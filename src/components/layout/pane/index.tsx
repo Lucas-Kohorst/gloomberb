@@ -24,6 +24,7 @@ interface PaneWrapperProps {
   onHeaderMouseDragEnd?: (event: any) => void;
   onHeaderContextMenu?: (event: any) => void;
   onActionMouseDown?: (event: any) => void;
+  onFloatToggleMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
 }
@@ -46,6 +47,7 @@ export function PaneWrapper({
   onHeaderMouseDragEnd,
   onHeaderContextMenu,
   onActionMouseDown,
+  onFloatToggleMouseDown,
   footer,
   children,
 }: PaneWrapperProps) {
@@ -96,6 +98,7 @@ export function PaneWrapper({
           onHeaderMouseDragEnd={onHeaderMouseDragEnd}
           onHeaderContextMenu={onHeaderContextMenu}
           onActionMouseDown={onActionMouseDown}
+          onFloatToggleMouseDown={onFloatToggleMouseDown}
         />
       )}
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>

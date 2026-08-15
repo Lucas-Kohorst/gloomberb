@@ -1,11 +1,12 @@
+/// <reference lib="dom" />
 /** @jsxImportSource react */
-import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import {
-  createShortcutRegistry,
   InputHostProvider,
-  useRegisteredShortcut,
+  shouldDeliverShortcut,
   type InputHost,
   type KeyEventLike,
+  type ShortcutOptions,
 } from "../../../react/input";
 import {
   isMouseBackNavigationButton,
@@ -16,6 +17,7 @@ import {
   isEditableKeyboardTarget,
   normalizeWebKeyName,
   shouldConsumeWebAppKeyDown,
+  shouldDispatchWebAppKeyDown,
   webKeySequence,
 } from "./key-event";
 
@@ -75,6 +77,22 @@ function toMouseBackKeyEventLike(event: MouseEvent): KeyEventLike {
   };
 }
 
+interface ShortcutEntry {
+  handlerRef: { current: (event: KeyEventLike) => void };
+  enabledRef: { current: boolean };
+  allowEditableRef: { current: boolean };
+  interceptNativeRef: { current: NonNullable<ShortcutOptions["interceptNative"]> | false };
+  phase: NonNullable<ShortcutOptions["phase"]>;
+  order: number;
+}
+
+let nextShortcutOrder = 1;
+
+function shouldInterceptNative(entry: ShortcutEntry, event: KeyEventLike): boolean {
+  const interceptor = entry.interceptNativeRef.current;
+  return typeof interceptor === "function" ? interceptor(event) : interceptor;
+}
+
 function subscribeViewport(listener: () => void): () => void {
   window.addEventListener("resize", listener);
   return () => window.removeEventListener("resize", listener);
@@ -91,18 +109,72 @@ function getViewport() {
   return viewportSnapshot;
 }
 
+function dispatchShortcutEntries(
+  shortcutEvent: KeyEventLike,
+  entries: readonly ShortcutEntry[],
+  nativeInterceptionOnly = false,
+  skipNativeInterceptors = false,
+): void {
+  for (const phase of ["before", "normal", "after"] as const) {
+    if (phase === "after" && (shortcutEvent.defaultPrevented || shortcutEvent.propagationStopped)) break;
+    const phaseEntries = entries
+      .filter((entry) => entry.phase === phase)
+      .map((entry) => ({
+        entry,
+        interceptsNative: shouldInterceptNative(entry, shortcutEvent),
+      }))
+      .sort((left, right) => (
+        phase === "before" && left.interceptsNative !== right.interceptsNative
+          ? Number(right.interceptsNative) - Number(left.interceptsNative)
+          : left.entry.order - right.entry.order
+      ));
+    for (const { entry, interceptsNative } of phaseEntries) {
+      if (!entry.enabledRef.current) continue;
+      if (nativeInterceptionOnly && (phase !== "before" || !interceptsNative)) continue;
+      if (skipNativeInterceptors && phase === "before" && interceptsNative) continue;
+      if (!shouldDeliverShortcut(shortcutEvent, entry.allowEditableRef.current)) continue;
+      entry.handlerRef.current(shortcutEvent);
+      if (shortcutEvent.propagationStopped) break;
+    }
+    if (shortcutEvent.propagationStopped) break;
+  }
+}
+
+export function dispatchWebNativeInterceptors(event: KeyboardEvent, entries: readonly ShortcutEntry[]): void {
+  if (event.defaultPrevented || event.isComposing) return;
+  dispatchShortcutEntries(toKeyEventLike(event), entries, true);
+}
+
+export function dispatchWebAppKeyDown(
+  event: KeyboardEvent,
+  entries: readonly ShortcutEntry[],
+  nativeInterceptorsDispatched = false,
+): void {
+  if (event.defaultPrevented || event.isComposing) return;
+  const shortcutEvent = toKeyEventLike(event);
+  const nativeInterceptionOnly = !shouldDispatchWebAppKeyDown(event);
+
+  dispatchShortcutEntries(shortcutEvent, entries, nativeInterceptionOnly, nativeInterceptorsDispatched);
+  if (!nativeInterceptionOnly && shouldConsumeWebAppKeyDown(event)) event.preventDefault();
+}
+
 export function WebInputHostProvider({ children }: { children: ReactNode }) {
-  const shortcutRegistry = useMemo(() => createShortcutRegistry(), []);
+  const shortcutsRef = useRef<ShortcutEntry[]>([]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const shortcutEvent = toKeyEventLike(event);
-      shortcutRegistry.dispatch(shortcutEvent);
-      if (shouldConsumeWebAppKeyDown(event)) event.preventDefault();
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      dispatchWebNativeInterceptors(event, shortcutsRef.current);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      dispatchWebAppKeyDown(event, shortcutsRef.current, true);
+    };
+    window.addEventListener("keydown", onKeyDownCapture, true);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [shortcutRegistry]);
+    return () => {
+      window.removeEventListener("keydown", onKeyDownCapture, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     const preventBrowserBack = (event: MouseEvent) => {
@@ -114,7 +186,7 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
       if (!isMouseBackNavigationButton(event.button)) return;
       event.preventDefault();
       event.stopPropagation();
-      shortcutRegistry.dispatch(toMouseBackKeyEventLike(event));
+      dispatchShortcutEntries(toMouseBackKeyEventLike(event), shortcutsRef.current);
     };
 
     window.addEventListener("mousedown", preventBrowserBack, true);
@@ -125,16 +197,38 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("auxclick", preventBrowserBack, true);
       window.removeEventListener("mouseup", onMouseUp, true);
     };
-  }, [shortcutRegistry]);
+  }, []);
 
   const host = useMemo<InputHost>(() => ({
     useShortcut(handler, options) {
-      useRegisteredShortcut(shortcutRegistry, handler, options);
+      const handlerRef = useRef(handler);
+      const enabledRef = useRef(options?.enabled !== false);
+      const allowEditableRef = useRef(options?.allowEditable === true);
+      const interceptNativeRef = useRef<NonNullable<ShortcutOptions["interceptNative"]> | false>(options?.interceptNative ?? false);
+      handlerRef.current = handler;
+      enabledRef.current = options?.enabled !== false;
+      allowEditableRef.current = options?.allowEditable === true;
+      interceptNativeRef.current = options?.interceptNative ?? false;
+
+      useLayoutEffect(() => {
+        const entry: ShortcutEntry = {
+          handlerRef,
+          enabledRef,
+          allowEditableRef,
+          interceptNativeRef,
+          phase: options?.phase ?? "normal",
+          order: nextShortcutOrder++,
+        };
+        shortcutsRef.current = [...shortcutsRef.current, entry].sort((a, b) => a.order - b.order);
+        return () => {
+          shortcutsRef.current = shortcutsRef.current.filter((current) => current !== entry);
+        };
+      }, [options?.phase, options?.scope]);
     },
     useViewport() {
       return useSyncExternalStore(subscribeViewport, getViewport, getViewport);
     },
-  }), [shortcutRegistry]);
+  }), []);
 
   return (
     <InputHostProvider host={host}>

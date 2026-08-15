@@ -34,6 +34,7 @@ export interface ShortcutOptions {
   scope?: string;
   phase?: "before" | "normal" | "after";
   allowEditable?: boolean;
+  interceptNative?: boolean | ((event: KeyEventLike) => boolean);
 }
 
 interface ShortcutRegistration {
