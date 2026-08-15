@@ -520,6 +520,13 @@ export interface GloomPluginContext {
   getConfig(): import("./config").AppConfig;
   getPaneDef(paneId: string): PaneDef | undefined;
 
+  /**
+   * Resolve an API key for a known service (e.g. "adjacent", "hyperliquid",
+   * "sec-edgar") or a custom BYOK entry. Checks stored BYOK keys first, then
+   * falls back to the service's configured environment variable.
+   */
+  getApiKey(serviceId: string): string | undefined;
+
   readonly marketData: DataProvider;
   readonly tickerRepository: AppTickerRepositoryPort;
   readonly persistence: PluginPersistence;

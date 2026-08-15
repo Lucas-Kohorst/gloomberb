@@ -41,6 +41,7 @@ export interface RegistryPluginContextOptions {
   getData: (ticker: string) => TickerFinancials | null;
   getTicker: (symbol: string) => TickerRecord | null;
   getConfig: () => import("../../types/config").AppConfig;
+  getApiKey: (serviceId: string) => string | undefined;
   getResumeState: <T = unknown>(key: string, schemaVersion?: number) => T | null;
   setResumeState: (key: string, value: unknown, schemaVersion?: number) => void;
   deleteResumeState: (key: string) => void;
@@ -90,6 +91,7 @@ export function createRegistryPluginContext({
   getData,
   getTicker,
   getConfig,
+  getApiKey,
   getResumeState,
   setResumeState,
   deleteResumeState,
@@ -166,6 +168,7 @@ export function createRegistryPluginContext({
     getData,
     getTicker,
     getConfig,
+    getApiKey,
     getPaneDef: (paneId) => contributions.panesMap.get(paneId),
 
     marketData,

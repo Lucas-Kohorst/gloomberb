@@ -12,6 +12,7 @@ export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
+    if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
@@ -100,4 +101,32 @@ async function serveApp(request: Request, env: Env): Promise<Response> {
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   return new Response(response.body, { status: response.status, headers });
+}
+
+/**
+ * Returns which BYOK service keys are configured as Cloudflare Worker secrets
+ * (environment variables), without revealing the key values.
+ *
+ * Keys are set via `wrangler secret put ADJACENT_API_KEY` etc.
+ */
+function handleByokKeysRequest(request: Request, env: Env): Response {
+  if (request.method !== "GET") {
+    return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+
+  const knownEnvVars = [
+    "ADJACENT_API_KEY",
+    "HYPERLIQUID_API_KEY",
+    "SEC_EDGAR_EMAIL",
+  ];
+
+  const configured: Array<{ serviceId: string; envVar: string }> = [];
+  for (const envVar of knownEnvVars) {
+    if (env[envVar as keyof Env]) {
+      const serviceId = envVar.toLowerCase().replace(/_api_key$|_email$/, "").replace(/_/g, "-");
+      configured.push({ serviceId, envVar });
+    }
+  }
+
+  return Response.json({ configured });
 }
