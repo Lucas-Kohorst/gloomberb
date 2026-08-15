@@ -1,4 +1,5 @@
 import type { DataTableColumn } from "../../../components";
+import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import type { PricePoint } from "../../../types/financials";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { getPricePointTimestamp } from "../../../utils/price-history";
@@ -25,6 +26,20 @@ export interface SectorRow extends SectorDef {
 
 type SectorColumnId = "name" | "etf" | "price" | "changePercent" | "return1M" | "return1Y" | "bar";
 export type SectorColumn = DataTableColumn & { id: SectorColumnId };
+
+export const SECTOR_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
+  { id: "name", label: "SECTOR", description: "Sector or industry name." },
+  { id: "etf", label: "ETF", description: "Tracking ETF ticker." },
+  { id: "price", label: "LAST", description: "Last price." },
+  { id: "changePercent", label: "1D", description: "1-day percent change." },
+  { id: "return1M", label: "1M", description: "1-month return." },
+  { id: "return1Y", label: "1Y", description: "1-year return." },
+  { id: "bar", label: "MOVE", description: "Relative daily move bar." },
+];
+
+export const DEFAULT_SECTOR_COLUMN_IDS = SECTOR_COLUMN_DEFS.map(
+  (column) => column.id,
+);
 export type SectorRowsByCollection = Record<SectorCollectionId, SectorRow[]>;
 export type SectorRefreshByCollection = Partial<Record<SectorCollectionId, number>>;
 

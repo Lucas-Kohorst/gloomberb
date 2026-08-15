@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView } from "../../../components";
+import {
+  buildColumnVisibilityField,
+  resolveVisibleColumns,
+} from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import { usePaneInstance } from "../../../state/app/context";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
@@ -17,7 +22,9 @@ import {
 } from "./model";
 import {
   createWorldIndexColumns,
+  DEFAULT_WORLD_INDEX_COLUMN_IDS,
   renderWorldIndexCell,
+  WORLD_INDEX_COLUMN_DEFS,
   type WorldIndexColumn,
 } from "./table";
 
@@ -26,6 +33,7 @@ const REFRESH_INTERVAL_MS = 60_000;
 function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { pinTicker } = usePluginTickerActions();
+  const paneInstance = usePaneInstance();
   const [quotes, setQuotes] = useState<QuoteMap>(new Map());
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<WorldIndexSortPreference>(DEFAULT_SORT_PREFERENCE);
@@ -143,7 +151,14 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
-  const columns = useMemo<WorldIndexColumn[]>(() => createWorldIndexColumns(width), [width]);
+  const columns = useMemo<WorldIndexColumn[]>(
+    () => resolveVisibleColumns(
+      createWorldIndexColumns(width),
+      paneInstance?.settings?.columnIds,
+      DEFAULT_WORLD_INDEX_COLUMN_IDS,
+    ),
+    [paneInstance?.settings?.columnIds, width],
+  );
 
   const renderCell = useCallback((
     row: WorldIndexTableRow,
@@ -196,6 +211,10 @@ export const worldIndicesModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 72, height: 32 },
+      settings: {
+        title: "World Indices Settings",
+        fields: [buildColumnVisibilityField(WORLD_INDEX_COLUMN_DEFS)],
+      },
     },
   ],
 

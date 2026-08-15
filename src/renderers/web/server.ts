@@ -15,7 +15,7 @@ import {
 import * as nodeConfigStoreHost from "../../data/config/store/node";
 import { getDesktopBackendPlugins } from "../../plugins/catalog-backend";
 import { createDesktopWorkspace } from "../electrobun/bun/desktop/workspace";
-import { loadDesktopPluginState } from "../electrobun/bun/desktop/plugin-state";
+import { handleDesktopPluginStateRequest, loadDesktopPluginState } from "../electrobun/bun/desktop/plugin-state";
 import { handleHttpFetch } from "../electrobun/bun/desktop/http-fetch";
 import { resolveDesktopLiveStream } from "../electrobun/bun/desktop/media";
 import type {
@@ -284,12 +284,13 @@ async function handleRequest(options: {
     case "host.windowControl":
     case "host.restart":
     case "host.showContextMenu":
-    case "pluginState.set":
-    case "pluginState.setMany":
-    case "pluginState.delete":
     case "update.start":
     case "remote.forward":
       return null;
+    case "pluginState.set":
+    case "pluginState.setMany":
+    case "pluginState.delete":
+      return handleDesktopPluginStateRequest(services().pluginRegistry.persistence.pluginState, request);
     case "host.readText":
       return "";
     case "update.check":

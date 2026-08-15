@@ -1,4 +1,5 @@
 import type { DataTableCell, DataTableColumn } from "../../../components";
+import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import { colors, priceColor } from "../../../theme/colors";
 import type { MarketState } from "../../../types/financials";
 import { TextAttributes } from "../../../ui";
@@ -10,6 +11,18 @@ import type {
 } from "./model";
 
 export type WorldIndexColumn = DataTableColumn & { id: WorldIndexColumnId };
+
+export const WORLD_INDEX_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
+  { id: "status", label: "", description: "Live trading session indicator." },
+  { id: "symbol", label: "INDEX", description: "Index ticker." },
+  { id: "name", label: "NAME", description: "Index name." },
+  { id: "price", label: "LAST", description: "Last price." },
+  { id: "changePercent", label: "CHG%", description: "Percent change." },
+];
+
+export const DEFAULT_WORLD_INDEX_COLUMN_IDS = WORLD_INDEX_COLUMN_DEFS.map(
+  (column) => column.id,
+);
 
 export function createWorldIndexColumns(width: number): WorldIndexColumn[] {
   const statusWidth = 1;

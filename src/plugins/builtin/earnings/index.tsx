@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import {
+  buildColumnVisibilityField,
+  resolveVisibleColumns,
+} from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { EarningsEvent } from "../../../types/data-provider";
@@ -22,6 +26,8 @@ import {
 } from "./model";
 import {
   buildEarningsColumns,
+  DEFAULT_EARNINGS_COLUMN_IDS,
+  EARNINGS_COLUMN_DEFS,
   renderEarningsCell,
   renderEarningsSectionHeader,
   type EarningsColumn,
@@ -63,7 +69,14 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const eventCount = eventRows.length;
   const activeEventIdx = eventCount > 0 ? Math.min(Math.max(selectedIdx, 0), eventCount - 1) : -1;
   const selectedRowIndex = rows.findIndex((row) => row.kind === "event" && row.eventIdx === activeEventIdx);
-  const columns = useMemo(() => buildEarningsColumns(width), [width]);
+  const columns = useMemo(
+    () => resolveVisibleColumns(
+      buildEarningsColumns(width),
+      pane?.settings?.columnIds,
+      DEFAULT_EARNINGS_COLUMN_IDS,
+    ),
+    [pane?.settings?.columnIds, width],
+  );
 
   const reload = useCallback((force = false) => {
     const requestId = ++requestIdRef.current;
@@ -201,6 +214,10 @@ export const earningsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 85, height: 25 },
+      settings: {
+        title: "Earnings Calendar Settings",
+        fields: [buildColumnVisibilityField(EARNINGS_COLUMN_DEFS)],
+      },
     },
   ],
 

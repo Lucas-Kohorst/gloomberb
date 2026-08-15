@@ -1,5 +1,6 @@
 import { TextAttributes } from "../../../ui";
 import type { DataTableCell, DataTableColumn } from "../../../components";
+import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
@@ -22,6 +23,27 @@ type EarningsColumnId =
   | "analysts";
 
 export type EarningsColumn = DataTableColumn & { id: EarningsColumnId };
+
+export const EARNINGS_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
+  { id: "date", label: "DATE", description: "Report date." },
+  { id: "when", label: "WHEN", description: "Timing or call time." },
+  { id: "status", label: "ST", description: "Confirmed vs estimated date." },
+  { id: "symbol", label: "TICKER", description: "Ticker symbol." },
+  { id: "name", label: "NAME", description: "Company name." },
+  { id: "epsEstimate", label: "EPS", description: "EPS estimate." },
+  { id: "epsRange", label: "EPS RNG", description: "EPS estimate range." },
+  { id: "epsGrowth", label: "EPS YOY", description: "EPS year-over-year growth." },
+  { id: "epsTrend", label: "EPS 30D", description: "EPS estimate revision trend." },
+  { id: "epsRevisions", label: "REV", description: "Estimate revisions up/down." },
+  { id: "revenueEstimate", label: "SALES", description: "Revenue estimate." },
+  { id: "revenueRange", label: "SALES RNG", description: "Revenue estimate range." },
+  { id: "revenueGrowth", label: "SALES YOY", description: "Revenue year-over-year growth." },
+  { id: "analysts", label: "ANL", description: "Analyst coverage count." },
+];
+
+export const DEFAULT_EARNINGS_COLUMN_IDS = EARNINGS_COLUMN_DEFS.map(
+  (column) => column.id,
+);
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 

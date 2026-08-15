@@ -1,9 +1,26 @@
 import type { DataTableCell } from "../../../components";
+import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import { TextAttributes } from "../../../ui";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatCompact, formatPercentRaw } from "../../../utils/format";
 import type { MarketMoverColumn, MarketMoverRow } from "./model";
 import { fiftyTwoWeekPositionPercent } from "./model";
+
+export const MARKET_MOVER_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
+  { id: "rank", label: "#", description: "Rank within the current tab." },
+  { id: "symbol", label: "TICKER", description: "Ticker symbol." },
+  { id: "name", label: "NAME", description: "Company name." },
+  { id: "price", label: "LAST", description: "Last trade price." },
+  { id: "changePercent", label: "CHG%", description: "Percent change." },
+  { id: "volume", label: "VOL", description: "Trading volume." },
+  { id: "volumeRatio", label: "V/AVG", description: "Volume relative to average." },
+  { id: "range", label: "52W%", description: "Position within the 52-week range." },
+  { id: "marketCap", label: "MCAP", description: "Market capitalization." },
+];
+
+export const DEFAULT_MARKET_MOVER_COLUMN_IDS = MARKET_MOVER_COLUMN_DEFS.map(
+  (column) => column.id,
+);
 
 function formatVolRatio(ratio: number): string {
   if (ratio <= 0) return "—";
