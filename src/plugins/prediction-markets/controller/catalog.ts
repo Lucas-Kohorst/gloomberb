@@ -15,6 +15,7 @@ import { getCachedPredictionResource } from "../services/fetch";
 import { loadKalshiCatalog } from "../services/kalshi/adapter";
 import { loadPolymarketCatalog } from "../services/polymarket/adapter";
 import type {
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../types";
@@ -23,6 +24,7 @@ type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
 
 interface UsePredictionCatalogDataOptions {
+  browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   includeKalshi: boolean;
   includePolymarket: boolean;
@@ -30,6 +32,7 @@ interface UsePredictionCatalogDataOptions {
 }
 
 export function usePredictionCatalogData({
+  browseTab,
   categoryId,
   includeKalshi,
   includePolymarket,
@@ -175,7 +178,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadPolymarketCatalog(search, category);
+        const next = await loadPolymarketCatalog(search, category, browseTab);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -205,7 +208,7 @@ export function usePredictionCatalogData({
         }
       }
     },
-    [],
+    [browseTab],
   );
 
   const loadKalshi = useCallback(
@@ -225,7 +228,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadKalshiCatalog(search, category);
+        const next = await loadKalshiCatalog(search, category, browseTab);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -255,7 +258,7 @@ export function usePredictionCatalogData({
         }
       }
     },
-    [],
+    [browseTab],
   );
 
   useEffect(() => {

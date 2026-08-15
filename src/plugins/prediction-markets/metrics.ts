@@ -141,6 +141,8 @@ function getMarketSortValue(
       return coerceDateValue(row.endsAt);
     case "updated":
       return coerceDateValue(row.updatedAt);
+    case "created":
+      return coerceDateValue(row.createdAt);
     case "status":
       return row.status;
     case "event":
@@ -161,7 +163,7 @@ export function getDefaultPredictionSort(
     case "ending":
       return { columnId: "ends", direction: "asc" };
     case "new":
-      return { columnId: "updated", direction: "desc" };
+      return { columnId: "created", direction: "desc" };
     default:
       return { columnId: "vol_24h", direction: "desc" };
   }
@@ -310,6 +312,8 @@ export function getPredictionColumnValue(
       };
     case "updated":
       return { text: formatPredictionUpdatedAt(market.updatedAt) };
+    case "created":
+      return { text: formatPredictionUpdatedAt(market.createdAt) };
     case "market_id":
       return { text: market.marketId };
     default:

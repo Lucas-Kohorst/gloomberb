@@ -6,6 +6,7 @@ import { getKalshiCategoryNames } from "../../categories";
 import type {
   PredictionBookLevel,
   PredictionBookSnapshot,
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionHistoryPoint,
   PredictionMarketDetail,
@@ -96,6 +97,7 @@ async function fetchKalshiCatalogEventsForCategory(
 export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
+  browseTab: PredictionBrowseTab = "top",
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   return await loadCachedPredictionResource(
@@ -109,7 +111,7 @@ export async function loadKalshiCatalog(
         categoryId === "all"
           ? await fetchKalshiCatalogEvents(maxPages)
           : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
-      return normalizeKalshiCatalog(events, normalizedQuery, categoryId);
+      return normalizeKalshiCatalog(events, normalizedQuery, categoryId, browseTab);
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );

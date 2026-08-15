@@ -2,6 +2,7 @@ import { measurePerf } from "../../../../utils/perf-marks";
 import { matchesPredictionCategory } from "../../categories";
 import type {
   PredictionBookLevel,
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../../types";
@@ -115,6 +116,7 @@ export function normalizeKalshiMarket(
     endsAt: record.close_time ?? null,
     updatedAt:
       record.updated_time ?? record.open_time ?? record.created_time ?? null,
+    createdAt: record.created_time ?? record.open_time ?? null,
     yesPrice: prices.yesPrice,
     noPrice: prices.noPrice,
     yesBid,
@@ -138,10 +140,21 @@ export function normalizeKalshiMarket(
 
 function sortKalshiMarkets(
   markets: PredictionMarketSummary[],
+  browseTab: PredictionBrowseTab = "top",
 ): PredictionMarketSummary[] {
-  return [...markets].sort(
-    (left, right) => (right.volume24h ?? 0) - (left.volume24h ?? 0),
-  );
+  return [...markets].sort((left, right) => {
+    if (browseTab === "ending") {
+      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
+      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
+      return leftEnds - rightEnds;
+    }
+    if (browseTab === "new") {
+      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightCreated - leftCreated;
+    }
+    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  });
 }
 
 function flattenKalshiEvents(
@@ -194,11 +207,13 @@ export function normalizeKalshiCatalog(
   events: KalshiEventRecord[],
   searchQuery: string,
   categoryId: PredictionCategoryId,
+  browseTab: PredictionBrowseTab = "top",
 ): PredictionMarketSummary[] {
   return measurePerf(
     "prediction.catalog.kalshi.normalize",
     () => sortKalshiMarkets(
       flattenKalshiEvents(events, searchQuery, categoryId),
+      browseTab,
     ),
     {
       categoryId,

@@ -108,6 +108,13 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
     description: "Last upstream update age.",
   },
   {
+    id: "created",
+    label: "CREATED",
+    width: 10,
+    align: "left",
+    description: "Market creation date.",
+  },
+  {
     id: "market_id",
     label: "ID",
     width: 20,

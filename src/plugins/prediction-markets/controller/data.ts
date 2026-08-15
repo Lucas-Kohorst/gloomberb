@@ -58,6 +58,7 @@ export function usePredictionMarketsDataState({
     debouncedSearchQuery,
     setCatalogCache,
   } = usePredictionCatalogData({
+    browseTab,
     categoryId,
     includeKalshi,
     includePolymarket,

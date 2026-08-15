@@ -47,6 +47,7 @@ export interface PredictionMarketSummary {
   description: string;
   endsAt: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
   yesPrice: number | null;
   noPrice: number | null;
   yesBid: number | null;
@@ -151,6 +152,7 @@ interface PredictionListRowBase {
   description: string;
   endsAt: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
   yesPrice: number | null;
   noPrice: number | null;
   spread: number | null;
