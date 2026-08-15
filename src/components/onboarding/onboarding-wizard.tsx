@@ -255,9 +255,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
 
   const contentWidth = Math.min(60, termWidth - 4);
   const contentLeft = Math.floor((termWidth - contentWidth) / 2);
+  const hideFooter = initialStep === "account";
+  const footerRows = hideFooter ? 0 : FOOTER_ROWS;
   // The footer is pinned to the last FOOTER_ROWS rows, so steps get whatever is left.
-  const contentTop = Math.max(0, Math.min(Math.floor((termHeight - 24) / 2), termHeight - FOOTER_ROWS - 1));
-  const contentHeight = Math.max(1, termHeight - contentTop - FOOTER_ROWS);
+  const contentTop = Math.max(0, Math.min(Math.floor((termHeight - 24) / 2), termHeight - footerRows - 1));
+  const contentHeight = Math.max(1, termHeight - contentTop - footerRows);
   const progressDots = ONBOARDING_STEPS.map((_, index) => {
     if (index < stepIdx) return "\u2501";
     if (index === stepIdx) return "\u25cf";
@@ -366,26 +368,28 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
         )}
       </Box>
 
-      <Box
-        position="absolute"
-        top={termHeight - FOOTER_ROWS}
-        left={contentLeft}
-        width={contentWidth}
-        flexDirection="column"
-      >
-        <Box height={1} />
-        <Box height={1} flexDirection="row" width={contentWidth}>
-          <Box flexGrow={1}>
-            <Text fg={colors.textMuted}>{progressDots}</Text>
+      {!hideFooter && (
+        <Box
+          position="absolute"
+          top={termHeight - FOOTER_ROWS}
+          left={contentLeft}
+          width={contentWidth}
+          flexDirection="column"
+        >
+          <Box height={1} />
+          <Box height={1} flexDirection="row" width={contentWidth}>
+            <Box flexGrow={1}>
+              <Text fg={colors.textMuted}>{progressDots}</Text>
+            </Box>
+          </Box>
+          <Box height={1} flexDirection="row" width={contentWidth}>
+            <Box flexGrow={1} />
+            <Box>
+              <Text fg={colors.textMuted}>{hintText}</Text>
+            </Box>
           </Box>
         </Box>
-        <Box height={1} flexDirection="row" width={contentWidth}>
-          <Box flexGrow={1} />
-          <Box>
-            <Text fg={colors.textMuted}>{hintText}</Text>
-          </Box>
-        </Box>
-      </Box>
+      )}
     </Box>
   );
 }

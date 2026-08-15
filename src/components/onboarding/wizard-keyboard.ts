@@ -302,5 +302,12 @@ export function useOnboardingKeyboard({
         }
       }
     }
-  }, { allowEditable: true });
+  }, {
+    allowEditable: true,
+    phase: "before",
+    interceptNative: (event) => (
+      event.targetEditable === true
+      && (event.name === "enter" || event.name === "return" || event.name === "escape")
+    ),
+  });
 }

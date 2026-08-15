@@ -3,6 +3,13 @@
   "name": "gloomberb-cloud",
   "main": "src/renderers/cloudflare/worker.ts",
   "compatibility_date": "2026-08-15",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "terminal.kohor.st",
+      "custom_domain": true
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
