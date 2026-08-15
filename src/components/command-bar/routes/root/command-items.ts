@@ -142,6 +142,8 @@ export function createRootCommandItemBuilder({
         return command.description;
       case "toggle-value-flashing":
         return state.config.valueFlashingEnabled ? "Currently on" : "Currently off";
+      case "set-refresh-interval":
+        return `Currently ${state.config.refreshIntervalMinutes} min`;
       default:
         return command.description;
     }

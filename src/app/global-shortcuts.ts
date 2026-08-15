@@ -83,6 +83,24 @@ export function useAppGlobalShortcuts({
 
     if (state.commandBarOpen) return;
 
+    if (!isDetachedWindow && (event.ctrl || event.meta || event.super) && event.targetEditable !== true) {
+      const name = event.name?.toLowerCase() ?? "";
+      const isUndo = name === "z" && !event.shift;
+      const isRedo = (name === "z" && event.shift) || name === "y";
+      if (isUndo) {
+        event.preventDefault();
+        event.stopPropagation();
+        dispatch({ type: "UNDO_LAYOUT" });
+        return;
+      }
+      if (isRedo) {
+        event.preventDefault();
+        event.stopPropagation();
+        dispatch({ type: "REDO_LAYOUT" });
+        return;
+      }
+    }
+
     if (event.name === "tab") {
       const paneOrder = getVisiblePaneCycleOrder(
         state.config.layout,

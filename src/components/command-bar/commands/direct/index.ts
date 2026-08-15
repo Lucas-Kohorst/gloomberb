@@ -262,6 +262,22 @@ export function runDirectCommandAction(options: {
       closeAll({ revertThemePreview: false });
       return;
     }
+    case "set-refresh-interval": {
+      const minutes = parseInt(arg, 10);
+      if (!Number.isFinite(minutes) || minutes < 1) {
+        notify("Enter a valid number of minutes (1 or more).", { type: "error" });
+        return;
+      }
+      const nextConfig = {
+        ...state.config,
+        refreshIntervalMinutes: minutes,
+      };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      persistConfig(nextConfig);
+      notify(`Refresh interval set to ${minutes} min`, { type: "success" });
+      closeAll({ revertThemePreview: false });
+      return;
+    }
     case "check-for-updates":
       void onCheckForUpdates?.();
       closeAll({ revertThemePreview: false });
