@@ -164,6 +164,8 @@ export function AdjacentRatesPane({
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [sortColumnId, setSortColumnId] = useState<RateColumn["id"] | null>("value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -196,7 +198,20 @@ export function AdjacentRatesPane({
   }, [rates, selectedId]);
 
   const columns = useMemo(() => createRateColumns(width), [width]);
-  const selectedRate = rates.find((r) => r.id === selectedId) ?? null;
+  const sortedRates = useMemo(() => {
+    if (!sortColumnId) return rates;
+    const sign = sortDirection === "asc" ? 1 : -1;
+    return [...rates].sort((left, right) => {
+      if (sortColumnId === "name") return sign * left.name.localeCompare(right.name);
+      const leftValue = left[sortColumnId];
+      const rightValue = right[sortColumnId];
+      if (leftValue == null && rightValue == null) return 0;
+      if (leftValue == null) return 1;
+      if (rightValue == null) return -1;
+      return sign * (Number(leftValue) - Number(rightValue));
+    });
+  }, [rates, sortColumnId, sortDirection]);
+  const selectedRate = sortedRates.find((r) => r.id === selectedId) ?? null;
 
   const renderCell = useCallback(
     (row: AdjacentRateRow, column: RateColumn, _index: number, rowState: { selected: boolean }) =>
@@ -257,10 +272,18 @@ export function AdjacentRatesPane({
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={rates}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={sortedRates}
+      sortColumnId={sortColumnId}
+      sortDirection={sortDirection}
+      onHeaderClick={(columnId) => {
+        const next = columnId as RateColumn["id"];
+        if (sortColumnId === next) {
+          setSortDirection((current) => current === "asc" ? "desc" : "asc");
+          return;
+        }
+        setSortColumnId(next);
+        setSortDirection(next === "name" ? "asc" : "desc");
+      }}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
       emptyStateTitle="No reference rates."

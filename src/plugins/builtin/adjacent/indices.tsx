@@ -347,6 +347,8 @@ export function AdjacentIndicesPane({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<IndexDetailTab>("overview");
+  const [sortColumnId, setSortColumnId] = useState<IndexColumn["id"] | null>("value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -380,8 +382,33 @@ export function AdjacentIndicesPane({
   }, [indices, selectedId]);
 
   const columns = useMemo(() => createIndexColumns(width), [width]);
-  const selectedIndex = indices.findIndex((i) => i.id === selectedId);
-  const selectedIndexRow = selectedIndex >= 0 ? indices[selectedIndex]! : null;
+  const sortedIndices = useMemo(() => {
+    if (!sortColumnId) return indices;
+    const sign = sortDirection === "asc" ? 1 : -1;
+    return [...indices].sort((left, right) => {
+      if (sortColumnId === "name") return sign * left.name.localeCompare(right.name);
+      const leftValue = sortColumnId === "value"
+        ? left.value
+        : sortColumnId === "prob"
+          ? left.probabilityPct
+          : sortColumnId === "chg1d"
+            ? left.change1d
+            : left.change7d;
+      const rightValue = sortColumnId === "value"
+        ? right.value
+        : sortColumnId === "prob"
+          ? right.probabilityPct
+          : sortColumnId === "chg1d"
+            ? right.change1d
+            : right.change7d;
+      if (leftValue == null && rightValue == null) return 0;
+      if (leftValue == null) return 1;
+      if (rightValue == null) return -1;
+      return sign * (leftValue - rightValue);
+    });
+  }, [indices, sortColumnId, sortDirection]);
+  const selectedIndex = sortedIndices.findIndex((i) => i.id === selectedId);
+  const selectedIndexRow = selectedIndex >= 0 ? sortedIndices[selectedIndex]! : null;
 
   const renderCell = useCallback(
     (row: AdjacentIndexRow, column: IndexColumn, _index: number, rowState: { selected: boolean }) =>
@@ -449,10 +476,18 @@ export function AdjacentIndicesPane({
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={indices}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={sortedIndices}
+      sortColumnId={sortColumnId}
+      sortDirection={sortDirection}
+      onHeaderClick={(columnId) => {
+        const next = columnId as IndexColumn["id"];
+        if (sortColumnId === next) {
+          setSortDirection((current) => current === "asc" ? "desc" : "asc");
+          return;
+        }
+        setSortColumnId(next);
+        setSortDirection(next === "name" ? "asc" : "desc");
+      }}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
       emptyStateTitle="No indices."

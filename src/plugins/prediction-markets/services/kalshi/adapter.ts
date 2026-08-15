@@ -21,6 +21,10 @@ import {
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
 import {
+  loadAdjacentVenueCatalog,
+  shouldUseAdjacentCatalog,
+} from "../adjacent/catalog";
+import {
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
   normalizeKalshiMarket,
@@ -30,22 +34,37 @@ import type {
   KalshiEventRecord,
   KalshiEventResponse,
   KalshiEventsResponse,
+  KalshiMarketRecord,
+  KalshiMarketsResponse,
   KalshiOrderbookResponse,
   KalshiTradesResponse,
 } from "./types";
 
 export { normalizeKalshiMarket } from "./normalize";
 
+const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
 const KALSHI_EVENT_PAGE_LIMIT = 200;
-const DEFAULT_KALSHI_EVENT_MAX_PAGES = 3;
-const SEARCH_KALSHI_EVENT_MAX_PAGES = 3;
+const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
+const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
+const KALSHI_MARKET_PAGE_LIMIT = 200;
+const KALSHI_MARKET_MAX_PAGES = 5;
+const KALSHI_TICKER_HYDRATE_BATCH = 80;
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
-  const url = new URL("https://api.elections.kalshi.com/trade-api/v2/events");
+  const url = new URL(`${KALSHI_API_BASE}/events`);
   url.searchParams.set("limit", String(KALSHI_EVENT_PAGE_LIMIT));
   url.searchParams.set("status", "open");
   url.searchParams.set("with_nested_markets", "true");
   if (category) url.searchParams.set("category", category);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  return url.toString();
+}
+
+function buildKalshiMarketsUrl(cursor?: string): string {
+  const url = new URL(`${KALSHI_API_BASE}/markets`);
+  url.searchParams.set("limit", String(KALSHI_MARKET_PAGE_LIMIT));
+  url.searchParams.set("status", "open");
+  url.searchParams.set("mve_filter", "exclude");
   if (cursor) url.searchParams.set("cursor", cursor);
   return url.toString();
 }
@@ -94,6 +113,110 @@ async function fetchKalshiCatalogEventsForCategory(
   return [...deduped.values()];
 }
 
+async function fetchKalshiOpenMarkets(
+  maxPages = KALSHI_MARKET_MAX_PAGES,
+): Promise<KalshiMarketRecord[]> {
+  const markets: KalshiMarketRecord[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < maxPages; page += 1) {
+    const response = await fetchJson<KalshiMarketsResponse>(
+      buildKalshiMarketsUrl(cursor),
+    );
+    markets.push(...(response.markets ?? []));
+    cursor = response.cursor?.trim() || undefined;
+    if (!cursor) break;
+  }
+  return markets;
+}
+
+async function loadKalshiVenueCatalog(
+  searchQuery: string,
+  categoryId: PredictionCategoryId,
+  browseTab: PredictionBrowseTab,
+): Promise<PredictionMarketSummary[]> {
+  const maxPages = searchQuery
+    ? SEARCH_KALSHI_EVENT_MAX_PAGES
+    : DEFAULT_KALSHI_EVENT_MAX_PAGES;
+  const [events, openMarkets] = await Promise.all([
+    categoryId === "all"
+      ? fetchKalshiCatalogEvents(maxPages)
+      : fetchKalshiCatalogEventsForCategory(categoryId, maxPages),
+    categoryId === "all" && !searchQuery
+      ? fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
+      : Promise.resolve([] as KalshiMarketRecord[]),
+  ]);
+  const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
+  if (openMarkets.length === 0) return fromEvents;
+  const fromMarkets = normalizeKalshiCatalog(
+    [{ title: "", markets: openMarkets }],
+    searchQuery,
+    categoryId,
+    browseTab,
+  );
+  const merged = new Map<string, PredictionMarketSummary>();
+  for (const market of [...fromMarkets, ...fromEvents]) {
+    merged.set(market.key, market);
+  }
+  return [...merged.values()].sort((left, right) => {
+    if (browseTab === "ending") {
+      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
+      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
+      return leftEnds - rightEnds;
+    }
+    if (browseTab === "new") {
+      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightCreated - leftCreated;
+    }
+    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  });
+}
+
+export async function hydrateKalshiCatalogPrices(
+  summaries: PredictionMarketSummary[],
+): Promise<PredictionMarketSummary[]> {
+  const kalshi = summaries.filter((summary) => summary.venue === "kalshi" && summary.marketId);
+  if (kalshi.length === 0) return summaries;
+  const byTicker = new Map<string, KalshiMarketRecord>();
+  for (let index = 0; index < kalshi.length; index += KALSHI_TICKER_HYDRATE_BATCH) {
+    const batch = kalshi.slice(index, index + KALSHI_TICKER_HYDRATE_BATCH);
+    const url = new URL(`${KALSHI_API_BASE}/markets`);
+    url.searchParams.set("tickers", batch.map((summary) => summary.marketId).join(","));
+    try {
+      const response = await fetchJson<{ markets?: KalshiMarketRecord[] }>(url.toString());
+      for (const market of response.markets ?? []) {
+        byTicker.set(market.ticker, market);
+      }
+    } catch {
+      // Keep Adjacent catalog rows even if live quotes fail.
+    }
+  }
+  if (byTicker.size === 0) return summaries;
+  return summaries.map((summary) => {
+    const record = byTicker.get(summary.marketId);
+    if (!record) return summary;
+    const live = normalizeKalshiMarket(record, {
+      title: summary.eventLabel,
+      category: summary.category,
+    });
+    if (!live) return summary;
+    return {
+      ...summary,
+      ...live,
+      key: summary.key,
+      title: summary.title || live.title,
+      marketLabel: summary.marketLabel || live.marketLabel,
+      eventLabel: summary.eventLabel || live.eventLabel,
+      category: summary.category ?? live.category,
+      url: summary.url || live.url,
+      volume24h: summary.volume24h ?? live.volume24h,
+      volume24hUnit: summary.volume24h != null ? summary.volume24hUnit : live.volume24hUnit,
+      totalVolume: summary.totalVolume ?? live.totalVolume,
+      openInterest: summary.openInterest ?? live.openInterest,
+    };
+  });
+}
+
 export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
@@ -102,16 +225,19 @@ export async function loadKalshiCatalog(
   const normalizedQuery = searchQuery.trim().toLowerCase();
   return await loadCachedPredictionResource(
     "catalog",
-    buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery),
+    buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
     async () => {
-      const maxPages = normalizedQuery
-        ? SEARCH_KALSHI_EVENT_MAX_PAGES
-        : DEFAULT_KALSHI_EVENT_MAX_PAGES;
-      const events =
-        categoryId === "all"
-          ? await fetchKalshiCatalogEvents(maxPages)
-          : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
-      return normalizeKalshiCatalog(events, normalizedQuery, categoryId, browseTab);
+      if (shouldUseAdjacentCatalog(browseTab, normalizedQuery)) {
+        try {
+          const adjacent = await loadAdjacentVenueCatalog("kalshi", normalizedQuery, categoryId);
+          if (adjacent.length > 0) {
+            return await hydrateKalshiCatalogPrices(adjacent);
+          }
+        } catch {
+          // Fall back to the venue catalog when Adjacent is down or empty.
+        }
+      }
+      return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );
@@ -127,7 +253,7 @@ async function loadKalshiEvent(
       `kalshi:event:${eventTicker}`,
       async () =>
         await fetchJson<KalshiEventResponse>(
-          `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
+          `${KALSHI_API_BASE}/events/${eventTicker}`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
     );
@@ -144,7 +270,7 @@ async function loadKalshiTrades(
     summary.key,
     async () => {
       const response = await fetchJson<KalshiTradesResponse>(
-        `https://api.elections.kalshi.com/trade-api/v2/markets/trades?ticker=${summary.marketId}&limit=30`,
+        `${KALSHI_API_BASE}/markets/trades?ticker=${summary.marketId}&limit=30`,
       );
       return (response.trades ?? []).map((trade) => ({
         id: trade.trade_id,
@@ -167,7 +293,7 @@ async function loadKalshiBook(
     summary.key,
     async () => {
       const response = await fetchJson<KalshiOrderbookResponse>(
-        `https://api.elections.kalshi.com/trade-api/v2/markets/${summary.marketId}/orderbook`,
+        `${KALSHI_API_BASE}/markets/${summary.marketId}/orderbook`,
       );
       const yesBids = (response.orderbook_fp?.yes_dollars ?? [])
         .map(normalizeKalshiBookLevel)
@@ -218,7 +344,7 @@ export async function loadKalshiHistory(
       `${summary.key}:${range}`,
       async () => {
         const response = await fetchJson<KalshiCandlestickResponse>(
-          `https://api.elections.kalshi.com/trade-api/v2/series/${event.event.series_ticker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
+          `${KALSHI_API_BASE}/series/${event.event.series_ticker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
         );
         return (response.candlesticks ?? [])
           .map((candle) => ({

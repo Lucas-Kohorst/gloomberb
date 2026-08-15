@@ -42,6 +42,11 @@ export interface KalshiEventsResponse {
   cursor?: string;
 }
 
+export interface KalshiMarketsResponse {
+  markets: KalshiMarketRecord[];
+  cursor?: string;
+}
+
 export interface KalshiEventResponse {
   event: {
     title: string;

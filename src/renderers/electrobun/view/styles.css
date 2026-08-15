@@ -185,9 +185,18 @@ body.gloom-dragging {
   overflow: hidden;
 }
 [data-gloom-role="pane-content"] > * {
-  min-width: 0;
-  min-height: 0;
-  max-height: 100%;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+}
+[data-gloom-role="pane-header-actions"] {
+  flex-direction: row !important;
+  align-items: center;
+  flex-shrink: 0;
 }
 [data-gloom-role="pane-footer"] {
   flex: 0 0 var(--cell-h);

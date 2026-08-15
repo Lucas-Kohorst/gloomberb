@@ -189,6 +189,8 @@ export function PaneHeader({
         width={width}
         backgroundColor={backgroundColor}
         flexDirection="row"
+        alignItems="center"
+        overflow="hidden"
         data-gloom-role="pane-header"
         data-floating={floating ? "true" : "false"}
         data-focused={focused ? "true" : "false"}
@@ -240,7 +242,14 @@ export function PaneHeader({
             />
           </Box>
         ))}
-        <Box data-gloom-role="pane-header-actions" position="relative" zIndex={2}>
+        <Box
+          data-gloom-role="pane-header-actions"
+          flexDirection="row"
+          alignItems="center"
+          flexShrink={0}
+          position="relative"
+          zIndex={2}
+        >
           {uiKind === "opentui" ? (
             <TerminalPaneButton
               text={floatToggleText}

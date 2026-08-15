@@ -52,22 +52,36 @@ export async function fetchChangelogReleases(
   limit = 30,
   signal?: AbortSignal,
 ): Promise<ChangelogRelease[]> {
+  const { bundledChangelogReleases, mergeChangelogReleases } = await import(
+    "../plugins/builtin/changelog/entries"
+  );
+  const local = bundledChangelogReleases();
   const perPage = Math.max(1, Math.min(Math.floor(limit), 100));
-  const response = await fetch(`${GITHUB_RELEASES_API_URL}?per_page=${perPage}`, {
-    signal,
-    headers: { Accept: "application/vnd.github+json" },
-  });
 
-  if (!response.ok) {
-    throw new Error(`GitHub returned ${response.status}`);
+  try {
+    const response = await fetch(`${GITHUB_RELEASES_API_URL}?per_page=${perPage}`, {
+      signal,
+      headers: { Accept: "application/vnd.github+json" },
+    });
+
+    if (!response.ok) {
+      if (local.length > 0) return local.slice(0, perPage);
+      throw new Error(`GitHub returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!Array.isArray(data)) {
+      if (local.length > 0) return local.slice(0, perPage);
+      throw new Error("GitHub returned an unexpected releases payload");
+    }
+
+    const remote = data
+      .map((release) => normalizeChangelogRelease(release as GitHubReleasePayload))
+      .filter((release): release is ChangelogRelease => release !== null);
+    return mergeChangelogReleases(local, remote).slice(0, perPage);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    if (local.length > 0) return local.slice(0, perPage);
+    throw error;
   }
-
-  const data = await response.json();
-  if (!Array.isArray(data)) {
-    throw new Error("GitHub returned an unexpected releases payload");
-  }
-
-  return data
-    .map((release) => normalizeChangelogRelease(release as GitHubReleasePayload))
-    .filter((release): release is ChangelogRelease => release !== null);
 }

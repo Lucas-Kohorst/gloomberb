@@ -1,4 +1,6 @@
 import { createDefaultConfig, type AppConfig } from "../../types/config";
+import { resolveHostedTvStream } from "../../plugins/builtin/tv/youtube-embed";
+import type { LiveStreamResolveRequest } from "../../types/media";
 import { handleHttpFetch, type SharedHttpFetchRequest } from "../electrobun/shared/http-fetch";
 import { decodeRpcValue, encodeRpcValue } from "../electrobun/view/rpc-codec";
 import { gloomFetch, readSessionCookie } from "./gloom-cloud";
@@ -87,6 +89,14 @@ export async function handleHostedBackendRpc(env: Env, user: HostedUser | null, 
       error: error instanceof Error ? error.message : "Hosted request failed.",
     }, { status: 400 });
   }
+}
+
+function resolveHostedMediaStream(payload: unknown): Promise<unknown> {
+  const request = payload && typeof payload === "object" ? payload as LiveStreamResolveRequest : null;
+  if (!request || request.provider !== "youtube" || typeof request.sourceId !== "string") {
+    throw new Error("Unsupported live-stream provider.");
+  }
+  return resolveHostedTvStream(request.sourceId);
 }
 
 function hostedConfig(user: HostedUser | null): AppConfig {
@@ -179,7 +189,7 @@ async function dispatch(
     case "desktop.focusDetachedPane":
       return null;
     case "media.resolveLiveStream":
-      throw new Error(`Live stream resolution is ${NOT_AVAILABLE.toLowerCase()}`);
+      return resolveHostedMediaStream(request.payload);
     case "host.openExternal":
     case "host.copyText":
     case "host.copyPngImage":

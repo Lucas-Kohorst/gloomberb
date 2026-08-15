@@ -55,13 +55,14 @@ export function usePredictionCatalogData({
         "polymarket",
         categoryId,
         debouncedSearchQuery,
+        browseTab,
       ),
-    [categoryId, debouncedSearchQuery],
+    [browseTab, categoryId, debouncedSearchQuery],
   );
   const kalshiCatalogKey = useMemo(
     () =>
-      buildPredictionCatalogCacheKey("kalshi", categoryId, debouncedSearchQuery),
-    [categoryId, debouncedSearchQuery],
+      buildPredictionCatalogCacheKey("kalshi", categoryId, debouncedSearchQuery, browseTab),
+    [browseTab, categoryId, debouncedSearchQuery],
   );
   const polymarketCatalogResourceKey = useMemo(
     () =>
@@ -69,8 +70,9 @@ export function usePredictionCatalogData({
         "polymarket",
         categoryId,
         normalizedCatalogQuery,
+        browseTab,
       ),
-    [categoryId, normalizedCatalogQuery],
+    [browseTab, categoryId, normalizedCatalogQuery],
   );
   const kalshiCatalogResourceKey = useMemo(
     () =>
@@ -78,8 +80,9 @@ export function usePredictionCatalogData({
         "kalshi",
         categoryId,
         normalizedCatalogQuery,
+        browseTab,
       ),
-    [categoryId, normalizedCatalogQuery],
+    [browseTab, categoryId, normalizedCatalogQuery],
   );
   const persistedPolymarketCatalog = useMemo(
     () =>

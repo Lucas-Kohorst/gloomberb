@@ -10,16 +10,20 @@ export function buildPredictionCatalogCacheKey(
   venue: PredictionVenue,
   categoryId: PredictionCategoryId,
   searchQuery: string,
+  browseTab: string = "top",
 ): string {
-  return `${venue}|${categoryId}|${searchQuery.trim().toLowerCase()}`;
+  const base = `${venue}|${categoryId}|${searchQuery.trim().toLowerCase()}`;
+  return browseTab === "top" ? base : `${base}|${browseTab}`;
 }
 
 export function buildPredictionCatalogResourceKey(
   venue: PredictionVenue,
   categoryId: PredictionCategoryId,
   searchQuery: string,
+  browseTab: string = "top",
 ): string {
-  return `${venue}:${categoryId}:${searchQuery.trim().toLowerCase() || "all"}`;
+  const base = `${venue}:${categoryId}:${searchQuery.trim().toLowerCase() || "all"}`;
+  return browseTab === "top" ? base : `${base}:${browseTab}`;
 }
 
 export function buildPredictionDetailCacheKey(

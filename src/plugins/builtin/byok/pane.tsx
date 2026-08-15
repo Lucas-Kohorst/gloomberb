@@ -1,4 +1,4 @@
-import { Box, Text, TextAttributes } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
@@ -7,7 +7,6 @@ import {
   TextField,
   usePaneFooter,
   type DataTableCell,
-  type DataTableColumn,
 } from "../../../components";
 import { DataTableView } from "../../../components";
 import { colors } from "../../../theme/colors";
@@ -26,22 +25,12 @@ import {
   getByokKnownService,
   getByokKnownServices,
 } from "./services";
-import { maskApiKey } from "./store";
+import { fetchByokEndpoint, isByokTestSuccess } from "./request";
+import { isOpenableCustomKey, maskApiKey } from "./store";
+import { buildByokColumns, type ByokColumn } from "./columns";
+import { BYOK_VIEWER_TEMPLATE_ID } from "./viewer";
 import { getAiRuntimeCatalogSnapshot, subscribeAiRuntimeCatalog } from "../ai/runner";
 import { useSyncExternalStore } from "react";
-
-type ByokColumnId = "name" | "service" | "key" | "url" | "status" | "validated";
-
-type ByokColumn = DataTableColumn & { id: ByokColumnId };
-
-const BYOK_COLUMNS: ByokColumn[] = [
-  { id: "name", label: "Name", width: 16, align: "left" },
-  { id: "service", label: "Service", width: 14, align: "left" },
-  { id: "key", label: "Key", width: 18, align: "left" },
-  { id: "url", label: "API URL", width: 24, align: "left" },
-  { id: "status", label: "Status", width: 8, align: "left" },
-  { id: "validated", label: "Validated", width: 10, align: "left" },
-];
 
 const ALL_SERVICES = [CUSTOM_SERVICE_OPTION, ...getByokKnownServices()];
 
@@ -128,9 +117,9 @@ function renderByokCell(entry: ByokApiKeyEntry, column: ByokColumn): DataTableCe
   }
 }
 
-export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
+export function ByokSettingsPane({ focused, width, height }: PaneProps) {
   const [stored, setStored] = usePluginConfigState<ByokStoredConfig>(BYOK_API_KEYS_CONFIG_KEY, { keys: [] });
-  const { notify } = usePluginAppActions();
+  const { notify, createPaneFromTemplate } = usePluginAppActions();
   const keys = useMemo(() => {
     if (!stored?.keys || !Array.isArray(stored.keys)) return [] as ByokApiKeyEntry[];
     return stored.keys as ByokApiKeyEntry[];
@@ -198,7 +187,7 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
     } else if (formMode === "edit" && draft.id) {
       const next = keys.map((entry) =>
         entry.id === draft.id
-          ? { ...entry, serviceId: draft.serviceId, name, apiKey, apiUrl, dataFormat }
+          ? { ...entry, serviceId: draft.serviceId, name, apiKey, apiUrl, dataFormat, lastValidationStatus: "untested" as const }
           : entry,
       );
       persistKeys(next);
@@ -238,44 +227,27 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
     if (!selectedEntry) return;
     setTesting(true);
     try {
-      const service = getByokKnownService(selectedEntry.serviceId);
-      const url = selectedEntry.apiUrl || service?.apiUrl;
-      if (!url) {
-        notify({ body: "No API URL to test for this service.", type: "error" });
-        return;
-      }
-      const headers: Record<string, string> = {};
-      if (service?.authType === "bearer") {
-        headers["Authorization"] = `Bearer ${selectedEntry.apiKey}`;
-      } else if (service?.authType === "header" && service.authKey) {
-        headers[service.authKey] = selectedEntry.apiKey;
-      } else if (service?.authType === "user-agent" && service.authKey) {
-        headers[service.authKey] = selectedEntry.apiKey;
-      }
-
-      const response = await fetch(url, { method: "GET", headers });
-      const ok = response.ok || response.status === 401 || response.status === 403;
-      // 401/403 means the server is reachable but auth may need different scope; still validates connectivity.
-      const status = ok ? "ok" : "error";
-      const next = keys.map((entry) =>
+      const result = await fetchByokEndpoint(selectedEntry);
+      const ok = isByokTestSuccess(selectedEntry, result);
+      persistKeys(keys.map((entry) =>
         entry.id === selectedEntry.id
-          ? { ...entry, lastValidated: Date.now(), lastValidationStatus: status as "ok" | "error" }
+          ? { ...entry, lastValidated: Date.now(), lastValidationStatus: ok ? "ok" : "error" }
           : entry,
-      );
-      persistKeys(next);
+      ));
       notify({
         body: ok
-          ? `Connection OK (${response.status}).`
-          : `Connection failed (${response.status}).`,
+          ? selectedEntry.serviceId === BYOK_CUSTOM_SERVICE_ID
+            ? `Connection OK (${result.status}). "${selectedEntry.name}" is in the command bar.`
+            : `Connection OK (${result.status}).`
+          : `Connection failed (${result.status}).`,
         type: ok ? "success" : "error",
       });
     } catch (error) {
-      const next = keys.map((entry) =>
+      persistKeys(keys.map((entry) =>
         entry.id === selectedEntry.id
-          ? { ...entry, lastValidated: Date.now(), lastValidationStatus: "error" as const }
+          ? { ...entry, lastValidated: Date.now(), lastValidationStatus: "error" }
           : entry,
-      );
-      persistKeys(next);
+      ));
       notify({
         body: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
         type: "error",
@@ -289,8 +261,17 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
     setDraft((prev) => ({ ...prev, [field]: value }));
   }, []);
 
-  const tableWidth = Math.min(width, 100);
+  const handleOpen = useCallback(() => {
+    if (!selectedEntry || !isOpenableCustomKey(selectedEntry)) return;
+    createPaneFromTemplate(BYOK_VIEWER_TEMPLATE_ID, {
+      arg: selectedEntry.id,
+      values: { title: selectedEntry.name },
+    });
+  }, [createPaneFromTemplate, selectedEntry]);
+
+  const columns = useMemo(() => buildByokColumns(width), [width]);
   const editing = formMode !== "idle";
+  const canOpen = selectedEntry != null && isOpenableCustomKey(selectedEntry);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -337,6 +318,11 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
       void handleTest();
       return;
     }
+    if (event.name === "o" && canOpen) {
+      event.stopPropagation();
+      handleOpen();
+      return;
+    }
     if (event.name === "d" && selectedEntry) {
       event.stopPropagation();
       handleDelete();
@@ -345,7 +331,6 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
 
   usePaneFooter("byok-settings", () => ({
     info: [
-      ...(keys.length > 0 ? [{ id: "key-count", parts: [{ text: `${keys.length} key${keys.length > 1 ? "s" : ""}`, tone: "muted" as const }] }] : []),
       ...(testing ? [{ id: "testing", parts: [{ text: "testing…", tone: "muted" as const }] }] : []),
     ],
     hints: editing
@@ -357,9 +342,10 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
           { id: "add", key: "a", label: "dd", onPress: handleAdd },
           ...(selectedEntry ? [{ id: "edit", key: "e", label: "dit", onPress: handleEdit }] : []),
           ...(selectedEntry ? [{ id: "test", key: "t", label: "est", onPress: handleTest }] : []),
+          ...(canOpen ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }] : []),
           ...(selectedEntry ? [{ id: "delete", key: "d", label: "elete", onPress: handleDelete }] : []),
         ],
-  }), [keys.length, testing, editing, handleSave, handleCancel, handleAdd, handleEdit, handleTest, handleDelete, selectedEntry]);
+  }), [testing, editing, handleSave, handleCancel, handleAdd, handleEdit, handleTest, handleOpen, handleDelete, selectedEntry, canOpen]);
 
   if (editing) {
     return (
@@ -367,7 +353,6 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
         draft={draft}
         activeField={activeField}
         setActiveField={setActiveField}
-        formFields={formFields}
         updateField={updateField}
         onSave={handleSave}
         onCancel={handleCancel}
@@ -378,9 +363,11 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
     );
   }
 
+  const tableHeight = Math.max(3, height - (aiAccounts.length > 0 ? Math.min(aiAccounts.length, 3) + 2 : 0));
+
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={Math.max(3, height - 3 - (aiAccounts.length > 0 ? 4 : 0))}>
+      <Box height={tableHeight} flexGrow={1} minHeight={3}>
         {keys.length === 0
           ? (
             <Box padding={1} flexDirection="column" gap={1}>
@@ -394,8 +381,8 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
           : (
             <DataTableView<ByokApiKeyEntry, ByokColumn>
               focused={focused}
-              rootWidth={tableWidth}
-              rootBackgroundColor={colors.panel}
+              rootWidth={width}
+              rootHeight={tableHeight}
               selection={{
                 kind: "id",
                 selectedId: selectedEntry?.id ?? null,
@@ -405,33 +392,35 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
                   if (index >= 0) setSelectedIdx(index);
                 },
               }}
-              columns={BYOK_COLUMNS}
+              columns={columns}
               items={keys}
               sortColumnId={null}
               sortDirection="asc"
               onHeaderClick={() => {}}
               getItemKey={(entry) => entry.id}
               renderCell={renderByokCell}
+              onActivate={(entry) => {
+                if (!isOpenableCustomKey(entry)) return;
+                createPaneFromTemplate(BYOK_VIEWER_TEMPLATE_ID, {
+                  arg: entry.id,
+                  values: { title: entry.name },
+                });
+              }}
               emptyStateTitle="No API keys configured."
               emptyStateHint="Press [a] to add a key for a known service or custom API."
+              showHorizontalScrollbar={false}
             />
           )}
       </Box>
 
-      {/* AI providers read-only display */}
       {aiAccounts.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
-          <Box height={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>AI Providers (read-only)</Text>
-          </Box>
-          <Box height={Math.min(aiAccounts.length + 1, 3)}>
-            {aiAccounts.slice(0, 3).map((account) => (
-              <Box key={account.providerId} height={1}>
-                <Text fg={colors.textDim}>  {account.providerLabel.padEnd(16)} </Text>
-                <Text fg={colors.positive}>connected</Text>
-              </Box>
-            ))}
-          </Box>
+        <Box flexDirection="column" flexShrink={0} paddingX={1}>
+          {aiAccounts.slice(0, 3).map((account) => (
+            <Box key={account.providerId} height={1}>
+              <Text fg={colors.textDim}>{account.providerLabel} </Text>
+              <Text fg={colors.positive}>connected</Text>
+            </Box>
+          ))}
         </Box>
       )}
     </Box>
@@ -442,7 +431,6 @@ function ByokEditForm({
   draft,
   activeField,
   setActiveField,
-  formFields,
   updateField,
   onSave,
   onCancel,
@@ -453,7 +441,6 @@ function ByokEditForm({
   draft: FormDraft;
   activeField: FormFieldKey;
   setActiveField: (key: FormFieldKey) => void;
-  formFields: FormFieldKey[];
   updateField: (field: FormFieldKey, value: string) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -462,115 +449,114 @@ function ByokEditForm({
   height: number;
 }) {
   const isCustom = draft.serviceId === BYOK_CUSTOM_SERVICE_ID;
-  const fieldWidth = Math.min(width - 4, 50);
+  const fieldWidth = Math.max(16, width - 4);
 
   return (
-    <Box flexDirection="column" width={width} height={height} padding={1}>
-      <Box height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {mode === "add" ? "Add API Key" : "Edit API Key"}
-        </Text>
-      </Box>
-      <Box height={1} />
-
-      {/* Service selector */}
-      <Box
-        flexDirection="column"
-        onMouseDown={() => setActiveField("serviceId")}
-        height={3}
-      >
-        <Text fg={activeField === "serviceId" ? colors.textBright : colors.textDim}>
-          {activeField === "serviceId" ? "> " : "  "}Service
-        </Text>
-        <SegmentedControl
-          value={draft.serviceId}
-          options={ALL_SERVICES.map((s) => ({ label: s.name, value: s.id }))}
-          onChange={(value) => updateField("serviceId", value)}
-        />
-      </Box>
-
-      <Box height={1} />
-
-      {/* Name field */}
-      <Box onMouseDown={() => setActiveField("name")} height={3}>
-        <TextField
-          label={`${activeField === "name" ? "> " : "  "}Name`}
-          value={draft.name}
-          focused={activeField === "name"}
-          width={fieldWidth}
-          placeholder="My Adjacent key"
-          onChange={(value) => updateField("name", value)}
-          onSubmit={onSave}
-        />
-      </Box>
-
-      <Box height={1} />
-
-      {/* API Key field */}
-      <Box onMouseDown={() => setActiveField("apiKey")} height={3}>
-        <TextField
-          label={`${activeField === "apiKey" ? "> " : "  "}API Key`}
-          value={draft.apiKey}
-          focused={activeField === "apiKey"}
-          width={fieldWidth}
-          type="password"
-          placeholder="sk-..."
-          onChange={(value) => updateField("apiKey", value)}
-          onSubmit={onSave}
-        />
-      </Box>
-
-      {/* Custom-only fields */}
-      {isCustom && (
-        <>
+    <Box flexDirection="column" width={width} height={height}>
+      <ScrollBox flexGrow={1} scrollY>
+        <Box flexDirection="column" padding={1}>
+          <Box height={1}>
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+              {mode === "add" ? "Add API Key" : "Edit API Key"}
+            </Text>
+          </Box>
           <Box height={1} />
-          <Box onMouseDown={() => setActiveField("apiUrl")} height={3}>
+
+          <Box
+            flexDirection="column"
+            onMouseDown={() => setActiveField("serviceId")}
+            height={3}
+          >
+            <Text fg={activeField === "serviceId" ? colors.textBright : colors.textDim}>
+              {activeField === "serviceId" ? "> " : "  "}Service
+            </Text>
+            <SegmentedControl
+              value={draft.serviceId}
+              options={ALL_SERVICES.map((s) => ({ label: s.name, value: s.id }))}
+              onChange={(value) => updateField("serviceId", value)}
+            />
+          </Box>
+
+          <Box height={1} />
+
+          <Box onMouseDown={() => setActiveField("name")} height={3}>
             <TextField
-              label={`${activeField === "apiUrl" ? "> " : "  "}API URL`}
-              value={draft.apiUrl}
-              focused={activeField === "apiUrl"}
+              label={`${activeField === "name" ? "> " : "  "}Name`}
+              value={draft.name}
+              focused={activeField === "name"}
               width={fieldWidth}
-              placeholder="https://api.example.com/v1"
-              onChange={(value) => updateField("apiUrl", value)}
+              placeholder="My Adjacent key"
+              onChange={(value) => updateField("name", value)}
               onSubmit={onSave}
             />
           </Box>
+
           <Box height={1} />
-          <Box
-            flexDirection="column"
-            onMouseDown={() => setActiveField("dataFormat")}
-            height={3}
-          >
-            <Text fg={activeField === "dataFormat" ? colors.textBright : colors.textDim}>
-              {activeField === "dataFormat" ? "> " : "  "}Data Format
-            </Text>
-            <SegmentedControl
-              value={draft.dataFormat}
-              options={[
-                { label: "Auto", value: "auto" },
-                { label: "JSON", value: "json" },
-                { label: "CSV", value: "csv" },
-                { label: "Text", value: "text" },
-              ]}
-              onChange={(value) => updateField("dataFormat", value)}
+
+          <Box onMouseDown={() => setActiveField("apiKey")} height={3}>
+            <TextField
+              label={`${activeField === "apiKey" ? "> " : "  "}API Key`}
+              value={draft.apiKey}
+              focused={activeField === "apiKey"}
+              width={fieldWidth}
+              type="password"
+              placeholder="sk-..."
+              onChange={(value) => updateField("apiKey", value)}
+              onSubmit={onSave}
             />
           </Box>
-        </>
-      )}
 
-      <Box height={1} />
-      <Box flexDirection="row" gap={2}>
-        <Button label="Save" variant="primary" onPress={onSave} shortcut="Enter" />
-        <Button label="Cancel" variant="secondary" onPress={onCancel} shortcut="Esc" />
-      </Box>
+          {isCustom && (
+            <>
+              <Box height={1} />
+              <Box onMouseDown={() => setActiveField("apiUrl")} height={3}>
+                <TextField
+                  label={`${activeField === "apiUrl" ? "> " : "  "}API URL`}
+                  value={draft.apiUrl}
+                  focused={activeField === "apiUrl"}
+                  width={fieldWidth}
+                  placeholder="https://api.example.com/v1"
+                  onChange={(value) => updateField("apiUrl", value)}
+                  onSubmit={onSave}
+                />
+              </Box>
+              <Box height={1} />
+              <Box
+                flexDirection="column"
+                onMouseDown={() => setActiveField("dataFormat")}
+                height={3}
+              >
+                <Text fg={activeField === "dataFormat" ? colors.textBright : colors.textDim}>
+                  {activeField === "dataFormat" ? "> " : "  "}Data Format
+                </Text>
+                <SegmentedControl
+                  value={draft.dataFormat}
+                  options={[
+                    { label: "Auto", value: "auto" },
+                    { label: "JSON", value: "json" },
+                    { label: "CSV", value: "csv" },
+                    { label: "Text", value: "text" },
+                  ]}
+                  onChange={(value) => updateField("dataFormat", value)}
+                />
+              </Box>
+            </>
+          )}
 
-      {/* Service description hint */}
-      <Box height={1} />
-      <Box height={1}>
-        <Text fg={colors.textMuted}>
-          {getByokKnownService(draft.serviceId)?.description ?? CUSTOM_SERVICE_OPTION.description}
-        </Text>
-      </Box>
+          <Box height={1} />
+          <Box flexDirection="row" gap={2}>
+            <Button label="Save" variant="primary" onPress={onSave} shortcut="Enter" />
+            <Button label="Cancel" variant="secondary" onPress={onCancel} shortcut="Esc" />
+          </Box>
+
+          <Box height={1} />
+          <Box height={1}>
+            <Text fg={colors.textMuted} wrapMode="word" width={Math.max(12, width - 4)}>
+              {getByokKnownService(draft.serviceId)?.description ?? CUSTOM_SERVICE_OPTION.description}
+            </Text>
+          </Box>
+        </Box>
+      </ScrollBox>
     </Box>
   );
 }

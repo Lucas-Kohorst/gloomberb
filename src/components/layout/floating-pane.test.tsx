@@ -81,7 +81,13 @@ describe("FloatingPaneWrapper", () => {
         expect.objectContaining({ top: 0, left: 14, width: 4, height: 1, zIndex: 1 }),
       ]);
     expect(headerHitTargets).toEqual([
-      expect.objectContaining({ "data-gloom-role": "pane-header-actions", position: "relative", zIndex: 2 }),
+      expect.objectContaining({
+        "data-gloom-role": "pane-header-actions",
+        flexDirection: "row",
+        alignItems: "center",
+        position: "relative",
+        zIndex: 2,
+      }),
       expect.objectContaining({ "data-gloom-role": "pane-close", position: "relative", zIndex: 2 }),
     ]);
     expect(resizeHandles.find((handle) => handle["data-corner"] === "top")?.width)

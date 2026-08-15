@@ -97,7 +97,7 @@ describe("prediction markets plugin registration and services", () => {
         open_interest_fp: "45000",
         liquidity_dollars: "250000",
       } as any)?.volume24h,
-    ).toBe(7200);
+    ).toBe(15000);
   });
 
   test("uses Kalshi target subtitles to disambiguate strike ladders", () => {

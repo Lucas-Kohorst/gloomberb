@@ -2,6 +2,7 @@ import type { AppConfig } from "../../../types/config";
 import type { GloomPluginContext } from "../../../types/plugin";
 import {
   BYOK_API_KEYS_CONFIG_KEY,
+  BYOK_CUSTOM_SERVICE_ID,
   type ByokApiKeyEntry,
   type ByokStoredConfig,
 } from "./types";
@@ -14,6 +15,13 @@ export function readByokKeysFromConfig(config: AppConfig): ByokApiKeyEntry[] {
     | undefined;
   if (!stored?.keys || !Array.isArray(stored.keys)) return [];
   return stored.keys.filter(isApiKeyEntry);
+}
+
+/** Custom keys become command-bar entries after a successful test. */
+export function isOpenableCustomKey(entry: ByokApiKeyEntry): boolean {
+  return entry.serviceId === BYOK_CUSTOM_SERVICE_ID
+    && Boolean(entry.apiUrl?.trim())
+    && entry.lastValidationStatus === "ok";
 }
 
 function isApiKeyEntry(value: unknown): value is ByokApiKeyEntry {

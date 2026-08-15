@@ -285,7 +285,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   useExternalLinkFooter({
     registrationId: "changelog",
     focused,
-    url: openRelease?.url,
+    url: openRelease?.url || undefined,
     source: openRelease?.version,
     label: "release",
     info: footerInfo,

@@ -43,17 +43,6 @@ function getKalshiDisplayPrice(record: KalshiMarketRecord): {
   };
 }
 
-// Kalshi reports volume/open-interest as contract counts. Each contract pays
-// $1 at settlement, so contract volume is converted to a dollar estimate using
-// the current representative price to stay comparable with Polymarket's USD volume.
-function contractsToDollars(
-  contracts: number | null,
-  price: number | null,
-): number | null {
-  if (contracts == null || price == null) return null;
-  return contracts * price;
-}
-
 function isDormantKalshiMarket(record: KalshiMarketRecord): boolean {
   const values = [
     parseFloatSafe(record.last_price_dollars),
@@ -136,12 +125,12 @@ export function normalizeKalshiMarket(
     noAsk,
     spread: yesBid != null && yesAsk != null ? yesAsk - yesBid : null,
     lastTradePrice: prices.lastTradePrice,
-    volume24h: contractsToDollars(parseFloatSafe(record.volume_24h_fp), prices.yesPrice),
-    volume24hUnit: "usd",
-    totalVolume: contractsToDollars(parseFloatSafe(record.volume_fp), prices.yesPrice),
-    totalVolumeUnit: "usd",
-    openInterest: contractsToDollars(parseFloatSafe(record.open_interest_fp), prices.yesPrice),
-    openInterestUnit: "usd",
+    volume24h: parseFloatSafe(record.volume_24h_fp),
+    volume24hUnit: "contracts",
+    totalVolume: parseFloatSafe(record.volume_fp),
+    totalVolumeUnit: "contracts",
+    openInterest: parseFloatSafe(record.open_interest_fp),
+    openInterestUnit: "contracts",
     liquidity: parseFloatSafe(record.liquidity_dollars),
     liquidityUnit: "usd",
     rulesPrimary: record.rules_primary,

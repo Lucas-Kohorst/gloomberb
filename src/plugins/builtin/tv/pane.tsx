@@ -14,9 +14,24 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
+import { buildYoutubeLiveEmbedUrl, fallbackTvStream } from "./youtube-embed";
 import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
+
+function webPlayableStream(
+  channel: ReturnType<typeof getTvChannel>,
+  stream: ResolvedLiveStream,
+): ResolvedLiveStream {
+  return {
+    ...stream,
+    manifestUrl: buildYoutubeLiveEmbedUrl(channel.channelId, {
+      muted: true,
+      origin: typeof window !== "undefined" ? window.location.origin : undefined,
+      videoId: stream.videoId || undefined,
+    }),
+  };
+}
 
 export function TvPane({ paneId, focused, width, height }: PaneProps) {
   const isDesktop = useUiHost().kind === "desktop-web";
@@ -73,11 +88,16 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         ? await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force })
         : await resolveTvStream(channel, { force });
       if (generation !== generationRef.current) return;
-      setStream(nextStream);
+      setStream(isDesktop ? webPlayableStream(channel, nextStream) : nextStream);
     } catch (cause) {
       if (generation !== generationRef.current) return;
-      setStream(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (isDesktop) {
+        setStream(fallbackTvStream(channel, { origin: window.location.origin }));
+        setError(null);
+      } else {
+        setStream(null);
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
       if (generation === generationRef.current) setLoading(false);
     }
@@ -242,7 +262,11 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         </Box>
       ) : isDesktop ? (
         <MediaSurface
-          src={stream.manifestUrl}
+          src={buildYoutubeLiveEmbedUrl(channel.channelId, {
+            muted: true,
+            origin: typeof window !== "undefined" ? window.location.origin : undefined,
+            videoId: stream.videoId || undefined,
+          })}
           title={stream.title}
           poster={stream.posterUrl}
           autoPlay

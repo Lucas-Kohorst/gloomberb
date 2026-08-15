@@ -15,6 +15,10 @@ import {
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
 import {
+  loadAdjacentVenueCatalog,
+  shouldUseAdjacentCatalog,
+} from "../adjacent/catalog";
+import {
   loadPolymarketEvent,
 } from "./detail";
 import {
@@ -103,8 +107,20 @@ export async function loadPolymarketCatalog(
   const sortOrder = browseTabToPolymarketSort(browseTab);
   return await loadCachedPredictionResource(
     "catalog",
-    buildPredictionCatalogResourceKey("polymarket", categoryId, normalizedQuery),
+    buildPredictionCatalogResourceKey("polymarket", categoryId, normalizedQuery, browseTab),
     async () => {
+      if (shouldUseAdjacentCatalog(browseTab, normalizedQuery)) {
+        try {
+          const adjacent = await loadAdjacentVenueCatalog(
+            "polymarket",
+            normalizedQuery,
+            categoryId,
+          );
+          if (adjacent.length > 0) return adjacent;
+        } catch {
+          // Fall back to Gamma when Adjacent is down or empty.
+        }
+      }
       if (normalizedQuery.length > 0) {
         const response = await fetchJson<PolymarketSearchResponse>(
           buildPolymarketSearchUrl(normalizedQuery),
