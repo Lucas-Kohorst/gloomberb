@@ -1,6 +1,7 @@
 const SESSION_COOKIE = "__Host-gloomberb.session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
-const PASSWORD_ITERATIONS = 310_000;
+// Workers WebCrypto caps PBKDF2 at 100k iterations, so use the platform maximum.
+const PASSWORD_ITERATIONS = 100_000;
 const PASSWORD_BYTES = 32;
 
 type UserRow = {

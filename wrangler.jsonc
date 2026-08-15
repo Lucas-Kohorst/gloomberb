@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "gloomberb-cloud",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "95f74fbd-07f5-4732-8ab7-3d0f42588dda",
       "migrations_dir": "migrations/cloudflare"
     }
   ]
