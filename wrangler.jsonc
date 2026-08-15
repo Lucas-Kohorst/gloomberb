@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gloomberb-cloud",
+  "main": "src/renderers/cloudflare/worker.ts",
+  "compatibility_date": "2026-08-15",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gloomberb-cloud",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations/cloudflare"
+    }
+  ]
+}

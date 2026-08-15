@@ -27,6 +27,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # caches
 .eslintcache
 .cache
+.wrangler/
+worker-configuration.d.ts
 *.tsbuildinfo
 paseo.json
 src-tauri/target
