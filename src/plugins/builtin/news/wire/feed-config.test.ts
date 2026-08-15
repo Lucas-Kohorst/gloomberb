@@ -69,17 +69,19 @@ describe("news feed config", () => {
     expect(loadNewsFeedSettings(config).userFeeds).toHaveLength(0);
   });
 
-  test("returns only user feeds when the default feed catalog is empty", async () => {
+  test("returns default feeds plus user feeds", async () => {
     const config = new MemoryConfigState();
 
-    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config))).toEqual([]);
+    const defaults = getEnabledNewsFeeds(loadNewsFeedSettings(config));
+    expect(defaults.length).toBeGreaterThan(0);
 
     const added = await addUserNewsFeed(config, {
       url: "https://example.com/feed",
       name: "Example",
     });
 
-    expect(getEnabledNewsFeeds(loadNewsFeedSettings(config)).map((feed) => feed.id)).toEqual([added.id]);
+    const ids = getEnabledNewsFeeds(loadNewsFeedSettings(config)).map((feed) => feed.id);
+    expect(ids).toContain(added.id);
     expect(await setDefaultNewsFeedEnabled(config, "missing-default-feed", false)).toBe(false);
   });
 
