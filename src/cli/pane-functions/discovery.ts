@@ -34,6 +34,7 @@ export async function createPaneCatalog(context: MarketContext, plugins: GloomPl
     getData: () => null,
     getTicker: () => null,
     getConfig: () => context.config,
+    getApiKey: () => undefined,
     getPaneDef: (paneId: string) => panes.get(paneId),
     marketData: context.dataProvider,
     tickerRepository: context.store,
