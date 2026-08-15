@@ -97,6 +97,7 @@ export function NewsPresetPane({
       columns={columns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
+      onPopOut={() => popOutArticle(detailArticle ?? selectedArticle)}
     />
   );
 }

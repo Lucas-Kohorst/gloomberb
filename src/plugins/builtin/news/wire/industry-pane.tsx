@@ -125,6 +125,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       ) : undefined}
       emptyStateTitle="No news in this category"
       emptyStateHint="Try another category or wait for the next feed refresh."
+      onPopOut={() => popOutArticle(detailArticle ?? selectedArticle)}
     />
   );
 }

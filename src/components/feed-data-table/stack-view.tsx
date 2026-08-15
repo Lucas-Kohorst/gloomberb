@@ -65,6 +65,7 @@ interface FeedDataTableStackViewProps {
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
   onOpenItemIdChange?: (itemId: string | null) => void;
   openItemId?: string | null;
+  onPopOut?: (item: FeedDataTableItem) => void;
 }
 
 function timestampValue(item: FeedDataTableItem): number {
@@ -150,6 +151,7 @@ export function FeedDataTableStackView({
   onOpenItem,
   onOpenItemIdChange,
   openItemId: controlledOpenItemId,
+  onPopOut,
 }: FeedDataTableStackViewProps) {
   const language = useAppLanguage();
   const [sortPreference, setSortPreference] = useState<SortPreference>({
@@ -270,8 +272,14 @@ export function FeedDataTableStackView({
       scrollDetailBy(-1);
       return true;
     }
+    if (onPopOut && openItem && isPlainKey(event, "p")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onPopOut(openItem);
+      return true;
+    }
     return false;
-  }, [scrollDetailBy]);
+  }, [onPopOut, openItem, scrollDetailBy]);
 
   const detailContent = openItem ? (
     <Box

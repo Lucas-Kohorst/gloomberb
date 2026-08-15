@@ -67,6 +67,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       columns={["time", "title", "tickers", "importance"]}
       emptyStateTitle="No breaking news"
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."
+      onPopOut={() => popOutArticle(detailArticle ?? selectedArticle)}
     />
   );
 }

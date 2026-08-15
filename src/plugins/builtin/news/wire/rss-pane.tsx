@@ -3,15 +3,12 @@ import { Box, Text, TextAttributes, useRendererHost } from "../../../../ui";
 import {
   DataTableView,
   EmptyState,
-  FeedDataTableStackView,
   Spinner,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
-  type FeedDataTableItem,
 } from "../../../../components";
-import { ExternalLink } from "../../../../components/ui/external-link";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
@@ -19,9 +16,12 @@ import { usePluginRenderContext } from "../../../runtime/context";
 import { useShortcut } from "../../../../react/input";
 import { colors } from "../../../../theme/colors";
 import { isPlainKey } from "../../../../utils/keyboard";
-import { useNewsArticles } from "../../../../news/hooks";
+import { useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { usePopOutNewsArticle } from "./news/pop-out";
+import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
+import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
+import { useNewsReadState } from "./read-state";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
@@ -32,8 +32,6 @@ import {
   updateUserNewsFeed,
 } from "./feed-config";
 import type { RssFeedConfig } from "./rss/parser";
-import type { NewsArticle } from "../../../../types/news-source";
-import { formatDetailDate } from "../../../../utils/datetime-format";
 
 interface FeedRow {
   id: string;
@@ -85,29 +83,6 @@ function buildFeedRows(
     });
   }
   return rows;
-}
-
-function getArticleFeedItems(articles: NewsArticle[]): FeedDataTableItem[] {
-  return articles.map((item) => ({
-    id: item.id,
-    eyebrow: item.source,
-    title: item.title,
-    timestamp: item.publishedAt,
-    detailTitle: item.title,
-    detailMeta: [
-      item.source,
-      `Published ${item.publishedAt.toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })}`,
-      ...(item.categories.length > 0 ? [item.categories.join(" · ")] : []),
-    ],
-    detailBody: item.summary ?? "",
-    detailNote: item.url,
-  }));
 }
 
 const CATEGORY_OPTIONS = ["general", "tech", "energy", "finance", "healthcare", "macro", "crypto"] as const;
@@ -377,6 +352,8 @@ function FeedsManager({ focused, width, height, onBack }: {
   );
 }
 
+const RSS_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
+
 function RssArticlesView({ focused, width, height, onManageFeeds }: {
   focused: boolean;
   width: number;
@@ -387,41 +364,30 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const newsState = useNewsArticles({ feed: "latest", limit: 200 });
   const articles = usePersistedNewsArticles("rss:articles", newsState.articles);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("rss:selectedArticleId", null);
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
+  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("rss:sort", RSS_SORT);
+  const loadNewsStory = useLoadNewsStory();
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailArticle ?? selectedArticle;
 
-  const sortedArticles = useMemo(
-    () => [...articles].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime()),
-    [articles],
-  );
-
-  const selectedArticle = useMemo(
-    () => sortedArticles.find((a) => a.id === selectedArticleId) ?? sortedArticles[0] ?? null,
-    [sortedArticles, selectedArticleId],
-  );
-
-  useEffect(() => {
-    if (sortedArticles.length > 0 && (!selectedArticleId || !sortedArticles.find((a) => a.id === selectedArticleId))) {
-      setSelectedArticleId(sortedArticles[0]!.id);
-    }
-  }, [sortedArticles, selectedArticleId, setSelectedArticleId]);
-
-  const selectedIdx = sortedArticles.findIndex((a) => a.id === selectedArticleId);
-
-  const openArticle = useCallback(() => {
-    if (selectedArticle) {
-      setOpenItemId(selectedArticle.id);
-      void rendererHost.openExternal(selectedArticle.url);
-    }
-  }, [rendererHost, selectedArticle]);
+  const openSelectedSource = useCallback(() => {
+    if (!readableArticle?.url) return;
+    void rendererHost.openExternal(readableArticle.url);
+  }, [readableArticle, rendererHost]);
 
   const popOutSelectedArticle = useCallback(() => {
-    const article = (openItemId
-      ? sortedArticles.find((item) => item.id === openItemId)
-      : null) ?? selectedArticle;
-    popOutArticle(article);
-  }, [openItemId, popOutArticle, selectedArticle, sortedArticles]);
+    popOutArticle(readableArticle);
+  }, [popOutArticle, readableArticle]);
+
+  useShortcut((event) => {
+    if (!focused || !readableArticle || !isPlainKey(event, "p")) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    popOutSelectedArticle();
+  }, { enabled: focused && !!readableArticle });
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "m")) {
@@ -430,84 +396,67 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       onManageFeeds();
       return true;
     }
-    if (isPlainKey(event, "o") && selectedArticle) {
+    if (isPlainKey(event, "o") && readableArticle) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      openArticle();
+      openSelectedSource();
       return true;
     }
-    if (isPlainKey(event, "p") && selectedArticle) {
+    if (isPlainKey(event, "p") && readableArticle) {
       event.preventDefault?.();
       event.stopPropagation?.();
       popOutSelectedArticle();
       return true;
     }
     return false;
-  }, [onManageFeeds, openArticle, popOutSelectedArticle, selectedArticle]);
+  }, [onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle]);
 
   usePaneFooter("rss-articles", () => ({
     info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : [],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
-      ...(selectedArticle ? [{ id: "open", key: "o", label: "pen", onPress: openArticle }] : []),
-      ...(selectedArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
+      ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
+      ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [loading, onManageFeeds, openArticle, popOutSelectedArticle, selectedArticle]);
+  }), [loading, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
   }
 
-  if (articles.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <EmptyState title="No RSS articles." hint="Press m to manage feeds and ensure feeds are enabled." />
-      </Box>
-    );
-  }
-
-  const items = getArticleFeedItems(sortedArticles);
-
-  const detailContent = selectedArticle ? (
-    <Box flexDirection="column" width={width} flexGrow={1} minHeight={0} overflow="hidden" paddingX={1} paddingY={1}>
-      <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{selectedArticle.title}</Text>
-      <Box height={1} flexDirection="row">
-        <Text fg={colors.textDim}>{selectedArticle.source} · {formatDetailDate(selectedArticle.publishedAt)}</Text>
-      </Box>
-      {selectedArticle.summary && (
-        <Box flexDirection="column" marginTop={1}>
-          {selectedArticle.summary.split("\n").map((line, i) => (
-            <Box key={i} height={1}>
-              <Text fg={colors.text}>{line}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-      {selectedArticle.categories.length > 0 && (
-        <Box height={1} flexDirection="row" marginTop={1}>
-          <Text fg={colors.textMuted}>{selectedArticle.categories.join(" · ")}</Text>
-        </Box>
-      )}
-      <Box marginTop={1}>
-        <ExternalLink url={selectedArticle.url} color={colors.textDim} />
-      </Box>
-    </Box>
-  ) : null;
+  const detailContent = detailArticle ? (
+    <NewsDetailView
+      item={detailArticle}
+      focused={focused}
+      width={width}
+      showTitle={false}
+    />
+  ) : (
+    <Box flexGrow={1} />
+  );
 
   return (
-    <FeedDataTableStackView
-      width={width}
-      height={height}
+    <NewsArticleStackView
+      articles={articles}
       focused={focused}
-      items={items}
-      selectedIdx={Math.max(0, selectedIdx)}
-      onSelect={(idx) => setSelectedArticleId(sortedArticles[idx]?.id ?? null)}
-      openItemId={openItemId}
-      onOpenItemIdChange={setOpenItemId}
+      width={width}
+      rootHeight={height}
+      readArticleIds={readArticleIds}
+      selectedArticleId={selectedArticleId}
+      setSelectedArticleId={setSelectedArticleId}
+      sortPreference={sortPreference}
+      setSortPreference={setSortPreference}
+      onOpenArticle={openArticle}
+      onArticleRead={markArticleRead}
+      detailOpen={!!detailArticle}
+      onBack={closeDetail}
+      detailContent={detailContent}
+      detailTitle={detailArticle?.title}
       onRootKeyDown={handleKeyDown}
-      sourceLabel="Source"
-      titleLabel="Headline"
+      onPopOut={popOutSelectedArticle}
+      columns={["time", "source", "title", "categories"]}
       emptyStateTitle="No RSS articles."
+      emptyStateHint="Press m to manage feeds and ensure feeds are enabled."
     />
   );
 }

@@ -140,6 +140,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       onOpenItem={(item) => markArticleRead(item.id)}
       openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
+      onPopOut={(item) => popOutArticle(news.find((article) => article.id === item.id) ?? openArticle ?? selected)}
       sourceLabel="Source"
       titleLabel="Headline"
       emptyStateTitle="No news."
