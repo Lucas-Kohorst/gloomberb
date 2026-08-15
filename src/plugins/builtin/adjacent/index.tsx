@@ -96,14 +96,12 @@ export const adjacentModule: PluginModule = {
   setup(ctx) {
     attachAdjacentPersistence(ctx.persistence);
 
-    const apiKey = ctx.configState.get<string>(ADJACENT_API_KEY_CONFIG);
+    const apiKey = ctx.configState?.get<string>(ADJACENT_API_KEY_CONFIG) ?? null;
     adjacentClient = new AdjacentClient({ apiKey: apiKey ?? undefined });
     setSharedAdjacentApiKey(apiKey ?? null);
 
-    // Register news capability
-    ctx.registerCapability(
-      createAdjacentNewsCapability(adjacentClient),
-    );
+    // Register news capability (best-effort in partial/test contexts).
+    ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
 
     // Commands
     ctx.registerCommand({
