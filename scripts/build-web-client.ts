@@ -1,4 +1,4 @@
-import { mkdir, rm } from "fs/promises";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import {
@@ -9,6 +9,7 @@ import {
 const outdir = join(process.cwd(), "dist", "web-client");
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
+await writeFile(join(outdir, ".assetsignore"), "*.map\n");
 
 await writeWebClientPage({
   entrypoint: electrobunViewPath("web-main.tsx"),

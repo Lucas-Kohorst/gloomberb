@@ -43,6 +43,17 @@ bun run web:start
 The server listens on `127.0.0.1` using an ephemeral port and prints the URL. It is intended for local development, not remote access.
 Pop-out panes open as browser popup windows. Browser deep links can be opened with `?gloomberb=gloomberb:...` or a `#gloomberb:...` fragment.
 
+## Cloudflare hosting (in progress)
+
+The `feature/cloudflare-deployment` branch hosts the web client behind Cloudflare Workers with email/password accounts backed by D1:
+
+```bash
+bun run cloud:dev    # build the web client and serve it locally via Wrangler
+bun run cloud:deploy # build and deploy the Worker + assets
+```
+
+Every request passes through the Worker, which requires a session cookie before serving the app. Unauthenticated visitors get a sign-in/sign-up page; `/sign-out` ends the session. The hosted backend RPC (`/_gloomberb/*`) currently returns `501` while the D1/Durable Objects persistence layer is being built, so the app shell loads but cannot initialize data yet.
+
 ## Install
 
 ### macOS
