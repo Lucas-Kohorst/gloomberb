@@ -1,11 +1,14 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import type { RefObject } from "react";
+import { useMemo, type RefObject } from "react";
 import { Tabs } from "../../../components";
 import { EmptyState } from "../../../components/ui/status";
+import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
 import { DETAIL_TABS } from "../navigation";
+import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
+import { PredictionSimilarTab, PredictionNewsTab } from "./adjacent-tabs";
 import {
   formatPredictionEndsAt,
   formatPredictionMetric,
@@ -104,6 +107,7 @@ export function PredictionMarketDetailPane({
   selectedSummary: PredictionMarketSummary | null;
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
+  const adjacentClient = useMemo(() => getSharedAdjacentClient(), []);
   if (!selectedSummary) {
     return (
       <Box flexGrow={1} justifyContent="center">
@@ -303,6 +307,25 @@ export function PredictionMarketDetailPane({
         <PredictionMarketTradesView
           focused={focused}
           trades={detail?.trades ?? []}
+          width={detailWidth}
+        />
+      )}
+
+      {detailTab === "similar" && (
+        <PredictionSimilarTab
+          client={adjacentClient}
+          marketTitle={summaryMetrics.title}
+          onSelectAdjacentMarket={(market) => {
+            if (market.url) openUrl(market.url);
+          }}
+          width={detailWidth}
+        />
+      )}
+
+      {detailTab === "news" && (
+        <PredictionNewsTab
+          client={adjacentClient}
+          marketTitle={summaryMetrics.title}
           width={detailWidth}
         />
       )}
