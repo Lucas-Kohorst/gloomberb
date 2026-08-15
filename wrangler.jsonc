@@ -13,12 +13,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "gloomberb-cloud",
-      "database_id": "95f74fbd-07f5-4732-8ab7-3d0f42588dda",
-      "migrations_dir": "migrations/cloudflare"
-    }
-  ]
+  "vars": {
+    "GLOOM_CLOUD_API_URL": "https://api.gloom.sh"
+  }
 }

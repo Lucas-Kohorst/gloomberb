@@ -45,14 +45,14 @@ Pop-out panes open as browser popup windows. Browser deep links can be opened wi
 
 ## Cloudflare hosting (in progress)
 
-The `feature/cloudflare-deployment` branch hosts the web client behind Cloudflare Workers with email/password accounts backed by D1:
+The `feature/cloudflare-deployment` branch hosts the web client on Cloudflare Workers as a thin proxy in front of Gloom Cloud — no separate accounts or database. You sign in with your existing Gloom Cloud account and your synced portfolios, watchlists, and settings follow you to any browser:
 
 ```bash
 bun run cloud:dev    # build the web client and serve it locally via Wrangler
 bun run cloud:deploy # build and deploy the Worker + assets
 ```
 
-Every request passes through the Worker, which requires a session cookie before serving the app. Unauthenticated visitors get a sign-in/sign-up page; `/sign-out` ends the session. The hosted backend RPC (`/_gloomberb/*`) currently returns `501` while the D1/Durable Objects persistence layer is being built, so the app shell loads but cannot initialize data yet.
+The Worker serves the app assets, relays sign-in/sign-up/sign-out to `api.gloom.sh` (keeping the session in a first-party HttpOnly cookie), and proxies `/cloud/*` API calls with your session attached. Unauthenticated visitors get the sign-in page; `/sign-out` ends the session. Backend RPC covers app bootstrapping (`init`, `http.fetch`); data capabilities run renderer-side against Gloom Cloud, and realtime events (`/_gloomberb/events`) are not wired up yet.
 
 ## Install
 

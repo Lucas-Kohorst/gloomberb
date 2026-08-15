@@ -1,41 +1,46 @@
-const SESSION_COOKIE = "__Host-gloomberb.session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
-// Workers WebCrypto caps PBKDF2 at 100k iterations, so use the platform maximum.
-const PASSWORD_ITERATIONS = 100_000;
-const PASSWORD_BYTES = 32;
-
-type UserRow = {
-  id: string;
-  email: string;
-  password_hash: string;
-  password_salt: string;
-};
-
-type SessionUser = {
-  id: string;
-  email: string;
-};
-
-type AuthPayload = {
-  email?: unknown;
-  password?: unknown;
-};
+import { handleHostedBackendRpc } from "./backend";
+import {
+  clearSessionCookieHeader,
+  extractSessionToken,
+  fetchSessionUser,
+  gloomFetch,
+  readSessionCookie,
+  relayError,
+  sessionCookieHeader,
+} from "./gloom-cloud";
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
-    if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env);
+    if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
+    if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
     if (url.pathname === "/sign-out") return signOutPage(request, env, url);
     if (request.method !== "GET" && request.method !== "HEAD") {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
-    const user = await sessionUser(request, env);
-    if (!user) return loginPage();
+    // Navigations validate the Gloom Cloud session upstream; static assets only
+    // require the session cookie's presence since the app bundle is not secret.
+    if (isNavigationRequest(request, url)) {
+      const user = await fetchSessionUser(request, env);
+      if (!user) return loginPage();
+    } else if (!readSessionCookie(request)) {
+      return loginPage();
+    }
     return serveApp(request, env);
   },
 } satisfies ExportedHandler<Env>;
+
+function isNavigationRequest(request: Request, url: URL): boolean {
+  if (url.pathname === "/" || url.pathname.endsWith(".html")) return true;
+  return request.headers.get("sec-fetch-mode") === "navigate";
+}
+
+function isSameOrigin(request: Request, url: URL): boolean {
+  const origin = request.headers.get("Origin");
+  return !origin || origin === url.origin;
+}
 
 async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "GET" && !isSameOrigin(request, url)) {
@@ -44,12 +49,12 @@ async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<
 
   try {
     switch (`${request.method} ${url.pathname}`) {
-      case "POST /api/auth/sign-up":
-        return signUp(request, env);
       case "POST /api/auth/sign-in":
-        return signIn(request, env);
+        return relayCredentialAuth(request, env, "/auth/sign-in/email");
+      case "POST /api/auth/sign-up":
+        return relayCredentialAuth(request, env, "/auth/sign-up/email");
       case "POST /api/auth/sign-out":
-        return signOut(request, env);
+        return relaySignOut(request, env);
       case "GET /api/auth/session":
         return getSession(request, env);
       default:
@@ -57,18 +62,95 @@ async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<
     }
   } catch (error) {
     console.error(JSON.stringify({
-      event: "cloud_auth_error",
+      event: "cloud_auth_relay_error",
       path: url.pathname,
       message: error instanceof Error ? error.message : String(error),
     }));
-    return Response.json({ error: "Authentication is temporarily unavailable." }, { status: 500 });
+    return Response.json({ error: "Authentication is temporarily unavailable." }, { status: 502 });
   }
 }
 
-async function handleBackendRequest(request: Request, env: Env): Promise<Response> {
-  const user = await sessionUser(request, env);
+async function relayCredentialAuth(request: Request, env: Env, upstreamPath: string): Promise<Response> {
+  const payload = await request.json().catch(() => null) as { email?: unknown; password?: unknown } | null;
+  const email = typeof payload?.email === "string" ? payload.email.trim().toLowerCase() : "";
+  const password = typeof payload?.password === "string" ? payload.password : "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 1 || password.length > 1_024) {
+    return Response.json({ error: "A valid email and password are required." }, { status: 400 });
+  }
+
+  const isSignUp = upstreamPath.includes("sign-up");
+  const body = isSignUp
+    ? { email, password, name: email.split("@")[0] || email }
+    : { email, password };
+  const upstream = await gloomFetch(env, upstreamPath, { method: "POST", body: JSON.stringify(body) });
+  if (!upstream.ok) return relayError(upstream);
+
+  const token = extractSessionToken(upstream.headers);
+  if (!token) {
+    return Response.json({ error: "Gloom Cloud did not return a session." }, { status: 502 });
+  }
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: { "content-type": "application/json", "Set-Cookie": sessionCookieHeader(token) },
+  });
+}
+
+async function relaySignOut(request: Request, env: Env): Promise<Response> {
+  const token = readSessionCookie(request);
+  if (token) {
+    await gloomFetch(env, "/auth/sign-out", { method: "POST", body: "{}", token }).catch(() => null);
+  }
+  return Response.json({ ok: true }, { headers: { "Set-Cookie": clearSessionCookieHeader() } });
+}
+
+async function getSession(request: Request, env: Env): Promise<Response> {
+  const token = readSessionCookie(request);
+  if (!token) return Response.json({ user: null });
+  const upstream = await gloomFetch(env, "/auth/get-session", { token });
+  if (!upstream.ok) {
+    const headers = upstream.status === 401 || upstream.status === 404
+      ? { "Set-Cookie": clearSessionCookieHeader() }
+      : undefined;
+    return Response.json({ user: null }, { headers });
+  }
+  const body = await upstream.json().catch(() => null) as { user?: unknown } | null;
+  return Response.json({ user: body?.user ?? null });
+}
+
+async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
+  const token = readSessionCookie(request);
+  if (!token) return Response.json({ error: "Authentication required." }, { status: 401 });
+  if (!isSameOrigin(request, url)) {
+    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
+  const path = url.pathname.slice("/cloud".length) + url.search;
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const upstream = await gloomFetch(env, path, {
+    method: request.method,
+    body: hasBody ? request.body : null,
+    token,
+  });
+
+  const headers = new Headers();
+  const contentType = upstream.headers.get("content-type");
+  if (contentType) headers.set("content-type", contentType);
+  // Gloom Cloud may rotate the session token on any response; keep the local cookie in step.
+  const rotated = extractSessionToken(upstream.headers);
+  if (rotated) headers.set("Set-Cookie", sessionCookieHeader(rotated));
+  return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== "GET" && !isSameOrigin(request, url)) {
+    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+  const user = await fetchSessionUser(request, env);
   if (!user) return Response.json({ error: "Authentication required." }, { status: 401 });
-  return Response.json({ error: "The hosted Gloomberb backend is not available yet." }, { status: 501 });
+  if (url.pathname === "/_gloomberb/rpc") {
+    return handleHostedBackendRpc(env, user, request);
+  }
+  return Response.json({ error: "Realtime events are not available in the hosted client yet." }, { status: 501 });
 }
 
 async function serveApp(request: Request, env: Env): Promise<Response> {
@@ -94,7 +176,7 @@ function loginPage(): Response {
 }
 
 async function signOutPage(request: Request, env: Env, url: URL): Promise<Response> {
-  const user = await sessionUser(request, env);
+  const user = await fetchSessionUser(request, env);
   if (!user) return Response.redirect(new URL("/", url), 303);
   return new Response(SIGN_OUT_PAGE_HTML, { headers: PAGE_HEADERS });
 }
@@ -128,18 +210,18 @@ const LOGIN_PAGE_HTML = `<!doctype html>
   </head>
   <body>
     <main>
-      <h1>Gloomberb Cloud</h1>
-      <p class="sub">Sign in to your hosted terminal.</p>
+      <h1>Gloomberb</h1>
+      <p class="sub">Sign in with your Gloom Cloud account.</p>
       <form id="auth-form">
         <label>Email <input name="email" type="email" autocomplete="email" required /></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required minlength="12" /></label>
+        <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
         <div class="actions">
           <button type="submit" id="sign-in" class="primary">Sign in</button>
           <button type="button" id="sign-up" class="secondary">Create account</button>
         </div>
         <p id="error" role="alert"></p>
       </form>
-      <p class="hint">Passwords must be at least 12 characters.</p>
+      <p class="hint">Uses your existing gloom.sh account, so your portfolios, layouts, and settings follow you here.</p>
     </main>
     <script>
       const form = document.getElementById("auth-form");
@@ -182,8 +264,8 @@ const SIGN_OUT_PAGE_HTML = `<!doctype html>
   </head>
   <body>
     <main>
-      <h1>Gloomberb Cloud</h1>
-      <p class="sub">End your session on this device.</p>
+      <h1>Gloomberb</h1>
+      <p class="sub">End your Gloom Cloud session on this device.</p>
       <form id="sign-out-form">
         <div class="actions">
           <button type="submit" class="primary">Sign out</button>
@@ -199,159 +281,3 @@ const SIGN_OUT_PAGE_HTML = `<!doctype html>
     </script>
   </body>
 </html>`;
-
-async function signUp(request: Request, env: Env): Promise<Response> {
-  const credentials = await readCredentials(request);
-  if (!credentials) return Response.json({ error: "A valid email and password are required." }, { status: 400 });
-
-  const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(credentials.email).first<{ id: string }>();
-  if (existing) return Response.json({ error: "Unable to create account." }, { status: 409 });
-
-  const salt = randomToken();
-  const passwordHash = await hashPassword(credentials.password, salt);
-  const user: SessionUser = { id: crypto.randomUUID(), email: credentials.email };
-  const now = Date.now();
-  await env.DB.prepare(
-    "INSERT INTO users (id, email, password_hash, password_salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(user.id, user.email, passwordHash, salt, now, now).run();
-
-  return createSessionResponse(env, user, 201);
-}
-
-async function signIn(request: Request, env: Env): Promise<Response> {
-  const credentials = await readCredentials(request);
-  if (!credentials) return Response.json({ error: "Invalid email or password." }, { status: 401 });
-
-  const user = await env.DB.prepare(
-    "SELECT id, email, password_hash, password_salt FROM users WHERE email = ?",
-  ).bind(credentials.email).first<UserRow>();
-  if (!user || !constantTimeEqual(await hashPassword(credentials.password, user.password_salt), user.password_hash)) {
-    return Response.json({ error: "Invalid email or password." }, { status: 401 });
-  }
-
-  return createSessionResponse(env, { id: user.id, email: user.email });
-}
-
-async function signOut(request: Request, env: Env): Promise<Response> {
-  const token = readCookie(request.headers.get("Cookie"), SESSION_COOKIE);
-  if (token) {
-    await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await hashToken(token)).run();
-  }
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": clearSessionCookie() } });
-}
-
-async function getSession(request: Request, env: Env): Promise<Response> {
-  const user = await sessionUser(request, env);
-  return Response.json({ user });
-}
-
-async function createSessionResponse(env: Env, user: SessionUser, status = 200): Promise<Response> {
-  const token = randomToken();
-  const now = Date.now();
-  await env.DB.prepare(
-    "INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)",
-  ).bind(await hashToken(token), user.id, now + SESSION_TTL_SECONDS * 1_000, now).run();
-  return Response.json(
-    { user },
-    { status, headers: { "Set-Cookie": sessionCookie(token) } },
-  );
-}
-
-async function sessionUser(request: Request, env: Env): Promise<SessionUser | null> {
-  const token = readCookie(request.headers.get("Cookie"), SESSION_COOKIE);
-  if (!token) return null;
-  const now = Date.now();
-  const row = await env.DB.prepare(
-    `SELECT users.id, users.email, sessions.expires_at
-     FROM sessions JOIN users ON users.id = sessions.user_id
-     WHERE sessions.token_hash = ?`,
-  ).bind(await hashToken(token)).first<SessionUser & { expires_at: number }>();
-  if (!row) return null;
-  if (row.expires_at <= now) {
-    await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await hashToken(token)).run();
-    return null;
-  }
-  return { id: row.id, email: row.email };
-}
-
-async function readCredentials(request: Request): Promise<{ email: string; password: string } | null> {
-  const payload = await request.json().catch(() => null) as AuthPayload | null;
-  const email = typeof payload?.email === "string" ? payload.email.trim().toLowerCase() : "";
-  const password = typeof payload?.password === "string" ? payload.password : "";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 1_024) return null;
-  return { email, password };
-}
-
-function isSameOrigin(request: Request, url: URL): boolean {
-  const origin = request.headers.get("Origin");
-  return !origin || origin === url.origin;
-}
-
-function readCookie(header: string | null, name: string): string | null {
-  if (!header) return null;
-  const prefix = `${name}=`;
-  for (const value of header.split(";")) {
-    const entry = value.trim();
-    if (entry.startsWith(prefix)) return entry.slice(prefix.length);
-  }
-  return null;
-}
-
-function sessionCookie(token: string): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL_SECONDS}`;
-}
-
-function clearSessionCookie(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
-}
-
-function randomToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return toBase64Url(bytes);
-}
-
-async function hashToken(token: string): Promise<string> {
-  return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))));
-}
-
-async function hashPassword(password: string, salt: string): Promise<string> {
-  const material = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    "PBKDF2",
-    false,
-    ["deriveBits"],
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt: decodeBase64Url(salt), iterations: PASSWORD_ITERATIONS },
-    material,
-    PASSWORD_BYTES * 8,
-  );
-  return toBase64Url(new Uint8Array(bits));
-}
-
-function constantTimeEqual(left: string, right: string): boolean {
-  if (left.length !== right.length) return false;
-  let difference = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return difference === 0;
-}
-
-function toBase64Url(bytes: Uint8Array): string {
-  let value = "";
-  for (const byte of bytes) value += String.fromCharCode(byte);
-  return btoa(value).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
-}
-
-function decodeBase64Url(value: string): ArrayBuffer {
-  const padded = value.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  const decoded = atob(padded);
-  const buffer = new ArrayBuffer(decoded.length);
-  const bytes = new Uint8Array(buffer);
-  for (let index = 0; index < decoded.length; index += 1) {
-    bytes[index] = decoded.charCodeAt(index);
-  }
-  return buffer;
-}
