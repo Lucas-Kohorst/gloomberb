@@ -7,6 +7,7 @@ import {
 } from "../src/renderers/electrobun/view/build-assets";
 
 const outdir = join(process.cwd(), "dist", "web-client");
+const hosted = process.env.GLOOMBERB_CLOUD_HOSTED === "1";
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await writeFile(join(outdir, ".assetsignore"), "*.map\n");
@@ -19,5 +20,5 @@ await writeWebClientPage({
   missingEntryMessage: "Local web client build did not produce a JavaScript entrypoint",
   title: "Gloomberb",
   loadingText: "Loading Gloomberb...",
-  bootstrapScript: "",
+  bootstrapScript: hosted ? "window.__GLOOM_CLOUD_HOSTED = true;" : "",
 });

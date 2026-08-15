@@ -13,6 +13,7 @@ import { WebDialogHostProvider } from "./dialog-host";
 import {
   installElectrobunCloudApiFetchTransport,
   installElectrobunHttpFetchTransport,
+  installHostedCloudApiFetchTransport,
 } from "./http-fetch";
 import { DesktopFatalScreen, ElectrobunErrorBoundary } from "./fatal-screen";
 import { WebInputHostProvider } from "./input-host";
@@ -23,13 +24,22 @@ import { createElectrobunAppServices } from "./app-services";
 import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
+import { apiClient, type PersistedAuthUser } from "../../../api-client";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
 
+declare global {
+  interface Window {
+    __GLOOM_CLOUD_HOSTED?: boolean;
+    __GLOOM_CLOUD_AUTHENTICATED?: boolean;
+  }
+}
+
 const root = createRoot(rootElement);
 const bootLog = debugLog.createLogger("web-client-boot");
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
+const isHosted = window.__GLOOM_CLOUD_HOSTED === true;
 
 function renderFatalError(error: unknown): void {
   root.render(<DesktopFatalScreen title="Gloomberb failed to start" error={error} source="web-client" />);
@@ -39,7 +49,16 @@ async function boot(): Promise<void> {
   installElectrobunConfigStoreHost();
   installElectrobunBrokerRemoteClient();
   installElectrobunHttpFetchTransport();
-  installElectrobunCloudApiFetchTransport();
+  if (isHosted) {
+    installHostedCloudApiFetchTransport();
+    const response = await fetch("/api/auth/session", { credentials: "include" });
+    const session = await response.json() as { user?: PersistedAuthUser | null };
+    window.__GLOOM_CLOUD_AUTHENTICATED = !!session.user;
+    apiClient.setSessionToken(session.user ? "hosted-session" : null);
+    apiClient.restoreCachedUser(session.user ?? null);
+  } else {
+    installElectrobunCloudApiFetchTransport();
+  }
   const init = await measurePerfAsync("startup.web-client.backend-init", () => initElectrobunBackend());
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
@@ -59,6 +78,7 @@ async function boot(): Promise<void> {
                 desktopWindowBridge={desktopWindowBridge}
                 desktopDeepLinkBridge={desktopDeepLinkBridge}
                 desktopSnapshot={init.desktopSnapshot}
+                onboardingInitialStep={isHosted ? "account" : undefined}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

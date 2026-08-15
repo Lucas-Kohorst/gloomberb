@@ -52,7 +52,7 @@ bun run cloud:dev    # build the web client and serve it locally via Wrangler
 bun run cloud:deploy # build and deploy the Worker + assets
 ```
 
-The Worker serves the app assets, relays sign-in/sign-up/sign-out to `api.gloom.sh` (keeping the session in a first-party HttpOnly cookie), and proxies `/cloud/*` API calls with your session attached. Unauthenticated visitors get the sign-in page; `/sign-out` ends the session. Backend RPC covers app bootstrapping (`init`, `http.fetch`); data capabilities run renderer-side against Gloom Cloud, and realtime events (`/_gloomberb/events`) are not wired up yet.
+The Worker serves the app assets and proxies `/cloud/*` API calls to `api.gloom.sh`, keeping the Gloom Cloud session in a first-party HttpOnly cookie. Fresh browsers open directly on the app's existing Gloom Cloud login step; authenticated browsers load the workspace immediately. Market data and news providers run renderer-side against the proxy. Backend RPC covers app bootstrapping (`init`, `http.fetch`); realtime events (`/_gloomberb/events`) are not wired up yet.
 
 ## Install
 

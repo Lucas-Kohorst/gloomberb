@@ -36,12 +36,13 @@ interface OnboardingWizardProps {
   config: AppConfig;
   pluginRegistry: PluginRegistry;
   onComplete: (config: AppConfig) => void | Promise<void>;
+  initialStep?: OnboardingStep;
 }
 
-export function OnboardingWizard({ config, pluginRegistry, onComplete }: OnboardingWizardProps) {
+export function OnboardingWizard({ config, pluginRegistry, onComplete, initialStep = "welcome" }: OnboardingWizardProps) {
   const language = useAppLanguage();
   const { width: termWidth, height: termHeight } = useViewport();
-  const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [step, setStep] = useState<OnboardingStep>(initialStep);
   const [themeIdx, setThemeIdx] = useState(0);
   const [portfolioSub, setPortfolioSub] = useState<PortfolioSub>("choose");
   const [portfolioOptionIdx, setPortfolioOptionIdx] = useState(0);
@@ -130,6 +131,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }, [editingField, portfolioSub, brokerFieldIdx, account.accountSub, account.accountFieldIdx]);
 
   const { beginAccountMode, syncExistingAccountSession } = account;
+  useEffect(() => {
+    if (initialStep !== "account") return;
+    beginAccountMode("login");
+  }, [beginAccountMode, initialStep]);
+
   useEffect(() => {
     if (step !== "account") return;
     syncExistingAccountSession();

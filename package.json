@@ -21,7 +21,7 @@
     "web:build": "bun run scripts/build-web-client.ts",
     "web:start": "bun run web:build && bun src/renderers/web/index.ts",
     "cloud:types": "wrangler types",
-    "cloud:build": "bun run web:build",
+    "cloud:build": "GLOOMBERB_CLOUD_HOSTED=1 bun run web:build",
     "cloud:dev": "bun run cloud:build && wrangler dev",
     "cloud:check": "bun run cloud:build && wrangler deploy --dry-run",
     "cloud:deploy": "bun run cloud:build && wrangler deploy",

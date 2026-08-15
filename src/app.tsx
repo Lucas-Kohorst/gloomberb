@@ -17,6 +17,7 @@ import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
+import type { OnboardingStep } from "./components/onboarding/wizard-model";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
 import type { LoadedExternalPlugin } from "./plugins/loader";
@@ -397,6 +398,7 @@ interface AppProps {
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
+  onboardingInitialStep?: OnboardingStep;
 }
 
 export function App({
@@ -410,6 +412,7 @@ export function App({
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
+  onboardingInitialStep,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -472,6 +475,7 @@ export function App({
         <OnboardingWizard
           config={config}
           pluginRegistry={services.pluginRegistry}
+          initialStep={onboardingInitialStep}
           onComplete={(updatedConfig) => {
             setConfig(updatedConfig);
             setShowOnboarding(false);

@@ -59,7 +59,7 @@ type HostedBackendRequest =
 
 const NOT_AVAILABLE = "Not available in the hosted client yet.";
 
-export async function handleHostedBackendRpc(env: Env, user: HostedUser, request: Request): Promise<Response> {
+export async function handleHostedBackendRpc(env: Env, user: HostedUser | null, request: Request): Promise<Response> {
   if (request.method !== "POST") {
     return Response.json({ ok: false, error: "Method not allowed." }, { status: 405 });
   }
@@ -79,7 +79,7 @@ export async function handleHostedBackendRpc(env: Env, user: HostedUser, request
     console.error(JSON.stringify({
       event: "cloud_backend_error",
       method: envelope.method,
-      userId: user.id,
+      userId: user?.id ?? null,
       message: error instanceof Error ? error.message : String(error),
     }));
     return Response.json({
@@ -89,13 +89,15 @@ export async function handleHostedBackendRpc(env: Env, user: HostedUser, request
   }
 }
 
-function hostedConfig(user: HostedUser): AppConfig {
-  return createDefaultConfig(`cloud://users/${user.id}`);
+function hostedConfig(user: HostedUser | null): AppConfig {
+  const config = createDefaultConfig(`cloud://users/${user?.id ?? "anonymous"}`);
+  if (user) config.onboardingComplete = true;
+  return config;
 }
 
 async function dispatch(
   env: Env,
-  user: HostedUser,
+  user: HostedUser | null,
   rawRequest: Request,
   request: HostedBackendRequest,
 ): Promise<unknown> {
@@ -106,7 +108,14 @@ async function dispatch(
         sessionSnapshot: null,
         desktopSnapshot: null,
         desktopThemePreview: null,
-        pluginState: {},
+        pluginState: user ? {
+          "gloomberb-cloud": {
+            session: {
+              sessionToken: "hosted-session",
+              user,
+            },
+          },
+        } : {},
         capabilityManifests: [],
         desktopPlatform: "cloud",
         windowKind: request.payload?.kind === "detached" ? "detached" : "main",
