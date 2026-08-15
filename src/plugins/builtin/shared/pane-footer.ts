@@ -3,6 +3,7 @@ import {
   useExternalLinkFooter,
   usePaneFooter,
   type PaneFooterSegment,
+  type PaneHint,
 } from "../../../components";
 
 const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
@@ -56,6 +57,9 @@ export function usePaneStatusLinkFooter({
   loading = false,
   error,
   info = EMPTY_STATUS_INFO,
+  hints,
+  trailingHints,
+  showOpenHint = false,
 }: {
   registrationId: string;
   focused: boolean;
@@ -65,6 +69,9 @@ export function usePaneStatusLinkFooter({
   loading?: boolean;
   error?: string | null;
   info?: readonly PaneFooterSegment[];
+  hints?: PaneHint[];
+  trailingHints?: PaneHint[];
+  showOpenHint?: boolean;
 }) {
   const statusInfo = useMemo(
     () => buildPaneStatusInfo({ loading, error, info }),
@@ -77,6 +84,8 @@ export function usePaneStatusLinkFooter({
     source,
     label,
     info: statusInfo,
-    showHint: false,
+    hints,
+    trailingHints,
+    showHint: showOpenHint,
   });
 }

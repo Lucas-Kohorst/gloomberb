@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { PaneFooterSegment } from "../../../../../components";
+import { useShortcut } from "../../../../../react/input";
+import type { PaneFooterSegment, PaneHint } from "../../../../../components";
 import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
@@ -18,6 +19,7 @@ interface UseNewsArticleFooterOptions {
   info?: PaneFooterSegment[];
   loading?: boolean;
   error?: string | null;
+  onPopOut?: () => void;
 }
 
 export function useNewsArticleFooter({
@@ -27,6 +29,7 @@ export function useNewsArticleFooter({
   info,
   loading = false,
   error,
+  onPopOut,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const { access, segment } = useCloudAccessFooter({
@@ -43,6 +46,19 @@ export function useNewsArticleFooter({
     return segment ? [segment] : [];
   }, [access.isPayingPro, language, segment]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+  const trailingHints = useMemo<PaneHint[]>(() => (
+    onPopOut && article
+      ? [{ id: "pop-out", key: "p", label: "op out", onPress: onPopOut }]
+      : []
+  ), [article, onPopOut]);
+
+  useShortcut((event) => {
+    const key = (event.name ?? event.key ?? "").toLowerCase();
+    if (!focused || !onPopOut || !article || key !== "p") return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    onPopOut();
+  }, { enabled: focused && !!onPopOut && !!article });
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -50,6 +66,8 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
+    trailingHints,
+    showOpenHint: true,
     loading,
     error,
   });

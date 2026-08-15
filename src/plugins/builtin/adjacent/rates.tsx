@@ -13,7 +13,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
 import type { AdjacentClient } from "./client";
-import type { AdjacentRateRow } from "./types";
+import type { AdjacentRateRow, AdjacentRateSource } from "./types";
 import { normalizeAdjacentRate } from "./normalize";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
@@ -62,12 +62,7 @@ function RateDetail({
   width: number;
   height: number;
 }) {
-  const [sourceMarkets, setSourceMarkets] = useState<Array<{
-    market_id: string;
-    title: string;
-    platform: string;
-    weight: number;
-  }>>([]);
+  const [sourceMarkets, setSourceMarkets] = useState<AdjacentRateSource[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const genRef = useRef(0);
@@ -80,9 +75,9 @@ function RateDetail({
     setSourceMarkets([]);
 
     client.getRate(rate.id)
-      .then((response) => {
+      .then((rateDetail) => {
         if (genRef.current !== gen) return;
-        setSourceMarkets(response.rate.source_markets ?? []);
+        setSourceMarkets(rateDetail.sources ?? []);
         setLoading(false);
       })
       .catch((err) => {
@@ -146,7 +141,7 @@ function RateDetail({
                 <Text fg={colors.textDim}>{m.platform === "kalshi" ? "K" : "P"}</Text>
               </Box>
               <Box flexGrow={1}>
-                <Text fg={colors.text} wrapMode="ellipsis">{m.title}</Text>
+                <Text fg={colors.text} wrapMode="ellipsis">{m.question ?? m.display_ticker ?? m.market_id}</Text>
               </Box>
             </Box>
           ))
@@ -180,7 +175,7 @@ export function AdjacentRatesPane({
     client.getRates()
       .then((response) => {
         if (genRef.current !== gen) return;
-        setRates((response.rates ?? []).map(normalizeAdjacentRate));
+        setRates((response.data ?? []).map(normalizeAdjacentRate));
         setStatus("loaded");
       })
       .catch((err) => {

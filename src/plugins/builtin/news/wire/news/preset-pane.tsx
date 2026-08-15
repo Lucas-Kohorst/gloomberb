@@ -11,6 +11,7 @@ import {
   type NewsSortPreference,
 } from "./table";
 import { useNewsArticleFooter } from "./footer";
+import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
 
@@ -51,11 +52,14 @@ export function NewsPresetPane({
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
 
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
     focused,
-    article: detailArticle,
+    article: detailArticle ?? selectedArticle,
+    onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
   });
 
   const detailContent = detailArticle ? (

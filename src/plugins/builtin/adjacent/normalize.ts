@@ -5,6 +5,7 @@ import type {
   AdjacentNewsArticle,
   AdjacentPriceHistoryPoint,
   AdjacentPricePoint,
+  AdjacentPriceSample,
   AdjacentRate,
   AdjacentRateRow,
 } from "./types";
@@ -13,26 +14,26 @@ import type { PricePoint } from "../../../types/financials";
 import type { PredictionHistoryPoint } from "../../prediction-markets/types";
 
 export function normalizeAdjacentIndex(index: AdjacentIndex): AdjacentIndexRow {
-  const value = index.value;
+  const value = index.latest_price;
   const probabilityPct = value != null ? value - 50 : null;
   return {
-    id: index.id,
+    id: index.index_id,
     name: index.name,
     value,
     probabilityPct,
     change1d: index.change_1d ?? null,
     change7d: index.change_7d ?? null,
-    category: index.category,
+    category: index.office_category ?? undefined,
   };
 }
 
 export function normalizeAdjacentRate(rate: AdjacentRate): AdjacentRateRow {
   return {
-    id: rate.id,
+    id: rate.rate_id,
     name: rate.name,
-    value: rate.value ?? null,
+    value: rate.latest_price ?? null,
     spread: rate.spread ?? null,
-    category: rate.category,
+    category: undefined,
   };
 }
 
@@ -80,12 +81,12 @@ export function adjacentPriceHistoryToPredictionPoints(
 }
 
 export function normalizeAdjacentIndexPrices(
-  prices: Array<{ timestamp: string; value: number }>,
+  prices: AdjacentPriceSample[],
 ): AdjacentIndexPricePoint[] {
   return prices.flatMap((point) => {
     const date = new Date(point.timestamp);
-    if (!Number.isFinite(date.getTime())) return [];
-    return [{ date, value: point.value }];
+    if (!Number.isFinite(date.getTime()) || point.price == null) return [];
+    return [{ date, value: point.price }];
   });
 }
 

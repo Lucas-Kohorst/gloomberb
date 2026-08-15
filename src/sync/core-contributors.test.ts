@@ -56,6 +56,61 @@ describe("core sync contributors", () => {
     expect(serialized).toContain("Demo Broker");
   });
 
+  test("redacts BYOK api keys from synced pluginConfig", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.pluginConfig = {
+      application: {
+        theme: "dark",
+        byokApiKeys: {
+          keys: [{
+            id: "byok-1",
+            serviceId: "adjacent",
+            name: "Adjacent",
+            apiKey: "sk-live-secret",
+            createdAt: 1,
+          }],
+        },
+      },
+    };
+
+    const payload = await coreConfigSyncContributor.collect({
+      state: createInitialState(config),
+    }) as { pluginConfig?: Record<string, Record<string, unknown>> };
+
+    expect(JSON.stringify(payload)).not.toContain("sk-live-secret");
+    expect(payload.pluginConfig?.application).toEqual({ theme: "dark" });
+  });
+
+  test("keeps local BYOK keys when a sanitized pull omits them", () => {
+    const localByok = {
+      keys: [{
+        id: "byok-1",
+        serviceId: "adjacent",
+        name: "Adjacent",
+        apiKey: "sk-local",
+        createdAt: 1,
+      }],
+    };
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.pluginConfig = {
+      application: {
+        theme: "dark",
+        byokApiKeys: localByok,
+      },
+    };
+
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      pluginConfig: {
+        application: { theme: "light" },
+      },
+    });
+
+    expect(merged?.pluginConfig.application).toEqual({
+      theme: "light",
+      byokApiKeys: localByok,
+    });
+  });
+
   test("normalizes legacy built-in ownership in pulled config", () => {
     const config = createDefaultConfig("/tmp/gloomberb-sync-test");
     const layouts = config.layouts.map((savedLayout, index) => index === 0

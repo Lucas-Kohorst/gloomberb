@@ -24,6 +24,7 @@ import { createElectrobunAppServices } from "./app-services";
 import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
+import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
 import { apiClient, type PersistedAuthUser } from "../../../api-client";
 
 const rootElement = document.getElementById("root");
@@ -60,6 +61,7 @@ async function boot(): Promise<void> {
     installElectrobunCloudApiFetchTransport();
   }
   const init = await measurePerfAsync("startup.web-client.backend-init", () => initElectrobunBackend());
+  if (isHosted) hydrateHostedByokConfig(init.config);
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
   const paneId = new URLSearchParams(window.location.search).get("paneId") ?? undefined;

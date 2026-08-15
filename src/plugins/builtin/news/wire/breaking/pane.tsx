@@ -6,6 +6,7 @@ import { Spinner } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "../news/table";
 import { useNewsArticleFooter } from "../news/footer";
+import { usePopOutNewsArticle } from "../news/pop-out";
 import { NEWS_QUERY_PRESETS } from "../news/query-presets";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useNewsReadState } from "../read-state";
@@ -21,11 +22,14 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
 
   useNewsArticleFooter({
     registrationId: "news-wire:breaking",
     focused,
-    article: detailArticle,
+    article: detailArticle ?? selectedArticle,
+    onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
   });
 
   const detailContent = detailArticle ? (

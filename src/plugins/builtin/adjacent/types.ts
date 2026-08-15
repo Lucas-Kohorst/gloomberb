@@ -130,35 +130,49 @@ export interface AdjacentEventsResponse {
   next_cursor?: string | null;
 }
 
+export interface AdjacentMeta {
+  total?: number;
+  page?: number;
+  per_page?: number;
+  total_pages?: number;
+  has_next?: boolean;
+  has_prev?: boolean;
+}
+
 export interface AdjacentIndex {
-  id: string;
+  index_id: string;
   name: string;
-  slug?: string;
+  ticker?: string;
   description?: string;
-  // 50-150 scale: value - 50 = win probability %
-  value: number | null;
+  office_category?: string | null;
+  party_side?: string | null;
+  // base-100 index level: 100 is neutral, each point = 1pp of blended win probability
+  latest_price: number | null;
   change_1d?: number | null;
   change_7d?: number | null;
   change_30d?: number | null;
-  category?: string;
   updated_at?: string | null;
 }
 
 export interface AdjacentIndicesResponse {
-  indices?: AdjacentIndex[];
+  data?: AdjacentIndex[];
+  meta?: AdjacentMeta;
 }
 
 export interface AdjacentConstituent {
+  kind?: "market" | "index";
   market_id: string;
-  title: string;
-  platform: AdjacentPlatform;
+  ticker?: string;
+  display_ticker?: string;
+  platform: string;
   weight: number;
-  yes_price: number | null;
-  url?: string;
+  price?: number | null;
+  name?: string | null;
 }
 
 export interface AdjacentConstituentsResponse {
-  constituents?: AdjacentConstituent[];
+  data?: AdjacentConstituent[];
+  meta?: AdjacentMeta;
 }
 
 export interface AdjacentIndexPricePoint {
@@ -166,8 +180,14 @@ export interface AdjacentIndexPricePoint {
   value: number;
 }
 
+export interface AdjacentPriceSample {
+  timestamp: string;
+  price: number | null;
+}
+
 export interface AdjacentIndexPricesResponse {
-  prices?: Array<{ timestamp: string; value: number }>;
+  data?: AdjacentPriceSample[];
+  meta?: AdjacentMeta;
 }
 
 export interface AdjacentNewsArticle {
@@ -196,31 +216,39 @@ export interface AdjacentNewsLatestResponse {
   news?: AdjacentNewsArticle[];
 }
 
+export interface AdjacentRateSource {
+  market_id: string;
+  display_ticker?: string;
+  platform: string;
+  weight: number;
+  question?: string | null;
+  latest_price?: number | null;
+  end_date?: string | null;
+  is_active?: boolean | null;
+}
+
 export interface AdjacentRate {
-  id: string;
+  rate_id: string;
   name: string;
-  description?: string;
-  value: number | null;
+  description?: string | null;
+  methodology?: string;
+  // 0-100 scale: 52.4 means 52.4 percent
+  latest_price: number | null;
   spread?: number | null;
-  category?: string;
-  updated_at?: string | null;
-  source_markets?: Array<{
-    market_id: string;
-    title: string;
-    platform: AdjacentPlatform;
-    weight: number;
-  }>;
+  previous_close_1d?: number | null;
+  price_change_1d?: number | null;
+  price_change_7d?: number | null;
+  sources?: AdjacentRateSource[];
 }
 
 export interface AdjacentRatesResponse {
-  rates?: AdjacentRate[];
+  data?: AdjacentRate[];
+  meta?: AdjacentMeta;
 }
 
 export interface AdjacentRatePricesResponse {
-  prices?: Array<{
-    timestamp: string;
-    value: number;
-  }>;
+  data?: AdjacentPriceSample[];
+  meta?: AdjacentMeta;
 }
 
 // Gloomberb-internal normalized types

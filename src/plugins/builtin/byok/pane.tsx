@@ -12,6 +12,7 @@ import {
 import { DataTableView } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
+import { useShortcut } from "../../../react/input";
 import { usePluginConfigState, usePluginAppActions } from "../../runtime";
 import {
   BYOK_API_KEYS_CONFIG_KEY,
@@ -225,7 +226,7 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
   const handleAdd = useCallback(() => {
     setDraft(emptyDraft());
     setFormMode("add");
-    setActiveField("serviceId");
+    setActiveField("name");
   }, []);
 
   const handleCancel = useCallback(() => {
@@ -291,11 +292,56 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
   const tableWidth = Math.min(width, 100);
   const editing = formMode !== "idle";
 
-  // Input capture when editing
-  useEffect(() => {
-    if (!focused || !editing) return;
-    // Form fields handle their own input; no global capture needed
-  }, [focused, editing]);
+  useShortcut((event) => {
+    if (!focused) return;
+    if (editing) {
+      if (event.name === "escape") {
+        event.stopPropagation();
+        handleCancel();
+        return;
+      }
+      if ((event.name === "tab" && event.shift) || event.name === "up") {
+        event.stopPropagation();
+        event.preventDefault?.();
+        const index = formFields.indexOf(activeField);
+        const next = index <= 0 ? formFields.length - 1 : index - 1;
+        setActiveField(formFields[next] ?? "name");
+        return;
+      }
+      if (event.name === "tab" || event.name === "down") {
+        event.stopPropagation();
+        event.preventDefault?.();
+        const index = formFields.indexOf(activeField);
+        setActiveField(formFields[(index + 1) % formFields.length] ?? "name");
+        return;
+      }
+      if (event.name === "enter" || event.name === "return") {
+        event.stopPropagation();
+        event.preventDefault?.();
+        handleSave();
+      }
+      return;
+    }
+    if (event.name === "a") {
+      event.stopPropagation();
+      handleAdd();
+      return;
+    }
+    if (event.name === "e" && selectedEntry) {
+      event.stopPropagation();
+      handleEdit();
+      return;
+    }
+    if (event.name === "t" && selectedEntry) {
+      event.stopPropagation();
+      void handleTest();
+      return;
+    }
+    if (event.name === "d" && selectedEntry) {
+      event.stopPropagation();
+      handleDelete();
+    }
+  }, { enabled: focused, allowEditable: true });
 
   usePaneFooter("byok-settings", () => ({
     info: [
@@ -334,18 +380,15 @@ export function ByokSettingsPane({ focused, width, height, close }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Keys table */}
-      <Box flexDirection="row" height={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>API Keys</Text>
-      </Box>
-      <Box height={Math.max(3, height - 4 - (aiAccounts.length > 0 ? 4 : 0))}>
+      <Box height={Math.max(3, height - 3 - (aiAccounts.length > 0 ? 4 : 0))}>
         {keys.length === 0
           ? (
-            <Box padding={1}>
+            <Box padding={1} flexDirection="column" gap={1}>
               <EmptyState
                 title="No API keys configured."
-                message="Press [a] to add a key for a known service or custom API."
+                message="Add a key for Adjacent, Hyperliquid, SEC EDGAR, or a custom API."
               />
+              <Button label="Add API key" variant="primary" onPress={handleAdd} shortcut="a" />
             </Box>
           )
           : (

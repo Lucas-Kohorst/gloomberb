@@ -2,6 +2,7 @@ import type { PluginCapability, AssetDataCapability, NewsCapability, RegisteredC
 import type { DataProvider } from "../../../types/data-provider";
 import type { GloomPluginContext } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
+import { isProviderMiss } from "../../../sources/provider-errors";
 import {
   type ConnectionState,
   type ConnectionSnapshot,
@@ -174,7 +175,11 @@ export class ConnectionTracker {
           tracker.recordSuccess(CLOUD_REST_ID, operation, Date.now() - start);
           return result;
         } catch (error) {
-          tracker.recordFailure(CLOUD_REST_ID, operation, Date.now() - start, error);
+          if (isProviderMiss(error)) {
+            tracker.recordSuccess(CLOUD_REST_ID, operation, Date.now() - start);
+          } else {
+            tracker.recordFailure(CLOUD_REST_ID, operation, Date.now() - start, error);
+          }
           throw error;
         }
       };

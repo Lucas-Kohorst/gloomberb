@@ -112,13 +112,13 @@ function IndexDetail({
         const tasks: Promise<unknown>[] = [];
         if (detailTab === "overview") {
           tasks.push(
-            client.getIndexConstituents(index.id).then((r) => setConstituents(r.constituents ?? [])),
+            client.getIndexConstituents(index.id).then((r) => setConstituents(r.data ?? [])),
           );
         }
         if (detailTab === "chart") {
           tasks.push(
             client.getIndexPrices(index.id).then((r) => {
-              setPrices(normalizeAdjacentIndexPrices(r.prices ?? []));
+              setPrices(normalizeAdjacentIndexPrices(r.data ?? []));
             }),
           );
         }
@@ -216,26 +216,34 @@ function IndexDetail({
             {constituents.length === 0 ? (
               <Text fg={colors.textDim}>No constituent data.</Text>
             ) : (
-              constituents.map((c) => (
-                <Box key={c.market_id} flexDirection="row" height={1} gap={2}>
-                  <Box width={6}>
-                    <Text fg={colors.textDim}>{(c.weight * 100).toFixed(0)}%</Text>
+              constituents.map((c) => {
+                const label = c.name ?? c.display_ticker ?? c.market_id;
+                const prob = c.price != null
+                  ? (c.kind === "index" ? c.price - 50 : c.price)
+                  : null;
+                return (
+                  <Box key={c.market_id} flexDirection="row" height={1} gap={2}>
+                    <Box width={6}>
+                      <Text fg={colors.textDim}>{(c.weight * 100).toFixed(0)}%</Text>
+                    </Box>
+                    <Box width={6}>
+                      <Text fg={colors.textDim}>
+                        {c.kind === "index" ? "IDX" : c.platform === "kalshi" ? "K" : "P"}
+                      </Text>
+                    </Box>
+                    <Box flexGrow={1}>
+                      <Text fg={colors.text} wrapMode="ellipsis">
+                        {label}
+                      </Text>
+                    </Box>
+                    <Box width={6}>
+                      <Text fg={prob != null ? priceColor(prob - 50) : colors.textDim}>
+                        {prob != null ? `${prob.toFixed(0)}%` : "—"}
+                      </Text>
+                    </Box>
                   </Box>
-                  <Box width={6}>
-                    <Text fg={colors.textDim}>{c.platform === "kalshi" ? "K" : "P"}</Text>
-                  </Box>
-                  <Box flexGrow={1}>
-                    <Text fg={colors.text} wrapMode="ellipsis">
-                      {c.title}
-                    </Text>
-                  </Box>
-                  <Box width={6}>
-                    <Text fg={c.yes_price != null ? priceColor(c.yes_price - 50) : colors.textDim}>
-                      {c.yes_price != null ? `${(c.yes_price - 50).toFixed(0)}%` : "—"}
-                    </Text>
-                  </Box>
-                </Box>
-              ))
+                );
+              })
             )}
           </Box>
         </ScrollBox>
@@ -350,7 +358,7 @@ export function AdjacentIndicesPane({
     client.getIndices()
       .then((response) => {
         if (genRef.current !== gen) return;
-        const rows = (response.indices ?? []).map(normalizeAdjacentIndex);
+        const rows = (response.data ?? []).map(normalizeAdjacentIndex);
         setIndices(rows);
         setStatus("loaded");
       })

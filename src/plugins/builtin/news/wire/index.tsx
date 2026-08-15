@@ -18,6 +18,13 @@ import { NEWS_QUERY_PRESETS } from "./news/query-presets";
 import type { NewsColumnId, NewsSortPreference } from "./news/table";
 import { createRssNewsCapability } from "./rss/source";
 import { RssPane } from "./rss-pane";
+import { NewsArticleReaderPane } from "./news/article-reader";
+import {
+  ARTICLE_READER_FLOATING_SIZE,
+  NEWS_ARTICLE_READER_PANE_ID,
+  NEWS_ARTICLE_READER_TEMPLATE_ID,
+  articleReaderInstanceId,
+} from "../../shared/article-pop-out";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -80,6 +87,15 @@ export const newsWireModule: PluginModule = {
         }],
       },
     },
+    {
+      id: NEWS_ARTICLE_READER_PANE_ID,
+      name: "Article",
+      icon: "A",
+      component: NewsArticleReaderPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
+    },
   ],
   paneTemplates: [
     { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Curated top market stories ranked by importance", keywords: ["top", "news", "headlines", "stories"], shortcut: { prefix: "TOP" } },
@@ -87,6 +103,29 @@ export const newsWireModule: PluginModule = {
     { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "Market news filtered by sector", keywords: ["news", "industry", "sector", "ni", "filter"], shortcut: { prefix: "NI" } },
     { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },
     { id: "news-rss-pane", paneId: "news-rss", label: "RSS Feeds", description: "Subscribe to and read RSS feeds", keywords: ["rss", "feed", "subscribe", "news", "reader"], shortcut: { prefix: "RSS" } },
+    {
+      id: NEWS_ARTICLE_READER_TEMPLATE_ID,
+      paneId: NEWS_ARTICLE_READER_PANE_ID,
+      label: "News Article",
+      description: "Read a popped-out news article.",
+      keywords: ["news", "article", "reader"],
+      canCreate: (_context, options) => !!options?.arg?.trim(),
+      createInstance: (_context, options) => {
+        const articleId = options?.arg?.trim() ?? "";
+        if (!articleId) return null;
+        return {
+          instanceId: articleReaderInstanceId(NEWS_ARTICLE_READER_PANE_ID, articleId),
+          title: options?.values?.title?.trim() || "Article",
+          placement: "floating",
+          settings: {
+            articleId,
+            title: options?.values?.title ?? "",
+            url: options?.values?.url ?? "",
+            source: options?.values?.source ?? "",
+          },
+        };
+      },
+    },
   ],
   setup(ctx) {
     const initialSettings = loadNewsFeedSettings(ctx.configState);

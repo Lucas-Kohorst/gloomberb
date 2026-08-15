@@ -5,6 +5,7 @@ import type {
   AdjacentCandlesResponse,
   AdjacentConstituentsResponse,
   AdjacentEventsResponse,
+  AdjacentIndex,
   AdjacentIndexPricesResponse,
   AdjacentIndicesResponse,
   AdjacentMarketDetail,
@@ -298,9 +299,9 @@ export class AdjacentClient {
     );
   }
 
-  async getIndex(id: string): Promise<AdjacentIndicesResponse> {
+  async getIndex(id: string): Promise<AdjacentIndex> {
     const url = buildUrl(`${this.indicesPath()}/${id}`);
-    return adjacentFetchJson<AdjacentIndicesResponse>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentIndex>(url, this.apiKey);
   }
 
   async getIndexConstituents(id: string): Promise<AdjacentConstituentsResponse> {
@@ -343,9 +344,9 @@ export class AdjacentClient {
     );
   }
 
-  async getRate(id: string): Promise<{ rate: AdjacentRate }> {
+  async getRate(id: string): Promise<AdjacentRate> {
     const url = buildUrl(`${this.ratesPath()}/${id}`);
-    return adjacentFetchJson<{ rate: AdjacentRate }>(url, this.apiKey);
+    return adjacentFetchJson<AdjacentRate>(url, this.apiKey);
   }
 
   async getRatePrices(id: string): Promise<AdjacentRatePricesResponse> {

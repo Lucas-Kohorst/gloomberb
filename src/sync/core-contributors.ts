@@ -24,6 +24,7 @@ import {
   normalizeBuiltinPaneStatePluginOwners,
   normalizeBuiltinPluginStateMap,
 } from "../plugins/ownership";
+import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -380,6 +381,18 @@ function mergeConfigPayload(
   }
   if (canApply("pluginConfig") && isPluginStateMap(payload.pluginConfig)) {
     next.pluginConfig = normalizeBuiltinPluginStateMap(payload.pluginConfig);
+    // Sync sanitizes credential-shaped keys (including byokApiKeys). Keep the
+    // local copy so hosted/local BYOK entries survive a cloud pull.
+    const localByok = config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY];
+    if (localByok != null && next.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY] == null) {
+      next.pluginConfig = {
+        ...next.pluginConfig,
+        [BYOK_PLUGIN_ID]: {
+          ...(next.pluginConfig[BYOK_PLUGIN_ID] ?? {}),
+          [BYOK_API_KEYS_CONFIG_KEY]: localByok,
+        },
+      };
+    }
   }
 
   const layoutStateUntouched = config.layout === baselineConfig.layout

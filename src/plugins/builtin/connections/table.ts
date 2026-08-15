@@ -105,11 +105,16 @@ export function renderConnectionCell(
         text: truncate(kindLabel(row.kind), column.width),
         color: colors.textDim,
       };
-    case "status":
+    case "status": {
+      const label = `${statusGlyph(row.status)} ${statusLabel(row.status)}`;
+      const text = row.status === "error" && row.lastError
+        ? truncate(`${label} ${row.lastError}`, column.width)
+        : label;
       return {
-        text: `${statusGlyph(row.status)} ${statusLabel(row.status)}`,
+        text,
         color: statusColor(row.status),
       };
+    }
     case "lastPoll":
       return {
         text: formatLastPoll(row.lastPolledAt),

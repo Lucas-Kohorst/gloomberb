@@ -21,6 +21,7 @@ import { colors } from "../../../../theme/colors";
 import { isPlainKey } from "../../../../utils/keyboard";
 import { useNewsArticles } from "../../../../news/hooks";
 import { usePersistedNewsArticles } from "./persisted-articles";
+import { usePopOutNewsArticle } from "./news/pop-out";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
@@ -387,6 +388,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const articles = usePersistedNewsArticles("rss:articles", newsState.articles);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("rss:selectedArticleId", null);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
 
   const sortedArticles = useMemo(
@@ -414,6 +416,13 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     }
   }, [rendererHost, selectedArticle]);
 
+  const popOutSelectedArticle = useCallback(() => {
+    const article = (openItemId
+      ? sortedArticles.find((item) => item.id === openItemId)
+      : null) ?? selectedArticle;
+    popOutArticle(article);
+  }, [openItemId, popOutArticle, selectedArticle, sortedArticles]);
+
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "m")) {
       event.preventDefault?.();
@@ -427,16 +436,23 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       openArticle();
       return true;
     }
+    if (isPlainKey(event, "p") && selectedArticle) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelectedArticle();
+      return true;
+    }
     return false;
-  }, [onManageFeeds, openArticle, selectedArticle]);
+  }, [onManageFeeds, openArticle, popOutSelectedArticle, selectedArticle]);
 
   usePaneFooter("rss-articles", () => ({
     info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : [],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       ...(selectedArticle ? [{ id: "open", key: "o", label: "pen", onPress: openArticle }] : []),
+      ...(selectedArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [loading, onManageFeeds, openArticle, selectedArticle]);
+  }), [loading, onManageFeeds, openArticle, popOutSelectedArticle, selectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
@@ -486,6 +502,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       items={items}
       selectedIdx={Math.max(0, selectedIdx)}
       onSelect={(idx) => setSelectedArticleId(sortedArticles[idx]?.id ?? null)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleKeyDown}
       sourceLabel="Source"

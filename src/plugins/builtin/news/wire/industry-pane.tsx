@@ -9,6 +9,7 @@ import { Spinner, Tabs } from "../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { useNewsArticleFooter } from "./news/footer";
+import { usePopOutNewsArticle } from "./news/pop-out";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import {
@@ -46,6 +47,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of SECTOR_TABS) {
@@ -68,7 +71,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
     focused,
-    article: detailArticle,
+    article: detailArticle ?? selectedArticle,
+    onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
   });
 
   const rootBefore = (
