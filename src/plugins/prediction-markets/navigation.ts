@@ -31,6 +31,8 @@ export const DETAIL_TABS: ReadonlyArray<{
   { label: "Book", value: "book" },
   { label: "Trades", value: "trades" },
   { label: "Rules", value: "rules" },
+  { label: "Similar", value: "similar" },
+  { label: "News", value: "news" },
 ];
 
 export function parsePredictionVenueScope(

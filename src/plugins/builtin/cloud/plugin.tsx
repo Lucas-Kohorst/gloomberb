@@ -18,6 +18,7 @@ import {
   CONGRESS_TRADES_PANE_ID,
   CongressTradesPane,
 } from "../congress-trades/pane";
+import { adjacentModule } from "../adjacent";
 import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
@@ -218,6 +219,7 @@ export function createGloomberbCloudPlugin({
       accountModule,
       buildoutModule,
       congressTradesModule,
+      adjacentModule,
       twitterModule,
     ],
   });
