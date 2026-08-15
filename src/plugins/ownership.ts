@@ -3,6 +3,7 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "broker-manager": "broker",
   byok: "application",
   changelog: "application",
+  connections: "application",
   "company-research": "ticker-research",
   "chart-composer": "ticker-research",
   "comparison-chart": "ticker-research",
@@ -36,7 +37,7 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
 ]);
 
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
-  application: ["layout-manager", "help", "changelog", "byok"],
+  application: ["layout-manager", "help", "changelog", "byok", "connections"],
   portfolio: ["portfolio-list", "analytics", "kelly-sizer"],
 };
 

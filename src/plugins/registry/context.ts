@@ -3,7 +3,7 @@ import type { BrokerInstanceConfig, LayoutConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
-import type { PluginCapability } from "../../capabilities";
+import type { PluginCapability, RegisteredCapability } from "../../capabilities";
 import type {
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
@@ -35,6 +35,7 @@ export interface RegistryPluginContextOptions {
   updateLayout: (layout: LayoutConfig) => void;
   resolvePaneTarget: (paneId: string) => string | undefined;
   registerCapabilityForPlugin: (pluginId: string, capability: PluginCapability, items: PluginItems) => void;
+  listCapabilities: () => RegisteredCapability[];
   registerSyncContributorForPlugin: (pluginId: string, contributor: SyncContributor) => () => void;
   registerSyncTransportForPlugin: (pluginId: string, transport: SyncTransport) => () => void;
   watchNewsQuery: (query: NewsQuery, listener: (state: NewsQueryState) => void) => () => void;
@@ -85,6 +86,7 @@ export function createRegistryPluginContext({
   updateLayout,
   resolvePaneTarget,
   registerCapabilityForPlugin,
+  listCapabilities,
   registerSyncContributorForPlugin,
   registerSyncTransportForPlugin,
   watchNewsQuery,
@@ -170,6 +172,7 @@ export function createRegistryPluginContext({
     getConfig,
     getApiKey,
     getPaneDef: (paneId) => contributions.panesMap.get(paneId),
+    listCapabilities,
 
     marketData,
     tickerRepository,
