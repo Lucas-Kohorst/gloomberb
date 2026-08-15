@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "fs/promises";
+import { copyFile, readFile, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 
@@ -46,6 +46,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
       ...(options.extraAliasRules ?? []),
     ],
   });
+  await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
   const htmlPath = join(options.outdir, "index.html");
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
@@ -114,6 +115,7 @@ function renderElectrobunViewHtml({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <title>${title}</title>
     <style>${stylesheet}</style>
   </head>

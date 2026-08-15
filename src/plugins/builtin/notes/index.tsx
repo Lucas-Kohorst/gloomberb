@@ -2,6 +2,7 @@ import type { GloomPlugin } from "../../../types/plugin";
 import { NotesFiles } from "./files";
 import { createQuickNotesPane } from "./quick-notes-pane";
 import { createNotesTab } from "./ticker-notes-tab";
+import { createNotesSyncContributor } from "./sync";
 
 export const notesPlugin: GloomPlugin = {
   id: "notes",
@@ -14,6 +15,8 @@ export const notesPlugin: GloomPlugin = {
     const notesFiles = new NotesFiles(ctx.getConfig().dataDir);
     const NotesTab = createNotesTab(notesFiles);
     const QuickNotesPane = createQuickNotesPane(notesFiles);
+
+    ctx.registerSyncContributor(createNotesSyncContributor(notesFiles));
 
     ctx.on("ticker:removed", ({ symbol }) => {
       notesFiles.delete(symbol).catch(() => {});

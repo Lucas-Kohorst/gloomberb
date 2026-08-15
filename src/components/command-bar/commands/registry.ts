@@ -174,6 +174,15 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
+    id: "set-refresh-interval",
+    prefix: "RI",
+    label: "Set Refresh Interval",
+    description: "Set the polling interval for active panes (in minutes)",
+    hasArg: true,
+    argPlaceholder: "minutes",
+    category: "Config",
+  },
+  {
     id: "check-for-updates",
     prefix: "",
     label: "Check for Updates",
