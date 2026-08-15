@@ -418,6 +418,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       updateLayout: (layout) => this.updateLayoutFn(layout),
       resolvePaneTarget: (paneId) => this.resolvePaneTarget(paneId),
       registerCapabilityForPlugin: (targetPluginId, capability, pluginItems) => this.registerCapabilityForPlugin(targetPluginId, capability, pluginItems),
+      listCapabilities: () => this.capabilities.list(),
       registerSyncContributorForPlugin: (targetPluginId, contributor) => this.registerSyncContributorForPlugin(targetPluginId, contributor),
       registerSyncTransportForPlugin: (targetPluginId, transport) => this.registerSyncTransportForPlugin(targetPluginId, transport),
       watchNewsQuery: (query, listener) => this.watchNewsQueryFn(query, listener),

@@ -3,7 +3,7 @@ import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
-import type { PluginCapability } from "../capabilities";
+import type { PluginCapability, RegisteredCapability } from "../capabilities";
 import type { CliGlobalOptions } from "../cli/options";
 import type { CliResult, CliResultRenderOptions } from "../cli/result";
 import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
@@ -519,6 +519,7 @@ export interface GloomPluginContext {
   getTicker(ticker: string): TickerRecord | null;
   getConfig(): import("./config").AppConfig;
   getPaneDef(paneId: string): PaneDef | undefined;
+  listCapabilities(): RegisteredCapability[];
 
   readonly marketData: DataProvider;
   readonly tickerRepository: AppTickerRepositoryPort;
