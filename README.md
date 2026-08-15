@@ -32,6 +32,17 @@ Gloomberb has two ways in:
 
 Both share the same command language, plugin system, market data surfaces, portfolios, watchlists, alerts, notes, and AI tools.
 
+## Local web client
+
+Run the full web-rendered workspace in your browser against the local Gloomberb data directory:
+
+```bash
+bun run web:start
+```
+
+The server listens on `127.0.0.1` using an ephemeral port and prints the URL. It is intended for local development, not remote access.
+Pop-out panes open as browser popup windows. Browser deep links can be opened with `?gloomberb=gloomberb:...` or a `#gloomberb:...` fragment.
+
 ## Install
 
 ### macOS

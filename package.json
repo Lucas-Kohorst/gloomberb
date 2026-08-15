@@ -18,6 +18,8 @@
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
+    "web:build": "bun run scripts/build-web-client.ts",
+    "web:start": "bun run web:build && bun src/renderers/web/index.ts",
     "desktop:view:build": "bun run scripts/build-electrobun-view.ts",
     "desktop:dev": "bun run scripts/electrobun-dev.ts",
     "desktop:build": "electrobun build",

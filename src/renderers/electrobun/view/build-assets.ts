@@ -37,6 +37,26 @@ export async function writeElectrobunViewPage(options: PageOptions): Promise<str
   return htmlPath;
 }
 
+export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"> & { sessionToken: string }): Promise<string> {
+  const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
+    ...options,
+    pluginName: "gloomberb-web-client-renderer",
+    extraAliasRules: [
+      ["./backend-rpc", "web-backend-rpc.ts"],
+      ...(options.extraAliasRules ?? []),
+    ],
+  });
+  const htmlPath = join(options.outdir, "index.html");
+  await writeFile(htmlPath, renderElectrobunViewHtml({
+    ...options,
+    pluginName: "gloomberb-web-client-renderer",
+    stylesheet,
+    entrySrc,
+    bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
+  }));
+  return htmlPath;
+}
+
 async function buildElectrobunViewBundle({
   entrypoint,
   outdir,
