@@ -31,8 +31,15 @@ export interface AiProviderDefinition {
   /**
    * Ordered, curated defaults. The runtime chooses the first one available to
    * the connected account and never falls back to provider array order.
+   * Ordered quality-first (powerful → balanced → fast).
    */
   preferredModelIds: readonly string[];
+  /**
+   * Ordered fast/cheap defaults for speed-optimised features (e.g. the
+   * screener). The runtime chooses the first one available to the connected
+   * account. Ordered speed-first (fast → balanced).
+   */
+  fastModelIds: readonly string[];
 }
 
 export interface AiProvider {
@@ -53,36 +60,42 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
     name: "Claude",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["claude-opus-4-8", "claude-sonnet-5"],
+    fastModelIds: ["claude-haiku-4-5", "claude-sonnet-4-6"],
   },
   {
     id: "openai-codex",
     name: "OpenAI (ChatGPT)",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra"],
+    fastModelIds: ["gpt-5.4-mini", "gpt-5.6-luna"],
   },
   {
     id: "openai",
     name: "OpenAI API",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.4"],
+    fastModelIds: ["gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     id: "google",
     name: "Google Gemini",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gemini-3.6-flash", "gemini-3.5-flash"],
+    fastModelIds: ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite"],
   },
   {
     id: "github-copilot",
     name: "GitHub Copilot",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "claude-sonnet-5", "gpt-5.4"],
+    fastModelIds: ["claude-haiku-4.5", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     id: "xai",
     name: "xAI / Grok",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["grok-4.5", "grok-4.3"],
+    fastModelIds: ["grok-4.3"],
   },
   {
     id: "openrouter",
@@ -92,6 +105,11 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
       "anthropic/claude-sonnet-5",
       "openai/gpt-5.6-sol",
       "google/gemini-3.6-flash",
+    ],
+    fastModelIds: [
+      "anthropic/claude-haiku-4.5",
+      "google/gemini-2.5-flash-lite",
+      "openai/gpt-4o-mini",
     ],
   },
 ];
@@ -121,6 +139,7 @@ export function getAiProviderDefinitions(): AiProviderDefinition[] {
     ...definition,
     outputModes: [...definition.outputModes],
     preferredModelIds: [...definition.preferredModelIds],
+    fastModelIds: [...definition.fastModelIds],
   }));
 }
 

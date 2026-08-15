@@ -8,6 +8,7 @@ import { migrateLegacyAiProviderId } from "./providers";
 
 export const AI_DEFAULT_PROVIDER_SETTING_KEY = "defaultProviderId";
 export const AI_DEFAULT_MODEL_SETTING_KEY = "defaultModelId";
+export const AI_MODEL_PREFERENCE_SETTING_KEY = "modelPreference";
 export const AI_PANE_PROVIDER_SETTING_KEY = "providerId";
 export const AI_PANE_MODEL_SETTING_KEY = "modelId";
 const AI_INHERIT_SETTING_VALUE = "";
