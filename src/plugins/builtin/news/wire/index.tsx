@@ -17,6 +17,7 @@ import { NewsPresetPane } from "./news/preset-pane";
 import { NEWS_QUERY_PRESETS } from "./news/query-presets";
 import type { NewsColumnId, NewsSortPreference } from "./news/table";
 import { createRssNewsCapability } from "./rss/source";
+import { RssPane } from "./rss-pane";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -60,9 +61,8 @@ export const newsWireModule: PluginModule = {
   panes: [
     { id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
     { id: "news-feed", name: "News Feed", icon: "N", component: FeedPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },
-    { id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },
-    {
-      id: "news-breaking",
+    { id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },    { id: "news-rss", name: "RSS Feeds", icon: "R", component: RssPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
+    { id: "news-breaking",
       name: "Breaking News",
       icon: "!",
       component: BreakingPane,
@@ -86,6 +86,7 @@ export const newsWireModule: PluginModule = {
     { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" } },
     { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "Market news filtered by sector", keywords: ["news", "industry", "sector", "ni", "filter"], shortcut: { prefix: "NI" } },
     { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },
+    { id: "news-rss-pane", paneId: "news-rss", label: "RSS Feeds", description: "Subscribe to and read RSS feeds", keywords: ["rss", "feed", "subscribe", "news", "reader"], shortcut: { prefix: "RSS" } },
   ],
   setup(ctx) {
     const initialSettings = loadNewsFeedSettings(ctx.configState);
