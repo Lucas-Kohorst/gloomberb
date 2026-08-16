@@ -6,6 +6,7 @@ import {
   MetricTreemapSurface,
   Tabs,
   usePaneFooter,
+  useUpdatedAgo,
   type MetricTreemapDirection,
   type MetricTreemapItem,
 } from "../../../components";
@@ -34,14 +35,6 @@ function formatMoneyCompact(value: number | null | undefined, currency: string):
 function sizeLabel(asset: MarketHeatmapAsset): string {
   const label = asset.sizeKind === "net-assets" ? "Assets" : "Mkt";
   return `${label} ${formatMoneyCompact(asset.size, asset.currency)}`;
-}
-
-function updatedLabel(timestamp: number | null): string | null {
-  if (!timestamp) return null;
-  return new Date(timestamp).toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<MarketHeatmapAsset>> {
@@ -150,6 +143,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     const target = findMetricTreemapNeighbor(navigationTiles, selectedSymbol, direction);
     if (target) setSelectedSymbol(target.item.data.symbol);
   }, [navigationTiles, selectedSymbol]);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -227,7 +221,6 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   });
 
   usePaneFooter("market-heatmap", () => {
-    const updated = updatedLabel(lastUpdated);
     return {
       info: [
         ...(selectedAsset ? [{
@@ -238,11 +231,10 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
             { text: formatPercentRaw(selectedAsset.changePercent), tone: "value" as const, color: priceColor(selectedAsset.changePercent), bold: true },
           ],
         }] : []),
-        ...(updated ? [{
+        ...(updatedAgo ? [{
           id: "updated",
           parts: [
-            { text: "updated", tone: "label" as const },
-            { text: updated, tone: "value" as const },
+            { text: `updated ${updatedAgo}`, tone: "muted" as const },
           ],
         }] : []),
         ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -250,7 +242,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       ],
       hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
     };
-  }, [lastUpdated, loadError, loading, refresh, selectedAsset]);
+  }, [loadError, loading, refresh, selectedAsset, updatedAgo]);
 
   const emptyStateTitle = loading
     ? "Loading market heatmap..."

@@ -18,6 +18,7 @@ import {
   nextStackSortPreference,
   sortStackItems,
   usePaneFooter,
+  useUpdatedAgo,
   type DataTableColumn,
   type DataTableCell,
   type DataTableKeyEvent,
@@ -384,6 +385,7 @@ export function AdjacentIndicesPane({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
 
@@ -399,6 +401,7 @@ export function AdjacentIndicesPane({
         const rows = (response.data ?? []).map(normalizeAdjacentIndex);
         setIndices(rows);
         setStatus("loaded");
+        setLastUpdated(Date.now());
       })
       .catch((err) => {
         if (genRef.current !== gen) return;
@@ -426,6 +429,7 @@ export function AdjacentIndicesPane({
   }, [indices, searchQuery, sortPreference]);
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
+  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
 
   useEffect(() => {
     if (visibleIndices.length === 0) return;
@@ -472,6 +476,7 @@ export function AdjacentIndicesPane({
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen
       ? [{ id: "refresh", key: "r", label: "efresh", onPress: load }]
@@ -479,7 +484,7 @@ export function AdjacentIndicesPane({
           { id: "search", key: "s", label: "earch", onPress: focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: load },
         ],
-  }), [detailOpen, error, focusSearch, load, searchQuery, status]);
+  }), [detailOpen, error, focusSearch, load, searchQuery, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (

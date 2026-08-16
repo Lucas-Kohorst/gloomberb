@@ -4,7 +4,7 @@ import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutBounds } from "../../../plugins/pane-manager";
 import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
-import { applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
+import { applyNewsFeedContextToAssistInventory, applyChartSeriesContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
 import { useNewsArticles } from "../../../news/hooks";
@@ -15,6 +15,9 @@ import {
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
 import { buildArticleSearchResultItems, useAdjacentArticleSearch } from "../routes/root/article-results";
+import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
+import { buildChartSeriesAssistContext } from "../../../plugins/builtin/chart-composer/series-catalog";
+import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -217,13 +220,43 @@ export function CommandBar({
     pluginRegistry,
     rootQuery,
   ]);
-  const buildAssistInventory = useCallback(() => applyNewsFeedContextToAssistInventory(
-    buildAssistCommandInventory({
-      commands: availableCommands,
-      pluginCommands: getAvailablePluginCommands(),
-      paneTemplates: getAvailablePaneTemplates(undefined, { includePromptableTickerTemplates: true }),
+  const chartSeriesIntent = rootShortcutIntent.kind !== "none"
+    && rootShortcutIntent.source === "pane-template"
+    && rootShortcutIntent.argKind === "text"
+    && rootShortcutIntent.prefix === "G"
+    ? rootShortcutIntent
+    : null;
+  const chartSeriesTemplateId = chartSeriesIntent?.source === "pane-template"
+    ? chartSeriesIntent.template.id
+    : null;
+  const chartSeriesDefaultInstrument = useMemo<SeriesCatalogInstrument>(
+    () => ({
+      symbol: activeTickerSymbol ?? "AAPL",
+      ...(activeTickerData?.metadata.exchange ? { exchange: activeTickerData.metadata.exchange } : {}),
+      ...(activeTickerData?.metadata.name ? { name: activeTickerData.metadata.name } : {}),
     }),
-    enabledNewsFeedNamesFromPluginConfig(state.config.pluginConfig.news),
+    [activeTickerData, activeTickerSymbol],
+  );
+  const chartSeriesItems = useChartSeriesSuggestions({
+    argText: chartSeriesIntent?.argText ?? "",
+    defaultInstrument: chartSeriesDefaultInstrument,
+    enabled: !currentRoute && !!chartSeriesIntent,
+    onRun: (expression) => {
+      if (!chartSeriesTemplateId) return;
+      pluginRegistry.createPaneFromTemplate(chartSeriesTemplateId, { arg: expression });
+      closeAll({ revertThemePreview: false });
+    },
+  });
+  const buildAssistInventory = useCallback(() => applyChartSeriesContextToAssistInventory(
+    applyNewsFeedContextToAssistInventory(
+      buildAssistCommandInventory({
+        commands: availableCommands,
+        pluginCommands: getAvailablePluginCommands(),
+        paneTemplates: getAvailablePaneTemplates(undefined, { includePromptableTickerTemplates: true }),
+      }),
+      enabledNewsFeedNamesFromPluginConfig(state.config.pluginConfig.news),
+    ),
+    buildChartSeriesAssistContext(),
   ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, state.config.pluginConfig.news]);
   // Only the root list asks on its own, and only for text the prefix parser
   // could not claim — otherwise the user is mid-command, not mid-question.
@@ -324,6 +357,7 @@ export function CommandBar({
     pluginCommandItems,
     pluginCommandResultItems,
     articleResultItems,
+    chartSeriesItems,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,

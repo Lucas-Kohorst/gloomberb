@@ -12,6 +12,7 @@ import {
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
+  useUpdatedAgo,
   type FeedDataTableItem,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
@@ -365,6 +366,7 @@ function SecPane({ width, height, focused }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback((nextQuery: string) => {
@@ -378,6 +380,7 @@ function SecPane({ width, height, focused }: PaneProps) {
         if (abortRef.current !== controller) return;
         setFilings(nextFilings);
         setStatus("loaded");
+        setLastUpdated(Date.now());
       })
       .catch((loadError) => {
         if (abortRef.current !== controller) return;
@@ -420,6 +423,7 @@ function SecPane({ width, height, focused }: PaneProps) {
   });
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
   const loading = status === "loading" && filings.length === 0;
+  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
 
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
@@ -472,6 +476,9 @@ function SecPane({ width, height, focused }: PaneProps) {
     label: "filing",
     loading,
     error,
+    info: updatedAgo
+      ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
+      : undefined,
     showOpenHint: !error && !!openFiling?.filingUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },

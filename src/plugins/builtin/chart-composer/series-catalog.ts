@@ -245,6 +245,35 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
   };
 }
 
+/** Renders a parsed series expression back into the SYMBOL:field / FRED:id text the chart command accepts. */
+export function formatParsedSeriesExpression(expression: ParsedSeriesExpression): string {
+  if (expression.kind === "economic") return `FRED:${expression.seriesId}`;
+  return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+}
+
+/**
+ * Field names the AI assistant can drop into a `G` expression. Each is a valid
+ * alias the parser resolves (a field-id suffix or an explicit alias), so the
+ * assistant never has to emit the verbose `fundamental.totalRevenue` form.
+ */
+const ASSIST_FIELD_NAMES = [
+  "price", "close", "volume",
+  "revenue", "grossProfit", "grossMargin", "operatingIncome", "netIncome", "netMargin",
+  "freeCashFlow", "eps", "totalAssets", "totalDebt", "totalEquity",
+  "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",
+] as const;
+
+/**
+ * Appended onto the `G` command descriptor so `/assist/command` knows the
+ * series vocabulary and expression syntax, letting it map natural-language
+ * chart queries ("show AAPL revenue vs MSFT revenue") onto a real expression.
+ */
+export function buildChartSeriesAssistContext(): string {
+  return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
+    + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
+    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data.";
+}
+
 export function buildSeriesCatalogSuggestions(
   query: string,
   defaultInstrument: SeriesCatalogInstrument,

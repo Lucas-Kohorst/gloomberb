@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandDef, PaneTemplateDef } from "../../../types/plugin";
 import type { Command } from "../commands/registry";
-import { applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "./inventory";
+import { applyChartSeriesContextToAssistInventory, applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "./inventory";
 
 function command(overrides: Partial<Command> & { prefix: string }): Command {
   return {
@@ -101,5 +101,25 @@ describe("buildAssistCommandInventory", () => {
     expect(inventory[0]?.description).toContain("Adjacent Press");
     expect(inventory[1]?.description).toContain("Enabled feeds: Adjacent Press, CNBC Top News.");
     expect(inventory[2]?.description).toBe("Browse indices");
+  });
+
+  test("appends chart series vocabulary onto the G descriptor only", () => {
+    const inventory = applyChartSeriesContextToAssistInventory([
+      { prefix: "G", name: "Custom Chart", description: "Chart arbitrary series." },
+      { prefix: "GP", name: "Graph Price", description: "Open a price chart" },
+    ], " Chart series fields: price, revenue. Syntax SYMBOL:field.");
+
+    expect(inventory[0]?.description).toContain("Chart series fields:");
+    expect(inventory[0]?.description).toContain("Chart arbitrary series.");
+    expect(inventory[1]?.description).toBe("Open a price chart");
+  });
+
+  test("does not double-apply the chart series context", () => {
+    const once = applyChartSeriesContextToAssistInventory(
+      [{ prefix: "G", name: "Custom Chart", description: "Chart series." }],
+      " Chart series fields: price.",
+    );
+    const twice = applyChartSeriesContextToAssistInventory(once, " Chart series fields: revenue.");
+    expect(twice[0]?.description).toBe(once[0]?.description);
   });
 });
