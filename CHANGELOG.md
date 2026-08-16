@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026.08.16 — Security hardening, performance optimizations, and plugin search
+
+Open this in the app with the Changelog pane (command bar: Changelog).
+
+### Highlights
+
+- URL scheme validation prevents `file://` and `javascript:` URLs from external feeds from opening local applications.
+- Cloudflare Worker http.fetch now blocks private/internal IP ranges, closing an SSRF vector on the hosted client.
+- Cloudflare Worker error responses no longer leak internal error details to clients.
+- Content-Security-Policy header added to the hosted web app for XSS defense-in-depth.
+- Self-updater now verifies SHA-256 checksums from GitHub release assets before installing binaries.
+- Time-series transform and alignment algorithms optimized from O(n²) and O(n×m) to O(n log n) and O(n+m).
+- `useRemoteUiNode` no longer re-registers semantic nodes on every render; DataTable metadata memoized.
+- `mergePriceHistoryWindows` uses a two-pointer merge instead of re-sorting the full history.
+- Silently swallowed persistence errors in notes and broker modules now surface to users and logs.
+- IBKR catch blocks use `error: unknown` with type narrowing instead of `error: any`.
+- `gloomberb plugin-search <query>` searches GitHub for installable plugins by keyword.
+- CI now typechecks the Cloudflare Worker; dead dependency `web-tree-sitter` removed; `.env.example` completed.
+
+### Security
+
+- `openUrl` and `openExternal` validate the URL scheme (`http:` / `https:` only) before spawning `open`, `cmd`, or `xdg-open`.
+- Cloudflare Worker `http.fetch` blocks localhost, RFC-1918, and link-local addresses before proxying.
+- Cloudflare Worker catch block maps known user-facing errors (auth, feature gates) and sanitizes all others to a generic message.
+- `Content-Security-Policy` header on `serveApp` with `default-src 'self'`, `connect-src 'self' https://api.gloom.sh`, and `frame-ancestors 'none'`.
+- Self-updater verifies SHA-256 digest from GitHub's release asset API before swapping the binary; backward compatible with older releases without digests.
+
+### Performance
+
+- `referencePoint` in yoy/qoq transforms uses binary search instead of linear scan (O(n²) → O(n log n)).
+- `alignTimeSeries` carry-forward uses a moving pointer per series instead of re-scanning all points (O(n×m) → O(n+m)).
+- `mergePriceHistoryWindows` uses a two-pointer merge of two sorted arrays instead of Map + full sort (O(n log n) → O(n)).
+- `useRemoteUiNode` effect has a dependency array; 7 UI component callers wrap registrations in `useMemo`.
+- DataTable `useRemoteUiNode` metadata (200-row slice) wrapped in `useMemo` to avoid per-render serialization.
+
+### DX and tooling
+
+- `typecheck` script now includes `typecheck:cloud` for the Cloudflare Worker.
+- `web-tree-sitter` removed (zero imports across the codebase).
+- `.env.example` documents `GLOOMBERB_LANG` and `GLOOMBERB_CLOUD_HOSTED`.
+- `catch (error: any)` replaced with `catch (error: unknown)` across 12 IBKR catch blocks.
+- Notes and broker persistence catch blocks now log errors instead of silently swallowing them.
+
+### Plugin discovery
+
+- `gloomberb plugin-search <query>` searches GitHub for repos with the `gloomberb-plugin` topic, falling back to a keyword search.
+- Results show plugin name, stars, and description; install with `gloomberb install <user/repo>`.
+
+### Tests
+
+- Sync controller race-condition tests: runtime swap mid-pull, contributor apply failure, concurrent requestSync queuing, stale signature skip + force override.
+- Time-series transform and alignment edge-case tests.
+- `mergePriceHistoryWindows` dedup, override, Date normalization, and empty-input tests.
+- Updater checksum verification tests: match, mismatch, and backward-compatible no-checksum cases.
+- URL scheme validation tests for `openUrl`.
+
 ## 2026.08.15 — Command-bar articles, SEC filings, and the connections inventory
 
 Open this in the app with the Changelog pane (command bar: Changelog).
