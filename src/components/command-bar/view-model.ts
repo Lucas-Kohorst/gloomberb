@@ -17,7 +17,7 @@ export interface CommandBarSection<T> {
   items: T[];
 }
 
-export type CommandBarSectionOrder = "default" | "app-first";
+export type CommandBarSectionOrder = "default" | "app-first" | "ranked";
 
 export interface CommandBarItemView {
   id: string;
@@ -138,6 +138,9 @@ export function truncateText(text: string, width: number): string {
 
 function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {
   const normalized = category.trim().toLowerCase();
+  // In ranked mode every category shares equal priority so results sort purely
+  // by relevance score (see #541).
+  if (sectionOrder === "ranked") return 0;
   const priorities: Record<string, number> = {
     // Query-specific results lead the command list.
     "ask ai": -100,
