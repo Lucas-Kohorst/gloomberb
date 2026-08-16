@@ -78,8 +78,7 @@ export type LlmStatsSortColumnId =
   | "p95"
   | "fail"
   | "calls"
-  | "ttft"
-  | "released";
+  | "ttft";
 
 export interface LlmStatsData {
   rows: LlmStatsRow[];

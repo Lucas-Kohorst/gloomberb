@@ -10,6 +10,7 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { debugPlugin } from "./builtin/debug";
+import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
@@ -33,6 +34,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   substackPlugin,
   notesPlugin,
   aiPlugin,
+  llmStatsPlugin,
   predictionMarketsBackendPlugin,
   marketOverviewPlugin,
   macroPlugin,
