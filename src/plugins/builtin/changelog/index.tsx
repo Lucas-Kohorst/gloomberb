@@ -47,7 +47,7 @@ function buildColumns(width: number, releases: ChangelogRelease[]): ChangelogCol
     14,
   );
   const titleWidth = Math.max(
-    18,
+    1,
     width - (dateWidth + 1) - (versionWidth + 1) - 3,
   );
 
