@@ -25,14 +25,16 @@ interface RateColumn extends DataTableColumn {
   id: "name" | "value" | "spread";
 }
 
-function createRateColumns(width: number): RateColumn[] {
+export function createRateColumns(width: number): RateColumn[] {
   const valueWidth = 10;
   const spreadWidth = 8;
-  const nameWidth = Math.max(16, width - valueWidth - spreadWidth - 4);
+  const showSpread = width >= 32;
+  const tableChromeWidth = (showSpread ? 3 : 2) + 2;
+  const nameWidth = Math.max(1, width - valueWidth - (showSpread ? spreadWidth : 0) - tableChromeWidth);
   return [
     { id: "name", label: "RATE", width: nameWidth, align: "left" },
     { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "spread", label: "SPREAD", width: spreadWidth, align: "right" },
+    ...(showSpread ? [{ id: "spread" as const, label: "SPREAD", width: spreadWidth, align: "right" as const }] : []),
   ];
 }
 
@@ -241,12 +243,11 @@ export function AdjacentRatesPane({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
-      ...(client.isPublic ? [{ id: "mode", parts: [{ text: "public", tone: "muted" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],
-  }), [client.isPublic, error, load, status]);
+  }), [error, load, status]);
 
   if (status === "loading" && rates.length === 0) {
     return (

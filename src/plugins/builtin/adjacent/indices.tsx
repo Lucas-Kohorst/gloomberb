@@ -56,23 +56,29 @@ interface IndexColumn extends DataTableColumn {
   id: "ticker" | "name" | "value" | "prob" | "chg1d" | "chg7d";
 }
 
-function createIndexColumns(width: number): IndexColumn[] {
-  const tickerWidth = 8;
+export function createIndexColumns(width: number): IndexColumn[] {
+  const tickerWidth = width >= 40 ? 8 : 6;
   const valueWidth = 8;
   const probWidth = 7;
   const chg1dWidth = 7;
   const chg7dWidth = 7;
+  const showValue = width >= 28;
+  const showChg1d = width >= 38;
   const showChg7d = width >= 64;
   const showProb = width >= 56;
-  const extras = valueWidth + chg1dWidth + (showProb ? probWidth : 0) + (showChg7d ? chg7dWidth : 0);
-  const nameWidth = Math.max(12, width - tickerWidth - extras - 6);
-  return [
+  const fixedColumns = [
     { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "name", label: "NAME", width: nameWidth, align: "left", flexGrow: 1 },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
+    ...(showValue ? [{ id: "value" as const, label: "VALUE", width: valueWidth, align: "right" as const }] : []),
     ...(showProb ? [{ id: "prob" as const, label: "PROB%", width: probWidth, align: "right" as const }] : []),
-    { id: "chg1d", label: "1D", width: chg1dWidth, align: "right" },
+    ...(showChg1d ? [{ id: "chg1d" as const, label: "1D", width: chg1dWidth, align: "right" as const }] : []),
     ...(showChg7d ? [{ id: "chg7d" as const, label: "7D", width: chg7dWidth, align: "right" as const }] : []),
+  ] satisfies IndexColumn[];
+  const tableChromeWidth = fixedColumns.length + 1 + 2;
+  const fixedWidth = fixedColumns.reduce((sum, column) => sum + column.width, 0);
+  return [
+    fixedColumns[0]!,
+    { id: "name", label: "NAME", width: Math.max(1, width - fixedWidth - tableChromeWidth), align: "left", flexGrow: 1 },
+    ...fixedColumns.slice(1),
   ];
 }
 
@@ -466,7 +472,6 @@ export function AdjacentIndicesPane({
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
-      ...(client.isPublic ? [{ id: "mode", parts: [{ text: "public", tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen
       ? [{ id: "refresh", key: "r", label: "efresh", onPress: load }]
@@ -474,7 +479,7 @@ export function AdjacentIndicesPane({
           { id: "search", key: "s", label: "earch", onPress: focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: load },
         ],
-  }), [client.isPublic, detailOpen, error, focusSearch, load, searchQuery, status]);
+  }), [detailOpen, error, focusSearch, load, searchQuery, status]);
 
   if (status === "loading" && indices.length === 0) {
     return (

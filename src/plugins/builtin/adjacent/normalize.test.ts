@@ -9,8 +9,18 @@ import {
   unwrapAdjacentMarketIds,
   unwrapAdjacentNewsArticles,
 } from "./normalize";
+import { createIndexColumns } from "./indices";
+import { createRateColumns } from "./rates";
+import { getTableWidth } from "../../../components/ui/table-layout";
 
 describe("adjacent normalize", () => {
+  test("budgets table gutters and padding before assigning the flexible column", () => {
+    expect(getTableWidth(createIndexColumns(80))).toBe(80);
+    expect(getTableWidth(createRateColumns(80))).toBe(80);
+    expect(getTableWidth(createIndexColumns(40))).toBe(40);
+    expect(getTableWidth(createRateColumns(24))).toBe(24);
+  });
+
   test("maps index wire shape to rows", () => {
     const row = normalizeAdjacentIndex({
       index_id: "red",
