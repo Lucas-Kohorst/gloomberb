@@ -10,6 +10,7 @@ import {
   Tabs,
   nextStackSortPreference,
   usePaneFooter,
+  useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -63,6 +64,19 @@ const DETAIL_TABS: Array<{ value: PollDetailTab; label: string }> = [
 
 const TREND_WINDOW = 5;
 const RECENT_POLL_COUNT = 10;
+
+/**
+ * Maps a poll answer label to a semantic color: approve/yes → positive,
+ * disapprove/no → negative, everything else stays neutral. A leading
+ * "approve" poll at 40% is still semantically positive, so this is label-based
+ * (not probability-based like prediction markets).
+ */
+function answerChoiceColor(choice: string): string | undefined {
+  const normalized = choice.trim().toLowerCase();
+  if (/\b(approve|yes|favor|support|positive)\b/.test(normalized)) return colors.positive;
+  if (/\b(disapprove|no|oppose|against|negative|unfavor)\b/.test(normalized)) return colors.negative;
+  return undefined;
+}
 
 function createColumns(width: number): PollColumn[] {
   const dateWidth = 8;
@@ -138,26 +152,29 @@ function PollOverview({ poll, allRows, width }: { poll: PollRow; allRows: PollRo
 
         <Box height={1} />
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>This poll</Text>
-        {poll.answers.map((answer) => (
+        {poll.answers.map((answer) => {
+          const choiceColor = answerChoiceColor(answer.choice);
+          return (
           <Box key={answer.choice} flexDirection="row" height={1} gap={2}>
             <Box width={labelWidth}>
-              <Text fg={colors.text} wrapMode="ellipsis">{answer.choice}</Text>
+              <Text fg={choiceColor ?? colors.text} wrapMode="ellipsis">{answer.choice}</Text>
             </Box>
             <Box width={4} justifyContent="flex-end" flexDirection="row">
-              <Text fg={poll.leadChoice === answer.choice ? colors.textBright : colors.textDim} attributes={TextAttributes.BOLD}>
+              <Text fg={choiceColor ?? (poll.leadChoice === answer.choice ? colors.textBright : colors.textDim)} attributes={TextAttributes.BOLD}>
                 {Number.isInteger(answer.pct) ? `${answer.pct}` : answer.pct.toFixed(1)}
               </Text>
             </Box>
             <Box width={barWidth}>
               <AnswerBar
                 pct={answer.pct}
-                color={poll.leadChoice === answer.choice ? colors.positive : colors.border}
+                color={choiceColor ?? (poll.leadChoice === answer.choice ? colors.positive : colors.border)}
                 maxPct={maxPct}
                 width={barWidth}
               />
             </Box>
           </Box>
-        ))}
+          );
+        })}
 
         {averages.length > 0 && (
           <>
@@ -165,27 +182,30 @@ function PollOverview({ poll, allRows, width }: { poll: PollRow; allRows: PollRo
             <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
               {RECENT_POLL_COUNT}-poll weighted avg
             </Text>
-            {averages.map((avg) => (
+            {averages.map((avg) => {
+              const avgColor = answerChoiceColor(avg.choice);
+              return (
               <Box key={avg.choice} flexDirection="row" height={1} gap={2}>
                 <Box width={labelWidth}>
-                  <Text fg={colors.text} wrapMode="ellipsis">{avg.choice}</Text>
+                  <Text fg={avgColor ?? colors.text} wrapMode="ellipsis">{avg.choice}</Text>
                 </Box>
                 <Box width={4} justifyContent="flex-end" flexDirection="row">
-                  <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                  <Text fg={avgColor ?? colors.textBright} attributes={TextAttributes.BOLD}>
                     {avg.avgPct.toFixed(1)}
                   </Text>
                 </Box>
                 <Box width={barWidth}>
                   <AnswerBar
                     pct={avg.avgPct}
-                    color={colors.textBright}
+                    color={avgColor ?? colors.textBright}
                     maxPct={maxAvg}
                     width={barWidth}
                   />
                 </Box>
                 <Text fg={colors.textDim}>{avg.pollCount}</Text>
               </Box>
-            ))}
+              );
+            })}
           </>
         )}
       </Box>
@@ -437,6 +457,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
 
@@ -466,6 +487,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
           [pollType]: polls.map(normalizeVoteHubPoll),
         }));
         setStatus("loaded");
+        setLastUpdated(Date.now());
       })
       .catch((loadError) => {
         if (genRef.current !== gen) return;
@@ -570,6 +592,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   }, [load, selected?.url, tab]);
 
   const columns = useMemo(() => createColumns(width), [width]);
+  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const renderCell = useCallback(
     (row: PollRow, column: PollColumn, _index: number, rowState: { selected: boolean }) =>
       renderPollCell(row, column, rowState.selected),
@@ -581,6 +604,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen
       ? [
@@ -592,7 +616,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
           { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ],
-  }), [error, detailOpen, focusSearch, load, openSelected, selected?.url, status, searchQuery, tab]);
+  }), [error, detailOpen, focusSearch, load, openSelected, selected?.url, status, searchQuery, tab, updatedAgo]);
 
   const tabs = (
     <Box height={1} flexShrink={0} overflow="hidden">

@@ -123,6 +123,44 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   return { kind: "security", ...instrument, fieldId };
 }
 
+/**
+ * Parses a two-series binary expression like `AAPL:price / AAPL:revenue` into
+ * its legs and the pair-study kind that combines them. `/` maps to a ratio
+ * study and `-` to a spread study (both already supported by the resolver).
+ * `*` and `+` are recognized but not yet supported. Returns null when the
+ * expression is not a binary combination.
+ */
+export type BinarySeriesOperator = "/" | "-";
+
+export interface ParsedBinarySeriesExpression {
+  left: ParsedSeriesExpression;
+  right: ParsedSeriesExpression;
+  operator: BinarySeriesOperator;
+  studyKind: "ratio" | "spread";
+}
+
+export function parseBinarySeriesExpression(value: string): ParsedBinarySeriesExpression | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // `/` never appears inside a valid series token, so it's safe to split on
+  // without requiring surrounding whitespace.
+  const slashMatch = /^(.+?)\s*\/\s*(.+)$/.exec(trimmed);
+  if (slashMatch) {
+    const left = parseSeriesExpression(slashMatch[1]!.trim());
+    const right = parseSeriesExpression(slashMatch[2]!.trim());
+    if (left && right) return { left, right, operator: "/", studyKind: "ratio" };
+  }
+  // `-` can appear inside symbols/exchange codes, so require surrounding
+  // whitespace to avoid mis-splitting `3HNX:LSE`-style tokens.
+  const dashMatch = /^(.+?)\s+-\s+(.+)$/.exec(trimmed);
+  if (dashMatch) {
+    const left = parseSeriesExpression(dashMatch[1]!.trim());
+    const right = parseSeriesExpression(dashMatch[2]!.trim());
+    if (left && right) return { left, right, operator: "-", studyKind: "spread" };
+  }
+  return null;
+}
+
 export function parseChartExpression(value: string): ParsedSeriesExpression[] {
   if (!value.trim()) return [];
 
@@ -553,6 +591,11 @@ export function buildEmptyChartPreset(): ChartSpec {
 }
 
 export function buildCustomChartPreset(expression: string, fallbackSymbol?: string | null): ChartSpec {
+  const binary = parseBinarySeriesExpression(expression);
+  if (binary) {
+    const spec = chartSpec(buildCustomSeries([binary.left, binary.right]));
+    return setPairStudies(spec, [binary.studyKind]);
+  }
   const parsed = parseChartExpression(expression);
   if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
   return chartSpec(buildCustomSeries(parsed));

@@ -183,6 +183,20 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
+    id: "font-size-increase",
+    prefix: "FONT+",
+    label: "Increase Font Size",
+    description: "Increase the terminal-wide font size",
+    category: "Config",
+  },
+  {
+    id: "font-size-decrease",
+    prefix: "FONT-",
+    label: "Decrease Font Size",
+    description: "Decrease the terminal-wide font size",
+    category: "Config",
+  },
+  {
     id: "check-for-updates",
     prefix: "",
     label: "Check for Updates",

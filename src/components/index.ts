@@ -23,6 +23,7 @@ export { activeStackIndex, nextStackSortPreference, sortStackItems } from "./fee
 export type { StackSortPreference } from "./feed-stack-controller";
 export { PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
 export type { PaneFooterPressEvent, PaneFooterSegment, PaneHint } from "./layout/pane/footer";
+export { useUpdatedAgo } from "./use-updated-ago";
 export {
   getPaneSidebarWidth,
   PaneSidebar,

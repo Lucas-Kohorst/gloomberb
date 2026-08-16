@@ -278,6 +278,17 @@ export function runDirectCommandAction(options: {
       closeAll({ revertThemePreview: false });
       return;
     }
+    case "font-size-increase":
+    case "font-size-decrease": {
+      const delta = command.id === "font-size-increase" ? 1 : -1;
+      const next = Math.min(20, Math.max(10, (state.config.fontSize ?? 12) + delta));
+      const nextConfig = { ...state.config, fontSize: next };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      persistConfig(nextConfig);
+      notify(`Font size: ${next}px`, { type: "success" });
+      closeAll({ revertThemePreview: false });
+      return;
+    }
     case "check-for-updates":
       void onCheckForUpdates?.();
       closeAll({ revertThemePreview: false });

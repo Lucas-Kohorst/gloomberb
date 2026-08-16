@@ -62,6 +62,7 @@ describe("createPaneTemplateOrThrow", () => {
       placePaneInstance: (...args) => {
         placeCalls.push(args);
       },
+      focusPaneInstance: () => {},
     });
 
     expect(buildCalls).toHaveLength(0);
@@ -113,12 +114,70 @@ describe("createPaneTemplateOrThrow", () => {
         } as any;
       },
       placePaneInstance: () => {},
+      focusPaneInstance: () => {},
     });
 
     expect(buildCalls[0]).toEqual([
       "financial-analysis",
       expect.objectContaining({ instanceId: "financial-analysis:AAPL" }),
     ]);
+  });
+
+  test("focuses an existing matching instance instead of creating a duplicate", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    // Plant an existing SEC instance bound to AAPL as a properly-referenced
+    // floating pane so it survives layout normalization.
+    const secInstance = {
+      instanceId: "sec:AAPL",
+      paneId: "sec",
+      title: "SEC AAPL",
+      binding: { kind: "fixed", symbol: "AAPL" } as const,
+      settings: { query: "AAPL" },
+    };
+    layout.instances = [...layout.instances, secInstance];
+    layout.floating = [...layout.floating, { instanceId: "sec:AAPL", x: 0, y: 0, width: 40, height: 20 }];
+    const state = createInitialState({ ...config, layout });
+    const focused: string[] = [];
+    const placed: unknown[] = [];
+
+    await createPaneTemplateOrThrow("sec-pane", { arg: "AAPL" }, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["sec-pane", {
+            id: "sec-pane",
+            paneId: "sec",
+            label: "SEC",
+            description: "Filings",
+            createInstance: () => ({
+              instanceId: "sec:AAPL",
+              title: "SEC AAPL",
+              binding: { kind: "fixed", symbol: "AAPL" },
+              placement: "floating",
+              settings: { query: "AAPL" },
+            }),
+          }],
+        ]),
+        panes: new Map([
+          ["sec", { id: "sec", name: "SEC", component: () => null, defaultPosition: "right" }],
+        ]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => {
+        placed.push("built");
+        return { instanceId: "sec:AAPL-2", paneId: "sec" } as any;
+      },
+      placePaneInstance: () => { placed.push("placed"); },
+      focusPaneInstance: (id) => { focused.push(id); },
+    });
+
+    expect(focused).toEqual(["sec:AAPL"]);
+    expect(placed).toEqual([]);
   });
 });
 
