@@ -24,3 +24,16 @@ export function withDeadline<T>(
     if (timer) clearTimeout(timer);
   });
 }
+
+export async function settleWithinBudget(
+  promise: Promise<void>,
+  timeoutMs: number,
+  message: string,
+  onFailure?: (error: unknown) => void,
+): Promise<void> {
+  try {
+    await withDeadline(promise, timeoutMs, message);
+  } catch (error) {
+    onFailure?.(error);
+  }
+}

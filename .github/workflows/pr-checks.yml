@@ -1,0 +1,39 @@
+name: PR Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Typecheck production runtimes
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Unused files, exports, and dependencies
+        run: bunx knip --no-exit-code
+
+      - name: Cloudflare Worker types are in sync
+        run: |
+          if [ -f wrangler.jsonc ]; then
+            bunx wrangler types --config wrangler.jsonc
+            git diff --exit-code worker-configuration.d.ts
+          else
+            echo "No Wrangler config on this branch; skipping Worker type generation."
+          fi
