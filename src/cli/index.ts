@@ -31,6 +31,7 @@ import {
   installPlugin,
   listPlugins,
   removePlugin,
+  searchPlugins,
   updatePlugins,
 } from "./commands/plugins";
 import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
@@ -184,6 +185,21 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
       },
       execute: () => {
         listPlugins();
+      },
+    },
+    {
+      name: "plugin-search",
+      aliases: ["search-plugins", "plugins-search"],
+      description: "Search for installable plugins on GitHub",
+      help: {
+        usage: ["plugin-search <query>"],
+      },
+      execute: async (args) => {
+        const query = args.join(" ").trim();
+        if (!query) {
+          fail("Usage: gloomberb plugin-search <query>");
+        }
+        await searchPlugins(query!);
       },
     },
     apiCliCommand,

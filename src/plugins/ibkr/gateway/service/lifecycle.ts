@@ -144,8 +144,8 @@ export async function connectWithClientFallback({
   let resolvedConfig: ResolvedIbkrGatewayConnection;
   try {
     resolvedConfig = await resolveGatewayConnection(config);
-  } catch (error: any) {
-    const message = error?.message || String(error || "");
+  } catch (error: unknown) {
+    const message = (error instanceof Error ? error.message : undefined) || String(error || "");
     updateSnapshot({
       ...snapshot,
       status: {
@@ -174,9 +174,9 @@ export async function connectWithClientFallback({
       );
       onResolved({ ...resolvedConfig, clientId });
       return;
-    } catch (error: any) {
+    } catch (error: unknown) {
       const code = getIbErrorCode(error);
-      const message = getIbErrorMessage(error) || error?.message || String(error || "");
+      const message = getIbErrorMessage(error) || (error instanceof Error ? error.message : undefined) || String(error || "");
       await disconnect();
       if (!isClientIdInUseError(code, message)) {
         throw error;

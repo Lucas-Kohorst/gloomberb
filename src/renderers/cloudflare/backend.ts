@@ -84,9 +84,14 @@ export async function handleHostedBackendRpc(env: Env, user: HostedUser | null, 
       userId: user?.id ?? null,
       message: error instanceof Error ? error.message : String(error),
     }));
+    const raw = error instanceof Error ? error.message : "";
+    const clientMessage =
+      raw.includes("Authentication") ? "Authentication required." :
+      raw.includes("not available in the hosted client yet") ? raw :
+      "Hosted request failed. Check server logs for details.";
     return Response.json({
       ok: false,
-      error: error instanceof Error ? error.message : "Hosted request failed.",
+      error: clientMessage,
     }, { status: 400 });
   }
 }
@@ -154,6 +159,22 @@ async function dispatch(
           setCookie: upstream.headers.getSetCookie?.() ?? [],
           body: await upstream.text(),
         };
+      }
+      const fetchUrl = new URL(url);
+      const hostname = fetchUrl.hostname.toLowerCase();
+      const blockedHosts = ["localhost", "127.0.0.1", "0.0.0.0", "::1"];
+      const blockedPrefixes = [
+        "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.",
+        "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.",
+        "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+        "192.168.", "169.254.",
+      ];
+      if (
+        blockedHosts.includes(hostname) ||
+        blockedPrefixes.some(prefix => hostname.startsWith(prefix)) ||
+        hostname.endsWith(".local") || hostname.endsWith(".internal")
+      ) {
+        throw new Error("Blocked: http.fetch to private/internal host");
       }
       return handleHttpFetch(request.payload);
     }

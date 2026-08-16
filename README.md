@@ -171,6 +171,7 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb shot [...]` | Capture a pane-backed screenshot |
 | `gloomberb predictions [...]` | Launch Prediction Markets |
 | `gloomberb plugins` | List installed plugins |
+| `gloomberb plugin-search <query>` | Search for plugins on GitHub |
 | `gloomberb install <user/repo>` | Install a plugin from GitHub |
 | `gloomberb remove <name>` | Remove an installed plugin |
 | `gloomberb update [name]` | Update plugins |

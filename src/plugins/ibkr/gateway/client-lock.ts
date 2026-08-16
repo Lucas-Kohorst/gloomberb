@@ -128,8 +128,9 @@ export class IbkrClientLockManager {
       await this.release();
       this.claimedLock = { clientId, requestedClientId, path };
       return true;
-    } catch (error: any) {
-      if (error?.code !== "EEXIST") throw error;
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code !== "EEXIST") throw error;
     }
 
     const lock = await readClientLock(path);

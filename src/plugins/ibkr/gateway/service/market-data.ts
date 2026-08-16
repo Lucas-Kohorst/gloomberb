@@ -19,8 +19,8 @@ export async function withIbkrMarketDataFallback<T>({
 }): Promise<T> {
   try {
     return await operation();
-  } catch (error: any) {
-    const message = error?.message || String(error || "");
+  } catch (error: unknown) {
+    const message = (error instanceof Error ? error.message : undefined) || String(error || "");
     const isPermission = isMarketDataPermissionError(undefined, message);
     const isTimeout = message.includes("timed out");
     const isNoData = message.includes("No valid market data");

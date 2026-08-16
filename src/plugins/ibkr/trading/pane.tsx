@@ -134,8 +134,8 @@ export function TradingPane({ focused, width, height }: PaneProps) {
         updateTradingPaneState({ accountId: inferred });
       }
       setTradingMessage(`Refreshed ${selectedInstance.label}.`, undefined);
-    } catch (error: any) {
-      setTradingMessage(undefined, error?.message || `Failed to refresh ${selectedInstance.label}.`);
+    } catch (error: unknown) {
+      setTradingMessage(undefined, (error instanceof Error ? error.message : undefined) || `Failed to refresh ${selectedInstance.label}.`);
     } finally {
       setTradingBusy(false);
     }
@@ -206,8 +206,8 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       await gatewayService.cancelOrder(normalizedConfig.gateway, selectedOrder.orderId);
       setTradingMessage(`Cancelled order ${selectedOrder.orderId}.`, undefined);
       await refresh();
-    } catch (error: any) {
-      setTradingMessage(undefined, error?.message || "Failed to cancel order.");
+    } catch (error: unknown) {
+      setTradingMessage(undefined, (error instanceof Error ? error.message : undefined) || "Failed to cancel order.");
     } finally {
       setTradingBusy(false);
     }
