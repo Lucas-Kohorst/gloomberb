@@ -12,16 +12,6 @@ export interface ChartSharePayload {
   spec: ChartSpec;
 }
 
-export type SharePayloadData =
-  | { kind: "article"; data: unknown }
-  | { kind: "chart"; data: ChartSharePayload };
-
-export interface ShareEnvelope {
-  kind: ShareKind;
-  data: unknown;
-  createdAt: string;
-}
-
 // ---------------------------------------------------------------------------
 // Short ID URL helpers
 // ---------------------------------------------------------------------------
@@ -87,18 +77,6 @@ export function isPublicShareLocation(): boolean {
 // Inline payload helpers (base64url, works in browser + Node + Bun)
 // ---------------------------------------------------------------------------
 
-function base64urlEncode(data: string): string {
-  const bytes = new TextEncoder().encode(data);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  const base64 = typeof btoa === "function"
-    ? btoa(binary)
-    : Buffer.from(data, "utf-8").toString("base64");
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 function base64urlDecode(encoded: string): string | null {
   try {
     const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
@@ -113,37 +91,6 @@ function base64urlDecode(encoded: string): string | null {
       return new TextDecoder().decode(bytes);
     }
     return Buffer.from(base64, "base64").toString("utf-8");
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Encode a share envelope inline (for URL-embedded shares that don't need a
- * short ID). Returns a base64url string.
- */
-export function encodeShareEnvelope(envelope: Omit<ShareEnvelope, "createdAt">): string {
-  return base64urlEncode(JSON.stringify(envelope));
-}
-
-/**
- * Decode an inline base64url share envelope. Returns null if the payload is
- * invalid or malformed.
- */
-export function decodeShareEnvelope(encoded: string): ShareEnvelope | null {
-  const json = base64urlDecode(encoded);
-  if (!json) return null;
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    if (typeof parsed.kind !== "string") return null;
-    if (parsed.kind !== "article" && parsed.kind !== "chart") return null;
-    if (typeof parsed.createdAt !== "string" && parsed.createdAt !== undefined) return null;
-    return {
-      kind: parsed.kind,
-      data: parsed.data,
-      createdAt: parsed.createdAt ?? new Date(0).toISOString(),
-    };
   } catch {
     return null;
   }

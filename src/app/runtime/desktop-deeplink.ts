@@ -557,6 +557,18 @@ function handleOpenArticleReader(
   });
 }
 
+/**
+ * A `/s/{id}` path skips the onboarding gate before the share is known to
+ * exist, so the reader can open without a blocking network call at bootstrap.
+ * When the id turns out to be bogus, drop back to the root so the visitor meets
+ * the normal gate instead of sitting in an anonymous workspace.
+ */
+function leaveUnresolvedShareLocation(): void {
+  if (typeof window === "undefined") return;
+  if (!/^\/s\/[A-Za-z0-9_-]+$/.test(window.location.pathname)) return;
+  window.history.replaceState(null, "", "/");
+}
+
 async function handleOpenShare(
   action: Extract<DesktopDeepLinkAction, { type: "open-share" }>,
   pluginRegistry: PluginRegistry,
@@ -566,10 +578,12 @@ async function handleOpenShare(
     resolved = await resolveShare(action.shortId);
   } catch (error) {
     notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to resolve share.");
+    leaveUnresolvedShareLocation();
     return;
   }
   if (!resolved) {
     notifyError(pluginRegistry, "This share link is no longer available.");
+    leaveUnresolvedShareLocation();
     return;
   }
 
