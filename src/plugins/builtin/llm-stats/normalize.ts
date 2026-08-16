@@ -28,8 +28,6 @@ export function llmStatsSortValue(
       return row.totalCalls;
     case "ttft":
       return row.avgTtft;
-    case "released":
-      return row.releaseDate ?? "";
   }
 }
 
@@ -70,7 +68,6 @@ export function defaultSortDirection(
   switch (columnId) {
     case "model":
     case "org":
-    case "released":
       return "asc";
     case "tps":
     case "calls":

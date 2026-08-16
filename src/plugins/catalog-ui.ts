@@ -15,6 +15,7 @@ import {
   marketOverviewPlugin,
   portfolioPlugin,
 } from "./builtin/composite-plugins";
+import { llmStatsPlugin } from "./builtin/llm-stats";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 
@@ -30,6 +31,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   substackPlugin,
   notesPlugin,
   aiPlugin,
+  llmStatsPlugin,
   predictionMarketsPlugin,
   marketOverviewPlugin,
   macroPlugin,

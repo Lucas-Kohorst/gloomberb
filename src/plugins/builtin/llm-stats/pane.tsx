@@ -145,8 +145,6 @@ function renderCell(
       return { text: formatCalls(row.totalCalls), color: sel ?? colors.textDim };
     case "ttft":
       return { text: formatMs(row.avgTtft), color: sel ?? latencyColor(row.avgTtft) ?? colors.textDim };
-    case "released":
-      return { text: formatReleaseDate(row.releaseDate), color: sel ?? colors.textDim };
   }
 }
 
@@ -179,7 +177,7 @@ function BenchmarkDetail({ row, width }: { row: LlmStatsRow; width: number }) {
   return (
     <ScrollBox flexGrow={1} scrollY>
       <Box flexDirection="column" paddingX={1} gap={lineGap}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{row.displayName}</Text>
+        {/* The stack detail title already names the model. */}
         <Text fg={colors.textDim}>
           {row.organization}
           {row.tier ? ` · ${row.tier}` : ""}
@@ -194,8 +192,8 @@ function BenchmarkDetail({ row, width }: { row: LlmStatsRow; width: number }) {
         <StatRow label="P95 latency" value={formatMs(row.p95Latency)} color={latencyColor(row.p95Latency)} width={width} />
         <StatRow label="Avg TTFT" value={formatMs(row.avgTtft)} color={latencyColor(row.avgTtft)} width={width} />
         <StatRow label="Failure rate" value={formatFailureRate(row.failureRate)} color={failureColor(row.failureRate)} width={width} />
-        <StatRow label="Total calls" value={row.totalCalls > 0 ? formatNumber(row.totalCalls) : "—"} color={colors.textDim} width={width} />
-        <StatRow label="Failed calls" value={row.failedCalls > 0 ? formatNumber(row.failedCalls) : "—"} color={colors.textDim} width={width} />
+        <StatRow label="Total calls" value={row.totalCalls > 0 ? formatNumber(row.totalCalls, 0) : "—"} color={colors.textDim} width={width} />
+        <StatRow label="Failed calls" value={row.failedCalls > 0 ? formatNumber(row.failedCalls, 0) : "—"} color={colors.textDim} width={width} />
 
         <Box height={1} />
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Model</Text>
@@ -302,12 +300,12 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
       if (isPlainKey(event, "o")) {
         event.preventDefault?.();
         event.stopPropagation?.();
-        if (selected?.url) openUrl(selected.url);
+        openSelected();
         return true;
       }
       return false;
     },
-    [focusSearch, load, openSelected, selected?.url],
+    [focusSearch, load, openSelected],
   );
 
   useShortcut((event) => {
