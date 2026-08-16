@@ -153,6 +153,8 @@ export function parseRootShortcutIntent({
     kind = match.argKind === "ticker-list" && /[,\n]\s*$/.test(trimmed) ? "partial" : "complete";
   } else if (completionQuery) {
     kind = "inferred-complete";
+  } else if (match.source === "pane-template" && match.template?.shortcut?.argOptional) {
+    kind = "complete";
   } else {
     kind = "partial";
   }

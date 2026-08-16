@@ -14,7 +14,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
-import { buildYoutubeLiveEmbedUrl, fallbackTvStream } from "./youtube-embed";
+import { buildYoutubeLiveEmbedUrl } from "./youtube-embed";
 import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
@@ -27,7 +27,6 @@ function webPlayableStream(
     ...stream,
     manifestUrl: buildYoutubeLiveEmbedUrl(channel.channelId, {
       muted: true,
-      origin: typeof window !== "undefined" ? window.location.origin : undefined,
       videoId: stream.videoId || undefined,
     }),
   };
@@ -91,13 +90,8 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
       setStream(isDesktop ? webPlayableStream(channel, nextStream) : nextStream);
     } catch (cause) {
       if (generation !== generationRef.current) return;
-      if (isDesktop) {
-        setStream(fallbackTvStream(channel, { origin: window.location.origin }));
-        setError(null);
-      } else {
-        setStream(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
-      }
+      setStream(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (generation === generationRef.current) setLoading(false);
     }
@@ -275,7 +269,6 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         <MediaSurface
           src={buildYoutubeLiveEmbedUrl(channel.channelId, {
             muted: true,
-            origin: typeof window !== "undefined" ? window.location.origin : undefined,
             videoId: stream.videoId || undefined,
           })}
           title={stream.title}

@@ -46,6 +46,13 @@ const paneTemplates: PaneTemplateDef[] = [
     description: "Search provider instruments",
     shortcut: { prefix: "SRCH", argPlaceholder: "query", argKind: "text" },
   },
+  {
+    id: "sec-pane",
+    paneId: "sec",
+    label: "SEC",
+    description: "Browse recent SEC filings",
+    shortcut: { prefix: "SEC", argPlaceholder: "ticker or company", argKind: "text", argOptional: true },
+  },
 ];
 
 const pluginCommands: CommandDef[] = [{
@@ -132,6 +139,28 @@ describe("ticker data root shortcuts", () => {
     if (intent.source === "pane-template") {
       expect(intent.template.id).toBe("provider-search-pane");
       expect(intent.argText).toBe("");
+    }
+  });
+
+  test("SEC without a ticker opens the broad filings browser", () => {
+    const intent = parse("SEC");
+    expect(intent.kind).toBe("complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.source).toBe("pane-template");
+    if (intent.source === "pane-template") {
+      expect(intent.template.id).toBe("sec-pane");
+      expect(intent.argText).toBe("");
+    }
+  });
+
+  test("SEC with a ticker keeps the browser query", () => {
+    const intent = parse("SEC AAPL");
+    expect(intent.kind).toBe("complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.source).toBe("pane-template");
+    if (intent.source === "pane-template") {
+      expect(intent.template.id).toBe("sec-pane");
+      expect(intent.argText).toBe("AAPL");
     }
   });
 
