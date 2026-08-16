@@ -29,7 +29,7 @@ export const pollsPlugin: GloomPlugin = {
       id: "polls-pane",
       paneId: POLLS_PANE_ID,
       label: "Polls",
-      description: "Browse VoteHub political polls by type, with results and source links.",
+      description: "Browse VoteHub political polls by type — approval, favorability, generic ballot, Senate, governor, House — with trend charts, pollster breakdowns, search, and source links.",
       keywords: ["polls", "votehub", "approval", "favorability", "generic", "ballot", "senate", "governor"],
       shortcut: { prefix: "POLL" },
       createInstance: () => ({ placement: "floating" }),

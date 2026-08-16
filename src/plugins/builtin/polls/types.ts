@@ -32,6 +32,7 @@ export interface PollRow {
   pollster: string;
   population: string;
   sampleSize: number | null;
+  marginOfError: number | null;
   startDate: string | null;
   endDate: string | null;
   result: string;
@@ -51,3 +52,26 @@ export type PollTabId =
   | "us-senator"
   | "governor"
   | "us-representative";
+
+export type PollDetailTab = "overview" | "trend" | "pollsters";
+
+export interface PollTrendPoint {
+  date: string;
+  value: number;
+  pollster: string;
+}
+
+export interface PollsterAverage {
+  pollster: string;
+  count: number;
+  avgPct: number;
+  totalSample: number;
+  lastDate: string | null;
+}
+
+export interface PollAverageSummary {
+  choice: string;
+  avgPct: number;
+  pollCount: number;
+  totalSample: number;
+}
