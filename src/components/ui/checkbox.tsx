@@ -1,4 +1,4 @@
-import { type ComponentType } from "react";
+import { type ComponentType, useMemo } from "react";
 import { Box, Text, TextAttributes, useUiHost, type HostCheckboxProps } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
@@ -16,8 +16,8 @@ export function Checkbox({
   width,
   variant = "default",
 }: CheckboxProps) {
-  useRemoteUiNode({
-    role: "checkbox",
+  const registration = useMemo(() => ({
+    role: "checkbox" as const,
     label,
     disabled,
     actions: {
@@ -29,7 +29,8 @@ export function Checkbox({
       },
     },
     metadata: { checked, active, variant },
-  });
+  }), [label, disabled, onChange, checked, active, variant]);
+  useRemoteUiNode(registration);
 
   const HostCheckbox = useUiHost().Checkbox as ComponentType<CheckboxProps> | undefined;
   if (HostCheckbox) {
