@@ -1,4 +1,4 @@
-import { type ComponentType } from "react";
+import { type ComponentType, useMemo } from "react";
 import { useUiHost } from "../../../ui";
 import { OpenTuiDataTable } from "./opentui";
 import type {
@@ -19,16 +19,16 @@ export type {
 export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
   props: DataTableProps<T, C>,
 ) {
-  useRemoteUiNode({
+  const registration = useMemo(() => ({
     role: "table",
     label: "Data table",
     actions: {
-      selectRow: (input) => {
+      selectRow: (input: unknown) => {
         const index = resolveTableIndex(input, props);
         const item = index >= 0 ? props.items[index] : undefined;
         if (item) props.onSelect(item, index);
       },
-      activateRow: (input) => {
+      activateRow: (input: unknown) => {
         const index = resolveTableIndex(input, props);
         const item = index >= 0 ? props.items[index] : undefined;
         if (item) {
@@ -36,7 +36,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
           props.onActivate?.(item, index);
         }
       },
-      sort: (input) => {
+      sort: (input: unknown) => {
         const columnId = typeof input === "string"
           ? input
           : input && typeof input === "object" && typeof (input as { columnId?: unknown }).columnId === "string"
@@ -58,7 +58,18 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
       })),
       rowCount: props.items.length,
     },
-  });
+  }), [
+    props.sortColumnId,
+    props.sortDirection,
+    props.columns,
+    props.items,
+    props.onSelect,
+    props.onActivate,
+    props.onHeaderClick,
+    props.getItemKey,
+    props.isSelected,
+  ]);
+  useRemoteUiNode(registration);
   const HostDataTable = useUiHost().DataTable as
     | ComponentType<DataTableProps<T, C>>
     | undefined;
