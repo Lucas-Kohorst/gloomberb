@@ -105,7 +105,7 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     dataProvider,
     marketData,
     pluginRegistry,
-    ready: Promise.allSettled(pluginReadyPromises).then(() => {}),
+    ready: Promise.all(pluginReadyPromises).then(() => {}),
     destroy() {
       disposeHostedSyncTransport?.();
       setSharedMarketDataCoordinator(null);
