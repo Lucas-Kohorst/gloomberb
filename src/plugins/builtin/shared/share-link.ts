@@ -1,4 +1,5 @@
 import type { ChartSpec } from "../../../time-series/types";
+import { getBrowserLocation } from "../../../utils/browser-location";
 import { SHARE_HOSTED_ORIGIN } from "./article-share";
 
 // ---------------------------------------------------------------------------
@@ -52,8 +53,9 @@ export function parseShortShareId(pathname: string): string | null {
  * the deep-link bridge has mounted.
  */
 export function isPublicShareLocation(): boolean {
-  if (typeof window === "undefined") return false;
-  const { pathname, search } = window.location;
+  const location = getBrowserLocation();
+  if (!location) return false;
+  const { pathname, search } = location;
 
   // Inline article share: /article?a=...
   if (pathname === "/article") {
