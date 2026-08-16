@@ -3,11 +3,20 @@ import { getTvChannel, TV_CHANNELS, type TvChannel } from "./channels";
 
 const YOUTUBE_VIDEO_ID = /(?:^|[^a-zA-Z0-9_-])([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/;
 
+/**
+ * Guards the render path: an embed URL may only ever be built from a concrete
+ * video id, and callers must check before building so a bad id degrades to the
+ * offline state instead of throwing mid-render.
+ */
+export function isValidYoutubeVideoId(videoId: string | undefined | null): videoId is string {
+  return !!videoId && YOUTUBE_VIDEO_ID.test(videoId);
+}
+
 export function buildYoutubeLiveEmbedUrl(
   videoId: string,
   options?: { muted?: boolean },
 ): string {
-  if (!YOUTUBE_VIDEO_ID.test(videoId)) {
+  if (!isValidYoutubeVideoId(videoId)) {
     throw new Error("A concrete YouTube video ID is required for an embed URL.");
   }
   const params = new URLSearchParams({

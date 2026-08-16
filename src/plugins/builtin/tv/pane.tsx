@@ -14,7 +14,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
-import { buildYoutubeLiveEmbedUrl } from "./youtube-embed";
+import { buildYoutubeLiveEmbedUrl, isValidYoutubeVideoId } from "./youtube-embed";
 import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
@@ -86,7 +86,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         ? await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force })
         : await resolveTvStream(channel, { force });
       if (generation !== generationRef.current) return;
-      if (isDesktop && !nextStream.videoId) {
+      if (isDesktop && !isValidYoutubeVideoId(nextStream.videoId)) {
         throw new Error(`${channel.name} does not currently have a public live stream.`);
       }
       setStream(isDesktop ? webPlayableStream(channel, nextStream) : nextStream);
@@ -267,7 +267,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
           <Text fg={colors.warning}>{error ?? `${channel.name} is offline.`}</Text>
           <Button label="Try again" variant="primary" onPress={refresh} />
         </Box>
-      ) : isDesktop && stream.videoId ? (
+      ) : isDesktop && isValidYoutubeVideoId(stream.videoId) ? (
         <MediaSurface
           src={buildYoutubeLiveEmbedUrl(stream.videoId, {
             muted: true,
