@@ -244,11 +244,15 @@ function AppInner({
     stateRef,
   });
 
-  // A public share is a reader-only entry point. Once the deep-link runtime
-  // creates the reader pane, hide the saved workspace behind it so the article
-  // is immediately readable rather than appearing as a small floating pane.
+  // A public share is a reader-only entry point for a visitor with no account.
+  // Once the deep-link runtime creates the reader pane, hide the throwaway
+  // anonymous workspace behind it so the article is immediately readable.
+  //
+  // This must never run for a signed-in reader: UPDATE_LAYOUT also replaces
+  // config.layouts, which the save effect below persists and syncs, so
+  // collapsing the layout here would destroy their real workspace.
   useEffect(() => {
-    if (!isPublicArticleShareLocation()) return;
+    if (!isPublicArticleShareLocation() || state.config.onboardingComplete) return;
     const articleInstance = state.config.layout.instances.find((instance) => (
       instance.paneId === "news-article" || instance.paneId === "substack-article"
     ));
@@ -272,7 +276,7 @@ function AppInner({
       },
       focusedPaneId: articleInstance.instanceId,
     });
-  }, [dispatch, state.config.layout]);
+  }, [dispatch, state.config.layout, state.config.onboardingComplete]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
   useAppStartupRuntime({
