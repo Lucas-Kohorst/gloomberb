@@ -923,6 +923,9 @@ describe("Shell", () => {
       await testSetup!.mockMouse.release(55, 34);
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await testSetup!.renderOnce();
+      }
     });
 
     expect(controls.state?.config.layout.dockRoot).toBeNull();

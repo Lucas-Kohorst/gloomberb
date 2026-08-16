@@ -4,7 +4,7 @@ import { Window } from "happy-dom";
 // The desktop host is the only renderer with a real DOM underneath it, so its
 // mouse contract needs a DOM to be tested against.
 const testWindow = new Window({ url: "http://localhost" });
-Object.assign(globalThis, {
+const globals: Record<string, unknown> = {
   window: testWindow,
   document: testWindow.document,
   navigator: testWindow.navigator,
@@ -14,7 +14,15 @@ Object.assign(globalThis, {
   Node: testWindow.Node,
   requestAnimationFrame: (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 8),
   cancelAnimationFrame: (id: number) => clearTimeout(id),
-});
+};
+for (const [name, value] of Object.entries(globals)) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
 
 import { expect, test } from "bun:test";
 import { act } from "react";
