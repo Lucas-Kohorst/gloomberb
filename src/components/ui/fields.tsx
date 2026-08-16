@@ -1,5 +1,5 @@
 import { Box, Input, Span, Text, useUiHost } from "../../ui";
-import { useEffect, useRef, useState, type ComponentType, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type RefObject } from "react";
 import { type InputRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
@@ -56,22 +56,23 @@ export function TextField({
   onMouseDown,
   onKeyDown,
 }: TextFieldProps) {
-  useRemoteUiNode({
-    role: "text-field",
+  const registration = useMemo(() => ({
+    role: "text-field" as const,
     label: label ?? placeholder,
     actions: {
-      setValue: (input) => {
+      setValue: (input: unknown) => {
         const nextValue = remoteStringValue(input);
         onChange?.(nextValue);
       },
-      submit: (input) => {
+      submit: (input: unknown) => {
         const nextValue = remoteStringValue(input, value ?? "");
         onSubmit?.(nextValue);
       },
       blur: () => onBlur?.(value ?? ""),
     },
     metadata: { value, placeholder, focused, type, variant },
-  });
+  }), [label, placeholder, onChange, onSubmit, onBlur, value, focused, type, variant]);
+  useRemoteUiNode(registration);
   const HostTextField = useUiHost().TextField as ComponentType<TextFieldProps> | undefined;
   if (HostTextField) {
     return (

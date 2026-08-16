@@ -88,6 +88,9 @@ export function useRemoteUiRegistry(): RemoteUiRegistry | null {
 }
 
 export function useRemoteUiNode(registration: RemoteUiNodeRegistration | null | undefined): string | null {
+  // The registration effect is keyed on `registration` identity. Callers must
+  // pass a memoized registration object (useMemo) — an inline literal would
+  // create a new object every render and re-register on every commit.
   const registry = useRemoteUiRegistry();
   const generatedId = useId();
   const nodeId = useMemo(() => `ui:${generatedId.replace(/:/g, "")}`, [generatedId]);
@@ -99,7 +102,7 @@ export function useRemoteUiNode(registration: RemoteUiNodeRegistration | null | 
       return;
     }
     registry.register(nodeId, registration);
-  });
+  }, [registry, nodeId, registration]);
 
   useEffect(() => {
     return () => registry?.unregister(nodeId);

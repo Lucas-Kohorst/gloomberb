@@ -1,5 +1,5 @@
 import { Box, Text, Textarea, useUiHost } from "../../ui";
-import { type ComponentType, type RefObject } from "react";
+import { type ComponentType, type RefObject, useMemo } from "react";
 import { type TextareaRenderable } from "../../ui";
 import { colors } from "../../theme/colors";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
@@ -58,11 +58,11 @@ export function MessageComposer({
   keyBindings,
   wrapText = false,
 }: MessageComposerProps) {
-  useRemoteUiNode({
-    role: "message-composer",
+  const registration = useMemo(() => ({
+    role: "message-composer" as const,
     label: placeholder || "Message composer",
     actions: {
-      setValue: (input) => {
+      setValue: (input: unknown) => {
         const value = remoteStringValue(input);
         onFocusRequest?.();
         onInput?.(value);
@@ -77,7 +77,8 @@ export function MessageComposer({
       },
     },
     metadata: { focused, placeholder, height },
-  });
+  }), [placeholder, onFocusRequest, onInput, onSubmit, inputRef, focused, height]);
+  useRemoteUiNode(registration);
   const HostMessageComposer = useUiHost().MessageComposer as ComponentType<MessageComposerProps> | undefined;
   if (HostMessageComposer) {
     return (
