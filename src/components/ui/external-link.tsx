@@ -1,10 +1,12 @@
 import { Box, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
+import { safeExternalUrl } from "../../utils/external-url";
 import { linkContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../../ui";
 
-export function openUrl(url: string) {
-  if (!url.trim()) return;
+export function openUrl(rawUrl: string) {
+  const url = safeExternalUrl(rawUrl);
+  if (!url) return;
 
   const browserWindow = (globalThis as { window?: { open?: (url: string, target?: string, features?: string) => void } }).window;
   if (typeof browserWindow?.open === "function") {

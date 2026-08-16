@@ -7,6 +7,7 @@ import type {
   DesktopRestartMessage,
   DesktopWindowControlAction,
 } from "../../shared/protocol";
+import { safeExternalUrl } from "../../../../utils/external-url";
 import { getContextMenuRequestId, normalizeContextMenuItems } from "../context-menu/normalize";
 import { MAIN_WINDOW_RPC_KEY } from "../window/focus";
 
@@ -102,12 +103,14 @@ export function handleDesktopHostRequest<TRpc>({
       }
       return null;
     }
-    case "host.openExternal":
+    case "host.openExternal": {
       if (typeof request.payload.url !== "string") {
         throw new Error("host.openExternal requires a URL.");
       }
-      Utils.openExternal(request.payload.url);
+      const externalUrl = safeExternalUrl(request.payload.url);
+      if (externalUrl) Utils.openExternal(externalUrl);
       return null;
+    }
     case "host.copyText":
       Utils.clipboardWriteText(normalizeText(request.payload.text) ?? "");
       return null;

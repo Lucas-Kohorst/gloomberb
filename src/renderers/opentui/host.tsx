@@ -5,6 +5,7 @@ import { resetTerminalInputState } from "../../utils/terminal-input-reset";
 import type { KeyEventLike } from "../../react/input";
 import type { NativeRendererHost, PixelResolution, RendererHost } from "../../ui/host";
 import { colors } from "../../theme/colors";
+import { safeExternalUrl } from "../../utils/external-url";
 
 export { useKeyboard, useTerminalDimensions };
 
@@ -95,7 +96,9 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
 
   const rendererHost: RendererHost = {
     requestExit: () => renderer.destroy(),
-    async openExternal(url) {
+    async openExternal(rawUrl) {
+      const url = safeExternalUrl(rawUrl);
+      if (!url) return;
       const command = process.platform === "darwin"
         ? ["open", url]
         : process.platform === "win32"
