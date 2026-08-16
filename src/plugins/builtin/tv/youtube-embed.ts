@@ -3,10 +3,22 @@ import { getTvChannel, TV_CHANNELS, type TvChannel } from "./channels";
 
 const YOUTUBE_VIDEO_ID = /(?:^|[^a-zA-Z0-9_-])([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_-]|$)/;
 
+/**
+ * Guards the render path: an embed URL may only ever be built from a concrete
+ * video id, and callers must check before building so a bad id degrades to the
+ * offline state instead of throwing mid-render.
+ */
+export function isValidYoutubeVideoId(videoId: string | undefined | null): videoId is string {
+  return !!videoId && YOUTUBE_VIDEO_ID.test(videoId);
+}
+
 export function buildYoutubeLiveEmbedUrl(
-  channelId: string,
-  options?: { muted?: boolean; videoId?: string },
+  videoId: string,
+  options?: { muted?: boolean },
 ): string {
+  if (!isValidYoutubeVideoId(videoId)) {
+    throw new Error("A concrete YouTube video ID is required for an embed URL.");
+  }
   const params = new URLSearchParams({
     autoplay: "1",
     mute: options?.muted === false ? "0" : "1",
@@ -15,10 +27,7 @@ export function buildYoutubeLiveEmbedUrl(
     modestbranding: "1",
     enablejsapi: "1",
   });
-  if (options?.videoId) {
-    return `https://www.youtube.com/embed/${options.videoId}?${params}`;
-  }
-  return `https://www.youtube.com/embed/live_stream?channel=${channelId}&${params}`;
+  return `https://www.youtube.com/embed/${videoId}?${params}`;
 }
 
 export function isYoutubeEmbedUrl(url: string): boolean {
@@ -27,21 +36,18 @@ export function isYoutubeEmbedUrl(url: string): boolean {
 
 export function fallbackTvStream(
   channel: TvChannel,
-  options?: { muted?: boolean; videoId?: string; title?: string },
+  options: { muted?: boolean; videoId: string; title?: string },
 ): ResolvedLiveStream {
   const now = Date.now();
   return {
     provider: "youtube",
     sourceId: channel.id,
-    videoId: options?.videoId ?? "",
+    videoId: options.videoId,
     title: options?.title?.trim() || `${channel.name} Live`,
-    manifestUrl: buildYoutubeLiveEmbedUrl(channel.channelId, {
-      muted: options?.muted,
-      videoId: options?.videoId,
+    manifestUrl: buildYoutubeLiveEmbedUrl(options.videoId, {
+      muted: options.muted,
     }),
-    watchUrl: options?.videoId
-      ? `https://www.youtube.com/watch?v=${options.videoId}`
-      : channel.channelUrl,
+    watchUrl: `https://www.youtube.com/watch?v=${options.videoId}`,
     resolvedAt: now,
     expiresAt: now + 10 * 60 * 1000,
   };
@@ -55,26 +61,58 @@ export function extractYoutubeVideoId(value: string): string | null {
   return null;
 }
 
-export async function resolveYoutubeLivePage(
-  channel: TvChannel,
-  fetchImpl: typeof fetch = fetch,
-): Promise<ResolvedLiveStream> {
-  const response = await fetchImpl(`https://www.youtube.com/channel/${channel.channelId}/live`, {
+function extractLiveYoutubeVideoId(value: string): string | null {
+  const liveMarker = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/;
+  const videoBeforeLive = /"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,2_000}?(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/.exec(value)?.[1];
+  if (videoBeforeLive) return videoBeforeLive;
+  const liveBeforeVideo = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")[\s\S]{0,2_000}?"videoId":"([a-zA-Z0-9_-]{11})"/.exec(value)?.[1];
+  if (liveBeforeVideo) return liveBeforeVideo;
+  return liveMarker.test(value) ? extractYoutubeVideoId(value) : null;
+}
+
+function isYoutubeConsentPage(response: Response, html: string): boolean {
+  return response.url.includes("consent.youtube.com")
+    || /(?:Before you continue to YouTube|consent\.youtube\.com)/i.test(html);
+}
+
+async function fetchYoutubePage(url: string, fetchImpl: typeof fetch): Promise<{ response: Response; html: string }> {
+  const response = await fetchImpl(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; GloomberbTV/1.0)",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
+      "Cookie": "CONSENT=YES+cb.20210328-17-p0.en+FX+667",
     },
     redirect: "follow",
   });
   if (!response.ok) {
-    throw new Error(`${channel.name} live page is unavailable (${response.status}).`);
+    throw new Error(`YouTube live page is unavailable (${response.status}).`);
   }
-  const html = await response.text();
-  const videoId = extractYoutubeVideoId(response.url) ?? extractYoutubeVideoId(html);
+  return { response, html: await response.text() };
+}
+
+export async function resolveYoutubeLivePage(
+  channel: TvChannel,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ResolvedLiveStream> {
+  const livePage = await fetchYoutubePage(`https://www.youtube.com/channel/${channel.channelId}/live`, fetchImpl);
+  if (isYoutubeConsentPage(livePage.response, livePage.html)) {
+    throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
+  }
+
+  let page = livePage;
+  let videoId = extractYoutubeVideoId(page.response.url) ?? extractLiveYoutubeVideoId(page.html);
+  if (!videoId) {
+    page = await fetchYoutubePage(`https://www.youtube.com/channel/${channel.channelId}/videos`, fetchImpl);
+    if (isYoutubeConsentPage(page.response, page.html)) {
+      throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
+    }
+    videoId = extractLiveYoutubeVideoId(page.html);
+  }
   if (!videoId || !YOUTUBE_VIDEO_ID.test(videoId)) {
     throw new Error(`${channel.name} does not currently have a public live stream.`);
   }
-  const rawTitle = /<title>([^<]+)<\/title>/i.exec(html)?.[1]?.replace(/\s+-+\s+YouTube\s*$/i, "").trim();
+  const rawTitle = /<title>([^<]+)<\/title>/i.exec(page.html)?.[1]?.replace(/\s+-+\s+YouTube\s*$/i, "").trim();
   return fallbackTvStream(channel, {
     videoId,
     title: rawTitle && rawTitle !== "YouTube" ? rawTitle : undefined,

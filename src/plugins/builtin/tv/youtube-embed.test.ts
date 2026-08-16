@@ -3,24 +3,21 @@ import {
   buildYoutubeLiveEmbedUrl,
   extractYoutubeVideoId,
   isYoutubeEmbedUrl,
+  resolveYoutubeLivePage,
   resolveHostedTvStream,
 } from "./youtube-embed";
+import { getTvChannel } from "./channels";
 
 describe("youtube TV embed", () => {
-  test("builds a channel fallback and a concrete video embed without an origin", () => {
-    const channelUrl = buildYoutubeLiveEmbedUrl("UCIALMKvObZNtJ6AmdCLP7Lg", { muted: true });
-    expect(channelUrl).toContain("youtube.com/embed/live_stream?channel=UCIALMKvObZNtJ6AmdCLP7Lg");
-    expect(channelUrl).toContain("autoplay=1");
-    expect(channelUrl).toContain("mute=1");
-    expect(isYoutubeEmbedUrl(channelUrl)).toBe(true);
-
-    const videoUrl = buildYoutubeLiveEmbedUrl("UCIALMKvObZNtJ6AmdCLP7Lg", {
-      videoId: "abcdefghijk",
+  test("builds only concrete video embeds without an origin", () => {
+    const videoUrl = buildYoutubeLiveEmbedUrl("abcdefghijk", {
       muted: false,
     });
     expect(videoUrl).toContain("/embed/abcdefghijk?");
     expect(videoUrl).toContain("mute=0");
     expect(videoUrl).not.toContain("origin=");
+    expect(videoUrl).not.toContain("live_stream");
+    expect(() => buildYoutubeLiveEmbedUrl("")).toThrow("concrete YouTube video ID");
   });
 
   test("extracts video ids from watch, embed, and innertube html", () => {
@@ -37,5 +34,31 @@ describe("youtube TV embed", () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  test("reports a YouTube consent interstitial precisely", async () => {
+    const fetchImpl = (async () => ({
+      ok: true,
+      status: 200,
+      url: "https://consent.youtube.com/m",
+      text: async () => "<title>Before you continue to YouTube</title>",
+    })) as typeof fetch;
+    await expect(resolveYoutubeLivePage(getTvChannel("bloomberg"), fetchImpl))
+      .rejects.toThrow("YouTube returned a consent page");
+  });
+
+  test("reports offline after neither the live page nor videos feed identifies a live video", async () => {
+    const pages = [
+      "<title>Bloomberg - YouTube</title><script>{\"videoId\":\"abcdefghijk\"}</script>",
+      "<title>Bloomberg videos - YouTube</title><script>{\"videoId\":\"zyxwvutsrqp\"}</script>",
+    ];
+    const fetchImpl = (async () => ({
+      ok: true,
+      status: 200,
+      url: "https://www.youtube.com/channel/UCIALMKvObZNtJ6AmdCLP7Lg/videos",
+      text: async () => pages.shift() ?? "",
+    })) as typeof fetch;
+    await expect(resolveYoutubeLivePage(getTvChannel("bloomberg"), fetchImpl))
+      .rejects.toThrow("does not currently have a public live stream");
   });
 });

@@ -14,7 +14,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
-import { buildYoutubeLiveEmbedUrl } from "./youtube-embed";
+import { buildYoutubeLiveEmbedUrl, isValidYoutubeVideoId } from "./youtube-embed";
 import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
@@ -25,9 +25,8 @@ function webPlayableStream(
 ): ResolvedLiveStream {
   return {
     ...stream,
-    manifestUrl: buildYoutubeLiveEmbedUrl(channel.channelId, {
+    manifestUrl: buildYoutubeLiveEmbedUrl(stream.videoId, {
       muted: true,
-      videoId: stream.videoId || undefined,
     }),
   };
 }
@@ -87,6 +86,9 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         ? await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force })
         : await resolveTvStream(channel, { force });
       if (generation !== generationRef.current) return;
+      if (isDesktop && !isValidYoutubeVideoId(nextStream.videoId)) {
+        throw new Error(`${channel.name} does not currently have a public live stream.`);
+      }
       setStream(isDesktop ? webPlayableStream(channel, nextStream) : nextStream);
     } catch (cause) {
       if (generation !== generationRef.current) return;
@@ -265,11 +267,10 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
           <Text fg={colors.warning}>{error ?? `${channel.name} is offline.`}</Text>
           <Button label="Try again" variant="primary" onPress={refresh} />
         </Box>
-      ) : isDesktop ? (
+      ) : isDesktop && isValidYoutubeVideoId(stream.videoId) ? (
         <MediaSurface
-          src={buildYoutubeLiveEmbedUrl(channel.channelId, {
+          src={buildYoutubeLiveEmbedUrl(stream.videoId, {
             muted: true,
-            videoId: stream.videoId || undefined,
           })}
           title={stream.title}
           poster={stream.posterUrl}
@@ -286,6 +287,11 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
             <Text fg={colors.warning}>{playbackError ?? "Live video unavailable."}</Text>
           </Box>
         </MediaSurface>
+      ) : isDesktop ? (
+        <Box flexGrow={1} flexDirection="column" justifyContent="center" alignItems="center" gap={1}>
+          <Text fg={colors.warning}>{`${channel.name} is offline.`}</Text>
+          <Button label="Try again" variant="primary" onPress={refresh} />
+        </Box>
       ) : (
         <Box flexGrow={1} flexDirection="column" alignItems="center" justifyContent="center" gap={1}>
           <ImageSurface
