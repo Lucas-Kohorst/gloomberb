@@ -63,6 +63,7 @@ import {
 } from "./pane-state";
 import { stashSubstackArticle } from "./article-stash";
 import { useSubstackReadState } from "./read-state";
+import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
@@ -360,6 +361,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     setDetailOpen(false);
   }, [createPaneFromTemplate, markArticleRead, selectedArticle, setDetailOpen]);
 
+  const copyShareLink = useCopyShareLink();
+  const shareSelectedArticle = useCallback(() => {
+    if (!selectedArticle) return;
+    void copyShareLink(encodeSubstackArticleForShare(selectedArticle));
+  }, [copyShareLink, selectedArticle]);
+
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
     setActiveTab(SUBSTACK_FEED_TAB_ID);
@@ -390,6 +397,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       openSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
     if (isPlainKey(event, "p")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -397,7 +410,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [openSelectedArticle, popOutSelectedArticle, refreshActive]);
+  }, [openSelectedArticle, popOutSelectedArticle, refreshActive, shareSelectedArticle]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "j", "down")) {
@@ -418,6 +431,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       openSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
     if (isPlainKey(event, "p")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -431,7 +450,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle]);
+  }, [loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle, shareSelectedArticle]);
 
   const includePublication = !activePublication;
   const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
@@ -445,6 +464,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     refreshActive,
     openSelectedArticle,
     popOutSelectedArticle,
+    shareSelectedArticle,
   });
 
   if (!auth) {

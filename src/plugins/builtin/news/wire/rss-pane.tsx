@@ -25,6 +25,7 @@ import { usePopOutNewsArticle } from "./news/pop-out";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/article-share";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
@@ -403,9 +404,15 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const copyShareLink = useCopyShareLink();
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailArticle ?? selectedArticle;
+
+  const shareSelectedArticle = useCallback(() => {
+    if (!readableArticle) return;
+    void copyShareLink(encodeNewsArticleForShare(readableArticle));
+  }, [copyShareLink, readableArticle]);
 
   const openSelectedSource = useCallback(() => {
     if (!readableArticle?.url) return;
@@ -417,10 +424,18 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   }, [popOutArticle, readableArticle]);
 
   useShortcut((event) => {
-    if (!focused || !readableArticle || !isPlainKey(event, "p")) return;
-    event.stopPropagation?.();
-    event.preventDefault?.();
-    popOutSelectedArticle();
+    if (!focused || !readableArticle) return;
+    if (isPlainKey(event, "p")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      popOutSelectedArticle();
+      return;
+    }
+    if (isPlainKey(event, "y")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      shareSelectedArticle();
+    }
   }, { enabled: focused && !!readableArticle });
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
@@ -442,6 +457,12 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       openSelectedSource();
       return true;
     }
+    if (isPlainKey(event, "y") && readableArticle) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
     if (isPlainKey(event, "p") && readableArticle) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -449,7 +470,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       return true;
     }
     return false;
-  }, [onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle]);
+  }, [onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   usePaneFooter("rss-articles", () => ({
     info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : [],
@@ -457,9 +478,10 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
+      ...(readableArticle ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [loading, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle]);
+  }), [loading, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
@@ -495,6 +517,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       detailTitle={detailArticle?.title}
       onRootKeyDown={handleKeyDown}
       onPopOut={popOutSelectedArticle}
+      onShare={readableArticle ? shareSelectedArticle : undefined}
       columns={["time", "source", "title", "categories"]}
       emptyStateTitle="No RSS articles."
       emptyStateHint="Press m to manage feeds and ensure feeds are enabled."

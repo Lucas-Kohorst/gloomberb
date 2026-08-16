@@ -135,6 +135,7 @@ interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
     stopPropagation?: () => void;
   }) => boolean | void;
   onPopOut?: () => void;
+  onShare?: () => void;
 }
 
 export function NewsArticleStackView({
@@ -156,6 +157,7 @@ export function NewsArticleStackView({
   rootBefore,
   onRootKeyDown,
   onPopOut,
+  onShare,
   columns: columnIds,
   emptyContent,
   emptyStateTitle,
@@ -235,12 +237,18 @@ export function NewsArticleStackView({
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => {
+    if (onShare && isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      onShare();
+      return true;
+    }
     if (!onPopOut || !isPlainKey(event, "p")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     onPopOut();
     return true;
-  }, [onPopOut]);
+  }, [onPopOut, onShare]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>

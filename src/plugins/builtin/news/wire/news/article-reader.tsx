@@ -8,6 +8,7 @@ import type { PaneProps } from "../../../../../types/plugin";
 import { useNewsArticleFooter } from "./footer";
 import { NewsDetailView } from "./detail-view";
 import { getStashedNewsArticle } from "./article-stash";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
 
 export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const [articleId] = usePaneSettingValue("articleId", "");
@@ -58,12 +59,18 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
     article ?? (url ? { source: source || undefined, url } : null)
   ), [article, source, url]);
 
+  const copyShareLink = useCopyShareLink();
+  const shareArticle = article
+    ? () => copyShareLink(encodeNewsArticleForShare(article))
+    : undefined;
+
   useNewsArticleFooter({
     registrationId: "news-article-reader",
     focused,
     article: footerArticle,
     loading,
     error,
+    onShare: shareArticle,
   });
 
   if (loading && !article) {

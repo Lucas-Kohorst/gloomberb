@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, type ScrollBoxRenderable, useRendererHost } from "../../../ui";
-import { EmptyState, Spinner } from "../../../components";
+import { EmptyState, Spinner, type PaneHint } from "../../../components";
 import { usePaneSettingValue } from "../../../state/app/context";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
 import { loadSubstackArticleDetail } from "./api/loaders";
 import { SubstackAuthError } from "./api/types";
 import { ArticleDetail } from "./article-detail";
@@ -93,6 +96,25 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     void rendererHost.openExternal(href);
   }, [article?.url, rendererHost, url]);
 
+  const copyShareLink = useCopyShareLink();
+  const shareArticle = useCallback(() => {
+    if (!article) return;
+    void copyShareLink(encodeSubstackArticleForShare(article));
+  }, [article, copyShareLink]);
+
+  useShortcut((event) => {
+    if (!focused || !article) return;
+    if (isPlainKey(event, "y")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      shareArticle();
+    }
+  }, { enabled: focused && !!article });
+
+  const shareHint: PaneHint[] = article
+    ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
+    : [];
+
   usePaneStatusLinkFooter({
     registrationId: "substack-article-reader",
     focused,
@@ -102,6 +124,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     loading: detail.loading,
     error: detail.error,
     showOpenHint: true,
+    trailingHints: shareHint,
   });
 
   if (!article) {

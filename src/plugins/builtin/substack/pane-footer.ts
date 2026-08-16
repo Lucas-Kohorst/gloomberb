@@ -19,6 +19,7 @@ export function useSubstackPaneFooter({
   refreshActive,
   openSelectedArticle,
   popOutSelectedArticle,
+  shareSelectedArticle,
 }: {
   auth: SubstackAuthState | null;
   detailOpen: boolean;
@@ -28,6 +29,7 @@ export function useSubstackPaneFooter({
   refreshActive: () => void;
   openSelectedArticle: () => void;
   popOutSelectedArticle: () => void;
+  shareSelectedArticle: () => void;
 }) {
   const statusLabel = cacheStatusLabel(activeFeedState.fetchedAt, activeFeedState.stale);
   const articleMetaLabel = detailOpen && selectedArticle
@@ -51,6 +53,7 @@ export function useSubstackPaneFooter({
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
+      { id: "share", key: "y", label: " share", onPress: shareSelectedArticle, disabled: !selectedArticle },
       { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
     ] : [],
   }), [
@@ -70,6 +73,7 @@ export function useSubstackPaneFooter({
     popOutSelectedArticle,
     refreshActive,
     selectedArticle?.url,
+    shareSelectedArticle,
     statusLabel,
   ]);
 }
