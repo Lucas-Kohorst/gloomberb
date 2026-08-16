@@ -31,5 +31,9 @@ jobs:
 
       - name: Cloudflare Worker types are in sync
         run: |
-          bunx wrangler types
-          git diff --exit-code worker-configuration.d.ts
+          if [ -f wrangler.jsonc ]; then
+            bunx wrangler types --config wrangler.jsonc
+            git diff --exit-code worker-configuration.d.ts
+          else
+            echo "No Wrangler config on this branch; skipping Worker type generation."
+          fi
