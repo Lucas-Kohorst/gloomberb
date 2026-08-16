@@ -11,6 +11,7 @@ import {
   applyTheme,
   clearTransientThemePreview,
 } from "../../../../theme/colors";
+import { clampFontSize, MIN_FONT_SIZE_PX } from "../../../../theme/font-scale";
 import type { AppAction, AppState } from "../../../../state/app/context";
 import { isManualPortfolio } from "../../../../plugins/builtin/portfolio-list/mutations";
 import { CHART_RENDERER_PREFERENCES } from "../../../chart/core/types";
@@ -281,7 +282,13 @@ export function runDirectCommandAction(options: {
     case "font-size-increase":
     case "font-size-decrease": {
       const delta = command.id === "font-size-increase" ? 1 : -1;
-      const next = Math.min(20, Math.max(10, (state.config.fontSize ?? 12) + delta));
+      const current = clampFontSize(state.config.fontSize);
+      const next = clampFontSize(current + delta);
+      if (next === current) {
+        notify(`Font size already at ${next === MIN_FONT_SIZE_PX ? "minimum" : "maximum"} (${next}px)`, { type: "info" });
+        closeAll({ revertThemePreview: false });
+        return;
+      }
       const nextConfig = { ...state.config, fontSize: next };
       dispatch({ type: "SET_CONFIG", config: nextConfig });
       persistConfig(nextConfig);
