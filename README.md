@@ -314,6 +314,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Manage plugins |
+| `PLUG` | Search and install plugins from GitHub |
 
 ## Localized interface
 
