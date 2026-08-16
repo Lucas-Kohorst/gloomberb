@@ -11,6 +11,7 @@ import type { DesktopDeepLinkBridge } from "../../types/desktop-deeplink";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { requestAccountManagementTab } from "../../plugins/builtin/account-management/navigation";
 import { chatController } from "../../plugins/builtin/chat/controller";
+import { getBrowserLocation, getBrowserWindow } from "../../utils/browser-location";
 import {
   NEWS_ARTICLE_READER_TEMPLATE_ID,
   SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
@@ -564,9 +565,10 @@ function handleOpenArticleReader(
  * the normal gate instead of sitting in an anonymous workspace.
  */
 function leaveUnresolvedShareLocation(): void {
-  if (typeof window === "undefined") return;
-  if (!/^\/s\/[A-Za-z0-9_-]+$/.test(window.location.pathname)) return;
-  window.history.replaceState(null, "", "/");
+  const browserWindow = getBrowserWindow();
+  if (!browserWindow) return;
+  if (!/^\/s\/[A-Za-z0-9_-]+$/.test(browserWindow.location.pathname)) return;
+  browserWindow.history.replaceState(null, "", "/");
 }
 
 async function handleOpenShare(
@@ -701,8 +703,10 @@ export function useDesktopDeepLinkRuntime({
   // Hosted shares arrive as normal browser navigations rather than through
   // the desktop deep-link bridge.
   useEffect(() => {
-    if (desktopDeepLinkBridge || typeof window === "undefined") return;
-    const match = /^\/s\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
+    if (desktopDeepLinkBridge) return;
+    const browserLocation = getBrowserLocation();
+    if (!browserLocation) return;
+    const match = /^\/s\/([A-Za-z0-9_-]+)$/.exec(browserLocation.pathname);
     if (!match) return;
     handleDesktopDeepLink(`https://terminal.kohor.st/share?s=${match[1]}`, {
       dispatch,

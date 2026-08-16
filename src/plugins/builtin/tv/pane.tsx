@@ -10,6 +10,7 @@ import {
 } from "../../../state/app/context";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { colors } from "../../../theme/colors";
+import { getBrowserLocation } from "../../../utils/browser-location";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
@@ -20,8 +21,9 @@ import { resolveTvStream } from "./youtube-stream";
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
 
 function activeWebOrigin(): string | undefined {
-  if (typeof window === "undefined") return undefined;
-  return /^https?:$/.test(window.location.protocol) ? window.location.origin : undefined;
+  const { protocol, origin } = getBrowserLocation() ?? {};
+  if (!protocol || !origin) return undefined;
+  return /^https?:$/.test(protocol) ? origin : undefined;
 }
 
 function webMediaSource(stream: ResolvedLiveStream): string {

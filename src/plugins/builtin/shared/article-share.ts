@@ -3,6 +3,7 @@ import type { NewsArticle } from "../../../news/types";
 import type { SubstackArticleSummary } from "../substack/types";
 import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
+import { getBrowserLocation } from "../../../utils/browser-location";
 import { usePluginAppActions } from "../../runtime";
 
 /**
@@ -183,9 +184,10 @@ export function decodeArticleSharePayload(encoded: string): ArticleSharePayload 
  * before the deep-link bridge has mounted.
  */
 export function isPublicArticleShareLocation(): boolean {
-  if (typeof window === "undefined") return false;
-  if (window.location.pathname !== "/article") return false;
-  const encoded = new URLSearchParams(window.location.search).get("a");
+  const location = getBrowserLocation();
+  if (!location) return false;
+  if (location.pathname !== "/article") return false;
+  const encoded = new URLSearchParams(location.search).get("a");
   return encoded != null && decodeArticleSharePayload(encoded) !== null;
 }
 
