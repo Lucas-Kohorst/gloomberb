@@ -26,6 +26,14 @@ jobs:
       - name: Test
         run: bun test
 
+      - name: Hosted bundle runs without Node globals
+        run: |
+          if [ -f scripts/check-web-bundle.ts ]; then
+            bun run web:check-bundle
+          else
+            echo "No hosted bundle check on this branch; skipping."
+          fi
+
       - name: Unused files, exports, and dependencies
         run: bunx knip --no-exit-code
 

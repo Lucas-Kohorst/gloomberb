@@ -24,6 +24,7 @@
     "cloud:build": "GLOOMBERB_CLOUD_HOSTED=1 bun run web:build",
     "cloud:dev": "bun run cloud:build && wrangler dev",
     "cloud:check": "bun run cloud:build && wrangler deploy --dry-run",
+    "web:check-bundle": "bun run cloud:build && bun run scripts/check-web-bundle.ts",
     "cloud:deploy": "bun run cloud:build && wrangler deploy",
     "desktop:view:build": "bun run scripts/build-electrobun-view.ts",
     "desktop:dev": "bun run scripts/electrobun-dev.ts",
