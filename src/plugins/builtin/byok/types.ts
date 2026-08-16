@@ -44,12 +44,26 @@ export interface ByokApiKeyEntry {
   apiUrl?: string;
   /** Data format hint for custom APIs. */
   dataFormat?: ByokDataFormat;
+  /** Optional OpenAPI/Swagger description used to direct custom API tests. */
+  openApiSpecUrl?: string;
+  openApiSpecBody?: string;
+  openApiAuthType?: ByokAuthType;
+  openApiAuthKey?: string;
+  openApiOperations?: ByokOpenApiOperation[];
   /** When the entry was created (epoch ms). */
   createdAt: number;
   /** When the key was last validated (epoch ms), if ever. */
   lastValidated?: number;
   /** Result of the last validation attempt. */
   lastValidationStatus?: "ok" | "error" | "untested";
+}
+
+export interface ByokOpenApiOperation {
+  method: "GET";
+  path: string;
+  summary?: string;
+  tags?: string[];
+  probeUrl?: string;
 }
 
 /** Shape persisted under the application plugin's config namespace. */

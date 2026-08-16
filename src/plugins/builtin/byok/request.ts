@@ -1,6 +1,7 @@
 import { httpFetch } from "../../../utils/http-transport";
 import { CUSTOM_SERVICE_OPTION, getByokKnownService } from "./services";
 import { BYOK_CUSTOM_SERVICE_ID, type ByokApiKeyEntry, type ByokAuthType } from "./types";
+import { ByokOpenApiError, parseByokOpenApi } from "./openapi";
 
 export function resolveByokService(entry: ByokApiKeyEntry) {
   if (entry.serviceId === BYOK_CUSTOM_SERVICE_ID) return CUSTOM_SERVICE_OPTION;
@@ -14,7 +15,7 @@ export function resolveByokRequestUrl(entry: ByokApiKeyEntry): string | null {
 
 export function buildByokAuthHeaders(entry: ByokApiKeyEntry): Record<string, string> {
   const service = resolveByokService(entry);
-  return authHeaders(service.authType, service.authKey, entry.apiKey);
+  return authHeaders(entry.openApiAuthType ?? service.authType, entry.openApiAuthKey ?? service.authKey, entry.apiKey);
 }
 
 function authHeaders(authType: ByokAuthType, authKey: string | undefined, apiKey: string): Record<string, string> {
@@ -27,9 +28,11 @@ function authHeaders(authType: ByokAuthType, authKey: string | undefined, apiKey
 
 export function applyByokQueryAuth(url: string, entry: ByokApiKeyEntry): string {
   const service = resolveByokService(entry);
-  if (service.authType !== "query" || !service.authKey) return url;
+  const authType = entry.openApiAuthType ?? service.authType;
+  const authKey = entry.openApiAuthKey ?? service.authKey;
+  if (authType !== "query" || !authKey) return url;
   const next = new URL(url);
-  next.searchParams.set(service.authKey, entry.apiKey);
+  next.searchParams.set(authKey, entry.apiKey);
   return next.toString();
 }
 
@@ -53,6 +56,16 @@ export interface ByokRequestResult {
   body: string;
 }
 
+export async function fetchByokSpec(entry: ByokApiKeyEntry): Promise<{ body: string; url: string }> {
+  const specUrl = entry.openApiSpecUrl?.trim();
+  if (!specUrl) throw new ByokOpenApiError("No OpenAPI spec URL configured.", "parse");
+  const result = await fetchByokUrl(specUrl, {
+    Accept: "application/json, text/plain, */*",
+  });
+  if (!result.ok) throw new ByokOpenApiError(`The OpenAPI spec URL could not be reached (${result.status}).`, "servers");
+  return { body: result.body, url: specUrl };
+}
+
 /** Detects whether the app is running on the hosted Cloudflare web client. */
 function isHostedWebClient(): boolean {
   try {
@@ -69,29 +82,30 @@ function isHostedWebClient(): boolean {
  * `httpFetch` (which uses the Electrobun backend on desktop) otherwise.
  */
 export async function fetchByokEndpoint(entry: ByokApiKeyEntry): Promise<ByokRequestResult> {
-  const rawUrl = resolveByokRequestUrl(entry);
+  let parsedSpec: ReturnType<typeof parseByokOpenApi> | undefined;
+  if (entry.openApiSpecBody || entry.openApiSpecUrl) {
+    parsedSpec = entry.openApiSpecBody
+      ? parseByokOpenApi(entry.openApiSpecBody, entry.openApiSpecUrl)
+      : await fetchByokSpec(entry).then(({ body, url }) => parseByokOpenApi(body, url));
+  }
+  const rawUrl = resolveByokRequestUrl(entry) ?? parsedSpec?.baseUrl;
   if (!rawUrl) throw new ByokRequestError("No API URL configured for this key.", "bad-url");
 
-  const url = applyByokQueryAuth(rawUrl, entry);
+  let targetUrl = rawUrl;
+  if (parsedSpec) targetUrl = parsedSpec.probe.probeUrl!;
+  const effectiveEntry = parsedSpec
+    ? { ...entry, openApiAuthType: parsedSpec.authType, openApiAuthKey: parsedSpec.authKey }
+    : entry;
+  const url = applyByokQueryAuth(targetUrl, effectiveEntry);
   const headers = {
     Accept: "application/json, text/csv, text/plain, */*",
-    ...buildByokAuthHeaders(entry),
+    ...buildByokAuthHeaders(effectiveEntry),
   };
 
-  if (isHostedWebClient()) {
-    return fetchByokViaProxy(url, headers);
-  }
-
-  const response = await httpFetch(url, { method: "GET", headers });
-  return {
-    ok: response.ok,
-    status: response.status,
-    contentType: response.headers.get("content-type") ?? "",
-    body: await response.text(),
-  };
+  return fetchByokUrl(url, headers);
 }
 
-async function fetchByokViaProxy(
+export async function fetchByokViaProxy(
   url: string,
   headers: Record<string, string>,
 ): Promise<ByokRequestResult> {
@@ -143,6 +157,17 @@ async function fetchByokViaProxy(
     status: result.status ?? 0,
     contentType: result.contentType ?? "",
     body: result.body ?? "",
+  };
+}
+
+async function fetchByokUrl(url: string, headers: Record<string, string>): Promise<ByokRequestResult> {
+  if (isHostedWebClient()) return fetchByokViaProxy(url, headers);
+  const response = await httpFetch(url, { method: "GET", headers });
+  return {
+    ok: response.ok,
+    status: response.status,
+    contentType: response.headers.get("content-type") ?? "",
+    body: await response.text(),
   };
 }
 
