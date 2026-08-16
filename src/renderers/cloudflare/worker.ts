@@ -100,6 +100,17 @@ async function serveApp(request: Request, env: Env): Promise<Response> {
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
+  headers.set(
+    "content-security-policy",
+    "default-src 'self'; "
+      + "script-src 'self' 'unsafe-inline'; "
+      + "style-src 'self' 'unsafe-inline'; "
+      + "img-src 'self' data: https:; "
+      + "connect-src 'self' https://api.gloom.sh; "
+      + "frame-ancestors 'none'; "
+      + "base-uri 'self'; "
+      + "form-action 'self'",
+  );
   return new Response(response.body, { status: response.status, headers });
 }
 
