@@ -68,6 +68,8 @@ export interface RootResultModelOptions {
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
   articleResultItems?: ResultItem[];
+  /** Local autocomplete rows for the custom chart (`G`) command. */
+  chartSeriesItems?: ResultItem[];
   runDirectCommand: (command: Command, arg: string) => void;
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
@@ -110,6 +112,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     rootQuery,
     rootShortcutIntent,
     articleResultItems = [],
+    chartSeriesItems = [],
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -164,6 +167,15 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       if (seenItemIds.has(item.id)) continue;
       seenItemIds.add(item.id);
       items.push(item);
+    }
+    // Local series autocomplete sits beneath the chart shortcut row, so the
+    // user can complete the expression without waiting on the AI assist.
+    if (rootShortcutIntent.argKind === "text" && rootShortcutIntent.argText.trim()) {
+      for (const item of chartSeriesItems) {
+        if (seenItemIds.has(item.id)) continue;
+        seenItemIds.add(item.id);
+        items.push(item);
+      }
     }
   } else if (
     rootShortcutIntent.kind !== "none"

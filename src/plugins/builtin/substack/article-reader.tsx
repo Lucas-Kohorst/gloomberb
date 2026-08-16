@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, type ScrollBoxRenderable, useRendererHost } from "../../../ui";
+import { Box } from "../../../ui";
 import { EmptyState, Spinner, type PaneHint } from "../../../components";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { useShortcut } from "../../../react/input";
@@ -9,10 +9,10 @@ import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
 import { loadSubstackArticleDetail } from "./api/loaders";
 import { SubstackAuthError } from "./api/types";
-import { ArticleDetail } from "./article-detail";
 import { getStashedSubstackArticle } from "./article-stash";
 import { emptyLoadState, errorMessage, type DetailState } from "./pane-state";
 import type { SubstackArticleDetail, SubstackArticleSummary } from "./types";
+import { JinaArticleReader, useJinaArticle } from "../shared/jina-reader";
 
 function summaryFromSettings(
   articleId: string,
@@ -40,7 +40,6 @@ function summaryFromSettings(
 }
 
 export function SubstackArticleReaderPane({ focused, width, height }: PaneProps) {
-  const rendererHost = useRendererHost();
   const [articleId] = usePaneSettingValue("articleId", "");
   const [title] = usePaneSettingValue("title", "Article");
   const [url] = usePaneSettingValue("url", "");
@@ -49,7 +48,6 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     ?? summaryFromSettings(articleId, title, url)
   ));
   const [detail, setDetail] = useState<DetailState>(emptyLoadState<SubstackArticleDetail>());
-  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const fetchGenRef = useRef(0);
 
   const loadDetail = useCallback((target: SubstackArticleSummary, force = false) => {
@@ -90,12 +88,6 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     loadDetail(next, false);
   }, [articleId, loadDetail, title, url]);
 
-  const openSelectedArticle = useCallback(() => {
-    const href = article?.url ?? url;
-    if (!href) return;
-    void rendererHost.openExternal(href);
-  }, [article?.url, rendererHost, url]);
-
   const copyShareLink = useCopyShareLink();
   const shareArticle = useCallback(() => {
     if (!article) return;
@@ -114,6 +106,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const shareHint: PaneHint[] = article
     ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
     : [];
+  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
 
   usePaneStatusLinkFooter({
     registrationId: "substack-article-reader",
@@ -121,8 +114,9 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     url: article?.url ?? url,
     source: article?.publicationName,
     label: "article",
-    loading: detail.loading,
-    error: detail.error,
+    loading: detail.loading || jina.loading,
+    error: detail.error ?? jina.error,
+    hints: article ? [{ id: "refresh", key: "r", label: "efresh", onPress: jina.refresh }] : [],
     showOpenHint: true,
     trailingHints: shareHint,
   });
@@ -145,14 +139,13 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <ArticleDetail
-        article={article}
-        detail={detail.data}
+      <JinaArticleReader
+        title={article.title}
+        url={article.url ?? url}
         width={width}
-        loading={detail.loading}
-        error={detail.error}
-        scrollRef={scrollRef}
-        onOpenArticle={openSelectedArticle}
+        height={height}
+        focused={focused}
+        state={jina}
       />
     </Box>
   );

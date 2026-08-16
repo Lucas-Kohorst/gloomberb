@@ -2,7 +2,7 @@ import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { usePaneFooter } from "../../../components";
+import { usePaneFooter, useUpdatedAgo } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
@@ -11,20 +11,11 @@ import { MAJOR_CURRENCIES, formatRate, type MajorCurrency } from "./pairs";
 
 const REFRESH_INTERVAL_MS = 60_000;
 
-function formatAge(ms: number): string {
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.floor(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
-}
-
 function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const [rates, setRates] = useState<Map<MajorCurrency, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
-  const [now, setNow] = useState(Date.now());
   const fetchGenRef = useRef(0);
 
   const fetchRates = useCallback(async () => {
@@ -64,11 +55,6 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(interval);
   }, [fetchRates]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 5_000);
-    return () => clearInterval(interval);
-  }, []);
-
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "r") {
@@ -86,12 +72,15 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
     return rowUsd / colUsd;
   }
 
-  const ageText = lastRefreshed ? `updated ${formatAge(now - lastRefreshed)}` : loading ? "loading…" : "";
+  const updatedAgo = useUpdatedAgo(lastRefreshed);
 
   usePaneFooter("fx-matrix", () => ({
-    info: ageText ? [{ id: "updated", parts: [{ text: ageText, tone: loading ? "muted" : "value" }] }] : [],
+    info: [
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+    ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchRates }],
-  }), [ageText, fetchRates, loading]);
+  }), [fetchRates, loading, updatedAgo]);
 
   // Row header: just the 3-letter code, no emoji (keeps width predictable)
   // Rates use flexGrow so they fill available space dynamically
