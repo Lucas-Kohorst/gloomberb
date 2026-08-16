@@ -12,6 +12,7 @@ import {
 import { debugPlugin } from "./builtin/debug";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
+import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
 import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
@@ -31,6 +32,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   pollsPlugin,
   substackPlugin,
   notesPlugin,
+  pluginDiscoveryPlugin,
   aiPlugin,
   predictionMarketsBackendPlugin,
   marketOverviewPlugin,
