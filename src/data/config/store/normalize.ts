@@ -12,6 +12,7 @@ import {
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
+import { clampFontSize } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig } from "./migrations";
 
@@ -106,12 +107,9 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
   return persisted;
 }
 
-const FONT_SIZE_MIN = 10;
-const FONT_SIZE_MAX = 20;
-
 function sanitizeFontSize(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(value)));
+  return clampFontSize(value);
 }
 
 function sanitizeStringArray(value: unknown, fallback: string[]): string[] {
