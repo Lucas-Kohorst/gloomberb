@@ -1,4 +1,5 @@
 import type { DesktopDeepLinkBridge } from "../../../types/desktop-deeplink";
+import { isPublicArticleShareLocation } from "../../../plugins/builtin/shared/article-share";
 
 function currentDeepLink(): string | null {
   const queryValue = new URLSearchParams(window.location.search).get("gloomberb");
@@ -8,7 +9,7 @@ function currentDeepLink(): string | null {
 
   // Detect the public /article share path and convert it to an internal
   // gloomberb:// deep link so the existing resolver handles it uniformly.
-  if (window.location.pathname === "/article") {
+  if (isPublicArticleShareLocation()) {
     const payload = new URLSearchParams(window.location.search).get("a");
     if (payload) {
       return `gloomberb://article?a=${encodeURIComponent(payload)}`;

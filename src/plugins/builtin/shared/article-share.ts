@@ -158,6 +158,19 @@ export function decodeArticleSharePayload(encoded: string): ArticleSharePayload 
   }
 }
 
+/**
+ * Returns true only for a decodable public article URL in a browser.
+ *
+ * Keep this check independent of the renderer so the app bootstrap can use it
+ * before the deep-link bridge has mounted.
+ */
+export function isPublicArticleShareLocation(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.location.pathname !== "/article") return false;
+  const encoded = new URLSearchParams(window.location.search).get("a");
+  return encoded != null && decodeArticleSharePayload(encoded) !== null;
+}
+
 // ---------------------------------------------------------------------------
 // URL builder
 // ---------------------------------------------------------------------------
