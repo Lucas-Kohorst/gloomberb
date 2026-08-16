@@ -11,6 +11,8 @@ export interface ReleaseInfo {
   publishedAt: string;
   updateAction: UpdateAction;
   compressed?: boolean;
+  /** Expected SHA-256 (hex) of the downloaded asset, from GitHub's asset digest. */
+  checksum?: string;
 }
 
 export interface UpdateProgress {
@@ -70,18 +72,29 @@ function getAssetBaseName(): string {
   return getAssetBaseNameForRuntime();
 }
 
+function parseAssetDigest(digest: string | undefined): string | undefined {
+  if (!digest) return undefined;
+  const prefix = "sha256:";
+  if (digest.startsWith(prefix)) {
+    return digest.slice(prefix.length).toLowerCase();
+  }
+  return undefined;
+}
+
 function resolveReleaseAsset(
-  assets: { name: string; browser_download_url: string }[],
-): { name: string; browser_download_url: string; compressed: boolean } | null {
+  assets: { name: string; browser_download_url: string; digest?: string }[],
+): { name: string; browser_download_url: string; compressed: boolean; checksum?: string } | null {
   const assetBaseName = getAssetBaseName();
   const gzAsset = assets.find((asset) => asset.name === `${assetBaseName}.gz`);
   if (gzAsset) {
-    return { ...gzAsset, compressed: true };
+    const { name, browser_download_url, digest } = gzAsset;
+    return { name, browser_download_url, compressed: true, checksum: parseAssetDigest(digest) };
   }
 
   const rawAsset = assets.find((asset) => asset.name === assetBaseName);
   if (rawAsset) {
-    return { ...rawAsset, compressed: false };
+    const { name, browser_download_url, digest } = rawAsset;
+    return { name, browser_download_url, compressed: false, checksum: parseAssetDigest(digest) };
   }
 
   return null;
@@ -249,7 +262,7 @@ export async function checkForUpdateDetailed(
     const data = (await res.json()) as {
       tag_name: string;
       published_at: string;
-      assets: { name: string; browser_download_url: string }[];
+      assets: { name: string; browser_download_url: string; digest?: string }[];
     };
 
     const version = data.tag_name.replace(/^v/, "");
@@ -274,6 +287,7 @@ export async function checkForUpdateDetailed(
         publishedAt: data.published_at,
         updateAction,
         compressed: asset.compressed,
+        checksum: asset.checksum,
       },
     };
   } catch (error: unknown) {
@@ -339,6 +353,7 @@ export async function performUpdate(
   try {
     const fsModulePath = "fs";
     const zlibModulePath = "zlib";
+    const cryptoModulePath = "crypto";
     const {
       renameSync,
       unlinkSync,
@@ -346,6 +361,7 @@ export async function performUpdate(
     } = await import(fsModulePath) as typeof import("fs");
     unlinkUpdatePath = unlinkSync;
     const { gunzipSync } = await import(zlibModulePath) as typeof import("zlib");
+    const { createHash } = await import(cryptoModulePath) as typeof import("crypto");
 
     onProgress({ phase: "downloading", percent: 0 });
 
@@ -378,6 +394,20 @@ export async function performUpdate(
       downloaded.set(chunk, offset);
       offset += chunk.byteLength;
     }
+
+    // Verify the SHA-256 checksum of the downloaded asset before installing.
+    // GitHub's asset digest covers the uploaded file (the compressed .gz when
+    // gzipped), so hash the raw bytes before decompression.
+    if (release.checksum) {
+      const hash = createHash("sha256").update(downloaded).digest("hex");
+      if (hash !== release.checksum) {
+        throw new Error(
+          `Checksum mismatch: expected ${release.checksum}, got ${hash}. ` +
+          "The downloaded binary may be corrupted or tampered with.",
+        );
+      }
+    }
+
     const nextBinary = release.compressed
       ? new Uint8Array(gunzipSync(downloaded))
       : downloaded;
