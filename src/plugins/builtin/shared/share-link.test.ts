@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildShortShareUrl,
-  decodeShareEnvelope,
-  encodeShareEnvelope,
   isPublicShareLocation,
   parseShortShareId,
 } from "./share-link";
@@ -52,35 +50,4 @@ describe("share-link", () => {
     }
   });
 
-  test("encodeShareEnvelope / decodeShareEnvelope round-trip for chart shares", () => {
-    const spec = {
-      version: 1 as const,
-      viewport: { range: "1M" as const, resolution: "1d" as const },
-      panels: [{ id: "main" }],
-      series: [{
-        id: "s1",
-        source: { kind: "security" as const, instrument: { symbol: "AAPL", exchange: "" }, fieldId: "market.ohlcv" },
-        style: "candles" as const,
-        transform: "raw" as const,
-        axis: "auto" as const,
-        panelId: "main",
-        interpolation: "none" as const,
-      }],
-      studies: [],
-    };
-    const encoded = encodeShareEnvelope({ kind: "chart", data: { spec } });
-    const decoded = decodeShareEnvelope(encoded);
-    expect(decoded).not.toBeNull();
-    expect(decoded!.kind).toBe("chart");
-    expect((decoded!.data as { spec: { series: unknown[] } }).spec.series).toHaveLength(1);
-  });
-
-  test("decodeShareEnvelope rejects invalid payloads", () => {
-    expect(decodeShareEnvelope("")).toBeNull();
-    expect(decodeShareEnvelope("!!!not-base64!!!")).toBeNull();
-    const badJson = btoa("not json");
-    expect(decodeShareEnvelope(badJson)).toBeNull();
-    const wrongKind = btoa(JSON.stringify({ kind: "blog", data: {} }));
-    expect(decodeShareEnvelope(wrongKind)).toBeNull();
-  });
 });

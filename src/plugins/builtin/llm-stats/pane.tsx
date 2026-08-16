@@ -85,7 +85,7 @@ function formatFailureRate(value: number): string {
 function formatContextLength(value: number | null): string {
   if (value == null || value <= 0) return "—";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 0)}K`;
+  if (value >= 1000) return `${(value / 1000).toFixed(0)}K`;
   return String(value);
 }
 
