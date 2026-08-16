@@ -6,6 +6,7 @@ import {
   fetchByokEndpoint,
   isByokTestSuccess,
   resolveByokRequestUrl,
+  ByokRequestError,
 } from "./request";
 import { BYOK_CUSTOM_SERVICE_ID, type ByokApiKeyEntry } from "./types";
 
@@ -83,5 +84,9 @@ describe("byok request helpers", () => {
         Authorization: "Bearer secret-key",
       },
     }]);
+  });
+
+  test("throws ByokRequestError when no URL is configured", async () => {
+    await expect(fetchByokEndpoint(entry({ apiUrl: "" }))).rejects.toBeInstanceOf(ByokRequestError);
   });
 });

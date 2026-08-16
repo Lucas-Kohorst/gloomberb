@@ -110,8 +110,9 @@ export const adjacentModule: PluginModule = {
       id: "adjacent",
       name: "Adjacent",
       kind: "prediction-market",
-      pluginId: "gloomberb-cloud",
+      pluginId: "adjacent",
       priority: 200,
+      authRequired: false,
     });
 
     // Commands

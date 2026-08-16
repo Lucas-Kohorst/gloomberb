@@ -5,6 +5,7 @@ import {
   reportConnectionRequest,
   setConnectionRequestReporter,
 } from "./register";
+import { createInitialConnectionState } from "./types";
 
 describe("connection source registry", () => {
   const disposers: Array<() => void> = [];
@@ -33,5 +34,28 @@ describe("connection source registry", () => {
 
     dispose();
     expect(listConnectionSources().some((source) => source.id === "votehub")).toBe(false);
+  });
+
+  test("persists authRequired on the source definition", () => {
+    const dispose = registerConnectionSource({
+      id: "test-public",
+      name: "Test Public",
+      kind: "api",
+      pluginId: "test",
+      authRequired: false,
+    });
+    disposers.push(dispose);
+
+    const source = listConnectionSources().find((s) => s.id === "test-public");
+    expect(source?.authRequired).toBe(false);
+  });
+
+  test("createInitialConnectionState propagates authRequired", () => {
+    const state = createInitialConnectionState("x", "X", "api", "p", 100, false, false);
+    expect(state.authRequired).toBe(false);
+    const state2 = createInitialConnectionState("y", "Y", "api", "p", 100, false, true);
+    expect(state2.authRequired).toBe(true);
+    const state3 = createInitialConnectionState("z", "Z", "api", "p", 100, false);
+    expect(state3.authRequired).toBeUndefined();
   });
 });

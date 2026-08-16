@@ -32,6 +32,7 @@ interface ProviderEntry {
   pluginId: string;
   priority: number;
   isWebSocket: boolean;
+  authRequired?: boolean;
 }
 
 function connectionKindFromCapability(kind: string): ConnectionKind {
@@ -68,8 +69,8 @@ export class ConnectionTracker {
     this.listCapabilities = listCapabilities;
     this.marketData = marketData;
 
-    this.ensureConnection(CLOUD_REST_ID, "Gloom Cloud", "asset-data", "gloomberb-cloud", 1, false);
-    this.ensureConnection(CLOUD_SOCKET_ID, "Gloom Cloud Stream", "websocket", "gloomberb-cloud", 0, true);
+    this.ensureConnection(CLOUD_REST_ID, "Gloom Cloud", "asset-data", "gloomberb-cloud", 1, false, true);
+    this.ensureConnection(CLOUD_SOCKET_ID, "Gloom Cloud Stream", "websocket", "gloomberb-cloud", 0, true, true);
 
     this.syncFromRegistry();
     this.wrapMarketData();
@@ -131,6 +132,7 @@ export class ConnectionTracker {
         source.pluginId,
         source.priority ?? 1000,
         source.isWebSocket === true,
+        source.authRequired,
       )) {
         changed = true;
       }
@@ -168,9 +170,10 @@ export class ConnectionTracker {
     pluginId: string,
     priority: number,
     isWebSocket: boolean,
+    authRequired?: boolean,
   ): boolean {
     if (this.states.has(id)) return false;
-    this.states.set(id, createInitialConnectionState(id, name, kind, pluginId, priority, isWebSocket));
+    this.states.set(id, createInitialConnectionState(id, name, kind, pluginId, priority, isWebSocket, authRequired));
     return true;
   }
 
