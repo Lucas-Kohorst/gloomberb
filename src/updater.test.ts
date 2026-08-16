@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, test } from "bun:test";
+import { createHash } from "crypto";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -388,6 +389,138 @@ describe("performUpdate", () => {
       expect(readFileSync(execPath)).toEqual(nextBinary);
       expect(progress[0]).toEqual({ phase: "downloading", percent: 0 });
       expect(progress).toContainEqual({ phase: "downloading", percent: 100 });
+      expect(progress.at(-1)).toEqual({ phase: "done" });
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("installs the binary when the SHA-256 checksum matches the compressed asset", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    const tempDir = mkdtempSync(join(tmpdir(), "gloomberb-update-"));
+    const execPath = join(tempDir, "gloomberb");
+    const nextBinary = Buffer.from("new-binary-verified");
+    const payload = gzipSync(nextBinary);
+    const checksum = createHash("sha256").update(payload).digest("hex");
+    const progress: UpdateProgress[] = [];
+
+    writeFileSync(execPath, Buffer.from("old-binary"));
+    chmodSync(execPath, 0o755);
+    globalThis.fetch = (async () => new Response(payload, {
+      status: 200,
+      headers: { "content-length": String(payload.length) },
+    })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: execPath, configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: [execPath],
+        configurable: true,
+      });
+
+      await performUpdate({
+        version: "9.9.9",
+        tagName: "v9.9.9",
+        downloadUrl: "https://example.com/gloomberb.gz",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+        compressed: true,
+        checksum,
+      }, (entry) => {
+        progress.push(entry);
+      });
+
+      expect(readFileSync(execPath)).toEqual(nextBinary);
+      expect(progress.at(-1)).toEqual({ phase: "done" });
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a tampered binary with a checksum mismatch and leaves the running binary intact", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    const tempDir = mkdtempSync(join(tmpdir(), "gloomberb-update-"));
+    const execPath = join(tempDir, "gloomberb");
+    const oldBinary = Buffer.from("old-binary");
+    const payload = gzipSync(Buffer.from("tampered-binary"));
+    const progress: UpdateProgress[] = [];
+
+    writeFileSync(execPath, oldBinary);
+    chmodSync(execPath, 0o755);
+    globalThis.fetch = (async () => new Response(payload, {
+      status: 200,
+      headers: { "content-length": String(payload.length) },
+    })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: execPath, configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: [execPath],
+        configurable: true,
+      });
+
+      await performUpdate({
+        version: "9.9.9",
+        tagName: "v9.9.9",
+        downloadUrl: "https://example.com/gloomberb.gz",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+        compressed: true,
+        checksum: "deadbeef".repeat(8),
+      }, (entry) => {
+        progress.push(entry);
+      });
+
+      // Running binary must be untouched.
+      expect(readFileSync(execPath)).toEqual(oldBinary);
+      expect(progress.at(-1)?.phase).toBe("error");
+      expect(progress.at(-1)?.error).toContain("Checksum mismatch");
+    } finally {
+      Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+      Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("installs the binary when no checksum is available (backward compatible)", async () => {
+    const originalExecPath = process.execPath;
+    const originalArgv = process.argv;
+    const tempDir = mkdtempSync(join(tmpdir(), "gloomberb-update-"));
+    const execPath = join(tempDir, "gloomberb");
+    const nextBinary = Buffer.from("new-binary-no-checksum");
+    const progress: UpdateProgress[] = [];
+
+    writeFileSync(execPath, Buffer.from("old-binary"));
+    chmodSync(execPath, 0o755);
+    globalThis.fetch = (async () => new Response(nextBinary, {
+      status: 200,
+      headers: { "content-length": String(nextBinary.length) },
+    })) as typeof fetch;
+
+    try {
+      Object.defineProperty(process, "execPath", { value: execPath, configurable: true });
+      Object.defineProperty(process, "argv", {
+        value: [execPath],
+        configurable: true,
+      });
+
+      await performUpdate({
+        version: "9.9.9",
+        tagName: "v9.9.9",
+        downloadUrl: "https://example.com/gloomberb",
+        publishedAt: "2026-04-03T00:00:00Z",
+        updateAction: { kind: "self" },
+      }, (entry) => {
+        progress.push(entry);
+      });
+
+      expect(readFileSync(execPath)).toEqual(nextBinary);
       expect(progress.at(-1)).toEqual({ phase: "done" });
     } finally {
       Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
