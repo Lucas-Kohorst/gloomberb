@@ -181,7 +181,12 @@ export function aiProviderFromRuntime(provider: AiRuntimeProvider): AiProvider {
  */
 export function detectProviders(): AiProvider[] {
   if (detectedProviders) return detectedProviders;
-  detectedProviders = PROVIDER_DEFINITIONS.map(disconnectedProvider);
+  // Chrome's Prompt API only exists in the hosted web client. Listing the
+  // on-device provider anywhere else offers a "sign in" action for a model
+  // that cannot be signed into and is not present on the platform.
+  detectedProviders = PROVIDER_DEFINITIONS
+    .filter((definition) => definition.id !== "browser-builtin" || isHostedWebClient())
+    .map(disconnectedProvider);
   return detectedProviders;
 }
 
