@@ -7,6 +7,7 @@ import type { AppRuntimeServices, AppServicesFactoryOptions } from "../../../cor
 import { newsProvider } from "../../../capabilities";
 import type { NewsCapability } from "../../../capabilities";
 import { debugLog } from "../../../utils/debug-log";
+import { settleWithinBudget } from "../../../utils/async-deadline";
 import { measurePerf, measurePerfAsync } from "../../../utils/perf-marks";
 import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { createRemoteAssetDataClient } from "./remote/asset-data-client";
@@ -23,6 +24,7 @@ declare global {
 }
 
 const servicesLog = debugLog.createLogger("services");
+const PLUGIN_REGISTRATION_BUDGET_MS = 5_000;
 
 export function createElectrobunAppServices({ config }: AppServicesFactoryOptions): AppRuntimeServices {
   servicesLog.info("create desktop web services start", {
@@ -72,9 +74,19 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
   const plugins = getRendererBuiltinPlugins();
   const pluginReadyPromises: Promise<void>[] = [];
   for (const plugin of plugins) {
-    pluginReadyPromises.push(measurePerfAsync("startup.services.register-plugin", () => (
-      pluginRegistry.register(plugin)
-    ), { pluginId: plugin.id }));
+    pluginReadyPromises.push(settleWithinBudget(
+      measurePerfAsync("startup.services.register-plugin", () => (
+        pluginRegistry.register(plugin)
+      ), { pluginId: plugin.id }),
+      PLUGIN_REGISTRATION_BUDGET_MS,
+      `Plugin registration timed out: ${plugin.id}`,
+      (error) => {
+        servicesLog.error("Plugin registration did not complete during startup", {
+          pluginId: plugin.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    ));
   }
   const disposeHostedSyncTransport = hosted
     ? pluginRegistry.registerSyncTransportForPlugin(
@@ -93,7 +105,7 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     dataProvider,
     marketData,
     pluginRegistry,
-    ready: Promise.allSettled(pluginReadyPromises).then(() => {}),
+    ready: Promise.all(pluginReadyPromises).then(() => {}),
     destroy() {
       disposeHostedSyncTransport?.();
       setSharedMarketDataCoordinator(null);
