@@ -600,6 +600,7 @@ export const secModule: PluginModule = {
             : "sec:latest",
           title: query ? `SEC ${query.toUpperCase()}` : "SEC",
           placement: "floating" as const,
+          binding: { kind: "none" as const },
           settings: { query },
         };
       },
