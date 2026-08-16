@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import type { NewsArticle } from "../../../news/types";
 import type { SubstackArticleSummary } from "../substack/types";
+import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
 
@@ -112,6 +113,23 @@ export function encodeNewsArticleForShare(article: NewsArticle): string {
       url: item.url,
       publishedAt: toDateISO(item.publishedAt) ?? new Date(0).toISOString(),
     })),
+  };
+  return base64urlEncode(JSON.stringify(payload));
+}
+
+/**
+ * Changelog releases travel as news-shaped article payloads so a shared link
+ * opens in the same reader, for anyone, without an account.
+ */
+export function encodeChangelogReleaseForShare(release: ChangelogRelease): string {
+  const payload: ArticleSharePayload = {
+    type: "news",
+    id: `changelog:${release.id}`,
+    title: release.title || release.version || release.tagName,
+    url: release.url,
+    source: "Gloomberb Changelog",
+    summary: release.body,
+    publishedAt: release.publishedAt,
   };
   return base64urlEncode(JSON.stringify(payload));
 }
