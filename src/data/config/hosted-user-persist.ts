@@ -89,5 +89,7 @@ export function hydrateHostedUserConfig(config: AppConfig, userId = activeUserId
   if (!record) return config;
   const loaded = normalizeLoadedConfig(record.config, config.dataDir).config;
   Object.assign(config, loaded, { dataDir: config.dataDir });
+  // Ensure core hosted plugins are never disabled by stale user config.
+  config.disabledPlugins = config.disabledPlugins.filter((id) => id !== "gloomberb-cloud");
   return config;
 }
