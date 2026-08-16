@@ -72,6 +72,7 @@ interface UseCommandBarRootRuntimeOptions {
   rootModeKind: string;
   rootQuery: string;
   rootSelectionNavigatedRef: RefObject<boolean>;
+  rootSelectedItemIdRef: RefObject<string | null>;
   rootShortcutIntent: ShortcutIntent;
   runDirectCommand(command: Command, arg: string): void;
   runSecurityDescriptionShortcut(query?: string): void | Promise<void>;
@@ -120,6 +121,7 @@ export function useCommandBarRootRuntime({
   rootModeKind,
   rootQuery,
   rootSelectionNavigatedRef,
+  rootSelectedItemIdRef,
   rootShortcutIntent,
   runDirectCommand,
   runSecurityDescriptionShortcut,
@@ -267,13 +269,14 @@ export function useCommandBarRootRuntime({
     const keepSelectionAcrossQueries = activeMatch?.command.id === "plugins";
     if (selectionContextChanged && !keepSelectionAcrossQueries) {
       rootSelectionNavigatedRef.current = false;
+      rootSelectedItemIdRef.current = null;
     }
 
     setRootSelectedIdx((current) => {
       if (rootSelectionNavigatedRef.current || keepSelectionAcrossQueries) {
         // The user picked this row: rows arriving above it — an AI answer, a
         // provider result — may renumber it, never take the highlight from it.
-        const selectedId = previousResultIds[current];
+        const selectedId = rootSelectedItemIdRef.current ?? previousResultIds[current];
         const shiftedIdx = selectedId ? resultIds.indexOf(selectedId) : -1;
         if (shiftedIdx >= 0) return shiftedIdx;
         return clampSelectedIdx(current, resultIds.length);
@@ -291,6 +294,7 @@ export function useCommandBarRootRuntime({
     rootQuery,
     rootResultModel.initialIdx,
     rootSelectionNavigatedRef,
+    rootSelectedItemIdRef,
     setRootHoveredIdx,
     setRootSelectedIdx,
   ]);

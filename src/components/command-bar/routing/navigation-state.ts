@@ -25,7 +25,7 @@ interface UseCommandBarNavigationStateResult {
   dismissCommandBar: () => void;
   lastMainBrowseRef: RefObject<CommandBarMainSnapshot>;
   /** Records that the user moved the root selection themselves. */
-  markRootSelectionNavigated: () => void;
+  markRootSelectionNavigated: (selectedId?: string) => void;
   popRoute: () => void;
   pushRoute: (route: CommandBarRoute) => void;
   rootHoveredIdx: number | null;
@@ -35,6 +35,8 @@ interface UseCommandBarNavigationStateResult {
   rootQueryRef: RefObject<string>;
   /** True once the user picked a row; cleared when the query context changes. */
   rootSelectionNavigatedRef: RefObject<boolean>;
+  /** Stable identity of the row the user picked, even while async rows arrive. */
+  rootSelectedItemIdRef: RefObject<string | null>;
   rootSelectedIdx: number;
   routeStack: CommandBarRoute[];
   setRootHoveredIdx: Dispatch<SetStateAction<number | null>>;
@@ -66,8 +68,10 @@ export function useCommandBarNavigationState({
    * replace it, while an untouched selection keeps following the top match.
    */
   const rootSelectionNavigatedRef = useRef(false);
-  const markRootSelectionNavigated = useCallback(() => {
+  const rootSelectedItemIdRef = useRef<string | null>(null);
+  const markRootSelectionNavigated = useCallback((selectedId?: string) => {
     rootSelectionNavigatedRef.current = true;
+    rootSelectedItemIdRef.current = selectedId ?? null;
   }, []);
   const [routeStack, setRouteStack] = useState<CommandBarRoute[]>([]);
   const lastMainBrowseRef = useRef<CommandBarMainSnapshot>({ query: "", selectedIdx: 0 });
@@ -84,6 +88,7 @@ export function useCommandBarNavigationState({
     setRootSelectedIdx(0);
     setRootHoveredIdx(null);
     rootSelectionNavigatedRef.current = false;
+    rootSelectedItemIdRef.current = null;
   }, [initialQuery]);
 
   const closeAll = useCallback((options?: CloseCommandBarOptions) => {
@@ -95,6 +100,7 @@ export function useCommandBarNavigationState({
     setRootSelectedIdx(0);
     setRootHoveredIdx(null);
     rootSelectionNavigatedRef.current = false;
+    rootSelectedItemIdRef.current = null;
   }, [dispatch, restoreThemePreview]);
 
   const setRootQuery = useCallback((query: string) => {
@@ -162,6 +168,7 @@ export function useCommandBarNavigationState({
     rootQuery,
     rootQueryRef,
     rootSelectionNavigatedRef,
+    rootSelectedItemIdRef,
     rootSelectedIdx,
     routeStack,
     setRootHoveredIdx,
