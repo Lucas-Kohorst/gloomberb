@@ -593,8 +593,14 @@ export function buildEmptyChartPreset(): ChartSpec {
 export function buildCustomChartPreset(expression: string, fallbackSymbol?: string | null): ChartSpec {
   const binary = parseBinarySeriesExpression(expression);
   if (binary) {
-    const spec = chartSpec(buildCustomSeries([binary.left, binary.right]));
-    return setPairStudies(spec, [binary.studyKind]);
+    const spec = setPairStudies(
+      chartSpec(buildCustomSeries([binary.left, binary.right])),
+      [binary.studyKind],
+    );
+    // `A / B` asks for the derived line, not the two inputs, so the operands are
+    // authored hidden. They stay in the spec (and keep loading) so the study can
+    // compute and the user can unhide either leg from series settings.
+    return { ...spec, series: spec.series.map((series) => ({ ...series, visible: false })) };
   }
   const parsed = parseChartExpression(expression);
   if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
@@ -758,7 +764,9 @@ export function getSelectedPairStudies(spec: ChartSpec): PairStudySelection[] {
 }
 
 export function setPairStudies(spec: ChartSpec, selected: readonly PairStudySelection[]): ChartSpec {
-  const inputs = spec.series.filter((series) => series.visible !== false).slice(0, 2);
+  // Inputs are taken regardless of visibility: a derived study keeps computing
+  // from its two sources even when the plot only shows the derived line.
+  const inputs = spec.series.slice(0, 2);
   const selectedSet = new Set(selected);
   const pairStudies: ChartStudySpec[] = inputs.length === 2
     ? (["ratio", "spread", "correlation"] as PairStudySelection[])

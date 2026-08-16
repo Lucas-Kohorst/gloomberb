@@ -20,6 +20,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
+  "kv_namespaces": [
+    {
+      "binding": "SHARES",
+      "id": "64e485e108e54d3eb64a3dabd3f270fc"
+    }
+  ],
   "vars": {
     "GLOOM_CLOUD_API_URL": "https://api.gloom.sh"
   }
