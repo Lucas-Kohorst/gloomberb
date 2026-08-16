@@ -7,6 +7,7 @@ import { correlationModule } from "./correlation";
 import { economicCalendarModule } from "./econ";
 import { earningsModule } from "./earnings";
 import { fearGreedModule } from "./fear-greed";
+import { futuresModule } from "./futures";
 import { fxMatrixModule } from "./fx-matrix";
 import { helpModule } from "./help";
 import { positionSizerModule } from "./kelly-sizer";
@@ -50,11 +51,12 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
   id: "market-overview",
   name: "Market Overview",
   version: "1.0.0",
-  description: "Global indices, movers, sectors, FX, sentiment, and correlations.",
+  description: "Global indices, futures, movers, sectors, FX, sentiment, and correlations.",
   toggleable: true,
   modules: [
     correlationModule,
     worldIndicesModule,
+    futuresModule,
     marketHeatmapModule,
     marketMoversModule,
     fearGreedModule,
