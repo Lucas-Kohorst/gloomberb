@@ -48,6 +48,7 @@ interface UsePredictionControllerKeyboardParams {
   selectMarket: (marketKey: string) => void;
   setVenue: (venueScope: PredictionVenueScope) => void;
   toggleWatchlist: (row: PredictionListRow) => void;
+  refreshCatalog: () => void;
 }
 
 export function usePredictionControllerKeyboard({
@@ -69,6 +70,7 @@ export function usePredictionControllerKeyboard({
   selectMarket,
   setVenue,
   toggleWatchlist,
+  refreshCatalog,
 }: UsePredictionControllerKeyboardParams) {
   const handleSearchNavigation = useCallback(
     (event: PredictionKeyboardEvent) => {
@@ -165,6 +167,13 @@ export function usePredictionControllerKeyboard({
         return;
       }
 
+      if (command === "refresh") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        refreshCatalog();
+        return;
+      }
+
       if (!hideTabs && command === "previous-venue-tab") {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -228,6 +237,7 @@ export function usePredictionControllerKeyboard({
       focusSearch,
       focused,
       hideTabs,
+      refreshCatalog,
       scrollDetailBy,
       searchFocused,
       selectBrowseTab,

@@ -32,6 +32,28 @@ Gloomberb has two ways in:
 
 Both share the same command language, plugin system, market data surfaces, portfolios, watchlists, alerts, notes, and AI tools.
 
+## Local web client
+
+Run the full web-rendered workspace in your browser against the local Gloomberb data directory:
+
+```bash
+bun run web:start
+```
+
+The server listens on `127.0.0.1` using an ephemeral port and prints the URL. It is intended for local development, not remote access.
+Pop-out panes open as browser popup windows. Browser deep links can be opened with `?gloomberb=gloomberb:...` or a `#gloomberb:...` fragment.
+
+## Cloudflare hosting (in progress)
+
+The `feature/cloudflare-deployment` branch hosts the web client on Cloudflare Workers as a thin proxy in front of Gloom Cloud — no separate accounts or database. You sign in with your existing Gloom Cloud account and your synced portfolios, watchlists, and settings follow you to any browser:
+
+```bash
+bun run cloud:dev    # build the web client and serve it locally via Wrangler
+bun run cloud:deploy # build and deploy the Worker + assets
+```
+
+The Worker serves the app assets and proxies `/cloud/*` API calls to `api.gloom.sh`, keeping the Gloom Cloud session in a first-party HttpOnly cookie. Fresh browsers open directly on the app's existing Gloom Cloud login step; authenticated browsers load the workspace immediately. Market data and news providers run renderer-side against the proxy. Backend RPC covers app bootstrapping (`init`, `http.fetch`); realtime events (`/_gloomberb/events`) are not wired up yet.
+
 ## Install
 
 ### macOS

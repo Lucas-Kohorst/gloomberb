@@ -1,11 +1,13 @@
 import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "../news/table";
 import { useNewsArticleFooter } from "../news/footer";
+import { usePopOutNewsArticle } from "../news/pop-out";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
 import { NEWS_QUERY_PRESETS } from "../news/query-presets";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useNewsReadState } from "../read-state";
@@ -21,11 +23,26 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const copyShareLink = useCopyShareLink();
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailArticle ?? selectedArticle;
+
+  const shareArticle = readableArticle
+    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    : undefined;
 
   useNewsArticleFooter({
     registrationId: "news-wire:breaking",
     focused,
-    article: detailArticle,
+    article: readableArticle,
+    loading,
+    error: breakingState.error,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRefresh: () => {
+      void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.breaking);
+    },
+    onShare: shareArticle,
   });
 
   const detailContent = detailArticle ? (
@@ -63,6 +80,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       columns={["time", "title", "tickers", "importance"]}
       emptyStateTitle="No breaking news"
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

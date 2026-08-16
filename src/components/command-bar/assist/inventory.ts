@@ -90,3 +90,28 @@ export function buildAssistCommandInventory({
   }
   return inventory;
 }
+
+const NEWS_FEED_PREFIXES = new Set(["ART", "RSS"]);
+
+/**
+ * Appends the user's enabled feed names onto article/RSS descriptors so
+ * `/assist/command` can resolve queries like "adjacent article on the strait"
+ * to ART instead of coming back empty.
+ */
+export function applyNewsFeedContextToAssistInventory(
+  inventory: AssistCommandDescriptor[],
+  feedNames: readonly string[],
+): AssistCommandDescriptor[] {
+  const names = [...new Set(feedNames.map((name) => name.trim()).filter(Boolean))];
+  if (names.length === 0) return inventory;
+  const listed = names.slice(0, 8).join(", ");
+  const suffix = ` Enabled feeds: ${listed}.`;
+  return inventory.map((descriptor) => {
+    if (!NEWS_FEED_PREFIXES.has(descriptor.prefix)) return descriptor;
+    if (descriptor.description?.includes("Enabled feeds:")) return descriptor;
+    return {
+      ...descriptor,
+      description: `${descriptor.description?.trim() ?? descriptor.name}.${suffix}`.replace(/\.\./g, "."),
+    };
+  });
+}

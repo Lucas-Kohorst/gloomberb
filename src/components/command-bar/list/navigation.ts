@@ -6,7 +6,7 @@ import type { CommandBarListScrollEvent } from "./view";
 interface CommandBarListNavigationOptions {
   activateListSelectionRef: RefObject<(options?: { secondary?: boolean; item?: ResultItem }) => void>;
   currentRouteRef: RefObject<CommandBarRoute | null>;
-  markRootSelectionNavigated: () => void;
+  markRootSelectionNavigated: (selectedId?: string) => void;
   setRootHoveredIdx: Dispatch<SetStateAction<number | null>>;
   setRootSelectedIdx: Dispatch<SetStateAction<number>>;
   setRouteStack: Dispatch<SetStateAction<CommandBarRoute[]>>;
@@ -37,7 +37,7 @@ export function useCommandBarListNavigation({
     visibleListStateRef.current = nextListState;
 
     if (!currentRouteRef.current) {
-      markRootSelectionNavigated();
+      markRootSelectionNavigated(nextListState.results[nextIndex]?.id);
       setRootSelectedIdx((current) => (current === nextIndex ? current : nextIndex));
       setRootHoveredIdx((current) => (current === null ? current : null));
       return;
@@ -98,7 +98,7 @@ export function useCommandBarListNavigation({
     event.stopPropagation?.();
     event.preventDefault?.();
     if (!currentRouteRef.current) {
-      markRootSelectionNavigated();
+      markRootSelectionNavigated(item.id);
       setRootSelectedIdx((current) => (current === globalIdx ? current : globalIdx));
     } else {
       setRouteStack((current) => {

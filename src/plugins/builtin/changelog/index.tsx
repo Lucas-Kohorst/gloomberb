@@ -47,7 +47,7 @@ function buildColumns(width: number, releases: ChangelogRelease[]): ChangelogCol
     14,
   );
   const titleWidth = Math.max(
-    18,
+    1,
     width - (dateWidth + 1) - (versionWidth + 1) - 3,
   );
 
@@ -163,6 +163,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     }
   }, [activeSelectedReleaseId, selectedReleaseId]);
 
+  const selectedRelease = sortedReleases[activeSelectedIdx] ?? null;
   const openRelease = useMemo(
     () =>
       openReleaseId
@@ -170,6 +171,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
         : null,
     [openReleaseId, releases],
   );
+  const linkRelease = openRelease ?? selectedRelease;
 
   useEffect(() => {
     if (openReleaseId && !openRelease) {
@@ -285,8 +287,8 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   useExternalLinkFooter({
     registrationId: "changelog",
     focused,
-    url: openRelease?.url,
-    source: openRelease?.version,
+    url: linkRelease?.url || undefined,
+    source: linkRelease?.version,
     label: "release",
     info: footerInfo,
     hints: footerHints,

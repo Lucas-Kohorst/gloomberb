@@ -14,12 +14,14 @@ interface UseExternalLinkFooterOptions {
   source?: string | null;
   info?: PaneFooterSegment[];
   hints?: PaneHint[];
+  trailingHints?: PaneHint[];
   label?: string;
   showHint?: boolean;
 }
 
 const EMPTY_INFO: PaneFooterSegment[] = [];
 const EMPTY_HINTS: PaneHint[] = [];
+const EMPTY_TRAILING_HINTS: PaneHint[] = [];
 
 function normalizeUrl(url: string | null | undefined): string | null {
   const trimmed = url?.trim();
@@ -33,6 +35,7 @@ export function useExternalLinkFooter({
   source,
   info = EMPTY_INFO,
   hints = EMPTY_HINTS,
+  trailingHints = EMPTY_TRAILING_HINTS,
   label = "link",
   showHint = true,
 }: UseExternalLinkFooterOptions) {
@@ -71,9 +74,10 @@ export function useExternalLinkFooter({
       hints: [
         ...hints,
         ...(url && showHint ? [{ id: "open", key: "o", label: "pen", onPress: openUrl }] : []),
+        ...trailingHints,
       ],
     };
-  }, [hints, info, label, openUrl, showHint, sourceLabel, url]);
+  }, [hints, info, label, openUrl, showHint, sourceLabel, trailingHints, url]);
 
   usePaneFooter(registrationId, () => footer, [footer]);
 

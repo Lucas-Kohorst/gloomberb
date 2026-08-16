@@ -7,8 +7,9 @@ import type { NewsArticle } from "../../../types/news-source";
 import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
+import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { FeedDataTableStackView, Spinner, type FeedDataTableItem } from "../../../components";
-import { useNewsArticles } from "../../../news/hooks";
+import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
 import { useNewsArticleFooter } from "./wire/news/footer";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
@@ -71,6 +72,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
 
@@ -110,11 +112,23 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   useNewsArticleFooter({
     registrationId: "news",
     focused,
-    article: openArticle,
+    article: openArticle ?? selected,
     loading,
     error,
     info: loadingSummary
       ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }]
+      : undefined,
+    onPopOut: () => popOutArticle(openArticle ?? selected),
+    onRefresh: instrument
+      ? () => {
+        void getSharedNewsService()?.load({
+          feed: "ticker",
+          ticker: instrument.symbol,
+          exchange: instrument.exchange,
+          tickerTier: "primary",
+          limit: NEWS_ITEM_LIMIT,
+        });
+      }
       : undefined,
   });
 
@@ -135,7 +149,9 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       onSelect={setSelectedIdx}
       isItemRead={(item) => readArticleIds.has(item.id)}
       onOpenItem={(item) => markArticleRead(item.id)}
+      openItemId={openItemId}
       onOpenItemIdChange={setOpenItemId}
+      onPopOut={(item) => popOutArticle(news.find((article) => article.id === item.id) ?? openArticle ?? selected)}
       sourceLabel="Source"
       titleLabel="Headline"
       emptyStateTitle="No news."

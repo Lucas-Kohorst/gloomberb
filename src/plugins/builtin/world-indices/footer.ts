@@ -5,7 +5,7 @@ import {
   type QuoteMap,
 } from "./model";
 
-export function useWorldIndicesFooter(quotes: QuoteMap) {
+export function useWorldIndicesFooter(quotes: QuoteMap, onRefresh: () => void) {
   const loadingCount = countLoadingQuotes(quotes);
   const latestQuoteTs = latestQuoteTimestamp(quotes);
 
@@ -23,6 +23,9 @@ export function useWorldIndicesFooter(quotes: QuoteMap) {
         }],
       });
     }
-    return { info };
-  }, [latestQuoteTs, loadingCount]);
+    return {
+      info,
+      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }],
+    };
+  }, [latestQuoteTs, loadingCount, onRefresh]);
 }

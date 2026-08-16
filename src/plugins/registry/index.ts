@@ -58,6 +58,7 @@ import {
 import { RegistryResumeStateListeners } from "./plugin-state";
 import { cloudSyncController } from "../../sync/controller";
 import { isReservedBuiltinPluginId } from "../ownership";
+import { resolveApiKey } from "../builtin/byok/store";
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -418,12 +419,14 @@ export class PluginRegistry implements PluginRuntimeAccess {
       updateLayout: (layout) => this.updateLayoutFn(layout),
       resolvePaneTarget: (paneId) => this.resolvePaneTarget(paneId),
       registerCapabilityForPlugin: (targetPluginId, capability, pluginItems) => this.registerCapabilityForPlugin(targetPluginId, capability, pluginItems),
+      listCapabilities: () => this.capabilities.list(),
       registerSyncContributorForPlugin: (targetPluginId, contributor) => this.registerSyncContributorForPlugin(targetPluginId, contributor),
       registerSyncTransportForPlugin: (targetPluginId, transport) => this.registerSyncTransportForPlugin(targetPluginId, transport),
       watchNewsQuery: (query, listener) => this.watchNewsQueryFn(query, listener),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (symbol) => this.getTickerFn(symbol),
       getConfig: () => this.getConfigFn(),
+      getApiKey: (serviceId: string) => resolveApiKey(this.getConfigFn(), serviceId),
       getResumeState: (key, schemaVersion) => this.getResumeState(pluginId, key, schemaVersion),
       setResumeState: (key, value, schemaVersion) => this.setResumeState(pluginId, key, value, schemaVersion),
       deleteResumeState: (key) => this.deleteResumeState(pluginId, key),

@@ -12,6 +12,7 @@ import {
   type DockGeometryOptions,
   type DockLeafLayout,
   type FloatingRect,
+  type FloatingResizeCorner,
   type LayoutBounds,
   type ResolvedPane,
 } from "../../../../plugins/pane-manager";
@@ -47,6 +48,7 @@ type DragMode =
   | {
     type: "float-resize";
     paneId: string;
+    corner: FloatingResizeCorner;
     startX: number;
     startY: number;
     origRect: FloatingRect;
@@ -173,6 +175,7 @@ interface UseShellPointerRuntimeOptions {
   focusPane: (paneId: string) => void;
   focusedPaneId: string | null;
   handleFloatingClose: (paneId: string) => void;
+  hoveredPaneId: string | null;
   menuState: ActionMenuState | null;
   nativePaneChrome: boolean;
   openPaneMenu: (
@@ -188,6 +191,7 @@ interface UseShellPointerRuntimeOptions {
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   snapGuides: ReturnType<typeof makeSnapGuides>;
   transientFocusActive: boolean;
+  togglePaneFloating: (paneId: string) => boolean;
   updateWindowModePreviewLayout: (nextLayout: LayoutConfig, paneId?: string) => void;
   visibleFloatingPanes: VisibleFloatingPane[];
   visibleLayout: LayoutConfig;
@@ -208,6 +212,7 @@ export function useShellPointerRuntime({
   focusPane,
   focusedPaneId,
   handleFloatingClose,
+  hoveredPaneId,
   menuState,
   nativePaneChrome,
   openPaneMenu,
@@ -219,6 +224,7 @@ export function useShellPointerRuntime({
   setMenuState,
   snapGuides,
   transientFocusActive,
+  togglePaneFloating,
   updateWindowModePreviewLayout,
   visibleFloatingPanes,
   visibleLayout,
@@ -256,6 +262,7 @@ export function useShellPointerRuntime({
     focusedPaneId,
     handleActiveDrag,
     handleFloatingClose,
+    hoveredPaneId,
     menuState,
     openPaneMenu,
     paneMap,
@@ -263,6 +270,7 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    togglePaneFloating,
     visibleFloatingPanes,
     width,
     windowMode,
@@ -281,6 +289,7 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    togglePaneFloating,
     windowMode,
   });
 

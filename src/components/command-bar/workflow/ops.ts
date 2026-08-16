@@ -48,6 +48,8 @@ interface CreatePaneTemplateDeps extends SharedWorkflowDeps {
     paneDef: NonNullable<ReturnType<PluginRegistry["panes"]["get"]>>,
     options?: PaneTemplateInstanceConfig,
   ) => void;
+  /** Focus/raise an existing instance instead of creating a duplicate. */
+  focusPaneInstance: (instanceId: string) => void;
 }
 
 interface ApplyPaneSettingDeps extends SharedWorkflowDeps {
@@ -130,6 +132,30 @@ async function resolvePaneTemplateOptions(
   };
 }
 
+/**
+ * Two pane instances are "the same" when they share a pane id and have
+ * equal binding, params, and settings. Title, placement, and z-order are
+ * presentation state and are ignored. Used to focus an existing pane instead
+ * of opening a duplicate from the command bar.
+ */
+function findMatchingPaneInstance(
+  instances: PaneInstanceConfig[],
+  paneId: string,
+  spec: { binding?: PaneBinding; params?: Record<string, string>; settings?: Record<string, unknown> },
+): string | null {
+  const bindingKey = JSON.stringify(spec.binding ?? { kind: "none" });
+  const paramsKey = JSON.stringify(spec.params ?? {});
+  const settingsKey = JSON.stringify(spec.settings ?? {});
+  for (const instance of instances) {
+    if (instance.paneId !== paneId) continue;
+    if (JSON.stringify(instance.binding ?? { kind: "none" }) !== bindingKey) continue;
+    if (JSON.stringify(instance.params ?? {}) !== paramsKey) continue;
+    if (JSON.stringify(instance.settings ?? {}) !== settingsKey) continue;
+    return instance.instanceId;
+  }
+  return null;
+}
+
 export async function createPaneTemplateOrThrow(
   templateId: string,
   options: PaneTemplateCreateOptions | undefined,
@@ -157,6 +183,14 @@ export async function createPaneTemplateOrThrow(
     return;
   }
   const spec = createInstanceResult ?? {};
+
+  // Reuse an existing instance with the same pane id + binding + params +
+  // settings instead of opening a duplicate (e.g. re-running `SEC AAPL`).
+  const existing = findMatchingPaneInstance(state.config.layout.instances, template.paneId, spec);
+  if (existing) {
+    deps.focusPaneInstance(existing);
+    return;
+  }
 
   const paneDef = deps.pluginRegistry.panes.get(template.paneId);
   if (!paneDef) {

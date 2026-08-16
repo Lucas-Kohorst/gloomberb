@@ -17,6 +17,30 @@ export const TV_CHANNELS = [
     channelId: "UCEAZeUIeJs0IjQiqTCdVSIg",
     channelUrl: "https://www.youtube.com/@YahooFinance/live",
   },
+  {
+    id: "tbpn",
+    name: "TBPN",
+    channelId: "UC-DRzaGnL_vtBUpCFH5M0tg",
+    channelUrl: "https://www.youtube.com/@TBPNLive/live",
+  },
+  {
+    id: "mts",
+    name: "MTS",
+    channelId: "UClWkDGXEzsh77GAhs90wpXw",
+    channelUrl: "https://www.youtube.com/@mtsituation/live",
+  },
+  {
+    id: "eventual",
+    name: "Eventual",
+    channelId: "UCsYnqcP1cHvRVvuwAKR5s_g",
+    channelUrl: "https://www.youtube.com/@Eventual-News/streams",
+  },
+  {
+    id: "threadguy",
+    name: "threadguy",
+    channelId: "UCyLaBb4OibRL7KMdd4wZ0OQ",
+    channelUrl: "https://www.youtube.com/@notthreadguy/streams",
+  },
 ] as const;
 
 export type TvChannel = (typeof TV_CHANNELS)[number];

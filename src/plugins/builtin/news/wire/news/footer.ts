@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { PaneFooterSegment } from "../../../../../components";
+import { useShortcut } from "../../../../../react/input";
+import type { PaneFooterSegment, PaneHint } from "../../../../../components";
 import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
@@ -18,6 +19,9 @@ interface UseNewsArticleFooterOptions {
   info?: PaneFooterSegment[];
   loading?: boolean;
   error?: string | null;
+  onPopOut?: () => void;
+  onRefresh?: () => void;
+  onShare?: () => void;
 }
 
 export function useNewsArticleFooter({
@@ -27,6 +31,9 @@ export function useNewsArticleFooter({
   info,
   loading = false,
   error,
+  onPopOut,
+  onRefresh,
+  onShare,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const { access, segment } = useCloudAccessFooter({
@@ -43,6 +50,43 @@ export function useNewsArticleFooter({
     return segment ? [segment] : [];
   }, [access.isPayingPro, language, segment]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+  const hints = useMemo<PaneHint[]>(() => (
+    onRefresh
+      ? [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }]
+      : []
+  ), [onRefresh]);
+  const trailingHints = useMemo<PaneHint[]>(() => {
+    const hints: PaneHint[] = [];
+    if (onShare && article) {
+      hints.push({ id: "share", key: "y", label: " share", onPress: onShare });
+    }
+    if (onPopOut && article) {
+      hints.push({ id: "pop-out", key: "p", label: "op out", onPress: onPopOut });
+    }
+    return hints;
+  }, [article, onPopOut, onShare]);
+
+  useShortcut((event) => {
+    const key = (event.name ?? event.key ?? "").toLowerCase();
+    if (!focused) return;
+    if (onRefresh && key === "r") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onRefresh();
+      return;
+    }
+    if (onShare && key === "y") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onShare();
+      return;
+    }
+    if (onPopOut && article && key === "p") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onPopOut();
+    }
+  }, { enabled: focused && (!!onPopOut && !!article || !!onRefresh || !!onShare) });
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -50,6 +94,9 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
+    hints,
+    trailingHints,
+    showOpenHint: true,
     loading,
     error,
   });

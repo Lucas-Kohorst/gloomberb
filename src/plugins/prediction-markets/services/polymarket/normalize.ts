@@ -126,6 +126,7 @@ export function normalizePolymarketMarket(
       record.createdAt ??
       event?.startDate ??
       null,
+    createdAt: record.createdAt ?? event?.startDate ?? null,
     yesPrice,
     noPrice,
     yesBid: record.bestBid ?? null,

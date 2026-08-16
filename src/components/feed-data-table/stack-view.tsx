@@ -64,6 +64,8 @@ interface FeedDataTableStackViewProps {
   isItemRead?: (item: FeedDataTableItem) => boolean;
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
   onOpenItemIdChange?: (itemId: string | null) => void;
+  openItemId?: string | null;
+  onPopOut?: (item: FeedDataTableItem) => void;
 }
 
 function timestampValue(item: FeedDataTableItem): number {
@@ -148,13 +150,20 @@ export function FeedDataTableStackView({
   isItemRead,
   onOpenItem,
   onOpenItemIdChange,
+  openItemId: controlledOpenItemId,
+  onPopOut,
 }: FeedDataTableStackViewProps) {
   const language = useAppLanguage();
   const [sortPreference, setSortPreference] = useState<SortPreference>({
     columnId: "time",
     direction: "desc",
   });
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [uncontrolledOpenItemId, setUncontrolledOpenItemId] = useState<string | null>(null);
+  const openItemId = controlledOpenItemId !== undefined ? controlledOpenItemId : uncontrolledOpenItemId;
+  const setOpenItemId = useCallback((itemId: string | null) => {
+    if (controlledOpenItemId === undefined) setUncontrolledOpenItemId(itemId);
+    onOpenItemIdChange?.(itemId);
+  }, [controlledOpenItemId, onOpenItemIdChange]);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const detailTextWidth = Math.max(width - 2, 12);
   const columns = useMemo(
@@ -175,7 +184,6 @@ export function FeedDataTableStackView({
         : null,
     [items, openItemId],
   );
-  const activeOpenItemId = openItem ? openItem.id : null;
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -194,17 +202,13 @@ export function FeedDataTableStackView({
     if (!row) return;
     onOpenItem?.(row.item, row.itemIndex);
     setOpenItemId(row.item.id);
-  }, [onOpenItem]);
+  }, [onOpenItem, setOpenItemId]);
 
   useEffect(() => {
     if (openItemId && !openItem) {
       setOpenItemId(null);
     }
-  }, [openItem, openItemId]);
-
-  useEffect(() => {
-    onOpenItemIdChange?.(activeOpenItemId);
-  }, [activeOpenItemId, onOpenItemIdChange]);
+  }, [openItem, openItemId, setOpenItemId]);
 
   useEffect(() => {
     if (!openItemId) return;
@@ -268,8 +272,14 @@ export function FeedDataTableStackView({
       scrollDetailBy(-1);
       return true;
     }
+    if (onPopOut && openItem && isPlainKey(event, "p")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onPopOut(openItem);
+      return true;
+    }
     return false;
-  }, [scrollDetailBy]);
+  }, [onPopOut, openItem, scrollDetailBy]);
 
   const detailContent = openItem ? (
     <Box

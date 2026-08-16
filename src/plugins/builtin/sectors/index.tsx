@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Box } from "../../../ui";
 import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent } from "../../../components";
+import {
+  buildColumnVisibilityField,
+  resolveVisibleColumns,
+} from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { Quote } from "../../../types/financials";
+import { usePaneInstance } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
@@ -23,10 +28,12 @@ import {
   buildBar,
   buildSectorColumns,
   computeTrailingReturn,
+  DEFAULT_SECTOR_COLUMN_IDS,
   formatTime,
   latestHistoryClose,
   nextSortPreference,
   normalizeRowsForCollection,
+  SECTOR_COLUMN_DEFS,
   sortRows,
   updateRowsForCollection,
   type SectorColumn,
@@ -39,6 +46,7 @@ import {
 function SectorPerformancePane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { navigateTicker } = usePluginTickerActions();
+  const paneInstance = usePaneInstance();
   const [activeCollectionId, setActiveCollectionId] = usePluginPaneState<SectorCollectionId>(
     "activeCollectionId",
     DEFAULT_COLLECTION_ID,
@@ -60,7 +68,14 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
 
   const fetchGenRef = useRef(0);
 
-  const columns = useMemo(() => buildSectorColumns(width), [width]);
+  const columns = useMemo(
+    () => resolveVisibleColumns(
+      buildSectorColumns(width),
+      paneInstance?.settings?.columnIds,
+      DEFAULT_SECTOR_COLUMN_IDS,
+    ),
+    [paneInstance?.settings?.columnIds, width],
+  );
   const rows = useMemo(
     () => normalizeRowsForCollection(rowsByCollection, activeCollection.id),
     [activeCollection.id, rowsByCollection],
@@ -315,6 +330,10 @@ export const sectorsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 82, height: 18 },
+      settings: {
+        title: "Sector Performance Settings",
+        fields: [buildColumnVisibilityField(SECTOR_COLUMN_DEFS)],
+      },
     },
   ],
 

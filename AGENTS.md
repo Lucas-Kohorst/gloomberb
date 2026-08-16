@@ -16,3 +16,30 @@ For desktop/Electrobun/web UI, do not draw GUI primitives with terminal cell cha
 Add mouse/cursor interactivity for everything interactive.
 Never fix chart issues by disabling / turning off the kitty renderer; preserve kitty support and fix the root cause.
 When adding new pane/plugin, read PLUGINS.md check how others are made first to keep UI consistent. Always prefer shared UI components and plugin APIs before rolling your own.
+
+Connections:
+- Every external API or data source is a Connection. Adjacent, VoteHub/polls, RSS, Kalshi, Polymarket, YouTube/TV, Yahoo, Gloom Cloud, and any new HTTP/WebSocket service must show up in the Connections pane.
+- Register it with `registerConnectionSource()` from `src/plugins/builtin/connections/register.ts` in plugin `setup()`, and report traffic through `withConnectionRequest()` / `reportConnectionRequest()` on the real fetch path.
+- Do not assume the capability registry will discover it. Hosted/web disables `plugin.capabilities` invoke handlers, so a source that is only listed there will be invisible.
+- Do not hardcode only Gloom Cloud. The Connections pane is the inventory of every live integration, not a cloud-status widget.
+
+New panes:
+- Give every new pane an AI-visible command-bar shortcut and a description the assist inventory can use.
+- News/RSS/Adjacent written-text panes must be searchable from the command bar (`ART` / article lookup) and must open the shared article reader.
+- Data tables need clickable header sort (asc/desc), the same as Adjacent Indices. Add `[s]`earch when the list is long enough to filter.
+
+Hosted / logged-in persist:
+- Hosted `config.save` is a backend no-op. User layouts, plugin config, RSS feeds, and similar settings must be written through `writeHostedUserConfig()` (keyed by user id) and still pushed via Gloom Cloud sync when the session is verified.
+- Do not let a stale cloud pull wipe a newer hosted local save.
+- BYOK keys stay local (`writeHostedByokKeys`); never put raw API keys in synced snapshots.
+
+Command-bar AI:
+- Assist only maps to prefixes. New panes need shortcuts or they fall out of the inventory. Article/headline queries must also run a local news/Adjacent lookup and offer an Open-article row.
+
+Pane footers:
+- Status that can change (loading, error, live/delayed, stale, auth) plus action hints only. No fixed labels, row counts, or generic keyboard hints.
+- `[o]`pen when the selected or detail item has an external URL (tweets, articles, polls, filings, markets, changelog, TV).
+- `[p]`op out for written articles (news, RSS, Substack).
+- `[s]`earch or `/` search when the list is long enough to filter.
+- `[r]`efresh for live or network-backed data.
+- Bind the hinted key. A footer hint with no handler is a bug.

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandDef, PaneTemplateDef } from "../../../types/plugin";
 import type { Command } from "../commands/registry";
-import { buildAssistCommandInventory } from "./inventory";
+import { applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "./inventory";
 
 function command(overrides: Partial<Command> & { prefix: string }): Command {
   return {
@@ -89,5 +89,17 @@ describe("buildAssistCommandInventory", () => {
 
     expect(inventory).toHaveLength(25);
     expect(inventory.at(-1)?.prefix).toBe("C24");
+  });
+
+  test("appends enabled feed names onto article and RSS descriptors", () => {
+    const inventory = applyNewsFeedContextToAssistInventory([
+      { prefix: "ART", name: "Open Article", description: "Open a news article" },
+      { prefix: "RSS", name: "RSS Feeds" },
+      { prefix: "ADI", name: "Adjacent Indices", description: "Browse indices" },
+    ], ["Adjacent Press", "CNBC Top News"]);
+
+    expect(inventory[0]?.description).toContain("Adjacent Press");
+    expect(inventory[1]?.description).toContain("Enabled feeds: Adjacent Press, CNBC Top News.");
+    expect(inventory[2]?.description).toBe("Browse indices");
   });
 });

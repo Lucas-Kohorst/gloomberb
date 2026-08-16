@@ -9,6 +9,7 @@ export type PredictionKeyboardCommand =
   | "previous-venue-tab"
   | "next-venue-tab"
   | "toggle-watchlist"
+  | "refresh"
   | "browse-top"
   | "browse-ending"
   | "browse-new"
@@ -57,6 +58,7 @@ export function resolvePredictionKeyboardCommand(
   )
     return "next-category";
   if (matchesPredictionKey(event, ["w"], ["w"])) return "toggle-watchlist";
+  if (matchesPredictionKey(event, ["r"], ["r"])) return "refresh";
   if (matchesPredictionKey(event, ["1"], ["1"])) return "browse-top";
   if (matchesPredictionKey(event, ["2"], ["2"])) return "browse-ending";
   if (matchesPredictionKey(event, ["3"], ["3"])) return "browse-new";

@@ -18,11 +18,13 @@ import {
   CONGRESS_TRADES_PANE_ID,
   CongressTradesPane,
 } from "../congress-trades/pane";
+import { adjacentModule } from "../adjacent";
 import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
+import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
   ChatPane: (props: PaneProps) => ReactNode;
@@ -33,16 +35,22 @@ function createCloudDataModule(): PluginModule {
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
     setup(ctx) {
-      ctx.registerSyncTransport({
-        id: "gloomberb-cloud",
-        isAvailable: () => apiClient.isVerified(),
-        pullSnapshot: () => apiClient.getSyncSnapshot(),
-        pushSnapshot: (snapshot, options) => apiClient.putSyncSnapshot(snapshot, options),
-      });
+      ctx.registerSyncTransport(createGloomberbCloudSyncTransport());
     },
     dispose() {
       apiClient.dispose();
     },
+  };
+}
+
+export function createGloomberbCloudSyncTransport(
+  isAvailable: () => boolean = () => apiClient.isVerified(),
+): SyncTransport {
+  return {
+    id: "gloomberb-cloud",
+    isAvailable,
+    pullSnapshot: () => apiClient.getSyncSnapshot(),
+    pushSnapshot: (snapshot, options) => apiClient.putSyncSnapshot(snapshot, options),
   };
 }
 
@@ -211,6 +219,7 @@ export function createGloomberbCloudPlugin({
       accountModule,
       buildoutModule,
       congressTradesModule,
+      adjacentModule,
       twitterModule,
     ],
   });

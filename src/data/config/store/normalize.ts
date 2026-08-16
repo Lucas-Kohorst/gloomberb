@@ -50,6 +50,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(candidate.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof candidate.valueFlashingEnabled === "boolean" ? candidate.valueFlashingEnabled : defaults.valueFlashingEnabled,
+    fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete: typeof candidate.onboardingComplete === "boolean" ? candidate.onboardingComplete : defaults.onboardingComplete,
@@ -98,10 +99,19 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
+    fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
   };
 
   return persisted;
+}
+
+const FONT_SIZE_MIN = 10;
+const FONT_SIZE_MAX = 20;
+
+function sanitizeFontSize(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(value)));
 }
 
 function sanitizeStringArray(value: unknown, fallback: string[]): string[] {

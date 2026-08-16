@@ -30,6 +30,7 @@ export interface SecFilingItem {
   items?: string;
   cik: string;
   companyName?: string;
+  ticker?: string;
   filingUrl: string;
   primaryDocumentUrl?: string;
 }

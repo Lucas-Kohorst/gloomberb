@@ -23,6 +23,7 @@ import { useAiRuntimeProviders } from "../use-runtime-providers";
 import {
   getSelectableAiRunners,
   isAiProviderReady,
+  resolveFeatureDefaultModelId,
   resolveReadyAiRunnerDefault,
 } from "../runner-selection";
 import {
@@ -77,7 +78,8 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     configuredDefaultModelId,
   );
   const defaultProviderId = defaults.providerId;
-  const defaultModelId = defaults.modelId;
+  const defaultModelId = defaults.modelId
+    ?? resolveFeatureDefaultModelId(defaultProviderId, "screener", null);
   const [persistedState, setPersistedState] = usePluginState<PersistedAiScreenerPaneState>(
     `screener-pane:${paneId}`,
     EMPTY_PANE_STATE,

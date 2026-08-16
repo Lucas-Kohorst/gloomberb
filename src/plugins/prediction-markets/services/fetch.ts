@@ -4,6 +4,7 @@ import { measurePerf } from "../../../utils/perf-marks";
 import {
   createThrottledFetch,
 } from "../../../utils/throttled-fetch";
+import { withConnectionRequest } from "../../builtin/connections/register";
 
 const DEFAULT_SOURCE_KEY = "remote";
 const PREDICTION_FETCH = createThrottledFetch({
@@ -40,20 +41,34 @@ export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
 }
 
+function connectionIdForPredictionUrl(url: string): string | null {
+  if (url.includes("kalshi.com")) return "kalshi";
+  if (url.includes("polymarket.com")) return "polymarket";
+  if (url.includes("adjacent.markets")) return "adjacent";
+  return null;
+}
+
 export async function fetchJson<T>(url: string): Promise<T> {
-  const response = await PREDICTION_FETCH.fetch(url);
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status}) for ${url}`);
+  const connectionId = connectionIdForPredictionUrl(url);
+  const run = async (): Promise<T> => {
+    const response = await PREDICTION_FETCH.fetch(url);
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status}) for ${url}`);
+    }
+    const body = await response.text();
+    return measurePerf(
+      "prediction.fetch.parse-json",
+      () => JSON.parse(body) as T,
+      {
+        sizeBytes: body.length,
+        url: summarizePredictionFetchUrl(url),
+      },
+    );
+  };
+  if (connectionId) {
+    return withConnectionRequest(connectionId, "fetch", run);
   }
-  const body = await response.text();
-  return measurePerf(
-    "prediction.fetch.parse-json",
-    () => JSON.parse(body) as T,
-    {
-      sizeBytes: body.length,
-      url: summarizePredictionFetchUrl(url),
-    },
-  );
+  return run();
 }
 
 export function getCachedPredictionResource<T>(
@@ -86,11 +101,17 @@ export async function loadCachedPredictionResource<T>(
   key: string,
   fetcher: () => Promise<T>,
   cachePolicy: { staleMs: number; expireMs: number },
+  options?: { force?: boolean },
 ): Promise<T> {
   const cached = predictionMarketsPersistence?.getResource<T>(kind, key, {
     sourceKey: DEFAULT_SOURCE_KEY,
   });
-  if (cached && cached.stale !== true && cached.staleAt > Date.now()) {
+  if (
+    !options?.force
+    && cached
+    && cached.stale !== true
+    && cached.staleAt > Date.now()
+  ) {
     return cached.value;
   }
   try {

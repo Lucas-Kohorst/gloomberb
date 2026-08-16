@@ -123,3 +123,23 @@ export function installElectrobunHttpFetchTransport(): void {
 export function installElectrobunCloudApiFetchTransport(): void {
   setCloudApiFetchTransport(electrobunCloudApiFetch);
 }
+
+export function installHostedCloudApiFetchTransport(): void {
+  setCloudApiFetchTransport(async (url, init) => {
+    const upstreamUrl = new URL(url);
+    const headers = new Headers(init?.headers);
+    headers.delete("Cookie");
+    headers.delete("Origin");
+    const response = await fetch(`/cloud${upstreamUrl.pathname}${upstreamUrl.search}`, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
+    if (response.headers.get("x-gloom-hosted-session") === "1") {
+      window.__GLOOM_CLOUD_AUTHENTICATED = true;
+    } else if (upstreamUrl.pathname === "/auth/sign-out" && response.ok) {
+      window.__GLOOM_CLOUD_AUTHENTICATED = false;
+    }
+    return response;
+  });
+}

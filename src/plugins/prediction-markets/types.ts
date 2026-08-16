@@ -4,7 +4,13 @@ import type { PredictionCategoryId } from "./categories";
 export type PredictionVenue = "polymarket" | "kalshi";
 export type PredictionVenueScope = "all" | PredictionVenue;
 export type PredictionBrowseTab = "top" | "ending" | "new" | "watchlist";
-export type PredictionDetailTab = "overview" | "book" | "trades" | "rules";
+export type PredictionDetailTab =
+  | "overview"
+  | "book"
+  | "trades"
+  | "rules"
+  | "similar"
+  | "news";
 export type PredictionHistoryRange = "1D" | "1W" | "1M" | "ALL";
 export type PredictionVolumeUnit = "usd" | "contracts";
 type PredictionSortDirection = "asc" | "desc";
@@ -47,6 +53,7 @@ export interface PredictionMarketSummary {
   description: string;
   endsAt: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
   yesPrice: number | null;
   noPrice: number | null;
   yesBid: number | null;
@@ -151,6 +158,7 @@ interface PredictionListRowBase {
   description: string;
   endsAt: string | null;
   updatedAt: string | null;
+  createdAt: string | null;
   yesPrice: number | null;
   noPrice: number | null;
   spread: number | null;

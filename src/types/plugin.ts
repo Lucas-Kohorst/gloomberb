@@ -3,7 +3,7 @@ import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
-import type { PluginCapability } from "../capabilities";
+import type { PluginCapability, RegisteredCapability } from "../capabilities";
 import type { CliGlobalOptions } from "../cli/options";
 import type { CliResult, CliResultRenderOptions } from "../cli/result";
 import type { ContextMenuContext, ContextMenuItem } from "./context-menu";
@@ -195,6 +195,8 @@ export interface PaneTemplateDef {
   label: string;
   description: string;
   keywords?: string[];
+  /** Command-bar section. Defaults to the owning plugin's pane section. */
+  category?: string;
   shortcut?: PaneTemplateShortcut;
   wizard?: WizardStep[];
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
@@ -519,6 +521,14 @@ export interface GloomPluginContext {
   getTicker(ticker: string): TickerRecord | null;
   getConfig(): import("./config").AppConfig;
   getPaneDef(paneId: string): PaneDef | undefined;
+  listCapabilities(): RegisteredCapability[];
+
+  /**
+   * Resolve an API key for a known service (e.g. "adjacent", "hyperliquid",
+   * "sec-edgar") or a custom BYOK entry. Checks stored BYOK keys first, then
+   * falls back to the service's configured environment variable.
+   */
+  getApiKey(serviceId: string): string | undefined;
 
   readonly marketData: DataProvider;
   readonly tickerRepository: AppTickerRepositoryPort;

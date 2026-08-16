@@ -1,6 +1,8 @@
 import { portfolioAnalyticsModule } from "./analytics";
 import { brokerManagerModule } from "./broker-manager";
+import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
+import { connectionsModule } from "./connections";
 import { correlationModule } from "./correlation";
 import { economicCalendarModule } from "./econ";
 import { earningsModule } from "./earnings";
@@ -22,8 +24,8 @@ export const applicationPlugin = composeBuiltinPlugin({
   id: "application",
   name: "Application",
   version: "1.0.0",
-  description: "Core layout, help, and release information.",
-  modules: [layoutManagerModule, helpModule, changelogModule],
+  description: "Core layout, help, release information, API key management, and connection health.",
+  modules: [layoutManagerModule, helpModule, changelogModule, byokModule, connectionsModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

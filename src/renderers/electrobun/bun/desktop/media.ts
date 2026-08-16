@@ -1,5 +1,6 @@
 import type { ResolvedLiveStream } from "../../../../types/media";
 import { getTvChannel, TV_CHANNELS } from "../../../../plugins/builtin/tv/channels";
+import { resolveYoutubeLivePage } from "../../../../plugins/builtin/tv/youtube-embed";
 import { resolveTvStream } from "../../../../plugins/builtin/tv/youtube-stream";
 import type { DesktopBackendRequestPayload } from "../../shared/protocol";
 
@@ -13,5 +14,10 @@ export async function resolveDesktopLiveStream(
   if (!channel) {
     throw new Error("Unknown TV channel.");
   }
-  return resolveTvStream(getTvChannel(channel.id), { force: request.force === true });
+  const tvChannel = getTvChannel(channel.id);
+  try {
+    return await resolveTvStream(tvChannel, { force: request.force === true });
+  } catch {
+    return resolveYoutubeLivePage(tvChannel);
+  }
 }

@@ -188,12 +188,17 @@ export function TweetSearchTable({
   const openSelectedTweet = usePaneStatusLinkFooter({
     registrationId: footerId,
     focused,
-    url: detailOpen ? selectedTweet?.url : null,
-    source: detailOpen && selectedTweet
+    url: selectedTweet?.url,
+    source: selectedTweet
       ? `@${selectedTweet.author.userName || selectedTweet.author.name}`
       : null,
     loading,
     error,
+    showOpenHint: !!selectedTweet?.url,
+    hints: [
+      ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),
+      { id: "refresh", key: "r", label: "efresh", onPress: reload },
+    ],
   });
 
   useEffect(() => {
@@ -238,12 +243,24 @@ export function TweetSearchTable({
       onFocusSearch();
       return true;
     }
+    if (onFocusSearch && event.name === "/") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      onFocusSearch();
+      return true;
+    }
+    if (event.name === "o" && selectedTweet?.url) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSelectedTweet();
+      return true;
+    }
     if (event.name !== "r") return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     reload();
     return true;
-  }, [onFocusSearch, reload]);
+  }, [onFocusSearch, openSelectedTweet, reload, selectedTweet?.url]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name !== "o") return false;

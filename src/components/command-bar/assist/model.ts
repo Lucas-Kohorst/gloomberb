@@ -108,7 +108,8 @@ export function buildAssistResultItems({
   onAsk,
   onSignUp,
   onRunCandidate,
-}: AssistRowHandlers & { query: string }): ResultItem[] {
+  hasLocalResults = false,
+}: AssistRowHandlers & { query: string; hasLocalResults?: boolean }): ResultItem[] {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
@@ -152,6 +153,9 @@ export function buildAssistResultItems({
   }
 
   if (active.candidates.length === 0) {
+    // Local article/command hits already answer the query; don't bury them
+    // under a dead-end AI row.
+    if (hasLocalResults) return [];
     return [assistRow({
       id: "assist:no-command",
       label: t("No command found — try HELP"),

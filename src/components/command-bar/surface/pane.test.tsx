@@ -209,7 +209,7 @@ describe("CommandBar pane and layout routes", () => {
       configureState={layoutModeState}
     />, {
       width: 90,
-      height: 28,
+      height: 38,
     });
 
     await testSetup.renderOnce();
@@ -217,9 +217,8 @@ describe("CommandBar pane and layout routes", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Focused Pane");
     expect(frame).toContain("Float Pane");
-    expect(frame).toContain("Undo Layout Change");
-    expect(frame).toContain("Current Layout");
-    expect(frame).toContain("Close All Floating Panes");
+    expect(frame).toContain("Layout Presets");
+    expect(frame).toContain("2x2 Grid");
   });
 
   test("runs layout actions directly from root search", async () => {

@@ -67,6 +67,7 @@ export interface RootResultModelOptions {
   pluginCommandResultItems: (command: CommandDef, shortcutArg: string) => ResultItem[];
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
+  articleResultItems?: ResultItem[];
   runDirectCommand: (command: Command, arg: string) => void;
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
@@ -108,6 +109,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
+    articleResultItems = [],
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -227,11 +229,15 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...matchedItems);
   }
 
+  if (rootShortcutIntent.kind === "none") {
+    items.push(...articleResultItems);
+  }
+
   // Built from the local matches, then moved above them: the AI answers the
   // question the user typed, so it leads the list. Rows landing here renumber
   // everything below, which the root selection effect absorbs by identity.
   const assistItems = assist && isAssistSectionVisible(assist, rootQuery, items.length)
-    ? buildAssistResultItems({ ...assist, query: rootQuery })
+    ? buildAssistResultItems({ ...assist, query: rootQuery, hasLocalResults: items.length > 0 })
     : [];
 
   return { items: [...assistItems, ...items], initialIdx };

@@ -4,9 +4,16 @@ import {
   resetSubstackPersistence,
 } from "./api/store";
 import {
+  ARTICLE_READER_FLOATING_SIZE,
+  SUBSTACK_ARTICLE_READER_PANE_ID,
+  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+  articleReaderInstanceId,
+} from "../shared/article-pop-out";
+import {
   SUBSTACK_PANE_ID,
   SUBSTACK_PLUGIN_ID,
 } from "./types";
+import { SubstackArticleReaderPane } from "./article-reader";
 import { SubstackPane } from "./pane";
 
 export const substackPlugin: GloomPlugin = {
@@ -34,6 +41,15 @@ export const substackPlugin: GloomPlugin = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 32 },
     },
+    {
+      id: SUBSTACK_ARTICLE_READER_PANE_ID,
+      name: "Article",
+      icon: "A",
+      component: SubstackArticleReaderPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
+    },
   ],
 
   paneTemplates: [
@@ -44,6 +60,28 @@ export const substackPlugin: GloomPlugin = {
       description: "Open the authenticated Substack reader feed.",
       keywords: ["substack", "newsletter", "feed", "reader", "subscription"],
       shortcut: { prefix: "SUB" },
+    },
+    {
+      id: SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+      paneId: SUBSTACK_ARTICLE_READER_PANE_ID,
+      label: "Substack Article",
+      description: "Read a popped-out Substack article.",
+      keywords: ["substack", "article", "reader"],
+      canCreate: (_context, options) => !!options?.arg?.trim(),
+      createInstance: (_context, options) => {
+        const articleId = options?.arg?.trim() ?? "";
+        if (!articleId) return null;
+        return {
+          instanceId: articleReaderInstanceId(SUBSTACK_ARTICLE_READER_PANE_ID, articleId),
+          title: options?.values?.title?.trim() || "Article",
+          placement: "floating",
+          settings: {
+            articleId,
+            title: options?.values?.title ?? "",
+            url: options?.values?.url ?? "",
+          },
+        };
+      },
     },
   ],
 };

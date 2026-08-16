@@ -56,6 +56,115 @@ describe("core sync contributors", () => {
     expect(serialized).toContain("Demo Broker");
   });
 
+  test("redacts BYOK api keys from synced pluginConfig", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.pluginConfig = {
+      application: {
+        theme: "dark",
+        byokApiKeys: {
+          keys: [{
+            id: "byok-1",
+            serviceId: "adjacent",
+            name: "Adjacent",
+            apiKey: "sk-live-secret",
+            createdAt: 1,
+          }],
+        },
+      },
+    };
+
+    const payload = await coreConfigSyncContributor.collect({
+      state: createInitialState(config),
+    }) as { pluginConfig?: Record<string, Record<string, unknown>> };
+
+    expect(JSON.stringify(payload)).not.toContain("sk-live-secret");
+    expect(payload.pluginConfig?.application).toEqual({ theme: "dark" });
+  });
+
+  test("keeps a newer hosted local config instead of applying a stale pull", async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+        clear: () => values.clear(),
+        key: (index: number) => [...values.keys()][index] ?? null,
+        get length() {
+          return values.size;
+        },
+      } satisfies Storage,
+    });
+
+    const { setHostedConfigUserId, writeHostedUserConfig } = await import("../data/config/hosted-user-persist");
+    setHostedConfigUserId("user-1");
+    const local = createDefaultConfig("cloud://users/user-1");
+    local.theme = "amber";
+    writeHostedUserConfig(local);
+
+    const remote = createDefaultConfig("cloud://users/user-1");
+    remote.theme = "default";
+    const state = createInitialState(local);
+    const applied: unknown[] = [];
+
+    await coreConfigSyncContributor.apply?.(
+      { theme: "default" },
+      {
+        snapshot: {
+          schemaVersion: 1,
+          appId: "gloomberb",
+          clientId: "client",
+          createdAt: "2020-01-01T00:00:00.000Z",
+          contributors: {},
+        },
+        baselineState: state,
+        state,
+        getState: () => state,
+        isCurrent: () => true,
+        dispatch: (action) => applied.push(action),
+        tickerRepository: {} as never,
+      },
+    );
+
+    expect(applied).toEqual([]);
+    setHostedConfigUserId(null);
+  });
+
+  test("keeps local BYOK keys when a sanitized pull omits them", () => {
+    const localByok = {
+      keys: [{
+        id: "byok-1",
+        serviceId: "adjacent",
+        name: "Adjacent",
+        apiKey: "sk-local",
+        createdAt: 1,
+      }],
+    };
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.pluginConfig = {
+      application: {
+        theme: "dark",
+        byokApiKeys: localByok,
+      },
+    };
+
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      pluginConfig: {
+        application: { theme: "light" },
+      },
+    });
+
+    expect(merged?.pluginConfig.application).toEqual({
+      theme: "light",
+      byokApiKeys: localByok,
+    });
+  });
+
   test("normalizes legacy built-in ownership in pulled config", () => {
     const config = createDefaultConfig("/tmp/gloomberb-sync-test");
     const layouts = config.layouts.map((savedLayout, index) => index === 0

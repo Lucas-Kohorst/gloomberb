@@ -43,6 +43,7 @@ export interface FloatingPlacementMemory {
   y: number;
   width: number;
   height: number;
+  fixedGeometry?: boolean;
 }
 
 export interface DetachedPlacementMemory {
@@ -90,6 +91,7 @@ export interface FloatingPaneEntry {
   width: number;
   height: number;
   zIndex?: number;
+  fixedGeometry?: boolean;
 }
 
 interface DetachedPaneEntry {
@@ -133,6 +135,7 @@ export interface AppConfig {
   theme: string;
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
+  fontSize: number;
   recentTickers: string[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;
@@ -159,7 +162,6 @@ const TICKER_PANE_IDS = new Set([
   "notes",
   "options",
   "holders",
-  "sec",
   "insider",
   "analyst-research",
   "corporate-actions",
@@ -632,6 +634,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       renderer: "auto",
     },
     valueFlashingEnabled: true,
+    fontSize: 12,
     recentTickers: [],
   };
 }

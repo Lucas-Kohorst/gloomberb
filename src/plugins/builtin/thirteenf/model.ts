@@ -554,7 +554,7 @@ export function buildFilingPositionColumns(width: number): FilingPositionColumn[
   const cusipWidth = 10;
   const discretionWidth = 8;
   const fixedWidth = tickerWidth + typeWidth + valueWidth + weightWidth + sharesWidth + cusipWidth + discretionWidth;
-  const issuerWidth = Math.max(16, width - fixedWidth - 9);
+  const issuerWidth = Math.max(16, width - fixedWidth - 10);
   return [
     { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
     { id: "type", label: "TYPE", width: typeWidth, align: "left" },
@@ -577,7 +577,7 @@ export function buildHoldingColumns(width: number): FundHoldingColumn[] {
   const changeWidth = 11;
   const actionWidth = 7;
   const fixedWidth = tickerWidth + typeWidth + valueWidth + pnlWidth + weightWidth + sharesWidth + changeWidth + actionWidth;
-  const issuerWidth = Math.max(18, width - fixedWidth - 10);
+  const issuerWidth = Math.max(18, width - fixedWidth - 11);
   return [
     { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
     { id: "type", label: "TYPE", width: typeWidth, align: "left" },

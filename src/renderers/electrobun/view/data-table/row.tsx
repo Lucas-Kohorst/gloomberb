@@ -105,6 +105,7 @@ export function WebDataTableHeader<C extends DataTableColumn>({
               minWidth: 0,
               height: WEB_CELL_HEIGHT,
               overflow: "hidden",
+              cursor: "pointer",
               backgroundColor: column.headerBackgroundColor ?? CSS_PANEL,
             }}
             onMouseDown={(event) => {

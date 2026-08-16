@@ -49,14 +49,14 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
     label: "VOL24H",
     width: 11,
     align: "right",
-    description: "24-hour venue-native volume.",
+    description: "24-hour volume in dollars.",
   },
   {
     id: "open_interest",
     label: "OI",
     width: 10,
     align: "right",
-    description: "Open interest.",
+    description: "Open interest in dollars.",
   },
   {
     id: "ends",
@@ -91,7 +91,7 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
     label: "TOTALVOL",
     width: 11,
     align: "right",
-    description: "Total venue-native volume.",
+    description: "Total volume in dollars.",
   },
   {
     id: "liquidity",
@@ -106,6 +106,13 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
     width: 10,
     align: "left",
     description: "Last upstream update age.",
+  },
+  {
+    id: "created",
+    label: "CREATED",
+    width: 10,
+    align: "left",
+    description: "Market creation date.",
   },
   {
     id: "market_id",

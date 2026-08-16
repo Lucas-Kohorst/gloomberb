@@ -1,6 +1,7 @@
 import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
 
 export const AI_PROVIDER_IDS = [
+  "browser-builtin",
   "anthropic",
   "openai-codex",
   "openai",
@@ -31,8 +32,15 @@ export interface AiProviderDefinition {
   /**
    * Ordered, curated defaults. The runtime chooses the first one available to
    * the connected account and never falls back to provider array order.
+   * Ordered quality-first (powerful → balanced → fast).
    */
   preferredModelIds: readonly string[];
+  /**
+   * Ordered fast/cheap defaults for speed-optimised features (e.g. the
+   * screener). The runtime chooses the first one available to the connected
+   * account. Ordered speed-first (fast → balanced).
+   */
+  fastModelIds: readonly string[];
 }
 
 export interface AiProvider {
@@ -49,40 +57,53 @@ const ALL_OUTPUT_MODES: readonly AiRunOutputMode[] = ["plain", "structured", "sc
 
 const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
   {
+    id: "browser-builtin",
+    name: "Browser (on-device)",
+    outputModes: ["plain"],
+    preferredModelIds: ["gemini-nano"],
+    fastModelIds: ["gemini-nano"],
+  },
+  {
     id: "anthropic",
     name: "Claude",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["claude-opus-4-8", "claude-sonnet-5"],
+    fastModelIds: ["claude-haiku-4-5", "claude-sonnet-4-6"],
   },
   {
     id: "openai-codex",
     name: "OpenAI (ChatGPT)",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra"],
+    fastModelIds: ["gpt-5.4-mini", "gpt-5.6-luna"],
   },
   {
     id: "openai",
     name: "OpenAI API",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.4"],
+    fastModelIds: ["gpt-4o-mini", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     id: "google",
     name: "Google Gemini",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gemini-3.6-flash", "gemini-3.5-flash"],
+    fastModelIds: ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite"],
   },
   {
     id: "github-copilot",
     name: "GitHub Copilot",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gpt-5.6-sol", "claude-sonnet-5", "gpt-5.4"],
+    fastModelIds: ["claude-haiku-4.5", "gpt-5.4-mini", "gpt-5.4-nano"],
   },
   {
     id: "xai",
     name: "xAI / Grok",
     outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["grok-4.5", "grok-4.3"],
+    fastModelIds: ["grok-4.3"],
   },
   {
     id: "openrouter",
@@ -92,6 +113,11 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
       "anthropic/claude-sonnet-5",
       "openai/gpt-5.6-sol",
       "google/gemini-3.6-flash",
+    ],
+    fastModelIds: [
+      "anthropic/claude-haiku-4.5",
+      "google/gemini-2.5-flash-lite",
+      "openai/gpt-4o-mini",
     ],
   },
 ];
@@ -121,6 +147,7 @@ export function getAiProviderDefinitions(): AiProviderDefinition[] {
     ...definition,
     outputModes: [...definition.outputModes],
     preferredModelIds: [...definition.preferredModelIds],
+    fastModelIds: [...definition.fastModelIds],
   }));
 }
 
@@ -154,7 +181,12 @@ export function aiProviderFromRuntime(provider: AiRuntimeProvider): AiProvider {
  */
 export function detectProviders(): AiProvider[] {
   if (detectedProviders) return detectedProviders;
-  detectedProviders = PROVIDER_DEFINITIONS.map(disconnectedProvider);
+  // Chrome's Prompt API only exists in the hosted web client. Listing the
+  // on-device provider anywhere else offers a "sign in" action for a model
+  // that cannot be signed into and is not present on the platform.
+  detectedProviders = PROVIDER_DEFINITIONS
+    .filter((definition) => definition.id !== "browser-builtin" || isHostedWebClient())
+    .map(disconnectedProvider);
   return detectedProviders;
 }
 
@@ -170,9 +202,22 @@ export function getAiProvider(
 export function resolveDefaultAiProviderId(
   providers: readonly AiProvider[] = detectProviders(),
 ): AiProviderId {
+  if (isHostedWebClient()) {
+    const browser = providers.find((provider) => provider.id === "browser-builtin");
+    // "ready" includes downloadable: selecting it lets the settings action
+    // perform the download under a user gesture. Never select a dead browser
+    // provider when Chrome reports it as unavailable.
+    if (browser?.status === "ready") return browser.id;
+  }
   return providers.find((provider) => provider.status === "ready")?.id
     ?? providers[0]?.id
     ?? "anthropic";
+}
+
+/** Hosted web is the only renderer where Chrome's Prompt API is available. */
+export function isHostedWebClient(): boolean {
+  return typeof globalThis !== "undefined"
+    && (globalThis as { __GLOOM_CLOUD_HOSTED?: unknown }).__GLOOM_CLOUD_HOSTED === true;
 }
 
 export function getAiProviderUnavailableReason(provider: AiProvider): string {

@@ -139,6 +139,21 @@ export async function saveNewsFeedSettings(
   await configState.delete(LEGACY_DISABLED_DEFAULT_FEEDS_KEY);
 }
 
+export function enabledNewsFeedNamesFromPluginConfig(
+  pluginConfig: Record<string, unknown> | undefined,
+): string[] {
+  const settings = loadNewsFeedSettings({
+    get<T = unknown>(key: string): T | null {
+      if (!pluginConfig || !Object.hasOwn(pluginConfig, key)) return null;
+      return pluginConfig[key] as T;
+    },
+    set: async () => {},
+    delete: async () => {},
+    keys: () => Object.keys(pluginConfig ?? {}),
+  });
+  return getEnabledNewsFeeds(settings).map((feed) => feed.name);
+}
+
 export function getEnabledNewsFeeds(settings: Pick<NewsFeedSettings, "userFeeds" | "disabledDefaultFeedIds">): RssFeedConfig[] {
   const disabled = new Set(settings.disabledDefaultFeedIds);
   return [

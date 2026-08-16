@@ -1,6 +1,6 @@
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
-import { useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
@@ -11,8 +11,10 @@ import {
   type NewsSortPreference,
 } from "./table";
 import { useNewsArticleFooter } from "./footer";
+import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
 
 export function NewsPresetPane({
   focused,
@@ -51,11 +53,26 @@ export function NewsPresetPane({
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
+  const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const copyShareLink = useCopyShareLink();
+  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailArticle ?? selectedArticle;
+
+  const shareArticle = readableArticle
+    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    : undefined;
 
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
     focused,
-    article: detailArticle,
+    article: readableArticle,
+    loading,
+    error: newsState.error,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRefresh: () => {
+      void getSharedNewsService()?.load(query);
+    },
+    onShare: shareArticle,
   });
 
   const detailContent = detailArticle ? (
@@ -93,6 +110,8 @@ export function NewsPresetPane({
       columns={columns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

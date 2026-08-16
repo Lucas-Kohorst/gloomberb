@@ -71,11 +71,13 @@ export function buildNativeTransientOccluders({
   }
 
   if (dockPreview) {
-    occluders.push({
-      id: `dock-preview:${dockPreview.kind}`,
-      rect: dockPreview.rect,
-      zIndex: 96,
-    });
+    for (const preview of dockPreview.rects) {
+      occluders.push({
+        id: `dock-preview:${dockPreview.kind}:${preview.instanceId}`,
+        rect: preview.rect,
+        zIndex: 96,
+      });
+    }
   }
 
   if (windowModeDockMovePreview) {

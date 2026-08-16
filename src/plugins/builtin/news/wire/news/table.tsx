@@ -12,6 +12,7 @@ import type { MarketNewsItem } from "../../../../../types/news-source";
 import { colors } from "../../../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
+import { isPlainKey } from "../../../../../utils/keyboard";
 
 export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -133,6 +134,8 @@ interface NewsArticleStackViewProps extends NewsArticleStackBaseProps {
     preventDefault?: () => void;
     stopPropagation?: () => void;
   }) => boolean | void;
+  onPopOut?: () => void;
+  onShare?: () => void;
 }
 
 export function NewsArticleStackView({
@@ -153,6 +156,8 @@ export function NewsArticleStackView({
   detailTitle,
   rootBefore,
   onRootKeyDown,
+  onPopOut,
+  onShare,
   columns: columnIds,
   emptyContent,
   emptyStateTitle,
@@ -227,6 +232,24 @@ export function NewsArticleStackView({
     }
   }, [readArticleIds, titleForArticle]);
 
+  const handleDetailKeyDown = useCallback((event: {
+    name?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+  }) => {
+    if (onShare && isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      onShare();
+      return true;
+    }
+    if (!onPopOut || !isPlainKey(event, "p")) return false;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    onPopOut();
+    return true;
+  }, [onPopOut, onShare]);
+
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>
       focused={focused}
@@ -244,6 +267,7 @@ export function NewsArticleStackView({
       rootBefore={rootBefore}
       rootHeight={rootHeight}
       onRootKeyDown={onRootKeyDown}
+      onDetailKeyDown={handleDetailKeyDown}
       columns={columns}
       items={sortedArticles}
       sortColumnId={sortPreference.columnId}

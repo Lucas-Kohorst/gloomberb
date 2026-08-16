@@ -4,7 +4,7 @@ import { createPaneTemplateOrThrow } from "../../components/command-bar/workflow
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
-import type { PaneBinding, PaneInstanceConfig } from "../../types/config";
+import type { LayoutConfig, PaneBinding, PaneInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type {
   PaneDef,
@@ -27,6 +27,7 @@ interface UseAppPaneTemplateRuntimeOptions {
   dialog: DialogApi;
   dispatch: Dispatch<AppAction>;
   notify: (body: string, options?: { type?: "info" | "success" | "error" }) => void;
+  focusVisiblePane: (paneId: string, layout?: LayoutConfig) => void;
   placePaneInstance: (
     instance: PaneInstanceConfig,
     paneDef: PaneDef,
@@ -43,6 +44,7 @@ export function useAppPaneTemplateRuntime({
   dialog,
   dispatch,
   notify,
+  focusVisiblePane,
   placePaneInstance,
   pluginRegistry,
   stateRef,
@@ -87,6 +89,7 @@ export function useAppPaneTemplateRuntime({
         getState: () => stateRef.current,
         buildPaneInstance,
         placePaneInstance,
+        focusPaneInstance: focusVisiblePane,
       });
     } catch (error) {
       notify(
@@ -98,6 +101,7 @@ export function useAppPaneTemplateRuntime({
     buildPaneInstance,
     dataProvider,
     dispatch,
+    focusVisiblePane,
     notify,
     placePaneInstance,
     pluginRegistry,

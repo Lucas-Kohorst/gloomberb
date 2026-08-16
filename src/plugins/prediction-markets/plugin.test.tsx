@@ -95,9 +95,13 @@ describe("prediction markets plugin registration and services", () => {
         volume_24h_fp: "15000",
         volume_fp: "90000",
         open_interest_fp: "45000",
+        notional_value_dollars: "1.0000",
         liquidity_dollars: "250000",
-      } as any)?.volume24h,
-    ).toBe(15000);
+      } as any),
+    ).toMatchObject({
+      volume24h: 15000,
+      volume24hUnit: "usd",
+    });
   });
 
   test("uses Kalshi target subtitles to disambiguate strike ladders", () => {
@@ -178,6 +182,7 @@ describe("prediction markets plugin registration and services", () => {
     expect(rows[0]?.kind).toBe("group");
     expect(rows[0]?.focusMarketKey).toBe("kalshi:KXFED-27APR-T4.25");
     expect(rows[0]?.focusYesPrice).toBe(0.48);
+    expect(rows[0]?.volume24h).toBe(27000);
   });
 
   test("styles YES consistently and uses the lead contract quote on grouped rows", () => {

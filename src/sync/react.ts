@@ -1,4 +1,6 @@
 import { useEffect, useSyncExternalStore, type Dispatch } from "react";
+import { apiClient } from "../api-client";
+import { setHostedConfigUserId } from "../data/config/hosted-user-persist";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginRegistry } from "../plugins/registry";
@@ -40,6 +42,16 @@ export function useCloudSyncRuntime({
     if (!initialized) return;
     cloudSyncController.schedulePush("state-change");
   }, [initialized, state.config, state.tickers]);
+
+  useEffect(() => {
+    const syncSignedInUser = () => {
+      setHostedConfigUserId(apiClient.getCurrentUser()?.id ?? null);
+      if (!initialized || !apiClient.isVerified()) return;
+      void cloudSyncController.requestSync({ reason: "signed-in" });
+    };
+    syncSignedInUser();
+    return apiClient.subscribeCurrentUser(syncSignedInUser);
+  }, [initialized]);
 }
 
 export function useCloudSyncStatus() {

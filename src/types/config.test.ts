@@ -3,6 +3,7 @@ import {
   createPaneInstance,
   findPrimaryPaneInstance,
   materializeDetachedPanesAsFloating,
+  normalizePaneLayout,
   resolveFollowBindingInstance,
   resolvePaneInstance,
   type LayoutConfig,
@@ -65,6 +66,17 @@ describe("resolvePaneInstance", () => {
 
     expect(resolvePaneInstance(layout, "portfolio-list:main")?.instanceId).toBe("portfolio-list:main");
     expect(resolvePaneInstance(layout, "portfolio-list")?.instanceId).toBe("portfolio-list:main");
+  });
+});
+
+describe("normalizePaneLayout", () => {
+  test("keeps an unbound SEC browser pane", () => {
+    const sec = createPaneInstance("sec", {
+      instanceId: "sec:latest",
+      binding: { kind: "none" },
+    });
+
+    expect(normalizePaneLayout(createLayout([sec])).instances).toContainEqual(sec);
   });
 });
 

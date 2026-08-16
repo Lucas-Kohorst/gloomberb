@@ -11,6 +11,17 @@ import type { DesktopDeepLinkBridge } from "../../types/desktop-deeplink";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { requestAccountManagementTab } from "../../plugins/builtin/account-management/navigation";
 import { chatController } from "../../plugins/builtin/chat/controller";
+import {
+  NEWS_ARTICLE_READER_TEMPLATE_ID,
+  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+} from "../../plugins/builtin/shared/article-pop-out";
+import {
+  decodeArticleSharePayload,
+  payloadToNewsArticle,
+  payloadToSubstackArticle,
+} from "../../plugins/builtin/shared/article-share";
+import { stashNewsArticle } from "../../plugins/builtin/news/wire/news/article-stash";
+import { stashSubstackArticle } from "../../plugins/builtin/substack/article-stash";
 
 type CloudDeepLinkRoute = {
   kind: "cloud-alerts" | "cloud-emails" | "cloud-roundup" | "cloud-success";
@@ -33,6 +44,7 @@ export type DesktopDeepLinkAction =
   | { type: "open-chat-channel"; channelId: string; messageId: string | null; message: string }
   | { type: "open-chat-dm"; participants: string; message: string }
   | { type: "open-news"; kind: NewsDeepLinkKind; symbol: string | null; message: string }
+  | { type: "open-article-reader"; articleType: "news" | "substack"; encodedPayload: string; message: string }
   | { type: "unsupported"; message: string };
 
 interface ParsedGloomUrl {
@@ -241,6 +253,19 @@ function parseNewsDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
   return { type: "unsupported", message: "Unsupported Gloomberb news link." };
 }
 
+function parseArticleDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
+  const encoded = param(parsed.url, "a");
+  if (!encoded) return { type: "unsupported", message: "Article links need an encoded payload." };
+  const payload = decodeArticleSharePayload(encoded);
+  if (!payload) return { type: "unsupported", message: "Article link payload is invalid." };
+  return {
+    type: "open-article-reader",
+    articleType: payload.type,
+    encodedPayload: encoded,
+    message: `Opened article "${payload.title}".`,
+  };
+}
+
 export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAction {
   const parsed = parseGloomUrl(rawUrl);
   if (!parsed) return { type: "unsupported", message: "Unsupported Gloomberb link." };
@@ -262,6 +287,8 @@ export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAct
       return parseChatDeepLink(parsed);
     case "news":
       return parseNewsDeepLink(parsed);
+    case "article":
+      return parseArticleDeepLink(parsed);
     default:
       return { type: "unsupported", message: "Unsupported Gloomberb link." };
   }
@@ -462,6 +489,58 @@ function handleOpenNews(
   notifySuccess(pluginRegistry, action.message);
 }
 
+function handleOpenArticleReader(
+  action: Extract<DesktopDeepLinkAction, { type: "open-article-reader" }>,
+  pluginRegistry: PluginRegistry,
+): void {
+  const payload = decodeArticleSharePayload(action.encodedPayload);
+  if (!payload) {
+    notifyError(pluginRegistry, "Article link payload is invalid.");
+    return;
+  }
+
+  if (payload.type === "news") {
+    if (!pluginRegistry.paneTemplates.has(NEWS_ARTICLE_READER_TEMPLATE_ID)) {
+      notifyError(pluginRegistry, "Article reader is unavailable.");
+      return;
+    }
+    const article = payloadToNewsArticle(payload);
+    stashNewsArticle(article);
+    void pluginRegistry.createPaneFromTemplateAsyncFn(NEWS_ARTICLE_READER_TEMPLATE_ID, {
+      arg: article.id,
+      values: {
+        title: article.title,
+        url: article.url,
+        source: article.source,
+      },
+    }).then(() => {
+      notifySuccess(pluginRegistry, action.message);
+    }).catch((error) => {
+      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open article.");
+    });
+    return;
+  }
+
+  // substack
+  if (!pluginRegistry.paneTemplates.has(SUBSTACK_ARTICLE_READER_TEMPLATE_ID)) {
+    notifyError(pluginRegistry, "Article reader is unavailable.");
+    return;
+  }
+  const article = payloadToSubstackArticle(payload);
+  stashSubstackArticle(article);
+  void pluginRegistry.createPaneFromTemplateAsyncFn(SUBSTACK_ARTICLE_READER_TEMPLATE_ID, {
+    arg: article.id,
+    values: {
+      title: article.title,
+      url: article.url ?? "",
+    },
+  }).then(() => {
+    notifySuccess(pluginRegistry, action.message);
+  }).catch((error) => {
+    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open article.");
+  });
+}
+
 export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHandlerOptions): void {
   const action = resolveDesktopDeepLinkAction(rawUrl);
   if (action.type === "unsupported") {
@@ -498,6 +577,9 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
       return;
     case "open-news":
       handleOpenNews(action, options.pluginRegistry);
+      return;
+    case "open-article-reader":
+      handleOpenArticleReader(action, options.pluginRegistry);
       return;
   }
 }

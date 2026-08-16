@@ -140,6 +140,11 @@ export class CloudApiRequestTransport {
   }
 
   private extractSessionCookie(res: CloudApiResponse): void {
+    if (res.headers.get("x-gloom-hosted-session") === "1") {
+      this.sessionToken = "hosted-session";
+      this.sessionCookieName = null;
+      return;
+    }
     const setCookie = res.headers.getSetCookie?.() ?? [];
     const fallbackHeader = res.headers.get("set-cookie");
     if (fallbackHeader) {

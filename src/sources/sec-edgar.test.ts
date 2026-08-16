@@ -3,6 +3,8 @@ import {
   SecEdgarClient,
   extractFilingContent,
   parseCompanyFactsFinancialStatements,
+  parseEftsDisplayName,
+  parseEftsFilings,
   parseFilingDocuments,
   parseRecentFilings,
   parseTickerLookup,
@@ -39,6 +41,51 @@ describe("parseTickerLookup", () => {
 
     expect(lookup.get("AAPL")?.name).toBe("Apple Inc.");
     expect(lookup.get("AAPL")?.cik).toBe("0000320193");
+  });
+});
+
+describe("parseEftsFilings", () => {
+  test("maps EFTS hits into filing items and keeps ticker from the display name", () => {
+    const filings = parseEftsFilings({
+      hits: {
+        hits: [
+          {
+            _id: "0000320193-26-000020:aapl-20260628.htm",
+            _source: {
+              adsh: "0000320193-26-000020",
+              form: "10-Q",
+              file_date: "2026-07-31",
+              file_description: "Quarterly report",
+              display_names: ["Apple Inc.  (AAPL)  (CIK 0000320193)"],
+              ciks: ["0000320193"],
+              items: [],
+            },
+          },
+          {
+            _id: "0000320193-26-000020:aapl-20260628.htm",
+            _source: {
+              adsh: "0000320193-26-000020",
+              form: "10-Q",
+              file_date: "2026-07-31",
+              ciks: ["0000320193"],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(filings).toHaveLength(1);
+    expect(filings[0]).toMatchObject({
+      accessionNumber: "0000320193-26-000020",
+      form: "10-Q",
+      ticker: "AAPL",
+      companyName: "Apple Inc.",
+      filingUrl: "https://www.sec.gov/Archives/edgar/data/320193/0000320193-26-000020-index.htm",
+      primaryDocumentUrl: "https://www.sec.gov/Archives/edgar/data/320193/000032019326000020/aapl-20260628.htm",
+    });
+    expect(parseEftsDisplayName("Bradshaw James Henderson  (CIK 0002146676)")).toEqual({
+      companyName: "Bradshaw James Henderson",
+    });
   });
 });
 

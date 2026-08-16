@@ -1,10 +1,17 @@
 import type { WizardStep } from "../../../types/plugin";
-import type { AiProvider } from "./providers";
+import type { AiProvider, AiProviderDefinition } from "./providers";
 import {
+  getAiProviderDefinition,
   getAiProviderUnavailableLabel,
   migrateLegacyAiProviderId,
   resolveDefaultAiProviderId,
 } from "./providers";
+import {
+  getModelTierBadge,
+  getModelTierMetaForId,
+  pickModelByTier,
+  type ModelTier,
+} from "./model-tiers";
 import {
   getAiRuntimeCatalog,
   type AiRunOutputMode,
@@ -12,6 +19,33 @@ import {
 } from "./runner";
 
 export const AI_AUTO_MODEL_VALUE = "__auto__";
+
+/**
+ * AI features that pick their own default model. The screener favours fast
+ * models (structured output, high volume); ask-AI and the workspace favour
+ * quality (reasoning, analysis).
+ */
+export type AiFeatureId = "screener" | "ask-ai" | "workspace";
+
+/**
+ * User-facing speed-vs-quality toggle. "auto" applies the per-feature default
+ * (speed for screener, quality for ask-AI/workspace).
+ */
+export type AiModelPreference = "auto" | "speed" | "quality";
+
+export const AI_MODEL_PREFERENCE_VALUES: readonly AiModelPreference[] = ["auto", "speed", "quality"];
+
+export const AI_MODEL_PREFERENCE_LABELS: Readonly<Record<AiModelPreference, string>> = {
+  auto: "Auto (screener: fast, ask-AI/agent: quality)",
+  speed: "Speed (fast models everywhere)",
+  quality: "Quality (powerful models everywhere)",
+};
+
+const FEATURE_DEFAULT_PREFERENCE: Readonly<Record<AiFeatureId, "speed" | "quality">> = {
+  "screener": "speed",
+  "ask-ai": "quality",
+  "workspace": "quality",
+};
 
 export interface AiRunnerSelectionScope {
   outputMode?: AiRunOutputMode;
@@ -63,6 +97,84 @@ export function normalizeAiModelId(value: string | null | undefined): string | n
   return modelId && modelId !== AI_AUTO_MODEL_VALUE ? modelId : null;
 }
 
+/**
+ * Resolves the effective speed-vs-quality preference for a feature. "auto"
+ * maps to the feature's curated default (speed for screener, quality
+ * otherwise); explicit "speed"/"quality" overrides apply everywhere.
+ */
+export function resolveFeatureModelPreference(
+  feature: AiFeatureId,
+  configuredPreference?: AiModelPreference | null,
+): "speed" | "quality" {
+  if (configuredPreference === "speed" || configuredPreference === "quality") {
+    return configuredPreference;
+  }
+  return FEATURE_DEFAULT_PREFERENCE[feature];
+}
+
+/**
+ * Desired model tier for a resolved preference. "speed" → fast, "quality" →
+ * powerful (falling back to balanced when no powerful model exists).
+ */
+export function preferenceToTargetTier(preference: "speed" | "quality"): ModelTier {
+  return preference === "speed" ? "fast" : "powerful";
+}
+
+function availableModelIdsForProvider(
+  providerId: string,
+  runtimeCatalog: AiRuntimeCatalog,
+): string[] {
+  const canonicalProviderId = migrateLegacyAiProviderId(providerId);
+  return runtimeCatalog.models
+    .filter((model) => model.providerId === canonicalProviderId && model.available)
+    .map((model) => model.id);
+}
+
+function definitionModelIdsForTier(
+  definition: AiProviderDefinition,
+  preference: "speed" | "quality",
+): readonly string[] {
+  return preference === "speed" ? definition.fastModelIds : definition.preferredModelIds;
+}
+
+/**
+ * Resolves the default model id for a feature on a connected provider.
+ *
+ * When the preference is "speed", fast model ids are tried first; when
+ * "quality", the curated quality ids are tried first. In both cases the
+ * runtime catalog's available models gate the choice, and a tier-based fallback
+ * picks the closest available model when no curated id is available.
+ */
+export function resolveFeatureDefaultModelId(
+  providerId: string,
+  feature: AiFeatureId,
+  preference: AiModelPreference | null | undefined,
+  runtimeCatalog: AiRuntimeCatalog = getAiRuntimeCatalog(),
+): string | null {
+  const canonicalProviderId = migrateLegacyAiProviderId(providerId);
+  const definition = getAiProviderDefinition(canonicalProviderId);
+  if (!definition) return null;
+  const resolvedPreference = resolveFeatureModelPreference(feature, preference);
+  const orderedIds = definitionModelIdsForTier(definition, resolvedPreference);
+  const availableIds = availableModelIdsForProvider(canonicalProviderId, runtimeCatalog);
+
+  // First pass: first curated id that is available to the connected account.
+  const curatedMatch = orderedIds
+    .map((modelId) => availableIds.find((available) => available === modelId))
+    .find((candidate): candidate is string => candidate !== undefined);
+  if (curatedMatch) return curatedMatch;
+
+  // Second pass: pick the best available model by tier when the account has
+  // models but none of the curated ids match (e.g. a restricted plan).
+  if (availableIds.length > 0) {
+    return pickModelByTier(availableIds, preferenceToTargetTier(resolvedPreference));
+  }
+
+  // No connected-account info yet (catalog not loaded). Use the first curated
+  // id so a sensible default is shown before the provider is connected.
+  return orderedIds[0] ?? definition.preferredModelIds[0] ?? null;
+}
+
 export function getAiModelSelectionOptions(
   providerId: string,
   currentModelId?: string | null,
@@ -86,13 +198,16 @@ export function getAiModelSelectionOptions(
           : "Auto · provider default",
       description: "Use the provider's recommended model.",
     },
-    ...models.map((model) => ({
-      value: model.id,
-      label: model.available ? model.label : `${model.label} · connect to use`,
-      description: model.available
-        ? "Available for the connected account."
-        : "This model becomes available after the provider is connected.",
-    })),
+    ...models.map((model) => {
+      const tierMeta = getModelTierMetaForId(model.id);
+      return {
+        value: model.id,
+        label: model.available ? model.label : `${model.label} · connect to use`,
+        description: model.available
+          ? `${tierMeta.badge} · ${tierMeta.description}`
+          : `${tierMeta.badge} · available after the provider is connected.`,
+      };
+    }),
   ];
   const normalizedCurrent = normalizeAiModelId(currentModelId);
   if (normalizedCurrent && !models.some((model) => model.id === normalizedCurrent)) {

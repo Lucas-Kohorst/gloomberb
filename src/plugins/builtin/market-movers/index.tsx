@@ -1,9 +1,14 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import {
+  buildColumnVisibilityField,
+  resolveVisibleColumns,
+} from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import { usePaneInstance } from "../../../state/app/context";
 import { priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
@@ -31,11 +36,17 @@ import {
   type MarketMoverSortPreference,
   type TabId,
 } from "./model";
-import { buildMarketMoverColumns, renderMarketMoverCell } from "./table";
+import {
+  buildMarketMoverColumns,
+  DEFAULT_MARKET_MOVER_COLUMN_IDS,
+  MARKET_MOVER_COLUMN_DEFS,
+  renderMarketMoverCell,
+} from "./table";
 
 function MarketMoversPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { pinTicker } = usePluginTickerActions();
+  const paneInstance = usePaneInstance();
   const [activeTab, setActiveTab] = useState<TabId>("gainers");
   const [quotes, setQuotes] = useState<ScreenerQuote[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,7 +57,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
 
   const fetchGenRef = useRef(0);
 
-  const columns = useMemo(() => buildMarketMoverColumns(width), [width]);
+  const columns = useMemo(
+    () => resolveVisibleColumns(
+      buildMarketMoverColumns(width),
+      paneInstance?.settings?.columnIds,
+      DEFAULT_MARKET_MOVER_COLUMN_IDS,
+    ),
+    [paneInstance?.settings?.columnIds, width],
+  );
   const rankedRows = useMemo(() => createRows(quotes), [quotes]);
   const rows = useMemo(() => sortRows(rankedRows, sortPreference), [rankedRows, sortPreference]);
   const selectedIdx = selectedSymbol
@@ -267,6 +285,10 @@ export const marketMoversModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 36 },
+      settings: {
+        title: "Market Movers Settings",
+        fields: [buildColumnVisibilityField(MARKET_MOVER_COLUMN_DEFS)],
+      },
     },
   ],
 

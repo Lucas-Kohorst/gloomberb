@@ -64,10 +64,11 @@ export function TableViewFrame({
       flexGrow={nativeFlexibleFrame || height == null ? 1 : undefined}
       flexShrink={nativeFlexibleFrame ? 1 : height == null ? undefined : 0}
       flexBasis={nativeFlexibleFrame ? 0 : undefined}
-      width={width}
+      width={nativeFlexibleFrame ? "100%" : width}
       height={nativeFlexibleFrame ? undefined : height}
       minWidth={nativeFlexibleFrame ? 0 : undefined}
       minHeight={nativeFlexibleFrame ? 0 : undefined}
+      maxWidth={nativeFlexibleFrame ? "100%" : undefined}
       maxHeight={nativeFlexibleFrame ? "100%" : undefined}
       backgroundColor={backgroundColor}
       overflow="hidden"

@@ -7,13 +7,28 @@ import {
   extractFilingContent,
   isPdfDocument,
 } from "./sec-edgar/content";
+import { httpFetch } from "../utils/http-transport";
 
 export { extractFilingContent } from "./sec-edgar/content";
 
 const LOOKUP_URL = "https://www.sec.gov/files/company_tickers_exchange.json";
 const SUBMISSIONS_URL = "https://data.sec.gov/submissions";
 const COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts";
+const EFTS_URL = "https://efts.sec.gov/LATEST/search-index";
 const FETCH_TIMEOUT_MS = 15_000;
+const LATEST_FILING_FORMS = [
+  "8-K",
+  "10-K",
+  "10-Q",
+  "6-K",
+  "20-F",
+  "S-1",
+  "S-3",
+  "DEF 14A",
+  "13F-HR",
+  "SC 13D",
+  "SC 13G",
+];
 
 function sanitizeIdentityPart(value: string, fallback: string): string {
   const sanitized = value.trim().toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -40,10 +55,22 @@ function getRuntimeHostName(): string {
 
 const runtimeHostName = getRuntimeHostName();
 
+// SEC EDGAR rejects requests whose User-Agent lacks a reachable contact email.
+// Use the real deployment host as the contact domain when one is available
+// (e.g. terminal.kohor.st) so the address is plausible; only fall back to the
+// .local mDNS-style suffix for truly local development hosts.
+function contactEmailDomain(host: string): string {
+  const sanitized = sanitizeIdentityPart(host, "localhost");
+  // A bare "localhost" or a single-label host has no public domain; use the
+  // local fallback so we never hand SEC a malformed contact address.
+  if (!sanitized.includes(".")) return `${sanitized}.local`;
+  return sanitized;
+}
+
 const DEFAULT_SEC_FROM =
   getEnv("SEC_FROM_EMAIL")?.trim()
   || extractEmail(getEnv("SEC_USER_AGENT"))
-  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${sanitizeIdentityPart(`${runtimeHostName}.local`, "localhost.localdomain")}`;
+  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${contactEmailDomain(runtimeHostName)}`;
 
 const DEFAULT_SEC_USER_AGENT =
   getEnv("SEC_USER_AGENT")?.trim()
@@ -250,6 +277,113 @@ export function parseTickerLookup(payload: unknown): Map<string, LookupEntry> {
   }
 
   return results;
+}
+
+export function parseEftsDisplayName(value: string): { companyName?: string; ticker?: string } {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  const withTicker = trimmed.match(/^(.*?)\s+\(([A-Z0-9][A-Z0-9.\-]{0,9})\)\s+\(CIK\s+\d+\)\s*$/i);
+  if (withTicker) {
+    return {
+      companyName: withTicker[1]?.trim() || undefined,
+      ticker: normalize(withTicker[2]),
+    };
+  }
+  const nameOnly = trimmed.match(/^(.*?)\s+\(CIK\s+\d+\)\s*$/i);
+  if (nameOnly) {
+    return { companyName: nameOnly[1]?.trim() || undefined };
+  }
+  return { companyName: trimmed };
+}
+
+export function parseEftsFilings(payload: unknown, count = 40): SecFilingItem[] {
+  const record = asRecord(payload);
+  const hits = asRecord(record?.hits);
+  const rows = Array.isArray(hits?.hits) ? hits.hits : [];
+  const results: SecFilingItem[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    if (results.length >= Math.max(count, 0)) break;
+    const hit = asRecord(row);
+    const source = asRecord(hit?._source);
+    if (!hit || !source) continue;
+
+    const hitId = String(hit._id ?? "").trim();
+    const accessionNumber = String(source.adsh ?? hitId.split(":")[0] ?? "").trim();
+    const form = String(
+      (Array.isArray(source.form) ? source.form[0] : source.form)
+      ?? (Array.isArray(source.root_forms) ? source.root_forms[0] : source.root_forms)
+      ?? "",
+    ).trim();
+    const filingDate = parseDate(source.file_date);
+    const ciks = Array.isArray(source.ciks) ? source.ciks : [];
+    const cik = zeroPadCik(ciks[0] ?? source.cik) ?? "";
+    const displayCik = String(Number(cik || "0"));
+    if (!accessionNumber || !form || !filingDate || !displayCik) continue;
+    if (seen.has(accessionNumber)) continue;
+    seen.add(accessionNumber);
+
+    const primaryDocument = hitId.includes(":")
+      ? hitId.slice(hitId.indexOf(":") + 1).trim() || undefined
+      : undefined;
+    const displayName = Array.isArray(source.display_names)
+      ? String(source.display_names[0] ?? "")
+      : String(source.display_names ?? "");
+    const identity = parseEftsDisplayName(displayName);
+    const items = Array.isArray(source.items)
+      ? source.items.map((item) => String(item).trim()).filter(Boolean).join(",")
+      : String(source.items ?? "").trim();
+    const accessionNumberNoDashes = stripAccessionDashes(accessionNumber);
+
+    results.push({
+      accessionNumber,
+      form,
+      filingDate,
+      primaryDocument,
+      primaryDocDescription: String(source.file_description ?? "").trim() || undefined,
+      items: items || undefined,
+      cik,
+      companyName: identity.companyName,
+      ticker: identity.ticker,
+      filingUrl: `https://www.sec.gov/Archives/edgar/data/${displayCik}/${accessionNumber}-index.htm`,
+      primaryDocumentUrl: primaryDocument
+        ? `https://www.sec.gov/Archives/edgar/data/${displayCik}/${accessionNumberNoDashes}/${primaryDocument}`
+        : undefined,
+    });
+  }
+
+  return results;
+}
+
+function buildEftsSearchUrl(params: {
+  query?: string;
+  ciks?: string;
+  forms?: readonly string[];
+  startDate?: string;
+  endDate?: string;
+  size?: number;
+}): string {
+  const url = new URL(EFTS_URL);
+  if (params.query?.trim()) url.searchParams.set("q", params.query.trim());
+  if (params.ciks) url.searchParams.set("ciks", params.ciks);
+  if (params.forms && params.forms.length > 0) url.searchParams.set("forms", params.forms.join(","));
+  if (params.startDate && params.endDate) {
+    url.searchParams.set("dateRange", "custom");
+    url.searchParams.set("startdt", params.startDate);
+    url.searchParams.set("enddt", params.endDate);
+  } else {
+    url.searchParams.set("dateRange", "all");
+  }
+  url.searchParams.set("from", "0");
+  url.searchParams.set("size", String(Math.max(1, Math.min(params.size ?? 40, 100))));
+  return url.toString();
+}
+
+function isoDateDaysAgo(days: number): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
 }
 
 export function parseRecentFilings(payload: unknown, count = 15): SecFilingItem[] {
@@ -574,7 +708,7 @@ export class SecEdgarClient {
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       headers: this.defaultHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -598,7 +732,7 @@ export class SecEdgarClient {
   }
 
   private async fetchText(url: string): Promise<{ body: string; contentType: string }> {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       headers: this.defaultHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -666,7 +800,38 @@ export class SecEdgarClient {
     if (!entry) return [];
 
     const payload = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/CIK${entry.cik}.json`);
-    return parseRecentFilings(payload, count);
+    return parseRecentFilings(payload, count).map((filing) => ({
+      ...filing,
+      ticker: filing.ticker ?? normalizedTicker,
+      companyName: filing.companyName ?? entry.name,
+    }));
+  }
+
+  async getLatestFilings(count = 40): Promise<SecFilingItem[]> {
+    const payload = await this.fetchJson<unknown>(buildEftsSearchUrl({
+      forms: LATEST_FILING_FORMS,
+      startDate: isoDateDaysAgo(7),
+      endDate: isoDateDaysAgo(0),
+      size: count,
+    }));
+    return parseEftsFilings(payload, count);
+  }
+
+  async searchFilings(query: string, count = 40): Promise<SecFilingItem[]> {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return this.getLatestFilings(count);
+
+    const ticker = normalize(normalizedQuery);
+    const lookup = await this.loadLookup();
+    if (lookup.has(ticker)) {
+      return this.getRecentFilings(ticker, count);
+    }
+
+    const payload = await this.fetchJson<unknown>(buildEftsSearchUrl({
+      query: normalizedQuery,
+      size: count,
+    }));
+    return parseEftsFilings(payload, count);
   }
 
   async getFinancialStatements(ticker: string): Promise<SecCompanyFactsStatements | null> {

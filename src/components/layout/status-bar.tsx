@@ -1,6 +1,6 @@
 import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, useState } from "react";
-import { blendHex, hoverBg } from "../../theme/colors";
+import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
@@ -42,6 +42,7 @@ type StatusBarViewProps = {
   layoutTabItems: LayoutTabItem[];
   layoutTabsWidth: number;
   openCommandBar: (event?: StatusBarEvent) => void;
+  openLayouts: (event?: StatusBarEvent) => void;
   openLayoutContextMenu: (index: number, event: any) => void | Promise<unknown>;
   setHoveredControl: SetHoveredControl;
   showGridlockTip: boolean;
@@ -55,6 +56,7 @@ function truncate(text: string, width: number): string {
 }
 
 export function StatusBar() {
+  useThemeColors();
   const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const registry = getSharedRegistry();
@@ -135,6 +137,12 @@ export function StatusBar() {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
+  };
+
+  const openLayouts = (event?: StatusBarEvent) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "LAY " });
   };
 
   const layoutContextMenuItems = useCallback((index: number): ContextMenuItem[] => {
@@ -236,6 +244,7 @@ export function StatusBar() {
     layoutTabItems,
     layoutTabsWidth,
     openCommandBar,
+    openLayouts,
     openLayoutContextMenu,
     setHoveredControl,
     showGridlockTip,
@@ -250,11 +259,20 @@ export function StatusBar() {
 
 function NativeStatusBar({
   activeLayoutIdx,
+  activeLayoutValue,
+  dismissGridlockTip,
+  handleGridlockTip,
+  handleLayoutSelect,
+  hasMultipleLayouts,
+  hoveredControl,
+  layoutTabItems,
+  layoutTabsWidth,
+  openCommandBar,
+  openLayouts,
   openLayoutContextMenu,
+  setHoveredControl,
   showGridlockTip,
-  ...props
 }: StatusBarViewProps) {
-  const colors = useThemeColors();
   return (
     <Box
       flexDirection="row"
@@ -271,8 +289,26 @@ function NativeStatusBar({
         paddingInline: 8,
       }}
     >
-      <StatusBarLayoutControl nativePaneChrome {...props} />
-      {showGridlockTip && <NativeGridlockTip {...props} />}
+      <StatusBarLayoutControl
+        activeLayoutValue={activeLayoutValue}
+        handleLayoutSelect={handleLayoutSelect}
+        hasMultipleLayouts={hasMultipleLayouts}
+        hoveredControl={hoveredControl}
+        layoutTabItems={layoutTabItems}
+        layoutTabsWidth={layoutTabsWidth}
+        nativePaneChrome
+        openCommandBar={openCommandBar}
+        openLayouts={openLayouts}
+        setHoveredControl={setHoveredControl}
+      />
+      {showGridlockTip && (
+        <NativeGridlockTip
+          dismissGridlockTip={dismissGridlockTip}
+          handleGridlockTip={handleGridlockTip}
+          hoveredControl={hoveredControl}
+          setHoveredControl={setHoveredControl}
+        />
+      )}
       <StatusBarWidgets />
     </Box>
   );
@@ -280,11 +316,20 @@ function NativeStatusBar({
 
 function TerminalStatusBar({
   activeLayoutIdx,
+  activeLayoutValue,
+  dismissGridlockTip,
+  handleGridlockTip,
+  handleLayoutSelect,
+  hasMultipleLayouts,
+  hoveredControl,
+  layoutTabItems,
+  layoutTabsWidth,
+  openCommandBar,
+  openLayouts,
   openLayoutContextMenu,
+  setHoveredControl,
   showGridlockTip,
-  ...props
 }: StatusBarViewProps) {
-  const colors = useThemeColors();
   return (
     <Box
       flexDirection="row"
@@ -296,8 +341,26 @@ function TerminalStatusBar({
         void openLayoutContextMenu(activeLayoutIdx, event);
       }}
     >
-      <StatusBarLayoutControl nativePaneChrome={false} {...props} />
-      {showGridlockTip && <TerminalGridlockTip {...props} />}
+      <StatusBarLayoutControl
+        activeLayoutValue={activeLayoutValue}
+        handleLayoutSelect={handleLayoutSelect}
+        hasMultipleLayouts={hasMultipleLayouts}
+        hoveredControl={hoveredControl}
+        layoutTabItems={layoutTabItems}
+        layoutTabsWidth={layoutTabsWidth}
+        nativePaneChrome={false}
+        openCommandBar={openCommandBar}
+        openLayouts={openLayouts}
+        setHoveredControl={setHoveredControl}
+      />
+      {showGridlockTip && (
+        <TerminalGridlockTip
+          dismissGridlockTip={dismissGridlockTip}
+          handleGridlockTip={handleGridlockTip}
+          hoveredControl={hoveredControl}
+          setHoveredControl={setHoveredControl}
+        />
+      )}
       <StatusBarWidgets />
     </Box>
   );
@@ -312,6 +375,7 @@ function StatusBarLayoutControl({
   layoutTabsWidth,
   nativePaneChrome,
   openCommandBar,
+  openLayouts,
   setHoveredControl,
 }: Pick<
   StatusBarViewProps,
@@ -322,6 +386,7 @@ function StatusBarLayoutControl({
   | "layoutTabItems"
   | "layoutTabsWidth"
   | "openCommandBar"
+  | "openLayouts"
   | "setHoveredControl"
 > & { nativePaneChrome: boolean }) {
   return (
@@ -349,6 +414,50 @@ function StatusBarLayoutControl({
           setHoveredControl={setHoveredControl}
         />
       )}
+      <LayoutsButton
+        hoveredControl={hoveredControl}
+        nativePaneChrome={nativePaneChrome}
+        openLayouts={openLayouts}
+        setHoveredControl={setHoveredControl}
+      />
+    </Box>
+  );
+}
+
+function LayoutsButton({
+  hoveredControl,
+  nativePaneChrome,
+  openLayouts,
+  setHoveredControl,
+}: Pick<StatusBarViewProps, "hoveredControl" | "openLayouts" | "setHoveredControl"> & {
+  nativePaneChrome: boolean;
+}) {
+  const hovered = hoveredControl === "layouts";
+  return (
+    <Box
+      marginLeft={1}
+      height={1}
+      alignItems="center"
+      onMouseOver={() => setHoveredControl((current) => (current === "layouts" ? current : "layouts"))}
+      onMouseDown={openLayouts}
+      data-gloom-role="layout-presets-button"
+      data-gloom-interactive="true"
+      aria-label="Open layout presets"
+      title="Layouts and presets"
+      {...(nativePaneChrome ? {
+        style: {
+          cursor: "pointer",
+          borderRadius: 4,
+          paddingInline: 6,
+          backgroundColor: hovered ? hoverBg() : blendHex(colors.panel, colors.header, 0.18),
+        },
+      } : {
+        backgroundColor: hovered ? hoverBg() : colors.header,
+      })}
+    >
+      <Text fg={nativePaneChrome ? (hovered ? colors.textBright : colors.text) : colors.headerText}>
+        {nativePaneChrome ? "Layouts" : " Layouts "}
+      </Text>
     </Box>
   );
 }
@@ -361,12 +470,11 @@ function CommandBarHint({
 }: Pick<StatusBarViewProps, "hoveredControl" | "openCommandBar" | "setHoveredControl"> & {
   nativePaneChrome: boolean;
 }) {
-  const colors = useThemeColors();
   const hovered = hoveredControl === "command-bar";
   return (
     <Text
       fg={hovered ? colors.text : colors.textDim}
-      {...(!nativePaneChrome ? { bg: hovered ? hoverBg(colors) : undefined } : {})}
+      {...(!nativePaneChrome ? { bg: hovered ? hoverBg() : undefined } : {})}
       onMouseOver={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
       onMouseDown={openCommandBar}
       {...(nativePaneChrome ? { "data-gloom-interactive": "true" } : {})}
@@ -382,7 +490,6 @@ function NativeGridlockTip({
   hoveredControl,
   setHoveredControl,
 }: Pick<StatusBarViewProps, "dismissGridlockTip" | "handleGridlockTip" | "hoveredControl" | "setHoveredControl">) {
-  const colors = useThemeColors();
   return (
     <Box paddingLeft={2} flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
       <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
@@ -413,13 +520,12 @@ function TerminalGridlockTip({
   hoveredControl,
   setHoveredControl,
 }: Pick<StatusBarViewProps, "dismissGridlockTip" | "handleGridlockTip" | "hoveredControl" | "setHoveredControl">) {
-  const colors = useThemeColors();
   return (
     <Box paddingLeft={1} flexShrink={0} flexDirection="row">
       <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
       <Box width={1} />
       <Box
-        backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg(colors) : colors.header}
+        backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
         onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
         onMouseDown={handleGridlockTip}
       >

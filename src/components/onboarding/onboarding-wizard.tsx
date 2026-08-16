@@ -36,12 +36,13 @@ interface OnboardingWizardProps {
   config: AppConfig;
   pluginRegistry: PluginRegistry;
   onComplete: (config: AppConfig) => void | Promise<void>;
+  initialStep?: OnboardingStep;
 }
 
-export function OnboardingWizard({ config, pluginRegistry, onComplete }: OnboardingWizardProps) {
+export function OnboardingWizard({ config, pluginRegistry, onComplete, initialStep = "welcome" }: OnboardingWizardProps) {
   const language = useAppLanguage();
   const { width: termWidth, height: termHeight } = useViewport();
-  const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [step, setStep] = useState<OnboardingStep>(initialStep);
   const [themeIdx, setThemeIdx] = useState(0);
   const [portfolioSub, setPortfolioSub] = useState<PortfolioSub>("choose");
   const [portfolioOptionIdx, setPortfolioOptionIdx] = useState(0);
@@ -130,6 +131,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
   }, [editingField, portfolioSub, brokerFieldIdx, account.accountSub, account.accountFieldIdx]);
 
   const { beginAccountMode, syncExistingAccountSession } = account;
+  useEffect(() => {
+    if (initialStep !== "account") return;
+    beginAccountMode("login");
+  }, [beginAccountMode, initialStep]);
+
   useEffect(() => {
     if (step !== "account") return;
     syncExistingAccountSession();
@@ -249,9 +255,11 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
 
   const contentWidth = Math.min(60, termWidth - 4);
   const contentLeft = Math.floor((termWidth - contentWidth) / 2);
+  const hideFooter = initialStep === "account";
+  const footerRows = hideFooter ? 0 : FOOTER_ROWS;
   // The footer is pinned to the last FOOTER_ROWS rows, so steps get whatever is left.
-  const contentTop = Math.max(0, Math.min(Math.floor((termHeight - 24) / 2), termHeight - FOOTER_ROWS - 1));
-  const contentHeight = Math.max(1, termHeight - contentTop - FOOTER_ROWS);
+  const contentTop = Math.max(0, Math.min(Math.floor((termHeight - 24) / 2), termHeight - footerRows - 1));
+  const contentHeight = Math.max(1, termHeight - contentTop - footerRows);
   const progressDots = ONBOARDING_STEPS.map((_, index) => {
     if (index < stepIdx) return "\u2501";
     if (index === stepIdx) return "\u25cf";
@@ -360,26 +368,28 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete }: Onboard
         )}
       </Box>
 
-      <Box
-        position="absolute"
-        top={termHeight - FOOTER_ROWS}
-        left={contentLeft}
-        width={contentWidth}
-        flexDirection="column"
-      >
-        <Box height={1} />
-        <Box height={1} flexDirection="row" width={contentWidth}>
-          <Box flexGrow={1}>
-            <Text fg={colors.textMuted}>{progressDots}</Text>
+      {!hideFooter && (
+        <Box
+          position="absolute"
+          top={termHeight - FOOTER_ROWS}
+          left={contentLeft}
+          width={contentWidth}
+          flexDirection="column"
+        >
+          <Box height={1} />
+          <Box height={1} flexDirection="row" width={contentWidth}>
+            <Box flexGrow={1}>
+              <Text fg={colors.textMuted}>{progressDots}</Text>
+            </Box>
+          </Box>
+          <Box height={1} flexDirection="row" width={contentWidth}>
+            <Box flexGrow={1} />
+            <Box>
+              <Text fg={colors.textMuted}>{hintText}</Text>
+            </Box>
           </Box>
         </Box>
-        <Box height={1} flexDirection="row" width={contentWidth}>
-          <Box flexGrow={1} />
-          <Box>
-            <Text fg={colors.textMuted}>{hintText}</Text>
-          </Box>
-        </Box>
-      </Box>
+      )}
     </Box>
   );
 }

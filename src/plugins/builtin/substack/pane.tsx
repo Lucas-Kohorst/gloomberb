@@ -7,7 +7,10 @@ import {
 } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { useDebouncedPluginPaneState, usePluginAppActions, usePluginPaneState } from "../../runtime";
+import {
+  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
+} from "../shared/article-pop-out";
 import {
   clearSubstackAuth,
   getStoredSubstackAuth,
@@ -58,12 +61,15 @@ import {
   type LoadState,
   type PublicationFeedState,
 } from "./pane-state";
+import { stashSubstackArticle } from "./article-stash";
 import { useSubstackReadState } from "./read-state";
+import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
 export function SubstackPane({ focused, width, height }: PaneProps) {
   const rendererHost = useRendererHost();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [auth, setAuth] = useState<SubstackAuthState | null>(() => getStoredSubstackAuth());
   const [home, setHome] = useState<LoadState<SubstackHomeData>>(homeLoadStateFromCache);
   const [publicationFeeds, setPublicationFeeds] = useState<Record<string, PublicationFeedState>>({});
@@ -341,6 +347,26 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     void rendererHost.openExternal(selectedArticle.url);
   }, [markArticleRead, rendererHost, selectedArticle]);
 
+  const popOutSelectedArticle = useCallback(() => {
+    if (!selectedArticle) return;
+    markArticleRead(selectedArticle.id);
+    stashSubstackArticle(selectedArticle);
+    createPaneFromTemplate(SUBSTACK_ARTICLE_READER_TEMPLATE_ID, {
+      arg: selectedArticle.id,
+      values: {
+        title: selectedArticle.title,
+        url: selectedArticle.url ?? "",
+      },
+    });
+    setDetailOpen(false);
+  }, [createPaneFromTemplate, markArticleRead, selectedArticle, setDetailOpen]);
+
+  const copyShareLink = useCopyShareLink();
+  const shareSelectedArticle = useCallback(() => {
+    if (!selectedArticle) return;
+    void copyShareLink(encodeSubstackArticleForShare(selectedArticle));
+  }, [copyShareLink, selectedArticle]);
+
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
     setActiveTab(SUBSTACK_FEED_TAB_ID);
@@ -371,8 +397,20 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       openSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
+    if (isPlainKey(event, "p")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelectedArticle();
+      return true;
+    }
     return false;
-  }, [openSelectedArticle, refreshActive]);
+  }, [openSelectedArticle, popOutSelectedArticle, refreshActive, shareSelectedArticle]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "j", "down")) {
@@ -393,6 +431,18 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       openSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedArticle();
+      return true;
+    }
+    if (isPlainKey(event, "p")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelectedArticle();
+      return true;
+    }
     if (isPlainKey(event, "r") && selectedArticle) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -400,7 +450,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [loadSelectedDetail, openSelectedArticle, scrollDetailBy, selectedArticle]);
+  }, [loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle, shareSelectedArticle]);
 
   const includePublication = !activePublication;
   const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
@@ -413,6 +463,8 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     selectedArticle,
     refreshActive,
     openSelectedArticle,
+    popOutSelectedArticle,
+    shareSelectedArticle,
   });
 
   if (!auth) {

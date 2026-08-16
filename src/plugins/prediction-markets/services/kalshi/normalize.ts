@@ -2,6 +2,7 @@ import { measurePerf } from "../../../../utils/perf-marks";
 import { matchesPredictionCategory } from "../../categories";
 import type {
   PredictionBookLevel,
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../../types";
@@ -42,6 +43,24 @@ function getKalshiDisplayPrice(record: KalshiMarketRecord): {
   };
 }
 
+export function kalshiNotionalDollars(record: Pick<KalshiMarketRecord, "notional_value_dollars">): number {
+  return parseFloatSafe(record.notional_value_dollars) ?? 1;
+}
+
+export function kalshiContractsToUsd(
+  contracts: number | null | undefined,
+  notionalDollars = 1,
+): number | null {
+  if (contracts == null || !Number.isFinite(contracts)) return null;
+  const notional = Number.isFinite(notionalDollars) && notionalDollars > 0 ? notionalDollars : 1;
+  return contracts * notional;
+}
+
+export function isOpenKalshiStatus(status: string | null | undefined): boolean {
+  const normalized = status?.trim().toLowerCase();
+  return normalized === "open" || normalized === "active";
+}
+
 function isDormantKalshiMarket(record: KalshiMarketRecord): boolean {
   const values = [
     parseFloatSafe(record.last_price_dollars),
@@ -77,6 +96,7 @@ export function normalizeKalshiMarket(
   const noBid = parseFloatSafe(record.no_bid_dollars);
   const noAsk = parseFloatSafe(record.no_ask_dollars);
   const prices = getKalshiDisplayPrice(record);
+  const notional = kalshiNotionalDollars(record);
   const category = eventMeta?.category?.trim();
   const hasTargetMetadata =
     record.strike_type != null ||
@@ -115,6 +135,7 @@ export function normalizeKalshiMarket(
     endsAt: record.close_time ?? null,
     updatedAt:
       record.updated_time ?? record.open_time ?? record.created_time ?? null,
+    createdAt: record.created_time ?? record.open_time ?? null,
     yesPrice: prices.yesPrice,
     noPrice: prices.noPrice,
     yesBid,
@@ -123,12 +144,12 @@ export function normalizeKalshiMarket(
     noAsk,
     spread: yesBid != null && yesAsk != null ? yesAsk - yesBid : null,
     lastTradePrice: prices.lastTradePrice,
-    volume24h: parseFloatSafe(record.volume_24h_fp),
-    volume24hUnit: "contracts",
-    totalVolume: parseFloatSafe(record.volume_fp),
-    totalVolumeUnit: "contracts",
-    openInterest: parseFloatSafe(record.open_interest_fp),
-    openInterestUnit: "contracts",
+    volume24h: kalshiContractsToUsd(parseFloatSafe(record.volume_24h_fp), notional),
+    volume24hUnit: "usd",
+    totalVolume: kalshiContractsToUsd(parseFloatSafe(record.volume_fp), notional),
+    totalVolumeUnit: "usd",
+    openInterest: kalshiContractsToUsd(parseFloatSafe(record.open_interest_fp), notional),
+    openInterestUnit: "usd",
     liquidity: parseFloatSafe(record.liquidity_dollars),
     liquidityUnit: "usd",
     rulesPrimary: record.rules_primary,
@@ -138,10 +159,21 @@ export function normalizeKalshiMarket(
 
 function sortKalshiMarkets(
   markets: PredictionMarketSummary[],
+  browseTab: PredictionBrowseTab = "top",
 ): PredictionMarketSummary[] {
-  return [...markets].sort(
-    (left, right) => (right.volume24h ?? 0) - (left.volume24h ?? 0),
-  );
+  return [...markets].sort((left, right) => {
+    if (browseTab === "ending") {
+      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
+      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
+      return leftEnds - rightEnds;
+    }
+    if (browseTab === "new") {
+      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightCreated - leftCreated;
+    }
+    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  });
 }
 
 function flattenKalshiEvents(
@@ -194,11 +226,13 @@ export function normalizeKalshiCatalog(
   events: KalshiEventRecord[],
   searchQuery: string,
   categoryId: PredictionCategoryId,
+  browseTab: PredictionBrowseTab = "top",
 ): PredictionMarketSummary[] {
   return measurePerf(
     "prediction.catalog.kalshi.normalize",
     () => sortKalshiMarkets(
       flattenKalshiEvents(events, searchQuery, categoryId),
+      browseTab,
     ),
     {
       categoryId,

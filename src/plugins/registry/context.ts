@@ -3,7 +3,7 @@ import type { BrokerInstanceConfig, LayoutConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
-import type { PluginCapability } from "../../capabilities";
+import type { PluginCapability, RegisteredCapability } from "../../capabilities";
 import type {
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
@@ -35,12 +35,14 @@ export interface RegistryPluginContextOptions {
   updateLayout: (layout: LayoutConfig) => void;
   resolvePaneTarget: (paneId: string) => string | undefined;
   registerCapabilityForPlugin: (pluginId: string, capability: PluginCapability, items: PluginItems) => void;
+  listCapabilities: () => RegisteredCapability[];
   registerSyncContributorForPlugin: (pluginId: string, contributor: SyncContributor) => () => void;
   registerSyncTransportForPlugin: (pluginId: string, transport: SyncTransport) => () => void;
   watchNewsQuery: (query: NewsQuery, listener: (state: NewsQueryState) => void) => () => void;
   getData: (ticker: string) => TickerFinancials | null;
   getTicker: (symbol: string) => TickerRecord | null;
   getConfig: () => import("../../types/config").AppConfig;
+  getApiKey: (serviceId: string) => string | undefined;
   getResumeState: <T = unknown>(key: string, schemaVersion?: number) => T | null;
   setResumeState: (key: string, value: unknown, schemaVersion?: number) => void;
   deleteResumeState: (key: string) => void;
@@ -76,7 +78,7 @@ export function createRegistryPluginContext({
   pluginId,
   items,
   contributions,
-  enableCapabilityHandlers,
+  enableCapabilityHandlers: _enableCapabilityHandlers,
   marketData,
   tickerRepository,
   persistence,
@@ -84,12 +86,14 @@ export function createRegistryPluginContext({
   updateLayout,
   resolvePaneTarget,
   registerCapabilityForPlugin,
+  listCapabilities,
   registerSyncContributorForPlugin,
   registerSyncTransportForPlugin,
   watchNewsQuery,
   getData,
   getTicker,
   getConfig,
+  getApiKey,
   getResumeState,
   setResumeState,
   deleteResumeState,
@@ -141,7 +145,7 @@ export function createRegistryPluginContext({
     registerColumn: (column) => contributions.registerColumn(pluginId, column, items),
     registerBroker: (broker) => contributions.registerBroker(pluginId, broker, items),
     registerCapability: (capability) => {
-      if (enableCapabilityHandlers) registerCapabilityForPlugin(pluginId, capability, items);
+      registerCapabilityForPlugin(pluginId, capability, items);
     },
     registerTickerResearchTab: (tab) => contributions.registerTickerResearchTab(pluginId, tab, items),
     registerShortcut: (shortcut) => contributions.registerShortcut(pluginId, shortcut, items),
@@ -166,7 +170,9 @@ export function createRegistryPluginContext({
     getData,
     getTicker,
     getConfig,
+    getApiKey,
     getPaneDef: (paneId) => contributions.panesMap.get(paneId),
+    listCapabilities,
 
     marketData,
     tickerRepository,

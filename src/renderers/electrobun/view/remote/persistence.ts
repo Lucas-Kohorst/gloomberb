@@ -8,6 +8,12 @@ import { DesktopMemoryResourceStore } from "../resource-store";
 
 const PLUGIN_STATE_BACKEND_FLUSH_DELAY_MS = 25;
 
+// On the hosted client the backend intentionally no-ops plugin state (persistence
+// is owned by Gloom Cloud sync), but some plugin state — e.g. Substack auth — is
+// not part of the synced config. Mirror it to localStorage so it survives reloads.
+const HOSTED_PLUGIN_STATE_STORAGE_KEY = "gloomberb:hosted-plugin-state";
+const BACKEND_MANAGED_PLUGIN_IDS = new Set(["gloomberb-cloud"]);
+
 class RemoteSessionStore {
   private snapshot = getElectrobunBackendInitSnapshot()?.sessionSnapshot ?? null;
   private readonly scheduler = createPersistScheduler<{
@@ -60,10 +66,53 @@ class RemotePluginStateStore {
   private readonly pendingBackendSaves = new Map<string, PluginStatePersistEntry>();
   private backendSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private backendSaveInFlight: Promise<void> = Promise.resolve();
+  private readonly persistLocal: boolean;
 
   constructor(initial: Record<string, Record<string, unknown>>) {
+    this.persistLocal = getElectrobunBackendInitSnapshot()?.desktopPlatform === "cloud";
     for (const [pluginId, values] of Object.entries(initial)) {
       this.state.set(pluginId, new Map(Object.entries(values)));
+    }
+    if (this.persistLocal) this.restoreLocalState();
+  }
+
+  private restoreLocalState(): void {
+    if (typeof window === "undefined") return;
+    let raw: string | null = null;
+    try {
+      raw = window.localStorage.getItem(HOSTED_PLUGIN_STATE_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      for (const [pluginId, values] of Object.entries(parsed as Record<string, unknown>)) {
+        if (BACKEND_MANAGED_PLUGIN_IDS.has(pluginId)) continue;
+        if (!values || typeof values !== "object" || Array.isArray(values)) continue;
+        const entries = this.state.get(pluginId) ?? new Map<string, unknown>();
+        for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
+          entries.set(key, value);
+        }
+        this.state.set(pluginId, entries);
+      }
+    } catch {
+      // Ignore malformed persisted state.
+    }
+  }
+
+  private persistLocalState(): void {
+    if (!this.persistLocal || typeof window === "undefined") return;
+    const snapshot: Record<string, Record<string, unknown>> = {};
+    for (const [pluginId, values] of this.state) {
+      if (BACKEND_MANAGED_PLUGIN_IDS.has(pluginId) || values.size === 0) continue;
+      snapshot[pluginId] = Object.fromEntries(values);
+    }
+    try {
+      window.localStorage.setItem(HOSTED_PLUGIN_STATE_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Ignore storage quota or security errors.
     }
   }
 
@@ -77,6 +126,7 @@ class RemotePluginStateStore {
     if (!this.state.has(pluginId)) this.state.set(pluginId, new Map());
     this.state.get(pluginId)!.set(key, value);
     this.getScheduler(pluginId, key).schedule({ pluginId, key, value, schemaVersion });
+    this.persistLocalState();
   }
 
   delete(pluginId: string, key: string): void {
@@ -87,6 +137,7 @@ class RemotePluginStateStore {
       .catch(() => {})
       .then(() => backendRequest("pluginState.delete", { pluginId, key }))
       .catch(() => {});
+    this.persistLocalState();
   }
 
   keys(pluginId: string): string[] {
@@ -95,6 +146,7 @@ class RemotePluginStateStore {
 
   clear(pluginId: string): void {
     this.state.delete(pluginId);
+    this.persistLocalState();
   }
 
   async flush(): Promise<void> {

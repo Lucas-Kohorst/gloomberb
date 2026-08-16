@@ -8,6 +8,8 @@ import {
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
 } from "../../components";
+import { openUrl } from "../../components/ui/external-link";
+import { useShortcut } from "../../react/input";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -83,29 +85,45 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     selectedRow: controller.selectedRow,
     selectedSummary: controller.selectedSummary,
   });
+  const marketUrl = controller.selectedSummary?.url || controller.selectedRow?.url || null;
+  const openMarket = useCallback(() => {
+    if (!marketUrl) return;
+    openUrl(marketUrl);
+  }, [marketUrl]);
+  useShortcut((event) => {
+    if (!focused || event.name !== "o" || !marketUrl) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    openMarket();
+  }, { enabled: focused && !!marketUrl });
   usePaneFooter("prediction-markets", () => {
-    if (controller.detailOpen) return null;
     return {
-      info: [
-        ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
-        ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
-        ...(controller.catalogStatus ? [{
-          id: "catalog",
-          parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
-        }] : []),
-      ],
+      info: controller.detailOpen
+        ? []
+        : [
+            ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
+            ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
+            ...(controller.catalogStatus ? [{
+              id: "catalog",
+              parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
+            }] : []),
+          ],
       hints: [
-        { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
-        { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
-        {
-          id: "browse",
-          key: "1-4",
-          label: "browse",
-          onPress: () => {
-            const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
-            controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+        ...(!controller.detailOpen ? [
+          { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
+          { id: "refresh", key: "r", label: "efresh", onPress: controller.actions.refreshCatalog },
+          { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
+          {
+            id: "browse",
+            key: "1-4",
+            label: "browse",
+            onPress: () => {
+              const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
+              controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+            },
           },
-        },
+        ] : []),
+        ...(marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
       ],
     };
   }, [
@@ -117,6 +135,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
+    marketUrl,
+    openMarket,
   ]);
 
   const browseControls = (

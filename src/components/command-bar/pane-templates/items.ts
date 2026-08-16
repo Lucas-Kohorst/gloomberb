@@ -167,7 +167,7 @@ export function buildPaneTemplateItem(options: {
     id: `pane-template:${options.template.id}:${arg || ""}`,
     label: displayLabel,
     detail: shortcutLabel ? `${options.template.description} · ${shortcutLabel}` : options.template.description,
-    category: options.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
+    category: options.category ?? options.template.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
     kind: "action",
     right: options.showShortcut ? options.template.shortcut?.prefix : undefined,
     shortcutQuery: options.template.shortcut?.prefix,
@@ -189,7 +189,7 @@ export function buildPaneShortcutItems(options: {
   const items = options.templates
     .filter((template) => template.shortcut)
     .map((template) => options.createItem(template, {
-      category: "Panes",
+      category: template.category ?? "Panes",
       createOptions: options.createOptions,
       showShortcut: true,
     }));
@@ -206,7 +206,7 @@ export function buildNonShortcutPaneTemplateItems(options: {
 }): ResultItem[] {
   const items = options.templates
     .filter((template) => !template.shortcut)
-    .map((template) => options.createItem(template, { category: "Panes" }));
+    .map((template) => options.createItem(template, { category: template.category ?? "Panes" }));
 
   return options.filterQuery
     ? fuzzyFilter(items, options.filterQuery, (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`)

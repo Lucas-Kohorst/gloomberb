@@ -18,6 +18,13 @@
     "start": "bun src/index.tsx",
     "build": "bun run scripts/build.ts",
     "build:all": "bun run scripts/build.ts --all",
+    "web:build": "bun run scripts/build-web-client.ts",
+    "web:start": "bun run web:build && bun src/renderers/web/index.ts",
+    "cloud:types": "wrangler types",
+    "cloud:build": "GLOOMBERB_CLOUD_HOSTED=1 bun run web:build",
+    "cloud:dev": "bun run cloud:build && wrangler dev",
+    "cloud:check": "bun run cloud:build && wrangler deploy --dry-run",
+    "cloud:deploy": "bun run cloud:build && wrangler deploy",
     "desktop:view:build": "bun run scripts/build-electrobun-view.ts",
     "desktop:dev": "bun run scripts/electrobun-dev.ts",
     "desktop:build": "electrobun build",
@@ -29,6 +36,7 @@
     "typecheck:electrobun-bun": "tsc --project tsconfig.electrobun-bun.json",
     "typecheck:electrobun-view": "tsc --project tsconfig.electrobun-view.json",
     "typecheck:scripts": "tsc --project tsconfig.scripts.json",
+    "typecheck:cloud": "bun run cloud:types && tsc --project tsconfig.cloudflare.json",
     "test": "bun test",
     "test:global-upgrade": "bun run scripts/smoke-global-upgrade.ts",
     "release": "./scripts/release.sh"
@@ -52,7 +60,8 @@
     "electrobun": "^1.18.1",
     "happy-dom": "^20.11.1",
     "png-to-ico": "^2.1.8",
-    "rcedit": "^4.0.1"
+    "rcedit": "^4.0.1",
+    "wrangler": "4.123.0"
   },
   "peerDependencies": {
     "typescript": "^5.9.2"

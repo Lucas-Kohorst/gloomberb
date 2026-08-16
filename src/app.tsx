@@ -17,6 +17,7 @@ import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
+import type { OnboardingStep } from "./components/onboarding/wizard-model";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
 import type { LoadedExternalPlugin } from "./plugins/loader";
@@ -55,6 +56,7 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
+import { isPublicArticleShareLocation } from "./plugins/builtin/shared/article-share";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
@@ -242,6 +244,40 @@ function AppInner({
     stateRef,
   });
 
+  // A public share is a reader-only entry point for a visitor with no account.
+  // Once the deep-link runtime creates the reader pane, hide the throwaway
+  // anonymous workspace behind it so the article is immediately readable.
+  //
+  // This must never run for a signed-in reader: UPDATE_LAYOUT also replaces
+  // config.layouts, which the save effect below persists and syncs, so
+  // collapsing the layout here would destroy their real workspace.
+  useEffect(() => {
+    if (!isPublicArticleShareLocation() || state.config.onboardingComplete) return;
+    const articleInstance = state.config.layout.instances.find((instance) => (
+      instance.paneId === "news-article" || instance.paneId === "substack-article"
+    ));
+    if (!articleInstance) return;
+    const currentLayout = state.config.layout;
+    if (
+      currentLayout.dockRoot?.kind === "pane"
+      && currentLayout.dockRoot.instanceId === articleInstance.instanceId
+      && currentLayout.floating.length === 0
+      && currentLayout.detached.length === 0
+    ) {
+      return;
+    }
+    dispatch({
+      type: "UPDATE_LAYOUT",
+      layout: {
+        ...currentLayout,
+        dockRoot: { kind: "pane", instanceId: articleInstance.instanceId },
+        floating: [],
+        detached: [],
+      },
+      focusedPaneId: articleInstance.instanceId,
+    });
+  }, [dispatch, state.config.layout, state.config.onboardingComplete]);
+
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
   useAppStartupRuntime({
     appActive,
@@ -397,6 +433,7 @@ interface AppProps {
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
+  onboardingInitialStep?: OnboardingStep;
 }
 
 export function App({
@@ -410,6 +447,7 @@ export function App({
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
+  onboardingInitialStep,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -434,7 +472,10 @@ export function App({
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const [showOnboarding, setShowOnboarding] = useState(!effectiveInitialConfig.onboardingComplete);
+  const publicArticleShare = isPublicArticleShareLocation();
+  const [showOnboarding, setShowOnboarding] = useState(
+    !publicArticleShare && !effectiveInitialConfig.onboardingComplete,
+  );
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
@@ -472,6 +513,7 @@ export function App({
         <OnboardingWizard
           config={config}
           pluginRegistry={services.pluginRegistry}
+          initialStep={onboardingInitialStep}
           onComplete={(updatedConfig) => {
             setConfig(updatedConfig);
             setShowOnboarding(false);

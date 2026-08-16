@@ -12,6 +12,7 @@ import {
   addPaneFloating,
   addPaneToLayout,
 } from "../../plugins/pane-manager";
+import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
 
@@ -66,14 +67,22 @@ export function useCommandBarPaneActions({
 
   const focusTicker = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
     const currentState = stateRef.current;
-    const focusedPane = currentState.focusedPaneId
-      ? findPaneInstance(currentState.config.layout, currentState.focusedPaneId)
-      : null;
     if (options?.forceNewPane) {
       openFixedTickerPane(symbol, { forceNewPane: true });
       return;
     }
 
+    // If the ticker is already open in a fixed research pane, toggle focus to it
+    // instead of retargeting the focused pane and creating a duplicate.
+    const existing = findFixedTickerPaneForSymbol(currentState.config.layout, TICKER_RESEARCH_PANE_ID, symbol);
+    if (existing) {
+      openFixedTickerPane(symbol);
+      return;
+    }
+
+    const focusedPane = currentState.focusedPaneId
+      ? findPaneInstance(currentState.config.layout, currentState.focusedPaneId)
+      : null;
     if (focusedPane?.paneId === TICKER_RESEARCH_PANE_ID) {
       retargetTickerResearchPane(focusedPane.instanceId, symbol);
       return;

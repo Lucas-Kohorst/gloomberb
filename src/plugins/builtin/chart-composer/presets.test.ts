@@ -165,6 +165,29 @@ describe("chart composer expressions", () => {
       .toThrow('Invalid chart series "MSFT:revenu"');
   });
 
+  test("builds a ratio study from a binary `a / b` expression", () => {
+    const spec = buildCustomChartPreset("AAPL:price / AAPL:revenue");
+    expect(spec.series.map((series) => series.source)).toEqual([
+      expect.objectContaining({ kind: "security", instrument: expect.objectContaining({ symbol: "AAPL" }), fieldId: "market.ohlcv" }),
+      expect.objectContaining({ kind: "security", instrument: expect.objectContaining({ symbol: "AAPL" }), fieldId: "fundamental.totalRevenue" }),
+    ]);
+    const ratio = spec.studies.find((study) => study.kind === "ratio");
+    expect(ratio).toBeDefined();
+    expect(ratio!.inputSeriesIds).toEqual(spec.series.slice(0, 2).map((series) => series.id));
+  });
+
+  test("builds a spread study from a binary `a - b` expression", () => {
+    const spec = buildCustomChartPreset("AAPL:price - MSFT:price");
+    const spread = spec.studies.find((study) => study.kind === "spread");
+    expect(spread).toBeDefined();
+    expect(spec.series).toHaveLength(2);
+  });
+
+  test("does not treat a single series as a binary expression", () => {
+    const spec = buildCustomChartPreset("AAPL:revenue");
+    expect(spec.studies.filter((study) => study.kind === "ratio" || study.kind === "spread")).toHaveLength(0);
+  });
+
   test("parses exchange-qualified tickers without confusing the exchange for a field", () => {
     const spec = buildCustomChartPreset("3hnx:lse, 3HNX:LSE:revenue");
 

@@ -320,6 +320,7 @@ export function usePredictionMarketsController({
     selectMarket,
     setVenue,
     toggleWatchlist,
+    refreshCatalog: data.actions.refreshCatalog,
   });
 
   const searchPending = searchQuery.trim() !== data.debouncedSearchQuery.trim();
@@ -362,6 +363,7 @@ export function usePredictionMarketsController({
       handleSortHeaderClick,
       openSelectedRow,
       previewOrder,
+      refreshCatalog: data.actions.refreshCatalog,
       selectBrowseTab,
       selectCategory,
       selectMarket,

@@ -15,6 +15,7 @@ import { getCachedPredictionResource } from "../services/fetch";
 import { loadKalshiCatalog } from "../services/kalshi/adapter";
 import { loadPolymarketCatalog } from "../services/polymarket/adapter";
 import type {
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../types";
@@ -23,6 +24,7 @@ type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
 
 interface UsePredictionCatalogDataOptions {
+  browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   includeKalshi: boolean;
   includePolymarket: boolean;
@@ -30,6 +32,7 @@ interface UsePredictionCatalogDataOptions {
 }
 
 export function usePredictionCatalogData({
+  browseTab,
   categoryId,
   includeKalshi,
   includePolymarket,
@@ -52,13 +55,14 @@ export function usePredictionCatalogData({
         "polymarket",
         categoryId,
         debouncedSearchQuery,
+        browseTab,
       ),
-    [categoryId, debouncedSearchQuery],
+    [browseTab, categoryId, debouncedSearchQuery],
   );
   const kalshiCatalogKey = useMemo(
     () =>
-      buildPredictionCatalogCacheKey("kalshi", categoryId, debouncedSearchQuery),
-    [categoryId, debouncedSearchQuery],
+      buildPredictionCatalogCacheKey("kalshi", categoryId, debouncedSearchQuery, browseTab),
+    [browseTab, categoryId, debouncedSearchQuery],
   );
   const polymarketCatalogResourceKey = useMemo(
     () =>
@@ -66,8 +70,9 @@ export function usePredictionCatalogData({
         "polymarket",
         categoryId,
         normalizedCatalogQuery,
+        browseTab,
       ),
-    [categoryId, normalizedCatalogQuery],
+    [browseTab, categoryId, normalizedCatalogQuery],
   );
   const kalshiCatalogResourceKey = useMemo(
     () =>
@@ -75,8 +80,9 @@ export function usePredictionCatalogData({
         "kalshi",
         categoryId,
         normalizedCatalogQuery,
+        browseTab,
       ),
-    [categoryId, normalizedCatalogQuery],
+    [browseTab, categoryId, normalizedCatalogQuery],
   );
   const persistedPolymarketCatalog = useMemo(
     () =>
@@ -163,7 +169,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean },
+      options?: { showPending?: boolean; force?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -175,7 +181,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadPolymarketCatalog(search, category);
+        const next = await loadPolymarketCatalog(search, category, browseTab, options);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -205,7 +211,7 @@ export function usePredictionCatalogData({
         }
       }
     },
-    [],
+    [browseTab],
   );
 
   const loadKalshi = useCallback(
@@ -213,7 +219,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean },
+      options?: { showPending?: boolean; force?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -225,7 +231,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadKalshiCatalog(search, category);
+        const next = await loadKalshiCatalog(search, category, browseTab, options);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -255,7 +261,7 @@ export function usePredictionCatalogData({
         }
       }
     },
-    [],
+    [browseTab],
   );
 
   useEffect(() => {
@@ -307,11 +313,40 @@ export function usePredictionCatalogData({
     loadKalshi,
   ]);
 
+  const refreshCatalog = useCallback(() => {
+    if (includePolymarket) {
+      void loadPolymarket(
+        polymarketCatalogKey,
+        debouncedSearchQuery,
+        categoryId,
+        { showPending: true, force: true },
+      );
+    }
+    if (includeKalshi) {
+      void loadKalshi(
+        kalshiCatalogKey,
+        debouncedSearchQuery,
+        categoryId,
+        { showPending: true, force: true },
+      );
+    }
+  }, [
+    categoryId,
+    debouncedSearchQuery,
+    includeKalshi,
+    includePolymarket,
+    kalshiCatalogKey,
+    loadKalshi,
+    loadPolymarket,
+    polymarketCatalogKey,
+  ]);
+
   return {
     allMarkets,
     catalogLoadCount,
     catalogStatus,
     debouncedSearchQuery,
+    refreshCatalog,
     setCatalogCache,
   };
 }

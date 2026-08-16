@@ -4,6 +4,7 @@ import type { NewsQuery, MarketNewsItem } from "../../../../../types/news-source
 import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
+import { withConnectionRequest } from "../../../connections/register";
 
 const RSS_CACHE_KIND = "rss-feed";
 export const RSS_FEED_CACHE_POLICY = {
@@ -137,13 +138,15 @@ export function createRssNewsCapability(
     if (freshCache) return freshCache;
 
     try {
-      const resp = await fetchText(feed.url);
-      if (!resp.ok) return readFeedCache(options.persistence, feed, { allowExpired: true }) ?? [];
-      const xml = await resp.text();
-      const items = parseRssFeed(xml, feed)
-        .map((item) => enrichNewsItem(item, feed.authority, options.knownTickers));
-      writeFeedCache(options.persistence, feed, items);
-      return items;
+      return await withConnectionRequest("rss", feed.name, async () => {
+        const resp = await fetchText(feed.url);
+        if (!resp.ok) throw new Error("RSS request failed");
+        const xml = await resp.text();
+        const items = parseRssFeed(xml, feed)
+          .map((item) => enrichNewsItem(item, feed.authority, options.knownTickers));
+        writeFeedCache(options.persistence, feed, items);
+        return items;
+      });
     } catch {
       return readFeedCache(options.persistence, feed, { allowExpired: true }) ?? [];
     }

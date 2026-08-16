@@ -132,6 +132,7 @@ export function bindAppPanePluginRegistry({
       getState: () => stateRef.current,
       buildPaneInstance,
       placePaneInstance,
+      focusPaneInstance: focusVisiblePane,
     });
   };
   pluginRegistry.createPaneFromTemplateFn = (templateId, options) => {

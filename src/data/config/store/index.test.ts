@@ -37,7 +37,7 @@ function createSavedConfig(overrides: Record<string, unknown> = {}): Record<stri
     brokerInstances: [],
     disabledPlugins: [],
     theme: "amber",
-    chartPreferences: { renderer: "auto" },
+    chartPreferences: { defaultRenderMode: "area", renderer: "auto" },
     valueFlashingEnabled: true,
     recentTickers: [],
     ...overrides,
@@ -49,17 +49,6 @@ async function writeConfigJson(dataDir: string, config: Record<string, unknown>)
 }
 
 describe("sanitizeLayout", () => {
-  test("keeps the default research layout free of retired chart settings", () => {
-    const researchPanes = DEFAULT_LAYOUT.instances.filter((instance) => instance.paneId === "ticker-research");
-    expect(researchPanes.length).toBeGreaterThan(0);
-    for (const pane of researchPanes) {
-      expect(pane.settings).not.toHaveProperty("chartRangePreset");
-      expect(pane.settings).not.toHaveProperty("chartResolution");
-      expect(pane.settings).not.toHaveProperty("chartAxisMode");
-      expect(pane.settings).not.toHaveProperty("chartRenderMode");
-    }
-  });
-
   test("rewrites unbound ticker-detail panes to follow the first portfolio pane", () => {
     const layout = sanitizeLayout({
       dockRoot: {
@@ -149,6 +138,7 @@ describe("sanitizeLayout", () => {
               y: 4,
               width: 0,
               height: 7,
+              fixedGeometry: true,
             },
           },
         },
@@ -166,90 +156,39 @@ describe("sanitizeLayout", () => {
         y: 4,
         width: 1,
         height: 7,
+        fixedGeometry: true,
       },
     });
   });
 
-  test("converts retired chart panes into composer specs", () => {
+  test("preserves explicit fixed floating geometry through layout sanitization", () => {
     const layout = sanitizeLayout({
-      dockRoot: { kind: "pane", instanceId: "comparison-chart:main" },
+      dockRoot: null,
       instances: [{
-        instanceId: "comparison-chart:main",
-        paneId: "comparison-chart",
+        instanceId: "portfolio-list:main",
+        paneId: "portfolio-list",
         binding: { kind: "none" },
-        settings: {
-          symbols: ["AAPL", "MSFT"],
-          axisMode: "percent",
-          rangePreset: "1Y",
-          chartResolution: "1d",
-        },
       }],
-      floating: [],
+      floating: [{
+        instanceId: "portfolio-list:main",
+        x: 50,
+        y: 30,
+        width: 10,
+        height: 3,
+        fixedGeometry: true,
+      }],
       detached: [],
     }, DEFAULT_LAYOUT);
 
-    const pane = findPaneInstance(layout, "comparison-chart:main");
-    expect(pane?.paneId).toBe("chart-composer");
-    expect(pane?.settings).toEqual({
-      chartSpec: expect.objectContaining({
-        version: 1,
-        viewport: { range: "1Y", resolution: "1d" },
-        series: [
-          expect.objectContaining({
-            transform: "percent",
-            interpolation: "none",
-            source: expect.objectContaining({ fieldId: "market.close" }),
-          }),
-          expect.objectContaining({
-            transform: "percent",
-            interpolation: "none",
-            source: expect.objectContaining({ fieldId: "market.close" }),
-          }),
-        ],
-      }),
-    });
-  });
-
-  test("migrates ticker research chart settings into one composer spec", () => {
-    const layout = sanitizeLayout({
-      dockRoot: { kind: "pane", instanceId: "ticker-detail:aapl" },
-      instances: [{
-        instanceId: "ticker-detail:aapl",
-        paneId: "ticker-research",
-        binding: { kind: "fixed", symbol: "AAPL" },
-        settings: {
-          hideTabs: true,
-          lockedTabId: "fundamental-graphs",
-          chartAxisMode: "percent",
-          chartRangePreset: "1Y",
-          chartResolution: "1wk",
-        },
-      }],
-      floating: [],
-      detached: [],
-    }, DEFAULT_LAYOUT);
-
-    const settings = findPaneInstance(layout, "ticker-detail:aapl")?.settings;
-    expect(settings).toEqual({
-      hideTabs: true,
-      lockedTabId: "chart",
-      chartSpec: expect.objectContaining({
-        version: 1,
-        viewport: { range: "1Y", resolution: "1wk" },
-        series: [expect.objectContaining({
-          transform: "percent",
-          interpolation: "none",
-          source: expect.objectContaining({
-            kind: "security",
-            instrument: { symbol: "AAPL" },
-            fieldId: "market.ohlcv",
-          }),
-        })],
-      }),
-    });
-    expect(settings).not.toHaveProperty("chartAxisMode");
-    expect(settings).not.toHaveProperty("chartRangePreset");
-    expect(settings).not.toHaveProperty("chartResolution");
+    expect(layout.floating).toEqual([{
+      instanceId: "portfolio-list:main",
+      x: 50,
+      y: 30,
+      width: 10,
+      height: 3,
+      fixedGeometry: true,
+      zIndex: undefined,
+    }]);
   });
 
   test("falls back to the default layout when given an obsolete column layout", () => {
@@ -272,175 +211,6 @@ describe("sanitizeLayout", () => {
 });
 
 describe("loadConfig", () => {
-  test("folds saved graph plugin state into composer specs and removes only chart-owned state", async () => {
-    const dataDir = await createTempConfigDir();
-    const legacyLayout = {
-      dockRoot: {
-        kind: "split" as const,
-        axis: "horizontal" as const,
-        ratio: 0.5,
-        first: { kind: "pane" as const, instanceId: "fundamental-graph:pair" },
-        second: { kind: "pane" as const, instanceId: "ticker-detail:nvda" },
-      },
-      instances: [
-        {
-          instanceId: "fundamental-graph:pair",
-          paneId: "fundamental-graph",
-          binding: { kind: "fixed" as const, symbol: "AAPL" },
-          settings: {
-            chartKind: "fundamental",
-            metric: "totalRevenue",
-            period: "quarterly",
-            periods: 8,
-            symbols: ["AAPL", "MSFT"],
-            symbolsText: "AAPL, MSFT",
-          },
-        },
-        {
-          instanceId: "ticker-detail:nvda",
-          paneId: "ticker-research",
-          binding: { kind: "fixed" as const, symbol: "NVDA" },
-          settings: {
-            hideTabs: true,
-            lockedTabId: "fundamental-graphs",
-            chartRangePreset: "1Y",
-            chartResolution: "1wk",
-          },
-        },
-      ],
-      floating: [],
-      detached: [],
-    };
-    await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
-      layout: legacyLayout,
-      layouts: [{
-        name: "Graphs",
-        layout: legacyLayout,
-        paneState: {
-          "fundamental-graph:pair": {
-            cursorSymbol: "AAPL",
-            pluginState: {
-              "ticker-detail": {
-                period: "annual",
-                chartKind: "valuation",
-                metric: "evSales",
-                periods: 3,
-                selectedIdx: 4,
-                hiddenSeriesIds: ["MSFT"],
-                retainedPreference: "keep",
-              },
-            },
-          },
-          "ticker-detail:nvda": {
-            activeTabId: "fundamental-graphs",
-            financialSubTab: "cashflow",
-            pluginState: {
-              "ticker-detail": {
-                detailPeriod: "annual",
-                detailChartKind: "fundamental",
-                detailMetric: "grossProfit",
-                selectedIdx: 2,
-                hiddenSeriesIds: [],
-                retainedPreference: "keep-too",
-              },
-            },
-          },
-        },
-      }],
-      activeLayoutIndex: 0,
-    }));
-
-    const config = await loadConfig(dataDir);
-    const standalone = findPaneInstance(config.layout, "fundamental-graph:pair");
-    const standaloneSpec = standalone?.settings?.chartSpec as any;
-    expect(standalone?.paneId).toBe("chart-composer");
-    expect(standalone?.settings).toEqual({ chartSpec: expect.any(Object) });
-    expect(standaloneSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: 3 });
-    expect(standaloneSpec.series.map((series: any) => ({
-      symbol: series.source.instrument.symbol,
-      fieldId: series.source.fieldId,
-      period: series.source.period,
-      visible: series.visible,
-    }))).toEqual([
-      { symbol: "AAPL", fieldId: "valuation.evSales", period: "annual", visible: true },
-      { symbol: "MSFT", fieldId: "valuation.evSales", period: "annual", visible: false },
-    ]);
-
-    const research = findPaneInstance(config.layout, "ticker-detail:nvda");
-    const researchSpec = research?.settings?.chartSpec as any;
-    expect(research?.settings?.lockedTabId).toBe("chart");
-    expect(researchSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: undefined });
-    expect(researchSpec.series[0]).toEqual(expect.objectContaining({
-      style: "columns",
-      source: expect.objectContaining({
-        fieldId: "fundamental.grossProfit",
-        period: "annual",
-      }),
-    }));
-
-    expect(config.layouts[0]?.paneState).toEqual({
-      "fundamental-graph:pair": {
-        cursorSymbol: "AAPL",
-        pluginState: { "ticker-research": { retainedPreference: "keep" } },
-      },
-      "ticker-detail:nvda": {
-        activeTabId: "chart",
-        financialSubTab: "cashflow",
-        pluginState: { "ticker-research": { retainedPreference: "keep-too" } },
-      },
-    });
-  });
-
-  test("migrates global indicator selection and render mode without retaining plugin keys", async () => {
-    const dataDir = await createTempConfigDir();
-    const legacyLayout = {
-      dockRoot: { kind: "pane" as const, instanceId: "ticker-chart:aapl" },
-      instances: [{
-        instanceId: "ticker-chart:aapl",
-        paneId: "ticker-chart",
-        binding: { kind: "fixed" as const, symbol: "AAPL" },
-        settings: {
-          chartAxisMode: "percent",
-          chartRangePreset: "6M",
-          chartResolution: "1d",
-          chartRenderMode: "candles",
-        },
-      }],
-      floating: [],
-      detached: [],
-    };
-    await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
-      layout: legacyLayout,
-      layouts: [{ name: "Price", layout: legacyLayout }],
-      activeLayoutIndex: 0,
-      chartPreferences: { renderer: "kitty", defaultRenderMode: "line" },
-      pluginConfig: {
-        "ticker-detail": {
-          chartIndicators: ["sma50", "bollinger20"],
-          chartIndicatorsVersion: 2,
-          retainedPreference: "keep",
-        },
-      },
-    }));
-
-    const config = await loadConfig(dataDir);
-    const pane = findPaneInstance(config.layout, "ticker-chart:aapl");
-    const spec = pane?.settings?.chartSpec as any;
-    expect(pane?.paneId).toBe("chart-composer");
-    expect(spec.viewport).toEqual({ range: "6M", resolution: "1d" });
-    expect(spec.series[0]).toEqual(expect.objectContaining({ style: "candles", transform: "raw" }));
-    expect(spec.studies.map((study: any) => ({ kind: study.kind, parameters: study.parameters }))).toEqual([
-      { kind: "sma", parameters: { period: 50 } },
-      { kind: "bollinger", parameters: { period: 20, stdDev: 2 } },
-    ]);
-    expect(config.pluginConfig).toEqual({
-      "ticker-research": { retainedPreference: "keep" },
-    });
-    expect(config.chartPreferences).toEqual({ renderer: "kitty" });
-  });
-
   test("defaults detached layouts to an empty list for older configs", async () => {
     const dataDir = await createTempConfigDir();
     const layoutWithoutDetached = {
@@ -480,6 +250,7 @@ describe("loadConfig", () => {
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: 7,
       chartPreferences: {
+        defaultRenderMode: "hlc",
         renderer: "nope",
       },
     }));
@@ -520,7 +291,7 @@ describe("loadConfig", () => {
           displayMode: "expanded",
         },
       },
-      chartPreferences: { renderer: "auto" },
+      chartPreferences: { defaultRenderMode: "line" },
     }));
 
     const config = await loadConfig(dataDir);
@@ -544,43 +315,16 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["chat", "news"]);
   });
 
-  test("migrates disabled built-in modules to their owning plugin ids", async () => {
+  test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
       configVersion: CURRENT_CONFIG_VERSION - 1,
-      disabledPlugins: [
-        "options",
-        "sec",
-        "thirteenf",
-        "world-indices",
-        "market-heatmap",
-        "fear-greed",
-        "chart-composer",
-        "comparison-chart",
-        "earnings-calendar",
-        "macro-tv",
-        "ibkr",
-        "broker-manager",
-        "analytics",
-        "kelly-sizer",
-        "portfolio-list",
-        "changelog",
-        "help",
-        "layout-manager",
-        "application",
-      ],
+      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
     }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toEqual([
-      "ticker-research",
-      "market-overview",
-      "macro",
-      "ibkr",
-      "broker",
-      "portfolio",
-    ]);
+    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
   });
 
   test("migrates grouped built-in plugin config keys", async () => {
@@ -594,16 +338,6 @@ describe("loadConfig", () => {
         "company-research": {
           preferredTab: "analyst-research",
         },
-        "kelly-sizer": {
-          inherited: true,
-          shared: "legacy",
-        },
-        portfolio: {
-          shared: "canonical",
-        },
-        changelog: {
-          dismissedVersion: "1.2.3",
-        },
       },
     }));
 
@@ -614,26 +348,7 @@ describe("loadConfig", () => {
         selectedExpiration: "2026-06-19",
         preferredTab: "analyst-research",
       },
-      portfolio: {
-        inherited: true,
-        shared: "canonical",
-      },
-      application: {
-        dismissedVersion: "1.2.3",
-      },
     });
-  });
-
-  test("does not repeat the legacy Cloud-to-Macro disable migration", async () => {
-    const dataDir = await createTempConfigDir();
-    await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
-      disabledPlugins: ["gloomberb-cloud"],
-    }));
-
-    const config = await loadConfig(dataDir);
-
-    expect(config.disabledPlugins).toEqual(["gloomberb-cloud"]);
   });
 
   test("enables Gloom Cloud when migrating older default configs", async () => {
@@ -646,28 +361,6 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.disabledPlugins).toEqual(["news"]);
-  });
-
-  test("runs the Cloud-to-Macro split only before its v15 boundary", async () => {
-    const beforeDir = await createTempConfigDir();
-    await writeConfigJson(beforeDir, createSavedConfig({
-      configVersion: 14,
-      disabledPlugins: ["gloomberb-cloud"],
-      disabledSources: [],
-    }));
-    const before = await loadConfig(beforeDir);
-    expect(before.disabledPlugins).toEqual(["gloomberb-cloud", "macro"]);
-    expect(before.disabledSources).toEqual(["gloomberb-cloud"]);
-
-    const atBoundaryDir = await createTempConfigDir();
-    await writeConfigJson(atBoundaryDir, createSavedConfig({
-      configVersion: 15,
-      disabledPlugins: ["gloomberb-cloud"],
-      disabledSources: [],
-    }));
-    const atBoundary = await loadConfig(atBoundaryDir);
-    expect(atBoundary.disabledPlugins).toEqual(["gloomberb-cloud"]);
-    expect(atBoundary.disabledSources).toEqual([]);
   });
 
   test("preserves IBKR gateway configs without migration rewrites", async () => {
@@ -698,21 +391,14 @@ describe("loadConfig", () => {
     });
   });
 
-  test("migrates legacy saved pane tab IDs and preserves focus metadata", async () => {
+  test("preserves saved layout pane state and focus metadata", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
       layouts: [{
         name: "Chart",
         layout: DEFAULT_LAYOUT,
         paneState: {
-          "ticker-detail:main": {
-            activeTabId: "fundamental-graphs",
-            pluginState: {
-              "ticker-detail": { detailMetric: "revenue", shared: "legacy" },
-              "ticker-research": { shared: "canonical" },
-            },
-          },
+          "ticker-detail:main": { activeTabId: "chart" },
           "missing:pane": { activeTabId: "overview" },
         },
         focusedPaneId: "ticker-detail:main",
@@ -723,12 +409,7 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.layouts[0]?.paneState).toEqual({
-      "ticker-detail:main": {
-        activeTabId: "chart",
-        pluginState: {
-          "ticker-research": { shared: "canonical" },
-        },
-      },
+      "ticker-detail:main": { activeTabId: "chart" },
     });
     expect(config.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
     expect(config.layouts[0]?.activePanel).toBe("right");
@@ -738,89 +419,10 @@ describe("loadConfig", () => {
       layouts: Array<{ paneState?: Record<string, unknown>; focusedPaneId?: string | null; activePanel?: string }>;
     };
     expect(persisted.layouts[0]?.paneState).toEqual({
-      "ticker-detail:main": {
-        activeTabId: "chart",
-        pluginState: {
-          "ticker-research": { shared: "canonical" },
-        },
-      },
+      "ticker-detail:main": { activeTabId: "chart" },
     });
     expect(persisted.layouts[0]?.focusedPaneId).toBe("ticker-detail:main");
     expect(persisted.layouts[0]?.activePanel).toBe("right");
-  });
-
-  test("does not replay historical migrations for current configs or saves", async () => {
-    const dataDir = await createTempConfigDir();
-    const selectedPortfolioColumns = DEFAULT_COLUMNS.map((column) => column.id);
-    const currentLayout = {
-      ...DEFAULT_LAYOUT,
-      instances: DEFAULT_LAYOUT.instances.map((instance) => (
-        instance.instanceId === "ticker-detail:main"
-          ? {
-            ...instance,
-            settings: {
-              ...(instance.settings ?? {}),
-              chartRangePreset: "6M",
-              chartResolution: "1d",
-            },
-          }
-          : instance.instanceId === "portfolio-list:main"
-            ? {
-              ...instance,
-              settings: {
-                ...(instance.settings ?? {}),
-                columnIds: selectedPortfolioColumns,
-              },
-            }
-          : instance
-      )),
-    };
-    const legacyPaneState = {
-      "ticker-detail:main": {
-        activeTabId: "fundamental-graphs",
-        pluginState: {
-          "ticker-detail": { detailMetric: "revenue", shared: "legacy" },
-          "ticker-research": { shared: "canonical" },
-        },
-      },
-    };
-    const legacyPluginConfig = {
-      "ticker-detail": {
-        chartIndicators: ["sma50"],
-        chartIndicatorsVersion: 2,
-        retainedPreference: "keep",
-      },
-    };
-    await writeConfigJson(dataDir, createSavedConfig({
-      layout: currentLayout,
-      layouts: [{ name: "Current", layout: currentLayout, paneState: legacyPaneState }],
-      pluginConfig: legacyPluginConfig,
-      disabledPlugins: ["options", "gloomberb-cloud"],
-      disabledSources: [],
-    }));
-
-    const config = await loadConfig(dataDir);
-    expect(findPaneInstance(config.layout, "ticker-detail:main")?.settings).toEqual(expect.objectContaining({
-      chartRangePreset: "6M",
-      chartResolution: "1d",
-    }));
-    expect(config.layouts[0]?.paneState).toEqual(legacyPaneState);
-    expect(config.pluginConfig).toEqual(legacyPluginConfig);
-    expect(config.disabledPlugins).toEqual(["options", "gloomberb-cloud"]);
-    expect(findPaneInstance(config.layout, "portfolio-list:main")?.settings?.columnIds)
-      .toEqual(selectedPortfolioColumns);
-
-    await saveConfig(config);
-    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as typeof config;
-    expect(persisted.layouts[0]?.paneState).toEqual(legacyPaneState);
-    expect(persisted.pluginConfig).toEqual(legacyPluginConfig);
-    expect(persisted.disabledPlugins).toEqual(["options", "gloomberb-cloud"]);
-    expect(findPaneInstance(persisted.layout, "portfolio-list:main")?.settings?.columnIds)
-      .toEqual(selectedPortfolioColumns);
-    expect(findPaneInstance(persisted.layout, "ticker-detail:main")?.settings).toEqual(expect.objectContaining({
-      chartRangePreset: "6M",
-      chartResolution: "1d",
-    }));
   });
 
   test("migrates legacy main portfolio panes to the portfolio default columns", async () => {
@@ -854,37 +456,6 @@ describe("loadConfig", () => {
       .toEqual(DEFAULT_PORTFOLIO_COLUMN_IDS);
   });
 
-  test("does not replay the portfolio column migration at its v17 boundary", async () => {
-    const dataDir = await createTempConfigDir();
-    const selectedColumnIds = DEFAULT_COLUMNS.map((column) => column.id);
-    const layout = {
-      ...DEFAULT_LAYOUT,
-      instances: DEFAULT_LAYOUT.instances.map((instance) => (
-        instance.instanceId === "portfolio-list:main"
-          ? {
-            ...instance,
-            settings: {
-              ...(instance.settings ?? {}),
-              columnIds: selectedColumnIds,
-            },
-          }
-          : instance
-      )),
-    };
-
-    await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: 17,
-      layout,
-      layouts: [{ name: "Default", layout }],
-    }));
-
-    const config = await loadConfig(dataDir);
-
-    expect(findPaneInstance(config.layout, "portfolio-list:main")?.settings?.columnIds).toEqual(selectedColumnIds);
-    expect(findPaneInstance(config.layouts[0]?.layout ?? DEFAULT_LAYOUT, "portfolio-list:main")?.settings?.columnIds)
-      .toEqual(selectedColumnIds);
-  });
-
   test("falls back to the default layout when persisted layouts use the obsolete column shape", async () => {
     const dataDir = await createTempConfigDir();
     const obsoleteLayout = {
@@ -915,8 +486,7 @@ describe("loadConfig", () => {
     expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(config.activeLayoutIndex).toBe(1);
     expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
-    const expectedLayout = sanitizeLayout(DEFAULT_LAYOUT, DEFAULT_LAYOUT);
-    expect(config.layout).toEqual(expectedLayout);
+    expect(config.layout).toEqual(DEFAULT_LAYOUT);
 
     await saveConfig(config);
     const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
@@ -927,7 +497,7 @@ describe("loadConfig", () => {
 
     expect(persisted.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(persisted.activeLayoutIndex).toBe(1);
-    expect(persisted.layouts[1]?.layout).toEqual(JSON.parse(JSON.stringify(expectedLayout)));
+    expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT as unknown as Record<string, unknown>);
   });
 });
 
