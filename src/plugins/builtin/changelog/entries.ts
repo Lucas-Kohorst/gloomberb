@@ -4,17 +4,26 @@ const RELEASE_2026_08_16: ChangelogRelease = {
   id: "hosted-2026-08-16",
   tagName: "2026.08.16",
   version: "2026.08.16",
-  title: "Hosted SEC and TV fixes, shareable articles, and Adjacent out of Gloom Cloud",
+  title: "Plugin Discovery pane, hosted SEC and TV fixes, shareable articles, and Adjacent out of Gloom Cloud",
   publishedAt: "2026-08-16T18:00:00.000Z",
   url: "",
   body: `## Highlights
 
+- Search and install Gloomberb plugins from GitHub without leaving the app. Open the Plugin Discovery pane with \`PLUG\`.
 - \`sec\` opens the broad filings browser on the hosted web client instead of asking you to pick a ticker first.
 - TV plays again — the deprecated YouTube embed that returned "Error 153" is gone.
 - Share any news, RSS, or Substack article as a public link with \`y\`.
 - Adjacent is no longer filed under Gloom Cloud, in the command bar or in Connections — and it needs no API key.
 
 ## Changes
+
+### Plugin Discovery
+
+- \`PLUG\` opens a floating pane that searches GitHub for installable Gloomberb plugins by keyword.
+- Results show the repo name, star count, and description, sorted by stars.
+- \`[i]nstall\` (or Enter) clones the plugin to \`~/.gloomberb/plugins/\` and runs \`bun install\` if needed. A toast confirms success or failure.
+- \`[o]pen\` opens the repo on GitHub in your browser.
+- Search defaults to the \`gloomberb-plugin\` topic, falling back to a keyword search across repo names and descriptions.
 
 ### SEC
 
