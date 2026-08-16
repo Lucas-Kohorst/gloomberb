@@ -10,6 +10,7 @@ import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/article-share";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import {
@@ -48,7 +49,13 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const copyShareLink = useCopyShareLink();
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailArticle ?? selectedArticle;
+
+  const shareArticle = readableArticle
+    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    : undefined;
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of SECTOR_TABS) {
@@ -71,13 +78,14 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
     focused,
-    article: detailArticle ?? selectedArticle,
+    article: readableArticle,
     loading,
-    onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
+    onPopOut: () => popOutArticle(readableArticle),
     onRefresh: () => {
       const query = category === "all" ? NEWS_QUERY_PRESETS.sectorAll : NEWS_QUERY_PRESETS.sector(category);
       void getSharedNewsService()?.load(query);
     },
+    onShare: shareArticle,
   });
 
   const rootBefore = (
@@ -130,7 +138,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       ) : undefined}
       emptyStateTitle="No news in this category"
       emptyStateHint="Try another category or wait for the next feed refresh."
-      onPopOut={() => popOutArticle(detailArticle ?? selectedArticle)}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

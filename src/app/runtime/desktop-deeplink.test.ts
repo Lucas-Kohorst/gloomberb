@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import type { NewsArticle } from "../../news/types";
+import { encodeNewsArticleForShare } from "../../plugins/builtin/shared/article-share";
 import { resolveDesktopDeepLinkAction } from "./desktop-deeplink";
 
 describe("desktop deeplinks", () => {
@@ -106,5 +108,35 @@ describe("desktop deeplinks", () => {
     expect(resolveDesktopDeepLinkAction("gloomberb://search/NVDA").type).toBe("unsupported");
     expect(resolveDesktopDeepLinkAction("https://gloom.sh/cloud").type).toBe("unsupported");
     expect(resolveDesktopDeepLinkAction("not a url").type).toBe("unsupported");
+  });
+
+  test("routes article share links to the article reader", () => {
+    const article: NewsArticle = {
+      id: "test-article",
+      title: "Test Article",
+      url: "https://example.com/test",
+      source: "Reuters",
+      publishedAt: new Date("2026-08-16T12:00:00Z"),
+      topic: "general",
+      topics: [],
+      sectors: [],
+      categories: [],
+      tickers: [],
+      scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+      isBreaking: false,
+      isDeveloping: false,
+      importance: 0,
+    };
+    const payload = encodeNewsArticleForShare(article);
+    const action = resolveDesktopDeepLinkAction(`gloomberb://article?a=${payload}`);
+    expect(action.type).toBe("open-article-reader");
+    if (action.type !== "open-article-reader") return;
+    expect(action.articleType).toBe("news");
+    expect(action.encodedPayload).toBe(payload);
+    expect(action.message).toContain("Test Article");
+  });
+
+  test("rejects article links without a payload", () => {
+    expect(resolveDesktopDeepLinkAction("gloomberb://article").type).toBe("unsupported");
   });
 });

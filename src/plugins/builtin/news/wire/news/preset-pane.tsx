@@ -14,6 +14,7 @@ import { useNewsArticleFooter } from "./footer";
 import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
+import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
 
 export function NewsPresetPane({
   focused,
@@ -53,18 +54,25 @@ export function NewsPresetPane({
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
+  const copyShareLink = useCopyShareLink();
   const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailArticle ?? selectedArticle;
+
+  const shareArticle = readableArticle
+    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    : undefined;
 
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
     focused,
-    article: detailArticle ?? selectedArticle,
+    article: readableArticle,
     loading,
     error: newsState.error,
-    onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
+    onPopOut: () => popOutArticle(readableArticle),
     onRefresh: () => {
       void getSharedNewsService()?.load(query);
     },
+    onShare: shareArticle,
   });
 
   const detailContent = detailArticle ? (
@@ -102,7 +110,8 @@ export function NewsPresetPane({
       columns={columns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
-      onPopOut={() => popOutArticle(detailArticle ?? selectedArticle)}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }
