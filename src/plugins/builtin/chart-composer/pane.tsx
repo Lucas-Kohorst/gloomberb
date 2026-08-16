@@ -62,6 +62,7 @@ import {
 import { resolveChartComposerShortcut } from "./shortcuts";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
+import { useShareView } from "../shared/use-share-view";
 
 const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
@@ -234,7 +235,7 @@ function ChartComposerSurface({
   const indicatorsDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
   const formulasDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
   const indicatorsDisabled = !isPriceStudyTarget(spec);
-  const formulasDisabled = spec.series.filter((series) => series.visible !== false).length < 2;
+  const formulasDisabled = spec.series.length < 2;
   const setInteractionCaptured = useCallback((source: string, captured: boolean) => {
     const sources = interactionCaptureSourcesRef.current;
     if (captured) sources.add(source);
@@ -510,6 +511,10 @@ function ChartComposerSurface({
   const footerResolution = useCallback(() => { void currentActionsRef.current.openResolutionPicker(); }, []);
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
   const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
+  const shareView = useShareView();
+  const shareChart = useCallback(() => {
+    void shareView("chart", { spec });
+  }, [shareView, spec]);
 
   useShortcut((event) => {
     if (interactionCaptureRef.current || dialogOpen) return;
@@ -537,6 +542,10 @@ function ChartComposerSurface({
         return;
       case "resolution":
         void openResolutionPicker();
+        return;
+      case "share":
+        shareChart();
+        return;
     }
   }, { enabled: focused && !dialogOpen });
 
@@ -557,6 +566,7 @@ function ChartComposerSurface({
       { id: "resolution", key: "r", label: "es", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
       { id: "reload", key: "Shift+R", label: "reload", onPress: footerReload },
+      { id: "share", key: "y", label: " share", onPress: shareChart },
     ],
   }), [
     footerDates,
@@ -572,6 +582,7 @@ function ChartComposerSurface({
     resolution.errors,
     resolution.loading,
     resolution.warnings,
+    shareChart,
     styles.length,
   ]);
 

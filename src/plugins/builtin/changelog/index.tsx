@@ -17,6 +17,7 @@ import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
+import { encodeChangelogReleaseForShare, useCopyShareLink } from "../shared/article-share";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -114,6 +115,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   const [openReleaseId, setOpenReleaseId] = useState<string | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const copyShareLink = useCopyShareLink();
 
   const loadReleases = useCallback(async () => {
     abortRef.current?.abort();
@@ -185,8 +187,21 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     if (scrollBox) scrollBox.scrollTop = 0;
   }, [openReleaseId]);
 
+  const shareRelease = useCallback(() => {
+    if (!openRelease) return;
+    void copyShareLink(encodeChangelogReleaseForShare(openRelease));
+  }, [copyShareLink, openRelease]);
+
   useShortcut((event) => {
-    if (!focused || !isPlainKey(event, "r")) return;
+    if (!focused) return;
+    if (isPlainKey(event, "y")) {
+      if (!openRelease) return;
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      shareRelease();
+      return;
+    }
+    if (!isPlainKey(event, "r")) return;
     event.stopPropagation?.();
     event.preventDefault?.();
     void loadReleases();
@@ -275,14 +290,20 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     return segments;
   }, [status]);
 
-  const footerHints = useMemo<PaneHint[]>(() => [{
-    id: "refresh",
-    key: "r",
-    label: "efresh",
-    onPress: () => {
-      void loadReleases();
-    },
-  }], [loadReleases]);
+  const footerHints = useMemo<PaneHint[]>(() => {
+    const hints: PaneHint[] = [{
+      id: "refresh",
+      key: "r",
+      label: "efresh",
+      onPress: () => {
+        void loadReleases();
+      },
+    }];
+    if (openRelease) {
+      hints.push({ id: "share", key: "y", label: " share", onPress: shareRelease });
+    }
+    return hints;
+  }, [loadReleases, openRelease, shareRelease]);
 
   useExternalLinkFooter({
     registrationId: "changelog",
