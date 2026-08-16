@@ -1,5 +1,38 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_2026_08_16_2: ChangelogRelease = {
+  id: "hosted-2026-08-16-fixes",
+  tagName: "2026.08.16.2",
+  version: "2026.08.16.2",
+  title: "SEC, TV, and shared articles actually fixed on web, plus on-device AI",
+  publishedAt: "2026-08-16T22:00:00.000Z",
+  url: "",
+  body: `The previous release claimed to fix SEC and TV on the hosted web client. Both were still broken, and shared article links demanded a login. This release fixes them for real.
+
+## SEC opens without a ticker
+
+\`sec\` opened the ticker-research tab and reported "Open a matching ticker or collection context first." Relaxing the shortcut's argument last release was necessary but not sufficient: the SEC pane id is classified as ticker-scoped, and the template supplied no binding, so pane construction returned nothing. The template now declares that it needs no ticker.
+
+## TV plays instead of showing Error 153
+
+Removing the \`origin\` parameter did not help, because the embed URL still fell back to YouTube's retired \`/embed/live_stream?channel=\` endpoint whenever no video id had been resolved — and on hosted web none ever was. That fallback is gone; an embed can only be built from a concrete video id. Resolution now sends browser-like headers with a consent cookie, detects YouTube's consent interstitial, tries the live page then the videos feed, and only accepts a video marked live. With no resolvable stream the pane shows an offline state with "Try again" and an open-on-YouTube action, and the footer no longer claims "playing live" over a dead player.
+
+## Shared article links open for anyone
+
+A shared link landed on the login screen, because an anonymous hosted session has onboarding incomplete and the app returns the onboarding wizard before it mounts. A link carrying a valid, decodable payload now bypasses onboarding and opens the reader. The bypass is strict: wrong path, missing, malformed, or undecodable payloads all fall through to the normal login gate. Signed-in readers keep their workspace exactly as it was.
+
+## BYOK understands your API
+
+Testing a custom API used to issue a blind \`GET\` against whichever URL you typed and demand a 2xx, so a valid key against a base URL reported failure. You can now attach an OpenAPI spec, by URL or pasted, for OpenAPI 3.x and Swagger 2.0. Gloomberb reads the server URL, derives the auth scheme from the spec instead of making you guess bearer versus header versus query, and probes a real endpoint — preferring health and identity paths, then the shortest safely callable one. Only side-effect-free GET operations are called. The operation catalog is kept so the assist inventory knows what the API offers, and failures name the cause.
+
+## On-device AI on the web client
+
+The hosted web client now defaults to Chrome's built-in on-device model (Gemini Nano) when available, so prompts stay on your machine. AI settings shows which model is active and its real state — ready, needs download, downloading, or unavailable with the reason. Downloads are user-initiated, because Chrome requires a genuine gesture. On-device is text output only; the screener and structured output keep using a remote provider, and an unavailable local model falls back rather than leaving a dead default. An explicit provider choice is never overridden.
+
+Chrome's requirements for the on-device model: desktop only, roughly 22 GB free on the Chrome profile volume, and either a GPU with more than 4 GB VRAM or 16 GB RAM with 4+ cores.
+`,
+};
+
 const RELEASE_2026_08_16: ChangelogRelease = {
   id: "hosted-2026-08-16",
   tagName: "2026.08.16",
@@ -186,6 +219,7 @@ const RELEASE_2026_08_15: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_2026_08_16_2,
   RELEASE_2026_08_16,
   RELEASE_2026_08_15_2,
   RELEASE_2026_08_15,

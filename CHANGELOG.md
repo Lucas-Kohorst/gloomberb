@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026.08.16.2 — SEC, TV, and shared articles actually fixed on web, plus on-device AI
+
+The previous release claimed to fix SEC and TV on the hosted web client. Both were still broken, and shared article links demanded a login. This release fixes them for real, and each one was verified in a browser rather than by HTTP status code.
+
+### SEC opens without a ticker
+
+`sec` opened the ticker-research tab and reported "Open a matching ticker or collection context first." The last release relaxed the shortcut's argument, which was necessary but not sufficient: the SEC pane id is classified as ticker-scoped, and the template supplied no binding, so pane construction returned nothing and the command bar reported a missing ticker context. The template now declares that it needs no ticker.
+
+### TV plays instead of showing Error 153
+
+Removing the `origin` parameter did not help, because the embed URL still fell back to YouTube's retired `/embed/live_stream?channel=` endpoint whenever no video id had been resolved — and on hosted web none ever was. That fallback is gone; an embed can only be built from a concrete video id. Stream resolution now sends browser-like headers with a consent cookie, detects YouTube's consent interstitial, tries the channel's live page and then its videos feed, and only accepts a video actually marked live. When no live stream can be resolved the pane shows an offline state with "Try again" and an open-on-YouTube action, and the footer no longer claims "playing live" over a dead player.
+
+### Shared article links open for anyone
+
+A shared link landed on the Gloom Cloud login screen, because an anonymous hosted session has onboarding incomplete and the app returns the onboarding wizard before it mounts. A link carrying a valid, decodable article payload now bypasses onboarding and opens the reader. The bypass is strict: wrong path, missing, malformed, or undecodable payloads all fall through to the normal login gate, and nothing else about authentication changed. Signed-in readers keep their workspace exactly as it was.
+
+### BYOK understands your API
+
+Testing a custom API used to issue a blind `GET` against whichever URL you typed and demand a 2xx, so a valid key against a base URL reported failure. You can now attach an OpenAPI spec, by URL or pasted, for OpenAPI 3.x and Swagger 2.0. Gloomberb reads the server URL, derives the auth scheme from the spec's security definitions instead of making you guess bearer versus header versus query, and probes a real endpoint — preferring health and identity paths, then the shortest safely callable one. Only side-effect-free GET operations are ever called. The spec's operation catalog is kept so the assist inventory knows what the API offers, and failures name the cause: spec unreachable, unparseable, no servers, or no safely callable operation.
+
+### On-device AI on the web client
+
+The hosted web client now defaults to Chrome's built-in on-device model (Gemini Nano) when the browser has it, so prompts stay on your machine. AI settings shows which model is active and its real state — ready, needs download, downloading, or unavailable with the reason. Downloads are always user-initiated, because Chrome requires a genuine gesture. On-device is text output only; the screener and structured output continue to use a remote provider, and if the local model is unavailable Gloomberb falls back to your configured provider rather than leaving a dead default. An explicit provider choice is never overridden. The provider is hidden outside the hosted web client, where the API does not exist.
+
+Requirements for the on-device model, set by Chrome: desktop only (no mobile), roughly 22 GB free on the Chrome profile volume, and either a GPU with more than 4 GB VRAM or 16 GB RAM with 4+ cores.
+
 ## 2026.08.16 — Hosted SEC and TV fixes, shareable articles, and Adjacent out of Gloom Cloud
 
 Open this in the app with the Changelog pane (command bar: Changelog).
