@@ -32,7 +32,7 @@
     "desktop:release": "electrobun build --env=stable",
     "desktop:release:windows": "electrobun build --env=stable --targets=win-x64",
     "i18n:audit": "bun run scripts/i18n-audit.ts",
-    "typecheck": "bun run typecheck:opentui && bun run typecheck:electrobun-bun && bun run typecheck:electrobun-view && bun run typecheck:scripts",
+    "typecheck": "bun run typecheck:opentui && bun run typecheck:electrobun-bun && bun run typecheck:electrobun-view && bun run typecheck:scripts && bun run typecheck:cloud",
     "typecheck:opentui": "tsc --project tsconfig.opentui.json",
     "typecheck:electrobun-bun": "tsc --project tsconfig.electrobun-bun.json",
     "typecheck:electrobun-view": "tsc --project tsconfig.electrobun-view.json",
