@@ -138,7 +138,9 @@ export async function syncBrokerInstance({
     if (resources) {
       try {
         persistBrokerAccounts(resources, instance, broker, brokerAccounts);
-      } catch {}
+      } catch (error) {
+        console.error("[broker-sync] Failed to persist broker accounts:", error);
+      }
     }
   } else {
     if (broker.listAccounts) {
@@ -147,7 +149,9 @@ export async function syncBrokerInstance({
         if (resources) {
           try {
             persistBrokerAccounts(resources, instance, broker, brokerAccounts);
-          } catch {}
+          } catch (error) {
+            console.error("[broker-sync] Failed to persist broker accounts:", error);
+          }
         }
       } catch (error) {
         throw error;
