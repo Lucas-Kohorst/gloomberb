@@ -7,6 +7,7 @@ import {
   extractFilingContent,
   isPdfDocument,
 } from "./sec-edgar/content";
+import { httpFetch } from "../utils/http-transport";
 
 export { extractFilingContent } from "./sec-edgar/content";
 
@@ -695,7 +696,7 @@ export class SecEdgarClient {
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       headers: this.defaultHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -719,7 +720,7 @@ export class SecEdgarClient {
   }
 
   private async fetchText(url: string): Promise<{ body: string; contentType: string }> {
-    const response = await fetch(url, {
+    const response = await httpFetch(url, {
       headers: this.defaultHeaders(),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });

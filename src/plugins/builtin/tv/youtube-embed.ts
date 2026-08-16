@@ -5,7 +5,7 @@ const YOUTUBE_VIDEO_ID = /(?:^|[^a-zA-Z0-9_-])([a-zA-Z0-9_-]{11})(?:[^a-zA-Z0-9_
 
 export function buildYoutubeLiveEmbedUrl(
   channelId: string,
-  options?: { muted?: boolean; origin?: string; videoId?: string },
+  options?: { muted?: boolean; videoId?: string },
 ): string {
   const params = new URLSearchParams({
     autoplay: "1",
@@ -15,7 +15,6 @@ export function buildYoutubeLiveEmbedUrl(
     modestbranding: "1",
     enablejsapi: "1",
   });
-  if (options?.origin) params.set("origin", options.origin);
   if (options?.videoId) {
     return `https://www.youtube.com/embed/${options.videoId}?${params}`;
   }
@@ -28,7 +27,7 @@ export function isYoutubeEmbedUrl(url: string): boolean {
 
 export function fallbackTvStream(
   channel: TvChannel,
-  options?: { muted?: boolean; origin?: string; videoId?: string; title?: string },
+  options?: { muted?: boolean; videoId?: string; title?: string },
 ): ResolvedLiveStream {
   const now = Date.now();
   return {
@@ -38,7 +37,6 @@ export function fallbackTvStream(
     title: options?.title?.trim() || `${channel.name} Live`,
     manifestUrl: buildYoutubeLiveEmbedUrl(channel.channelId, {
       muted: options?.muted,
-      origin: options?.origin,
       videoId: options?.videoId,
     }),
     watchUrl: options?.videoId
@@ -86,5 +84,5 @@ export async function resolveYoutubeLivePage(
 export function resolveHostedTvStream(sourceId: string): Promise<ResolvedLiveStream> {
   const channel = TV_CHANNELS.find((item) => item.id === sourceId);
   if (!channel) throw new Error("Unknown TV channel.");
-  return resolveYoutubeLivePage(getTvChannel(channel.id)).catch(() => fallbackTvStream(channel));
+  return resolveYoutubeLivePage(getTvChannel(channel.id));
 }
