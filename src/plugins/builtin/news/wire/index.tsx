@@ -25,6 +25,15 @@ import {
   NEWS_ARTICLE_READER_TEMPLATE_ID,
   articleReaderInstanceId,
 } from "../../shared/article-pop-out";
+import {
+  buildOpenArticleCommandResults,
+  cachedNewsArticles,
+  loadNewsArticles,
+  openNewsArticle,
+  searchNewsArticles,
+} from "./article-search";
+import { searchAdjacentRelatedArticles } from "../../adjacent/news";
+import { registerConnectionSource } from "../../connections/register";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -63,6 +72,7 @@ const FeedPane = createNewsPresetPane({
 });
 
 let disposeBreakingNewsNotifications: (() => void) | null = null;
+let disposeRssConnection: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
@@ -102,7 +112,14 @@ export const newsWireModule: PluginModule = {
     { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" } },
     { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "Market news filtered by sector", keywords: ["news", "industry", "sector", "ni", "filter"], shortcut: { prefix: "NI" } },
     { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },
-    { id: "news-rss-pane", paneId: "news-rss", label: "RSS Feeds", description: "Subscribe to and read RSS feeds", keywords: ["rss", "feed", "subscribe", "news", "reader"], shortcut: { prefix: "RSS" } },
+    {
+      id: "news-rss-pane",
+      paneId: "news-rss",
+      label: "RSS Feeds",
+      description: "Read subscribed RSS feeds, including Adjacent Press and other custom sources. Search headlines from the command bar with ART.",
+      keywords: ["rss", "feed", "subscribe", "news", "reader", "adjacent", "press", "article"],
+      shortcut: { prefix: "RSS" },
+    },
     {
       id: NEWS_ARTICLE_READER_TEMPLATE_ID,
       paneId: NEWS_ARTICLE_READER_PANE_ID,
@@ -138,6 +155,61 @@ export const newsWireModule: PluginModule = {
       { persistence: ctx.persistence },
     );
     ctx.registerCapability(source);
+    disposeRssConnection = registerConnectionSource({
+      id: "rss",
+      name: "RSS Feeds",
+      kind: "news",
+      pluginId: "news",
+      priority: 400,
+    });
+
+    ctx.registerCommand({
+      id: "open-news-article",
+      label: "Open Article",
+      description: "Open a news article from enabled RSS feeds (including Adjacent Press) and Adjacent News. Search by headline or topic, e.g. ART hormuz.",
+      keywords: [
+        "article",
+        "news",
+        "rss",
+        "headline",
+        "story",
+        "adjacent",
+        "press",
+        "open",
+        "hormuz",
+        "strait",
+      ],
+      category: "navigation",
+      shortcut: "ART",
+      shortcutArg: {
+        placeholder: "headline or topic",
+        kind: "text",
+        parse: (arg) => ({ query: arg.trim() }),
+      },
+      buildResults: (arg) => buildOpenArticleCommandResults(
+        cachedNewsArticles(),
+        arg,
+        ctx.createPaneFromTemplate,
+      ),
+      async execute(values) {
+        const query = values?.query ?? values?.shortcut ?? "";
+        const articles = [
+          ...await loadNewsArticles(),
+          ...await searchAdjacentRelatedArticles(query),
+        ];
+        const match = searchNewsArticles(articles, query)[0];
+        if (!match) {
+          ctx.notify({
+            body: query.trim()
+              ? `No article matched "${query.trim()}".`
+              : "No articles loaded yet.",
+            type: "error",
+          });
+          return;
+        }
+        openNewsArticle(match, ctx.createPaneFromTemplate);
+      },
+    });
 
     ctx.registerCommand({
       id: "add-news-feed",
@@ -175,5 +247,7 @@ export const newsWireModule: PluginModule = {
   dispose() {
     disposeBreakingNewsNotifications?.();
     disposeBreakingNewsNotifications = null;
+    disposeRssConnection?.();
+    disposeRssConnection = null;
   },
 };

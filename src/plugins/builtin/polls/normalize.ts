@@ -107,11 +107,42 @@ export function normalizeVoteHubPoll(poll: VoteHubPoll): PollRow {
   };
 }
 
-export function sortPollRows(rows: PollRow[]): PollRow[] {
+export type PollSortColumnId = "date" | "subject" | "pollster" | "pop" | "result";
+
+export interface PollSortPreference {
+  columnId: PollSortColumnId;
+  direction: "asc" | "desc";
+}
+
+export const DEFAULT_POLL_SORT: PollSortPreference = { columnId: "date", direction: "desc" };
+
+export function comparePollRows(
+  left: PollRow,
+  right: PollRow,
+  columnId: PollSortColumnId,
+): number {
+  switch (columnId) {
+    case "date":
+      return dateValue(left.endDate ?? left.startDate) - dateValue(right.endDate ?? right.startDate);
+    case "subject":
+      return left.subject.localeCompare(right.subject);
+    case "pollster":
+      return left.pollster.localeCompare(right.pollster);
+    case "pop":
+      return left.population.localeCompare(right.population);
+    case "result":
+      return (left.lead ?? Number.NEGATIVE_INFINITY) - (right.lead ?? Number.NEGATIVE_INFINITY);
+  }
+}
+
+export function sortPollRows(
+  rows: PollRow[],
+  preference: PollSortPreference = DEFAULT_POLL_SORT,
+): PollRow[] {
+  const sign = preference.direction === "asc" ? 1 : -1;
   return [...rows].sort((left, right) => {
-    const leftTime = dateValue(left.endDate ?? left.startDate);
-    const rightTime = dateValue(right.endDate ?? right.startDate);
-    if (rightTime !== leftTime) return rightTime - leftTime;
+    const primary = comparePollRows(left, right, preference.columnId);
+    if (primary !== 0) return sign * primary;
     return left.subject.localeCompare(right.subject);
   });
 }

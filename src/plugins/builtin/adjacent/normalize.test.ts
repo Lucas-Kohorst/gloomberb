@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  compareAdjacentIndexRows,
+  filterAdjacentIndexRows,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
+  normalizeAdjacentNewsArticle,
   normalizeAdjacentRate,
+  unwrapAdjacentMarketIds,
+  unwrapAdjacentNewsArticles,
 } from "./normalize";
 
 describe("adjacent normalize", () => {
@@ -16,6 +21,8 @@ describe("adjacent normalize", () => {
       office_category: null,
     });
     expect(row.id).toBe("red");
+    expect(row.ticker).toBe("RED");
+    expect(row.name).toBe("Republican Political Future Index");
     expect(row.value).toBeCloseTo(98.5612);
     expect(row.probabilityPct).toBeCloseTo(48.5612);
     expect(row.change1d).toBe(0.129);
@@ -42,5 +49,65 @@ describe("adjacent normalize", () => {
     ]);
     expect(points).toHaveLength(1);
     expect(points[0]!.value).toBeCloseTo(98.5611);
+  });
+
+  test("filters indices by ticker or name", () => {
+    const rows = [
+      normalizeAdjacentIndex({
+        index_id: "red",
+        name: "Republican Political Future Index",
+        ticker: "RED",
+        latest_price: 98,
+      }),
+      normalizeAdjacentIndex({
+        index_id: "blue",
+        name: "Democrat Political Future Index",
+        ticker: "BLUE",
+        latest_price: 52,
+      }),
+    ];
+    expect(filterAdjacentIndexRows(rows, "pres")).toEqual([]);
+    expect(filterAdjacentIndexRows(rows, "blue").map((row) => row.ticker)).toEqual(["BLUE"]);
+    expect(filterAdjacentIndexRows(rows, "republican").map((row) => row.ticker)).toEqual(["RED"]);
+  });
+
+  test("sorts indices by ticker, probability, and 1d change fields", () => {
+    const red = normalizeAdjacentIndex({
+      index_id: "red",
+      name: "Republican",
+      ticker: "RED",
+      latest_price: 98,
+      change_1d: 0.2,
+    });
+    const blue = normalizeAdjacentIndex({
+      index_id: "blue",
+      name: "Democrat",
+      ticker: "BLUE",
+      latest_price: 52,
+      change_1d: -1.4,
+    });
+    expect(compareAdjacentIndexRows(red, blue, "ticker")).toBeGreaterThan(0);
+    expect(compareAdjacentIndexRows(red, blue, "prob")).toBeGreaterThan(0);
+    expect(compareAdjacentIndexRows(red, blue, "chg1d")).toBeGreaterThan(0);
+    expect(compareAdjacentIndexRows(red, blue, "value")).toBeGreaterThan(0);
+  });
+
+  test("unwraps public news and market list payloads", () => {
+    const articles = unwrapAdjacentNewsArticles({
+      data: [{
+        article_id: "hormuz-1",
+        title: "Iran won’t reopen Strait of Hormuz without US concessions",
+        url: "https://apnews.com/hormuz",
+        source: "Associated Press",
+        published_date: "2026-08-10T10:58:24Z",
+        image_url: "https://example.com/hormuz.jpg",
+      }],
+    });
+    expect(articles).toHaveLength(1);
+    expect(articles[0]?.id).toBe("hormuz-1");
+    expect(normalizeAdjacentNewsArticle(articles[0]!).topics).toContain("adjacent");
+    expect(unwrapAdjacentMarketIds({
+      data: [{ market_id: "polymarket:abc" }, { id: "kalshi:def" }],
+    })).toEqual(["polymarket:abc", "kalshi:def"]);
   });
 });

@@ -4,6 +4,7 @@ import {
   normalizeVoteHubPoll,
   parseSampleSize,
   populationLabel,
+  sortPollRows,
   summarizeAnswers,
 } from "./normalize";
 
@@ -60,5 +61,48 @@ describe("VoteHub normalize", () => {
     expect(row.lead).toBeCloseTo(4);
     expect(parseSampleSize("800")).toBe(800);
     expect(populationLabel("rv")).toBe("RV");
+  });
+
+  test("sorts poll rows by date, pollster, or lead", () => {
+    const older = normalizeVoteHubPoll({
+      id: "old",
+      poll_type: "approval",
+      sample_size: 100,
+      population: "a",
+      url: null,
+      created_at: null,
+      start_date: "2026-07-01",
+      end_date: "2026-07-02",
+      pollster: "YouGov",
+      answers: [{ choice: "Approve", pct: 40 }, { choice: "Disapprove", pct: 50 }],
+      seat_name: null,
+      sponsors: [],
+      internal: false,
+      partisan: null,
+      subject: "Older",
+    });
+    const newer = normalizeVoteHubPoll({
+      id: "new",
+      poll_type: "approval",
+      sample_size: 100,
+      population: "lv",
+      url: null,
+      created_at: null,
+      start_date: "2026-08-01",
+      end_date: "2026-08-10",
+      pollster: "Emerson",
+      answers: [{ choice: "Approve", pct: 55 }, { choice: "Disapprove", pct: 40 }],
+      seat_name: null,
+      sponsors: [],
+      internal: false,
+      partisan: null,
+      subject: "Newer",
+    });
+
+    expect(sortPollRows([older, newer]).map((row) => row.id)).toEqual(["new", "old"]);
+    expect(sortPollRows([older, newer], { columnId: "pollster", direction: "asc" }).map((row) => row.id))
+      .toEqual(["new", "old"]);
+    expect(sortPollRows([older, newer], { columnId: "result", direction: "desc" }).map((row) => row.id))
+      .toEqual(["new", "old"]);
   });
 });

@@ -19,7 +19,7 @@ export type { DataTableKeyEvent, DataTableRootKeyContext } from "./data-table/vi
 export { DataTableStackView } from "./data-table/stack-view";
 export { FeedDataTableStackView } from "./feed-data-table/stack-view";
 export type { FeedDataTableItem } from "./feed-data-table/stack-view";
-export { activeStackIndex, sortStackItems } from "./feed-stack-controller";
+export { activeStackIndex, nextStackSortPreference, sortStackItems } from "./feed-stack-controller";
 export type { StackSortPreference } from "./feed-stack-controller";
 export { PaneFooterScope, usePaneFooter } from "./layout/pane/footer";
 export type { PaneFooterPressEvent, PaneFooterSegment, PaneHint } from "./layout/pane/footer";

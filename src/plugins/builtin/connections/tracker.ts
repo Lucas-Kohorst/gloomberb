@@ -1,4 +1,4 @@
-import type { PluginCapability, AssetDataCapability, NewsCapability, RegisteredCapability } from "../../../capabilities/types";
+import type { PluginCapability, RegisteredCapability } from "../../../capabilities/types";
 import type { DataProvider } from "../../../types/data-provider";
 import type { GloomPluginContext } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
@@ -13,6 +13,11 @@ import {
   recordRequest,
   updateWebSocketState,
 } from "./types";
+import {
+  listConnectionSources,
+  setConnectionRequestReporter,
+  subscribeConnectionSources,
+} from "./register";
 
 type ConnectionListener = (snapshot: ConnectionSnapshot) => void;
 
@@ -27,6 +32,13 @@ interface ProviderEntry {
   pluginId: string;
   priority: number;
   isWebSocket: boolean;
+}
+
+function connectionKindFromCapability(kind: string): ConnectionKind {
+  if (kind === "asset-data" || kind === "news" || kind === "broker" || kind === "prediction-market" || kind === "websocket" || kind === "api") {
+    return kind;
+  }
+  return "api";
 }
 
 const statusOrder: Record<ConnectionStatus, number> = {
@@ -62,6 +74,12 @@ export class ConnectionTracker {
     this.syncFromRegistry();
     this.wrapMarketData();
     this.subscribeCloudUserChanges();
+    setConnectionRequestReporter((id, report) => {
+      if (report.success) this.recordSuccess(id, report.operation ?? "request", report.durationMs);
+      else this.recordFailure(id, report.operation ?? "request", report.durationMs, report.error);
+    });
+    this.disposers.push(subscribeConnectionSources(() => this.syncFromRegistry()));
+    this.disposers.push(() => setConnectionRequestReporter(null));
 
     this.pollTimer = setInterval(() => {
       this.syncFromRegistry();
@@ -103,45 +121,44 @@ export class ConnectionTracker {
   // -- Registry discovery ----------------------------------------------------
 
   private syncFromRegistry(): void {
-    if (!this.listCapabilities) return;
-    const capabilities = this.listCapabilities();
     let changed = false;
 
-    for (const { capability, pluginId } of capabilities) {
-      const entry = this.providerEntryFromCapability(capability, pluginId);
-      if (!entry) continue;
-      if (this.ensureConnection(entry.id, entry.name, entry.kind, entry.pluginId, entry.priority, entry.isWebSocket)) {
+    for (const source of listConnectionSources()) {
+      if (this.ensureConnection(
+        source.id,
+        source.name,
+        source.kind,
+        source.pluginId,
+        source.priority ?? 1000,
+        source.isWebSocket === true,
+      )) {
         changed = true;
+      }
+    }
+
+    if (this.listCapabilities) {
+      for (const { capability, pluginId } of this.listCapabilities()) {
+        const entry = this.providerEntryFromCapability(capability, pluginId);
+        if (!entry) continue;
+        if (this.ensureConnection(entry.id, entry.name, entry.kind, entry.pluginId, entry.priority, entry.isWebSocket)) {
+          changed = true;
+        }
       }
     }
 
     if (changed) this.notify();
   }
 
-  private providerEntryFromCapability(capability: PluginCapability, pluginId: string): ProviderEntry | null {
-    if (capability.kind === "asset-data") {
-      const asset = capability as AssetDataCapability;
-      return {
-        id: asset.sourceId ?? asset.id,
-        name: asset.name,
-        kind: "asset-data",
-        pluginId,
-        priority: asset.priority ?? 1000,
-        isWebSocket: false,
-      };
-    }
-    if (capability.kind === "news") {
-      const news = capability as NewsCapability;
-      return {
-        id: news.sourceId ?? news.id,
-        name: news.name,
-        kind: "news",
-        pluginId,
-        priority: news.priority ?? 1000,
-        isWebSocket: false,
-      };
-    }
-    return null;
+  private providerEntryFromCapability(capability: PluginCapability, pluginId: string): ProviderEntry {
+    const kind = connectionKindFromCapability(capability.kind);
+    return {
+      id: capability.sourceId ?? capability.id,
+      name: capability.name,
+      kind,
+      pluginId,
+      priority: capability.priority ?? 1000,
+      isWebSocket: kind === "websocket",
+    };
   }
 
   private ensureConnection(

@@ -11,11 +11,13 @@ import {
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { createAdjacentNewsCapability } from "./news";
+import { registerConnectionSource } from "../connections/register";
 import { usePluginConfigState } from "../../runtime";
 
 const ADJACENT_API_KEY_CONFIG = "adjacentApiKey";
 
 let adjacentClient: AdjacentClient | null = null;
+let disposeAdjacentConnection: (() => void) | null = null;
 
 function getOrCreateClient(apiKey: string | null): AdjacentClient {
   if (!adjacentClient) {
@@ -77,7 +79,7 @@ export const adjacentModule: PluginModule = {
       id: "adjacent-indices-pane",
       paneId: "adjacent-indices",
       label: "Adjacent Indices",
-      description: "Browse prediction market indices (RED, BLUE, RED-TR) with constituents and charts.",
+      description: "Browse Adjacent prediction-market indices (RED, BLUE, RED-TR) with constituents and charts.",
       keywords: ["adjacent", "indices", "prediction", "markets", "political", "red", "blue"],
       shortcut: { prefix: "ADI" },
       createInstance: () => ({ placement: "floating" }),
@@ -102,6 +104,13 @@ export const adjacentModule: PluginModule = {
 
     // Register news capability (best-effort in partial/test contexts).
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
+    disposeAdjacentConnection = registerConnectionSource({
+      id: "adjacent",
+      name: "Adjacent",
+      kind: "prediction-market",
+      pluginId: "gloomberb-cloud",
+      priority: 200,
+    });
 
     // Commands
     ctx.registerCommand({
@@ -132,6 +141,12 @@ export const adjacentModule: PluginModule = {
       description: "Search normalized prediction markets via Adjacent.",
       keywords: ["adjacent", "search", "markets", "prediction", "kalshi", "polymarket"],
       category: "data",
+      shortcut: "ADJ",
+      shortcutArg: {
+        placeholder: "query",
+        kind: "text",
+        parse: (arg) => ({ query: arg.trim() }),
+      },
       wizard: [
         {
           key: "query",
@@ -157,6 +172,8 @@ export const adjacentModule: PluginModule = {
   },
 
   dispose() {
+    disposeAdjacentConnection?.();
+    disposeAdjacentConnection = null;
     resetAdjacentPersistence();
     adjacentClient = null;
   },

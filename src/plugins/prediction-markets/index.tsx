@@ -1,4 +1,5 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
+import { registerConnectionSource } from "../builtin/connections/register";
 import { parsePredictionSearchShortcut } from "./navigation";
 import { PredictionMarketsPane } from "./pane";
 import { attachPredictionMarketsPersistence, resetPredictionMarketsPersistence } from "./services/fetch";
@@ -11,6 +12,8 @@ import {
 
 const PANE_ID = "prediction-markets";
 const MAIN_INSTANCE_ID = `${PANE_ID}:main`;
+
+const predictionConnectionDisposers: Array<() => void> = [];
 
 function openPredictionMarkets(ctx: GloomPluginContext, query = ""): void {
   const parsed = parsePredictionSearchShortcut(query);
@@ -70,6 +73,22 @@ export const predictionMarketsPlugin: GloomPlugin = {
   ],
   setup(ctx) {
     attachPredictionMarketsPersistence(ctx.persistence);
+    predictionConnectionDisposers.push(
+      registerConnectionSource({
+        id: "kalshi",
+        name: "Kalshi",
+        kind: "prediction-market",
+        pluginId: PANE_ID,
+        priority: 210,
+      }),
+      registerConnectionSource({
+        id: "polymarket",
+        name: "Polymarket",
+        kind: "prediction-market",
+        pluginId: PANE_ID,
+        priority: 220,
+      }),
+    );
 
     ctx.registerCommand({
       id: "prediction-markets-open",
@@ -103,6 +122,9 @@ export const predictionMarketsPlugin: GloomPlugin = {
   },
 
   dispose() {
+    while (predictionConnectionDisposers.length > 0) {
+      predictionConnectionDisposers.pop()?.();
+    }
     resetPredictionMarketsPersistence();
   },
 };

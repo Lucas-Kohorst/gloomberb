@@ -48,7 +48,7 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
 
   pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
-  pluginRegistry.registerNewsCapabilityFn = () => () => {};
+  pluginRegistry.registerNewsCapabilityFn = (capability) => newsService.register(capability);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
 
   setSharedMarketDataCoordinator(marketData);

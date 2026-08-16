@@ -18,6 +18,7 @@ export interface KalshiMarketRecord {
   volume_24h_fp?: string;
   volume_fp?: string;
   open_interest_fp?: string;
+  notional_value_dollars?: string;
   liquidity_dollars?: string;
   rules_primary?: string;
   rules_secondary?: string;

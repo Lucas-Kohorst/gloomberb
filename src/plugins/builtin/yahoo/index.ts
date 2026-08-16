@@ -3,6 +3,7 @@ import type { NewsArticle, NewsQuery } from "../../../types/news-source";
 import type { NewsItem } from "../../../types/data-provider";
 import { YahooFinanceClient } from "../../../sources/yahoo-finance";
 import { assetDataProvider, newsProvider } from "../../../capabilities";
+import { registerConnectionSource } from "../connections/register";
 
 class YahooPluginProvider extends YahooFinanceClient {
   readonly priority = 1000;
@@ -59,6 +60,7 @@ function createYahooNewsProvider(provider: YahooPluginProvider) {
 }
 
 const yahooProvider = createYahooProvider();
+let disposeYahooConnection: (() => void) | null = null;
 
 export const yahooPlugin: GloomPlugin = {
   id: "yahoo",
@@ -69,4 +71,17 @@ export const yahooPlugin: GloomPlugin = {
     assetDataProvider(yahooProvider),
     newsProvider({ id: "yahoo", name: "Yahoo Finance", priority: 1000, provider: createYahooNewsProvider(yahooProvider) }),
   ],
+  setup() {
+    disposeYahooConnection = registerConnectionSource({
+      id: "yahoo",
+      name: "Yahoo Finance",
+      kind: "asset-data",
+      pluginId: "yahoo",
+      priority: 800,
+    });
+  },
+  dispose() {
+    disposeYahooConnection?.();
+    disposeYahooConnection = null;
+  },
 };

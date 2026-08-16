@@ -10,7 +10,7 @@ import type { AdjacentCatalogMarket, AdjacentCatalogResponse } from "./types";
 
 const ADJACENT_MARKETS_URL = "https://api.adjacent.markets/api/v1/public/markets";
 const ADJACENT_PAGE_SIZE = 100;
-const ADJACENT_TOP_PAGES = 3;
+const ADJACENT_TOP_PAGES = 6;
 const ADJACENT_SEARCH_PAGES = 2;
 
 export function shouldUseAdjacentCatalog(
@@ -32,11 +32,6 @@ export function normalizeAdjacentCatalogMarket(
 
   const key = record.market_id?.trim() || `${platform}:${ticker}`;
   const yesPrice = adjacentProbabilityToYesPrice(record.probability);
-  const volumeUnit = record.volume_24h_unit === "contracts" || record.volume_unit === "contracts"
-    ? "contracts"
-    : "usd";
-  const totalUnit = record.volume_unit === "contracts" ? "contracts" : "usd";
-  const openInterestUnit = record.open_interest_unit === "contracts" ? "contracts" : "usd";
 
   return {
     key,
@@ -66,11 +61,11 @@ export function normalizeAdjacentCatalogMarket(
     spread: null,
     lastTradePrice: yesPrice,
     volume24h: record.volume_24h ?? null,
-    volume24hUnit: volumeUnit,
+    volume24hUnit: "usd",
     totalVolume: record.volume ?? null,
-    totalVolumeUnit: totalUnit,
+    totalVolumeUnit: "usd",
     openInterest: record.open_interest ?? null,
-    openInterestUnit,
+    openInterestUnit: "usd",
     liquidity: null,
     liquidityUnit: "usd",
   };

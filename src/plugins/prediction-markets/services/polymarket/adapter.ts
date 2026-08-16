@@ -98,10 +98,38 @@ async function loadPolymarketCatalogPages(
   return [];
 }
 
+function mergePredictionCatalogs(
+  primary: PredictionMarketSummary[],
+  secondary: PredictionMarketSummary[],
+): PredictionMarketSummary[] {
+  const merged = new Map<string, PredictionMarketSummary>();
+  for (const market of secondary) merged.set(market.key, market);
+  for (const market of primary) {
+    const existing = merged.get(market.key);
+    if (!existing) {
+      merged.set(market.key, market);
+      continue;
+    }
+    merged.set(market.key, {
+      ...existing,
+      ...market,
+      volume24h: market.volume24h ?? existing.volume24h,
+      totalVolume: market.totalVolume ?? existing.totalVolume,
+      openInterest: market.openInterest ?? existing.openInterest,
+      yesPrice: market.yesPrice ?? existing.yesPrice,
+      noPrice: market.noPrice ?? existing.noPrice,
+    });
+  }
+  return [...merged.values()].sort((left, right) => (
+    (right.volume24h ?? 0) - (left.volume24h ?? 0)
+  ));
+}
+
 export async function loadPolymarketCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
   browseTab: PredictionBrowseTab = "top",
+  options?: { force?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const sortOrder = browseTabToPolymarketSort(browseTab);
@@ -109,16 +137,19 @@ export async function loadPolymarketCatalog(
     "catalog",
     buildPredictionCatalogResourceKey("polymarket", categoryId, normalizedQuery, browseTab),
     async () => {
+      let adjacent: PredictionMarketSummary[] = [];
       if (shouldUseAdjacentCatalog(browseTab, normalizedQuery)) {
         try {
-          const adjacent = await loadAdjacentVenueCatalog(
+          adjacent = await loadAdjacentVenueCatalog(
             "polymarket",
             normalizedQuery,
             categoryId,
           );
-          if (adjacent.length > 0) return adjacent;
+          if (adjacent.length > 0 && (normalizedQuery || browseTab !== "top")) {
+            return adjacent;
+          }
         } catch {
-          // Fall back to Gamma when Adjacent is down or empty.
+          adjacent = [];
         }
       }
       if (normalizedQuery.length > 0) {
@@ -159,7 +190,11 @@ export async function loadPolymarketCatalog(
           "",
           categoryId,
         );
-        if (categorized.length > 0) return categorized;
+        if (categorized.length > 0) {
+          return adjacent.length > 0
+            ? mergePredictionCatalogs(categorized, adjacent)
+            : categorized;
+        }
       }
 
       const pages = await loadPolymarketCatalogPages(
@@ -167,8 +202,12 @@ export async function loadPolymarketCatalog(
         undefined,
         sortOrder,
       );
-      return normalizePolymarketCatalog(pages, "", categoryId);
+      const gamma = normalizePolymarketCatalog(pages, "", categoryId);
+      return adjacent.length > 0
+        ? mergePredictionCatalogs(gamma, adjacent)
+        : gamma;
     },
     PREDICTION_CACHE_POLICIES.catalog,
+    options,
   );
 }

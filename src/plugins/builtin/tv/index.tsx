@@ -1,5 +1,8 @@
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { TvPane } from "./pane";
+
+let disposeTvConnection: (() => void) | null = null;
 
 export const tvModule: PluginModule = {
   panes: [{
@@ -37,4 +40,17 @@ export const tvModule: PluginModule = {
     ],
     shortcut: { prefix: "TV" },
   }],
+  setup() {
+    disposeTvConnection = registerConnectionSource({
+      id: "youtube",
+      name: "YouTube TV",
+      kind: "api",
+      pluginId: "macro",
+      priority: 500,
+    });
+  },
+  dispose() {
+    disposeTvConnection?.();
+    disposeTvConnection = null;
+  },
 };

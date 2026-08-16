@@ -25,6 +25,10 @@ import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
+import {
+  hydrateHostedUserConfig,
+  setHostedConfigUserId,
+} from "../../../data/config/hosted-user-persist";
 import { apiClient, type PersistedAuthUser } from "../../../api-client";
 
 const rootElement = document.getElementById("root");
@@ -57,11 +61,15 @@ async function boot(): Promise<void> {
     window.__GLOOM_CLOUD_AUTHENTICATED = !!session.user;
     apiClient.setSessionToken(session.user ? "hosted-session" : null);
     apiClient.restoreCachedUser(session.user ?? null);
+    setHostedConfigUserId(session.user?.id ?? null);
   } else {
     installElectrobunCloudApiFetchTransport();
   }
   const init = await measurePerfAsync("startup.web-client.backend-init", () => initElectrobunBackend());
-  if (isHosted) hydrateHostedByokConfig(init.config);
+  if (isHosted) {
+    hydrateHostedUserConfig(init.config);
+    hydrateHostedByokConfig(init.config);
+  }
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
   const paneId = new URLSearchParams(window.location.search).get("paneId") ?? undefined;

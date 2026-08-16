@@ -56,6 +56,7 @@ export function usePredictionMarketsDataState({
     catalogLoadCount,
     catalogStatus,
     debouncedSearchQuery,
+    refreshCatalog,
     setCatalogCache,
   } = usePredictionCatalogData({
     browseTab,
@@ -166,6 +167,7 @@ export function usePredictionMarketsDataState({
     transportState,
     visibleRows,
     actions: {
+      refreshCatalog,
       setNextDetailLoadDelay: detailActions.setNextDetailLoadDelay,
     },
   };

@@ -1,17 +1,27 @@
-import { Text } from "../../../ui";
-import { useEffect, useMemo, useState } from "react";
+import { Box, Text, type InputRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
+import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
-import { useDebouncedPluginPaneState } from "../../runtime";
-import { usePaneTicker } from "../../../state/app/context";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import { FeedDataTableStackView, Spinner, type FeedDataTableItem } from "../../../components";
+import {
+  FeedDataTableStackView,
+  InputSearchBar,
+  Spinner,
+  type FeedDataTableItem,
+} from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
+import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { formatCompact, formatCurrency } from "../../../utils/format";
-import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { registerConnectionSource } from "../connections/register";
+import { loadSecBrowserFilings } from "./client";
 import {
   formatFilingMetaDate,
   renderFilingNotice,
@@ -184,6 +194,11 @@ function getFormDescription(form: string): string {
   }
 }
 
+function filingEntityLabel(filing: SecFilingItem): string | undefined {
+  if (filing.ticker && filing.companyName) return `${filing.companyName} (${filing.ticker})`;
+  return filing.companyName || filing.ticker || undefined;
+}
+
 function toFeedItems(
   filings: SecFilingItem[],
   selectedAccessionNumber: string | undefined,
@@ -191,6 +206,7 @@ function toFeedItems(
   loadingContent: boolean,
   selectedDocuments: SecFilingDocument[],
   loadingDocuments: boolean,
+  showEntity = false,
 ): FeedDataTableItem[] {
   return filings.map((filing) => {
     const displayTitle = getFilingDisplayTitle(filing);
@@ -223,14 +239,16 @@ function toFeedItems(
         })
       : form4Detail ?? fallbackBody;
 
-    const enrichedTitle = formDesc
-      ? `${displayTitle} — ${formDesc}`
-      : displayTitle;
+    const entityLabel = showEntity ? filingEntityLabel(filing) : undefined;
+    const enrichedTitle = [entityLabel, displayTitle, formDesc].filter(Boolean).join(" | ");
+    const listTitle = form4Preview
+      ? [entityLabel, displayTitle, form4Preview].filter(Boolean).join(" | ")
+      : enrichedTitle;
 
     return {
       id: filing.accessionNumber,
-      eyebrow: filing.form,
-      title: form4Preview ? `${displayTitle} | ${form4Preview}` : enrichedTitle,
+      eyebrow: filing.ticker || filing.form,
+      title: listTitle,
       timestamp: filing.filingDate,
       detailTitle: enrichedTitle,
       detailMeta: [
@@ -243,7 +261,7 @@ function toFeedItems(
   });
 }
 
-function SecView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
+function SecTickerView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
   const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
@@ -295,6 +313,7 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
     label: "filing",
     loading,
     error,
+    showOpenHint: !error && !!openFiling?.filingUrl,
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
@@ -326,13 +345,234 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
   );
 }
 
+const SEARCH_DEBOUNCE_MS = 250;
+const trimSearchValue = (value: string) => value.trim();
+
+function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
+  return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+}
+
+function SecPane({ width, height, focused }: PaneProps) {
+  const { ticker } = usePaneTicker();
+  const [storedQuery] = usePaneSettingValue("query", "");
+  const initialQuery = String(storedQuery ?? "").trim() || ticker?.metadata.ticker || "";
+  const [query, setQuery] = usePluginPaneState("query", initialQuery);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const [filings, setFilings] = useState<SecFilingItem[]>([]);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const load = useCallback((nextQuery: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus("loading");
+    setError(null);
+    void loadSecBrowserFilings(nextQuery)
+      .then((nextFilings) => {
+        if (abortRef.current !== controller) return;
+        setFilings(nextFilings);
+        setStatus("loaded");
+      })
+      .catch((loadError) => {
+        if (abortRef.current !== controller) return;
+        if (loadError instanceof Error && loadError.name === "AbortError") return;
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setFilings([]);
+        setStatus("error");
+      });
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      load(query);
+    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
+    return () => clearTimeout(timeoutId);
+  }, [load, query]);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+  }, []);
+
+  const openFiling = openItemId
+    ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
+    : null;
+  const documentsEntry = useSecFilingDocuments(openFiling ?? null);
+  const openDocuments = useResolvedEntryValue(documentsEntry) ?? [];
+  const loadingDocuments = !!openFiling && (
+    documentsEntry?.phase === "idle"
+    || documentsEntry?.phase === "loading"
+    || documentsEntry?.phase === "refreshing"
+  );
+  const contentTargets = useMemo(() => [
+    ...(openFiling ? [openFiling] : []),
+    ...buildInlineFilingContentTargets(openFiling, openDocuments),
+    ...filings.filter((filing) => OWNERSHIP_FORMS.has(filing.form.trim())),
+  ], [filings, openDocuments, openFiling]);
+  const { contentCache } = useSecFilingContentCache({
+    scopeKey: `browser:${query.trim().toLowerCase() || "latest"}`,
+    targets: contentTargets,
+  });
+  const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
+  const loading = status === "loading" && filings.length === 0;
+
+  useEffect(() => {
+    if (filings.length > 0 && selectedIdx >= filings.length) {
+      setSelectedIdx(Math.max(0, filings.length - 1));
+    }
+  }, [filings.length, selectedIdx, setSelectedIdx]);
+
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((current) => current + 1);
+  }, []);
+  const blurSearch = useCallback(() => {
+    setSearchFocused(false);
+  }, []);
+  const updateQuery = useCallback((nextQuery: string) => {
+    setQuery(nextQuery);
+    setSelectedIdx(0);
+    setOpenItemId(null);
+  }, [setQuery, setSelectedIdx]);
+
+  useShortcut((event) => {
+    if (!focused || openItemId) return;
+    if (searchFocused) {
+      if (isPlainKey(event, "escape")) {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        setSearchFocused(false);
+      }
+      return;
+    }
+    if (event.targetEditable) return;
+    if (isPlainKey(event, "/")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      focusSearch();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      load(query);
+    }
+  }, { allowEditable: true, enabled: focused });
+
+  usePaneStatusLinkFooter({
+    registrationId: "sec",
+    focused,
+    url: error ? null : openFiling?.filingUrl,
+    source: openFiling?.form,
+    label: "filing",
+    loading,
+    error,
+    showOpenHint: !error && !!openFiling?.filingUrl,
+    hints: [
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
+    ],
+  });
+
+  const handleRootKeyDown = useCallback((event: { name?: string; preventDefault?: () => void; stopPropagation?: () => void }, context: { selectedIndex: number }) => {
+    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+      stopSearchFocusNavigation(event);
+      focusSearch();
+      return true;
+    }
+    if (event.name === "/") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+      return true;
+    }
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      load(query);
+      return true;
+    }
+    return false;
+  }, [focusSearch, load, query]);
+
+  const rootBefore = (
+    <InputSearchBar
+      value={query}
+      focused={focused && !openItemId}
+      active={searchFocused}
+      width={width}
+      focusToken={searchFocusToken}
+      inputRef={searchInputRef}
+      placeholder="ticker, company, or form"
+      debounceMs={SEARCH_DEBOUNCE_MS}
+      normalizeValue={trimSearchValue}
+      onFocus={focusSearch}
+      onBlur={blurSearch}
+      onNavigateDown={blurSearch}
+      onQueryChange={updateQuery}
+    />
+  );
+
+  if (loading) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label={query.trim() ? `Searching SEC for ${query.trim()}...` : "Loading latest SEC filings..."} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error && filings.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        {renderFilingNotice(`Error: ${error}`, width)}
+      </Box>
+    );
+  }
+
+  return (
+    <FeedDataTableStackView
+      width={width}
+      height={height}
+      focused={focused && !searchFocused}
+      rootBefore={rootBefore}
+      items={toFeedItems(
+        filings,
+        openFiling?.accessionNumber,
+        contentCache,
+        loadingContent,
+        openDocuments,
+        loadingDocuments,
+        true,
+      )}
+      selectedIdx={selectedIdx}
+      onSelect={setSelectedIdx}
+      onOpenItemIdChange={setOpenItemId}
+      onRootKeyDown={handleRootKeyDown}
+      sourceLabel="Form"
+      titleLabel="Filing"
+      emptyStateTitle={query.trim() ? `No SEC filings for ${query.trim()}.` : "No recent SEC filings."}
+    />
+  );
+}
+
+let disposeSecConnection: (() => void) | null = null;
+
 export const secModule: PluginModule = {
   panes: [
     {
       id: "sec",
       name: "SEC",
       icon: "S",
-      component: SecView,
+      component: SecPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
@@ -340,24 +580,51 @@ export const secModule: PluginModule = {
   ],
 
   paneTemplates: [
-    createTickerSurfacePaneTemplate({
+    {
       id: "sec-pane",
       paneId: "sec",
       label: "SEC",
-      description: "Recent SEC filings for the selected ticker.",
-      keywords: ["sec", "filings", "10-k", "10-q", "8-k"],
-      shortcut: "SEC",
-      canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
-    }),
+      description: "Latest SEC filings. Search a ticker or company, or open SEC AAPL to jump there.",
+      keywords: ["sec", "filings", "10-k", "10-q", "8-k", "edgar"],
+      shortcut: {
+        prefix: "SEC",
+        argPlaceholder: "ticker or company",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        const query = queryFromTemplateOptions(options);
+        return {
+          instanceId: query
+            ? `sec:${encodeURIComponent(query.toUpperCase()).replace(/%/g, "~")}`
+            : "sec:latest",
+          title: query ? `SEC ${query.toUpperCase()}` : "SEC",
+          placement: "floating" as const,
+          settings: { query },
+        };
+      },
+    },
   ],
 
   setup(ctx) {
+    disposeSecConnection = registerConnectionSource({
+      id: "sec-edgar",
+      name: "SEC EDGAR",
+      kind: "api",
+      pluginId: "sec",
+      priority: 700,
+    });
     ctx.registerTickerResearchTab({
       id: "sec",
       name: "SEC",
       order: 45,
-      component: SecView,
+      component: SecTickerView,
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
     });
+  },
+
+  dispose() {
+    disposeSecConnection?.();
+    disposeSecConnection = null;
   },
 };

@@ -177,6 +177,11 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
       selectChannel(TV_CHANNELS[channelIndex]!.id);
       return;
     }
+    if (event.name === "o") {
+      event.preventDefault?.();
+      void renderer.openExternal(channel.channelUrl);
+      return;
+    }
     if (event.name === "r") {
       event.preventDefault?.();
       refresh();
@@ -229,8 +234,14 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         disabled: loading || !stream,
       },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
+      {
+        id: "open",
+        key: "o",
+        label: "pen",
+        onPress: () => { void renderer.openExternal(channel.channelUrl); },
+      },
     ],
-  }), [error, loading, muted, paneId, playbackError, playbackState, refresh, status, stream, toggleMute, togglePlayback]);
+  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
 
   const channelTabs = useMemo(() => TV_CHANNELS.map((item, index) => ({
     label: `${index + 1} ${item.name}`,

@@ -140,6 +140,7 @@ function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOr
   const normalized = category.trim().toLowerCase();
   // The AI answers the question the user actually typed, so it leads the list.
   if (normalized === "ask ai") return -100;
+  if (normalized === "articles") return -60;
   if (normalized === "exact match") return -50;
   if (sectionOrder === "app-first") {
     if (normalized === "saved") return 100;

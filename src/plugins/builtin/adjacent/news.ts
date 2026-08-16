@@ -1,7 +1,35 @@
 import { newsProvider, type NewsCapability } from "../../../capabilities";
 import type { NewsArticle, NewsQuery } from "../../../types/news-source";
-import type { AdjacentClient } from "./client";
+import { getSharedAdjacentClient, type AdjacentClient } from "./client";
 import { normalizeAdjacentNewsArticle } from "./normalize";
+
+const RELATED_MARKET_LIMIT = 4;
+
+export async function searchAdjacentRelatedArticles(query: string): Promise<NewsArticle[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const client = getSharedAdjacentClient();
+  try {
+    const marketIds = await client.searchMarketsByText(trimmed, RELATED_MARKET_LIMIT);
+    if (marketIds.length === 0) return [];
+    const pages = await Promise.all(
+      marketIds.map((marketId) => client.getMarketNews(marketId).catch(() => ({ news: [] }))),
+    );
+    const seen = new Set<string>();
+    const articles: NewsArticle[] = [];
+    for (const page of pages) {
+      for (const article of page.news ?? []) {
+        if (seen.has(article.id) || seen.has(article.url)) continue;
+        seen.add(article.id);
+        seen.add(article.url);
+        articles.push(normalizeAdjacentNewsArticle(article));
+      }
+    }
+    return articles;
+  } catch {
+    return [];
+  }
+}
 
 export function createAdjacentNewsCapability(client: AdjacentClient): NewsCapability {
   function supports(query: NewsQuery): boolean {

@@ -49,6 +49,7 @@ export function kindLabel(kind: ConnectionState["kind"]): string {
     case "broker": return t("Broker");
     case "prediction-market": return t("Prediction");
     case "websocket": return t("WebSocket");
+    case "api": return t("API");
     default: return kind;
   }
 }
@@ -66,6 +67,53 @@ export function formatLastPoll(timestamp: number | null, now = Date.now()): stri
 
 export function truncate(value: string, width: number): string {
   return truncateToDisplayWidth(value, width);
+}
+
+export type ConnectionSortPreference = {
+  columnId: ConnectionColumnId;
+  direction: "asc" | "desc";
+};
+
+const STATUS_ORDER: Record<ConnectionStatus, number> = {
+  error: 0,
+  disconnected: 1,
+  reconnecting: 2,
+  connected: 3,
+  idle: 4,
+};
+
+export function compareConnections(
+  left: ConnectionState,
+  right: ConnectionState,
+  columnId: ConnectionColumnId,
+): number {
+  switch (columnId) {
+    case "service":
+      return left.name.localeCompare(right.name);
+    case "type":
+      return left.kind.localeCompare(right.kind);
+    case "status": {
+      const orderDiff = (STATUS_ORDER[left.status] ?? 99) - (STATUS_ORDER[right.status] ?? 99);
+      if (orderDiff !== 0) return orderDiff;
+      return left.priority - right.priority;
+    }
+    case "lastPoll":
+      return (left.lastPolledAt ?? 0) - (right.lastPolledAt ?? 0);
+    case "latency":
+      return (left.lastLatencyMs ?? Number.POSITIVE_INFINITY) - (right.lastLatencyMs ?? Number.POSITIVE_INFINITY);
+  }
+}
+
+export function sortConnections(
+  connections: ConnectionState[],
+  preference: ConnectionSortPreference,
+): ConnectionState[] {
+  const sign = preference.direction === "asc" ? 1 : -1;
+  return [...connections].sort((left, right) => {
+    const primary = compareConnections(left, right, preference.columnId);
+    if (primary !== 0) return sign * primary;
+    return left.name.localeCompare(right.name);
+  });
 }
 
 export function buildConnectionColumns(width: number): ConnectionColumn[] {

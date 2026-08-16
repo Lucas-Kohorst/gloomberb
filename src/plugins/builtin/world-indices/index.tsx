@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView } from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import {
   buildColumnVisibilityField,
   resolveVisibleColumns,
@@ -169,7 +171,14 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     return renderWorldIndexCell(row, column, rowState, quotes);
   }, [quotes]);
 
-  useWorldIndicesFooter(quotes);
+  useShortcut((event) => {
+    if (!focused || !isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    fetchAll();
+  }, { enabled: focused });
+
+  useWorldIndicesFooter(quotes, fetchAll);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>

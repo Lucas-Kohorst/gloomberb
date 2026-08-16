@@ -169,7 +169,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean },
+      options?: { showPending?: boolean; force?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -181,7 +181,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadPolymarketCatalog(search, category, browseTab);
+        const next = await loadPolymarketCatalog(search, category, browseTab, options);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -219,7 +219,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean },
+      options?: { showPending?: boolean; force?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -231,7 +231,7 @@ export function usePredictionCatalogData({
         );
       }
       try {
-        const next = await loadKalshiCatalog(search, category, browseTab);
+        const next = await loadKalshiCatalog(search, category, browseTab, options);
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -313,11 +313,40 @@ export function usePredictionCatalogData({
     loadKalshi,
   ]);
 
+  const refreshCatalog = useCallback(() => {
+    if (includePolymarket) {
+      void loadPolymarket(
+        polymarketCatalogKey,
+        debouncedSearchQuery,
+        categoryId,
+        { showPending: true, force: true },
+      );
+    }
+    if (includeKalshi) {
+      void loadKalshi(
+        kalshiCatalogKey,
+        debouncedSearchQuery,
+        categoryId,
+        { showPending: true, force: true },
+      );
+    }
+  }, [
+    categoryId,
+    debouncedSearchQuery,
+    includeKalshi,
+    includePolymarket,
+    kalshiCatalogKey,
+    loadKalshi,
+    loadPolymarket,
+    polymarketCatalogKey,
+  ]);
+
   return {
     allMarkets,
     catalogLoadCount,
     catalogStatus,
     debouncedSearchQuery,
+    refreshCatalog,
     setCatalogCache,
   };
 }

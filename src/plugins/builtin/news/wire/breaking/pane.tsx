@@ -1,6 +1,6 @@
 import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
@@ -29,7 +29,12 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     registrationId: "news-wire:breaking",
     focused,
     article: detailArticle ?? selectedArticle,
+    loading,
+    error: breakingState.error,
     onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
+    onRefresh: () => {
+      void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.breaking);
+    },
   });
 
   const detailContent = detailArticle ? (

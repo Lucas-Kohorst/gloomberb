@@ -53,6 +53,21 @@ function buildGroupSubtitle(
   return `${markets.length} targets`;
 }
 
+function sumGroupedMetric(
+  markets: PredictionMarketSummary[],
+  field: "volume24h" | "totalVolume" | "openInterest",
+): number | null {
+  let total = 0;
+  let seen = false;
+  for (const market of markets) {
+    const value = market[field];
+    if (value == null || !Number.isFinite(value)) continue;
+    total += value;
+    seen = true;
+  }
+  return seen ? total : null;
+}
+
 function sortGroupMembers(
   markets: PredictionMarketSummary[],
 ): PredictionMarketSummary[] {
@@ -173,11 +188,11 @@ function buildGroupedRow(markets: PredictionMarketSummary[]): PredictionGroupedL
     noPrice: representative.noPrice,
     spread: representative.spread,
     lastTradePrice: representative.lastTradePrice,
-    volume24h: representative.volume24h,
+    volume24h: sumGroupedMetric(sortedMarkets, "volume24h"),
     volume24hUnit: representative.volume24hUnit,
-    totalVolume: representative.totalVolume,
+    totalVolume: sumGroupedMetric(sortedMarkets, "totalVolume"),
     totalVolumeUnit: representative.totalVolumeUnit,
-    openInterest: representative.openInterest,
+    openInterest: sumGroupedMetric(sortedMarkets, "openInterest"),
     openInterestUnit: representative.openInterestUnit,
     liquidity: representative.liquidity,
     liquidityUnit: representative.liquidityUnit,

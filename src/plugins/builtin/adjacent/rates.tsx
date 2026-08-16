@@ -8,7 +8,10 @@ import {
   usePaneFooter,
   type DataTableColumn,
   type DataTableCell,
+  type DataTableKeyEvent,
 } from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
@@ -219,6 +222,21 @@ export function AdjacentRatesPane({
     [],
   );
 
+  useShortcut((event) => {
+    if (!focused || !isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    load();
+  }, { enabled: focused });
+
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (!isPlainKey(event, "r")) return false;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    load();
+    return true;
+  }, [load]);
+
   usePaneFooter("adjacent-rates", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -228,7 +246,7 @@ export function AdjacentRatesPane({
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],
-  }), [status, error, client.isPublic, load]);
+  }), [client.isPublic, error, load, status]);
 
   if (status === "loading" && rates.length === 0) {
     return (
@@ -269,6 +287,7 @@ export function AdjacentRatesPane({
         onChange: (id) => setSelectedId(id),
       }}
       onActivate={() => setDetailOpen(true)}
+      onRootKeyDown={handleRootKeyDown}
       rootWidth={width}
       rootHeight={height}
       columns={columns}

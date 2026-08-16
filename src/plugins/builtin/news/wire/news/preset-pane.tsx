@@ -1,6 +1,6 @@
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
-import { useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
@@ -59,7 +59,12 @@ export function NewsPresetPane({
     registrationId: `news-wire:${paneKey}`,
     focused,
     article: detailArticle ?? selectedArticle,
+    loading,
+    error: newsState.error,
     onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
+    onRefresh: () => {
+      void getSharedNewsService()?.load(query);
+    },
   });
 
   const detailContent = detailArticle ? (

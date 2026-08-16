@@ -43,6 +43,24 @@ function getKalshiDisplayPrice(record: KalshiMarketRecord): {
   };
 }
 
+export function kalshiNotionalDollars(record: Pick<KalshiMarketRecord, "notional_value_dollars">): number {
+  return parseFloatSafe(record.notional_value_dollars) ?? 1;
+}
+
+export function kalshiContractsToUsd(
+  contracts: number | null | undefined,
+  notionalDollars = 1,
+): number | null {
+  if (contracts == null || !Number.isFinite(contracts)) return null;
+  const notional = Number.isFinite(notionalDollars) && notionalDollars > 0 ? notionalDollars : 1;
+  return contracts * notional;
+}
+
+export function isOpenKalshiStatus(status: string | null | undefined): boolean {
+  const normalized = status?.trim().toLowerCase();
+  return normalized === "open" || normalized === "active";
+}
+
 function isDormantKalshiMarket(record: KalshiMarketRecord): boolean {
   const values = [
     parseFloatSafe(record.last_price_dollars),
@@ -78,6 +96,7 @@ export function normalizeKalshiMarket(
   const noBid = parseFloatSafe(record.no_bid_dollars);
   const noAsk = parseFloatSafe(record.no_ask_dollars);
   const prices = getKalshiDisplayPrice(record);
+  const notional = kalshiNotionalDollars(record);
   const category = eventMeta?.category?.trim();
   const hasTargetMetadata =
     record.strike_type != null ||
@@ -125,12 +144,12 @@ export function normalizeKalshiMarket(
     noAsk,
     spread: yesBid != null && yesAsk != null ? yesAsk - yesBid : null,
     lastTradePrice: prices.lastTradePrice,
-    volume24h: parseFloatSafe(record.volume_24h_fp),
-    volume24hUnit: "contracts",
-    totalVolume: parseFloatSafe(record.volume_fp),
-    totalVolumeUnit: "contracts",
-    openInterest: parseFloatSafe(record.open_interest_fp),
-    openInterestUnit: "contracts",
+    volume24h: kalshiContractsToUsd(parseFloatSafe(record.volume_24h_fp), notional),
+    volume24hUnit: "usd",
+    totalVolume: kalshiContractsToUsd(parseFloatSafe(record.volume_fp), notional),
+    totalVolumeUnit: "usd",
+    openInterest: kalshiContractsToUsd(parseFloatSafe(record.open_interest_fp), notional),
+    openInterestUnit: "usd",
     liquidity: parseFloatSafe(record.liquidity_dollars),
     liquidityUnit: "usd",
     rulesPrimary: record.rules_primary,

@@ -25,6 +25,7 @@ import {
   shouldUseAdjacentCatalog,
 } from "../adjacent/catalog";
 import {
+  isOpenKalshiStatus,
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
   normalizeKalshiMarket,
@@ -174,6 +175,7 @@ async function loadKalshiVenueCatalog(
 
 export async function hydrateKalshiCatalogPrices(
   summaries: PredictionMarketSummary[],
+  options?: { dropClosed?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const kalshi = summaries.filter((summary) => summary.venue === "kalshi" && summary.marketId);
   if (kalshi.length === 0) return summaries;
@@ -191,16 +193,21 @@ export async function hydrateKalshiCatalogPrices(
       // Keep Adjacent catalog rows even if live quotes fail.
     }
   }
-  if (byTicker.size === 0) return summaries;
-  return summaries.map((summary) => {
+  const dropClosed = options?.dropClosed !== false;
+  const next: PredictionMarketSummary[] = [];
+  for (const summary of summaries) {
     const record = byTicker.get(summary.marketId);
-    if (!record) return summary;
+    if (!record) {
+      if (!dropClosed || isOpenKalshiStatus(summary.status)) next.push(summary);
+      continue;
+    }
+    if (dropClosed && !isOpenKalshiStatus(record.status)) continue;
     const live = normalizeKalshiMarket(record, {
       title: summary.eventLabel,
       category: summary.category,
     });
-    if (!live) return summary;
-    return {
+    if (!live) continue;
+    next.push({
       ...summary,
       ...live,
       key: summary.key,
@@ -209,18 +216,22 @@ export async function hydrateKalshiCatalogPrices(
       eventLabel: summary.eventLabel || live.eventLabel,
       category: summary.category ?? live.category,
       url: summary.url || live.url,
-      volume24h: summary.volume24h ?? live.volume24h,
-      volume24hUnit: summary.volume24h != null ? summary.volume24hUnit : live.volume24hUnit,
-      totalVolume: summary.totalVolume ?? live.totalVolume,
-      openInterest: summary.openInterest ?? live.openInterest,
-    };
-  });
+      volume24h: live.volume24h ?? summary.volume24h,
+      volume24hUnit: "usd",
+      totalVolume: live.totalVolume ?? summary.totalVolume,
+      totalVolumeUnit: "usd",
+      openInterest: live.openInterest ?? summary.openInterest,
+      openInterestUnit: "usd",
+    });
+  }
+  return next.sort((left, right) => (right.volume24h ?? 0) - (left.volume24h ?? 0));
 }
 
 export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
   browseTab: PredictionBrowseTab = "top",
+  options?: { force?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   return await loadCachedPredictionResource(
@@ -231,7 +242,10 @@ export async function loadKalshiCatalog(
         try {
           const adjacent = await loadAdjacentVenueCatalog("kalshi", normalizedQuery, categoryId);
           if (adjacent.length > 0) {
-            return await hydrateKalshiCatalogPrices(adjacent);
+            const hydrated = await hydrateKalshiCatalogPrices(adjacent, {
+              dropClosed: browseTab === "top" && !normalizedQuery,
+            });
+            if (hydrated.length > 0) return hydrated;
           }
         } catch {
           // Fall back to the venue catalog when Adjacent is down or empty.
@@ -240,6 +254,7 @@ export async function loadKalshiCatalog(
       return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
     },
     PREDICTION_CACHE_POLICIES.catalog,
+    options,
   );
 }
 

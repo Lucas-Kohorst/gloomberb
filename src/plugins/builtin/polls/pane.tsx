@@ -5,6 +5,7 @@ import {
   EmptyState,
   Spinner,
   Tabs,
+  nextStackSortPreference,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -15,9 +16,12 @@ import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { fetchVoteHubPolls } from "./client";
 import {
+  DEFAULT_POLL_SORT,
   formatPollDate,
   normalizeVoteHubPoll,
   sortPollRows,
+  type PollSortColumnId,
+  type PollSortPreference,
 } from "./normalize";
 import type { PollRow, PollTabId } from "./types";
 
@@ -112,9 +116,11 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [sortPreference, setSortPreference] = useState<PollSortPreference>(DEFAULT_POLL_SORT);
   const genRef = useRef(0);
 
-  const rows = rowsByTab[tab] ?? [];
+  const loadedRows = rowsByTab[tab] ?? [];
+  const rows = useMemo(() => sortPollRows(loadedRows, sortPreference), [loadedRows, sortPreference]);
   const selected = rows.find((row) => row.id === selectedId) ?? null;
 
   const load = useCallback((pollType: PollTabId) => {
@@ -127,7 +133,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         if (genRef.current !== gen) return;
         setRowsByTab((current) => ({
           ...current,
-          [pollType]: sortPollRows(polls.map(normalizeVoteHubPoll)),
+          [pollType]: polls.map(normalizeVoteHubPoll),
         }));
         setStatus("loaded");
       })
@@ -183,16 +189,14 @@ export function PollsPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("polls", () => ({
     info: [
-      { id: "source", parts: [{ text: "VoteHub", tone: "muted" as const }] },
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-      ...(rows.length > 0 ? [{ id: "count", parts: [{ text: `${rows.length}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
     ],
-  }), [error, load, openSelected, rows.length, selected?.url, status, tab]);
+  }), [error, load, openSelected, selected?.url, status, tab]);
 
   const tabs = (
     <Box height={1} flexShrink={0} overflow="hidden">
@@ -254,9 +258,16 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         rootHeight={Math.max(1, height - 1)}
         columns={columns}
         items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => {
+          const next = columnId as PollSortColumnId;
+          setSortPreference((current) => nextStackSortPreference(
+            current,
+            next,
+            next === "subject" || next === "pollster" || next === "pop" ? "asc" : "desc",
+          ));
+        }}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
         emptyStateTitle="No polls in this category."

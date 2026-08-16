@@ -1,6 +1,9 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerConnectionSource } from "../connections/register";
 import { PollsPane } from "./pane";
 import { POLLS_PANE_ID, POLLS_PLUGIN_ID } from "./types";
+
+let disposeVoteHubConnection: (() => void) | null = null;
 
 export const pollsPlugin: GloomPlugin = {
   id: POLLS_PLUGIN_ID,
@@ -32,4 +35,19 @@ export const pollsPlugin: GloomPlugin = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
+
+  setup() {
+    disposeVoteHubConnection = registerConnectionSource({
+      id: "votehub",
+      name: "VoteHub",
+      kind: "api",
+      pluginId: POLLS_PLUGIN_ID,
+      priority: 300,
+    });
+  },
+
+  dispose() {
+    disposeVoteHubConnection?.();
+    disposeVoteHubConnection = null;
+  },
 };

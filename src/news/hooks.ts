@@ -8,6 +8,10 @@ export function setSharedNewsService(service: NewsService | null): void {
   sharedService = service;
 }
 
+export function getSharedNewsService(): NewsService | null {
+  return sharedService;
+}
+
 const IDLE_NEWS_QUERY_STATE: NewsQueryState = {
   phase: "idle",
   articles: [],

@@ -2,13 +2,16 @@ import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Button,
+  DataTableView,
   EmptyState,
   SegmentedControl,
   TextField,
+  nextStackSortPreference,
+  sortStackItems,
   usePaneFooter,
   type DataTableCell,
+  type StackSortPreference,
 } from "../../../components";
-import { DataTableView } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { useShortcut } from "../../../react/input";
@@ -27,7 +30,7 @@ import {
 } from "./services";
 import { fetchByokEndpoint, isByokTestSuccess } from "./request";
 import { isOpenableCustomKey, maskApiKey } from "./store";
-import { buildByokColumns, type ByokColumn } from "./columns";
+import { buildByokColumns, type ByokColumn, type ByokColumnId } from "./columns";
 import { BYOK_VIEWER_TEMPLATE_ID } from "./viewer";
 import { getAiRuntimeCatalogSnapshot, subscribeAiRuntimeCatalog } from "../ai/runner";
 import { useSyncExternalStore } from "react";
@@ -80,6 +83,27 @@ function statusLabel(entry: ByokApiKeyEntry): string {
   }
 }
 
+function compareByokEntries(
+  left: ByokApiKeyEntry,
+  right: ByokApiKeyEntry,
+  columnId: ByokColumnId,
+): number {
+  switch (columnId) {
+    case "name":
+      return left.name.localeCompare(right.name);
+    case "service":
+      return serviceLabel(left.serviceId).localeCompare(serviceLabel(right.serviceId));
+    case "key":
+      return left.apiKey.localeCompare(right.apiKey);
+    case "url":
+      return (left.apiUrl ?? "").localeCompare(right.apiUrl ?? "");
+    case "status":
+      return statusLabel(left).localeCompare(statusLabel(right));
+    case "validated":
+      return (left.lastValidated ?? 0) - (right.lastValidated ?? 0);
+  }
+}
+
 function statusColor(entry: ByokApiKeyEntry): string {
   switch (entry.lastValidationStatus) {
     case "ok": return colors.positive;
@@ -120,10 +144,18 @@ function renderByokCell(entry: ByokApiKeyEntry, column: ByokColumn): DataTableCe
 export function ByokSettingsPane({ focused, width, height }: PaneProps) {
   const [stored, setStored] = usePluginConfigState<ByokStoredConfig>(BYOK_API_KEYS_CONFIG_KEY, { keys: [] });
   const { notify, createPaneFromTemplate } = usePluginAppActions();
-  const keys = useMemo(() => {
+  const storedKeys = useMemo(() => {
     if (!stored?.keys || !Array.isArray(stored.keys)) return [] as ByokApiKeyEntry[];
     return stored.keys as ByokApiKeyEntry[];
   }, [stored]);
+  const [sortPreference, setSortPreference] = useState<StackSortPreference<ByokColumnId>>({
+    columnId: "name",
+    direction: "asc",
+  });
+  const keys = useMemo(
+    () => sortStackItems(storedKeys, sortPreference, compareByokEntries),
+    [sortPreference, storedKeys],
+  );
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [formMode, setFormMode] = useState<FormMode>("idle");
@@ -394,9 +426,16 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
               }}
               columns={columns}
               items={keys}
-              sortColumnId={null}
-              sortDirection="asc"
-              onHeaderClick={() => {}}
+              sortColumnId={sortPreference.columnId}
+              sortDirection={sortPreference.direction}
+              onHeaderClick={(columnId) => {
+                const next = columnId as ByokColumnId;
+                setSortPreference((current) => nextStackSortPreference(
+                  current,
+                  next,
+                  next === "validated" ? "desc" : "asc",
+                ));
+              }}
               getItemKey={(entry) => entry.id}
               renderCell={renderByokCell}
               onActivate={(entry) => {

@@ -1,4 +1,5 @@
 import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config/store";
+import { writeHostedUserConfig } from "../../../data/config/hosted-user-persist";
 import { writeHostedByokKeys } from "../../../plugins/builtin/byok/hosted-persist";
 import type { AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
@@ -17,7 +18,10 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
     return config;
   },
   async saveConfig(config: AppConfig) {
-    if (isHostedClient()) writeHostedByokKeys(config);
+    if (isHostedClient()) {
+      writeHostedUserConfig(config);
+      writeHostedByokKeys(config);
+    }
     await backendRequest("config.save", { config });
   },
   async initDataDir() {

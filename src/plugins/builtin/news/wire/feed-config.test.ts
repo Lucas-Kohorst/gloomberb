@@ -3,6 +3,7 @@ import type { PluginConfigState } from "../../../../types/plugin";
 import {
   addUserNewsFeed,
   createUserFeed,
+  enabledNewsFeedNamesFromPluginConfig,
   getEnabledNewsFeeds,
   loadNewsFeedSettings,
   removeUserNewsFeed,
@@ -83,6 +84,19 @@ describe("news feed config", () => {
     const ids = getEnabledNewsFeeds(loadNewsFeedSettings(config)).map((feed) => feed.id);
     expect(ids).toContain(added.id);
     expect(await setDefaultNewsFeedEnabled(config, "missing-default-feed", false)).toBe(false);
+  });
+
+  test("lists enabled feed names including user-added Adjacent Press", async () => {
+    const config = new MemoryConfigState();
+    await addUserNewsFeed(config, {
+      url: "https://adjacent.markets/press/rss",
+      name: "Adjacent Press",
+    });
+    const names = enabledNewsFeedNamesFromPluginConfig({
+      feeds: config.get("feeds"),
+      disabledDefaultFeedIds: config.get("disabledDefaultFeedIds"),
+    });
+    expect(names).toContain("Adjacent Press");
   });
 
   test("rejects invalid user feed input", () => {

@@ -278,7 +278,7 @@ describe("PluginRegistry capabilities", () => {
     expect(registry.getEnabledCapabilities("asset-data").map((entry) => entry.sourceId)).toEqual(["source-b"]);
   });
 
-  test("can skip plugin capability handlers in renderer registries", async () => {
+  test("skips plugin.capabilities arrays in renderer registries but still accepts setup registrations", async () => {
     const registry = createRegistry({ enableCapabilityHandlers: false });
     await registry.register({
       id: "source-plugin",
@@ -291,8 +291,8 @@ describe("PluginRegistry capabilities", () => {
     });
 
     expect(registry.getCapability("asset-data.source-a")).toBeNull();
-    expect(registry.getCapability("asset-data.source-b")).toBeNull();
-    expect(registry.getEnabledCapabilities("asset-data")).toEqual([]);
+    expect(registry.getCapability("asset-data.source-b")?.sourceId).toBe("source-b");
+    expect(registry.getEnabledCapabilities("asset-data").map((entry) => entry.sourceId)).toEqual(["source-b"]);
   });
 });
 

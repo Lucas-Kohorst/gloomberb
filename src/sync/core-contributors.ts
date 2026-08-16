@@ -25,6 +25,7 @@ import {
   normalizeBuiltinPluginStateMap,
 } from "../plugins/ownership";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
+import { peekHostedUserConfigStamp } from "../data/config/hosted-user-persist";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -431,7 +432,19 @@ export const coreConfigSyncContributor: SyncContributor = {
   id: "core.config",
   schemaVersion: 1,
   collect: ({ state }) => collectCoreConfigPayload(state.config),
-  apply: (payload, { baselineState, state, dispatch }) => {
+  apply: (payload, { snapshot, baselineState, state, dispatch }) => {
+    const localStamp = peekHostedUserConfigStamp();
+    const snapshotCreatedAt = snapshot?.createdAt ? Date.parse(snapshot.createdAt) : Number.NaN;
+    const localUpdatedAt = localStamp ? Date.parse(localStamp.updatedAt) : Number.NaN;
+    if (
+      Number.isFinite(localUpdatedAt)
+      && Number.isFinite(snapshotCreatedAt)
+      && localUpdatedAt > snapshotCreatedAt
+    ) {
+      // Hosted local persist is newer than the cloud snapshot. Keep it and let
+      // the following push publish it instead of reverting to a stale pull.
+      return;
+    }
     const nextConfig = mergeConfigPayload(state.config, payload, baselineState.config);
     if (!nextConfig || valuesEqual(nextConfig, state.config)) return;
     dispatch({ type: "SET_CONFIG", config: nextConfig });

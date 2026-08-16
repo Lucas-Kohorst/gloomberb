@@ -20,6 +20,7 @@ interface UseNewsArticleFooterOptions {
   loading?: boolean;
   error?: string | null;
   onPopOut?: () => void;
+  onRefresh?: () => void;
 }
 
 export function useNewsArticleFooter({
@@ -30,6 +31,7 @@ export function useNewsArticleFooter({
   loading = false,
   error,
   onPopOut,
+  onRefresh,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const { access, segment } = useCloudAccessFooter({
@@ -46,6 +48,11 @@ export function useNewsArticleFooter({
     return segment ? [segment] : [];
   }, [access.isPayingPro, language, segment]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+  const hints = useMemo<PaneHint[]>(() => (
+    onRefresh
+      ? [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }]
+      : []
+  ), [onRefresh]);
   const trailingHints = useMemo<PaneHint[]>(() => (
     onPopOut && article
       ? [{ id: "pop-out", key: "p", label: "op out", onPress: onPopOut }]
@@ -54,11 +61,19 @@ export function useNewsArticleFooter({
 
   useShortcut((event) => {
     const key = (event.name ?? event.key ?? "").toLowerCase();
-    if (!focused || !onPopOut || !article || key !== "p") return;
-    event.stopPropagation?.();
-    event.preventDefault?.();
-    onPopOut();
-  }, { enabled: focused && !!onPopOut && !!article });
+    if (!focused) return;
+    if (onRefresh && key === "r") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onRefresh();
+      return;
+    }
+    if (onPopOut && article && key === "p") {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      onPopOut();
+    }
+  }, { enabled: focused && (!!onPopOut && !!article || !!onRefresh) });
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -66,6 +81,7 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
+    hints,
     trailingHints,
     showOpenHint: true,
     loading,

@@ -61,6 +61,22 @@ describe("buildAssistResultItems", () => {
       .toEqual(["No command found — try HELP"]);
   });
 
+  test("hides the empty AI row when a local article or command already matched", () => {
+    expect(buildAssistResultItems({
+      ...handlers,
+      query: "adjacent article on the strait",
+      enabled: true,
+      auto: true,
+      hasLocalResults: true,
+      state: {
+        status: "answered",
+        query: "adjacent article on the strait",
+        source: "auto",
+        candidates: [],
+      },
+    })).toEqual([]);
+  });
+
   test("keeps failures silent unless the user asked for the answer", () => {
     const failure = { status: "error", query: "chart nvidia vs amd", kind: "rate-limited" } as const;
     expect(labels({ ...failure, source: "auto" })).toEqual([]);

@@ -78,7 +78,7 @@ export function createRegistryPluginContext({
   pluginId,
   items,
   contributions,
-  enableCapabilityHandlers,
+  enableCapabilityHandlers: _enableCapabilityHandlers,
   marketData,
   tickerRepository,
   persistence,
@@ -145,7 +145,7 @@ export function createRegistryPluginContext({
     registerColumn: (column) => contributions.registerColumn(pluginId, column, items),
     registerBroker: (broker) => contributions.registerBroker(pluginId, broker, items),
     registerCapability: (capability) => {
-      if (enableCapabilityHandlers) registerCapabilityForPlugin(pluginId, capability, items);
+      registerCapabilityForPlugin(pluginId, capability, items);
     },
     registerTickerResearchTab: (tab) => contributions.registerTickerResearchTab(pluginId, tab, items),
     registerShortcut: (shortcut) => contributions.registerShortcut(pluginId, shortcut, items),

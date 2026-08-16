@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
-import { DataTableStackView } from "../../../components";
+import { DataTableStackView, nextStackSortPreference } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
@@ -9,8 +9,9 @@ import type { ConnectionState } from "./types";
 import {
   buildConnectionColumns,
   renderConnectionCell,
-  statusColor,
+  sortConnections,
   type ConnectionColumn,
+  type ConnectionSortPreference,
 } from "./table";
 import { ConnectionDetailContent } from "./detail";
 import { useConnectionsFooter } from "./footer";
@@ -27,32 +28,40 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const [sortMode, setSortMode] = useState<"status" | "lastPoll">("status");
+  const [sortPreference, setSortPreference] = useState<ConnectionSortPreference>({
+    columnId: "status",
+    direction: "asc",
+  });
   const versionRef = useRef(0);
 
   useEffect(() => {
     if (!sharedTracker) return;
     const dispose = sharedTracker.subscribe((snapshot) => {
       versionRef.current = snapshot.version;
-      setConnections(sortConnections(snapshot.connections, sortMode));
+      setConnections(snapshot.connections);
     });
     return dispose;
-  }, [sortMode]);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(interval);
   }, []);
 
+  const sortedConnections = useMemo(
+    () => sortConnections(connections, sortPreference),
+    [connections, sortPreference],
+  );
+
   useEffect(() => {
-    setSelectedIndex((current) => Math.max(0, Math.min(current, connections.length - 1)));
-  }, [connections.length]);
+    setSelectedIndex((current) => Math.max(0, Math.min(current, sortedConnections.length - 1)));
+  }, [sortedConnections.length]);
 
   useEffect(() => {
     if (connections.length === 0) setDetailOpen(false);
   }, [connections.length]);
 
-  const selectedRow = connections[Math.min(selectedIndex, connections.length - 1)] ?? null;
+  const selectedRow = sortedConnections[Math.min(selectedIndex, sortedConnections.length - 1)] ?? null;
 
   const handleRefresh = useCallback(() => {
     sharedTracker?.refresh();
@@ -128,16 +137,21 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
           rootHeight={bodyHeight}
           selection={{
             kind: "index",
-            selectedIndex: Math.min(selectedIndex, Math.max(0, connections.length - 1)),
+            selectedIndex: Math.min(selectedIndex, Math.max(0, sortedConnections.length - 1)),
             onChange: (index, row) => selectRow(index, row),
           }}
           onActivate={(row, index) => openDetail(index, row)}
           columns={columns}
-          items={connections}
-          sortColumnId={null}
-          sortDirection="asc"
-          onHeaderClick={() => {
-            setSortMode((prev) => prev === "status" ? "lastPoll" : "status");
+          items={sortedConnections}
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
+          onHeaderClick={(columnId) => {
+            const next = columnId as ConnectionSortPreference["columnId"];
+            setSortPreference((current) => nextStackSortPreference(
+              current,
+              next,
+              next === "service" || next === "type" || next === "status" ? "asc" : "desc",
+            ));
           }}
           getItemKey={(row) => row.id}
           renderCell={renderConnectionCell}
@@ -148,32 +162,4 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
       </Box>
     </Box>
   );
-}
-
-function sortConnections(
-  connections: ConnectionState[],
-  mode: "status" | "lastPoll",
-): ConnectionState[] {
-  const statusOrder: Record<string, number> = {
-    error: 0,
-    disconnected: 1,
-    reconnecting: 2,
-    connected: 3,
-    idle: 4,
-  };
-
-  if (mode === "lastPoll") {
-    return [...connections].sort((a, b) => {
-      const aTime = a.lastPolledAt ?? 0;
-      const bTime = b.lastPolledAt ?? 0;
-      return bTime - aTime;
-    });
-  }
-
-  return [...connections].sort((a, b) => {
-    const orderDiff = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
-    if (orderDiff !== 0) return orderDiff;
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    return a.name.localeCompare(b.name);
-  });
 }

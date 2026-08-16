@@ -13,7 +13,7 @@ describe("adjacent prediction catalog", () => {
     expect(shouldUseAdjacentCatalog("ending", "fed")).toBe(true);
   });
 
-  test("keeps Kalshi 24h volume in contracts instead of last-price dollars", () => {
+  test("treats Kalshi contract volume as $1 notional USD", () => {
     const market = normalizeAdjacentCatalogMarket({
       platform: "kalshi",
       ticker: "KXNBA-26-NYK",
@@ -33,9 +33,10 @@ describe("adjacent prediction catalog", () => {
       venue: "kalshi",
       marketId: "KXNBA-26-NYK",
       volume24h: 1_873_462,
-      volume24hUnit: "contracts",
+      volume24hUnit: "usd",
       yesPrice: 0.37,
     });
+    expect(market?.volume24h).not.toBeCloseTo(1_873_462 * 0.37);
   });
 
   test("keeps Polymarket 24h volume in USD", () => {

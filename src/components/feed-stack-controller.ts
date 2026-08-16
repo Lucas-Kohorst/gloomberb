@@ -34,6 +34,17 @@ export function sortIndexedStackRows<T, C extends string>(
   );
 }
 
+export function nextStackSortPreference<C extends string>(
+  current: StackSortPreference<C>,
+  columnId: C,
+  defaultDirection: "asc" | "desc" = "desc",
+): StackSortPreference<C> {
+  if (current.columnId === columnId) {
+    return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+  }
+  return { columnId, direction: defaultDirection };
+}
+
 export function activeStackIndex(length: number, selectedIndex: number): number {
   return selectedIndex >= 0 ? selectedIndex : length > 0 ? 0 : -1;
 }

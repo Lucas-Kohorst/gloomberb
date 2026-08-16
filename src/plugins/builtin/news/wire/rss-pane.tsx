@@ -4,10 +4,13 @@ import {
   DataTableView,
   EmptyState,
   Spinner,
+  nextStackSortPreference,
+  sortStackItems,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
+  type StackSortPreference,
 } from "../../../../components";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
@@ -16,7 +19,7 @@ import { usePluginRenderContext } from "../../../runtime/context";
 import { useShortcut } from "../../../../react/input";
 import { colors } from "../../../../theme/colors";
 import { isPlainKey } from "../../../../utils/keyboard";
-import { useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
@@ -41,6 +44,24 @@ interface FeedRow {
   authority: number;
   enabled: boolean;
   isDefault: boolean;
+}
+
+type FeedColumnId = "name" | "category" | "authority" | "status";
+type FeedSortPreference = StackSortPreference<FeedColumnId>;
+
+const DEFAULT_FEED_SORT: FeedSortPreference = { columnId: "name", direction: "asc" };
+
+function compareFeedRows(left: FeedRow, right: FeedRow, columnId: FeedColumnId): number {
+  switch (columnId) {
+    case "name":
+      return left.name.localeCompare(right.name);
+    case "category":
+      return left.category.localeCompare(right.category);
+    case "authority":
+      return left.authority - right.authority;
+    case "status":
+      return Number(left.enabled) - Number(right.enabled);
+  }
 }
 
 type RssViewMode = "articles" | "feeds";
@@ -184,11 +205,16 @@ function FeedsManager({ focused, width, height, onBack }: {
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("feeds:selectedIdx", 0);
   const [showAddForm, setShowAddForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<FeedSortPreference>(DEFAULT_FEED_SORT);
   const settingsVersion = useRef(0);
 
   const rows = useMemo(
-    () => buildFeedRows(new Set(settings.disabledDefaultFeedIds), settings.userFeeds),
-    [settings.disabledDefaultFeedIds, settings.userFeeds],
+    () => sortStackItems(
+      buildFeedRows(new Set(settings.disabledDefaultFeedIds), settings.userFeeds),
+      sortPreference,
+      compareFeedRows,
+    ),
+    [settings.disabledDefaultFeedIds, settings.userFeeds, sortPreference],
   );
 
   useEffect(() => {
@@ -300,6 +326,7 @@ function FeedsManager({ focused, width, height, onBack }: {
       { id: "feeds", key: "f", label: "eeds", onPress: onBack },
       { id: "add", key: "a", label: "dd", onPress: () => setShowAddForm(true) },
       { id: "toggle", key: "t", label: "oggle", onPress: () => selected && void toggleFeed(selected) },
+      ...(selected?.url ? [{ id: "open", key: "o", label: "pen", onPress: () => void rendererHost.openExternal(selected.url) }] : []),
       ...(selected && !selected.isDefault ? [{ id: "delete", key: "d", label: "elete", onPress: () => void deleteFeed(selected) }] : []),
     ],
   }), [deleteFeed, error, onBack, selected, toggleFeed]);
@@ -341,9 +368,16 @@ function FeedsManager({ focused, width, height, onBack }: {
         rootHeight={height - 1}
         columns={columns}
         items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => {
+          const next = columnId as FeedColumnId;
+          setSortPreference((current) => nextStackSortPreference(
+            current,
+            next,
+            next === "authority" || next === "status" ? "desc" : "asc",
+          ));
+        }}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
         emptyStateTitle="No feeds"
@@ -396,6 +430,12 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       onManageFeeds();
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void getSharedNewsService()?.load({ feed: "latest", limit: 200 });
+      return true;
+    }
     if (isPlainKey(event, "o") && readableArticle) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -415,6 +455,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : [],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],

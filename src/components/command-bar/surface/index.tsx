@@ -4,9 +4,17 @@ import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { LayoutBounds } from "../../../plugins/pane-manager";
 import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
-import { buildAssistCommandInventory } from "../assist/inventory";
+import { applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
+import { useNewsArticles } from "../../../news/hooks";
+import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
+import {
+  ARTICLE_SEARCH_QUERY,
+  looksLikeArticleQuery,
+  openNewsArticle,
+} from "../../../plugins/builtin/news/wire/article-search";
+import { buildArticleSearchResultItems, useAdjacentArticleSearch } from "../routes/root/article-results";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -180,11 +188,43 @@ export function CommandBar({
   }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
 
   const planAccess = usePlanAccess();
-  const buildAssistInventory = useCallback(() => buildAssistCommandInventory({
-    commands: availableCommands,
-    pluginCommands: getAvailablePluginCommands(),
-    paneTemplates: getAvailablePaneTemplates(undefined, { includePromptableTickerTemplates: true }),
-  }), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands]);
+  const watchArticles = looksLikeArticleQuery(rootQuery);
+  const newsState = useNewsArticles(watchArticles ? ARTICLE_SEARCH_QUERY : null);
+  const adjacentNews = useAdjacentArticleSearch(rootQuery);
+  const articleResultItems = useMemo(() => {
+    const stillLoading = adjacentNews.phase === "loading"
+      || adjacentNews.phase === "idle"
+      || newsState.phase === "idle"
+      || newsState.phase === "loading"
+      || newsState.phase === "refreshing";
+    return buildArticleSearchResultItems({
+      articles: [...newsState.articles, ...adjacentNews.articles],
+      query: rootQuery,
+      phase: stillLoading ? "loading" : "ready",
+      onOpen: (article) => {
+        openNewsArticle(article, (templateId, options) => {
+          pluginRegistry.createPaneFromTemplate(templateId, options);
+        });
+        closeAll({ revertThemePreview: false });
+      },
+    });
+  }, [
+    adjacentNews.articles,
+    adjacentNews.phase,
+    closeAll,
+    newsState.articles,
+    newsState.phase,
+    pluginRegistry,
+    rootQuery,
+  ]);
+  const buildAssistInventory = useCallback(() => applyNewsFeedContextToAssistInventory(
+    buildAssistCommandInventory({
+      commands: availableCommands,
+      pluginCommands: getAvailablePluginCommands(),
+      paneTemplates: getAvailablePaneTemplates(undefined, { includePromptableTickerTemplates: true }),
+    }),
+    enabledNewsFeedNamesFromPluginConfig(state.config.pluginConfig.news),
+  ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, state.config.pluginConfig.news]);
   // Only the root list asks on its own, and only for text the prefix parser
   // could not claim — otherwise the user is mid-command, not mid-question.
   const assistAutoAsk = !currentRoute
@@ -283,6 +323,7 @@ export function CommandBar({
     paneShortcutItems,
     pluginCommandItems,
     pluginCommandResultItems,
+    articleResultItems,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,

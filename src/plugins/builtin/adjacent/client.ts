@@ -21,6 +21,8 @@ import type {
   AdjacentSimilarResponse,
   AdjacentTradesResponse,
 } from "./types";
+import { unwrapAdjacentMarketIds, unwrapAdjacentNewsArticles } from "./normalize";
+import { withConnectionRequest } from "../connections/register";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
 const DEFAULT_SOURCE_KEY = "adjacent";
@@ -94,13 +96,15 @@ async function adjacentFetchJson<T>(
   url: string,
   apiKey: string | null | undefined,
 ): Promise<T> {
-  const headers = authHeaders(apiKey);
-  const response = await ADJACENT_FETCH.fetch(url, { headers });
-  if (!response.ok) {
-    throw new Error(`Adjacent request failed (${response.status}) for ${url}`);
-  }
-  const body = await response.text();
-  return JSON.parse(body) as T;
+  return withConnectionRequest("adjacent", "fetch", async () => {
+    const headers = authHeaders(apiKey);
+    const response = await ADJACENT_FETCH.fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Adjacent request failed (${response.status}) for ${url}`);
+    }
+    const body = await response.text();
+    return JSON.parse(body) as T;
+  });
 }
 
 function getCached<T>(
@@ -364,22 +368,24 @@ export class AdjacentClient {
       limit: params?.limit,
       cursor: params?.cursor,
     });
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-news",
       url,
-      () => adjacentFetchJson<AdjacentNewsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
+    return { news: unwrapAdjacentNewsArticles(raw) };
   }
 
   async getLatestNews(limit = 20): Promise<AdjacentNewsLatestResponse> {
     const url = buildUrl(`${this.newsPath()}/latest`, { limit });
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-news-latest",
       url,
-      () => adjacentFetchJson<AdjacentNewsLatestResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
+    return { news: unwrapAdjacentNewsArticles(raw) };
   }
 
   async getNewsArticle(id: string): Promise<AdjacentNewsArticle> {
@@ -394,12 +400,24 @@ export class AdjacentClient {
 
   async getMarketNews(marketId: string): Promise<AdjacentNewsResponse> {
     const url = buildUrl(`${this.marketsPath()}/${marketId}/news`);
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-market-news",
       marketId,
-      () => adjacentFetchJson<AdjacentNewsResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
+    return { news: unwrapAdjacentNewsArticles(raw) };
+  }
+
+  async searchMarketsByText(query: string, limit = 5): Promise<string[]> {
+    const url = buildUrl(this.marketsPath(), {
+      search: query,
+      scope: this.isPublic ? "all" : undefined,
+      per_page: limit,
+      limit,
+    });
+    const raw = await adjacentFetchJson<unknown>(url, this.apiKey);
+    return unwrapAdjacentMarketIds(raw).slice(0, limit);
   }
 }
 

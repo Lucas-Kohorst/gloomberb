@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, ScrollBox, Text, type ScrollBoxRenderable } from "../../../ui";
-import { TextAttributes } from "../../../ui";
+import {
+  Box,
+  ScrollBox,
+  Text,
+  TextAttributes,
+  type InputRenderable,
+  type ScrollBoxRenderable,
+} from "../../../ui";
+import { useShortcut } from "../../../react/input";
+import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   DataTableStackView,
   EmptyState,
+  InputSearchBar,
   Spinner,
   Tabs,
+  nextStackSortPreference,
+  sortStackItems,
   usePaneFooter,
   type DataTableColumn,
   type DataTableCell,
+  type DataTableKeyEvent,
+  type DataTableRootKeyContext,
+  type StackSortPreference,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
@@ -25,9 +39,12 @@ import type {
   AdjacentNewsArticle,
 } from "./types";
 import {
+  compareAdjacentIndexRows,
+  filterAdjacentIndexRows,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
   adjacentIndexPricesToPricePoints,
+  type AdjacentIndexSortColumnId,
 } from "./normalize";
 
 export type AdjacentTab = "indices" | "rates";
@@ -36,21 +53,26 @@ export type IndexDetailTab = "overview" | "chart" | "news";
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface IndexColumn extends DataTableColumn {
-  id: "name" | "value" | "prob" | "chg1d" | "chg7d";
+  id: "ticker" | "name" | "value" | "prob" | "chg1d" | "chg7d";
 }
 
 function createIndexColumns(width: number): IndexColumn[] {
+  const tickerWidth = 8;
   const valueWidth = 8;
   const probWidth = 7;
   const chg1dWidth = 7;
   const chg7dWidth = 7;
-  const nameWidth = Math.max(12, width - valueWidth - probWidth - chg1dWidth - chg7dWidth - 6);
+  const showChg7d = width >= 64;
+  const showProb = width >= 56;
+  const extras = valueWidth + chg1dWidth + (showProb ? probWidth : 0) + (showChg7d ? chg7dWidth : 0);
+  const nameWidth = Math.max(12, width - tickerWidth - extras - 6);
   return [
-    { id: "name", label: "INDEX", width: nameWidth, align: "left" },
+    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
+    { id: "name", label: "NAME", width: nameWidth, align: "left", flexGrow: 1 },
     { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "prob", label: "PROB%", width: probWidth, align: "right" },
+    ...(showProb ? [{ id: "prob" as const, label: "PROB%", width: probWidth, align: "right" as const }] : []),
     { id: "chg1d", label: "1D", width: chg1dWidth, align: "right" },
-    { id: "chg7d", label: "7D", width: chg7dWidth, align: "right" },
+    ...(showChg7d ? [{ id: "chg7d" as const, label: "7D", width: chg7dWidth, align: "right" as const }] : []),
   ];
 }
 
@@ -61,8 +83,10 @@ function renderIndexCell(
 ): DataTableCell {
   const sel = selected ? colors.selectedText : undefined;
   switch (column.id) {
+    case "ticker":
+      return { text: row.ticker, color: sel ?? colors.textBright, attributes: TextAttributes.BOLD };
     case "name":
-      return { text: row.name, color: sel ?? colors.textBright, attributes: TextAttributes.BOLD };
+      return { text: row.name, color: sel ?? colors.text };
     case "value":
       if (row.value == null) return { text: "—", color: sel ?? colors.textDim };
       return { text: row.value.toFixed(1), color: sel };
@@ -347,8 +371,14 @@ export function AdjacentIndicesPane({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<IndexDetailTab>("overview");
-  const [sortColumnId, setSortColumnId] = useState<IndexColumn["id"] | null>("value");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [sortPreference, setSortPreference] = useState<StackSortPreference<AdjacentIndexSortColumnId>>({
+    columnId: "value",
+    direction: "desc",
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -375,40 +405,28 @@ export function AdjacentIndicesPane({
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (indices.length > 0 && (!selectedId || !indices.find((i) => i.id === selectedId))) {
-      setSelectedId(indices[0]!.id);
-    }
-  }, [indices, selectedId]);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((current) => current + 1);
+  }, []);
+  const blurSearch = useCallback(() => {
+    setSearchFocused(false);
+  }, []);
 
   const columns = useMemo(() => createIndexColumns(width), [width]);
-  const sortedIndices = useMemo(() => {
-    if (!sortColumnId) return indices;
-    const sign = sortDirection === "asc" ? 1 : -1;
-    return [...indices].sort((left, right) => {
-      if (sortColumnId === "name") return sign * left.name.localeCompare(right.name);
-      const leftValue = sortColumnId === "value"
-        ? left.value
-        : sortColumnId === "prob"
-          ? left.probabilityPct
-          : sortColumnId === "chg1d"
-            ? left.change1d
-            : left.change7d;
-      const rightValue = sortColumnId === "value"
-        ? right.value
-        : sortColumnId === "prob"
-          ? right.probabilityPct
-          : sortColumnId === "chg1d"
-            ? right.change1d
-            : right.change7d;
-      if (leftValue == null && rightValue == null) return 0;
-      if (leftValue == null) return 1;
-      if (rightValue == null) return -1;
-      return sign * (leftValue - rightValue);
-    });
-  }, [indices, sortColumnId, sortDirection]);
-  const selectedIndex = sortedIndices.findIndex((i) => i.id === selectedId);
-  const selectedIndexRow = selectedIndex >= 0 ? sortedIndices[selectedIndex]! : null;
+  const visibleIndices = useMemo(() => {
+    const filtered = filterAdjacentIndexRows(indices, searchQuery);
+    return sortStackItems(filtered, sortPreference, compareAdjacentIndexRows);
+  }, [indices, searchQuery, sortPreference]);
+  const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
+  const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
+
+  useEffect(() => {
+    if (visibleIndices.length === 0) return;
+    if (!selectedId || !visibleIndices.some((row) => row.id === selectedId)) {
+      setSelectedId(visibleIndices[0]!.id);
+    }
+  }, [selectedId, visibleIndices]);
 
   const renderCell = useCallback(
     (row: AdjacentIndexRow, column: IndexColumn, _index: number, rowState: { selected: boolean }) =>
@@ -416,16 +434,47 @@ export function AdjacentIndicesPane({
     [],
   );
 
+  useShortcut((event) => {
+    if (!focused || detailOpen || searchFocused) return;
+    if (event.name === "s" || event.name === "/") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+    }
+  }, { enabled: focused && !detailOpen && !searchFocused });
+
+  const handleRootKeyDown = useCallback((
+    event: DataTableKeyEvent,
+    context: DataTableRootKeyContext,
+  ) => {
+    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+      stopSearchFocusNavigation(event);
+      focusSearch();
+      return true;
+    }
+    if (event.name === "s" || event.name === "/") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+      return true;
+    }
+    return false;
+  }, [focusSearch]);
+
   usePaneFooter("adjacent-indices", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
       ...(client.isPublic ? [{ id: "mode", parts: [{ text: "public", tone: "muted" as const }] }] : []),
     ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
-    ],
-  }), [status, error, client.isPublic, load]);
+    hints: detailOpen
+      ? [{ id: "refresh", key: "r", label: "efresh", onPress: load }]
+      : [
+          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "refresh", key: "r", label: "efresh", onPress: load },
+        ],
+  }), [client.isPublic, detailOpen, error, focusSearch, load, searchQuery, status]);
 
   if (status === "loading" && indices.length === 0) {
     return (
@@ -457,41 +506,62 @@ export function AdjacentIndicesPane({
       onDetailTabChange={setDetailTab}
     />
   ) : null;
-  const detailTitle = selectedIndexRow?.name;
+  const detailTitle = selectedIndexRow
+    ? `${selectedIndexRow.ticker}  ${selectedIndexRow.name}`
+    : undefined;
 
   return (
     <DataTableStackView<AdjacentIndexRow, IndexColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={detailOpen && !!selectedIndexRow}
       onBack={() => setDetailOpen(false)}
       detailContent={detailContent}
       detailTitle={detailTitle}
+      rootBefore={(
+        <InputSearchBar
+          value={searchQuery}
+          focused={focused && !detailOpen}
+          active={searchFocused}
+          width={width}
+          focusToken={searchFocusToken}
+          inputRef={searchInputRef}
+          placeholder="ticker or name"
+          debounceMs={80}
+          onFocus={focusSearch}
+          onBlur={blurSearch}
+          onNavigateDown={blurSearch}
+          onQueryChange={setSearchQuery}
+        />
+      )}
+      onRootKeyDown={handleRootKeyDown}
       selection={{
         kind: "id",
         selectedId,
         getId: (row) => row.id,
         onChange: (id) => setSelectedId(id),
       }}
-      onActivate={() => setDetailOpen(true)}
+      onActivate={() => {
+        blurSearch();
+        setDetailOpen(true);
+      }}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={sortedIndices}
-      sortColumnId={sortColumnId}
-      sortDirection={sortDirection}
+      items={visibleIndices}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => {
-        const next = columnId as IndexColumn["id"];
-        if (sortColumnId === next) {
-          setSortDirection((current) => current === "asc" ? "desc" : "asc");
-          return;
-        }
-        setSortColumnId(next);
-        setSortDirection(next === "name" ? "asc" : "desc");
+        const next = columnId as AdjacentIndexSortColumnId;
+        setSortPreference((current) => nextStackSortPreference(
+          current,
+          next,
+          next === "ticker" || next === "name" ? "asc" : "desc",
+        ));
       }}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
-      emptyStateTitle="No indices."
-      emptyStateHint="Press r to refresh."
+      emptyStateTitle={searchQuery.trim() ? "No matching indices." : "No indices."}
+      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press [s] to search."}
     />
   );
 }

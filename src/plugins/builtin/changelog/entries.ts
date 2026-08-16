@@ -1,6 +1,58 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
 export const HOSTED_CHANGELOG_RELEASE: ChangelogRelease = {
+  id: "hosted-2026-08-15-articles",
+  tagName: "2026.08.15.2",
+  version: "2026.08.15.2",
+  title: "Command-bar articles, SEC filings, and the connections inventory",
+  publishedAt: "2026-08-15T22:00:00.000Z",
+  url: "",
+  body: `## Highlights
+
+- Ask the command bar for an article and it searches your enabled news/RSS feeds plus Adjacent Press, offering an Open-article row.
+- \`sec\` now opens a standalone SEC filings browser — latest filings with search — instead of demanding a ticker first.
+- The Connections pane is now the inventory of every live integration, with real request traffic, not just a Gloom Cloud status widget.
+- Hosted settings (layouts, plugin config, RSS feeds) persist per user and sync through Gloom Cloud; BYOK keys stay local.
+
+## Changes
+
+### Command bar
+
+- Type "article on …" or "news about …" and get matching articles from subscribed feeds plus Adjacent Press, each with an Open-article row.
+- Article and headline queries run a local news/Adjacent lookup, so the AI row no longer dead-ends when a local article already matched.
+- AI assist resolves article queries to the ART command and knows your enabled feed names.
+
+### SEC filings
+
+- \`sec\` opens a browser of the latest 8-K / 10-K / 10-Q / S-1 / 13F filings from the last week.
+- Search by ticker, company, or form with \`/\` or the search bar.
+- \`sec aapl\` (or any symbol) opens SEC with that search prefilled and loads the company's filings.
+- Rows include the company name; the footer has \`/\` search, \`[r]efresh\`, and \`[o]pen\`.
+
+### Connections
+
+- Every external API registers in the Connections pane and reports real request traffic.
+- Adjacent, VoteHub polls, RSS, Kalshi, Polymarket, TV/YouTube, Yahoo, SEC EDGAR, and Gloom Cloud are all listed.
+
+### Adjacent
+
+- \`ADJ <query>\` searches prediction markets by text.
+- Prediction-market detail gains Similar and News tabs.
+- The Indices table gains a ticker column, clickable header sort, and search.
+
+### Hosted client
+
+- User layouts, plugin config, and RSS feeds save per user and sync through Gloom Cloud; a stale cloud pull can't overwrite a newer local save.
+- BYOK API keys stay local and are never written into synced snapshots.
+
+### Data tables and footers
+
+- Long tables sort when you click a column header (asc/desc) and offer \`[s]earch\`.
+- Pane footers use consistent, working hints: \`[o]pen\`, \`[p]op out\`, \`[s]earch\`, \`[r]efresh\`.
+`,
+};
+
+export const HOSTED_CHANGELOG_RELEASE_PRIOR: ChangelogRelease = {
   id: "hosted-2026-08-15",
   tagName: "2026.08.15",
   version: "2026.08.15",
@@ -70,7 +122,7 @@ export const HOSTED_CHANGELOG_RELEASE: ChangelogRelease = {
 };
 
 export function bundledChangelogReleases(): ChangelogRelease[] {
-  return [HOSTED_CHANGELOG_RELEASE];
+  return [HOSTED_CHANGELOG_RELEASE, HOSTED_CHANGELOG_RELEASE_PRIOR];
 }
 
 export function mergeChangelogReleases(

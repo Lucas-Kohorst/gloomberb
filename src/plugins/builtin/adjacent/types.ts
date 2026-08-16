@@ -255,6 +255,7 @@ export interface AdjacentRatePricesResponse {
 
 export interface AdjacentIndexRow {
   id: string;
+  ticker: string;
   name: string;
   value: number | null;
   probabilityPct: number | null;

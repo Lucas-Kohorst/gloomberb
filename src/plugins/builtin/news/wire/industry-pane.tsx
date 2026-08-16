@@ -2,7 +2,7 @@ import { Box } from "../../../../ui";
 import { useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
-import { useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import type { NewsQueryPhase } from "../../../../news/types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
 import { Spinner, Tabs } from "../../../../components";
@@ -72,7 +72,12 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     registrationId: "news-wire:industry",
     focused,
     article: detailArticle ?? selectedArticle,
+    loading,
     onPopOut: () => popOutArticle(detailArticle ?? selectedArticle),
+    onRefresh: () => {
+      const query = category === "all" ? NEWS_QUERY_PRESETS.sectorAll : NEWS_QUERY_PRESETS.sector(category);
+      void getSharedNewsService()?.load(query);
+    },
   });
 
   const rootBefore = (

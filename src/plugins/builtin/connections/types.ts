@@ -1,4 +1,4 @@
-export type ConnectionKind = "asset-data" | "news" | "broker" | "prediction-market" | "websocket";
+export type ConnectionKind = "asset-data" | "news" | "broker" | "prediction-market" | "websocket" | "api";
 
 export type ConnectionStatus = "connected" | "disconnected" | "error" | "idle" | "reconnecting";
 

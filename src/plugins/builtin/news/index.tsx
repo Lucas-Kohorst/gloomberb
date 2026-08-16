@@ -9,7 +9,7 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { FeedDataTableStackView, Spinner, type FeedDataTableItem } from "../../../components";
-import { useNewsArticles } from "../../../news/hooks";
+import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
 import { useNewsArticleFooter } from "./wire/news/footer";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
@@ -119,6 +119,17 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }]
       : undefined,
     onPopOut: () => popOutArticle(openArticle ?? selected),
+    onRefresh: instrument
+      ? () => {
+        void getSharedNewsService()?.load({
+          feed: "ticker",
+          ticker: instrument.symbol,
+          exchange: instrument.exchange,
+          tickerTier: "primary",
+          limit: NEWS_ITEM_LIMIT,
+        });
+      }
+      : undefined,
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
