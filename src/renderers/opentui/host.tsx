@@ -96,6 +96,14 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
   const rendererHost: RendererHost = {
     requestExit: () => renderer.destroy(),
     async openExternal(url) {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return;
+      }
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+
       const command = process.platform === "darwin"
         ? ["open", url]
         : process.platform === "win32"
