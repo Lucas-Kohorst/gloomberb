@@ -30,9 +30,10 @@ const FACTORIES_BY_PROVIDER_ID = {
   "github-copilot": githubCopilotProvider,
   xai: xaiProvider,
   openrouter: openrouterProvider,
-} as const satisfies Readonly<Record<AiProviderId, PiProviderFactory>>;
+} as const satisfies Readonly<Record<Exclude<AiProviderId, "browser-builtin">, PiProviderFactory>>;
 
-export const GLOOMBERB_PI_PROVIDER_IDS: readonly AiProviderId[] = AI_PROVIDER_IDS;
+export const GLOOMBERB_PI_PROVIDER_IDS: readonly Exclude<AiProviderId, "browser-builtin">[] = AI_PROVIDER_IDS
+  .filter((providerId): providerId is Exclude<AiProviderId, "browser-builtin"> => providerId !== "browser-builtin");
 
 export const GLOOMBERB_PI_PROVIDER_FACTORIES: readonly PiProviderFactory[] =
   GLOOMBERB_PI_PROVIDER_IDS.map((providerId) => FACTORIES_BY_PROVIDER_ID[providerId]);
