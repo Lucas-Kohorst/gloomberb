@@ -6,6 +6,14 @@ import { linkContextMenuItems, useContextMenu, useRendererHost, useUiCapabilitie
 export function openUrl(url: string) {
   if (!url.trim()) return;
 
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+
   const browserWindow = (globalThis as { window?: { open?: (url: string, target?: string, features?: string) => void } }).window;
   if (typeof browserWindow?.open === "function") {
     browserWindow.open(url, "_blank", "noopener,noreferrer");
