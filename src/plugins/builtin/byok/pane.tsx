@@ -28,7 +28,8 @@ import {
   getByokKnownService,
   getByokKnownServices,
 } from "./services";
-import { fetchByokEndpoint, isByokTestSuccess, ByokRequestError } from "./request";
+import { fetchByokEndpoint, fetchByokSpec, isByokTestSuccess, ByokRequestError } from "./request";
+import { ByokOpenApiError, parseByokOpenApi } from "./openapi";
 import { isOpenableCustomKey, maskApiKey } from "./store";
 import { buildByokColumns, type ByokColumn, type ByokColumnId } from "./columns";
 import { BYOK_VIEWER_TEMPLATE_ID } from "./viewer";
@@ -38,7 +39,7 @@ import { useSyncExternalStore } from "react";
 const ALL_SERVICES = [CUSTOM_SERVICE_OPTION, ...getByokKnownServices()];
 
 type FormMode = "idle" | "add" | "edit";
-type FormFieldKey = "serviceId" | "name" | "apiKey" | "apiUrl" | "dataFormat";
+type FormFieldKey = "serviceId" | "name" | "apiKey" | "apiUrl" | "dataFormat" | "openApiSpecUrl" | "openApiSpecBody";
 
 interface FormDraft {
   id?: string;
@@ -47,6 +48,8 @@ interface FormDraft {
   apiKey: string;
   apiUrl: string;
   dataFormat: ByokDataFormat;
+  openApiSpecUrl: string;
+  openApiSpecBody: string;
 }
 
 function emptyDraft(): FormDraft {
@@ -56,6 +59,8 @@ function emptyDraft(): FormDraft {
     apiKey: "",
     apiUrl: "",
     dataFormat: "auto",
+    openApiSpecUrl: "",
+    openApiSpecBody: "",
   };
 }
 
@@ -67,6 +72,8 @@ function draftFromEntry(entry: ByokApiKeyEntry): FormDraft {
     apiKey: entry.apiKey,
     apiUrl: entry.apiUrl ?? "",
     dataFormat: entry.dataFormat ?? "auto",
+    openApiSpecUrl: entry.openApiSpecUrl ?? "",
+    openApiSpecBody: entry.openApiSpecBody ?? "",
   };
 }
 
@@ -190,7 +197,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
   const formFields: FormFieldKey[] = useMemo(() => {
     const isCustom = draft.serviceId === BYOK_CUSTOM_SERVICE_ID;
     const fields: FormFieldKey[] = ["serviceId", "name", "apiKey"];
-    if (isCustom) fields.push("apiUrl", "dataFormat");
+    if (isCustom) fields.push("apiUrl", "openApiSpecUrl", "openApiSpecBody", "dataFormat");
     return fields;
   }, [draft.serviceId]);
 
@@ -213,6 +220,26 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
     const isCustom = draft.serviceId === BYOK_CUSTOM_SERVICE_ID;
     const apiUrl = isCustom ? draft.apiUrl.trim() || undefined : undefined;
     const dataFormat = isCustom ? draft.dataFormat : undefined;
+    let openApiSpecUrl: string | undefined;
+    let openApiSpecBody: string | undefined;
+    let openApiOperations: ByokApiKeyEntry["openApiOperations"];
+    let openApiAuthType: ByokApiKeyEntry["openApiAuthType"];
+    let openApiAuthKey: string | undefined;
+    if (isCustom) {
+      openApiSpecUrl = draft.openApiSpecUrl.trim() || undefined;
+      openApiSpecBody = draft.openApiSpecBody.trim() || undefined;
+      if (openApiSpecBody) {
+        try {
+          const parsed = parseByokOpenApi(openApiSpecBody, openApiSpecUrl);
+          openApiOperations = parsed.operations;
+          openApiAuthType = parsed.authType;
+          openApiAuthKey = parsed.authKey;
+        } catch (error) {
+          notify({ body: error instanceof ByokOpenApiError ? error.message : "OpenAPI spec could not be parsed.", type: "error" });
+          return;
+        }
+      }
+    }
 
     if (formMode === "add") {
       const newEntry: ByokApiKeyEntry = {
@@ -222,6 +249,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
         apiKey,
         apiUrl,
         dataFormat,
+        openApiSpecUrl, openApiSpecBody, openApiOperations, openApiAuthType, openApiAuthKey,
         createdAt: Date.now(),
         lastValidationStatus: "untested",
       };
@@ -230,7 +258,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
     } else if (formMode === "edit" && draft.id) {
       const next = keys.map((entry) =>
         entry.id === draft.id
-          ? { ...entry, serviceId: draft.serviceId, name, apiKey, apiUrl, dataFormat, lastValidationStatus: "untested" as const }
+          ? { ...entry, serviceId: draft.serviceId, name, apiKey, apiUrl, dataFormat, openApiSpecUrl, openApiSpecBody, openApiOperations, openApiAuthType, openApiAuthKey, lastValidationStatus: "untested" as const }
           : entry,
       );
       persistKeys(next);
@@ -272,15 +300,26 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
     try {
       const result = await fetchByokEndpoint(selectedEntry);
       const ok = isByokTestSuccess(selectedEntry, result);
+      let specPatch: Partial<ByokApiKeyEntry> = {};
+      if (selectedEntry.openApiSpecUrl && !selectedEntry.openApiSpecBody) {
+        const spec = await fetchByokSpec(selectedEntry);
+        const parsed = parseByokOpenApi(spec.body, spec.url);
+        specPatch = {
+          openApiSpecBody: spec.body,
+          openApiOperations: parsed.operations,
+          openApiAuthType: parsed.authType,
+          openApiAuthKey: parsed.authKey,
+        };
+      }
       persistKeys(keys.map((entry) =>
         entry.id === selectedEntry.id
-          ? { ...entry, lastValidated: Date.now(), lastValidationStatus: ok ? "ok" : "error" }
+          ? { ...entry, ...specPatch, lastValidated: Date.now(), lastValidationStatus: ok ? "ok" : "error" }
           : entry,
       ));
       notify({
         body: ok
           ? selectedEntry.serviceId === BYOK_CUSTOM_SERVICE_ID
-            ? `Connection OK (${result.status}). "${selectedEntry.name}" is in the command bar.`
+            ? `Connection OK (${result.status}). "${selectedEntry.name}" is in the command bar. Probe: ${selectedEntry.openApiOperations?.find((op) => op.probeUrl)?.path ?? "OpenAPI GET"}.`
             : `Connection OK (${result.status}).`
           : describeByokHttpFailure(result.status, result.contentType),
         type: ok ? "success" : "error",
@@ -475,6 +514,11 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
           ))}
         </Box>
       )}
+      {selectedEntry?.openApiOperations && selectedEntry.openApiOperations.length > 0 && (
+        <Box paddingX={1} flexDirection="column" flexShrink={0}>
+          <Text fg={colors.textDim}>OpenAPI GET catalog: {selectedEntry.openApiOperations.map((op) => op.path).join(", ")}</Text>
+        </Box>
+      )}
     </Box>
   );
 }
@@ -569,6 +613,30 @@ function ByokEditForm({
                   width={fieldWidth}
                   placeholder="https://api.example.com/v1"
                   onChange={(value) => updateField("apiUrl", value)}
+                  onSubmit={onSave}
+                />
+              </Box>
+              <Box height={1} />
+              <Box onMouseDown={() => setActiveField("openApiSpecUrl")} height={3}>
+                <TextField
+                  label={`${activeField === "openApiSpecUrl" ? "> " : "  "}OpenAPI Spec URL`}
+                  value={draft.openApiSpecUrl}
+                  focused={activeField === "openApiSpecUrl"}
+                  width={fieldWidth}
+                  placeholder="https://api.example.com/openapi.json"
+                  onChange={(value) => updateField("openApiSpecUrl", value)}
+                  onSubmit={onSave}
+                />
+              </Box>
+              <Box height={1} />
+              <Box onMouseDown={() => setActiveField("openApiSpecBody")} height={3}>
+                <TextField
+                  label={`${activeField === "openApiSpecBody" ? "> " : "  "}OpenAPI Spec JSON (paste)`}
+                  value={draft.openApiSpecBody}
+                  focused={activeField === "openApiSpecBody"}
+                  width={fieldWidth}
+                  placeholder='{"openapi":"3.0.0",...}'
+                  onChange={(value) => updateField("openApiSpecBody", value)}
                   onSubmit={onSave}
                 />
               </Box>
