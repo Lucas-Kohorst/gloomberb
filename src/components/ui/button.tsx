@@ -1,6 +1,6 @@
 import { Box, Text, useUiHost } from "../../ui";
 import { TextAttributes } from "../../ui";
-import { type ComponentType } from "react";
+import { type ComponentType, useMemo } from "react";
 import { colors } from "../../theme/colors";
 import { t } from "../../i18n";
 import { useRemoteUiNode } from "../../remote/semantic-tree";
@@ -50,8 +50,8 @@ export function Button({
   height,
 }: ButtonProps) {
   const label = t(rawLabel);
-  useRemoteUiNode({
-    role: "button",
+  const registration = useMemo(() => ({
+    role: "button" as const,
     label,
     disabled,
     actions: {
@@ -60,7 +60,8 @@ export function Button({
       },
     },
     metadata: { variant, active, shortcut },
-  });
+  }), [label, disabled, onPress, variant, active, shortcut]);
+  useRemoteUiNode(registration);
   const HostButton = useUiHost().Button as ComponentType<ButtonProps> | undefined;
   if (HostButton) {
     return (

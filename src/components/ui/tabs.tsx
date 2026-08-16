@@ -92,11 +92,11 @@ export function Tabs({
     navigationValueRef.current = value;
     onSelect(value);
   }, [onSelect]);
-  useRemoteUiNode({
-    role: "tabs",
+  const registration = useMemo(() => ({
+    role: "tabs" as const,
     label: "Tabs",
     actions: {
-      select: (input) => {
+      select: (input: unknown) => {
         const value = resolveTabValue(input, tabs);
         if (!value) return;
         const tab = tabs.find((entry) => entry.value === value);
@@ -104,7 +104,7 @@ export function Tabs({
         handleSelect(value);
       },
       add: onAdd ? () => onAdd() : undefined,
-      close: (input) => {
+      close: (input: unknown) => {
         const value = resolveTabValue(input, tabs);
         if (!value) return;
         const tab = tabs.find((entry) => entry.value === value);
@@ -121,7 +121,8 @@ export function Tabs({
         closeable: !!tab.onClose,
       })),
     },
-  });
+  }), [tabs, activeValue, onAdd, handleSelect]);
+  useRemoteUiNode(registration);
 
   const selectAdjacentTab = useCallback((direction: -1 | 1) => {
     const enabledTabs = tabs.filter((tab) => !tab.disabled);
