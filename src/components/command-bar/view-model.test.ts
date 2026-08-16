@@ -44,7 +44,7 @@ describe("command bar view model helpers", () => {
       { id: "d", category: "Config" },
     ]);
 
-    expect(sections.map((section) => section.category)).toEqual(["Tickers", "Config", "Danger", "Debug"]);
+    expect(sections.map((section) => section.category)).toEqual(["Config", "Tickers", "Danger", "Debug"]);
   });
 
   test("keeps non-exact ticker suggestions behind app sections in app-first order", () => {

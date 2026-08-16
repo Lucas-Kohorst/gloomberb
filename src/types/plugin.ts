@@ -195,6 +195,8 @@ export interface PaneTemplateDef {
   label: string;
   description: string;
   keywords?: string[];
+  /** Command-bar section. Defaults to the owning plugin's pane section. */
+  category?: string;
   shortcut?: PaneTemplateShortcut;
   wizard?: WizardStep[];
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
