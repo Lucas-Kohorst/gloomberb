@@ -138,21 +138,35 @@ export function truncateText(text: string, width: number): string {
 
 function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {
   const normalized = category.trim().toLowerCase();
-  // The AI answers the question the user actually typed, so it leads the list.
-  if (normalized === "ask ai") return -100;
-  if (normalized === "articles") return -60;
-  if (normalized === "exact match") return -50;
+  const priorities: Record<string, number> = {
+    // Query-specific results lead the command list.
+    "ask ai": -100,
+    articles: -90,
+    "exact match": -80,
+    saved: -70,
+    "primary listing": -60,
+    "other listings": -50,
+    "funds & derivatives": -40,
+    // General command-bar sections follow a stable, task-oriented order.
+    search: 0,
+    navigation: 10,
+    panes: 20,
+    portfolio: 30,
+    data: 40,
+    actions: 50,
+    config: 60,
+    create: 70,
+  };
   if (sectionOrder === "app-first") {
-    if (normalized === "saved") return 100;
-    if (normalized === "primary listing") return 110;
-    if (normalized === "other listings") return 120;
-    if (normalized === "funds & derivatives") return 130;
+    const appFirstPriorities: Record<string, number> = {
+      saved: 100,
+      "primary listing": 110,
+      "other listings": 120,
+      "funds & derivatives": 130,
+    };
+    if (normalized in appFirstPriorities) return appFirstPriorities[normalized] ?? 80;
   }
-  if (normalized === "saved") return -40;
-  if (normalized === "primary listing") return -30;
-  if (normalized === "other listings") return -20;
-  if (normalized === "funds & derivatives") return -10;
   if (normalized.includes("danger")) return 900;
   if (normalized.includes("debug")) return 910;
-  return 0;
+  return priorities[normalized] ?? 80;
 }

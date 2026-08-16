@@ -81,6 +81,7 @@ export const adjacentModule: PluginModule = {
       label: "Adjacent Indices",
       description: "Browse Adjacent prediction-market indices (RED, BLUE, RED-TR) with constituents and charts.",
       keywords: ["adjacent", "indices", "prediction", "markets", "political", "red", "blue"],
+      category: "Data",
       shortcut: { prefix: "ADI" },
       createInstance: () => ({ placement: "floating" }),
     },
@@ -90,6 +91,7 @@ export const adjacentModule: PluginModule = {
       label: "Adjacent Reference Rates",
       description: "Cross-platform prediction market reference rates with source markets.",
       keywords: ["adjacent", "rates", "reference", "prediction", "markets", "benchmarks"],
+      category: "Data",
       shortcut: { prefix: "ADR" },
       createInstance: () => ({ placement: "floating" }),
     },
@@ -118,7 +120,7 @@ export const adjacentModule: PluginModule = {
       label: "Open Adjacent Indices",
       description: "Browse prediction market indices from Adjacent.",
       keywords: ["adjacent", "indices", "prediction", "markets", "open"],
-      category: "navigation",
+      category: "data",
       execute: async () => {
         ctx.focusPane("adjacent-indices");
       },
@@ -129,7 +131,7 @@ export const adjacentModule: PluginModule = {
       label: "Open Adjacent Rates",
       description: "Browse cross-platform reference rates from Adjacent.",
       keywords: ["adjacent", "rates", "reference", "prediction", "open"],
-      category: "navigation",
+      category: "data",
       execute: async () => {
         ctx.focusPane("adjacent-rates");
       },

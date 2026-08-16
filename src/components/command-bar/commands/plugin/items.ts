@@ -13,6 +13,22 @@ interface PluginCommandConfirm {
   tone?: "default" | "danger";
 }
 
+const COMMAND_CATEGORY_LABELS: Record<CommandDef["category"], string> = {
+  navigation: "Navigation",
+  data: "Data",
+  portfolio: "Portfolio",
+  config: "Config",
+};
+
+/**
+ * Commands declare their command-bar category. Plugin ownership is useful for
+ * lifecycle, but is not a user-facing command section: first-party plugins
+ * may compose unrelated modules (for example, Adjacent in Gloom Cloud).
+ */
+export function getPluginCommandCategory(command: CommandDef): string {
+  return COMMAND_CATEGORY_LABELS[command.category] ?? "Commands";
+}
+
 export function getAvailablePluginCommandsForState(
   pluginRegistry: PluginRegistry,
   disabledPlugins: readonly string[],
@@ -65,15 +81,13 @@ export function buildPluginCommandItem(options: {
   runPluginCommandDirect: (command: CommandDef, values?: Record<string, string>) => void;
   notify: NotifyFn;
 }): ResultItem {
-  const pluginId = options.pluginRegistry.getCommandPluginId(options.command.id);
-  const pluginName = pluginId ? options.pluginRegistry.allPlugins.get(pluginId)?.name : null;
   const shortcut = options.command.shortcut?.trim() || undefined;
   const shortcutArg = options.shortcutArg?.trim() || "";
   return {
     id: options.command.id,
     label: options.command.label,
     detail: shortcutArg || options.command.description || "",
-    category: pluginName || "Plugin Commands",
+    category: getPluginCommandCategory(options.command),
     kind: "command",
     right: shortcut,
     shortcutQuery: shortcut,
