@@ -188,3 +188,61 @@ export function listPlugins() {
   console.log("");
   console.log(renderStat("Directory", PLUGINS_DIR));
 }
+
+export async function searchPlugins(query: string) {
+  const baseUrl = new URL("https://api.github.com/search/repositories");
+  baseUrl.searchParams.set("sort", "stars");
+  baseUrl.searchParams.set("order", "desc");
+  baseUrl.searchParams.set("per_page", "20");
+
+  async function fetchResults(q: string) {
+    const url = new URL(baseUrl);
+    url.searchParams.set("q", q);
+    const res = await fetch(url.toString(), {
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "gloomberb",
+      },
+    });
+    if (!res.ok) {
+      fail(`GitHub search failed: ${res.status}`);
+    }
+    const data = await res.json() as {
+      items: Array<{
+        full_name: string;
+        description: string | null;
+        stargazers_count: number;
+        html_url: string;
+      }>;
+    };
+    return data.items;
+  }
+
+  let items = await fetchResults(`${query} topic:gloomberb-plugin`);
+  if (items.length === 0) {
+    items = await fetchResults(`${query} gloomberb in:name,description`);
+  }
+
+  if (items.length === 0) {
+    console.log(cliStyles.muted(`No plugins found for "${query}".`));
+    console.log(cliStyles.muted("Try a different keyword, or install directly with: gloomberb install <user/repo>"));
+    return;
+  }
+
+  console.log(renderSection("Plugin Search Results"));
+  const rows = items.map((item) => [
+    item.full_name,
+    String(item.stargazers_count),
+    item.description ?? "—",
+  ]);
+  console.log(renderTable(
+    [
+      { header: "Plugin" },
+      { header: "Stars" },
+      { header: "Description" },
+    ],
+    rows,
+  ));
+  console.log("");
+  console.log(cliStyles.muted("Install with: gloomberb install <user/repo>"));
+}

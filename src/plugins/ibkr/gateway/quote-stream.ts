@@ -152,7 +152,7 @@ export function startIbkrTickByTickBidAskStream({
   };
   const handleError = (error: Error, code: number, incomingReqId: number) => {
     if (incomingReqId !== reqId) return;
-    onError(error?.message || `IBKR error ${code}`);
+    onError((error instanceof Error ? error.message : undefined) || `IBKR error ${code}`);
   };
 
   rawApi.on(EventName.tickByTickBidAsk, handleBidAsk);
