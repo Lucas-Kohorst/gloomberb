@@ -4,8 +4,11 @@ import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import {
   detectProviders,
   resolveDefaultAiProviderId,
+  setDetectedProviders,
   type AiProvider,
 } from "./providers";
+import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
+import { isHostedWebClient } from "./providers";
 import { AiScreenerPane } from "./screener/pane";
 import { buildAiScreenerPaneSettingsDef, getAiScreenerPaneSettings } from "./settings";
 import {
@@ -193,6 +196,26 @@ export const aiPlugin: GloomPlugin = {
 
   setup(ctx) {
     const initialProviders = detectProviders();
+    if (isHostedWebClient()) {
+      void getBrowserAiState().then((state) => {
+        const browserStatus = browserAiProviderStatus(state);
+        setDetectedProviders([
+          ...detectProviders().filter((provider) => provider.id !== "browser-builtin"),
+          {
+            id: "browser-builtin",
+            name: "Browser (on-device)",
+            available: browserStatus.available,
+            status: browserStatus.status,
+            ...(browserStatus.unavailableReason
+              ? { unavailableReason: browserStatus.unavailableReason }
+              : {}),
+            outputModes: ["plain"],
+            defaultModelId: "gemini-nano",
+          },
+        ]);
+        updateWizards(ctx.getConfig());
+      });
+    }
     const initialScreenerRunners = getSelectableAiRunners(initialProviders, { outputMode: "screener" });
     const fallbackProviderId = resolveDefaultAiProviderId(initialScreenerRunners);
     const initialDefaults = resolveAiSharedDefaults(
@@ -309,6 +332,7 @@ export const aiPlugin: GloomPlugin = {
             ),
           },
           accountRows: accountSettingRows(workspaceProviderIds),
+          additional: buildBrowserAiSettings(),
         });
       },
     });
@@ -371,9 +395,14 @@ export const aiPlugin: GloomPlugin = {
             ),
           },
           accountRows: accountSettingRows(providerIds),
-          additional: buildAiScreenerPaneSettingsDef(
-            getAiScreenerPaneSettings(context.settings),
-          ),
+          additional: {
+            ...buildBrowserAiSettings(),
+            ...buildAiScreenerPaneSettingsDef(getAiScreenerPaneSettings(context.settings)),
+            fields: [
+              ...buildBrowserAiSettings().fields,
+              ...buildAiScreenerPaneSettingsDef(getAiScreenerPaneSettings(context.settings)).fields,
+            ],
+          },
         }), context.settings);
       },
     });

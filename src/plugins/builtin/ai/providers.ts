@@ -1,6 +1,7 @@
 import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
 
 export const AI_PROVIDER_IDS = [
+  "browser-builtin",
   "anthropic",
   "openai-codex",
   "openai",
@@ -55,6 +56,13 @@ export interface AiProvider {
 const ALL_OUTPUT_MODES: readonly AiRunOutputMode[] = ["plain", "structured", "screener"];
 
 const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
+  {
+    id: "browser-builtin",
+    name: "Browser (on-device)",
+    outputModes: ["plain"],
+    preferredModelIds: ["gemini-nano"],
+    fastModelIds: ["gemini-nano"],
+  },
   {
     id: "anthropic",
     name: "Claude",
@@ -189,9 +197,22 @@ export function getAiProvider(
 export function resolveDefaultAiProviderId(
   providers: readonly AiProvider[] = detectProviders(),
 ): AiProviderId {
+  if (isHostedWebClient()) {
+    const browser = providers.find((provider) => provider.id === "browser-builtin");
+    // "ready" includes downloadable: selecting it lets the settings action
+    // perform the download under a user gesture. Never select a dead browser
+    // provider when Chrome reports it as unavailable.
+    if (browser?.status === "ready") return browser.id;
+  }
   return providers.find((provider) => provider.status === "ready")?.id
     ?? providers[0]?.id
     ?? "anthropic";
+}
+
+/** Hosted web is the only renderer where Chrome's Prompt API is available. */
+export function isHostedWebClient(): boolean {
+  return typeof globalThis !== "undefined"
+    && (globalThis as { __GLOOM_CLOUD_HOSTED?: unknown }).__GLOOM_CLOUD_HOSTED === true;
 }
 
 export function getAiProviderUnavailableReason(provider: AiProvider): string {
