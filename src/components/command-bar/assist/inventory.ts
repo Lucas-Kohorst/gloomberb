@@ -115,3 +115,26 @@ export function applyNewsFeedContextToAssistInventory(
     };
   });
 }
+
+const CHART_SERIES_PREFIXES = new Set(["G"]);
+
+/**
+ * Appends the chart series vocabulary and expression syntax onto the `G`
+ * descriptor so `/assist/command` can map natural-language chart queries
+ * ("show AAPL revenue vs MSFT revenue") onto a real `G` expression.
+ */
+export function applyChartSeriesContextToAssistInventory(
+  inventory: AssistCommandDescriptor[],
+  chartSeriesContext: string,
+): AssistCommandDescriptor[] {
+  if (!chartSeriesContext.trim()) return inventory;
+  return inventory.map((descriptor) => {
+    if (!CHART_SERIES_PREFIXES.has(descriptor.prefix)) return descriptor;
+    if (descriptor.description?.includes("Chart series fields:")) return descriptor;
+    const base = descriptor.description?.trim() ?? descriptor.name;
+    return {
+      ...descriptor,
+      description: `${base}.${chartSeriesContext}`.replace(/\.\./g, "."),
+    };
+  });
+}

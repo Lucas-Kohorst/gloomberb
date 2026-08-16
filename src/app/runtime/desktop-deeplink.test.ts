@@ -139,4 +139,16 @@ describe("desktop deeplinks", () => {
   test("rejects article links without a payload", () => {
     expect(resolveDesktopDeepLinkAction("gloomberb://article").type).toBe("unsupported");
   });
+
+  test("routes short-ID share links to the share resolver", () => {
+    expect(resolveDesktopDeepLinkAction("gloomberb://share?s=abc123")).toEqual({
+      type: "open-share",
+      shortId: "abc123",
+      message: "Opening shared view...",
+    });
+  });
+
+  test("rejects share links without a short ID", () => {
+    expect(resolveDesktopDeepLinkAction("gloomberb://share").type).toBe("unsupported");
+  });
 });

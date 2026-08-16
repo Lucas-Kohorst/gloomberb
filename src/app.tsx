@@ -56,7 +56,7 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
-import { isPublicArticleShareLocation } from "./plugins/builtin/shared/article-share";
+import { isPublicShareLocation } from "./plugins/builtin/shared/share-link";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
@@ -252,9 +252,14 @@ function AppInner({
   // config.layouts, which the save effect below persists and syncs, so
   // collapsing the layout here would destroy their real workspace.
   useEffect(() => {
-    if (!isPublicArticleShareLocation() || state.config.onboardingComplete) return;
+    if (!isPublicShareLocation() || state.config.onboardingComplete) return;
+    // For inline article shares, the reader pane is created synchronously by
+    // the deep-link bridge. For short-ID shares, the pane is created async
+    // after the payload is fetched, so we collapse to whatever pane appears.
     const articleInstance = state.config.layout.instances.find((instance) => (
-      instance.paneId === "news-article" || instance.paneId === "substack-article"
+      instance.paneId === "news-article"
+      || instance.paneId === "substack-article"
+      || instance.paneId === "chart-composer"
     ));
     if (!articleInstance) return;
     const currentLayout = state.config.layout;
@@ -472,9 +477,9 @@ export function App({
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const publicArticleShare = isPublicArticleShareLocation();
+  const publicShare = isPublicShareLocation();
   const [showOnboarding, setShowOnboarding] = useState(
-    !publicArticleShare && !effectiveInitialConfig.onboardingComplete,
+    !publicShare && !effectiveInitialConfig.onboardingComplete,
   );
 
   useEffect(() => bindAppActivity(renderer), [renderer]);

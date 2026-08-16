@@ -22,6 +22,9 @@ import {
 } from "../../plugins/builtin/shared/article-share";
 import { stashNewsArticle } from "../../plugins/builtin/news/wire/news/article-stash";
 import { stashSubstackArticle } from "../../plugins/builtin/substack/article-stash";
+import { stashChartSpec } from "../../plugins/builtin/chart-composer/chart-stash";
+import type { ChartSharePayload } from "../../plugins/builtin/shared/share-link";
+import { resolveShare } from "../../sources/share-service";
 
 type CloudDeepLinkRoute = {
   kind: "cloud-alerts" | "cloud-emails" | "cloud-roundup" | "cloud-success";
@@ -45,6 +48,7 @@ export type DesktopDeepLinkAction =
   | { type: "open-chat-dm"; participants: string; message: string }
   | { type: "open-news"; kind: NewsDeepLinkKind; symbol: string | null; message: string }
   | { type: "open-article-reader"; articleType: "news" | "substack"; encodedPayload: string; message: string }
+  | { type: "open-share"; shortId: string; message: string }
   | { type: "unsupported"; message: string };
 
 interface ParsedGloomUrl {
@@ -266,6 +270,16 @@ function parseArticleDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
   };
 }
 
+function parseShareDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
+  const shortId = param(parsed.url, "s", "id", "share");
+  if (!shortId) return { type: "unsupported", message: "Share links need a short ID." };
+  return {
+    type: "open-share",
+    shortId,
+    message: "Opening shared view...",
+  };
+}
+
 export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAction {
   const parsed = parseGloomUrl(rawUrl);
   if (!parsed) return { type: "unsupported", message: "Unsupported Gloomberb link." };
@@ -289,6 +303,8 @@ export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAct
       return parseNewsDeepLink(parsed);
     case "article":
       return parseArticleDeepLink(parsed);
+    case "share":
+      return parseShareDeepLink(parsed);
     default:
       return { type: "unsupported", message: "Unsupported Gloomberb link." };
   }
@@ -541,6 +557,67 @@ function handleOpenArticleReader(
   });
 }
 
+async function handleOpenShare(
+  action: Extract<DesktopDeepLinkAction, { type: "open-share" }>,
+  pluginRegistry: PluginRegistry,
+): Promise<void> {
+  let resolved;
+  try {
+    resolved = await resolveShare(action.shortId);
+  } catch (error) {
+    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to resolve share.");
+    return;
+  }
+  if (!resolved) {
+    notifyError(pluginRegistry, "This share link is no longer available.");
+    return;
+  }
+
+  if (resolved.kind === "article") {
+    if (typeof resolved.data !== "string") {
+      notifyError(pluginRegistry, "Shared article payload is invalid.");
+      return;
+    }
+    const decoded = decodeArticleSharePayload(resolved.data);
+    if (!decoded) {
+      notifyError(pluginRegistry, "Shared article payload is invalid.");
+      return;
+    }
+    handleOpenArticleReader(
+      {
+        type: "open-article-reader",
+        articleType: decoded.type,
+        encodedPayload: resolved.data,
+        message: `Opened article "${decoded.title}".`,
+      },
+      pluginRegistry,
+    );
+    return;
+  }
+
+  if (resolved.kind === "chart") {
+    const data = resolved.data as ChartSharePayload | null;
+    if (!data?.spec) {
+      notifyError(pluginRegistry, "Shared chart payload is invalid.");
+      return;
+    }
+    if (!pluginRegistry.paneTemplates.has("chart-composer-pane")) {
+      notifyError(pluginRegistry, "Chart composer is unavailable.");
+      return;
+    }
+    const stashKey = `share:${action.shortId}`;
+    stashChartSpec(stashKey, data.spec);
+    void pluginRegistry.createPaneFromTemplateAsyncFn("chart-composer-pane", {
+      arg: stashKey,
+    }).then(() => {
+      notifySuccess(pluginRegistry, "Opened shared chart.");
+    }).catch((error) => {
+      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open shared chart.");
+    });
+    return;
+  }
+}
+
 export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHandlerOptions): void {
   const action = resolveDesktopDeepLinkAction(rawUrl);
   if (action.type === "unsupported") {
@@ -581,6 +658,9 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
     case "open-article-reader":
       handleOpenArticleReader(action, options.pluginRegistry);
       return;
+    case "open-share":
+      void handleOpenShare(action, options.pluginRegistry);
+      return;
   }
 }
 
@@ -603,4 +683,17 @@ export function useDesktopDeepLinkRuntime({
       handleDesktopDeepLink(deeplink.url, { dispatch, pluginRegistry, stateRef });
     });
   }, [desktopDeepLinkBridge, desktopWindowKind, dispatch, pluginRegistry, stateRef]);
+
+  // Hosted shares arrive as normal browser navigations rather than through
+  // the desktop deep-link bridge.
+  useEffect(() => {
+    if (desktopDeepLinkBridge || typeof window === "undefined") return;
+    const match = /^\/s\/([A-Za-z0-9_-]+)$/.exec(window.location.pathname);
+    if (!match) return;
+    handleDesktopDeepLink(`https://terminal.kohor.st/share?s=${match[1]}`, {
+      dispatch,
+      pluginRegistry,
+      stateRef,
+    });
+  }, [desktopDeepLinkBridge, dispatch, pluginRegistry, stateRef]);
 }

@@ -15,6 +15,7 @@ import {
   marketOverviewPlugin,
   portfolioPlugin,
 } from "./builtin/composite-plugins";
+import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
@@ -33,6 +34,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
+  pluginMarketPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {

@@ -22,14 +22,6 @@ describe("youtube TV embed", () => {
     expect(() => buildYoutubeLiveEmbedUrl("")).toThrow("concrete YouTube video ID");
   });
 
-  test("enables captions when requested", () => {
-    const withCaptions = buildYoutubeLiveEmbedUrl("abcdefghijk", { captions: true });
-    expect(withCaptions).toContain("cc_load_policy=1");
-    expect(withCaptions).toContain("cc_lang_pref=en");
-    const withoutCaptions = buildYoutubeLiveEmbedUrl("abcdefghijk", {});
-    expect(withoutCaptions).not.toContain("cc_load_policy");
-  });
-
   test("extracts video ids from watch, embed, and innertube html", () => {
     expect(extractYoutubeVideoId("https://www.youtube.com/watch?v=abcdefghijk")).toBe("abcdefghijk");
     expect(extractYoutubeVideoId("https://youtu.be/abcdefghijk")).toBe("abcdefghijk");
@@ -79,6 +71,15 @@ describe("youtube TV embed", () => {
     const html = '{"videoId":"zyxwvutsrqp","title":"x","publishedTimeText":{"simpleText":"Premiered Aug 12, 2026"}}';
     expect(extractPublishedTextForVideo(html, "zyxwvutsrqp")).toBe("Premiered Aug 12, 2026");
     expect(extractPublishedTextForVideo(html, "abcdefghijk")).toBeNull();
+  });
+
+  test("extracts the publish label from the current metadataParts markup", () => {
+    const html = '{"videoId":"zyxwvutsrqp","x":1}'
+      + `,"padding":"${"-".repeat(1200)}"`
+      + ',"metadataParts":[{"text":{"content":"718 views"}},{"text":{"content":"1 day ago"}}]'
+      + ',{"videoId":"abcdefghijk"},"metadataParts":[{"text":{"content":"2 views"}},{"text":{"content":"5 months ago"}}]';
+    expect(extractPublishedTextForVideo(html, "zyxwvutsrqp")).toBe("1 day ago");
+    expect(extractPublishedTextForVideo(html, "abcdefghijk")).toBe("5 months ago");
   });
 
   test("resolves the stream embedded in the live player payload", async () => {

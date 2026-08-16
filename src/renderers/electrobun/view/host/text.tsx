@@ -11,7 +11,10 @@ import { webAsciiTextLines, webAsciiTextWordmarkVariant } from "./ascii-text";
 import { mouseHandlers } from "./mouse";
 import { cleanDomProps, commonStyle, textStyle } from "./style";
 
-const WEB_WORDMARK_CHAR_WIDTH_PX = Math.max(10, WEB_CELL_WIDTH);
+// Read per render: the cell width tracks the configured font size.
+function wordmarkCharWidthPx(): number {
+  return Math.max(10, WEB_CELL_WIDTH);
+}
 
 interface WebAsciiTextProps extends AsciiTextProps {
   desktopPlatform?: string;
@@ -105,7 +108,7 @@ export function WebAsciiText({
   const resolvedBackground = bg ?? backgroundColor;
   const lineHeightPx = isCompatWordmark ? 16 : 12;
   const wordmarkWidthPx = isCompatWordmark
-    ? Math.max(...lines.map((line) => line.length)) * WEB_WORDMARK_CHAR_WIDTH_PX
+    ? Math.max(...lines.map((line) => line.length)) * wordmarkCharWidthPx()
     : undefined;
   return (
     <div

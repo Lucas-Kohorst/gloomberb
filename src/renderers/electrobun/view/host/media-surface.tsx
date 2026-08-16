@@ -192,6 +192,7 @@ export const WebMediaSurface = forwardRef<HTMLVideoElement, MediaSurfaceProps>(f
     >
       {mediaSrc && !failed && youtubeEmbed ? (
         <iframe
+          key={mediaSrc}
           ref={iframeRef}
           title={title || "Live TV stream"}
           src={mediaSrc}

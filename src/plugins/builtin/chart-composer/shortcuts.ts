@@ -7,6 +7,7 @@ export type ChartComposerShortcut =
   | "mode"
   | "resolution"
   | "reload"
+  | "share"
   | { type: "range"; index: number };
 
 export function resolveChartComposerShortcut(
@@ -26,6 +27,7 @@ export function resolveChartComposerShortcut(
   if (isPlainKey(event, "w")) return "dates";
   if (isPlainKey(event, "m")) return "mode";
   if (isPlainKey(event, "r")) return "resolution";
+  if (isPlainKey(event, "y")) return "share";
   if (!isPlainKey(event, event.name ?? "")) return null;
 
   const rangeIndex = Number(event.name) - 1;

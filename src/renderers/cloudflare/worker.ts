@@ -12,6 +12,9 @@ export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
+    if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
+      return handleShareRequest(request, env, url);
+    }
     if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
@@ -23,6 +26,53 @@ export default {
     return serveApp(request, env);
   },
 } satisfies ExportedHandler<Env>;
+
+const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
+const MAX_SHARE_BODY_BYTES = 512_000;
+
+async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (!isSameOrigin(request, url)) {
+    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/share") {
+    if (!await fetchSessionUser(request, env)) {
+      return Response.json({ error: "Authentication required." }, { status: 401 });
+    }
+    const rawBody = await request.text().catch(() => "");
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_SHARE_BODY_BYTES) {
+      return Response.json({ error: "Share payload is too large." }, { status: 413 });
+    }
+    let body: { kind?: unknown; data?: unknown } | null;
+    try {
+      body = JSON.parse(rawBody || "null") as { kind?: unknown; data?: unknown } | null;
+    } catch {
+      return Response.json({ error: "Invalid share payload." }, { status: 400 });
+    }
+    if (!body || (body.kind !== "article" && body.kind !== "chart") || body.data === undefined) {
+      return Response.json({ error: "Invalid share payload." }, { status: 400 });
+    }
+    const id = `${crypto.randomUUID().replaceAll("-", "")}`;
+    await env.SHARES.put(id, JSON.stringify({
+      kind: body.kind,
+      data: body.data,
+      createdAt: new Date().toISOString(),
+    }), { expirationTtl: SHARE_TTL_SECONDS });
+    return Response.json({ id });
+  }
+
+  if (request.method === "GET") {
+    const id = url.pathname.slice("/api/share/".length);
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+      return Response.json({ error: "Share not found." }, { status: 404 });
+    }
+    const value = await env.SHARES.get(id);
+    if (!value) return Response.json({ error: "Share not found." }, { status: 404 });
+    return new Response(value, { headers: { "content-type": "application/json" } });
+  }
+
+  return Response.json({ error: "Method not allowed." }, { status: 405 });
+}
 
 function isSameOrigin(request: Request, url: URL): boolean {
   const origin = request.headers.get("Origin");

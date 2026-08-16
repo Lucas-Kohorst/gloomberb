@@ -176,6 +176,19 @@ describe("chart composer expressions", () => {
     expect(ratio!.inputSeriesIds).toEqual(spec.series.slice(0, 2).map((series) => series.id));
   });
 
+  test("plots only the derived line for a binary expression", () => {
+    const spec = buildCustomChartPreset("AAPL:price / NVDA:price");
+    expect(spec.series.every((series) => series.visible === false)).toBe(true);
+    expect(spec.studies.find((study) => study.kind === "ratio")).toBeDefined();
+  });
+
+  test("keeps a pair study bound to hidden operands when the spec is rebuilt", () => {
+    const spec = buildCustomChartPreset("AAPL:price / NVDA:price");
+    const rebound = setPairStudies(spec, getSelectedPairStudies(spec));
+    expect(rebound.studies.find((study) => study.kind === "ratio")?.inputSeriesIds)
+      .toEqual(spec.series.map((series) => series.id));
+  });
+
   test("builds a spread study from a binary `a - b` expression", () => {
     const spec = buildCustomChartPreset("AAPL:price - MSFT:price");
     const spread = spec.studies.find((study) => study.kind === "spread");

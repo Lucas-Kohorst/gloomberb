@@ -8,7 +8,7 @@ import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/h
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
-import { FeedDataTableStackView, Spinner, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, Spinner, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
 import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
 import { useNewsArticleFooter } from "./wire/news/footer";
@@ -75,6 +75,14 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
+
+  useEffect(() => {
+    if (newsState.phase === "ready" || newsState.phase === "refreshing") {
+      setLastUpdated(Date.now());
+    }
+  }, [liveNews.length, newsState.phase]);
 
   useEffect(() => {
     summaryFetchRef.current += 1;
@@ -115,9 +123,10 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     article: openArticle ?? selected,
     loading,
     error,
-    info: loadingSummary
-      ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }]
-      : undefined,
+    info: [
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
+    ],
     onPopOut: () => popOutArticle(openArticle ?? selected),
     onRefresh: instrument
       ? () => {

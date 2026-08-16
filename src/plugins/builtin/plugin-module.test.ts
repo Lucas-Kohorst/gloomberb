@@ -55,7 +55,7 @@ describe("composeBuiltinPlugin", () => {
     plugin.dispose?.();
   });
 
-  test("disposes initialized and partially initialized modules in reverse order", async () => {
+  test("isolates a failing module's setup and still disposes all modules in reverse order", async () => {
     const lifecycle: string[] = [];
     const plugin = composeBuiltinPlugin({
       id: "parent",
@@ -73,15 +73,23 @@ describe("composeBuiltinPlugin", () => {
           },
           dispose: () => { lifecycle.push("dispose:second"); },
         },
+        {
+          setup: () => { lifecycle.push("setup:third"); },
+          dispose: () => { lifecycle.push("dispose:third"); },
+        },
       ],
     });
 
-    await expect(plugin.setup?.(context())).rejects.toThrow("setup failed");
+    // setup must resolve (not reject) — a sibling module's failure must not
+    // kill the composite plugin or prevent the registry from registering it.
+    await plugin.setup?.(context());
     plugin.dispose?.();
 
     expect(lifecycle).toEqual([
       "setup:first",
       "setup:second",
+      "setup:third",
+      "dispose:third",
       "dispose:second",
       "dispose:first",
     ]);

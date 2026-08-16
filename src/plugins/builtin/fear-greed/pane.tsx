@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useUiHost } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { SpeedometerGauge, usePaneFooter } from "../../../components";
+import { SpeedometerGauge, usePaneFooter, useUpdatedAgo } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import type { FearGreedData } from "./data";
@@ -9,7 +9,6 @@ import { getCachedFearGreedData, loadFearGreed } from "./cache";
 import { IndicatorChart, IndexHistoryChart, PreviousScoreGrid } from "./charts";
 import {
   FEAR_GREED_GAUGE_SEGMENTS,
-  formatAge,
   formatScore,
   ratingColor,
   ratingLabel,
@@ -24,7 +23,6 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   const [loading, setLoading] = useState(!initialCache || initialCache.stale);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(initialCache?.fetchedAt ?? null);
-  const [now, setNow] = useState(Date.now());
   const fetchGenRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
@@ -51,11 +49,6 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
     }
   }, [initialCache, load]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 10_000);
-    return () => clearInterval(interval);
-  }, []);
-
   const refresh = useCallback(() => {
     void load(true);
   }, [load]);
@@ -74,7 +67,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
     }
   });
 
-  const footerAge = lastRefreshed ? `refreshed ${formatAge(now - lastRefreshed)}` : loading ? "loading" : "";
+  const updatedAgo = useUpdatedAgo(lastRefreshed);
   usePaneFooter(paneId, () => ({
     info: [
       ...(data ? [{
@@ -83,11 +76,11 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
           { text: `${formatScore(data.overall.score)} ${ratingLabel(data.overall.rating)}`, color: ratingColor(data.overall.rating), bold: true },
         ],
       }] : []),
-      ...(footerAge ? [{ id: "age", parts: [{ text: footerAge, tone: loading ? "muted" as const : "value" as const }] }] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }],
-  }), [data, error, footerAge, loading, paneId, refresh]);
+  }), [data, error, loading, paneId, refresh, updatedAgo]);
 
   if (loading && !data) {
     return (

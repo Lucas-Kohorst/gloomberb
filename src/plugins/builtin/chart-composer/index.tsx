@@ -19,6 +19,7 @@ import {
   buildValuationChartPreset,
 } from "./presets";
 import { buildChartComposerPaneSettingsDef } from "./settings";
+import { getStashedChartSpec } from "./chart-stash";
 import type { PluginModule } from "../plugin-module";
 import {
   LIVE_STREAMING_QUICK_SETTING,
@@ -143,7 +144,15 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     }],
     canCreate: () => true,
     createInstance: (context, options) => {
-      const expression = options?.arg?.trim() || options?.values?.series?.trim() || context.activeTicker || "";
+      const arg = options?.arg?.trim() ?? "";
+      // Shared charts arrive with a stash key (e.g. "share:abc123") that
+      // resolves to a full ChartSpec. Use it directly instead of parsing
+      // the key as a series expression.
+      if (arg.startsWith("share:")) {
+        const stashed = getStashedChartSpec(arg);
+        if (stashed) return instanceFor(stashed, "G");
+      }
+      const expression = arg || options?.values?.series?.trim() || context.activeTicker || "";
       return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
     },
   },
