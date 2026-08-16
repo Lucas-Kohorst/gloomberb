@@ -56,6 +56,7 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
+import { isPublicArticleShareLocation } from "./plugins/builtin/shared/article-share";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
@@ -242,6 +243,36 @@ function AppInner({
     pluginRegistry,
     stateRef,
   });
+
+  // A public share is a reader-only entry point. Once the deep-link runtime
+  // creates the reader pane, hide the saved workspace behind it so the article
+  // is immediately readable rather than appearing as a small floating pane.
+  useEffect(() => {
+    if (!isPublicArticleShareLocation()) return;
+    const articleInstance = state.config.layout.instances.find((instance) => (
+      instance.paneId === "news-article" || instance.paneId === "substack-article"
+    ));
+    if (!articleInstance) return;
+    const currentLayout = state.config.layout;
+    if (
+      currentLayout.dockRoot?.kind === "pane"
+      && currentLayout.dockRoot.instanceId === articleInstance.instanceId
+      && currentLayout.floating.length === 0
+      && currentLayout.detached.length === 0
+    ) {
+      return;
+    }
+    dispatch({
+      type: "UPDATE_LAYOUT",
+      layout: {
+        ...currentLayout,
+        dockRoot: { kind: "pane", instanceId: articleInstance.instanceId },
+        floating: [],
+        detached: [],
+      },
+      focusedPaneId: articleInstance.instanceId,
+    });
+  }, [dispatch, state.config.layout]);
 
   const focusedTickerSymbol = getFocusedTickerSymbol(state);
   useAppStartupRuntime({
@@ -437,7 +468,10 @@ export function App({
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const [showOnboarding, setShowOnboarding] = useState(!effectiveInitialConfig.onboardingComplete);
+  const publicArticleShare = isPublicArticleShareLocation();
+  const [showOnboarding, setShowOnboarding] = useState(
+    !publicArticleShare && !effectiveInitialConfig.onboardingComplete,
+  );
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 

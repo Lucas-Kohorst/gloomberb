@@ -9,6 +9,7 @@ import {
   payloadToNewsArticle,
   payloadToSubstackArticle,
   SHARE_HOSTED_ORIGIN,
+  isPublicArticleShareLocation,
 } from "./article-share";
 
 function makeNewsArticle(overrides: Partial<NewsArticle> & Pick<NewsArticle, "id" | "title">): NewsArticle {
@@ -49,6 +50,39 @@ function makeSubstackArticle(overrides: Partial<SubstackArticleSummary> & Pick<S
 }
 
 describe("article-share encode/decode", () => {
+  test("recognizes only valid public article locations", () => {
+    const encoded = encodeNewsArticleForShare(makeNewsArticle({ id: "public", title: "Public" }));
+    const originalWindow = globalThis.window;
+    try {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: { location: { pathname: "/article", search: `?a=${encoded}` } },
+      });
+      expect(isPublicArticleShareLocation()).toBe(true);
+
+      window.location.search = "";
+      expect(isPublicArticleShareLocation()).toBe(false);
+      window.location.search = "?a=garbage";
+      expect(isPublicArticleShareLocation()).toBe(false);
+      window.location.pathname = "/other";
+      window.location.search = `?a=${encoded}`;
+      expect(isPublicArticleShareLocation()).toBe(false);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+      else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
+  test("returns false outside browser contexts", () => {
+    const originalWindow = globalThis.window;
+    try {
+      delete (globalThis as { window?: unknown }).window;
+      expect(isPublicArticleShareLocation()).toBe(false);
+    } finally {
+      if (originalWindow !== undefined) Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    }
+  });
+
   test("news article round-trips through encode → decode → reconstruct", () => {
     const original = makeNewsArticle({
       id: "hormuz",
