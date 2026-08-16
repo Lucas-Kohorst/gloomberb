@@ -1,0 +1,70 @@
+/**
+ * Evaluates the built hosted bundle in a DOM with `process` undefined.
+ *
+ * The hosted client shares most of its module graph with the terminal and
+ * desktop builds, so a Node-only module reached from a renderer import is easy
+ * to add and invisible in review: bundling succeeds, typecheck succeeds, and
+ * every test still passes because the tests run under Bun where `process`
+ * exists. The failure only appears in a browser, where a module-scope
+ * `process.env` read throws before React mounts and the page hangs on its
+ * loading placeholder.
+ *
+ * Running the real bundle with `process` shadowed reproduces that browser
+ * condition, so the failure lands in CI instead of production.
+ */
+import { join } from "path";
+import { Window } from "happy-dom";
+
+const bundlePath = process.argv[2] ?? join("dist", "web-client", "web-main.js");
+
+const bundle = Bun.file(bundlePath);
+if (!await bundle.exists()) {
+  console.error(`No bundle at ${bundlePath}. Run \`bun run cloud:build\` first.`);
+  process.exit(1);
+}
+const source = await bundle.text();
+
+const testWindow = new Window({ url: "https://terminal.kohor.st/" });
+testWindow.document.body.innerHTML = '<div id="root"></div>';
+
+const globals: Record<string, unknown> = {
+  window: testWindow,
+  document: testWindow.document,
+  navigator: testWindow.navigator,
+  location: testWindow.location,
+  history: testWindow.history,
+  localStorage: testWindow.localStorage,
+  sessionStorage: testWindow.sessionStorage,
+  Event: testWindow.Event,
+  CustomEvent: testWindow.CustomEvent,
+  MouseEvent: testWindow.MouseEvent,
+  HTMLElement: testWindow.HTMLElement,
+  Element: testWindow.Element,
+  Node: testWindow.Node,
+  getComputedStyle: testWindow.getComputedStyle.bind(testWindow),
+  requestAnimationFrame: (callback: (time: number) => void) => setTimeout(() => callback(Date.now()), 8),
+  cancelAnimationFrame: (id: number) => clearTimeout(id),
+  // The hosted page sets both before loading the bundle.
+  __GLOOM_WEB_SESSION: "bundle-check-session",
+  __GLOOM_CLOUD_HOSTED: true,
+};
+for (const [name, value] of Object.entries(globals)) {
+  Object.defineProperty(globalThis, name, { configurable: true, enumerable: true, value, writable: true });
+}
+
+try {
+  // Shadowing `process` and `global` as parameters makes any bare reference
+  // inside the bundle resolve to undefined, exactly as it does in a browser.
+  new Function("process", "global", source)(undefined, undefined);
+} catch (error) {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.error(`Hosted bundle failed to evaluate in a browser-like environment.\n${detail}`);
+  console.error(
+    "\nA module reached from the hosted renderer is reading a Node global at import time."
+    + "\nMove the read inside the function that needs it, or keep the module out of the renderer graph.",
+  );
+  process.exit(1);
+}
+
+console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
+process.exit(0);
