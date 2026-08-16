@@ -1,6 +1,60 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
 export const HOSTED_CHANGELOG_RELEASE: ChangelogRelease = {
+  id: "hosted-2026-08-16-hardening",
+  tagName: "2026.08.16",
+  version: "2026.08.16",
+  title: "Security hardening, performance optimizations, and plugin search",
+  publishedAt: "2026-08-16T13:00:00.000Z",
+  url: "",
+  body: `## Highlights
+
+- URL scheme validation prevents \`file://\` and \`javascript://\` URLs from external feeds from opening local applications.
+- Cloudflare Worker \`http.fetch\` now blocks private/internal IP ranges, closing an SSRF vector on the hosted client.
+- Self-updater verifies SHA-256 checksums from GitHub release assets before installing binaries.
+- Time-series transform and alignment algorithms optimized from O(n\u00b2) and O(n\u00d7m) to O(n log n) and O(n+m).
+- \`gloomberb plugin-search <query>\` searches GitHub for installable plugins by keyword.
+
+## Security
+
+- \`openUrl\` and \`openExternal\` validate the URL scheme (\`http:\` / \`https:\` only) before spawning \`open\`, \`cmd\`, or \`xdg-open\`.
+- Cloudflare Worker \`http.fetch\` blocks localhost, RFC-1918, and link-local addresses before proxying.
+- Cloudflare Worker catch block maps known user-facing errors (auth, feature gates) and sanitizes all others to a generic message.
+- \`Content-Security-Policy\` header on \`serveApp\` with \`default-src 'self'\`, \`connect-src 'self' https://api.gloom.sh\`, and \`frame-ancestors 'none'\`.
+- Self-updater verifies SHA-256 digest from GitHub's release asset API before swapping the binary; backward compatible with older releases without digests.
+
+## Performance
+
+- \`referencePoint\` in yoy/qoq transforms uses binary search instead of linear scan (O(n\u00b2) \u2192 O(n log n)).
+- \`alignTimeSeries\` carry-forward uses a moving pointer per series instead of re-scanning all points (O(n\u00d7m) \u2192 O(n+m)).
+- \`mergePriceHistoryWindows\` uses a two-pointer merge of two sorted arrays instead of Map + full sort (O(n log n) \u2192 O(n)).
+- \`useRemoteUiNode\` effect has a dependency array; 7 UI component callers wrap registrations in \`useMemo\`.
+- DataTable \`useRemoteUiNode\` metadata (200-row slice) wrapped in \`useMemo\` to avoid per-render serialization.
+
+## DX and tooling
+
+- \`typecheck\` script now includes \`typecheck:cloud\` for the Cloudflare Worker.
+- \`web-tree-sitter\` removed (zero imports across the codebase).
+- \`.env.example\` documents \`GLOOMBERB_LANG\` and \`GLOOMBERB_CLOUD_HOSTED\`.
+- \`catch (error: any)\` replaced with \`catch (error: unknown)\` across 12 IBKR catch blocks.
+- Notes and broker persistence catch blocks now log errors instead of silently swallowing them.
+
+## Plugin discovery
+
+- \`gloomberb plugin-search <query>\` searches GitHub for repos with the \`gloomberb-plugin\` topic, falling back to a keyword search.
+- Results show plugin name, stars, and description; install with \`gloomberb install <user/repo>\`.
+
+## Tests
+
+- Sync controller race-condition tests: runtime swap mid-pull, contributor apply failure, concurrent requestSync queuing, stale signature skip + force override.
+- Time-series transform and alignment edge-case tests.
+- \`mergePriceHistoryWindows\` dedup, override, Date normalization, and empty-input tests.
+- Updater checksum verification tests: match, mismatch, and backward-compatible no-checksum cases.
+- URL scheme validation tests for \`openUrl\`.
+`,
+};
+
+export const HOSTED_CHANGELOG_RELEASE_PRIOR: ChangelogRelease = {
   id: "hosted-2026-08-15-articles",
   tagName: "2026.08.15.2",
   version: "2026.08.15.2",
@@ -49,75 +103,6 @@ export const HOSTED_CHANGELOG_RELEASE: ChangelogRelease = {
 
 - Long tables sort when you click a column header (asc/desc) and offer \`[s]earch\`.
 - Pane footers use consistent, working hints: \`[o]pen\`, \`[p]op out\`, \`[s]earch\`, \`[r]efresh\`.
-`,
-};
-
-export const HOSTED_CHANGELOG_RELEASE_PRIOR: ChangelogRelease = {
-  id: "hosted-2026-08-15",
-  tagName: "2026.08.15",
-  version: "2026.08.15",
-  title: "Web terminal: TV, custom APIs, Kalshi, and new panes",
-  publishedAt: "2026-08-15T20:00:00.000Z",
-  url: "",
-  body: `## Highlights
-
-- Custom API keys can be tested, then opened from the command bar by name in a JSON / CSV / text viewer.
-- Prediction Markets now ranks Kalshi from Adjacent's full market universe, so high-volume sports and politics show up instead of a thin elections sample.
-- TV plays on the hosted web client through a YouTube live embed instead of failing before a player appears.
-- New panes: Adjacent indices and rates, API Keys, Connections, RSS, VoteHub Polls, and article pop-out from news / Substack / RSS.
-
-## Changes
-
-### API Keys
-
-- Add, edit, test, and delete keys for Adjacent, Hyperliquid, SEC EDGAR, or a custom URL.
-- Custom keys send a Bearer token on test. A passing test registers the key **under its name** in the command bar.
-- Opening that command fetches the endpoint and renders JSON as a table or key/value pairs, CSV as a table, or text as a scrollable body. Auto sniffs the format.
-- From the keys list, \`t\` tests, \`o\` or Enter opens a tested custom API.
-- Keys persist in the hosted browser. They are not synced to Gloom Cloud.
-
-### Prediction Markets
-
-- Top / search catalogs come from Adjacent (\`scope=all\`, sorted by volume) for both Kalshi and Polymarket.
-- Live yes/no quotes still come from the venue after the catalog lands.
-- Kalshi 24h volume is contract count, not contracts multiplied by last price.
-- Native Kalshi / Polymarket catalogs remain the fallback, and still power New and Ending.
-
-### TV
-
-- Hosted web no longer errors with "live stream resolution is not available."
-- Playback uses YouTube's live embed (channel or resolved video). Play and mute still use \`p\` / \`m\`.
-
-### Web panes
-
-- Floating pane actions stay on one row. The \`⋯\` menu no longer stacks under the float and close buttons.
-- Pane bodies and tables stretch with the window instead of leaving an empty strip after resize.
-- Adjacent Indices and Rates sort when you click a column header.
-
-### News and reading
-
-- Pop a news, Substack, or RSS article into its own floating pane with \`p\`. The list stays behind it.
-- RSS feed subscriptions and a reader pane.
-
-### New and restored panes
-
-- **Polls** — VoteHub approval, favorability, generic ballot, Senate, governor, and House (free, no key).
-- **Adjacent** — prediction-market indices and reference rates.
-- **Connections** — live status for data providers and APIs.
-- **API Keys** — BYOK settings.
-
-### Hosted client
-
-- Plugin config such as API keys survives a refresh on the hosted client.
-- Opening a ticker that already has a pane focuses that pane instead of spawning another.
-- Column settings persist.
-
-## How to try it
-
-- Command bar: \`KEYS\` for API Keys, then add a custom key, test it, and search its name.
-- Command bar: \`TV\` for Bloomberg / CNBC / Yahoo Finance.
-- Command bar: \`PM\` for Prediction Markets, Top tab, Kalshi or All.
-- Command bar: Changelog to reopen these notes.
 `,
 };
 

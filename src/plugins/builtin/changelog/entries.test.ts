@@ -10,17 +10,17 @@ describe("bundled changelog", () => {
   test("ships a hosted note with a body the pane can render", () => {
     const [release] = bundledChangelogReleases();
     expect(release?.id).toBe(HOSTED_CHANGELOG_RELEASE.id);
-    expect(release?.body.includes("SEC filings")).toBe(true);
-    expect(release?.body.includes("Connections")).toBe(true);
-    expect(release?.body.includes("article")).toBe(true);
+    expect(release?.body.includes("Security")).toBe(true);
+    expect(release?.body.includes("Performance")).toBe(true);
+    expect(release?.body.includes("plugin-search")).toBe(true);
   });
 
   test("keeps the prior hosted note bundled behind the newest one", () => {
     const [, prior] = bundledChangelogReleases();
     expect(prior?.id).toBe(HOSTED_CHANGELOG_RELEASE_PRIOR.id);
-    expect(prior?.body.includes("YouTube")).toBe(true);
-    expect(prior?.body.includes("Kalshi")).toBe(true);
-    expect(prior?.body.includes("API Keys")).toBe(true);
+    expect(prior?.body.includes("SEC filings")).toBe(true);
+    expect(prior?.body.includes("Connections")).toBe(true);
+    expect(prior?.body.includes("article")).toBe(true);
   });
 
   test("keeps bundled notes ahead of GitHub releases with the same tag", () => {
