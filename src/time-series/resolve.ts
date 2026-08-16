@@ -394,23 +394,62 @@ function emptyFinancials(priceHistory: TickerFinancials["priceHistory"] = []): T
   return { annualStatements: [], quarterlyStatements: [], priceHistory };
 }
 
-function mergePriceHistoryWindows(
+export function mergePriceHistoryWindows(
   current: TickerFinancials["priceHistory"],
   incoming: TickerFinancials["priceHistory"],
 ): TickerFinancials["priceHistory"] {
-  const byTimestamp = new Map<number, TickerFinancials["priceHistory"][number]>();
-  for (const point of [...current, ...incoming]) {
-    const timestamp = getPricePointTimestamp(point);
-    if (Number.isFinite(timestamp)) {
-      byTimestamp.set(
-        timestamp,
-        point.date instanceof Date ? point : { ...point, date: new Date(timestamp) },
-      );
+  const result: TickerFinancials["priceHistory"] = [];
+  let ci = 0;
+  let ii = 0;
+
+  const normalize = (
+    point: TickerFinancials["priceHistory"][number],
+    timestamp: number,
+  ): TickerFinancials["priceHistory"][number] => {
+    if (point.date instanceof Date) return point;
+    return { ...point, date: new Date(timestamp) };
+  };
+
+  while (ci < current.length && ii < incoming.length) {
+    const currentTs = getPricePointTimestamp(current[ci]!);
+    const incomingTs = getPricePointTimestamp(incoming[ii]!);
+
+    if (!Number.isFinite(currentTs)) {
+      ci++;
+      continue;
+    }
+    if (!Number.isFinite(incomingTs)) {
+      ii++;
+      continue;
+    }
+
+    if (currentTs < incomingTs) {
+      result.push(normalize(current[ci]!, currentTs));
+      ci++;
+    } else if (incomingTs < currentTs) {
+      result.push(normalize(incoming[ii]!, incomingTs));
+      ii++;
+    } else {
+      // Equal timestamps: incoming overrides current (dedup).
+      result.push(normalize(incoming[ii]!, incomingTs));
+      ci++;
+      ii++;
     }
   }
-  return [...byTimestamp.values()].sort(
-    (left, right) => getPricePointTimestamp(left) - getPricePointTimestamp(right),
-  );
+
+  while (ci < current.length) {
+    const ts = getPricePointTimestamp(current[ci]!);
+    if (Number.isFinite(ts)) result.push(normalize(current[ci]!, ts));
+    ci++;
+  }
+
+  while (ii < incoming.length) {
+    const ts = getPricePointTimestamp(incoming[ii]!);
+    if (Number.isFinite(ts)) result.push(normalize(incoming[ii]!, ts));
+    ii++;
+  }
+
+  return result;
 }
 
 function historyIntersectsBounds(
