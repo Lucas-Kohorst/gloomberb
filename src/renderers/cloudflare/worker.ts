@@ -133,6 +133,78 @@ function handleByokKeysRequest(request: Request, env: Env): Response {
 }
 
 const BYOK_PROXY_TIMEOUT_MS = 10_000;
+const BYOK_MAX_BODY_BYTES = 1_000_000;
+const BYOK_MAX_REDIRECTS = 3;
+
+/** Caller-supplied values for these would let the proxy spoof its own hop. */
+const BYOK_BLOCKED_REQUEST_HEADERS = new Set([
+  "cookie",
+  "host",
+  "connection",
+  "keep-alive",
+  "proxy-authorization",
+  "transfer-encoding",
+  "upgrade",
+  "te",
+  "trailer",
+  "cf-connecting-ip",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-real-ip",
+]);
+
+/** Reflecting these to the browser would leak upstream credentials. */
+const BYOK_BLOCKED_RESPONSE_HEADERS = new Set([
+  "set-cookie",
+  "set-cookie2",
+  "www-authenticate",
+  "proxy-authenticate",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+/**
+ * Blocks loopback, RFC1918, CGNAT, and link-local targets. 169.254.0.0/16 in
+ * particular covers the cloud instance metadata endpoint.
+ */
+function isPrivateHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".home.arpa")) return true;
+  if (host === "::1" || host === "::") return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]:/.test(host)) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!v4) return false;
+  const a = Number(v4[1]);
+  const b = Number(v4[2]);
+  if (a === 0 || a === 127 || a === 10) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+type ByokTarget = { url: URL } | { error: string; errorType: string };
+
+function validateByokTarget(raw: string): ByokTarget {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return { error: `Invalid URL: ${raw}`, errorType: "bad-url" };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { error: `Unsupported protocol: ${parsed.protocol}`, errorType: "bad-url" };
+  }
+  if (isPrivateHostname(parsed.hostname)) {
+    return { error: "Requests to private or internal addresses are not allowed.", errorType: "blocked-target" };
+  }
+  return { url: parsed };
+}
 
 /**
  * Server-side proxy for BYOK custom API test requests. On the hosted web
@@ -140,13 +212,31 @@ const BYOK_PROXY_TIMEOUT_MS = 10_000;
  * by CORS. This endpoint runs the fetch on the worker so it succeeds
  * regardless of the target's CORS headers, and returns a classified error
  * so the UI can show a precise, actionable message.
+ *
+ * Gated behind a verified Gloom Cloud session and an exact Origin match:
+ * without both, this route is an open proxy that would let anyone launder
+ * arbitrary traffic through this worker.
  */
 async function handleByokProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed." }, { status: 405 });
   }
-  if (!isSameOrigin(request, url)) {
+  // Deliberately stricter than isSameOrigin(): an absent Origin must fail,
+  // otherwise any non-browser client bypasses the check by omitting it.
+  if (request.headers.get("Origin") !== url.origin) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
+  const token = readSessionCookie(request);
+  if (!token) {
+    return Response.json({ error: "Sign in to test custom API keys." }, { status: 401 });
+  }
+  const session = await gloomFetch(env, "/auth/get-session", { token });
+  const sessionBody = session.ok
+    ? await session.json().catch(() => null) as { user?: unknown } | null
+    : null;
+  if (!sessionBody?.user) {
+    return Response.json({ error: "Sign in to test custom API keys." }, { status: 401 });
   }
 
   let body: { url?: string; headers?: Record<string, string>; method?: string };
@@ -161,41 +251,61 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
     return Response.json({ ok: false, error: "No API URL provided.", errorType: "bad-request" });
   }
 
-  let parsed: URL;
-  try {
-    parsed = new URL(targetUrl);
-  } catch {
-    return Response.json({ ok: false, error: `Invalid URL: ${targetUrl}`, errorType: "bad-url" });
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return Response.json({ ok: false, error: `Unsupported protocol: ${parsed.protocol}`, errorType: "bad-url" });
-  }
+  const target = validateByokTarget(targetUrl);
+  if ("error" in target) return Response.json({ ok: false, ...target });
 
   const method = (body.method ?? "GET").toUpperCase();
-  const headers = new Headers(body.headers ?? {});
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(body.headers ?? {})) {
+    if (BYOK_BLOCKED_REQUEST_HEADERS.has(key.toLowerCase())) continue;
+    headers.set(key, value);
+  }
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json, text/csv, text/plain, */*");
   }
 
   try {
-    const response = await fetch(parsed.toString(), {
+    // Redirects are followed by hand so every hop is re-validated; "follow"
+    // would let a public URL bounce the proxy into a private address.
+    let current = target.url;
+    let response = await fetch(current.toString(), {
       method,
       headers,
-      redirect: "follow",
+      redirect: "manual",
       signal: AbortSignal.timeout(BYOK_PROXY_TIMEOUT_MS),
     });
+    for (let hop = 0; response.status >= 300 && response.status < 400; hop += 1) {
+      const location = response.headers.get("location");
+      if (!location) break;
+      if (hop >= BYOK_MAX_REDIRECTS) {
+        return Response.json({ ok: false, error: "Too many redirects.", errorType: "network" });
+      }
+      const next = validateByokTarget(new URL(location, current).toString());
+      if ("error" in next) return Response.json({ ok: false, ...next });
+      current = next.url;
+      response = await fetch(current.toString(), {
+        method,
+        headers,
+        redirect: "manual",
+        signal: AbortSignal.timeout(BYOK_PROXY_TIMEOUT_MS),
+      });
+    }
+
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
+      if (BYOK_BLOCKED_RESPONSE_HEADERS.has(key.toLowerCase())) return;
       responseHeaders[key] = value;
     });
-    const responseBody = await response.text();
+    const rawBody = await response.text();
+    const truncated = rawBody.length > BYOK_MAX_BODY_BYTES;
     return Response.json({
       ok: response.ok,
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
       contentType: response.headers.get("content-type") ?? "",
-      body: responseBody,
+      body: truncated ? rawBody.slice(0, BYOK_MAX_BODY_BYTES) : rawBody,
+      truncated,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
