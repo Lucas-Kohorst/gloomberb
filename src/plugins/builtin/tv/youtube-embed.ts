@@ -14,7 +14,7 @@ export function isValidYoutubeVideoId(videoId: string | undefined | null): video
 
 export function buildYoutubeLiveEmbedUrl(
   videoId: string,
-  options?: { muted?: boolean; origin?: string; widgetReferrer?: string; captions?: boolean },
+  options?: { muted?: boolean; origin?: string; widgetReferrer?: string },
 ): string {
   if (!isValidYoutubeVideoId(videoId)) {
     throw new Error("A concrete YouTube video ID is required for an embed URL.");
@@ -30,10 +30,6 @@ export function buildYoutubeLiveEmbedUrl(
     origin,
     widget_referrer: options?.widgetReferrer ?? origin,
   });
-  if (options?.captions) {
-    params.set("cc_load_policy", "1");
-    params.set("cc_lang_pref", "en");
-  }
   return `https://www.youtube.com/embed/${videoId}?${params}`;
 }
 
@@ -70,17 +66,32 @@ export function extractYoutubeVideoId(value: string): string | null {
   return null;
 }
 
+const PUBLISHED_LABEL = /^(?:\d+\s+\w+\s+ago|Streamed\b.*|Premiered\b.*|Scheduled\b.*)$/;
+
 /**
- * Finds the human-readable publish label (e.g. "3 days ago", "Premiered Aug 12, 2026")
- * YouTube attaches to a specific video in the channel /videos grid.
+ * Finds the human-readable publish label (e.g. "3 days ago", "Streamed 2 weeks ago")
+ * YouTube attaches to a specific video in the channel grid.
+ *
+ * Two markups are in the wild: the legacy `publishedTimeText.simpleText`, and the
+ * current `metadataParts` list where the label sits ~1.3k characters after the id,
+ * alongside the view count. Both are matched inside a window anchored on the id so
+ * a neighbouring grid item can never donate its date.
  */
 export function extractPublishedTextForVideo(html: string, videoId: string): string | null {
   const escaped = videoId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // The grid item wraps the video id near its publishedTimeText; grab the
-  // nearest simpleText within a reasonable window after the id occurrence.
-  const windowRegex = new RegExp(`"videoId":"${escaped}"[\\s\\S]{0,3000}?"publishedTimeText":\\{"simpleText":"([^"]+)"`, "m");
-  const match = windowRegex.exec(html);
-  return match?.[1] ?? null;
+  const legacy = new RegExp(`"videoId":"${escaped}"[\\s\\S]{0,3000}?"publishedTimeText":\\{"simpleText":"([^"]+)"`, "m");
+  const legacyMatch = legacy.exec(html);
+  if (legacyMatch?.[1]) return legacyMatch[1];
+
+  const anchor = new RegExp(`"videoId":"${escaped}"`, "g");
+  let occurrence: RegExpExecArray | null;
+  while ((occurrence = anchor.exec(html))) {
+    const window = html.slice(occurrence.index, occurrence.index + 3000);
+    for (const [, content] of window.matchAll(/"content":"([^"]+)"/g)) {
+      if (content && PUBLISHED_LABEL.test(content)) return content;
+    }
+  }
+  return null;
 }
 
 function extractLiveYoutubeVideoId(value: string): string | null {
@@ -92,9 +103,9 @@ function extractLiveYoutubeVideoId(value: string): string | null {
   const videoDetailsLive = /"videoDetails":\{"videoId":"([a-zA-Z0-9_-]{11})"(?:(?!\}).){0,400}?"isLive":true/.exec(value);
   if (videoDetailsLive?.[1]) return videoDetailsLive[1];
   const liveMarker = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/;
-  const videoBeforeLive = /"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,2_000}?(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/.exec(value)?.[1];
+  const videoBeforeLive = /"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,2000}?(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/.exec(value)?.[1];
   if (videoBeforeLive) return videoBeforeLive;
-  const liveBeforeVideo = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")[\s\S]{0,2_000}?"videoId":"([a-zA-Z0-9_-]{11})"/.exec(value)?.[1];
+  const liveBeforeVideo = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")[\s\S]{0,2000}?"videoId":"([a-zA-Z0-9_-]{11})"/.exec(value)?.[1];
   if (liveBeforeVideo) return liveBeforeVideo;
   return liveMarker.test(value) ? extractYoutubeVideoId(value) : null;
 }
