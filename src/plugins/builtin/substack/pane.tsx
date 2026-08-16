@@ -3,6 +3,8 @@ import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
 import {
   EmptyState,
   Spinner,
+  usePaneFooter,
+  useUpdatedAgo,
   type DataTableKeyEvent,
 } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
@@ -47,7 +49,6 @@ import {
   type SubstackSortColumnId,
   type SubstackSortDirection,
 } from "./types";
-import { useSubstackPaneFooter } from "./pane-footer";
 import {
   activeFeedStateFromSources,
   detailLoadStateFromCache,
@@ -455,17 +456,41 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const includePublication = !activePublication;
   const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
   const activeDetail = selectedArticle ? details[selectedArticle.id] ?? emptyLoadState<SubstackArticleDetail>() : emptyLoadState<SubstackArticleDetail>();
-  useSubstackPaneFooter({
+  const updatedAgo = useUpdatedAgo(activeFeedState.fetchedAt ?? null);
+  usePaneFooter("substack", () => ({
+    info: [
+      ...(!auth ? [{ id: "auth", parts: [{ text: "login required", tone: "warning" as const }] }] : []),
+      ...(updatedAgo && auth ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ...(activeFeedState.loading || activeFeedState.loadingMore
+        ? [{ id: "loading", parts: [{ text: activeFeedState.loadingMore ? "loading more" : "loading", tone: "muted" as const }] }]
+        : []),
+      ...(activeDetail.loading && detailOpen ? [{ id: "detail-loading", parts: [{ text: "loading article", tone: "muted" as const }] }] : []),
+      ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
+      ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
+    ],
+    hints: auth ? [
+      { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
+      { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
+      { id: "share", key: "y", label: " share", onPress: shareSelectedArticle, disabled: !selectedArticle },
+      { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
+    ] : [],
+  }), [
+    activeDetail.error,
+    activeDetail.loading,
+    activeFeedState.error,
+    activeFeedState.fetchedAt,
+    activeFeedState.loading,
+    activeFeedState.loadingMore,
     auth,
     detailOpen,
-    activeFeedState,
-    activeDetail,
-    selectedArticle,
-    refreshActive,
     openSelectedArticle,
     popOutSelectedArticle,
+    refreshActive,
+    selectedArticle?.url,
+    selectedArticle,
     shareSelectedArticle,
-  });
+    updatedAgo,
+  ]);
 
   if (!auth) {
     return (

@@ -6,9 +6,9 @@ import { usePaneSettingValue } from "../../../../../state/app/context";
 import type { NewsArticle } from "../../../../../news/types";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useNewsArticleFooter } from "./footer";
-import { NewsDetailView } from "./detail-view";
 import { getStashedNewsArticle } from "./article-stash";
 import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
+import { JinaArticleReader, useJinaArticle } from "../../../shared/jina-reader";
 
 export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const [articleId] = usePaneSettingValue("articleId", "");
@@ -63,13 +63,15 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const shareArticle = article
     ? () => copyShareLink(encodeNewsArticleForShare(article))
     : undefined;
+  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
 
   useNewsArticleFooter({
     registrationId: "news-article-reader",
     focused,
     article: footerArticle,
-    loading,
-    error,
+    loading: loading || jina.loading,
+    error: error ?? jina.error,
+    onRefresh: jina.refresh,
     onShare: shareArticle,
   });
 
@@ -95,7 +97,14 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <NewsDetailView item={article} focused={focused} width={width} showTitle={false} />
+      <JinaArticleReader
+        title={article.title}
+        url={article.url}
+        width={width}
+        height={height}
+        focused={focused}
+        state={jina}
+      />
     </Box>
   );
 }
