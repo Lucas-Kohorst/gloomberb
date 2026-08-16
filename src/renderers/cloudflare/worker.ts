@@ -31,7 +31,10 @@ const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_SHARE_BODY_BYTES = 512_000;
 
 async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
-  if (!isSameOrigin(request, url)) {
+  // Reads are public by design. Writes must carry a matching Origin: an absent
+  // one cannot be trusted, or any non-browser client bypasses the check by
+  // omitting the header.
+  if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 

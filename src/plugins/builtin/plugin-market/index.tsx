@@ -41,4 +41,4 @@ export const pluginMarketPlugin: GloomPlugin = {
   },
 };
 
-export default pluginMarketPlugin;
+

@@ -68,8 +68,10 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
       titleBarOverlay: true,
       precisePointer: true,
       fractionalViewport: true,
-      cellWidthPx: WEB_CELL_WIDTH,
-      cellHeightPx: WEB_CELL_HEIGHT,
+      // Getters, not values: the cell tracks the configured font size, and this
+      // object outlives any rescale.
+      get cellWidthPx() { return WEB_CELL_WIDTH; },
+      get cellHeightPx() { return WEB_CELL_HEIGHT; },
       pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
       canvasCharts: true,
       nativeContextMenu: NATIVE_CONTEXT_MENU_SUPPORTED,
