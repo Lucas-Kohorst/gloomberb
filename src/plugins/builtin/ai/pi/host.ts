@@ -2,6 +2,7 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import { sendRemoteControlRequest } from "../../../../remote/client";
+import { safeExternalUrl } from "../../../../utils/external-url";
 import type {
   RemoteAppKind,
   RemoteControlRequest,
@@ -141,18 +142,18 @@ export function toAiRuntimeCatalog(catalog: PiCatalog): AiRuntimeCatalog {
 }
 
 async function defaultOpenExternal(url: string): Promise<void> {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) {
     throw new Error("AI sign-in returned an unsupported URL.");
   }
   if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
     throw new Error("Opening AI sign-in requires the native app host.");
   }
   const command = process.platform === "darwin"
-    ? ["open", parsed.toString()]
+    ? ["open", safeUrl]
     : process.platform === "win32"
-      ? ["cmd", "/c", "start", "", parsed.toString()]
-      : ["xdg-open", parsed.toString()];
+      ? ["cmd", "/c", "start", "", safeUrl]
+      : ["xdg-open", safeUrl];
   const processRef = Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
   const exitCode = await processRef.exited;
   if (exitCode !== 0) throw new Error("Could not open the AI sign-in page.");
