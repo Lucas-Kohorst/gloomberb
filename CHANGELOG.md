@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026.08.16 — Hosted SEC and TV fixes, shareable articles, and Adjacent out of Gloom Cloud
+
+Open this in the app with the Changelog pane (command bar: Changelog).
+
+### Highlights
+
+- `sec` opens the broad filings browser on the hosted web client instead of asking you to pick a ticker first.
+- TV plays again — the deprecated YouTube embed that returned "Error 153" is gone.
+- Share any news, RSS, or Substack article as a public link with `y`.
+- Adjacent is no longer filed under Gloom Cloud, in the command bar or in Connections — and it needs no API key.
+
+### SEC
+
+- The `SEC` shortcut was declared as requiring an argument, so a bare `sec` fell through to the ticker-research tab and asked you to select a ticker. It now opens the standalone browser directly; `SEC AAPL` still prefills the search.
+- SEC EDGAR requests route through the hosted backend, so the browser is no longer blocked by CORS.
+
+### TV
+
+- Removed the deprecated `/embed/live_stream?channel=` fallback that produced "Error 153: Video player configuration error".
+- Live streams embed a resolved video id and omit the `origin` parameter. A channel with no live stream shows a clear message instead of a broken player.
+
+### Sharing articles
+
+- `y` copies a public link to the selected article — from the list, the detail view, or a popped-out reader.
+- Works for news, RSS, and Substack.
+- The link opens for anyone, signed in or not. The article travels inside the URL, so nothing is stored server side.
+
+### Adjacent
+
+- Adjacent commands and panes now sit under **Data** in the command bar. They were showing under Gloom Cloud because plugin commands were grouped by their owning plugin instead of their declared category.
+- Adjacent is its own entry in Connections rather than part of Gloom Cloud.
+- **No API key is needed.** Adjacent uses public endpoints when no key is set, and Connections now says "Public — no key needed" instead of showing an auth warning.
+
+### Prediction markets
+
+- Requests to an unrecognized URL were attributed to Polymarket, which made its connection status misleading. Unmatched requests are no longer reported against any source.
+
+### API Keys (BYOK)
+
+- Testing a custom API works on the hosted client. The request runs server side, so third-party CORS rules no longer block it.
+- Failures say what actually went wrong — timeout, DNS, refused connection, TLS, 401, or an unexpected content type — instead of a generic connection error.
+- Testing a custom API now requires being signed in.
+
+### Polls
+
+- Poll detail gains Overview, Trend, and Pollsters tabs.
+- Trend charts every historical poll for a subject with a 5-poll moving average.
+- Pollsters lists every firm covering a subject with sample-weighted averages and poll counts.
+- `[s]earch` filters by subject, pollster, or race type.
+- Margin of error is estimated from sample size, because VoteHub does not publish it.
+
+### Tables and layout
+
+- The Adjacent Indices `7D` column is no longer clipped. Column widths account for gutters and padding, and lower-priority metrics drop out at narrow widths instead of overflowing.
+- Same overflow fix applied to Adjacent Rates and 13F holdings.
+
 ## 2026.08.15 — Command-bar articles, SEC filings, and the connections inventory
 
 Open this in the app with the Changelog pane (command bar: Changelog).
