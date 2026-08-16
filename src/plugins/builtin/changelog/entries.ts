@@ -1,64 +1,85 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
-const RELEASE_2026_08_16_3: ChangelogRelease = {
-  id: "hosted-2026-08-16-live",
-  tagName: "2026.08.16.3",
-  version: "2026.08.16.3",
-  title: "SEC opens on web for real, live TV is live again, plus TBPN and MTS",
-  publishedAt: "2026-08-16T23:30:00.000Z",
+const RELEASE_0_11_0: ChangelogRelease = {
+  id: "hosted-v0-11-0",
+  tagName: "v0.11.0",
+  version: "0.11.0",
+  title: "Chat and plugin resilience, TV replays, real font scaling, chart and changelog sharing",
+  publishedAt: "2026-08-17T00:00:00.000Z",
   url: "",
-  body: `Two fixes that shipped in name but not in the live bundle, plus two new TV channels.
+  body: `A consolidated release: hosted SEC and TV fixes that finally hold, sharing for charts and changelog entries, two new panes, a font size that scales the whole terminal, and a plugin loader that no longer lets one bad module take the app down with it.
+
+## One broken module no longer takes down the app
+
+Chat, Adjacent, and the rest of the Gloom Cloud integration ship as modules of a single composite plugin. If any one module threw while starting up, the registry rolled back the *entire* plugin — so one unrelated failure silently removed chat and everything next to it. Each module now starts in isolation: a failure is logged and the remaining modules still register. Plugin readiness no longer aborts on the first rejection, and a stale \`gloomberb-cloud\` entry left behind in \`disabledPlugins\` is stripped on load.
+
+## TV: live streams, and replays with their air time
+
+YouTube stopped emitting the LIVE badge markup the resolver relied on, so every channel reported offline. Live resolution now reads the stream out of the channel live page's player payload. The deprecated \`/embed/live_stream\` fallback that produced Error 153 is gone; an embed is only ever built from a concrete video id, and web embeds send the page's real HTTPS origin so YouTube identifies the client.
+
+A channel with no live stream plays its newest upload, labelled \`latest replay\` with the air time. YouTube moved that markup too — the publish time left \`publishedTimeText\` for a newer metadata block — so the parser now reads both shapes. Muting goes through the player API instead of rebuilding the embed URL, so toggling sound no longer restarts the stream. Two channels join the grid: Eventual and threadguy (\`1\`–\`7\`).
+
+Captions are gone. The toggle never reliably reached the player, and a footer hint that does nothing is worse than no hint at all.
+
+## Font size scales everything
+
+\`FONT+\` / \`FONT-\` persisted a number that nothing ever read. The web client measures every pane, table, dialog, and floating window in grid cells, so the cell itself now scales with the font size and the whole terminal grows and shrinks together. 10–20px, persisted across sessions.
+
+## Share a chart or a changelog entry
+
+Charts built with \`G\` share with \`y\`, the same as articles: the chart spec travels behind a short \`/s/…\` link and rebuilds the exact chart for whoever opens it. Reading a changelog entry now offers \`[y] share\` beside refresh, producing a public link that opens for anyone, account or not.
+
+## A derived chart plots the derived line
+
+\`G AAPL:price / NVDA:price\` built the ratio study but still plotted both raw operands, flattening the ratio against a mismatched scale. A binary expression now hides its operands and plots only the result.
+
+## Two new panes
+
+- **AI benchmarks** (\`AIBENCH\`) — live model rankings from llm-stats: intelligence scores, context windows, price per million tokens, and throughput, with sortable columns and search.
+- **Plugin marketplace** (\`PLUGINS\`) — browse, enable, and disable every installed plugin from one pane instead of hunting through settings.
+
+## Articles render in full
+
+The news, RSS, and Substack readers pull full article text through the Jina reader instead of showing a summary and a link out. It is registered as its own Connection like every other external source.
 
 ## SEC opens on the hosted client
 
-The standalone \`sec\` pane fix was merged but never made it into the deployed bundle — the live web client was still running the build that returned nothing for a bare \`sec\`. This release actually ships it, so \`sec\` opens the broad filings browser, \`SEC AAPL\` prefills the search, and EDGAR traffic still routes through the hosted backend so the browser never hits CORS.
+\`sec\` opens the standalone filings browser without a ticker — \`SEC AAPL\` still prefills the search. The pane id is no longer classified as ticker-scoped, so it survives layout normalization instead of being silently dropped. EDGAR traffic routes through the hosted backend (no browser CORS), and the EDGAR User-Agent carries a real contact address derived from the deployment host instead of a \`.local\` suffix, so SEC stops blocking the requests.
 
-## TV is live again
+## Shared articles open for anyone
 
-YouTube stopped emitting the LIVE badge markup the resolver relied on, so every channel — even ones actively streaming — reported offline. Live resolution now reads the stream embedded in the channel's live-page player payload instead of chasing badges. Bloomberg, CNBC, and Yahoo Finance resolve their current streams again; a channel with no live stream still shows an honest offline state with "Try again".
-
-## TBPN and MTS
-
-The TV pane gains two channels: TBPN (live weekdays 11am–2pm PT) and MTS — Monitor The Situation (live weekdays). Use the \`1\`–\`5\` number keys to switch channels.
-
-## How to try it
-
-- Command bar: \`SEC\` to open the filings browser, \`SEC AAPL\` to jump to a ticker.
-- Command bar: \`TV\`, then \`1\`–\`5\` for Bloomberg, CNBC, Yahoo Finance, TBPN, or MTS.
-- Command bar: Changelog to reopen these notes.
-`,
-};
-
-const RELEASE_2026_08_16_2: ChangelogRelease = {
-  id: "hosted-2026-08-16-fixes",
-  tagName: "2026.08.16.2",
-  version: "2026.08.16.2",
-  title: "SEC, TV, and shared articles actually fixed on web, plus on-device AI",
-  publishedAt: "2026-08-16T22:00:00.000Z",
-  url: "",
-  body: `The previous release claimed to fix SEC and TV on the hosted web client. Both were still broken, and shared article links demanded a login. This release fixes them for real.
-
-## SEC opens without a ticker
-
-\`sec\` opened the ticker-research tab and reported "Open a matching ticker or collection context first." Relaxing the shortcut's argument last release was necessary but not sufficient: the SEC pane id is classified as ticker-scoped, and the template supplied no binding, so pane construction returned nothing. The template now declares that it needs no ticker.
-
-## TV plays instead of showing Error 153
-
-Removing the \`origin\` parameter did not help, because the embed URL still fell back to YouTube's retired \`/embed/live_stream?channel=\` endpoint whenever no video id had been resolved — and on hosted web none ever was. That fallback is gone; an embed can only be built from a concrete video id. Resolution now sends browser-like headers with a consent cookie, detects YouTube's consent interstitial, tries the live page then the videos feed, and only accepts a video marked live. With no resolvable stream the pane shows an offline state with "Try again" and an open-on-YouTube action, and the footer no longer claims "playing live" over a dead player.
-
-## Shared article links open for anyone
-
-A shared link landed on the login screen, because an anonymous hosted session has onboarding incomplete and the app returns the onboarding wizard before it mounts. A link carrying a valid, decodable payload now bypasses onboarding and opens the reader. The bypass is strict: wrong path, missing, malformed, or undecodable payloads all fall through to the normal login gate. Signed-in readers keep their workspace exactly as it was.
+A shared article link used to land on the Gloom Cloud login screen, because anonymous sessions have onboarding incomplete. A link carrying a valid, decodable payload now bypasses onboarding and opens the reader for anyone. The bypass is strict: a wrong path or a missing, malformed, or undecodable payload falls through to the normal login gate. Signed-in readers keep their workspace exactly as it was.
 
 ## BYOK understands your API
 
-Testing a custom API used to issue a blind \`GET\` against whichever URL you typed and demand a 2xx, so a valid key against a base URL reported failure. You can now attach an OpenAPI spec, by URL or pasted, for OpenAPI 3.x and Swagger 2.0. Gloomberb reads the server URL, derives the auth scheme from the spec instead of making you guess bearer versus header versus query, and probes a real endpoint — preferring health and identity paths, then the shortest safely callable one. Only side-effect-free GET operations are called. The operation catalog is kept so the assist inventory knows what the API offers, and failures name the cause.
+Testing a custom API used to issue a blind GET and demand a 2xx. You can now attach an OpenAPI 3.x or Swagger 2.0 spec, by URL or pasted; Gloomberb reads the server URL, derives the auth scheme from the security definitions, and probes a real side-effect-free GET endpoint. The spec catalog feeds the assist inventory, and failures name the cause.
 
 ## On-device AI on the web client
 
-The hosted web client now defaults to Chrome's built-in on-device model (Gemini Nano) when available, so prompts stay on your machine. AI settings shows which model is active and its real state — ready, needs download, downloading, or unavailable with the reason. Downloads are user-initiated, because Chrome requires a genuine gesture. On-device is text output only; the screener and structured output keep using a remote provider, and an unavailable local model falls back rather than leaving a dead default. An explicit provider choice is never overridden.
+The hosted web client defaults to Chrome's built-in on-device model when the browser has it, so prompts stay on your machine. AI settings shows the real model state: ready, needs download, downloading, or unavailable. Downloads are user-initiated, on-device is text only with remote fallback, an explicit provider choice is never overridden, and the option is hidden outside the hosted web client.
 
-Chrome's requirements for the on-device model: desktop only, roughly 22 GB free on the Chrome profile volume, and either a GPU with more than 4 GB VRAM or 16 GB RAM with 4+ cores.
+## Command bar and panes
+
+- **No more duplicate panes.** Opening a pane that is already on screen — same pane id, binding, params, and settings — focuses the existing one instead of stacking a copy.
+- **Series suggestions.** Typing a \`G\` expression suggests matching series as you go.
+- **Poll coloring.** Approve and yes render green, disapprove and no render red, across labels, values, and bars.
+- **Footer freshness.** Network-backed panes show an approximate \`updated ~5m\` that ticks up each minute.
+
+## Adjacent
+
+Adjacent commands and panes sit under **Data** in the command bar rather than under Gloom Cloud. Adjacent is its own Connections entry and needs no API key — public endpoints are used when no key is set.
+
+## Polls, prediction markets, and tables
+
+Poll detail gains Overview, Trend, and Pollsters tabs, with a 5-poll moving average, pollster sample-weighted averages, \`[s]earch\`, and an estimated margin of error. Requests to an unrecognized URL are no longer attributed to Polymarket. The Adjacent Indices \`7D\` column is no longer clipped: column widths account for gutters and padding, and lower-priority metrics drop out at narrow widths, the same for Adjacent Rates and 13F holdings.
+
+## How to try it
+
+- \`TV\`, then \`1\`–\`7\` for channels.
+- \`G AAPL:price / NVDA:price\`, then \`y\` to share the chart.
+- \`AIBENCH\` for model benchmarks, \`PLUGINS\` for the marketplace.
+- \`FONT+\` / \`FONT-\` to scale the whole terminal.
+- Changelog, open an entry, then \`y\` to share it.
 `,
 };
 
@@ -248,8 +269,7 @@ const RELEASE_2026_08_15: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
-  RELEASE_2026_08_16_3,
-  RELEASE_2026_08_16_2,
+  RELEASE_0_11_0,
   RELEASE_2026_08_16,
   RELEASE_2026_08_15_2,
   RELEASE_2026_08_15,
