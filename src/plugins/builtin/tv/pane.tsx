@@ -14,21 +14,25 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
-import { buildYoutubeLiveEmbedUrl, isValidYoutubeVideoId } from "./youtube-embed";
+import { buildYoutubeLiveEmbedUrl, isYoutubeEmbedUrl } from "./youtube-embed";
 import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
 
-function webPlayableStream(
-  channel: ReturnType<typeof getTvChannel>,
-  stream: ResolvedLiveStream,
-): ResolvedLiveStream {
-  return {
-    ...stream,
-    manifestUrl: buildYoutubeLiveEmbedUrl(stream.videoId, {
-      muted: true,
-    }),
-  };
+function activeWebOrigin(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return /^https?:$/.test(window.location.protocol) ? window.location.origin : undefined;
+}
+
+function webMediaSource(stream: ResolvedLiveStream, muted: boolean, captions: boolean): string {
+  if (!isYoutubeEmbedUrl(stream.manifestUrl)) return stream.manifestUrl;
+  const origin = activeWebOrigin();
+  return buildYoutubeLiveEmbedUrl(stream.videoId, {
+    muted,
+    origin,
+    widgetReferrer: origin,
+    captions,
+  });
 }
 
 export function TvPane({ paneId, focused, width, height }: PaneProps) {
@@ -47,6 +51,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>("idle");
   const [muted, setMuted] = useState(true);
+  const [captions, setCaptions] = useState(false);
   const mediaRef = useRef<MediaSurfaceHandle | null>(null);
   const terminalAutoPlayedRef = useRef<string | null>(null);
   const generationRef = useRef(0);
@@ -86,10 +91,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         ? await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force })
         : await resolveTvStream(channel, { force });
       if (generation !== generationRef.current) return;
-      if (isDesktop && !isValidYoutubeVideoId(nextStream.videoId)) {
-        throw new Error(`${channel.name} does not currently have a public live stream.`);
-      }
-      setStream(isDesktop ? webPlayableStream(channel, nextStream) : nextStream);
+      setStream(nextStream);
     } catch (cause) {
       if (generation !== generationRef.current) return;
       setStream(null);
@@ -192,18 +194,24 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       toggleMute();
     }
+    if (event.name === "c" && stream) {
+      event.preventDefault?.();
+      setCaptions((current) => !current);
+    }
   });
 
+  const streamKind = stream?.isLive === false ? "latest replay" : "live";
+  const replayDetail = stream?.isLive === false && stream.publishedText ? ` · ${stream.publishedText}` : "";
   const status = loading
     ? `resolving ${channel.name}`
     : error || playbackError
       ? "stream error"
       : playbackState === "playing"
-        ? "playing live"
+        ? `playing ${streamKind}${replayDetail}`
         : playbackState === "loading"
-          ? "buffering live"
+          ? `buffering ${streamKind}${replayDetail}`
           : stream
-            ? "live"
+            ? `${streamKind}${replayDetail}`
             : "offline";
 
   usePaneFooter(paneId, () => ({
@@ -229,6 +237,13 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: toggleMute,
         disabled: loading || !stream,
       },
+      {
+        id: "captions",
+        key: "c",
+        label: captions ? "aptions off" : "aptions",
+        onPress: () => { setCaptions((current) => !current); },
+        disabled: loading || !stream,
+      },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
       {
         id: "open",
@@ -237,7 +252,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: () => { void renderer.openExternal(channel.channelUrl); },
       },
     ],
-  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
+  }), [captions, channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
 
   const channelTabs = useMemo(() => TV_CHANNELS.map((item, index) => ({
     label: `${index + 1} ${item.name}`,
@@ -267,11 +282,9 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
           <Text fg={colors.warning}>{error ?? `${channel.name} is offline.`}</Text>
           <Button label="Try again" variant="primary" onPress={refresh} />
         </Box>
-      ) : isDesktop && isValidYoutubeVideoId(stream.videoId) ? (
+      ) : isDesktop ? (
         <MediaSurface
-          src={buildYoutubeLiveEmbedUrl(stream.videoId, {
-            muted: true,
-          })}
+          src={webMediaSource(stream, muted, captions)}
           title={stream.title}
           poster={stream.posterUrl}
           autoPlay
@@ -303,6 +316,9 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
           >
             <Box flexGrow={1} justifyContent="center" alignItems="center">
               <Text fg={colors.text}>{stream.title}</Text>
+              {stream.isLive === false && stream.publishedText ? (
+                <Text fg={colors.textMuted}>{stream.publishedText}</Text>
+              ) : null}
             </Box>
           </ImageSurface>
           <Button

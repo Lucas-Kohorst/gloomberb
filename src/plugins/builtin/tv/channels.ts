@@ -17,6 +17,18 @@ export const TV_CHANNELS = [
     channelId: "UCEAZeUIeJs0IjQiqTCdVSIg",
     channelUrl: "https://www.youtube.com/@YahooFinance/live",
   },
+  {
+    id: "tbpn",
+    name: "TBPN",
+    channelId: "UC-DRzaGnL_vtBUpCFH5M0tg",
+    channelUrl: "https://www.youtube.com/@TBPNLive/live",
+  },
+  {
+    id: "mts",
+    name: "MTS",
+    channelId: "UClWkDGXEzsh77GAhs90wpXw",
+    channelUrl: "https://www.youtube.com/@mtsituation/live",
+  },
 ] as const;
 
 export type TvChannel = (typeof TV_CHANNELS)[number];

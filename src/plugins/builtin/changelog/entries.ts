@@ -1,5 +1,34 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_2026_08_16_3: ChangelogRelease = {
+  id: "hosted-2026-08-16-live",
+  tagName: "2026.08.16.3",
+  version: "2026.08.16.3",
+  title: "SEC opens on web for real, live TV is live again, plus TBPN and MTS",
+  publishedAt: "2026-08-16T23:30:00.000Z",
+  url: "",
+  body: `Two fixes that shipped in name but not in the live bundle, plus two new TV channels.
+
+## SEC opens on the hosted client
+
+The standalone \`sec\` pane fix was merged but never made it into the deployed bundle — the live web client was still running the build that returned nothing for a bare \`sec\`. This release actually ships it, so \`sec\` opens the broad filings browser, \`SEC AAPL\` prefills the search, and EDGAR traffic still routes through the hosted backend so the browser never hits CORS.
+
+## TV is live again
+
+YouTube stopped emitting the LIVE badge markup the resolver relied on, so every channel — even ones actively streaming — reported offline. Live resolution now reads the stream embedded in the channel's live-page player payload instead of chasing badges. Bloomberg, CNBC, and Yahoo Finance resolve their current streams again; a channel with no live stream still shows an honest offline state with "Try again".
+
+## TBPN and MTS
+
+The TV pane gains two channels: TBPN (live weekdays 11am–2pm PT) and MTS — Monitor The Situation (live weekdays). Use the \`1\`–\`5\` number keys to switch channels.
+
+## How to try it
+
+- Command bar: \`SEC\` to open the filings browser, \`SEC AAPL\` to jump to a ticker.
+- Command bar: \`TV\`, then \`1\`–\`5\` for Bloomberg, CNBC, Yahoo Finance, TBPN, or MTS.
+- Command bar: Changelog to reopen these notes.
+`,
+};
+
 const RELEASE_2026_08_16_2: ChangelogRelease = {
   id: "hosted-2026-08-16-fixes",
   tagName: "2026.08.16.2",
@@ -219,6 +248,7 @@ const RELEASE_2026_08_15: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_2026_08_16_3,
   RELEASE_2026_08_16_2,
   RELEASE_2026_08_16,
   RELEASE_2026_08_15_2,

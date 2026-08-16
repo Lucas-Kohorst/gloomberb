@@ -9,6 +9,8 @@ export interface ResolvedLiveStream {
   sourceId: string;
   videoId: string;
   title: string;
+  isLive?: boolean;
+  publishedText?: string;
   manifestUrl: string;
   watchUrl: string;
   posterUrl?: string;

@@ -55,10 +55,22 @@ function getRuntimeHostName(): string {
 
 const runtimeHostName = getRuntimeHostName();
 
+// SEC EDGAR rejects requests whose User-Agent lacks a reachable contact email.
+// Use the real deployment host as the contact domain when one is available
+// (e.g. terminal.kohor.st) so the address is plausible; only fall back to the
+// .local mDNS-style suffix for truly local development hosts.
+function contactEmailDomain(host: string): string {
+  const sanitized = sanitizeIdentityPart(host, "localhost");
+  // A bare "localhost" or a single-label host has no public domain; use the
+  // local fallback so we never hand SEC a malformed contact address.
+  if (!sanitized.includes(".")) return `${sanitized}.local`;
+  return sanitized;
+}
+
 const DEFAULT_SEC_FROM =
   getEnv("SEC_FROM_EMAIL")?.trim()
   || extractEmail(getEnv("SEC_USER_AGENT"))
-  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${sanitizeIdentityPart(`${runtimeHostName}.local`, "localhost.localdomain")}`;
+  || `${sanitizeIdentityPart(getEnv("USER") ?? "gloomberb", "gloomberb")}@${contactEmailDomain(runtimeHostName)}`;
 
 const DEFAULT_SEC_USER_AGENT =
   getEnv("SEC_USER_AGENT")?.trim()

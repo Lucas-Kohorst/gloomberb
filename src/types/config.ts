@@ -161,7 +161,6 @@ const TICKER_PANE_IDS = new Set([
   "notes",
   "options",
   "holders",
-  "sec",
   "insider",
   "analyst-research",
   "corporate-actions",

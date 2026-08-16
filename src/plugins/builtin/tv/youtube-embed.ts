@@ -14,11 +14,12 @@ export function isValidYoutubeVideoId(videoId: string | undefined | null): video
 
 export function buildYoutubeLiveEmbedUrl(
   videoId: string,
-  options?: { muted?: boolean },
+  options?: { muted?: boolean; origin?: string; widgetReferrer?: string; captions?: boolean },
 ): string {
   if (!isValidYoutubeVideoId(videoId)) {
     throw new Error("A concrete YouTube video ID is required for an embed URL.");
   }
+  const origin = options?.origin ?? "https://terminal.kohor.st";
   const params = new URLSearchParams({
     autoplay: "1",
     mute: options?.muted === false ? "0" : "1",
@@ -26,7 +27,13 @@ export function buildYoutubeLiveEmbedUrl(
     rel: "0",
     modestbranding: "1",
     enablejsapi: "1",
+    origin,
+    widget_referrer: options?.widgetReferrer ?? origin,
   });
+  if (options?.captions) {
+    params.set("cc_load_policy", "1");
+    params.set("cc_lang_pref", "en");
+  }
   return `https://www.youtube.com/embed/${videoId}?${params}`;
 }
 
@@ -36,14 +43,16 @@ export function isYoutubeEmbedUrl(url: string): boolean {
 
 export function fallbackTvStream(
   channel: TvChannel,
-  options: { muted?: boolean; videoId: string; title?: string },
+  options: { muted?: boolean; videoId: string; title?: string; isLive?: boolean; publishedText?: string },
 ): ResolvedLiveStream {
   const now = Date.now();
   return {
     provider: "youtube",
     sourceId: channel.id,
     videoId: options.videoId,
-    title: options?.title?.trim() || `${channel.name} Live`,
+    title: options?.title?.trim() || `${channel.name} ${options.isLive === false ? "latest video" : "Live"}`,
+    isLive: options.isLive ?? true,
+    publishedText: options.publishedText,
     manifestUrl: buildYoutubeLiveEmbedUrl(options.videoId, {
       muted: options.muted,
     }),
@@ -61,7 +70,27 @@ export function extractYoutubeVideoId(value: string): string | null {
   return null;
 }
 
+/**
+ * Finds the human-readable publish label (e.g. "3 days ago", "Premiered Aug 12, 2026")
+ * YouTube attaches to a specific video in the channel /videos grid.
+ */
+export function extractPublishedTextForVideo(html: string, videoId: string): string | null {
+  const escaped = videoId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // The grid item wraps the video id near its publishedTimeText; grab the
+  // nearest simpleText within a reasonable window after the id occurrence.
+  const windowRegex = new RegExp(`"videoId":"${escaped}"[\\s\\S]{0,3000}?"publishedTimeText":\\{"simpleText":"([^"]+)"`, "m");
+  const match = windowRegex.exec(html);
+  return match?.[1] ?? null;
+}
+
 function extractLiveYoutubeVideoId(value: string): string | null {
+  // The channel /live page embeds the player payload for the currently-airing
+  // stream; this is the authoritative marker (more stable than the transient
+  // LIVE badge markup, which YouTube has stopped emitting on these pages).
+  const streamabilityLive = /"liveStreamabilityRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"/.exec(value);
+  if (streamabilityLive?.[1]) return streamabilityLive[1];
+  const videoDetailsLive = /"videoDetails":\{"videoId":"([a-zA-Z0-9_-]{11})"(?:(?!\}).){0,400}?"isLive":true/.exec(value);
+  if (videoDetailsLive?.[1]) return videoDetailsLive[1];
   const liveMarker = /(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/;
   const videoBeforeLive = /"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]{0,2_000}?(?:BADGE_STYLE_TYPE_LIVE_NOW|"label":"LIVE")/.exec(value)?.[1];
   if (videoBeforeLive) return videoBeforeLive;
@@ -100,22 +129,31 @@ export async function resolveYoutubeLivePage(
     throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
   }
 
-  let page = livePage;
-  let videoId = extractYoutubeVideoId(page.response.url) ?? extractLiveYoutubeVideoId(page.html);
-  if (!videoId) {
-    page = await fetchYoutubePage(`https://www.youtube.com/channel/${channel.channelId}/videos`, fetchImpl);
-    if (isYoutubeConsentPage(page.response, page.html)) {
+  const liveVideoId = extractYoutubeVideoId(livePage.response.url) ?? extractLiveYoutubeVideoId(livePage.html);
+  if (liveVideoId && YOUTUBE_VIDEO_ID.test(liveVideoId)) {
+    const rawTitle = /<title>([^<]+)<\/title>/i.exec(livePage.html)?.[1]?.replace(/\s+-+\s+YouTube\s*$/i, "").trim();
+    return fallbackTvStream(channel, {
+      videoId: liveVideoId,
+      title: rawTitle && rawTitle !== "YouTube" ? rawTitle : undefined,
+      isLive: true,
+    });
+  }
+
+  const videosPage = await fetchYoutubePage(`https://www.youtube.com/channel/${channel.channelId}/videos`, fetchImpl);
+  if (isYoutubeConsentPage(videosPage.response, videosPage.html)) {
       throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
-    }
-    videoId = extractLiveYoutubeVideoId(page.html);
   }
+  const videoId = extractYoutubeVideoId(videosPage.response.url) ?? extractYoutubeVideoId(videosPage.html);
   if (!videoId || !YOUTUBE_VIDEO_ID.test(videoId)) {
-    throw new Error(`${channel.name} does not currently have a public live stream.`);
+    throw new Error(`${channel.name} does not currently have a public video.`);
   }
-  const rawTitle = /<title>([^<]+)<\/title>/i.exec(page.html)?.[1]?.replace(/\s+-+\s+YouTube\s*$/i, "").trim();
+  const publishedText = extractPublishedTextForVideo(videosPage.html, videoId);
+  const rawTitle = /<title>([^<]+)<\/title>/i.exec(videosPage.html)?.[1]?.replace(/\s+-+\s+YouTube\s*$/i, "").trim();
   return fallbackTvStream(channel, {
     videoId,
     title: rawTitle && rawTitle !== "YouTube" ? rawTitle : undefined,
+    isLive: false,
+    publishedText: publishedText ?? undefined,
   });
 }
 

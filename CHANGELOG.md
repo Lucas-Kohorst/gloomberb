@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026.08.16.3 — SEC opens on web for real, live TV is live again, plus TBPN and MTS
+
+Two fixes that shipped in name but not in the live bundle, plus two new TV channels.
+
+### SEC opens on the hosted client
+
+The standalone `sec` pane fix was merged but never made it into the deployed bundle — the live web client was still running the build that returned nothing for a bare `sec`. This release actually ships it, so `sec` opens the broad filings browser, `SEC AAPL` prefills the search, and EDGAR traffic still routes through the hosted backend so the browser never hits CORS.
+
+### TV is live again
+
+YouTube stopped emitting the LIVE badge markup the resolver relied on, so every channel — even ones actively streaming — reported offline. Live resolution now reads the stream embedded in the channel's live-page player payload instead of chasing badges. Bloomberg, CNBC, and Yahoo Finance resolve their current streams again; a channel with no live stream still shows an honest offline state with "Try again".
+
+### TBPN and MTS
+
+The TV pane gains two channels: TBPN (live weekdays 11am–2pm PT) and MTS — Monitor The Situation (live weekdays). Use the `1`–`5` number keys to switch channels.
+
 ## 2026.08.16.2 — SEC, TV, and shared articles actually fixed on web, plus on-device AI
 
 The previous release claimed to fix SEC and TV on the hosted web client. Both were still broken, and shared article links demanded a login. This release fixes them for real, and each one was verified in a browser rather than by HTTP status code.
