@@ -41,15 +41,16 @@ export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
 }
 
-function connectionIdForPredictionUrl(url: string): string {
+function connectionIdForPredictionUrl(url: string): string | null {
   if (url.includes("kalshi.com")) return "kalshi";
   if (url.includes("polymarket.com")) return "polymarket";
   if (url.includes("adjacent.markets")) return "adjacent";
-  return "polymarket";
+  return null;
 }
 
 export async function fetchJson<T>(url: string): Promise<T> {
-  return withConnectionRequest(connectionIdForPredictionUrl(url), "fetch", async () => {
+  const connectionId = connectionIdForPredictionUrl(url);
+  const run = async (): Promise<T> => {
     const response = await PREDICTION_FETCH.fetch(url);
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${url}`);
@@ -63,7 +64,11 @@ export async function fetchJson<T>(url: string): Promise<T> {
         url: summarizePredictionFetchUrl(url),
       },
     );
-  });
+  };
+  if (connectionId) {
+    return withConnectionRequest(connectionId, "fetch", run);
+  }
+  return run();
 }
 
 export function getCachedPredictionResource<T>(

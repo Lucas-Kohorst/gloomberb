@@ -25,6 +25,8 @@ export interface ConnectionState {
   wsState: "open" | "closed" | "connecting" | "idle";
   lastMessageAt: number | null;
   pluginId: string;
+  /** When false, the source has public/keyless endpoints and needs no API key. */
+  authRequired?: boolean;
   recentRequests: RequestRecord[];
 }
 
@@ -42,6 +44,7 @@ export function createInitialConnectionState(
   pluginId: string,
   priority = 1000,
   isWebSocket = false,
+  authRequired?: boolean,
 ): ConnectionState {
   return {
     id,
@@ -58,6 +61,7 @@ export function createInitialConnectionState(
     wsState: isWebSocket ? "idle" : "closed",
     lastMessageAt: null,
     pluginId,
+    authRequired,
     recentRequests: [],
   };
 }

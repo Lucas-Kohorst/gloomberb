@@ -75,6 +75,12 @@ export function ConnectionDetailContent({ row, width }: { row: ConnectionState |
 
       <DetailRow label={t("Type")} value={kindLabel(row.kind)} valueColor={colors.textDim} />
       <DetailRow label={t("Plugin")} value={row.pluginId} valueColor={colors.textDim} />
+      {row.authRequired === false && (
+        <DetailRow label={t("Auth")} value={t("Public — no key needed")} valueColor={colors.positive} />
+      )}
+      {row.authRequired === true && (
+        <DetailRow label={t("Auth")} value={t("Key required")} valueColor={colors.textDim} />
+      )}
       <DetailRow label={t("Priority")} value={String(row.priority)} valueColor={colors.textDim} />
       {row.isWebSocket && (
         <DetailRow label={t("WS State")} value={row.wsState} valueColor={statusColor(row.status)} />

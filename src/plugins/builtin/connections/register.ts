@@ -7,6 +7,8 @@ export interface ConnectionSourceDef {
   pluginId: string;
   priority?: number;
   isWebSocket?: boolean;
+  /** When false, the source has public/keyless endpoints and needs no API key. */
+  authRequired?: boolean;
 }
 
 export interface ConnectionRequestReport {

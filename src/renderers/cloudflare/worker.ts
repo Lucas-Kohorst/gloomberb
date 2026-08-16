@@ -13,6 +13,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true });
     if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
+    if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
@@ -129,4 +130,85 @@ function handleByokKeysRequest(request: Request, env: Env): Response {
   }
 
   return Response.json({ configured });
+}
+
+const BYOK_PROXY_TIMEOUT_MS = 10_000;
+
+/**
+ * Server-side proxy for BYOK custom API test requests. On the hosted web
+ * client, a direct browser fetch to an arbitrary third-party URL is blocked
+ * by CORS. This endpoint runs the fetch on the worker so it succeeds
+ * regardless of the target's CORS headers, and returns a classified error
+ * so the UI can show a precise, actionable message.
+ */
+async function handleByokProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== "POST") {
+    return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+  if (!isSameOrigin(request, url)) {
+    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+
+  let body: { url?: string; headers?: Record<string, string>; method?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const targetUrl = body.url;
+  if (typeof targetUrl !== "string" || targetUrl.trim().length === 0) {
+    return Response.json({ ok: false, error: "No API URL provided.", errorType: "bad-request" });
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return Response.json({ ok: false, error: `Invalid URL: ${targetUrl}`, errorType: "bad-url" });
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return Response.json({ ok: false, error: `Unsupported protocol: ${parsed.protocol}`, errorType: "bad-url" });
+  }
+
+  const method = (body.method ?? "GET").toUpperCase();
+  const headers = new Headers(body.headers ?? {});
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json, text/csv, text/plain, */*");
+  }
+
+  try {
+    const response = await fetch(parsed.toString(), {
+      method,
+      headers,
+      redirect: "follow",
+      signal: AbortSignal.timeout(BYOK_PROXY_TIMEOUT_MS),
+    });
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      responseHeaders[key] = value;
+    });
+    const responseBody = await response.text();
+    return Response.json({
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers: responseHeaders,
+      contentType: response.headers.get("content-type") ?? "",
+      body: responseBody,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    let errorType = "network";
+    if (message.includes("abort") || message.includes("timed out") || message.includes("timeout")) {
+      errorType = "timeout";
+    } else if (message.includes("ENOTFOUND") || message.includes("getaddrinfo") || message.includes("dns")) {
+      errorType = "dns";
+    } else if (message.includes("ECONNREFUSED") || message.includes("connection refused")) {
+      errorType = "connection-refused";
+    } else if (message.includes("SSL") || message.includes("certificate") || message.includes("TLS")) {
+      errorType = "ssl";
+    }
+    return Response.json({ ok: false, error: message, errorType });
+  }
 }

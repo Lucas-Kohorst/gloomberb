@@ -28,7 +28,7 @@ import {
   getByokKnownService,
   getByokKnownServices,
 } from "./services";
-import { fetchByokEndpoint, isByokTestSuccess } from "./request";
+import { fetchByokEndpoint, isByokTestSuccess, ByokRequestError } from "./request";
 import { isOpenableCustomKey, maskApiKey } from "./store";
 import { buildByokColumns, type ByokColumn, type ByokColumnId } from "./columns";
 import { BYOK_VIEWER_TEMPLATE_ID } from "./viewer";
@@ -139,6 +139,17 @@ function renderByokCell(entry: ByokApiKeyEntry, column: ByokColumn): DataTableCe
     case "validated":
       return { text: relativeTime(entry.lastValidated), color: colors.textDim };
   }
+}
+
+function describeByokHttpFailure(status: number, contentType: string): string {
+  if (status === 401) return "Connection failed (401 Unauthorized). The API key may be invalid or expired.";
+  if (status === 403) return "Connection failed (403 Forbidden). The key may lack permission for this endpoint.";
+  if (status === 404) return "Connection failed (404 Not Found). Check that the API URL is correct.";
+  if (status === 0) return "Connection failed. No response received — check the URL and network.";
+  if (contentType && !contentType.includes("json") && !contentType.includes("text") && !contentType.includes("csv") && !contentType.includes("xml") && !contentType.includes("html")) {
+    return `Connection failed (${status}). Unexpected content-type: ${contentType}`;
+  }
+  return `Connection failed (${status}).`;
 }
 
 export function ByokSettingsPane({ focused, width, height }: PaneProps) {
@@ -271,7 +282,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
           ? selectedEntry.serviceId === BYOK_CUSTOM_SERVICE_ID
             ? `Connection OK (${result.status}). "${selectedEntry.name}" is in the command bar.`
             : `Connection OK (${result.status}).`
-          : `Connection failed (${result.status}).`,
+          : describeByokHttpFailure(result.status, result.contentType),
         type: ok ? "success" : "error",
       });
     } catch (error) {
@@ -281,7 +292,9 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
           : entry,
       ));
       notify({
-        body: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
+        body: error instanceof ByokRequestError
+          ? error.message
+          : `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
         type: "error",
       });
     } finally {
