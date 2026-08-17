@@ -4,6 +4,8 @@ import {
   getHostedConfigUserId,
   hydrateHostedUserConfig,
   peekHostedUserConfigStamp,
+  readLastHostedUserId,
+  rememberHostedUserId,
   setHostedConfigUserId,
   writeHostedUserConfig,
 } from "./hosted-user-persist";
@@ -74,5 +76,37 @@ describe("hosted user config persist", () => {
     hydrateHostedUserConfig(second);
     expect(second.pluginConfig.news).toBeUndefined();
     expect(peekHostedUserConfigStamp()).toBeNull();
+  });
+
+  // Guards the degraded boot path: when Gloom Cloud cannot confirm the session,
+  // the app still needs to know whose saved config to restore.
+  describe("remembered user id", () => {
+    test("round-trips the remembered id and forgets it on sign-out", () => {
+      rememberHostedUserId("user-1");
+      expect(readLastHostedUserId()).toBe("user-1");
+      rememberHostedUserId(null);
+      expect(readLastHostedUserId()).toBeNull();
+    });
+
+    test("recovers the owner from a stored config written before the id was tracked", () => {
+      setHostedConfigUserId("user-1");
+      writeHostedUserConfig(createDefaultConfig("cloud://users/user-1"));
+      expect(readLastHostedUserId()).toBe("user-1");
+    });
+
+    test("stays null when two accounts have stored configs", () => {
+      setHostedConfigUserId("user-1");
+      writeHostedUserConfig(createDefaultConfig("cloud://users/user-1"));
+      setHostedConfigUserId("user-2");
+      writeHostedUserConfig(createDefaultConfig("cloud://users/user-2"));
+      expect(readLastHostedUserId()).toBeNull();
+    });
+
+    test("prefers the remembered id over inference", () => {
+      setHostedConfigUserId("user-1");
+      writeHostedUserConfig(createDefaultConfig("cloud://users/user-1"));
+      rememberHostedUserId("user-2");
+      expect(readLastHostedUserId()).toBe("user-2");
+    });
   });
 });
