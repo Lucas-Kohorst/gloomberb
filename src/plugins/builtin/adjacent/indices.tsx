@@ -4,15 +4,11 @@ import {
   ScrollBox,
   Text,
   TextAttributes,
-  type InputRenderable,
   type ScrollBoxRenderable,
 } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   DataTableStackView,
   EmptyState,
-  InputSearchBar,
   Spinner,
   Tabs,
   nextStackSortPreference,
@@ -21,8 +17,6 @@ import {
   useUpdatedAgo,
   type DataTableColumn,
   type DataTableCell,
-  type DataTableKeyEvent,
-  type DataTableRootKeyContext,
   type StackSortPreference,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
@@ -41,7 +35,6 @@ import type {
 } from "./types";
 import {
   compareAdjacentIndexRows,
-  filterAdjacentIndexRows,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
   adjacentIndexPricesToPricePoints,
@@ -382,11 +375,7 @@ export function AdjacentIndicesPane({
     columnId: "value",
     direction: "desc",
   });
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -414,19 +403,10 @@ export function AdjacentIndicesPane({
     load();
   }, [load]);
 
-  const focusSearch = useCallback(() => {
-    setSearchFocused(true);
-    setSearchFocusToken((current) => current + 1);
-  }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
-
   const columns = useMemo(() => createIndexColumns(width), [width]);
   const visibleIndices = useMemo(() => {
-    const filtered = filterAdjacentIndexRows(indices, searchQuery);
-    return sortStackItems(filtered, sortPreference, compareAdjacentIndexRows);
-  }, [indices, searchQuery, sortPreference]);
+    return sortStackItems(indices, sortPreference, compareAdjacentIndexRows);
+  }, [indices, sortPreference]);
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -444,47 +424,16 @@ export function AdjacentIndicesPane({
     [],
   );
 
-  useShortcut((event) => {
-    if (!focused || detailOpen || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-    }
-  }, { enabled: focused && !detailOpen && !searchFocused });
-
-  const handleRootKeyDown = useCallback((
-    event: DataTableKeyEvent,
-    context: DataTableRootKeyContext,
-  ) => {
-    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
-      stopSearchFocusNavigation(event);
-      focusSearch();
-      return true;
-    }
-    if (event.name === "s" || event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    return false;
-  }, [focusSearch]);
-
   usePaneFooter("adjacent-indices", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
-      ...(searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
-    hints: detailOpen
-      ? [{ id: "refresh", key: "r", label: "efresh", onPress: load }]
-      : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: load },
-        ],
-  }), [detailOpen, error, focusSearch, load, searchQuery, status, updatedAgo]);
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: load },
+    ],
+  }), [error, load, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
@@ -522,28 +471,11 @@ export function AdjacentIndicesPane({
 
   return (
     <DataTableStackView<AdjacentIndexRow, IndexColumn>
-      focused={focused && !searchFocused}
+      focused={focused}
       detailOpen={detailOpen && !!selectedIndexRow}
       onBack={() => setDetailOpen(false)}
       detailContent={detailContent}
       detailTitle={detailTitle}
-      rootBefore={(
-        <InputSearchBar
-          value={searchQuery}
-          focused={focused && !detailOpen}
-          active={searchFocused}
-          width={width}
-          focusToken={searchFocusToken}
-          inputRef={searchInputRef}
-          placeholder="ticker or name"
-          debounceMs={80}
-          onFocus={focusSearch}
-          onBlur={blurSearch}
-          onNavigateDown={blurSearch}
-          onQueryChange={setSearchQuery}
-        />
-      )}
-      onRootKeyDown={handleRootKeyDown}
       selection={{
         kind: "id",
         selectedId,
@@ -551,7 +483,6 @@ export function AdjacentIndicesPane({
         onChange: (id) => setSelectedId(id),
       }}
       onActivate={() => {
-        blurSearch();
         setDetailOpen(true);
       }}
       rootWidth={width}
@@ -570,8 +501,8 @@ export function AdjacentIndicesPane({
       }}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
-      emptyStateTitle={searchQuery.trim() ? "No matching indices." : "No indices."}
-      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press [s] to search."}
+      emptyStateTitle="No indices."
+      emptyStateHint="Press r to refresh."
     />
   );
 }

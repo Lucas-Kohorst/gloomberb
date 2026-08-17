@@ -51,20 +51,6 @@ export function compareAdjacentIndexRows(
   return leftValue - rightValue;
 }
 
-export function filterAdjacentIndexRows(
-  rows: AdjacentIndexRow[],
-  query: string,
-): AdjacentIndexRow[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return rows;
-  return rows.filter((row) => (
-    row.ticker.toLowerCase().includes(needle)
-    || row.name.toLowerCase().includes(needle)
-    || row.id.toLowerCase().includes(needle)
-    || (row.category ?? "").toLowerCase().includes(needle)
-  ));
-}
-
 export function normalizeAdjacentIndex(index: AdjacentIndex): AdjacentIndexRow {
   const value = index.latest_price;
   const probabilityPct = value != null ? value - 50 : null;
