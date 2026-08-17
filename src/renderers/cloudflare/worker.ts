@@ -147,6 +147,34 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
   return Response.json({ error: "Realtime events are not available in the hosted client yet." }, { status: 501 });
 }
 
+/**
+ * Sent as `content-security-policy-report-only`, so the browser reports what
+ * this policy *would* block and blocks nothing.
+ *
+ * Enforcing it blind would be a silent outage: a blocked `connect-src` does
+ * not raise an error in the UI, panes just stop loading data. The hosted
+ * client talks to Yahoo, Adjacent, Polymarket, Kalshi, SEC, and RSS hosts,
+ * and which of those the browser reaches directly versus through this Worker
+ * has to be measured rather than guessed. `connect-src` is therefore
+ * deliberately narrow here: violation reports are the inventory.
+ *
+ * `script-src` allows inline because the app's bootstrap script carries the
+ * session token inline; moving to a nonce is the follow-up that lets
+ * 'unsafe-inline' drop. `frame-src` allows YouTube because TV embeds it.
+ */
+const APP_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://api.gloom.sh",
+  "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+
 async function serveApp(request: Request, env: Env): Promise<Response> {
   const response = await env.ASSETS.fetch(request);
   const headers = new Headers(response.headers);
@@ -154,6 +182,7 @@ async function serveApp(request: Request, env: Env): Promise<Response> {
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
+  headers.set("content-security-policy-report-only", APP_CSP);
   return new Response(response.body, { status: response.status, headers });
 }
 
