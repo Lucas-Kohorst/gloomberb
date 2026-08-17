@@ -7,7 +7,7 @@ import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "../news/table";
 import { useNewsArticleFooter } from "../news/footer";
 import { usePopOutNewsArticle } from "../news/pop-out";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { NEWS_QUERY_PRESETS } from "../news/query-presets";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useNewsReadState } from "../read-state";
@@ -29,7 +29,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
-    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
 
   useNewsArticleFooter({

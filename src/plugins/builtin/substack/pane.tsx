@@ -65,7 +65,7 @@ import {
 } from "./pane-state";
 import { stashSubstackArticle } from "./article-stash";
 import { useSubstackReadState } from "./read-state";
-import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
+import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
@@ -366,7 +366,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const copyShareLink = useCopyShareLink();
   const shareSelectedArticle = useCallback(() => {
     if (!selectedArticle) return;
-    void copyShareLink(encodeSubstackArticleForShare(selectedArticle));
+    void copyShareLink(substackArticleSharePayload(selectedArticle));
   }, [copyShareLink, selectedArticle]);
 
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {

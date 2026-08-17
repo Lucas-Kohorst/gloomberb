@@ -8,10 +8,10 @@ import { buildShortShareUrl, type ShareKind } from "./share-link";
  * Returns a function that stores a share payload via the short-ID backend and
  * copies the resulting compact URL to the clipboard.
  *
- * On the hosted web client this requires a verified session (the worker
- * rejects anonymous share creation). On the desktop client the share URL
- * points at the hosted origin, which is unreachable from the terminal — so
- * the hook notifies the user instead of silently failing.
+ * Chart and table shares require a verified session on the hosted web client.
+ * Article shares may be created anonymously. On the desktop client the share
+ * API is unreachable from the terminal origin — use the article inline
+ * fallback (`useCopyShareLink`) or expect an error notification.
  */
 export function useShareView(): (kind: ShareKind, data: unknown) => Promise<void> {
   const rendererHost = useRendererHost();

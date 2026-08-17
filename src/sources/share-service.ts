@@ -1,11 +1,12 @@
 /**
  * Share payloads are stored on the hosted worker (Cloudflare KV) behind short
- * IDs so that share URLs stay compact: terminal.kohor.st/s/abc123 instead of
- * a long base64url blob in the query string.
+ * IDs so that share URLs stay compact: terminal.kohor.st/s/Xk9mQ2nLp4Ab instead
+ * of a long base64url blob in the query string.
  *
- * Creating a share requires a verified session (prevents anonymous abuse of
- * the storage backend). Resolving a share is public — anyone with the link
- * must be able to open it without an account.
+ * Article shares may be created anonymously (public changelog/news/Substack
+ * links). Chart and table shares still require a verified session. Resolving a
+ * share is always public — anyone with the link must be able to open it without
+ * an account.
  */
 
 import type { ShareKind } from "../shares/payload";
