@@ -25,6 +25,7 @@ import {
 } from "./universal-series";
 import {
   formatPredictionSeriesExpression,
+  normalizePredictionMarketId,
   resolvePredictionSeriesQuery,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
@@ -615,10 +616,12 @@ function appendPredictionMarketHits(
 ): void {
   for (const hit of hits) {
     if (suggestions.length >= limit) return;
+    const marketId = normalizePredictionMarketId(hit.venue, hit.marketId);
+    if (!marketId) continue;
     const suggestion = predictionExpressionSuggestion({
       kind: "prediction-market",
       venue: hit.venue,
-      marketId: hit.marketId,
+      marketId,
       label: hit.title,
     });
     if (!suggestions.some((entry) => entry.id === suggestion.id)) {

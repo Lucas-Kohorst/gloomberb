@@ -294,6 +294,12 @@ describe("universal series catalog suggestions", () => {
     expect(formatParsedSeriesExpression(suggestions[0]!.expression)).toBe("KALSHI:KXPRESPERSON");
   });
 
+  test("suggests polls when the query matches 'poll' or a subject", () => {
+    const suggestions = buildSeriesCatalogSuggestions("poll approval", AAPL, [], 12);
+    const polls = suggestions.filter((entry) => entry.expression.kind === "poll");
+    expect(polls.length).toBeGreaterThan(0);
+  });
+
   test("exact prefix expressions are recognized as suggestions", () => {
     expect(buildSeriesCatalogSuggestions("FUT:ES", AAPL)[0]).toMatchObject({
       expression: { kind: "future", code: "ES" },

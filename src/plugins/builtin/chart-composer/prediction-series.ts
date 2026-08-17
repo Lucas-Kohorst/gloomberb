@@ -62,7 +62,6 @@ export function looksLikePredictionMarketQuery(query: string): boolean {
   if (tokens.some((token) => PREDICTION_INTENT_WORDS.has(token))) return true;
   if (/\bfed\s+cuts?\b/.test(lower) || /\brate\s+cuts?\b/.test(lower)) return true;
   if (/\b(red|blue)\s+(index|idx)\b/.test(lower)) return true;
-  if (/\bwill\b/.test(lower) && tokens.length >= 3) return true;
   return false;
 }
 

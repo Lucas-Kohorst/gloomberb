@@ -143,7 +143,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       placeholder: "AAPL:price, ADJ:red, KALSHI:KXPRESPERSON, FRED:CPIAUCSL",
       type: "text",
       body: [
-        "Enter comma-separated SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:market expressions — or a description like “adjacent red index” or “trump kalshi”.",
+        "Enter comma-separated SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:market expressions — or a description like 'adjacent red index' or 'trump kalshi'.",
       ],
     }],
     canCreate: () => true,

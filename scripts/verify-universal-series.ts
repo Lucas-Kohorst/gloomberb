@@ -109,6 +109,14 @@ const stubSources = {
     unitGroup: `poll:${subject}`,
     label: `${subject} ${choice}`,
   }),
+  loadPredictionMarketSeries: async (venue: string, marketId: string): Promise<UniversalSeriesLoadResult> => ({
+    points: [
+      { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" as const } },
+    ],
+    unit: "%",
+    unitGroup: `prediction-market:${venue}`,
+    label: `${venue} ${marketId}`,
+  }),
 };
 
 async function verifyResolution(expr: string) {
@@ -133,6 +141,7 @@ async function verifyResolution(expr: string) {
 await verifyResolution("ADJ:adjacent-djt");
 await verifyResolution("BENCH:OpenAI:tps");
 await verifyResolution("POLL:Donald Trump:Approve");
+await verifyResolution("KALSHI:KXPRESPERSON");
 await verifyResolution("FUT:ES");
 await verifyResolution("UST:10Y");
 
