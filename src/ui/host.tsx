@@ -3,6 +3,7 @@ import type { ContextMenuItem } from "../types/context-menu";
 import type { AppNotificationRequest } from "../types/plugin";
 import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
 import type { AsciiFontName } from "./ascii-font";
+import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
 
 export const TextAttributes = {
   NONE: 0,
@@ -231,6 +232,13 @@ export interface ChartSurfaceProps extends BoxProps {
   vectors?: readonly ChartVectorShape[] | null;
   nativeBitmapsEnabled?: boolean;
 }
+export interface TradingViewChartProps extends BoxProps {
+  panel: CompositePanelScene;
+  colors: CompositeChartColors;
+  viewport?: { start: Date; end: Date } | null;
+  interactive?: boolean;
+  onViewportChange?: (range: { start: Date; end: Date }) => void;
+}
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;
@@ -353,6 +361,7 @@ export interface UiHost {
   Input: ComponentType<InputProps>;
   Textarea: ComponentType<TextareaProps>;
   ChartSurface: ComponentType<ChartSurfaceProps>;
+  TradingViewChart?: ComponentType<TradingViewChartProps>;
   ImageSurface: ComponentType<ImageSurfaceProps>;
   MediaSurface: ComponentType<MediaSurfaceProps>;
   SpinnerMark: ComponentType<SpinnerMarkProps>;
