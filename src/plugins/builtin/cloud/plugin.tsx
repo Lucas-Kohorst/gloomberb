@@ -24,6 +24,7 @@ import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
+import { registerConnectionSource } from "../connections/register";
 import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
@@ -32,12 +33,22 @@ interface GloomberbCloudPluginComponents {
 }
 
 function createCloudDataModule(): PluginModule {
+  let disposeConfigConnection: (() => void) | null = null;
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
     setup(ctx) {
       ctx.registerSyncTransport(createGloomberbCloudSyncTransport());
+      disposeConfigConnection = registerConnectionSource({
+        id: "hosted-config",
+        name: "Hosted Config Sync",
+        kind: "api",
+        pluginId: "gloomberb-cloud",
+        priority: 100,
+        authRequired: true,
+      });
     },
     dispose() {
+      disposeConfigConnection?.();
       apiClient.dispose();
     },
   };

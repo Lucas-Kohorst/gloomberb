@@ -26,8 +26,14 @@ import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
 import {
+  fetchHostedConfigSnapshot,
+  mergeRemoteConfigSnapshot,
+} from "../../../data/config/hosted-config-snapshot";
+import {
   hydrateHostedUserConfig,
+  peekHostedUserConfigStamp,
   setHostedConfigUserId,
+  writeHostedUserConfig,
 } from "../../../data/config/hosted-user-persist";
 import { apiClient, type PersistedAuthUser } from "../../../api-client";
 
@@ -69,6 +75,27 @@ async function boot(): Promise<void> {
   if (isHosted) {
     hydrateHostedUserConfig(init.config);
     hydrateHostedByokConfig(init.config);
+    // After local hydration, try the server-side snapshot. If it is newer than
+    // the local save (e.g. browser data was cleared, or a different device),
+    // overlay it and persist it locally so the next boot is fast.
+    if (session.user) {
+      try {
+        const remote = await fetchHostedConfigSnapshot();
+        const localStamp = peekHostedUserConfigStamp();
+        const merged = mergeRemoteConfigSnapshot(
+          init.config,
+          remote,
+          localStamp?.updatedAt ?? null,
+        );
+        if (merged) {
+          Object.assign(init.config, merged);
+          writeHostedUserConfig(init.config);
+          hydrateHostedByokConfig(init.config);
+        }
+      } catch {
+        // Network or parse failure — proceed with whatever local hydration gave us.
+      }
+    }
   }
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
