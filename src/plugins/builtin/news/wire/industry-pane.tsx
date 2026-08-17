@@ -59,10 +59,13 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of SECTOR_TABS) {
-      if (cat === "all") continue;
-      next[cat] = allArticles.filter((article) => (
-        article.sectors.some((entry) => entry.toLowerCase() === cat)
-      )).length;
+      if (cat !== "all") next[cat] = 0;
+    }
+    for (const article of allArticles) {
+      for (const entry of article.sectors) {
+        const key = entry.toLowerCase();
+        if (key in next) next[key]!++;
+      }
     }
     return next;
   }, [allArticles]);
