@@ -25,6 +25,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PricePoint } from "../../../types/financials";
 import type { PaneProps } from "../../../types/plugin";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { fetchVoteHubPolls } from "./client";
 import {
   computeMovingAverage,
@@ -593,6 +594,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
 
   const columns = useMemo(() => createColumns(width), [width]);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(tab));
   const renderCell = useCallback(
     (row: PollRow, column: PollColumn, _index: number, rowState: { selected: boolean }) =>
       renderPollCell(row, column, rowState.selected),

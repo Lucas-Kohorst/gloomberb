@@ -135,6 +135,7 @@ export interface AppConfig {
   theme: string;
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
+  autoRefreshInterval: number;
   fontSize: number;
   recentTickers: string[];
   language?: LanguagePreference;
@@ -634,6 +635,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       renderer: "auto",
     },
     valueFlashingEnabled: true,
+    autoRefreshInterval: 0,
     fontSize: 12,
     recentTickers: [],
   };

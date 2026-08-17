@@ -21,6 +21,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { formatCompact, formatNumber } from "../../../utils/format";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { fetchLlmStatsData } from "./client";
 import {
   compareLlmStatsRows,
@@ -261,6 +262,8 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
 
   const selected = visibleRows.find((r) => r.id === selectedId) ?? null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
 
   useEffect(() => {
     if (visibleRows.length === 0) {

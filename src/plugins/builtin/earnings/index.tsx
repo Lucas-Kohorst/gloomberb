@@ -10,6 +10,7 @@ import type { EarningsEvent } from "../../../types/data-provider";
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   attachEarningsCalendarPersistence,
   loadEarningsCalendar,
@@ -40,6 +41,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const [events, setEvents] = useState<EarningsEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
   const requestIdRef = useRef(0);
 
@@ -93,6 +95,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       .then((data) => {
         if (requestId !== requestIdRef.current) return;
         setEvents(data);
+        setLastUpdated(Date.now());
       })
       .catch((err) => {
         if (requestId !== requestIdRef.current) return;
@@ -139,6 +142,8 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   ) => {
     return renderEarningsCell(row, column, rowState.selected);
   }, []);
+
+  useAutoRefresh(lastUpdated, () => reload(true));
 
   usePaneFooter("earnings-calendar", () => ({
     info: [

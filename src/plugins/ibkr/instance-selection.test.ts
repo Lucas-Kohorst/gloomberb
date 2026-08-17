@@ -38,6 +38,7 @@ function createConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       renderer: "auto",
     },
     recentTickers: [],
+    autoRefreshInterval: 0,
     ...overrides,
   };
 }

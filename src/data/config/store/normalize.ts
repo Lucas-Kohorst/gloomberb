@@ -51,6 +51,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(candidate.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof candidate.valueFlashingEnabled === "boolean" ? candidate.valueFlashingEnabled : defaults.valueFlashingEnabled,
+    autoRefreshInterval: typeof candidate.autoRefreshInterval === "number" ? candidate.autoRefreshInterval : defaults.autoRefreshInterval,
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,

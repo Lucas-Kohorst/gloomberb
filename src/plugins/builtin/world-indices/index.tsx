@@ -11,7 +11,8 @@ import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePaneInstance } from "../../../state/app/context";
 import { usePluginTickerActions } from "../../runtime";
-import { useQuoteBoard } from "../shared/use-quote-board";
+import { useQuoteBoard, latestQuoteTimestamp } from "../shared/use-quote-board";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
 import {
@@ -97,6 +98,8 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     event.stopPropagation?.();
     fetchAll();
   }, { enabled: focused });
+
+  useAutoRefresh(latestQuoteTimestamp(quotes) || null, fetchAll);
 
   useWorldIndicesFooter(quotes, fetchAll);
 
