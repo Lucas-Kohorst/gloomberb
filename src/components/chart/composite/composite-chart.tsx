@@ -638,7 +638,9 @@ function CompositePanelSurface({
   onSetViewport,
   onToolSpanChange,
 }: CompositePanelSurfaceProps) {
-  const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const ui = useUiHost();
+  const isDesktopWeb = ui.kind === "desktop-web";
+  const TradingViewChart = ui.TradingViewChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -1092,28 +1094,43 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      <ChartSurface
-        ref={plotRef}
-        width={plotWidth}
-        height={panel.height}
-        flexDirection="column"
-        bitmaps={bitmapLayers}
-        crosshair={crosshair}
-        vectors={vectors}
-        onMouseMove={interactive ? handleMouseMove : undefined}
-        onMouseDown={interactive ? startDrag : undefined}
-        onMouseDrag={interactive ? dragViewport : undefined}
-        onMouseUp={interactive ? resetDrag : undefined}
-        onMouseDragEnd={interactive ? resetDrag : undefined}
-        onMouseScroll={interactive ? panFromWheel : undefined}
-        onMouseOut={interactive ? clearCursor : undefined}
-        cursor={interactive ? toolDrag ? "crosshair" : "grab" : undefined}
-        data-gloom-interactive={interactive ? "true" : undefined}
-        data-gloom-role={COMPOSITE_PANEL_ROLE}
-        data-gloom-label={panel.label ?? panel.id}
-      >
-        {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
-      </ChartSurface>
+      {TradingViewChart ? (
+        <TradingViewChart
+          width={plotWidth}
+          height={panel.height}
+          panel={panel}
+          colors={colors}
+          viewport={viewport}
+          interactive={interactive}
+          onViewportChange={onSetViewport}
+          data-gloom-interactive={interactive ? "true" : undefined}
+          data-gloom-role={COMPOSITE_PANEL_ROLE}
+          data-gloom-label={panel.label ?? panel.id}
+        />
+      ) : (
+        <ChartSurface
+          ref={plotRef}
+          width={plotWidth}
+          height={panel.height}
+          flexDirection="column"
+          bitmaps={bitmapLayers}
+          crosshair={crosshair}
+          vectors={vectors}
+          onMouseMove={interactive ? handleMouseMove : undefined}
+          onMouseDown={interactive ? startDrag : undefined}
+          onMouseDrag={interactive ? dragViewport : undefined}
+          onMouseUp={interactive ? resetDrag : undefined}
+          onMouseDragEnd={interactive ? resetDrag : undefined}
+          onMouseScroll={interactive ? panFromWheel : undefined}
+          onMouseOut={interactive ? clearCursor : undefined}
+          cursor={interactive ? toolDrag ? "crosshair" : "grab" : undefined}
+          data-gloom-interactive={interactive ? "true" : undefined}
+          data-gloom-role={COMPOSITE_PANEL_ROLE}
+          data-gloom-label={panel.label ?? panel.id}
+        >
+          {textLines.map((line, index) => <Text key={index} fg={colors.text}>{line}</Text>)}
+        </ChartSurface>
+      )}
       {rightAxisWidth > 0 ? (
         <>
           <Box width={axisGap} />

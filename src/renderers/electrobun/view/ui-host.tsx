@@ -17,6 +17,7 @@ import {
 import { WebPopover } from "./desktop/popover";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
+import { WebTradingViewChart } from "./host/tradingview-chart";
 import { WebInput, WebTextarea } from "./host/input";
 import { WebMediaSurface } from "./host/media-surface";
 import {
@@ -102,6 +103,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
     DataTable: WebDataTable,
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
+    TradingViewChart: WebTradingViewChart,
     ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
       const imageSrc = typeof src === "string" ? src.trim() : "";
       const [failed, setFailed] = useState(false);
