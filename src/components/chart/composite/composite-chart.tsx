@@ -17,6 +17,7 @@ import { formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
+import { groupSeriesByPanelId } from "./panel-series";
 import {
   consumeChartMouseEvent,
   getGlobalMouseX,
@@ -591,7 +592,7 @@ const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
 
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
-  /** Unwindowed series for this panel, for renderers that own their time scale. */
+  /** Unwindowed series for TradingViewChart (see TradingViewChartProps.seriesData). */
   panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
@@ -1478,14 +1479,11 @@ export function CompositeChart({
   );
   // Renderers that own their own time scale need the unwindowed series, and
   // need it at a stable identity so panning does not look like new data.
+  const seriesByPanelIdRef = useRef<Map<string, ResolvedSeries[]>>(new Map());
   const seriesByPanelId = useMemo(() => {
-    const byPanel = new Map<string, ResolvedSeries[]>();
-    for (const entry of visibleSeries) {
-      const existing = byPanel.get(entry.panelId);
-      if (existing) existing.push(entry);
-      else byPanel.set(entry.panelId, [entry]);
-    }
-    return byPanel;
+    const next = groupSeriesByPanelId(visibleSeries, seriesByPanelIdRef.current);
+    seriesByPanelIdRef.current = next;
+    return next;
   }, [visibleSeries]);
   useEffect(() => {
     setLegendKeyboardIndex((current) => (

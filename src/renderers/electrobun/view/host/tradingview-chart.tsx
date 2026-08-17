@@ -14,29 +14,23 @@ import {
   type TimeRangeChangeEventHandler,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { ChartVectorShape, TradingViewChartProps } from "../../../../ui/host";
+import type { TradingViewChartProps } from "../../../../ui/host";
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
+import {
+  tradingViewCandleData,
+  tradingViewScalarData,
+  tradingViewSeriesTypeFor,
+  utcTimestampSeconds,
+  type TradingViewSeriesType,
+} from "./tradingview-series-data";
 
 function timestamp(value: number): UTCTimestamp {
-  return Math.floor(value / 1000) as UTCTimestamp;
+  return utcTimestampSeconds(value) as UTCTimestamp;
 }
 
 function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-interface SeriesDatum {
-  time: Time;
-  value: number;
-}
-
-interface CandleDatum {
-  time: Time;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
 }
 
 function timeToMs(time: Time): number | null {
@@ -51,46 +45,10 @@ function timeToMs(time: Time): number | null {
   return null;
 }
 
-function projectSeriesData(series: ResolvedSeries): { data: SeriesDatum[]; candle: CandleDatum[] } {
-  // lightweight-charts rejects out-of-order and duplicate timestamps outright,
-  // and a resolved series carries both once a live quote is merged onto the bar
-  // it belongs to. Collapsing by second keeps the latest reading per bar.
-  const byTime = new Map<number, TimeSeriesPoint>();
-  for (const point of series.points) {
-    const time = point.date.getTime();
-    if (Number.isFinite(time)) byTime.set(timestamp(time), point);
-  }
-  const ordered = [...byTime.entries()].sort(([left], [right]) => left - right);
-  const candle = ordered.flatMap(([time, point]) => (
-    finite(point.open) && finite(point.high) && finite(point.low) && finite(point.close)
-      ? [{ time: time as Time, open: point.open, high: point.high, low: point.low, close: point.close }]
-      : []
-  ));
-  const data = ordered.flatMap(([time, point]) => (
-    finite(point.value) ? [{ time: time as Time, value: point.value }] : []
-  ));
-  return { data, candle };
-}
-
-/**
- * Single source of truth for the series type. Creation and data-sync must agree,
- * or a reused series is handed data in the wrong shape.
- */
-function seriesTypeFor(series: ResolvedSeries): SeriesEntry["type"] {
-  if (series.style === "columns") return "Histogram";
-  if (series.style === "area") return "Area";
-  if (series.style === "candles" && series.points.some((point) => (
-    finite(point.open) && finite(point.high) && finite(point.low) && finite(point.close)
-  ))) {
-    return "Candlestick";
-  }
-  return "Line";
-}
-
 function createSeries(
   chart: IChartApi,
   series: ResolvedSeries,
-  type: SeriesEntry["type"],
+  type: TradingViewSeriesType,
   colors: TradingViewChartProps["colors"],
 ): ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram"> {
   switch (type) {
@@ -125,13 +83,9 @@ function createSeries(
   }
 }
 
-function colorKeyFor(series: ResolvedSeries, colors: TradingViewChartProps["colors"]): string {
-  return `${series.color}|${colors.negative}`;
-}
-
 function applySeriesColors(
   api: SeriesEntry["api"],
-  type: SeriesEntry["type"],
+  type: TradingViewSeriesType,
   series: ResolvedSeries,
   colors: TradingViewChartProps["colors"],
 ): void {
@@ -155,17 +109,20 @@ function applySeriesColors(
 
 function syncSeriesData(
   api: SeriesEntry["api"],
-  type: SeriesEntry["type"],
+  type: TradingViewSeriesType,
   series: ResolvedSeries,
 ): void {
-  const { data, candle } = projectSeriesData(series);
   if (type === "Candlestick") {
-    api.setData(candle);
-  } else if (type === "Histogram") {
-    api.setData(data.map((point) => ({ ...point, color: series.color })));
-  } else {
-    api.setData(data);
+    api.setData(tradingViewCandleData(series.points).map((point) => ({
+      ...point,
+      time: point.time as Time,
+    })));
+    return;
   }
+  api.setData(tradingViewScalarData(series.points).map((point) => ({
+    ...point,
+    time: point.time as Time,
+  })));
 }
 
 interface MeasureState {
@@ -175,7 +132,8 @@ interface MeasureState {
 
 type SeriesEntry = {
   key: string;
-  type: "Line" | "Area" | "Candlestick" | "Histogram";
+  type: TradingViewSeriesType;
+  style: ResolvedSeries["style"];
   api: ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram">;
   label: string;
   /** Last data written, so a pan does not re-set identical points. */
@@ -184,7 +142,6 @@ type SeriesEntry = {
 };
 
 export function WebTradingViewChart({
-  panel,
   seriesData,
   colors,
   viewport,
@@ -209,13 +166,6 @@ export function WebTradingViewChart({
   const [chartEpoch, setChartEpoch] = useState(0);
 
   const measureEnabled = interactive && armedTool === "measure";
-
-  // The scene projection windows its points to the viewport, so consuming it
-  // would hand this chart a different dataset on every pan frame.
-  const chartSeries = useMemo(
-    () => seriesData ?? panel.series.map((projected) => projected.source),
-    [seriesData, panel],
-  );
 
   const chartOptions = useMemo(() => ({
     layout: {
@@ -312,6 +262,7 @@ export function WebTradingViewChart({
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handleVisibleRangeChange);
       for (const entry of seriesRef.current) entry.api.setData([]);
       seriesRef.current = [];
+      rangeRef.current = null;
       chart.remove();
       chartRef.current = null;
     };
@@ -345,10 +296,16 @@ export function WebTradingViewChart({
     if (!chart) return;
     const byKey = new Map(seriesRef.current.map((entry) => [entry.key, entry]));
     const next: SeriesEntry[] = [];
-    for (const series of chartSeries) {
-      const type = seriesTypeFor(series);
-      const colorKey = colorKeyFor(series, colors);
+    for (const series of seriesData) {
       const existing = byKey.get(series.id);
+      // Reuse cached type when style+points are unchanged so candle series skip
+      // a full OHLC scan on every parent re-render that only swaps array identity.
+      const type = existing
+        && existing.style === series.style
+        && existing.points === series.points
+        ? existing.type
+        : tradingViewSeriesTypeFor(series);
+      const colorKey = `${series.color}|${colors.negative}`;
       if (existing) {
         byKey.delete(series.id);
         if (existing.type === type) {
@@ -362,6 +319,7 @@ export function WebTradingViewChart({
             syncSeriesData(existing.api, type, series);
             existing.points = series.points;
           }
+          existing.style = series.style;
           existing.label = series.label;
           next.push(existing);
           continue;
@@ -370,11 +328,19 @@ export function WebTradingViewChart({
       }
       const api = createSeries(chart, series, type, colors);
       syncSeriesData(api, type, series);
-      next.push({ key: series.id, type, api, label: series.label, points: series.points, colorKey });
+      next.push({
+        key: series.id,
+        type,
+        style: series.style,
+        api,
+        label: series.label,
+        points: series.points,
+        colorKey,
+      });
     }
     for (const [, entry] of byKey) chart.removeSeries(entry.api);
     seriesRef.current = next;
-  }, [chartEpoch, chartSeries, colors]);
+  }, [chartEpoch, colors, seriesData]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -387,7 +353,7 @@ export function WebTradingViewChart({
     if (rangeRef.current === key) return;
     rangeRef.current = key;
     chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
-  }, [viewport]);
+  }, [chartEpoch, viewport]);
 
   const beginMeasure = (event: PointerEvent<HTMLDivElement>) => {
     if (!measureEnabled) return;

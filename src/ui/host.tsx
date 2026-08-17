@@ -237,12 +237,11 @@ export interface ChartSurfaceProps extends BoxProps {
 export interface TradingViewChartProps extends BoxProps {
   panel: CompositePanelScene;
   /**
-   * Unclipped series for the panel. The scene projection windows points to the
-   * viewport, which this renderer must not consume: it owns its own time scale,
-   * so windowed data forces a full re-set on every pan frame and fights the
-   * user's drag. Falls back to the projection when absent.
+   * Unclipped panel series. The scene projection windows points to the viewport;
+   * this renderer owns its time scale, so it must not consume that windowed data
+   * or every pan frame forces a full re-set and fights the drag.
    */
-  seriesData?: readonly ResolvedSeries[] | null;
+  seriesData: readonly ResolvedSeries[];
   colors: CompositeChartColors;
   viewport?: { start: Date; end: Date } | null;
   interactive?: boolean;

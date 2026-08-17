@@ -1,6 +1,7 @@
 import { copyFile, readFile, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
+import { toRootAbsoluteAssetUrl } from "./asset-urls";
 
 type AliasRule = readonly [string, string] | readonly [string, string, string];
 type PageOptions = {
@@ -13,15 +14,6 @@ type PageOptions = {
   title: string;
   loadingText: string;
   bootstrapScript: string;
-  /**
-   * Root-absolute asset URLs. The hosted client answers nested routes like
-   * `/s/{id}` with this same document, where a relative `./web-main.js`
-   * resolves to `/s/web-main.js` and the SPA fallback returns HTML instead of
-   * the module — the script then fails to parse and the page hangs on its
-   * loading placeholder. The desktop view loads over a file/custom scheme with
-   * no origin root, so it keeps relative URLs.
-   */
-  absoluteAssetPaths?: boolean;
 };
 
 const ELECTROBUN_VIEW_DIR = join(process.cwd(), "src", "renderers", "electrobun", "view");
@@ -50,7 +42,6 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    absoluteAssetPaths: true,
     extraAliasRules: [
       ["./backend-rpc", "web-backend-rpc.ts"],
       ...(options.extraAliasRules ?? []),
@@ -58,12 +49,16 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   });
   await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
   const htmlPath = join(options.outdir, "index.html");
+  // Nested routes (`/s/{id}`) serve this same document; relative `./web-main.js`
+  // would resolve under `/s/` and the SPA fallback would return HTML instead of
+  // the module. Desktop keeps relative URLs (file/custom scheme, no origin root).
+  const absoluteEntrySrc = toRootAbsoluteAssetUrl(entrySrc);
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    absoluteAssetPaths: true,
     stylesheet,
-    entrySrc,
+    entrySrc: absoluteEntrySrc,
+    faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
   }));
   return htmlPath;
@@ -76,7 +71,6 @@ async function buildElectrobunViewBundle({
   extraAliasRules = [],
   failureMessage,
   missingEntryMessage,
-  absoluteAssetPaths = false,
 }: PageOptions): Promise<{ entrySrc: string; stylesheet: string }> {
   const result = await Bun.build({
     entrypoints: [entrypoint],
@@ -109,7 +103,7 @@ async function buildElectrobunViewBundle({
   if (!entry) throw new Error(missingEntryMessage);
 
   return {
-    entrySrc: `${absoluteAssetPaths ? "/" : "./"}${relative(outdir, entry.path).replaceAll("\\", "/")}`,
+    entrySrc: `./${relative(outdir, entry.path).replaceAll("\\", "/")}`,
     stylesheet: (await readFile(electrobunViewPath("styles.css"), "utf8"))
       .replaceAll("__TITLEBAR_OVERLAY_HEIGHT_PX__", String(TITLEBAR_OVERLAY_HEIGHT_PX)),
   };
@@ -121,14 +115,14 @@ function renderElectrobunViewHtml({
   stylesheet,
   bootstrapScript,
   entrySrc,
-  absoluteAssetPaths = false,
-}: PageOptions & { stylesheet: string; entrySrc: string }): string {
+  faviconHref = "favicon.svg",
+}: PageOptions & { stylesheet: string; entrySrc: string; faviconHref?: string }): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="${absoluteAssetPaths ? "/favicon.svg" : "favicon.svg"}" />
+    <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
     <title>${title}</title>
     <style>${stylesheet}</style>
   </head>
