@@ -35,6 +35,17 @@ export const DETAIL_TABS: ReadonlyArray<{
   { label: "News", value: "news" },
 ];
 
+const LIVE_DETAIL_TABS = new Set<PredictionDetailTab>([
+  "overview",
+  "book",
+  "trades",
+]);
+
+/** Rules, similar, and news are static, so they should not drive venue polling. */
+export function isLivePredictionDetailTab(tab: PredictionDetailTab): boolean {
+  return LIVE_DETAIL_TABS.has(tab);
+}
+
 export function parsePredictionVenueScope(
   value: string | undefined,
 ): PredictionVenueScope | null {

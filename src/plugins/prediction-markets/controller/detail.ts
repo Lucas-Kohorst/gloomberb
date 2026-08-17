@@ -28,6 +28,7 @@ import type {
 interface UsePredictionDetailDataOptions {
   focused: boolean;
   historyRange: PredictionHistoryRange;
+  pollLiveData: boolean;
   selectedSummary: PredictionMarketSummary | null;
   setCatalogCache: PredictionCatalogCacheSetter;
 }
@@ -35,6 +36,7 @@ interface UsePredictionDetailDataOptions {
 export function usePredictionDetailData({
   focused,
   historyRange,
+  pollLiveData,
   selectedSummary,
   setCatalogCache,
 }: UsePredictionDetailDataOptions) {
@@ -154,7 +156,12 @@ export function usePredictionDetailData({
   }, [loadSelectedDetail, selectedSummaryKey]);
 
   useEffect(() => {
-    if (!focused || selectedSummaryVenue !== "kalshi" || !selectedSummaryKey) {
+    if (
+      !focused ||
+      !pollLiveData ||
+      selectedSummaryVenue !== "kalshi" ||
+      !selectedSummaryKey
+    ) {
       return;
     }
     const intervalId = setInterval(() => {
@@ -164,7 +171,13 @@ export function usePredictionDetailData({
       }
     }, 5_000);
     return () => clearInterval(intervalId);
-  }, [focused, loadSelectedDetail, selectedSummaryKey, selectedSummaryVenue]);
+  }, [
+    focused,
+    loadSelectedDetail,
+    pollLiveData,
+    selectedSummaryKey,
+    selectedSummaryVenue,
+  ]);
 
   useEffect(() => {
     if (

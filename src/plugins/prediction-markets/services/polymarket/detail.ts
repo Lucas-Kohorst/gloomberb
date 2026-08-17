@@ -19,6 +19,7 @@ import {
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
+import { revivePredictionHistoryPoints } from "../history";
 import {
   extractPolymarketSlug,
   hydratePolymarketMarket,
@@ -34,6 +35,8 @@ import type {
   PolymarketTradesResponseItem,
 } from "./types";
 
+const POLYMARKET_GAMMA_BASE = "https://gamma-api.polymarket.com";
+
 export async function loadPolymarketEvent(
   eventId: string | undefined,
 ): Promise<PolymarketEventRecord | null> {
@@ -44,7 +47,7 @@ export async function loadPolymarketEvent(
       `polymarket:event:${eventId}`,
       async () =>
         await fetchJson<PolymarketEventRecord>(
-          `https://gamma-api.polymarket.com/events/${eventId}`,
+          `${POLYMARKET_GAMMA_BASE}/events/${eventId}`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
     );
@@ -121,7 +124,53 @@ async function resolvePolymarketSummary(
   };
 }
 
-async function loadPolymarketHistory(
+async function fetchPolymarketMarketRecord(
+  url: string,
+): Promise<PolymarketMarketRecord | null> {
+  try {
+    const response = await fetchJson<PolymarketMarketRecord | PolymarketMarketRecord[]>(url);
+    if (Array.isArray(response)) return response[0] ?? null;
+    return response ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves a venue-native Polymarket identifier onto a chartable market.
+ * Accepts a Gamma market id, a market slug, or an event id (which settles on
+ * the event's busiest market).
+ */
+export async function resolvePolymarketMarketById(
+  marketId: string,
+): Promise<PredictionMarketSummary | null> {
+  const trimmed = marketId.trim();
+  if (!trimmed) return null;
+
+  const byId = /^\d+$/.test(trimmed)
+    ? await fetchPolymarketMarketRecord(`${POLYMARKET_GAMMA_BASE}/markets/${trimmed}`)
+    : null;
+  const record =
+    byId ??
+    (await fetchPolymarketMarketRecord(
+      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(trimmed)}&limit=1`,
+    ));
+  if (record) return normalizePolymarketMarket(record);
+
+  const event = await loadPolymarketEvent(trimmed);
+  if (!event?.markets?.length) return null;
+  let best: PredictionMarketSummary | null = null;
+  for (const eventMarket of event.markets) {
+    const summary = normalizePolymarketMarket(
+      hydratePolymarketMarket(eventMarket, event),
+    );
+    if (!summary) continue;
+    if (!best || (summary.volume24h ?? 0) > (best.volume24h ?? 0)) best = summary;
+  }
+  return best;
+}
+
+export async function loadPolymarketHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionHistoryPoint[]> {
@@ -138,7 +187,7 @@ async function loadPolymarketHistory(
   const fidelity =
     range === "1D" ? 15 : range === "1W" ? 60 : range === "1M" ? 240 : 1440;
 
-  return await loadCachedPredictionResource(
+  const points = await loadCachedPredictionResource(
     "history",
     `${summary.key}:${range}`,
     async () => {
@@ -154,6 +203,7 @@ async function loadPolymarketHistory(
     },
     PREDICTION_CACHE_POLICIES.history,
   );
+  return revivePredictionHistoryPoints(points);
 }
 
 async function loadPolymarketTrades(

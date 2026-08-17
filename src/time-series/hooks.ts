@@ -21,6 +21,7 @@ import {
   normalizeAdjacentPriceHistory,
 } from "../plugins/builtin/adjacent/normalize";
 import type { AdjacentMarket } from "../plugins/builtin/adjacent/types";
+import { loadVenuePredictionMarketSeries } from "../plugins/prediction-markets/services/series";
 import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
 import type { LlmStatsRow } from "../plugins/builtin/llm-stats/types";
 import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
@@ -65,12 +66,13 @@ function predictionYesPercent(value: number): number {
 
 function predictionMarketPoints(
   prices: Array<{ date: Date; close: number }>,
+  providerId: string,
 ): TimeSeriesPoint[] {
   return prices.map((point) => ({
     date: point.date,
     observedAt: point.date,
     value: predictionYesPercent(point.close),
-    provenance: { providerId: "adjacent", quality: "reported" },
+    provenance: { providerId, quality: "reported" },
   }));
 }
 
@@ -93,6 +95,17 @@ export async function loadPredictionMarketSeries(
   venue: "kalshi" | "polymarket",
   marketId: string,
 ): Promise<UniversalSeriesLoadResult> {
+  const venueSeries = await loadVenuePredictionMarketSeries(venue, marketId)
+    .catch(() => null);
+  if (venueSeries) {
+    return {
+      points: predictionMarketPoints(venueSeries.points, venue),
+      unit: "%",
+      unitGroup: `prediction-market:${venue}`,
+      label: venueSeries.label,
+    };
+  }
+
   const client = getSharedAdjacentClient();
   const loadPrices = async (id: string) => {
     const response = await client.getMarketPrices(id);
@@ -102,10 +115,12 @@ export async function loadPredictionMarketSeries(
   let history = await loadPrices(marketId).catch(() => []);
   let label: string | undefined;
   if (history.length === 0) {
-    const search = await client.searchMarkets(marketId, 8);
-    const match = matchingPredictionMarket(search.markets ?? [], venue, marketId);
+    const search = await client.searchMarkets(marketId, 8).catch(() => null);
+    const match = matchingPredictionMarket(search?.markets ?? [], venue, marketId);
     if (!match) {
-      throw new Error(`No ${venue} market found for "${marketId}".`);
+      throw new Error(
+        `No ${venue} market found for "${marketId}" on ${venue === "kalshi" ? "Kalshi" : "Polymarket"} or Adjacent.`,
+      );
     }
     history = await loadPrices(match.id);
     label = match.title;
@@ -115,7 +130,7 @@ export async function loadPredictionMarketSeries(
   }
 
   return {
-    points: predictionMarketPoints(history),
+    points: predictionMarketPoints(history, "adjacent"),
     unit: "%",
     unitGroup: `prediction-market:${venue}`,
     label: label ?? `${venue === "kalshi" ? "KALSHI" : "POLY"} ${marketId}`,

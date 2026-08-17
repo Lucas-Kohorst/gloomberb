@@ -13,10 +13,12 @@ import {
   sortPredictionMarkets,
 } from "../metrics";
 import { sortPredictionOutcomeMarkets } from "../outcome-order";
+import { isLivePredictionDetailTab } from "../navigation";
 import { buildPredictionListRows } from "../rows";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
+  PredictionDetailTab,
   PredictionHistoryRange,
   PredictionSortPreference,
   PredictionVenueScope,
@@ -26,6 +28,7 @@ export function usePredictionMarketsDataState({
   browseTab,
   categoryId,
   detailOpen,
+  detailTab,
   effectiveVenueScope,
   focused,
   historyRange,
@@ -40,6 +43,7 @@ export function usePredictionMarketsDataState({
   browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   detailOpen: boolean;
+  detailTab: PredictionDetailTab;
   effectiveVenueScope: PredictionVenueScope;
   focused: boolean;
   historyRange: PredictionHistoryRange;
@@ -147,6 +151,7 @@ export function usePredictionMarketsDataState({
   } = usePredictionDetailData({
     focused,
     historyRange,
+    pollLiveData: !detailOpen || isLivePredictionDetailTab(detailTab),
     selectedSummary,
     setCatalogCache,
   });

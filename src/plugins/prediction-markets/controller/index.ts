@@ -127,6 +127,7 @@ export function usePredictionMarketsController({
     browseTab,
     categoryId,
     detailOpen,
+    detailTab,
     effectiveVenueScope,
     focused,
     historyRange,

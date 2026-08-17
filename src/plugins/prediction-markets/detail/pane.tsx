@@ -14,6 +14,7 @@ import {
   formatPredictionMetric,
   formatPredictionProbability,
   formatPredictionSpread,
+  formatPredictionTicker,
   getPredictionProbabilityColor,
 } from "../metrics";
 import type {
@@ -120,6 +121,9 @@ export function PredictionMarketDetailPane({
   }
 
   const summaryMetrics = detail?.summary ?? selectedSummary;
+  const detailTicker = formatPredictionTicker(
+    selectedRow?.kind === "group" ? selectedRow : summaryMetrics,
+  );
   const detailSubtitleParts: string[] = [];
   if (selectedRow?.kind === "group") {
     if (summaryMetrics.category) detailSubtitleParts.push(summaryMetrics.category);
@@ -194,7 +198,7 @@ export function PredictionMarketDetailPane({
             0,
             Math.max(Math.min(Math.floor((detailWidth - 10) / 18), 3), 0),
           ) ?? []);
-  const headerHeight = detailSubtitle.length > 0 ? 2 : 0;
+  const headerHeight = detailSubtitle.length > 0 || detailTicker.length > 0 ? 2 : 0;
   const detailLoading = detailLoadCount > 0 && !detail;
   const detailTextWidth = Math.max(detailWidth, 12);
 
@@ -202,9 +206,17 @@ export function PredictionMarketDetailPane({
     <>
       {headerHeight > 0 && (
         <Box flexDirection="column" height={headerHeight} paddingBottom={1}>
-          <Box flexDirection="row" height={1}>
+          <Box flexDirection="row" height={1} gap={1}>
+            {detailTicker.length > 0 && (
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                {truncatePredictionText(detailTicker, detailTextWidth)}
+              </Text>
+            )}
             <Text fg={colors.textDim}>
-              {truncatePredictionText(detailSubtitle, detailTextWidth)}
+              {truncatePredictionText(
+                detailSubtitle,
+                Math.max(detailTextWidth - detailTicker.length - 1, 8),
+              )}
             </Text>
           </Box>
         </Box>
@@ -318,7 +330,6 @@ export function PredictionMarketDetailPane({
           onSelectAdjacentMarket={(market) => {
             if (market.url) openUrl(market.url);
           }}
-          width={detailWidth}
         />
       )}
 
@@ -326,7 +337,6 @@ export function PredictionMarketDetailPane({
         <PredictionNewsTab
           client={adjacentClient}
           marketTitle={summaryMetrics.title}
-          width={detailWidth}
         />
       )}
     </>

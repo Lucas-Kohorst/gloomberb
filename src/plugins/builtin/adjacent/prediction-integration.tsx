@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
@@ -12,12 +12,10 @@ export function SimilarMarketsView({
   client,
   marketId,
   onSelectMarket,
-  width,
 }: {
   client: AdjacentClient;
   marketId: string;
   onSelectMarket: (market: AdjacentSimilarMarket) => void;
-  width: number;
 }) {
   const [markets, setMarkets] = useState<AdjacentSimilarMarket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,11 +91,11 @@ export function SimilarMarketsView({
 export function AdjacentMarketNewsView({
   client,
   marketId,
-  width,
+  onSelectArticle,
 }: {
   client: AdjacentClient;
   marketId: string;
-  width: number;
+  onSelectArticle?: (article: AdjacentNewsArticle) => void;
 }) {
   const [articles, setArticles] = useState<AdjacentNewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,7 +136,21 @@ export function AdjacentMarketNewsView({
   return (
     <Box flexDirection="column" paddingX={1} gap={1}>
       {articles.map((article) => (
-        <Box key={article.id} flexDirection="column" height={2}>
+        <Box
+          key={article.id}
+          flexDirection="column"
+          height={2}
+          {...(onSelectArticle && article.url
+            ? {
+                cursor: "pointer" as const,
+                "data-gloom-interactive": "true",
+                onMouseDown: (event: ChartMouseEvent) => {
+                  event.preventDefault?.();
+                  onSelectArticle(article);
+                },
+              }
+            : {})}
+        >
           <Text fg={colors.text} wrapMode="ellipsis" attributes={TextAttributes.BOLD}>
             {article.title}
           </Text>

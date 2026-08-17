@@ -7,10 +7,12 @@ import type {
   PredictionColumnDef,
   PredictionListRow,
   PredictionSortPreference,
+  PredictionVenue,
   PredictionVenueScope,
   PredictionVolumeUnit,
 } from "./types";
 import { matchesPredictionCategory } from "./categories";
+import { extractPolymarketSlug } from "./services/polymarket/normalize";
 
 const TEXT_SORT_COLUMNS = new Set([
   "market",
@@ -21,6 +23,21 @@ const TEXT_SORT_COLUMNS = new Set([
   "status",
   "market_id",
 ]);
+
+/**
+ * The identifier a trader would type or paste: the Kalshi ticker, or the
+ * Polymarket slug when Gamma only gave us a numeric id.
+ */
+export function formatPredictionTicker(market: {
+  venue: PredictionVenue;
+  marketId: string;
+  url: string;
+}): string {
+  if (market.venue !== "polymarket" || !/^\d+$/.test(market.marketId)) {
+    return market.marketId;
+  }
+  return extractPolymarketSlug(market.url) ?? market.marketId;
+}
 
 function coerceDateValue(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -150,7 +167,7 @@ function getMarketSortValue(
     case "category":
       return (row.category ?? "").toLowerCase();
     case "market_id":
-      return row.marketId;
+      return formatPredictionTicker(row).toLowerCase();
     default:
       return null;
   }
@@ -315,7 +332,7 @@ export function getPredictionColumnValue(
     case "created":
       return { text: formatPredictionUpdatedAt(market.createdAt) };
     case "market_id":
-      return { text: market.marketId };
+      return { text: formatPredictionTicker(market), color: colors.textBright };
     default:
       return { text: "—" };
   }

@@ -116,16 +116,17 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
   },
   {
     id: "market_id",
-    label: "ID",
+    label: "TICKER",
     width: 20,
     align: "left",
-    description: "Venue market identifier.",
+    description: "Venue ticker: Kalshi ticker or Polymarket slug.",
   },
 ];
 
 export const DEFAULT_PREDICTION_COLUMN_IDS = [
   "watch",
   "market",
+  "market_id",
   "venue",
   "yes",
   "spread",

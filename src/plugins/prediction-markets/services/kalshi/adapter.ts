@@ -20,10 +20,7 @@ import {
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
-import {
-  loadAdjacentVenueCatalog,
-  shouldUseAdjacentCatalog,
-} from "../adjacent/catalog";
+import { revivePredictionHistoryPoints } from "../history";
 import {
   isOpenKalshiStatus,
   normalizeKalshiBookLevel,
@@ -49,7 +46,7 @@ const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
 const KALSHI_MARKET_MAX_PAGES = 5;
-const KALSHI_TICKER_HYDRATE_BATCH = 80;
+const KALSHI_SERIES_EVENT_LIMIT = 20;
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
   const url = new URL(`${KALSHI_API_BASE}/events`);
@@ -173,60 +170,6 @@ async function loadKalshiVenueCatalog(
   });
 }
 
-export async function hydrateKalshiCatalogPrices(
-  summaries: PredictionMarketSummary[],
-  options?: { dropClosed?: boolean },
-): Promise<PredictionMarketSummary[]> {
-  const kalshi = summaries.filter((summary) => summary.venue === "kalshi" && summary.marketId);
-  if (kalshi.length === 0) return summaries;
-  const byTicker = new Map<string, KalshiMarketRecord>();
-  for (let index = 0; index < kalshi.length; index += KALSHI_TICKER_HYDRATE_BATCH) {
-    const batch = kalshi.slice(index, index + KALSHI_TICKER_HYDRATE_BATCH);
-    const url = new URL(`${KALSHI_API_BASE}/markets`);
-    url.searchParams.set("tickers", batch.map((summary) => summary.marketId).join(","));
-    try {
-      const response = await fetchJson<{ markets?: KalshiMarketRecord[] }>(url.toString());
-      for (const market of response.markets ?? []) {
-        byTicker.set(market.ticker, market);
-      }
-    } catch {
-      // Keep Adjacent catalog rows even if live quotes fail.
-    }
-  }
-  const dropClosed = options?.dropClosed !== false;
-  const next: PredictionMarketSummary[] = [];
-  for (const summary of summaries) {
-    const record = byTicker.get(summary.marketId);
-    if (!record) {
-      if (!dropClosed || isOpenKalshiStatus(summary.status)) next.push(summary);
-      continue;
-    }
-    if (dropClosed && !isOpenKalshiStatus(record.status)) continue;
-    const live = normalizeKalshiMarket(record, {
-      title: summary.eventLabel,
-      category: summary.category,
-    });
-    if (!live) continue;
-    next.push({
-      ...summary,
-      ...live,
-      key: summary.key,
-      title: summary.title || live.title,
-      marketLabel: summary.marketLabel || live.marketLabel,
-      eventLabel: summary.eventLabel || live.eventLabel,
-      category: summary.category ?? live.category,
-      url: summary.url || live.url,
-      volume24h: live.volume24h ?? summary.volume24h,
-      volume24hUnit: "usd",
-      totalVolume: live.totalVolume ?? summary.totalVolume,
-      totalVolumeUnit: "usd",
-      openInterest: live.openInterest ?? summary.openInterest,
-      openInterestUnit: "usd",
-    });
-  }
-  return next.sort((left, right) => (right.volume24h ?? 0) - (left.volume24h ?? 0));
-}
-
 export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
@@ -237,22 +180,10 @@ export async function loadKalshiCatalog(
   return await loadCachedPredictionResource(
     "catalog",
     buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
-    async () => {
-      if (shouldUseAdjacentCatalog(browseTab, normalizedQuery)) {
-        try {
-          const adjacent = await loadAdjacentVenueCatalog("kalshi", normalizedQuery, categoryId);
-          if (adjacent.length > 0) {
-            const hydrated = await hydrateKalshiCatalogPrices(adjacent, {
-              dropClosed: browseTab === "top" && !normalizedQuery,
-            });
-            if (hydrated.length > 0) return hydrated;
-          }
-        } catch {
-          // Fall back to the venue catalog when Adjacent is down or empty.
-        }
-      }
-      return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
-    },
+    // Browse/search hits Kalshi directly. Adjacent is reserved for indices and
+    // detail enrichments — routing the PM catalog through it added a multi-page
+    // hop before the venue call, which is what made the pane feel stuck.
+    async () => await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab),
     PREDICTION_CACHE_POLICIES.catalog,
     options,
   );
@@ -275,6 +206,112 @@ async function loadKalshiEvent(
   } catch {
     return null;
   }
+}
+
+async function fetchKalshiMarketByTicker(
+  ticker: string,
+): Promise<KalshiMarketRecord | null> {
+  try {
+    const response = await fetchJson<{ market?: KalshiMarketRecord }>(
+      `${KALSHI_API_BASE}/markets/${encodeURIComponent(ticker)}`,
+    );
+    return response.market ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchKalshiEventsForSeries(
+  seriesTicker: string,
+): Promise<KalshiEventRecord[]> {
+  const url = new URL(`${KALSHI_API_BASE}/events`);
+  url.searchParams.set("series_ticker", seriesTicker);
+  url.searchParams.set("with_nested_markets", "true");
+  url.searchParams.set("limit", String(KALSHI_SERIES_EVENT_LIMIT));
+  try {
+    const response = await fetchJson<KalshiEventsResponse>(url.toString());
+    return response.events ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function compareKalshiMarketProminence(
+  left: PredictionMarketSummary,
+  right: PredictionMarketSummary,
+): number {
+  const leftOpen = isOpenKalshiStatus(left.status) ? 1 : 0;
+  const rightOpen = isOpenKalshiStatus(right.status) ? 1 : 0;
+  if (leftOpen !== rightOpen) return rightOpen - leftOpen;
+  const volumeDelta = (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  if (volumeDelta !== 0) return volumeDelta;
+  return (right.openInterest ?? 0) - (left.openInterest ?? 0);
+}
+
+function pickBusiestKalshiMarket(
+  events: KalshiEventRecord[],
+): PredictionMarketSummary | null {
+  let best: PredictionMarketSummary | null = null;
+  for (const event of events) {
+    for (const record of event.markets ?? []) {
+      const summary = normalizeKalshiMarket(
+        record,
+        {
+          title: event.title,
+          category: event.category,
+          series_ticker: event.series_ticker,
+          sub_title: event.sub_title,
+        },
+        { allowDormant: true },
+      );
+      if (!summary) continue;
+      if (!best || compareKalshiMarketProminence(summary, best) < 0) best = summary;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolves a venue-native Kalshi identifier onto a chartable market. Callers
+ * hand us whatever the user or a search hit produced, which can be a market
+ * ticker (`CONTROLS-2026-R`), an event ticker (`CONTROLS-2026`), or a series
+ * ticker (`CONTROLS`); the latter two settle on their busiest market.
+ */
+export async function resolveKalshiMarketByTicker(
+  ticker: string,
+): Promise<PredictionMarketSummary | null> {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) return null;
+
+  const record = await fetchKalshiMarketByTicker(normalized);
+  if (record) {
+    const event = await loadKalshiEvent(record.event_ticker);
+    return normalizeKalshiMarket(
+      record,
+      {
+        title: event?.event?.title,
+        category: event?.event?.category,
+        series_ticker: event?.event?.series_ticker,
+        sub_title: event?.event?.sub_title,
+      },
+      { allowDormant: true },
+    );
+  }
+
+  const event = await loadKalshiEvent(normalized);
+  if (event?.markets?.length) {
+    return pickBusiestKalshiMarket([
+      {
+        title: event.event.title,
+        category: event.event.category,
+        series_ticker: event.event.series_ticker,
+        sub_title: event.event.sub_title,
+        markets: event.markets,
+      },
+    ]);
+  }
+
+  return pickBusiestKalshiMarket(await fetchKalshiEventsForSeries(normalized));
 }
 
 async function loadKalshiTrades(
@@ -354,7 +391,7 @@ export async function loadKalshiHistory(
   const start = now - rangeSeconds;
 
   try {
-    return await loadCachedPredictionResource(
+    const points = await loadCachedPredictionResource(
       "history",
       `${summary.key}:${range}`,
       async () => {
@@ -377,6 +414,7 @@ export async function loadKalshiHistory(
       },
       PREDICTION_CACHE_POLICIES.history,
     );
+    return revivePredictionHistoryPoints(points);
   } catch {
     return [];
   }

@@ -87,9 +87,10 @@ export function normalizeKalshiMarket(
     series_ticker?: string;
     sub_title?: string;
   },
+  options?: { allowDormant?: boolean },
 ): PredictionMarketSummary | null {
   if (record.market_type && record.market_type !== "binary") return null;
-  if (isDormantKalshiMarket(record)) return null;
+  if (!options?.allowDormant && isDormantKalshiMarket(record)) return null;
 
   const yesBid = parseFloatSafe(record.yes_bid_dollars);
   const yesAsk = parseFloatSafe(record.yes_ask_dollars);

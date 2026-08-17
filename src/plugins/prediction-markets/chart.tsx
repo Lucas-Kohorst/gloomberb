@@ -10,20 +10,10 @@ import { EmptyState } from "../../components/ui/status";
 import { colors } from "../../theme/colors";
 import { formatNumber, formatPercentRaw } from "../../utils/format";
 import type { PricePoint } from "../../types/financials";
+import { coercePredictionPointDate } from "./services/history";
 import type { PredictionHistoryPoint, PredictionHistoryRange } from "./types";
 
 const RANGES: PredictionHistoryRange[] = ["1D", "1W", "1M", "ALL"];
-
-function coercePredictionPointDate(value: unknown): Date | null {
-  if (value instanceof Date) {
-    return Number.isFinite(value.getTime()) ? value : null;
-  }
-  if (typeof value === "string" || typeof value === "number") {
-    const next = new Date(value);
-    return Number.isFinite(next.getTime()) ? next : null;
-  }
-  return null;
-}
 
 function toPricePoints(points: PredictionHistoryPoint[]): PricePoint[] {
   return points.flatMap((point) => {
