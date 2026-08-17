@@ -922,8 +922,18 @@ describe("Shell", () => {
     await act(async () => {
       await testSetup!.mockMouse.release(55, 34);
       await testSetup!.renderOnce();
-      await testSetup!.renderOnce();
-      for (let attempt = 0; attempt < 4; attempt += 1) {
+      // Committing the drop re-parents the pane from the dock into the
+      // floating layer. That relayout needs a variable number of driven
+      // frames depending on scheduler state left behind by earlier tests, and
+      // it is not a scheduled render, so `waitFor`/`flush` return while the
+      // pane still holds its pre-drop geometry. Drive frames until the pane
+      // reaches its committed rect; the assertions below report the failure
+      // if it never does.
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const pane = testSetup!.renderer.root
+          .findDescendantById(`floating-pane:${mainPane.instanceId}`) as BoxRenderable | undefined;
+        if (pane?.x === expected.x && pane?.y === expected.y
+          && pane?.width === expected.width && pane?.height === expected.height) break;
         await testSetup!.renderOnce();
       }
     });
