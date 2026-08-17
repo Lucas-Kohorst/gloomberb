@@ -16,6 +16,7 @@ import {
   type StackSortPreference,
 } from "../feed-stack-controller";
 import { ExternalLink, type DataTableCell, type DataTableColumn } from "../ui";
+import { MarkdownText } from "../markdown-text";
 import { wrapTextLines } from "../../utils/text-wrap";
 
 export interface FeedDataTableItem {
@@ -66,6 +67,7 @@ interface FeedDataTableStackViewProps {
   onOpenItemIdChange?: (itemId: string | null) => void;
   openItemId?: string | null;
   onPopOut?: (item: FeedDataTableItem) => void;
+  markdown?: boolean;
 }
 
 function timestampValue(item: FeedDataTableItem): number {
@@ -152,6 +154,7 @@ export function FeedDataTableStackView({
   onOpenItemIdChange,
   openItemId: controlledOpenItemId,
   onPopOut,
+  markdown = false,
 }: FeedDataTableStackViewProps) {
   const language = useAppLanguage();
   const [sortPreference, setSortPreference] = useState<SortPreference>({
@@ -310,12 +313,20 @@ export function FeedDataTableStackView({
 
           <Box height={1} />
 
-          {wrapTextLines(openItem.detailBody ?? "", detailTextWidth).map(
-            (line, index) => (
-              <Box key={`body-${index}`} height={1}>
-                <Text fg={colors.text}>{line}</Text>
-              </Box>
-            ),
+          {markdown ? (
+            <MarkdownText
+              text={openItem.detailBody ?? ""}
+              lineWidth={detailTextWidth}
+              textColor={colors.text}
+            />
+          ) : (
+            wrapTextLines(openItem.detailBody ?? "", detailTextWidth).map(
+              (line, index) => (
+                <Box key={`body-${index}`} height={1}>
+                  <Text fg={colors.text}>{line}</Text>
+                </Box>
+              ),
+            )
           )}
 
           {openItem.detailNote ? (
