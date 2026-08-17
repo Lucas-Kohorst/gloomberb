@@ -29,6 +29,11 @@ import {
   publicTickerKey,
 } from "../../../utils/exchanges";
 import { MAX_CHART_COMPOSER_SERIES } from "./chart-spec";
+import {
+  SERIES_PREFIX,
+  findFuturesCatalogEntry,
+  findTreasuryCatalogEntry,
+} from "./universal-series";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -47,7 +52,12 @@ const CHART_FIELD_IDS = {
 
 export type ParsedSeriesExpression =
   | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string }
-  | { kind: "economic"; provider: "fred"; seriesId: string; label?: string };
+  | { kind: "economic"; provider: "fred"; seriesId: string; label?: string }
+  | { kind: "adjacent-index"; indexId: string; label?: string }
+  | { kind: "future"; code: string; symbol: string; name: string; label?: string }
+  | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
+  | { kind: "benchmark"; selector: string; metric: string; label?: string }
+  | { kind: "poll"; subject: string; choice: string; label?: string };
 
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
@@ -91,11 +101,57 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parts = trimmed.split(":");
-  if (parts[0]?.trim().toUpperCase() === "FRED") {
+  const prefix = parts[0]?.trim().toUpperCase() ?? "";
+
+  if (prefix === "FRED") {
     const seriesId = parts.length === 2 ? parts[1]?.trim().toUpperCase() ?? "" : "";
     return /^[A-Z0-9._-]{1,80}$/.test(seriesId)
       ? { kind: "economic", provider: "fred", seriesId }
       : null;
+  }
+
+  // --- Universal series prefixes -----------------------------------------
+  if (prefix === SERIES_PREFIX.adjacentIndex) {
+    const indexId = parts.slice(1).join(":").trim().toLowerCase();
+    return indexId ? { kind: "adjacent-index", indexId } : null;
+  }
+
+  if (prefix === SERIES_PREFIX.future) {
+    const code = parts.slice(1).join(":").trim().toUpperCase();
+    if (!code) return null;
+    const entry = findFuturesCatalogEntry(code);
+    if (!entry) return null;
+    return { kind: "future", code: entry.code, symbol: entry.symbol, name: entry.name, label: entry.name };
+  }
+
+  if (prefix === SERIES_PREFIX.treasury) {
+    const maturity = parts.slice(1).join(":").trim().toUpperCase();
+    if (!maturity) return null;
+    const entry = findTreasuryCatalogEntry(maturity);
+    if (!entry) return null;
+    return { kind: "treasury-yield", maturity: entry.maturity, seriesId: entry.seriesId, label: entry.label };
+  }
+
+  if (prefix === SERIES_PREFIX.benchmark) {
+    // BENCH:selector:metric  — selector may contain spaces; metric is the last colon segment.
+    const rest = parts.slice(1).join(":");
+    const lastColon = rest.lastIndexOf(":");
+    if (lastColon < 0) return null;
+    const selector = rest.slice(0, lastColon).trim();
+    const metric = rest.slice(lastColon + 1).trim().toLowerCase();
+    if (!selector || !metric) return null;
+    return { kind: "benchmark", selector, metric };
+  }
+
+  if (prefix === SERIES_PREFIX.poll) {
+    // POLL:subject:choice  — subject is everything between the first and last colon; choice is the last segment.
+    const rest = parts.slice(1).join(":");
+    const lastColon = rest.lastIndexOf(":");
+    if (lastColon < 0) return null;
+    const subject = rest.slice(0, lastColon).trim();
+    const choice = rest.slice(lastColon + 1).trim();
+    if (!subject || !choice) return null;
+    return { kind: "poll", subject, choice };
   }
 
   let instrument: { symbol: string; exchange?: string } | null = null;
@@ -174,25 +230,46 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
     if (parsed) return parsed;
     const display = leg.trim() || "empty series";
     throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL, SYMBOL:field, or FRED:series, for example AAPL:price or FRED:CPIAUCSL.`,
+      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, FUT:code, UST:maturity, BENCH:selector:metric, or POLL:subject:choice.`,
     );
   });
 }
 
 export function formatSeriesExpression(series: ChartSeriesSpec): string {
-  if (series.source.kind === "economic") return `FRED:${series.source.seriesId}`;
-  return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
+  switch (series.source.kind) {
+    case "economic":
+      return `FRED:${series.source.seriesId}`;
+    case "adjacent-index":
+      return `${SERIES_PREFIX.adjacentIndex}:${series.source.indexId}`;
+    case "benchmark":
+      return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
+    case "poll":
+      return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
+    default:
+      return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
+  }
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
   if (series.label?.trim()) return series.label.trim();
-  if (series.source.kind === "economic") return `FRED ${series.source.seriesId}`;
-  const instrument = publicTickerKey(
-    series.source.instrument.symbol,
-    series.source.instrument.exchange,
-  );
-  const field = getTimeSeriesField(series.source.fieldId);
-  return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
+  switch (series.source.kind) {
+    case "economic":
+      return `FRED ${series.source.seriesId}`;
+    case "adjacent-index":
+      return `ADJ ${series.source.indexId}`;
+    case "benchmark":
+      return `${series.source.selector} ${series.source.metric}`;
+    case "poll":
+      return `${series.source.subject} ${series.source.choice}`;
+    default: {
+      const instrument = publicTickerKey(
+        series.source.instrument.symbol,
+        series.source.instrument.exchange,
+      );
+      const field = getTimeSeriesField(series.source.fieldId);
+      return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
+    }
+  }
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {
@@ -273,6 +350,91 @@ export function buildSeriesSpec(
       interpolation: coerceSeriesInterpolationForStyle(style),
     };
   }
+
+  if (expression.kind === "future") {
+    // Futures are Yahoo continuous-front symbols; they resolve through the
+    // existing security pipeline. The prefix only makes them discoverable.
+    const presentation = defaultSeriesPresentation(CHART_FIELD_IDS.price);
+    const style = overrides.style ?? presentation.style;
+    return {
+      id: `${slug(expression.code)}-fut-${index + 1}`,
+      source: {
+        kind: "security",
+        instrument: { symbol: expression.symbol },
+        fieldId: CHART_FIELD_IDS.price,
+        period: presentation.period,
+      },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: presentation.transform,
+      axis: presentation.axis,
+      panelId: presentation.panelId,
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
+  if (expression.kind === "treasury-yield") {
+    // Treasury yields are FRED constant-rate series; reuse the economic pipeline.
+    const style = overrides.style ?? "step";
+    return {
+      id: `ust-${slug(expression.maturity)}-${index + 1}`,
+      source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
+  if (expression.kind === "adjacent-index") {
+    const style = overrides.style ?? "line";
+    return {
+      id: `adj-${slug(expression.indexId)}-${index + 1}`,
+      source: { kind: "adjacent-index", indexId: expression.indexId },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
+  if (expression.kind === "benchmark") {
+    const style = overrides.style ?? "points";
+    return {
+      id: `bench-${slug(expression.selector)}-${slug(expression.metric)}-${index + 1}`,
+      source: { kind: "benchmark", selector: expression.selector, metric: expression.metric },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
+  if (expression.kind === "poll") {
+    const style = overrides.style ?? "line";
+    return {
+      id: `poll-${slug(expression.subject)}-${slug(expression.choice)}-${index + 1}`,
+      source: { kind: "poll", subject: expression.subject, choice: expression.choice },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   const presentation = defaultSeriesPresentation(expression.fieldId);
   const style = overrides.style ?? presentation.style;
   const timestampMode = defaultFinancialTimestampMode(expression.fieldId);
@@ -331,9 +493,18 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
     return "percent";
   }
   if (series.transform === "index100") return "index";
-  return series.source.kind === "economic"
-    ? `economic:${series.source.seriesId}`
-    : getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
+  switch (series.source.kind) {
+    case "economic":
+      return `economic:${series.source.seriesId}`;
+    case "adjacent-index":
+      return `adjacent-index:${series.source.indexId}`;
+    case "benchmark":
+      return `benchmark:${series.source.metric}`;
+    case "poll":
+      return `poll:${series.source.subject}`;
+    default:
+      return getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
+  }
 }
 
 function nextGeneratedPanelId(

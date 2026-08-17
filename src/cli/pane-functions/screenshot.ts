@@ -106,7 +106,7 @@ export interface PaneScreenshotExpectedChartEvidence {
   sourceSeries?: PaneScreenshotChartSeriesEvidence[];
   baseSeries?: Array<{
     id: string;
-    sourceKind: "security" | "economic";
+    sourceKind: string;
     symbol?: string;
     fieldId?: string;
     economicSeriesId?: string;
@@ -629,7 +629,9 @@ function shotExpectedChart(
             symbol: publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange),
             fieldId: series.source.fieldId,
           }
-          : { economicSeriesId: series.source.seriesId }),
+          : series.source.kind === "economic"
+            ? { economicSeriesId: series.source.seriesId }
+            : {}),
         style: series.style,
         transform: series.transform,
         panelId: series.panelId,

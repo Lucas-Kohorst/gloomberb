@@ -26,7 +26,30 @@ export interface EconomicSeriesSource {
   seriesId: string;
 }
 
-export type ChartSeriesSource = SecuritySeriesSource | EconomicSeriesSource;
+export interface AdjacentIndexSeriesSource {
+  kind: "adjacent-index";
+  indexId: string;
+}
+
+export interface BenchmarkSeriesSource {
+  kind: "benchmark";
+  /** Organization name or model ID. */
+  selector: string;
+  metric: string;
+}
+
+export interface PollSeriesSource {
+  kind: "poll";
+  subject: string;
+  choice: string;
+}
+
+export type ChartSeriesSource =
+  | SecuritySeriesSource
+  | EconomicSeriesSource
+  | AdjacentIndexSeriesSource
+  | BenchmarkSeriesSource
+  | PollSeriesSource;
 
 export interface ChartSeriesSpec {
   id: string;

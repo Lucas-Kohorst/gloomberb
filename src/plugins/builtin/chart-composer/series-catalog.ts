@@ -12,6 +12,16 @@ import {
   parseSeriesExpression,
   type ParsedSeriesExpression,
 } from "./presets";
+import {
+  SERIES_PREFIX,
+  FUTURES_CATALOG,
+  TREASURY_CATALOG,
+  BENCHMARK_METRICS,
+  BENCHMARK_ORGS,
+  POLL_SUBJECTS,
+  type FuturesCatalogEntry,
+  type TreasuryCatalogEntry,
+} from "./universal-series";
 
 export interface SeriesCatalogInstrument {
   symbol: string;
@@ -223,32 +233,89 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
   if (!query.includes(":")) return null;
   const expression = parseSeriesExpression(query);
   if (!expression) return null;
-  if (expression.kind === "economic") {
-    return {
-      id: `fred:${expression.seriesId}`,
-      label: `FRED · ${expression.seriesId}`,
-      description: "Economic series from FRED",
-      detail: "FRED",
-      expression,
-    };
+  switch (expression.kind) {
+    case "economic":
+      return {
+        id: `fred:${expression.seriesId}`,
+        label: `FRED · ${expression.seriesId}`,
+        description: "Economic series from FRED",
+        detail: "FRED",
+        expression,
+      };
+    case "adjacent-index":
+      return {
+        id: `adj:${expression.indexId}`,
+        label: `ADJ · ${expression.indexId}`,
+        description: "Adjacent prediction-market index",
+        detail: "Adjacent",
+        expression,
+      };
+    case "future":
+      return {
+        id: `fut:${expression.code}`,
+        label: `${expression.name} (${expression.code})`,
+        description: `Futures · ${expression.symbol}`,
+        detail: "Futures",
+        expression,
+      };
+    case "treasury-yield":
+      return {
+        id: `ust:${expression.maturity}`,
+        label: `${expression.maturity} Treasury Yield`,
+        description: "US Treasury yield (FRED)",
+        detail: "UST",
+        expression,
+      };
+    case "benchmark":
+      return {
+        id: `bench:${expression.selector}:${expression.metric}`,
+        label: `${expression.selector} · ${expression.metric}`,
+        description: "AI benchmark (point-in-time)",
+        detail: "Bench",
+        expression,
+      };
+    case "poll":
+      return {
+        id: `poll:${expression.subject}:${expression.choice}`,
+        label: `${expression.subject} · ${expression.choice}`,
+        description: "VoteHub poll series",
+        detail: "Poll",
+        expression,
+      };
+    default: {
+      const field = getTimeSeriesField(expression.fieldId);
+      const instrument = publicTickerKey(expression.symbol, expression.exchange);
+      return {
+        id: `${instrument}:${expression.fieldId}`,
+        label: `${instrument} · ${field?.label ?? expression.fieldId}`,
+        description: field
+          ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
+          : "Security series",
+        detail: field ? fieldFrequency(field) : "Security",
+        expression,
+      };
+    }
   }
-  const field = getTimeSeriesField(expression.fieldId);
-  const instrument = publicTickerKey(expression.symbol, expression.exchange);
-  return {
-    id: `${instrument}:${expression.fieldId}`,
-    label: `${instrument} · ${field?.label ?? expression.fieldId}`,
-    description: field
-      ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
-      : "Security series",
-    detail: field ? fieldFrequency(field) : "Security",
-    expression,
-  };
 }
 
 /** Renders a parsed series expression back into the SYMBOL:field / FRED:id text the chart command accepts. */
 export function formatParsedSeriesExpression(expression: ParsedSeriesExpression): string {
-  if (expression.kind === "economic") return `FRED:${expression.seriesId}`;
-  return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+  switch (expression.kind) {
+    case "economic":
+      return `FRED:${expression.seriesId}`;
+    case "adjacent-index":
+      return `${SERIES_PREFIX.adjacentIndex}:${expression.indexId}`;
+    case "future":
+      return `${SERIES_PREFIX.future}:${expression.code}`;
+    case "treasury-yield":
+      return `${SERIES_PREFIX.treasury}:${expression.maturity}`;
+    case "benchmark":
+      return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
+    case "poll":
+      return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    default:
+      return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+  }
 }
 
 /**
@@ -271,7 +338,11 @@ const ASSIST_FIELD_NAMES = [
 export function buildChartSeriesAssistContext(): string {
   return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
     + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
-    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data.";
+    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data, "
+    + "ADJ:indexId for Adjacent indices, FUT:code for futures (e.g. FUT:ES), "
+    + "UST:maturity for Treasury yields (e.g. UST:10Y), "
+    + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
+    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve).";
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -320,5 +391,149 @@ export function buildSeriesCatalogSuggestions(
       if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
     }
   }
+
+  // Append universal-series suggestions (futures, treasuries, benchmarks, polls)
+  // when the query matches keywords or prefixes, filling remaining slots.
+  appendUniversalSuggestions(suggestions, query, limit);
+
   return suggestions.slice(0, Math.max(1, limit));
+}
+
+function appendUniversalSuggestions(
+  suggestions: SeriesCatalogSuggestion[],
+  query: string,
+  limit: number,
+): void {
+  const remaining = Math.max(0, limit - suggestions.length);
+  if (remaining === 0) return;
+  const q = query.trim().toLowerCase();
+  const qCompact = compact(q);
+  const scored: Array<{ suggestion: SeriesCatalogSuggestion; score: number }> = [];
+
+  // Futures
+  for (const entry of FUTURES_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.code,
+      entry.name,
+      entry.symbol,
+      entry.sectorLabel,
+      "futures",
+      "future",
+    ]);
+    if (score >= 0) {
+      scored.push({ suggestion: futuresSuggestion(entry), score });
+    }
+  }
+
+  // Treasuries
+  for (const entry of TREASURY_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.maturity,
+      entry.label,
+      "treasury",
+      "yield",
+      "bond",
+      "bonds",
+      "ust",
+    ]);
+    if (score >= 0) {
+      scored.push({ suggestion: treasurySuggestion(entry), score });
+    }
+  }
+
+  // Benchmarks — org + metric combos
+  for (const org of BENCHMARK_ORGS) {
+    for (const metric of BENCHMARK_METRICS) {
+      const score = universalScore(q, qCompact, [
+        org,
+        metric.label,
+        metric.code,
+        "benchmark",
+        "bench",
+        "ai",
+        "llm",
+      ]);
+      if (score >= 0) {
+        scored.push({ suggestion: benchmarkSuggestion(org, metric.code, metric.label), score });
+      }
+    }
+  }
+
+  // Polls — subject + choice combos
+  for (const subject of POLL_SUBJECTS) {
+    for (const choice of subject.choices) {
+      const score = universalScore(q, qCompact, [
+        subject.subject,
+        choice,
+        "poll",
+        "polls",
+        "votehub",
+      ]);
+      if (score >= 0) {
+        scored.push({ suggestion: pollSuggestion(subject.subject, choice), score });
+      }
+    }
+  }
+
+  scored.sort((left, right) => right.score - left.score);
+  for (const { suggestion } of scored.slice(0, remaining)) {
+    if (!suggestions.some((entry) => entry.id === suggestion.id)) {
+      suggestions.push(suggestion);
+    }
+  }
+}
+
+function universalScore(query: string, queryCompact: string, keywords: string[]): number {
+  if (!query) return 50; // show a few when the query is empty
+  for (const keyword of keywords) {
+    const kw = keyword.toLowerCase();
+    const kwCompact = compact(kw);
+    if (kwCompact === queryCompact) return 2_000 + kwCompact.length;
+    if (kwCompact.startsWith(queryCompact)) return 1_500 + queryCompact.length;
+    if (queryCompact.includes(kwCompact) || kwCompact.includes(queryCompact)) return 1_000 + queryCompact.length;
+    for (const word of kw.split(/\s+/)) {
+      if (word.startsWith(query) || query.startsWith(word)) return 800 + query.length;
+    }
+  }
+  return -1;
+}
+
+function futuresSuggestion(entry: FuturesCatalogEntry): SeriesCatalogSuggestion {
+  return {
+    id: `fut:${entry.code}`,
+    label: `${entry.name} (${entry.code})`,
+    description: `Futures · ${entry.sectorLabel}`,
+    detail: "FUT",
+    expression: { kind: "future", code: entry.code, symbol: entry.symbol, name: entry.name, label: entry.name },
+  };
+}
+
+function treasurySuggestion(entry: TreasuryCatalogEntry): SeriesCatalogSuggestion {
+  return {
+    id: `ust:${entry.maturity}`,
+    label: entry.label,
+    description: "US Treasury yield (FRED)",
+    detail: "UST",
+    expression: { kind: "treasury-yield", maturity: entry.maturity, seriesId: entry.seriesId, label: entry.label },
+  };
+}
+
+function benchmarkSuggestion(org: string, metricCode: string, metricLabel: string): SeriesCatalogSuggestion {
+  return {
+    id: `bench:${org}:${metricCode}`,
+    label: `${org} · ${metricLabel}`,
+    description: "AI benchmark (point-in-time)",
+    detail: "Bench",
+    expression: { kind: "benchmark", selector: org, metric: metricCode },
+  };
+}
+
+function pollSuggestion(subject: string, choice: string): SeriesCatalogSuggestion {
+  return {
+    id: `poll:${subject}:${choice}`,
+    label: `${subject} · ${choice}`,
+    description: "VoteHub poll series",
+    detail: "Poll",
+    expression: { kind: "poll", subject, choice },
+  };
 }
