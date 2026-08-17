@@ -59,6 +59,14 @@ export type ParsedSeriesExpression =
   | { kind: "benchmark"; selector: string; metric: string; label?: string }
   | { kind: "poll"; subject: string; choice: string; label?: string };
 
+/** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
+export interface ConstantSeriesExpression {
+  kind: "constant";
+  value: number;
+}
+
+export type SeriesOrConstant = ParsedSeriesExpression | ConstantSeriesExpression;
+
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
   return /^[A-Z0-9^][A-Z0-9.^_-]{0,31}$/.test(symbol) ? symbol : null;
@@ -189,10 +197,21 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
 export type BinarySeriesOperator = "/" | "-";
 
 export interface ParsedBinarySeriesExpression {
-  left: ParsedSeriesExpression;
-  right: ParsedSeriesExpression;
+  left: SeriesOrConstant;
+  right: SeriesOrConstant;
   operator: BinarySeriesOperator;
   studyKind: "ratio" | "spread";
+}
+
+export function parseConstantExpression(value: string): ConstantSeriesExpression | null {
+  const trimmed = value.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? { kind: "constant", value: parsed } : null;
+}
+
+function parseSeriesOrConstant(value: string): SeriesOrConstant | null {
+  return parseConstantExpression(value) ?? parseSeriesExpression(value);
 }
 
 export function parseBinarySeriesExpression(value: string): ParsedBinarySeriesExpression | null {
@@ -202,16 +221,16 @@ export function parseBinarySeriesExpression(value: string): ParsedBinarySeriesEx
   // without requiring surrounding whitespace.
   const slashMatch = /^(.+?)\s*\/\s*(.+)$/.exec(trimmed);
   if (slashMatch) {
-    const left = parseSeriesExpression(slashMatch[1]!.trim());
-    const right = parseSeriesExpression(slashMatch[2]!.trim());
+    const left = parseSeriesOrConstant(slashMatch[1]!.trim());
+    const right = parseSeriesOrConstant(slashMatch[2]!.trim());
     if (left && right) return { left, right, operator: "/", studyKind: "ratio" };
   }
   // `-` can appear inside symbols/exchange codes, so require surrounding
   // whitespace to avoid mis-splitting `3HNX:LSE`-style tokens.
   const dashMatch = /^(.+?)\s+-\s+(.+)$/.exec(trimmed);
   if (dashMatch) {
-    const left = parseSeriesExpression(dashMatch[1]!.trim());
-    const right = parseSeriesExpression(dashMatch[2]!.trim());
+    const left = parseSeriesOrConstant(dashMatch[1]!.trim());
+    const right = parseSeriesOrConstant(dashMatch[2]!.trim());
     if (left && right) return { left, right, operator: "-", studyKind: "spread" };
   }
   return null;
@@ -245,6 +264,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
       return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
+    case "constant":
+      return String(series.source.value);
     default:
       return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
   }
@@ -261,6 +282,8 @@ export function chartSeriesLabel(series: ChartSeriesSpec): string {
       return `${series.source.selector} ${series.source.metric}`;
     case "poll":
       return `${series.source.subject} ${series.source.choice}`;
+    case "constant":
+      return String(series.source.value);
     default: {
       const instrument = publicTickerKey(
         series.source.instrument.symbol,
@@ -332,10 +355,24 @@ function defaultSeriesPresentation(fieldId: string): {
 }
 
 export function buildSeriesSpec(
-  expression: ParsedSeriesExpression,
+  expression: SeriesOrConstant,
   index: number,
   overrides: Partial<Omit<ChartSeriesSpec, "id" | "source">> = {},
 ): ChartSeriesSpec {
+  if (expression.kind === "constant") {
+    const style = overrides.style ?? "step";
+    return {
+      id: `const-${slug(String(expression.value))}-${index + 1}`,
+      source: { kind: "constant", value: expression.value },
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   if (expression.kind === "economic") {
     const style = overrides.style ?? "step";
     return {
@@ -502,6 +539,8 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
       return `benchmark:${series.source.metric}`;
     case "poll":
       return `poll:${series.source.subject}`;
+    case "constant":
+      return "constant";
     default:
       return getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
   }
@@ -659,7 +698,7 @@ function panelsForSeries(series: readonly ChartSeriesSpec[], studies: readonly C
 }
 
 /** Keep arbitrary sources legible when one panel would require more than two axes. */
-function buildCustomSeries(expressions: readonly ParsedSeriesExpression[]): ChartSeriesSpec[] {
+function buildCustomSeries(expressions: readonly SeriesOrConstant[]): ChartSeriesSpec[] {
   const parsedSeries = expressions.map((expression, index) => buildSeriesSpec(expression, index));
   const mixedPriceAndFinancial = parsedSeries.some(isMarketPriceSeries)
     && parsedSeries.some(isFinancialSeries);

@@ -159,6 +159,8 @@ function seriesFallbackLabel(source: ChartSeriesSpec["source"]): string {
       return `${source.selector} ${source.metric}`;
     case "poll":
       return `${source.subject} ${source.choice}`;
+    case "constant":
+      return String(source.value);
     default: {
       const field = getTimeSeriesField(source.fieldId);
       return `${instrumentLabel(source)} ${field?.shortLabel ?? source.fieldId.split(".").at(-1) ?? "Series"}`;
@@ -642,6 +644,26 @@ function baseUniversalSeries(
   };
 }
 
+function baseConstantSeries(spec: ChartSeriesSpec, index: number): ResolvedSeries | null {
+  if (spec.source.kind !== "constant") return null;
+  return {
+    id: spec.id,
+    label: spec.label?.trim() || String(spec.source.value),
+    color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
+    unit: "",
+    unitGroup: "constant",
+    nativeFrequency: "auto",
+    dataShape: "scalar",
+    style: spec.style,
+    transform: spec.transform,
+    axis: spec.axis === "right" ? "right" : "left",
+    panelId: spec.panelId,
+    interpolation: spec.interpolation,
+    // No timestamps of its own; sampled at the union of the other inputs below.
+    points: [],
+  };
+}
+
 function assignAxes(
   series: ResolvedSeries[],
   specs: readonly { id: string; axis: ChartSeriesSpec["axis"] }[],
@@ -950,6 +972,10 @@ export async function resolveChartSpecData(
   const loaded = await Promise.all(spec.series.map(async (seriesSpec, index) => {
     if (!calculationSeriesIds.has(seriesSpec.id)) return null;
     try {
+      if (seriesSpec.source.kind === "constant") {
+        return baseConstantSeries(seriesSpec, index);
+      }
+
       if (seriesSpec.source.kind === "economic") {
         const request: FredSeriesRequest = {
           seriesId: seriesSpec.source.seriesId,
@@ -1050,6 +1076,38 @@ export async function resolveChartSpecData(
       return unloadableSeries(seriesSpec, index, message);
     }
   }));
+
+  // Constant operands have no timestamps of their own. Sample each one at the
+  // union of the other loaded inputs' event dates so pair formulas align on
+  // every observation instead of collapsing to a single point.
+  const constantSpecs = new Map(
+    spec.series
+      .filter((seriesSpec) => seriesSpec.source.kind === "constant")
+      .map((seriesSpec) => [seriesSpec.id, seriesSpec] as const),
+  );
+  if (constantSpecs.size > 0) {
+    const sampleTimes = new Set<number>();
+    for (const entry of loaded) {
+      if (!entry || constantSpecs.has(entry.id)) continue;
+      for (const point of entry.points) {
+        const time = point.date.getTime();
+        if (Number.isFinite(time)) sampleTimes.add(time);
+      }
+    }
+    const timestamps = [...sampleTimes].sort((left, right) => left - right);
+    for (const entry of loaded) {
+      if (!entry || !constantSpecs.has(entry.id)) continue;
+      const constantSpec = constantSpecs.get(entry.id);
+      if (!constantSpec || constantSpec.source.kind !== "constant") continue;
+      const value = constantSpec.source.value;
+      entry.points = timestamps.map((time) => ({
+        date: new Date(time),
+        observedAt: new Date(time),
+        value,
+        provenance: { quality: "derived" as const },
+      }));
+    }
+  }
 
   const rawSeries = loaded.filter((entry): entry is ResolvedSeries => !!entry);
   const marketTimelineSeries = primaryMarketSeries?.visible === false

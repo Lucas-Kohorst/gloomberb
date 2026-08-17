@@ -18,6 +18,7 @@ import {
   applySeriesTimestampMode,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
+  parseBinarySeriesExpression,
   parseChartExpression,
   rebindChartSecuritySymbol,
   resolveChartFieldAlias,
@@ -194,6 +195,31 @@ describe("chart composer expressions", () => {
     const spread = spec.studies.find((study) => study.kind === "spread");
     expect(spread).toBeDefined();
     expect(spec.series).toHaveLength(2);
+  });
+
+  test("builds a spread study from a numeric constant on the left", () => {
+    const spec = buildCustomChartPreset("100 - STRC:price");
+    expect(spec.series.map((series) => series.source)).toEqual([
+      { kind: "constant", value: 100 },
+      expect.objectContaining({ kind: "security", instrument: { symbol: "STRC" }, fieldId: "market.ohlcv" }),
+    ]);
+    const spread = spec.studies.find((study) => study.kind === "spread");
+    expect(spread).toBeDefined();
+    expect(spread!.inputSeriesIds).toEqual(spec.series.slice(0, 2).map((series) => series.id));
+    expect(parseChartSpec(spec)).not.toBeNull();
+  });
+
+  test("builds a ratio study with the constant on the right", () => {
+    const spec = buildCustomChartPreset("AAPL:price / 2");
+    expect(spec.series[0]?.source).toMatchObject({ kind: "security", instrument: { symbol: "AAPL" } });
+    expect(spec.series[1]?.source).toEqual({ kind: "constant", value: 2 });
+    expect(spec.studies.find((study) => study.kind === "ratio")).toBeDefined();
+  });
+
+  test("does not treat a lone numeric literal as a binary expression", () => {
+    expect(parseBinarySeriesExpression("100")).toBeNull();
+    expect(buildCustomChartPreset("100").series.map((series) => series.source))
+      .toEqual([expect.objectContaining({ kind: "security", instrument: { symbol: "100" } })]);
   });
 
   test("does not treat a single series as a binary expression", () => {

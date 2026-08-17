@@ -29,6 +29,7 @@ let initSnapshot: ElectrobunBackendInit | null = null;
 let socket: WebSocket | null = null;
 const capabilityEventListeners = new Map<string, Set<CapabilityEventListener>>();
 const desktopStateListeners = new Set<(message: DesktopStateMessage) => void>();
+const HOSTED_RPC_PATH = "/_gloomberb/rpc?transport=2";
 
 function sessionToken(): string {
   const token = window.__GLOOM_WEB_SESSION;
@@ -37,10 +38,12 @@ function sessionToken(): string {
 }
 
 async function request<T>(method: DesktopBackendRequestMethod, payload: unknown): Promise<T> {
-  const response = await fetch("/_gloomberb/rpc", {
+  const response = await fetch(HOSTED_RPC_PATH, {
     method: "POST",
+    cache: "no-store",
     headers: {
       authorization: `Bearer ${sessionToken()}`,
+      "cache-control": "no-store",
       "content-type": "application/json",
     },
     body: JSON.stringify({ method, payload: encodeRpcValue(payload) }),

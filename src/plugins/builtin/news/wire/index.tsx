@@ -153,7 +153,13 @@ export const newsWireModule: PluginModule = {
 
     const source = createRssNewsCapability(
       () => getEnabledNewsFeeds(loadNewsFeedSettings(ctx.configState)),
-      { persistence: ctx.persistence },
+      {
+        persistence: ctx.persistence,
+        knownTickers: async () => {
+          const tickers = await ctx.tickerRepository.loadAllTickers();
+          return new Set(tickers.map((ticker) => ticker.metadata.ticker.toUpperCase()));
+        },
+      },
     );
     ctx.registerCapability(source);
     disposeRssConnection = registerConnectionSource({

@@ -4,6 +4,7 @@ import type { AppNotificationRequest } from "../types/plugin";
 import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
 import type { AsciiFontName } from "./ascii-font";
 import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
+import type { ChartToolKind } from "../components/chart/composite/tools";
 
 export const TextAttributes = {
   NONE: 0,
@@ -238,6 +239,10 @@ export interface TradingViewChartProps extends BoxProps {
   viewport?: { start: Date; end: Date } | null;
   interactive?: boolean;
   onViewportChange?: (range: { start: Date; end: Date }) => void;
+  /** Drawings and tool drags to overlay, in plot ratios. */
+  vectors?: readonly ChartVectorShape[] | null;
+  /** Keyboard-armed tool; the chart owns interaction for armed tools. */
+  armedTool?: ChartToolKind | null;
 }
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;

@@ -76,7 +76,7 @@ export function PaneSuggestions({
   const shortcutFg = blendHex(colors.headerText, colors.header, 0.7);
 
   return (
-    <Box flexDirection="row" alignItems="center" gap={1}>
+    <Box flexDirection="row" alignItems="center" gap={2}>
       {suggestions.map((suggestion, idx) => {
         const hovered = hoveredIdx === idx;
         return (
@@ -84,6 +84,8 @@ export function PaneSuggestions({
             key={suggestion.templateId}
             flexDirection="row"
             alignItems="center"
+            gap={1}
+            paddingHorizontal={1}
             onMouseOver={() => setHoveredIdx(idx)}
             onMouseOut={() => setHoveredIdx(null)}
             onMouseDown={() => handleClick(suggestion)}
@@ -93,7 +95,7 @@ export function PaneSuggestions({
               {suggestion.label}
             </Text>
             <Text fg={hovered ? blendHex(colors.headerText, colors.header, 0.3) : shortcutFg}>
-              {" "}{suggestion.shortcut}
+              {suggestion.shortcut}
             </Text>
           </Box>
         );

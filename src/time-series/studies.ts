@@ -413,6 +413,10 @@ function pairedFrequency(left: ResolvedSeries, right: ResolvedSeries): SeriesPer
   return left.nativeFrequency === right.nativeFrequency ? left.nativeFrequency : "auto";
 }
 
+function isConstantSeries(series: ResolvedSeries): boolean {
+  return series.unitGroup === "constant" && series.unit === "";
+}
+
 function resolvePairStudy(
   spec: ChartStudySpec,
   left: ResolvedSeries,
@@ -430,8 +434,14 @@ function resolvePairStudy(
     ));
     const ratioStudy = spec.kind === "ratio";
     const outputUnit = ratioStudy
-      ? ratioUnit(left, right)
-      : { unit: left.unit, unitGroup: left.unitGroup };
+      ? isConstantSeries(left)
+        ? { unit: right.unit, unitGroup: right.unitGroup }
+        : isConstantSeries(right)
+          ? { unit: left.unit, unitGroup: left.unitGroup }
+          : ratioUnit(left, right)
+      : isConstantSeries(left)
+        ? { unit: right.unit, unitGroup: right.unitGroup }
+        : { unit: left.unit, unitGroup: left.unitGroup };
     return [outputSeries(spec, left, {
       label: ratioStudy
         ? `${left.label} / ${right.label}`
@@ -540,7 +550,8 @@ export function resolveStudies(
       const differentCurrencies = inputUnit.currency !== null
         && pairedUnit.currency !== null
         && inputUnit.currency !== pairedUnit.currency;
-      if (spec.kind === "spread" && !sameDimension) {
+      const constantInput = isConstantSeries(input) || isConstantSeries(pairedInput);
+      if (!constantInput && spec.kind === "spread" && !sameDimension) {
         warnings.push(
           `${spec.id}: spread cannot subtract ${pairedInput.unit} from ${input.unit}; choose inputs with matching units.`,
         );

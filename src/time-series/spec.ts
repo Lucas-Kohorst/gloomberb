@@ -152,6 +152,10 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!subject || !choice) return null;
     return { kind: "poll", subject, choice };
   }
+  if (source.kind === "constant") {
+    if (typeof source.value !== "number" || !Number.isFinite(source.value)) return null;
+    return { kind: "constant", value: source.value };
+  }
   if (source.kind !== "security") return null;
   const instrument = record(source.instrument);
   const symbol = nonEmptyString(instrument?.symbol);
@@ -468,6 +472,10 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (!entry.source.choice.trim()) {
         errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
+      }
+    } else if (entry.source.kind === "constant") {
+      if (!Number.isFinite(entry.source.value)) {
+        errors.push(issue(`${path}.source.value`, "invalid-constant", "Constant value must be a finite number."));
       }
     }
     if (isOhlcSeriesStyle(entry.style)) {

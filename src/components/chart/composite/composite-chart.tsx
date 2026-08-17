@@ -1102,6 +1102,8 @@ function CompositePanelSurface({
           colors={colors}
           viewport={viewport}
           interactive={interactive}
+          vectors={vectors}
+          armedTool={armedTool}
           onViewportChange={onSetViewport}
           data-gloom-interactive={interactive ? "true" : undefined}
           data-gloom-role={COMPOSITE_PANEL_ROLE}

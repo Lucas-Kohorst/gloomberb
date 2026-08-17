@@ -977,6 +977,89 @@ describe("resolveChartSpecData", () => {
     });
   });
 
+  test("resolves a numeric constant leg in a spread formula across input timestamps", async () => {
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => ({
+        ...emptyFinancials(),
+        quarterlyStatements: [
+          {
+            date: "2024-12-31",
+            availableAt: "2025-02-10",
+            fieldAvailability: { totalRevenue: "2025-02-10" },
+            totalRevenue: 80,
+          },
+          {
+            date: "2025-03-31",
+            availableAt: "2025-05-10",
+            fieldAvailability: { totalRevenue: "2025-05-10" },
+            totalRevenue: 120,
+          },
+        ],
+      }),
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1Y", resolution: "auto" },
+      panels: [{ id: "main" }, { id: "formula" }],
+      series: [
+        {
+          id: "const",
+          source: { kind: "constant", value: 100 },
+          style: "step",
+          transform: "raw",
+          axis: "left",
+          panelId: "main",
+          interpolation: "step-after",
+          visible: false,
+        },
+        {
+          id: "left",
+          source: {
+            kind: "security",
+            instrument: { symbol: "LEFT" },
+            fieldId: "fundamental.totalRevenue",
+            period: "quarterly",
+            timestampMode: "available-at",
+          },
+          style: "columns",
+          transform: "raw",
+          axis: "left",
+          panelId: "main",
+          interpolation: "none",
+          visible: false,
+        },
+      ],
+      studies: [
+        {
+          id: "spread",
+          kind: "spread",
+          inputSeriesIds: ["const", "left"],
+          parameters: {},
+          panelId: "formula",
+          axis: "left",
+        },
+      ],
+    };
+
+    const result = await resolveChartSpecData(spec, {
+      dataProvider: provider,
+      now: new Date("2025-08-01T00:00:00Z"),
+      loadFredSeries: async () => fredLoad(),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    const spread = result.series.find(({ id }) => id === "spread");
+    expect(spread).toMatchObject({ unit: "currency", unitGroup: "currency-total" });
+    expect(spread?.points.map((point) => ({
+      date: point.date.toISOString().slice(0, 10),
+      value: point.value,
+    }))).toEqual([
+      { date: "2025-02-10", value: 20 },
+      { date: "2025-05-10", value: -20 },
+    ]);
+  });
+
   test("keeps an explicit viewport when a latest-observation cap is also set", async () => {
     const provider = createTestDataProvider({
       getTickerFinancials: async () => ({

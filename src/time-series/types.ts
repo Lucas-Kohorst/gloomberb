@@ -44,12 +44,19 @@ export interface PollSeriesSource {
   choice: string;
 }
 
+/** A numeric literal used as one leg of a derived formula (e.g. `100 - STRC:price`). */
+export interface ConstantSeriesSource {
+  kind: "constant";
+  value: number;
+}
+
 export type ChartSeriesSource =
   | SecuritySeriesSource
   | EconomicSeriesSource
   | AdjacentIndexSeriesSource
   | BenchmarkSeriesSource
-  | PollSeriesSource;
+  | PollSeriesSource
+  | ConstantSeriesSource;
 
 export interface ChartSeriesSpec {
   id: string;

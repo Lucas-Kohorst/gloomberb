@@ -1,5 +1,3 @@
-import { httpFetch } from "../utils/http-transport";
-
 /**
  * Share payloads are stored on the hosted worker (Cloudflare KV) behind short
  * IDs so that share URLs stay compact: terminal.kohor.st/s/abc123 instead of
@@ -11,6 +9,16 @@ import { httpFetch } from "../utils/http-transport";
  */
 
 const SHARE_API_BASE = "/api/share";
+
+// Shares live on the same origin as the hosted app. They must be fetched
+// directly from the browser rather than through the shared http.fetch
+// transport: on the hosted client that transport is the `/_gloomberb/rpc`
+// bridge, whose worker-side fetch drops the session cookie and the Origin
+// header, so a create-share POST can never authenticate (401/403/502). A
+// direct same-origin fetch carries both and is exempt from CORS.
+function sameOriginFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  return (globalThis.fetch)(url, { ...init, credentials: "include" });
+}
 
 export interface ShareEnvelope {
   kind: "article" | "chart";
@@ -47,7 +55,7 @@ function resolveShareApiBase(): string {
 export async function createShare(
   request: CreateShareRequest,
 ): Promise<CreateShareResponse> {
-  const response = await httpFetch(resolveShareApiBase(), {
+  const response = await sameOriginFetch(resolveShareApiBase(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
@@ -64,7 +72,7 @@ export async function resolveShare(
   id: string,
 ): Promise<ResolveShareResponse | null> {
   const base = resolveShareApiBase();
-  const response = await httpFetch(`${base}/${encodeURIComponent(id)}`);
+  const response = await sameOriginFetch(`${base}/${encodeURIComponent(id)}`);
   if (response.status === 404) return null;
   if (!response.ok) {
     throw new Error(`Failed to resolve share (${response.status})`);

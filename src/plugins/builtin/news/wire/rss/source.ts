@@ -31,7 +31,8 @@ const rssClient = createThrottledFetch({
 });
 
 export interface RssNewsCapabilityOptions {
-  knownTickers?: Set<string>;
+  /** Resolved at fetch time so newly added tickers are matched without a restart. */
+  knownTickers?: () => Promise<Set<string>>;
   persistence?: PluginPersistence;
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
 }
@@ -142,8 +143,9 @@ export function createRssNewsCapability(
         const resp = await fetchText(feed.url);
         if (!resp.ok) throw new Error("RSS request failed");
         const xml = await resp.text();
+        const knownTickers = options.knownTickers ? await options.knownTickers() : undefined;
         const items = parseRssFeed(xml, feed)
-          .map((item) => enrichNewsItem(item, feed.authority, options.knownTickers));
+          .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
         writeFeedCache(options.persistence, feed, items);
         return items;
       });

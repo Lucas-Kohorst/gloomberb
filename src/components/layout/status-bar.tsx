@@ -547,8 +547,10 @@ function StatusBarWidgets() {
   return (
     <>
       <Box flexGrow={1} />
-      <Text fg={colors.textDim} paddingRight={2}>v{VERSION}</Text>
-      <PluginSlot name="status:widget" />
+      <Text fg={colors.textDim} paddingRight={3}>v{VERSION}</Text>
+      <Box paddingRight={2}>
+        <PluginSlot name="status:widget" />
+      </Box>
     </>
   );
 }

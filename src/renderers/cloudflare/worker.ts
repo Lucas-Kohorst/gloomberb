@@ -213,7 +213,9 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
     if (!user && requestPayload?.method !== "init" && !isPublicHttpFetch) {
       return Response.json({ error: "Authentication required." }, { status: 401 });
     }
-    return handleHostedBackendRpc(env, user, request);
+    const response = await handleHostedBackendRpc(env, user, request);
+    response.headers.set("cache-control", "no-store, private");
+    return response;
   }
   return Response.json({ error: "Realtime events are not available in the hosted client yet." }, { status: 501 });
 }
