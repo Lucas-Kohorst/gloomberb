@@ -63,6 +63,7 @@ import { resolveChartComposerShortcut } from "./shortcuts";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { useShareView } from "../shared/use-share-view";
+import { serializeChartSpecForShare } from "../shared/share-link";
 
 const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
@@ -513,7 +514,7 @@ function ChartComposerSurface({
   const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
   const shareView = useShareView();
   const shareChart = useCallback(() => {
-    void shareView("chart", { spec });
+    void shareView("chart", serializeChartSpecForShare(spec));
   }, [shareView, spec]);
 
   useShortcut((event) => {

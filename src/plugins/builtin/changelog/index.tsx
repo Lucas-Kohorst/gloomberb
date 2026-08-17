@@ -188,14 +188,14 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   }, [openReleaseId]);
 
   const shareRelease = useCallback(() => {
-    if (!openRelease) return;
-    void copyShareLink(encodeChangelogReleaseForShare(openRelease));
-  }, [copyShareLink, openRelease]);
+    if (!linkRelease) return;
+    void copyShareLink(encodeChangelogReleaseForShare(linkRelease));
+  }, [copyShareLink, linkRelease]);
 
   useShortcut((event) => {
     if (!focused) return;
     if (isPlainKey(event, "y")) {
-      if (!openRelease) return;
+      if (!linkRelease) return;
       event.stopPropagation?.();
       event.preventDefault?.();
       shareRelease();
@@ -299,11 +299,11 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
         void loadReleases();
       },
     }];
-    if (openRelease) {
+    if (linkRelease) {
       hints.push({ id: "share", key: "y", label: " share", onPress: shareRelease });
     }
     return hints;
-  }, [loadReleases, openRelease, shareRelease]);
+  }, [linkRelease, loadReleases, shareRelease]);
 
   useExternalLinkFooter({
     registrationId: "changelog",
