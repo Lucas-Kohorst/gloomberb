@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore, type Dispatch } from "react";
 import { apiClient } from "../api-client";
-import { setHostedConfigUserId } from "../data/config/hosted-user-persist";
+import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
+import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
+import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginRegistry } from "../plugins/registry";
@@ -44,14 +46,41 @@ export function useCloudSyncRuntime({
   }, [initialized, state.config, state.tickers]);
 
   useEffect(() => {
-    const syncSignedInUser = () => {
-      setHostedConfigUserId(apiClient.getCurrentUser()?.id ?? null);
-      if (!initialized || !apiClient.isVerified()) return;
+    let lastUserId: string | null = apiClient.getCurrentUser()?.id ?? null;
+    const syncSignedInUser = async () => {
+      const userId = apiClient.getCurrentUser()?.id ?? null;
+      setHostedConfigUserId(userId);
+      if (!initialized) return;
+      if (userId && userId !== lastUserId) {
+        // User signed in (possibly after sign-out). Reset the sync pull state
+        // so Gloom Cloud is re-pulled with the new session, and try to restore
+        // the server-side config snapshot before the sync pull runs.
+        cloudSyncController.resetPullState();
+        try {
+          const remote = await fetchHostedConfigSnapshot();
+          const localStamp = peekHostedUserConfigStamp();
+          const currentState = getState();
+          const merged = mergeRemoteConfigSnapshot(
+            currentState.config,
+            remote,
+            localStamp?.updatedAt ?? null,
+          );
+          if (merged) {
+            dispatch({ type: "SET_CONFIG", config: merged });
+            writeHostedUserConfig(merged);
+            hydrateHostedByokConfig(merged);
+          }
+        } catch {
+          // Network failure — the sync pull will still run as a fallback.
+        }
+      }
+      lastUserId = userId;
+      if (!apiClient.isVerified()) return;
       void cloudSyncController.requestSync({ reason: "signed-in" });
     };
-    syncSignedInUser();
-    return apiClient.subscribeCurrentUser(syncSignedInUser);
-  }, [initialized]);
+    void syncSignedInUser();
+    return apiClient.subscribeCurrentUser(() => void syncSignedInUser());
+  }, [initialized, dispatch, getState]);
 }
 
 export function useCloudSyncStatus() {

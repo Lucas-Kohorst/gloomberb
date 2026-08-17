@@ -123,6 +123,16 @@ export class CloudSyncController {
     this.setStatus({ phase: "disabled", transportId: null, error: null });
   }
 
+  /**
+   * Clears the "already pulled" flag for the active transport so the next
+   * sync re-pulls. Called when the signed-in user changes (sign-in after
+   * sign-out) so a stale in-memory pull state does not skip the pull.
+   */
+  resetPullState(): void {
+    this.hasPulledForTransport.clear();
+    this.lastSignature = null;
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

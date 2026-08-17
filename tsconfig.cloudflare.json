@@ -7,5 +7,8 @@
   "include": [
     "src/renderers/cloudflare/**/*.ts",
     "worker-configuration.d.ts"
+  ],
+  "exclude": [
+    "src/renderers/cloudflare/**/*.test.ts"
   ]
 }

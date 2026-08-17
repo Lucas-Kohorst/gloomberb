@@ -26,11 +26,17 @@ import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
 import {
+  fetchHostedConfigSnapshot,
+  mergeRemoteConfigSnapshot,
+} from "../../../data/config/hosted-config-snapshot";
+import {
   getHostedConfigUserId,
   hydrateHostedUserConfig,
+  peekHostedUserConfigStamp,
   readLastHostedUserId,
   rememberHostedUserId,
   setHostedConfigUserId,
+  writeHostedUserConfig,
 } from "../../../data/config/hosted-user-persist";
 import { apiClient } from "../../../api-client";
 import {
@@ -80,17 +86,18 @@ async function boot(): Promise<void> {
   installElectrobunBrokerRemoteClient();
   installElectrobunHttpFetchTransport();
   let degraded = false;
+  let hostedSession: Awaited<ReturnType<typeof resolveHostedSession>> | null = null;
   if (isHosted) {
     installHostedCloudApiFetchTransport();
-    const session = await resolveHostedSession(fetch);
-    degraded = session.degraded;
-    window.__GLOOM_CLOUD_AUTHENTICATED = !!session.user;
-    apiClient.setSessionToken(session.user ? "hosted-session" : null);
-    apiClient.restoreCachedUser(session.user ?? null);
-    if (session.user) {
-      rememberHostedUserId(session.user.id);
-      setHostedConfigUserId(session.user.id);
-    } else if (session.degraded) {
+    hostedSession = await resolveHostedSession(fetch);
+    degraded = hostedSession.degraded;
+    window.__GLOOM_CLOUD_AUTHENTICATED = !!hostedSession.user;
+    apiClient.setSessionToken(hostedSession.user ? "hosted-session" : null);
+    apiClient.restoreCachedUser(hostedSession.user ?? null);
+    if (hostedSession.user) {
+      rememberHostedUserId(hostedSession.user.id);
+      setHostedConfigUserId(hostedSession.user.id);
+    } else if (hostedSession.degraded) {
       // Gloom Cloud never answered. Keep the last user's config so a slow
       // upstream does not look like a wiped account, but leave the api client
       // unauthenticated so nothing syncs against an unverified session.
@@ -129,6 +136,27 @@ async function boot(): Promise<void> {
   if (isHosted) {
     hydrateHostedUserConfig(init.config);
     hydrateHostedByokConfig(init.config);
+    // After local hydration, try the server-side snapshot. If it is newer than
+    // the local save (e.g. browser data was cleared, or a different device),
+    // overlay it and persist it locally so the next boot is fast.
+    if (hostedSession?.user) {
+      try {
+        const remote = await fetchHostedConfigSnapshot();
+        const localStamp = peekHostedUserConfigStamp();
+        const merged = mergeRemoteConfigSnapshot(
+          init.config,
+          remote,
+          localStamp?.updatedAt ?? null,
+        );
+        if (merged) {
+          Object.assign(init.config, merged);
+          writeHostedUserConfig(init.config);
+          hydrateHostedByokConfig(init.config);
+        }
+      } catch {
+        // Network or parse failure — proceed with whatever local hydration gave us.
+      }
+    }
   }
   window.__GLOOM_CLOUD_DEGRADED = degraded;
   installElectrobunAiHost();

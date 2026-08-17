@@ -16,6 +16,7 @@ export default {
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
     }
+    if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
@@ -73,6 +74,69 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     const value = await env.SHARES.get(id);
     if (!value) return Response.json({ error: "Share not found." }, { status: 404 });
     return new Response(value, { headers: { "content-type": "application/json" } });
+  }
+
+  return Response.json({ error: "Method not allowed." }, { status: 405 });
+}
+
+const CONFIG_SNAPSHOT_MAX_BYTES = 512_000;
+const CONFIG_SNAPSHOT_KEY_PREFIX = "config:";
+
+function configSnapshotKey(userId: string): string {
+  return `${CONFIG_SNAPSHOT_KEY_PREFIX}${userId}`;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Authenticated GET/PUT for a signed-in user's config snapshot, stored in the
+ * SHARES KV under a `config:{userId}` key. The user id is always derived from
+ * the verified session server-side — a client cannot read or write another
+ * user's snapshot.
+ */
+async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<Response> {
+  const user = await fetchSessionUser(request, env);
+  if (!user) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+
+  if (request.method === "GET") {
+    const raw = await env.SHARES.get(configSnapshotKey(user.id));
+    if (!raw) return Response.json({ config: null, updatedAt: null });
+    return new Response(raw, { headers: { "content-type": "application/json" } });
+  }
+
+  if (request.method === "PUT") {
+    // Strict origin check: an absent Origin cannot be trusted, or any
+    // non-browser client bypasses the check by omitting the header.
+    if (request.headers.get("Origin") !== new URL(request.url).origin) {
+      return Response.json({ error: "Invalid origin" }, { status: 403 });
+    }
+
+    const rawBody = await request.text().catch(() => "");
+    if (new TextEncoder().encode(rawBody).byteLength > CONFIG_SNAPSHOT_MAX_BYTES) {
+      return Response.json({ error: "Config snapshot is too large." }, { status: 413 });
+    }
+
+    let body: { config?: unknown; updatedAt?: unknown } | null;
+    try {
+      body = JSON.parse(rawBody || "null") as { config?: unknown; updatedAt?: unknown } | null;
+    } catch {
+      return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
+    }
+    if (!body || !isPlainObject(body.config) || typeof body.updatedAt !== "string") {
+      return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
+    }
+
+    const record = JSON.stringify({
+      userId: user.id,
+      updatedAt: body.updatedAt,
+      config: body.config,
+    });
+    await env.SHARES.put(configSnapshotKey(user.id), record);
+    return Response.json({ ok: true, updatedAt: body.updatedAt });
   }
 
   return Response.json({ error: "Method not allowed." }, { status: 405 });
