@@ -261,7 +261,7 @@ async function buildChartComposerReport(
     if (output?.points.length) return [];
     return [entry.source.kind === "security"
       ? publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange)
-      : `FRED:${entry.source.seriesId}`];
+      : entry.label ?? entry.id];
   });
   const rowCount = series.reduce((count, entry) => count + entry.observations.length, 0);
   const tableRows = series.map((entry) => {

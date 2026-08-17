@@ -56,7 +56,9 @@ function clampIndex(value: number, length: number): number {
 }
 
 function seriesFieldId(series: ChartSeriesSpec): string {
-  return series.source.kind === "security" ? series.source.fieldId : series.source.seriesId;
+  if (series.source.kind === "security") return series.source.fieldId;
+  if (series.source.kind === "economic") return series.source.seriesId;
+  return series.source.kind;
 }
 
 function timingDescription(series: ChartSeriesSpec): string | null {

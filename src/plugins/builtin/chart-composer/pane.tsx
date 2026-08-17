@@ -132,7 +132,7 @@ function ChartComposerSurface({
             ?? defaultFinancialTimestampMode(entry.source.fieldId)
             ?? "",
         ]
-      : [entry.id, entry.source.kind, entry.source.seriesId]),
+      : [entry.id, entry.source.kind, entry.source.kind === "economic" ? entry.source.seriesId : ""]),
   }), [spec.series, spec.viewport.dateWindow, spec.viewport.maxPoints, spec.viewport.range, spec.viewport.resolution]);
   const [runtimeViewportState, setRuntimeViewportState] = useState<{
     key: string;

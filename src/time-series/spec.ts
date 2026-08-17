@@ -135,6 +135,23 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!seriesId || source.provider !== "fred") return null;
     return { kind: "economic", provider: "fred", seriesId };
   }
+  if (source.kind === "adjacent-index") {
+    const indexId = nonEmptyString(source.indexId);
+    if (!indexId) return null;
+    return { kind: "adjacent-index", indexId: indexId.toLowerCase() };
+  }
+  if (source.kind === "benchmark") {
+    const selector = nonEmptyString(source.selector);
+    const metric = nonEmptyString(source.metric);
+    if (!selector || !metric) return null;
+    return { kind: "benchmark", selector, metric: metric.toLowerCase() };
+  }
+  if (source.kind === "poll") {
+    const subject = nonEmptyString(source.subject);
+    const choice = nonEmptyString(source.choice);
+    if (!subject || !choice) return null;
+    return { kind: "poll", subject, choice };
+  }
   if (source.kind !== "security") return null;
   const instrument = record(source.instrument);
   const symbol = nonEmptyString(instrument?.symbol);
@@ -203,7 +220,9 @@ function normalizeSeries(
       : definition.defaultStyle
     : source.kind === "economic"
       ? requestedStyle && ECONOMIC_STYLES.has(requestedStyle) ? requestedStyle : "step"
-      : requestedStyle ?? "line";
+      : source.kind === "benchmark"
+        ? requestedStyle && STYLES.has(requestedStyle) ? requestedStyle : "points"
+        : requestedStyle ?? "line";
   const transform = definition
     ? requestedTransform && definition.transforms.includes(requestedTransform)
       ? requestedTransform
@@ -425,12 +444,30 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
             : definition.unitGroup);
         unitGroupsByPanel.set(entry.panelId, groups);
       }
-    } else {
+    } else if (entry.source.kind === "economic") {
       if (!entry.source.seriesId.trim()) {
         errors.push(issue(`${path}.source.seriesId`, "missing-series", "Economic series ID is required."));
       }
       if (!ECONOMIC_STYLES.has(entry.style)) {
         errors.push(issue(`${path}.style`, "unsupported-style", `${entry.style} is not valid for an economic scalar series.`));
+      }
+    } else if (entry.source.kind === "adjacent-index") {
+      if (!entry.source.indexId.trim()) {
+        errors.push(issue(`${path}.source.indexId`, "missing-index", "Adjacent index ID is required."));
+      }
+    } else if (entry.source.kind === "benchmark") {
+      if (!entry.source.selector.trim()) {
+        errors.push(issue(`${path}.source.selector`, "missing-selector", "Benchmark selector is required."));
+      }
+      if (!entry.source.metric.trim()) {
+        errors.push(issue(`${path}.source.metric`, "missing-metric", "Benchmark metric is required."));
+      }
+    } else if (entry.source.kind === "poll") {
+      if (!entry.source.subject.trim()) {
+        errors.push(issue(`${path}.source.subject`, "missing-subject", "Poll subject is required."));
+      }
+      if (!entry.source.choice.trim()) {
+        errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
       }
     }
     if (isOhlcSeriesStyle(entry.style)) {
@@ -440,7 +477,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
         firstCandleByPanel.set(
           entry.panelId,
           entry.label?.trim()
-            || (entry.source.kind === "economic" ? entry.source.seriesId : entry.source.instrument.symbol),
+            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.id),
         );
       }
       if (entry.transform !== "raw") {

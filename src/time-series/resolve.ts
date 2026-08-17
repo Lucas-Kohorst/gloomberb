@@ -55,6 +55,34 @@ import type {
   TimeSeriesPoint,
 } from "./types";
 
+// ---------------------------------------------------------------------------
+// Universal series loader interfaces — implementations are wired in hooks.ts
+// using each plugin's existing client/normalize code so the resolver stays
+// independent of plugin internals.
+// ---------------------------------------------------------------------------
+
+export interface UniversalSeriesLoadResult {
+  points: TimeSeriesPoint[];
+  label?: string;
+  unit?: string;
+  unitGroup?: string;
+  warning?: string;
+}
+
+export interface ChartResolveSources {
+  dataProvider: DataProvider | null;
+  loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
+  /** Loads an Adjacent prediction-market index price history. */
+  loadAdjacentIndexSeries?: (indexId: string) => Promise<UniversalSeriesLoadResult>;
+  /** Loads AI benchmark data as point-in-time observations at model release dates. */
+  loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
+  /** Loads a VoteHub poll time series for a subject/choice pair. */
+  loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
+  now?: Date;
+  /** Latest streamed quote per security identity, layered over snapshot data. */
+  quoteOverrides?: ReadonlyMap<string, Quote>;
+}
+
 const SERIES_COLORS = [
   "#4dabf7",
   "#63e6be",
@@ -67,14 +95,6 @@ const SERIES_COLORS = [
   "#8ce99a",
   "#ffd43b",
 ] as const;
-
-export interface ChartResolveSources {
-  dataProvider: DataProvider | null;
-  loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
-  now?: Date;
-  /** Latest streamed quote per security identity, layered over snapshot data. */
-  quoteOverrides?: ReadonlyMap<string, Quote>;
-}
 
 export interface ChartResolveOptions {
   /** Runtime zoom window used only to choose an adaptive Auto resolution. */
@@ -92,6 +112,7 @@ export class ChartResolveCache {
   readonly accumulatedPriceHistory = new Map<string, TickerFinancials["priceHistory"]>();
   readonly resolutionSupportByInstrument = new Map<string, Promise<ChartResolutionSupport[]>>();
   readonly fredSeriesByRequest = new Map<string, Promise<FredSeriesLoadResult>>();
+  readonly universalSeriesByKey = new Map<string, Promise<UniversalSeriesLoadResult>>();
 }
 
 interface DateBounds {
@@ -128,14 +149,29 @@ function instrumentLabel(spec: Extract<ChartSeriesSpec["source"], { kind: "secur
   return publicTickerKey(spec.instrument.symbol, spec.instrument.exchange);
 }
 
+function seriesFallbackLabel(source: ChartSeriesSpec["source"]): string {
+  switch (source.kind) {
+    case "economic":
+      return `FRED ${source.seriesId}`;
+    case "adjacent-index":
+      return `ADJ ${source.indexId}`;
+    case "benchmark":
+      return `${source.selector} ${source.metric}`;
+    case "poll":
+      return `${source.subject} ${source.choice}`;
+    default: {
+      const field = getTimeSeriesField(source.fieldId);
+      return `${instrumentLabel(source)} ${field?.shortLabel ?? source.fieldId.split(".").at(-1) ?? "Series"}`;
+    }
+  }
+}
+
 // A series that fails to load keeps its place with no observations. Dropping it
 // made a series the user had added disappear from the legend while it still sat
 // in the series editor, with nothing on screen to explain the difference.
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
   const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
-  const label = spec.source.kind === "economic"
-    ? `FRED ${spec.source.seriesId}`
-    : `${instrumentLabel(spec.source)} ${field?.shortLabel ?? spec.source.fieldId.split(".").at(-1) ?? "Series"}`;
+  const label = seriesFallbackLabel(spec.source);
   return {
     id: spec.id,
     label: spec.label?.trim() || label,
@@ -574,6 +610,38 @@ function staleFredWarning(loaded: FredSeriesLoadResult): string | null {
   return `FRED refresh failed${loaded.refreshError ? ` (${loaded.refreshError})` : ""}; showing cached data fetched ${new Date(loaded.fetchedAt).toISOString().slice(0, 10)}.`;
 }
 
+function baseUniversalSeries(
+  spec: ChartSeriesSpec,
+  loaded: UniversalSeriesLoadResult,
+  index: number,
+): ResolvedSeries | null {
+  if (
+    spec.source.kind !== "adjacent-index"
+    && spec.source.kind !== "benchmark"
+    && spec.source.kind !== "poll"
+  ) {
+    return null;
+  }
+  const fallbackLabel = seriesFallbackLabel(spec.source);
+  const unitGroup = loaded.unitGroup ?? `universal:${spec.source.kind}`;
+  return {
+    id: spec.id,
+    label: spec.label?.trim() || loaded.label?.trim() || fallbackLabel,
+    color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
+    unit: loaded.unit ?? "",
+    unitGroup,
+    nativeFrequency: "auto",
+    dataShape: "scalar",
+    style: spec.style,
+    transform: spec.transform,
+    axis: spec.axis === "right" ? "right" : "left",
+    panelId: spec.panelId,
+    interpolation: spec.interpolation,
+    points: loaded.points,
+    ...(loaded.warning ? { warning: loaded.warning } : {}),
+  };
+}
+
 function assignAxes(
   series: ResolvedSeries[],
   specs: readonly { id: string; axis: ChartSeriesSpec["axis"] }[],
@@ -865,6 +933,20 @@ export async function resolveChartSpecData(
     return pending;
   };
 
+  const loadUniversalSeries = (
+    kind: "adjacent-index" | "benchmark" | "poll",
+    key: string,
+    loader: () => Promise<UniversalSeriesLoadResult>,
+  ): Promise<UniversalSeriesLoadResult> => {
+    const cacheKey = `${kind}:${key}`;
+    let pending = cache.universalSeriesByKey.get(cacheKey);
+    if (!pending) {
+      pending = loader();
+      cache.universalSeriesByKey.set(cacheKey, pending);
+    }
+    return pending;
+  };
+
   const loaded = await Promise.all(spec.series.map(async (seriesSpec, index) => {
     if (!calculationSeriesIds.has(seriesSpec.id)) return null;
     try {
@@ -881,6 +963,45 @@ export async function resolveChartSpecData(
         const freshnessWarning = staleFredWarning(fred);
         if (result && freshnessWarning) priorityWarnings.push(`${result.label}: ${freshnessWarning}`);
         return result;
+      }
+
+      if (seriesSpec.source.kind === "adjacent-index") {
+        if (!sources.loadAdjacentIndexSeries) {
+          throw new Error("Adjacent index data source is not available.");
+        }
+        const { indexId } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "adjacent-index",
+          indexId,
+          () => sources.loadAdjacentIndexSeries!(indexId),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "benchmark") {
+        if (!sources.loadBenchmarkSeries) {
+          throw new Error("AI benchmark data source is not available.");
+        }
+        const { selector, metric } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "benchmark",
+          `${selector}:${metric}`,
+          () => sources.loadBenchmarkSeries!(selector, metric),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "poll") {
+        if (!sources.loadPollSeries) {
+          throw new Error("Poll data source is not available.");
+        }
+        const { subject, choice } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "poll",
+          `${subject}:${choice}`,
+          () => sources.loadPollSeries!(subject, choice),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
       }
 
       const source = seriesSpec.source;

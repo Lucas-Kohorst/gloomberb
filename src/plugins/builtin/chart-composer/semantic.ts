@@ -34,11 +34,13 @@ function sourceEvidence(series: ChartSeriesSpec) {
       period: series.source.period ?? "auto",
       timestampMode: series.source.timestampMode ?? null,
     }
-    : {
-      sourceKind: "economic",
-      provider: series.source.provider,
-      economicSeriesId: series.source.seriesId,
-    };
+    : series.source.kind === "economic"
+      ? {
+        sourceKind: "economic",
+        provider: series.source.provider,
+        economicSeriesId: series.source.seriesId,
+      }
+      : { sourceKind: series.source.kind };
 }
 
 /** Stable semantic evidence used by desktop automation and bot-safe screenshots. */
