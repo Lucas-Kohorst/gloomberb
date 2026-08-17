@@ -13,6 +13,7 @@ import {
 } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import { isCollectionCommand } from "../../helpers";
+import { dedupeById } from "../../view-model";
 import type { ResultItem } from "../../list/model";
 import type { parseRootShortcutIntent } from "./shortcuts";
 import type { CommandBarRoute } from "../../workflow/types";
@@ -252,5 +253,5 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     ? buildAssistResultItems({ ...assist, query: rootQuery, hasLocalResults: items.length > 0 })
     : [];
 
-  return { items: [...assistItems, ...items], initialIdx };
+  return { items: dedupeById([...assistItems, ...items]), initialIdx };
 }

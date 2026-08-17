@@ -142,7 +142,17 @@ function findMatchingPaneInstance(
   instances: PaneInstanceConfig[],
   paneId: string,
   spec: { binding?: PaneBinding; params?: Record<string, string>; settings?: Record<string, unknown> },
+  options?: { singleton?: boolean },
 ): string | null {
+  // Singleton panes (e.g. Chat) represent a single shared surface whose
+  // runtime state can drift from the template's default create spec. Focus any
+  // existing instance of the same pane id instead of requiring an exact match.
+  if (options?.singleton) {
+    for (const instance of instances) {
+      if (instance.paneId === paneId) return instance.instanceId;
+    }
+    return null;
+  }
   const bindingKey = JSON.stringify(spec.binding ?? { kind: "none" });
   const paramsKey = JSON.stringify(spec.params ?? {});
   const settingsKey = JSON.stringify(spec.settings ?? {});
@@ -186,7 +196,14 @@ export async function createPaneTemplateOrThrow(
 
   // Reuse an existing instance with the same pane id + binding + params +
   // settings instead of opening a duplicate (e.g. re-running `SEC AAPL`).
-  const existing = findMatchingPaneInstance(state.config.layout.instances, template.paneId, spec);
+  // Singleton templates focus any existing instance of the pane id regardless
+  // of settings drift (e.g. Chat switching channels).
+  const existing = findMatchingPaneInstance(
+    state.config.layout.instances,
+    template.paneId,
+    spec,
+    { singleton: template.singleton },
+  );
   if (existing) {
     deps.focusPaneInstance(existing);
     return;
