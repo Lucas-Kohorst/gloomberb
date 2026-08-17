@@ -199,6 +199,14 @@ export interface PaneTemplateDef {
   category?: string;
   shortcut?: PaneTemplateShortcut;
   wizard?: WizardStep[];
+  /**
+   * When true, opening this template from the command bar focuses any existing
+   * instance of the same pane id instead of creating a duplicate, even if the
+   * binding, params, or settings differ. Use for panes that represent a single
+   * shared surface (e.g. Chat) whose runtime state can drift from the template's
+   * default create spec.
+   */
+  singleton?: boolean;
   canCreate?: (context: PaneTemplateContext, options?: PaneTemplateCreateOptions) => boolean;
   createInstance?: (
     context: PaneTemplateContext,

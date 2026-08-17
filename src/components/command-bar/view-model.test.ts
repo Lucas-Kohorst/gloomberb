@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildSections,
+  dedupeById,
   getRowPresentation,
   rankTickerSearchItems,
   resolveCommandBarMode,
@@ -8,6 +9,18 @@ import {
 import { commands } from "./commands/registry";
 
 describe("command bar view model helpers", () => {
+  test("dedupeById keeps the first occurrence and drops later duplicates", () => {
+    const items = [
+      { id: "a", label: "First A" },
+      { id: "b", label: "B" },
+      { id: "a", label: "Second A" },
+      { id: "c", label: "C" },
+    ];
+    const result = dedupeById(items);
+    expect(result).toHaveLength(3);
+    expect(result.map((item) => item.label)).toEqual(["First A", "B", "C"]);
+  });
+
   test("resolves prefix-driven modes", () => {
     expect(resolveCommandBarMode("")).toMatchObject({ kind: "default", badge: "BROWSE" });
     expect(resolveCommandBarMode("DES NVDA")).toMatchObject({ kind: "search", badge: "DES" });

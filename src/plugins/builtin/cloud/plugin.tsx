@@ -72,9 +72,10 @@ function createChatModule(
       id: "new-chat-pane",
       paneId: "chat",
       label: "New Chat Pane",
-      description: "Open another floating chat window",
+      description: "Open the floating chat window",
       keywords: ["new", "chat", "pane", "message"],
       shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text" },
+      singleton: true,
       createInstance: async (context, options) => {
         const channelId = options?.arg
           ? await chatController.resolveRequiredChannelId(normalizeShortcutChannelId(options.arg))
