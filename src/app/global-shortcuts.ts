@@ -70,7 +70,7 @@ export function useAppGlobalShortcuts({
       });
       return;
     }
-    if (!isDetachedWindow && /^[1-9]$/.test(event.name ?? "") && event.ctrl && (state.config.layouts ?? []).length > 1) {
+    if (!isDetachedWindow && !state.commandBarOpen && /^[1-9]$/.test(event.name ?? "") && (event.ctrl || event.meta || event.super) && (state.config.layouts ?? []).length > 1) {
       const idx = parseInt(event.name!, 10) - 1;
       const layouts = state.config.layouts ?? [];
       if (idx < layouts.length && idx !== state.config.activeLayoutIndex) {
