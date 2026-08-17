@@ -13,6 +13,19 @@ export interface ChartSharePayload {
   spec: ChartSpec;
 }
 
+/**
+ * Create the JSON-safe envelope stored by the share service.
+ *
+ * Keeping this conversion at the boundary prevents a chart's in-memory
+ * settings object from being passed around as an opaque value and makes the
+ * shape consumed by the deep-link reader explicit.
+ */
+export function serializeChartSpecForShare(spec: ChartSpec): ChartSharePayload {
+  return {
+    spec: JSON.parse(JSON.stringify(spec)) as ChartSpec,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Short ID URL helpers
 // ---------------------------------------------------------------------------
