@@ -117,28 +117,6 @@ export const adjacentModule: PluginModule = {
 
     // Commands
     ctx.registerCommand({
-      id: "adjacent-indices-open",
-      label: "Open Adjacent Indices",
-      description: "Browse prediction market indices from Adjacent.",
-      keywords: ["adjacent", "indices", "prediction", "markets", "open"],
-      category: "data",
-      execute: async () => {
-        ctx.focusPane("adjacent-indices");
-      },
-    });
-
-    ctx.registerCommand({
-      id: "adjacent-rates-open",
-      label: "Open Adjacent Rates",
-      description: "Browse cross-platform reference rates from Adjacent.",
-      keywords: ["adjacent", "rates", "reference", "prediction", "open"],
-      category: "data",
-      execute: async () => {
-        ctx.focusPane("adjacent-rates");
-      },
-    });
-
-    ctx.registerCommand({
       id: "adjacent-markets-search",
       label: "Search Adjacent Markets",
       description: "Search normalized prediction markets via Adjacent.",
