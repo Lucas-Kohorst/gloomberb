@@ -12,6 +12,7 @@ import { FeedDataTableStackView, Spinner, useUpdatedAgo, type FeedDataTableItem 
 import { useJinaArticle } from "../shared/jina-reader";
 import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
+import { firehoseModule } from "./wire/firehose";
 import { useNewsArticleFooter } from "./wire/news/footer";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
@@ -214,5 +215,5 @@ export const newsPlugin = composeBuiltinPlugin({
   version: "1.0.0",
   description: "View latest news for each ticker",
   toggleable: true,
-  modules: [tickerNewsModule, newsWireModule],
+  modules: [tickerNewsModule, newsWireModule, firehoseModule],
 });

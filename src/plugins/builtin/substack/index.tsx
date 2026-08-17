@@ -15,6 +15,10 @@ import {
 } from "./types";
 import { SubstackArticleReaderPane } from "./article-reader";
 import { SubstackPane } from "./pane";
+import { createSubstackNewsCapability } from "./news-capability";
+import { registerConnectionSource } from "../connections/register";
+
+let disposeSubstackConnection: (() => void) | null = null;
 
 export const substackPlugin: GloomPlugin = {
   id: SUBSTACK_PLUGIN_ID,
@@ -25,10 +29,21 @@ export const substackPlugin: GloomPlugin = {
 
   setup(ctx) {
     attachSubstackPersistence(ctx.persistence);
+    ctx.registerCapability?.(createSubstackNewsCapability());
+    disposeSubstackConnection = registerConnectionSource({
+      id: "substack",
+      name: "Substack",
+      kind: "news",
+      pluginId: SUBSTACK_PLUGIN_ID,
+      priority: 600,
+      authRequired: true,
+    });
   },
 
   dispose() {
     resetSubstackPersistence();
+    disposeSubstackConnection?.();
+    disposeSubstackConnection = null;
   },
 
   panes: [
