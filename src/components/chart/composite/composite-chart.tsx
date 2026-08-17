@@ -587,8 +587,12 @@ function resolveSeriesCursorYRatio(
   return null;
 }
 
+const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
+
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
+  /** Unwindowed series for this panel, for renderers that own their time scale. */
+  panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
   leftAxisWidth: number;
@@ -615,6 +619,7 @@ interface CompositePanelSurfaceProps {
 
 function CompositePanelSurface({
   panel,
+  panelSeries,
   scene,
   plotWidth,
   leftAxisWidth,
@@ -1099,6 +1104,7 @@ function CompositePanelSurface({
           width={plotWidth}
           height={panel.height}
           panel={panel}
+          seriesData={panelSeries}
           colors={colors}
           viewport={viewport}
           interactive={interactive}
@@ -1470,6 +1476,17 @@ export function CompositeChart({
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
   );
+  // Renderers that own their own time scale need the unwindowed series, and
+  // need it at a stable identity so panning does not look like new data.
+  const seriesByPanelId = useMemo(() => {
+    const byPanel = new Map<string, ResolvedSeries[]>();
+    for (const entry of visibleSeries) {
+      const existing = byPanel.get(entry.panelId);
+      if (existing) existing.push(entry);
+      else byPanel.set(entry.panelId, [entry]);
+    }
+    return byPanel;
+  }, [visibleSeries]);
   useEffect(() => {
     setLegendKeyboardIndex((current) => (
       current === null || visibleLegendSeries.length === 0
@@ -2011,6 +2028,7 @@ export function CompositeChart({
         <CompositePanelSurface
           key={panel.id}
           panel={panel}
+          panelSeries={seriesByPanelId.get(panel.id) ?? EMPTY_PANEL_SERIES}
           scene={scene}
           plotWidth={plotWidth}
           leftAxisWidth={leftAxisWidth}

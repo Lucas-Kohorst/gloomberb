@@ -5,6 +5,7 @@ import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/medi
 import type { AsciiFontName } from "./ascii-font";
 import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
 import type { ChartToolKind } from "../components/chart/composite/tools";
+import type { ResolvedSeries } from "../time-series/types";
 
 export const TextAttributes = {
   NONE: 0,
@@ -235,6 +236,13 @@ export interface ChartSurfaceProps extends BoxProps {
 }
 export interface TradingViewChartProps extends BoxProps {
   panel: CompositePanelScene;
+  /**
+   * Unclipped series for the panel. The scene projection windows points to the
+   * viewport, which this renderer must not consume: it owns its own time scale,
+   * so windowed data forces a full re-set on every pan frame and fights the
+   * user's drag. Falls back to the projection when absent.
+   */
+  seriesData?: readonly ResolvedSeries[] | null;
   colors: CompositeChartColors;
   viewport?: { start: Date; end: Date } | null;
   interactive?: boolean;

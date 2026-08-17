@@ -13,6 +13,15 @@ type PageOptions = {
   title: string;
   loadingText: string;
   bootstrapScript: string;
+  /**
+   * Root-absolute asset URLs. The hosted client answers nested routes like
+   * `/s/{id}` with this same document, where a relative `./web-main.js`
+   * resolves to `/s/web-main.js` and the SPA fallback returns HTML instead of
+   * the module — the script then fails to parse and the page hangs on its
+   * loading placeholder. The desktop view loads over a file/custom scheme with
+   * no origin root, so it keeps relative URLs.
+   */
+  absoluteAssetPaths?: boolean;
 };
 
 const ELECTROBUN_VIEW_DIR = join(process.cwd(), "src", "renderers", "electrobun", "view");
@@ -41,6 +50,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
+    absoluteAssetPaths: true,
     extraAliasRules: [
       ["./backend-rpc", "web-backend-rpc.ts"],
       ...(options.extraAliasRules ?? []),
@@ -51,6 +61,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
+    absoluteAssetPaths: true,
     stylesheet,
     entrySrc,
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
@@ -65,6 +76,7 @@ async function buildElectrobunViewBundle({
   extraAliasRules = [],
   failureMessage,
   missingEntryMessage,
+  absoluteAssetPaths = false,
 }: PageOptions): Promise<{ entrySrc: string; stylesheet: string }> {
   const result = await Bun.build({
     entrypoints: [entrypoint],
@@ -97,7 +109,7 @@ async function buildElectrobunViewBundle({
   if (!entry) throw new Error(missingEntryMessage);
 
   return {
-    entrySrc: `./${relative(outdir, entry.path).replaceAll("\\", "/")}`,
+    entrySrc: `${absoluteAssetPaths ? "/" : "./"}${relative(outdir, entry.path).replaceAll("\\", "/")}`,
     stylesheet: (await readFile(electrobunViewPath("styles.css"), "utf8"))
       .replaceAll("__TITLEBAR_OVERLAY_HEIGHT_PX__", String(TITLEBAR_OVERLAY_HEIGHT_PX)),
   };
@@ -109,13 +121,14 @@ function renderElectrobunViewHtml({
   stylesheet,
   bootstrapScript,
   entrySrc,
+  absoluteAssetPaths = false,
 }: PageOptions & { stylesheet: string; entrySrc: string }): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="${absoluteAssetPaths ? "/favicon.svg" : "favicon.svg"}" />
     <title>${title}</title>
     <style>${stylesheet}</style>
   </head>

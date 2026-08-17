@@ -16,6 +16,7 @@ import {
 } from "lightweight-charts";
 import type { ChartVectorShape, TradingViewChartProps } from "../../../../ui/host";
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
+import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 
 function timestamp(value: number): UTCTimestamp {
   return Math.floor(value / 1000) as UTCTimestamp;
@@ -25,11 +26,17 @@ function finite(value: number | null | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-type ProjectedSeries = TradingViewChartProps["panel"]["series"][number];
-
 interface SeriesDatum {
   time: Time;
   value: number;
+}
+
+interface CandleDatum {
+  time: Time;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
 }
 
 function timeToMs(time: Time): number | null {
@@ -44,118 +51,118 @@ function timeToMs(time: Time): number | null {
   return null;
 }
 
-function projectSeriesData(projected: ProjectedSeries): {
-  data: { time: Time; value: number }[];
-  candle: { time: Time; open: number; high: number; low: number; close: number }[];
-} {
-  const candle = projected.points
-    .filter((point) => finite(point.point.open) && finite(point.point.high)
-      && finite(point.point.low) && finite(point.point.close))
-    .map((point) => ({
-      time: timestamp(point.timestamp),
-      open: point.point.open!,
-      high: point.point.high!,
-      low: point.point.low!,
-      close: point.point.close!,
-    }));
-  const data = projected.points
-    .filter((point) => finite(point.value))
-    .map((point) => ({ time: timestamp(point.timestamp), value: point.value as number }));
+function projectSeriesData(series: ResolvedSeries): { data: SeriesDatum[]; candle: CandleDatum[] } {
+  // lightweight-charts rejects out-of-order and duplicate timestamps outright,
+  // and a resolved series carries both once a live quote is merged onto the bar
+  // it belongs to. Collapsing by second keeps the latest reading per bar.
+  const byTime = new Map<number, TimeSeriesPoint>();
+  for (const point of series.points) {
+    const time = point.date.getTime();
+    if (Number.isFinite(time)) byTime.set(timestamp(time), point);
+  }
+  const ordered = [...byTime.entries()].sort(([left], [right]) => left - right);
+  const candle = ordered.flatMap(([time, point]) => (
+    finite(point.open) && finite(point.high) && finite(point.low) && finite(point.close)
+      ? [{ time: time as Time, open: point.open, high: point.high, low: point.low, close: point.close }]
+      : []
+  ));
+  const data = ordered.flatMap(([time, point]) => (
+    finite(point.value) ? [{ time: time as Time, value: point.value }] : []
+  ));
   return { data, candle };
 }
 
-function addChartSeries(
-  chart: IChartApi,
-  projected: ProjectedSeries,
-  colors: TradingViewChartProps["colors"],
-): ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram"> {
-  const source = projected.source;
-  const { data, candle } = projectSeriesData(projected);
-  if (candle.length > 0) {
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: source.color,
-      downColor: colors.negative,
-      borderVisible: false,
-      wickUpColor: source.color,
-      wickDownColor: colors.negative,
-    });
-    series.setData(candle);
-    return series;
+/**
+ * Single source of truth for the series type. Creation and data-sync must agree,
+ * or a reused series is handed data in the wrong shape.
+ */
+function seriesTypeFor(series: ResolvedSeries): SeriesEntry["type"] {
+  if (series.style === "columns") return "Histogram";
+  if (series.style === "area") return "Area";
+  if (series.style === "candles" && series.points.some((point) => (
+    finite(point.open) && finite(point.high) && finite(point.low) && finite(point.close)
+  ))) {
+    return "Candlestick";
   }
-  if (source.style === "columns") {
-    const series = chart.addSeries(HistogramSeries, {
-      color: source.color,
-      priceFormat: { type: "volume" },
-      base: 0,
-    });
-    series.setData(data.map((point) => ({ ...point, color: source.color })));
-    return series;
-  }
-  if (source.style === "area") {
-    const series = chart.addSeries(AreaSeries, {
-      lineColor: source.color,
-      topColor: `${source.color}55`,
-      bottomColor: `${source.color}08`,
-      lineWidth: 2,
-    });
-    series.setData(data);
-    return series;
-  }
-  const series = chart.addSeries(LineSeries, {
-    color: source.color,
-    lineWidth: 2,
-    lineType: source.style === "step" ? 1 : 0,
-    crosshairMarkerVisible: true,
-  });
-  series.setData(data);
-  return series;
+  return "Line";
 }
 
-function seriesTypeFor(projected: ProjectedSeries): SeriesEntry["type"] {
-  const style = projected.source.style;
-  if (style === "candles") return "Candlestick";
-  if (style === "columns") return "Histogram";
-  if (style === "area") return "Area";
-  return "Line";
+function createSeries(
+  chart: IChartApi,
+  series: ResolvedSeries,
+  type: SeriesEntry["type"],
+  colors: TradingViewChartProps["colors"],
+): ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram"> {
+  switch (type) {
+    case "Candlestick":
+      return chart.addSeries(CandlestickSeries, {
+        upColor: series.color,
+        downColor: colors.negative,
+        borderVisible: false,
+        wickUpColor: series.color,
+        wickDownColor: colors.negative,
+      });
+    case "Histogram":
+      return chart.addSeries(HistogramSeries, {
+        color: series.color,
+        priceFormat: { type: "volume" },
+        base: 0,
+      });
+    case "Area":
+      return chart.addSeries(AreaSeries, {
+        lineColor: series.color,
+        topColor: `${series.color}55`,
+        bottomColor: `${series.color}08`,
+        lineWidth: 2,
+      });
+    default:
+      return chart.addSeries(LineSeries, {
+        color: series.color,
+        lineWidth: 2,
+        lineType: series.style === "step" ? 1 : 0,
+        crosshairMarkerVisible: true,
+      });
+  }
+}
+
+function colorKeyFor(series: ResolvedSeries, colors: TradingViewChartProps["colors"]): string {
+  return `${series.color}|${colors.negative}`;
 }
 
 function applySeriesColors(
   api: SeriesEntry["api"],
   type: SeriesEntry["type"],
-  projected: ProjectedSeries,
+  series: ResolvedSeries,
   colors: TradingViewChartProps["colors"],
 ): void {
-  const source = projected.source;
   if (type === "Candlestick") {
     api.applyOptions({
-      upColor: source.color,
+      upColor: series.color,
       downColor: colors.negative,
-      wickUpColor: source.color,
+      wickUpColor: series.color,
       wickDownColor: colors.negative,
     });
-  } else if (type === "Histogram") {
-    api.applyOptions({ color: source.color });
   } else if (type === "Area") {
     api.applyOptions({
-      lineColor: source.color,
-      topColor: `${source.color}55`,
-      bottomColor: `${source.color}08`,
+      lineColor: series.color,
+      topColor: `${series.color}55`,
+      bottomColor: `${series.color}08`,
     });
   } else {
-    api.applyOptions({ color: source.color });
+    api.applyOptions({ color: series.color });
   }
 }
 
 function syncSeriesData(
   api: SeriesEntry["api"],
   type: SeriesEntry["type"],
-  projected: ProjectedSeries,
+  series: ResolvedSeries,
 ): void {
-  const { data, candle } = projectSeriesData(projected);
+  const { data, candle } = projectSeriesData(series);
   if (type === "Candlestick") {
     api.setData(candle);
   } else if (type === "Histogram") {
-    api.setData(data.map((point) => ({ ...point, color: projected.source.color })));
+    api.setData(data.map((point) => ({ ...point, color: series.color })));
   } else {
     api.setData(data);
   }
@@ -170,10 +177,15 @@ type SeriesEntry = {
   key: string;
   type: "Line" | "Area" | "Candlestick" | "Histogram";
   api: ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram">;
+  label: string;
+  /** Last data written, so a pan does not re-set identical points. */
+  points: readonly TimeSeriesPoint[];
+  colorKey: string;
 };
 
 export function WebTradingViewChart({
   panel,
+  seriesData,
   colors,
   viewport,
   interactive = true,
@@ -192,8 +204,18 @@ export function WebTradingViewChart({
   onViewportChangeRef.current = onViewportChange;
   const [measure, setMeasure] = useState<MeasureState | null>(null);
   const measureDragRef = useRef<MeasureState["start"] | null>(null);
+  // The chart is built once and mutated in place. Effects that write to it key
+  // off this so a rebuilt chart is repopulated rather than left blank.
+  const [chartEpoch, setChartEpoch] = useState(0);
 
   const measureEnabled = interactive && armedTool === "measure";
+
+  // The scene projection windows its points to the viewport, so consuming it
+  // would hand this chart a different dataset on every pan frame.
+  const chartSeries = useMemo(
+    () => seriesData ?? panel.series.map((projected) => projected.source),
+    [seriesData, panel],
+  );
 
   const chartOptions = useMemo(() => ({
     layout: {
@@ -242,8 +264,10 @@ export function WebTradingViewChart({
 
     const handleVisibleRangeChange: TimeRangeChangeEventHandler<Time> = (range) => {
       if (!range) return;
-      const start = typeof range.from === "number" ? range.from : null;
-      const end = typeof range.to === "number" ? range.to : null;
+      // Floored to whole seconds so the key matches the one the viewport effect
+      // derives from the range it gets echoed back.
+      const start = typeof range.from === "number" ? Math.floor(range.from) : null;
+      const end = typeof range.to === "number" ? Math.floor(range.to) : null;
       if (start === null || end === null) return;
       const key = `${start}:${end}`;
       if (rangeRef.current === key) return;
@@ -258,27 +282,18 @@ export function WebTradingViewChart({
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange);
 
-    const entries: SeriesEntry[] = panel.series.map((projected) => ({
-      key: projected.source.id,
-      type: seriesTypeFor(projected),
-      api: addChartSeries(chart, projected, colors),
-    }));
-    seriesRef.current = entries;
-
     const handleCrosshairMove: MouseEventHandler<Time> = (param) => {
       const tooltip = tooltipRef.current;
       if (!tooltip || !param.point || !param.time) {
         if (tooltip) tooltip.hidden = true;
         return;
       }
-      const values = panel.series.flatMap((projected, index) => {
-        const api = seriesRef.current[index]?.api;
-        if (!api) return [];
-        const value = param.seriesData.get(api) as
+      const values = seriesRef.current.flatMap((entry) => {
+        const value = param.seriesData.get(entry.api) as
           | { value?: number; close?: number }
           | undefined;
         const numeric = value?.value ?? value?.close;
-        return finite(numeric) ? [`${projected.source.label}: ${numeric}`] : [];
+        return finite(numeric) ? [`${entry.label}: ${numeric}`] : [];
       });
       if (values.length === 0) {
         tooltip.hidden = true;
@@ -290,6 +305,7 @@ export function WebTradingViewChart({
       tooltip.hidden = false;
     };
     chart.subscribeCrosshairMove(handleCrosshairMove);
+    setChartEpoch((epoch) => epoch + 1);
 
     return () => {
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
@@ -305,7 +321,7 @@ export function WebTradingViewChart({
     const chart = chartRef.current;
     if (!chart) return;
     chart.applyOptions({ layout: chartOptions.layout, grid: chartOptions.grid });
-  }, [chartOptions]);
+  }, [chartEpoch, chartOptions]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -322,33 +338,43 @@ export function WebTradingViewChart({
         axisPressedMouseMove: interactive && !measureEnabled,
       },
     });
-  }, [interactive, measureEnabled]);
+  }, [chartEpoch, interactive, measureEnabled]);
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const byKey = new Map(seriesRef.current.map((entry) => [entry.key, entry]));
     const next: SeriesEntry[] = [];
-    for (const projected of panel.series) {
-      const key = projected.source.id;
-      const type = seriesTypeFor(projected);
-      const existing = byKey.get(key);
+    for (const series of chartSeries) {
+      const type = seriesTypeFor(series);
+      const colorKey = colorKeyFor(series, colors);
+      const existing = byKey.get(series.id);
       if (existing) {
-        byKey.delete(key);
+        byKey.delete(series.id);
         if (existing.type === type) {
-          applySeriesColors(existing.api, type, projected, colors);
-          syncSeriesData(existing.api, type, projected);
+          // Re-setting data or options is what made panning stutter, so both are
+          // written only when the value behind them actually moved.
+          if (existing.colorKey !== colorKey) {
+            applySeriesColors(existing.api, type, series, colors);
+            existing.colorKey = colorKey;
+          }
+          if (existing.points !== series.points) {
+            syncSeriesData(existing.api, type, series);
+            existing.points = series.points;
+          }
+          existing.label = series.label;
           next.push(existing);
           continue;
         }
         chart.removeSeries(existing.api);
       }
-      const api = addChartSeries(chart, projected, colors);
-      next.push({ key, type, api });
+      const api = createSeries(chart, series, type, colors);
+      syncSeriesData(api, type, series);
+      next.push({ key: series.id, type, api, label: series.label, points: series.points, colorKey });
     }
     for (const [, entry] of byKey) chart.removeSeries(entry.api);
     seriesRef.current = next;
-  }, [colors, panel]);
+  }, [chartEpoch, chartSeries, colors]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -356,6 +382,9 @@ export function WebTradingViewChart({
     const from = timestamp(viewport.start.getTime());
     const to = timestamp(viewport.end.getTime());
     const key = `${from}:${to}`;
+    // This is the range the chart itself just reported. Re-applying it mid-drag
+    // fights the user's own pan.
+    if (rangeRef.current === key) return;
     rangeRef.current = key;
     chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
   }, [viewport]);
