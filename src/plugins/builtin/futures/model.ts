@@ -54,17 +54,28 @@ function sortContracts(
   ));
 }
 
+export interface BuildFuturesRowsOptions {
+  /** Keep only contracts that match the predicate. */
+  filter?: (contract: FuturesContract) => boolean;
+  /** Sectors whose contracts are hidden under the header. */
+  collapsed?: ReadonlySet<FuturesSector>;
+}
+
 export function buildFuturesRows(
   contractsBySector: Map<FuturesSector, FuturesContract[]>,
   sortPreference: FuturesSortPreference,
   quotes: BoardQuoteMap,
+  options?: BuildFuturesRowsOptions,
 ): FuturesTableRow[] {
   const rows: FuturesTableRow[] = [];
   for (const sector of FUTURES_SECTOR_ORDER) {
     const contracts = sortContracts(contractsBySector.get(sector) ?? [], sortPreference, quotes);
-    if (contracts.length === 0) continue;
+    const visibleContracts = options?.filter ? contracts.filter(options.filter) : contracts;
+    if (visibleContracts.length === 0) continue;
     rows.push({ type: "header", sector });
-    for (const contract of contracts) rows.push({ type: "row", contract });
+    if (!options?.collapsed?.has(sector)) {
+      for (const contract of visibleContracts) rows.push({ type: "row", contract });
+    }
   }
   return rows;
 }

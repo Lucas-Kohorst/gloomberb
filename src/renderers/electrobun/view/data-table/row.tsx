@@ -213,6 +213,7 @@ function WebDataTableRowInner<
         onMouseDown={(event) => {
           focusPane();
           onTableMouseDown?.(event);
+          sectionHeader.onMouseDown?.(event);
           event.preventDefault();
         }}
       >

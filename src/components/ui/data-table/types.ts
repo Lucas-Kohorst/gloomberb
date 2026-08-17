@@ -25,6 +25,7 @@ export interface DataTableSectionHeader {
   color?: string;
   backgroundColor?: string;
   attributes?: number;
+  onMouseDown?: (event: any) => void;
 }
 
 export type DataTableScrollAlign = "nearest" | "center";
