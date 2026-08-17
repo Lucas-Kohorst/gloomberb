@@ -49,6 +49,19 @@ function newsCapabilitySourceId(source: NewsCapability): string {
   return source.sourceId ?? source.id;
 }
 
+/**
+ * Stamps the producing capability on an article so panes can show where a
+ * headline came from (RSS, Substack, Adjacent, cloud) rather than only the
+ * publisher name, which is ambiguous across sources.
+ */
+function attributeArticle(source: NewsCapability, article: NewsArticle): NewsArticle {
+  const origin = newsCapabilitySourceId(source);
+  return markDetailCapableArticle(
+    source,
+    article.origin === origin ? article : { ...article, origin },
+  );
+}
+
 export class NewsService {
   private readonly sources = new Map<string, NewsCapability>();
   private readonly listeners = new Set<() => void>();
@@ -166,6 +179,15 @@ export class NewsService {
 
   async poll(query: NewsQuery = DEFAULT_GLOBAL_QUERY): Promise<void> {
     await this.refreshQuery(normalizeNewsQuery(query), false);
+  }
+
+  /**
+   * Re-runs every watched query. Sources call this when their own state
+   * changes out of band — signing into Substack, for example, turns an empty
+   * source into a populated one without any query having changed.
+   */
+  async refreshWatchedQueries(): Promise<void> {
+    await this.pollActiveQueries();
   }
 
   private async pollActiveQueries(): Promise<void> {
@@ -290,7 +312,7 @@ export class NewsService {
     for (const source of sources) {
       try {
         const articles = (await source.provider.fetchNews(query))
-          .map((article) => markDetailCapableArticle(source, article));
+          .map((article) => attributeArticle(source, article));
         const result = { articles, sourceIds: [newsCapabilitySourceId(source)] };
         if (articles.length > 0) return result;
         firstEmpty ??= result;
@@ -306,7 +328,7 @@ export class NewsService {
       sources.map(async (source) => ({
         source,
         articles: (await source.provider.fetchNews(query))
-          .map((article) => markDetailCapableArticle(source, article)),
+          .map((article) => attributeArticle(source, article)),
       })),
     );
     const articles: NewsArticle[] = [];
@@ -328,7 +350,7 @@ export class NewsService {
     for (const query of queries) {
       if (source.isEnabled?.() === false || news.supports?.(query) === false) continue;
       const cached = (news.getCachedNews?.(query) ?? [])
-        .map((article) => markDetailCapableArticle(source, article));
+        .map((article) => attributeArticle(source, article));
       if (cached.length === 0) continue;
       const entry = this.getOrCreateQueryEntry(query);
       entry.state = {

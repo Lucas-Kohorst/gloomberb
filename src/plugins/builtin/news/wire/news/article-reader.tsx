@@ -104,6 +104,7 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
         height={height}
         focused={focused}
         state={jina}
+        knownBody={article.body ?? article.summary ?? ""}
       />
     </Box>
   );

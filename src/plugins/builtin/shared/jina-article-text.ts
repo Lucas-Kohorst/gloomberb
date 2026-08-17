@@ -89,14 +89,56 @@ export function cleanJinaArticle(raw: string): string {
   if (start === -1) return "";
 
   const kept: string[] = [];
+  const seen = new Set<string>();
   for (let i = start; i < blocks.length; i++) {
     if (kinds[i] === "chrome") continue;
+    // A lone nav label can be a real subheading; a run of them is a menu.
+    if (kinds[i] === "nav-label" && (kinds[i - 1] === "nav-label" || kinds[i + 1] === "nav-label")) continue;
+    const key = blockKey(blocks[i]!);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
     kept.push(blocks[i]!);
   }
   return kept.join("\n\n").trim();
 }
 
-type BlockKind = "chrome" | "content";
+/**
+ * True when extracted text is site chrome rather than an article: navigation
+ * labels, section names, and menu links with no informative lines. Callers use
+ * this to keep a clean summary instead of publishing scraped boilerplate.
+ */
+export function isBoilerplateArticleBody(text: string): boolean {
+  const lines = text
+    .split("\n")
+    .map(visibleLineText)
+    .filter(Boolean);
+  if (lines.length === 0) return true;
+  if (lines.some(isProseLine)) return false;
+  // Nav dumps are many short labels; a genuine short newsletter is a few lines.
+  // Only apply the density test once there is enough text to judge, so a real
+  // one- or two-line blurb is never discarded as chrome.
+  if (lines.length < 4) return false;
+  const informative = lines.filter(isInformativeLine).length;
+  return informative / lines.length < 0.3;
+}
+
+/**
+ * Picks the body a reader should show.
+ *
+ * Extraction only wins when it actually returned an article: paywalls, consent
+ * walls, and dead links come back as navigation dumps or short landing pages,
+ * which would replace a good summary with something worse.
+ */
+export function preferredArticleBody(summary: string, fullText: string | null): string {
+  const extracted = fullText?.trim() ?? "";
+  if (!extracted) return summary;
+  const clean = summary.trim();
+  if (!clean) return isBoilerplateArticleBody(extracted) ? "" : extracted;
+  if (isBoilerplateArticleBody(extracted)) return summary;
+  return extracted.length > clean.length ? extracted : summary;
+}
+
+type BlockKind = "chrome" | "nav-label" | "content";
 
 function classifyBlock(block: string): BlockKind {
   if (BOT_WALL_RE.test(block)) return "chrome";
@@ -108,8 +150,36 @@ function classifyBlock(block: string): BlockKind {
   if (visible.length === 0) return "chrome";
 
   if (visible.every((line) => isChromeLine(line))) return "chrome";
-  if (isNavMenu(visible)) return "chrome";
-  return "content";
+  if (visible.length >= 2) return isNavMenu(visible) ? "chrome" : "content";
+
+  // Single-line blocks are how readers emit one nav link per paragraph.
+  if (isLinkOnlyLine(lines[0]!)) return "chrome";
+  return isNavLabel(visible[0]!) ? "nav-label" : "content";
+}
+
+function blockKey(block: string): string {
+  return block
+    .split("\n")
+    .map(visibleLineText)
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function isLinkOnlyLine(line: string): boolean {
+  const bare = line.replace(/^[-*+]\s+/, "").replace(/^\d+\.\s+/, "").trim();
+  if (!/^\[[^\]]*\]\([^)]*\)$/.test(bare)) return false;
+  return !isProseLine(bare);
+}
+
+function isNavLabel(line: string): boolean {
+  if (isProseLine(line) || isTimestampOrByline(line) || isRelatedHeading(line)) return false;
+  return isShortNavLabel(line);
+}
+
+function isInformativeLine(line: string): boolean {
+  if (isProseLine(line) || isTimestampOrByline(line)) return true;
+  return line.length >= 40 || /[.!?]/.test(line);
 }
 
 function isNavMenu(lines: string[]): boolean {
@@ -135,7 +205,7 @@ function isShortNavLabel(line: string): boolean {
   const text = visibleLineText(line);
   if (!text) return true;
   if (isProseLine(text) || isTimestampOrByline(text)) return false;
-  return text.length < 28 && !/[.!?]/.test(text);
+  return text.length <= 32 && !/[.!?]/.test(text);
 }
 
 function isProseLine(line: string): boolean {

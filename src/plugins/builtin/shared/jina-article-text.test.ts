@@ -1,5 +1,44 @@
 import { describe, expect, test } from "bun:test";
-import { cleanJinaArticle, stripJinaPreamble } from "./jina-article-text";
+import {
+  cleanJinaArticle,
+  isBoilerplateArticleBody,
+  preferredArticleBody,
+  stripJinaPreamble,
+} from "./jina-article-text";
+
+// A CNBC extraction that came back as the site's top navigation instead of the
+// article: repeated section labels, account chrome, and a duplicated headline.
+const CNBC_NAV_DUMP = [
+  "Title: Stocks close higher as investors weigh Fed path",
+  "",
+  "URL Source: https://www.cnbc.com/2026/08/17/stocks.html",
+  "",
+  "Markdown Content:",
+  "",
+  "Skip to content",
+  "",
+  "[Livestream](https://www.cnbc.com/live-tv/)",
+  "",
+  "[Markets](https://www.cnbc.com/markets/)",
+  "",
+  "Business",
+  "",
+  "Tech",
+  "",
+  "Politics & Policy",
+  "",
+  "Video",
+  "",
+  "Watchlist",
+  "",
+  "Investing Club",
+  "",
+  "PRO",
+  "",
+  "Menu",
+  "",
+  "Search quotes, news & videos",
+].join("\n");
 
 const SEEKING_ALPHA_DUMP = [
   "Title: Voya Emerging Markets High Dividend Equity Fund declares $0.055 dividend",
@@ -118,6 +157,18 @@ describe("cleanJinaArticle", () => {
     ].join("\n"));
   });
 
+  test("drops CNBC top-navigation dumps down to nothing", () => {
+    // Regression: opening a CNBC article showed scraped site chrome
+    // (Livestream, Business, Tech, Politics & Policy, Video, Watchlist,
+    // Investing Club, PRO, Menu, Search quotes) instead of the story.
+    const cleaned = cleanJinaArticle(CNBC_NAV_DUMP);
+    expect(cleaned).not.toContain("Livestream");
+    expect(cleaned).not.toContain("Investing Club");
+    expect(cleaned).not.toContain("Search quotes");
+    expect(cleaned).not.toContain("Politics & Policy");
+    expect(isBoilerplateArticleBody(cleaned)).toBe(true);
+  });
+
   test("returns empty when Jina only got a captcha or access-denied wall", () => {
     const raw = [
       "Title: Access to this page has been denied",
@@ -135,5 +186,30 @@ describe("cleanJinaArticle", () => {
       "a human (and not a bot).",
     ].join("\n");
     expect(cleanJinaArticle(raw)).toBe("");
+  });
+});
+
+describe("preferredArticleBody", () => {
+  test("keeps a clean summary when extraction is mostly site chrome", () => {
+    const summary = "The S&P 500 closed higher as investors weighed the Fed's rate path.";
+    const junk = cleanJinaArticle(CNBC_NAV_DUMP);
+    expect(preferredArticleBody(summary, junk)).toBe(summary);
+  });
+
+  test("prefers the extracted article when it is real, longer text", () => {
+    const summary = "Short blurb.";
+    const full = "A full multi-sentence article body. It explains the story in detail across lines.";
+    expect(preferredArticleBody(summary, full)).toBe(full);
+  });
+
+  test("preserves a short legitimate newsletter body when there is no summary", () => {
+    const body = "Open thread. Post whatever you want.";
+    expect(preferredArticleBody("", body)).toBe(body);
+  });
+
+  test("falls back either way when one side is missing", () => {
+    expect(preferredArticleBody("summary", null)).toBe("summary");
+    expect(preferredArticleBody("", "extracted")).toBe("extracted");
+    expect(preferredArticleBody("", "")).toBe("");
   });
 });

@@ -2,7 +2,9 @@ import type { GloomPlugin } from "../../../types/plugin";
 import {
   attachSubstackPersistence,
   resetSubstackPersistence,
+  subscribeSubstackAuth,
 } from "./api/store";
+import { getSharedNewsService } from "../../../news/hooks";
 import {
   ARTICLE_READER_FLOATING_SIZE,
   SUBSTACK_ARTICLE_READER_PANE_ID,
@@ -19,6 +21,7 @@ import { createSubstackNewsCapability } from "./news-capability";
 import { registerConnectionSource } from "../connections/register";
 
 let disposeSubstackConnection: (() => void) | null = null;
+let disposeSubstackAuthWatch: (() => void) | null = null;
 
 export const substackPlugin: GloomPlugin = {
   id: SUBSTACK_PLUGIN_ID,
@@ -30,6 +33,11 @@ export const substackPlugin: GloomPlugin = {
   setup(ctx) {
     attachSubstackPersistence(ctx.persistence);
     ctx.registerCapability?.(createSubstackNewsCapability());
+    // Logging in/out flips this source between empty and populated; re-run the
+    // watched news queries so the firehose merges Substack without a reload.
+    disposeSubstackAuthWatch = subscribeSubstackAuth(() => {
+      void getSharedNewsService()?.refreshWatchedQueries();
+    });
     disposeSubstackConnection = registerConnectionSource({
       id: "substack",
       name: "Substack",
@@ -44,6 +52,8 @@ export const substackPlugin: GloomPlugin = {
     resetSubstackPersistence();
     disposeSubstackConnection?.();
     disposeSubstackConnection = null;
+    disposeSubstackAuthWatch?.();
+    disposeSubstackAuthWatch = null;
   },
 
   panes: [

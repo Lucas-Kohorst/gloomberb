@@ -31,6 +31,7 @@ let substackClient = createThrottledFetch({
   dedupeGetRequests: false,
 });
 const activeFetches = new Map<string, Promise<SubstackCachedData<unknown>>>();
+const authListeners = new Set<() => void>();
 
 export function attachSubstackPersistence(persistence: PluginPersistence): void {
   substackPersistence = persistence;
@@ -70,10 +71,34 @@ export function getStoredSubstackAuth(): SubstackAuthState | null {
 
 export function storeSubstackAuth(auth: SubstackAuthState): void {
   substackPersistence?.setState(AUTH_STATE_KEY, auth, { schemaVersion: AUTH_SCHEMA_VERSION });
+  emitAuthChange();
 }
 
 export function clearSubstackAuth(): void {
   substackPersistence?.deleteState(AUTH_STATE_KEY);
+  emitAuthChange();
+}
+
+/**
+ * Signing in turns Substack from an empty news source into a populated one.
+ * Nothing else in the app knows to re-ask, so listeners (the news aggregator)
+ * subscribe here instead of waiting for the next poll or an app restart.
+ */
+export function subscribeSubstackAuth(listener: () => void): () => void {
+  authListeners.add(listener);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
+function emitAuthChange(): void {
+  for (const listener of [...authListeners]) {
+    try {
+      listener();
+    } catch {
+      // A failed listener must not break login.
+    }
+  }
 }
 
 export function requireAuth(): SubstackAuthState {
