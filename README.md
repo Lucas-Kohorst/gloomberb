@@ -266,6 +266,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `CN <ticker>` | Ticker news |
 | `NI` | Sector news |
 | `SUB` | Authenticated Substack reader feed |
+| `FH` | News firehose — all article sources in one stream |
 | `FIRST` | Breaking news |
 | `TWIT <query>` | Ticker-related market posts |
 | `TBO` | TheBuildout infrastructure intelligence |

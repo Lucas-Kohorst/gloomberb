@@ -89,9 +89,73 @@ export function createIdleNewsQueryState(): NewsQueryState {
   };
 }
 
+const TRACKING_QUERY_PARAMS = new Set([
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "ref",
+  "reference",
+  "source",
+  "fbclid",
+  "gclid",
+  "mc_cid",
+  "mc_eid",
+  "_hsenc",
+  "_hsmi",
+  "vero_id",
+  "oly_enc_id",
+  "oly_anon_id",
+  "sr_share",
+  "nb",
+]);
+
+/**
+ * Canonicalises an article URL for cross-source deduplication.
+ *
+ * Strips tracking parameters, fragments, and trailing slashes so that the same
+ * story republished by multiple aggregators collapses to one key. Falls back to
+ * `null` when the URL is empty or invalid — callers should use a title+source
+ * key or the item id in that case.
+ */
+export function canonicalArticleUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim().toLowerCase();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = "";
+    const params = parsed.searchParams;
+    for (const key of [...params.keys()]) {
+      if (TRACKING_QUERY_PARAMS.has(key.toLowerCase())) {
+        params.delete(key);
+      }
+    }
+    if ([...params].length === 0) parsed.search = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    // Not a valid URL — fall back to a cleaned string key.
+    const cleaned = trimmed.replace(/[#?].*$/, "").replace(/\/$/, "");
+    return cleaned || null;
+  }
+}
+
+/**
+ * Normalises a title+source pair into a fallback dedup key for articles whose
+ * URL is missing or non-canonical. Aggregators sometimes republish without a
+ * unique link, so a title+source collapse catches those duplicates.
+ */
+export function titleSourceKey(title: string, source: string): string {
+  const normalisedTitle = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const normalisedSource = source.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return normalisedTitle ? `t:${normalisedSource}:${normalisedTitle}` : "";
+}
+
 function articleKey(item: NewsArticle): string {
-  const url = item.url.trim().toLowerCase().replace(/#.*$/, "").replace(/\/$/, "");
-  return url || `id:${item.id}`;
+  const url = canonicalArticleUrl(item.url);
+  if (url) return url;
+  const titleKey = titleSourceKey(item.title, item.source);
+  return titleKey || `id:${item.id}`;
 }
 
 function sortByPublishedAt(items: NewsArticle[]): NewsArticle[] {
