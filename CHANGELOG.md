@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.11.1 — A tighter terminal, sharing, search, and AI status
+
+A focused follow-up release with terminal polish, keyboard and sharing fixes, and a reliable local AI status.
+
+### Terminal and command bar
+
+- Removed the Gloomberb title from the header, moved the version to the status bar, and added pane suggestions to the header.
+- Deduplicated command-bar entries and fixed pane toggling.
+- Fixed Tab on web, Ctrl+N layout switching, and arrow-key navigation.
+
+### Sharing, charts, and articles
+
+- Fixed chart sharing with `y`, changelog sharing, and completed a full sharing sweep.
+- Fixed chart series suggestions.
+- Article views now use the Jina reader on initial view and render markdown correctly.
+
+### Panes and data
+
+- Consolidated plugin panes.
+- Fixed refresh behavior and added a universal auto-pull setting.
+- Added futures and bonds search and an expandable futures board.
+- Removed broken Adjacent Indices search and duplicate open actions.
+
+### AI
+
+- Local AI availability checks now resolve to available or unavailable instead of remaining stuck on checking.
+
+
 ## v0.11.0 — The web terminal: futures, AI benchmarks, TV replays, sharing, and a hosted client that loads
 
 Everything from the web terminal push, consolidated into one note. New panes, a hosted client that actually boots, TV that plays, sharing for charts and articles, a font size that scales the whole grid, and a long tail of fixes.
