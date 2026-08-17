@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { searchTickerCandidates } from "../../../tickers/search";
+import {
+  buildTickerSearchCandidates,
+  searchTickerCandidates,
+} from "../../../tickers/search";
 import { useOptionalAppSelector } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
 import { getSharedRegistry } from "../../registry";
@@ -45,7 +48,31 @@ export function useSeriesCatalogSuggestions({
 
     const registry = getSharedRegistry();
     if (!registry) {
-      setSearch({ query: instrumentQuery, instruments: [], loading: false });
+      // The registry is installed after the app state is created in some
+      // hosted/test render paths. Local tickers are still enough to resolve
+      // a company name, so do not leave the catalog permanently empty while
+      // waiting for the provider registry.
+      const candidates = buildTickerSearchCandidates({
+        query: instrumentQuery,
+        tickers,
+        providerResults: [],
+        totalLimit: 4,
+        localLimit: 3,
+        includeOptionContracts: false,
+      });
+      setSearch({
+        query: instrumentQuery,
+        instruments: candidates.map((candidate) => ({
+          symbol: candidate.symbol,
+          ...(candidate.ticker?.metadata.exchange
+            ? { exchange: candidate.ticker.metadata.exchange }
+            : {}),
+          ...(candidate.ticker?.metadata.name
+            ? { name: candidate.ticker.metadata.name }
+            : {}),
+        })),
+        loading: false,
+      });
       return;
     }
 
