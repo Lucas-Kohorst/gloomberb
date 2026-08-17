@@ -7,6 +7,19 @@ import { colors } from "../../../theme/colors";
 
 const JINA_CONNECTION_ID = "jina-ai";
 
+/**
+ * The reader prefixes every response with `Title:` / `URL Source:` /
+ * `Published Time:` lines. The pane already renders the title and source, so
+ * keeping them would repeat that metadata as the first lines of the body.
+ */
+export function stripJinaPreamble(raw: string): string {
+  const text = raw.trim();
+  if (!text.startsWith("Title:")) return text;
+  const marker = text.match(/^Markdown Content:[ \t]*$/m);
+  if (marker?.index == null) return text;
+  return text.slice(marker.index + marker[0].length).trim();
+}
+
 export interface JinaArticleState {
   content: string | null;
   loading: boolean;
@@ -52,7 +65,7 @@ export function useJinaArticle(url: string, enabled = true) {
       return response.text();
     }).then((content) => {
       if (requestRef.current !== requestId) return;
-      setState({ content: content.trim(), loading: false, error: null });
+      setState({ content: stripJinaPreamble(content), loading: false, error: null });
     }).catch((error: unknown) => {
       if (requestRef.current !== requestId || controller.signal.aborted) return;
       setState((current) => ({

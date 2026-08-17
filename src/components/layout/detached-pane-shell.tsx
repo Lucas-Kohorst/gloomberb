@@ -43,9 +43,9 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     typeof document === "undefined" ? true : document.hasFocus()
   ));
   const { width, height } = useViewport();
-  const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay, windowControls } = useUiCapabilities();
+  const { cellHeightPx = 18, nativePaneChrome, titleBarOverlay, nativeTrafficLights, windowControls } = useUiCapabilities();
   const showWindowControls = windowControls === "windows";
-  const titlebarLeadingInset = titleBarOverlay ? getTitlebarLeadingInset() : 0;
+  const titlebarLeadingInset = nativeTrafficLights ? getTitlebarLeadingInset() : 0;
   const instance = useAppSelector((state) => findPaneInstance(state.config.layout, desktopWindowBridge.paneId) ?? null);
   const paneDef = instance ? pluginRegistry.panes.get(instance.paneId) ?? null : null;
   const hasPaneSettings = !!instance && pluginRegistry.hasPaneSettings(instance.instanceId);
@@ -190,7 +190,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 flexGrow={1}
                 minWidth={0}
                 backgroundColor={titleBackground}
-                paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1}
+                paddingLeft={titlebarLeadingInset > 0 ? titlebarLeadingInset : 1}
                 paddingRight={showWindowControls ? 0 : 1}
                 style={{ position: "relative" }}
               >

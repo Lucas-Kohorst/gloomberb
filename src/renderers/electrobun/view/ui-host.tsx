@@ -60,12 +60,17 @@ function usesWindowsWindowControls(desktopPlatform?: string): boolean {
 
 export function createWebUiHost(desktopPlatform?: string): UiHost {
   const usesWindowsControls = usesWindowsWindowControls(desktopPlatform);
+  // Only a real desktop window gets OS traffic lights drawn over our header.
+  // The hosted client renders in a browser tab and passes no desktop platform,
+  // so it must not reserve space for controls that will never appear.
+  const nativeTrafficLights = desktopPlatform != null && !usesWindowsControls;
 
   return {
     kind: "desktop-web",
     capabilities: {
       nativePaneChrome: true,
       titleBarOverlay: true,
+      nativeTrafficLights,
       precisePointer: true,
       fractionalViewport: true,
       // Getters, not values: the cell tracks the configured font size, and this

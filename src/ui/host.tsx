@@ -334,6 +334,12 @@ export interface UiHost {
   capabilities?: {
     nativePaneChrome?: boolean;
     titleBarOverlay?: boolean;
+    /**
+     * True only when the OS paints window traffic lights over the top-left of
+     * our own header, which is the sole reason to reserve leading inset there.
+     * A browser tab has no traffic lights even though it overlays the titlebar.
+     */
+    nativeTrafficLights?: boolean;
     precisePointer?: boolean;
     fractionalViewport?: boolean;
     cellWidthPx?: number;
