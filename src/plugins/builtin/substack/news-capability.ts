@@ -1,6 +1,7 @@
 import { newsProvider, type NewsCapability } from "../../../capabilities";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { SubstackArticleSummary } from "./types";
+import { extractArticleContent } from "./content";
 import { loadSubstackHome } from "./api/loaders";
 import { readResource } from "./api/store";
 import { SubstackAuthError } from "./api/types";
@@ -25,7 +26,17 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
   const publishedAt = article.publishedAt ? new Date(article.publishedAt) : null;
   if (!publishedAt || Number.isNaN(publishedAt.getTime())) return null;
 
+  // The reader feed already ships post HTML. Carrying the extracted text keeps
+  // the firehose reader off r.jina.ai, which cannot see a subscriber-only post.
+  const body = article.bodyHtml
+    ? extractArticleContent(article.bodyHtml, {
+      baseUrl: article.publicationBaseUrl,
+      title: article.title,
+    }).text
+    : "";
+
   return {
+    body: body || undefined,
     id: `substack:${article.id}`,
     title: article.title,
     url,

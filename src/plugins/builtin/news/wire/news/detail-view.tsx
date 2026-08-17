@@ -7,6 +7,8 @@ import { colors } from "../../../../../theme/colors";
 import { TickerBadge } from "../../../../../components/ticker/badge";
 import { ExternalLink, ExternalLinkText } from "../../../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
+import { newsOriginLabel } from "../../../../../news/origins";
+import { MarkdownText } from "../../../../../components/markdown-text";
 import { useInlineTickers } from "../../../../../state/hooks/inline-tickers";
 import { isPlainKey } from "../../../../../utils/keyboard";
 import { wrapTextLines } from "../../../../../utils/text-wrap";
@@ -195,6 +197,9 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
   const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
   const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
+  const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
+    .filter((part) => part && part !== "—")
+    .join(" · ");
 
   const scrollBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -239,9 +244,13 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
             </Box>
           )}
           <Box height={1} flexDirection="row">
-            <Text fg={colors.textDim}>Last updated at {lastUpdatedStr}</Text>
+            <Text fg={colors.textDim}>{metaLine}</Text>
           </Box>
-          <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
+          {item.body?.trim() ? (
+            <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} />
+          ) : (
+            <TextLines text={item.summary} width={innerW} color={colors.text} nativePaneChrome={nativePaneChrome === true} />
+          )}
           {tickers.length > 0 && (
             <Box flexDirection="row" flexWrap="wrap" width={contentWidth} style={contentStyle}>
               {tickers.map((ticker) => {

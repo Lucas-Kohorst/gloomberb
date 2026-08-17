@@ -7,6 +7,7 @@ import {
   usePaneFooter,
 } from "../../../../components";
 import type { NewsQuery, NewsArticle } from "../../../../news/types";
+import { newsOriginLabel } from "../../../../news/origins";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import type { PaneProps } from "../../../../types/plugin";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
@@ -21,7 +22,7 @@ import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/articl
 import type { PluginModule } from "../../plugin-module";
 
 export const FIREHOSE_QUERY: NewsQuery = { feed: "latest", limit: 200 };
-const FIREHOSE_COLUMNS: NewsColumnId[] = ["time", "source", "title", "tickers", "categories"];
+const FIREHOSE_COLUMNS: NewsColumnId[] = ["time", "origin", "source", "title", "tickers", "categories"];
 const FIREHOSE_DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
 /**
@@ -42,6 +43,7 @@ export function filterFirehoseArticles(
     const haystack = [
       article.title,
       article.source,
+      newsOriginLabel(article.origin),
       article.summary ?? "",
       ...article.tickers,
       ...article.topics,

@@ -4,7 +4,12 @@ import { EmptyState, Spinner } from "../../../components";
 import { MarkdownText } from "../../../components/markdown-text";
 import { withConnectionRequest } from "../connections/register";
 import { colors } from "../../../theme/colors";
-import { cleanJinaArticle, JINA_READER_ENDPOINT, JINA_READER_HEADERS } from "./jina-article-text";
+import {
+  cleanJinaArticle,
+  preferredArticleBody,
+  JINA_READER_ENDPOINT,
+  JINA_READER_HEADERS,
+} from "./jina-article-text";
 
 const JINA_CONNECTION_ID = "jina-ai";
 
@@ -80,6 +85,7 @@ export function JinaArticleReader({
   height,
   focused,
   state,
+  knownBody = "",
 }: {
   title: string;
   url: string;
@@ -87,18 +93,21 @@ export function JinaArticleReader({
   height: number;
   focused: boolean;
   state: JinaArticleState;
+  /** Body the payload already carried (Substack post text, wire summary). */
+  knownBody?: string;
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const lineWidth = Math.max(1, width - 4);
+  const body = preferredArticleBody(knownBody, state.content);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [url, state.content]);
 
-  if (!url) {
+  if (!url && !body) {
     return <EmptyState title={title || "Article unavailable."} message="This article has no source URL." />;
   }
-  if (state.loading && !state.content) {
+  if (state.loading && !body) {
     return (
       <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
         <Spinner label="Rendering article..." />
@@ -113,9 +122,9 @@ export function JinaArticleReader({
           {title || "Article"}
         </Text>
         {state.loading ? <Text fg={colors.textDim}>Refreshing article...</Text> : null}
-        {state.error ? <Text fg={colors.negative} wrapText width={lineWidth}>{state.error}</Text> : null}
-        {state.content ? (
-          <MarkdownText text={state.content} lineWidth={lineWidth} textColor={colors.text} />
+        {state.error && !body ? <Text fg={colors.negative} wrapText width={lineWidth}>{state.error}</Text> : null}
+        {body ? (
+          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} />
         ) : !state.error ? <Text fg={colors.textDim}>No article text returned.</Text> : null}
       </Box>
     </ScrollBox>

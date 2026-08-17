@@ -39,6 +39,10 @@ export interface NewsArticle {
   isBreaking: boolean;
   isDeveloping: boolean;
   items?: NewsStoryItem[];
+  /** Capability that produced the article: `rss`, `substack-news`, `adjacent`, … */
+  origin?: string;
+  /** Article text the source already had, so the reader can skip extraction. */
+  body?: string;
 
   // Compatibility aliases for RSS/Yahoo panes and existing table columns.
   importance: number;

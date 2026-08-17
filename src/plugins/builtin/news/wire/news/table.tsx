@@ -11,10 +11,11 @@ import {
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { colors } from "../../../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
+import { newsOriginLabel } from "../../../../../news/origins";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
 import { isPlainKey } from "../../../../../utils/keyboard";
 
-export type NewsColumnId = "rank" | "time" | "source" | "title" | "tickers" | "categories" | "importance";
+export type NewsColumnId = "rank" | "time" | "origin" | "source" | "title" | "tickers" | "categories" | "importance";
 
 export type NewsSortPreference = StackSortPreference<NewsColumnId>;
 
@@ -49,6 +50,8 @@ function compareArticle(a: MarketNewsItem, b: MarketNewsItem, columnId: NewsColu
       return a.importance - b.importance;
     case "time":
       return a.publishedAt.getTime() - b.publishedAt.getTime();
+    case "origin":
+      return compareText(newsOriginLabel(a.origin), newsOriginLabel(b.origin));
     case "source":
       return compareText(a.source, b.source);
     case "title":
@@ -82,16 +85,18 @@ function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId)
       direction: current.direction === "asc" ? "desc" : "asc",
     };
   }
-  return {
-    columnId,
-    direction: columnId === "title" || columnId === "source" || columnId === "categories" ? "asc" : "desc",
-  };
+  const textColumn = columnId === "title"
+    || columnId === "source"
+    || columnId === "origin"
+    || columnId === "categories";
+  return { columnId, direction: textColumn ? "asc" : "desc" };
 }
 
 function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn[] {
   const fixedWidths: Record<Exclude<NewsColumnId, "title">, number> = {
     rank: 4,
     time: 4,
+    origin: 8,
     source: 10,
     tickers: 24,
     categories: 10,
@@ -100,6 +105,7 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
   const labels: Record<NewsColumnId, string> = {
     rank: "#",
     time: "Time",
+    origin: "Origin",
     source: "Source",
     title: "Headline",
     tickers: "Tickers",
@@ -198,6 +204,8 @@ export function NewsArticleStackView({
         return { text: String(index + 1), color: selectedColor ?? colors.textDim };
       case "time":
         return { text: formatRelativeTime(item.publishedAt), color: selectedColor ?? colors.textDim };
+      case "origin":
+        return { text: newsOriginLabel(item.origin), color: selectedColor ?? colors.textDim };
       case "source":
         return { text: item.source, color: selectedColor ?? colors.textMuted };
       case "title":

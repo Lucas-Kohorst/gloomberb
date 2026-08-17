@@ -10,21 +10,16 @@
 
 import { useEffect, useState } from "react";
 import type { ArticleSharePayload } from "../../shares/payload";
-import { cleanJinaArticle, JINA_READER_ENDPOINT, JINA_READER_HEADERS } from "../../plugins/builtin/shared/jina-article-text";
+import {
+  cleanJinaArticle,
+  preferredArticleBody,
+  JINA_READER_ENDPOINT,
+  JINA_READER_HEADERS,
+} from "../../plugins/builtin/shared/jina-article-text";
 import { MarkdownBody, SanitizedHtmlBody } from "./rich-text";
 import { ShareShell, formatShareTimestamp } from "./shell";
 
-/**
- * The reader does not always return an article. Paywalls, consent walls, and
- * dead links come back as a short landing page, which would replace a summary
- * the share payload already carried with something worse. Length is a crude
- * signal but the right one here: extraction only wins when it actually got more.
- */
-export function preferredArticleBody(summary: string, fullText: string | null): string {
-  if (!fullText) return summary;
-  if (!summary) return fullText;
-  return fullText.length > summary.length ? fullText : summary;
-}
+export { preferredArticleBody };
 
 function useFullArticleText(url: string, enabled: boolean) {
   const [state, setState] = useState<{ text: string | null; loading: boolean }>({

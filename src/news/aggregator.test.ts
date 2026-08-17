@@ -86,6 +86,36 @@ describe("NewsService", () => {
     expect(stories[0]!.importance).toBe(80);
   });
 
+  it("stamps each article with the capability that produced it", async () => {
+    agg.register(makeSource("rss", [makeItem({ url: "https://rss.example/1" })]));
+    agg.register(makeSource("substack-news", [makeItem({ url: "https://sub.example/1" })]));
+    await agg.poll();
+
+    const byUrl = new Map(agg.getFirehose(undefined, 10).map((item) => [item.url, item.origin]));
+    expect(byUrl.get("https://rss.example/1")).toBe("rss");
+    expect(byUrl.get("https://sub.example/1")).toBe("substack-news");
+  });
+
+  it("re-runs watched queries when a source asks for a refresh", async () => {
+    let items: MarketNewsItem[] = [];
+    const source = newsProvider({
+      id: "substack-news",
+      name: "substack-news",
+      provider: { fetchNews: mock(async () => items) },
+    });
+    agg.register(source);
+    const query = { feed: "latest" as const, limit: 50 };
+    const unwatch = agg.watchQuery(query, () => {});
+    await agg.poll(query);
+    expect(agg.getQueryState(query).articles).toHaveLength(0);
+
+    // Signing in makes the source non-empty; a refresh must surface it.
+    items = [makeItem({ url: "https://sub.example/late" })];
+    await agg.refreshWatchedQueries();
+    expect(agg.getQueryState(query).articles).toHaveLength(1);
+    unwatch();
+  });
+
   it("getTopStories returns items sorted by importance descending", async () => {
     const items = [
       makeItem({ url: "https://a.com/1", importance: 30 }),
