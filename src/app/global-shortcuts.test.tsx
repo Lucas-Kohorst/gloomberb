@@ -183,6 +183,42 @@ describe("useAppGlobalShortcuts", () => {
     expect(event.propagationStopped).toBe(true);
   });
 
+  test("switches saved layouts with Meta-number (Cmd on macOS) and consumes the shortcut", async () => {
+    const actions: AppAction[] = [];
+    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-meta");
+    config.layouts = [
+      { name: "One", layout: cloneLayout(config.layout) },
+      { name: "Two", layout: cloneLayout(config.layout) },
+    ];
+    config.activeLayoutIndex = 0;
+    const state = createInitialState(config);
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "2", super: true });
+
+    expect(actions).toEqual([{ type: "SWITCH_LAYOUT", index: 1 }]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
+  test("does not switch layouts with Ctrl-number while the command bar is open", async () => {
+    const actions: AppAction[] = [];
+    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-cmdbar");
+    config.layouts = [
+      { name: "One", layout: cloneLayout(config.layout) },
+      { name: "Two", layout: cloneLayout(config.layout) },
+    ];
+    config.activeLayoutIndex = 0;
+    const state = { ...createInitialState(config), commandBarOpen: true };
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "2", ctrl: true });
+
+    expect(actions).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+    expect(event.propagationStopped).toBe(false);
+  });
+
   test("does not run plain plugin shortcuts while input is captured", async () => {
     let executed = 0;
     const actions: AppAction[] = [];

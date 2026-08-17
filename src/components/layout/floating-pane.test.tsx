@@ -142,7 +142,7 @@ describe("FloatingPaneWrapper", () => {
       metaKey: false,
       shiftKey: false,
       target: null,
-    } as never)).toBe(false);
+    } as never)).toBe(true);
     activeElement = buttonElement;
 
     pressKey("Enter");

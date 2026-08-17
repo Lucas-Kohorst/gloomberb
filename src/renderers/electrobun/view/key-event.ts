@@ -79,10 +79,7 @@ function isNativeControlActivationKey(event: WebKeyDefaultEvent): boolean {
 
 export function shouldDispatchWebAppKeyDown(event: WebKeyDefaultEvent): boolean {
   if (isNativeKeyboardControlTarget(event.target) && isNativeControlActivationKey(event)) return false;
-  return normalizeWebKeyName(event.key) !== "tab"
-    || !!event.ctrlKey
-    || !!event.metaKey
-    || !!event.altKey;
+  return true;
 }
 
 export function shouldDispatchWebNativeKeyDown(event: WebKeyDefaultEvent): boolean {

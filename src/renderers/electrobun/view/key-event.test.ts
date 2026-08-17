@@ -36,16 +36,20 @@ describe("shouldConsumeWebAppKeyDown", () => {
     expect(shouldConsumeWebAppKeyDown(keyEvent({ key: "c", ctrlKey: true, shiftKey: true }))).toBe(true);
   });
 
-  test("leaves native Tab focus traversal available from the app root and its controls", () => {
+  test("dispatches Tab to the app so pane cycling can preventDefault, but preserves native Tab in editable controls", () => {
     const root = { tagName: "DIV", getAttribute: (name: string) => name === "id" ? "root" : null };
     const button = { tagName: "BUTTON" };
+    const input = { tagName: "INPUT" };
 
     for (const target of [root, button]) {
       const event = keyEvent({ key: "Tab", target });
-      expect(shouldDispatchWebAppKeyDown(event)).toBe(false);
-      expect(shouldConsumeWebAppKeyDown(event)).toBe(false);
+      expect(shouldDispatchWebAppKeyDown(event)).toBe(true);
+      expect(shouldConsumeWebAppKeyDown(event)).toBe(true);
     }
-    expect(shouldDispatchWebAppKeyDown(keyEvent({ key: "Tab", shiftKey: true, target: button }))).toBe(false);
+    // Tab inside editable controls stays native so the user can move within text
+    expect(shouldConsumeWebAppKeyDown(keyEvent({ key: "Tab", target: input }))).toBe(false);
+    // Modified Tab (Shift+Tab) is also dispatched
+    expect(shouldDispatchWebAppKeyDown(keyEvent({ key: "Tab", shiftKey: true, target: button }))).toBe(true);
   });
 
   test("bypasses app shortcut dispatch for native control activation keys", () => {

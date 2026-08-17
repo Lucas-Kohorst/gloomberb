@@ -63,20 +63,25 @@ describe("dispatchWebAppKeyDown", () => {
     expect(calls).toEqual(["native-before", "generic-before", "generic-normal"]);
   });
 
-  test("leaves Tab and Shift+Tab to native focus traversal when no modal handler accepts them", () => {
+  test("dispatches Tab to before-phase pane shortcuts so they can preventDefault native focus", () => {
     let paneTabs = 0;
     const focusMoves: string[] = [];
-    const paneShortcut = shortcut(() => { paneTabs += 1; }, { phase: "before" });
+    const paneShortcut = shortcut((key) => {
+      if (key.name !== "tab") return;
+      paneTabs += 1;
+      key.preventDefault();
+      key.stopPropagation();
+    }, { phase: "before" });
 
     for (const shiftKey of [false, true]) {
       const event = keyboardEvent({ key: "Tab", shiftKey });
       dispatchWebAppKeyDown(event, [paneShortcut]);
       runNativeDefault(event, () => { focusMoves.push(shiftKey ? "backward" : "forward"); });
-      expect(event.defaultPrevented).toBe(false);
+      expect(event.defaultPrevented).toBe(true);
     }
 
-    expect(paneTabs).toBe(0);
-    expect(focusMoves).toEqual(["forward", "backward"]);
+    expect(paneTabs).toBe(2);
+    expect(focusMoves).toEqual([]);
   });
 
   test("lets an active before-phase modal intercept Tab ahead of native focus and pane shortcuts", () => {
@@ -101,19 +106,6 @@ describe("dispatchWebAppKeyDown", () => {
   });
 
   test("limits target-aware native interception to matching editable controls", () => {
-    let commandBarTabs = 0;
-    let nativeFocusMoves = 0;
-    const commandBarShortcut = shortcut((key) => {
-      if (key.name !== "tab") return;
-      commandBarTabs += 1;
-      key.preventDefault();
-      key.stopPropagation();
-    }, {
-      phase: "before",
-      allowEditable: true,
-      interceptNative: (key) => key.targetEditable === true,
-    });
-
     const editableTargets = [
       { tagName: "INPUT" },
       { tagName: "TEXTAREA" },
@@ -127,13 +119,41 @@ describe("dispatchWebAppKeyDown", () => {
       { tagName: "SUMMARY" },
     ];
 
+    const commandBarShortcut = shortcut((key) => {
+      if (key.name !== "tab") return;
+      key.preventDefault();
+      key.stopPropagation();
+    }, {
+      phase: "before",
+      allowEditable: true,
+      interceptNative: (key) => key.targetEditable === true,
+    });
+
+    // Capture phase: only editable targets trigger the native interceptor.
+    let captureIntercepts = 0;
+    for (const target of editableTargets) {
+      const event = keyboardEvent({ key: "Tab", target });
+      dispatchWebNativeInterceptors(event, [commandBarShortcut]);
+      if (event.defaultPrevented) captureIntercepts++;
+    }
+    for (const target of nativeTargets) {
+      const event = keyboardEvent({ key: "Tab", target });
+      dispatchWebNativeInterceptors(event, [commandBarShortcut]);
+      if (event.defaultPrevented) captureIntercepts++;
+    }
+    expect(captureIntercepts).toBe(5);
+
+    // Bubble phase: Tab is dispatched to the app for all targets so the
+    // shortcut handler can preventDefault native focus traversal everywhere.
+    let bubblePrevented = 0;
+    let nativeFocusMoves = 0;
     for (const target of [...editableTargets, ...nativeTargets]) {
       const event = keyboardEvent({ key: "Tab", target });
       dispatchWebAppKeyDown(event, [commandBarShortcut]);
       runNativeDefault(event, () => { nativeFocusMoves += 1; });
+      if (event.defaultPrevented) bubblePrevented++;
     }
-
-    expect({ commandBarTabs, nativeFocusMoves }).toEqual({ commandBarTabs: 5, nativeFocusMoves: 3 });
+    expect({ bubblePrevented, nativeFocusMoves }).toEqual({ bubblePrevented: 8, nativeFocusMoves: 0 });
   });
 
   test("leaves button, link, and summary activation outside target-aware interception", () => {
