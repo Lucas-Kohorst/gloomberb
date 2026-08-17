@@ -199,6 +199,7 @@ describe("AI runner", () => {
 });
 
 describe("checkAiProviderStatus timeout", () => {
+  // Implementation waits the full 5s hang timeout; give the suite headroom under load.
   test("reaches a terminal state when the host checkStatus hangs", async () => {
     setAiRunHost({
       run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
@@ -209,7 +210,7 @@ describe("checkAiProviderStatus timeout", () => {
     expect(result.authenticated).toBe(false);
     expect(result.inconclusive).toBe(true);
     expect(result.message).toContain("timed out");
-  });
+  }, 10_000);
 
   test("returns the host result when checkStatus resolves quickly", async () => {
     setAiRunHost({
