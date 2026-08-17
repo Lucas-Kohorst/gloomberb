@@ -1,8 +1,13 @@
 import { tokenizeInlineLinks } from "./link-tokenizer";
+import {
+  tokenizeMarkdownInline,
+  type MarkdownInlineStyle,
+} from "./markdown-inline-tokenizer";
 
 interface InlineContentTextToken {
   kind: "text";
   value: string;
+  style?: MarkdownInlineStyle;
 }
 
 interface InlineContentLinkToken {
@@ -53,43 +58,85 @@ function isValidUsernameBoundary(text: string, start: number, end: number): bool
   return !USERNAME_CHAR_RE.test(prev) && !USERNAME_CHAR_RE.test(next);
 }
 
-export function tokenizeInlineContent(text: string): InlineContentToken[] {
+function styledText(value: string, style?: MarkdownInlineStyle): InlineContentTextToken {
+  return style ? { kind: "text", value, style } : { kind: "text", value };
+}
+
+function tokenizeSymbols(
+  text: string,
+  style: MarkdownInlineStyle | undefined,
+  tokens: InlineContentToken[],
+): void {
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  INLINE_SYMBOL_TOKEN_RE.lastIndex = 0;
+  while ((match = INLINE_SYMBOL_TOKEN_RE.exec(text)) !== null) {
+    const rawValue = match[0];
+    const start = match.index;
+    const rawEnd = start + rawValue.length;
+    const isTicker = rawValue.startsWith("$");
+    const value = isTicker ? trimTrailingTickerPunctuation(rawValue) : rawValue;
+    const end = start + value.length;
+    if (
+      isTicker
+        ? !isValidTickerBoundary(text, start, rawEnd)
+        : !isValidUsernameBoundary(text, start, rawEnd)
+    ) continue;
+
+    if (start > cursor) {
+      tokens.push(styledText(text.slice(cursor, start), style));
+    }
+    tokens.push(isTicker
+      ? { kind: "ticker", value, symbol: value.slice(1) }
+      : { kind: "username", value, username: value.slice(1) });
+    cursor = end;
+  }
+
+  if (cursor < text.length) {
+    tokens.push(styledText(text.slice(cursor), style));
+  }
+}
+
+/**
+ * Markdown is opt-in: sources like tweets and scraped articles are plain text
+ * where stripping `*` or `_` pairs would silently rewrite what the author wrote.
+ */
+export function tokenizeInlineContent(
+  text: string,
+  { markdown = false }: { markdown?: boolean } = {},
+): InlineContentToken[] {
   const tokens: InlineContentToken[] = [];
 
-  for (const segment of tokenizeInlineLinks(text)) {
-    if (segment.kind === "link") {
-      tokens.push(segment);
+  if (!markdown) {
+    for (const segment of tokenizeInlineLinks(text)) {
+      if (segment.kind === "link") {
+        tokens.push(segment);
+        continue;
+      }
+      tokenizeSymbols(segment.value, undefined, tokens);
+    }
+    return tokens;
+  }
+
+  for (const parsed of tokenizeMarkdownInline(text)) {
+    if (parsed.kind === "link") {
+      tokens.push({ kind: "link", value: parsed.value, url: parsed.url });
       continue;
     }
 
-    let cursor = 0;
-    let match: RegExpExecArray | null;
-
-    INLINE_SYMBOL_TOKEN_RE.lastIndex = 0;
-    while ((match = INLINE_SYMBOL_TOKEN_RE.exec(segment.value)) !== null) {
-      const rawValue = match[0];
-      const start = match.index;
-      const rawEnd = start + rawValue.length;
-      const isTicker = rawValue.startsWith("$");
-      const value = isTicker ? trimTrailingTickerPunctuation(rawValue) : rawValue;
-      const end = start + value.length;
-      if (
-        isTicker
-          ? !isValidTickerBoundary(segment.value, start, rawEnd)
-          : !isValidUsernameBoundary(segment.value, start, rawEnd)
-      ) continue;
-
-      if (start > cursor) {
-        tokens.push({ kind: "text", value: segment.value.slice(cursor, start) });
-      }
-      tokens.push(isTicker
-        ? { kind: "ticker", value, symbol: value.slice(1) }
-        : { kind: "username", value, username: value.slice(1) });
-      cursor = end;
+    // Code spans are literal: no autolinking, tickers, or mentions inside them.
+    if (parsed.style?.code) {
+      tokens.push(styledText(parsed.value, parsed.style));
+      continue;
     }
 
-    if (cursor < segment.value.length) {
-      tokens.push({ kind: "text", value: segment.value.slice(cursor) });
+    for (const segment of tokenizeInlineLinks(parsed.value)) {
+      if (segment.kind === "link") {
+        tokens.push(segment);
+        continue;
+      }
+      tokenizeSymbols(segment.value, parsed.style, tokens);
     }
   }
 

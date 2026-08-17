@@ -1,6 +1,8 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
+import { type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
+import { InputSearchBar, usePaneFooter, type PaneFooterSegment } from "../../../../components";
+import { t } from "../../../../i18n";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
 import { blendHex, colors } from "../../../../theme/colors";
@@ -86,6 +88,11 @@ export function ChatContent({
   const [newDmOpen, setNewDmOpen] = useState(false);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const searchInputRef = useRef<InputRenderable>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const messageElementsRef = useRef(new Map<string, unknown>());
   const applyingExternalDraftRef = useRef(false);
   const prependAnchorRef = useRef<ChatPrependAnchor | null>(null);
@@ -159,9 +166,19 @@ export function ChatContent({
   });
   composerTextWidthRef.current = composerTextWidth;
   const canSend = !!user?.emailVerified;
-  const selectionActive = selectedIdx >= 0 && selectedIdx < messages.length;
-  const stickyTranscript = followMessages && !selectionActive;
-  const latestMessageId = messages[messages.length - 1]?.id ?? null;
+  const trimmedSearchQuery = searchQuery.trim();
+  const searching = searchOpen && trimmedSearchQuery.length > 0;
+  const visibleMessages = useMemo(() => {
+    if (!searching) return messages;
+    const needle = trimmedSearchQuery.toLowerCase();
+    return messages.filter((message) => (
+      message.content.toLowerCase().includes(needle)
+      || (message.user.username?.toLowerCase().includes(needle) ?? false)
+    ));
+  }, [messages, searching, trimmedSearchQuery]);
+  const selectionActive = selectedIdx >= 0 && selectedIdx < visibleMessages.length;
+  const stickyTranscript = followMessages && !selectionActive && !searching;
+  const latestMessageId = visibleMessages[visibleMessages.length - 1]?.id ?? null;
   const [editWindowNowMs, setEditWindowNowMs] = useState(() => Date.now());
   const latestOwnMessage = useMemo(() => {
     if (!user?.id) return null;
@@ -231,6 +248,7 @@ export function ChatContent({
     mentionSuggestionCount: mentionSuggestions.length,
     nativePaneChrome,
     replyTo,
+    searchRows: searchOpen ? 1 : 0,
   });
   const {
     cancelProfilePopoverClose,
@@ -255,6 +273,21 @@ export function ChatContent({
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [dispatch]);
 
+  const openSearch = useCallback(() => {
+    blurInput();
+    setSearchOpen(true);
+    setSearchFocused(true);
+    setSearchFocusToken((token) => token + 1);
+  }, [blurInput]);
+
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setSearchFocused(false);
+    setSearchQuery("");
+    setSelectedIdx(-1);
+    setFollowMessages(true);
+  }, []);
+
   useEffect(() => {
     onChannelTitleChange?.(activeChannelTitle);
   }, [activeChannelTitle, onChannelTitleChange]);
@@ -263,7 +296,8 @@ export function ChatContent({
     if (previousEditingChannelIdRef.current === channelId) return;
     previousEditingChannelIdRef.current = channelId;
     setEditingMessage(null);
-  }, [channelId]);
+    closeSearch();
+  }, [channelId, closeSearch]);
 
   const {
     moveMessageSelection,
@@ -271,7 +305,7 @@ export function ChatContent({
     shouldLeaveComposerForSelection,
   } = useChatMessageSelection({
     inputRef,
-    messageCount: messages.length,
+    messageCount: visibleMessages.length,
     selectedIdx,
     setFollowMessages,
     setSelectedIdx,
@@ -366,7 +400,7 @@ export function ChatContent({
     inputFocused,
     inputRef,
     inputValueRef,
-    messages,
+    messages: visibleMessages,
     onComposerStateChange: syncComposerState,
     onChannelChange,
     editingMessage,
@@ -431,13 +465,15 @@ export function ChatContent({
     contentWidth,
     controller,
     focused,
-    hasOlderMessages,
+    // Search filters the loaded transcript; paginating older pages mid-search
+    // would prepend messages the query never asked for.
+    hasOlderMessages: hasOlderMessages && !searching,
     height,
     latestMessageId,
     loadingOlderMessages,
     messageAreaHeight,
     messageElementsRef,
-    messages,
+    messages: visibleMessages,
     nativePaneChrome,
     prependAnchorRef,
     scrollRef,
@@ -479,11 +515,11 @@ export function ChatContent({
     focusChatContent,
     focusComposer,
     focused: focused && !newDmOpen,
-    hasOlderMessages,
+    hasOlderMessages: hasOlderMessages && !searching,
     inputFocused,
     inputValueRef,
     loadingOlderMessages,
-    messages,
+    messages: visibleMessages,
     mentionMenuOpen: mentionSuggestions.length > 0,
     moveMentionSelection,
     dismissMentionSuggestions,
@@ -503,7 +539,28 @@ export function ChatContent({
     shouldLeaveComposerForSelection,
     showChannelSidebar,
     sidebarFocusedRef,
+    searchFocused: searchOpen && searchFocused,
+    openSearch,
+    closeSearch,
   });
+
+  usePaneFooter("chat", () => {
+    const info: PaneFooterSegment[] = [];
+    if (loading) {
+      info.push({ id: "loading", parts: [{ text: t("loading"), tone: "muted" }] });
+    } else if (!user) {
+      info.push({ id: "auth", parts: [{ text: t("read-only"), tone: "warning" }] });
+    } else if (!canSend) {
+      info.push({ id: "auth", parts: [{ text: t("verify email to send"), tone: "warning" }] });
+    }
+    if (searching && visibleMessages.length === 0) {
+      info.push({ id: "search", parts: [{ text: t("no matches"), tone: "muted" }] });
+    }
+    return {
+      info,
+      hints: [{ id: "search", key: "s", label: "earch", onPress: openSearch }],
+    };
+  }, [canSend, loading, openSearch, searching, user, visibleMessages.length]);
 
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
@@ -559,6 +616,22 @@ export function ChatContent({
         </Box>
       )}
 
+      {searchOpen && (
+        <InputSearchBar
+          value={searchQuery}
+          focused={focused}
+          active={searchFocused}
+          width={contentWidth}
+          focusToken={searchFocusToken}
+          inputRef={searchInputRef}
+          placeholder={t("search this conversation")}
+          debounceMs={80}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          onQueryChange={setSearchQuery}
+        />
+      )}
+
       <ChatTranscript
         beginReplyTo={beginReplyTo}
         beginEditMessage={beginEditMessage}
@@ -574,7 +647,8 @@ export function ChatContent({
         loadingOlderMessages={loadingOlderMessages}
         messageAreaHeight={messageAreaHeight}
         messageBodyWidth={messageBodyWidth}
-        messages={messages}
+        messages={visibleMessages}
+        emptyStateLabel={searching ? t("No messages match this search.") : undefined}
         nativePaneChrome={nativePaneChrome}
         latestEditableMessageId={latestEditableMessageId}
         openTicker={openTicker}
