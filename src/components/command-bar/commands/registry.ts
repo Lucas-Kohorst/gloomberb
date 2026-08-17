@@ -183,6 +183,15 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
+    id: "set-auto-refresh",
+    prefix: "AR",
+    label: "Set Auto-Refresh",
+    description: "Auto-refresh network panes when data is stale (off, 1, 5, 15)",
+    hasArg: true,
+    argPlaceholder: "off|1|5|15",
+    category: "Config",
+  },
+  {
     id: "font-size-increase",
     prefix: "FONT+",
     label: "Increase Font Size",

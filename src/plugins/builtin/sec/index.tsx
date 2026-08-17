@@ -19,6 +19,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { isUsEquityTicker } from "../../../utils/sec";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { registerConnectionSource } from "../connections/register";
@@ -424,6 +425,7 @@ function SecPane({ width, height, focused }: PaneProps) {
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
   const loading = status === "loading" && filings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
 
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {

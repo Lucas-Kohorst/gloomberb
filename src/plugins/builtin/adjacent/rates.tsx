@@ -6,6 +6,7 @@ import {
   EmptyState,
   Spinner,
   usePaneFooter,
+  useUpdatedAgo,
   type DataTableColumn,
   type DataTableCell,
   type DataTableKeyEvent,
@@ -15,6 +16,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { AdjacentClient } from "./client";
 import type { AdjacentRateRow, AdjacentRateSource } from "./types";
 import { normalizeAdjacentRate } from "./normalize";
@@ -167,6 +169,7 @@ export function AdjacentRatesPane({
   const [rates, setRates] = useState<AdjacentRateRow[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [sortColumnId, setSortColumnId] = useState<RateColumn["id"] | null>("value");
@@ -184,6 +187,7 @@ export function AdjacentRatesPane({
         if (genRef.current !== gen) return;
         setRates((response.data ?? []).map(normalizeAdjacentRate));
         setStatus("loaded");
+        setLastUpdated(Date.now());
       })
       .catch((err) => {
         if (genRef.current !== gen) return;
@@ -239,15 +243,19 @@ export function AdjacentRatesPane({
     return true;
   }, [load]);
 
+  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
+
   usePaneFooter("adjacent-rates", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],
-  }), [error, load, status]);
+  }), [error, load, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

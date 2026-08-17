@@ -13,6 +13,7 @@ import { colors } from "../../../theme/colors";
 import { getBrowserLocation } from "../../../utils/browser-location";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
 import { buildYoutubeLiveEmbedUrl, isYoutubeEmbedUrl } from "./youtube-embed";
@@ -214,6 +215,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
             ? `${streamKind}${replayDetail}`
             : "offline";
   const updatedAgo = useUpdatedAgo(lastUpdated);
+  useAutoRefresh(lastUpdated, refresh);
 
   usePaneFooter(paneId, () => ({
     info: [{

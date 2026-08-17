@@ -22,6 +22,7 @@ import {
   latestQuoteTimestamp,
   useQuoteBoard,
 } from "../shared/use-quote-board";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
@@ -168,6 +169,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
 
   const loadingCount = countLoadingQuotes(quotes);
   const latestTs = latestQuoteTimestamp(quotes);
+  useAutoRefresh(latestTs || null, refresh);
   usePaneFooter("futures", () => {
     const info: PaneFooterSegment[] = [];
     if (loadingCount > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });

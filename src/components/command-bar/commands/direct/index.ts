@@ -279,6 +279,25 @@ export function runDirectCommandAction(options: {
       closeAll({ revertThemePreview: false });
       return;
     }
+    case "set-auto-refresh": {
+      const normalized = arg.trim().toLowerCase();
+      const minutes = normalized === "off" || normalized === "0"
+        ? 0
+        : parseInt(normalized, 10);
+      if (!Number.isFinite(minutes) || ![0, 1, 5, 15].includes(minutes)) {
+        notify("Enter off, 1, 5, or 15.", { type: "error" });
+        return;
+      }
+      const nextConfig = {
+        ...state.config,
+        autoRefreshInterval: minutes,
+      };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      persistConfig(nextConfig);
+      notify(minutes === 0 ? "Auto-refresh off" : `Auto-refresh every ${minutes} min`, { type: "success" });
+      closeAll({ revertThemePreview: false });
+      return;
+    }
     case "font-size-increase":
     case "font-size-decrease": {
       const delta = command.id === "font-size-increase" ? 1 : -1;

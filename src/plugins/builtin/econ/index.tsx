@@ -5,6 +5,7 @@ import { DataTableStackView, type DataTableCell, type PaneFooterSegment } from "
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { EconEvent } from "./types";
 import { EconDetailView } from "./detail-view";
 import {
@@ -215,6 +216,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const separatorBg = blendHex(colors.bg, colors.border, 0.3);
   const calendarCache = getCalendarCache();
   const staleness = calendarCache ? formatStaleness(calendarCache.fetchedAt, now) : "";
+  useAutoRefresh(calendarCache?.fetchedAt ?? null, () => load(true));
   const emptyStateHint = !loading && !error
     ? [
         impactFilter !== "all" ? `impact: ${impactFilter}` : null,

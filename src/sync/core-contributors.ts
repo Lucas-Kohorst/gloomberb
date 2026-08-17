@@ -181,6 +181,7 @@ function collectCoreConfigPayload(config: AppConfig) {
     theme: config.theme,
     chartPreferences: config.chartPreferences,
     valueFlashingEnabled: config.valueFlashingEnabled,
+    autoRefreshInterval: config.autoRefreshInterval,
     recentTickers: config.recentTickers,
     onboardingComplete: config.onboardingComplete,
   });
@@ -370,6 +371,7 @@ function mergeConfigPayload(
   assign("theme");
   assign("chartPreferences");
   assign("valueFlashingEnabled");
+  assign("autoRefreshInterval");
   assign("recentTickers");
   assign("onboardingComplete");
 

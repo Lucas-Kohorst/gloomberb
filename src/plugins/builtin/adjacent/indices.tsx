@@ -21,6 +21,8 @@ import {
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import {
   CompositeChart,
@@ -40,6 +42,7 @@ import {
   adjacentIndexPricesToPricePoints,
   type AdjacentIndexSortColumnId,
 } from "./normalize";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 
 export type AdjacentTab = "indices" | "rates";
 export type IndexDetailTab = "overview" | "chart" | "news";
@@ -410,6 +413,7 @@ export function AdjacentIndicesPane({
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
 
   useEffect(() => {
     if (visibleIndices.length === 0) return;
@@ -424,6 +428,14 @@ export function AdjacentIndicesPane({
     [],
   );
 
+  useShortcut((event) => {
+    if (!focused || detailOpen) return;
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      load();
+    }
+  }, { enabled: focused && !detailOpen });
   usePaneFooter("adjacent-indices", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),

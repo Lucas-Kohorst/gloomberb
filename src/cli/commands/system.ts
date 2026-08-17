@@ -104,6 +104,7 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
           dataDir: context.config.dataDir,
           baseCurrency: context.config.baseCurrency,
           refreshIntervalMinutes: context.config.refreshIntervalMinutes,
+          autoRefreshInterval: context.config.autoRefreshInterval,
           theme: context.config.theme,
           disabledPlugins: context.config.disabledPlugins,
           disabledSources: context.config.disabledSources,
@@ -129,9 +130,9 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
         if (action === "set") {
           const key = requireArg(args[1], "Usage: gloomberb config set <key> <value>", ctx);
           const value = requireArg(args[2], "Usage: gloomberb config set <key> <value>", ctx);
-          const editable = new Set(["baseCurrency", "refreshIntervalMinutes", "theme", "valueFlashingEnabled"]);
+          const editable = new Set(["baseCurrency", "refreshIntervalMinutes", "autoRefreshInterval", "theme", "valueFlashingEnabled"]);
           if (!editable.has(key)) ctx.fail(`Config key "${key}" is not editable from the CLI.`);
-          const parsedValue = key === "refreshIntervalMinutes"
+          const parsedValue = key === "refreshIntervalMinutes" || key === "autoRefreshInterval"
             ? Number(value)
             : key === "valueFlashingEnabled"
               ? value === "true"
