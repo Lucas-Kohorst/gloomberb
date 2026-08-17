@@ -26,10 +26,18 @@ import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
 import {
+  getHostedConfigUserId,
   hydrateHostedUserConfig,
+  readLastHostedUserId,
+  rememberHostedUserId,
   setHostedConfigUserId,
 } from "../../../data/config/hosted-user-persist";
-import { apiClient, type PersistedAuthUser } from "../../../api-client";
+import { apiClient } from "../../../api-client";
+import {
+  createHostedFallbackInit,
+  resolveHostedInit,
+  resolveHostedSession,
+} from "./hosted-boot";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -38,6 +46,8 @@ declare global {
   interface Window {
     __GLOOM_CLOUD_HOSTED?: boolean;
     __GLOOM_CLOUD_AUTHENTICATED?: boolean;
+    /** Booted without a confirmed Gloom Cloud session or backend snapshot. */
+    __GLOOM_CLOUD_DEGRADED?: boolean;
   }
 }
 
@@ -46,7 +56,22 @@ const bootLog = debugLog.createLogger("web-client-boot");
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
 const isHosted = window.__GLOOM_CLOUD_HOSTED === true;
 
+/**
+ * A boot still waiting on Gloom Cloud is indistinguishable from a frozen app,
+ * so say what it is waiting for once the wait becomes noticeable.
+ */
+const slowBootNotice = isHosted
+  ? setTimeout(() => {
+    root.render(<div className="gloom-loading">Waiting for Gloom Cloud...</div>);
+  }, 2_500)
+  : undefined;
+
+function stopSlowBootNotice(): void {
+  if (slowBootNotice !== undefined) clearTimeout(slowBootNotice);
+}
+
 function renderFatalError(error: unknown): void {
+  stopSlowBootNotice();
   root.render(<DesktopFatalScreen title="Gloomberb failed to start" error={error} source="web-client" />);
 }
 
@@ -54,28 +79,63 @@ async function boot(): Promise<void> {
   installElectrobunConfigStoreHost();
   installElectrobunBrokerRemoteClient();
   installElectrobunHttpFetchTransport();
+  let degraded = false;
   if (isHosted) {
     installHostedCloudApiFetchTransport();
-    const response = await fetch("/api/auth/session", { credentials: "include" });
-    const session = await response.json() as { user?: PersistedAuthUser | null };
+    const session = await resolveHostedSession(fetch);
+    degraded = session.degraded;
     window.__GLOOM_CLOUD_AUTHENTICATED = !!session.user;
     apiClient.setSessionToken(session.user ? "hosted-session" : null);
     apiClient.restoreCachedUser(session.user ?? null);
-    setHostedConfigUserId(session.user?.id ?? null);
+    if (session.user) {
+      rememberHostedUserId(session.user.id);
+      setHostedConfigUserId(session.user.id);
+    } else if (session.degraded) {
+      // Gloom Cloud never answered. Keep the last user's config so a slow
+      // upstream does not look like a wiped account, but leave the api client
+      // unauthenticated so nothing syncs against an unverified session.
+      bootLog.warn("session check failed; booting degraded");
+      setHostedConfigUserId(readLastHostedUserId());
+    } else {
+      rememberHostedUserId(null);
+      setHostedConfigUserId(null);
+    }
   } else {
     installElectrobunCloudApiFetchTransport();
   }
-  const init = await measurePerfAsync("startup.web-client.backend-init", () => initElectrobunBackend());
+  const paneId = new URLSearchParams(window.location.search).get("paneId") ?? undefined;
+  const windowKind = paneId ? "detached" : "main";
+  const hostedFallbackInit = () => createHostedFallbackInit({
+    userId: getHostedConfigUserId(),
+    windowKind,
+    paneId,
+  });
+  const resolved = await measurePerfAsync("startup.web-client.backend-init", () => {
+    if (!isHosted) return initElectrobunBackend().then((init) => ({ init, degraded: false }));
+    // The hosted init RPC re-resolves the session upstream. Once the session is
+    // already known to be unreachable, asking again only doubles the wait for a
+    // snapshot this can build locally.
+    if (degraded) return Promise.resolve({ init: hostedFallbackInit(), degraded: true });
+    return resolveHostedInit(
+      () => initElectrobunBackend({ kind: windowKind, paneId }),
+      hostedFallbackInit,
+    );
+  });
+  const init = resolved.init;
+  if (resolved.degraded) {
+    degraded = true;
+    bootLog.warn("backend init timed out; booting from local config");
+  }
   if (isHosted) {
     hydrateHostedUserConfig(init.config);
     hydrateHostedByokConfig(init.config);
   }
+  window.__GLOOM_CLOUD_DEGRADED = degraded;
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
-  const paneId = new URLSearchParams(window.location.search).get("paneId") ?? undefined;
-  const windowKind = paneId ? "detached" : "main";
   const desktopWindowBridge = createWebWindowBridge(windowKind, paneId);
   const desktopDeepLinkBridge = createWebDeepLinkBridge();
+  stopSlowBootNotice();
   root.render(
     <ElectrobunErrorBoundary>
       <UiHostProvider ui={webUiHost} renderer={localWebRendererHost} nativeRenderer={webNativeRenderer}>

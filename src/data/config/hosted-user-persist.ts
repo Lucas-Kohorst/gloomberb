@@ -2,6 +2,7 @@ import type { AppConfig } from "../../types/config";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 
 const STORAGE_PREFIX = "gloomberb:hosted-user-config:";
+const LAST_USER_KEY = "gloomberb:hosted-user-id";
 
 export interface HostedUserConfigStamp {
   userId: string;
@@ -51,6 +52,45 @@ export function setHostedConfigUserId(userId: string | null): void {
 
 export function getHostedConfigUserId(): string | null {
   return activeUserId;
+}
+
+/**
+ * Remembers who was last signed in so a boot that cannot reach Gloom Cloud can
+ * still overlay that user's saved config instead of showing a blank default.
+ * Cleared only on an explicit sign-out, never on a failed session check.
+ */
+export function rememberHostedUserId(userId: string | null): void {
+  const backend = storage();
+  if (!backend) return;
+  try {
+    if (userId) backend.setItem(LAST_USER_KEY, userId);
+    else backend.removeItem(LAST_USER_KEY);
+  } catch {
+    // Ignore quota or security errors.
+  }
+}
+
+export function readLastHostedUserId(): string | null {
+  const backend = storage();
+  if (!backend) return null;
+  try {
+    const remembered = backend.getItem(LAST_USER_KEY)?.trim();
+    if (remembered) return remembered;
+    // Nothing remembered yet, which is the case for anyone whose last sign-in
+    // predates this bookkeeping. A single stored per-user config identifies the
+    // owner unambiguously; more than one is genuinely ambiguous, so give up.
+    const owners: string[] = [];
+    for (let index = 0; index < backend.length; index += 1) {
+      const key = backend.key(index);
+      if (!key?.startsWith(STORAGE_PREFIX)) continue;
+      const userId = key.slice(STORAGE_PREFIX.length).trim();
+      if (userId) owners.push(userId);
+      if (owners.length > 1) return null;
+    }
+    return owners[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function hostedUserConfigStorageKey(userId: string): string {

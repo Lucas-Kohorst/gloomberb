@@ -5,6 +5,7 @@ import {
   fetchSessionUser,
   gloomFetch,
   readSessionCookie,
+  resolveSessionUser,
   sessionCookieHeader,
 } from "./gloom-cloud";
 
@@ -90,17 +91,11 @@ async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<
 }
 
 async function getSession(request: Request, env: Env): Promise<Response> {
-  const token = readSessionCookie(request);
-  if (!token) return Response.json({ user: null });
-  const upstream = await gloomFetch(env, "/auth/get-session", { token });
-  if (!upstream.ok) {
-    const headers = upstream.status === 401 || upstream.status === 404
-      ? { "Set-Cookie": clearSessionCookieHeader() }
-      : undefined;
-    return Response.json({ user: null }, { headers });
-  }
-  const body = await upstream.json().catch(() => null) as { user?: unknown } | null;
-  return Response.json({ user: body?.user ?? null });
+  const resolved = await resolveSessionUser(request, env);
+  // Only an explicit rejection clears the cookie. A degraded upstream leaves it
+  // in place so the session survives the outage.
+  const headers = resolved.rejected ? { "Set-Cookie": clearSessionCookieHeader() } : undefined;
+  return Response.json({ user: resolved.user, degraded: resolved.degraded }, { headers });
 }
 
 async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
