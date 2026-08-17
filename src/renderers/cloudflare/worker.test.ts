@@ -195,4 +195,32 @@ describe("hosted config snapshot Worker endpoint", () => {
     );
     expect(putResponse?.status).toBe(413);
   });
+
+  test("allows public HTTP fetches without waiting for Gloom Cloud auth", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response(JSON.stringify({ models: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/_gloomberb/rpc", {
+        body: JSON.stringify({
+          method: "http.fetch",
+          payload: {
+            url: "https://api.llm-stats.com/v1/models",
+            init: { method: "GET", timeoutMs: 1000 },
+          },
+        }),
+      }),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
+    expect((await response?.json()).ok).toBe(true);
+  });
 });

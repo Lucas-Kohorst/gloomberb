@@ -196,9 +196,21 @@ async function handleBackendRequest(request: Request, env: Env, url: URL): Promi
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
   if (url.pathname === "/_gloomberb/rpc") {
-    const requestPayload = await request.clone().json().catch(() => null) as { method?: string } | null;
-    const user = await fetchSessionUser(request, env);
-    if (!user && requestPayload?.method !== "init") {
+    const requestPayload = await request.clone().json().catch(() => null) as {
+      method?: string;
+      payload?: { init?: { method?: string } };
+    } | null;
+    // Public providers use the shared HTTP-fetch bridge, but do not need a
+    // Gloom Cloud session for read-only requests. Resolving the session first
+    // made every public request wait on a degraded api.gloom.sh and then fail
+    // as 401. Mutating requests and authenticated RPC methods continue through
+    // the verified-session gate. The hosted backend still enforces a token for
+    // requests to api.gloom.sh.
+    const httpMethod = requestPayload?.payload?.init?.method?.toUpperCase() ?? "GET";
+    const isPublicHttpFetch = requestPayload?.method === "http.fetch"
+      && (httpMethod === "GET" || httpMethod === "HEAD");
+    const user = isPublicHttpFetch ? null : await fetchSessionUser(request, env);
+    if (!user && requestPayload?.method !== "init" && !isPublicHttpFetch) {
       return Response.json({ error: "Authentication required." }, { status: 401 });
     }
     return handleHostedBackendRpc(env, user, request);
