@@ -14,23 +14,43 @@ export interface MarkdownTextProps {
   openTicker?: (symbol: string) => void;
 }
 
-interface StyledSegment {
+export interface StyledSegment {
   text: string;
   bold?: boolean;
   italic?: boolean;
   dim?: boolean;
   code?: boolean;
+  underline?: boolean;
   color?: string;
+  /** Set for `[label](href)` and `<autolink>` segments; the href is not rendered. */
+  link?: string;
 }
 
-interface ParsedLine {
+export interface ParsedLine {
   segments: StyledSegment[];
   heading?: boolean;
   indent?: number;
 }
 
-const INLINE_RE =
-  /(\*\*(?<bold>[^*]+)\*\*|(?<!\*)\*(?!\*)(?<italic>[^*]+)\*(?!\*)|`(?<code>[^`]+)`|~~(?<strike>[^~]+)~~)/g;
+// Order matters: images must be tried before links, and `**` before `*`.
+const INLINE_RE = new RegExp([
+  /!\[(?<imageAlt>[^\]]*)\]\((?<imageHref>[^)]*)\)/.source,
+  /\[(?<linkText>[^\]]*)\]\((?<linkHref>[^)]*)\)/.source,
+  /<(?<autolink>(?:https?:\/\/|mailto:)[^>\s]+)>/.source,
+  /\*\*(?<bold>[^*]+)\*\*/.source,
+  /(?<!\*)\*(?!\*)(?<italic>[^*]+)\*(?!\*)/.source,
+  /`(?<code>[^`]+)`/.source,
+  /~~(?<strike>[^~]+)~~/.source,
+].join("|"), "g");
+
+function linkSegment(label: string, href: string): StyledSegment {
+  return {
+    text: label.trim() || href,
+    link: href,
+    color: colors.borderFocused,
+    underline: true,
+  };
+}
 
 function parseInlineMarkdown(text: string): StyledSegment[] {
   const segments: StyledSegment[] = [];
@@ -42,14 +62,24 @@ function parseInlineMarkdown(text: string): StyledSegment[] {
     if (match.index > cursor) {
       segments.push({ text: text.slice(cursor, match.index) });
     }
-    if (match.groups?.bold != null) {
-      segments.push({ text: match.groups.bold, bold: true });
-    } else if (match.groups?.italic != null) {
-      segments.push({ text: match.groups.italic, italic: true });
-    } else if (match.groups?.code != null) {
-      segments.push({ text: match.groups.code, code: true });
-    } else if (match.groups?.strike != null) {
-      segments.push({ text: match.groups.strike, dim: true });
+    const groups = match.groups ?? {};
+    if (groups.imageAlt != null) {
+      // Scraped pages are full of decorative images. Keep a caption only when
+      // the alt text carries meaning, and never show the image URL.
+      const alt = groups.imageAlt.trim();
+      if (alt) segments.push({ text: alt, dim: true, italic: true });
+    } else if (groups.linkText != null) {
+      segments.push(linkSegment(groups.linkText, groups.linkHref ?? ""));
+    } else if (groups.autolink != null) {
+      segments.push(linkSegment(groups.autolink, groups.autolink));
+    } else if (groups.bold != null) {
+      segments.push({ text: groups.bold, bold: true });
+    } else if (groups.italic != null) {
+      segments.push({ text: groups.italic, italic: true });
+    } else if (groups.code != null) {
+      segments.push({ text: groups.code, code: true });
+    } else if (groups.strike != null) {
+      segments.push({ text: groups.strike, dim: true });
     }
     cursor = match.index + match[0].length;
   }
@@ -59,9 +89,13 @@ function parseInlineMarkdown(text: string): StyledSegment[] {
   return segments;
 }
 
-function parseLine(line: string): ParsedLine {
-  // Headings
-  const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+export function parseMarkdownLine(line: string): ParsedLine {
+  // Thematic breaks and empty bullets are layout scaffolding in scraped
+  // markdown; rendering the raw markers as text is worse than dropping them.
+  if (/^\s*([-*_])\1{2,}\s*$/.test(line)) return { segments: [] };
+  if (/^\s*(?:[-*+]|\d+\.)\s*$/.test(line)) return { segments: [] };
+
+  const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
   if (headingMatch) {
     return {
       heading: true,
@@ -69,17 +103,24 @@ function parseLine(line: string): ParsedLine {
     };
   }
 
-  // List items
-  const listMatch = line.match(/^(\s*)([-*]|\d+\.)\s(.*)$/);
-  if (listMatch) {
-    const indent = listMatch[1]!.length;
-    const marker = listMatch[2]!;
-    const content = listMatch[3]!;
+  const quoteMatch = line.match(/^\s*>\s?(.*)$/);
+  if (quoteMatch) {
     return {
-      indent,
+      segments: [
+        { text: "| ", dim: true },
+        ...parseInlineMarkdown(quoteMatch[1]!).map((segment) => ({ ...segment, dim: true })),
+      ],
+    };
+  }
+
+  const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+  if (listMatch) {
+    const marker = /^\d/.test(listMatch[2]!) ? listMatch[2]! : "-";
+    return {
+      indent: listMatch[1]!.length,
       segments: [
         { text: `${marker} `, bold: true, color: colors.borderFocused },
-        ...parseInlineMarkdown(content),
+        ...parseInlineMarkdown(listMatch[3]!),
       ],
     };
   }
@@ -117,7 +158,8 @@ function SegmentSpan({ segment, wrap = false }: { segment: StyledSegment; wrap?:
   const attrs =
     (segment.bold ? TextAttributes.BOLD : 0) |
     (segment.italic ? TextAttributes.ITALIC : 0) |
-    (segment.dim ? TextAttributes.DIM : 0);
+    (segment.dim ? TextAttributes.DIM : 0) |
+    (segment.underline ? TextAttributes.UNDERLINE : 0);
   return (
     <Span
       fg={segment.color ?? undefined}
@@ -181,8 +223,21 @@ function MarkdownLine({
     <Box flexDirection="row" flexWrap="wrap" {...(lineWidth != null ? { width: lineWidth } : {})}>
       {indentStr ? <Text fg={textColor}>{indentStr}</Text> : null}
       {parsed.segments.map((segment, segIdx) => {
-        const tokens = tokenizeTickerText(segment.text);
-        return tokens.map((token, tokIdx) => {
+        // A link label is a unit; tickerising inside it would split the label.
+        if (segment.link) {
+          return (
+            <Text
+              key={segIdx}
+              fg={textColor}
+              {...(shouldWrap
+                ? { wrapText: true, wrapMode: "word", style: wrappedTextStyle() }
+                : {})}
+            >
+              <SegmentSpan segment={segment} wrap={shouldWrap} />
+            </Text>
+          );
+        }
+        return tokenizeTickerText(segment.text).map((token, tokIdx) => {
           if (token.kind === "text") {
             if (!token.value) return null;
             return (
@@ -245,7 +300,10 @@ export function MarkdownText({
         if (line.trim() === "") {
           return <Text key={index}>{" "}</Text>;
         }
-        const parsed = parseLine(line);
+        const parsed = parseMarkdownLine(line);
+        if (parsed.segments.length === 0) {
+          return <Text key={index}>{" "}</Text>;
+        }
         return (
           <MarkdownLine
             key={index}

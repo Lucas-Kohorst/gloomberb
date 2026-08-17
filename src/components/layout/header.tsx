@@ -145,9 +145,9 @@ export function Header() {
     focusedPaneId ? findPaneInstance(state.config.layout, focusedPaneId)?.paneId ?? null : null,
   );
   const focusedTicker = useAppSelector(getFocusedTickerSymbol);
-  const { titleBarOverlay, windowControls } = useUiCapabilities();
+  const { titleBarOverlay, nativeTrafficLights, windowControls } = useUiCapabilities();
   const showWindowControls = windowControls === "windows";
-  const titlebarLeadingInset = titleBarOverlay ? getTitlebarLeadingInset() : 0;
+  const titlebarLeadingInset = nativeTrafficLights ? getTitlebarLeadingInset() : 0;
   const spyQuoteEntry = useQuoteEntry("SPY", null);
   const spyQuote = useResolvedEntryValue(spyQuoteEntry);
 
@@ -191,7 +191,7 @@ export function Header() {
         onMouseDown={startWindowDrag}
         style={{
           boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
-          paddingLeft: 8,
+          paddingLeft: titlebarLeadingInset > 0 ? 8 : 0,
           paddingRight: showWindowControls ? 0 : 12,
           position: "relative",
         }}
@@ -233,7 +233,7 @@ export function Header() {
       data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
       onMouseDown={startWindowDrag}
     >
-      <Box paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1} flexDirection="row" alignItems="center">
+      <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center">
         <PaneSuggestions paneId={focusedPaneType} tickerSymbol={focusedTicker} />
       </Box>
       <Box flexGrow={1} paddingLeft={2}>
