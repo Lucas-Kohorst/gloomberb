@@ -5,82 +5,16 @@ import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
 import { getBrowserLocation } from "../../../utils/browser-location";
 import { usePluginAppActions } from "../../runtime";
+import {
+  decodeArticleSharePayload,
+  encodeArticleSharePayload,
+  type ArticleSharePayload,
+} from "../../../shares/payload";
+import { buildInlineArticleShareUrl } from "../../../shares/routes";
 
-/**
- * The hosted web origin. Share URLs always point here so that a logged-out
- * stranger can open them in any browser without needing the desktop app.
- */
-export const SHARE_HOSTED_ORIGIN = "https://terminal.kohor.st";
-
-export interface ArticleShareStoryItem {
-  id: string;
-  sourceKey: string;
-  sourceName: string;
-  title: string;
-  summary?: string;
-  url: string;
-  publishedAt: string;
-}
-
-export interface ArticleSharePayload {
-  type: "news" | "substack";
-  id: string;
-  title: string;
-  url: string;
-  source: string;
-  summary?: string;
-  publishedAt?: string;
-  topics?: string[];
-  categories?: string[];
-  tickers?: string[];
-  importance?: number;
-  items?: ArticleShareStoryItem[];
-  // Substack-specific
-  subtitle?: string;
-  publicationName?: string;
-  publicationBaseUrl?: string;
-  slug?: string;
-  previewText?: string;
-  bodyHtml?: string;
-  imageUrls?: string[];
-  wordCount?: number;
-  readMinutes?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Base64url helpers (work in browser, Node, and Bun)
-// ---------------------------------------------------------------------------
-
-function base64urlEncode(data: string): string {
-  const bytes = new TextEncoder().encode(data);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  const base64 = typeof btoa === "function"
-    ? btoa(binary)
-    : Buffer.from(data, "utf-8").toString("base64");
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64urlDecode(encoded: string): string | null {
-  try {
-    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const pad = padded.length % 4;
-    const base64 = pad ? padded + "=".repeat(4 - pad) : padded;
-    if (typeof atob === "function") {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      return new TextDecoder().decode(bytes);
-    }
-    return Buffer.from(base64, "base64").toString("utf-8");
-  } catch {
-    return null;
-  }
-}
+export { decodeArticleSharePayload };
+export type { ArticleShareStoryItem, ArticleSharePayload } from "../../../shares/payload";
+export { SHARE_HOSTED_ORIGIN } from "../../../shares/routes";
 
 function toDateISO(value: Date | string | null | undefined): string | undefined {
   if (!value) return undefined;
@@ -115,7 +49,7 @@ export function encodeNewsArticleForShare(article: NewsArticle): string {
       publishedAt: toDateISO(item.publishedAt) ?? new Date(0).toISOString(),
     })),
   };
-  return base64urlEncode(JSON.stringify(payload));
+  return encodeArticleSharePayload(payload);
 }
 
 /**
@@ -132,7 +66,7 @@ export function encodeChangelogReleaseForShare(release: ChangelogRelease): strin
     summary: release.body,
     publishedAt: release.publishedAt,
   };
-  return base64urlEncode(JSON.stringify(payload));
+  return encodeArticleSharePayload(payload);
 }
 
 export function encodeSubstackArticleForShare(article: SubstackArticleSummary): string {
@@ -154,27 +88,7 @@ export function encodeSubstackArticleForShare(article: SubstackArticleSummary): 
     readMinutes: article.readMinutes || undefined,
     publishedAt: article.publishedAt ?? undefined,
   };
-  return base64urlEncode(JSON.stringify(payload));
-}
-
-// ---------------------------------------------------------------------------
-// Decode function
-// ---------------------------------------------------------------------------
-
-export function decodeArticleSharePayload(encoded: string): ArticleSharePayload | null {
-  const json = base64urlDecode(encoded);
-  if (!json) return null;
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    if (typeof parsed.id !== "string" || typeof parsed.title !== "string" || typeof parsed.url !== "string") {
-      return null;
-    }
-    if (parsed.type !== "news" && parsed.type !== "substack") return null;
-    return parsed as ArticleSharePayload;
-  } catch {
-    return null;
-  }
+  return encodeArticleSharePayload(payload);
 }
 
 /**
@@ -196,7 +110,7 @@ export function isPublicArticleShareLocation(): boolean {
 // ---------------------------------------------------------------------------
 
 export function buildShareUrl(encodedPayload: string): string {
-  return `${SHARE_HOSTED_ORIGIN}/article?a=${encodedPayload}`;
+  return buildInlineArticleShareUrl(encodedPayload);
 }
 
 // ---------------------------------------------------------------------------

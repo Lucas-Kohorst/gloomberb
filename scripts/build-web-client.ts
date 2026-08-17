@@ -3,6 +3,7 @@ import { join } from "path";
 import { randomUUID } from "crypto";
 import {
   electrobunViewPath,
+  writeSharePage,
   writeWebClientPage,
 } from "../src/renderers/electrobun/view/build-assets";
 
@@ -21,4 +22,10 @@ await writeWebClientPage({
   title: "Gloomberb",
   loadingText: "Loading Gloomberb...",
   bootstrapScript: hosted ? "window.__GLOOM_CLOUD_HOSTED = true;" : "",
+});
+
+await writeSharePage({
+  outdir,
+  title: "Gloomberb",
+  loadingText: "Loading shared view...",
 });

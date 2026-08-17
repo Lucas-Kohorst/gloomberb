@@ -17,6 +17,7 @@ type PageOptions = {
 };
 
 const ELECTROBUN_VIEW_DIR = join(process.cwd(), "src", "renderers", "electrobun", "view");
+const SHARE_VIEW_DIR = join(process.cwd(), "src", "renderers", "share");
 const COMMON_ALIAS_RULES: AliasRule[] = [
   ["notes-files", "notes-files.ts"],
   ["./files", "plugins/builtin/notes/index.tsx", "notes-files.ts"],
@@ -62,6 +63,81 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
   }));
   return htmlPath;
+}
+
+/**
+ * Builds the slim share page (`share.html` + `share-main.js`).
+ *
+ * A separate entrypoint, not a route inside the terminal bundle: the point of
+ * the share page is that opening a link does not download the workspace. Sharing
+ * the bundle would give up the only thing that makes it fast.
+ */
+export async function writeSharePage(options: {
+  outdir: string;
+  title: string;
+  loadingText: string;
+}): Promise<string> {
+  const result = await Bun.build({
+    entrypoints: [join(SHARE_VIEW_DIR, "share-main.tsx")],
+    outdir: options.outdir,
+    target: "browser",
+    format: "esm",
+    // Unlike the terminal bundle, splitting is on so the chart renderer stays a
+    // separate chunk that only chart shares fetch.
+    splitting: true,
+    sourcemap: "external",
+    minify: true,
+    define: { "process.env.NODE_ENV": "\"production\"" },
+  });
+  if (!result.success) {
+    const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
+    throw new Error(details ? `Failed to build share page\n${details}` : "Failed to build share page");
+  }
+  const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
+  if (!entry) throw new Error("Share page build did not produce a JavaScript entrypoint");
+
+  const htmlPath = join(options.outdir, "share.html");
+  await writeFile(htmlPath, renderSharePageHtml({
+    title: options.title,
+    loadingText: options.loadingText,
+    stylesheet: await readFile(join(SHARE_VIEW_DIR, "styles.css"), "utf8"),
+    // The share document is served for `/s/{id}` and `/article`, so a relative
+    // URL would resolve under the route and hit the SPA fallback.
+    entrySrc: toRootAbsoluteAssetUrl(`./${relative(options.outdir, entry.path).replaceAll("\\", "/")}`),
+    faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
+  }));
+  return htmlPath;
+}
+
+function renderSharePageHtml({
+  title,
+  loadingText,
+  stylesheet,
+  entrySrc,
+  faviconHref,
+}: {
+  title: string;
+  loadingText: string;
+  stylesheet: string;
+  entrySrc: string;
+  faviconHref: string;
+}): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
+    <title>${title}</title>
+    <style>${stylesheet}</style>
+  </head>
+  <body>
+    <div id="root"><div class="share-main"><div class="share-loading-body">${loadingText}</div></div></div>
+    <script type="module" src="${entrySrc}"></script>
+  </body>
+</html>
+`;
 }
 
 async function buildElectrobunViewBundle({

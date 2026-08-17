@@ -47,6 +47,12 @@ async function collectImports(): Promise<Array<{ file: string; specifier: string
   return imports;
 }
 
+/**
+ * The renderers that mount into a real DOM, and so are the only places allowed
+ * to reach for react-dom: the desktop/web terminal, and the slim share page.
+ */
+const DOM_RENDERER_ROOTS = ["src/renderers/electrobun/", "src/renderers/share/"];
+
 describe("import boundaries", () => {
   test("external renderer packages stay in renderer adapters", async () => {
     const imports = await collectImports();
@@ -61,7 +67,7 @@ describe("import boundaries", () => {
         return !file.startsWith("src/renderers/electrobun/");
       }
       if (specifier === "react-dom" || specifier.startsWith("react-dom/")) {
-        return !file.startsWith("src/renderers/electrobun/");
+        return !DOM_RENDERER_ROOTS.some((root) => file.startsWith(root));
       }
       return false;
     });

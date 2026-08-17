@@ -28,6 +28,8 @@ import {
   CompositeChart,
   pricePointsToResolvedSeries,
 } from "../../../components/chart/composite";
+import { useShareTable } from "../shared/use-share-table";
+import type { TableShareColumn } from "../../../shares/payload";
 import type { AdjacentClient } from "./client";
 import type {
   AdjacentConstituent,
@@ -78,6 +80,20 @@ export function createIndexColumns(width: number): IndexColumn[] {
     ...fixedColumns.slice(1),
   ];
 }
+
+/**
+ * Fixed for shares, unlike the on-screen columns which drop out as the pane
+ * narrows: a link created from a half-width pane should still carry the whole
+ * table.
+ */
+const INDEX_SHARE_COLUMNS: TableShareColumn[] = [
+  { id: "ticker", label: "Ticker" },
+  { id: "name", label: "Name" },
+  { id: "value", label: "Value", align: "right" },
+  { id: "prob", label: "Prob %", align: "right" },
+  { id: "chg1d", label: "1D", align: "right" },
+  { id: "chg7d", label: "7D", align: "right" },
+];
 
 function renderIndexCell(
   row: AdjacentIndexRow,
@@ -428,14 +444,33 @@ export function AdjacentIndicesPane({
     [],
   );
 
+  const shareTable = useShareTable();
+  const shareIndices = useCallback(() => {
+    void shareTable({
+      title: "Adjacent Indices",
+      subtitle: "Prediction-market indices",
+      columns: INDEX_SHARE_COLUMNS,
+      items: visibleIndices,
+      cell: (row, columnId) => renderIndexCell(row, { id: columnId } as IndexColumn, false),
+      paneTemplateId: "adjacent-indices-pane",
+    });
+  }, [shareTable, visibleIndices]);
+
   useShortcut((event) => {
     if (!focused || detailOpen) return;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       load();
+      return;
+    }
+    if (isPlainKey(event, "y")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareIndices();
     }
   }, { enabled: focused && !detailOpen });
+
   usePaneFooter("adjacent-indices", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -444,8 +479,9 @@ export function AdjacentIndicesPane({
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
+      { id: "share", key: "y", label: " share", onPress: shareIndices },
     ],
-  }), [error, load, status, updatedAgo]);
+  }), [error, load, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
