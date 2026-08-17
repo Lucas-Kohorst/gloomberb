@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  checkAiProviderStatus,
   connectAiRuntimeProvider,
   disconnectAiRuntimeProvider,
   getAiRuntimeCatalog,
@@ -194,5 +195,41 @@ describe("AI runner", () => {
       providerId: "opencode",
       prompt: "hello",
     }).done).rejects.toThrow("Unknown AI provider: opencode");
+  });
+});
+
+describe("checkAiProviderStatus timeout", () => {
+  test("reaches a terminal state when the host checkStatus hangs", async () => {
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+      checkStatus: () => new Promise(() => {}), // never resolves
+    });
+    const result = await checkAiProviderStatus("anthropic");
+    expect(result.available).toBe(false);
+    expect(result.authenticated).toBe(false);
+    expect(result.inconclusive).toBe(true);
+    expect(result.message).toContain("timed out");
+  });
+
+  test("returns the host result when checkStatus resolves quickly", async () => {
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+      checkStatus: async () => ({
+        available: true,
+        authenticated: true,
+        message: null,
+      }),
+    });
+    const result = await checkAiProviderStatus("anthropic");
+    expect(result.available).toBe(true);
+    expect(result.authenticated).toBe(true);
+  });
+
+  test("falls back to the runtime catalog when no host checkStatus is configured", async () => {
+    setAiRunHost(null);
+    setAiRuntimeCatalog(catalog("connected"));
+    const result = await checkAiProviderStatus("openai-codex");
+    expect(result.available).toBe(true);
+    expect(result.authenticated).toBe(true);
   });
 });

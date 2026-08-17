@@ -2,13 +2,19 @@ import type { GloomPlugin } from "../../../types/plugin";
 import type { AppConfig } from "../../../types/config";
 import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import {
+  AI_PROVIDER_IDS,
   detectProviders,
+  getAiProviderDefinition,
   resolveDefaultAiProviderId,
   setDetectedProviders,
   type AiProvider,
+  type AiProviderId,
 } from "./providers";
 import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
 import { isHostedWebClient } from "./providers";
+import { registerConnectionSource } from "../connections/register";
+import { registerByokKnownService } from "../byok/services";
+import { aiProviderByokService } from "../account-management/ai-providers";
 import { AiScreenerPane } from "./screener/pane";
 import { buildAiScreenerPaneSettingsDef, getAiScreenerPaneSettings } from "./settings";
 import {
@@ -53,6 +59,8 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
+
+let connectionDisposers: Array<() => void> = [];
 
 function settingOrFallback(
   settings: Record<string, unknown>,
@@ -195,6 +203,36 @@ export const aiPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    // Register every AI provider as a Connection so it shows up in the
+    // Connections pane with real request traffic (per AGENTS.md).
+    const connectionDisposers = AI_PROVIDER_IDS.map((providerId) =>
+      registerConnectionSource({
+        id: `ai-${providerId}`,
+        name: getAiProviderDefinition(providerId)?.name ?? providerId,
+        kind: "api",
+        pluginId: "ai",
+        priority: 200,
+        authRequired: providerId !== "browser-builtin" && providerId !== "ollama",
+      }),
+    );
+
+    // Register BYOK known services for AI providers that accept API keys, so
+    // users can add keys through the existing BYOK infrastructure rather than
+    // a second key store. Ollama is registered with authType "none" for its
+    // local endpoint URL.
+    for (const providerId of AI_PROVIDER_IDS) {
+      const service = aiProviderByokService(providerId);
+      if (service) {
+        registerByokKnownService({
+          id: service.id,
+          name: service.name,
+          apiUrl: service.apiUrl,
+          authType: service.authType,
+          description: service.description,
+        });
+      }
+    }
+
     const initialProviders = detectProviders();
     if (isHostedWebClient()) {
       void getBrowserAiState().then((state) => {
@@ -449,5 +487,9 @@ export const aiPlugin: GloomPlugin = {
         };
       },
     });
+  },
+
+  dispose() {
+    for (const dispose of connectionDisposers) dispose();
   },
 };

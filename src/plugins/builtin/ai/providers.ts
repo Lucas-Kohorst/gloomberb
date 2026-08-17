@@ -2,6 +2,7 @@ import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
 
 export const AI_PROVIDER_IDS = [
   "browser-builtin",
+  "ollama",
   "anthropic",
   "openai-codex",
   "openai",
@@ -62,6 +63,13 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
     outputModes: ["plain"],
     preferredModelIds: ["gemini-nano"],
     fastModelIds: ["gemini-nano"],
+  },
+  {
+    id: "ollama",
+    name: "Ollama (local)",
+    outputModes: ["plain"],
+    preferredModelIds: ["llama3.2", "qwen2.5", "phi3"],
+    fastModelIds: ["qwen2.5", "phi3", "llama3.2"],
   },
   {
     id: "anthropic",
