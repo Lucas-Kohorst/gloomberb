@@ -8,6 +8,9 @@ import type {
 import type { AiProviderStatus } from "./providers";
 import type { PaneSettingsDef } from "../../../types/plugin";
 import { isHostedWebClient } from "./providers";
+import { withDeadline } from "../../../utils/async-deadline";
+
+const BROWSER_AI_CHECK_TIMEOUT_MS = 5_000;
 
 export type BrowserAiAvailability =
   | "available"
@@ -105,7 +108,11 @@ export async function getBrowserAiState(): Promise<BrowserAiState> {
     };
   }
   try {
-    const availability = await api.availability({ languages: ["en"] });
+    const availability = await withDeadline(
+      api.availability({ languages: ["en"] }),
+      BROWSER_AI_CHECK_TIMEOUT_MS,
+      "Chrome's built-in Prompt API availability check timed out.",
+    );
     if (availability === "available") {
       return { availability, reason: "The on-device model is ready." };
     }

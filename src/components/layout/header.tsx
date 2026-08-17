@@ -1,24 +1,26 @@
-import { Box, SpinnerMark, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../ui";
+import { Box, SpinnerMark, Text, useRendererHost, useUiCapabilities } from "../../ui";
 import { useCallback, useEffect, type ReactNode } from "react";
 import { blendHex, priceColor } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppActive } from "../../state/app/activity";
-import { useAppDispatch, useAppSelector } from "../../state/app/context";
+import { getFocusedTickerSymbol, useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
   selectBaseCurrency,
+  selectFocusedPaneId,
   selectUpdateAvailable,
   selectUpdateCheckInProgress,
   selectUpdateNotice,
   selectUpdateProgress,
 } from "../../state/selectors-ui";
+import { findPaneInstance } from "../../types/config";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { t, tf } from "../../i18n";
 import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
 import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../market-data/market/format";
 import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
-import { VERSION } from "../../version";
 import { getTitlebarLeadingInset } from "./titlebar-overlay";
+import { PaneSuggestions } from "./pane-suggestions";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
 const SPY_REFRESH_MS = 5 * 60_000; // 5 min
@@ -138,6 +140,11 @@ export function Header() {
   const rendererHost = useRendererHost();
   const baseCurrency = useAppSelector(selectBaseCurrency);
   const appActive = useAppActive();
+  const focusedPaneId = useAppSelector(selectFocusedPaneId);
+  const focusedPaneType = useAppSelector((state) =>
+    focusedPaneId ? findPaneInstance(state.config.layout, focusedPaneId)?.paneId ?? null : null,
+  );
+  const focusedTicker = useAppSelector(getFocusedTickerSymbol);
   const { titleBarOverlay, windowControls } = useUiCapabilities();
   const showWindowControls = windowControls === "windows";
   const titlebarLeadingInset = titleBarOverlay ? getTitlebarLeadingInset() : 0;
@@ -190,15 +197,7 @@ export function Header() {
         }}
       >
         <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" gap={1}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
-            Gloomberb
-          </Text>
-          <DesktopHeaderPill
-            backgroundColor={blendHex(colors.header, colors.headerText, 0.1)}
-            borderColor={blendHex(colors.border, colors.headerText, 0.28)}
-          >
-            <Text fg={colors.headerText} style={{ fontSize: 11 }}>v{VERSION}</Text>
-          </DesktopHeaderPill>
+          <PaneSuggestions paneId={focusedPaneType} tickerSymbol={focusedTicker} />
         </Box>
         <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
           <UpdateStatus />
@@ -234,10 +233,8 @@ export function Header() {
       data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
       onMouseDown={startWindowDrag}
     >
-      <Box paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1}>
-        <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
-          Gloomberb v{VERSION}
-        </Text>
+      <Box paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1} flexDirection="row" alignItems="center">
+        <PaneSuggestions paneId={focusedPaneType} tickerSymbol={focusedTicker} />
       </Box>
       <Box flexGrow={1} paddingLeft={2}>
         <UpdateStatus />

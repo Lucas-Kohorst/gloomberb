@@ -9,6 +9,7 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { FeedDataTableStackView, Spinner, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
+import { useJinaArticle } from "../shared/jina-reader";
 import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
 import { useNewsArticleFooter } from "./wire/news/footer";
@@ -23,10 +24,12 @@ function getFeedItems(
   selectedUrl: string | undefined,
   summaryCache: Map<string, string>,
   loadingSummary: boolean,
+  selectedJinaContent: string | null,
 ): FeedDataTableItem[] {
   return news.map((item) => {
     const preview = summaryCache.get(item.url) ?? item.summary ?? undefined;
     const isSelected = item.url === selectedUrl;
+    const fallbackBody = preview ?? (loadingSummary ? "Loading preview..." : "No preview available.");
     return {
       id: item.id,
       eyebrow: item.source,
@@ -44,7 +47,7 @@ function getFeedItems(
         })}`,
       ],
       detailBody: isSelected
-        ? preview ?? (loadingSummary ? "Loading preview..." : "No preview available.")
+        ? selectedJinaContent ?? fallbackBody
         : preview ?? "",
       detailNote: item.url,
     };
@@ -99,6 +102,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
   const selectedSummary = useResolvedEntryValue(articleSummaryEntry);
   const loadingSummary = articleSummaryEntry?.phase === "loading" || articleSummaryEntry?.phase === "refreshing";
+  const jina = useJinaArticle(selected?.url ?? "", !!selected?.url);
 
   useEffect(() => {
     if (!selected?.summary) return;
@@ -126,6 +130,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     info: [
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
+      ...(jina.loading ? [{ id: "rendering", parts: [{ text: "rendering article", tone: "muted" as const }] }] : []),
     ],
     onPopOut: () => popOutArticle(openArticle ?? selected),
     onRefresh: instrument
@@ -146,7 +151,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   if (error) return <Text fg={colors.textDim}>Error: {error}</Text>;
   if (news.length === 0) return <Text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</Text>;
 
-  const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary);
+  const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary, jina.content);
 
   return (
     <FeedDataTableStackView
@@ -164,6 +169,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       sourceLabel="Source"
       titleLabel="Headline"
       emptyStateTitle="No news."
+      markdown
     />
   );
 }

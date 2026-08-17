@@ -179,6 +179,61 @@ describe("createPaneTemplateOrThrow", () => {
     expect(focused).toEqual(["sec:AAPL"]);
     expect(placed).toEqual([]);
   });
+
+  test("singleton template focuses an existing instance even when settings differ", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    // An existing chat instance on a different channel than the template
+    // would resolve — a non-singleton template would miss this and duplicate.
+    const chatInstance = {
+      instanceId: "chat:main",
+      paneId: "chat",
+      title: "Chat #equities",
+      settings: { channelId: "equities" },
+    };
+    layout.instances = [...layout.instances, chatInstance];
+    layout.floating = [...layout.floating, { instanceId: "chat:main", x: 0, y: 0, width: 80, height: 30 }];
+    const state = createInitialState({ ...config, layout });
+    const focused: string[] = [];
+    const placed: unknown[] = [];
+
+    await createPaneTemplateOrThrow("new-chat-pane", undefined, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["new-chat-pane", {
+            id: "new-chat-pane",
+            paneId: "chat",
+            label: "New Chat Pane",
+            description: "Chat",
+            singleton: true,
+            createInstance: () => ({
+              placement: "floating",
+              title: "Chat #general",
+              settings: { channelId: "general" },
+            }),
+          }],
+        ]),
+        panes: new Map([
+          ["chat", { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" }],
+        ]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => {
+        placed.push("built");
+        return { instanceId: "chat:dup", paneId: "chat" } as any;
+      },
+      placePaneInstance: () => { placed.push("placed"); },
+      focusPaneInstance: (id) => { focused.push(id); },
+    });
+
+    expect(focused).toEqual(["chat:main"]);
+    expect(placed).toEqual([]);
+  });
 });
 
 describe("applyPaneSettingFieldValue", () => {

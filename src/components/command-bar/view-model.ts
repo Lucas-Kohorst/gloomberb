@@ -4,6 +4,24 @@ import { truncateToDisplayWidth } from "../../utils/format";
 
 export { rankTickerSearchItems } from "../../tickers/search";
 
+/**
+ * Remove items that share an id, keeping the first occurrence. The command
+ * bar assembles suggestions from several sources (pane shortcuts, built-in
+ * commands, plugin commands, ticker actions, layout items) that can overlap.
+ * Items are pushed in priority order, so the first occurrence is the one that
+ * best fits and subsequent duplicates are dropped.
+ */
+export function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    result.push(item);
+  }
+  return result;
+}
+
 export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "direct-command";
 
 export interface CommandBarModeInfo {

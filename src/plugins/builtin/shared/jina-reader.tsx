@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
+import { MarkdownText } from "../../../components/markdown-text";
 import { withConnectionRequest } from "../connections/register";
 import { colors } from "../../../theme/colors";
 
@@ -113,14 +114,7 @@ export function JinaArticleReader({
         {state.loading ? <Text fg={colors.textDim}>Refreshing article...</Text> : null}
         {state.error ? <Text fg={colors.negative} wrapText width={lineWidth}>{state.error}</Text> : null}
         {state.content ? (
-          <Text
-            fg={colors.text}
-            wrapText
-            width={lineWidth}
-            style={{ minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-          >
-            {state.content}
-          </Text>
+          <MarkdownText text={state.content} lineWidth={lineWidth} textColor={colors.text} />
         ) : !state.error ? <Text fg={colors.textDim}>No article text returned.</Text> : null}
       </Box>
     </ScrollBox>

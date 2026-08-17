@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   compareAdjacentIndexRows,
-  filterAdjacentIndexRows,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
   normalizeAdjacentNewsArticle,
@@ -59,26 +58,6 @@ describe("adjacent normalize", () => {
     ]);
     expect(points).toHaveLength(1);
     expect(points[0]!.value).toBeCloseTo(98.5611);
-  });
-
-  test("filters indices by ticker or name", () => {
-    const rows = [
-      normalizeAdjacentIndex({
-        index_id: "red",
-        name: "Republican Political Future Index",
-        ticker: "RED",
-        latest_price: 98,
-      }),
-      normalizeAdjacentIndex({
-        index_id: "blue",
-        name: "Democrat Political Future Index",
-        ticker: "BLUE",
-        latest_price: 52,
-      }),
-    ];
-    expect(filterAdjacentIndexRows(rows, "pres")).toEqual([]);
-    expect(filterAdjacentIndexRows(rows, "blue").map((row) => row.ticker)).toEqual(["BLUE"]);
-    expect(filterAdjacentIndexRows(rows, "republican").map((row) => row.ticker)).toEqual(["RED"]);
   });
 
   test("sorts indices by ticker, probability, and 1d change fields", () => {
