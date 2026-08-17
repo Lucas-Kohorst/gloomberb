@@ -12,8 +12,9 @@
  * Running the real bundle with `process` shadowed reproduces that browser
  * condition, so the failure lands in CI instead of production.
  */
-import { join } from "path";
+import { dirname, join } from "path";
 import { Window } from "happy-dom";
+import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
 const bundlePath = process.argv[2] ?? join("dist", "web-client", "web-main.js");
 
@@ -66,5 +67,24 @@ try {
   process.exit(1);
 }
 
+// Same failure mode as a module-scope Node global: nested routes serve this
+// document, relative assets resolve under the route, SPA fallback returns HTML.
+const htmlPath = join(dirname(bundlePath), "index.html");
+const html = Bun.file(htmlPath);
+if (!await html.exists()) {
+  console.error(`No hosted page at ${htmlPath}. Run \`bun run cloud:build\` first.`);
+  process.exit(1);
+}
+const relativeAssets = findRelativeAssetUrls(await html.text());
+if (relativeAssets.length > 0) {
+  console.error(
+    `Hosted page references assets with relative URLs: ${relativeAssets.join(", ")}`
+    + "\n\nNested routes are served the same document, so these resolve under the route path"
+    + "\nand the SPA fallback returns HTML instead of the asset. Use root-absolute URLs.",
+  );
+  process.exit(1);
+}
+
 console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
+console.log(`Hosted page references only root-absolute asset URLs (${htmlPath}).`);
 process.exit(0);

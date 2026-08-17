@@ -1,6 +1,7 @@
 import { copyFile, readFile, writeFile } from "fs/promises";
 import { join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
+import { toRootAbsoluteAssetUrl } from "./asset-urls";
 
 type AliasRule = readonly [string, string] | readonly [string, string, string];
 type PageOptions = {
@@ -48,11 +49,16 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   });
   await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
   const htmlPath = join(options.outdir, "index.html");
+  // Nested routes (`/s/{id}`) serve this same document; relative `./web-main.js`
+  // would resolve under `/s/` and the SPA fallback would return HTML instead of
+  // the module. Desktop keeps relative URLs (file/custom scheme, no origin root).
+  const absoluteEntrySrc = toRootAbsoluteAssetUrl(entrySrc);
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
     stylesheet,
-    entrySrc,
+    entrySrc: absoluteEntrySrc,
+    faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
   }));
   return htmlPath;
@@ -109,13 +115,14 @@ function renderElectrobunViewHtml({
   stylesheet,
   bootstrapScript,
   entrySrc,
-}: PageOptions & { stylesheet: string; entrySrc: string }): string {
+  faviconHref = "favicon.svg",
+}: PageOptions & { stylesheet: string; entrySrc: string; faviconHref?: string }): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
     <title>${title}</title>
     <style>${stylesheet}</style>
   </head>

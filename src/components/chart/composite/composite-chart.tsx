@@ -17,6 +17,7 @@ import { formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
+import { groupSeriesByPanelId } from "./panel-series";
 import {
   consumeChartMouseEvent,
   getGlobalMouseX,
@@ -587,8 +588,12 @@ function resolveSeriesCursorYRatio(
   return null;
 }
 
+const EMPTY_PANEL_SERIES: readonly ResolvedSeries[] = [];
+
 interface CompositePanelSurfaceProps {
   panel: CompositePanelScene;
+  /** Unwindowed series for TradingViewChart (see TradingViewChartProps.seriesData). */
+  panelSeries: readonly ResolvedSeries[];
   scene: CompositeChartScene;
   plotWidth: number;
   leftAxisWidth: number;
@@ -615,6 +620,7 @@ interface CompositePanelSurfaceProps {
 
 function CompositePanelSurface({
   panel,
+  panelSeries,
   scene,
   plotWidth,
   leftAxisWidth,
@@ -1099,6 +1105,7 @@ function CompositePanelSurface({
           width={plotWidth}
           height={panel.height}
           panel={panel}
+          seriesData={panelSeries}
           colors={colors}
           viewport={viewport}
           interactive={interactive}
@@ -1470,6 +1477,14 @@ export function CompositeChart({
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
   );
+  // Renderers that own their own time scale need the unwindowed series, and
+  // need it at a stable identity so panning does not look like new data.
+  const seriesByPanelIdRef = useRef<Map<string, ResolvedSeries[]>>(new Map());
+  const seriesByPanelId = useMemo(() => {
+    const next = groupSeriesByPanelId(visibleSeries, seriesByPanelIdRef.current);
+    seriesByPanelIdRef.current = next;
+    return next;
+  }, [visibleSeries]);
   useEffect(() => {
     setLegendKeyboardIndex((current) => (
       current === null || visibleLegendSeries.length === 0
@@ -2011,6 +2026,7 @@ export function CompositeChart({
         <CompositePanelSurface
           key={panel.id}
           panel={panel}
+          panelSeries={seriesByPanelId.get(panel.id) ?? EMPTY_PANEL_SERIES}
           scene={scene}
           plotWidth={plotWidth}
           leftAxisWidth={leftAxisWidth}
