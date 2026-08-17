@@ -14,7 +14,12 @@ export interface VisibleTimeRangeMs {
 
 const MIN_SPAN_MS = 1_000;
 const MAX_WHEEL_MAGNITUDE = 48;
-const WHEEL_ZOOM_PER_PIXEL = 0.02;
+/**
+ * A Mac trackpad emits many high-magnitude pixel deltas per physical swipe, so
+ * per-event zoom and pan have to stay small or one flick crosses the whole range.
+ */
+const WHEEL_ZOOM_PER_PIXEL = 0.0022;
+const WHEEL_PAN_DAMPING = 0.12;
 
 export function scaleVisibleTimeRange(
   range: VisibleTimeRangeMs,
@@ -52,7 +57,7 @@ export function wheelZoomFactorFromDelta(deltaY: number): number {
 
 export function wheelPanRatioFromDelta(deltaX: number, widthPx: number): number {
   if (!Number.isFinite(deltaX) || deltaX === 0 || !(widthPx > 0)) return 0;
-  return deltaX / widthPx;
+  return (deltaX / widthPx) * WHEEL_PAN_DAMPING;
 }
 
 function clamp(value: number, min: number, max: number): number {

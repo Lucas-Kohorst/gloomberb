@@ -31,12 +31,15 @@ describe("tradingview trackpad interactions", () => {
     const huge = wheelZoomFactorFromDelta(-10_000);
     const capped = wheelZoomFactorFromDelta(-48);
     expect(huge).toBe(capped);
-    expect(huge).toBeLessThan(2);
+    // A trackpad fires many of these per swipe, so one event must stay gentle.
+    expect(huge).toBeLessThan(1.2);
   });
 
-  test("pans by a fraction of the visible span", () => {
+  test("pans by a damped fraction of the visible span", () => {
     expect(panVisibleTimeRange(RANGE, 0.1)).toEqual({ start: 1_100_000, end: 2_100_000 });
-    expect(wheelPanRatioFromDelta(50, 200)).toBe(0.25);
+    expect(wheelPanRatioFromDelta(50, 200)).toBeLessThan(0.05);
+    expect(wheelPanRatioFromDelta(50, 200)).toBeGreaterThan(0);
+    expect(wheelPanRatioFromDelta(-50, 200)).toBe(-wheelPanRatioFromDelta(50, 200));
     expect(wheelPanRatioFromDelta(50, 0)).toBe(0);
   });
 });

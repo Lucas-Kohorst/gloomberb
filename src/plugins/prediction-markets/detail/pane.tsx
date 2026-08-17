@@ -26,6 +26,7 @@ import type {
   PredictionOrderPreviewIntent,
 } from "../types";
 import { PredictionMarketBookView } from "./book";
+import { PredictionMarketChartTab } from "./chart-tab";
 import { PredictionMarketOverviewView } from "./overview";
 import { PredictionMarketRulesView } from "./rules";
 import { truncatePredictionText } from "./shared";
@@ -201,6 +202,14 @@ export function PredictionMarketDetailPane({
   const headerHeight = detailSubtitle.length > 0 || detailTicker.length > 0 ? 2 : 0;
   const detailLoading = detailLoadCount > 0 && !detail;
   const detailTextWidth = Math.max(detailWidth, 12);
+  const showDetailError = Boolean(detailError) && !detail;
+  const chromeRows =
+    headerHeight +
+    3 +
+    (relatedSiblings.length > 0 ? 1 : 0) +
+    2 +
+    (showDetailError ? 2 : 0);
+  const detailBodyHeight = Math.max(height - chromeRows, 6);
 
   return (
     <>
@@ -259,7 +268,7 @@ export function PredictionMarketDetailPane({
         />
       </Box>
 
-      {detailError && !detail && (
+      {showDetailError && (
         <Box paddingBottom={1}>
           <Text
             fg={colors.negative}
@@ -276,12 +285,7 @@ export function PredictionMarketDetailPane({
         <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
           {detailTab === "overview" && (
             <PredictionMarketOverviewView
-              detail={detail}
               detailWidth={detailWidth}
-              height={height}
-              historyRange={historyRange}
-              loading={detailLoading}
-              onHistoryRangeChange={onHistoryRangeChange}
               onSelectMarket={onSelectMarket}
               selectedRow={selectedRow}
               summary={summaryMetrics}
@@ -296,6 +300,18 @@ export function PredictionMarketDetailPane({
           )}
         </ScrollBox>
       ) : null}
+
+      {detailTab === "chart" && (
+        <PredictionMarketChartTab
+          detail={detail}
+          detailWidth={detailWidth}
+          height={detailBodyHeight}
+          historyRange={historyRange}
+          loading={detailLoading}
+          onHistoryRangeChange={onHistoryRangeChange}
+          summary={summaryMetrics}
+        />
+      )}
 
       {detailTab === "book" && (
         detail ? (

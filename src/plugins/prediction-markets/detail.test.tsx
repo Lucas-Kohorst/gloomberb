@@ -59,9 +59,36 @@ describe("prediction markets detail views", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Outcomes");
     expect(frame).toContain("Above 4.25%");
+    expect(frame).not.toContain("Loading market detail...");
+  });
+
+  test("moves price history onto its own chart tab", async () => {
+    testSetup = await testRender(<GroupedDetailHarness />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+    expect(testSetup.captureCharFrame()).not.toContain("No chart history.");
+
+    await cleanupPredictionTest(testSetup);
+    testSetup = await testRender(<GroupedDetailHarness detailTab="chart" />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+    expect(testSetup.captureCharFrame()).toContain("No chart history.");
+  });
+
+  test("shows the chart tab as loading instead of empty while detail loads", async () => {
+    testSetup = await testRender(
+      <GroupedDetailHarness detailTab="chart" loading />,
+      { width: 64, height: 24 },
+    );
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Loading chart...");
     expect(frame).not.toContain("No chart history.");
-    expect(frame).not.toContain("Loading market detail...");
   });
 
 });

@@ -6,6 +6,7 @@ export type PredictionVenueScope = "all" | PredictionVenue;
 export type PredictionBrowseTab = "top" | "ending" | "new" | "watchlist";
 export type PredictionDetailTab =
   | "overview"
+  | "chart"
   | "book"
   | "trades"
   | "rules"
