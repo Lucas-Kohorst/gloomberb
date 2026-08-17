@@ -84,3 +84,15 @@ export interface LlmStatsData {
   rows: LlmStatsRow[];
   fetchedAt: number;
 }
+
+export type LlmStatsTab = "benchmarks" | "models" | "frontier" | "context" | "providers";
+
+export interface LlmStatsBenchmarkRow {
+  id: string;
+  name: string;
+  unit: string;
+  bestOverall: LlmStatsRow | null;
+  bestCostAdjusted: LlmStatsRow | null;
+  /** Historical score data is not present in the API, so this is intentionally null. */
+  biggestImprovement: null;
+}

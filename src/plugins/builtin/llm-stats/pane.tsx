@@ -7,6 +7,7 @@ import {
   EmptyState,
   InputSearchBar,
   Spinner,
+  Tabs,
   nextStackSortPreference,
   sortStackItems,
   usePaneFooter,
@@ -28,13 +29,66 @@ import {
   DEFAULT_LLM_STATS_SORT,
   defaultSortDirection,
   filterLlmStatsRows,
+  buildBenchmarkRows,
 } from "./normalize";
-import type { LlmStatsRow, LlmStatsSortColumnId } from "./types";
+import type { LlmStatsBenchmarkRow, LlmStatsRow, LlmStatsSortColumnId, LlmStatsTab } from "./types";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface BenchColumn extends DataTableColumn {
   id: LlmStatsSortColumnId;
+}
+
+type SummaryColumnId = "benchmark" | "overall" | "cost" | "unit";
+interface SummaryColumn extends DataTableColumn { id: SummaryColumnId; }
+
+function SummaryTable({ rows, width, focused }: { rows: LlmStatsBenchmarkRow[]; width: number; focused: boolean }) {
+  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
+  const [sort, setSort] = useState<{ columnId: SummaryColumnId; direction: "asc" | "desc" }>({ columnId: "benchmark", direction: "asc" });
+  const columns: SummaryColumn[] = [
+    { id: "benchmark", label: "BENCHMARK", width: Math.max(12, Math.floor(width * 0.24)), align: "left" },
+    { id: "overall", label: "BEST OVERALL", width: Math.max(16, Math.floor(width * 0.25)), align: "left" },
+    { id: "cost", label: "BEST COST-ADJ.", width: Math.max(16, Math.floor(width * 0.25)), align: "left" },
+    { id: "unit", label: "SCALE / UNIT", width: 0, align: "left", flexGrow: 1 },
+  ];
+  const cellText = (row: LlmStatsBenchmarkRow, id: SummaryColumnId): string => {
+    if (id === "benchmark") return row.name;
+    if (id === "overall") return row.bestOverall?.displayName ?? "—";
+    if (id === "cost") return row.bestCostAdjusted?.displayName ?? "—";
+    return row.unit;
+  };
+  const items = [...rows].sort((a, b) => {
+    const result = cellText(a, sort.columnId).localeCompare(cellText(b, sort.columnId), undefined, { numeric: true });
+    return sort.direction === "asc" ? result : -result;
+  });
+  return (
+    <DataTableStackView<LlmStatsBenchmarkRow, SummaryColumn>
+      focused={focused}
+      detailOpen={false}
+      onBack={() => undefined}
+      detailContent={null}
+      selection={{ kind: "id", selectedId, getId: (row) => row.id, onChange: setSelectedId }}
+      onActivate={() => undefined}
+      rootWidth={width}
+      rootHeight={Math.max(4, rows.length + 2)}
+      columns={columns}
+      items={items}
+      sortColumnId={sort.columnId}
+      sortDirection={sort.direction}
+      onHeaderClick={(columnId) => setSort((current) => ({
+        columnId: columnId as SummaryColumnId,
+        direction: current.columnId === columnId && current.direction === "asc" ? "desc" : "asc",
+      }))}
+      getItemKey={(row) => row.id}
+      renderCell={(row, column, _index, state) => ({
+        text: cellText(row, column.id),
+        color: state.selected ? colors.selectedText : column.id === "benchmark" ? colors.textBright : colors.text,
+        attributes: column.id === "benchmark" ? TextAttributes.BOLD : undefined,
+      })}
+      emptyStateTitle="No benchmark data."
+      emptyStateHint="Press r to refresh."
+    />
+  );
 }
 
 function createColumns(width: number): BenchColumn[] {
@@ -211,6 +265,7 @@ function BenchmarkDetail({ row, width }: { row: LlmStatsRow; width: number }) {
 
 export function LlmStatsPane({ focused, width, height }: PaneProps) {
   const [rows, setRows] = useState<LlmStatsRow[]>([]);
+  const [activeTab, setActiveTab] = useState<LlmStatsTab>("benchmarks");
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -257,11 +312,42 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
   const columns = useMemo(() => createColumns(width), [width]);
   const visibleRows = useMemo(() => {
     const filtered = filterLlmStatsRows(rows, searchQuery);
+    if (activeTab === "frontier") {
+      return [...filtered].sort((a, b) => {
+        const score = (row: LlmStatsRow) => row.avgThroughput > 0 && row.inputPrice != null && row.outputPrice != null
+          ? row.avgThroughput / ((row.inputPrice + row.outputPrice) / 2) : 0;
+        return score(b) - score(a);
+      });
+    }
+    if (activeTab === "context") {
+      return [...filtered].sort((a, b) => (b.contextLength ?? 0) - (a.contextLength ?? 0));
+    }
+    if (activeTab === "providers") {
+      return [...filtered].sort((a, b) => a.organization.localeCompare(b.organization) || b.totalCalls - a.totalCalls);
+    }
     return sortStackItems(filtered, sortPreference, compareLlmStatsRows);
-  }, [rows, searchQuery, sortPreference]);
+  }, [activeTab, rows, searchQuery, sortPreference]);
 
   const selected = visibleRows.find((r) => r.id === selectedId) ?? null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  const benchmarkRows = useMemo(() => buildBenchmarkRows(rows), [rows]);
+  const tabs = (
+    <Box paddingBottom={1}>
+      <Tabs
+        tabs={[
+          { label: "Benchmarks", value: "benchmarks" },
+          { label: "Models", value: "models" },
+          { label: "Price / perf", value: "frontier" },
+          { label: "Context", value: "context" },
+          { label: "Providers", value: "providers" },
+        ]}
+        activeValue={activeTab}
+        onSelect={(value) => setActiveTab(value as LlmStatsTab)}
+        focused={focused}
+        compact
+      />
+    </Box>
+  );
 
   useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
 
@@ -360,7 +446,21 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
     );
   }
 
+  if (activeTab === "benchmarks") {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <Text fg={colors.textDim} paddingLeft={1}>
+          Derived from live throughput, latency, reliability, and call-volume fields. Historical scores are not exposed.
+        </Text>
+        <SummaryTable rows={benchmarkRows} width={width} focused={focused} />
+      </Box>
+    );
+  }
+
   return (
+    <Box flexDirection="column" width={width} height={height}>
+      {tabs}
     <DataTableStackView<LlmStatsRow, BenchColumn>
       focused={focused && !searchFocused}
       detailOpen={detailOpen && !!selected}
@@ -369,7 +469,7 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
         selected ? <BenchmarkDetail row={selected} width={width} /> : null
       }
       detailTitle={selected?.displayName}
-      rootBefore={(
+      rootBefore={activeTab === "models" ? (
         <InputSearchBar
           value={searchQuery}
           focused={focused && !detailOpen}
@@ -384,7 +484,7 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
           onNavigateDown={blurSearch}
           onQueryChange={setSearchQuery}
         />
-      )}
+      ) : undefined}
       onRootKeyDown={handleRootKeyDown}
       selection={{
         kind: "id",
@@ -413,5 +513,6 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
       emptyStateTitle={searchQuery.trim() ? "No matching models." : "No benchmark data."}
       emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
     />
+    </Box>
   );
 }

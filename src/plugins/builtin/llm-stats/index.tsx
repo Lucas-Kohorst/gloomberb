@@ -13,7 +13,7 @@ export const llmStatsPlugin: GloomPlugin = {
   id: LLM_STATS_PLUGIN_ID,
   name: "AI Benchmarks",
   version: "1.0.0",
-  description: "Live AI model benchmark stats from llm-stats.com (ZeroEval) — throughput, latency, TTFT, and failure rate across models.",
+  description: "Benchmark-first AI model intelligence from llm-stats.com: derived benchmark leaders, price/performance, context, providers, and the full model list.",
   toggleable: true,
 
   panes: [
@@ -34,7 +34,7 @@ export const llmStatsPlugin: GloomPlugin = {
       paneId: LLM_STATS_PANE_ID,
       label: "AI Benchmarks",
       description:
-        "Live AI model benchmark stats from llm-stats.com — throughput (tok/s), P95 latency, TTFT, failure rate, and call volume per model, with search, sortable columns, and per-model detail.",
+        "AI benchmark leaders and model intelligence from llm-stats.com — benchmark summaries, price/performance, context, providers, and sortable searchable model detail.",
       keywords: [
         "ai",
         "benchmarks",

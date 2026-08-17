@@ -1,4 +1,5 @@
 import type {
+  LlmStatsBenchmarkRow,
   LlmStatsRow,
   LlmStatsSortColumnId,
 } from "./types";
@@ -77,4 +78,55 @@ export function defaultSortDirection(
     case "ttft":
       return "asc";
   }
+}
+
+/** Blended dollars per 1M tokens, assuming an equal input/output mix. */
+export function blendedPrice(row: LlmStatsRow): number | null {
+  if (row.inputPrice == null || row.outputPrice == null) return null;
+  const price = (row.inputPrice + row.outputPrice) / 2;
+  return price > 0 ? price : null;
+}
+
+/** Cost-adjusted score: score units per dollar per 1M blended tokens. */
+export function costAdjustedScore(score: number, row: LlmStatsRow): number | null {
+  const price = blendedPrice(row);
+  return price == null || score <= 0 ? null : score / price;
+}
+
+export function bestOverall(rows: LlmStatsRow[], score: (row: LlmStatsRow) => number): LlmStatsRow | null {
+  return rows.filter((row) => score(row) > 0).reduce<LlmStatsRow | null>(
+    (best, row) => !best || score(row) > score(best) ? row : best,
+    null,
+  );
+}
+
+export function bestCostAdjusted(rows: LlmStatsRow[], score: (row: LlmStatsRow) => number): LlmStatsRow | null {
+  return rows.reduce<LlmStatsRow | null>((best, row) => {
+    const candidate = costAdjustedScore(score(row), row);
+    if (candidate == null) return best;
+    const current = best == null ? null : costAdjustedScore(score(best), best);
+    return current == null || candidate > current ? row : best;
+  }, null);
+}
+
+export function biggestImprovement(): null {
+  // The live API exposes no previous score or change field; never fabricate a delta.
+  return null;
+}
+
+export function buildBenchmarkRows(rows: LlmStatsRow[]): LlmStatsBenchmarkRow[] {
+  const definitions = [
+    { id: "throughput", name: "Throughput", unit: "tokens/sec", score: (r: LlmStatsRow) => r.avgThroughput },
+    { id: "latency", name: "Latency", unit: "ms (lower is better)", score: (r: LlmStatsRow) => r.p95Latency > 0 ? 1 / r.p95Latency : 0 },
+    { id: "reliability", name: "Reliability", unit: "success rate", score: (r: LlmStatsRow) => r.totalCalls > 0 ? 1 - r.failureRate : 0 },
+    { id: "usage", name: "Usage", unit: "calls", score: (r: LlmStatsRow) => r.totalCalls },
+  ];
+  return definitions.map(({ id, name, unit, score }) => ({
+    id,
+    name,
+    unit,
+    bestOverall: bestOverall(rows, score),
+    bestCostAdjusted: bestCostAdjusted(rows, score),
+    biggestImprovement: biggestImprovement(),
+  }));
 }
