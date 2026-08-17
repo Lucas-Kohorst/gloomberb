@@ -4,6 +4,7 @@ import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
+import { VERSION } from "../../version";
 import {
   selectActiveLayoutIndex,
   selectGridlockTipSequence,
@@ -546,6 +547,7 @@ function StatusBarWidgets() {
   return (
     <>
       <Box flexGrow={1} />
+      <Text fg={colors.textDim} paddingRight={1}>v{VERSION}</Text>
       <PluginSlot name="status:widget" />
     </>
   );
