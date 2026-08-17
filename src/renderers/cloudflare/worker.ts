@@ -8,6 +8,7 @@ import {
   fetchSessionUser,
   gloomFetch,
   readSessionCookie,
+  relayError,
   resolveSessionUser,
   sessionCookieHeader,
 } from "./gloom-cloud";
@@ -186,7 +187,7 @@ async function getSession(request: Request, env: Env): Promise<Response> {
 
 async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
   const token = readSessionCookie(request);
-  if (!isSameOrigin(request, url)) {
+  if (request.headers.get("Origin") !== url.origin) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 
@@ -210,6 +211,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     headers.set("x-gloom-hosted-session", "1");
   }
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
+  if (!upstream.ok) return relayError(upstream);
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
