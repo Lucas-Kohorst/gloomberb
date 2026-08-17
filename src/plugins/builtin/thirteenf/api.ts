@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import type { PluginPersistence } from "../../../types/plugin";
 import { httpFetch } from "../../../utils/http-transport";
+import { withConnectionRequest } from "../connections/register";
 
 const FORMS_13F_BASE_URL = "https://forms13f.com/api/v1";
 const FORM_PAGE_LIMIT = 100;
@@ -122,10 +123,11 @@ async function fetchForms13F<T>(
   }
 
   const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
-  const response = await httpFetch(url, {
-    headers: { Accept: "application/json" },
-    signal: options.signal,
-  });
+  const response = await withConnectionRequest("forms13f", path, () =>
+    httpFetch(url, {
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    }));
   if (!response.ok) {
     const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
     if (stale) return stale;

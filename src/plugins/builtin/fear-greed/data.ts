@@ -1,5 +1,6 @@
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import type { OverlayPoint } from "../../../components/chart/indicators/types";
+import { withConnectionRequest } from "../connections/register";
 
 const CNN_FEAR_GREED_GRAPH_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata";
 const CNN_REFERER = "https://www.cnn.com/markets/fear-and-greed";
@@ -350,8 +351,10 @@ export async function fetchFearGreedData(options: {
   const latestUrl = `${CNN_FEAR_GREED_GRAPH_URL}/${formatLocalDate(date)}`;
 
   const [chartsResult, latestResult] = await Promise.allSettled([
-    fetchCnnGraphData(CNN_FEAR_GREED_GRAPH_URL, fetcher),
-    fetchCnnGraphData(latestUrl, fetcher),
+    withConnectionRequest("cnn-fear-greed", "graphdata", () =>
+      fetchCnnGraphData(CNN_FEAR_GREED_GRAPH_URL, fetcher)),
+    withConnectionRequest("cnn-fear-greed", "graphdata-latest", () =>
+      fetchCnnGraphData(latestUrl, fetcher)),
   ]);
 
   const charts = chartsResult.status === "fulfilled" ? chartsResult.value : null;

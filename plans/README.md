@@ -24,7 +24,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 014  | Add race-condition tests for sync controller | P2 | M | — | TODO |
 | 015  | Replace error: any with error: unknown in IBKR catch blocks | P3 | S | — | TODO |
 | 016  | Add plugin discovery via GitHub search | P3 | M | — | TODO |
-| 017  | Register missing connection sources (fear-greed, market-movers, thirteenf) | P2 | S | — | TODO |
+| 017  | Register missing connection sources (fear-greed, market-movers, thirteenf) | P2 | S | — | DONE |
 | 018  | Enforce strict Origin check on Gloom Cloud proxy | P1 | S | — | TODO |
 | 019  | Replace O(n²) mergeStatementsByPeriod with last-group-only check | P2 | S | — | TODO |
 | 020  | Use relayError for non-OK upstream responses in proxyToGloomCloud | P2 | S | — | TODO |

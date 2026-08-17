@@ -7,6 +7,7 @@ import {
 } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePaneInstance } from "../../../state/app/context";
 import { priceColor } from "../../../theme/colors";
@@ -42,6 +43,8 @@ import {
   MARKET_MOVER_COLUMN_DEFS,
   renderMarketMoverCell,
 } from "./table";
+
+let disposeMarketMoversConnection: (() => void) | null = null;
 
 function MarketMoversPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -270,9 +273,18 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
 export const marketMoversModule: PluginModule = {
   setup(ctx) {
     attachMarketMoversPersistence(ctx.persistence);
+    disposeMarketMoversConnection = registerConnectionSource({
+      id: "yahoo-screener",
+      name: "Yahoo Finance Screener",
+      kind: "api",
+      pluginId: "market-movers",
+      authRequired: false,
+    });
   },
 
   dispose() {
+    disposeMarketMoversConnection?.();
+    disposeMarketMoversConnection = null;
     resetMarketMoversPersistence();
   },
 

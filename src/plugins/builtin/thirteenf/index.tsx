@@ -1,5 +1,6 @@
 import type { PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import {
   THIRTEENF_PANE_ID,
   THIRTEENF_TEMPLATE_ID,
@@ -12,6 +13,8 @@ import {
   resetThirteenFApiPersistence,
 } from "./api";
 
+let disposeThirteenFConnection: (() => void) | null = null;
+
 function queryFromOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.values?.query ?? "").trim();
 }
@@ -23,9 +26,18 @@ function initialCikFromQuery(query: string): string | undefined {
 export const thirteenFModule: PluginModule = {
   setup(ctx) {
     attachThirteenFApiPersistence(ctx.persistence);
+    disposeThirteenFConnection = registerConnectionSource({
+      id: "forms13f",
+      name: "Forms13F",
+      kind: "api",
+      pluginId: "thirteenf",
+      authRequired: false,
+    });
   },
 
   dispose() {
+    disposeThirteenFConnection?.();
+    disposeThirteenFConnection = null;
     resetThirteenFApiPersistence();
   },
 

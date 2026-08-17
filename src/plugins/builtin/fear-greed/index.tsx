@@ -1,16 +1,28 @@
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import {
   attachFearGreedPersistence,
   resetFearGreedPersistence,
 } from "./cache";
 import { FearGreedPane } from "./pane";
 
+let disposeFearGreedConnection: (() => void) | null = null;
+
 export const fearGreedModule: PluginModule = {
   setup(ctx) {
     attachFearGreedPersistence(ctx.persistence);
+    disposeFearGreedConnection = registerConnectionSource({
+      id: "cnn-fear-greed",
+      name: "CNN Fear & Greed",
+      kind: "api",
+      pluginId: "fear-greed",
+      authRequired: false,
+    });
   },
 
   dispose() {
+    disposeFearGreedConnection?.();
+    disposeFearGreedConnection = null;
     resetFearGreedPersistence();
   },
 

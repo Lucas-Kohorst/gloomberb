@@ -1,5 +1,6 @@
 import { createThrottledFetch, type ThrottledFetchTransport } from "../../../utils/throttled-fetch";
 import type { PluginPersistence } from "../../../types/plugin";
+import { withConnectionRequest } from "../connections/register";
 
 const YAHOO_FINANCE_HOSTS = [
   "query2.finance.yahoo.com",
@@ -60,7 +61,8 @@ export function createYahooScreenerApi(transport?: ThrottledFetchTransport): Yah
         }
 
         try {
-          return await client.fetchJson<T>(url.toString());
+          return await withConnectionRequest("yahoo-screener", "screener", () =>
+            client.fetchJson<T>(url.toString()));
         } catch (error) {
           lastError = error;
         }
