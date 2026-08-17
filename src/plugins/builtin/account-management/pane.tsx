@@ -39,6 +39,7 @@ import {
   type PlanPriceDisplay,
 } from "./model";
 import { PasswordChangeDialog } from "./password-dialog";
+import { AiProvidersTab } from "./ai-providers-tab";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
 import { buildTrackedCurrencies } from "../analytics/sector-model";
@@ -65,6 +66,7 @@ type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | nu
 const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = [
   { label: "Profile", value: "profile" },
   { label: "Emails", value: "emails" },
+  { label: "AI", value: "ai" },
   { label: "Pro", value: "pro" },
   { label: "Advanced", value: "advanced" },
 ];
@@ -88,6 +90,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
     "positionAlertsEnabled",
     "emailAlertsOffAction",
   ],
+  ai: ["aiProvidersAction"],
   pro: ["upgradeAction"],
   advanced: ["passwordAction", "deleteAccountAction"],
 };
@@ -842,7 +845,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     turnOffEmailAlerts,
   });
 
-  if (!hasSession && !apiClient.getSessionToken()) {
+  if (!hasSession && !apiClient.getSessionToken() && activeTab !== "ai") {
     return (
       <Box padding={1}>
         <CloudAuthNotice message={t("Log in to manage your Gloom Cloud account.")} />
@@ -1074,6 +1077,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 <Button label={busy === "profile" ? t("Saving...") : t("Save")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
+          ) : null}
+
+          {activeTab === "ai" ? (
+            <AiProvidersTab
+              focused={focused && activeTab === "ai"}
+              width={contentWidth}
+              height={Math.max(5, bodyHeight - 2)}
+            />
           ) : null}
 
           {activeTab === "pro" ? (

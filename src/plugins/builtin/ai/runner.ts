@@ -9,6 +9,7 @@ import {
 } from "./providers";
 import type { AiAgentHistoryMessage } from "./agent-history";
 import { withDeadline } from "../../../utils/async-deadline";
+import { withConnectionRequest } from "../connections/register";
 
 export class AiRunCancelledError extends Error {
   constructor() {
@@ -242,11 +243,26 @@ export function isAiRunCancelled(error: unknown): boolean {
   return error instanceof AiRunCancelledError;
 }
 
+const AI_PROVIDER_STATUS_TIMEOUT_MS = 5_000;
+
 export async function checkAiProviderStatus(
   provider: AiProvider | AiProviderId,
 ): Promise<AiProviderStatusResult> {
   const providerId = canonicalProviderId(typeof provider === "string" ? provider : provider.id);
-  if (configuredHost?.checkStatus) return configuredHost.checkStatus(providerId);
+  if (configuredHost?.checkStatus) {
+    // Every provider must reach a terminal state — available / not
+    // authenticated / error — even when the underlying auth check hangs.
+    return withDeadline(
+      configuredHost.checkStatus(providerId),
+      AI_PROVIDER_STATUS_TIMEOUT_MS,
+      `${providerId} status check timed out.`,
+    ).catch((): AiProviderStatusResult => ({
+      available: false,
+      authenticated: false,
+      inconclusive: true,
+      message: `${providerId} status check timed out.`,
+    }));
+  }
 
   const account = runtimeCatalog.accounts.find((candidate) => candidate.providerId === providerId);
   if (account?.connectionState === "connected") {
@@ -303,7 +319,7 @@ export function runAiPrompt({
     };
   }
 
-  return configuredHost.run({
+  const controller = configuredHost.run({
     providerId: canonicalId,
     prompt,
     messages,
@@ -313,4 +329,9 @@ export function runAiPrompt({
     onAgentMessages,
     outputMode,
   });
+
+  // Report real request traffic to the Connections pane per AGENTS.md.
+  const connectionId = `ai-${canonicalId}`;
+  const reportedDone = withConnectionRequest(connectionId, outputMode ?? "run", () => controller.done);
+  return { done: reportedDone, cancel: controller.cancel };
 }

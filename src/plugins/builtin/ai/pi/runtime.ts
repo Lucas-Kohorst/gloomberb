@@ -31,6 +31,7 @@ import {
   type AiProviderId,
 } from "../providers";
 import type { AiAgentHistoryMessage } from "../agent-history";
+import { withDeadline } from "../../../../utils/async-deadline";
 import { PiFileCredentialStore } from "./credential-store";
 import { PiFileModelsStore } from "./models-store";
 import { createGloomberbPiModels, type PiProviderFactory } from "./providers";
@@ -190,6 +191,8 @@ export interface PiAiRuntimeOptions {
   models?: Models;
   providerFactories?: readonly PiProviderFactory[];
 }
+
+const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
 
 function sanitizeErrorMessage(value: unknown): string {
   const raw = value instanceof Error ? value.message : String(value);
@@ -388,8 +391,20 @@ export class PiAiRuntime {
     try {
       // getAuth performs the real OAuth refresh path. checkAuth only reports
       // that a stored token exists, even when it is expired or revoked.
-      const auth = await this.models.getAuth(provider.id);
-      const authCheck = auth ? await this.models.checkAuth(provider.id) : undefined;
+      // Bound by a deadline so a hung network refresh never leaves the
+      // provider stuck on "checking" — it reaches a terminal error state.
+      const auth = await withDeadline(
+        this.models.getAuth(provider.id),
+        PROVIDER_AUTH_TIMEOUT_MS,
+        `${provider.id} auth check timed out.`,
+      );
+      const authCheck = auth
+        ? await withDeadline(
+            this.models.checkAuth(provider.id),
+            PROVIDER_AUTH_TIMEOUT_MS,
+            `${provider.id} credential check timed out.`,
+          )
+        : undefined;
       const disconnectable = authCheck?.type === "oauth" || auth?.source === "stored credential";
       connection = auth
         ? {

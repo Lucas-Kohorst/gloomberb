@@ -16,6 +16,7 @@ describe("Pi provider catalog", () => {
   test("exposes exactly the curated canonical providers in a stable order", () => {
     expect(AI_PROVIDER_IDS).toEqual([
       "browser-builtin",
+      "ollama",
       "anthropic",
       "openai-codex",
       "openai",
@@ -24,7 +25,7 @@ describe("Pi provider catalog", () => {
       "xai",
       "openrouter",
     ]);
-    expect(GLOOMBERB_PI_PROVIDER_IDS).toEqual(AI_PROVIDER_IDS.filter((id) => id !== "browser-builtin"));
+    expect(GLOOMBERB_PI_PROVIDER_IDS).toEqual(AI_PROVIDER_IDS.filter((id) => id !== "browser-builtin" && id !== "ollama"));
     expect(new Set(AI_PROVIDER_IDS).size).toBe(AI_PROVIDER_IDS.length);
     expect(AI_PROVIDER_IDS).not.toContain("opencode");
     expect(AI_PROVIDER_IDS).not.toContain("pi");
@@ -37,7 +38,7 @@ describe("Pi provider catalog", () => {
     expect(definitions.map((provider) => provider.id)).toEqual([...AI_PROVIDER_IDS]);
     for (const definition of definitions) {
       const provider = piProviders.find((candidate) => candidate.id === definition.id);
-      if (definition.id === "browser-builtin") {
+      if (definition.id === "browser-builtin" || definition.id === "ollama") {
         expect(definition.outputModes).toEqual(["plain"]);
         continue;
       }
