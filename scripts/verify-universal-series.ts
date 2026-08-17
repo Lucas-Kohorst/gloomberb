@@ -23,6 +23,9 @@ console.log("=== Expression Parsing ===\n");
 
 const expressions = [
   "ADJ:adjacent-djt",
+  "ADJ:red",
+  "KALSHI:KXPRESPERSON",
+  "POLY:fed-cut-september",
   "FUT:ES",
   "FUT:GC",
   "FUT:CL",
@@ -55,7 +58,7 @@ for (const expr of expressions) {
 
 console.log("=== Catalog Suggestions ===\n");
 
-const queries = ["futures", "gold", "treasury yield", "10Y", "benchmark openai", "poll approval", "FUT:ES", "UST:10Y"];
+const queries = ["futures", "gold", "treasury yield", "10Y", "benchmark openai", "poll approval", "adjacent red index", "trump kalshi", "FUT:ES", "UST:10Y"];
 for (const q of queries) {
   const suggestions = buildSeriesCatalogSuggestions(q, AAPL, [], 10);
   console.log(`  Query "${q}": ${suggestions.length} suggestions`);

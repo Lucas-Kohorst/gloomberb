@@ -7,11 +7,13 @@ import { ListView, type ListViewItem } from "../../ui";
 
 export function AccountChooserPanel({
   choiceIdx,
+  requireAccount = false,
   onChoiceSelect,
   onChoiceActivate,
   height,
 }: {
   choiceIdx: number;
+  requireAccount?: boolean;
   onChoiceSelect: (index: number) => void;
   onChoiceActivate: (index: number) => void;
   height: number;
@@ -22,11 +24,16 @@ export function AccountChooserPanel({
     t("Sync portfolios, watchlists & layouts"),
     t("Chat + AI command bar"),
   ];
-  const choices = useMemo<ListViewItem[]>(() => [
-    { id: "signup", label: t("Create free account"), description: t("Email and password — that's it") },
-    { id: "login", label: t("Log In"), description: t("Already have a Gloom Cloud account") },
-    { id: "skip", label: t("Skip for now"), description: t("Continue without an account") },
-  ], [language]);
+  const choices = useMemo<ListViewItem[]>(() => {
+    const items: ListViewItem[] = [
+      { id: "signup", label: t("Create free account"), description: t("Email and password — that's it") },
+      { id: "login", label: t("Log In"), description: t("Already have a Gloom Cloud account") },
+    ];
+    if (!requireAccount) {
+      items.push({ id: "skip", label: t("Skip for now"), description: t("Continue without an account") });
+    }
+    return items;
+  }, [language, requireAccount]);
 
   // Bullets are the first rows to go so the choices and footer survive a short terminal.
   const showBullets = height >= 15;

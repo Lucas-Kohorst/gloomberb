@@ -5,6 +5,7 @@ import { cloneLayout, createDefaultConfig, TICKER_RESEARCH_PANE_ID, type LayoutC
 import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";
 import { setSharedRegistryForTests } from "../../plugins/registry";
+import { VERSION } from "../../version";
 import { useEffect, useState } from "react";
 import { TransientLayoutProvider, useTransientLayout } from "./transient-layout";
 
@@ -49,6 +50,44 @@ describe("StatusBar", () => {
     }, [active, onActivate, onDeactivate, onExit, setTransientLayout]);
     return null;
   }
+
+  test("opens the changelog pane from the version label", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-version-changelog-test");
+    config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];
+    const state = {
+      ...createInitialState(config),
+      statusBarVisible: true,
+    };
+    const created: string[] = [];
+
+    setSharedRegistryForTests({
+      panes: new Map(),
+      getLayoutFn: () => state.config.layout,
+      getTermSizeFn: () => ({ width: 120, height: 40 }),
+      updateLayoutFn: () => {},
+      notify: () => {},
+      createPaneFromTemplate: (templateId: string) => { created.push(templateId); },
+      Slot: () => null,
+    } as any);
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <StatusBar />
+      </AppContext>,
+      { width: 120, height: 1 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    const versionX = frame.split("\n")[0]?.indexOf(`v${VERSION}`) ?? -1;
+    expect(versionX).toBeGreaterThanOrEqual(0);
+
+    await testSetup.mockMouse.click(versionX + 1, 0);
+    await testSetup.renderOnce();
+
+    expect(created).toEqual(["changelog-pane"]);
+  });
 
   test("opens the command bar from the shortcut hint", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-test");

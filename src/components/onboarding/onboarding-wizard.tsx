@@ -18,7 +18,7 @@ import {
   WelcomeStep,
   type PortfolioSub,
 } from "./onboarding-steps";
-import { ACCOUNT_CHOICE_IDS } from "./account-step/model";
+import { accountChoiceIds } from "./account-step/model";
 import { useOnboardingAccount } from "./wizard-account";
 import { finishOnboarding, summarizeOnboardingError, useOnboardingBrokerSync } from "./wizard-broker-sync";
 import { useOnboardingKeyboard } from "./wizard-keyboard";
@@ -37,9 +37,17 @@ interface OnboardingWizardProps {
   pluginRegistry: PluginRegistry;
   onComplete: (config: AppConfig) => void | Promise<void>;
   initialStep?: OnboardingStep;
+  /** Hide skip and land on sign-up. Used by the share page's open-in-terminal hand-off. */
+  requireAccount?: boolean;
 }
 
-export function OnboardingWizard({ config, pluginRegistry, onComplete, initialStep = "welcome" }: OnboardingWizardProps) {
+export function OnboardingWizard({
+  config,
+  pluginRegistry,
+  onComplete,
+  initialStep = "welcome",
+  requireAccount = false,
+}: OnboardingWizardProps) {
   const language = useAppLanguage();
   const { width: termWidth, height: termHeight } = useViewport();
   const [step, setStep] = useState<OnboardingStep>(initialStep);
@@ -58,6 +66,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
   const inputRef = useRef<InputRenderable>(null);
   const themeIds = getThemeIds();
   const stepIdx = ONBOARDING_STEPS.indexOf(step);
+  const choiceIds = accountChoiceIds(requireAccount);
 
   const brokerOptions = useMemo(
     (): BrokerOption[] => getConnectableBrokerOptions(pluginRegistry.brokers),
@@ -133,8 +142,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
   const { beginAccountMode, syncExistingAccountSession } = account;
   useEffect(() => {
     if (initialStep !== "account") return;
-    beginAccountMode("login");
-  }, [beginAccountMode, initialStep]);
+    beginAccountMode(requireAccount ? "signup" : "login");
+  }, [beginAccountMode, initialStep, requireAccount]);
 
   useEffect(() => {
     if (step !== "account") return;
@@ -143,13 +152,14 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
 
   // Clicking a chooser row has to do exactly what enter does on it.
   const activateAccountChoice = useCallback((index: number) => {
-    const choice = ACCOUNT_CHOICE_IDS[index];
+    const choice = choiceIds[index];
     if (!choice || choice === "skip") {
+      if (requireAccount) return;
       nextStep();
       return;
     }
     beginAccountMode(choice);
-  }, [beginAccountMode, nextStep]);
+  }, [beginAccountMode, choiceIds, nextStep, requireAccount]);
 
   const {
     isBrokerSyncing,
@@ -235,6 +245,8 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
     isBrokerSyncing,
     brokerSyncError,
     accountSub: account.accountSub,
+    accountChoices: choiceIds,
+    requireAccount,
     accountChoiceIdx: account.accountChoiceIdx,
     setAccountChoiceIdx: account.setAccountChoiceIdx,
     accountSubmitting: account.accountSubmitting,
@@ -340,6 +352,7 @@ export function OnboardingWizard({ config, pluginRegistry, onComplete, initialSt
           <AccountStep
             sub={account.accountSub}
             choiceIdx={account.accountChoiceIdx}
+            requireAccount={requireAccount}
             onChoiceSelect={account.setAccountChoiceIdx}
             onChoiceActivate={activateAccountChoice}
             email={account.accountEmail}

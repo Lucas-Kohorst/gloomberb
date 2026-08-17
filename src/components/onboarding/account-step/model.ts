@@ -14,6 +14,11 @@ export type AccountChoiceId = AccountMode | "skip";
 /** Order matches the chooser list, so the selected index maps straight onto an id. */
 export const ACCOUNT_CHOICE_IDS: AccountChoiceId[] = ["signup", "login", "skip"];
 
+/** Drop skip when the visitor must have an account before the terminal opens. */
+export function accountChoiceIds(requireAccount = false): AccountChoiceId[] {
+  return requireAccount ? ["signup", "login"] : ACCOUNT_CHOICE_IDS;
+}
+
 export interface AccountOutcome {
   mode: AccountMode;
   email: string;

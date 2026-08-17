@@ -44,6 +44,12 @@ export interface PollSeriesSource {
   choice: string;
 }
 
+export interface PredictionMarketSeriesSource {
+  kind: "prediction-market";
+  venue: "kalshi" | "polymarket";
+  marketId: string;
+}
+
 /** A numeric literal used as one leg of a derived formula (e.g. `100 - STRC:price`). */
 export interface ConstantSeriesSource {
   kind: "constant";
@@ -56,6 +62,7 @@ export type ChartSeriesSource =
   | AdjacentIndexSeriesSource
   | BenchmarkSeriesSource
   | PollSeriesSource
+  | PredictionMarketSeriesSource
   | ConstantSeriesSource;
 
 export interface ChartSeriesSpec {

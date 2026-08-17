@@ -8,6 +8,7 @@ import type { AccountOutcome, AccountSub, AccountSubmitError } from "./model";
 export interface AccountStepProps {
   sub: AccountSub;
   choiceIdx: number;
+  requireAccount?: boolean;
   onChoiceSelect: (index: number) => void;
   onChoiceActivate: (index: number) => void;
   email: string;
@@ -41,6 +42,7 @@ export function AccountStep(props: AccountStepProps) {
         submitting={props.submitting}
         submitError={props.submitError}
         validationError={props.validationError}
+        requireAccount={props.requireAccount}
         onEmailChange={props.onEmailChange}
         onPasswordChange={props.onPasswordChange}
       />
@@ -50,6 +52,7 @@ export function AccountStep(props: AccountStepProps) {
   return (
     <AccountChooserPanel
       choiceIdx={props.choiceIdx}
+      requireAccount={props.requireAccount}
       onChoiceSelect={props.onChoiceSelect}
       onChoiceActivate={props.onChoiceActivate}
       height={props.height}

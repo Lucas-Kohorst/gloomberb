@@ -20,11 +20,11 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { ChartSharePanel, ChartSharePayload, ChartShareSeries } from "../../shares/payload";
-import { ShareHeading, ShareShell, formatShareTimestamp } from "./shell";
+import { ShareShell, formatShareTimestamp } from "./shell";
 
 const CHART_PALETTE = {
-  background: "#0a0a14",
-  text: "#886622",
+  background: "#000000",
+  text: "#92763c",
   grid: "rgba(26, 58, 92, 0.35)",
   border: "#1a3a5c",
   negative: "#ff3333",
@@ -173,53 +173,44 @@ export function ChartShareView({
   })).filter((entry) => entry.series.length > 0), [payload.panels, payload.series]);
 
   const captured = formatShareTimestamp(payload.capturedAt);
-  const pointCount = payload.series.reduce((total, entry) => total + entry.points.length, 0);
+  const footer = captured ? `snapshot ${captured}` : "";
 
   return (
     <ShareShell
       layout="wide"
+      title={payload.title}
+      footer={footer}
       openInTerminalHref={openInTerminalHref}
-      openInTerminalLabel="Open live in terminal"
     >
-      <ShareHeading
-        title={payload.title}
-        subtitle={payload.subtitle}
-        meta={captured ? [{ label: "Snapshot", value: captured }] : []}
-      />
+      <div className="share-chart">
+        {payload.series.length > 0 ? (
+          <ul className="share-legend">
+            {payload.series.map((entry) => (
+              <li key={entry.id}>
+                <span className="share-swatch" style={{ backgroundColor: entry.color }} />
+                {entry.label}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
-      {payload.series.length > 0 ? (
-        <ul className="share-legend">
-          {payload.series.map((entry) => (
-            <li key={entry.id}>
-              <span className="share-swatch" style={{ backgroundColor: entry.color }} />
-              {entry.label}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      {panels.length > 0 ? (
-        <div className="share-panels">
-          {panels.map(({ panel, series, heightPx }, index) => (
-            <ChartPanel
-              key={panel.id}
-              panel={panel}
-              series={series}
-              heightPx={heightPx}
-              logScale={panel.scale === "log"}
-              attribution={index === 0}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="share-note">This chart snapshot contains no plotted data.</p>
-      )}
-
-      {pointCount > 0 ? (
-        <p className="share-note">
-          Snapshot of the sharer&rsquo;s view. Open it in the terminal for live data.
-        </p>
-      ) : null}
+        {panels.length > 0 ? (
+          <div className="share-panels">
+            {panels.map(({ panel, series, heightPx }, index) => (
+              <ChartPanel
+                key={panel.id}
+                panel={panel}
+                series={series}
+                heightPx={heightPx}
+                logScale={panel.scale === "log"}
+                attribution={index === 0}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="share-note">This chart snapshot contains no plotted data.</p>
+        )}
+      </div>
     </ShareShell>
   );
 }

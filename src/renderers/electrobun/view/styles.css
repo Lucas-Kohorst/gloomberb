@@ -172,11 +172,32 @@ body.gloom-dragging {
   min-height: var(--cell-h);
   max-height: var(--cell-h);
   align-items: center;
+  overflow: visible;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
 }
 [data-gloom-role="status-bar"] span {
-  line-height: var(--cell-h);
+  /* textStyle sets line-height: var(--cell-h) inline; that fills the 18px bar
+     and shears glyphs against overflow/radius. Keep the used height smaller. */
+  line-height: 1.15 !important;
+}
+[data-gloom-role="status-chip"] {
+  align-items: center;
+  overflow: visible;
+  min-height: calc(var(--cell-h) - 4px);
+  padding-block: 2px;
+}
+[data-gloom-role="status-version"] {
+  cursor: pointer;
+}
+[data-gloom-role="pane-suggestions"] {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+[data-gloom-role="pane-suggestion"] {
+  flex-shrink: 0;
+  align-items: center;
+  white-space: nowrap;
 }
 [data-gloom-role="pane-body"] {
   overflow: hidden;

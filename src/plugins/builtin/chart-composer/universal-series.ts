@@ -6,6 +6,8 @@
  *
  * Prefixes:
  * - `ADJ:indexId`       — Adjacent prediction-market index (50–150 scale)
+ * - `KALSHI:ticker`     — Kalshi market yes-price
+ * - `POLY:marketId`     — Polymarket market yes-price
  * - `FUT:code`          — Yahoo front-month futures contract (resolves as a security)
  * - `UST:maturity`      — US Treasury constant-rate yield (backed by FRED)
  * - `BENCH:selector:metric` — AI model benchmark metric at release date (scatter)
@@ -14,11 +16,16 @@
 
 export const SERIES_PREFIX = {
   adjacentIndex: "ADJ",
+  kalshi: "KALSHI",
+  polymarket: "POLY",
+  predictionMarket: "PM",
   future: "FUT",
   treasury: "UST",
   benchmark: "BENCH",
   poll: "POLL",
 } as const;
+
+export type PredictionMarketVenue = "kalshi" | "polymarket";
 
 // ---------------------------------------------------------------------------
 // Futures — static catalogue of Yahoo front-month contracts.
@@ -144,4 +151,48 @@ export const POLL_SUBJECTS: readonly PollSubjectEntry[] = [
 export function findPollSubject(token: string): PollSubjectEntry | undefined {
   const lower = token.trim().toLowerCase();
   return POLL_SUBJECTS.find((entry) => entry.subject.toLowerCase() === lower);
+}
+
+// ---------------------------------------------------------------------------
+// Adjacent prediction-market indices — stable IDs for suggestion + NL mapping.
+// ---------------------------------------------------------------------------
+
+export interface AdjacentIndexCatalogEntry {
+  indexId: string;
+  ticker: string;
+  name: string;
+  aliases: readonly string[];
+}
+
+export const ADJACENT_INDEX_CATALOG: readonly AdjacentIndexCatalogEntry[] = [
+  {
+    indexId: "red",
+    ticker: "RED",
+    name: "RED Index",
+    aliases: ["red", "republican", "gop", "red index", "adjacent red"],
+  },
+  {
+    indexId: "blue",
+    ticker: "BLUE",
+    name: "BLUE Index",
+    aliases: ["blue", "democrat", "dem", "blue index", "adjacent blue"],
+  },
+  {
+    indexId: "red-tr",
+    ticker: "RED-TR",
+    name: "RED Total Return",
+    aliases: ["red-tr", "redtr", "red total return", "adjacent red-tr"],
+  },
+];
+
+export function findAdjacentIndexCatalogEntry(
+  token: string,
+): AdjacentIndexCatalogEntry | undefined {
+  const compact = token.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  if (!compact) return undefined;
+  return ADJACENT_INDEX_CATALOG.find((entry) => {
+    if (entry.indexId.replace(/[^a-z0-9]+/g, "") === compact) return true;
+    if (entry.ticker.toLowerCase().replace(/[^a-z0-9]+/g, "") === compact) return true;
+    return entry.aliases.some((alias) => alias.replace(/[^a-z0-9]+/g, "") === compact);
+  });
 }

@@ -24,7 +24,7 @@ import {
 } from "../../shares/routes";
 import { ArticleShareView } from "./article-view";
 import { TableShareView } from "./table-view";
-import { ShareShell, ShareStatus } from "./shell";
+import { ShareShell } from "./shell";
 
 // lightweight-charts is over half the weight of this page and only chart shares
 // need it. Articles are the common case and must not download a charting engine
@@ -63,7 +63,7 @@ function SharePayloadView({
   if (payload.kind === "chart") {
     return (
       <Suspense fallback={(
-        <ShareShell layout="wide" openInTerminalHref={openInTerminalHref}>
+        <ShareShell layout="wide" title="Chart" openInTerminalHref={openInTerminalHref}>
           <div className="share-loading-body">Drawing chart&hellip;</div>
         </ShareShell>
       )}
@@ -117,18 +117,23 @@ function StoredShareView({ shortId }: { shortId: string }) {
   if (state.status === "ready") {
     return <SharePayloadView payload={state.payload} openInTerminalHref={terminalHref} />;
   }
+  if (state.status === "loading") {
+    return (
+      <ShareShell title="Share">
+        <div className="share-loading-body">Loading shared view&hellip;</div>
+      </ShareShell>
+    );
+  }
+  if (state.status === "missing") {
+    return (
+      <ShareShell title="This share link has expired" openInTerminalHref={terminalHref}>
+        <p className="share-note">Shared views are kept for 30 days.</p>
+      </ShareShell>
+    );
+  }
   return (
-    <ShareShell openInTerminalHref={state.status === "loading" ? null : terminalHref}>
-      {state.status === "loading"
-        ? <div className="share-loading-body">Loading shared view&hellip;</div>
-        : state.status === "missing"
-          ? (
-            <ShareStatus
-              title="This share link has expired"
-              detail="Shared views are kept for 30 days."
-            />
-          )
-          : <ShareStatus title="This share could not be opened" detail={state.message} />}
+    <ShareShell title="This share could not be opened" openInTerminalHref={terminalHref}>
+      <p className="share-note">{state.message}</p>
     </ShareShell>
   );
 }
@@ -144,11 +149,8 @@ function ShareApp({ route }: { route: ShareRoute }) {
   }
   if (route.kind === "stored") return <StoredShareView shortId={route.shortId} />;
   return (
-    <ShareShell>
-      <ShareStatus
-        title="Not a share link"
-        detail="This address does not point at a shared view."
-      />
+    <ShareShell title="Not a share link" openInTerminalHref="/">
+      <p className="share-note">This address does not point at a shared view.</p>
     </ShareShell>
   );
 }

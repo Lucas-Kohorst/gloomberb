@@ -6,12 +6,17 @@ import {
 import { useOptionalAppSelector } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
 import { getSharedRegistry } from "../../registry";
+import { getSharedAdjacentClient } from "../adjacent/client";
 import {
   analyzeSeriesSearchQuery,
   buildSeriesCatalogSuggestions,
   type SeriesCatalogInstrument,
   type SeriesCatalogSuggestion,
 } from "./series-catalog";
+import {
+  looksLikePredictionMarketQuery,
+  type PredictionMarketSearchHit,
+} from "./prediction-series";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
 
@@ -38,10 +43,15 @@ export function useSeriesCatalogSuggestions({
     instruments: SeriesCatalogInstrument[];
     loading: boolean;
   }>({ query: "", instruments: [], loading: false });
+  const [marketSearch, setMarketSearch] = useState<{
+    query: string;
+    markets: PredictionMarketSearchHit[];
+    loading: boolean;
+  }>({ query: "", markets: [], loading: false });
 
   useEffect(() => {
     const instrumentQuery = analysis.instrumentQuery.trim();
-    if (!enabled || !instrumentQuery || analysis.directInstrument) {
+    if (!enabled || !instrumentQuery || analysis.directInstrument || looksLikePredictionMarketQuery(query)) {
       setSearch({ query: "", instruments: [], loading: false });
       return;
     }
@@ -112,19 +122,58 @@ export function useSeriesCatalogSuggestions({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [analysis.directInstrument, analysis.instrumentQuery, enabled, tickers]);
+  }, [analysis.directInstrument, analysis.instrumentQuery, enabled, query, tickers]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!enabled || !looksLikePredictionMarketQuery(trimmed) || trimmed.includes(":")) {
+      setMarketSearch({ query: "", markets: [], loading: false });
+      return;
+    }
+
+    let cancelled = false;
+    setMarketSearch({ query: trimmed, markets: [], loading: true });
+    const timer = setTimeout(() => {
+      void getSharedAdjacentClient().searchMarkets(trimmed, 6).then((response) => {
+        if (cancelled) return;
+        const markets: PredictionMarketSearchHit[] = (response.markets ?? []).flatMap((market) => {
+          if (market.platform !== "kalshi" && market.platform !== "polymarket") return [];
+          const marketId = market.platform === "kalshi"
+            ? (market.slug?.trim() || market.id)
+            : market.id;
+          if (!marketId) return [];
+          return [{
+            venue: market.platform,
+            marketId,
+            title: market.title,
+            ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
+          }];
+        });
+        setMarketSearch({ query: trimmed, markets, loading: false });
+      }).catch(() => {
+        if (!cancelled) setMarketSearch({ query: trimmed, markets: [], loading: false });
+      });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, query]);
 
   const instruments = search.query === analysis.instrumentQuery
     ? search.instruments
     : [];
+  const markets = marketSearch.query === query.trim() ? marketSearch.markets : [];
   const suggestions = useMemo(
-    () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments),
-    [defaultInstrument, instruments, query],
+    () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments, 8, markets),
+    [defaultInstrument, instruments, markets, query],
   );
 
   return {
     suggestions,
     instruments,
-    loading: search.loading && search.query === analysis.instrumentQuery,
+    loading: (search.loading && search.query === analysis.instrumentQuery)
+      || (marketSearch.loading && marketSearch.query === query.trim()),
   };
 }

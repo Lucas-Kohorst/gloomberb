@@ -79,7 +79,7 @@ export const adjacentModule: PluginModule = {
       id: "adjacent-indices-pane",
       paneId: "adjacent-indices",
       label: "Adjacent Indices",
-      description: "Browse Adjacent prediction-market indices (RED, BLUE, RED-TR) with constituents and charts.",
+      description: "Browse Adjacent prediction-market indices (RED, BLUE, RED-TR). Chart one with G ADJ:red.",
       keywords: ["adjacent", "indices", "prediction", "markets", "political", "red", "blue"],
       category: "Data",
       shortcut: { prefix: "ADI" },

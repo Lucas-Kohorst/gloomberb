@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { parseMarkdownLine } from "./markdown-text";
-import { stripJinaPreamble } from "../plugins/builtin/shared/jina-reader";
 
 function rendered(line: string): string {
   const parsed = parseMarkdownLine(line);
@@ -68,31 +67,5 @@ describe("parseMarkdownLine block syntax", () => {
 
   test("inline emphasis still parses", () => {
     expect(rendered("**bold** and *italic* and `code`")).toBe("bold and italic and code");
-  });
-});
-
-describe("stripJinaPreamble", () => {
-  test("removes the reader metadata header", () => {
-    const raw = [
-      "Title: Some Article",
-      "",
-      "URL Source: https://example.com/a",
-      "",
-      "Published Time: 2026-08-17T00:00:00Z",
-      "",
-      "Markdown Content:",
-      "",
-      "The actual first paragraph.",
-    ].join("\n");
-    expect(stripJinaPreamble(raw)).toBe("The actual first paragraph.");
-  });
-
-  test("leaves content untouched when there is no preamble", () => {
-    expect(stripJinaPreamble("## Heading\n\nBody")).toBe("## Heading\n\nBody");
-  });
-
-  test("does not strip an article that merely mentions the marker", () => {
-    const body = "A post about Markdown Content:\nstill body text";
-    expect(stripJinaPreamble(body)).toBe(body);
   });
 });

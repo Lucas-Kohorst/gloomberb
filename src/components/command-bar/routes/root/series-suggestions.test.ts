@@ -43,6 +43,7 @@ describe("chart series command-bar autocomplete", () => {
     expect(ctx).toContain("revenue");
     expect(ctx).toContain("eps");
     expect(ctx).toContain("FRED:seriesId");
+    expect(ctx).toContain("KALSHI:ticker");
     expect(ctx).toContain("A / B");
   });
 });

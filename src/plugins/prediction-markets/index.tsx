@@ -52,7 +52,8 @@ export const predictionMarketsPlugin: GloomPlugin = {
       id: "new-prediction-markets-pane",
       paneId: PANE_ID,
       label: "Prediction Markets",
-      description: "Open a new prediction markets browser pane",
+      description:
+        "Browse Kalshi and Polymarket. Query can be text, kalshi:query, or polymarket:query. Chart a market with G KALSHI:ticker, G POLY:marketId, or G ADJ:red.",
       keywords: ["prediction", "markets", "polymarket", "kalshi", "events"],
       shortcut: { prefix: "PM", argPlaceholder: "query", argKind: "text" },
       createInstance: (_context, options) => {

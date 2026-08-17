@@ -18,6 +18,7 @@ import { buildArticleSearchResultItems, useAdjacentArticleSearch } from "../rout
 import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
 import { buildChartSeriesAssistContext } from "../../../plugins/builtin/chart-composer/series-catalog";
 import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
+import { looksLikePredictionMarketQuery } from "../../../plugins/builtin/chart-composer/prediction-series";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -220,6 +221,9 @@ export function CommandBar({
     pluginRegistry,
     rootQuery,
   ]);
+  const predictionChartQuery = !currentRoute
+    && rootShortcutIntent.kind === "none"
+    && looksLikePredictionMarketQuery(rootQuery);
   const chartSeriesIntent = rootShortcutIntent.kind !== "none"
     && rootShortcutIntent.source === "pane-template"
     && rootShortcutIntent.argKind === "text"
@@ -238,12 +242,12 @@ export function CommandBar({
     [activeTickerData, activeTickerSymbol],
   );
   const chartSeriesItems = useChartSeriesSuggestions({
-    argText: chartSeriesIntent?.argText ?? "",
+    argText: chartSeriesIntent?.argText ?? (predictionChartQuery ? rootQuery : ""),
     defaultInstrument: chartSeriesDefaultInstrument,
-    enabled: !currentRoute && !!chartSeriesIntent,
+    enabled: !currentRoute && (!!chartSeriesIntent || predictionChartQuery),
     onRun: (expression) => {
-      if (!chartSeriesTemplateId) return;
-      pluginRegistry.createPaneFromTemplate(chartSeriesTemplateId, { arg: expression });
+      const templateId = chartSeriesTemplateId ?? "chart-composer-pane";
+      pluginRegistry.createPaneFromTemplate(templateId, { arg: expression });
       closeAll({ revertThemePreview: false });
     },
   });

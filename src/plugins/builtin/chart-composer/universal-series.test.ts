@@ -105,6 +105,32 @@ describe("universal series expression parsing", () => {
     });
   });
 
+  test("parses KALSHI:ticker, POLY:marketId, and PM:venue:id", () => {
+    expect(parseSeriesExpression("KALSHI:KXPRESPERSON")).toEqual({
+      kind: "prediction-market",
+      venue: "kalshi",
+      marketId: "KXPRESPERSON",
+    });
+    expect(parseSeriesExpression("poly:fed-cut-september")).toEqual({
+      kind: "prediction-market",
+      venue: "polymarket",
+      marketId: "fed-cut-september",
+    });
+    expect(parseSeriesExpression("PM:kalshi:kx-fed-cut")).toEqual({
+      kind: "prediction-market",
+      venue: "kalshi",
+      marketId: "KX-FED-CUT",
+    });
+  });
+
+  test("maps Adjacent index natural language onto ADJ:indexId", () => {
+    expect(parseChartExpression("adjacent red index")).toEqual([
+      { kind: "adjacent-index", indexId: "red", label: "RED Index" },
+    ]);
+    const spec = buildCustomChartPreset("adjacent red index");
+    expect(formatSeriesExpression(spec.series[0]!)).toBe("ADJ:red");
+  });
+
   test("parseChartExpression handles mixed universal and security series", () => {
     const parsed = parseChartExpression("AAPL:price, FUT:ES, UST:10Y, BENCH:OpenAI:tps");
     expect(parsed.map((entry) => entry.kind)).toEqual([
@@ -168,6 +194,17 @@ describe("universal series spec building", () => {
     });
     expect(spec.style).toBe("line");
   });
+
+  test("prediction-market builds a kalshi/polymarket source", () => {
+    const spec = buildSeriesSpec(parseSeriesExpression("KALSHI:KXPRESPERSON")!, 0);
+    expect(spec.source).toEqual({
+      kind: "prediction-market",
+      venue: "kalshi",
+      marketId: "KXPRESPERSON",
+    });
+    expect(spec.style).toBe("line");
+    expect(formatSeriesExpression(spec)).toBe("KALSHI:KXPRESPERSON");
+  });
 });
 
 describe("universal series formatting and labels", () => {
@@ -182,6 +219,10 @@ describe("universal series formatting and labels", () => {
       .toBe("BENCH:OpenAI:tps");
     expect(formatParsedSeriesExpression(parseSeriesExpression("POLL:Donald Trump:Approve")!))
       .toBe("POLL:Donald Trump:Approve");
+    expect(formatParsedSeriesExpression(parseSeriesExpression("KALSHI:KXPRESPERSON")!))
+      .toBe("KALSHI:KXPRESPERSON");
+    expect(formatParsedSeriesExpression(parseSeriesExpression("POLY:fed-cut-september")!))
+      .toBe("POLY:fed-cut-september");
   });
 
   test("formatSeriesExpression and chartSeriesLabel handle stored specs", () => {
@@ -229,10 +270,28 @@ describe("universal series catalog suggestions", () => {
     expect(benches.some((entry) => entry.label.includes("OpenAI"))).toBe(true);
   });
 
-  test("suggests polls when the query matches 'poll' or a subject", () => {
-    const suggestions = buildSeriesCatalogSuggestions("poll approval", AAPL, [], 12);
-    const polls = suggestions.filter((entry) => entry.expression.kind === "poll");
-    expect(polls.length).toBeGreaterThan(0);
+  test("suggests Adjacent indices from natural language", () => {
+    const suggestions = buildSeriesCatalogSuggestions("adjacent red index", AAPL);
+    expect(suggestions[0]?.expression).toMatchObject({
+      kind: "adjacent-index",
+      indexId: "red",
+    });
+  });
+
+  test("suggests Kalshi series from a search hit", () => {
+    const suggestions = buildSeriesCatalogSuggestions(
+      "trump kalshi",
+      AAPL,
+      [],
+      8,
+      [{ venue: "kalshi", marketId: "KXPRESPERSON", title: "Will Trump win?" }],
+    );
+    expect(suggestions[0]?.expression).toMatchObject({
+      kind: "prediction-market",
+      venue: "kalshi",
+      marketId: "KXPRESPERSON",
+    });
+    expect(formatParsedSeriesExpression(suggestions[0]!.expression)).toBe("KALSHI:KXPRESPERSON");
   });
 
   test("exact prefix expressions are recognized as suggestions", () => {
@@ -245,11 +304,16 @@ describe("universal series catalog suggestions", () => {
     expect(buildSeriesCatalogSuggestions("ADJ:my-index", AAPL)[0]).toMatchObject({
       expression: { kind: "adjacent-index", indexId: "my-index" },
     });
+    expect(buildSeriesCatalogSuggestions("KALSHI:KXPRESPERSON", AAPL)[0]).toMatchObject({
+      expression: { kind: "prediction-market", venue: "kalshi", marketId: "KXPRESPERSON" },
+    });
   });
 
   test("assist context mentions all universal prefixes", () => {
     const ctx = buildChartSeriesAssistContext();
     expect(ctx).toContain("ADJ:");
+    expect(ctx).toContain("KALSHI:");
+    expect(ctx).toContain("POLY:");
     expect(ctx).toContain("FUT:");
     expect(ctx).toContain("UST:");
     expect(ctx).toContain("BENCH:");

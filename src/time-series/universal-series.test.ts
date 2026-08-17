@@ -195,6 +195,15 @@ describe("universal series resolution", () => {
         unitGroup: `poll:${subject}`,
         label: `${subject} ${choice}`,
       }),
+      loadPredictionMarketSeries: async (venue, marketId): Promise<UniversalSeriesLoadResult> => ({
+        points: [
+          { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" } },
+          { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 48, provenance: { providerId: "adjacent", quality: "reported" } },
+        ],
+        unit: "%",
+        unitGroup: `prediction-market:${venue}`,
+        label: `${venue} ${marketId}`,
+      }),
       ...overrides,
     };
   }
@@ -225,6 +234,16 @@ describe("universal series resolution", () => {
     expect(result.errors).toHaveLength(0);
     expect(result.series).toHaveLength(1);
     expect(result.series[0]!.points).toHaveLength(2);
+    expect(result.series[0]!.unit).toBe("%");
+  });
+
+  test("resolves a prediction-market series through injected loaders", async () => {
+    const spec: ChartSpec = buildCustomChartPreset("KALSHI:KXPRESPERSON");
+    const result = await resolveChartSpecData(spec, makeSources());
+    expect(result.errors).toHaveLength(0);
+    expect(result.series).toHaveLength(1);
+    expect(result.series[0]!.points).toHaveLength(2);
+    expect(result.series[0]!.points[0]!.value).toBe(42);
     expect(result.series[0]!.unit).toBe("%");
   });
 

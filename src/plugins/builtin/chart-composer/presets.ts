@@ -34,6 +34,10 @@ import {
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
 } from "./universal-series";
+import {
+  normalizePredictionMarketId,
+  resolveAdjacentIndexQuery,
+} from "./prediction-series";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -57,7 +61,8 @@ export type ParsedSeriesExpression =
   | { kind: "future"; code: string; symbol: string; name: string; label?: string }
   | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
   | { kind: "benchmark"; selector: string; metric: string; label?: string }
-  | { kind: "poll"; subject: string; choice: string; label?: string };
+  | { kind: "poll"; subject: string; choice: string; label?: string }
+  | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
 
 /** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
 export interface ConstantSeriesExpression {
@@ -162,6 +167,27 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     return { kind: "poll", subject, choice };
   }
 
+  if (prefix === SERIES_PREFIX.kalshi) {
+    const marketId = normalizePredictionMarketId("kalshi", parts.slice(1).join(":"));
+    return marketId ? { kind: "prediction-market", venue: "kalshi", marketId } : null;
+  }
+
+  if (prefix === SERIES_PREFIX.polymarket) {
+    const marketId = normalizePredictionMarketId("polymarket", parts.slice(1).join(":"));
+    return marketId ? { kind: "prediction-market", venue: "polymarket", marketId } : null;
+  }
+
+  if (prefix === SERIES_PREFIX.predictionMarket) {
+    const rest = parts.slice(1).join(":");
+    const venueSep = rest.indexOf(":");
+    if (venueSep < 0) return null;
+    const venueToken = rest.slice(0, venueSep).trim().toLowerCase();
+    const venue = venueToken === "kalshi" || venueToken === "polymarket" ? venueToken : null;
+    if (!venue) return null;
+    const marketId = normalizePredictionMarketId(venue, rest.slice(venueSep + 1));
+    return marketId ? { kind: "prediction-market", venue, marketId } : null;
+  }
+
   let instrument: { symbol: string; exchange?: string } | null = null;
   let fieldId: string = CHART_FIELD_IDS.price;
   if (parts.length === 1) {
@@ -245,11 +271,11 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
   }
 
   return legs.map((leg) => {
-    const parsed = parseSeriesExpression(leg);
+    const parsed = parseSeriesExpression(leg) ?? resolveAdjacentIndexQuery(leg.trim());
     if (parsed) return parsed;
     const display = leg.trim() || "empty series";
     throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, FUT:code, UST:maturity, BENCH:selector:metric, or POLL:subject:choice.`,
+      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, or POLL:subject:choice.`,
     );
   });
 }
@@ -264,6 +290,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
       return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
+    case "prediction-market":
+      return `${series.source.venue === "kalshi" ? SERIES_PREFIX.kalshi : SERIES_PREFIX.polymarket}:${series.source.marketId}`;
     case "constant":
       return String(series.source.value);
     default:
@@ -282,6 +310,8 @@ export function chartSeriesLabel(series: ChartSeriesSpec): string {
       return `${series.source.selector} ${series.source.metric}`;
     case "poll":
       return `${series.source.subject} ${series.source.choice}`;
+    case "prediction-market":
+      return `${series.source.venue === "kalshi" ? "KALSHI" : "POLY"} ${series.source.marketId}`;
     case "constant":
       return String(series.source.value);
     default: {
@@ -472,6 +502,25 @@ export function buildSeriesSpec(
     };
   }
 
+  if (expression.kind === "prediction-market") {
+    const style = overrides.style ?? "line";
+    return {
+      id: `pm-${expression.venue}-${slug(expression.marketId)}-${index + 1}`,
+      source: {
+        kind: "prediction-market",
+        venue: expression.venue,
+        marketId: expression.marketId,
+      },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   const presentation = defaultSeriesPresentation(expression.fieldId);
   const style = overrides.style ?? presentation.style;
   const timestampMode = defaultFinancialTimestampMode(expression.fieldId);
@@ -539,6 +588,8 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
       return `benchmark:${series.source.metric}`;
     case "poll":
       return `poll:${series.source.subject}`;
+    case "prediction-market":
+      return `prediction-market:${series.source.venue}`;
     case "constant":
       return "constant";
     default:

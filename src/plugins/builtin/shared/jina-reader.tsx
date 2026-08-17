@@ -4,21 +4,9 @@ import { EmptyState, Spinner } from "../../../components";
 import { MarkdownText } from "../../../components/markdown-text";
 import { withConnectionRequest } from "../connections/register";
 import { colors } from "../../../theme/colors";
+import { cleanJinaArticle, JINA_READER_ENDPOINT, JINA_READER_HEADERS } from "./jina-article-text";
 
 const JINA_CONNECTION_ID = "jina-ai";
-
-/**
- * The reader prefixes every response with `Title:` / `URL Source:` /
- * `Published Time:` lines. The pane already renders the title and source, so
- * keeping them would repeat that metadata as the first lines of the body.
- */
-export function stripJinaPreamble(raw: string): string {
-  const text = raw.trim();
-  if (!text.startsWith("Title:")) return text;
-  const marker = text.match(/^Markdown Content:[ \t]*$/m);
-  if (marker?.index == null) return text;
-  return text.slice(marker.index + marker[0].length).trim();
-}
 
 export interface JinaArticleState {
   content: string | null;
@@ -57,15 +45,15 @@ export function useJinaArticle(url: string, enabled = true) {
     const controller = new AbortController();
     setState((current) => ({ ...current, loading: true, error: null }));
     void withConnectionRequest(JINA_CONNECTION_ID, "render article", async () => {
-      const response = await fetch(`https://r.jina.ai/${target}`, {
+      const response = await fetch(`${JINA_READER_ENDPOINT}${target}`, {
         signal: controller.signal,
-        headers: { Accept: "text/plain" },
+        headers: JINA_READER_HEADERS,
       });
       if (!response.ok) throw new Error(`Reader request failed (${response.status})`);
       return response.text();
     }).then((content) => {
       if (requestRef.current !== requestId) return;
-      setState({ content: stripJinaPreamble(content), loading: false, error: null });
+      setState({ content: cleanJinaArticle(content), loading: false, error: null });
     }).catch((error: unknown) => {
       if (requestRef.current !== requestId || controller.signal.aborted) return;
       setState((current) => ({

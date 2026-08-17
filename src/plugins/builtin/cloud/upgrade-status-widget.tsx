@@ -42,11 +42,13 @@ export function CloudUpgradeStatusWidget({ controller = chatController }: CloudU
   return (
     <Box
       flexDirection="row"
+      alignItems="center"
       paddingRight={1}
       backgroundColor={hovered ? hoverBg() : undefined}
       onMouseOver={() => setHovered((current) => (current ? current : true))}
       onMouseOut={() => setHovered((current) => (current ? false : current))}
       onMouseDown={trial ? openPlan : openUpgrade}
+      data-gloom-interactive="true"
     >
       <Text fg={trial ? colors.positive : colors.warning}>{label}</Text>
     </Box>

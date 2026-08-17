@@ -244,6 +244,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
 
   if (rootShortcutIntent.kind === "none") {
     items.push(...articleResultItems);
+    items.push(...chartSeriesItems);
   }
 
   // Built from the local matches, then moved above them: the AI answers the

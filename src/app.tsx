@@ -56,7 +56,7 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
-import { isPublicShareLocation } from "./plugins/builtin/shared/share-link";
+import { isPublicShareLocation, isShareTerminalHandoff } from "./plugins/builtin/shared/share-link";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
@@ -478,6 +478,7 @@ export function App({
     return initialCliLaunch.config;
   });
   const publicShare = isPublicShareLocation();
+  const shareHandoff = isShareTerminalHandoff();
   const [showOnboarding, setShowOnboarding] = useState(
     !publicShare && !effectiveInitialConfig.onboardingComplete,
   );
@@ -518,7 +519,8 @@ export function App({
         <OnboardingWizard
           config={config}
           pluginRegistry={services.pluginRegistry}
-          initialStep={onboardingInitialStep}
+          initialStep={shareHandoff ? "account" : onboardingInitialStep}
+          requireAccount={shareHandoff}
           onComplete={(updatedConfig) => {
             setConfig(updatedConfig);
             setShowOnboarding(false);

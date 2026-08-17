@@ -6,6 +6,7 @@ import type { ListViewItem } from "../ui";
 import { useShortcut } from "../../react/input";
 import {
   ACCOUNT_CHOICE_IDS,
+  type AccountChoiceId,
   type AccountMode,
   type AccountSub,
   type AccountSubmitError,
@@ -36,6 +37,8 @@ export function useOnboardingKeyboard({
   isBrokerSyncing,
   brokerSyncError,
   accountSub,
+  accountChoices = ACCOUNT_CHOICE_IDS,
+  requireAccount = false,
   accountChoiceIdx,
   setAccountChoiceIdx,
   accountSubmitting,
@@ -75,6 +78,8 @@ export function useOnboardingKeyboard({
   isBrokerSyncing: boolean;
   brokerSyncError: string | null;
   accountSub: AccountSub;
+  accountChoices?: AccountChoiceId[];
+  requireAccount?: boolean;
   accountChoiceIdx: number;
   setAccountChoiceIdx: Dispatch<SetStateAction<number>>;
   accountSubmitting: boolean;
@@ -152,8 +157,9 @@ export function useOnboardingKeyboard({
       if (step === "account") {
         if (accountSubmitting) return;
         if (accountSub === "choose") {
-          const choice = ACCOUNT_CHOICE_IDS[accountChoiceIdx];
+          const choice = accountChoices[accountChoiceIdx];
           if (!choice || choice === "skip") {
+            if (requireAccount) return;
             nextStep();
             return;
           }
@@ -270,6 +276,9 @@ export function useOnboardingKeyboard({
       }
       prevStep();
     } else if (event.name === "right") {
+      if (requireAccount && step === "account" && accountSub !== "signed-in") {
+        return;
+      }
       nextStep();
     }
 
@@ -283,7 +292,7 @@ export function useOnboardingKeyboard({
       if (isPlainKey(event, "up", "k")) {
         setAccountChoiceIdx((index) => Math.max(0, index - 1));
       } else if (isPlainKey(event, "down", "j")) {
-        setAccountChoiceIdx((index) => Math.min(ACCOUNT_CHOICE_IDS.length - 1, index + 1));
+        setAccountChoiceIdx((index) => Math.min(accountChoices.length - 1, index + 1));
       }
     } else if (step === "portfolio" && portfolioSub === "choose") {
       if (isPlainKey(event, "up", "k")) {

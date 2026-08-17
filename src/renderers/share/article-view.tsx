@@ -10,22 +10,9 @@
 
 import { useEffect, useState } from "react";
 import type { ArticleSharePayload } from "../../shares/payload";
+import { cleanJinaArticle, JINA_READER_ENDPOINT, JINA_READER_HEADERS } from "../../plugins/builtin/shared/jina-article-text";
 import { MarkdownBody, SanitizedHtmlBody } from "./rich-text";
-import { ShareHeading, ShareShell, formatShareTimestamp, type ShareMetaEntry } from "./shell";
-
-const READER_ENDPOINT = "https://r.jina.ai/";
-
-/**
- * The reader prefixes responses with `Title:` / `URL Source:` / `Published
- * Time:` lines. The page already shows that metadata above the body.
- */
-function stripReaderPreamble(raw: string): string {
-  const text = raw.trim();
-  if (!text.startsWith("Title:")) return text;
-  const marker = text.match(/^Markdown Content:[ \t]*$/m);
-  if (marker?.index == null) return text;
-  return text.slice(marker.index + marker[0].length).trim();
-}
+import { ShareShell, formatShareTimestamp } from "./shell";
 
 /**
  * The reader does not always return an article. Paywalls, consent walls, and
@@ -52,12 +39,12 @@ function useFullArticleText(url: string, enabled: boolean) {
     }
     const controller = new AbortController();
     setState({ text: null, loading: true });
-    fetch(`${READER_ENDPOINT}${url}`, {
+    fetch(`${JINA_READER_ENDPOINT}${url}`, {
       signal: controller.signal,
-      headers: { Accept: "text/plain" },
+      headers: JINA_READER_HEADERS,
     })
       .then((response) => (response.ok ? response.text() : Promise.reject(new Error(""))))
-      .then((raw) => setState({ text: stripReaderPreamble(raw), loading: false }))
+      .then((raw) => setState({ text: cleanJinaArticle(raw), loading: false }))
       .catch(() => {
         if (!controller.signal.aborted) setState({ text: null, loading: false });
       });
@@ -87,15 +74,22 @@ export function ArticleShareView({
   const body = preferredArticleBody(summary, full.text);
 
   const published = formatShareTimestamp(payload.publishedAt);
-  const meta: ShareMetaEntry[] = [
-    { value: payload.source || payload.publicationName || "" },
-    ...(published ? [{ label: "Published", value: published }] : []),
-    ...(payload.url ? [{ value: "View original", href: payload.url }] : []),
-  ];
+  const source = payload.source || payload.publicationName || "";
+  const footer = (
+    <>
+      {[source, published].filter(Boolean).join(" · ")}
+      {payload.url ? (
+        <>
+          {source || published ? " · " : null}
+          <a href={payload.url} target="_blank" rel="noreferrer noopener">view original</a>
+        </>
+      ) : null}
+    </>
+  );
 
   return (
-    <ShareShell openInTerminalHref={openInTerminalHref} openInTerminalLabel="Open in terminal">
-      <ShareHeading title={payload.title} subtitle={payload.subtitle} meta={meta} />
+    <ShareShell title={payload.title} footer={footer} openInTerminalHref={openInTerminalHref}>
+      {payload.subtitle ? <p className="share-subtitle">{payload.subtitle}</p> : null}
 
       {embedded ? <SanitizedHtmlBody html={embedded} /> : body
         ? <MarkdownBody text={body} />

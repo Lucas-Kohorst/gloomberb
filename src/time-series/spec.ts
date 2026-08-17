@@ -152,6 +152,16 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!subject || !choice) return null;
     return { kind: "poll", subject, choice };
   }
+  if (source.kind === "prediction-market") {
+    const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
+    const marketId = nonEmptyString(source.marketId);
+    if (!venue || !marketId) return null;
+    return {
+      kind: "prediction-market",
+      venue,
+      marketId: venue === "kalshi" ? marketId.toUpperCase() : marketId,
+    };
+  }
   if (source.kind === "constant") {
     if (typeof source.value !== "number" || !Number.isFinite(source.value)) return null;
     return { kind: "constant", value: source.value };
@@ -472,6 +482,13 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (!entry.source.choice.trim()) {
         errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
+      }
+    } else if (entry.source.kind === "prediction-market") {
+      if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {
+        errors.push(issue(`${path}.source.venue`, "invalid-venue", "Prediction market venue must be kalshi or polymarket."));
+      }
+      if (!entry.source.marketId.trim()) {
+        errors.push(issue(`${path}.source.marketId`, "missing-market", "Prediction market ID is required."));
       }
     } else if (entry.source.kind === "constant") {
       if (!Number.isFinite(entry.source.value)) {

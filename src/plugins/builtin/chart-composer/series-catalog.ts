@@ -19,9 +19,15 @@ import {
   BENCHMARK_METRICS,
   BENCHMARK_ORGS,
   POLL_SUBJECTS,
+  ADJACENT_INDEX_CATALOG,
   type FuturesCatalogEntry,
   type TreasuryCatalogEntry,
 } from "./universal-series";
+import {
+  formatPredictionSeriesExpression,
+  resolvePredictionSeriesQuery,
+  type PredictionMarketSearchHit,
+} from "./prediction-series";
 
 export interface SeriesCatalogInstrument {
   symbol: string;
@@ -282,6 +288,14 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
         detail: "Poll",
         expression,
       };
+    case "prediction-market":
+      return {
+        id: `pm:${expression.venue}:${expression.marketId}`,
+        label: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${expression.label ?? expression.marketId}`,
+        description: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} yes-price`,
+        detail: expression.venue === "kalshi" ? "KALSHI" : "POLY",
+        expression,
+      };
     default: {
       const field = getTimeSeriesField(expression.fieldId);
       const instrument = publicTickerKey(expression.symbol, expression.exchange);
@@ -313,6 +327,8 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
       return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    case "prediction-market":
+      return formatPredictionSeriesExpression(expression);
     default:
       return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
   }
@@ -339,10 +355,14 @@ export function buildChartSeriesAssistContext(): string {
   return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
     + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
     + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data, "
-    + "ADJ:indexId for Adjacent indices, FUT:code for futures (e.g. FUT:ES), "
+    + "ADJ:indexId for Adjacent indices (e.g. ADJ:red, ADJ:blue, ADJ:red-tr), "
+    + "KALSHI:ticker for Kalshi yes-price (e.g. KALSHI:KXPRESPERSON), "
+    + "POLY:marketId for Polymarket yes-price, "
+    + "FUT:code for futures (e.g. FUT:ES), "
     + "UST:maturity for Treasury yields (e.g. UST:10Y), "
     + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
-    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve).";
+    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve). "
+    + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -350,8 +370,10 @@ export function buildSeriesCatalogSuggestions(
   defaultInstrument: SeriesCatalogInstrument,
   searchedInstruments: readonly SeriesCatalogInstrument[] = [],
   limit = 8,
+  searchedMarkets: readonly PredictionMarketSearchHit[] = [],
 ): SeriesCatalogSuggestion[] {
   const exact = exactExpressionSuggestion(query.trim());
+  const nl = resolvePredictionSeriesQuery(query, searchedMarkets);
   const analysis = analyzeSeriesSearchQuery(query);
   const instruments = uniqueInstruments(
     analysis.directInstrument
@@ -367,6 +389,12 @@ export function buildSeriesCatalogSuggestions(
     .sort((left, right) => right.score - left.score || left.field.label.localeCompare(right.field.label));
 
   const suggestions: SeriesCatalogSuggestion[] = exact ? [exact] : [];
+  if (nl) {
+    const nlSuggestion = predictionExpressionSuggestion(nl);
+    if (!suggestions.some((entry) => entry.id === nlSuggestion.id)) {
+      suggestions.unshift(nlSuggestion);
+    }
+  }
   const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
   for (const instrument of instruments) {
     const instrumentLabel = publicTickerKey(instrument.symbol, instrument.exchange);
@@ -392,9 +420,10 @@ export function buildSeriesCatalogSuggestions(
     }
   }
 
-  // Append universal-series suggestions (futures, treasuries, benchmarks, polls)
-  // when the query matches keywords or prefixes, filling remaining slots.
+  // Append universal-series suggestions (futures, treasuries, benchmarks, polls,
+  // Adjacent indices) and live prediction-market hits, filling remaining slots.
   appendUniversalSuggestions(suggestions, query, limit);
+  appendPredictionMarketHits(suggestions, searchedMarkets, limit);
 
   return suggestions.slice(0, Math.max(1, limit));
 }
@@ -475,6 +504,22 @@ function appendUniversalSuggestions(
     }
   }
 
+  // Adjacent prediction-market indices
+  for (const entry of ADJACENT_INDEX_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.indexId,
+      entry.ticker,
+      entry.name,
+      ...entry.aliases,
+      "adjacent",
+      "index",
+      "adj",
+    ]);
+    if (score >= 0) {
+      scored.push({ suggestion: adjacentIndexSuggestion(entry.indexId, entry.name), score });
+    }
+  }
+
   scored.sort((left, right) => right.score - left.score);
   for (const { suggestion } of scored.slice(0, remaining)) {
     if (!suggestions.some((entry) => entry.id === suggestion.id)) {
@@ -536,4 +581,48 @@ function pollSuggestion(subject: string, choice: string): SeriesCatalogSuggestio
     detail: "Poll",
     expression: { kind: "poll", subject, choice },
   };
+}
+
+function adjacentIndexSuggestion(indexId: string, name: string): SeriesCatalogSuggestion {
+  return {
+    id: `adj:${indexId}`,
+    label: `ADJ · ${name}`,
+    description: "Adjacent prediction-market index",
+    detail: "Adjacent",
+    expression: { kind: "adjacent-index", indexId, label: name },
+  };
+}
+
+function predictionExpressionSuggestion(
+  expression: Extract<ParsedSeriesExpression, { kind: "adjacent-index" | "prediction-market" }>,
+): SeriesCatalogSuggestion {
+  if (expression.kind === "adjacent-index") {
+    return adjacentIndexSuggestion(expression.indexId, expression.label ?? expression.indexId);
+  }
+  return {
+    id: `pm:${expression.venue}:${expression.marketId}`,
+    label: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${expression.label ?? expression.marketId}`,
+    description: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} yes-price`,
+    detail: expression.venue === "kalshi" ? "KALSHI" : "POLY",
+    expression,
+  };
+}
+
+function appendPredictionMarketHits(
+  suggestions: SeriesCatalogSuggestion[],
+  hits: readonly PredictionMarketSearchHit[],
+  limit: number,
+): void {
+  for (const hit of hits) {
+    if (suggestions.length >= limit) return;
+    const suggestion = predictionExpressionSuggestion({
+      kind: "prediction-market",
+      venue: hit.venue,
+      marketId: hit.marketId,
+      label: hit.title,
+    });
+    if (!suggestions.some((entry) => entry.id === suggestion.id)) {
+      suggestions.push(suggestion);
+    }
+  }
 }

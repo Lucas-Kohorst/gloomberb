@@ -319,4 +319,36 @@ describe("OnboardingWizard", () => {
     expect(completedConfig).not.toBeNull();
     expect(requestedUrls).toEqual([]);
   });
+
+  test("share hand-off opens on sign-up and has no skip", async () => {
+    const pluginRegistry = {
+      allPlugins: new Map(),
+      brokers: new Map(),
+      paneTemplates: new Map(),
+      getPaneTemplatePluginId: () => undefined,
+      tickerRepository: createTickerRepository(),
+      persistence: { resources: undefined },
+    } as unknown as PluginRegistry;
+
+    testSetup = await testRender(
+      <OnboardingWizard
+        config={createDefaultConfig("/tmp/gloomberb-share-handoff")}
+        pluginRegistry={pluginRegistry}
+        initialStep="account"
+        requireAccount
+        onComplete={() => {}}
+      />,
+      { width: 90, height: 28 },
+    );
+    await testSetup.renderOnce();
+
+    let frame = await waitForFrameToContain("Create your free account");
+    expect(frame).not.toContain("Skip for now");
+    expect(frame).not.toContain("this step is optional");
+
+    await emitKeypress(testSetup, { name: "escape", sequence: "\u001b" });
+    frame = await waitForFrameToContain("Create free account");
+    expect(frame).toContain("Log In");
+    expect(frame).not.toContain("Skip for now");
+  });
 });

@@ -18,7 +18,9 @@ import {
 } from "../plugins/builtin/adjacent/client";
 import {
   normalizeAdjacentIndexPrices,
+  normalizeAdjacentPriceHistory,
 } from "../plugins/builtin/adjacent/normalize";
+import type { AdjacentMarket } from "../plugins/builtin/adjacent/types";
 import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
 import type { LlmStatsRow } from "../plugins/builtin/llm-stats/types";
 import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
@@ -54,6 +56,69 @@ export async function loadAdjacentIndexSeries(indexId: string): Promise<Universa
     points,
     unit: "index",
     unitGroup: `adjacent-index:${indexId}`,
+  };
+}
+
+function predictionYesPercent(value: number): number {
+  return value <= 1 ? value * 100 : value;
+}
+
+function predictionMarketPoints(
+  prices: Array<{ date: Date; close: number }>,
+): TimeSeriesPoint[] {
+  return prices.map((point) => ({
+    date: point.date,
+    observedAt: point.date,
+    value: predictionYesPercent(point.close),
+    provenance: { providerId: "adjacent", quality: "reported" },
+  }));
+}
+
+function matchingPredictionMarket(
+  markets: readonly AdjacentMarket[],
+  venue: "kalshi" | "polymarket",
+  marketId: string,
+): AdjacentMarket | undefined {
+  const needle = marketId.trim().toLowerCase();
+  const venueMarkets = markets.filter((market) => market.platform === venue);
+  const pool = venueMarkets.length > 0 ? venueMarkets : markets;
+  return pool.find((market) => {
+    const id = market.id.trim().toLowerCase();
+    const slug = market.slug?.trim().toLowerCase();
+    return id === needle || slug === needle;
+  }) ?? pool[0];
+}
+
+export async function loadPredictionMarketSeries(
+  venue: "kalshi" | "polymarket",
+  marketId: string,
+): Promise<UniversalSeriesLoadResult> {
+  const client = getSharedAdjacentClient();
+  const loadPrices = async (id: string) => {
+    const response = await client.getMarketPrices(id);
+    return normalizeAdjacentPriceHistory(response.prices ?? []);
+  };
+
+  let history = await loadPrices(marketId).catch(() => []);
+  let label: string | undefined;
+  if (history.length === 0) {
+    const search = await client.searchMarkets(marketId, 8);
+    const match = matchingPredictionMarket(search.markets ?? [], venue, marketId);
+    if (!match) {
+      throw new Error(`No ${venue} market found for "${marketId}".`);
+    }
+    history = await loadPrices(match.id);
+    label = match.title;
+    if (history.length === 0) {
+      throw new Error(`No price history for ${venue} market "${match.title}".`);
+    }
+  }
+
+  return {
+    points: predictionMarketPoints(history),
+    unit: "%",
+    unitGroup: `prediction-market:${venue}`,
+    label: label ?? `${venue === "kalshi" ? "KALSHI" : "POLY"} ${marketId}`,
   };
 }
 
@@ -180,6 +245,7 @@ export function useResolvedChartSpec(
       loadAdjacentIndexSeries,
       loadBenchmarkSeries,
       loadPollSeries,
+      loadPredictionMarketSeries,
     }),
     [dataProvider],
   );

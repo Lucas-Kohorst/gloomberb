@@ -82,7 +82,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   if (cloudPluginDisabled) return null;
 
   return (
-    <Box flexDirection="row" paddingRight={1}>
+    <Box flexDirection="row" alignItems="center" paddingRight={1}>
       {!username && !hasSavedSession ? (
         <>
           <CloudStatusIcon />
@@ -91,10 +91,12 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
       ) : (
         <Box
           flexDirection="row"
+          alignItems="center"
           backgroundColor={hovered ? hoverBg() : undefined}
           onMouseOver={() => setHovered((current) => (current ? current : true))}
           onMouseOut={() => setHovered((current) => (current ? false : current))}
           onMouseDown={openChat}
+          data-gloom-interactive="true"
         >
           <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
             <Span fg={colors.positive}>@</Span>

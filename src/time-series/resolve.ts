@@ -78,6 +78,11 @@ export interface ChartResolveSources {
   loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
   /** Loads a VoteHub poll time series for a subject/choice pair. */
   loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
+  /** Loads a Kalshi/Polymarket yes-price history. */
+  loadPredictionMarketSeries?: (
+    venue: "kalshi" | "polymarket",
+    marketId: string,
+  ) => Promise<UniversalSeriesLoadResult>;
   now?: Date;
   /** Latest streamed quote per security identity, layered over snapshot data. */
   quoteOverrides?: ReadonlyMap<string, Quote>;
@@ -159,6 +164,8 @@ function seriesFallbackLabel(source: ChartSeriesSpec["source"]): string {
       return `${source.selector} ${source.metric}`;
     case "poll":
       return `${source.subject} ${source.choice}`;
+    case "prediction-market":
+      return `${source.venue === "kalshi" ? "KALSHI" : "POLY"} ${source.marketId}`;
     case "constant":
       return String(source.value);
     default: {
@@ -621,6 +628,7 @@ function baseUniversalSeries(
     spec.source.kind !== "adjacent-index"
     && spec.source.kind !== "benchmark"
     && spec.source.kind !== "poll"
+    && spec.source.kind !== "prediction-market"
   ) {
     return null;
   }
@@ -956,7 +964,7 @@ export async function resolveChartSpecData(
   };
 
   const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll",
+    kind: "adjacent-index" | "benchmark" | "poll" | "prediction-market",
     key: string,
     loader: () => Promise<UniversalSeriesLoadResult>,
   ): Promise<UniversalSeriesLoadResult> => {
@@ -1026,6 +1034,19 @@ export async function resolveChartSpecData(
           "poll",
           `${subject}:${choice}`,
           () => sources.loadPollSeries!(subject, choice),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "prediction-market") {
+        if (!sources.loadPredictionMarketSeries) {
+          throw new Error("Prediction market data source is not available.");
+        }
+        const { venue, marketId } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "prediction-market",
+          `${venue}:${marketId}`,
+          () => sources.loadPredictionMarketSeries!(venue, marketId),
         );
         return baseUniversalSeries(seriesSpec, data, index);
       }

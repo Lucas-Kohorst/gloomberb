@@ -134,15 +134,17 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: CHART_COMPOSER_TEMPLATE_ID,
     paneId: CHART_COMPOSER_PANE_ID,
     label: "Custom Chart",
-    description: "Chart arbitrary market, fundamental, valuation, and FRED series together.",
-    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental"],
+    description: "Chart arbitrary market, fundamental, valuation, FRED, Adjacent, Kalshi, and Polymarket series together.",
+    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental", "kalshi", "polymarket", "adjacent", "prediction"],
     shortcut: { prefix: "G", argPlaceholder: "series", argKind: "text", argOptional: true },
     wizard: [{
       key: "series",
       label: "Chart Series",
-      placeholder: "AAPL:price, MSFT:revenue, FRED:CPIAUCSL",
+      placeholder: "AAPL:price, ADJ:red, KALSHI:KXPRESPERSON, FRED:CPIAUCSL",
       type: "text",
-      body: ["Enter comma-separated SYMBOL:field or FRED:series expressions."],
+      body: [
+        "Enter comma-separated SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:market expressions — or a description like “adjacent red index” or “trump kalshi”.",
+      ],
     }],
     canCreate: () => true,
     createInstance: (context, options) => {

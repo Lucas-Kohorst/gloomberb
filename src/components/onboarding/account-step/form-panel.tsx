@@ -72,6 +72,7 @@ export function AccountFormPanel({
   submitting,
   submitError,
   validationError,
+  requireAccount = false,
   onEmailChange,
   onPasswordChange,
 }: {
@@ -84,6 +85,7 @@ export function AccountFormPanel({
   submitting: boolean;
   submitError: AccountSubmitError | null;
   validationError: string | null;
+  requireAccount?: boolean;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
 }) {
@@ -150,7 +152,9 @@ export function AccountFormPanel({
 
       <Box height={1} />
       <Box height={1}>
-        <Text fg={colors.textMuted}>{t("esc to go back — this step is optional")}</Text>
+        <Text fg={colors.textMuted}>
+          {requireAccount ? t("esc to go back") : t("esc to go back — this step is optional")}
+        </Text>
       </Box>
     </Box>
   );

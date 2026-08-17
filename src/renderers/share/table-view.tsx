@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import type { TableSharePayload } from "../../shares/payload";
-import { ShareHeading, ShareShell, formatShareTimestamp } from "./shell";
+import { ShareShell, formatShareTimestamp } from "./shell";
 
 /**
  * Cells are formatted strings, so ordering has to recover the number behind
@@ -59,19 +59,20 @@ export function TableShareView({
   };
 
   const captured = formatShareTimestamp(payload.capturedAt);
-  const meta = [
-    ...(captured ? [{ label: "Snapshot", value: captured }] : []),
-    { label: "Rows", value: String(payload.rows.length) },
-  ];
+  const footer = [
+    captured ? `snapshot ${captured}` : null,
+    payload.truncatedFrom
+      ? `first ${payload.rows.length} of ${payload.truncatedFrom}`
+      : null,
+  ].filter(Boolean).join(" · ");
 
   return (
     <ShareShell
       layout="wide"
+      title={payload.title}
+      footer={footer}
       openInTerminalHref={openInTerminalHref}
-      openInTerminalLabel="Open live in terminal"
     >
-      <ShareHeading title={payload.title} subtitle={payload.subtitle} meta={meta} />
-
       <div className="share-table-scroll">
         <table className="share-table">
           <thead>
@@ -81,7 +82,9 @@ export function TableShareView({
                   key={column.id}
                   data-align={column.align ?? "left"}
                   onClick={() => toggleSort(columnIndex)}
-                  style={{ cursor: "pointer" }}
+                  style={column.width != null
+                    ? { minWidth: `calc(${column.width} * var(--cell-w))` }
+                    : undefined}
                   aria-sort={sort?.columnIndex === columnIndex
                     ? (sort.direction === "asc" ? "ascending" : "descending")
                     : "none"}
@@ -115,17 +118,6 @@ export function TableShareView({
           </tbody>
         </table>
       </div>
-
-      {payload.truncatedFrom ? (
-        <p className="share-note">
-          Showing the first {payload.rows.length} of {payload.truncatedFrom} rows.
-          Open it in the terminal for the full table.
-        </p>
-      ) : (
-        <p className="share-note">
-          Snapshot of the sharer&rsquo;s view. Open it in the terminal for live data.
-        </p>
-      )}
     </ShareShell>
   );
 }

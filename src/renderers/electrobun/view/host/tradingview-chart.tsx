@@ -18,6 +18,12 @@ import type { TradingViewChartProps } from "../../../../ui/host";
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 import {
+  panVisibleTimeRange,
+  scaleVisibleTimeRange,
+  wheelPanRatioFromDelta,
+  wheelZoomFactorFromDelta,
+} from "./tradingview-interactions";
+import {
   tradingViewCandleData,
   tradingViewScalarData,
   tradingViewSeriesTypeFor,
@@ -152,10 +158,14 @@ export function WebTradingViewChart({
   style,
   ...props
 }: TradingViewChartProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const rangeRef = useRef<string | null>(null);
+  const gestureStartRangeRef = useRef<{ start: number; end: number } | null>(null);
+  const interactiveRef = useRef(interactive);
+  interactiveRef.current = interactive;
   const seriesRef = useRef<SeriesEntry[]>([]);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
@@ -198,13 +208,16 @@ export function WebTradingViewChart({
         secondsVisible: false,
       },
       handleScroll: {
-        mouseWheel: interactive,
+        // Wheel is owned below: LWC pinch is two TouchEvents, which a Mac
+        // trackpad never sends. Chrome pinch is ctrl+wheel; WKWebView pinch is
+        // a GestureEvent. Both must be handled on this wrapper.
+        mouseWheel: false,
         pressedMouseMove: interactive && !measureEnabled,
         horzTouchDrag: interactive,
         vertTouchDrag: false,
       },
       handleScale: {
-        mouseWheel: interactive,
+        mouseWheel: false,
         pinch: interactive,
         axisPressedMouseMove: interactive && !measureEnabled,
         axisDoubleClickReset: true,
@@ -279,12 +292,12 @@ export function WebTradingViewChart({
     if (!chart) return;
     chart.applyOptions({
       handleScroll: {
-        mouseWheel: interactive,
+        mouseWheel: false,
         pressedMouseMove: interactive && !measureEnabled,
         horzTouchDrag: interactive,
       },
       handleScale: {
-        mouseWheel: interactive,
+        mouseWheel: false,
         pinch: interactive,
         axisPressedMouseMove: interactive && !measureEnabled,
       },
@@ -355,6 +368,90 @@ export function WebTradingViewChart({
     chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
   }, [chartEpoch, viewport]);
 
+  useEffect(() => {
+    const node = wrapperRef.current;
+    if (!node) return;
+
+    const visibleRangeMs = (): { start: number; end: number } | null => {
+      const range = chartRef.current?.timeScale().getVisibleRange();
+      if (!range) return null;
+      const start = timeToMs(range.from);
+      const end = timeToMs(range.to);
+      if (start === null || end === null || end <= start) return null;
+      return { start, end };
+    };
+
+    const applyRange = (next: { start: number; end: number }) => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      const from = timestamp(next.start);
+      const to = timestamp(next.end);
+      if (to <= from) return;
+      const key = `${from}:${to}`;
+      rangeRef.current = key;
+      chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
+      onViewportChangeRef.current?.({
+        start: new Date(from * 1000),
+        end: new Date(to * 1000),
+      });
+    };
+
+    const pointerAnchor = (clientX: number, width: number) => (
+      width > 0 ? Math.min(1, Math.max(0, (clientX - node.getBoundingClientRect().left) / width)) : 0.5
+    );
+
+    const onWheel = (event: WheelEvent) => {
+      if (!interactiveRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const current = visibleRangeMs();
+      const width = node.getBoundingClientRect().width;
+      if (!current || !(width > 0)) return;
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        applyRange(panVisibleTimeRange(current, wheelPanRatioFromDelta(event.deltaX, width)));
+        return;
+      }
+      applyRange(scaleVisibleTimeRange(
+        current,
+        wheelZoomFactorFromDelta(event.deltaY),
+        pointerAnchor(event.clientX, width),
+      ));
+    };
+
+    const onGestureStart = (event: Event) => {
+      if (!interactiveRef.current) return;
+      event.preventDefault();
+      gestureStartRangeRef.current = visibleRangeMs();
+    };
+    const onGestureChange = (event: Event) => {
+      if (!interactiveRef.current) return;
+      event.preventDefault();
+      const start = gestureStartRangeRef.current;
+      const gesture = event as Event & { scale?: number; clientX?: number };
+      if (!start || typeof gesture.scale !== "number" || !(gesture.scale > 0)) return;
+      const width = node.getBoundingClientRect().width;
+      applyRange(scaleVisibleTimeRange(
+        start,
+        gesture.scale,
+        pointerAnchor(typeof gesture.clientX === "number" ? gesture.clientX : 0, width),
+      ));
+    };
+    const onGestureEnd = () => {
+      gestureStartRangeRef.current = null;
+    };
+
+    node.addEventListener("wheel", onWheel, { passive: false });
+    node.addEventListener("gesturestart", onGestureStart, { passive: false });
+    node.addEventListener("gesturechange", onGestureChange, { passive: false });
+    node.addEventListener("gestureend", onGestureEnd);
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      node.removeEventListener("gesturestart", onGestureStart);
+      node.removeEventListener("gesturechange", onGestureChange);
+      node.removeEventListener("gestureend", onGestureEnd);
+    };
+  }, []);
+
   const beginMeasure = (event: PointerEvent<HTMLDivElement>) => {
     if (!measureEnabled) return;
     const chart = chartRef.current;
@@ -420,6 +517,7 @@ export function WebTradingViewChart({
     <div
       {...props}
       {...pointerHandlers}
+      ref={wrapperRef}
       style={{
         position: "relative",
         width: "100%",
@@ -428,7 +526,7 @@ export function WebTradingViewChart({
         minHeight: 0,
         overflow: "hidden",
         cursor: measureEnabled ? "crosshair" : interactive ? "grab" : undefined,
-        touchAction: measureEnabled ? "none" : undefined,
+        touchAction: interactive ? "none" : undefined,
         ...(style as CSSProperties | undefined),
       }}
       data-gloom-role="tradingview-chart"

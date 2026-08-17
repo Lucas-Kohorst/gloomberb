@@ -19,4 +19,10 @@ describe("preferredArticleBody", () => {
     expect(preferredArticleBody("", "extracted")).toBe("extracted");
     expect(preferredArticleBody("", null)).toBe("");
   });
+
+  test("keeps the summary when cleaning left nothing to show", () => {
+    expect(preferredArticleBody("The fund declared a $0.055 dividend.", "")).toBe(
+      "The fund declared a $0.055 dividend.",
+    );
+  });
 });

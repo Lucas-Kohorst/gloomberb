@@ -35,6 +35,7 @@ import {
   setBuiltinStudies,
   setPairStudies,
 } from "../presets";
+import { resolveAdjacentIndexQuery } from "../prediction-series";
 import type { SeriesCatalogInstrument, SeriesCatalogSuggestion } from "../series-catalog";
 import { useSeriesCatalogSuggestions } from "../use-series-catalog";
 import type {
@@ -223,9 +224,9 @@ export function useSeriesEditorController({
   const commitExpression = (): boolean => {
     if (expressionCommitLockRef.current) return true;
     if (!selected) return false;
-    const parsed = parseSeriesExpression(expression);
+    const parsed = parseSeriesExpression(expression) ?? resolveAdjacentIndexQuery(expression);
     if (!parsed) {
-      setError("Use SYMBOL, SYMBOL:field, SYMBOL:EXCHANGE:field, or FRED:series.");
+      setError("Use SYMBOL, SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:marketId.");
       return false;
     }
     expressionCommitLockRef.current = true;

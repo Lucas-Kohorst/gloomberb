@@ -288,6 +288,7 @@ function NativeStatusBar({
         borderTop: `1px solid ${colors.border}`,
         boxShadow: `inset 0 1px 0 ${blendHex(colors.panel, colors.textBright, 0.03)}`,
         paddingInline: 8,
+        overflow: "visible",
       }}
     >
       <StatusBarLayoutControl
@@ -543,14 +544,77 @@ function TerminalGridlockTip({
   );
 }
 
+function openChangelog(event?: StatusBarEvent) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  getSharedRegistry()?.createPaneFromTemplate("changelog-pane");
+}
+
+function StatusBarVersion({ nativePaneChrome }: { nativePaneChrome: boolean }) {
+  const [hovered, setHovered] = useState(false);
+  const handleKeyDown = (event: { key?: string; preventDefault?: () => void }) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault?.();
+    openChangelog();
+  };
+
+  return (
+    <Box
+      alignItems="center"
+      onMouseOver={() => setHovered((current) => (current ? current : true))}
+      onMouseOut={() => setHovered((current) => (current ? false : current))}
+      onMouseDown={openChangelog}
+      onKeyDown={nativePaneChrome ? handleKeyDown : undefined}
+      data-gloom-role="status-version"
+      data-gloom-interactive="true"
+      aria-label="Open changelog"
+      title="Changelog"
+      role={nativePaneChrome ? "button" : undefined}
+      tabIndex={nativePaneChrome ? 0 : undefined}
+      {...(nativePaneChrome ? {
+        style: {
+          cursor: "pointer",
+          borderRadius: 4,
+          paddingInline: 4,
+        },
+      } : {
+        height: 1,
+        paddingRight: 1,
+      })}
+    >
+      <Text fg={hovered ? colors.text : colors.textDim}>v{VERSION}</Text>
+    </Box>
+  );
+}
+
 function StatusBarWidgets() {
+  const { nativePaneChrome } = useUiCapabilities();
   return (
     <>
       <Box flexGrow={1} />
-      <Text fg={colors.textDim} paddingRight={3}>v{VERSION}</Text>
-      <Box paddingRight={2}>
-        <PluginSlot name="status:widget" />
-      </Box>
+      {nativePaneChrome ? (
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          flexShrink={0}
+          data-gloom-role="status-chip"
+          style={{
+            gap: 8,
+            paddingInline: 8,
+            borderRadius: 6,
+            overflow: "visible",
+            backgroundColor: blendHex(colors.panel, colors.header, 0.28),
+          }}
+        >
+          <StatusBarVersion nativePaneChrome />
+          <PluginSlot name="status:widget" />
+        </Box>
+      ) : (
+        <>
+          <StatusBarVersion nativePaneChrome={false} />
+          <PluginSlot name="status:widget" />
+        </>
+      )}
     </>
   );
 }

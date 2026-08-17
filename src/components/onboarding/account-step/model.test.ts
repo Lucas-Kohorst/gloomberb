@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ACCOUNT_CHOICE_IDS,
+  accountChoiceIds,
   advanceAccountField,
   classifyAccountError,
   deriveUsernameFromEmail,
   isUsernameConflictError,
 } from "./model";
+
+describe("accountChoiceIds", () => {
+  test("omits skip when an account is required", () => {
+    expect(accountChoiceIds()).toEqual(ACCOUNT_CHOICE_IDS);
+    expect(accountChoiceIds(false)).toEqual(["signup", "login", "skip"]);
+    expect(accountChoiceIds(true)).toEqual(["signup", "login"]);
+  });
+});
 
 describe("deriveUsernameFromEmail", () => {
   test("builds a server-legal username from the email local part", () => {

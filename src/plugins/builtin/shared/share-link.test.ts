@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { isPublicShareLocation } from "./share-link";
+import { isPublicShareLocation, isShareTerminalHandoff } from "./share-link";
 
 // URL shapes themselves are covered in src/shares/routes.test.ts. What this
 // module adds is the onboarding bypass, which reads a browser location.
@@ -23,19 +23,20 @@ describe("isPublicShareLocation", () => {
     expect(isPublicShareLocation()).toBe(true);
   });
 
-  test("bypasses onboarding for the share page's open-in-terminal hand-off", () => {
-    // Without this, a visitor sent from a share page into the terminal lands on
-    // the sign-up gate instead of the view they clicked through to see.
+  test("does not bypass onboarding for the share page's open-in-terminal hand-off", () => {
     setLocation("/", "?gloomberb=gloomberb%3A%2F%2Fshare%3Fs%3Dabcdef1234567890");
-    expect(isPublicShareLocation()).toBe(true);
+    expect(isPublicShareLocation()).toBe(false);
+    expect(isShareTerminalHandoff()).toBe(true);
 
     setLocation("/", "?gloomberb=gloomberb%3A%2F%2Farticle%3Fa%3DeyJhIjoxfQ");
-    expect(isPublicShareLocation()).toBe(true);
+    expect(isPublicShareLocation()).toBe(false);
+    expect(isShareTerminalHandoff()).toBe(true);
   });
 
   test("does not bypass onboarding for unrelated deep links", () => {
     setLocation("/", "?gloomberb=gloomberb%3A%2F%2Fsettings");
     expect(isPublicShareLocation()).toBe(false);
+    expect(isShareTerminalHandoff()).toBe(false);
   });
 
   test("requires an article payload that actually decodes", () => {
