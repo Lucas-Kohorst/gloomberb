@@ -24,7 +24,7 @@ import {
 import { stashNewsArticle } from "../../plugins/builtin/news/wire/news/article-stash";
 import { stashSubstackArticle } from "../../plugins/builtin/substack/article-stash";
 import { stashChartSpec } from "../../plugins/builtin/chart-composer/chart-stash";
-import type { ChartSharePayload } from "../../plugins/builtin/shared/share-link";
+import type { ChartSharePayload, TableSharePayload } from "../../shares/payload";
 import { resolveShare } from "../../sources/share-service";
 
 type CloudDeepLinkRoute = {
@@ -631,6 +631,22 @@ async function handleOpenShare(
       notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open shared chart.");
     });
     return;
+  }
+
+  if (resolved.kind === "table") {
+    // A table snapshot is frozen text, so there is nothing worth reopening in a
+    // pane except the live source it came from.
+    const templateId = (resolved.data as TableSharePayload | null)?.paneTemplateId;
+    if (!templateId || !pluginRegistry.paneTemplates.has(templateId)) {
+      notifyError(pluginRegistry, "The pane this table came from is unavailable.");
+      leaveUnresolvedShareLocation();
+      return;
+    }
+    void pluginRegistry.createPaneFromTemplateAsyncFn(templateId).then(() => {
+      notifySuccess(pluginRegistry, "Opened the live view for this table.");
+    }).catch((error) => {
+      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open shared table.");
+    });
   }
 }
 

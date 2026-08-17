@@ -8,6 +8,8 @@
  * must be able to open it without an account.
  */
 
+import type { ShareKind } from "../shares/payload";
+
 const SHARE_API_BASE = "/api/share";
 
 // Shares live on the same origin as the hosted app. They must be fetched
@@ -20,14 +22,10 @@ function sameOriginFetch(url: string, init: RequestInit = {}): Promise<Response>
   return (globalThis.fetch)(url, { ...init, credentials: "include" });
 }
 
-export interface ShareEnvelope {
-  kind: "article" | "chart";
-  data: unknown;
-  createdAt: string;
-}
+export type { ShareEnvelope } from "../shares/payload";
 
 export interface CreateShareRequest {
-  kind: ShareEnvelope["kind"];
+  kind: ShareKind;
   data: unknown;
 }
 
@@ -36,7 +34,7 @@ export interface CreateShareResponse {
 }
 
 export interface ResolveShareResponse {
-  kind: ShareEnvelope["kind"];
+  kind: ShareKind;
   data: unknown;
   createdAt: string;
 }

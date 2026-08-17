@@ -67,24 +67,50 @@ try {
   process.exit(1);
 }
 
-// Same failure mode as a module-scope Node global: nested routes serve this
-// document, relative assets resolve under the route, SPA fallback returns HTML.
-const htmlPath = join(dirname(bundlePath), "index.html");
-const html = Bun.file(htmlPath);
-if (!await html.exists()) {
-  console.error(`No hosted page at ${htmlPath}. Run \`bun run cloud:build\` first.`);
+// Same failure mode as a module-scope Node global: nested routes serve these
+// documents, relative assets resolve under the route, SPA fallback returns HTML.
+// share.html is served for `/s/{id}`, so it is the one that fails most visibly.
+const outdir = dirname(bundlePath);
+for (const document of ["index.html", "share.html"]) {
+  const htmlPath = join(outdir, document);
+  const html = Bun.file(htmlPath);
+  if (!await html.exists()) {
+    console.error(`No hosted page at ${htmlPath}. Run \`bun run cloud:build\` first.`);
+    process.exit(1);
+  }
+  const relativeAssets = findRelativeAssetUrls(await html.text());
+  if (relativeAssets.length > 0) {
+    console.error(
+      `${document} references assets with relative URLs: ${relativeAssets.join(", ")}`
+      + "\n\nNested routes are served the same document, so these resolve under the route path"
+      + "\nand the SPA fallback returns HTML instead of the asset. Use root-absolute URLs.",
+    );
+    process.exit(1);
+  }
+}
+
+// A share link that costs a terminal-sized download is the thing this page
+// exists to avoid, so the size gap is worth failing on rather than trusting.
+const shareBundle = Bun.file(join(outdir, "share-main.js"));
+if (!await shareBundle.exists()) {
+  console.error(`No share bundle at ${join(outdir, "share-main.js")}. Run \`bun run cloud:build\` first.`);
   process.exit(1);
 }
-const relativeAssets = findRelativeAssetUrls(await html.text());
-if (relativeAssets.length > 0) {
+const shareBytes = shareBundle.size;
+const terminalBytes = bundle.size;
+if (shareBytes > terminalBytes / 4) {
   console.error(
-    `Hosted page references assets with relative URLs: ${relativeAssets.join(", ")}`
-    + "\n\nNested routes are served the same document, so these resolve under the route path"
-    + "\nand the SPA fallback returns HTML instead of the asset. Use root-absolute URLs.",
+    `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB against a ${(terminalBytes / 1024).toFixed(0)} KB terminal bundle.`
+    + "\n\nThe share page has pulled in part of the terminal graph. Check for an import that"
+    + "\nreaches plugins, the pane registry, or the renderer host.",
   );
   process.exit(1);
 }
 
 console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
-console.log(`Hosted page references only root-absolute asset URLs (${htmlPath}).`);
+console.log("Hosted pages reference only root-absolute asset URLs (index.html, share.html).");
+console.log(
+  `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB`
+  + ` (${((shareBytes / terminalBytes) * 100).toFixed(1)}% of the terminal bundle).`,
+);
 process.exit(0);

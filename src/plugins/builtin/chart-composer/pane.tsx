@@ -63,7 +63,7 @@ import { resolveChartComposerShortcut } from "./shortcuts";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { useShareView } from "../shared/use-share-view";
-import { serializeChartSpecForShare } from "../shared/share-link";
+import { buildChartSharePayload, describeChartSpec } from "../../../shares/chart-snapshot";
 
 const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
@@ -513,9 +513,17 @@ function ChartComposerSurface({
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
   const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
   const shareView = useShareView();
+  // The snapshot carries the plotted points, so a shared link renders without
+  // the recipient re-resolving providers they may have no access to. The spec
+  // rides along for the "open live in terminal" hand-off.
   const shareChart = useCallback(() => {
-    void shareView("chart", serializeChartSpecForShare(spec));
-  }, [shareView, spec]);
+    void shareView("chart", buildChartSharePayload({
+      title: describeChartSpec(spec, plottedSeries),
+      spec,
+      series: plottedSeries,
+      window: viewport ?? null,
+    }));
+  }, [plottedSeries, shareView, spec, viewport]);
 
   useShortcut((event) => {
     if (interactionCaptureRef.current || dialogOpen) return;

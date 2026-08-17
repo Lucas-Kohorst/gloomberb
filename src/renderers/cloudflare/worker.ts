@@ -1,4 +1,6 @@
 import { handleHostedBackendRpc } from "./backend";
+import { isShareDocumentPath } from "../../shares/routes";
+import { SHARE_KINDS } from "../../shares/payload";
 import {
   clearSessionCookieHeader,
   extractSessionToken,
@@ -25,6 +27,9 @@ export default {
     if (request.method !== "GET" && request.method !== "HEAD") {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
+    // Share URLs get the slim share document rather than the terminal SPA, so
+    // opening a link does not download the whole workspace first.
+    if (isShareDocumentPath(url.pathname)) return serveApp(request, env, "/share.html");
     return serveApp(request, env);
   },
 } satisfies ExportedHandler<Env>;
@@ -54,7 +59,7 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     } catch {
       return Response.json({ error: "Invalid share payload." }, { status: 400 });
     }
-    if (!body || (body.kind !== "article" && body.kind !== "chart") || body.data === undefined) {
+    if (!body || !SHARE_KINDS.includes(body.kind as never) || body.data === undefined) {
       return Response.json({ error: "Invalid share payload." }, { status: 400 });
     }
     const id = `${crypto.randomUUID().replaceAll("-", "")}`;
@@ -248,8 +253,10 @@ const APP_CSP = [
   "form-action 'self'",
 ].join("; ");
 
-async function serveApp(request: Request, env: Env): Promise<Response> {
-  const response = await env.ASSETS.fetch(request);
+async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
+  const response = await env.ASSETS.fetch(assetPath
+    ? new Request(new URL(assetPath, request.url), { method: "GET", headers: request.headers })
+    : request);
   const headers = new Headers(response.headers);
   headers.set("cache-control", "private, max-age=0, must-revalidate");
   headers.set("referrer-policy", "no-referrer");

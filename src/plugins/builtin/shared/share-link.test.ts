@@ -1,53 +1,57 @@
-import { describe, expect, test } from "bun:test";
-import {
-  buildShortShareUrl,
-  isPublicShareLocation,
-  parseShortShareId,
-} from "./share-link";
+import { afterEach, describe, expect, test } from "bun:test";
+import { isPublicShareLocation } from "./share-link";
 
-describe("share-link", () => {
-  test("parseShortShareId extracts IDs from /s/{id} paths", () => {
-    expect(parseShortShareId("/s/abc123")).toBe("abc123");
-    expect(parseShortShareId("/s/AbC123_xyz")).toBe("AbC123_xyz");
-    expect(parseShortShareId("/s/a")).toBe("a");
-    expect(parseShortShareId("/article")).toBeNull();
-    expect(parseShortShareId("/s/")).toBeNull();
-    expect(parseShortShareId("/s/abc/def")).toBeNull();
-    expect(parseShortShareId("/share/abc")).toBeNull();
+// URL shapes themselves are covered in src/shares/routes.test.ts. What this
+// module adds is the onboarding bypass, which reads a browser location.
+const originalWindow = globalThis.window;
+
+function setLocation(pathname: string, search = ""): void {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { location: { pathname, search } },
+  });
+}
+
+afterEach(() => {
+  if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+});
+
+describe("isPublicShareLocation", () => {
+  test("bypasses onboarding for a stored share path", () => {
+    setLocation("/s/abcdef1234567890");
+    expect(isPublicShareLocation()).toBe(true);
   });
 
-  test("buildShortShareUrl produces compact URLs", () => {
-    expect(buildShortShareUrl("abc123")).toBe("https://terminal.kohor.st/s/abc123");
+  test("bypasses onboarding for the share page's open-in-terminal hand-off", () => {
+    // Without this, a visitor sent from a share page into the terminal lands on
+    // the sign-up gate instead of the view they clicked through to see.
+    setLocation("/", "?gloomberb=gloomberb%3A%2F%2Fshare%3Fs%3Dabcdef1234567890");
+    expect(isPublicShareLocation()).toBe(true);
+
+    setLocation("/", "?gloomberb=gloomberb%3A%2F%2Farticle%3Fa%3DeyJhIjoxfQ");
+    expect(isPublicShareLocation()).toBe(true);
   });
 
-  test("isPublicShareLocation recognizes short-ID paths", () => {
-    const originalWindow = globalThis.window;
-    try {
-      Object.defineProperty(globalThis, "window", {
-        configurable: true,
-        value: { location: { pathname: "/s/abc123", search: "" } },
-      });
-      expect(isPublicShareLocation()).toBe(true);
-
-      window.location.pathname = "/s/";
-      expect(isPublicShareLocation()).toBe(false);
-
-      window.location.pathname = "/dashboard";
-      expect(isPublicShareLocation()).toBe(false);
-    } finally {
-      if (originalWindow === undefined) delete (globalThis as { window?: unknown }).window;
-      else Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
-    }
+  test("does not bypass onboarding for unrelated deep links", () => {
+    setLocation("/", "?gloomberb=gloomberb%3A%2F%2Fsettings");
+    expect(isPublicShareLocation()).toBe(false);
   });
 
-  test("isPublicShareLocation returns false outside browser contexts", () => {
-    const originalWindow = globalThis.window;
-    try {
-      delete (globalThis as { window?: unknown }).window;
-      expect(isPublicShareLocation()).toBe(false);
-    } finally {
-      if (originalWindow !== undefined) Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
-    }
+  test("requires an article payload that actually decodes", () => {
+    setLocation("/article", "?a=not-a-payload");
+    expect(isPublicShareLocation()).toBe(false);
   });
 
+  test("does not bypass onboarding for ordinary app paths", () => {
+    setLocation("/s/");
+    expect(isPublicShareLocation()).toBe(false);
+    setLocation("/dashboard");
+    expect(isPublicShareLocation()).toBe(false);
+  });
+
+  test("returns false outside a browser", () => {
+    delete (globalThis as { window?: unknown }).window;
+    expect(isPublicShareLocation()).toBe(false);
+  });
 });
