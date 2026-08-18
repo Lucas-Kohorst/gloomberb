@@ -21,6 +21,13 @@ import { buildRootShortcutItem } from "./shortcut-items";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
+/** The ART plugin command claims the prefix, so article rows must still be shown. */
+export function isArticleLookupShortcut(intent: RootShortcutIntent): boolean {
+  return intent.kind !== "none"
+    && intent.source === "plugin-command"
+    && intent.command.id === "open-news-article";
+}
+
 interface PaneTemplateItemOptions {
   category?: string;
   createOptions?: PaneTemplateCreateOptions;
@@ -67,6 +74,7 @@ export interface RootResultModelOptions {
   pluginCommandResultItems: (command: CommandDef, shortcutArg: string) => ResultItem[];
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
+  articleResultItems?: ResultItem[];
   runDirectCommand: (command: Command, arg: string) => void;
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
@@ -108,6 +116,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
+    articleResultItems = [],
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -168,8 +177,12 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     && rootShortcutIntent.source === "plugin-command"
     && shortcutItem
   ) {
-    const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
-    items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    if (isArticleLookupShortcut(rootShortcutIntent)) {
+      items.push(shortcutItem);
+    } else {
+      const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
+      items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    }
   } else if (match && match.command.id === "plugins") {
     items.push(...buildPluginItems(match.arg));
   } else if (match && match.command.id === "layout") {
@@ -225,6 +238,10 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     ];
     const matchedItems = fuzzyFilter(allItems, rootQuery, (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`);
     items.push(...matchedItems);
+  }
+
+  if (rootShortcutIntent.kind === "none" || isArticleLookupShortcut(rootShortcutIntent)) {
+    items.push(...articleResultItems);
   }
 
   // Built from the local matches, then moved above them: the AI answers the

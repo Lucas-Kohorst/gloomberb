@@ -7,6 +7,14 @@ import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
 import { buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
+import { useNewsArticles } from "../../../news/hooks";
+import {
+  ARTICLE_SEARCH_QUERY,
+  cachedNewsArticles,
+  looksLikeArticleQuery,
+} from "../../../plugins/builtin/news/wire/article-search";
+import { buildArticleSearchResultItems } from "../routes/root/article-results";
+import { openUrl } from "../../ui/external-link";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -247,6 +255,32 @@ export function CommandBar({
     ),
   }), [askAssistNow, assistActive, assistAutoAsk, assistState, planAccess.emailVerified, startAssistSignUp]);
 
+  const newsState = useNewsArticles(looksLikeArticleQuery(rootQuery) ? ARTICLE_SEARCH_QUERY : null);
+  const articleResultItems = useMemo(() => {
+    const cached = cachedNewsArticles();
+    const seen = new Set<string>();
+    const articles = [];
+    for (const article of [...cached, ...newsState.articles]) {
+      if (seen.has(article.id)) continue;
+      seen.add(article.id);
+      articles.push(article);
+    }
+    const localReady = cached.length > 0
+      || newsState.phase === "ready"
+      || newsState.phase === "refreshing"
+      || newsState.phase === "error";
+    const stillLoading = !localReady && (newsState.phase === "idle" || newsState.phase === "loading");
+    return buildArticleSearchResultItems({
+      articles,
+      query: rootQuery,
+      phase: stillLoading ? "loading" : "ready",
+      onOpen: (article) => {
+        openUrl(article.url);
+        closeAll({ revertThemePreview: false });
+      },
+    });
+  }, [closeAll, newsState.articles, newsState.phase, rootQuery]);
+
   const {
     activeMatch,
     orderedRootResults,
@@ -283,6 +317,7 @@ export function CommandBar({
     paneShortcutItems,
     pluginCommandItems,
     pluginCommandResultItems,
+    articleResultItems,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,
