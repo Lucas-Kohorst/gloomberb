@@ -1,5 +1,27 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_12_1: ChangelogRelease = {
+  id: "hosted-v0-12-1",
+  tagName: "v0.12.1",
+  version: "0.12.1",
+  title: "News roll-in and blocked-reader fallback",
+  publishedAt: "2026-08-18T01:30:00.000Z",
+  url: "",
+  body: `News rows briefly roll in when they arrive, and the article reader stays useful when publishers block automated extraction.
+
+## News
+
+- New headlines in firehose, RSS wire, breaking, industry, presets, and ticker news briefly roll in after the first silent hydrate (terminal row tint; web/desktop opacity/brightness).
+- Arrival tracking keys on stable article ids so filter hide/show does not re-animate already-seen rows.
+
+## Reader
+
+- When Jina or the publisher returns 403/blocked (common on Investing.com and similar), show a clear “full text unavailable” empty state with RSS-summary fallback when present, instead of a raw \`Reader request failed (403)\`.
+- Footer keeps a short status (\`blocked\`) plus \`[r]\`efresh / \`[o]\`pen / \`[y]\` share — no duplicated error string in the body and footer.
+- Same path covers the terminal reader, Substack reader, and public article share pages.
+`,
+};
+
 const RELEASE_0_12_0: ChangelogRelease = {
   id: "hosted-v0-12-0",
   tagName: "v0.12.0",
@@ -78,6 +100,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_12_1,
   RELEASE_0_12_0,
   RELEASE_0_11_0,
 ];

@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.12.1 — News roll-in and blocked-reader fallback
+
+News rows briefly roll in when they arrive, and the article reader stays useful when publishers block automated extraction.
+
+### News
+
+- New headlines in firehose, RSS wire, breaking, industry, presets, and ticker news briefly roll in after the first silent hydrate (terminal row tint; web/desktop opacity/brightness).
+- Arrival tracking keys on stable article ids so filter hide/show does not re-animate already-seen rows.
+
+### Reader
+
+- When Jina or the publisher returns 403/blocked (common on Investing.com and similar), show a clear “full text unavailable” empty state with RSS-summary fallback when present, instead of a raw `Reader request failed (403)`.
+- Footer keeps a short status (`blocked`) plus `[r]`efresh / `[o]`pen / `[y]` share — no duplicated error string in the body and footer.
+- Same path covers the terminal reader, Substack reader, and public article share pages.
+
 ## v0.12.0 — Alt-data panes, denser news wire, and security hardening
 
 Security, performance, and discovery work from the improve cycle, plus Treasury auctions and a much denser RSS firehose. Bond search and VIX term-structure panes are built but stay hidden until the Gloom Cloud FRED proxy allowlists their series.
