@@ -29,7 +29,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 019  | Replace O(n²) mergeStatementsByPeriod with last-group-only check | P2 | S | — | TODO |
 | 020  | Use relayError for non-OK upstream responses in proxyToGloomCloud | P2 | S | — | TODO |
 | 021  | Require authentication for BYOK keys info endpoint | P2 | S | — | TODO |
-| 022  | Add Treasury auctions pane | P2 | M | — | TODO |
+| 022  | Add Treasury auctions pane | P2 | M | — | DONE |
 | 023  | Add volatility and sentiment term-structure pane | P2 | M | — | TODO |
 | 024  | Add corporate and municipal bond search pane | P2 | L | — | TODO |
 | 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | TODO |
