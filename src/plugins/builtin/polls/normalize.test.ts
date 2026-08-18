@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseVoteHubPollsPayload } from "./client";
+import { parseVoteHubPollsPayload, voteHubPollQuery } from "./client";
 import {
   computeMarginOfError,
   computeMovingAverage,
@@ -45,6 +45,12 @@ describe("VoteHub normalize", () => {
     expect(parseVoteHubPollsPayload([poll])).toHaveLength(1);
     expect(parseVoteHubPollsPayload({ polls: [poll] })).toHaveLength(1);
     expect(parseVoteHubPollsPayload({ data: [poll] })).toHaveLength(0);
+  });
+
+  test("omits poll_type for the All tab so VoteHub returns every category", () => {
+    expect(voteHubPollQuery()).toEqual({ poll_type: undefined, subject: undefined });
+    expect(voteHubPollQuery({ pollType: "all" })).toEqual({ poll_type: undefined, subject: undefined });
+    expect(voteHubPollQuery({ pollType: "approval" })).toEqual({ poll_type: "approval", subject: undefined });
   });
 
   test("summarizes a two-way result and lead", () => {

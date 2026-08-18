@@ -49,6 +49,7 @@ interface PollColumn extends DataTableColumn {
 }
 
 const TABS: Array<{ value: PollTabId; label: string }> = [
+  { value: "all", label: "All" },
   { value: "approval", label: "Approval" },
   { value: "favorability", label: "Favorability" },
   { value: "generic-ballot", label: "Generic" },
@@ -447,7 +448,7 @@ function PollDetail({
 }
 
 export function PollsPane({ focused, width, height }: PaneProps) {
-  const [tab, setTab] = useState<PollTabId>("approval");
+  const [tab, setTab] = useState<PollTabId>("all");
   const [rowsByTab, setRowsByTab] = useState<Partial<Record<PollTabId, PollRow[]>>>({});
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -725,7 +726,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         }}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
-        emptyStateTitle={searchQuery.trim() ? "No matching polls." : "No polls in this category."}
+        emptyStateTitle={searchQuery.trim() ? "No matching polls." : tab === "all" ? "No polls." : "No polls in this category."}
         emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
       />
     </Box>
