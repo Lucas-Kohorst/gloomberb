@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { NewsArticle } from "../../../../news/types";
 import { buildArticleSearchResultItems } from "./article-results";
+import { isArticleLookupShortcut } from "./results";
 
 function article(title: string, source: string): NewsArticle {
   return {
@@ -51,5 +52,43 @@ describe("buildArticleSearchResultItems", () => {
       onOpen: () => {},
     });
     expect(items.map((item) => item.label)).toEqual(["Looking up articles…"]);
+  });
+
+  test("returns local matches without waiting on a still-loading Adjacent lookup", () => {
+    const items = buildArticleSearchResultItems({
+      articles: [article("Trump administration pauses talks", "AP")],
+      query: "ART trum",
+      phase: "loading",
+      onOpen: () => {},
+    });
+    expect(items.map((item) => item.label)).toEqual(["Trump administration pauses talks"]);
+  });
+});
+
+describe("isArticleLookupShortcut", () => {
+  test("treats the ART plugin command as an article lookup", () => {
+    expect(isArticleLookupShortcut({ kind: "none" })).toBe(false);
+    expect(isArticleLookupShortcut({
+      kind: "partial",
+      source: "plugin-command",
+      prefix: "ART",
+      label: "Open Article",
+      description: "",
+      argKind: "text",
+      argText: "hormuz",
+      completionQuery: null,
+      command: { id: "open-news-article", label: "Open Article" } as never,
+    })).toBe(true);
+    expect(isArticleLookupShortcut({
+      kind: "partial",
+      source: "plugin-command",
+      prefix: "CHAT",
+      label: "Chat",
+      description: "",
+      argKind: "text",
+      argText: "hello",
+      completionQuery: null,
+      command: { id: "open-chat", label: "Chat" } as never,
+    })).toBe(false);
   });
 });

@@ -61,6 +61,16 @@ describe("searchNewsArticles", () => {
     expect(matches.map((item) => item.id)).toEqual(["hormuz", "fed"]);
   });
 
+  test("strips the ART command prefix so local headlines match immediately", () => {
+    const trump = article({
+      id: "trump",
+      title: "Trump administration pauses contentious trade talks",
+      source: "AP",
+    });
+    expect(tokenizeArticleQuery("art trum")).toEqual(["trum"]);
+    expect(searchNewsArticles([trump, other], "ART trum").map((item) => item.id)).toEqual(["trump"]);
+  });
+
   test("matches Adjacent related-news articles tagged from the public wire", () => {
     const parsed = parseAdjacentNewsArticle({
       article_id: "ap-hormuz",
