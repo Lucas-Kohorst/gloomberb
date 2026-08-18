@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePaneTicker } from "../../../state/app/context";
+import { debugLog } from "../../../utils/debug-log";
+
+const requestLog = debugLog.createLogger("ticker-request");
+
+export function reportTickerRequestError(
+  error: unknown,
+  context: { symbol: string | null; exchange: string; forceRefresh: boolean },
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  requestLog.error("Ticker data request failed", { ...context, error: message });
+  return message;
+}
 
 export type LoadState<T> = {
   data: T | null;
@@ -47,10 +59,15 @@ export function useTickerRequest<T>(
       })
       .catch((error) => {
         if (fetchGenRef.current !== gen) return;
+        const message = reportTickerRequestError(error, {
+          symbol,
+          exchange,
+          forceRefresh,
+        });
         setState({
           data: null,
           loading: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
         });
       });
   }, [exchange, loader, symbol]);

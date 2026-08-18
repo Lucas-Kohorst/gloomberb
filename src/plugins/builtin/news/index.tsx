@@ -8,7 +8,7 @@ import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/h
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
-import { FeedDataTableStackView, Spinner, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
+import { EmptyState, ErrorState, FeedDataTableStackView, LoadingState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
 import { useJinaArticle } from "../shared/jina-reader";
 import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
@@ -147,10 +147,10 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       : undefined,
   });
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view news.</Text>;
-  if (loading && news.length === 0) return <Spinner label="Loading news..." />;
-  if (error) return <Text fg={colors.textDim}>Error: {error}</Text>;
-  if (news.length === 0) return <Text fg={colors.textDim}>No news available for {ticker.metadata.ticker}.</Text>;
+  if (!ticker) return <EmptyState title="Select a ticker to view news." />;
+  if (loading && news.length === 0) return <LoadingState title="Loading news..." />;
+  if (error && news.length === 0) return <ErrorState error={error} />;
+  if (news.length === 0) return <EmptyState title="No news available." />;
 
   const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary, jina.content);
 
