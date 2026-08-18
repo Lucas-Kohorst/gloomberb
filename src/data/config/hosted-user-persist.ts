@@ -1,4 +1,6 @@
 import type { AppConfig } from "../../types/config";
+import { tryLocalStorage } from "../../utils/browser-storage";
+import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 
 const STORAGE_PREFIX = "gloomberb:hosted-user-config:";
@@ -15,20 +17,8 @@ interface HostedUserConfigRecord extends HostedUserConfigStamp {
 
 let activeUserId: string | null = null;
 
-function storage(): Storage | null {
-  try {
-    return globalThis.localStorage;
-  } catch {
-    return null;
-  }
-}
-
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseRecord(raw: string | null): HostedUserConfigRecord | null {
@@ -60,7 +50,7 @@ export function getHostedConfigUserId(): string | null {
  * Cleared only on an explicit sign-out, never on a failed session check.
  */
 export function rememberHostedUserId(userId: string | null): void {
-  const backend = storage();
+  const backend = tryLocalStorage();
   if (!backend) return;
   try {
     if (userId) backend.setItem(LAST_USER_KEY, userId);
@@ -71,7 +61,7 @@ export function rememberHostedUserId(userId: string | null): void {
 }
 
 export function readLastHostedUserId(): string | null {
-  const backend = storage();
+  const backend = tryLocalStorage();
   if (!backend) return null;
   try {
     const remembered = backend.getItem(LAST_USER_KEY)?.trim();
@@ -99,7 +89,7 @@ export function hostedUserConfigStorageKey(userId: string): string {
 
 export function peekHostedUserConfigStamp(userId = activeUserId): HostedUserConfigStamp | null {
   if (!userId) return null;
-  const record = parseRecord(storage()?.getItem(storageKey(userId)) ?? null);
+  const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return null;
   return { userId: record.userId, updatedAt: record.updatedAt };
 }
@@ -107,7 +97,7 @@ export function peekHostedUserConfigStamp(userId = activeUserId): HostedUserConf
 /** Writes the signed-in user's AppConfig to hosted localStorage. */
 export function writeHostedUserConfig(config: AppConfig, userId = activeUserId): void {
   if (!userId) return;
-  const backend = storage();
+  const backend = tryLocalStorage();
   if (!backend) return;
   try {
     const persisted = normalizeConfigForSave(config);
@@ -125,7 +115,7 @@ export function writeHostedUserConfig(config: AppConfig, userId = activeUserId):
 /** Overlays the signed-in user's last hosted config onto the boot config. */
 export function hydrateHostedUserConfig(config: AppConfig, userId = activeUserId): AppConfig {
   if (!userId) return config;
-  const record = parseRecord(storage()?.getItem(storageKey(userId)) ?? null);
+  const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return config;
   const loaded = normalizeLoadedConfig(record.config, config.dataDir).config;
   Object.assign(config, loaded, { dataDir: config.dataDir });

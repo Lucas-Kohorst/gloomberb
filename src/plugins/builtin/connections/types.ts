@@ -1,4 +1,13 @@
-export type ConnectionKind = "asset-data" | "news" | "broker" | "prediction-market" | "websocket" | "api";
+export const CONNECTION_KINDS = [
+  "asset-data",
+  "news",
+  "broker",
+  "prediction-market",
+  "websocket",
+  "api",
+] as const;
+
+export type ConnectionKind = (typeof CONNECTION_KINDS)[number];
 
 export type ConnectionStatus = "connected" | "disconnected" | "error" | "idle" | "reconnecting";
 
