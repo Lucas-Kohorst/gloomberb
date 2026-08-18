@@ -37,6 +37,7 @@ export class ChatControllerMessageLoading {
       this.options.emit(channelId);
     }
 
+    let loadFailed = false;
     const request = fetchLatestChannelMessages(channelId, channel, {
       mergeMessages: (nextChannelId, messages, mergeOptions) => {
         this.options.mergeMessages(nextChannelId, messages, mergeOptions);
@@ -46,9 +47,15 @@ export class ChatControllerMessageLoading {
       },
     })
       .catch(() => {
+        // Both the incremental and full-refresh attempts failed. Record it so
+        // the pane can tell "couldn't load" apart from "no messages yet".
+        loadFailed = true;
         this.options.persistChannelState(channelId);
       })
       .finally(() => {
+        // A resolved fetch (even one returning zero messages) means the channel
+        // is genuinely empty, not broken; only a hard failure flags it.
+        channel.loadFailed = loadFailed;
         if (options.showLoading) {
           channel.messagesLoading = false;
         }

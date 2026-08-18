@@ -45,6 +45,7 @@ export function useChatContentShortcuts({
   searchFocused,
   openSearch,
   closeSearch,
+  onRefresh,
 }: {
   beginEditLatestMessage: (options?: { deferFocus?: boolean }) => boolean;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
@@ -85,6 +86,7 @@ export function useChatContentShortcuts({
   searchFocused: boolean;
   openSearch: () => void;
   closeSearch: () => void;
+  onRefresh: () => void;
 }) {
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
@@ -284,6 +286,15 @@ export function useChatContentShortcuts({
       event.preventDefault?.();
       event.stopPropagation?.();
       beginReplyTo(selectedIdx, { deferFocus: true });
+      return;
+    }
+
+    // With no message selected, `r` is the pane refresh (retry a failed load),
+    // matching the footer hint. Reply-`r` above owns the selected-message case.
+    if (isPlainKey(event, "r") && selectedIdx < 0) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      onRefresh();
       return;
     }
 

@@ -431,6 +431,70 @@ describe("ChatController", () => {
     });
   });
 
+  test("flags a hard transcript load failure and clears it on a successful retry", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    // A signed-in user: a failed load for them is a real error, not the
+    // signed-out read-only case.
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.attachPersistence(persistence);
+
+    // Both the incremental and the full-refresh attempt fail (e.g. upstream 5xx
+    // or a blocked proxy), so the channel is broken, not merely empty.
+    apiClient.getMessages = async () => {
+      throw new Error("chat request failed (503)");
+    };
+    await controller.refreshMessages();
+    expect(controller.getSnapshot().loadFailed).toBe(true);
+    expect(controller.getSnapshot().messages).toEqual([]);
+
+    const message: ChatMessage = {
+      id: "m1",
+      channelId: "everyone",
+      content: "back online",
+      replyToId: null,
+      createdAt: "2026-03-28T00:00:00.000Z",
+      user: { id: "u1", username: "vince", displayName: "Vince" },
+    };
+    apiClient.getMessages = async () => [message];
+    await controller.refreshMessages();
+    expect(controller.getSnapshot().loadFailed).toBe(false);
+    expect(controller.getSnapshot().messages).toEqual([message]);
+  });
+
+  test("does not flag a genuinely empty channel as a load failure", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    controller.attachPersistence(persistence);
+
+    apiClient.getMessages = async () => [];
+    await controller.refreshMessages();
+
+    expect(controller.getSnapshot().loadFailed).toBe(false);
+    expect(controller.getSnapshot().messages).toEqual([]);
+  });
+
+  test("does not surface a load failure to signed-out visitors", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    controller.attachPersistence(persistence);
+
+    apiClient.getMessages = async () => {
+      throw new Error("Authentication required.");
+    };
+    await controller.refreshMessages();
+
+    // No session: the public channel simply reads as empty/read-only.
+    expect(controller.getSnapshot().loadFailed).toBe(false);
+  });
+
   test("keeps per-channel drafts and transcripts isolated", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
