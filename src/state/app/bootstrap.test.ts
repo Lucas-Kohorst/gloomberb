@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { AppPersistence } from "../../data/app-persistence";
 import { TickerRepository } from "../../data/ticker-repository";
-import { createDefaultConfig, type BrokerInstanceConfig } from "../../types/config";
+import { createDefaultConfig, ADJACENT_WATCHLIST_ID, type BrokerInstanceConfig } from "../../types/config";
 import type { AppAction } from "./context";
 import { initializeAppState } from "./bootstrap";
 
@@ -492,6 +492,45 @@ describe("initializeAppState", () => {
     expect(cachedTargetRequests).toContain("T13");
     expect(financialRefreshes).not.toContain("T13");
     expect(events.indexOf(primeEvent!)).toBeLessThan(events.indexOf("SET_INITIALIZED"));
+
+    persistence.close();
+  });
+
+  test("seeds the Adjacent collection with its default tickers on first run", async () => {
+    const dbPath = createTempDbPath("app-bootstrap-adjacent-seed");
+    const persistence = new AppPersistence(dbPath);
+    const tickerRepository = new TickerRepository(persistence.tickers);
+    const config = createDefaultConfig(dbPath);
+
+    await initializeAppState({
+      config,
+      tickerRepository,
+      dataProvider: {} as any,
+      sessionSnapshot: null,
+      dispatch: () => {},
+      refreshTicker: () => {},
+      refreshQuote: () => {},
+      autoImportBrokerPositions: async () => {},
+    });
+
+    const tickers = await tickerRepository.loadAllTickers();
+    const adjacentTickers = tickers
+      .filter((ticker) => ticker.metadata.watchlists.includes(ADJACENT_WATCHLIST_ID))
+      .map((ticker) => ticker.metadata.ticker)
+      .sort();
+
+    expect(adjacentTickers).toEqual([
+      "BTC-USD",
+      "ETH-USD",
+      "QQQ",
+      "SOL-USD",
+      "SPCX",
+      "SPX",
+      "TSLA",
+      "ZEC-USD",
+    ]);
+    expect(tickers.find((ticker) => ticker.metadata.ticker === "TSLA")?.metadata.watchlists)
+      .toEqual(["watchlist", ADJACENT_WATCHLIST_ID]);
 
     persistence.close();
   });

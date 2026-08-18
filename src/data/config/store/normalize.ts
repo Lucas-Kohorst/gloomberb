@@ -10,6 +10,7 @@ import {
   cloneLayout,
   createDefaultConfig,
   CURRENT_CONFIG_VERSION,
+  withAdjacentDefaultWorkspace,
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
@@ -41,13 +42,14 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
       ? candidate.onboardingComplete
       : defaults.onboardingComplete;
 
-  const config: AppConfig = {
+  const watchlists = sanitizeWatchlists(candidate.watchlists, defaults.watchlists);
+  const config = withAdjacentDefaultWorkspace({
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
     baseCurrency: typeof candidate.baseCurrency === "string" ? candidate.baseCurrency : defaults.baseCurrency,
     refreshIntervalMinutes: typeof candidate.refreshIntervalMinutes === "number" ? candidate.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
     portfolios: sanitizePortfolios(candidate.portfolios, defaults.portfolios),
-    watchlists: sanitizeWatchlists(candidate.watchlists, defaults.watchlists),
+    watchlists,
     layout,
     layouts: syncedLayouts,
     activeLayoutIndex,
@@ -65,10 +67,15 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     onboardingComplete,
     onboardingProgress,
     lastLaunchedVersion: typeof candidate.lastLaunchedVersion === "string" ? candidate.lastLaunchedVersion : undefined,
-  };
+  });
+
+  const adjacentRestored =
+    config.layouts.length !== syncedLayouts.length
+    || config.watchlists.length !== watchlists.length;
 
   const needsSave =
     migration.migrated
+    || adjacentRestored
     || candidate.configVersion !== CURRENT_CONFIG_VERSION
     || !isLayoutConfig(candidate.layout)
     || !Array.isArray((candidate.layout as { instances?: unknown })?.instances)
