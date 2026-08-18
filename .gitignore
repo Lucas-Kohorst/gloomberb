@@ -43,3 +43,16 @@ src-tauri/gen
 
 .codex/
 paseo.json
+
+# Editor / OS backup & swap files
+*.orig
+*.bak
+*.tmp
+*.rej
+*.swp
+*.swo
+*~
+
+# Agent / Factory session dumps (do not commit)
+session-ses_*.md
+/ses_*.md
