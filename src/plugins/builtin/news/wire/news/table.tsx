@@ -9,11 +9,12 @@ import {
   type StackSortPreference,
 } from "../../../../../components";
 import type { MarketNewsItem } from "../../../../../types/news-source";
-import { colors } from "../../../../../theme/colors";
+import { blendHex, colors } from "../../../../../theme/colors";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { newsOriginLabel } from "../../../../../news/origins";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
 import { isPlainKey } from "../../../../../utils/keyboard";
+import { useRecentlyArrivedIds } from "../../../../../components/data-table/use-recently-arrived-ids";
 
 export type NewsColumnId = "rank" | "time" | "origin" | "source" | "title" | "tickers" | "categories" | "importance";
 
@@ -174,6 +175,11 @@ export function NewsArticleStackView({
     () => sortNewsArticles(articles, sortPreference),
     [articles, sortPreference],
   );
+  const articleIds = useMemo(
+    () => sortedArticles.map((article) => article.id),
+    [sortedArticles],
+  );
+  const arrivingArticleIds = useRecentlyArrivedIds(articleIds);
   const selectedIdx = sortedArticles.findIndex((article) => article.id === selectedArticleId);
   const columns = useMemo(() => buildColumns(width, columnIds), [columnIds, width]);
 
@@ -181,6 +187,19 @@ export function NewsArticleStackView({
     onArticleRead?.(article.id);
     onOpenArticle(article);
   }, [onArticleRead, onOpenArticle]);
+
+  const getRowBackgroundColor = useCallback((
+    item: MarketNewsItem,
+    _index: number,
+    rowState: { selected: boolean },
+  ) => {
+    if (rowState.selected || !arrivingArticleIds.has(item.id)) return undefined;
+    return blendHex(colors.bg, colors.selected, 0.34);
+  }, [arrivingArticleIds]);
+
+  const isRowArriving = useCallback((item: MarketNewsItem) => {
+    return arrivingArticleIds.has(item.id);
+  }, [arrivingArticleIds]);
 
   useEffect(() => {
     if (sortedArticles.length === 0) {
@@ -282,6 +301,8 @@ export function NewsArticleStackView({
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
       getItemKey={(item) => item.id}
+      getRowBackgroundColor={getRowBackgroundColor}
+      isRowArriving={isRowArriving}
       renderCell={renderCell}
       emptyContent={emptyContent}
       emptyStateTitle={emptyStateTitle}

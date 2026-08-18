@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { t } from "../../i18n";
 import { useAppLanguage } from "../../i18n/react";
 import { displayWidth, formatTimeAgo } from "../../utils/format";
-import { colors } from "../../theme/colors";
+import { blendHex, colors } from "../../theme/colors";
 import { isPlainKey } from "../../utils/keyboard";
 import { toTimestampMillis } from "../../utils/timestamp";
 import { DataTableStackView } from "../data-table/stack-view";
+import { useRecentlyArrivedIds } from "../data-table/use-recently-arrived-ids";
 import type { DataTableRootKeyContext } from "../data-table/view";
 import {
   activeStackIndex,
@@ -176,6 +177,11 @@ export function FeedDataTableStackView({
   const sortedRows = useMemo(() => {
     return sortIndexedStackRows(items, sortPreference, compareRows);
   }, [items, sortPreference]);
+  const itemIds = useMemo(
+    () => sortedRows.map((row) => row.item.id),
+    [sortedRows],
+  );
+  const arrivingItemIds = useRecentlyArrivedIds(itemIds);
   const selectedRowIndex = sortedRows.findIndex(
     (row) => row.itemIndex === selectedIdx,
   );
@@ -257,6 +263,19 @@ export function FeedDataTableStackView({
         };
     }
   }, [isItemRead]);
+
+  const getRowBackgroundColor = useCallback((
+    row: DetailRow,
+    _index: number,
+    rowState: { selected: boolean },
+  ) => {
+    if (rowState.selected || !arrivingItemIds.has(row.item.id)) return undefined;
+    return blendHex(colors.bg, colors.selected, 0.34);
+  }, [arrivingItemIds]);
+
+  const isRowArriving = useCallback((row: DetailRow) => {
+    return arrivingItemIds.has(row.item.id);
+  }, [arrivingItemIds]);
 
   const handleDetailKeyDown = useCallback((event: {
     name?: string;
@@ -379,6 +398,8 @@ export function FeedDataTableStackView({
           nextSortPreference(current, columnId as DetailColumnId)
         )}
       getItemKey={(row) => row.item.id}
+      getRowBackgroundColor={getRowBackgroundColor}
+      isRowArriving={isRowArriving}
       renderCell={renderCell}
       emptyStateTitle={t(emptyStateTitle)}
       emptyStateHint={emptyStateHint}

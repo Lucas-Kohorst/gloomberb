@@ -153,6 +153,7 @@ function WebDataTableRowInner<
   itemKey,
   gridTemplateColumns,
   getRowBackgroundColor,
+  isRowArriving,
   renderCell,
   renderSectionHeader,
   rowSize,
@@ -174,6 +175,7 @@ function WebDataTableRowInner<
   itemKey: string;
   gridTemplateColumns: string;
   getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
+  isRowArriving?: DataTableProps<T, C>["isRowArriving"];
   renderCell: DataTableProps<T, C>["renderCell"];
   renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
   rowSize: number;
@@ -237,6 +239,7 @@ function WebDataTableRowInner<
 
   const rowState = { selected };
   const rowBackgroundColor = getRowBackgroundColor?.(item, index, rowState);
+  const arriving = !selected && (isRowArriving?.(item, index) ?? false);
   const rowBg = selected
     ? CSS_SELECTED
     : rowBackgroundColor ?? CSS_BG;
@@ -247,6 +250,7 @@ function WebDataTableRowInner<
       data-gloom-role="data-table-row"
       data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
+      data-roll-in={arriving ? "true" : undefined}
       style={{
         ...baseRowStyle,
         backgroundColor: rowBg,
