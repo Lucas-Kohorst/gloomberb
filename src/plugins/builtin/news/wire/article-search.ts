@@ -61,7 +61,9 @@ const COMMAND_WORDS = new Set([
 export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
 
 export function tokenizeArticleQuery(query: string): string[] {
-  return query
+  // `ART trump` is the command prefix plus a topic — "art" is not a search term.
+  const withoutArtPrefix = query.replace(/^\s*art\b/i, " ");
+  return withoutArtPrefix
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((token) => (
@@ -167,7 +169,11 @@ export function buildOpenArticleCommandResults(
 }
 
 export function cachedNewsArticles(): NewsArticle[] {
-  return getSharedNewsService()?.getQueryState(ARTICLE_SEARCH_QUERY).articles ?? [];
+  const service = getSharedNewsService();
+  if (!service) return [];
+  const pooled = service.getFirehose(undefined, 500);
+  if (pooled.length > 0) return pooled;
+  return service.getQueryState(ARTICLE_SEARCH_QUERY).articles;
 }
 
 export async function loadNewsArticles(): Promise<NewsArticle[]> {

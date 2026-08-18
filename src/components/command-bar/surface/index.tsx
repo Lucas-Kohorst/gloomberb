@@ -11,6 +11,7 @@ import { useNewsArticles } from "../../../news/hooks";
 import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
 import {
   ARTICLE_SEARCH_QUERY,
+  cachedNewsArticles,
   looksLikeArticleQuery,
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
@@ -196,13 +197,24 @@ export function CommandBar({
   const newsState = useNewsArticles(watchArticles ? ARTICLE_SEARCH_QUERY : null);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
   const articleResultItems = useMemo(() => {
+    const cached = cachedNewsArticles();
+    const seen = new Set<string>();
+    const articles = [];
+    for (const article of [...cached, ...newsState.articles, ...adjacentNews.articles]) {
+      if (seen.has(article.id)) continue;
+      seen.add(article.id);
+      articles.push(article);
+    }
+    // Search the already-loaded firehose/RSS pool immediately. Only wait on
+    // Adjacent (or a cold news service) when that pool has nothing to match.
+    const localReady = cached.length > 0
+      || newsState.phase === "ready"
+      || newsState.phase === "refreshing"
+      || newsState.phase === "error";
     const stillLoading = adjacentNews.phase === "loading"
-      || adjacentNews.phase === "idle"
-      || newsState.phase === "idle"
-      || newsState.phase === "loading"
-      || newsState.phase === "refreshing";
+      || (!localReady && (newsState.phase === "idle" || newsState.phase === "loading"));
     return buildArticleSearchResultItems({
-      articles: [...newsState.articles, ...adjacentNews.articles],
+      articles,
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
