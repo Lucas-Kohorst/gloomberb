@@ -31,7 +31,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 021  | Require authentication for BYOK keys info endpoint | P2 | S | — | TODO |
 | 022  | Add Treasury auctions pane | P2 | M | — | TODO |
 | 023  | Add volatility and sentiment term-structure pane | P2 | M | — | TODO |
-| 024  | Add corporate and municipal bond search pane | P2 | L | — | TODO |
+| 024  | Add corporate and municipal bond search pane | P2 | L | — | PARTIAL — Phase 1 pane built; cloud FRED proxy allowlist needs BAML corporate series |
 | 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | TODO |
 | 012  | Add checksum verification to self-updater | P1 | M | — | TODO |
 | 013  | Add SSRF protection to Cloudflare Worker http.fetch | P1 | M | — | TODO |

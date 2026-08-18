@@ -274,6 +274,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `WEI` | Global equity indices |
 | `ECON` | Economic events and releases |
 | `GC` | Yield curve |
+| `BOND` | Corporate bond yields and spreads |
 | `ERN` | Earnings calendar |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `BI` / `SP` | S&P 500 sector performance |
