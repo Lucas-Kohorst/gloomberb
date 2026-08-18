@@ -6,11 +6,13 @@ import {
   clearSessionCookieHeader,
   extractSessionToken,
   fetchSessionUser,
+  gloomApiBaseUrl,
   gloomFetch,
   readSessionCookie,
   relayError,
   resolveSessionUser,
   sessionCookieHeader,
+  upstreamSessionCookieHeader,
 } from "./gloom-cloud";
 
 export default {
@@ -170,6 +172,22 @@ function isSameOrigin(request: Request, url: URL): boolean {
   return !origin || origin === url.origin;
 }
 
+/**
+ * Origin gate for the Gloom Cloud proxy. Browsers omit the `Origin` header on
+ * same-origin `GET`/`HEAD` requests, so a strict `Origin === url.origin` check
+ * rejects every same-origin read (this is what broke hosted chat: message,
+ * channel, and state loads are same-origin GETs and were answered with 403).
+ *
+ * A present `Origin` must still match exactly, and state-changing methods —
+ * which browsers always send an `Origin` for — must carry a matching one, so a
+ * non-browser client cannot bypass the check by omitting the header on a write.
+ */
+function isAllowedCloudProxyOrigin(request: Request, url: URL): boolean {
+  const origin = request.headers.get("Origin");
+  if (origin !== null) return origin === url.origin;
+  return request.method === "GET" || request.method === "HEAD";
+}
+
 async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<Response> {
   if (`${request.method} ${url.pathname}` !== "GET /api/auth/session") {
     return Response.json({ error: "Not found" }, { status: 404 });
@@ -187,13 +205,25 @@ async function getSession(request: Request, env: Env): Promise<Response> {
 
 async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
   const token = readSessionCookie(request);
-  if (request.headers.get("Origin") !== url.origin) {
+  if (!isAllowedCloudProxyOrigin(request, url)) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 
   const path = url.pathname.slice("/cloud".length) + url.search;
   const publicAuthPath = path === "/auth/sign-in/email" || path === "/auth/sign-up/email";
   if (!token && !publicAuthPath) return Response.json({ error: "Authentication required." }, { status: 401 });
+
+  // WebSocket upgrades cannot go through gloomFetch: it neither forwards the
+  // Upgrade handshake nor relays the resulting 101, so hosted realtime never
+  // connects. Relay the upgrade to api.gloom.sh with the server-held session,
+  // so the socket authenticates upstream without the raw token ever reaching
+  // the browser (it only holds the opaque hosted-session cookie). Unlike REST,
+  // the upstream socket lives at `/cloud/ws`, so the full pathname is kept
+  // rather than stripping the `/cloud` prefix.
+  if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+    return proxyGloomCloudWebSocket(request, env, url.pathname + url.search, token);
+  }
+
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const upstream = await gloomFetch(env, path, {
     method: request.method,
@@ -212,7 +242,55 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
   }
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
   if (!upstream.ok) return relayError(upstream);
+  // A rotating session (e.g. sign-in) also carries the raw token in the JSON
+  // body. The hosted client authenticates purely through the HttpOnly cookie,
+  // so strip the token before the body can reach browser JS.
+  if (rotated) {
+    return new Response(await stripUpstreamTokenBody(upstream), { status: upstream.status, headers });
+  }
   return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+/**
+ * Relay a browser WebSocket upgrade to Gloom Cloud. The caller has already
+ * enforced the exact-origin check and required a hosted session, so this is
+ * never an open relay. The browser's own `__Host-gloom.session` cookie is
+ * dropped and replaced with the real upstream session token server-side, and
+ * Cloudflare forwards the `Upgrade`/`Connection` handshake headers verbatim as
+ * long as they are left intact.
+ */
+async function proxyGloomCloudWebSocket(
+  request: Request,
+  env: Env,
+  upstreamPath: string,
+  token: string | null,
+): Promise<Response> {
+  if (!token) return Response.json({ error: "Authentication required." }, { status: 401 });
+  const baseUrl = gloomApiBaseUrl(env);
+  const upstreamRequest = new Request(`${baseUrl}${upstreamPath}`, request);
+  upstreamRequest.headers.delete("Cookie");
+  upstreamRequest.headers.set("Cookie", upstreamSessionCookieHeader(token));
+  upstreamRequest.headers.set("Origin", baseUrl);
+  return fetch(upstreamRequest);
+}
+
+/**
+ * Return the upstream JSON body with any top-level `token` removed. Falls back
+ * to the raw text when the body is not a JSON object, so non-auth responses are
+ * passed through untouched.
+ */
+async function stripUpstreamTokenBody(upstream: Response): Promise<string> {
+  const text = await upstream.text();
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (isPlainObject(parsed) && "token" in parsed) {
+      delete (parsed as Record<string, unknown>).token;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON — pass the original text through unchanged.
+  }
+  return text;
 }
 
 async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {

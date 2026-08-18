@@ -104,6 +104,7 @@ afterEach(() => {
   setCloudApiFetchTransport(null);
   apiClient.setSessionToken(null);
   apiClient.setWebSocketToken(null);
+  apiClient.setHostedSocketBaseUrl(null);
   jest.useRealTimers();
 });
 
@@ -602,6 +603,33 @@ describe("apiClient quote socket", () => {
     expect(seenPrices).toEqual([123]);
 
     unsubscribe();
+  });
+});
+
+describe("apiClient hosted socket", () => {
+  test("connects same-origin to the Worker without a token query param", () => {
+    const sockets = installTestWebSocket();
+    // Hosted holds only the opaque hosted-session sentinel and authenticates
+    // the socket through the same-origin cookie, so no token may hit the URL.
+    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
+    apiClient.setSessionToken("hosted-session");
+    apiClient.restoreCachedUser(verifiedUser);
+
+    const channel = apiClient.connectChannel("everyone", () => {});
+
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]!.url).toBe("wss://terminal.kohor.st/cloud/ws");
+
+    channel.close();
+  });
+
+  test("never captures a raw upstream token from a response body in hosted mode", async () => {
+    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
+    globalThis.fetch = mockFetch(async () => createResponse({ token: "raw-upstream-token", onlineCount: 0 }));
+
+    await apiClient.getChatPresence();
+
+    expect(apiClient.getWebSocketToken()).toBeNull();
   });
 });
 

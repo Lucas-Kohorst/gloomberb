@@ -88,8 +88,9 @@ class GloomApiClient {
       updateCurrentUser: (updater) => this.updateCurrentUser(updater),
     });
     this.socket = new CloudApiSocket({
-      getBaseUrl: () => this.transport.baseUrl,
+      getBaseUrl: () => this.transport.getSocketBaseUrl(),
       getSocketAuthToken: () => this.getSocketAuthToken(),
+      isCookieAuthenticated: () => this.transport.isHostedSocket(),
       hasVerifiedUser: () => this.currentUser?.emailVerified === true,
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
@@ -134,6 +135,16 @@ class GloomApiClient {
     const changed = this.transport.getWebSocketToken() !== token;
     this.transport.setWebSocketToken(token);
     this.socket.syncAuthState({ reconnect: changed });
+  }
+
+  /**
+   * Point the realtime socket at the hosted Worker origin (e.g.
+   * `https://terminal.kohor.st`) so it connects same-origin and authenticates
+   * through the HttpOnly session cookie instead of a query-string token.
+   */
+  setHostedSocketBaseUrl(url: string | null): void {
+    this.transport.setHostedSocketBaseUrl(url);
+    this.socket.syncAuthState({ reconnect: true });
   }
 
   getCurrentUser(): AuthUser | null {

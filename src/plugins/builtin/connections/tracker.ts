@@ -74,6 +74,7 @@ export class ConnectionTracker {
 
     this.syncFromRegistry();
     this.wrapMarketData();
+    this.wrapCloudChat();
     this.subscribeCloudUserChanges();
     setConnectionRequestReporter((id, report) => {
       if (report.success) this.recordSuccess(id, report.operation ?? "request", report.durationMs);
@@ -225,6 +226,48 @@ export class ConnectionTracker {
       const original = (router as unknown as Record<string, unknown>)[key];
       if (typeof original !== "function") continue;
       (router as unknown as Record<string, unknown>)[key] = wrap(op, original as (...args: unknown[]) => Promise<unknown>);
+    }
+  }
+
+  // -- Cloud chat wrapping ---------------------------------------------------
+
+  /**
+   * Chat REST calls go straight through the api client, bypassing the market
+   * data router that `wrapMarketData` instruments, so their traffic never
+   * reached Connections. Wrap them so chat activity reports against the Gloom
+   * Cloud REST connection like every other integration.
+   */
+  private wrapCloudChat(): void {
+    const client = apiClient as unknown as Record<string, unknown>;
+    const tracker = this;
+    const chatOps = [
+      "getChannels",
+      "getChatState",
+      "getChatPresence",
+      "getMessages",
+      "sendMessage",
+      "editMessage",
+      "openDirectChannel",
+      "openGroupChannel",
+      "updateChatChannelState",
+      "markChatNotificationsDelivered",
+    ];
+
+    for (const op of chatOps) {
+      const original = client[op];
+      if (typeof original !== "function") continue;
+      const run = original as (...args: unknown[]) => Promise<unknown>;
+      client[op] = async function (...args: unknown[]): Promise<unknown> {
+        const start = Date.now();
+        try {
+          const result = await run.apply(apiClient, args);
+          tracker.recordSuccess(CLOUD_REST_ID, op, Date.now() - start);
+          return result;
+        } catch (error) {
+          tracker.recordFailure(CLOUD_REST_ID, op, Date.now() - start, error);
+          throw error;
+        }
+      };
     }
   }
 
