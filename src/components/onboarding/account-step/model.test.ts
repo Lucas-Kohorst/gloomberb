@@ -11,8 +11,8 @@ import {
 describe("accountChoiceIds", () => {
   test("omits skip when an account is required", () => {
     expect(accountChoiceIds()).toEqual(ACCOUNT_CHOICE_IDS);
-    expect(accountChoiceIds(false)).toEqual(["signup", "login", "skip"]);
-    expect(accountChoiceIds(true)).toEqual(["signup", "login"]);
+    expect(accountChoiceIds(false)).toEqual(ACCOUNT_CHOICE_IDS);
+    expect(accountChoiceIds(true)).toEqual(["qr", "signup", "login"]);
   });
 });
 

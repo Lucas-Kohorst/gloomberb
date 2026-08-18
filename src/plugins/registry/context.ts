@@ -5,6 +5,7 @@ import type { TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import type { PluginCapability, RegisteredCapability } from "../../capabilities";
 import type {
+  AppNotificationDelivery,
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
   GloomPluginContext,
@@ -71,7 +72,7 @@ export interface RegistryPluginContextOptions {
     on: <K extends keyof PluginEvents>(event: K, handler: (payload: PluginEvents[K]) => void) => () => void;
     emit: <K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]) => void;
   };
-  notify: (notification: AppNotificationRequest) => void;
+  notify: (notification: AppNotificationRequest) => AppNotificationDelivery | void;
 }
 
 export function createRegistryPluginContext({

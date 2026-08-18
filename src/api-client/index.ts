@@ -35,6 +35,7 @@ import type {
   CloudFundamentals,
   CloudHoldersPayload,
   CloudAnalystResearchPayload,
+  CloudBrowserHandoffResponse,
   CloudCorporateActionsPayload,
   CloudPricePointPayload,
   CloudEconEventPayload,
@@ -47,7 +48,11 @@ import type {
   CloudMarketResponse,
   CloudMarketBatchTarget,
   CloudMarketBatchPayload,
+  CloudMarketScreenerCategory,
+  CloudMarketScreenerPayload,
   CloudVerificationResponse,
+  DeviceAuthStartResponse,
+  DeviceAuthTokenResponse,
   CloudRoundupPreviewResponse,
   CloudSyncPushResponse,
   CloudSyncSnapshotResponse,
@@ -205,6 +210,14 @@ class GloomApiClient {
     return this.auth.signIn(email, password);
   }
 
+  async startDeviceSignIn(body: { clientName?: string; clientPlatform?: string }): Promise<DeviceAuthStartResponse> {
+    return this.auth.startDeviceSignIn(body);
+  }
+
+  async pollDeviceSignIn(deviceCode: string): Promise<DeviceAuthTokenResponse> {
+    return this.auth.pollDeviceSignIn(deviceCode);
+  }
+
   async signOut(): Promise<void> {
     return this.auth.signOut();
   }
@@ -215,6 +228,10 @@ class GloomApiClient {
 
   async sendVerification(): Promise<CloudVerificationResponse> {
     return this.auth.sendVerification();
+  }
+
+  async createBrowserHandoff(): Promise<CloudBrowserHandoffResponse> {
+    return this.auth.createBrowserHandoff();
   }
 
   async getAccountProfile(): Promise<AccountProfile> {
@@ -411,6 +428,14 @@ class GloomApiClient {
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>> {
     return this.data.getCloudQuotesBatch(targets, mode);
+  }
+
+  async getCloudMarketScreener(
+    category: CloudMarketScreenerCategory,
+    count = 25,
+    mode: "cache-first" | "refresh" = "cache-first",
+  ): Promise<CloudMarketResponse<CloudMarketScreenerPayload>> {
+    return this.data.getCloudMarketScreener(category, count, mode);
   }
 
   async getCloudOptionsChain(

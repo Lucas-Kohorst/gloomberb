@@ -2,6 +2,7 @@ import { Box, Span, Text, useNativeRenderer, useUiCapabilities, useUiHost } from
 import { useCallback, useRef, type ReactNode } from "react";
 import { blendHex, colors, floatingPaneTitleBg, paneTitleBg, paneTitleText } from "../../../theme/colors";
 import { displayWidth, truncateToDisplayWidth } from "../../../utils/format";
+import { capturePointerDrag } from "../../../ui/pointer-drag";
 import {
   PANE_HEADER_ACTION,
   PANE_HEADER_CLOSE,
@@ -49,18 +50,6 @@ export interface PaneHeaderQuickSetting {
 
 function truncateTitle(title: string, maxWidth: number): string {
   return truncateToDisplayWidth(title, maxWidth);
-}
-
-function captureTerminalPointerDrag(renderer: unknown, renderable: unknown): void {
-  if (!renderable) return;
-  const hostCapture = (renderer as { captureMouseRenderable?: (target: unknown) => void }).captureMouseRenderable;
-  if (typeof hostCapture === "function") {
-    hostCapture.call(renderer, renderable);
-    return;
-  }
-  const capture = (renderer as { setCapturedRenderable?: (target: unknown) => void }).setCapturedRenderable;
-  if (typeof capture !== "function") return;
-  capture.call(renderer, renderable);
 }
 
 export function DesktopPaneButton({
@@ -178,7 +167,7 @@ export function PaneHeader({
     showActions,
   });
   const handleTerminalHeaderMouseDown = useCallback((event: any) => {
-    captureTerminalPointerDrag(nativeRenderer, terminalHeaderRef.current);
+    capturePointerDrag(nativeRenderer, terminalHeaderRef.current);
     onHeaderMouseDown?.(event);
   }, [nativeRenderer, onHeaderMouseDown]);
 

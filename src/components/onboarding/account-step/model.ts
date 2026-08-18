@@ -5,18 +5,18 @@
  */
 import { t } from "../../../i18n";
 
-export type AccountSub = "choose" | "signup" | "login" | "signed-in";
+export type AccountSub = "choose" | "signup" | "login" | "qr" | "signed-in";
 
 export type AccountMode = "signup" | "login";
 
-export type AccountChoiceId = AccountMode | "skip";
+export type AccountChoiceId = AccountMode | "qr" | "skip";
 
 /** Order matches the chooser list, so the selected index maps straight onto an id. */
-export const ACCOUNT_CHOICE_IDS: AccountChoiceId[] = ["signup", "login", "skip"];
+export const ACCOUNT_CHOICE_IDS: AccountChoiceId[] = ["qr", "signup", "login", "skip"];
 
 /** Drop skip when the visitor must have an account before the terminal opens. */
 export function accountChoiceIds(requireAccount = false): AccountChoiceId[] {
-  return requireAccount ? ["signup", "login"] : ACCOUNT_CHOICE_IDS;
+  return requireAccount ? ["qr", "signup", "login"] : ACCOUNT_CHOICE_IDS;
 }
 
 export interface AccountOutcome {

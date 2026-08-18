@@ -176,7 +176,7 @@ async function boot(): Promise<void> {
                 desktopWindowBridge={desktopWindowBridge}
                 desktopDeepLinkBridge={desktopDeepLinkBridge}
                 desktopSnapshot={init.desktopSnapshot}
-                onboardingInitialStep={isHosted ? "account" : undefined}
+                requireAccount={isHosted}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

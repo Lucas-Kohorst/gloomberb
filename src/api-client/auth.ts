@@ -5,8 +5,11 @@ import type {
   AuthUser,
   BuildoutAccountResponse,
   BuildoutTokenResponse,
+  CloudBrowserHandoffResponse,
   CloudPricing,
   CloudVerificationResponse,
+  DeviceAuthStartResponse,
+  DeviceAuthTokenResponse,
   PersistedAuthUser,
 } from "./types";
 
@@ -86,6 +89,26 @@ export class CloudAuthApi {
     return result.user;
   }
 
+  /** Starts a QR / device sign-in; the mobile app approves the returned user code. */
+  async startDeviceSignIn(body: { clientName?: string; clientPlatform?: string }): Promise<DeviceAuthStartResponse> {
+    return this.options.request<DeviceAuthStartResponse>("/auth/device/start", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Polls a pending device sign-in. Unlike the email flow, approval hands back
+   * a raw session token in the body instead of a Set-Cookie header; the caller
+   * installs it through the same path boot restoration uses.
+   */
+  async pollDeviceSignIn(deviceCode: string): Promise<DeviceAuthTokenResponse> {
+    return this.options.request<DeviceAuthTokenResponse>("/auth/device/token", {
+      method: "POST",
+      body: JSON.stringify({ deviceCode }),
+    });
+  }
+
   async signOut(): Promise<void> {
     try {
       await this.options.request("/auth/sign-out", { method: "POST" });
@@ -113,6 +136,17 @@ export class CloudAuthApi {
 
   async sendVerification(): Promise<CloudVerificationResponse> {
     return this.options.request<CloudVerificationResponse>("/cloud/auth/send-verification", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  }
+
+  /**
+   * Creates a short-lived browser handoff for the captured native session.
+   * The server deliberately returns an opaque one-time URL, never the session cookie.
+   */
+  async createBrowserHandoff(): Promise<CloudBrowserHandoffResponse> {
+    return this.options.request<CloudBrowserHandoffResponse>("/cloud/auth/browser-handoff", {
       method: "POST",
       body: JSON.stringify({}),
     });

@@ -140,6 +140,7 @@ export function ChatContent({
     applyingExternalDraftRef,
     channelId,
     controller,
+    focused,
     initialSnapshot,
     inputRef,
     inputValueRef,
