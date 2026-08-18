@@ -1,5 +1,6 @@
 import type { PluginModule } from "../plugin-module";
 import { attachFredSeriesPersistence } from "../../../data/fred-series";
+import { FRED_EXTENDED_SERIES_ENABLED } from "../../../data/fred-extended-series";
 import { registerConnectionSource } from "../connections/register";
 import { VolatilityPane } from "./pane";
 
@@ -20,6 +21,7 @@ export const volatilityModule: PluginModule = {
     description: "VIX, VXV, VXMT, term structure, and contango/backwardation signals.",
     keywords: ["vix", "volatility", "vxv", "vxmt", "term structure", "contango", "backwardation", "sentiment", "fear", "greed"],
     shortcut: { prefix: "VIX" },
+    canCreate: () => FRED_EXTENDED_SERIES_ENABLED,
   }],
   setup(ctx) {
     attachFredSeriesPersistence(ctx.persistence);
