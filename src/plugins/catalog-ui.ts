@@ -9,6 +9,7 @@ import { publicPlugin } from "./broker-sync/public";
 import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { simpleFinPlugin } from "./broker-sync/simplefin";
 import { predictionMarketsPlugin } from "./prediction-markets";
+import { pollsPlugin } from "./builtin/polls";
 import { alertsPlugin } from "./builtin/alerts";
 import {
   applicationPlugin,
@@ -34,6 +35,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   notesPlugin,
   aiPlugin,
   predictionMarketsPlugin,
+  pollsPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,

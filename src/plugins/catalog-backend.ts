@@ -20,6 +20,7 @@ import { publicPlugin } from "./broker-sync/public";
 import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { simpleFinPlugin } from "./broker-sync/simplefin";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
+import { pollsPlugin } from "./builtin/polls";
 
 const desktopBackendPlugins: GloomPlugin[] = [
   yahooPlugin,
@@ -37,6 +38,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   notesPlugin,
   aiPlugin,
   predictionMarketsBackendPlugin,
+  pollsPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
