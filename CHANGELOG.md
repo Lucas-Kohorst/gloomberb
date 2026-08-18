@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.12.2 — Hosted chat realtime fix
+
+Hosted chat at terminal.kohor.st can load history, send, and receive live messages again.
+
+### Chat
+
+- Fixed hosted chat showing "couldn't reach chat": the Gloom Cloud proxy rejected same-origin `GET`s because browsers omit the `Origin` header on safe methods, so channel/state/message loads were answered with `403`. Reads now allow an absent `Origin`, while writes still require a matching one.
+- Realtime now authenticates: the hosted socket connects same-origin to the Worker (no token in the URL), and the Worker relays the `/cloud/ws` upgrade to Gloom Cloud under the server-held session. The browser only ever holds the opaque hosted-session cookie — the raw upstream token is stripped from responses and never captured client-side.
+- Gloom Cloud chat REST traffic now reports through the Connections pane.
+
 ## v0.12.1 — News roll-in and blocked-reader fallback
 
 News rows briefly roll in when they arrive, and the article reader stays useful when publishers block automated extraction.
