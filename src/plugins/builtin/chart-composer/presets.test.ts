@@ -159,6 +159,9 @@ describe("chart composer expressions", () => {
       { kind: "economic", provider: "fred", seriesId: "CPIAUCSL" },
     ]);
     expect(resolveChartFieldAlias("EV / EBITDA")).toBe("valuation.evEbitda");
+    expect(parseChartExpression("AAPL:div")).toEqual([
+      { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },
+    ]);
   });
 
   test("rejects an invalid leg instead of silently building a partial chart", () => {

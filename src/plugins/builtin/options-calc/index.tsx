@@ -1,5 +1,6 @@
 import type { PluginModule } from "../plugin-module";
 import { OptionsCalcPane, DEFAULT_FLOATING_SIZE, OPTIONS_CALC_PANE_ID } from "./pane";
+import { parseOvmeSeed } from "./seed";
 
 export const optionsCalcModule: PluginModule = {
   panes: [
@@ -36,6 +37,10 @@ export const optionsCalcModule: PluginModule = {
         "volatility",
       ],
       shortcut: { prefix: "OVME" },
+      createInstance(_context, options) {
+        const seed = parseOvmeSeed(options?.values);
+        return seed ? { settings: { seed } } : {};
+      },
     },
   ],
 };

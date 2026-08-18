@@ -29,6 +29,12 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 - **SI** — uses the shared Yahoo crumb client with 429 retries. Hosted Yahoo/Nasdaq/stockanalysis GETs share the same Worker cache as Kalshi.
 - **Connections** — a 429 is rate-limited (`Reconnecting` / stay Connected), not a hard Error.
 
+### Follow-ups
+
+- **OVME** — from the options chain, `[c]`alc opens the calculator filled with that contract's spot, strike, expiry, and IV (edit after; not live-tracked).
+- **Charts** — `G AAPL:div` plots dividend history from corporate actions.
+- **Alerts** — `SA AAPL halted`, `SA AAPL short 5`, and `SA AAPL exdiv 7` in addition to price triggers.
+
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 
 One release note for the hosted web terminal ship.

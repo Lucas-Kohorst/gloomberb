@@ -44,6 +44,7 @@ const CHART_FIELD_IDS = {
   price: "market.ohlcv",
   close: "market.close",
   volume: "market.volume",
+  dividends: "market.dividends",
   revenue: "fundamental.totalRevenue",
   grossProfit: "fundamental.grossProfit",
   operatingIncome: "fundamental.operatingIncome",

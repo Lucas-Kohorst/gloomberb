@@ -309,13 +309,16 @@ describe("alertsPlugin command", () => {
       expect(command?.label).toBe("Add Alert");
       expect(command?.keywords).toContain("add");
       expect(command?.shortcut).toBe("SA");
-      expect(command?.shortcutArg?.placeholder).toBe("symbol condition price");
       expect(command?.shortcutArg?.parse("AMD")).toEqual({ symbol: "AMD" });
       expect(command?.shortcutArg?.parse("", { activeTicker: "MSFT" })).toEqual({ symbol: "MSFT" });
       expect(command?.shortcutArg?.parse("AMD above 200")).toEqual({
         symbol: "AMD",
         condition: "above",
         price: "200",
+      });
+      expect(command?.shortcutArg?.parse("AMD halted")).toEqual({
+        symbol: "AMD",
+        condition: "halted",
       });
 
       await command.execute({ shortcut: "AAPL above 200" });

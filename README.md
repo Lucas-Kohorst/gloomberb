@@ -124,7 +124,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 |-----|-------|
 | `DES AAPL` | Security details |
 | `GP NVDA` | Price chart |
-| `G AAPL:price, MSFT:revenue` | Mixed-series chart |
+| `G AAPL:price, MSFT:revenue` | Mixed-series chart (`AAPL:div` for dividend history) |
 | `TOP` | Ranked market stories |
 | `HM` | Market heatmap |
 | `MOST` | Market movers |
@@ -236,7 +236,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `ANR <ticker>` | Analyst targets and ratings |
 | `SEC <ticker>` | SEC filings and company disclosures |
 | `OMON <ticker>` | Options monitor |
-| `OVME` | Black-Scholes options calculator |
+| `OVME` | Black-Scholes options calculator. From the options chain, `[c]`alc fills spot, strike, expiry, and IV. |
 | `SI <ticker>` | Short interest and days to cover |
 | `DVD <ticker>` | Dividend yield and payment history |
 | `HDS <ticker>` | Institutional holders |
@@ -291,8 +291,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 |----------|----------|
 | `PF` | Portfolio and watchlist workspace |
 | `PORT` | Portfolio risk and sector exposure |
-| `ALRT` | Price alerts |
-| `SA <symbol condition price>` | Create a price alert |
+| `ALRT` | Alerts |
+| `SA <symbol condition [target]>` | Create an alert (`above`/`below`/`crosses` PRICE, `halted`, `short` PCT, `exdiv` DAYS) |
 | `AI <prompt>` | AI screener |
 | `AGENT` | Local AI research workspace |
 | `CHAT [channel]` | Gloom Cloud chat |
