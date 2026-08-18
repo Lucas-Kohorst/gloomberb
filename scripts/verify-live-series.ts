@@ -3,7 +3,7 @@
 
 import { getSharedAdjacentClient } from "../src/plugins/builtin/adjacent/client";
 import { normalizeAdjacentIndexPrices } from "../src/plugins/builtin/adjacent/normalize";
-import { fetchLlmStatsData } from "../src/plugins/builtin/llm-stats/client";
+import { fetchArtificialAnalysisData } from "../src/plugins/builtin/llm-stats/client";
 import { fetchVoteHubPolls } from "../src/plugins/builtin/polls/client";
 import { computePollTrend, normalizeVoteHubPoll } from "../src/plugins/builtin/polls/normalize";
 import {
@@ -40,20 +40,19 @@ try {
 }
 console.log();
 
-// 2. AI benchmarks — public endpoint
-console.log("--- AI Benchmarks (llm-stats.com) ---");
+// 2. AI benchmarks — Artificial Analysis
+console.log("--- AI Benchmarks (artificialanalysis.ai) ---");
 try {
-  const data = await fetchLlmStatsData();
+  const data = await fetchArtificialAnalysisData();
   console.log(`  Fetched ${data.rows.length} model rows`);
-  const orgs = [...new Set(data.rows.map((r) => r.organization))].sort();
+  const orgs = [...new Set(data.rows.map((r) => r.creator))].sort();
   console.log(`  Organizations: ${orgs.slice(0, 10).join(", ")}${orgs.length > 10 ? "..." : ""}`);
-  const openai = data.rows.filter((r) => r.organization.toLowerCase() === "openai" && r.releaseDate);
+  const openai = data.rows.filter((r) => r.creator.toLowerCase() === "openai" && r.releaseDate);
   console.log(`  OpenAI models with release dates: ${openai.length}`);
   if (openai.length > 0) {
-    console.log(`    Examples: ${openai.slice(0, 3).map((r) => `${r.displayName} (${r.releaseDate}, tps=${r.avgThroughput})`).join(", ")}`);
+    console.log(`    Examples: ${openai.slice(0, 3).map((r) => `${r.name} (${r.releaseDate}, intelligence=${r.intelligence})`).join(", ")}`);
   }
-  // Test the loader
-  const loaded = await loadBenchmarkSeries("OpenAI", "tps");
+  const loaded = await loadBenchmarkSeries("gpt-4o", "intelligence");
   console.log(`  Loader result: ${loaded.points.length} points, unit="${loaded.unit}"`);
   if (loaded.warning) console.log(`  Warning: ${loaded.warning}`);
 } catch (err) {

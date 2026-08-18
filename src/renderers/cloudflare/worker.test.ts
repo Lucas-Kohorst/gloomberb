@@ -211,7 +211,7 @@ describe("hosted config snapshot Worker endpoint", () => {
         body: JSON.stringify({
           method: "http.fetch",
           payload: {
-            url: "https://api.llm-stats.com/v1/models",
+            url: "https://artificialanalysis.ai/api/v2/language/models/free",
             init: { method: "GET", timeoutMs: 1000 },
           },
         }),
@@ -220,8 +220,40 @@ describe("hosted config snapshot Worker endpoint", () => {
     );
 
     expect(response?.status).toBe(200);
-    expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
+    expect(fetchedUrl).toBe("https://artificialanalysis.ai/api/v2/language/models/free");
     expect((await response?.json()).ok).toBe(true);
+  });
+
+  test("hosted http.fetch to Artificial Analysis attaches x-api-key from env", async () => {
+    let fetchedHeaders: Record<string, string> = {};
+    globalThis.fetch = (async (_input: URL | RequestInfo, init?: RequestInit) => {
+      const headers = init?.headers;
+      if (headers && typeof headers === "object" && !Array.isArray(headers) && !(headers instanceof Headers)) {
+        fetchedHeaders = headers as Record<string, string>;
+      }
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const env = { ...makeEnv(), ARTIFICIAL_ANALYSIS_API_KEY: "aa-test-key" } as Env;
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/_gloomberb/rpc", {
+        body: JSON.stringify({
+          method: "http.fetch",
+          payload: {
+            url: "https://artificialanalysis.ai/api/v2/language/models/free",
+            init: { method: "GET", timeoutMs: 1000 },
+          },
+        }),
+      }),
+      env,
+    );
+
+    expect(response?.status).toBe(200);
+    expect((await response?.json()).ok).toBe(true);
+    expect(fetchedHeaders["x-api-key"]).toBe("aa-test-key");
   });
 
   test("coalesces concurrent hosted Kalshi GETs onto one upstream request", async () => {

@@ -22,15 +22,15 @@ import {
 } from "../plugins/builtin/adjacent/normalize";
 import type { AdjacentMarket } from "../plugins/builtin/adjacent/types";
 import { loadVenuePredictionMarketSeries } from "../plugins/prediction-markets/services/series";
-import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
-import type { LlmStatsRow } from "../plugins/builtin/llm-stats/types";
+import { fetchArtificialAnalysisData } from "../plugins/builtin/llm-stats/client";
+import { aaMetricValue, matchingAaRows } from "../plugins/builtin/llm-stats/normalize";
 import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
 import {
   computePollTrend,
   normalizeVoteHubPoll,
 } from "../plugins/builtin/polls/normalize";
 import {
-  BENCHMARK_METRICS,
+  findBenchmarkMetric,
 } from "../plugins/builtin/chart-composer/universal-series";
 
 async function loadFred(request: FredSeriesRequest) {
@@ -137,31 +137,16 @@ export async function loadPredictionMarketSeries(
   };
 }
 
-const BENCHMARK_METRIC_FIELDS: Record<string, keyof LlmStatsRow> = {
-  tps: "avgThroughput",
-  p95: "p95Latency",
-  ttft: "avgTtft",
-  latency: "avgLatency",
-  fail: "failureRate",
-  calls: "totalCalls",
-};
-
 export async function loadBenchmarkSeries(
   selector: string,
   metric: string,
 ): Promise<UniversalSeriesLoadResult> {
-  const metricEntry = BENCHMARK_METRICS.find((entry) => entry.code === metric);
-  const field = BENCHMARK_METRIC_FIELDS[metric];
-  if (!metricEntry || !field) {
+  const metricEntry = findBenchmarkMetric(metric);
+  if (!metricEntry) {
     throw new Error(`Unknown benchmark metric "${metric}".`);
   }
-  const data = await fetchLlmStatsData();
-  const selectorLower = selector.trim().toLowerCase();
-  const matching = data.rows.filter((row) =>
-    row.organization.toLowerCase() === selectorLower
-    || row.id.toLowerCase() === selectorLower
-    || row.displayName.toLowerCase() === selectorLower,
-  );
+  const data = await fetchArtificialAnalysisData();
+  const matching = matchingAaRows(data.rows, selector);
   if (matching.length === 0) {
     throw new Error(`No models found for "${selector}".`);
   }
@@ -170,20 +155,20 @@ export async function loadBenchmarkSeries(
     if (!row.releaseDate) continue;
     const date = new Date(row.releaseDate);
     if (!Number.isFinite(date.getTime())) continue;
-    const value = row[field];
+    const value = aaMetricValue(row, metricEntry.code);
     if (typeof value !== "number" || !Number.isFinite(value)) continue;
     points.push({
       date,
       observedAt: date,
       value,
-      provenance: { providerId: "llm-stats", quality: "reported" },
+      provenance: { providerId: "artificial-analysis", quality: "reported" },
     });
   }
   points.sort((left, right) => left.date.getTime() - right.date.getTime());
   return {
     points,
     unit: metricEntry.unit,
-    unitGroup: `benchmark:${metric}`,
+    unitGroup: `benchmark:${metricEntry.code}`,
     label: `${selector} ${metricEntry.label}`,
     warning: matching.length === 1
       ? "Point-in-time snapshot at model release date; no historical time series available."

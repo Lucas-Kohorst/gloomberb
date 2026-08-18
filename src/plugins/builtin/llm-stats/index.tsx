@@ -1,7 +1,11 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerByokKnownService } from "../byok/services";
 import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
 import {
+  ARTIFICIAL_ANALYSIS_API_BASE,
+  ARTIFICIAL_ANALYSIS_ENV_VAR,
+  ARTIFICIAL_ANALYSIS_SERVICE_ID,
   LLM_STATS_CONNECTION_ID,
   LLM_STATS_PANE_ID,
   LLM_STATS_PLUGIN_ID,
@@ -13,7 +17,8 @@ export const llmStatsPlugin: GloomPlugin = {
   id: LLM_STATS_PLUGIN_ID,
   name: "AI Benchmarks",
   version: "1.0.0",
-  description: "Benchmark-first AI model intelligence from llm-stats.com: derived benchmark leaders, price/performance, context, providers, and the full model list.",
+  description:
+    "AI model intelligence from Artificial Analysis: Intelligence/Coding/Agentic indices, price vs speed, and image/video/speech/music arenas.",
   toggleable: true,
 
   panes: [
@@ -34,18 +39,19 @@ export const llmStatsPlugin: GloomPlugin = {
       paneId: LLM_STATS_PANE_ID,
       label: "AI Benchmarks",
       description:
-        "AI benchmark leaders and model intelligence from llm-stats.com — benchmark summaries, price/performance, context, providers, and sortable searchable model detail.",
+        "Artificial Analysis model intelligence — indices, price vs speed, and media arenas. Requires an API key.",
       keywords: [
         "ai",
         "benchmarks",
         "llm",
         "model",
+        "intelligence",
+        "coding",
+        "agentic",
         "throughput",
         "latency",
-        "ttft",
-        "zeroeval",
-        "llm-stats",
-        "inference",
+        "artificial analysis",
+        "artificialanalysis",
       ],
       shortcut: { prefix: "AIBENCH" },
       createInstance: () => ({ placement: "floating" }),
@@ -53,13 +59,22 @@ export const llmStatsPlugin: GloomPlugin = {
   ],
 
   setup() {
+    registerByokKnownService({
+      id: ARTIFICIAL_ANALYSIS_SERVICE_ID,
+      name: "Artificial Analysis",
+      apiUrl: ARTIFICIAL_ANALYSIS_API_BASE,
+      authType: "header",
+      authKey: "x-api-key",
+      envVar: ARTIFICIAL_ANALYSIS_ENV_VAR,
+      description: "AI model intelligence, pricing, and performance. Required for AIBENCH and BENCH: series.",
+    });
     disposeConnection = registerConnectionSource({
       id: LLM_STATS_CONNECTION_ID,
-      name: "llm-stats",
+      name: "Artificial Analysis",
       kind: "api",
       pluginId: LLM_STATS_PLUGIN_ID,
       priority: 300,
-      authRequired: false,
+      authRequired: true,
     });
   },
 

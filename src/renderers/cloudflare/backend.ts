@@ -180,6 +180,28 @@ async function dispatch(
       // Cloud API calls get the user's Gloom Cloud session attached; anything
       // else is proxied untouched, mirroring the desktop http.fetch contract.
       const url = typeof request.payload?.url === "string" ? request.payload.url : "";
+      let payload = request.payload;
+      try {
+        const hostname = new URL(url).hostname;
+        if (hostname === "artificialanalysis.ai" || hostname.endsWith(".artificialanalysis.ai")) {
+          const headers = { ...(payload.init?.headers ?? {}) };
+          const hasKey = Object.entries(headers).some(([key, value]) => (
+            key.toLowerCase() === "x-api-key" && value.trim().length > 0
+          ));
+          const envKey = (env as { ARTIFICIAL_ANALYSIS_API_KEY?: string }).ARTIFICIAL_ANALYSIS_API_KEY?.trim();
+          if (!hasKey && envKey) {
+            payload = {
+              ...payload,
+              init: {
+                ...payload.init,
+                headers: { ...headers, "x-api-key": envKey },
+              },
+            };
+          }
+        }
+      } catch {
+        // Invalid URL — handleHttpFetch will reject it.
+      }
       if (url.startsWith("https://api.gloom.sh/")) {
         const token = readSessionCookie(rawRequest);
         if (!token) throw new Error("Authentication required.");
@@ -200,11 +222,11 @@ async function dispatch(
           body: await upstream.text(),
         };
       }
-      const publicGetTtl = hostedPublicGetCacheTtlSeconds(request.payload);
+      const publicGetTtl = hostedPublicGetCacheTtlSeconds(payload);
       if (publicGetTtl != null) {
-        return handleCachedPublicGet(request.payload, publicGetTtl);
+        return handleCachedPublicGet(payload, publicGetTtl);
       }
-      return handleHttpFetch(request.payload);
+      return handleHttpFetch(payload);
     }
     case "ticker.loadAll":
       return [];

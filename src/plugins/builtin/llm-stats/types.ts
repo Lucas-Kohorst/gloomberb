@@ -1,98 +1,87 @@
 export const LLM_STATS_PLUGIN_ID = "llm-stats";
 export const LLM_STATS_PANE_ID = "llm-stats";
-export const LLM_STATS_CONNECTION_ID = "llm-stats";
+export const LLM_STATS_CONNECTION_ID = "artificial-analysis";
 
-/** Base URL for the ZeroEval / llm-stats public API. */
-export const LLM_STATS_API_BASE = "https://api.llm-stats.com";
-/** Base URL for the public website (per-model pages). */
-export const LLM_STATS_SITE_BASE = "https://llm-stats.com";
+export const ARTIFICIAL_ANALYSIS_SERVICE_ID = "artificial-analysis";
+export const ARTIFICIAL_ANALYSIS_API_BASE = "https://artificialanalysis.ai/api/v2";
+export const ARTIFICIAL_ANALYSIS_SITE = "https://artificialanalysis.ai";
+export const ARTIFICIAL_ANALYSIS_ENV_VAR = "ARTIFICIAL_ANALYSIS_API_KEY";
+export const ARTIFICIAL_ANALYSIS_ATTRIBUTION = "artificialanalysis.ai";
 
-/**
- * Raw model metadata row from GET /v1/models.
- */
-export interface LlmStatsModel {
-  id: string;
-  display_name: string;
-  provider_name: string | null;
-  organization_name: string | null;
-  organization_id: string | null;
-  model_name: string | null;
-  release_date: string | null;
-  context_length: number | null;
-  input_price: number | null;
-  output_price: number | null;
-  quantization_type: string | null;
-  input_modalities: string[] | null;
-  output_modalities: string[] | null;
-  routing_providers: string[] | null;
-  is_fallback: boolean | null;
-  fallback_providers: string[] | null;
-  tier: string | null;
-}
+export type AaFamily = "language" | "image" | "video" | "speech" | "music";
 
-/**
- * Raw runtime metrics row from GET /v1/models/metrics.
- */
-export interface LlmStatsModelMetrics {
-  model_id: string;
-  total_calls: number;
-  failed_calls: number;
-  failure_rate: number;
-  avg_throughput: number;
-  p5_throughput: number;
-  avg_latency: number;
-  p95_latency: number;
-  avg_ttft: number;
-}
+export type AaTab =
+  | "intelligence"
+  | "coding"
+  | "agentic"
+  | "price-speed"
+  | "image"
+  | "video"
+  | "audio"
+  | "models";
 
-/**
- * Joined row shown in the pane: model metadata plus live runtime benchmarks.
- */
-export interface LlmStatsRow {
-  id: string;
-  displayName: string;
-  organization: string;
-  provider: string;
-  releaseDate: string | null;
-  contextLength: number | null;
-  inputPrice: number | null;
-  outputPrice: number | null;
-  inputModalities: string[];
-  outputModalities: string[];
-  tier: string | null;
-  totalCalls: number;
-  failedCalls: number;
-  failureRate: number;
-  avgThroughput: number;
-  p5Throughput: number;
-  avgLatency: number;
-  p95Latency: number;
-  avgTtft: number;
-  url: string;
-}
-
-export type LlmStatsSortColumnId =
+export type AaSortColumnId =
   | "model"
   | "org"
-  | "tps"
-  | "p95"
-  | "fail"
-  | "calls"
-  | "ttft";
+  | "intelligence"
+  | "coding"
+  | "agentic"
+  | "speed"
+  | "ttft"
+  | "e2e"
+  | "input"
+  | "output"
+  | "elo"
+  | "wer";
 
-export interface LlmStatsData {
-  rows: LlmStatsRow[];
+export interface AaModelRow {
+  id: string;
+  slug: string;
+  name: string;
+  creator: string;
+  creatorSlug: string;
+  family: AaFamily;
+  category: string;
+  releaseDate: string | null;
+  url: string;
+  intelligence: number | null;
+  coding: number | null;
+  agentic: number | null;
+  speed: number | null;
+  ttftSeconds: number | null;
+  e2eSeconds: number | null;
+  inputPrice: number | null;
+  outputPrice: number | null;
+  elo: number | null;
+  ci95: number | null;
+  bba: number | null;
+  fdb: number | null;
+  tau: number | null;
+  wer: number | null;
+}
+
+export interface AaCatalogMetric {
+  code: string;
+  label: string;
+  kind: string;
+  unit: string;
+  unitGroup: string;
+}
+
+export interface ArtificialAnalysisData {
+  rows: AaModelRow[];
+  tier: string | null;
+  intelligenceIndexVersion: number | null;
   fetchedAt: number;
 }
 
-export type LlmStatsTab = "benchmarks" | "models" | "frontier" | "context" | "providers";
+export interface AaAuthError extends Error {
+  code: "missing-key" | "unauthorized";
+}
 
-export interface LlmStatsBenchmarkRow {
-  id: string;
-  name: string;
-  unit: string;
-  bestOverall: LlmStatsRow | null;
-  bestCostAdjusted: LlmStatsRow | null;
-  /** Historical score data is not present in the API, so this is intentionally null. */
-  biggestImprovement: null;
+export function isAaAuthError(error: unknown): error is AaAuthError {
+  return !!error
+    && typeof error === "object"
+    && "code" in error
+    && ((error as AaAuthError).code === "missing-key" || (error as AaAuthError).code === "unauthorized");
 }

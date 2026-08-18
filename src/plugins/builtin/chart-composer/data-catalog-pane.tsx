@@ -19,16 +19,19 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { fetchArtificialAnalysisData } from "../llm-stats/client";
+import { ARTIFICIAL_ANALYSIS_ATTRIBUTION } from "../llm-stats/types";
 import {
   CATALOG_FILTERS,
   catalogRowUrl,
+  catalogRowsFromAaModels,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
   listStaticCatalogInventory,
   type CatalogFilterId,
   type CatalogSeriesRow,
 } from "./catalog-inventory";
-import { usePredictionMarketHits } from "./use-series-catalog";
+import { useCatalogUniverse, usePredictionMarketHits } from "./use-series-catalog";
 
 type CatalogColumnId = "series" | "source" | "kind" | "expression";
 type CatalogColumn = DataTableColumn & { id: CatalogColumnId };
@@ -39,7 +42,6 @@ interface CatalogSortPreference {
 }
 
 const DEFAULT_SORT: CatalogSortPreference = { columnId: "source", direction: "asc" };
-const DEFAULT_INSTRUMENT = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 
 function nextSortPreference(
   current: CatalogSortPreference,
@@ -65,7 +67,7 @@ function sortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
 }
 
 function buildColumns(width: number): CatalogColumn[] {
-  const sourceWidth = 11;
+  const sourceWidth = 18;
   const kindWidth = 12;
   const expressionWidth = Math.min(28, Math.max(16, Math.floor(width * 0.28)));
   const seriesWidth = Math.max(18, width - 2 - 4 - sourceWidth - kindWidth - expressionWidth);
@@ -86,17 +88,44 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<CatalogSortPreference>(DEFAULT_SORT);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [aaRows, setAaRows] = useState<CatalogSeriesRow[]>([]);
+  const [aaLoading, setAaLoading] = useState(true);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
+  const { instruments, loading: universeLoading } = useCatalogUniverse(searchQuery);
   const searchMarkets = searchQuery.trim().length >= 3
     && (filter === "all" || filter === "prediction");
-  const { markets, loading } = usePredictionMarketHits(searchQuery, searchMarkets);
+  const { markets, loading: marketsLoading } = usePredictionMarketHits(searchQuery, searchMarkets);
+  const loading = universeLoading || marketsLoading || aaLoading;
+
+  useEffect(() => {
+    let cancelled = false;
+    setAaLoading(true);
+    fetchArtificialAnalysisData()
+      .then((data) => {
+        if (cancelled) return;
+        setAaRows(catalogRowsFromAaModels(data.rows));
+        setAaLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAaRows([]);
+          setAaLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rows = useMemo(() => {
-    const staticRows = listStaticCatalogInventory(DEFAULT_INSTRUMENT);
+    const staticRows = listStaticCatalogInventory(instruments);
     const liveRows = catalogRowsFromPredictionHits(markets);
     const merged = new Map<string, CatalogSeriesRow>();
-    for (const entry of [...liveRows, ...staticRows]) {
+    const withoutStaticBench = aaRows.length > 0
+      ? staticRows.filter((entry) => entry.sourceId !== "benchmark")
+      : staticRows;
+    for (const entry of [...liveRows, ...aaRows, ...withoutStaticBench]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
     const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
@@ -107,7 +136,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [filter, markets, searchQuery, sortPreference]);
+  }, [aaRows, filter, instruments, markets, searchQuery, sortPreference]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -119,6 +148,9 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     [rows, selectedId],
   );
   const selectedUrl = selectedRow ? catalogRowUrl(selectedRow) : null;
+  const footerSource = selectedRow?.sourceId === "benchmark"
+    ? ARTIFICIAL_ANALYSIS_ATTRIBUTION
+    : selectedRow?.source;
 
   const columns = useMemo(() => buildColumns(width), [width]);
 
@@ -142,12 +174,21 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
     }
   }, { enabled: focused && !searchFocused });
+
+  useShortcut((event) => {
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "g") && selectedRow) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      chartSelected(selectedRow);
+    }
+  }, { enabled: focused && !searchFocused && !!selectedRow });
 
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
@@ -159,10 +200,16 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   }, { enabled: focused && !searchFocused && !!selectedUrl });
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+      return true;
+    }
+    if (event.name === "g" && selectedRow) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      chartSelected(selectedRow);
       return true;
     }
     if (event.name === "o" && selectedUrl) {
@@ -172,7 +219,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, openSelected, selectedUrl]);
+  }, [chartSelected, focusSearch, openSelected, selectedRow, selectedUrl]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -209,14 +256,15 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     registrationId: "data-catalog",
     focused,
     url: selectedUrl,
-    source: selectedRow?.source,
+    source: footerSource,
     label: "source",
     loading,
     info: searchQuery.trim()
       ? [{ id: "search", parts: [{ text: `filter: ${searchQuery.trim()}`, tone: "value" }] }]
       : [],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "graph", key: "g", label: "raph", onPress: () => chartSelected(selectedRow), disabled: !selectedRow },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
     ],
     showOpenHint: !!selectedUrl,
   });
@@ -271,7 +319,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         onActivate={chartSelected}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? `No series matching "${searchQuery.trim()}"` : "No series"}
-        emptyStateHint={loading ? "Searching prediction markets…" : "Press [s] to search."}
+        emptyStateHint={loading ? "Searching prediction markets…" : "Press / to search."}
       />
     </Box>
   );
