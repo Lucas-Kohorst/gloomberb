@@ -162,6 +162,10 @@ describe("chart composer expressions", () => {
     expect(parseChartExpression("AAPL:div")).toEqual([
       { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },
     ]);
+    expect(parseChartExpression("AAPL:DVD")).toEqual([
+      { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },
+    ]);
+    expect(resolveChartFieldAlias("dvd")).toBe("market.dividends");
   });
 
   test("rejects an invalid leg instead of silently building a partial chart", () => {

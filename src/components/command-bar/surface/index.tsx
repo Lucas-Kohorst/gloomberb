@@ -19,6 +19,7 @@ import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
 import { buildChartSeriesAssistContext } from "../../../plugins/builtin/chart-composer/series-catalog";
 import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
 import { looksLikePredictionMarketQuery } from "../../../plugins/builtin/chart-composer/prediction-series";
+import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -248,6 +249,10 @@ export function CommandBar({
     onRun: (expression) => {
       const templateId = chartSeriesTemplateId ?? "chart-composer-pane";
       pluginRegistry.createPaneFromTemplate(templateId, { arg: expression });
+      closeAll({ revertThemePreview: false });
+    },
+    onOpenCatalog: (query) => {
+      pluginRegistry.createPaneFromTemplate(DATA_CATALOG_TEMPLATE_ID, { arg: query });
       closeAll({ revertThemePreview: false });
     },
   });

@@ -15,10 +15,55 @@ import {
 } from "./series-catalog";
 import {
   looksLikePredictionMarketQuery,
+  mapAdjacentMarketToHit,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
+
+export function usePredictionMarketHits(
+  query: string,
+  enabled: boolean,
+): { markets: PredictionMarketSearchHit[]; loading: boolean } {
+  const trimmed = query.trim();
+  const [search, setSearch] = useState<{
+    query: string;
+    markets: PredictionMarketSearchHit[];
+    loading: boolean;
+  }>({ query: "", markets: [], loading: false });
+
+  useEffect(() => {
+    if (!enabled || !trimmed || trimmed.includes(":")) {
+      setSearch({ query: "", markets: [], loading: false });
+      return;
+    }
+
+    let cancelled = false;
+    setSearch({ query: trimmed, markets: [], loading: true });
+    const timer = setTimeout(() => {
+      void getSharedAdjacentClient().searchMarkets(trimmed, 12).then((response) => {
+        if (cancelled) return;
+        const markets = (response.markets ?? []).flatMap((market) => {
+          const hit = mapAdjacentMarketToHit(market);
+          return hit ? [hit] : [];
+        });
+        setSearch({ query: trimmed, markets, loading: false });
+      }).catch(() => {
+        if (!cancelled) setSearch({ query: trimmed, markets: [], loading: false });
+      });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, trimmed]);
+
+  return {
+    markets: search.query === trimmed ? search.markets : [],
+    loading: search.loading && search.query === trimmed,
+  };
+}
 
 export interface SeriesCatalogSearchResult {
   suggestions: SeriesCatalogSuggestion[];
@@ -43,11 +88,10 @@ export function useSeriesCatalogSuggestions({
     instruments: SeriesCatalogInstrument[];
     loading: boolean;
   }>({ query: "", instruments: [], loading: false });
-  const [marketSearch, setMarketSearch] = useState<{
-    query: string;
-    markets: PredictionMarketSearchHit[];
-    loading: boolean;
-  }>({ query: "", markets: [], loading: false });
+  const predictionSearch = usePredictionMarketHits(
+    query,
+    enabled && looksLikePredictionMarketQuery(query.trim()),
+  );
 
   useEffect(() => {
     const instrumentQuery = analysis.instrumentQuery.trim();
@@ -124,47 +168,10 @@ export function useSeriesCatalogSuggestions({
     };
   }, [analysis.directInstrument, analysis.instrumentQuery, enabled, query, tickers]);
 
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (!enabled || !looksLikePredictionMarketQuery(trimmed) || trimmed.includes(":")) {
-      setMarketSearch({ query: "", markets: [], loading: false });
-      return;
-    }
-
-    let cancelled = false;
-    setMarketSearch({ query: trimmed, markets: [], loading: true });
-    const timer = setTimeout(() => {
-      void getSharedAdjacentClient().searchMarkets(trimmed, 6).then((response) => {
-        if (cancelled) return;
-        const markets: PredictionMarketSearchHit[] = (response.markets ?? []).flatMap((market) => {
-          if (market.platform !== "kalshi" && market.platform !== "polymarket") return [];
-          const marketId = market.platform === "kalshi"
-            ? (market.slug?.trim() || market.id)
-            : market.id;
-          if (!marketId) return [];
-          return [{
-            venue: market.platform,
-            marketId,
-            title: market.title,
-            ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
-          }];
-        });
-        setMarketSearch({ query: trimmed, markets, loading: false });
-      }).catch(() => {
-        if (!cancelled) setMarketSearch({ query: trimmed, markets: [], loading: false });
-      });
-    }, 120);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [enabled, query]);
-
   const instruments = search.query === analysis.instrumentQuery
     ? search.instruments
     : [];
-  const markets = marketSearch.query === query.trim() ? marketSearch.markets : [];
+  const markets = predictionSearch.markets;
   const suggestions = useMemo(
     () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments, 8, markets),
     [defaultInstrument, instruments, markets, query],
@@ -174,6 +181,6 @@ export function useSeriesCatalogSuggestions({
     suggestions,
     instruments,
     loading: (search.loading && search.query === analysis.instrumentQuery)
-      || (marketSearch.loading && marketSearch.query === query.trim()),
+      || predictionSearch.loading,
   };
 }

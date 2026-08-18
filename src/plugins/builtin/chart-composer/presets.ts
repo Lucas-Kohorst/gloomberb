@@ -98,12 +98,33 @@ function normalizeInstrument(
   return { symbol, exchange: canonicalExchange(exchangeToken) };
 }
 
+const CHART_FIELD_TOKEN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  div: CHART_FIELD_IDS.dividends,
+  dvd: CHART_FIELD_IDS.dividends,
+  dividend: CHART_FIELD_IDS.dividends,
+  dividends: CHART_FIELD_IDS.dividends,
+});
+
+const SHORT_FIELD_TOKENS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries([
+    ...Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token]),
+    [CHART_FIELD_IDS.dividends, "dvd"],
+  ]),
+);
+
+/** Short token used in catalog / command-bar copy (`AAPL:dvd`, `AAPL:price`). */
+export function shortChartFieldToken(fieldId: string): string {
+  return SHORT_FIELD_TOKENS[fieldId] ?? fieldId.split(".").at(-1) ?? fieldId;
+}
+
 export function resolveChartFieldAlias(value: string | undefined): string {
   if (!value?.trim()) return CHART_FIELD_IDS.price;
   const trimmed = value.trim();
   const canonical = canonicalTimeSeriesFieldId(trimmed);
   if (getTimeSeriesField(canonical)) return canonical;
   const searchable = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const aliased = CHART_FIELD_TOKEN_ALIASES[searchable];
+  if (aliased) return aliased;
   const match = listTimeSeriesFields().find((field) => (
     field.id.toLowerCase().replace(/[^a-z0-9]/g, "") === searchable
     || field.label.toLowerCase().replace(/[^a-z0-9]/g, "") === searchable

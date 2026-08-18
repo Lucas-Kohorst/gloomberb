@@ -282,6 +282,8 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
   const openFiling = openItemId
     ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
     : null;
+  const selectedFiling = filings[selectedIdx] ?? null;
+  const linkFiling = openFiling ?? selectedFiling;
   const documentsEntry = useSecFilingDocuments(openFiling ?? null);
   const openDocuments = useResolvedEntryValue(documentsEntry) ?? [];
   const loadingDocuments = !!openFiling && (
@@ -310,12 +312,12 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
   usePaneStatusLinkFooter({
     registrationId: "sec",
     focused,
-    url: error ? null : openFiling?.filingUrl,
-    source: openFiling?.form,
+    url: error ? null : linkFiling?.filingUrl,
+    source: linkFiling?.form,
     label: "filing",
     loading,
     error,
-    showOpenHint: !error && !!openFiling?.filingUrl,
+    showOpenHint: !error && !!linkFiling?.filingUrl,
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
@@ -406,6 +408,8 @@ function SecPane({ width, height, focused }: PaneProps) {
   const openFiling = openItemId
     ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
     : null;
+  const selectedFiling = filings[selectedIdx] ?? null;
+  const linkFiling = openFiling ?? selectedFiling;
   const documentsEntry = useSecFilingDocuments(openFiling ?? null);
   const openDocuments = useResolvedEntryValue(documentsEntry) ?? [];
   const loadingDocuments = !!openFiling && (
@@ -473,15 +477,15 @@ function SecPane({ width, height, focused }: PaneProps) {
   usePaneStatusLinkFooter({
     registrationId: "sec",
     focused,
-    url: error ? null : openFiling?.filingUrl,
-    source: openFiling?.form,
+    url: error ? null : linkFiling?.filingUrl,
+    source: linkFiling?.form,
     label: "filing",
     loading,
     error,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : undefined,
-    showOpenHint: !error && !!openFiling?.filingUrl,
+    showOpenHint: !error && !!linkFiling?.filingUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
