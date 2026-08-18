@@ -6,6 +6,7 @@ import { optionsModule } from "./options";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { researchModule } from "./research";
 import { secModule } from "./sec";
+import { shortInterestModule } from "./short-interest";
 import { thirteenFModule } from "./thirteenf";
 import { tickerDetailModule } from "./ticker-detail";
 
@@ -22,6 +23,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     researchModule,
     dividendYieldModule,
     holdersModule,
+    shortInterestModule,
     thirteenFModule,
     secModule,
     insiderModule,

@@ -227,6 +227,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `OMON <ticker>` | Options monitor |
 | `HDS <ticker>` | Institutional holders |
 | `DVD <ticker>` | Dividend yield and history |
+| `SI <ticker>` | Short interest |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
 | `INS <ticker>` | Insider activity |
 | `EVT <ticker>` | Corporate actions, earnings, and estimates |
