@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box } from "../../../ui";
-import type { PaneProps } from "../../../types/plugin";
-import type { PluginModule } from "../plugin-module";
+import { useMemo } from "react";
+import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -14,6 +12,7 @@ import { createAdjacentNewsCapability } from "./news";
 import { registerConnectionSource } from "../connections/register";
 import { usePluginConfigState } from "../../runtime";
 
+export const ADJACENT_PLUGIN_ID = "adjacent";
 const ADJACENT_API_KEY_CONFIG = "adjacentApiKey";
 
 let adjacentClient: AdjacentClient | null = null;
@@ -51,7 +50,13 @@ function AdjacentRatesPaneWrapper(props: PaneProps) {
   return <AdjacentRatesPane client={client} {...props} />;
 }
 
-export const adjacentModule: PluginModule = {
+export const adjacentPlugin: GloomPlugin = {
+  id: ADJACENT_PLUGIN_ID,
+  name: "Adjacent",
+  version: "1.0.0",
+  description: "Adjacent prediction-market indices, reference rates, and market search.",
+  toggleable: true,
+
   panes: [
     {
       id: "adjacent-indices",
@@ -109,12 +114,11 @@ export const adjacentModule: PluginModule = {
       id: "adjacent",
       name: "Adjacent",
       kind: "prediction-market",
-      pluginId: "adjacent",
+      pluginId: ADJACENT_PLUGIN_ID,
       priority: 200,
       authRequired: false,
     });
 
-    // Commands
     ctx.registerCommand({
       id: "adjacent-markets-search",
       label: "Search Adjacent Markets",

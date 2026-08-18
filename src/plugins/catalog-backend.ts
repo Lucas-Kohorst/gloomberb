@@ -9,6 +9,10 @@ import {
   marketOverviewPlugin,
   portfolioPlugin,
 } from "./builtin/composite-plugins";
+import { adjacentPlugin } from "./builtin/adjacent";
+import { bondSearchPlugin } from "./builtin/bond-search";
+import { buildoutPlugin } from "./builtin/buildout";
+import { congressTradesPlugin } from "./builtin/congress-trades";
 import { debugPlugin } from "./builtin/debug";
 import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
@@ -19,6 +23,7 @@ import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
+import { volatilityPlugin } from "./builtin/volatility";
 import { yahooPlugin } from "./builtin/yahoo";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
@@ -33,17 +38,22 @@ const desktopBackendPlugins: GloomPlugin[] = [
   applicationPlugin,
   newsPlugin,
   pollsPlugin,
+  llmStatsPlugin,
+  adjacentPlugin,
+  predictionMarketsBackendPlugin,
+  treasuryAuctionsPlugin,
+  bondSearchPlugin,
+  volatilityPlugin,
+  congressTradesPlugin,
+  buildoutPlugin,
   substackPlugin,
   notesPlugin,
   pluginDiscoveryPlugin,
   aiPlugin,
-  llmStatsPlugin,
-  predictionMarketsBackendPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
-  treasuryAuctionsPlugin,
   debugPlugin,
 ];
 

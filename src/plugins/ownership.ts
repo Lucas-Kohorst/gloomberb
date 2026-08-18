@@ -65,7 +65,7 @@ export function normalizeBuiltinDisabledPluginIds(pluginIds: readonly string[]):
 export function normalizeBuiltinPluginStateMap(
   value: Record<string, Record<string, unknown>>,
 ): Record<string, Record<string, unknown>> {
-  return Object.fromEntries(
+  const remapped = Object.fromEntries(
     Object.entries(value).reduce<Array<[string, Record<string, unknown>]>>((entries, [pluginId, state]) => {
       const normalizedPluginId = normalizeBuiltinPluginOwnerId(pluginId);
       const existing = entries.find(([entryPluginId]) => entryPluginId === normalizedPluginId);
@@ -79,6 +79,30 @@ export function normalizeBuiltinPluginStateMap(
       return entries;
     }, []),
   );
+  return liftAdjacentConfigFromCloud(remapped);
+}
+
+/**
+ * Adjacent used to live under the Gloom Cloud composite. Lift its API key into
+ * the new adjacent plugin namespace so saved keys survive the extraction.
+ */
+function liftAdjacentConfigFromCloud(
+  value: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  const cloud = value["gloomberb-cloud"];
+  if (!cloud || !Object.prototype.hasOwnProperty.call(cloud, "adjacentApiKey")) {
+    return value;
+  }
+  const { adjacentApiKey, ...cloudRest } = cloud;
+  const adjacent = { ...(value.adjacent ?? {}) };
+  if (!Object.prototype.hasOwnProperty.call(adjacent, "adjacentApiKey")) {
+    adjacent.adjacentApiKey = adjacentApiKey;
+  }
+  return {
+    ...value,
+    "gloomberb-cloud": cloudRest,
+    adjacent,
+  };
 }
 
 /**
