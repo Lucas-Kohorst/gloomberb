@@ -1,4 +1,4 @@
-import type { TvChannel } from "./channels";
+import { TV_CHANNELS, type TvChannel } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
 import { resolveYoutubeLivePage } from "./youtube-embed";
 
@@ -24,6 +24,17 @@ async function getYoutubeClient(): Promise<{ client: YoutubeClient; module: Yout
     enable_session_cache: true,
   });
   return { client: await clientPromise, module };
+}
+
+function isTvSourceId(sourceId: string): sourceId is TvChannel["id"] {
+  return TV_CHANNELS.some((channel) => channel.id === sourceId);
+}
+
+function asResolvedTvStream(stream: ResolvedLiveStream): ResolvedTvStream {
+  if (!isTvSourceId(stream.sourceId)) {
+    throw new Error(`Unknown TV channel: ${stream.sourceId}`);
+  }
+  return { ...stream, sourceId: stream.sourceId };
 }
 
 function usableCachedStream(sourceId: TvChannel["id"]): ResolvedTvStream | null {
@@ -81,7 +92,7 @@ async function resolveUncached(channel: TvChannel): Promise<ResolvedTvStream> {
     return await resolveLiveStream(channel);
   } catch (liveError) {
     try {
-      return await resolveYoutubeLivePage(channel);
+      return asResolvedTvStream(await resolveYoutubeLivePage(channel));
     } catch {
       throw liveError;
     }
