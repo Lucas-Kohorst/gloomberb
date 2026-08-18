@@ -1,5 +1,6 @@
 import type { TvChannel } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
+import { resolveYoutubeLivePage } from "./youtube-embed";
 
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const MAX_LIVE_CANDIDATES = 6;
@@ -32,7 +33,7 @@ function usableCachedStream(sourceId: TvChannel["id"]): ResolvedTvStream | null 
   return Date.now() < validUntil ? cached : null;
 }
 
-async function resolveUncached(channel: TvChannel): Promise<ResolvedTvStream> {
+async function resolveLiveStream(channel: TvChannel): Promise<ResolvedTvStream> {
   const { client, module } = await getYoutubeClient();
   const channelFeed = await client.getChannel(channel.channelId);
   if (!channelFeed.has_live_streams) {
@@ -63,6 +64,7 @@ async function resolveUncached(channel: TvChannel): Promise<ResolvedTvStream> {
       sourceId: channel.id,
       videoId: candidate.content_id,
       title: info.basic_info.title || candidate.metadata?.title?.toString() || `${channel.name} Live`,
+      isLive: true,
       manifestUrl,
       watchUrl: `https://www.youtube.com/watch?v=${candidate.content_id}`,
       posterUrl: poster?.url,
@@ -72,6 +74,18 @@ async function resolveUncached(channel: TvChannel): Promise<ResolvedTvStream> {
   }
 
   throw new Error(`${channel.name} does not currently have a playable public live stream.`);
+}
+
+async function resolveUncached(channel: TvChannel): Promise<ResolvedTvStream> {
+  try {
+    return await resolveLiveStream(channel);
+  } catch (liveError) {
+    try {
+      return await resolveYoutubeLivePage(channel);
+    } catch {
+      throw liveError;
+    }
+  }
 }
 
 export function resolveTvStream(
