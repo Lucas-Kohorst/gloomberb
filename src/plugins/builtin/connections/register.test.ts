@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   clearPendingConnectionReports,
   listConnectionSources,
@@ -10,6 +10,12 @@ import { createInitialConnectionState } from "./types";
 
 describe("connection source registry", () => {
   const disposers: Array<() => void> = [];
+
+  // Buffered reports are process-wide, so traffic from any other module loaded
+  // in this test process would otherwise replay into the reporter under test.
+  beforeEach(() => {
+    clearPendingConnectionReports();
+  });
 
   afterEach(() => {
     setConnectionRequestReporter(null);
