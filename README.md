@@ -256,6 +256,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
+| `VIX` | Volatility and term-structure dashboard |
 
 ### Workspace and App Controls
 
