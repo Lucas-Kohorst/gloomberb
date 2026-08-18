@@ -10,8 +10,8 @@ import {
   normalizeVoteHubPoll,
 } from "../plugins/builtin/polls/normalize";
 import type { VoteHubPoll } from "../plugins/builtin/polls/types";
-import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
-import type { LlmStatsRow } from "../plugins/builtin/llm-stats/types";
+import { aaMetricValue, matchingAaRows } from "../plugins/builtin/llm-stats/normalize";
+import type { AaModelRow } from "../plugins/builtin/llm-stats/types";
 import { resolveChartSpecData, type ChartResolveSources, type UniversalSeriesLoadResult } from "./resolve";
 import { buildCustomChartPreset } from "../plugins/builtin/chart-composer/presets";
 import type { ChartSpec, TimeSeriesPoint } from "./types";
@@ -114,41 +114,36 @@ describe("poll trend computation", () => {
 // ---------------------------------------------------------------------------
 
 describe("benchmark release-date mapping", () => {
-  test("maps rows with release dates to points, skipping missing dates and non-finite values", async () => {
-    // We test the mapping logic by calling the loader with a mocked fetch.
-    // Since fetchLlmStatsData hits the real API, we verify the mapping math
-    // through the loader interface with a stub.
-
-    const rows: LlmStatsRow[] = [
+  test("maps rows with release dates to points, skipping missing dates and non-finite values", () => {
+    const rows: AaModelRow[] = [
       {
-        id: "gpt-4o", displayName: "GPT-4o", organization: "OpenAI", provider: "OpenAI",
-        releaseDate: "2024-05-13", contextLength: 128000, inputPrice: 5, outputPrice: 15,
-        inputModalities: [], outputModalities: [], tier: "frontier",
-        totalCalls: 1000, failedCalls: 10, failureRate: 1, avgThroughput: 85.5,
-        p5Throughput: 50, avgLatency: 1200, p95Latency: 2000, avgTtft: 500, url: "",
+        id: "gpt-4o", slug: "gpt-4o", name: "GPT-4o", creator: "OpenAI", creatorSlug: "openai",
+        family: "language", category: "language", releaseDate: "2024-05-13",
+        url: "https://artificialanalysis.ai/models/gpt-4o",
+        intelligence: 40, coding: 38, agentic: 36, speed: 85.5,
+        ttftSeconds: 0.4, e2eSeconds: 2.1, inputPrice: 2.5, outputPrice: 10,
+        elo: null, ci95: null, bba: null, fdb: null, tau: null, wer: null,
       },
       {
-        id: "gpt-4-turbo", displayName: "GPT-4 Turbo", organization: "OpenAI", provider: "OpenAI",
-        releaseDate: null, contextLength: 128000, inputPrice: 10, outputPrice: 30,
-        inputModalities: [], outputModalities: [], tier: "frontier",
-        totalCalls: 2000, failedCalls: 20, failureRate: 1, avgThroughput: 45.2,
-        p5Throughput: 20, avgLatency: 1500, p95Latency: 3000, avgTtft: 800, url: "",
+        id: "gpt-4-turbo", slug: "gpt-4-turbo", name: "GPT-4 Turbo", creator: "OpenAI", creatorSlug: "openai",
+        family: "language", category: "language", releaseDate: null,
+        url: "https://artificialanalysis.ai/models/gpt-4-turbo",
+        intelligence: 38, coding: 36, agentic: 34, speed: 45.2,
+        ttftSeconds: 0.8, e2eSeconds: 3, inputPrice: 10, outputPrice: 30,
+        elo: null, ci95: null, bba: null, fdb: null, tau: null, wer: null,
       },
     ];
 
-    // The mapping logic: filter by org, map release_date + metric → point
-    const selectorLower = "openai";
-    const matching = rows.filter((r) => r.organization.toLowerCase() === selectorLower);
+    const matching = matchingAaRows(rows, "OpenAI");
     const points: TimeSeriesPoint[] = [];
     for (const row of matching) {
       if (!row.releaseDate) continue;
       const date = new Date(row.releaseDate);
       if (!Number.isFinite(date.getTime())) continue;
-      const value = row.avgThroughput;
+      const value = aaMetricValue(row, "speed");
       if (typeof value !== "number" || !Number.isFinite(value)) continue;
-      points.push({ date, observedAt: date, value, provenance: { providerId: "llm-stats", quality: "reported" } });
+      points.push({ date, observedAt: date, value, provenance: { providerId: "artificial-analysis", quality: "reported" } });
     }
-    // Only the model with a release date produces a point.
     expect(points).toHaveLength(1);
     expect(points[0]!.value).toBe(85.5);
     expect(points[0]!.date.toISOString().slice(0, 10)).toBe("2024-05-13");
@@ -179,7 +174,7 @@ describe("universal series resolution", () => {
       }),
       loadBenchmarkSeries: async (selector, metric): Promise<UniversalSeriesLoadResult> => ({
         points: [
-          { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" } },
+          { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "artificial-analysis", quality: "reported" } },
         ],
         unit: "tok/s",
         unitGroup: `benchmark:${metric}`,

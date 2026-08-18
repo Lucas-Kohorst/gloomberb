@@ -35,6 +35,7 @@ export interface SeriesCatalogInstrument {
   symbol: string;
   exchange?: string;
   name?: string;
+  assetCategory?: string;
 }
 
 export interface SeriesCatalogSuggestion {
@@ -364,7 +365,7 @@ export function buildChartSeriesAssistContext(): string {
     + "POLY:marketId for Polymarket yes-price, "
     + "FUT:code for futures (e.g. FUT:ES), "
     + "UST:maturity for Treasury yields (e.g. UST:10Y), "
-    + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
+    + "BENCH:selector:metric for AI benchmarks (e.g. BENCH:gpt-4o:intelligence), "
     + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve). "
     + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
 }

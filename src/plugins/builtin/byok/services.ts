@@ -35,10 +35,21 @@ const SEC_EDGAR_SERVICE: ByokKnownService = {
   description: "SEC filings data. Requires an email address in the User-Agent header per SEC fair-access policy.",
 };
 
+const ARTIFICIAL_ANALYSIS_SERVICE: ByokKnownService = {
+  id: "artificial-analysis",
+  name: "Artificial Analysis",
+  apiUrl: "https://artificialanalysis.ai/api/v2",
+  authType: "header",
+  authKey: "x-api-key",
+  envVar: "ARTIFICIAL_ANALYSIS_API_KEY",
+  description: "AI model intelligence, pricing, and performance. Required for AIBENCH and BENCH: series.",
+};
+
 const BUILTIN_SERVICES: ByokKnownService[] = [
   ADJACENT_SERVICE,
   HYPERLIQUID_SERVICE,
   SEC_EDGAR_SERVICE,
+  ARTIFICIAL_ANALYSIS_SERVICE,
 ];
 
 const registeredServices = new Map<string, ByokKnownService>(

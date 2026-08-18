@@ -20,6 +20,135 @@ import {
 } from "./prediction-series";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
+const DEFAULT_CATALOG_INSTRUMENT: SeriesCatalogInstrument = {
+  symbol: "AAPL",
+  exchange: "NASDAQ",
+  name: "Apple Inc.",
+};
+
+function instrumentFromTicker(ticker: TickerRecord): SeriesCatalogInstrument {
+  return {
+    symbol: ticker.metadata.ticker,
+    ...(ticker.metadata.exchange ? { exchange: ticker.metadata.exchange } : {}),
+    ...(ticker.metadata.name ? { name: ticker.metadata.name } : {}),
+    ...(ticker.metadata.assetCategory ? { assetCategory: ticker.metadata.assetCategory } : {}),
+  };
+}
+
+function uniqueCatalogInstruments(
+  instruments: readonly SeriesCatalogInstrument[],
+): SeriesCatalogInstrument[] {
+  const seen = new Set<string>();
+  return instruments.filter((instrument) => {
+    const key = `${instrument.symbol}:${instrument.exchange ?? ""}:${instrument.assetCategory ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function candidateToInstrument(candidate: {
+  symbol: string;
+  ticker?: TickerRecord;
+  result?: { primaryExchange?: string; exchange?: string; name?: string; type?: string };
+}): SeriesCatalogInstrument {
+  const exchange = candidate.ticker?.metadata.exchange
+    || candidate.result?.primaryExchange
+    || candidate.result?.exchange;
+  const name = candidate.ticker?.metadata.name || candidate.result?.name;
+  const assetCategory = candidate.ticker?.metadata.assetCategory || candidate.result?.type;
+  return {
+    symbol: candidate.symbol,
+    ...(exchange ? { exchange } : {}),
+    ...(name ? { name } : {}),
+    ...(assetCategory ? { assetCategory } : {}),
+  };
+}
+
+/** Watchlist + option-aware ticker search used by the Data Catalog universe. */
+export function useCatalogUniverse(query: string): {
+  instruments: SeriesCatalogInstrument[];
+  loading: boolean;
+} {
+  const tickers = useOptionalAppSelector((state) => state.tickers, EMPTY_TICKERS);
+  const watchlist = useMemo(
+    () => [...tickers.values()].map(instrumentFromTicker),
+    [tickers],
+  );
+  const [search, setSearch] = useState<{
+    query: string;
+    instruments: SeriesCatalogInstrument[];
+    loading: boolean;
+  }>({ query: "", instruments: [], loading: false });
+
+  useEffect(() => {
+    const instrumentQuery = query.trim();
+    if (!instrumentQuery || instrumentQuery.includes(":")) {
+      setSearch({ query: "", instruments: [], loading: false });
+      return;
+    }
+
+    const applyLocal = () => {
+      const candidates = buildTickerSearchCandidates({
+        query: instrumentQuery,
+        tickers,
+        providerResults: [],
+        totalLimit: 12,
+        localLimit: 8,
+        includeOptionContracts: true,
+      });
+      setSearch({
+        query: instrumentQuery,
+        instruments: candidates.map(candidateToInstrument),
+        loading: false,
+      });
+    };
+
+    const registry = getSharedRegistry();
+    if (!registry) {
+      applyLocal();
+      return;
+    }
+
+    let cancelled = false;
+    setSearch({ query: instrumentQuery, instruments: [], loading: true });
+    const timer = setTimeout(() => {
+      void searchTickerCandidates({
+        query: instrumentQuery,
+        tickers,
+        dataProvider: registry.marketData,
+        totalLimit: 12,
+        localLimit: 8,
+        includeOptionContracts: true,
+      }).then((candidates) => {
+        if (cancelled) return;
+        setSearch({
+          query: instrumentQuery,
+          instruments: candidates.map(candidateToInstrument),
+          loading: false,
+        });
+      }).catch(() => {
+        if (!cancelled) applyLocal();
+      });
+    }, 80);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, tickers]);
+
+  const searched = search.query === query.trim() ? search.instruments : [];
+  const instruments = useMemo(() => {
+    const merged = uniqueCatalogInstruments([...watchlist, ...searched]);
+    return merged.length > 0 ? merged : [DEFAULT_CATALOG_INSTRUMENT];
+  }, [searched, watchlist]);
+
+  return {
+    instruments,
+    loading: search.loading && search.query === query.trim(),
+  };
+}
 
 export function usePredictionMarketHits(
   query: string,

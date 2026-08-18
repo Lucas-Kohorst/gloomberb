@@ -298,6 +298,7 @@ function handleByokKeysRequest(request: Request, env: Env): Response {
     "ADJACENT_API_KEY",
     "HYPERLIQUID_API_KEY",
     "SEC_EDGAR_EMAIL",
+    "ARTIFICIAL_ANALYSIS_API_KEY",
   ];
 
   const configured: Array<{ serviceId: string; envVar: string }> = [];

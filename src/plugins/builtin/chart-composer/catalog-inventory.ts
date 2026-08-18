@@ -1,6 +1,13 @@
-import { listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { isDividendFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
 import { publicTickerKey } from "../../../utils/exchanges";
+import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
+import {
+  ARTIFICIAL_ANALYSIS_ATTRIBUTION,
+  ARTIFICIAL_ANALYSIS_SITE,
+  type AaModelRow,
+} from "../llm-stats/types";
+import { aaCatalogMetricsForRow, aaChartExpression } from "../llm-stats/normalize";
 import {
   type SeriesCatalogInstrument,
 } from "./series-catalog";
@@ -38,6 +45,7 @@ export type CatalogFilterId =
   | "fred"
   | "prediction"
   | "futures"
+  | "ai"
   | "other";
 
 export interface CatalogSeriesRow {
@@ -57,6 +65,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "fred", label: "FRED" },
   { id: "prediction", label: "Prediction" },
   { id: "futures", label: "Futures" },
+  { id: "ai", label: "AI" },
   { id: "other", label: "Other" },
 ];
 
@@ -66,10 +75,18 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   fred: new Set(["fred", "treasury"]),
   prediction: new Set(["adjacent", "kalshi", "polymarket"]),
   futures: new Set(["futures"]),
-  other: new Set(["poll", "benchmark"]),
+  ai: new Set(["benchmark"]),
+  other: new Set(["poll"]),
 };
 
-function fieldKind(fieldId: string): string {
+function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
+  const category = instrument.assetCategory?.trim().toUpperCase();
+  return category === "OPT" || parseOptionSymbol(instrument.symbol) != null;
+}
+
+function fieldKind(fieldId: string, option = false): string {
+  if (option) return "Options";
+  if (isDividendFieldId(fieldId)) return "Dividends";
   if (fieldId.startsWith("market.")) return "Market";
   if (fieldId.startsWith("valuation.")) return "Valuation";
   return "Fundamentals";
@@ -115,7 +132,7 @@ export function catalogRowsFromPredictionHits(
       label: `${hit.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${hit.title}`,
       source: hit.venue === "kalshi" ? "Kalshi" : "Polymarket",
       sourceId: hit.venue,
-      kind: hit.eventLabel || "Yes price",
+      kind: "Prediction",
       expression,
       url: hit.venue === "kalshi"
         ? `https://kalshi.com/markets/${hit.marketId}`
@@ -124,21 +141,48 @@ export function catalogRowsFromPredictionHits(
   });
 }
 
-export function listStaticCatalogInventory(
-  instrument: SeriesCatalogInstrument,
-): CatalogSeriesRow[] {
-  const ticker = publicTickerKey(instrument.symbol, instrument.exchange);
-  const securities = listTimeSeriesFields().map((field) => {
-    const token = shortChartFieldToken(field.id);
-    return row({
-      id: `${ticker}:${field.id}`,
-      label: `${ticker} · ${field.label}`,
-      source: "Security",
-      sourceId: "security",
-      kind: fieldKind(field.id),
-      expression: `${ticker}:${token}`,
+export function catalogRowsFromAaModels(models: readonly AaModelRow[]): CatalogSeriesRow[] {
+  return models.flatMap((model) => (
+    aaCatalogMetricsForRow(model).map((metric) => row({
+      id: `bench:${model.slug}:${metric.code}`,
+      label: `${model.name} · ${metric.label}`,
+      source: "Artificial Analysis",
+      sourceId: "benchmark",
+      kind: "Benchmark",
+      expression: aaChartExpression(model, metric.code),
+      url: model.url || ARTIFICIAL_ANALYSIS_SITE,
+    }))
+  )).map((entry) => ({
+    ...entry,
+    searchText: `${entry.searchText} ${ARTIFICIAL_ANALYSIS_ATTRIBUTION}`.toLowerCase(),
+  }));
+}
+
+function securityRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
+  return instruments.flatMap((instrument) => {
+    const ticker = publicTickerKey(instrument.symbol, instrument.exchange);
+    const option = isOptionInstrument(instrument);
+    return listTimeSeriesFields().flatMap((field) => {
+      if (option && (field.id.startsWith("fundamental.") || field.id.startsWith("valuation.") || isDividendFieldId(field.id))) {
+        return [];
+      }
+      const token = shortChartFieldToken(field.id);
+      return [row({
+        id: `${ticker}:${field.id}`,
+        label: `${ticker} · ${field.label}`,
+        source: "Yahoo",
+        sourceId: "security",
+        kind: fieldKind(field.id, option),
+        expression: `${ticker}:${token}`,
+      })];
     });
   });
+}
+
+export function listStaticCatalogInventory(
+  instruments: readonly SeriesCatalogInstrument[],
+): CatalogSeriesRow[] {
+  const securities = securityRows(instruments);
 
   const fred = listKnownFredSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
@@ -153,9 +197,9 @@ export function listStaticCatalogInventory(
   const treasuries = TREASURY_CATALOG.map((entry) => row({
     id: `ust:${entry.maturity}`,
     label: entry.label,
-    source: "Treasury",
+    source: "FRED",
     sourceId: "treasury",
-    kind: "Yield",
+    kind: "Treasury",
     expression: `UST:${entry.maturity}`,
     url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
   }));
@@ -163,7 +207,7 @@ export function listStaticCatalogInventory(
   const futures = FUTURES_CATALOG.map((entry) => row({
     id: `fut:${entry.code}`,
     label: `${entry.name} (${entry.code})`,
-    source: "Futures",
+    source: "Yahoo",
     sourceId: "futures",
     kind: entry.sectorLabel,
     expression: `FUT:${entry.code}`,
@@ -194,12 +238,16 @@ export function listStaticCatalogInventory(
     BENCHMARK_METRICS.map((metric) => row({
       id: `bench:${org}:${metric.code}`,
       label: `${org} · ${metric.label}`,
-      source: "Benchmark",
+      source: "Artificial Analysis",
       sourceId: "benchmark",
-      kind: "AI",
+      kind: "Benchmark",
       expression: `BENCH:${org}:${metric.code}`,
+      url: ARTIFICIAL_ANALYSIS_SITE,
     }))
-  ));
+  )).map((entry) => ({
+    ...entry,
+    searchText: `${entry.searchText} ${ARTIFICIAL_ANALYSIS_ATTRIBUTION}`.toLowerCase(),
+  }));
 
   return [
     ...securities,

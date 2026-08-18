@@ -254,7 +254,7 @@ G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
 G AAPL:dvd
 ```
 
-`CAT [query]` opens the Data Catalog — a searchable, filterable inventory of every chartable series (securities fields, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls). Enter charts the selected series.
+`CAT [query]` opens the Data Catalog — a searchable, filterable inventory of every chartable series (securities, options, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls, and Artificial Analysis). Enter or `[g]`raph charts the selected series.
 
 Open **Series** to add, remove, reorder, or hide series and choose each series' field, chart style, transform, axis, panel, period, and panel scale. Price data supports candles, OHLC, HLC, line, and area; scalar data supports its compatible line, area, step, column, and point modes. Panels can use independent left/right axes and linear or logarithmic scales.
 
@@ -287,7 +287,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `FNG` | Fear and greed market gauge |
 | `HALT` | Today's US market trading halts |
 | `IPO` | Upcoming and recent IPOs |
-| `CAT [query]` | Data Catalog of every chartable series |
+| `CAT [query]` | Data Catalog of every chartable series, including options and Artificial Analysis |
+| `AIBENCH` | AI model intelligence from Artificial Analysis |
 
 ### Workspace and App Controls
 

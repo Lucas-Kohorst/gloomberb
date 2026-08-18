@@ -106,17 +106,26 @@ export interface BenchmarkMetricEntry {
 }
 
 export const BENCHMARK_METRICS: readonly BenchmarkMetricEntry[] = [
-  { code: "tps", label: "Throughput", unit: "tok/s", unitGroup: "throughput" },
-  { code: "p95", label: "P95 Latency", unit: "ms", unitGroup: "latency" },
-  { code: "ttft", label: "Time to First Token", unit: "ms", unitGroup: "latency" },
-  { code: "latency", label: "Avg Latency", unit: "ms", unitGroup: "latency" },
-  { code: "fail", label: "Failure Rate", unit: "%", unitGroup: "percent" },
-  { code: "calls", label: "Total Calls", unit: "calls", unitGroup: "calls" },
+  { code: "intelligence", label: "Intelligence Index", unit: "index", unitGroup: "intelligence" },
+  { code: "coding", label: "Coding Index", unit: "index", unitGroup: "coding" },
+  { code: "agentic", label: "Agentic Index", unit: "index", unitGroup: "agentic" },
+  { code: "speed", label: "Output Speed", unit: "tok/s", unitGroup: "throughput" },
+  { code: "ttft", label: "Time to First Token", unit: "s", unitGroup: "latency" },
+  { code: "e2e", label: "End-to-end Latency", unit: "s", unitGroup: "latency" },
+  { code: "input", label: "Input Price", unit: "$/1M", unitGroup: "price" },
+  { code: "output", label: "Output Price", unit: "$/1M", unitGroup: "price" },
+  { code: "elo", label: "Arena Elo", unit: "elo", unitGroup: "elo" },
 ];
+
+const BENCHMARK_METRIC_ALIASES: Readonly<Record<string, string>> = {
+  tps: "speed",
+  p95: "e2e",
+};
 
 export function findBenchmarkMetric(token: string): BenchmarkMetricEntry | undefined {
   const lower = token.trim().toLowerCase();
-  return BENCHMARK_METRICS.find((entry) => entry.code === lower);
+  const code = BENCHMARK_METRIC_ALIASES[lower] ?? lower;
+  return BENCHMARK_METRICS.find((entry) => entry.code === code);
 }
 
 /** Well-known organizations for benchmark suggestion discoverability. */
