@@ -43,6 +43,7 @@ import {
   applySeriesStyle,
   chartSeriesLabel,
   defaultFinancialTimestampMode,
+  formatSeriesExpression,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
   setBuiltinStudies,
@@ -132,13 +133,7 @@ function ChartComposerSurface({
             ?? defaultFinancialTimestampMode(entry.source.fieldId)
             ?? "",
         ]
-      : [entry.id, entry.source.kind, entry.source.kind === "economic"
-        ? entry.source.seriesId
-        : entry.source.kind === "prediction-market"
-          ? `${entry.source.venue}:${entry.source.marketId}`
-          : entry.source.kind === "adjacent-index"
-            ? entry.source.indexId
-            : ""]),
+      : [entry.id, formatSeriesExpression(entry)]),
   }), [spec.series, spec.viewport.dateWindow, spec.viewport.maxPoints, spec.viewport.range, spec.viewport.resolution]);
   const [runtimeViewportState, setRuntimeViewportState] = useState<{
     key: string;

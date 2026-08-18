@@ -20,9 +20,8 @@ let adjacentClient: AdjacentClient | null = null;
 let disposeAdjacentConnection: (() => void) | null = null;
 
 function getOrCreateClient(apiKey: string | null): AdjacentClient {
-  if (!adjacentClient) {
-    adjacentClient = new AdjacentClient({ apiKey: apiKey ?? undefined });
-  } else {
+  const normalizedKey = apiKey ?? null;
+  if (!adjacentClient || adjacentClient.apiKey !== normalizedKey) {
     adjacentClient = new AdjacentClient({ apiKey: apiKey ?? undefined });
   }
   return adjacentClient;

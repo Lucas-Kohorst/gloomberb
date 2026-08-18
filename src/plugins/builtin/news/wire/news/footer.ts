@@ -56,14 +56,14 @@ export function useNewsArticleFooter({
       : []
   ), [onRefresh]);
   const trailingHints = useMemo<PaneHint[]>(() => {
-    const hints: PaneHint[] = [];
+    const trailing: PaneHint[] = [];
     if (onShare && article) {
-      hints.push({ id: "share", key: "y", label: " share", onPress: onShare });
+      trailing.push({ id: "share", key: "y", label: " share", onPress: onShare });
     }
     if (onPopOut && article) {
-      hints.push({ id: "pop-out", key: "p", label: "op out", onPress: onPopOut });
+      trailing.push({ id: "pop-out", key: "p", label: "op out", onPress: onPopOut });
     }
-    return hints;
+    return trailing;
   }, [article, onPopOut, onShare]);
 
   useShortcut((event) => {

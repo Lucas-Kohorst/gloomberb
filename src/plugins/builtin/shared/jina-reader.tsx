@@ -118,9 +118,6 @@ export function JinaArticleReader({
   return (
     <ScrollBox ref={scrollRef} scrollY focusable={focused} flexGrow={1} paddingX={1}>
       <Box flexDirection="column" width={lineWidth} gap={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD} wrapText width={lineWidth}>
-          {title || "Article"}
-        </Text>
         {state.loading ? <Text fg={colors.textDim}>Refreshing article...</Text> : null}
         {state.error && !body ? <Text fg={colors.negative} wrapText width={lineWidth}>{state.error}</Text> : null}
         {body ? (

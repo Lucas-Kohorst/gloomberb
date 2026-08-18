@@ -17,7 +17,7 @@ import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
-import { encodeChangelogReleaseForShare, useCopyShareLink } from "../shared/article-share";
+import { changelogReleaseSharePayload, useCopyShareLink } from "../shared/article-share";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -189,7 +189,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
 
   const shareRelease = useCallback(() => {
     if (!linkRelease) return;
-    void copyShareLink(encodeChangelogReleaseForShare(linkRelease));
+    void copyShareLink(changelogReleaseSharePayload(linkRelease));
   }, [copyShareLink, linkRelease]);
 
   useShortcut((event) => {

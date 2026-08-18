@@ -14,7 +14,7 @@ import { useNewsArticleFooter } from "./footer";
 import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 
 export function NewsPresetPane({
   focused,
@@ -59,7 +59,7 @@ export function NewsPresetPane({
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
-    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
 
   useNewsArticleFooter({

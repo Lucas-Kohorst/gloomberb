@@ -14,7 +14,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 - **Futures** (\`FUT\`), **AI benchmarks** (\`AIBENCH\`), **Plugins**, **SEC filings**, **Connections**, **API Keys**, **Polls**, Adjacent indices/rates, and **RSS**.
 - TradingView charts with universal series expressions, plus prediction-market series (\`G KALSHI:…\` / \`G POLY:…\` / \`G ADJ:…\`) from venue-direct Kalshi/Polymarket catalogs with native ticker/event/series resolution and a visible TICKER column. Market price history lives in its own **Chart** tab so Overview leads with outcomes.
 - News/article reader with command-bar article lookup; firehose with sortable/searchable Origin and Substack bodies; TV live and labelled replays.
-- Slim public share pages for articles, charts, and tables (\`/article\`, \`/s/…\`) instead of booting the full terminal.
+- Slim public share pages for articles, charts, and tables at short \`/s/{id}\` links (~12 chars) instead of booting the full terminal. Legacy \`/article?a=…\` links still open.
 
 ## Features
 

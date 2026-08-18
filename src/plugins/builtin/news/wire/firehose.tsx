@@ -18,7 +18,7 @@ import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import type { PluginModule } from "../../plugin-module";
 
 export const FIREHOSE_QUERY: NewsQuery = { feed: "latest", limit: 200 };
@@ -101,7 +101,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
-    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
 
   const refresh = useCallback(() => {

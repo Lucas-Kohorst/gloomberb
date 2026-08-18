@@ -6,7 +6,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
-import { useCopyShareLink, encodeSubstackArticleForShare } from "../shared/article-share";
+import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
 import { loadSubstackArticleDetail } from "./api/loaders";
 import { SubstackAuthError } from "./api/types";
 import { getStashedSubstackArticle } from "./article-stash";
@@ -91,7 +91,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const copyShareLink = useCopyShareLink();
   const shareArticle = useCallback(() => {
     if (!article) return;
-    void copyShareLink(encodeSubstackArticleForShare(article));
+    void copyShareLink(substackArticleSharePayload(article));
   }, [article, copyShareLink]);
 
   useShortcut((event) => {

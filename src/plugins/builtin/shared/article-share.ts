@@ -4,30 +4,33 @@ import type { SubstackArticleSummary } from "../substack/types";
 import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
 import { getBrowserLocation } from "../../../utils/browser-location";
+import { parseDisplayDate } from "../../../utils/datetime-format";
 import { usePluginAppActions } from "../../runtime";
+import { createShare } from "../../../sources/share-service";
 import {
   decodeArticleSharePayload,
   encodeArticleSharePayload,
   type ArticleSharePayload,
 } from "../../../shares/payload";
-import { buildInlineArticleShareUrl } from "../../../shares/routes";
+import {
+  buildInlineArticleShareUrl,
+  buildShortShareUrl,
+} from "../../../shares/routes";
 
 export { decodeArticleSharePayload };
 export type { ArticleShareStoryItem, ArticleSharePayload } from "../../../shares/payload";
 export { SHARE_HOSTED_ORIGIN } from "../../../shares/routes";
 
 function toDateISO(value: Date | string | null | undefined): string | undefined {
-  if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  return parseDisplayDate(value)?.toISOString();
 }
 
 // ---------------------------------------------------------------------------
-// Encode functions
+// Payload builders
 // ---------------------------------------------------------------------------
 
-export function encodeNewsArticleForShare(article: NewsArticle): string {
-  const payload: ArticleSharePayload = {
+export function newsArticleSharePayload(article: NewsArticle): ArticleSharePayload {
+  return {
     type: "news",
     id: article.id,
     title: article.title,
@@ -49,15 +52,14 @@ export function encodeNewsArticleForShare(article: NewsArticle): string {
       publishedAt: toDateISO(item.publishedAt) ?? new Date(0).toISOString(),
     })),
   };
-  return encodeArticleSharePayload(payload);
 }
 
 /**
  * Changelog releases travel as news-shaped article payloads so a shared link
  * opens in the same reader, for anyone, without an account.
  */
-export function encodeChangelogReleaseForShare(release: ChangelogRelease): string {
-  const payload: ArticleSharePayload = {
+export function changelogReleaseSharePayload(release: ChangelogRelease): ArticleSharePayload {
+  return {
     type: "news",
     id: `changelog:${release.id}`,
     title: release.title || release.version || release.tagName,
@@ -66,11 +68,10 @@ export function encodeChangelogReleaseForShare(release: ChangelogRelease): strin
     summary: release.body,
     publishedAt: release.publishedAt,
   };
-  return encodeArticleSharePayload(payload);
 }
 
-export function encodeSubstackArticleForShare(article: SubstackArticleSummary): string {
-  const payload: ArticleSharePayload = {
+export function substackArticleSharePayload(article: SubstackArticleSummary): ArticleSharePayload {
+  return {
     type: "substack",
     id: article.id,
     title: article.title,
@@ -88,14 +89,29 @@ export function encodeSubstackArticleForShare(article: SubstackArticleSummary): 
     readMinutes: article.readMinutes || undefined,
     publishedAt: article.publishedAt ?? undefined,
   };
-  return encodeArticleSharePayload(payload);
+}
+
+/** @deprecated Prefer `newsArticleSharePayload` + short-ID share. Kept for legacy `/article?a=` links. */
+export function encodeNewsArticleForShare(article: NewsArticle): string {
+  return encodeArticleSharePayload(newsArticleSharePayload(article));
+}
+
+/** @deprecated Prefer `changelogReleaseSharePayload` + short-ID share. */
+export function encodeChangelogReleaseForShare(release: ChangelogRelease): string {
+  return encodeArticleSharePayload(changelogReleaseSharePayload(release));
+}
+
+/** @deprecated Prefer `substackArticleSharePayload` + short-ID share. */
+export function encodeSubstackArticleForShare(article: SubstackArticleSummary): string {
+  return encodeArticleSharePayload(substackArticleSharePayload(article));
 }
 
 /**
  * Returns true only for a decodable public article URL in a browser.
  *
  * Keep this check independent of the renderer so the app bootstrap can use it
- * before the deep-link bridge has mounted.
+ * before the deep-link bridge has mounted. New shares use `/s/{id}`; the
+ * inline shape stays so older links still bypass the login gate.
  */
 export function isPublicArticleShareLocation(): boolean {
   const location = getBrowserLocation();
@@ -106,7 +122,7 @@ export function isPublicArticleShareLocation(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// URL builder
+// URL builder (legacy inline form)
 // ---------------------------------------------------------------------------
 
 export function buildShareUrl(encodedPayload: string): string {
@@ -174,21 +190,31 @@ export function payloadToSubstackArticle(payload: ArticleSharePayload): Substack
 }
 
 // ---------------------------------------------------------------------------
-// React hook — copies share URL to clipboard with confirmation feedback
+// React hook — stores a short-ID share and copies the compact URL
 // ---------------------------------------------------------------------------
 
-export function useCopyShareLink(): (encodedPayload: string) => Promise<void> {
+/**
+ * Prefer a short `/s/{id}` link. Fall back to the inline `/article?a=…` form
+ * when the hosted share API is unreachable (desktop terminal, offline).
+ */
+export function useCopyShareLink(): (payload: ArticleSharePayload) => Promise<void> {
   const rendererHost = useRendererHost();
   const { notify } = usePluginAppActions();
 
   return useCallback(
-    async (encodedPayload: string) => {
-      const shareUrl = buildShareUrl(encodedPayload);
+    async (payload: ArticleSharePayload) => {
       try {
-        await rendererHost.copyText(shareUrl);
+        const { id } = await createShare({ kind: "article", data: payload });
+        await rendererHost.copyText(buildShortShareUrl(id));
         notify({ body: "Share link copied to clipboard", type: "success" });
       } catch {
-        notify({ body: "Failed to copy share link", type: "error" });
+        try {
+          const shareUrl = buildInlineArticleShareUrl(encodeArticleSharePayload(payload));
+          await rendererHost.copyText(shareUrl);
+          notify({ body: "Share link copied to clipboard", type: "success" });
+        } catch {
+          notify({ body: "Failed to copy share link", type: "error" });
+        }
       }
     },
     [rendererHost, notify],

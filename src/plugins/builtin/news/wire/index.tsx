@@ -208,10 +208,11 @@ export const newsWireModule: PluginModule = {
       ),
       async execute(values) {
         const query = values?.query ?? values?.shortcut ?? "";
-        const articles = [
-          ...await loadNewsArticles(),
-          ...await searchAdjacentRelatedArticles(query),
-        ];
+        const [newsArticles, adjacentArticles] = await Promise.all([
+          loadNewsArticles(),
+          searchAdjacentRelatedArticles(query),
+        ]);
+        const articles = [...newsArticles, ...adjacentArticles];
         const match = searchNewsArticles(articles, query)[0];
         if (!match) {
           ctx.notify({

@@ -7,7 +7,7 @@ import type { NewsArticle } from "../../../../../news/types";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useNewsArticleFooter } from "./footer";
 import { getStashedNewsArticle } from "./article-stash";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { JinaArticleReader, useJinaArticle } from "../../../shared/jina-reader";
 
 export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
@@ -61,7 +61,7 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
 
   const copyShareLink = useCopyShareLink();
   const shareArticle = article
-    ? () => copyShareLink(encodeNewsArticleForShare(article))
+    ? () => copyShareLink(newsArticleSharePayload(article))
     : undefined;
   const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
 

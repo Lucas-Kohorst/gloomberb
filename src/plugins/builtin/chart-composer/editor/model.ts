@@ -68,7 +68,7 @@ export function titleCaseSeriesEditorValue(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function seriesFieldId(series: ChartSeriesSpec): string {
+export function seriesFieldId(series: ChartSeriesSpec): string {
   if (series.source.kind === "security") return series.source.fieldId;
   if (series.source.kind === "economic") return series.source.seriesId;
   return series.source.kind;

@@ -10,7 +10,7 @@ import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import {
@@ -54,15 +54,18 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
-    ? () => copyShareLink(encodeNewsArticleForShare(readableArticle))
+    ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
   const counts = useMemo(() => {
     const next: Record<string, number> = { all: allArticles.length };
     for (const cat of SECTOR_TABS) {
-      if (cat === "all") continue;
-      next[cat] = allArticles.filter((article) => (
-        article.sectors.some((entry) => entry.toLowerCase() === cat)
-      )).length;
+      if (cat !== "all") next[cat] = 0;
+    }
+    for (const article of allArticles) {
+      for (const entry of article.sectors) {
+        const key = entry.toLowerCase();
+        if (key in next) next[key]!++;
+      }
     }
     return next;
   }, [allArticles]);
