@@ -17,6 +17,7 @@ import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
+import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
 import { yahooPlugin } from "./builtin/yahoo";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
@@ -40,6 +41,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
+  treasuryAuctionsPlugin,
   debugPlugin,
 ];
 
