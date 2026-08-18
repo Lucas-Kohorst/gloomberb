@@ -43,7 +43,8 @@ export function listConnectionSources(): ConnectionSourceDef[] {
 
 export function setConnectionRequestReporter(next: ConnectionRequestReporter | null): void {
   reporter = next;
-  if (!next || pendingReports.length === 0) return;
+  if (!next) return;
+  if (pendingReports.length === 0) return;
   const queued = pendingReports.splice(0, pendingReports.length);
   for (const entry of queued) {
     next(entry.id, entry.report);

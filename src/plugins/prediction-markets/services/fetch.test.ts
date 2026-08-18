@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import {
+  clearPendingConnectionReports,
   setConnectionRequestReporter,
   type ConnectionRequestReport,
 } from "../../builtin/connections/register";
@@ -9,6 +10,7 @@ import { fetchJson } from "./fetch";
 afterEach(() => {
   setHttpFetchTransport(null);
   setConnectionRequestReporter(null);
+  clearPendingConnectionReports();
 });
 
 function mockTransport(responses: Record<string, { status?: number; body: string }>): void {
