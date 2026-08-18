@@ -303,7 +303,7 @@ export function usePredictionCatalogData({
     void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
     const intervalId = setInterval(() => {
       void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
-    }, 20_000);
+    }, 60_000);
     return () => clearInterval(intervalId);
   }, [
     categoryId,

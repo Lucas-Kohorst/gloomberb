@@ -1,79 +1,13 @@
 import { withConnectionRequest } from "../connections/register";
+import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
+import { financeRawNumber, mapYahooDividends } from "../../../sources/yahoo-finance/mappers";
+import { fetchYahooChart } from "../../../sources/yahoo-finance/requests";
+import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
 import type { DividendMetrics, DividendPayment } from "./types";
 
 const CONNECTION_ID = "yahoo-dividends";
-const YAHOO_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function yahooHeaders(): HeadersInit {
-  const headers: Record<string, string> = {
-    Accept: "text/csv,application/json,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "User-Agent": YAHOO_USER_AGENT,
-    Referer: "https://finance.yahoo.com/",
-  };
-  return headers;
-}
-
-function parseCsvDate(value: string): Date | null {
-  const date = new Date(value.trim());
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function parseAmount(value: string): number {
-  const parsed = parseFloat(value.trim());
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function inferType(amount: number, label: string): DividendPayment["type"] {
-  const lower = label.toLowerCase();
-  if (lower.includes("special")) return "special";
-  if (lower.includes("stock")) return "stock";
-  if (lower.includes("cash") || amount > 0) return "cash";
-  return "unknown";
-}
-
-/**
- * Parse Yahoo Finance dividend CSV (Date,Dividends) into DividendPayment[].
- * Sorted by ex-date descending.
- */
-export function parseDividendCsv(csv: string, currency = "USD"): DividendPayment[] {
-  const lines = csv.trim().split("\n");
-  if (lines.length < 2) return [];
-
-  // Find the header row to locate columns
-  const header = lines[0]!.split(",");
-  const dateIdx = header.findIndex((h) => h.trim().toLowerCase() === "date");
-  const amountIdx = header.findIndex((h) => h.trim().toLowerCase() === "dividends");
-
-  if (dateIdx === -1 || amountIdx === -1) return [];
-
-  const payments: DividendPayment[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i]!.split(",");
-    if (cols.length < 2) continue;
-    const dateStr = cols[dateIdx]?.trim();
-    const amountStr = cols[amountIdx]?.trim();
-    if (!dateStr || !amountStr) continue;
-    const exDate = parseCsvDate(dateStr);
-    if (!exDate) continue;
-    const amount = parseAmount(amountStr);
-    if (amount <= 0) continue;
-    payments.push({
-      exDate,
-      recordDate: null,
-      paymentDate: null,
-      declarationDate: null,
-      amount,
-      currency,
-      type: inferType(amount, ""),
-    });
-  }
-
-  return payments.sort((a, b) => b.exDate.getTime() - a.exDate.getTime());
-}
+const yahoo = new YahooHttpClient();
 
 interface QuoteSummaryDividendFields {
   trailingAnnualDividendRate: number | null;
@@ -85,42 +19,61 @@ interface QuoteSummaryDividendFields {
   currency: string | null;
 }
 
-function extractDividendFields(json: unknown): QuoteSummaryDividendFields {
-  const result: QuoteSummaryDividendFields = {
-    trailingAnnualDividendRate: null,
-    trailingAnnualDividendYield: null,
-    forwardAnnualDividendRate: null,
-    payoutRatio: null,
-    exDividendDate: null,
-    dividendDate: null,
-    currency: null,
+const EMPTY_DIVIDEND_FIELDS: QuoteSummaryDividendFields = {
+  trailingAnnualDividendRate: null,
+  trailingAnnualDividendYield: null,
+  forwardAnnualDividendRate: null,
+  payoutRatio: null,
+  exDividendDate: null,
+  dividendDate: null,
+  currency: null,
+};
+
+/**
+ * Yahoo nests quote modules at quoteSummary.result[0], not the response root.
+ */
+export function extractDividendFields(payload: unknown): QuoteSummaryDividendFields {
+  if (typeof payload !== "object" || payload === null) return { ...EMPTY_DIVIDEND_FIELDS };
+  const result = (payload as QuoteSummaryResponse).quoteSummary?.result?.[0];
+  if (!result) return { ...EMPTY_DIVIDEND_FIELDS };
+
+  const summaryDetail = result.summaryDetail;
+  const financialData = result.financialData;
+  const defaultKeyStats = result.defaultKeyStatistics;
+
+  return {
+    trailingAnnualDividendRate: financeRawNumber(summaryDetail?.trailingAnnualDividendRate) ?? null,
+    trailingAnnualDividendYield: financeRawNumber(summaryDetail?.trailingAnnualDividendYield) ?? null,
+    forwardAnnualDividendRate: financeRawNumber(summaryDetail?.forwardAnnualDividendRate)
+      ?? financeRawNumber(summaryDetail?.dividendRate)
+      ?? null,
+    payoutRatio: financeRawNumber(financialData?.payoutRatio)
+      ?? financeRawNumber(defaultKeyStats?.payoutRatio)
+      ?? financeRawNumber(summaryDetail?.payoutRatio)
+      ?? null,
+    exDividendDate: financeRawNumber(summaryDetail?.exDividendDate) ?? null,
+    dividendDate: financeRawNumber(summaryDetail?.dividendDate) ?? null,
+    currency: typeof summaryDetail?.currency === "string" ? summaryDetail.currency : null,
   };
+}
 
-  if (typeof json !== "object" || json === null) return result;
-  const root = json as Record<string, unknown>;
-  const summaryDetail = root.summaryDetail as Record<string, unknown> | undefined;
-  const financialData = root.financialData as Record<string, unknown> | undefined;
-  const defaultKeyStats = root.defaultKeyStatistics as Record<string, unknown> | undefined;
-
-  function num(val: unknown): number | null {
-    if (typeof val === "number" && Number.isFinite(val)) return val;
-    if (val && typeof val === "object" && "raw" in val) {
-      const raw = (val as Record<string, unknown>).raw;
-      if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-    }
-    return null;
-  }
-
-  result.trailingAnnualDividendRate = num(summaryDetail?.trailingAnnualDividendRate);
-  result.trailingAnnualDividendYield = num(summaryDetail?.trailingAnnualDividendYield);
-  result.forwardAnnualDividendRate = num(summaryDetail?.forwardAnnualDividendRate);
-  result.payoutRatio = num(financialData?.payoutRatio) ?? num(defaultKeyStats?.payoutRatio);
-  result.exDividendDate = num(summaryDetail?.exDividendDate);
-  result.dividendDate = num(summaryDetail?.dividendDate);
-  result.currency =
-    typeof summaryDetail?.currency === "string" ? summaryDetail.currency : null;
-
-  return result;
+function toDividendPayment(
+  exDate: string,
+  amount: number,
+  currency: string,
+): DividendPayment | null {
+  if (amount <= 0) return null;
+  const parsed = new Date(`${exDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    exDate: parsed,
+    recordDate: null,
+    paymentDate: null,
+    declarationDate: null,
+    amount,
+    currency,
+    type: "cash",
+  };
 }
 
 export interface DividendData {
@@ -131,48 +84,42 @@ export interface DividendData {
 export async function fetchDividendData(
   symbol: string,
   currentPrice: number | null,
-  options: { fetcher?: typeof fetch } = {},
 ): Promise<DividendData> {
-  const fetcher = options.fetcher ?? fetch;
-  const now = new Date();
-  const period1 = Math.floor((now.getTime() - 5 * 365 * DAY_MS) / 1000);
-  const period2 = Math.floor(now.getTime() / 1000);
-
-  const csvUrl =
-    `https://query1.finance.yahoo.com/v7/finance/download/${encodeURIComponent(symbol)}` +
-    `?period1=${period1}&period2=${period2}&interval=1mo&events=div`;
-
   const quoteUrl =
-    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}` +
-    `?modules=summaryDetail,financialData,defaultKeyStatistics`;
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
+    + "?modules=summaryDetail,financialData,defaultKeyStatistics";
 
-  const [csvResult, quoteResult] = await Promise.allSettled([
+  const [chartResult, quoteResult] = await Promise.allSettled([
     withConnectionRequest(CONNECTION_ID, "dividend-history", () =>
-      fetcher(csvUrl, { headers: yahooHeaders() }).then((r) => r.text()),
+      fetchYahooChart(yahoo, symbol, "10y", "1d"),
     ),
     withConnectionRequest(CONNECTION_ID, "quote-summary", () =>
-      fetcher(quoteUrl, { headers: yahooHeaders() }).then((r) => r.json()),
+      yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl),
     ),
   ]);
-
-  const payments: DividendPayment[] = [];
-  let currency = "USD";
-
-  if (csvResult.status === "fulfilled") {
-    const quoteFields = quoteResult.status === "fulfilled"
-      ? extractDividendFields(quoteResult.value)
-      : null;
-    if (quoteFields?.currency) currency = quoteFields.currency;
-    payments.push(...parseDividendCsv(csvResult.value, currency));
-  }
 
   const quoteFields = quoteResult.status === "fulfilled"
     ? extractDividendFields(quoteResult.value)
     : null;
 
-  if (quoteFields?.currency && currency === "USD") currency = quoteFields.currency;
+  const currency = quoteFields?.currency
+    ?? (chartResult.status === "fulfilled" ? chartResult.value.meta.currency ?? null : null)
+    ?? "USD";
 
-  const metrics = buildMetrics(payments, quoteFields, currentPrice);
+  const payments: DividendPayment[] = [];
+  if (chartResult.status === "fulfilled") {
+    for (const dividend of mapYahooDividends(chartResult.value.events)) {
+      const payment = toDividendPayment(dividend.exDate, dividend.amount, currency);
+      if (payment) payments.push(payment);
+    }
+    payments.sort((a, b) => b.exDate.getTime() - a.exDate.getTime());
+  }
+
+  const resolvedPrice = currentPrice
+    ?? (chartResult.status === "fulfilled" ? chartResult.value.meta.regularMarketPrice ?? null : null)
+    ?? null;
+
+  const metrics = buildMetrics(payments, quoteFields, resolvedPrice);
 
   if (payments.length === 0 && !quoteFields?.trailingAnnualDividendRate) {
     throw new Error(`No dividend data found for ${symbol}`);
@@ -271,8 +218,6 @@ function computeGrowth3Y(payments: DividendPayment[]): number | null {
   if (priorAvg <= 0 || recentAvg <= 0) return null;
   return Math.pow(recentAvg / priorAvg, 1 / 3) - 1;
 }
-
-type Frequency = "monthly" | "quarterly" | "semi-annual" | "annual" | "irregular";
 
 function inferFrequency(payments: DividendPayment[]): DividendMetrics["paymentFrequency"] {
   if (payments.length < 2) return null;

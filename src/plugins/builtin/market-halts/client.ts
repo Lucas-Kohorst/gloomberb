@@ -1,3 +1,4 @@
+import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 import { computeStatus, haltCodeDescription } from "./model";
 import type { MarketHalt } from "./types";
@@ -28,8 +29,8 @@ function getTagContent(xml: string, tag: string): string | null {
 }
 
 function getTagValue(xml: string, tag: string): string | null {
-  // Self-closing tag: <ndaq:Tag />  → null
-  const selfClosing = xml.match(new RegExp(`<${tag}\\s*/?>`, "i"));
+  // Slash is required so <ndaq:IssueSymbol> is not treated as empty.
+  const selfClosing = xml.match(new RegExp(`<${tag}\\s*/>`, "i"));
   if (selfClosing) return null;
 
   const content = getTagContent(xml, tag);
@@ -54,7 +55,7 @@ function parseNasdaqDate(dateStr: string, timeStr: string): Date | null {
   return utcApprox;
 }
 
-function parseHaltsXml(xml: string): MarketHalt[] {
+export function parseHaltsXml(xml: string): MarketHalt[] {
   const itemRe = /<item>([\s\S]*?)<\/item>/gi;
   const halts: MarketHalt[] = [];
   let match: RegExpExecArray | null;
@@ -105,16 +106,13 @@ function parseHaltsXml(xml: string): MarketHalt[] {
 }
 
 export async function fetchMarketHalts(options: {
-  fetcher?: typeof fetch;
   forceRefresh?: boolean;
 } = {}): Promise<MarketHalt[]> {
-  const fetcher = options.fetcher ?? fetch;
-
   return withConnectionRequest(
     HALTS_CONNECTION_ID,
     "fetch-halts",
     async () => {
-      const response = await fetcher(HALTS_FEED_URL, {
+      const response = await httpFetch(HALTS_FEED_URL, {
         headers: haltsFetchHeaders(),
         cache: options.forceRefresh ? "no-store" : "default",
       });

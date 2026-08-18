@@ -223,6 +223,46 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
     expect((await response?.json()).ok).toBe(true);
   });
+
+  test("coalesces concurrent hosted Kalshi GETs onto one upstream request", async () => {
+    let upstreamCalls = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("kalshi.com")) {
+        upstreamCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return new Response('{"events":[]}', {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const payload = JSON.stringify({
+      method: "http.fetch",
+      payload: {
+        url: "https://external-api.kalshi.com/trade-api/v2/events?limit=1",
+        init: { method: "GET" },
+      },
+    });
+    const [first, second] = await Promise.all([
+      workerModule.default.fetch?.(
+        makeRequest("POST", "/_gloomberb/rpc", { body: payload }),
+        makeEnv(),
+      ),
+      workerModule.default.fetch?.(
+        makeRequest("POST", "/_gloomberb/rpc", { body: payload }),
+        makeEnv(),
+      ),
+    ]);
+
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect((await first?.json()).ok).toBe(true);
+    expect((await second?.json()).ok).toBe(true);
+    expect(upstreamCalls).toBe(1);
+  });
 });
 
 describe("hosted share Worker endpoint", () => {

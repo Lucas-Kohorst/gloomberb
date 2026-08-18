@@ -1,7 +1,11 @@
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { resolveHostedTvStream } from "../../plugins/builtin/tv/youtube-embed";
 import type { LiveStreamResolveRequest } from "../../types/media";
-import { handleHttpFetch, type SharedHttpFetchRequest } from "../electrobun/shared/http-fetch";
+import {
+  handleHttpFetch,
+  type SharedHttpFetchRequest,
+  type SharedHttpFetchResponse,
+} from "../electrobun/shared/http-fetch";
 import { decodeRpcValue, encodeRpcValue } from "../electrobun/view/rpc-codec";
 import { gloomFetch, readSessionCookie } from "./gloom-cloud";
 
@@ -60,6 +64,34 @@ type HostedBackendRequest =
   | { method: "remote.forward"; payload: unknown };
 
 const NOT_AVAILABLE = "Not available in the hosted client yet.";
+
+// Hosted users share this Worker's egress IP. Kalshi 429s that budget, so
+// public GETs are edge-cached and in-flight identical URLs are coalesced.
+const KALSHI_EDGE_CACHE_TTL_SECONDS = 20;
+const kalshiInflight = new Map<string, Promise<SharedHttpFetchResponse>>();
+
+function isKalshiPublicGet(payload: SharedHttpFetchRequest): boolean {
+  if (typeof payload.url !== "string") return false;
+  const method = (payload.init?.method ?? "GET").trim().toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  try {
+    const hostname = new URL(payload.url).hostname;
+    return hostname === "kalshi.com" || hostname.endsWith(".kalshi.com");
+  } catch {
+    return false;
+  }
+}
+
+function handleKalshiHttpFetch(payload: SharedHttpFetchRequest): Promise<SharedHttpFetchResponse> {
+  const existing = kalshiInflight.get(payload.url);
+  if (existing) return existing;
+  const request = handleHttpFetch(payload, { edgeCacheTtlSeconds: KALSHI_EDGE_CACHE_TTL_SECONDS })
+    .finally(() => {
+      kalshiInflight.delete(payload.url);
+    });
+  kalshiInflight.set(payload.url, request);
+  return request;
+}
 
 export async function handleHostedBackendRpc(env: Env, user: HostedUser | null, request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -154,6 +186,9 @@ async function dispatch(
           setCookie: upstream.headers.getSetCookie?.() ?? [],
           body: await upstream.text(),
         };
+      }
+      if (isKalshiPublicGet(request.payload)) {
+        return handleKalshiHttpFetch(request.payload);
       }
       return handleHttpFetch(request.payload);
     }

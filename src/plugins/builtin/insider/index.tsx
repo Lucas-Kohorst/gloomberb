@@ -251,7 +251,6 @@ export const insiderModule: PluginModule = {
       description: "Insider transaction activity for the selected ticker.",
       keywords: ["insider", "form 4", "ownership", "transactions", "ins"],
       shortcut: "INS",
-      canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
     }),
   ],
 

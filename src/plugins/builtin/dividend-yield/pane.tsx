@@ -136,7 +136,6 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   const { ticker } = usePaneTicker();
   const symbol = ticker?.metadata.ticker ?? null;
   const currency = ticker?.metadata.currency ?? "USD";
-  const currentPrice = ticker?.metadata ? null : null;
 
   const [data, setData] = useState<DividendData | null>(null);
   const [loading, setLoading] = useState(false);

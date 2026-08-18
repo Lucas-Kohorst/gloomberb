@@ -42,10 +42,12 @@ export { normalizeKalshiMarket } from "./normalize";
 
 const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
 const KALSHI_EVENT_PAGE_LIMIT = 200;
-const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
-const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
+// Hosted users share one Worker egress IP; Kalshi 429s that budget if we
+// fan out 8+5 pages on every catalog load.
+const DEFAULT_KALSHI_EVENT_MAX_PAGES = 3;
+const SEARCH_KALSHI_EVENT_MAX_PAGES = 2;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
-const KALSHI_MARKET_MAX_PAGES = 5;
+const KALSHI_MARKET_MAX_PAGES = 1;
 const KALSHI_SERIES_EVENT_LIMIT = 20;
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
@@ -135,14 +137,12 @@ async function loadKalshiVenueCatalog(
   const maxPages = searchQuery
     ? SEARCH_KALSHI_EVENT_MAX_PAGES
     : DEFAULT_KALSHI_EVENT_MAX_PAGES;
-  const [events, openMarkets] = await Promise.all([
-    categoryId === "all"
-      ? fetchKalshiCatalogEvents(maxPages)
-      : fetchKalshiCatalogEventsForCategory(categoryId, maxPages),
-    categoryId === "all" && !searchQuery
-      ? fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
-      : Promise.resolve([] as KalshiMarketRecord[]),
-  ]);
+  const events = categoryId === "all"
+    ? await fetchKalshiCatalogEvents(maxPages)
+    : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
+  const openMarkets = categoryId === "all" && !searchQuery
+    ? await fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
+    : [];
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
   if (openMarkets.length === 0) return fromEvents;
   const fromMarkets = normalizeKalshiCatalog(

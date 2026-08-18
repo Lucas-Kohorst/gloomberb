@@ -15,6 +15,11 @@ export interface SharedHttpFetchRequest {
   };
 }
 
+export interface SharedHttpFetchOptions {
+  /** Cloudflare edge TTL for 2xx subresponses. Ignored outside Workers. */
+  edgeCacheTtlSeconds?: number;
+}
+
 export interface SharedHttpFetchResponse {
   status: number;
   statusText: string;
@@ -35,6 +40,7 @@ function normalizeHttpFetchHeaders(headers: unknown): Record<string, string> {
 
 export async function handleHttpFetch(
   payload: SharedHttpFetchRequest,
+  options?: SharedHttpFetchOptions,
 ): Promise<SharedHttpFetchResponse> {
   if (typeof payload.url !== "string") {
     throw new Error("http.fetch requires a URL.");
@@ -69,13 +75,28 @@ export async function handleHttpFetch(
       ? init.timeoutMs
       : undefined;
 
-  const response = await fetch(url, {
+  const fetchInit: RequestInit & {
+    cf?: {
+      cacheEverything?: boolean;
+      cacheTtlByStatus?: Record<string, number>;
+    };
+  } = {
     method,
     headers: normalizeHttpFetchHeaders(init.headers),
     body,
     redirect,
     signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
-  });
+  };
+  if (options?.edgeCacheTtlSeconds != null && options.edgeCacheTtlSeconds > 0) {
+    fetchInit.cf = {
+      cacheEverything: true,
+      cacheTtlByStatus: {
+        "200-299": options.edgeCacheTtlSeconds,
+        "400-599": 0,
+      },
+    };
+  }
+  const response = await fetch(url, fetchInit);
   const responseHeaders: Record<string, string> = {};
   response.headers.forEach((value, key) => {
     responseHeaders[key] = value;

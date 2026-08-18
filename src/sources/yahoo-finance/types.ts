@@ -49,6 +49,7 @@ export type QuoteSummaryResponse = {
         targetMeanPrice?: { raw?: number } | number | null;
         targetMedianPrice?: { raw?: number } | number | null;
         recommendationMean?: { raw?: number } | number | null;
+        payoutRatio?: { raw?: number } | number | null;
       };
       recommendationTrend?: {
         trend?: Array<{
@@ -141,6 +142,17 @@ export type QuoteSummaryResponse = {
         open?: { raw?: number } | number | null;
         dayHigh?: { raw?: number } | number | null;
         dayLow?: { raw?: number } | number | null;
+        trailingAnnualDividendRate?: { raw?: number } | number | null;
+        trailingAnnualDividendYield?: { raw?: number } | number | null;
+        forwardAnnualDividendRate?: { raw?: number } | number | null;
+        dividendRate?: { raw?: number } | number | null;
+        payoutRatio?: { raw?: number } | number | null;
+        exDividendDate?: { raw?: number } | number | null;
+        dividendDate?: { raw?: number } | number | null;
+        currency?: string;
+      };
+      defaultKeyStatistics?: {
+        payoutRatio?: { raw?: number } | number | null;
       };
       majorHoldersBreakdown?: {
         insidersPercentHeld?: { raw?: number } | number | null;

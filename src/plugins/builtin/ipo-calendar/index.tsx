@@ -2,7 +2,7 @@ import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { IPOCalendarPane } from "./pane";
 
-let disposeConnection: (() => void) | null = null;
+let disposeConnections: Array<() => void> = [];
 
 export const ipoCalendarModule: PluginModule = {
   panes: [
@@ -39,17 +39,26 @@ export const ipoCalendarModule: PluginModule = {
   ],
 
   setup() {
-    disposeConnection = registerConnectionSource({
-      id: "sec-edgar-ipo",
-      name: "SEC EDGAR (IPO Filings)",
-      kind: "api",
-      pluginId: "ipo-calendar",
-      authRequired: false,
-    });
+    disposeConnections = [
+      registerConnectionSource({
+        id: "stockanalysis-ipo",
+        name: "Stock Analysis (IPO Calendar)",
+        kind: "api",
+        pluginId: "ipo-calendar",
+        authRequired: false,
+      }),
+      registerConnectionSource({
+        id: "sec-edgar-ipo",
+        name: "SEC EDGAR (IPO Filings)",
+        kind: "api",
+        pluginId: "ipo-calendar",
+        authRequired: false,
+      }),
+    ];
   },
 
   dispose() {
-    disposeConnection?.();
-    disposeConnection = null;
+    for (const dispose of disposeConnections) dispose();
+    disposeConnections = [];
   },
 };

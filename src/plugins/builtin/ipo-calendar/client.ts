@@ -56,26 +56,46 @@ function resolveRef(flat: unknown[], index: number, depth = 0): unknown {
   return result;
 }
 
-function getFlatData(payload: unknown): unknown[] | null {
+function isIpoRecordShape(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && "s" in value && "ipoDate" in value;
+}
+
+function countIpoRecords(flat: unknown[]): number {
+  let count = 0;
+  for (const item of flat) {
+    if (isIpoRecordShape(item)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * SvelteKit `__data.json` ships several nodes. Node 0 is session/cookie
+ * boilerplate whose first entry is an object; the IPO rows live in a later
+ * node. Select by record shape, not by the first object-shaped node.
+ */
+export function getFlatData(payload: unknown): unknown[] | null {
   const root = isObject(payload) ? payload : null;
   const nodes = root?.nodes;
   if (!isRecordArray(nodes)) return null;
+
+  let best: unknown[] | null = null;
+  let bestCount = 0;
   for (const node of nodes) {
     const nodeData = isObject(node) ? node.data : undefined;
-    if (isRecordArray(nodeData) && nodeData.length > 0 && isObject(nodeData[0])) {
-      return nodeData;
+    if (!isRecordArray(nodeData) || nodeData.length === 0) continue;
+    const count = countIpoRecords(nodeData);
+    if (count > bestCount) {
+      best = nodeData;
+      bestCount = count;
     }
   }
-  return null;
+  return best;
 }
 
 function findRecordObjects(flat: unknown[]): Record<string, unknown>[] {
   const records: Record<string, unknown>[] = [];
   for (const item of flat) {
-    if (!isObject(item)) continue;
-    if ("s" in item && "ipoDate" in item) {
-      records.push(item);
-    }
+    if (isIpoRecordShape(item)) records.push(item);
   }
   return records;
 }
@@ -185,10 +205,12 @@ function fetchJson(url: string, headers: Record<string, string>): Promise<unknow
 }
 
 function fetchStockAnalysis(url: string): Promise<unknown> {
-  return fetchJson(url, {
-    "User-Agent": SA_USER_AGENT,
-    Accept: "application/json",
-  });
+  return withConnectionRequest("stockanalysis-ipo", "fetch", () =>
+    fetchJson(url, {
+      "User-Agent": SA_USER_AGENT,
+      Accept: "application/json",
+    }),
+  );
 }
 
 async function fetchRecentIpos(): Promise<IPORecord[]> {
@@ -237,10 +259,12 @@ async function fetchSecS1Filings(): Promise<Map<string, string>> {
   url.searchParams.set("from", "0");
   url.searchParams.set("size", "100");
 
-  const payload = await fetchJson(url.toString(), {
-    "User-Agent": getSecUserAgent(),
-    Accept: "application/json",
-  });
+  const payload = await withConnectionRequest("sec-edgar-ipo", "fetch", () =>
+    fetchJson(url.toString(), {
+      "User-Agent": getSecUserAgent(),
+      Accept: "application/json",
+    }),
+  );
 
   const filings = parseEftsFilings(payload, 100);
   const tickerToUrl = new Map<string, string>();
@@ -276,27 +300,25 @@ function dedupeAndSort(records: IPORecord[]): IPORecord[] {
 }
 
 export async function fetchIpoCalendar(): Promise<IPORecord[]> {
-  return withConnectionRequest("sec-edgar-ipo", "fetch", async () => {
-    const [recentResult, upcomingResult, secResult] = await Promise.allSettled([
-      fetchRecentIpos(),
-      fetchUpcomingIpos(),
-      fetchSecS1Filings(),
-    ]);
+  const [recentResult, upcomingResult, secResult] = await Promise.allSettled([
+    fetchRecentIpos(),
+    fetchUpcomingIpos(),
+    fetchSecS1Filings(),
+  ]);
 
-    const records: IPORecord[] = [];
-    if (recentResult.status === "fulfilled") records.push(...recentResult.value);
-    if (upcomingResult.status === "fulfilled") records.push(...upcomingResult.value);
+  const records: IPORecord[] = [];
+  if (recentResult.status === "fulfilled") records.push(...recentResult.value);
+  if (upcomingResult.status === "fulfilled") records.push(...upcomingResult.value);
 
-    const secMap = secResult.status === "fulfilled" ? secResult.value : new Map<string, string>();
-    const enriched = enrichWithSecUrls(records, secMap);
+  const secMap = secResult.status === "fulfilled" ? secResult.value : new Map<string, string>();
+  const enriched = enrichWithSecUrls(records, secMap);
 
-    if (records.length === 0) {
-      const errors: string[] = [];
-      if (recentResult.status === "rejected") errors.push(`recent: ${recentResult.reason}`);
-      if (upcomingResult.status === "rejected") errors.push(`upcoming: ${upcomingResult.reason}`);
-      if (errors.length > 0) throw new Error(`IPO data unavailable (${errors.join("; ")})`);
-    }
+  if (records.length === 0) {
+    const errors: string[] = [];
+    if (recentResult.status === "rejected") errors.push(`recent: ${recentResult.reason}`);
+    if (upcomingResult.status === "rejected") errors.push(`upcoming: ${upcomingResult.reason}`);
+    if (errors.length > 0) throw new Error(`IPO data unavailable (${errors.join("; ")})`);
+  }
 
-    return dedupeAndSort(enriched);
-  });
+  return dedupeAndSort(enriched);
 }

@@ -7,7 +7,7 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 ### New panes
 
 - **Short Interest** (`SI <ticker>`) — shares short, days to cover, average daily volume, and short % of float. Yahoo Finance fallback after FINRA API deprecation. Ticker-scoped research tab + standalone pane.
-- **Dividend Yield** (`DVD <ticker>`) — trailing/forward yield, 1Y/3Y growth rates, payment frequency, yield chart, and full dividend history table. Yahoo Finance CSV + quoteSummary. Ticker-scoped research tab + standalone pane.
+- **Dividend Yield** (`DVD <ticker>`) — trailing/forward yield, 1Y/3Y growth rates, payment frequency, yield chart, and full dividend history table. Yahoo Finance v8 chart + quoteSummary. Ticker-scoped research tab + standalone pane.
 - **Market Halts** (`HALT`) — today's US trading halts with reason codes, halt/resumption times, and All/Active/Resumed filter tabs. Nasdaq Trader RSS feed. Color-coded by status.
 - **IPO Calendar** (`IPO`) — upcoming and recent IPOs with pricing, exchange, offer size, shares, first-day return, and SEC S-1 prospectus links. stockanalysis.com + SEC EDGAR. Searchable, sortable, upcoming rows tinted.
 - **Black-Scholes Calculator** (`OVME`) — option prices and all five Greeks (delta, gamma, theta, vega, rho) with implied volatility solver. Pure computation, no data source. Call/Put toggle, inputs persist across pane reopen.
@@ -17,6 +17,14 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 - All five panes registered in the Connections pane with `registerConnectionSource()`.
 - Short Interest and Dividend Yield registered as ticker research tabs alongside Holders, Insider, and Options.
 - Market Halts added to Market Overview plugin; IPO Calendar added to Macro plugin; Options Calculator added to Portfolio plugin.
+
+### Fixes
+
+- **HALT** — Nasdaq RSS parser treated ordinary opening tags as self-closing, so every halt was dropped. Feed now returns the live items.
+- **IPO** — stockanalysis `__data.json` parser grabbed the session node instead of the IPO node. Calendar now loads upcoming and recent listings. Stock Analysis is registered as its own Connection.
+- **DVD** — retired Yahoo v7 CSV + missing `quoteSummary.result[0]` unwrap. History now comes from the v8 chart + shared Yahoo crumb client.
+- **SI** — command bar no longer refuses the pane when the active ticker is not a US equity; the pane opens and shows an in-pane message.
+- **Kalshi** — hosted users share one Worker egress IP and were 429'd by catalog fan-out. Fewer pages, sequential fetches, 60s poll, and edge-cached public GETs.
 
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 

@@ -50,7 +50,6 @@ export const shortInterestModule: PluginModule = {
       description: "Historical short interest, days to cover, and short % of float.",
       keywords: ["short", "interest", "si", "shorts", "borrow", "days", "cover"],
       shortcut: "SI",
-      canCreate: (_context, options) => !options?.ticker || isUsEquityTicker(options.ticker),
     }),
   ],
 };
