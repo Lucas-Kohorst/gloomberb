@@ -217,7 +217,7 @@ export function useChatContentShortcuts({
       return;
     }
 
-    if (isPlainKey(event, "s", "/")) {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       openSearch();

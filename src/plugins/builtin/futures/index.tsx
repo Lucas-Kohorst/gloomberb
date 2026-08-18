@@ -142,7 +142,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -158,7 +158,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -188,7 +188,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
     return {
       info,
       hints: [
-        { id: "search", key: "s", label: "earch", onPress: focusSearch },
+        { id: "search", key: "/", label: "search", onPress: focusSearch },
         { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ],
     };
@@ -227,7 +227,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
         : null}
       renderCell={renderCell}
       emptyStateTitle={searchQuery.trim() ? "No matching contracts." : "No contracts configured."}
-      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press [s] to search."}
+      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press / to search."}
       rootBefore={(
         <InputSearchBar
           value={searchQuery}

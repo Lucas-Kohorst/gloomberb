@@ -119,16 +119,16 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     onShare: shareArticle,
   });
 
-  // [s]earch hint — separate registration so it combines with the article footer.
+  // [/]search hint — separate registration so it combines with the article footer.
   usePaneFooter("news-wire:firehose:search", () => ({
     order: -1,
-    hints: [{ id: "search", key: "s", label: "earch", onPress: focusSearch }],
+    hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
   }), [focusSearch]);
 
-  // [s] / [/] search shortcut — only when search is not already focused.
+  // [/] search shortcut — only when search is not already focused.
   useShortcut((event) => {
     if (!focused || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -137,7 +137,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
 
   const handleRootKeyDown = useCallback(
     (event: { name?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
-      if (event.name === "s" || event.name === "/") {
+      if (event.name === "/") {
         event.preventDefault?.();
         event.stopPropagation?.();
         focusSearch();

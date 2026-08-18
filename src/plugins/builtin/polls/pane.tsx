@@ -526,7 +526,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -549,7 +549,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -614,7 +614,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ]
       : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ],

@@ -313,7 +313,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
 
   useShortcut((event) => {
     if (!focused || installMode || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -352,7 +352,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       refresh();
       return true;
     }
-    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -377,7 +377,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         ]
       : [
           { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: busy },
-          { id: "search", key: "s", label: "earch", onPress: focusSearch, disabled: installMode },
+          { id: "search", key: "/", label: "search", onPress: focusSearch, disabled: installMode },
           { id: "toggle", key: "t", label: "oggle", onPress: toggleSelected, disabled: !canToggle || busy },
           ...(managementAvailable
             ? [{ id: "install", key: "i", label: "nstall", onPress: enterInstallMode, disabled: busy }]
@@ -517,7 +517,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
           />
         )}
         emptyStateTitle="No plugins match your search."
-        emptyStateHint="Press [s] to change your search or [i] to install a new plugin."
+        emptyStateHint="Press / to change your search or [i] to install a new plugin."
         showHorizontalScrollbar={false}
       />
     </Box>

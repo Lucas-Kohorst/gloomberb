@@ -124,7 +124,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       refresh();
       return true;
     }
-    if (event.name === "/" || event.name === "s") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -144,7 +144,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   useShortcut((event) => {
     if (!focused || searchFocused) return;
     if (event.targetEditable) return;
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+    if (isPlainKey(event, "/")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       focusSearch();
@@ -172,7 +172,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       ...(searchQuery ? [{ id: "search", parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
     showOpenHint: !error && !!selectedRecord?.secUrl,

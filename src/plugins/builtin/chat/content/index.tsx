@@ -558,7 +558,7 @@ export function ChatContent({
     }
     return {
       info,
-      hints: [{ id: "search", key: "s", label: "earch", onPress: openSearch }],
+      hints: [{ id: "search", key: "/", label: "search", onPress: openSearch }],
     };
   }, [canSend, loading, openSearch, searching, user, visibleMessages.length]);
 

@@ -142,7 +142,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
-    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -159,7 +159,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   }, { enabled: focused && !searchFocused && !!selectedUrl });
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -216,7 +216,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       ? [{ id: "search", parts: [{ text: `filter: ${searchQuery.trim()}`, tone: "value" }] }]
       : [],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
     ],
     showOpenHint: !!selectedUrl,
   });
@@ -271,7 +271,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         onActivate={chartSelected}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? `No series matching "${searchQuery.trim()}"` : "No series"}
-        emptyStateHint={loading ? "Searching prediction markets…" : "Press [s] to search."}
+        emptyStateHint={loading ? "Searching prediction markets…" : "Press / to search."}
       />
     </Box>
   );
