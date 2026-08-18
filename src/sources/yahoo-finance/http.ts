@@ -1,8 +1,10 @@
+import { withConnectionRequest } from "../../plugins/builtin/connections/register";
 import { httpFetch } from "../../utils/http-transport";
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1500;
 const FETCH_TIMEOUT_MS = 20_000;
+const YAHOO_CONNECTION_ID = "yahoo";
 const RETRYABLE_ERROR = /429|403|401|Too Many Requests|Forbidden|Unauthorized|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|Failed to get crumb|socket hang up|503|502|504/i;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -22,18 +24,18 @@ export class YahooHttpClient {
   }
 
   async fetchJson<T>(url: string): Promise<T> {
-    return this.withRetry(async () => {
+    return withConnectionRequest(YAHOO_CONNECTION_ID, "fetch", () => this.withRetry(async () => {
       const resp = await httpFetch(url, {
         headers: this.defaultHeaders(),
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
       return resp.json() as Promise<T>;
-    });
+    }));
   }
 
   async fetchJsonWithCrumb<T>(url: string): Promise<T> {
-    return this.withRetry(async () => {
+    return withConnectionRequest(YAHOO_CONNECTION_ID, "fetch-crumb", () => this.withRetry(async () => {
       await this.ensureCrumb();
       const separator = url.includes("?") ? "&" : "?";
       const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
@@ -48,11 +50,11 @@ export class YahooHttpClient {
       }
       if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
       return resp.json() as Promise<T>;
-    });
+    }));
   }
 
   async postJsonWithCrumb<T>(url: string, body: unknown): Promise<T> {
-    return this.withRetry(async () => {
+    return withConnectionRequest(YAHOO_CONNECTION_ID, "post-crumb", () => this.withRetry(async () => {
       await this.ensureCrumb();
       const separator = url.includes("?") ? "&" : "?";
       const fullUrl = `${url}${separator}crumb=${encodeURIComponent(this.crumb!)}`;
@@ -73,7 +75,7 @@ export class YahooHttpClient {
       }
       if (!resp.ok) throw new Error(`[${resp.status}] ${(await resp.text()).slice(0, 200)}`);
       return resp.json() as Promise<T>;
-    });
+    }));
   }
 
   private async ensureCrumb(): Promise<void> {

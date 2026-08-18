@@ -24,8 +24,8 @@ import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
 
 const desktopBackendPlugins: GloomPlugin[] = [
-  yahooPlugin,
   gloomberbCloudPlugin,
+  yahooPlugin,
   portfolioPlugin,
   tickerResearchBackendPlugin,
   brokerPlugin,
