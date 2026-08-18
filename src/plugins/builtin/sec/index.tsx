@@ -295,6 +295,7 @@ function SecView({ width, height, focused }: { width: number; height: number; fo
     label: "filing",
     loading,
     error,
+    showOpenHint: !error && !!openFiling?.filingUrl,
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;

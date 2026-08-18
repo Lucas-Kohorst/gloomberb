@@ -25,7 +25,7 @@ const WORLD_INDEX_SYMBOLS = WORLD_INDICES.map((entry) => entry.symbol);
 
 function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const { quotes } = useQuoteBoard(WORLD_INDEX_SYMBOLS, REFRESH_INTERVAL_MS);
+  const { quotes, refresh } = useQuoteBoard(WORLD_INDEX_SYMBOLS, REFRESH_INTERVAL_MS);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<WorldIndexSortPreference>(DEFAULT_SORT_PREFERENCE);
 
@@ -74,7 +74,7 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     return renderWorldIndexCell(row, column, rowState, quotes);
   }, [quotes]);
 
-  useWorldIndicesFooter(quotes);
+  useWorldIndicesFooter(quotes, refresh, focused);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>

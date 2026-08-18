@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import type { PaneFooterSegment } from "../../../../../components";
+import { useShortcut } from "../../../../../react/input";
+import type { PaneFooterSegment, PaneHint } from "../../../../../components";
 import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
@@ -18,6 +19,7 @@ interface UseNewsArticleFooterOptions {
   info?: PaneFooterSegment[];
   loading?: boolean;
   error?: string | null;
+  onRefresh?: () => void;
 }
 
 export function useNewsArticleFooter({
@@ -27,6 +29,7 @@ export function useNewsArticleFooter({
   info,
   loading = false,
   error,
+  onRefresh,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const { access, segment } = useCloudAccessFooter({
@@ -43,6 +46,19 @@ export function useNewsArticleFooter({
     return segment ? [segment] : [];
   }, [access.isPayingPro, language, segment]);
   const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+  const hints = useMemo<PaneHint[]>(() => (
+    onRefresh
+      ? [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }]
+      : []
+  ), [onRefresh]);
+
+  useShortcut((event) => {
+    const key = (event.name ?? event.key ?? "").toLowerCase();
+    if (!focused || !onRefresh || key !== "r") return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    onRefresh();
+  }, { enabled: focused && !!onRefresh });
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -50,6 +66,8 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
+    hints,
+    showOpenHint: true,
     loading,
     error,
   });

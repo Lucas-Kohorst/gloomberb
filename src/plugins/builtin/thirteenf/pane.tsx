@@ -277,6 +277,10 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
     loading: status === "loading",
     error,
     info: browserStatusInfo,
+    hints: [
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    ],
   });
 
   const rootBefore = (
@@ -542,6 +546,7 @@ function FundDetailView({
     loading: status === "loading",
     error,
     info: detailStatusInfo,
+    showOpenHint: true,
   });
 
   if ((status === "loading" || status === "idle") && !data) {
