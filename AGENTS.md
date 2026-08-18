@@ -49,3 +49,21 @@ Pane footers:
 - `[s]`earch or `/` search when the list is long enough to filter.
 - `[r]`efresh for live or network-backed data.
 - Bind the hinted key. A footer hint with no handler is a bug.
+
+## Cursor Cloud specific instructions
+
+Runtime: Bun (pinned `bun@1.3.11`) is the only runtime. It is preinstalled at `~/.bun` and symlinked to `/usr/local/bin/bun` so it stays on `PATH` for non-interactive shells. The startup update script runs `bun install`; do not add system-dependency installs there.
+
+Lint / test / build / run commands are the ones in `package.json` scripts and CI (`.github/workflows/pr-checks.yml`, `.github/workflows/verify.yml`) — use those as the source of truth rather than duplicating. In short: `bun run typecheck`, `bun test`, `bunx knip --no-exit-code` (lint), `bun run web:check-bundle`, `bun run desktop:view:build`, `bun run build`.
+
+Services / how to run:
+- Terminal UI (primary product): `bun run dev` (watch mode). Run it inside tmux for TUI testing (see the `tui-testing` skill) and kill the session when done.
+- Headless CLI: `bun start <command>` or `bun run dev <command>` (e.g. `bun start quote AAPL`). `bun start` is non-watch; `bun run dev` is watch mode.
+- Local web client: `bun run web:start`. It builds then serves on `127.0.0.1` at an ephemeral port and prints the URL (e.g. `http://127.0.0.1:34903`). Intended for local use only.
+
+Non-obvious caveats:
+- CLI commands need the local data dir at `~/.gloomberb/config.json`, which is created on the first TUI or web-client run. If a CLI command prints "No data directory configured", start the TUI or web server once to initialize it.
+- Live market data (Yahoo, etc.) reaches the internet from the Cloud VM. Quotes are 15-minute delayed without a Gloom Cloud login; sign-in/chat/sync flows still require credentials handled in-app.
+- First run shows an onboarding wizard; skip it with `F10` (TUI) or the "Skip setup" control.
+- The full `bun test` suite currently has two order-dependent flakes (a BYOK "fetches a custom endpoint with auth headers" test and a "Chrome built-in AI shows unavailable on non-hosted renderers" test) caused by shared global fetch-mock state; both pass when their files are run in isolation. This is a pre-existing test-isolation issue, not an environment problem.
+- The Electrobun desktop app cannot run headless on Linux; only `desktop:view:build` (the view bundle) is exercised here. The Cloudflare `cloud:*` scripts are fork-only and build/deploy the hosted Worker.
