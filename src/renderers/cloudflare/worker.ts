@@ -21,7 +21,7 @@ export default {
       return handleShareRequest(request, env, url);
     }
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
-    if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
+    if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
@@ -291,9 +291,14 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
  *
  * Keys are set via `wrangler secret put ADJACENT_API_KEY` etc.
  */
-function handleByokKeysRequest(request: Request, env: Env): Response {
+async function handleByokKeysRequest(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") {
     return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+
+  const resolved = await resolveSessionUser(request, env);
+  if (!resolved.user) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
   }
 
   const knownEnvVars = [
