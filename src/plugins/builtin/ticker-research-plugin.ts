@@ -1,4 +1,5 @@
 import { chartComposerModule } from "./chart-composer";
+import { dividendYieldModule } from "./dividend-yield";
 import { holdersModule } from "./holders";
 import { insiderModule } from "./insider";
 import { optionsModule } from "./options";
@@ -19,6 +20,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     chartComposerModule,
     optionsModule,
     researchModule,
+    dividendYieldModule,
     holdersModule,
     thirteenFModule,
     secModule,
