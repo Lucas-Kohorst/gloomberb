@@ -24,7 +24,6 @@ import {
   sortRows,
   statusColor,
   statusLabel,
-  upcomingTint,
   type IPOColumn,
   type IPOSortPreference,
   DEFAULT_SORT_PREFERENCE,
@@ -182,7 +181,6 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   const renderCell = useCallback(
     (row: IPORecord, column: IPOColumn, _index: number, rowState: { selected: boolean }): DataTableCell => {
       const selectedColor = rowState.selected ? colors.selectedText : undefined;
-      const upcomingBg = row.status === "upcoming" ? upcomingTint() : undefined;
 
       switch (column.id) {
         case "ticker":
@@ -190,49 +188,41 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
             text: row.ticker,
             color: selectedColor ?? colors.textBright,
             attributes: TextAttributes.BOLD,
-            backgroundColor: upcomingBg,
           };
         case "date":
           return {
             text: formatDate(row.date),
             color: selectedColor ?? colors.textMuted,
-            backgroundColor: upcomingBg,
           };
         case "status":
           return {
             text: statusLabel(row.status),
             color: selectedColor ?? statusColor(row.status),
-            backgroundColor: upcomingBg,
           };
         case "exchange":
           return {
             text: row.exchange ?? "—",
             color: selectedColor ?? colors.textDim,
-            backgroundColor: upcomingBg,
           };
         case "offer":
           return {
             text: formatOfferSize(row.offerSize),
             color: selectedColor ?? colors.textDim,
-            backgroundColor: upcomingBg,
           };
         case "price":
           return {
             text: formatPrice(row),
             color: selectedColor ?? colors.text,
-            backgroundColor: upcomingBg,
           };
         case "shares":
           return {
             text: formatShares(row.shares),
             color: selectedColor ?? colors.textDim,
-            backgroundColor: upcomingBg,
           };
         case "return":
           return {
             text: formatReturn(row.change1D),
             color: selectedColor ?? (row.change1D != null ? priceColor(row.change1D) : colors.textDim),
-            backgroundColor: upcomingBg,
           };
       }
     },

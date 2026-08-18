@@ -75,6 +75,11 @@ export function createInitialConnectionState(
   };
 }
 
+export function isRateLimitedError(error: string | undefined): boolean {
+  if (!error) return false;
+  return /429|too many requests|rate.?limit/i.test(error);
+}
+
 export function recordRequest(
   state: ConnectionState,
   record: Omit<RequestRecord, "timestamp">,
@@ -84,13 +89,19 @@ export function recordRequest(
   const recentRequests = [fullRecord, ...state.recentRequests].slice(0, MAX_RECENT_REQUESTS);
   const successCount = state.successCount + (record.success ? 1 : 0);
   const failureCount = state.failureCount + (record.success ? 0 : 1);
+  const rateLimited = !record.success && isRateLimitedError(record.error);
+  const status: ConnectionStatus = record.success
+    ? "connected"
+    : rateLimited
+      ? (successCount > 0 || state.status === "connected" ? "connected" : "reconnecting")
+      : "error";
   return {
     ...state,
     lastPolledAt: now,
     lastLatencyMs: record.durationMs,
     successCount,
     failureCount,
-    status: record.success ? "connected" : "error",
+    status,
     lastError: record.success ? null : (record.error ?? "Request failed"),
     recentRequests,
   };

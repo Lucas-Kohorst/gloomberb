@@ -25,6 +25,9 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 - **DVD** — retired Yahoo v7 CSV + missing `quoteSummary.result[0]` unwrap. History now comes from the v8 chart + shared Yahoo crumb client.
 - **SI** — command bar no longer refuses the pane when the active ticker is not a US equity; the pane opens and shows an in-pane message.
 - **Kalshi** — hosted users share one Worker egress IP and were 429'd by catalog fan-out. Fewer pages, sequential fetches, 60s poll, and edge-cached public GETs.
+- **IPO** — upcoming rows no longer paint `selected` onto every cell (that showed as black patches on hosted).
+- **SI** — uses the shared Yahoo crumb client with 429 retries. Hosted Yahoo/Nasdaq/stockanalysis GETs share the same Worker cache as Kalshi.
+- **Connections** — a 429 is rate-limited (`Reconnecting` / stay Connected), not a hard Error.
 
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 

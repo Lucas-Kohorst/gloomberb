@@ -65,31 +65,44 @@ type HostedBackendRequest =
 
 const NOT_AVAILABLE = "Not available in the hosted client yet.";
 
-// Hosted users share this Worker's egress IP. Kalshi 429s that budget, so
-// public GETs are edge-cached and in-flight identical URLs are coalesced.
-const KALSHI_EDGE_CACHE_TTL_SECONDS = 20;
-const kalshiInflight = new Map<string, Promise<SharedHttpFetchResponse>>();
+// Hosted users share this Worker's egress IP. Public GETs for rate-limited
+// vendors are edge-cached and in-flight identical URLs are coalesced.
+const hostedPublicGetInflight = new Map<string, Promise<SharedHttpFetchResponse>>();
 
-function isKalshiPublicGet(payload: SharedHttpFetchRequest): boolean {
-  if (typeof payload.url !== "string") return false;
+function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest): number | null {
+  if (typeof payload.url !== "string") return null;
   const method = (payload.init?.method ?? "GET").trim().toUpperCase();
-  if (method !== "GET" && method !== "HEAD") return false;
+  if (method !== "GET" && method !== "HEAD") return null;
+  let hostname: string;
+  let pathname: string;
   try {
-    const hostname = new URL(payload.url).hostname;
-    return hostname === "kalshi.com" || hostname.endsWith(".kalshi.com");
+    const parsed = new URL(payload.url);
+    hostname = parsed.hostname;
+    pathname = parsed.pathname;
   } catch {
-    return false;
+    return null;
   }
+  if (hostname === "kalshi.com" || hostname.endsWith(".kalshi.com")) return 60;
+  if (hostname === "query1.finance.yahoo.com" || hostname === "query2.finance.yahoo.com") {
+    if (pathname.includes("/getcrumb")) return null;
+    return 60;
+  }
+  if (hostname === "stockanalysis.com" || hostname.endsWith(".stockanalysis.com")) return 120;
+  if (hostname === "www.nasdaqtrader.com" || hostname === "nasdaqtrader.com") return 60;
+  return null;
 }
 
-function handleKalshiHttpFetch(payload: SharedHttpFetchRequest): Promise<SharedHttpFetchResponse> {
-  const existing = kalshiInflight.get(payload.url);
+function handleCachedPublicGet(
+  payload: SharedHttpFetchRequest,
+  ttlSeconds: number,
+): Promise<SharedHttpFetchResponse> {
+  const existing = hostedPublicGetInflight.get(payload.url);
   if (existing) return existing;
-  const request = handleHttpFetch(payload, { edgeCacheTtlSeconds: KALSHI_EDGE_CACHE_TTL_SECONDS })
+  const request = handleHttpFetch(payload, { edgeCacheTtlSeconds: ttlSeconds })
     .finally(() => {
-      kalshiInflight.delete(payload.url);
+      hostedPublicGetInflight.delete(payload.url);
     });
-  kalshiInflight.set(payload.url, request);
+  hostedPublicGetInflight.set(payload.url, request);
   return request;
 }
 
@@ -187,8 +200,9 @@ async function dispatch(
           body: await upstream.text(),
         };
       }
-      if (isKalshiPublicGet(request.payload)) {
-        return handleKalshiHttpFetch(request.payload);
+      const publicGetTtl = hostedPublicGetCacheTtlSeconds(request.payload);
+      if (publicGetTtl != null) {
+        return handleCachedPublicGet(request.payload, publicGetTtl);
       }
       return handleHttpFetch(request.payload);
     }

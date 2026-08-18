@@ -33,7 +33,6 @@ import type {
   KalshiEventResponse,
   KalshiEventsResponse,
   KalshiMarketRecord,
-  KalshiMarketsResponse,
   KalshiOrderbookResponse,
   KalshiTradesResponse,
 } from "./types";
@@ -46,8 +45,6 @@ const KALSHI_EVENT_PAGE_LIMIT = 200;
 // fan out 8+5 pages on every catalog load.
 const DEFAULT_KALSHI_EVENT_MAX_PAGES = 3;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 2;
-const KALSHI_MARKET_PAGE_LIMIT = 200;
-const KALSHI_MARKET_MAX_PAGES = 1;
 const KALSHI_SERIES_EVENT_LIMIT = 20;
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
@@ -56,15 +53,6 @@ function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
   url.searchParams.set("status", "open");
   url.searchParams.set("with_nested_markets", "true");
   if (category) url.searchParams.set("category", category);
-  if (cursor) url.searchParams.set("cursor", cursor);
-  return url.toString();
-}
-
-function buildKalshiMarketsUrl(cursor?: string): string {
-  const url = new URL(`${KALSHI_API_BASE}/markets`);
-  url.searchParams.set("limit", String(KALSHI_MARKET_PAGE_LIMIT));
-  url.searchParams.set("status", "open");
-  url.searchParams.set("mve_filter", "exclude");
   if (cursor) url.searchParams.set("cursor", cursor);
   return url.toString();
 }
@@ -113,22 +101,6 @@ async function fetchKalshiCatalogEventsForCategory(
   return [...deduped.values()];
 }
 
-async function fetchKalshiOpenMarkets(
-  maxPages = KALSHI_MARKET_MAX_PAGES,
-): Promise<KalshiMarketRecord[]> {
-  const markets: KalshiMarketRecord[] = [];
-  let cursor: string | undefined;
-  for (let page = 0; page < maxPages; page += 1) {
-    const response = await fetchJson<KalshiMarketsResponse>(
-      buildKalshiMarketsUrl(cursor),
-    );
-    markets.push(...(response.markets ?? []));
-    cursor = response.cursor?.trim() || undefined;
-    if (!cursor) break;
-  }
-  return markets;
-}
-
 async function loadKalshiVenueCatalog(
   searchQuery: string,
   categoryId: PredictionCategoryId,
@@ -140,22 +112,8 @@ async function loadKalshiVenueCatalog(
   const events = categoryId === "all"
     ? await fetchKalshiCatalogEvents(maxPages)
     : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
-  const openMarkets = categoryId === "all" && !searchQuery
-    ? await fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
-    : [];
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
-  if (openMarkets.length === 0) return fromEvents;
-  const fromMarkets = normalizeKalshiCatalog(
-    [{ title: "", markets: openMarkets }],
-    searchQuery,
-    categoryId,
-    browseTab,
-  );
-  const merged = new Map<string, PredictionMarketSummary>();
-  for (const market of [...fromMarkets, ...fromEvents]) {
-    merged.set(market.key, market);
-  }
-  return [...merged.values()].sort((left, right) => {
+  return [...fromEvents].sort((left, right) => {
     if (browseTab === "ending") {
       const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
       const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
