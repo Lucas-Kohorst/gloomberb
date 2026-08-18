@@ -57,6 +57,7 @@ const PREFERRED_FIELD_IDS = [
   "fundamental.eps",
   "fundamental.freeCashFlow",
   "market.volume",
+  "market.dividends",
   "valuation.trailingPE",
   "valuation.evEbitda",
 ] as const;
@@ -64,6 +65,7 @@ const PREFERRED_FIELD_IDS = [
 const FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "market.ohlcv": ["stock price", "share price"],
   "market.volume": ["trading volume"],
+  "market.dividends": ["dividend", "dividends", "div"],
   "fundamental.totalRevenue": ["sales"],
   "fundamental.operatingCashFlow": ["cash from operations", "cfo"],
   "valuation.trailingPE": ["price earnings", "price to earnings"],

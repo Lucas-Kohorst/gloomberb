@@ -18,14 +18,16 @@ import {
 } from "./resolution";
 import type { TimeRange } from "./range";
 import type { DataProvider, MarketDataRequestContext } from "../types/data-provider";
-import type { Quote, TickerFinancials } from "../types/financials";
+import type { CorporateActionsData, Quote, TickerFinancials } from "../types/financials";
 import type { FredSeriesLoadResult, FredSeriesRequest } from "../data/fred-series";
 import { extractFredSeries } from "./economic";
 import {
   getTimeSeriesField,
+  isDividendFieldId,
   isFundamentalFieldId,
   isMarketFieldId,
 } from "./field-catalog";
+import { extractDividendSeries } from "./dividends";
 import {
   fundamentalSeriesUsesAvailabilityFallback,
   valuationSeriesUsesLiveQuote,
@@ -114,6 +116,7 @@ export interface ChartResolveOptions {
 /** Raw source data retained while live quotes recompute the chart tail. */
 export class ChartResolveCache {
   readonly financialsByInstrument = new Map<string, Promise<TickerFinancials | null>>();
+  readonly corporateActionsByInstrument = new Map<string, Promise<CorporateActionsData | null>>();
   readonly priceHistoryByRequest = new Map<string, Promise<TickerFinancials["priceHistory"]>>();
   readonly accumulatedPriceHistory = new Map<string, TickerFinancials["priceHistory"]>();
   readonly resolutionSupportByInstrument = new Map<string, Promise<ChartResolutionSupport[]>>();
@@ -566,6 +569,43 @@ function baseSecuritySeries(
   };
 }
 
+function baseDividendSeries(
+  spec: ChartSeriesSpec,
+  actions: CorporateActionsData,
+  points: TimeSeriesPoint[],
+  index: number,
+): ResolvedSeries | null {
+  if (spec.source.kind !== "security" || !isDividendFieldId(spec.source.fieldId)) return null;
+  const field = getTimeSeriesField(spec.source.fieldId);
+  if (!field) return null;
+  const symbol = instrumentLabel(spec.source);
+  const currency = actions.currency;
+  const unit = field.unit.startsWith("currency") && currency
+    ? field.unit.replace("currency", currency)
+    : field.unit;
+  const currencyUnitGroup = field.unit.startsWith("currency") && currency
+    ? `${field.unitGroup}:${currency}`
+    : field.unitGroup;
+  return {
+    id: spec.id,
+    label: spec.label?.trim() || `${symbol} ${field.shortLabel}`,
+    color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
+    unit,
+    unitGroup: currencyUnitGroup,
+    nativeFrequency: spec.source.period && spec.source.period !== "auto"
+      ? spec.source.period
+      : field.nativeFrequency,
+    timestampMode: spec.source.timestampMode,
+    dataShape: field.dataShape,
+    style: spec.style,
+    transform: spec.transform,
+    axis: spec.axis === "right" ? "right" : "left",
+    panelId: spec.panelId,
+    interpolation: spec.interpolation,
+    points,
+  };
+}
+
 function baseEconomicSeries(
   spec: ChartSeriesSpec,
   loaded: FredSeriesLoadResult,
@@ -804,6 +844,22 @@ export async function resolveChartSpecData(
     }
     return pending;
   };
+  const loadCorporateActions = (source: Extract<ChartSeriesSpec["source"], { kind: "security" }>) => {
+    const key = instrumentKey(source);
+    let pending = cache.corporateActionsByInstrument.get(key);
+    if (!pending) {
+      const provider = sources.dataProvider!;
+      pending = provider.getCorporateActions
+        ? provider.getCorporateActions(
+          source.instrument.symbol,
+          source.instrument.exchange ?? "",
+          requestContext(source),
+        ).catch(() => null)
+        : Promise.resolve(null);
+      cache.corporateActionsByInstrument.set(key, pending);
+    }
+    return pending;
+  };
   const loadResolutionSupport = (
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
   ) => {
@@ -1032,6 +1088,16 @@ export async function resolveChartSpecData(
       }
 
       const source = seriesSpec.source;
+      if (source.kind === "security" && isDividendFieldId(source.fieldId)) {
+        const actions = await loadCorporateActions(source);
+        const points = extractDividendSeries(actions);
+        if (!actions || points.length === 0) {
+          throw new Error(`No dividend history is available for ${instrumentLabel(source)}.`);
+        }
+        const result = baseDividendSeries(seriesSpec, actions, points, index);
+        if (!result) throw new Error(`Unknown field ${source.fieldId}.`);
+        return result;
+      }
       const marketField = isMarketFieldId(source.fieldId);
       const quoteDerivedValuation = valuationSeriesUsesLiveQuote(source.fieldId);
       const needsHistory = marketField || quoteDerivedValuation;

@@ -30,6 +30,7 @@ import {
   resolveAlertQuote,
 } from "./quotes";
 import type { AlertRule } from "./types";
+import { isPriceAlertCondition } from "./types";
 
 type AlertColumnId =
   | "status"
@@ -123,7 +124,8 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     if (!marketData || rows.length === 0) return;
     const now = Date.now();
     const dueAlerts = rows.filter((alert) => (
-      !alert.lastCheckedAt || now - alert.lastCheckedAt > PANE_QUOTE_REFRESH_MS
+      isPriceAlertCondition(alert.condition)
+      && (!alert.lastCheckedAt || now - alert.lastCheckedAt > PANE_QUOTE_REFRESH_MS)
     ));
     if (dueAlerts.length === 0) return;
 

@@ -128,6 +128,17 @@ export async function fetchDividendData(
   return { payments, metrics };
 }
 
+export async function fetchExDividendDate(symbol: string): Promise<Date | null> {
+  const quoteUrl =
+    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
+    + "?modules=summaryDetail";
+  return withConnectionRequest(CONNECTION_ID, "ex-dividend-date", async () => {
+    const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl);
+    const raw = extractDividendFields(data).exDividendDate;
+    return raw != null ? new Date(raw * 1000) : null;
+  });
+}
+
 function buildMetrics(
   payments: DividendPayment[],
   quoteFields: QuoteSummaryDividendFields | null,

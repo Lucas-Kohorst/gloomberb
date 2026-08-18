@@ -4,13 +4,14 @@ import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import { NumberField, SegmentedControl, usePaneFooter } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
-import { usePaneStateValue, usePaneTicker } from "../../../state/app/context";
+import { usePaneSettingValue, usePaneStateValue, usePaneTicker } from "../../../state/app/context";
 import { formatNumber } from "../../../utils/format";
 import {
   blackScholes,
   impliedVolatility,
   type BSInputs,
 } from "./blackscholes";
+import type { OvmeSeed } from "./seed";
 
 export const OPTIONS_CALC_PANE_ID = "options-calc";
 const DEFAULT_FLOATING_SIZE = { width: 70, height: 20 };
@@ -289,17 +290,17 @@ function MetricLine({
 
 export function OptionsCalcPane({ focused, width, height }: PaneProps) {
   const ticker = usePaneTicker();
-  const [inputs, setInputs] = usePaneStateValue<CalcInputs>("inputs", DEFAULT_INPUTS);
+  const [seed] = usePaneSettingValue<OvmeSeed | null>("seed", null);
+  const [inputs, setInputs] = usePaneStateValue<CalcInputs>("inputs", seed ? { ...DEFAULT_INPUTS, ...seed } : DEFAULT_INPUTS);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [selectedFieldIndex, setSelectedFieldIndex] = useState(0);
 
-  // Pre-fill spot from ticker market data on first load if spot is at default
   useEffect(() => {
+    if (seed) return;
     if (ticker?.financials?.quote?.price && inputs.spot === DEFAULT_INPUTS.spot) {
       setInputs({ ...inputs, spot: ticker.financials.quote.price });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker?.financials?.quote?.price]);
+  }, [inputs, seed, setInputs, ticker?.financials?.quote?.price]);
 
   const updateInput = useCallback((patch: Partial<CalcInputs>) => {
     setInputs((current) => ({ ...current, ...patch }));
