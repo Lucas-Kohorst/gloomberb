@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  EmptyState,
+  ErrorState,
+  LoadingState,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -528,7 +531,7 @@ export function CorporateActionsView({
   const todayKey = todayDateKey();
   const futureRowBackground = blendHex(colors.bg, colors.positive, 0.16);
   const loading = actionsLoading || analystLoading || financialsLoading;
-  const error = [actionsError, analystError, financialsError].filter(Boolean).join(" | ") || null;
+  const error = actionsError ?? analystError ?? financialsError;
   const reload = useCallback(() => {
     reloadActions();
     reloadAnalyst();
@@ -703,6 +706,10 @@ export function CorporateActionsView({
     hints: [refreshFooterHint(reload)],
   }), [error, footerPaneId, loading, reload]);
 
+  if (loading && rows.length === 0) return <LoadingState title="Loading events..." />;
+  if (error && rows.length === 0) return <ErrorState error={error} />;
+  if (rows.length === 0) return <EmptyState title="No events." />;
+
   return (
     <DataTableStackView<EventRow, EventColumn>
       focused={focused}
@@ -730,7 +737,7 @@ export function CorporateActionsView({
       getRowBackgroundColor={(row) => (
         row.date > todayKey ? futureRowBackground : undefined
       )}
-      emptyStateTitle={loading ? "Loading events..." : error ?? "No events"}
+      emptyStateTitle="No events."
     />
   );
 }
