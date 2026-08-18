@@ -32,7 +32,9 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 ### Follow-ups
 
 - **OVME** — from the options chain, `[c]`alc opens the calculator filled with that contract's spot, strike, expiry, and IV (edit after; not live-tracked).
-- **Charts** — `G AAPL:div` plots dividend history from corporate actions.
+- **Charts** — `G AAPL:div` / `G AAPL:dvd` plots dividend history from corporate actions. `G president` ranks Kalshi/Polymarket hits instead of tickers that happen to contain the word. The Custom Chart wizard shows the same series dropdown as `G aapl:`.
+- **Data Catalog** (`CAT [query]`) — searchable, filterable inventory of every chartable series. Enter charts it; `[o]`pen when a series has an external URL.
+- **SEC** — `[o]`pen works on the selected filing row, not only after drill-in.
 - **Alerts** — `SA AAPL halted`, `SA AAPL short 5`, and `SA AAPL exdiv 7` in addition to price triggers.
 
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads

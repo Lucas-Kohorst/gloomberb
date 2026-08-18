@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import { truncateText } from "../view-model";
 import { CommandBarWorkflowFieldRow } from "./field-row";
+import { ChartSeriesWorkflowSuggestions, isChartSeriesWorkflow } from "./chart-series-field";
 
 interface CommandBarWorkflowBodyProps {
   route: CommandBarWorkflowRoute;
@@ -137,6 +138,19 @@ export function CommandBarWorkflowBody({
           />
         );
       })}
+      {isChartSeriesWorkflow(route) && (
+        <ChartSeriesWorkflowSuggestions
+          route={route}
+          queryDisplayWidth={queryDisplayWidth}
+          paletteSelectedBg={paletteSelectedBg}
+          paletteSubtleText={paletteSubtleText}
+          paletteText={paletteText}
+          onApplyExpression={(expression) => {
+            onFieldValueChange("series", expression);
+            void onSubmit({ ...route, values: { ...route.values, series: expression } });
+          }}
+        />
+      )}
       {route.error && (
         <Box height={1}>
           <Text fg={themeNegative}>{truncateText(route.error, queryDisplayWidth)}</Text>

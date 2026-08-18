@@ -9,6 +9,8 @@ import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
+import { DataCatalogPane } from "./data-catalog-pane";
+import { DATA_CATALOG_PANE_ID, DATA_CATALOG_TEMPLATE_ID } from "./catalog-inventory";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   buildComparisonChartPreset,
@@ -140,10 +142,10 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     wizard: [{
       key: "series",
       label: "Chart Series",
-      placeholder: "AAPL:price, ADJ:red, KALSHI:KXPRESPERSON, FRED:CPIAUCSL",
+      placeholder: "AAPL:price, AAPL:dvd, ADJ:red, KALSHI:KXPRESPERSON, FRED:CPIAUCSL",
       type: "text",
       body: [
-        "Enter comma-separated SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:market expressions — or a description like 'adjacent red index' or 'trump kalshi'.",
+        "Enter comma-separated SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:market expressions — or a description like 'adjacent red index' or 'trump kalshi'. Type AAPL: for the series dropdown.",
       ],
     }],
     canCreate: () => true,
@@ -158,6 +160,38 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       }
       const expression = arg || options?.values?.series?.trim() || context.activeTicker || "";
       return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
+    },
+  },
+  {
+    id: DATA_CATALOG_TEMPLATE_ID,
+    paneId: DATA_CATALOG_PANE_ID,
+    label: "Data Catalog",
+    description: "Search, filter, and chart every series the composer knows — securities, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, and polls.",
+    keywords: [
+      "catalog",
+      "series",
+      "data",
+      "chart",
+      "fred",
+      "kalshi",
+      "polymarket",
+      "adjacent",
+      "prediction",
+      "futures",
+      "treasury",
+      "polls",
+      "dividends",
+      "dvd",
+    ],
+    shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
+    canCreate: () => true,
+    createInstance: (_context, options) => {
+      const query = options?.arg?.trim() ?? options?.values?.query?.trim() ?? "";
+      return {
+        title: query ? `Catalog · ${query}` : "Data Catalog",
+        placement: "floating" as const,
+        ...(query ? { settings: { query } } : {}),
+      };
     },
   },
   securityTemplate({
@@ -224,6 +258,14 @@ export const chartComposerModule: PluginModule = {
       ),
       context.settings,
     ),
+  }, {
+    id: DATA_CATALOG_PANE_ID,
+    name: "Data Catalog",
+    icon: "C",
+    component: DataCatalogPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 110, height: 32 },
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {

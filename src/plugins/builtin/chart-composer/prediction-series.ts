@@ -21,6 +21,27 @@ const PREDICTION_INTENT_WORDS = new Set([
   "adj",
 ]);
 
+const PREDICTION_TOPIC_WORDS = new Set([
+  "president",
+  "presidential",
+  "election",
+  "elections",
+  "electoral",
+  "nominee",
+  "democrat",
+  "republican",
+  "gop",
+  "senate",
+  "governor",
+  "primary",
+  "potus",
+  "inauguration",
+  "ballot",
+  "trump",
+  "biden",
+  "harris",
+]);
+
 const PREDICTION_PREFIX_RE = new RegExp(
   `^\\s*(${SERIES_PREFIX.kalshi}|${SERIES_PREFIX.polymarket}|${SERIES_PREFIX.predictionMarket}|${SERIES_PREFIX.adjacentIndex})\\s*:`,
   "i",
@@ -59,10 +80,32 @@ export function looksLikePredictionMarketQuery(query: string): boolean {
   if (PREDICTION_PREFIX_RE.test(trimmed)) return true;
   const lower = trimmed.toLowerCase();
   const tokens = lower.split(/[^a-z0-9]+/).filter(Boolean);
-  if (tokens.some((token) => PREDICTION_INTENT_WORDS.has(token))) return true;
+  if (tokens.some((token) => PREDICTION_INTENT_WORDS.has(token) || PREDICTION_TOPIC_WORDS.has(token))) {
+    return true;
+  }
   if (/\bfed\s+cuts?\b/.test(lower) || /\brate\s+cuts?\b/.test(lower)) return true;
   if (/\b(red|blue)\s+(index|idx)\b/.test(lower)) return true;
   return false;
+}
+
+export function mapAdjacentMarketToHit(market: {
+  platform: string;
+  id: string;
+  title: string;
+  slug?: string | null;
+  subtitle?: string | null;
+}): PredictionMarketSearchHit | null {
+  if (market.platform !== "kalshi" && market.platform !== "polymarket") return null;
+  const marketId = market.platform === "kalshi"
+    ? (market.slug?.trim() || market.id)
+    : market.id;
+  if (!marketId) return null;
+  return {
+    venue: market.platform,
+    marketId,
+    title: market.title,
+    ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
+  };
 }
 
 function compact(value: string): string {

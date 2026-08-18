@@ -83,3 +83,17 @@ export function resolveFredMapping(eventTitle: string, country: string): FredMap
 export function getRelatedTickers(eventTitle: string, country: string): string[] {
   return resolveFredMapping(eventTitle, country)?.relatedTickers ?? [];
 }
+
+export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
+  const seen = new Set<string>();
+  const rows: Array<{ seriesId: string; label: string }> = [];
+  for (const [eventTitle, mapping] of Object.entries(SERIES_MAP)) {
+    if (seen.has(mapping.seriesId)) continue;
+    seen.add(mapping.seriesId);
+    rows.push({
+      seriesId: mapping.seriesId,
+      label: eventTitle.replace(/\b\w/g, (char) => char.toUpperCase()),
+    });
+  }
+  return rows;
+}

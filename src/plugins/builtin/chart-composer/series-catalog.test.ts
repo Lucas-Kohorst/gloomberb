@@ -62,4 +62,28 @@ describe("chart composer series catalog", () => {
       },
     });
   });
+
+  test("ranks prediction-market hits above ticker names that happen to contain the query", () => {
+    const suggestions = buildSeriesCatalogSuggestions(
+      "president",
+      AAPL,
+      [{ symbol: "2855", exchange: "TWSE", name: "President Securities" }],
+      8,
+      [{
+        venue: "kalshi",
+        marketId: "KXPRESPERSON",
+        title: "Who will be the next president?",
+      }],
+    );
+
+    expect(suggestions[0]).toMatchObject({
+      expression: {
+        kind: "prediction-market",
+        venue: "kalshi",
+        marketId: "KXPRESPERSON",
+      },
+    });
+    expect(suggestions.some((entry) => entry.label.includes("TWSE"))).toBe(false);
+    expect(suggestions.some((entry) => entry.expression.kind === "future")).toBe(false);
+  });
 });

@@ -220,7 +220,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 |----------|----------|
 | `DES <ticker>` / `T <ticker>` | Security details for a ticker |
 | `FA <ticker>` | Financial statement view |
-| `G <series>` | Custom chart composer |
+| `G <series>` | Custom chart composer. `AAPL:dvd` / `AAPL:div` plots dividend history. `G president` ranks prediction markets. |
 | `GP <ticker>` | Price chart |
 | `GIP <ticker>` | Intraday price chart |
 | `HP <ticker>` | Historical OHLCV prices |
@@ -251,7 +251,10 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 
 ```text
 G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
+G AAPL:dvd
 ```
+
+`CAT [query]` opens the Data Catalog — a searchable, filterable inventory of every chartable series (securities fields, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls). Enter charts the selected series.
 
 Open **Series** to add, remove, reorder, or hide series and choose each series' field, chart style, transform, axis, panel, period, and panel scale. Price data supports candles, OHLC, HLC, line, and area; scalar data supports its compatible line, area, step, column, and point modes. Panels can use independent left/right axes and linear or logarithmic scales.
 
@@ -284,6 +287,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `FNG` | Fear and greed market gauge |
 | `HALT` | Today's US market trading halts |
 | `IPO` | Upcoming and recent IPOs |
+| `CAT [query]` | Data Catalog of every chartable series |
 
 ### Workspace and App Controls
 

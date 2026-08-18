@@ -25,6 +25,7 @@ import {
 } from "./universal-series";
 import {
   formatPredictionSeriesExpression,
+  looksLikePredictionMarketQuery,
   normalizePredictionMarketId,
   resolvePredictionSeriesQuery,
   type PredictionMarketSearchHit,
@@ -65,7 +66,7 @@ const PREFERRED_FIELD_IDS = [
 const FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "market.ohlcv": ["stock price", "share price"],
   "market.volume": ["trading volume"],
-  "market.dividends": ["dividend", "dividends", "div"],
+  "market.dividends": ["dividend", "dividends", "div", "dvd"],
   "fundamental.totalRevenue": ["sales"],
   "fundamental.operatingCashFlow": ["cash from operations", "cfo"],
   "valuation.trailingPE": ["price earnings", "price to earnings"],
@@ -343,7 +344,7 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
  * assistant never has to emit the verbose `fundamental.totalRevenue` form.
  */
 const ASSIST_FIELD_NAMES = [
-  "price", "close", "volume",
+  "price", "close", "volume", "div", "dvd",
   "revenue", "grossProfit", "grossMargin", "operatingIncome", "netIncome", "netMargin",
   "freeCashFlow", "eps", "totalAssets", "totalDebt", "totalEquity",
   "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",
@@ -398,33 +399,41 @@ export function buildSeriesCatalogSuggestions(
       suggestions.unshift(nlSuggestion);
     }
   }
-  const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
-  for (const instrument of instruments) {
-    const instrumentLabel = publicTickerKey(instrument.symbol, instrument.exchange);
-    for (const { field } of rankedFields.slice(0, fieldLimit)) {
-      const expression: ParsedSeriesExpression = {
-        kind: "security",
-        symbol: instrument.symbol,
-        ...(instrument.exchange ? { exchange: canonicalExchange(instrument.exchange) } : {}),
-        fieldId: field.id,
-      };
-      const suggestion: SeriesCatalogSuggestion = {
-        id: `${instrumentLabel}:${field.id}`,
-        label: `${instrumentLabel} · ${field.label}`,
-        description: [
-          instrument.name,
-          fieldCategory(field),
-          fieldFrequency(field),
-        ].filter(Boolean).join(" · "),
-        detail: fieldFrequency(field),
-        expression,
-      };
-      if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
+
+  const predictionQuery = looksLikePredictionMarketQuery(query);
+  if (predictionQuery || searchedMarkets.length > 0) {
+    appendPredictionMarketHits(suggestions, searchedMarkets, limit);
+  }
+
+  if (!predictionQuery || analysis.directInstrument || analysis.metricQuery) {
+    const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
+    for (const instrument of instruments) {
+      const instrumentLabel = publicTickerKey(instrument.symbol, instrument.exchange);
+      for (const { field } of rankedFields.slice(0, fieldLimit)) {
+        const expression: ParsedSeriesExpression = {
+          kind: "security",
+          symbol: instrument.symbol,
+          ...(instrument.exchange ? { exchange: canonicalExchange(instrument.exchange) } : {}),
+          fieldId: field.id,
+        };
+        const suggestion: SeriesCatalogSuggestion = {
+          id: `${instrumentLabel}:${field.id}`,
+          label: `${instrumentLabel} · ${field.label}`,
+          description: [
+            instrument.name,
+            fieldCategory(field),
+            fieldFrequency(field),
+          ].filter(Boolean).join(" · "),
+          detail: fieldFrequency(field),
+          expression,
+        };
+        if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
+      }
     }
   }
 
   // Append universal-series suggestions (futures, treasuries, benchmarks, polls,
-  // Adjacent indices) and live prediction-market hits, filling remaining slots.
+  // Adjacent indices) and any leftover prediction-market hits.
   appendUniversalSuggestions(suggestions, query, limit);
   appendPredictionMarketHits(suggestions, searchedMarkets, limit);
 
@@ -537,9 +546,15 @@ function universalScore(query: string, queryCompact: string, keywords: string[])
     const kw = keyword.toLowerCase();
     const kwCompact = compact(kw);
     if (kwCompact === queryCompact) return 2_000 + kwCompact.length;
-    if (kwCompact.startsWith(queryCompact)) return 1_500 + queryCompact.length;
-    if (queryCompact.includes(kwCompact) || kwCompact.includes(queryCompact)) return 1_000 + queryCompact.length;
+    if (queryCompact.length >= 3 && kwCompact.startsWith(queryCompact)) return 1_500 + queryCompact.length;
+    if (
+      (kwCompact.length >= 3 && queryCompact.includes(kwCompact))
+      || (queryCompact.length >= 3 && kwCompact.includes(queryCompact))
+    ) {
+      return 1_000 + queryCompact.length;
+    }
     for (const word of kw.split(/\s+/)) {
+      if (word.length < 3) continue;
       if (word.startsWith(query) || query.startsWith(word)) return 800 + query.length;
     }
   }

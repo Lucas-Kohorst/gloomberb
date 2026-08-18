@@ -86,6 +86,8 @@ describe("prediction-market NL → series expression", () => {
     expect(looksLikePredictionMarketQuery("will fed cut polymarket")).toBe(true);
     expect(looksLikePredictionMarketQuery("adjacent red index")).toBe(true);
     expect(looksLikePredictionMarketQuery("KALSHI:KXPRES")).toBe(true);
+    expect(looksLikePredictionMarketQuery("president")).toBe(true);
+    expect(looksLikePredictionMarketQuery("presidential election")).toBe(true);
     expect(looksLikePredictionMarketQuery("AAPL revenue")).toBe(false);
     expect(looksLikePredictionMarketQuery("gold")).toBe(false);
   });
