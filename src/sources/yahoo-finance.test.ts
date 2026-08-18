@@ -118,6 +118,11 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("BTCUSD", "CCC")[0]).toBe("BTC-USD");
   });
 
+  test("leaves a bare quote symbol alone instead of emitting an empty base", () => {
+    expect(getYahooSymbolsToTry("BTC", "CCC")[0]).toBe("BTC");
+    expect(getYahooSymbolsToTry("ETH", "CRYPTO")[0]).toBe("ETH");
+  });
+
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
     let requested = false;

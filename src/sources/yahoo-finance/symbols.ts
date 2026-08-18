@@ -109,6 +109,8 @@ function normalizeYahooTicker(ticker: string, exchange: string): string {
   for (const quoteCurrency of CRYPTO_QUOTE_CURRENCIES) {
     if (!normalized.endsWith(quoteCurrency)) continue;
     const base = normalized.slice(0, -quoteCurrency.length);
+    // A bare quote symbol ("BTC", "ETH") has no base and is already a Yahoo ticker.
+    if (!base) continue;
     if (CRYPTO_BASE_SYMBOLS.has(base) || exchange === "CCC" || exchange === "CRYPTO") {
       return `${base}-${quoteCurrency}`;
     }
