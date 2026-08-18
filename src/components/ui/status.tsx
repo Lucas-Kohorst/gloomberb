@@ -49,6 +49,10 @@ export function LoadingState({ title = "Loading data..." }: { title?: string }) 
   return <EmptyState title={title} />;
 }
 
-export function ErrorState({ error, hint = "Press r to retry." }: { error: string | null | undefined; hint?: string }) {
+/**
+ * `hint` is opt-in on purpose: a retry hint must only appear where the pane
+ * actually binds the key, so callers pass it rather than inherit a default.
+ */
+export function ErrorState({ error, hint }: { error: string | null | undefined; hint?: string }) {
   return <EmptyState title={dataErrorMessage(error)} hint={hint} />;
 }
