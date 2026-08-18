@@ -1,5 +1,47 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_12_0: ChangelogRelease = {
+  id: "hosted-v0-12-0",
+  tagName: "v0.12.0",
+  version: "0.12.0",
+  title: "Alt-data panes, denser news wire, and security hardening",
+  publishedAt: "2026-08-18T00:00:00.000Z",
+  url: "",
+  body: `Security, performance, and discovery work from the improve cycle, plus Treasury auctions and a much denser RSS firehose. Bond search and VIX term-structure panes are built but stay hidden until the Gloom Cloud FRED proxy allowlists their series.
+
+## Panes
+
+- **Treasury auctions** (\`AUCT\`) from Treasury Fiscal Data — Bills, Notes, Bonds/TIPS with sortable auction tables.
+- **Plugin discovery** pane — search GitHub for Gloomberb plugins and install from the command bar / pane UI.
+- **Bond search** and **Volatility / VIX term structure** panes are implemented and connection-registered, but gated off until the hosted FRED proxy allowlists their series ids (no empty-table ship).
+- Plans for Godel Terminal parity follow-ups: short interest, dividend yield, market halts, IPO calendar, Black-Scholes calculator (\`plans/025–029\`).
+
+## News & shares
+
+- Default RSS wire expanded from ~33 to **335** feeds across wires, national papers, sector trades, government/central-bank releases, tech/AI, energy, healthcare, crypto, and geopolitics.
+- Share links use short \`/s/{id}\` ids; article shares join the same KV-backed path charts and tables already used.
+
+## Security & reliability
+
+- URL scheme validation before opening external links (http/https only).
+- Cloudflare Worker: CSP header, SSRF protections on \`http.fetch\`, stricter Origin checks on the Gloom Cloud proxy, sanitized error responses, BYOK keys endpoint requires auth.
+- Updater verifies SHA-256 checksums before installing a new binary.
+- Surfaced previously swallowed persistence errors in notes and broker modules.
+
+## Performance
+
+- Chart time-series: O(n log n) reference-point lookup, O(n+m) alignment carry-forward, O(n) price-history window merge.
+- DataTable remote-ui metadata memoized; \`useRemoteUiNode\` registration effect has a real dependency array.
+- Linear grouping for statement merges; Adjacent client cache reuse fixed.
+
+## DX & polish
+
+- Knip + Cloudflare Worker typecheck in CI; dead deps removed; \`.env.example\` completed.
+- Sync controller race-condition tests; consistent empty/error states (no unbound retry hints).
+- Crypto price symbols skip empty bases; IBKR catch blocks typed as \`unknown\`.
+`,
+};
+
 const RELEASE_0_11_0: ChangelogRelease = {
   id: "hosted-v0-11-0",
   tagName: "v0.11.0",
@@ -36,6 +78,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_12_0,
   RELEASE_0_11_0,
 ];
 
