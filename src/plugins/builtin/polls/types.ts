@@ -46,6 +46,7 @@ export interface PollRow {
 }
 
 export type PollTabId =
+  | "all"
   | "approval"
   | "favorability"
   | "generic-ballot"

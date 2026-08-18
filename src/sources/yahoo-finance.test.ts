@@ -123,6 +123,10 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("ETH", "CRYPTO")[0]).toBe("ETH");
   });
 
+  test("maps SPX to the Yahoo S&P 500 index symbol", () => {
+    expect(getYahooSymbolsToTry("SPX", "INDEX")).toEqual(["^GSPC"]);
+  });
+
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
     let requested = false;

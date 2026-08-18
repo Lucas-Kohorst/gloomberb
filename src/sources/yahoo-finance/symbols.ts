@@ -52,6 +52,9 @@ const CRYPTO_BASE_SYMBOLS = new Set([
   "NEAR", "ALGO", "AAVE", "SUI", "ICP", "HBAR", "TRX", "TON", "PEPE",
 ]);
 const CRYPTO_QUOTE_CURRENCIES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "BTC", "ETH"];
+const INDEX_TICKER_ALIASES: Record<string, string> = {
+  SPX: "^GSPC",
+};
 
 export function getYahooSymbol(ticker: string, exchange: string): string {
   if (tickerHasYahooSuffix(ticker)) return ticker;
@@ -104,6 +107,8 @@ function normalizeYahooTicker(ticker: string, exchange: string): string {
     return ticker.padStart(4, "0");
   }
   const normalized = ticker.trim().toUpperCase().replace(/[\/\s]+/g, "-");
+  const aliased = INDEX_TICKER_ALIASES[normalized];
+  if (aliased) return aliased;
   if (normalized.includes("-")) return normalized;
 
   for (const quoteCurrency of CRYPTO_QUOTE_CURRENCIES) {

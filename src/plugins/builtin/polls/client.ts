@@ -42,14 +42,22 @@ function buildUrl(path: string, params?: Record<string, string | undefined>): st
   return url.toString();
 }
 
+export function voteHubPollQuery(params?: {
+  pollType?: string;
+  subject?: string;
+}): Record<string, string | undefined> {
+  const pollType = params?.pollType?.trim();
+  return {
+    poll_type: !pollType || pollType === "all" ? undefined : pollType,
+    subject: params?.subject,
+  };
+}
+
 export async function fetchVoteHubPolls(params?: {
   pollType?: string;
   subject?: string;
 }): Promise<VoteHubPoll[]> {
-  const url = buildUrl("/polls", {
-    poll_type: params?.pollType,
-    subject: params?.subject,
-  });
+  const url = buildUrl("/polls", voteHubPollQuery(params));
   return withConnectionRequest("votehub", "polls", async () => {
     const response = await VOTEHUB_FETCH.fetch(url);
     if (!response.ok) {

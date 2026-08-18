@@ -92,6 +92,10 @@ describe("CommandBar portfolio commands", () => {
       <CommandBarHarness
         query="AW"
         selectedTicker="AAPL"
+        configureConfig={(config) => ({
+          ...config,
+          watchlists: [{ id: "watchlist", name: "Watchlist" }],
+        })}
         onSaveTicker={(ticker) => {
           saved.push(ticker);
         }}
