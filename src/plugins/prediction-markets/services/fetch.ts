@@ -8,10 +8,10 @@ import { withConnectionRequest } from "../../builtin/connections/register";
 
 const DEFAULT_SOURCE_KEY = "remote";
 const PREDICTION_FETCH = createThrottledFetch({
-  requestsPerMinute: 120,
+  requestsPerMinute: 60,
   maxRetries: 2,
   timeoutMs: 10_000,
-  backoffBaseMs: 250,
+  backoffBaseMs: 1_000,
   dedupeGetRequests: false,
   defaultHeaders: {
     Accept: "application/json",

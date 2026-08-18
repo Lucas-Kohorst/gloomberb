@@ -18,6 +18,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { formatCompact } from "../../../utils/format";
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
+import type { TickerRecord } from "../../../types/ticker";
 import { fetchShortInterest } from "./client";
 import {
   buildColumns,
@@ -30,6 +31,16 @@ import {
   type SortPreference,
 } from "./model";
 import type { LoadStatus, ShortInterestRecord } from "./types";
+
+function hasClassifiableUsEquityMetadata(ticker: TickerRecord): boolean {
+  const contract = ticker.metadata.broker_contracts?.[0];
+  const currency = (contract?.currency ?? ticker.metadata.currency ?? "").trim();
+  const type = (contract?.secType ?? ticker.metadata.assetCategory ?? "").trim();
+  return currency.length > 0
+    || type.length > 0
+    || [contract?.primaryExchange, contract?.exchange, ticker.metadata.exchange]
+      .some((value) => (value ?? "").trim().length > 0);
+}
 
 function recordsToChartPoints(records: ShortInterestRecord[]): ProjectedChartPoint[] {
   return records.map((record) => ({
@@ -46,7 +57,6 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   const { nativePaneChrome } = useUiCapabilities();
   const { ticker } = usePaneTicker();
   const symbol = ticker?.metadata.ticker ?? null;
-  const eligible = isUsEquityTicker(ticker);
 
   const [records, setRecords] = useState<ShortInterestRecord[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
@@ -68,7 +78,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
     : -1;
 
   const loadData = useCallback(async (forceRefresh: boolean) => {
-    if (!symbol || !eligible) {
+    if (!symbol) {
       setRecords([]);
       setStatus("idle");
       setError(null);
@@ -92,7 +102,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
       setRecords([]);
       setStatus("error");
     }
-  }, [eligible, symbol]);
+  }, [symbol]);
 
   useEffect(() => {
     void loadData(false);
@@ -158,15 +168,11 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
   }), [error, records, refresh, status, symbol]);
 
-  if (!ticker) {
+  if (!ticker || !symbol) {
     return <EmptyState title="No ticker selected" message="Select a ticker to view short interest." />;
   }
 
-  if (!eligible) {
-    return <EmptyState title="US equities only" message="Short interest data is available for US equities." />;
-  }
-
-  if (status === "loading" && records.length === 0) {
+  if ((status === "idle" || status === "loading") && records.length === 0) {
     return <Spinner label="Loading short interest..." />;
   }
 
@@ -175,7 +181,15 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }
 
   if (status === "loaded" && records.length === 0) {
-    return <EmptyState title="No short interest data" message={`No short interest found for ${symbol}.`} />;
+    const usEquitiesOnly = hasClassifiableUsEquityMetadata(ticker) && !isUsEquityTicker(ticker);
+    return (
+      <EmptyState
+        title={usEquitiesOnly ? "US equities only" : "No short interest data"}
+        message={usEquitiesOnly
+          ? "Short interest data is available for US equities."
+          : `No short interest found for ${symbol}.`}
+      />
+    );
   }
 
   const chartHeight = Math.max(1, Math.floor((height - 1) * 0.35));
