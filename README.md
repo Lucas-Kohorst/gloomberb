@@ -236,6 +236,9 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `ANR <ticker>` | Analyst targets and ratings |
 | `SEC <ticker>` | SEC filings and company disclosures |
 | `OMON <ticker>` | Options monitor |
+| `OVME` | Black-Scholes options calculator |
+| `SI <ticker>` | Short interest and days to cover |
+| `DVD <ticker>` | Dividend yield and payment history |
 | `HDS <ticker>` | Institutional holders |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
 | `INS <ticker>` | Insider activity |
@@ -279,6 +282,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
+| `HALT` | Today's US market trading halts |
+| `IPO` | Upcoming and recent IPOs |
 
 ### Workspace and App Controls
 
