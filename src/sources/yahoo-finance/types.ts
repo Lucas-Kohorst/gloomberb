@@ -36,6 +36,7 @@ export type QuoteSummaryResponse = {
         shortName?: string;
         longName?: string;
         exchangeName?: string;
+        marketCap?: { raw?: number } | number | null;
       };
       quoteType?: {
         exchange?: string;
@@ -142,6 +143,7 @@ export type QuoteSummaryResponse = {
         open?: { raw?: number } | number | null;
         dayHigh?: { raw?: number } | number | null;
         dayLow?: { raw?: number } | number | null;
+        marketCap?: { raw?: number } | number | null;
         trailingAnnualDividendRate?: { raw?: number } | number | null;
         trailingAnnualDividendYield?: { raw?: number } | number | null;
         forwardAnnualDividendRate?: { raw?: number } | number | null;

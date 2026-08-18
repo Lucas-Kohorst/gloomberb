@@ -34,6 +34,7 @@ type YahooQuoteSupplement = Pick<
   | "open"
   | "high"
   | "low"
+  | "marketCap"
 >;
 
 interface YahooSnapshotLoaders {
@@ -152,7 +153,6 @@ export async function loadYahooTickerFinancials(
     changePercent: changePct,
     high52w: meta.fiftyTwoWeekHigh,
     low52w: meta.fiftyTwoWeekLow,
-    marketCap: latest("trailingMarketCap"),
     name: meta.shortName || meta.longName,
     lastUpdated: Date.now(),
     exchangeName: meta.exchangeName,
@@ -164,6 +164,7 @@ export async function loadYahooTickerFinancials(
     dataSource: "delayed",
     ...quoteSupplement,
     ...extHours,
+    marketCap: quoteSupplement.marketCap ?? latest("trailingMarketCap"),
   };
 
   const revenue = latest("annualTotalRevenue");
