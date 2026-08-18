@@ -83,10 +83,7 @@ function inlineTokenWidth(
 }
 
 function tokenWithValue(token: InlineContentToken, value: string): InlineContentToken {
-  if (token.kind === "link") return { ...token, value };
-  if (token.kind === "username") return { ...token, value };
-  if (token.kind === "ticker") return { ...token, value };
-  return { kind: "text", value };
+  return { ...token, value };
 }
 
 function firstDisplayWidthChunk(value: string, width: number): string {
@@ -174,20 +171,20 @@ function wrapInlineContentLine(
     }
   };
 
-  const appendTextPart = (rawPart: string) => {
+  const appendTextPart = (token: InlineContentToken, rawPart: string) => {
     let part = rawPart;
     const partWidth = displayWidth(part);
     if (currentWidth > 0 && partWidth > safeWidth - currentWidth && partWidth <= safeWidth) {
       finishLine();
       part = part.trimStart();
     }
-    appendSegment({ kind: "text", value: part }, part, true);
+    appendSegment(tokenWithValue(token, part), part, true);
   };
 
-  const appendText = (value: string) => {
-    const parts = value.match(/\S+\s*|\s+/g) ?? [value];
+  const appendText = (token: InlineContentToken) => {
+    const parts = token.value.match(/\S+\s*|\s+/g) ?? [token.value];
     for (const part of parts) {
-      appendTextPart(part);
+      appendTextPart(token, part);
     }
   };
 
@@ -197,9 +194,9 @@ function wrapInlineContentLine(
     appendSegment(token, token.value, false);
   };
 
-  for (const token of tokenizeInlineContent(text)) {
+  for (const token of tokenizeInlineContent(text, { markdown: true })) {
     if (token.kind === "text") {
-      appendText(token.value);
+      appendText(token);
       continue;
     }
     appendInlineToken(token);

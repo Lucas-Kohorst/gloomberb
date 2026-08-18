@@ -30,7 +30,10 @@ export interface OnboardingAccountState {
   setAccountChoiceIdx: Dispatch<SetStateAction<number>>;
   setAccountEmail: (value: string) => void;
   setAccountPassword: (value: string) => void;
+  focusAccountField: (index: 0 | 1) => void;
   beginAccountMode: (mode: AccountMode) => void;
+  beginQrSignIn: () => void;
+  completeQrSignIn: (email: string) => void;
   returnToAccountChooser: () => void;
   switchToAccountLogin: () => void;
   submitAccountField: () => void;
@@ -97,6 +100,32 @@ export function useOnboardingAccount({
     setAccountSub(mode);
     setEditingField(true);
   }, [clearErrors, setEditingField]);
+
+  const focusAccountField = useCallback((index: 0 | 1) => {
+    clearErrors();
+    setAccountFieldIdx(index);
+    setEditingField(true);
+  }, [clearErrors, setEditingField]);
+
+  const beginQrSignIn = useCallback(() => {
+    attemptRef.current += 1;
+    clearErrors();
+    setAccountSubmitting(false);
+    setAccountSub("qr");
+    setEditingField(false);
+  }, [clearErrors, setEditingField]);
+
+  // The QR panel owns the network flow; this only records the outcome and
+  // advances once the mobile app has approved the session.
+  const completeQrSignIn = useCallback((email: string) => {
+    attemptRef.current += 1;
+    resetAccountPassword();
+    setAccountSubmitting(false);
+    onboardingLog.info("Onboarding account step completed", { mode: "qr" });
+    setAccountOutcome({ mode: "login", email });
+    setAccountSub("signed-in");
+    nextStep();
+  }, [nextStep, resetAccountPassword]);
 
   const returnToAccountChooser = useCallback(() => {
     attemptRef.current += 1;
@@ -206,11 +235,14 @@ export function useOnboardingAccount({
   }, [accountEmail, accountFieldIdx, accountPassword, accountSub, setEditingField, submitAccount]);
 
   const syncExistingAccountSession = useCallback(() => {
-    if (accountOutcome || accountSub !== "choose" || !apiClient.getSessionToken()) return;
+    if (accountSub !== "choose" || !apiClient.getSessionToken()) return;
     const user = apiClient.getCurrentUser();
-    setAccountOutcome({ mode: "login", email: user?.email?.trim() || user?.username?.trim() || "" });
+    setAccountOutcome((current) => current ?? {
+      mode: "login",
+      email: user?.email?.trim() || user?.username?.trim() || "",
+    });
     setAccountSub("signed-in");
-  }, [accountOutcome, accountSub]);
+  }, [accountSub]);
 
   return {
     accountSub,
@@ -225,7 +257,10 @@ export function useOnboardingAccount({
     setAccountChoiceIdx,
     setAccountEmail,
     setAccountPassword,
+    focusAccountField,
     beginAccountMode,
+    beginQrSignIn,
+    completeQrSignIn,
     returnToAccountChooser,
     switchToAccountLogin,
     submitAccountField,

@@ -28,6 +28,7 @@ interface ChatTranscriptProps {
   messageAreaHeight: number;
   messageBodyWidth: number;
   messages: ChatMessage[];
+  emptyStateLabel?: string;
   nativePaneChrome: boolean | undefined;
   latestEditableMessageId: string | null;
   openTicker: (symbol: string) => void;
@@ -60,6 +61,7 @@ export function ChatTranscript({
   messageAreaHeight,
   messageBodyWidth,
   messages,
+  emptyStateLabel,
   nativePaneChrome,
   latestEditableMessageId,
   openTicker,
@@ -99,7 +101,9 @@ export function ChatTranscript({
           </Box>
         ) : messages.length === 0 && (
           <Box alignItems="center" justifyContent="center" flexGrow={1}>
-            <Text fg={colors.textDim}>{t("No messages yet. Be the first to say something!")}</Text>
+            <Text fg={colors.textDim}>
+              {emptyStateLabel ?? t("No messages yet. Be the first to say something!")}
+            </Text>
           </Box>
         )}
         {messages.map((msg, index) => (

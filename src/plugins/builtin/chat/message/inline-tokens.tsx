@@ -7,6 +7,7 @@ import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-ti
 import { blendHex, colors } from "../../../../theme/colors";
 import type { ChatUserSummary } from "../../../../api-client";
 import { tokenizeInlineContent, type InlineContentToken } from "../../../../utils/inline-content-tokenizer";
+import type { MarkdownInlineStyle } from "../../../../utils/markdown-inline-tokenizer";
 
 export function ResponsiveTickerBadgeText({
   text = "",
@@ -30,13 +31,25 @@ export function ResponsiveTickerBadgeText({
   onUserHoverEnd?: () => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
-  const tokens = useMemo(() => providedTokens ?? tokenizeInlineContent(text), [providedTokens, text]);
-  const renderTextToken = (value: string, tokenIndex: number) => {
+  const tokens = useMemo(
+    () => providedTokens ?? tokenizeInlineContent(text, { markdown: true }),
+    [providedTokens, text],
+  );
+  const renderTextToken = (
+    value: string,
+    tokenIndex: number,
+    style?: MarkdownInlineStyle,
+  ) => {
     if (!value) return null;
+    const attributes =
+      (style?.bold ? TextAttributes.BOLD : 0) |
+      (style?.italic ? TextAttributes.ITALIC : 0) |
+      (style?.strike ? TextAttributes.STRIKETHROUGH : 0);
     return (
       <Text
         key={`text:${tokenIndex}`}
-        fg={textColor}
+        fg={style?.code ? colors.textDim : textColor}
+        attributes={attributes || undefined}
         wrapText={!prewrapped}
         style={prewrapped
           ? undefined
@@ -81,7 +94,7 @@ export function ResponsiveTickerBadgeText({
     >
       {tokens.map((token, index) => {
         if (token.kind === "text") {
-          return renderTextToken(token.value, index);
+          return renderTextToken(token.value, index, token.style);
         }
 
         if (token.kind === "link") {

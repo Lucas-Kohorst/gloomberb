@@ -171,6 +171,7 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb shot [...]` | Capture a pane-backed screenshot |
 | `gloomberb predictions [...]` | Launch Prediction Markets |
 | `gloomberb plugins` | List installed plugins |
+| `gloomberb plugin-search <query>` | Search for plugins on GitHub |
 | `gloomberb install <user/repo>` | Install a plugin from GitHub |
 | `gloomberb remove <name>` | Remove an installed plugin |
 | `gloomberb update [name]` | Update plugins |
@@ -274,11 +275,14 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `WEI` | Global equity indices |
 | `ECON` | Economic events and releases |
 | `GC` | Yield curve |
+| `AUCT` | Treasury auction results |
+| `BOND` | Corporate bond yields and spreads |
 | `ERN` | Earnings calendar |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
+| `VIX` | Volatility and term-structure dashboard |
 
 ### Workspace and App Controls
 
@@ -310,6 +314,11 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Manage plugins |
+| `PLUG` | Search and install plugins from GitHub |
+
+## Gloom Cloud sign-in
+
+Sign in with email and password, or pick `Log In with QR Code` from the command bar and scan the code with the Gloomberb mobile companion app to sign the terminal in without typing. The onboarding wizard offers the same QR option as the recommended path, with email and password as the alternative.
 
 ## Localized interface
 

@@ -42,6 +42,9 @@ export function useChatContentShortcuts({
   shouldLeaveComposerForSelection,
   showChannelSidebar,
   sidebarFocusedRef,
+  searchFocused,
+  openSearch,
+  closeSearch,
 }: {
   beginEditLatestMessage: (options?: { deferFocus?: boolean }) => boolean;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
@@ -79,6 +82,9 @@ export function useChatContentShortcuts({
   shouldLeaveComposerForSelection: (direction: "up" | "down") => boolean;
   showChannelSidebar: boolean;
   sidebarFocusedRef: MutableRefObject<boolean>;
+  searchFocused: boolean;
+  openSearch: () => void;
+  closeSearch: () => void;
 }) {
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
@@ -100,6 +106,17 @@ export function useChatContentShortcuts({
   useShortcut((event) => {
     if (!focused || commandBarOpen) return;
     const isEnterKey = event.name === "return" || event.name === "enter";
+
+    // Transcript keys are plain letters, so they must not fire while the query
+    // field owns the keyboard.
+    if (searchFocused) {
+      if (event.name === "escape") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        closeSearch();
+      }
+      return;
+    }
 
     if (sidebarFocusedRef.current && showChannelSidebar) {
       if (isEnterKey) {
@@ -197,6 +214,13 @@ export function useChatContentShortcuts({
         }
       }
 
+      return;
+    }
+
+    if (isPlainKey(event, "s", "/")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSearch();
       return;
     }
 

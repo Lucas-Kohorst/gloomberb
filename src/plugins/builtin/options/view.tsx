@@ -7,6 +7,9 @@ import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../../market-data/hooks";
 import {
   DataTableView,
+  EmptyState,
+  ErrorState,
+  LoadingState,
   Spinner,
   Tabs,
   type DataTableKeyEvent,
@@ -301,10 +304,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     return false;
   }, [enterInteractive, exitInteractive, interactive, selectAdjacentExpiration, strikes.length]);
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view options.</Text>;
-  if (loading && !chain) return <Spinner label="Loading options chain..." />;
-  if (error) return <Text fg={colors.textDim}>{error}</Text>;
-  if (!chain || chain.expirationDates.length === 0) return <Text fg={colors.textDim}>No options available for {effectiveTicker}.</Text>;
+  if (!ticker) return <EmptyState title="Select a ticker to view options." />;
+  if (loading && !chain) return <LoadingState title="Loading options..." />;
+  if (error && !chain) return <ErrorState error={error} />;
+  if (!chain || chain.expirationDates.length === 0) return <EmptyState title="No options available." />;
 
   const posShares = isOpt && parsed
     ? ticker.metadata.positions.reduce((sum, p) => sum + p.shares, 0)

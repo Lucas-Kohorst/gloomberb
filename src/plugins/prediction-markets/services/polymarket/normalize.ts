@@ -1,4 +1,5 @@
 import { measurePerf } from "../../../../utils/perf-marks";
+import { slugifyName } from "../../../../utils/slugify";
 import {
   matchesPredictionCategory,
   resolvePredictionDisplayCategory,
@@ -35,8 +36,7 @@ function buildSyntheticPolymarketMarketId(
 ): string {
   const slug =
     record.slug?.trim() ??
-    record.groupItemTitle?.trim().toLowerCase().replace(/\s+/g, "-") ??
-    record.question.trim().toLowerCase().replace(/\s+/g, "-");
+    slugifyName(record.groupItemTitle ?? record.question, "market");
   return event?.id ? `${event.id}:${slug}` : slug;
 }
 

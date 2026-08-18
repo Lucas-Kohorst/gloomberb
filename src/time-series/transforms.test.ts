@@ -61,6 +61,79 @@ describe("series transformations", () => {
     expect(values[1]).toBe(0);
     expect(values[2]).toBeCloseTo(1, 12);
   });
+
+  test("yoy returns null for every point when no observation is near the 12-month target", () => {
+    const points = [
+      point("2024-01-01", 100),
+      point("2024-02-01", 110),
+      point("2024-03-01", 120),
+    ];
+    expect(applySeriesTransform(points, "yoy").map(({ value }) => value)).toEqual(
+      [null, null, null],
+    );
+  });
+
+  test("yoy finds a reference at the exact 12-month boundary", () => {
+    const points = [
+      point("2023-01-01", 100),
+      point("2023-02-01", 110),
+      point("2023-03-01", 120),
+      point("2023-04-01", 130),
+      point("2023-05-01", 140),
+      point("2023-06-01", 150),
+      point("2023-07-01", 160),
+      point("2023-08-01", 170),
+      point("2023-09-01", 180),
+      point("2023-10-01", 190),
+      point("2023-11-01", 200),
+      point("2023-12-01", 210),
+      point("2024-01-01", 220),
+    ];
+    const values = applySeriesTransform(points, "yoy").map(({ value }) => value);
+    expect(values[0]).toBeNull();
+    expect(values[12]).toBeCloseTo(120, 10);
+  });
+
+  test("yoy handles 1000 daily points without timing out", () => {
+    const start = new Date("2004-01-01T00:00:00Z");
+    const points = Array.from({ length: 1000 }, (_, i) => {
+      const d = new Date(start);
+      d.setUTCDate(d.getUTCDate() + i);
+      const iso = d.toISOString().slice(0, 10);
+      return point(iso, 100 + Math.sin(i / 10) * 10);
+    });
+    const result = applySeriesTransform(points, "yoy");
+    expect(result).toHaveLength(1000);
+    expect(result[999]!.value).not.toBeNull();
+  });
+
+  test("yoy tie-breaks duplicate timestamps by preferring the later date", () => {
+    const points = [
+      point("2023-06-15", 100),
+      point("2024-06-15", 180),
+      point("2023-06-15", 120),
+      point("2024-06-15", 200),
+    ];
+    const values = applySeriesTransform(points, "yoy").map(({ value }) => value);
+    const sortedPoints = [...points].sort(
+      (a, b) => a.observedAt.getTime() - b.observedAt.getTime(),
+    );
+    const reference = sortedPoints.find((p) => p.observedAt.getTime() === new Date("2023-06-15T00:00:00Z").getTime());
+    expect(reference).toBeDefined();
+    const expected = ((200 - reference!.value) / Math.abs(reference!.value)) * 100;
+    const last = values[values.length - 1];
+    expect(last).toBeCloseTo(expected, 10);
+  });
+
+  test("yoy returns null when gaps exceed the tolerance window", () => {
+    const points = [
+      point("2022-01-01", 100),
+      point("2024-06-01", 150),
+    ];
+    expect(applySeriesTransform(points, "yoy").map(({ value }) => value)).toEqual(
+      [null, null],
+    );
+  });
 });
 
 describe("market aggregation", () => {

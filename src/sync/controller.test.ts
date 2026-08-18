@@ -314,3 +314,253 @@ test("keeps the latest layout when switching away and back during a pull", async
   expect(state.config.activeLayoutIndex).toBe(0);
   expect(pushedConfig.activeLayoutIndex).toBe(0);
 });
+
+test("aborts pull and skips push when runtime is swapped mid-iteration", async () => {
+  let resolveApplyB!: () => void;
+  const applyBHanging = new Promise<void>((resolve) => {
+    resolveApplyB = resolve;
+  });
+  let applyBStarted!: () => void;
+  const applyBStartedPromise = new Promise<void>((resolve) => {
+    applyBStarted = resolve;
+  });
+
+  let appliedA = false;
+  let appliedB = false;
+  let dispatchedB = false;
+  let pushes = 0;
+
+  const contributorA: SyncContributor = {
+    id: "test.a",
+    schemaVersion: 1,
+    collect: () => ({ a: true }),
+    apply: () => {
+      appliedA = true;
+    },
+  };
+  const contributorB: SyncContributor = {
+    id: "test.b",
+    schemaVersion: 1,
+    collect: () => ({ b: true }),
+    apply: async (_payload, context) => {
+      appliedB = true;
+      applyBStarted();
+      await applyBHanging;
+      if (context.isCurrent()) {
+        dispatchedB = true;
+      }
+    },
+  };
+
+  const snapshot: SyncSnapshot = {
+    schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
+    appId: "gloomberb",
+    clientId: "remote-client",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    contributors: {
+      "test.a": { schemaVersion: 1, updatedAt: "2026-08-16T00:00:00.000Z", payload: { a: true } },
+      "test.b": { schemaVersion: 1, updatedAt: "2026-08-16T00:00:00.000Z", payload: { b: true } },
+    },
+  };
+  const transport: SyncTransport = {
+    id: "race-swap",
+    isAvailable: () => true,
+    pullSnapshot: async () => ({ snapshot, revision: 1, updatedAt: "2026-08-16T00:00:00.000Z" }),
+    pushSnapshot: async () => {
+      pushes += 1;
+      return { revision: 2, updatedAt: "2026-08-16T00:00:01.000Z" };
+    },
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [
+      { pluginId: "test", contributor: contributorA },
+      { pluginId: "test", contributor: contributorB },
+    ],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  const syncPromise = controller.requestSync({ force: true });
+  await applyBStartedPromise;
+
+  // Swap to a different runtime while contributor B's apply is still pending.
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [],
+    getTransport: () => ({
+      pluginId: "test",
+      transport: {
+        id: "new-transport",
+        isAvailable: () => true,
+        pullSnapshot: async () => ({ snapshot: null, revision: 0, updatedAt: null }),
+        pushSnapshot: async () => ({ revision: 1, updatedAt: "2026-08-16T00:00:02.000Z" }),
+      },
+    }),
+  });
+
+  resolveApplyB();
+  await syncPromise;
+
+  expect(appliedA).toBe(true);
+  expect(appliedB).toBe(true);
+  expect(dispatchedB).toBe(false);
+  expect(pushes).toBe(0);
+});
+
+test("aborts pull and surfaces error when a contributor apply throws mid-iteration", async () => {
+  let appliedA = false;
+  let appliedB = false;
+  let pushes = 0;
+
+  const contributorA: SyncContributor = {
+    id: "test.a",
+    schemaVersion: 1,
+    collect: () => ({ a: true }),
+    apply: () => {
+      appliedA = true;
+    },
+  };
+  const contributorB: SyncContributor = {
+    id: "test.b",
+    schemaVersion: 1,
+    collect: () => ({ b: true }),
+    apply: () => {
+      appliedB = true;
+      throw new Error("apply B failed");
+    },
+  };
+
+  const snapshot: SyncSnapshot = {
+    schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
+    appId: "gloomberb",
+    clientId: "remote-client",
+    createdAt: "2026-08-16T00:00:00.000Z",
+    contributors: {
+      "test.a": { schemaVersion: 1, updatedAt: "2026-08-16T00:00:00.000Z", payload: { a: true } },
+      "test.b": { schemaVersion: 1, updatedAt: "2026-08-16T00:00:00.000Z", payload: { b: true } },
+    },
+  };
+  const transport: SyncTransport = {
+    id: "apply-throws",
+    isAvailable: () => true,
+    pullSnapshot: async () => ({ snapshot, revision: 1, updatedAt: "2026-08-16T00:00:00.000Z" }),
+    pushSnapshot: async () => {
+      pushes += 1;
+      return { revision: 2, updatedAt: "2026-08-16T00:00:01.000Z" };
+    },
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [
+      { pluginId: "test", contributor: contributorA },
+      { pluginId: "test", contributor: contributorB },
+    ],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  await controller.requestSync({ force: true });
+
+  expect(appliedA).toBe(true);
+  expect(appliedB).toBe(true);
+  expect(pushes).toBe(0);
+  expect(controller.getStatus()).toMatchObject({ phase: "error", error: "apply B failed" });
+});
+
+test("queues a second requestSync while one is in flight and runs it after", async () => {
+  let resolvePull!: (response: SyncSnapshotResponse) => void;
+  const deferredPull = new Promise<SyncSnapshotResponse>((resolve) => {
+    resolvePull = resolve;
+  });
+  let pulls = 0;
+  let pushes = 0;
+
+  // Mutable collect value so every assembled snapshot has a different signature,
+  // guaranteeing the queued sync also pushes.
+  let collectCount = 0;
+  const contributor: SyncContributor = {
+    id: "test.counter",
+    schemaVersion: 1,
+    collect: () => ({ count: ++collectCount }),
+    apply: () => {},
+  };
+
+  const transport: SyncTransport = {
+    id: "queued-sync",
+    isAvailable: () => true,
+    pullSnapshot: () => {
+      pulls += 1;
+      return deferredPull;
+    },
+    pushSnapshot: async () => {
+      pushes += 1;
+      return { revision: pushes, updatedAt: "2026-08-16T00:00:00.000Z" };
+    },
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [{ pluginId: "test", contributor }],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  const firstPromise = controller.requestSync({ force: true });
+  // Second call while the first is in flight: queues a follow-up sync.
+  const secondPromise = controller.requestSync({ force: true });
+
+  resolvePull({ snapshot: null, revision: 1, updatedAt: "2026-08-16T00:00:00.000Z" });
+  // Both promises resolve only after the queued sync also completes.
+  await Promise.all([firstPromise, secondPromise]);
+
+  // One pull (cached for the queued run), two pushes (one per sync).
+  expect(pulls).toBe(1);
+  expect(pushes).toBe(2);
+});
+
+test("skips push when snapshot signature is unchanged, but force overrides the skip", async () => {
+  let pushes = 0;
+  const contributor: SyncContributor = {
+    id: "test.stable",
+    schemaVersion: 1,
+    collect: () => ({ stable: true }),
+    apply: () => {},
+  };
+  const transport: SyncTransport = {
+    id: "signature-skip",
+    isAvailable: () => true,
+    pullSnapshot: async () => ({ snapshot: null, revision: 1, updatedAt: "2026-08-16T00:00:00.000Z" }),
+    pushSnapshot: async () => {
+      pushes += 1;
+      return { revision: 2, updatedAt: "2026-08-16T00:00:01.000Z" };
+    },
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [{ pluginId: "test", contributor }],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  // First sync: pull + push (lastSignature is null so push always fires).
+  await controller.requestSync({ force: true });
+  expect(pushes).toBe(1);
+
+  // Second sync: signature matches lastSignature, push is skipped.
+  await controller.requestSync();
+  expect(pushes).toBe(1);
+
+  // Third sync with force: bypasses the signature check and pushes.
+  await controller.requestSync({ force: true });
+  expect(pushes).toBe(2);
+});

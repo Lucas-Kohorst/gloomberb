@@ -41,6 +41,7 @@ import { applyResolvedSeriesTransform } from "./transforms";
 import { clipSeriesToWindow } from "./alignment";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 import { resolutionForExplicitMarketPeriods } from "./market-resolution";
+import { sourceFallbackLabel } from "./series-label";
 import {
   canonicalExchange,
   publicTickerKey,
@@ -154,33 +155,12 @@ function instrumentLabel(spec: Extract<ChartSeriesSpec["source"], { kind: "secur
   return publicTickerKey(spec.instrument.symbol, spec.instrument.exchange);
 }
 
-function seriesFallbackLabel(source: ChartSeriesSpec["source"]): string {
-  switch (source.kind) {
-    case "economic":
-      return `FRED ${source.seriesId}`;
-    case "adjacent-index":
-      return `ADJ ${source.indexId}`;
-    case "benchmark":
-      return `${source.selector} ${source.metric}`;
-    case "poll":
-      return `${source.subject} ${source.choice}`;
-    case "prediction-market":
-      return `${source.venue === "kalshi" ? "KALSHI" : "POLY"} ${source.marketId}`;
-    case "constant":
-      return String(source.value);
-    default: {
-      const field = getTimeSeriesField(source.fieldId);
-      return `${instrumentLabel(source)} ${field?.shortLabel ?? source.fieldId.split(".").at(-1) ?? "Series"}`;
-    }
-  }
-}
-
 // A series that fails to load keeps its place with no observations. Dropping it
 // made a series the user had added disappear from the legend while it still sat
 // in the series editor, with nothing on screen to explain the difference.
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
   const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
-  const label = seriesFallbackLabel(spec.source);
+  const label = sourceFallbackLabel(spec.source);
   return {
     id: spec.id,
     label: spec.label?.trim() || label,
@@ -394,23 +374,62 @@ function emptyFinancials(priceHistory: TickerFinancials["priceHistory"] = []): T
   return { annualStatements: [], quarterlyStatements: [], priceHistory };
 }
 
-function mergePriceHistoryWindows(
+export function mergePriceHistoryWindows(
   current: TickerFinancials["priceHistory"],
   incoming: TickerFinancials["priceHistory"],
 ): TickerFinancials["priceHistory"] {
-  const byTimestamp = new Map<number, TickerFinancials["priceHistory"][number]>();
-  for (const point of [...current, ...incoming]) {
-    const timestamp = getPricePointTimestamp(point);
-    if (Number.isFinite(timestamp)) {
-      byTimestamp.set(
-        timestamp,
-        point.date instanceof Date ? point : { ...point, date: new Date(timestamp) },
-      );
+  const result: TickerFinancials["priceHistory"] = [];
+  let ci = 0;
+  let ii = 0;
+
+  const normalize = (
+    point: TickerFinancials["priceHistory"][number],
+    timestamp: number,
+  ): TickerFinancials["priceHistory"][number] => {
+    if (point.date instanceof Date) return point;
+    return { ...point, date: new Date(timestamp) };
+  };
+
+  while (ci < current.length && ii < incoming.length) {
+    const currentTs = getPricePointTimestamp(current[ci]!);
+    const incomingTs = getPricePointTimestamp(incoming[ii]!);
+
+    if (!Number.isFinite(currentTs)) {
+      ci++;
+      continue;
+    }
+    if (!Number.isFinite(incomingTs)) {
+      ii++;
+      continue;
+    }
+
+    if (currentTs < incomingTs) {
+      result.push(normalize(current[ci]!, currentTs));
+      ci++;
+    } else if (incomingTs < currentTs) {
+      result.push(normalize(incoming[ii]!, incomingTs));
+      ii++;
+    } else {
+      // Equal timestamps: incoming overrides current (dedup).
+      result.push(normalize(incoming[ii]!, incomingTs));
+      ci++;
+      ii++;
     }
   }
-  return [...byTimestamp.values()].sort(
-    (left, right) => getPricePointTimestamp(left) - getPricePointTimestamp(right),
-  );
+
+  while (ci < current.length) {
+    const ts = getPricePointTimestamp(current[ci]!);
+    if (Number.isFinite(ts)) result.push(normalize(current[ci]!, ts));
+    ci++;
+  }
+
+  while (ii < incoming.length) {
+    const ts = getPricePointTimestamp(incoming[ii]!);
+    if (Number.isFinite(ts)) result.push(normalize(incoming[ii]!, ts));
+    ii++;
+  }
+
+  return result;
 }
 
 function historyIntersectsBounds(
@@ -632,7 +651,7 @@ function baseUniversalSeries(
   ) {
     return null;
   }
-  const fallbackLabel = seriesFallbackLabel(spec.source);
+  const fallbackLabel = sourceFallbackLabel(spec.source);
   const unitGroup = loaded.unitGroup ?? `universal:${spec.source.kind}`;
   return {
     id: spec.id,
@@ -1121,12 +1140,15 @@ export async function resolveChartSpecData(
       const constantSpec = constantSpecs.get(entry.id);
       if (!constantSpec || constantSpec.source.kind !== "constant") continue;
       const value = constantSpec.source.value;
-      entry.points = timestamps.map((time) => ({
-        date: new Date(time),
-        observedAt: new Date(time),
-        value,
-        provenance: { quality: "derived" as const },
-      }));
+      entry.points = timestamps.map((time) => {
+        const date = new Date(time);
+        return {
+          date,
+          observedAt: date,
+          value,
+          provenance: { quality: "derived" as const },
+        };
+      });
     }
   }
 

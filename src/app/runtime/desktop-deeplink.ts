@@ -25,6 +25,10 @@ import { stashNewsArticle } from "../../plugins/builtin/news/wire/news/article-s
 import { stashSubstackArticle } from "../../plugins/builtin/substack/article-stash";
 import { stashChartSpec } from "../../plugins/builtin/chart-composer/chart-stash";
 import type { ChartSharePayload, TableSharePayload } from "../../shares/payload";
+import {
+  encodeArticleSharePayload,
+  parseArticleSharePayload,
+} from "../../shares/payload";
 import { resolveShare } from "../../sources/share-service";
 
 type CloudDeepLinkRoute = {
@@ -590,11 +594,9 @@ async function handleOpenShare(
   }
 
   if (resolved.kind === "article") {
-    if (typeof resolved.data !== "string") {
-      notifyError(pluginRegistry, "Shared article payload is invalid.");
-      return;
-    }
-    const decoded = decodeArticleSharePayload(resolved.data);
+    const decoded = typeof resolved.data === "string"
+      ? decodeArticleSharePayload(resolved.data)
+      : parseArticleSharePayload(resolved.data);
     if (!decoded) {
       notifyError(pluginRegistry, "Shared article payload is invalid.");
       return;
@@ -603,7 +605,7 @@ async function handleOpenShare(
       {
         type: "open-article-reader",
         articleType: decoded.type,
-        encodedPayload: resolved.data,
+        encodedPayload: encodeArticleSharePayload(decoded),
         message: `Opened article "${decoded.title}".`,
       },
       pluginRegistry,

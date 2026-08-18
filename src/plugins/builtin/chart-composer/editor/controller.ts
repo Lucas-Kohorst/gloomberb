@@ -49,17 +49,12 @@ import {
   getSeriesTimestampMode,
   supportsSeriesTimestampMode,
   titleCaseSeriesEditorValue,
+  seriesFieldId,
 } from "./model";
 
 function clampIndex(value: number, length: number): number {
   if (length <= 0) return -1;
   return Math.max(0, Math.min(value, length - 1));
-}
-
-function seriesFieldId(series: ChartSeriesSpec): string {
-  if (series.source.kind === "security") return series.source.fieldId;
-  if (series.source.kind === "economic") return series.source.seriesId;
-  return series.source.kind;
 }
 
 function timingDescription(series: ChartSeriesSpec): string | null {

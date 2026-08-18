@@ -23,6 +23,7 @@ import {
   coerceSeriesTransformForStyle,
   isOhlcSeriesStyle,
 } from "../../../time-series/spec";
+import { sourceFallbackLabel } from "../../../time-series/series-label";
 import {
   CANONICAL_EXCHANGE_ALIASES,
   canonicalExchange,
@@ -300,29 +301,7 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
-  if (series.label?.trim()) return series.label.trim();
-  switch (series.source.kind) {
-    case "economic":
-      return `FRED ${series.source.seriesId}`;
-    case "adjacent-index":
-      return `ADJ ${series.source.indexId}`;
-    case "benchmark":
-      return `${series.source.selector} ${series.source.metric}`;
-    case "poll":
-      return `${series.source.subject} ${series.source.choice}`;
-    case "prediction-market":
-      return `${series.source.venue === "kalshi" ? "KALSHI" : "POLY"} ${series.source.marketId}`;
-    case "constant":
-      return String(series.source.value);
-    default: {
-      const instrument = publicTickerKey(
-        series.source.instrument.symbol,
-        series.source.instrument.exchange,
-      );
-      const field = getTimeSeriesField(series.source.fieldId);
-      return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
-    }
-  }
+  return series.label?.trim() || sourceFallbackLabel(series.source);
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {

@@ -146,7 +146,7 @@ describe("CommandBar AI assist", () => {
     signInVerified();
     let releaseResponse = () => {};
     const held = new Promise<void>((resolve) => { releaseResponse = resolve; });
-    mockAssistTransport(async () => {
+    const requests = mockAssistTransport(async () => {
       await held;
       return jsonResponse({
         candidates: [
@@ -166,9 +166,8 @@ describe("CommandBar AI assist", () => {
     );
 
     await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Thinking…");
-    // Down lands on the local match while the held response leaves one
-    // "Thinking…" row above it.
+    await waitForRequest(requests);
+    // Down lands on the local match while a single "Thinking…" row sits above.
     await emitKeypress(testSetup, { name: "down" });
     releaseResponse();
     await waitForFrameToContain("CHAT #random — Open the random channel", ASSIST_WAIT_ATTEMPTS);

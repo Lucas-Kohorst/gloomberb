@@ -9,6 +9,7 @@ import {
   type ConnectionKind,
   type ConnectionStatus,
   type RequestRecord,
+  CONNECTION_KINDS,
   createInitialConnectionState,
   recordRequest,
   updateWebSocketState,
@@ -36,10 +37,9 @@ interface ProviderEntry {
 }
 
 function connectionKindFromCapability(kind: string): ConnectionKind {
-  if (kind === "asset-data" || kind === "news" || kind === "broker" || kind === "prediction-market" || kind === "websocket" || kind === "api") {
-    return kind;
-  }
-  return "api";
+  return (CONNECTION_KINDS as readonly string[]).includes(kind)
+    ? (kind as ConnectionKind)
+    : "api";
 }
 
 const statusOrder: Record<ConnectionStatus, number> = {

@@ -1,12 +1,14 @@
 import { handleHostedBackendRpc } from "./backend";
 import { isShareDocumentPath } from "../../shares/routes";
-import { SHARE_KINDS } from "../../shares/payload";
+import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
+import { generateShareId, isShareId } from "../../shares/short-id";
 import {
   clearSessionCookieHeader,
   extractSessionToken,
   fetchSessionUser,
   gloomFetch,
   readSessionCookie,
+  relayError,
   resolveSessionUser,
   sessionCookieHeader,
 } from "./gloom-cloud";
@@ -19,7 +21,7 @@ export default {
       return handleShareRequest(request, env, url);
     }
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
-    if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
+    if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
@@ -36,6 +38,15 @@ export default {
 
 const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_SHARE_BODY_BYTES = 512_000;
+const SHARE_ID_MAX_ATTEMPTS = 5;
+
+async function allocateShareId(env: Env): Promise<string | null> {
+  for (let attempt = 0; attempt < SHARE_ID_MAX_ATTEMPTS; attempt += 1) {
+    const id = generateShareId();
+    if (await env.SHARES.get(id) == null) return id;
+  }
+  return null;
+}
 
 async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {
   // Reads are public by design. Writes must carry a matching Origin: an absent
@@ -46,9 +57,6 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
   }
 
   if (request.method === "POST" && url.pathname === "/api/share") {
-    if (!await fetchSessionUser(request, env)) {
-      return Response.json({ error: "Authentication required." }, { status: 401 });
-    }
     const rawBody = await request.text().catch(() => "");
     if (new TextEncoder().encode(rawBody).byteLength > MAX_SHARE_BODY_BYTES) {
       return Response.json({ error: "Share payload is too large." }, { status: 413 });
@@ -62,9 +70,19 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     if (!body || !SHARE_KINDS.includes(body.kind as never) || body.data === undefined) {
       return Response.json({ error: "Invalid share payload." }, { status: 400 });
     }
-    const id = `${crypto.randomUUID().replaceAll("-", "")}`;
+    const kind = body.kind as ShareKind;
+    // Articles are the public-share case (changelog, news, Substack) and must
+    // work without a login. Charts/tables still require a session so anonymous
+    // visitors cannot fill KV with large snapshots.
+    if (kind !== "article" && !await fetchSessionUser(request, env)) {
+      return Response.json({ error: "Authentication required." }, { status: 401 });
+    }
+    const id = await allocateShareId(env);
+    if (!id) {
+      return Response.json({ error: "Failed to allocate share id." }, { status: 503 });
+    }
     await env.SHARES.put(id, JSON.stringify({
-      kind: body.kind,
+      kind,
       data: body.data,
       createdAt: new Date().toISOString(),
     }), { expirationTtl: SHARE_TTL_SECONDS });
@@ -73,7 +91,7 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
 
   if (request.method === "GET") {
     const id = url.pathname.slice("/api/share/".length);
-    if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+    if (!isShareId(id)) {
       return Response.json({ error: "Share not found." }, { status: 404 });
     }
     const value = await env.SHARES.get(id);
@@ -169,7 +187,7 @@ async function getSession(request: Request, env: Env): Promise<Response> {
 
 async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
   const token = readSessionCookie(request);
-  if (!isSameOrigin(request, url)) {
+  if (request.headers.get("Origin") !== url.origin) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 
@@ -193,6 +211,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     headers.set("x-gloom-hosted-session", "1");
   }
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
+  if (!upstream.ok) return relayError(upstream);
   return new Response(upstream.body, { status: upstream.status, headers });
 }
 
@@ -272,9 +291,14 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
  *
  * Keys are set via `wrangler secret put ADJACENT_API_KEY` etc.
  */
-function handleByokKeysRequest(request: Request, env: Env): Response {
+async function handleByokKeysRequest(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") {
     return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+
+  const resolved = await resolveSessionUser(request, env);
+  if (!resolved.user) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
   }
 
   const knownEnvVars = [

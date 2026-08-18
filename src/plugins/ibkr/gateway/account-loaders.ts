@@ -214,11 +214,11 @@ async function loadAccountPnl(
       unrealizedPnl: finiteNumber(pnl.unrealizedPnL),
       realizedPnl: finiteNumber(pnl.realizedPnL),
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     gatewayLog.warn("Failed to load IBKR account P&L", {
       instanceId,
       accountId,
-      error: error?.message || String(error || ""),
+      error: (error instanceof Error ? error.message : undefined) || String(error || ""),
     });
     return null;
   }
@@ -255,11 +255,11 @@ async function loadPortfolioSnapshotForAccount(
       ),
     );
     return (update.all.portfolio?.get(accountId) ?? []) as AccountPortfolioSnapshotPosition[];
-  } catch (error: any) {
+  } catch (error: unknown) {
     gatewayLog.warn("Failed to load IBKR portfolio snapshot", {
       instanceId,
       accountId,
-      error: error?.message || String(error || ""),
+      error: (error instanceof Error ? error.message : undefined) || String(error || ""),
     });
     return [];
   }

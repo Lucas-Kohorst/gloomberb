@@ -570,11 +570,62 @@ export interface CloudMarketBatchPayload<T> {
   items: Array<CloudMarketBatchItem<T>>;
 }
 
+export type CloudMarketScreenerCategory = "gainers" | "losers" | "most-active";
+
+export interface CloudMarketScreenerItem {
+  rank: number;
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number;
+  tradeCount?: number;
+  currency: string;
+  high52w?: number;
+  low52w?: number;
+  dayHigh?: number;
+  dayLow?: number;
+  exchange: string;
+  lastUpdated: number;
+  dataSource: "live";
+}
+
+export interface CloudMarketScreenerPayload {
+  providerId: "gloomberb-cloud";
+  category: CloudMarketScreenerCategory;
+  asOf: string;
+  stale?: boolean;
+  items: CloudMarketScreenerItem[];
+}
+
 export interface CloudVerificationResponse {
   sent: boolean;
   email?: string;
   alreadyVerified?: boolean;
 }
+
+/** A short-lived, single-use browser URL that establishes the existing desktop session. */
+export interface CloudBrowserHandoffResponse {
+  url: string;
+}
+
+export interface DeviceAuthStartResponse {
+  deviceCode: string;
+  /** 8 characters formatted "XXXX-XXXX", shown so a user without the app can type it. */
+  userCode: string;
+  expiresAt: string;
+  /** Like https://gloom.sh/link/<userCode>; this is what the QR code encodes. */
+  verificationUri: string;
+  pollIntervalMs: number;
+}
+
+/** The approved response is single-use; polling again returns a non-approved status. */
+export type DeviceAuthTokenResponse =
+  | { status: "pending" }
+  | { status: "denied" }
+  | { status: "expired" }
+  | { status: "approved"; sessionToken: string; user: AuthUser };
 
 export interface QuoteStreamTarget {
   symbol: string;

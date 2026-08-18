@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
+  EmptyState,
+  ErrorState,
+  LoadingState,
   Tabs,
   usePaneFooter,
   usePaneTicker,
@@ -34,6 +37,7 @@ import {
 import { HoldersTreemap } from "./treemap";
 import type { HolderColumn, HolderRow, SortPreference, ViewMode } from "./types";
 import { loadHolder13FMatches, type Holder13FMatch } from "./thirteenf-match";
+import { reportTickerRequestError } from "../shared/ticker-request";
 
 export function HoldersView({ focused, width, height }: { focused: boolean; width: number; height: number }) {
   const { nativePaneChrome } = useUiCapabilities();
@@ -83,7 +87,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
       setSelectedId(null);
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setError(reportTickerRequestError(err, { symbol, exchange, forceRefresh }));
       setData(null);
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
@@ -268,12 +272,12 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
     };
   }, [data?.asOf, fundMatching, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
 
-  const emptyTitle = !symbol
-    ? "No ticker selected"
-    : loading
-      ? "Loading holders..."
-      : error ?? "No holders available";
   const chartHeight = Math.max(1, height - 1 - (nativePaneChrome ? 1 : 0));
+
+  if (!symbol) return <EmptyState title="No ticker selected." />;
+  if (loading && sortedRows.length === 0) return <LoadingState title="Loading holders..." />;
+  if (error && sortedRows.length === 0) return <ErrorState error={error} />;
+  if (sortedRows.length === 0) return <EmptyState title="No holders available." />;
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -308,7 +312,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           onHeaderClick={handleHeaderClick}
           getItemKey={(row) => row.id}
           renderCell={renderCell}
-          emptyStateTitle={emptyTitle}
+          emptyStateTitle="No holders available."
         />
       ) : (
         <HoldersTreemap

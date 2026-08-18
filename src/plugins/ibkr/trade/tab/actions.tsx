@@ -112,8 +112,8 @@ export function useTradeTabActions({
         setTradeTicketDraft(symbol, { brokerInstanceId: selectedInstance.id, accountId: inferred }, ticker);
       }
       setTradeTicketMessage(symbol, `Refreshed ${selectedInstance.label}.`, undefined, ticker);
-    } catch (error: any) {
-      setTradeTicketMessage(symbol, undefined, error?.message || `Failed to refresh ${selectedInstance.label}.`, ticker);
+    } catch (error: unknown) {
+      setTradeTicketMessage(symbol, undefined, (error instanceof Error ? error.message : undefined) || `Failed to refresh ${selectedInstance.label}.`, ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);
     }
@@ -223,8 +223,8 @@ export function useTradeTabActions({
       if (!result) return;
       setTradeTicketInstrument(symbol, result, ticker);
       setTradeTicketMessage(symbol, `Loaded ${result.symbol} into the ticket.`, undefined, ticker);
-    } catch (error: any) {
-      setTradeTicketMessage(symbol, undefined, error?.message || "Failed to search IBKR contracts.", ticker);
+    } catch (error: unknown) {
+      setTradeTicketMessage(symbol, undefined, (error instanceof Error ? error.message : undefined) || "Failed to search IBKR contracts.", ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);
     }
@@ -327,8 +327,8 @@ export function useTradeTabActions({
       setTradeTicketDraft(symbol, { brokerInstanceId: selectedInstance.id, accountId: request.accountId }, ticker);
       setTradeTicketPreview(symbol, preview, ticker);
       setTradeTicketMessage(symbol, "Review the what-if preview, then submit when ready.", undefined, ticker);
-    } catch (error: any) {
-      const message = error?.message || "Failed to preview order.";
+    } catch (error: unknown) {
+      const message = (error instanceof Error ? error.message : undefined) || "Failed to preview order.";
       setTradeTicketMessage(symbol, undefined, message.replace("Timeout has occurred", "Preview timed out — try again."), ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);
@@ -357,8 +357,8 @@ export function useTradeTabActions({
       setTradeTicketPreview(symbol, null, ticker);
       await refresh();
       setTradeTicketMessage(symbol, successMessage, undefined, ticker, true);
-    } catch (error: any) {
-      const message = error?.message || "Failed to submit order.";
+    } catch (error: unknown) {
+      const message = (error instanceof Error ? error.message : undefined) || "Failed to submit order.";
       setTradeTicketMessage(symbol, undefined, message.replace("Timeout has occurred", "Order timed out — check open orders to verify status."), ticker);
     } finally {
       setTradeTicketBusy(symbol, false, ticker);

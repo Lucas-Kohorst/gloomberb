@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
+import { usePaneInstance } from "../../../state/app/context";
 import {
   DataTableStackView,
   Spinner,
@@ -17,7 +18,7 @@ import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
-import { encodeChangelogReleaseForShare, useCopyShareLink } from "../shared/article-share";
+import { changelogReleaseSharePayload, useCopyShareLink } from "../shared/article-share";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -107,6 +108,8 @@ function ChangelogDetail({
 }
 
 function ChangelogPane({ focused, width, height }: PaneProps) {
+  const paneInstance = usePaneInstance();
+  const requestedVersion = paneInstance?.params?.version ?? null;
   const [releases, setReleases] = useState<ChangelogRelease[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -116,6 +119,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const abortRef = useRef<AbortController | null>(null);
   const copyShareLink = useCopyShareLink();
+  const requestedVersionOpenedRef = useRef(false);
 
   const loadReleases = useCallback(async () => {
     abortRef.current?.abort();
@@ -181,6 +185,16 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     }
   }, [openRelease, openReleaseId]);
 
+  // Opened via "what's new after update": jump straight to that release's notes.
+  useEffect(() => {
+    if (!requestedVersion || requestedVersionOpenedRef.current) return;
+    const match = releases.find((release) => release.version.replace(/^v/, "") === requestedVersion.replace(/^v/, ""));
+    if (!match) return;
+    requestedVersionOpenedRef.current = true;
+    setSelectedReleaseId(match.id);
+    setOpenReleaseId(match.id);
+  }, [releases, requestedVersion]);
+
   useEffect(() => {
     if (!openReleaseId) return;
     const scrollBox = detailScrollRef.current;
@@ -189,7 +203,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
 
   const shareRelease = useCallback(() => {
     if (!linkRelease) return;
-    void copyShareLink(encodeChangelogReleaseForShare(linkRelease));
+    void copyShareLink(changelogReleaseSharePayload(linkRelease));
   }, [copyShareLink, linkRelease]);
 
   useShortcut((event) => {
@@ -396,6 +410,10 @@ export const changelogModule: PluginModule = {
       description: "Browse version history and release notes.",
       keywords: ["changelog", "release", "releases", "version", "updates"],
       shortcut: { prefix: "CHG" },
+      createInstance: (_context, options) => {
+        const version = options?.values?.version;
+        return version ? { params: { version } } : {};
+      },
     },
   ],
 };

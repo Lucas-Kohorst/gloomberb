@@ -1,5 +1,5 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../ui";
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
 import { colors, hoverBg } from "../../theme/colors";
 import { t } from "../../i18n";
@@ -111,15 +111,15 @@ export function ListView({
   remoteItemCategory,
   remoteMetadata,
 }: ListViewProps) {
-  useRemoteUiNode({
+  const registration = useMemo(() => ({
     role: remoteRole,
     label: remoteLabel ?? emptyMessage,
     actions: {
-      select: (input) => {
+      select: (input: unknown) => {
         const index = resolveListIndex(input, items);
         if (index >= 0 && !items[index]?.disabled) onSelect?.(index);
       },
-      activate: (input) => {
+      activate: (input: unknown) => {
         const index = resolveListIndex(input, items);
         const item = index >= 0 ? items[index] : undefined;
         if (item && !item.disabled) {
@@ -145,7 +145,20 @@ export function ListView({
         disabled: item.disabled === true,
       })),
     },
-  });
+  }), [
+    remoteRole,
+    remoteLabel,
+    emptyMessage,
+    remoteMetadata,
+    remoteScope,
+    remoteItemCategory,
+    remoteItemKind,
+    selectedIndex,
+    items,
+    onSelect,
+    onActivate,
+  ]);
+  useRemoteUiNode(registration);
   const HostListView = useUiHost().ListView as ComponentType<ListViewProps> | undefined;
   if (HostListView) {
     return (

@@ -11,6 +11,12 @@ gloomberb install user/repo        # from GitHub shorthand
 gloomberb install https://github.com/user/repo  # from full URL
 ```
 
+Search for plugins:
+
+```bash
+gloomberb plugin-search portfolio    # search by keyword
+```
+
 Manage installed plugins:
 
 ```bash

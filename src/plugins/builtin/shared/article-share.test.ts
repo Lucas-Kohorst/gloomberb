@@ -3,9 +3,11 @@ import type { NewsArticle } from "../../../news/types";
 import type { SubstackArticleSummary } from "../substack/types";
 import {
   buildShareUrl,
+  changelogReleaseSharePayload,
   decodeArticleSharePayload,
   encodeNewsArticleForShare,
   encodeSubstackArticleForShare,
+  newsArticleSharePayload,
   payloadToNewsArticle,
   payloadToSubstackArticle,
   SHARE_HOSTED_ORIGIN,
@@ -135,12 +137,28 @@ describe("article-share encode/decode", () => {
     expect(reconstructed.previewText).toBe(original.previewText);
   });
 
-  test("buildShareUrl produces a public /article URL with the encoded payload", () => {
+  test("buildShareUrl produces a legacy public /article URL with the encoded payload", () => {
     const article = makeNewsArticle({ id: "abc", title: "Test" });
     const encoded = encodeNewsArticleForShare(article);
     const url = buildShareUrl(encoded);
     expect(url).toBe(`${SHARE_HOSTED_ORIGIN}/article?a=${encoded}`);
     expect(url).toContain("terminal.kohor.st/article?a=");
+  });
+
+  test("payload builders feed the short-id share path without embedding in the URL", () => {
+    const news = newsArticleSharePayload(makeNewsArticle({ id: "abc", title: "Test" }));
+    const changelog = changelogReleaseSharePayload({
+      id: "hosted-v0-11-0",
+      tagName: "v0.11.0",
+      version: "0.11.0",
+      title: "Web terminal",
+      publishedAt: "2026-08-17T00:00:00.000Z",
+      url: "",
+      body: "One release note.",
+    });
+    expect(news.type).toBe("news");
+    expect(changelog.id).toBe("changelog:hosted-v0-11-0");
+    expect(changelog.summary).toBe("One release note.");
   });
 
   test("decodeArticleSharePayload returns null for invalid input", () => {

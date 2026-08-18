@@ -1,4 +1,5 @@
 import type { AppConfig } from "../../types/config";
+import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
@@ -16,10 +17,6 @@ export interface HostedConfigSnapshotEnvelope {
 export interface HostedConfigSnapshotResponse {
   config: Record<string, unknown> | null;
   updatedAt: string | null;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
@@ -51,7 +48,7 @@ export async function fetchHostedConfigSnapshot(): Promise<HostedConfigSnapshotR
     const body = await response.json().catch(() => null) as HostedConfigSnapshotResponse | null;
     if (!body) return { config: null, updatedAt: null };
     return {
-      config: isPlainObject(body.config) ? body.config : null,
+      config: isRecord(body.config) ? body.config : null,
       updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : null,
     };
   });

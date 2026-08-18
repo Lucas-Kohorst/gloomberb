@@ -44,6 +44,15 @@ const KNOWN_SUFFIXES = new Set(
     .concat(GENERIC_SUFFIX_FALLBACKS.filter(Boolean)),
 );
 
+// Yahoo names crypto pairs with a hyphen (BTC-USD), while users and some
+// brokers commonly use the compact form (BTCUSD).
+const CRYPTO_BASE_SYMBOLS = new Set([
+  "BTC", "ETH", "SOL", "XRP", "DOGE", "ADA", "AVAX", "DOT", "MATIC", "LINK",
+  "LTC", "BCH", "XLM", "ATOM", "UNI", "ETC", "FIL", "APT", "ARB", "OP",
+  "NEAR", "ALGO", "AAVE", "SUI", "ICP", "HBAR", "TRX", "TON", "PEPE",
+]);
+const CRYPTO_QUOTE_CURRENCIES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "BTC", "ETH"];
+
 export function getYahooSymbol(ticker: string, exchange: string): string {
   if (tickerHasYahooSuffix(ticker)) return ticker;
   const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
@@ -94,7 +103,19 @@ function normalizeYahooTicker(ticker: string, exchange: string): string {
   if (isHongKongExchange(exchange) && /^\d+$/.test(ticker)) {
     return ticker.padStart(4, "0");
   }
-  return ticker.replace(/ /g, "-");
+  const normalized = ticker.trim().toUpperCase().replace(/[\/\s]+/g, "-");
+  if (normalized.includes("-")) return normalized;
+
+  for (const quoteCurrency of CRYPTO_QUOTE_CURRENCIES) {
+    if (!normalized.endsWith(quoteCurrency)) continue;
+    const base = normalized.slice(0, -quoteCurrency.length);
+    // A bare quote symbol ("BTC", "ETH") has no base and is already a Yahoo ticker.
+    if (!base) continue;
+    if (CRYPTO_BASE_SYMBOLS.has(base) || exchange === "CCC" || exchange === "CRYPTO") {
+      return `${base}-${quoteCurrency}`;
+    }
+  }
+  return normalized;
 }
 
 function isHongKongExchange(exchange: string): boolean {

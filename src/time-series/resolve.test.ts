@@ -3,7 +3,7 @@ import type { FredSeriesData, FredSeriesLoadResult } from "../data/fred-series";
 import { createTestDataProvider } from "../test-support/data-provider";
 import type { TickerFinancials } from "../types/financials";
 import { CHART_SPEC_VERSION, type ChartSpec } from "./types";
-import { ChartResolveCache, resolveChartSpecData } from "./resolve";
+import { ChartResolveCache, mergePriceHistoryWindows, resolveChartSpecData } from "./resolve";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 
 const emptyFinancials = (): TickerFinancials => ({
@@ -1768,5 +1768,65 @@ describe("resolveChartSpecData", () => {
     });
     expect(result.series.find((series) => series.id === "sma")?.points.map((point) => point.value))
       .toEqual([10]);
+  });
+});
+
+describe("mergePriceHistoryWindows", () => {
+  const pp = (date: string, close: number) => ({ date: new Date(date), close });
+
+  test("merges two non-overlapping sorted windows in order", () => {
+    const current = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-03T00:00:00Z", 102)];
+    const incoming = [pp("2025-01-02T00:00:00Z", 101), pp("2025-01-04T00:00:00Z", 103)];
+    const merged = mergePriceHistoryWindows(current, incoming);
+    expect(merged.map((p) => p.date.getTime())).toEqual([
+      Date.parse("2025-01-01T00:00:00Z"),
+      Date.parse("2025-01-02T00:00:00Z"),
+      Date.parse("2025-01-03T00:00:00Z"),
+      Date.parse("2025-01-04T00:00:00Z"),
+    ]);
+  });
+
+  test("incoming overrides current for overlapping timestamps", () => {
+    const current = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-02T00:00:00Z", 200)];
+    const incoming = [pp("2025-01-02T00:00:00Z", 101), pp("2025-01-03T00:00:00Z", 103)];
+    const merged = mergePriceHistoryWindows(current, incoming);
+    expect(merged).toHaveLength(3);
+    expect(merged.find((p) => p.date.getTime() === Date.parse("2025-01-02T00:00:00Z"))?.close).toBe(101);
+  });
+
+  test("creates a Date instance for points missing one", () => {
+    const current = [{ date: "2025-01-01T00:00:00Z" as unknown as Date, close: 100 }];
+    const incoming: TickerFinancials["priceHistory"] = [];
+    const merged = mergePriceHistoryWindows(current, incoming);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.date).toBeInstanceOf(Date);
+    expect(merged[0]!.date.getTime()).toBe(Date.parse("2025-01-01T00:00:00Z"));
+  });
+
+  test("drops points with non-finite timestamps", () => {
+    const current = [
+      { date: new Date(Number.NaN), close: 100 },
+      pp("2025-01-02T00:00:00Z", 102),
+    ];
+    const incoming = [pp("2025-01-01T00:00:00Z", 101)];
+    const merged = mergePriceHistoryWindows(current, incoming);
+    expect(merged).toHaveLength(2);
+    expect(merged.map((p) => p.date.getTime())).toEqual([
+      Date.parse("2025-01-01T00:00:00Z"),
+      Date.parse("2025-01-02T00:00:00Z"),
+    ]);
+  });
+
+  test("merges empty current with non-empty incoming", () => {
+    const incoming = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-02T00:00:00Z", 101)];
+    const merged = mergePriceHistoryWindows([], incoming);
+    expect(merged.map((p) => p.date.getTime())).toEqual([
+      Date.parse("2025-01-01T00:00:00Z"),
+      Date.parse("2025-01-02T00:00:00Z"),
+    ]);
+  });
+
+  test("returns empty for two empty arrays", () => {
+    expect(mergePriceHistoryWindows([], [])).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ import { priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
+import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import {
   MARKET_HEATMAP_UNIVERSES,
   fetchMarketHeatmap,
@@ -25,6 +26,16 @@ import {
   type MarketHeatmapAsset,
   type MarketHeatmapUniverseId,
 } from "./data";
+import {
+  LIVE_STREAMING_QUICK_SETTING,
+  useLiveStreamingSetting,
+  withLiveStreamingSetting,
+} from "../shared/live-streaming";
+import {
+  buildScreenerQuoteTargets,
+  overlayScreenerQuoteEntries,
+  resolveScreenerQuoteFeedStatus,
+} from "../shared/screener-live-quotes";
 
 function formatMoneyCompact(value: number | null | undefined, currency: string): string {
   if (value == null) return "—";
@@ -52,6 +63,7 @@ function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<Marke
 
 function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
+  const liveStreaming = useLiveStreamingSetting();
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const [activeUniverse, setActiveUniverse] = usePluginPaneState<MarketHeatmapUniverseId>("universe", "us-equity");
   const [assets, setAssets] = useState<MarketHeatmapAsset[]>([]);
@@ -64,16 +76,39 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const chartHeight = Math.max(1, height - 1);
   const chartWidth = Math.max(1, width - 2);
   const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
-  const items = useMemo(() => buildItems(assets), [assets]);
+  const quoteTargets = useMemo(
+    () => buildScreenerQuoteTargets(assets, selectedSymbol),
+    [assets, selectedSymbol],
+  );
+  const {
+    entries: liveQuoteEntries,
+    freshnessNow,
+    subscriptionStartedAt,
+  } = useLiveQuoteEntries(quoteTargets, {
+    freshnessScopeKey: `market-heatmap:${activeUniverse}`,
+    liveStreaming,
+  });
+  const resolvedAssets = useMemo(
+    () => overlayScreenerQuoteEntries(assets, liveQuoteEntries),
+    [assets, liveQuoteEntries],
+  );
+  const feedStatus = useMemo(
+    () => resolveScreenerQuoteFeedStatus(quoteTargets, liveQuoteEntries, {
+      now: freshnessNow,
+      subscriptionStartedAt,
+    }),
+    [freshnessNow, liveQuoteEntries, quoteTargets, subscriptionStartedAt],
+  );
+  const items = useMemo(() => buildItems(resolvedAssets), [resolvedAssets]);
   const navigationTiles = useMemo(
     () => buildMetricTreemapNavigationTiles(items, chartWidth, chartHeight, cellAspect, nativePaneChrome ? "float" : "integer"),
     [cellAspect, chartHeight, chartWidth, items, nativePaneChrome],
   );
   const selectedIdx = selectedSymbol
-    ? assets.findIndex((asset) => asset.symbol === selectedSymbol)
+    ? resolvedAssets.findIndex((asset) => asset.symbol === selectedSymbol)
     : -1;
-  const activeIdx = selectedIdx >= 0 ? selectedIdx : (assets.length > 0 ? 0 : -1);
-  const selectedAsset = activeIdx >= 0 ? assets[activeIdx] ?? null : null;
+  const activeIdx = selectedIdx >= 0 ? selectedIdx : (resolvedAssets.length > 0 ? 0 : -1);
+  const selectedAsset = activeIdx >= 0 ? resolvedAssets[activeIdx] ?? null : null;
 
   const loadUniverse = useCallback(async (universe: MarketHeatmapUniverseId, options?: { forceRefresh?: boolean }) => {
     fetchGenRef.current += 1;
@@ -90,12 +125,12 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       setAssets(result.assets);
       setLastUpdated(result.fetchedAt);
       setSelectedSymbol(result.assets[0]?.symbol ?? null);
-    } catch (error) {
+    } catch {
       if (fetchGenRef.current !== gen) return;
       setAssets([]);
       setLastUpdated(null);
       setSelectedSymbol(null);
-      setLoadError(error instanceof Error ? error.message : "Market heatmap unavailable");
+      setLoadError("Market heatmap temporarily unavailable");
     } finally {
       if (fetchGenRef.current === gen) setLoading(false);
     }
@@ -239,10 +274,14 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
         }] : []),
         ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
         ...(loadError ? [{ id: "error", parts: [{ text: "error", tone: "muted" as const }] }] : []),
+        ...(feedStatus ? [{
+          id: "feed",
+          parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
+        }] : []),
       ],
       hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
     };
-  }, [loadError, loading, refresh, selectedAsset, updatedAgo]);
+  }, [feedStatus, loadError, loading, refresh, selectedAsset, updatedAgo]);
 
   const emptyStateTitle = loading
     ? "Loading market heatmap..."
@@ -292,6 +331,8 @@ export const marketHeatmapModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 36 },
+      quickSettings: [LIVE_STREAMING_QUICK_SETTING],
+      settings: (context) => withLiveStreamingSetting({ fields: [] }, context.settings),
     },
   ],
 

@@ -1,5 +1,11 @@
 Stack: Bun + OpenTUI
 
+Git remotes — work on the fork ONLY:
+- `fork` (Lucas-Kohorst/gloomberb) is the only remote to push to, branch from, and open PRs against. All work lands here.
+- `origin` (gloom-sh/gloomberb) is upstream and read-only for us. We have `pull` access only — no push, no merge. Never open, merge, or close PRs there.
+- Never target upstream `main` with a PR. Pull from `origin/main` when we want its changes, but land everything on the fork's integration branch.
+- The hosted Cloudflare stack (`src/renderers/cloudflare/`, `wrangler.jsonc`, the `cloud:*` scripts) exists only on the fork. Do not assume upstream has it.
+
 Tests:
 - Be selective: add or keep a test only when it protects behavior that is easy to break and hard to catch in review.
 - Good test targets: parser/math/state complexity, async/cache/persistence behavior, integration boundaries, and regressions with a concrete failure mode that could plausibly return.

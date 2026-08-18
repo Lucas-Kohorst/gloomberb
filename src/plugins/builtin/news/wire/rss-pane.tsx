@@ -25,7 +25,7 @@ import { usePopOutNewsArticle } from "./news/pop-out";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
-import { useCopyShareLink, encodeNewsArticleForShare } from "../../shared/article-share";
+import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
@@ -411,7 +411,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   const shareSelectedArticle = useCallback(() => {
     if (!readableArticle) return;
-    void copyShareLink(encodeNewsArticleForShare(readableArticle));
+    void copyShareLink(newsArticleSharePayload(readableArticle));
   }, [copyShareLink, readableArticle]);
 
   const openSelectedSource = useCallback(() => {

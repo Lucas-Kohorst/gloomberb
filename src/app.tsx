@@ -17,12 +17,11 @@ import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
-import type { OnboardingStep } from "./components/onboarding/wizard-model";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
 import type { LoadedExternalPlugin } from "./plugins/loader";
 import type { AppServicesFactory, AppTickerRepositoryPort } from "./core/app-service-ports";
-import { ThemeProvider, useThemeColors } from "./theme/theme-context";
+import { useThemeColors } from "./theme/theme-context";
 import type { AppConfig } from "./types/config";
 import type { DesktopDeepLinkBridge } from "./types/desktop-deeplink";
 import type { CliLaunchRequest } from "./types/plugin";
@@ -70,6 +69,9 @@ interface AppInnerProps {
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
   desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   remoteControlAdapter?: RemoteControlAdapter;
+  onboardingActive?: boolean;
+  requireAccount?: boolean;
+  onOnboardingComplete?: (config: AppConfig) => void | Promise<void>;
 }
 
 function ThemedAppRoot({ children }: { children: ReactNode }) {
@@ -100,6 +102,9 @@ function AppInner({
   desktopApplicationMenuBridge,
   desktopDeepLinkBridge,
   remoteControlAdapter,
+  onboardingActive = false,
+  requireAccount = false,
+  onOnboardingComplete,
 }: AppInnerProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
@@ -221,6 +226,8 @@ function AppInner({
   const { runUpdateCheck, startUpdate } = useAppUpdateRuntime({
     dispatch,
     isDetachedWindow,
+    pluginRegistry,
+    stateRef,
     updateAvailable: state.updateAvailable,
     updateCheckInProgress: state.updateCheckInProgress,
     updateProgress: state.updateProgress,
@@ -318,7 +325,11 @@ function AppInner({
     dispatch,
     tickerRepository,
     pluginRegistry,
-    initialized: state.initialized && desktopWindowBridge?.kind !== "detached",
+    // Keep a first-run workspace stable while the local guide is active. Once
+    // onboarding finishes, the normal pull-before-push sync starts immediately.
+    initialized: state.initialized
+      && desktopWindowBridge?.kind !== "detached"
+      && !onboardingActive,
   });
 
   useAppPaneRuntime({
@@ -400,7 +411,7 @@ function AppInner({
         desktopWindowBridge={desktopWindowBridge}
       >
         <ThemedAppRoot>
-          <Header />
+          <Header onOpenHelp={() => pluginRegistry.showPane("help")} />
           <TransientLayoutProvider>
             <Shell
               pluginRegistry={pluginRegistry}
@@ -410,6 +421,14 @@ function AppInner({
             />
             <StatusBar />
           </TransientLayoutProvider>
+          {onboardingActive && onOnboardingComplete ? (
+            <OnboardingWizard
+              pluginRegistry={pluginRegistry}
+              importBrokerPositions={importBrokerPositions}
+              requireAccount={requireAccount}
+              onComplete={onOnboardingComplete}
+            />
+          ) : null}
           {state.commandBarOpen && (
             <CommandBar
               dataProvider={dataProvider}
@@ -438,7 +457,8 @@ interface AppProps {
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
-  onboardingInitialStep?: OnboardingStep;
+  /** Force the user to create/sign in to an account before the workspace opens. */
+  requireAccount?: boolean;
 }
 
 export function App({
@@ -452,7 +472,7 @@ export function App({
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
-  onboardingInitialStep,
+  requireAccount: requireAccountProp = false,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -479,9 +499,11 @@ export function App({
   });
   const publicShare = isPublicShareLocation();
   const shareHandoff = isShareTerminalHandoff();
-  const [showOnboarding, setShowOnboarding] = useState(
-    !publicShare && !effectiveInitialConfig.onboardingComplete,
-  );
+  const [showOnboarding, setShowOnboarding] = useState(() => (
+    desktopWindowBridge?.kind !== "detached"
+    && !publicShare
+    && (!effectiveInitialConfig.onboardingComplete || !!effectiveInitialConfig.onboardingProgress)
+  ));
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
@@ -513,23 +535,6 @@ export function App({
     });
   }, [cliLaunchRequest, config, desktopSnapshot, desktopWindowBridge?.kind, services.persistence.sessions]);
 
-  if (showOnboarding) {
-    return (
-      <ThemeProvider themeId={config.theme}>
-        <OnboardingWizard
-          config={config}
-          pluginRegistry={services.pluginRegistry}
-          initialStep={shareHandoff ? "account" : onboardingInitialStep}
-          requireAccount={shareHandoff}
-          onComplete={(updatedConfig) => {
-            setConfig(updatedConfig);
-            setShowOnboarding(false);
-          }}
-        />
-      </ThemeProvider>
-    );
-  }
-
   return (
     <RemoteUiRegistryProvider>
       <AppProvider
@@ -551,6 +556,12 @@ export function App({
           desktopApplicationMenuBridge={desktopApplicationMenuBridge}
           desktopDeepLinkBridge={desktopDeepLinkBridge}
           remoteControlAdapter={remoteControlAdapter}
+          onboardingActive={showOnboarding}
+          requireAccount={shareHandoff || requireAccountProp}
+          onOnboardingComplete={(updatedConfig) => {
+            setConfig(updatedConfig);
+            setShowOnboarding(false);
+          }}
         />
       </AppProvider>
     </RemoteUiRegistryProvider>

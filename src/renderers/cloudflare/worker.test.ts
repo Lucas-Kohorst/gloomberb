@@ -224,3 +224,82 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect((await response?.json()).ok).toBe(true);
   });
 });
+
+describe("hosted share Worker endpoint", () => {
+  afterEach(() => {
+    SNAPSHOTS.clear();
+    mockSessionUser = null;
+    restoreFetch();
+  });
+
+  test("creates an anonymous article share with a short id", async () => {
+    mockSessionUser = null;
+    installMockFetch();
+    const env = makeEnv();
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/share", {
+        origin: ORIGIN,
+        body: JSON.stringify({
+          kind: "article",
+          data: {
+            type: "news",
+            id: "changelog:hosted-v0-11-0",
+            title: "Web terminal",
+            url: "",
+            source: "Gloomberb Changelog",
+            summary: "One release note.",
+          },
+        }),
+      }),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { id: string };
+    expect(body.id).toMatch(/^[A-Za-z0-9]{12}$/);
+
+    const getResponse = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/share/${body.id}`),
+      env,
+    );
+    expect(getResponse?.status).toBe(200);
+    const envelope = await getResponse?.json() as { kind: string; data: { id: string } };
+    expect(envelope.kind).toBe("article");
+    expect(envelope.data.id).toBe("changelog:hosted-v0-11-0");
+  });
+
+  test("rejects anonymous chart share creation", async () => {
+    mockSessionUser = null;
+    installMockFetch();
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/share", {
+        origin: ORIGIN,
+        body: JSON.stringify({
+          kind: "chart",
+          data: { title: "SPY", panels: [], series: [], capturedAt: "2026-08-17T00:00:00.000Z" },
+        }),
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+  });
+
+  test("creates an authenticated chart share with a short id", async () => {
+    mockSessionUser = { id: "user-A" };
+    installMockFetch();
+    const env = makeEnv();
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/share", {
+        origin: ORIGIN,
+        sessionToken: "tok",
+        body: JSON.stringify({
+          kind: "chart",
+          data: { title: "SPY", panels: [], series: [], capturedAt: "2026-08-17T00:00:00.000Z" },
+        }),
+      }),
+      env,
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { id: string };
+    expect(body.id).toHaveLength(12);
+  });
+});

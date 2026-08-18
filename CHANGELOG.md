@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.12.0 — Alt-data panes, denser news wire, and security hardening
+
+Security, performance, and discovery work from the improve cycle, plus Treasury auctions and a much denser RSS firehose. Bond search and VIX term-structure panes are built but stay hidden until the Gloom Cloud FRED proxy allowlists their series.
+
+### Panes
+
+- **Treasury auctions** (`AUCT`) from Treasury Fiscal Data — Bills, Notes, Bonds/TIPS with sortable auction tables.
+- **Plugin discovery** pane — search GitHub for Gloomberb plugins and install from the command bar / pane UI.
+- **Bond search** and **Volatility / VIX term structure** panes are implemented and connection-registered, but gated off until the hosted FRED proxy allowlists their series ids (no empty-table ship).
+- Plans for Godel Terminal parity follow-ups: short interest, dividend yield, market halts, IPO calendar, Black-Scholes calculator (`plans/025–029`).
+
+### News & shares
+
+- Default RSS wire expanded from ~33 to **335** feeds across wires, national papers, sector trades, government/central-bank releases, tech/AI, energy, healthcare, crypto, and geopolitics.
+- Share links use short `/s/{id}` ids; article shares join the same KV-backed path charts and tables already used.
+
+### Security & reliability
+
+- URL scheme validation before opening external links (http/https only).
+- Cloudflare Worker: CSP header, SSRF protections on `http.fetch`, stricter Origin checks on the Gloom Cloud proxy, sanitized error responses, BYOK keys endpoint requires auth.
+- Updater verifies SHA-256 checksums before installing a new binary.
+- Surfaced previously swallowed persistence errors in notes and broker modules.
+
+### Performance
+
+- Chart time-series: O(n log n) reference-point lookup, O(n+m) alignment carry-forward, O(n) price-history window merge.
+- DataTable remote-ui metadata memoized; `useRemoteUiNode` registration effect has a real dependency array.
+- Linear grouping for statement merges; Adjacent client cache reuse fixed.
+
+### DX & polish
+
+- Knip + Cloudflare Worker typecheck in CI; dead deps removed; `.env.example` completed.
+- Sync controller race-condition tests; consistent empty/error states (no unbound retry hints).
+- Crypto price symbols skip empty bases; IBKR catch blocks typed as `unknown`.
+
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 
 One release note for the hosted web terminal ship.
@@ -9,7 +44,7 @@ One release note for the hosted web terminal ship.
 - **Futures** (`FUT`), **AI benchmarks** (`AIBENCH`), **Plugins**, **SEC filings**, **Connections**, **API Keys**, **Polls**, Adjacent indices/rates, and **RSS**.
 - TradingView charts with universal series expressions, plus prediction-market series (`G KALSHI:…` / `G POLY:…` / `G ADJ:…`) from venue-direct Kalshi/Polymarket catalogs with native ticker/event/series resolution and a visible TICKER column. Market price history lives in its own **Chart** tab so Overview leads with outcomes.
 - News/article reader with command-bar article lookup; firehose with sortable/searchable Origin and Substack bodies; TV live and labelled replays.
-- Slim public share pages for articles, charts, and tables (`/article`, `/s/…`) instead of booting the full terminal.
+- Slim public share pages for articles, charts, and tables at short `/s/{id}` links (~12 chars) instead of booting the full terminal. Legacy `/article?a=…` links still open.
 
 ### Features
 

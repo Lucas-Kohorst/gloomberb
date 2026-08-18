@@ -1,0 +1,64 @@
+import type { PluginModule } from "../plugin-module";
+import { attachFredSeriesPersistence } from "../../../data/fred-series";
+import { FRED_EXTENDED_SERIES_ENABLED } from "../../../data/fred-extended-series";
+import { registerConnectionSource } from "../connections/register";
+import { BondSearchPane } from "./pane";
+import { BOND_SEARCH_PANE_ID } from "./model";
+import { FRED_CORPORATE_YIELDS_CONNECTION_ID } from "./fred-yields";
+
+let disposeConnection: (() => void) | null = null;
+
+export const bondSearchModule: PluginModule = {
+  panes: [
+    {
+      id: BOND_SEARCH_PANE_ID,
+      name: "Bond Search",
+      icon: "B",
+      component: BondSearchPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 30 },
+    },
+  ],
+  paneTemplates: [
+    {
+      id: "bond-search-pane",
+      paneId: BOND_SEARCH_PANE_ID,
+      label: "Bond Search",
+      description:
+        "Corporate and municipal bond yields, spreads vs. Treasury, and search.",
+      keywords: [
+        "bond",
+        "bonds",
+        "corporate",
+        "municipal",
+        "muni",
+        "yield",
+        "spread",
+        "credit",
+        "fixed income",
+        "cusip",
+        "IG",
+        "HY",
+      ],
+      shortcut: { prefix: "BOND" },
+      canCreate: () => FRED_EXTENDED_SERIES_ENABLED,
+      createInstance: () => ({ placement: "floating" }),
+    },
+  ],
+  setup(ctx) {
+    // Share the FRED series cache/persistence namespace used by the econ plugin.
+    attachFredSeriesPersistence(ctx.persistence);
+    disposeConnection = registerConnectionSource({
+      id: FRED_CORPORATE_YIELDS_CONNECTION_ID,
+      name: "FRED Corporate Yields",
+      kind: "api",
+      pluginId: BOND_SEARCH_PANE_ID,
+      authRequired: false,
+    });
+  },
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+};
