@@ -341,7 +341,6 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
     onCancelRun: cancelRun,
     onCloseEditor: closeEditor,
     onEdit: editActiveTab,
-    onRefresh: refreshActiveTab,
     onSaveEditor: saveEditor,
   });
 

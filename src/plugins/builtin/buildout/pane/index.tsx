@@ -158,9 +158,8 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
     if (detailCompanyTicker) {
       hints.push({ id: "open-ticker", key: "o", label: "pen", onPress: openDetailTicker });
     }
-    hints.push({ id: "refresh", key: "r", label: "efresh", onPress: refresh });
     return hints;
-  }, [detailCompanyTicker, openDetailTicker, refresh, startUpgrade, state]);
+  }, [detailCompanyTicker, openDetailTicker, startUpgrade, state]);
 
   usePaneFooter("buildout", () => ({
     info: updateBuildoutFooterInfo(state, activeTab, selectedList, favoriteMessage),

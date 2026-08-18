@@ -251,8 +251,7 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
         parts: [{ text: lastRefreshText, tone: lastRefreshMs ? "value" : "muted" }],
       },
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchAll }],
-  }), [activeCollection.label, fetchAll, lastRefreshMs, lastRefreshText]);
+  }), [activeCollection.label, lastRefreshMs, lastRefreshText]);
 
   const rootBefore = (
     <Box height={1} paddingX={1}>

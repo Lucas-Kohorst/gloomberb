@@ -13,7 +13,7 @@ import type { InstrumentSearchResult } from "../../../../types/instrument";
 import { usePaneInstance } from "../../../../state/app/context";
 import { colors } from "../../../../theme/colors";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../../runtime";
-import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../../shared/table-pane";
 import type { LoadState } from "../../shared/ticker-request";
 
 function resultSymbol(result: InstrumentSearchResult): string {
@@ -115,8 +115,7 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
       ...(query ? [{ id: "query", parts: [{ text: query, tone: "muted" as const }] }] : []),
       ...loadingErrorFooterInfo(state.loading, state.error),
     ],
-    hints: [refreshFooterHint(() => load(true))],
-  }), [load, query, state.error, state.loading]);
+  }), [query, state.error, state.loading]);
 
   return (
     <DataTableView<InstrumentSearchResult, DataTableColumn & { id: "symbol" | "name" | "exchange" | "type" }>

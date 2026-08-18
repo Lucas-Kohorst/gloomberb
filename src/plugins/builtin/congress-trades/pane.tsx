@@ -182,7 +182,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     detailMode,
     detailTrade,
     error,
-    load,
     openSelectedTicker,
     openSelectedTradeMember,
     openSelectedTradeSource,
@@ -240,7 +239,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Congress trades unavailable." message={error} hint="Press r to retry." />
+          <EmptyState title="Congress trades unavailable." message={error} />
         </Box>
       </Box>
     );
@@ -278,7 +277,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           getItemKey={(trade) => trade.id}
           renderCell={renderCongressTradeCell}
           emptyStateTitle="No House PTR trades."
-          emptyStateHint="Press r to refresh."
         />
       ) : (
         <DataTableStackView<CloudCongressMemberPayload, MemberColumn>
@@ -309,7 +307,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           getItemKey={(member) => member.id}
           renderCell={renderCongressMemberCell}
           emptyStateTitle="No House PTR members."
-          emptyStateHint="Press r to refresh."
         />
       )}
     </Box>

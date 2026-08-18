@@ -83,8 +83,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       ...(footerAge ? [{ id: "age", parts: [{ text: footerAge, tone: loading ? "muted" as const : "value" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }],
-  }), [data, error, footerAge, loading, paneId, refresh]);
+  }), [data, error, footerAge, loading, paneId]);
 
   if (loading && !data) {
     return (

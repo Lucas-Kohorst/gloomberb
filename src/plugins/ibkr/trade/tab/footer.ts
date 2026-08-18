@@ -37,7 +37,6 @@ export function useTradeTabFooter({
     ],
     hints: [
       ...(!ticketState.busy ? [
-        { id: "refresh", key: "r", label: "efresh", onPress: () => actions.refresh().catch(() => {}) },
         { id: "profile", key: "i", label: "profile", onPress: () => actions.chooseBrokerInstance().catch(() => {}) },
         { id: "account", key: "a", label: "ccount", onPress: () => actions.chooseAccount().catch(() => {}) },
       ] : []),

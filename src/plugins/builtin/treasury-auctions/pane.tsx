@@ -277,7 +277,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/")) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
@@ -303,11 +303,10 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     return {
       info,
       hints: detailOpen
-        ? [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }]
+        ? []
         : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
           { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
         ],
     };
   }, [
@@ -318,7 +317,6 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     fetchedAt,
     filter,
     focusSearch,
-    load,
     searchQuery,
     stale,
     status,
@@ -353,7 +351,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Treasury auctions unavailable." message={error} hint="Press r to retry." />
+          <EmptyState title="Treasury auctions unavailable." message={error} />
         </Box>
       </Box>
     );
@@ -408,7 +406,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         getItemKey={(auction) => auction.id}
         renderCell={(auction, column, _index, rowState) => renderAuctionCell(auction, column, rowState)}
         emptyStateTitle={searchQuery.trim() ? "No matching auctions." : "No recent auctions."}
-        emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
+        emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       />
     </Box>
   );

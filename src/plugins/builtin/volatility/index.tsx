@@ -115,10 +115,7 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
   ], [data?.termState, error, loading, stale]);
-  usePaneFooter(paneId, () => ({
-    info: footerInfo,
-    hints: [{ id: "reload", key: "r", label: "eload", onPress: reload, disabled: loading }],
-  }), [footerInfo, loading, paneId, reload]);
+  usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (!data && loading) {
     return <Box width={width} height={height} justifyContent="center" alignItems="center"><Text fg={colors.textMuted}>Loading volatility data...</Text></Box>;

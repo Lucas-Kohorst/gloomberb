@@ -13,7 +13,7 @@ import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercent } from "../../../utils/format";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { useAssetData } from "../../runtime";
-import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
 function compactPeriod(period: string): string {
@@ -358,8 +358,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
       ...buildAnalystFooterInfo(data),
       ...loadingErrorFooterInfo(loading, error),
     ],
-    hints: [refreshFooterHint(reload)],
-  }), [data, error, loading, reload]);
+  }), [data, error, loading]);
 
   return (
     <DataTableView<AnalystResearchData["ratings"][number], RatingColumn>

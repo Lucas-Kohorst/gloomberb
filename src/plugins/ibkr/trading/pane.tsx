@@ -259,7 +259,6 @@ export function TradingPane({ focused, width, height }: PaneProps) {
       { id: "account", key: "a", label: "ccount", onPress: () => footerActionsRef.current.chooseAccount().catch(() => {}) },
       { id: "open", key: "m", label: "open", onPress: () => footerActionsRef.current.openSelectedOrder() },
       { id: "cancel", key: "c", label: "ancel", onPress: () => footerActionsRef.current.cancelSelectedOrder().catch(() => {}) },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => footerActionsRef.current.refresh().catch(() => {}) },
     ],
   }), []);
 

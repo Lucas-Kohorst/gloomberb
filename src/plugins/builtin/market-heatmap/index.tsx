@@ -278,8 +278,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  }), [feedStatus, loadError, loading, refresh, selectedAsset, updated]);
+  }), [feedStatus, loadError, loading, selectedAsset, updated]);
 
   const emptyStateTitle = loading
     ? "Loading market heatmap..."

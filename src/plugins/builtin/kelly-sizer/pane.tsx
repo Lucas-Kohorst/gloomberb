@@ -340,7 +340,7 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
       toggleSensitivity();
       return;
     }
-    if (isPlainShortcut(event, "t")) {
+    if (isPlainShortcut(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusTickerSearch();
@@ -360,7 +360,7 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
         ? [{ id: "clip", parts: [{ text: `clip ${result.clipReasons.join(", ")}`, tone: "muted" as const }] }]
         : [],
     hints: [
-      { id: "ticker", key: "t", label: "icker", onPress: focusTickerSearch },
+      { id: "search", key: "/", label: "search", onPress: focusTickerSearch },
       { id: "sensitivity", key: "s", label: showSensitivity ? "ensitivity off" : "ensitivity", onPress: toggleSensitivity },
     ],
   }), [focusTickerSearch, result.clipReasons, result.warnings, showSensitivity, toggleSensitivity]);

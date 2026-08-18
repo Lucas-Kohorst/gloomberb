@@ -149,14 +149,14 @@ describe("KellySizerPane", () => {
     expect(frame).not.toContain("Kelly Curve");
   });
 
-  test("focuses ticker search with t", async () => {
+  test("focuses ticker search with slash", async () => {
     await renderPane();
     await flushFrame();
 
     await act(async () => {
       (testSetup!.renderer.keyInput as any).emit("keypress", {
-        name: "t",
-        sequence: "t",
+        name: "/",
+        sequence: "/",
         ctrl: false,
         meta: false,
         shift: false,

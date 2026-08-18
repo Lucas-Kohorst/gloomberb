@@ -235,7 +235,6 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     loading,
     error,
     info: calendarStatus,
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
   });
 
   const handleHeaderClick = useCallback(() => {}, []);

@@ -128,7 +128,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       refresh();
       return true;
     }
-    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
+    if (isPlainKey(event, "/")) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
@@ -161,14 +161,10 @@ function FuturesPane({ focused, width, height }: PaneProps) {
     }
     return {
       info,
-      hints: [
-        { id: "search", key: "s", label: "earch", onPress: focusSearch },
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-      ],
+      hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
     };
   }, [
     focusSearch,
-    refresh,
     searchQuery,
     status.latestTs,
     status.loading,
@@ -209,7 +205,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
         : null}
       renderCell={renderCell}
       emptyStateTitle={searchQuery.trim() ? "No matching contracts." : "No contracts configured."}
-      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press s to search."}
+      emptyStateHint={searchQuery.trim() ? "Clear search." : "Press / to search."}
       rootBefore={(
         <InputSearchBar
           value={searchQuery}

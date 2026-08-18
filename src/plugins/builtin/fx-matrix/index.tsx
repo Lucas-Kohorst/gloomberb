@@ -80,8 +80,7 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("fx-matrix", () => ({
     info: ageText ? [{ id: "updated", parts: [{ text: ageText, tone: loading ? "muted" : "value" }] }] : [],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchRates }],
-  }), [ageText, fetchRates, loading]);
+  }), [ageText, loading]);
 
   // Row header: just the 3-letter code, no emoji (keeps width predictable)
   // Rates use flexGrow so they fill available space dynamically

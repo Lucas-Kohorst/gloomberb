@@ -12,7 +12,6 @@ interface UseAiScreenerFooterOptions {
   onCancelRun: () => void;
   onCloseEditor: () => void;
   onEdit: () => void;
-  onRefresh: () => void;
   onSaveEditor: () => void;
 }
 
@@ -25,7 +24,6 @@ export function useAiScreenerFooter({
   onCancelRun,
   onCloseEditor,
   onEdit,
-  onRefresh,
   onSaveEditor,
 }: UseAiScreenerFooterOptions) {
   const language = useAppLanguage();
@@ -81,13 +79,6 @@ export function useAiScreenerFooter({
               onPress: onAddTab,
             },
             {
-              id: "refresh",
-              key: "r",
-              label: t("efresh"),
-              onPress: onRefresh,
-              disabled: !activeTab,
-            },
-            {
               id: "edit",
               key: "e",
               label: t("dit"),
@@ -104,7 +95,6 @@ export function useAiScreenerFooter({
     onCancelRun,
     onCloseEditor,
     onEdit,
-    onRefresh,
     onSaveEditor,
     runState,
   ]);

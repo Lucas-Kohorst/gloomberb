@@ -10,7 +10,6 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
   type PaneFooterSegment,
-  type PaneHint,
 } from "../../../components";
 import { MarkdownText } from "../../../components/markdown-text";
 import { fetchChangelogReleases, type ChangelogRelease } from "../../../updater/github-releases";
@@ -287,15 +286,6 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     return segments;
   }, [status]);
 
-  const footerHints = useMemo<PaneHint[]>(() => [{
-    id: "refresh",
-    key: "r",
-    label: "efresh",
-    onPress: () => {
-      void loadReleases();
-    },
-  }], [loadReleases]);
-
   useExternalLinkFooter({
     registrationId: "changelog",
     focused,
@@ -303,7 +293,6 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     source: openRelease?.version,
     label: "release",
     info: footerInfo,
-    hints: footerHints,
   });
 
   if (status === "loading" && releases.length === 0) {

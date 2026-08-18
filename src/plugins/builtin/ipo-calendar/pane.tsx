@@ -131,7 +131,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       refresh();
       return true;
     }
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -147,7 +147,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   useShortcut((event) => {
     if (!focused || searchFocused) return;
     if (event.targetEditable) return;
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+    if (isPlainKey(event, "/")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       focusSearch();
@@ -171,10 +171,10 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
     }] : []),
   ], [error, searchQuery, status]);
 
-  const footerHints = useMemo(() => [
-    { id: "search", key: "s", label: "earch", onPress: focusSearch },
-    { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-  ], [focusSearch, refresh]);
+  const footerHints = useMemo(
+    () => [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
+    [focusSearch],
+  );
 
   useExternalLinkFooter({
     registrationId: IPO_CALENDAR_PANE_ID,

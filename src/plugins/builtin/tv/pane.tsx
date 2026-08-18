@@ -234,7 +234,6 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: toggleMute,
         disabled: loading || !stream,
       },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
       {
         id: "open",
         key: "o",
@@ -242,7 +241,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: () => { void renderer.openExternal(channel.channelUrl); },
       },
     ],
-  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
+  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, renderer, status, stream, toggleMute, togglePlayback]);
 
   const channelTabs = useMemo(() => TV_CHANNELS.map((item, index) => ({
     label: `${index + 1} ${item.name}`,

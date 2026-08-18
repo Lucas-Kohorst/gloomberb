@@ -411,7 +411,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     activeFeedState,
     activeDetail,
     selectedArticle,
-    refreshActive,
     openSelectedArticle,
   });
 
@@ -452,7 +451,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Substack unavailable." message={home.error} hint="Press r to retry." />
+          <EmptyState title="Substack unavailable." message={home.error} />
         </Box>
       </Box>
     );

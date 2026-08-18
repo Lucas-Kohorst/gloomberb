@@ -190,7 +190,7 @@ describe("FuturesPane", () => {
     await renderSettled();
     expect(testSetup.captureCharFrame()).not.toContain("E-Mini Dow");
 
-    await emitKeypress({ name: "s", sequence: "s" });
+    await emitKeypress({ name: "/", sequence: "/" });
     for (const character of "dow") {
       await emitKeypress({ name: character, sequence: character });
     }
@@ -221,7 +221,7 @@ describe("FuturesPane", () => {
     testSetup = await testRender(<Harness />, { width: 80, height: 24 });
     await renderSettled();
 
-    await emitKeypress({ name: "s", sequence: "s" });
+    await emitKeypress({ name: "/", sequence: "/" });
     await renderSettled();
     for (const character of "gold") {
       await emitKeypress({ name: character, sequence: character });

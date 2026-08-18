@@ -23,7 +23,7 @@ import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { useAssetData } from "../../runtime";
-import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 import {
   documentContentKey,
@@ -700,8 +700,7 @@ export function CorporateActionsView({
 
   usePaneFooter(footerPaneId, () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [refreshFooterHint(reload)],
-  }), [error, footerPaneId, loading, reload]);
+  }), [error, footerPaneId, loading]);
 
   return (
     <DataTableStackView<EventRow, EventColumn>

@@ -169,8 +169,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(status === "error" && error ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  }), [error, refresh, status]);
+  }), [error, status]);
 
   if (!ticker || !symbol) {
     return <EmptyState title="No ticker selected" message="Select a ticker to view short interest." />;
@@ -181,7 +180,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }
 
   if (status === "error" && records.length === 0) {
-    return <EmptyState title="Failed to load short interest" message={error ?? undefined} hint="Press [r] to retry" />;
+    return <EmptyState title="Failed to load short interest" message={error ?? undefined} />;
   }
 
   if (status === "loaded" && records.length === 0) {

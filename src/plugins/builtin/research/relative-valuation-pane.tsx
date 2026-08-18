@@ -13,7 +13,7 @@ import { usePaneInstance } from "../../../state/app/context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
-import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 
 type RelativeColumnId = "symbol" | "price" | "change" | "marketCap" | "pe" | "forwardPe" | "evSales" | "fcfYield" | "revenueGrowth" | "margin";
@@ -159,8 +159,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       { id: "tickers", parts: [{ text: `${symbols.length} tickers`, tone: symbols.length > 0 ? "value" as const : "muted" as const }] },
       ...loadingErrorFooterInfo(loading, error),
     ],
-    hints: [refreshFooterHint(() => reload(true))],
-  }), [error, loading, reload, symbols.length]);
+  }), [error, loading, symbols.length]);
 
   return (
     <DataTableView<RelativeRow, RelativeColumn>

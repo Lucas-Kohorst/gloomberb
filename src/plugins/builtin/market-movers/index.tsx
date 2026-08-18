@@ -263,8 +263,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         parts: [{ text: "stale", tone: "muted" as const }],
       }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab }],
-  }), [feedStatus, loading, moversStale, refreshActiveTab, summaryQuotes]);
+  }), [feedStatus, loading, moversStale, summaryQuotes]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

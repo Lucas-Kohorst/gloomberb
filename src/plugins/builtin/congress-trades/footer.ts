@@ -16,7 +16,6 @@ export function useCongressTradesFooter({
   detailMode,
   detailTrade,
   error,
-  load,
   openSelectedTicker,
   openSelectedTradeMember,
   openSelectedTradeSource,
@@ -28,7 +27,6 @@ export function useCongressTradesFooter({
   detailMode: DetailMode;
   detailTrade: CloudCongressTradePayload | null;
   error: string | null;
-  load: (refresh?: boolean) => void;
   openSelectedTicker: () => void;
   openSelectedTradeMember: () => void;
   openSelectedTradeSource: () => void;
@@ -47,22 +45,18 @@ export function useCongressTradesFooter({
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: detailMode?.kind === "member"
-      ? []
-      : [
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
-          ...(activeTab === "trades" ? [
-            { id: "member", key: "m", label: "ember", onPress: openSelectedTradeMember, disabled: !selectedTrade },
-            { id: "ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !(detailTrade?.ticker ?? selectedTrade?.ticker) },
-            { id: "open", key: "o", label: "pen", onPress: openSelectedTradeSource, disabled: !(detailTrade ?? selectedTrade)?.sourceUrl },
-          ] : []),
-        ],
+    hints: detailMode?.kind !== "member" && activeTab === "trades"
+      ? [
+          { id: "member", key: "m", label: "ember", onPress: openSelectedTradeMember, disabled: !selectedTrade },
+          { id: "ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !(detailTrade?.ticker ?? selectedTrade?.ticker) },
+          { id: "open", key: "o", label: "pen", onPress: openSelectedTradeSource, disabled: !(detailTrade ?? selectedTrade)?.sourceUrl },
+        ]
+      : [],
   }), [
     activeTab,
     detailMode,
     detailTrade,
     error,
-    load,
     openSelectedTicker,
     openSelectedTradeMember,
     openSelectedTradeSource,

@@ -261,12 +261,11 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
         ...(fundMatching ? [{ id: "fund-matching", parts: [{ text: "13F matching", tone: "muted" as const }] }] : []),
       ],
       hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
         { id: "view", key: "s", label: "witch", onPress: toggleView },
         ...(selectedFundMatch ? [{ id: "fund", key: "f", label: "und", onPress: () => openFundDetail(selectedRow) }] : []),
       ],
     };
-  }, [data?.asOf, fundMatching, loading, openFundDetail, refresh, selectedFundMatch, selectedRow, toggleView]);
+  }, [data?.asOf, fundMatching, loading, openFundDetail, selectedFundMatch, selectedRow, toggleView]);
 
   const emptyTitle = !symbol
     ? "No ticker selected"

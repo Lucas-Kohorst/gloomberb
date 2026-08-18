@@ -12,7 +12,7 @@ import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
-import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint } from "../shared/table-pane";
+import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { fetchDividendData, type DividendData } from "./client";
 import {
   buildDividendColumns,
@@ -236,8 +236,7 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
 
   usePaneFooter("dividend-yield", () => ({
     info: loadingErrorFooterInfo(loading, error),
-    hints: [{ ...refreshFooterHint(refresh), disabled: !symbol || loading }],
-  }), [error, loading, refresh, symbol]);
+  }), [error, loading]);
 
   const payments = data?.payments ?? [];
   const metrics = data?.metrics;

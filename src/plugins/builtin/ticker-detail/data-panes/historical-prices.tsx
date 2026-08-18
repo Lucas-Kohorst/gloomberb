@@ -17,7 +17,7 @@ import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
 } from "../../../runtime";
-import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
+import { loadingErrorFooterInfo, useClampSelectedIndex } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 
 type HistoryColumnId = "date" | "open" | "high" | "low" | "close" | "change" | "changePercent" | "volume";
@@ -163,11 +163,8 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       { id: "range", parts: [{ text: range, tone: "muted" as const }] },
       ...loadingErrorFooterInfo(loading, error),
     ],
-    hints: [
-      { id: "range", key: "t", label: "oggle range", onPress: cycleRange },
-      refreshFooterHint(reload),
-    ],
-  }), [cycleRange, error, loading, range, reload]);
+    hints: [{ id: "range", key: "t", label: "oggle range", onPress: cycleRange }],
+  }), [cycleRange, error, loading, range]);
 
   return (
     <DataTableView<HistoricalPriceRow, HistoryColumn>

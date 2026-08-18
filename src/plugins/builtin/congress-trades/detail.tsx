@@ -224,7 +224,6 @@ export function MemberTradesDetail({
       ...(maybeTruncated ? [{ id: "member-truncated", parts: [{ text: `limited to ${CONGRESS_MEMBER_TRADE_LIMIT} trades`, tone: "warning" as const }] }] : []),
     ],
     hints: [
-      { id: "member-refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "member-ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !selectedTrade?.ticker },
       { id: "member-open", key: "o", label: "pen", onPress: openSelectedSource, disabled: !selectedTrade?.sourceUrl },
     ],
@@ -233,7 +232,6 @@ export function MemberTradesDetail({
     maybeTruncated,
     openSelectedSource,
     openSelectedTicker,
-    refresh,
     selectedTrade?.sourceUrl,
     selectedTrade?.ticker,
     status,

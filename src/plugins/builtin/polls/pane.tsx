@@ -524,7 +524,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -547,7 +547,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -606,16 +606,12 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen
-      ? [
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
-          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-        ]
+      ? [{ id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url }]
       : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ],
-  }), [error, detailOpen, focusSearch, load, openSelected, selected?.url, status, searchQuery, tab, updatedAgo]);
+  }), [error, detailOpen, focusSearch, openSelected, selected?.url, status, searchQuery, updatedAgo]);
 
   const tabs = (
     <Box height={1} flexShrink={0} overflow="hidden">
@@ -667,7 +663,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Polls unavailable." message={error} hint="Press r to retry." />
+          <EmptyState title="Polls unavailable." message={error} />
         </Box>
       </Box>
     );
@@ -723,7 +719,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         getItemKey={(row) => row.id}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? "No matching polls." : "No polls in this category."}
-        emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
+        emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       />
     </Box>
   );

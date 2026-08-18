@@ -18,10 +18,7 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
 
   usePaneFooter(
     "world-indices",
-    () => ({
-      info: quoteBoardFooterInfo(status),
-      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }],
-    }),
+    () => ({ info: quoteBoardFooterInfo(status) }),
     [focused, onRefresh, status.latestTs, status.loading, status.stale, status.unavailable],
   );
 }

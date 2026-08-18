@@ -144,10 +144,7 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
   ], [error, loading, partial, stale]);
-  usePaneFooter(paneId, () => ({
-    info: footerInfo,
-    hints: [{ id: "reload", key: "r", label: "eload", onPress: reload, disabled: loading }],
-  }), [footerInfo, loading, paneId, reload]);
+  usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (rows.length === 0 && loading) {
     return <Box width={width} height={height} justifyContent="center" alignItems="center"><Text fg={colors.textMuted}>Loading credit spreads...</Text></Box>;
@@ -187,7 +184,6 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
       getItemKey={(row) => row.seriesId}
       renderCell={renderRowCell}
       emptyStateTitle="No credit spread data."
-      emptyStateHint="Press r to reload."
     />
   );
 }

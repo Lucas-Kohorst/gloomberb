@@ -132,8 +132,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => reload(true) }],
-  }), [error, loading, reload]);
+  }), [error, loading]);
 
   return (
     <DataTableView<EarningsDisplayRow, EarningsColumn>
