@@ -3,7 +3,6 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 import { AccountManagementPane } from "../account-management/pane";
-import { BuildoutPane } from "../buildout/pane";
 import { chatController } from "../chat/controller";
 import {
   buildDmCommandResults,
@@ -14,11 +13,6 @@ import {
   openDmTargetFromCommand,
   parseDmUsernames,
 } from "../chat/channels";
-import {
-  CONGRESS_TRADES_PANE_ID,
-  CongressTradesPane,
-} from "../congress-trades/pane";
-import { adjacentModule } from "../adjacent";
 import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
@@ -168,48 +162,6 @@ const accountModule: PluginModule = {
   },
 };
 
-const buildoutModule: PluginModule = {
-  panes: [{
-    id: "buildout",
-    name: "TheBuildout",
-    icon: "T",
-    component: BuildoutPane,
-    defaultPosition: "right",
-    defaultMode: "floating",
-    defaultFloatingSize: { width: 110, height: 34 },
-  }],
-  paneTemplates: [{
-    id: "buildout-pane",
-    paneId: "buildout",
-    label: "TheBuildout",
-    description: "Open TheBuildout infrastructure intelligence.",
-    keywords: ["tbo", "buildout", "thebuildout", "infrastructure", "sites", "intel"],
-    shortcut: { prefix: "TBO" },
-    createInstance: () => ({ placement: "floating" }),
-  }],
-};
-
-const congressTradesModule: PluginModule = {
-  panes: [{
-    id: CONGRESS_TRADES_PANE_ID,
-    name: "Congress",
-    icon: "G",
-    component: CongressTradesPane,
-    defaultPosition: "right",
-    defaultMode: "floating",
-    defaultFloatingSize: { width: 112, height: 30 },
-  }],
-  paneTemplates: [{
-    id: "congress-trades-pane",
-    paneId: CONGRESS_TRADES_PANE_ID,
-    label: "Congress Trades",
-    description: "Track newly disclosed House periodic transaction reports.",
-    keywords: ["congress", "house", "trades", "ptr", "stock", "disclosures"],
-    shortcut: { prefix: "CG" },
-    createInstance: () => ({ placement: "floating" }),
-  }],
-};
-
 const twitterModule: PluginModule = {
   setup: registerTwitterFeedFeature,
 };
@@ -222,16 +174,13 @@ export function createGloomberbCloudPlugin({
     id: "gloomberb-cloud",
     name: "Gloom Cloud",
     version: "1.0.0",
-    description: "Free market, macro, and chat services. Chat requires signup.",
+    description: "Gloom Cloud auth, chat, sync, and Twitter feeds. Chat requires signup.",
     toggleable: true,
     order: 10,
     modules: [
       createCloudDataModule(),
       createChatModule(ChatPane, ChatStatusWidget),
       accountModule,
-      buildoutModule,
-      congressTradesModule,
-      adjacentModule,
       twitterModule,
     ],
   });

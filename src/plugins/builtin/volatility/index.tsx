@@ -1,12 +1,24 @@
-import type { PluginModule } from "../plugin-module";
+import type { GloomPlugin } from "../../../types/plugin";
 import { attachFredSeriesPersistence } from "../../../data/fred-series";
 import { FRED_EXTENDED_SERIES_ENABLED } from "../../../data/fred-extended-series";
 import { registerConnectionSource } from "../connections/register";
 import { VolatilityPane } from "./pane";
 
-export const volatilityModule: PluginModule = {
+export const VOLATILITY_PLUGIN_ID = "volatility";
+export const VOLATILITY_PANE_ID = "volatility";
+export const VOLATILITY_CONNECTION_ID = "fred-volatility";
+
+let disposeConnection: (() => void) | null = null;
+
+export const volatilityPlugin: GloomPlugin = {
+  id: VOLATILITY_PLUGIN_ID,
+  name: "Volatility & Sentiment",
+  version: "1.0.0",
+  description: "VIX, VXV, VXMT, term structure, and contango/backwardation signals.",
+  toggleable: true,
+
   panes: [{
-    id: "volatility",
+    id: VOLATILITY_PANE_ID,
     name: "Volatility & Sentiment",
     icon: "V",
     component: VolatilityPane,
@@ -14,26 +26,30 @@ export const volatilityModule: PluginModule = {
     defaultMode: "floating",
     defaultFloatingSize: { width: 70, height: 22 },
   }],
+
   paneTemplates: [{
     id: "volatility-pane",
-    paneId: "volatility",
+    paneId: VOLATILITY_PANE_ID,
     label: "Volatility & Sentiment",
     description: "VIX, VXV, VXMT, term structure, and contango/backwardation signals.",
     keywords: ["vix", "volatility", "vxv", "vxmt", "term structure", "contango", "backwardation", "sentiment", "fear", "greed"],
     shortcut: { prefix: "VIX" },
     canCreate: () => FRED_EXTENDED_SERIES_ENABLED,
   }],
+
   setup(ctx) {
     attachFredSeriesPersistence(ctx.persistence);
-    registerConnectionSource({
-      id: "fred-volatility",
+    disposeConnection = registerConnectionSource({
+      id: VOLATILITY_CONNECTION_ID,
       name: "FRED Volatility Series",
       kind: "api",
-      pluginId: "volatility",
+      pluginId: VOLATILITY_PLUGIN_ID,
       authRequired: false,
     });
   },
+
   dispose() {
-    // Connection sources are cleaned up when the parent plugin is disabled.
+    disposeConnection?.();
+    disposeConnection = null;
   },
 };
