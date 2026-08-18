@@ -263,18 +263,40 @@ export class ConnectionTracker {
   // -- Request recording -----------------------------------------------------
 
   private recordSuccess(id: string, operation: string, durationMs: number): void {
-    const state = this.states.get(id);
+    const state = this.ensureStateForReport(id);
     if (!state) return;
     this.states.set(id, recordRequest(state, { success: true, durationMs, operation }));
     this.notify();
   }
 
   private recordFailure(id: string, operation: string, durationMs: number, error: unknown): void {
-    const state = this.states.get(id);
+    const state = this.ensureStateForReport(id);
     if (!state) return;
     const message = error instanceof Error ? error.message : String(error);
     this.states.set(id, recordRequest(state, { success: false, durationMs, operation, error: message }));
     this.notify();
+  }
+
+  /**
+   * Traffic can arrive before syncFromRegistry observes a just-registered
+   * source (parallel plugin setup). Hydrate from the source registry so the
+   * report is not dropped into a permanent Idle row.
+   */
+  private ensureStateForReport(id: string): ConnectionState | null {
+    const existing = this.states.get(id);
+    if (existing) return existing;
+    const source = listConnectionSources().find((entry) => entry.id === id);
+    if (!source) return null;
+    this.ensureConnection(
+      source.id,
+      source.name,
+      source.kind,
+      source.pluginId,
+      source.priority ?? 1000,
+      source.isWebSocket === true,
+      source.authRequired,
+    );
+    return this.states.get(id) ?? null;
   }
 
   // -- Snapshot + notify -----------------------------------------------------

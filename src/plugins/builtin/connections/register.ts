@@ -23,6 +23,9 @@ type ConnectionRequestReporter = (id: string, report: ConnectionRequestReport) =
 const sources = new Map<string, ConnectionSourceDef>();
 const listeners = new Set<() => void>();
 let reporter: ConnectionRequestReporter | null = null;
+/** Reports that arrived before the Connections tracker attached a reporter. */
+const pendingReports: Array<{ id: string; report: ConnectionRequestReport }> = [];
+const MAX_PENDING_REPORTS = 200;
 
 export function registerConnectionSource(source: ConnectionSourceDef): () => void {
   sources.set(source.id, source);
@@ -40,10 +43,22 @@ export function listConnectionSources(): ConnectionSourceDef[] {
 
 export function setConnectionRequestReporter(next: ConnectionRequestReporter | null): void {
   reporter = next;
+  if (!next || pendingReports.length === 0) return;
+  const queued = pendingReports.splice(0, pendingReports.length);
+  for (const entry of queued) {
+    next(entry.id, entry.report);
+  }
 }
 
 export function reportConnectionRequest(id: string, report: ConnectionRequestReport): void {
-  reporter?.(id, report);
+  if (reporter) {
+    reporter(id, report);
+    return;
+  }
+  pendingReports.push({ id, report });
+  if (pendingReports.length > MAX_PENDING_REPORTS) {
+    pendingReports.splice(0, pendingReports.length - MAX_PENDING_REPORTS);
+  }
 }
 
 export async function withConnectionRequest<T>(
@@ -76,6 +91,11 @@ export function subscribeConnectionSources(listener: () => void): () => void {
   return () => {
     listeners.delete(listener);
   };
+}
+
+/** Test helper: drain any buffered reports without attaching a reporter. */
+export function clearPendingConnectionReports(): void {
+  pendingReports.length = 0;
 }
 
 function emit(): void {

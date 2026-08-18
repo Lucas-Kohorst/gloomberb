@@ -4,7 +4,7 @@ import type { NewsQuery, MarketNewsItem } from "../../../../../types/news-source
 import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
-import { withConnectionRequest } from "../../../connections/register";
+import { withConnectionRequest, reportConnectionRequest } from "../../../connections/register";
 
 const RSS_CACHE_KIND = "rss-feed";
 export const RSS_FEED_CACHE_POLICY = {
@@ -134,23 +134,25 @@ export function createRssNewsCapability(
   const fetchText = options.fetchText ?? ((url: string) => rssClient.fetch(url));
   const getFeeds = () => Array.isArray(feedsOrGetter) ? feedsOrGetter : feedsOrGetter();
 
-  async function fetchFeed(feed: RssFeedConfig): Promise<MarketNewsItem[]> {
+  async function fetchFeed(feed: RssFeedConfig): Promise<{ items: MarketNewsItem[]; fromCache: boolean }> {
     const freshCache = readFeedCache(options.persistence, feed);
-    if (freshCache) return freshCache;
+    if (freshCache) return { items: freshCache, fromCache: true };
 
     try {
-      return await withConnectionRequest("rss", feed.name, async () => {
+      const items = await withConnectionRequest("rss", feed.name, async () => {
         const resp = await fetchText(feed.url);
         if (!resp.ok) throw new Error("RSS request failed");
         const xml = await resp.text();
         const knownTickers = options.knownTickers ? await options.knownTickers() : undefined;
-        const items = parseRssFeed(xml, feed)
+        const parsed = parseRssFeed(xml, feed)
           .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
-        writeFeedCache(options.persistence, feed, items);
-        return items;
+        writeFeedCache(options.persistence, feed, parsed);
+        return parsed;
       });
+      return { items, fromCache: false };
     } catch {
-      return readFeedCache(options.persistence, feed, { allowExpired: true }) ?? [];
+      const fallback = readFeedCache(options.persistence, feed, { allowExpired: true }) ?? [];
+      return { items: fallback, fromCache: fallback.length > 0 };
     }
   }
 
@@ -173,10 +175,23 @@ export function createRssNewsCapability(
         );
 
         const allItems: MarketNewsItem[] = [];
+        let cacheOnlyHits = 0;
+        let networkReports = 0;
         for (const result of results) {
-          if (result.status === "fulfilled") {
-            allItems.push(...result.value);
-          }
+          if (result.status !== "fulfilled") continue;
+          allItems.push(...result.value.items);
+          if (result.value.fromCache) cacheOnlyHits += 1;
+          else networkReports += 1;
+        }
+
+        // When every feed is served from cache, no withConnectionRequest ran.
+        // Emit one synthetic success so Connections reflects RSS as in use.
+        if (networkReports === 0 && cacheOnlyHits > 0) {
+          reportConnectionRequest("rss", {
+            success: true,
+            durationMs: 0,
+            operation: `cache (${cacheOnlyHits} feeds)`,
+          });
         }
 
         return allItems;

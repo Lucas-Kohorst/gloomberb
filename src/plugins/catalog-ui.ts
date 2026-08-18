@@ -6,6 +6,7 @@ import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
+import { yahooPlugin } from "./builtin/yahoo";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { alertsPlugin } from "./builtin/alerts";
@@ -23,6 +24,7 @@ import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
+  yahooPlugin,
   portfolioPlugin,
   tickerResearchPlugin,
   brokerPlugin,
