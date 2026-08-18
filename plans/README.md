@@ -32,6 +32,11 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 022  | Add Treasury auctions pane | P2 | M | — | TODO |
 | 023  | Add volatility and sentiment term-structure pane | P2 | M | — | TODO |
 | 024  | Add corporate and municipal bond search pane | P2 | L | — | TODO |
+| 025  | Add short interest pane (Godel SI parity) | P2 | M | — | TODO |
+| 026  | Add dividend yield pane (Godel DVD parity) | P2 | M | — | TODO |
+| 027  | Add market halts pane (Godel HALT parity) | P2 | M | — | TODO |
+| 028  | Add IPO calendar pane (Godel IPO parity) | P2 | M | — | TODO |
+| 029  | Add Black-Scholes options calculator pane (Godel OVME parity) | P3 | S | — | TODO |
 | 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | TODO |
 | 012  | Add checksum verification to self-updater | P1 | M | — | TODO |
 | 013  | Add SSRF protection to Cloudflare Worker http.fetch | P1 | M | — | TODO |
@@ -55,6 +60,11 @@ fully before starting, honor its STOP conditions, and update your row when done.
 - **022, 023, 024** are independent feature plans. 022 (Treasury auctions) is the
   lowest-risk starting point. 024 (bond search) complements 022 but is higher risk
   due to FINRA/EMMA API uncertainty.
+- **025–029** are Godel Terminal feature-parity plans. All are independent and can
+  be executed in parallel. 029 (Black-Scholes) is the lowest risk (pure math, no
+  external data). 025 (short interest) and 027 (market halts) require verifying
+  free API endpoints before implementation. 028 (IPO calendar) is the highest risk
+  due to data source uncertainty — test all candidate endpoints first.
 
 ## Findings considered and rejected
 
