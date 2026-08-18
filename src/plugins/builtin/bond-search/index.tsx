@@ -1,5 +1,6 @@
 import type { PluginModule } from "../plugin-module";
 import { attachFredSeriesPersistence } from "../../../data/fred-series";
+import { FRED_EXTENDED_SERIES_ENABLED } from "../../../data/fred-extended-series";
 import { registerConnectionSource } from "../connections/register";
 import { BondSearchPane } from "./pane";
 import { BOND_SEARCH_PANE_ID } from "./model";
@@ -41,6 +42,7 @@ export const bondSearchModule: PluginModule = {
         "HY",
       ],
       shortcut: { prefix: "BOND" },
+      canCreate: () => FRED_EXTENDED_SERIES_ENABLED,
       createInstance: () => ({ placement: "floating" }),
     },
   ],
