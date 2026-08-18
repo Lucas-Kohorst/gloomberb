@@ -18,6 +18,7 @@ import { tvModule } from "./tv";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
 import { sectorsModule } from "./sectors";
+import { volatilityModule } from "./volatility";
 import { worldIndicesModule } from "./world-indices";
 import { yieldCurveModule } from "./yield-curve";
 
@@ -60,6 +61,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     marketHeatmapModule,
     marketMoversModule,
     fearGreedModule,
+    volatilityModule,
     sectorsModule,
     fxMatrixModule,
   ],
