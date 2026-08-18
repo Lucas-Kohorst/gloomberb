@@ -54,6 +54,8 @@ export interface ChatControllerSnapshot {
   onlineCount: number;
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
+  /** The latest message load hard-failed (network/HTTP), distinct from an empty channel. */
+  loadFailed: boolean;
   draft: string;
   replyToId: string | null;
   unreadMentionCount: number;
@@ -79,6 +81,8 @@ export interface ChannelRuntimeState {
    * never be requested again; one uncursored fetch per session repairs it.
    */
   backfilled: boolean;
+  /** True after the latest message load hard-failed; cleared on the next success. */
+  loadFailed: boolean;
   messages: ChatMessage[];
   pendingMessages: ChatMessage[];
   draft: string;
@@ -113,6 +117,7 @@ export function createEmptyChannelState(): ChannelRuntimeState {
     loadOlderMessagesPromise: null,
     reachedOldestMessage: false,
     backfilled: false,
+    loadFailed: false,
     messages: [],
     pendingMessages: [],
     draft: "",
