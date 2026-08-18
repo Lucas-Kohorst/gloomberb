@@ -8,41 +8,35 @@ fully before starting, honor its STOP conditions, and update your row when done.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 001  | Validate URL scheme before opening external links | P1 | S | — | TODO |
-| 002  | Replace O(n²) referencePoint scan with binary search | P1 | S | — | TODO |
-| 003  | Replace O(n×m) carry-forward scan with moving pointer | P1 | S | — | TODO |
-| 004  | Add dependency array to useRemoteUiNode effect | P1 | S | — | TODO |
-| 005  | Replace mergePriceHistoryWindows re-sort with two-pointer merge | P2 | S | — | TODO |
-| 006  | Memoize DataTable remote-ui metadata | P2 | S | 004 | TODO |
-| 007  | Add Content-Security-Policy header to hosted web app | P2 | S | — | TODO |
-| 008  | Surface silently swallowed persistence errors | P2 | S | — | TODO |
-| 009  | Sanitize Cloudflare Worker error responses | P2 | S | — | TODO |
-| 010  | Add knip and Cloudflare typecheck to CI | P2 | S | — | TODO |
-| 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | TODO |
-| 012  | Add checksum verification to self-updater | P1 | M | — | TODO |
-| 013  | Add SSRF protection to Cloudflare Worker http.fetch | P1 | M | — | TODO |
-| 014  | Add race-condition tests for sync controller | P2 | M | — | TODO |
-| 015  | Replace error: any with error: unknown in IBKR catch blocks | P3 | S | — | TODO |
-| 016  | Add plugin discovery via GitHub search | P3 | M | — | TODO |
+| 001  | Validate URL scheme before opening external links | P1 | S | — | DONE |
+| 002  | Replace O(n²) referencePoint scan with binary search | P1 | S | — | DONE |
+| 003  | Replace O(n×m) carry-forward scan with moving pointer | P1 | S | — | DONE |
+| 004  | Add dependency array to useRemoteUiNode effect | P1 | S | — | DONE |
+| 005  | Replace mergePriceHistoryWindows re-sort with two-pointer merge | P2 | S | — | DONE |
+| 006  | Memoize DataTable remote-ui metadata | P2 | S | 004 | DONE |
+| 007  | Add Content-Security-Policy header to hosted web app | P2 | S | — | DONE |
+| 008  | Surface silently swallowed persistence errors | P2 | S | — | DONE |
+| 009  | Sanitize Cloudflare Worker error responses | P2 | S | — | DONE |
+| 010  | Add knip and Cloudflare typecheck to CI | P2 | S | — | DONE |
+| 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | DONE |
+| 012  | Add checksum verification to self-updater | P1 | M | — | DONE |
+| 013  | Add SSRF protection to Cloudflare Worker http.fetch | P1 | M | — | DONE |
+| 014  | Add race-condition tests for sync controller | P2 | M | — | DONE |
+| 015  | Replace error: any with error: unknown in IBKR catch blocks | P3 | S | — | DONE |
+| 016  | Add plugin discovery via GitHub search | P3 | M | — | DONE |
 | 017  | Register missing connection sources (fear-greed, market-movers, thirteenf) | P2 | S | — | DONE |
-| 018  | Enforce strict Origin check on Gloom Cloud proxy | P1 | S | — | TODO |
+| 018  | Enforce strict Origin check on Gloom Cloud proxy | P1 | S | — | DONE |
 | 019  | Replace O(n²) mergeStatementsByPeriod with last-group-only check | P2 | S | — | DONE |
-| 020  | Use relayError for non-OK upstream responses in proxyToGloomCloud | P2 | S | — | TODO |
+| 020  | Use relayError for non-OK upstream responses in proxyToGloomCloud | P2 | S | — | DONE |
 | 021  | Require authentication for BYOK keys info endpoint | P2 | S | — | DONE |
 | 022  | Add Treasury auctions pane | P2 | M | — | DONE |
-| 023  | Add volatility and sentiment term-structure pane | P2 | M | — | DONE |
-| 024  | Add corporate and municipal bond search pane | P2 | L | — | PARTIAL — Phase 1 pane built; cloud FRED proxy allowlist needs BAML corporate series |
+| 023  | Add volatility and sentiment term-structure pane | P2 | M | — | DONE (gated; needs FRED proxy allowlist) |
+| 024  | Add corporate and municipal bond search pane | P2 | L | — | DONE (gated; needs FRED proxy allowlist) |
 | 025  | Add short interest pane (Godel SI parity) | P2 | M | — | TODO |
 | 026  | Add dividend yield pane (Godel DVD parity) | P2 | M | — | TODO |
 | 027  | Add market halts pane (Godel HALT parity) | P2 | M | — | TODO |
 | 028  | Add IPO calendar pane (Godel IPO parity) | P2 | M | — | TODO |
 | 029  | Add Black-Scholes options calculator pane (Godel OVME parity) | P3 | S | — | TODO |
-| 011  | Remove dead dependencies and complete .env.example | P3 | S | 010 | TODO |
-| 012  | Add checksum verification to self-updater | P1 | M | — | TODO |
-| 013  | Add SSRF protection to Cloudflare Worker http.fetch | P1 | M | — | TODO |
-| 014  | Add race-condition tests for sync controller | P2 | M | — | TODO |
-| 015  | Replace error: any with error: unknown in IBKR catch blocks | P3 | S | — | TODO |
-| 016  | Add plugin discovery via GitHub search | P3 | M | — | TODO |
 
 ## Dependency notes
 
