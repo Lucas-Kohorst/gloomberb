@@ -111,6 +111,44 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
 
+  test("maps crypto slash pairs onto Yahoo hyphen symbols", () => {
+    expect(getYahooSymbolsToTry("BTC/USD", "CCC")).toEqual(["BTC-USD"]);
+    expect(getYahooSymbolsToTry("ETH/USD", "")).toEqual(["ETH-USD"]);
+    expect(getYahooSymbolsToTry("BTC-USD", "CCC")).toEqual(["BTC-USD"]);
+  });
+
+  test("quotes crypto slash pairs through the Yahoo hyphen symbol", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const requested: string[] = [];
+    provider.fetchChart = async (symbol: string) => {
+      requested.push(symbol);
+      return {
+        meta: {
+          currency: "USD",
+          regularMarketPrice: 64_000,
+          shortName: "Bitcoin USD",
+          exchangeName: "CCC",
+          currentTradingPeriod: {
+            regular: { start: 0, end: 4_000_000_000 },
+          },
+        },
+        history: [
+          { date: new Date("2026-08-17T00:00:00Z"), close: 63_000 },
+          { date: new Date("2026-08-18T00:00:00Z"), close: 64_000 },
+        ],
+      };
+    };
+    provider.fetchQuoteSupplement = async () => ({ marketCap: 1_200_000_000_000 });
+    provider.fetchExtendedHoursData = async () => ({});
+
+    const quote = await provider.getQuote("BTC/USD", "CCC");
+
+    expect(requested).toEqual(["BTC-USD"]);
+    expect(quote.price).toBe(64_000);
+    expect(quote.changePercent).toBeCloseTo((64_000 - 63_000) / 63_000 * 100, 5);
+    expect(quote.marketCap).toBe(1_200_000_000_000);
+  });
+
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
     let requested = false;

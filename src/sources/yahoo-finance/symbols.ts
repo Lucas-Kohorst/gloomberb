@@ -44,6 +44,8 @@ const KNOWN_SUFFIXES = new Set(
     .concat(GENERIC_SUFFIX_FALLBACKS.filter(Boolean)),
 );
 
+const CRYPTO_PAIR_RE = /^[A-Z0-9]{2,10}[-/][A-Z]{3}$/i;
+
 export function getYahooSymbol(ticker: string, exchange: string): string {
   if (tickerHasYahooSuffix(ticker)) return ticker;
   const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
@@ -54,6 +56,9 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
   if (tickerHasYahooSuffix(ticker)) return [ticker];
 
   const normalized = normalizeYahooTicker(ticker, exchange);
+  if (isYahooCryptoPair(ticker) || isYahooCryptoPair(normalized) || exchange === "CCC") {
+    return [normalized];
+  }
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
   if (!exchange) {
@@ -94,7 +99,12 @@ function normalizeYahooTicker(ticker: string, exchange: string): string {
   if (isHongKongExchange(exchange) && /^\d+$/.test(ticker)) {
     return ticker.padStart(4, "0");
   }
-  return ticker.replace(/ /g, "-");
+  // Yahoo crypto pairs are BTC-USD; Twelve Data / IBKR / UI often use BTC/USD.
+  return ticker.replace(/ /g, "-").replace(/\//g, "-");
+}
+
+function isYahooCryptoPair(ticker: string): boolean {
+  return CRYPTO_PAIR_RE.test(ticker.trim());
 }
 
 function isHongKongExchange(exchange: string): boolean {

@@ -1,4 +1,7 @@
+import { withConnectionRequest } from "../../plugins/builtin/connections/register";
 import { httpFetch } from "../../utils/http-transport";
+
+const YAHOO_CONNECTION_ID = "yahoo";
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1500;
@@ -109,19 +112,21 @@ export class YahooHttpClient {
   }
 
   private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-        if (!RETRYABLE_ERROR.test(error instanceof Error ? error.message : String(error)) || attempt === MAX_RETRIES) {
-          throw error;
+    return withConnectionRequest(YAHOO_CONNECTION_ID, "fetch", async () => {
+      let lastError: unknown;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          return await fn();
+        } catch (error) {
+          lastError = error;
+          if (!RETRYABLE_ERROR.test(error instanceof Error ? error.message : String(error)) || attempt === MAX_RETRIES) {
+            throw error;
+          }
+          const delay = Math.min(30_000, RETRY_BASE_MS * Math.pow(2, attempt)) + Math.round(Math.random() * 300);
+          await sleep(delay);
         }
-        const delay = Math.min(30_000, RETRY_BASE_MS * Math.pow(2, attempt)) + Math.round(Math.random() * 300);
-        await sleep(delay);
       }
-    }
-    throw lastError;
+      throw lastError;
+    });
   }
 }

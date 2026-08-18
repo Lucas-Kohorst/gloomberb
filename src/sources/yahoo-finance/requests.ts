@@ -141,39 +141,46 @@ export async function fetchYahooQuoteSupplement(
     | "open"
     | "high"
     | "low"
+    | "marketCap"
   >
 > {
   try {
-    const params = new URLSearchParams({ modules: "summaryDetail" });
+    const params = new URLSearchParams({ modules: "price,summaryDetail" });
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
     const data = await http.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
-    const summaryDetail = data.quoteSummary?.result?.[0]?.summaryDetail;
-    if (!summaryDetail) return {};
+    const result = data.quoteSummary?.result?.[0];
+    const summaryDetail = result?.summaryDetail;
+    if (!summaryDetail && result?.price?.marketCap == null) return {};
 
     const bid = normalizePositiveMarketValue(
-      financeRawNumber(summaryDetail.bid),
+      financeRawNumber(summaryDetail?.bid),
       currencyDivisor,
     );
     const ask = normalizePositiveMarketValue(
-      financeRawNumber(summaryDetail.ask),
+      financeRawNumber(summaryDetail?.ask),
       currencyDivisor,
     );
-    const bidSize = financeRawNumber(summaryDetail.bidSize);
-    const askSize = financeRawNumber(summaryDetail.askSize);
+    const bidSize = financeRawNumber(summaryDetail?.bidSize);
+    const askSize = financeRawNumber(summaryDetail?.askSize);
     const previousClose = normalizeMarketValue(
-      financeRawNumber(summaryDetail.previousClose),
+      financeRawNumber(summaryDetail?.previousClose),
       currencyDivisor,
     );
     const open = normalizeMarketValue(
-      financeRawNumber(summaryDetail.open),
+      financeRawNumber(summaryDetail?.open),
       currencyDivisor,
     );
     const high = normalizeMarketValue(
-      financeRawNumber(summaryDetail.dayHigh),
+      financeRawNumber(summaryDetail?.dayHigh),
       currencyDivisor,
     );
     const low = normalizeMarketValue(
-      financeRawNumber(summaryDetail.dayLow),
+      financeRawNumber(summaryDetail?.dayLow),
+      currencyDivisor,
+    );
+    const marketCap = normalizePositiveMarketValue(
+      financeRawNumber(result?.price?.marketCap)
+      ?? financeRawNumber(summaryDetail?.marketCap),
       currencyDivisor,
     );
 
@@ -186,6 +193,7 @@ export async function fetchYahooQuoteSupplement(
       open,
       high,
       low,
+      marketCap,
     };
   } catch {
     return {};
