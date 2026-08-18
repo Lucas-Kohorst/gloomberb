@@ -41,6 +41,7 @@ import { applyResolvedSeriesTransform } from "./transforms";
 import { clipSeriesToWindow } from "./alignment";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 import { resolutionForExplicitMarketPeriods } from "./market-resolution";
+import { sourceFallbackLabel } from "./series-label";
 import {
   canonicalExchange,
   publicTickerKey,
@@ -154,33 +155,12 @@ function instrumentLabel(spec: Extract<ChartSeriesSpec["source"], { kind: "secur
   return publicTickerKey(spec.instrument.symbol, spec.instrument.exchange);
 }
 
-function seriesFallbackLabel(source: ChartSeriesSpec["source"]): string {
-  switch (source.kind) {
-    case "economic":
-      return `FRED ${source.seriesId}`;
-    case "adjacent-index":
-      return `ADJ ${source.indexId}`;
-    case "benchmark":
-      return `${source.selector} ${source.metric}`;
-    case "poll":
-      return `${source.subject} ${source.choice}`;
-    case "prediction-market":
-      return `${source.venue === "kalshi" ? "KALSHI" : "POLY"} ${source.marketId}`;
-    case "constant":
-      return String(source.value);
-    default: {
-      const field = getTimeSeriesField(source.fieldId);
-      return `${instrumentLabel(source)} ${field?.shortLabel ?? source.fieldId.split(".").at(-1) ?? "Series"}`;
-    }
-  }
-}
-
 // A series that fails to load keeps its place with no observations. Dropping it
 // made a series the user had added disappear from the legend while it still sat
 // in the series editor, with nothing on screen to explain the difference.
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
   const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
-  const label = seriesFallbackLabel(spec.source);
+  const label = sourceFallbackLabel(spec.source);
   return {
     id: spec.id,
     label: spec.label?.trim() || label,
@@ -632,7 +612,7 @@ function baseUniversalSeries(
   ) {
     return null;
   }
-  const fallbackLabel = seriesFallbackLabel(spec.source);
+  const fallbackLabel = sourceFallbackLabel(spec.source);
   const unitGroup = loaded.unitGroup ?? `universal:${spec.source.kind}`;
   return {
     id: spec.id,
@@ -1121,12 +1101,15 @@ export async function resolveChartSpecData(
       const constantSpec = constantSpecs.get(entry.id);
       if (!constantSpec || constantSpec.source.kind !== "constant") continue;
       const value = constantSpec.source.value;
-      entry.points = timestamps.map((time) => ({
-        date: new Date(time),
-        observedAt: new Date(time),
-        value,
-        provenance: { quality: "derived" as const },
-      }));
+      entry.points = timestamps.map((time) => {
+        const date = new Date(time);
+        return {
+          date,
+          observedAt: date,
+          value,
+          provenance: { quality: "derived" as const },
+        };
+      });
     }
   }
 

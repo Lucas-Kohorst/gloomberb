@@ -13,6 +13,7 @@
  */
 
 import type { ChartSpec, SeriesStyle, PanelScale } from "../time-series/types";
+import { isRecord } from "../utils/is-record";
 
 export const SHARE_KINDS = ["article", "chart", "table"] as const;
 
@@ -199,9 +200,7 @@ export function base64urlDecode(encoded: string): string | null {
 // ---------------------------------------------------------------------------
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
+  return isRecord(value) ? value : null;
 }
 
 function asString(value: unknown): string | null {

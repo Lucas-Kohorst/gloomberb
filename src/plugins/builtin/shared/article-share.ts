@@ -4,6 +4,7 @@ import type { SubstackArticleSummary } from "../substack/types";
 import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
 import { getBrowserLocation } from "../../../utils/browser-location";
+import { parseDisplayDate } from "../../../utils/datetime-format";
 import { usePluginAppActions } from "../../runtime";
 import { createShare } from "../../../sources/share-service";
 import {
@@ -21,9 +22,7 @@ export type { ArticleShareStoryItem, ArticleSharePayload } from "../../../shares
 export { SHARE_HOSTED_ORIGIN } from "../../../shares/routes";
 
 function toDateISO(value: Date | string | null | undefined): string | undefined {
-  if (!value) return undefined;
-  const date = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+  return parseDisplayDate(value)?.toISOString();
 }
 
 // ---------------------------------------------------------------------------
