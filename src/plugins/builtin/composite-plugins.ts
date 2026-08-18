@@ -10,6 +10,7 @@ import { correlationModule } from "./correlation";
 import { creditConditionsModule } from "./credit-conditions";
 import { economicCalendarModule } from "./econ";
 import { earningsModule } from "./earnings";
+import { ipoCalendarModule } from "./ipo-calendar";
 import { fearGreedModule } from "./fear-greed";
 import { futuresModule } from "./futures";
 import { fxMatrixModule } from "./fx-matrix";
@@ -86,7 +87,7 @@ export const macroPlugin = composeBuiltinPlugin({
   id: "macro",
   name: "Macro",
   version: "1.0.0",
-  description: "Economic calendar, rates, volatility, credit spreads, Treasury auctions, earnings, and live financial TV.",
+  description: "Economic calendar, rates, volatility, credit spreads, Treasury auctions, earnings, IPOs, and live financial TV.",
   toggleable: true,
   modules: [
     macroSharedResourcesModule,
@@ -96,6 +97,7 @@ export const macroPlugin = composeBuiltinPlugin({
     creditConditionsModule,
     treasuryAuctionsModule,
     earningsModule,
+    ipoCalendarModule,
     tvModule,
   ],
 });

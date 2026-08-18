@@ -269,6 +269,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `VIX` | VIX 30-day/3-month implied-volatility curve |
 | `CRD` | Credit spreads |
 | `ERN` | Earnings calendar |
+| `IPO` | Upcoming and recent IPOs |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
