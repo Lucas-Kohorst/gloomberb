@@ -153,6 +153,13 @@ export type QuoteSummaryResponse = {
       };
       defaultKeyStatistics?: {
         payoutRatio?: { raw?: number } | number | null;
+        sharesShort?: { raw?: number } | number | null;
+        sharesShortPriorMonth?: { raw?: number } | number | null;
+        sharesShortPreviousMonthDate?: { raw?: number; fmt?: string } | number | string | null;
+        dateShortInterest?: { raw?: number; fmt?: string } | number | string | null;
+        shortRatio?: { raw?: number } | number | null;
+        shortPercentOfFloat?: { raw?: number } | number | null;
+        floatShares?: { raw?: number } | number | null;
       };
       majorHoldersBreakdown?: {
         insidersPercentHeld?: { raw?: number } | number | null;
