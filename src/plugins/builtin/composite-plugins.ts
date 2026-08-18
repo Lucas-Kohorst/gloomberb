@@ -1,3 +1,4 @@
+import { bondSearchModule } from "./bond-search";
 import { portfolioAnalyticsModule } from "./analytics";
 import { brokerManagerModule } from "./broker-manager";
 import { changelogModule } from "./changelog";
@@ -65,7 +66,8 @@ export const macroPlugin = composeBuiltinPlugin({
   id: "macro",
   name: "Macro",
   version: "1.0.0",
-  description: "Economic calendar, yield curve, earnings calendar, and live financial TV.",
+  description:
+    "Economic calendar, yield curve, corporate bond yields, earnings calendar, and live financial TV.",
   toggleable: true,
-  modules: [economicCalendarModule, yieldCurveModule, earningsModule, tvModule],
+  modules: [economicCalendarModule, yieldCurveModule, bondSearchModule, earningsModule, tvModule],
 });
