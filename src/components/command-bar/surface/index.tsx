@@ -7,6 +7,10 @@ import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
 import { buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
+import { useNewsArticles } from "../../../news/hooks";
+import { ARTICLE_SEARCH_QUERY, looksLikeArticleQuery } from "../../../plugins/builtin/news/wire/article-search";
+import { buildArticleSearchResultItems } from "../routes/root/article-results";
+import { openUrl } from "../../../components/ui/external-link";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -247,6 +251,18 @@ export function CommandBar({
     ),
   }), [askAssistNow, assistActive, assistAutoAsk, assistState, planAccess.emailVerified, startAssistSignUp]);
 
+  // Article lookup (`ART`): match the typed query against the loaded news feed
+  // and surface matching stories as command-bar rows that open externally.
+  const newsState = useNewsArticles(looksLikeArticleQuery(rootQuery) ? ARTICLE_SEARCH_QUERY : null);
+  const articleResultItems = useMemo(() => buildArticleSearchResultItems({
+    articles: newsState.articles,
+    query: rootQuery,
+    onOpen: (article) => {
+      openUrl(article.url);
+      closeAll({ revertThemePreview: false });
+    },
+  }), [newsState.articles, rootQuery, closeAll]);
+
   const {
     activeMatch,
     orderedRootResults,
@@ -283,6 +299,7 @@ export function CommandBar({
     paneShortcutItems,
     pluginCommandItems,
     pluginCommandResultItems,
+    articleResultItems,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,
