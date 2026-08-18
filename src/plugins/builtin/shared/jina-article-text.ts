@@ -138,6 +138,137 @@ export function preferredArticleBody(summary: string, fullText: string | null): 
   return extracted.length > clean.length ? extracted : summary;
 }
 
+/** Why a Jina/reader extraction failed — drives user-facing copy. */
+export type ReaderFailureKind = "blocked" | "auth" | "timeout" | "network" | "http" | "unknown";
+
+export interface ReaderFailure {
+  kind: ReaderFailureKind;
+  /** Short, changeable footer status (not the body explanation). */
+  status: string;
+  /** Body copy explaining what happened and what the user can do. */
+  message: string;
+}
+
+const ABUSE_OR_BLOCK_RE = (
+  /AbuseAlleviationError|anonymous access to domain|access to this page has been denied|captcha|ddos attack suspected|too many requests|forbidden|blocked until/i
+);
+
+/**
+ * Map an HTTP failure (and optional response body) into user-facing reader state.
+ *
+ * Publishers like Investing.com are blocked at Jina's abuse layer (403 +
+ * AbuseAlleviationError). That is expected for some feeds — not a network bug.
+ */
+export function classifyReaderHttpFailure(status: number, body = ""): ReaderFailure {
+  const text = body.trim();
+  if (status === 401 || status === 407) {
+    return {
+      kind: "auth",
+      status: "reader auth failed",
+      message: "Article reader authentication failed.",
+    };
+  }
+  if (status === 403 || status === 451 || ABUSE_OR_BLOCK_RE.test(text)) {
+    return {
+      kind: "blocked",
+      status: "blocked",
+      message: "Full text unavailable — this publisher blocks automated readers.",
+    };
+  }
+  if (status === 408 || status === 504) {
+    return {
+      kind: "timeout",
+      status: "reader timed out",
+      message: "The article reader timed out.",
+    };
+  }
+  if (status === 429) {
+    return {
+      kind: "blocked",
+      status: "reader rate limited",
+      message: "The article reader is rate-limited right now.",
+    };
+  }
+  if (status >= 500) {
+    return {
+      kind: "http",
+      status: "reader unavailable",
+      message: "The article reader is temporarily unavailable.",
+    };
+  }
+  return {
+    kind: "http",
+    status: "reader failed",
+    message: `Could not load the full article (HTTP ${status}).`,
+  };
+}
+
+/** Map a thrown fetch/abort error into user-facing reader state. */
+export function classifyReaderThrow(error: unknown): ReaderFailure {
+  if (
+    error
+    && typeof error === "object"
+    && "readerFailure" in error
+    && isReaderFailure((error as { readerFailure: unknown }).readerFailure)
+  ) {
+    return (error as { readerFailure: ReaderFailure }).readerFailure;
+  }
+  if (isReaderFailure(error)) {
+    return { kind: error.kind, status: error.status, message: error.message };
+  }
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  if (name === "AbortError" || /aborted|timed?\s*out|timeout/i.test(message)) {
+    return {
+      kind: "timeout",
+      status: "reader timed out",
+      message: "The article reader timed out.",
+    };
+  }
+  if (/failed to fetch|networkerror|network request failed|econnreset|enotfound|econnrefused/i.test(message)) {
+    return {
+      kind: "network",
+      status: "reader offline",
+      message: "Could not reach the article reader. Check your connection.",
+    };
+  }
+  return {
+    kind: "unknown",
+    status: "reader failed",
+    message: "Could not load the full article.",
+  };
+}
+
+export function isReaderFailure(value: unknown): value is ReaderFailure {
+  return (
+    !!value
+    && typeof value === "object"
+    && "kind" in value
+    && "status" in value
+    && "message" in value
+    && typeof (value as ReaderFailure).kind === "string"
+    && typeof (value as ReaderFailure).status === "string"
+    && typeof (value as ReaderFailure).message === "string"
+  );
+}
+
+/**
+ * Body note shown above fallback/summary text when extraction failed.
+ * Kept shorter than `failure.message` so the footer can own the status line.
+ */
+export function readerFallbackNotice(kind: ReaderFailureKind | null | undefined, hasFallback: boolean): string | null {
+  if (!kind) return null;
+  if (kind === "blocked") {
+    return hasFallback
+      ? "Showing available summary — full text blocked by this publisher."
+      : null;
+  }
+  if (kind === "timeout" || kind === "network" || kind === "http" || kind === "auth" || kind === "unknown") {
+    return hasFallback ? "Showing available summary — full text could not be loaded." : null;
+  }
+  return null;
+}
+
 type BlockKind = "chrome" | "nav-label" | "content";
 
 function classifyBlock(block: string): BlockKind {
