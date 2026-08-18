@@ -18,9 +18,11 @@ import {
   shouldConsumeWebAppKeyDown,
   webKeySequence,
 } from "./key-event";
+import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../../theme/font-scale";
 
-export const WEB_CELL_WIDTH = 8;
-export const WEB_CELL_HEIGHT = 18;
+// Re-exported as live bindings so every consumer follows the configured font
+// size (see theme/font-scale) without threading metrics through the tree.
+export { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../../theme/font-scale";
 
 function toKeyEventLike(event: KeyboardEvent): KeyEventLike {
   const key = normalizeWebKeyName(event.key);

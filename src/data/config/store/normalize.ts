@@ -13,6 +13,7 @@ import {
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
+import { clampFontSize } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig } from "./migrations";
 
@@ -57,6 +58,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(candidate.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof candidate.valueFlashingEnabled === "boolean" ? candidate.valueFlashingEnabled : defaults.valueFlashingEnabled,
+    fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
@@ -111,12 +113,18 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
+    fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
   };
 
   return persisted;
+}
+
+function sanitizeFontSize(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return clampFontSize(value);
 }
 
 const ONBOARDING_STAGES = new Set<OnboardingProgress["stage"]>([

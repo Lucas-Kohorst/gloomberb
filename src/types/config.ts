@@ -153,6 +153,7 @@ export interface AppConfig {
   theme: string;
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
+  fontSize: number;
   recentTickers: string[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;
@@ -633,6 +634,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       renderer: "auto",
     },
     valueFlashingEnabled: true,
+    fontSize: 12,
     recentTickers: [],
   };
 }
