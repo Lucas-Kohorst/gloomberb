@@ -32,6 +32,7 @@ export class CloudApiRequestTransport {
   private sessionToken: string | null = null;
   private sessionCookieName: SessionCookieName | null = null;
   private websocketToken: string | null = null;
+  private hostedSocketBaseUrl: string | null = null;
   private readonly fetchTransport: CloudApiFetchTransport | null;
   private readonly marketRequestTimeoutMs: number;
 
@@ -69,6 +70,24 @@ export class CloudApiRequestTransport {
 
   getSocketAuthToken(): string | null {
     return this.websocketToken || this.sessionToken;
+  }
+
+  /**
+   * In the hosted web client the WebSocket must connect to the Worker's own
+   * origin (which relays to Gloom Cloud with the server-held session), not
+   * directly to api.gloom.sh. Setting this switches the socket to same-origin,
+   * cookie-authenticated mode.
+   */
+  setHostedSocketBaseUrl(url: string | null): void {
+    this.hostedSocketBaseUrl = url;
+  }
+
+  isHostedSocket(): boolean {
+    return this.hostedSocketBaseUrl !== null;
+  }
+
+  getSocketBaseUrl(): string {
+    return this.hostedSocketBaseUrl ?? this.baseUrl;
   }
 
   clearWebSocketTokenForFallback(): boolean {
@@ -133,7 +152,11 @@ export class CloudApiRequestTransport {
 
     if (!text) return undefined as T;
     const parsed = JSON.parse(text) as T & { token?: string };
-    if (typeof parsed?.token === "string" && parsed.token.length > 0) {
+    // The hosted client authenticates the socket through the Worker's HttpOnly
+    // cookie, so it must never hold a raw upstream token — the Worker also
+    // strips it from response bodies, but never capture it here as defense in
+    // depth.
+    if (!this.isHostedSocket() && typeof parsed?.token === "string" && parsed.token.length > 0) {
       this.websocketToken = parsed.token;
     }
     return parsed as T;
