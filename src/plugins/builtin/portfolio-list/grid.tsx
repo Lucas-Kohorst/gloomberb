@@ -88,6 +88,7 @@ export function PortfolioGrid({
   setCursorSymbol,
   onRowActivate,
   onToggleViewMode,
+  onChartSelected,
   onDeleteSelected,
   focused,
   width,
@@ -101,6 +102,7 @@ export function PortfolioGrid({
   setCursorSymbol: (symbol: string) => void;
   onRowActivate: (ticker: TickerRecord) => void;
   onToggleViewMode: () => void;
+  onChartSelected?: () => void;
   onDeleteSelected?: () => void;
   focused?: boolean;
   width: number;
@@ -138,6 +140,12 @@ export function PortfolioGrid({
       event.preventDefault();
       event.stopPropagation();
       onToggleViewMode();
+      return;
+    }
+    if (onChartSelected && isPlainKey(event, "g")) {
+      event.preventDefault();
+      event.stopPropagation();
+      onChartSelected();
       return;
     }
     if (onDeleteSelected && isPlainKey(event, "d")) {

@@ -58,9 +58,11 @@ import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
 import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 
+const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
+
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const { notify } = usePluginAppActions();
+  const { notify, createPaneFromTemplate } = usePluginAppActions();
   const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
@@ -249,6 +251,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
+  const chartSelectedTicker = useCallback((ticker?: TickerRecord | null) => {
+    const symbol = ticker?.metadata.ticker;
+    if (!symbol) return;
+    createPaneFromTemplate(CHART_COMPOSER_TEMPLATE_ID, { arg: symbol });
+  }, [createPaneFromTemplate]);
+
   const toggleViewMode = useCallback(() => {
     if (!isPortfolioTab) return;
     setViewMode((current) => current === "table" ? "grid" : "table");
@@ -368,10 +376,18 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
+    if (isPlainKey(event, "g")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      chartSelectedTicker(sortedTickers[safeSelectedIdx]);
+      return true;
+    }
+
     return false;
   }, [
     canMutateCollection,
     cashDrawerExpanded,
+    chartSelectedTicker,
     deleteSelectedTicker,
     focused,
     isPortfolioTab,
@@ -460,6 +476,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   usePaneFooter("portfolio-list", () => ({
     info: summaryFooterInfo,
     hints: [
+      {
+        id: "graph",
+        key: "g",
+        label: "raph",
+        onPress: () => chartSelectedTicker(selectedTicker),
+        disabled: !selectedTicker,
+      },
       ...(canMutateCollection ? [
         { id: "add", key: "a", label: "dd", onPress: toggleAdd },
         {
@@ -482,6 +505,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }), [
     canMutateCollection,
     cashDrawerExpanded,
+    chartSelectedTicker,
     deleteSelectedTicker,
     selectedTicker,
     setCashDrawerExpanded,
@@ -554,6 +578,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           setCursorSymbol={(symbol) => setCursorSymbol(symbol)}
           onRowActivate={handleRowActivate}
           onToggleViewMode={toggleViewMode}
+          onChartSelected={() => chartSelectedTicker(selectedTicker)}
           onDeleteSelected={canMutateCollection ? deleteSelectedTicker : undefined}
           focused={focused && !quickAddFocused}
           width={width}

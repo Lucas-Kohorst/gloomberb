@@ -625,6 +625,7 @@ describe("PortfolioListPane cash and margin UI", () => {
 
     await flushFrame();
     const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[g]raph");
     expect(frame).toContain("[a]dd");
     expect(frame).toContain("[d]elete");
     expect(frame).toContain("AAPL");
@@ -641,6 +642,39 @@ describe("PortfolioListPane cash and margin UI", () => {
       type: "success",
       body: "Removed AAPL from Watchlist.",
     });
+  });
+
+  test("footer graph charts the selected portfolio ticker", async () => {
+    const config = createManualCollectionConfig("main");
+    const opened: Array<{ templateId: string; options?: { arg?: string } }> = [];
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="main"
+        ticker={makeTicker({ portfolios: ["main"], watchlists: [], positions: [] })}
+        runtime={createTestPluginRuntime({
+          createPaneFromTemplate(templateId, options) {
+            opened.push({ templateId, options });
+          },
+        })}
+        paneHeight={12}
+        showFooter
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[g]raph");
+    expect(frame).toContain("AAPL");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("g");
+      await testSetup!.renderOnce();
+    });
+
+    expect(opened).toEqual([{ templateId: "chart-composer-pane", options: { arg: "AAPL" } }]);
   });
 
   test("quick-add adds an exact ticker to a manual portfolio", async () => {
