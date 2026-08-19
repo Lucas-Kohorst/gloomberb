@@ -318,7 +318,13 @@ describe("Adjacent Cloud keyed-data providers", () => {
     );
     expect(response?.status).toBe(200);
     const body = await response?.json() as { providers: Array<{ id: string }> };
-    expect(body.providers.map((provider) => provider.id).sort()).toEqual(["nws-cli", "twc-kalshi"]);
+    expect(body.providers.map((provider) => provider.id).sort()).toEqual([
+      "adjacent",
+      "jina-ai",
+      "llm-stats",
+      "nws-cli",
+      "twc-kalshi",
+    ]);
   });
 
   test("TWC alias allowlists kalshi/api and rejects other weather.com paths", async () => {
@@ -386,5 +392,46 @@ PRECIPITATION (IN)
     expect(body.icao).toBe("KNYC");
     expect(body.highF).toBe(87);
     expect(body.printKind).toBe("final");
+  });
+
+  test("llm-stats, Adjacent, and Jina share GET /api/data", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof globalThis.fetch;
+
+    const llm = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/llm-stats/v1/models"),
+      makeEnv(),
+    );
+    expect(llm?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
+
+    const adjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/public/markets?limit=5"),
+      makeEnv(),
+    );
+    expect(adjacent?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/public/markets?limit=5");
+
+    const jina = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/jina-ai/read?url=https://example.com/story"),
+      makeEnv(),
+    );
+    expect(jina?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://r.jina.ai/https://example.com/story");
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/jina-ai/read?url=http://127.0.0.1/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(403);
+
+    const badAdjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/http://evil.example"),
+      makeEnv(),
+    );
+    expect(badAdjacent?.status).toBe(400);
   });
 });

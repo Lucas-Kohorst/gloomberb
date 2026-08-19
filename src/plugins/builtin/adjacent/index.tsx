@@ -11,13 +11,11 @@ import {
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { createAdjacentNewsCapability } from "./news";
-import { registerConnectionSource } from "../connections/register";
 import { usePluginConfigState } from "../../runtime";
 
 const ADJACENT_API_KEY_CONFIG = "adjacentApiKey";
 
 let adjacentClient: AdjacentClient | null = null;
-let disposeAdjacentConnection: (() => void) | null = null;
 
 function getOrCreateClient(apiKey: string | null): AdjacentClient {
   const normalizedKey = apiKey ?? null;
@@ -105,14 +103,6 @@ export const adjacentModule: PluginModule = {
 
     // Register news capability (best-effort in partial/test contexts).
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
-    disposeAdjacentConnection = registerConnectionSource({
-      id: "adjacent",
-      name: "Adjacent",
-      kind: "prediction-market",
-      pluginId: "adjacent",
-      priority: 200,
-      authRequired: false,
-    });
 
     // Commands
     ctx.registerCommand({
@@ -152,8 +142,6 @@ export const adjacentModule: PluginModule = {
   },
 
   dispose() {
-    disposeAdjacentConnection?.();
-    disposeAdjacentConnection = null;
     resetAdjacentPersistence();
     adjacentClient = null;
   },

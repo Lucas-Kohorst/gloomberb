@@ -1,13 +1,9 @@
 import type { GloomPlugin } from "../../../types/plugin";
-import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
 import {
-  LLM_STATS_CONNECTION_ID,
   LLM_STATS_PANE_ID,
   LLM_STATS_PLUGIN_ID,
 } from "./types";
-
-let disposeConnection: (() => void) | null = null;
 
 export const llmStatsPlugin: GloomPlugin = {
   id: LLM_STATS_PLUGIN_ID,
@@ -51,22 +47,6 @@ export const llmStatsPlugin: GloomPlugin = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
-
-  setup() {
-    disposeConnection = registerConnectionSource({
-      id: LLM_STATS_CONNECTION_ID,
-      name: "llm-stats",
-      kind: "api",
-      pluginId: LLM_STATS_PLUGIN_ID,
-      priority: 300,
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeConnection?.();
-    disposeConnection = null;
-  },
 };
 
 export default llmStatsPlugin;

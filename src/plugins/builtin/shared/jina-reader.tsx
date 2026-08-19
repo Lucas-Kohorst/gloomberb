@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
 import { MarkdownText } from "../../../components/markdown-text";
+import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
 import { colors } from "../../../theme/colors";
 import {
@@ -11,7 +12,7 @@ import {
   JINA_READER_HEADERS,
 } from "./jina-article-text";
 
-const JINA_CONNECTION_ID = "jina-ai";
+const JINA_CONNECTION_ID = ADJACENT_CLOUD_CONNECTION_ID;
 
 export interface JinaArticleState {
   content: string | null;
@@ -50,9 +51,12 @@ export function useJinaArticle(url: string, enabled = true) {
     const controller = new AbortController();
     setState((current) => ({ ...current, loading: true, error: null }));
     void withConnectionRequest(JINA_CONNECTION_ID, "render article", async () => {
-      const response = await fetch(`${JINA_READER_ENDPOINT}${target}`, {
+      const readerUrl = isHostedWebClient()
+        ? adjacentCloudDataUrl("jina-ai", "read", `url=${encodeURIComponent(target)}`)
+        : `${JINA_READER_ENDPOINT}${target}`;
+      const response = await fetch(readerUrl, {
         signal: controller.signal,
-        headers: JINA_READER_HEADERS,
+        headers: isHostedWebClient() ? undefined : JINA_READER_HEADERS,
       });
       if (!response.ok) throw new Error(`Reader request failed (${response.status})`);
       return response.text();

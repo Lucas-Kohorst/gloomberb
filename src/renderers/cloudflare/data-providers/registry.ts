@@ -1,3 +1,6 @@
+import { adjacentProvider } from "./adjacent";
+import { jinaAiProvider } from "./jina-ai";
+import { llmStatsProvider } from "./llm-stats";
 import { nwsCliProvider } from "./nws-cli";
 import { twcKalshiProvider } from "./twc-kalshi";
 import type { KeyedDataProvider, KeyedDataProviderSummary } from "./types";
@@ -12,6 +15,9 @@ import type { KeyedDataProvider, KeyedDataProviderSummary } from "./types";
 const PROVIDERS: readonly KeyedDataProvider[] = [
   twcKalshiProvider,
   nwsCliProvider,
+  llmStatsProvider,
+  jinaAiProvider,
+  adjacentProvider,
 ];
 
 const BY_ID = new Map(PROVIDERS.map((provider) => [provider.id, provider]));

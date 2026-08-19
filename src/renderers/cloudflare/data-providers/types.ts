@@ -8,6 +8,9 @@
  *
  * Secrets stay on the Worker. Clients call `/api/data/{providerId}/…` and
  * never receive upstream API keys.
+ *
+ * Current providers: twc-kalshi, nws-cli, llm-stats, jina-ai, adjacent.
+ * They share one Connections row ("Adjacent Cloud").
  */
 
 export const KEYED_DATA_PATH = "/api/data";
