@@ -267,7 +267,9 @@ export function getPredictionColumnValue(
       return {
         text:
           market.kind === "group"
-            ? `${market.title} · ${market.marketCount} targets`
+            ? `${market.expanded ? "▾" : "▸"} ${market.title} · ${market.marketCount} targets`
+            : market.kind === "strike"
+              ? `  ${market.title}`
             : market.title,
       };
     case "target":

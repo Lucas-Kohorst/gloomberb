@@ -460,6 +460,8 @@ describe("prediction markets pane interactions", () => {
     await flushFrames(testSetup);
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
     await flushFrames(testSetup);
+    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    await flushFrames(testSetup);
     await emitKeypress(testSetup, { name: "down", sequence: "\u001b[B" });
     await flushFrames(testSetup);
 

@@ -84,7 +84,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     (controller.catalogLoadCount > 0 || controller.searchLoading);
   const detailTitle = resolvePredictionDetailTitle({
     detail: controller.detail,
-    selectedRow: controller.selectedRow,
+    selectedRow: controller.detailRow ?? controller.selectedRow,
     selectedSummary: controller.selectedSummary,
   });
   const marketUrl = controller.selectedSummary?.url || controller.selectedRow?.url || null;
@@ -314,7 +314,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           onPreviewOrder={controller.actions.previewOrder}
           onSelectMarket={controller.actions.selectMarket}
           scrollRef={controller.detailScrollRef}
-          selectedRow={controller.selectedRow}
+          selectedRow={controller.detailRow ?? controller.selectedRow}
           selectedSummary={controller.selectedSummary}
         />
       </Box>
@@ -338,9 +338,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         kind: "id",
         selectedId: controller.selectedRow?.key ?? null,
         getId: (row) => row.key,
-        onChange: (key, _row, _index, reason) =>
+        onChange: (key, row, _index, reason) =>
           controller.actions.setBrowseSelection(key, {
             debounceDetail: reason === "keyboard",
+            expandGroup: reason === "pointer" && row.kind === "group",
           }),
       }}
       onActivate={(row) =>

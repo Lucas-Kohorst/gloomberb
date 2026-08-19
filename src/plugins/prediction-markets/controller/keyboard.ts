@@ -35,6 +35,7 @@ interface UsePredictionControllerKeyboardParams {
   detailScrollRef: RefObject<ScrollBoxRenderable | null>;
   detailTab: PredictionDetailTab;
   effectiveVenueScope: PredictionVenueScope;
+  onBrowseEscape: () => void;
   focused: boolean;
   hideTabs: boolean;
   searchFocused: boolean;
@@ -59,6 +60,7 @@ export function usePredictionControllerKeyboard({
   effectiveVenueScope,
   focused,
   hideTabs,
+  onBrowseEscape,
   searchFocused,
   selectedRow,
   selectedSummaryKey,
@@ -160,6 +162,13 @@ export function usePredictionControllerKeyboard({
         return;
       }
 
+      if (command === "escape") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        onBrowseEscape();
+        return;
+      }
+
       if (command === "search") {
         event.stopPropagation?.();
         event.preventDefault?.();
@@ -237,6 +246,7 @@ export function usePredictionControllerKeyboard({
       focusSearch,
       focused,
       hideTabs,
+      onBrowseEscape,
       refreshCatalog,
       scrollDetailBy,
       searchFocused,

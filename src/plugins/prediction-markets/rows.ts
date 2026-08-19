@@ -3,8 +3,9 @@ import type {
   PredictionListRow,
   PredictionMarketSummary,
   PredictionSingleListRow,
+  PredictionStrikeListRow,
 } from "./types";
-import { getPredictionTopOutcome } from "./outcome-order";
+import { getPredictionTopOutcome, sortPredictionOutcomeMarkets } from "./outcome-order";
 
 function coerceTimestamp(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -250,4 +251,34 @@ export function buildPredictionListRows(
   }
 
   return rows;
+}
+
+export function buildPredictionStrikeRow(
+  market: PredictionMarketSummary,
+  parentKey: string,
+): PredictionStrikeListRow {
+  return {
+    ...buildSingleRow(market),
+    key: `${parentKey}::${market.key}`,
+    kind: "strike",
+    parentKey,
+    title: market.marketLabel,
+  };
+}
+
+/** Insert strike rows under the expanded event. Groups stay collapsed by default. */
+export function expandPredictionListRows(
+  rows: readonly PredictionListRow[],
+  expandedGroupKey: string | null,
+): PredictionListRow[] {
+  if (!expandedGroupKey) return [...rows];
+  const next: PredictionListRow[] = [];
+  for (const row of rows) {
+    next.push(row.kind === "group" && row.key === expandedGroupKey ? { ...row, expanded: true } : row);
+    if (row.kind !== "group" || row.key !== expandedGroupKey) continue;
+    for (const market of sortPredictionOutcomeMarkets(row.markets)) {
+      next.push(buildPredictionStrikeRow(market, row.key));
+    }
+  }
+  return next;
 }

@@ -6,7 +6,7 @@ import {
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
-import { buildPredictionListRows } from "./rows";
+import { buildPredictionListRows, expandPredictionListRows } from "./rows";
 import { getPredictionColumnValue } from "./metrics";
 import {
   attachPredictionMarketsPersistence,
@@ -183,6 +183,94 @@ describe("prediction markets plugin registration and services", () => {
     expect(rows[0]?.focusMarketKey).toBe("kalshi:KXFED-27APR-T4.25");
     expect(rows[0]?.focusYesPrice).toBe(0.48);
     expect(rows[0]?.volume24h).toBe(27000);
+  });
+
+  test("expands a grouped event into strike rows on the main list", () => {
+    const rows = buildPredictionListRows([
+      normalizeKalshiMarket(
+        {
+          ticker: "KXFED-27APR-T4.25",
+          title:
+            "Will the upper bound of the federal funds target rate be above 4.25%?",
+          yes_sub_title: "Above 4.25%",
+          event_ticker: "KXFED-27APR",
+          status: "open",
+          market_type: "binary",
+          last_price_dollars: "0.48",
+          volume_24h_fp: "15000",
+          strike_type: "greater",
+          floor_strike: "4.25",
+        } as any,
+        {
+          title: "Federal funds target rate after April 2026 FOMC",
+          sub_title: "Upper bound",
+          category: "Economics",
+          series_ticker: "KXFED",
+        },
+      )!,
+      normalizeKalshiMarket(
+        {
+          ticker: "KXFED-27APR-T4.50",
+          title:
+            "Will the upper bound of the federal funds target rate be above 4.50%?",
+          yes_sub_title: "Above 4.50%",
+          event_ticker: "KXFED-27APR",
+          status: "open",
+          market_type: "binary",
+          last_price_dollars: "0.31",
+          volume_24h_fp: "12000",
+          strike_type: "greater",
+          floor_strike: "4.50",
+        } as any,
+        {
+          title: "Federal funds target rate after April 2026 FOMC",
+          sub_title: "Upper bound",
+          category: "Economics",
+          series_ticker: "KXFED",
+        },
+      )!,
+    ]);
+    expect(expandPredictionListRows(rows, null)).toHaveLength(1);
+    const expanded = expandPredictionListRows(rows, rows[0]!.key);
+    expect(expanded.map((row) => row.kind)).toEqual(["group", "strike", "strike"]);
+    expect(expanded[0]).toMatchObject({ kind: "group", expanded: true });
+    expect(expanded[1]).toMatchObject({
+      kind: "strike",
+      parentKey: rows[0]!.key,
+      title: "Above 4.25%",
+    });
+  });
+
+  test("expands Polymarket multi-outcome events the same way", () => {
+    const rows = buildPredictionListRows([
+      normalizePolymarketMarket({
+        id: "pm-dem",
+        question: "Democratic nominee?",
+        groupItemTitle: "Democrat",
+        conditionId: "cond-dem",
+        outcomes: '["Yes","No"]',
+        outcomePrices: '["0.55","0.45"]',
+        volume24hr: 200000,
+        events: [{ id: "event-pres", title: "2028 Presidential nominee" } as any],
+      } as any)!,
+      normalizePolymarketMarket({
+        id: "pm-gop",
+        question: "Republican nominee?",
+        groupItemTitle: "Republican",
+        conditionId: "cond-gop",
+        outcomes: '["Yes","No"]',
+        outcomePrices: '["0.40","0.60"]',
+        volume24hr: 180000,
+        events: [{ id: "event-pres", title: "2028 Presidential nominee" } as any],
+      } as any)!,
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe("group");
+    expect(rows[0]?.venue).toBe("polymarket");
+    const expanded = expandPredictionListRows(rows, rows[0]!.key);
+    expect(expanded.map((row) => row.kind)).toEqual(["group", "strike", "strike"]);
+    expect(expanded.some((row) => row.kind === "strike" && row.title === "Democrat")).toBe(true);
+    expect(expanded.some((row) => row.kind === "strike" && row.title === "Republican")).toBe(true);
   });
 
   test("styles YES consistently and uses the lead contract quote on grouped rows", () => {
