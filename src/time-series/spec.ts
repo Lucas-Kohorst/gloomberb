@@ -52,10 +52,10 @@ export function isOhlcSeriesStyle(style: SeriesStyle): boolean {
 }
 
 export function coerceSeriesTransformForStyle(
-  style: SeriesStyle,
+  _style: SeriesStyle,
   transform: SeriesTransform,
 ): SeriesTransform {
-  return isOhlcSeriesStyle(style) ? "raw" : transform;
+  return transform;
 }
 
 export function coerceSeriesInterpolationForStyle(
@@ -391,8 +391,6 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
   }
 
   const seriesIds = new Set<string>();
-  const candleCountByPanel = new Map<string, number>();
-  const firstCandleByPanel = new Map<string, string>();
   const unitGroupsByPanel = new Map<string, Set<string>>();
   const panelScaleById = new Map(spec.panels.map((panel) => [panel.id, panel.scale ?? "linear"] as const));
   spec.series.forEach((entry, index) => {
@@ -495,32 +493,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
         errors.push(issue(`${path}.source.value`, "invalid-constant", "Constant value must be a finite number."));
       }
     }
-    if (isOhlcSeriesStyle(entry.style)) {
-      const count = (candleCountByPanel.get(entry.panelId) ?? 0) + 1;
-      candleCountByPanel.set(entry.panelId, count);
-      if (count === 1) {
-        firstCandleByPanel.set(
-          entry.panelId,
-          entry.label?.trim()
-            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.id),
-        );
-      }
-      if (entry.transform !== "raw") {
-        errors.push(issue(`${path}.transform`, "transformed-ohlc", "OHLC styles require raw values."));
-      }
-    }
   });
-  for (const [panelId, count] of candleCountByPanel) {
-    if (count > 1) {
-      // Name the series holding the slot: it is often hidden or drawn as a line
-      // for lack of OHLC data, so "this panel already has one" reads as a ghost.
-      const panelLabel = spec.panels.find((panel) => panel.id === panelId)?.label ?? panelId;
-      const holder = firstCandleByPanel.get(panelId);
-      errors.push(issue("series", "multiple-ohlc", holder
-        ? `${holder} already uses a candle or OHLC style on ${panelLabel}. Give it another style first.`
-        : `Panel ${panelLabel} may contain only one candle or OHLC series.`));
-    }
-  }
   for (const [panelId, groups] of unitGroupsByPanel) {
     if (groups.size > 2) {
       warnings.push(issue("series", "too-many-unit-groups", `Panel ${panelId} has more than two unit groups; normalize a series or use another panel.`));

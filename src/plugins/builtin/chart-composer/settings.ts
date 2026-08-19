@@ -14,19 +14,25 @@ import type {
 } from "../../../time-series/types";
 import { isOhlcSeriesStyle } from "../../../time-series/spec";
 import {
+  applyPriceComparisonLayout,
   applySeriesStyle,
   buildCustomChartPreset,
   buildEmptyChartPreset,
   buildPriceChartPreset,
   chartSeriesLabel,
+  detectPriceComparisonLayout,
   formatSeriesExpression,
   getCompatibleSeriesStyles,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
+  isMarketPriceSeries,
+  PRICE_COMPARISON_LAYOUTS,
+  PRICE_COMPARISON_LAYOUT_OPTIONS,
   setBuiltinStudies,
   setPairStudies,
   type BuiltinStudySelection,
   type PairStudySelection,
+  type PriceComparisonLayout,
 } from "./presets";
 import {
   CHART_SPEC_SETTING_KEY,
@@ -72,6 +78,7 @@ export const CHART_SETTING_KEYS = {
   range: "chartRange",
   resolution: "chartResolution",
   mode: "chartMode",
+  layout: "chartLayout",
 } as const;
 
 function fallbackSpec(symbol: string | null | undefined): ChartSpec {
@@ -83,9 +90,10 @@ function sourceKey(series: ChartSeriesSpec): string {
 }
 
 /**
- * The compact style picker is intentionally scoped to a chart with exactly one
- * authored series. Multi-series styling belongs in the Series editor where the
- * target is explicit, even when all but one series are currently hidden.
+ * The compact style picker is scoped to a chart with exactly one authored
+ * series. Multi-series styling belongs in the Series editor. Comparison layout
+ * (% / price / panes) is a separate pane setting when two or more price series
+ * are present.
  */
 export function getChartInlineStyleTarget(spec: ChartSpec): ChartSeriesSpec | null {
   return spec.series.length === 1 ? spec.series[0] ?? null : null;
@@ -158,7 +166,12 @@ function replaceChartSeriesFromExpression(
     studies: customStudies,
     panels,
   };
-  return setPairStudies(setBuiltinStudies(base, builtinStudies), pairStudies);
+  const next = setPairStudies(setBuiltinStudies(base, builtinStudies), pairStudies);
+  const previousPriceCount = spec.series.filter(isMarketPriceSeries).length;
+  if (previousPriceCount < 2 && next.series.filter(isMarketPriceSeries).length >= 2) {
+    return applyPriceComparisonLayout(next, "percent");
+  }
+  return next;
 }
 
 function formatDateWindow(spec: ChartSpec): string {
@@ -310,6 +323,17 @@ export function applyChartComposerPaneSetting(
       };
       break;
     }
+    case CHART_SETTING_KEYS.layout: {
+      if (!detectPriceComparisonLayout(spec)) {
+        throw new Error("Add another price series before choosing a comparison layout.");
+      }
+      const layout = requireString(value, "Compare") as PriceComparisonLayout;
+      if (!(PRICE_COMPARISON_LAYOUTS as readonly string[]).includes(layout)) {
+        throw new Error("Choose % Scale, Price Scale, or Separate Panes.");
+      }
+      nextSpec = applyPriceComparisonLayout(spec, layout);
+      break;
+    }
     default:
       return { ...settings, [field.key]: value };
   }
@@ -324,6 +348,7 @@ export function buildChartComposerPaneSettingsDef(
   const spec = parseChartSpecOr(settings[CHART_SPEC_SETTING_KEY], fallbackSpec(activeTicker));
   const inlineStyleTarget = getChartInlineStyleTarget(spec);
   const modes = getChartInlineStyles(spec);
+  const comparisonLayout = detectPriceComparisonLayout(spec);
 
   return {
     title: "Chart Settings",
@@ -335,6 +360,7 @@ export function buildChartComposerPaneSettingsDef(
       [CHART_SETTING_KEYS.range]: spec.viewport.range,
       [CHART_SETTING_KEYS.resolution]: spec.viewport.resolution,
       [CHART_SETTING_KEYS.mode]: inlineStyleTarget?.style ?? "",
+      [CHART_SETTING_KEYS.layout]: comparisonLayout ?? "",
     },
     fields: [
       {
@@ -389,6 +415,15 @@ export function buildChartComposerPaneSettingsDef(
           description: `Choose how ${chartSeriesLabel(inlineStyleTarget)} is drawn.`,
           type: "select" as const,
           options: modes.map((mode) => ({ value: mode, label: mode.toUpperCase() })),
+        }]
+        : []),
+      ...(comparisonLayout
+        ? [{
+          key: CHART_SETTING_KEYS.layout,
+          label: "Compare",
+          description: "Overlay on a percent scale, overlay on a price scale, or split into separate panes.",
+          type: "select" as const,
+          options: PRICE_COMPARISON_LAYOUT_OPTIONS,
         }]
         : []),
     ],

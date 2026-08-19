@@ -50,18 +50,21 @@ describe("chart composer pane settings", () => {
     expect(definition.applyValue).toBe(applyChartComposerPaneSetting);
   });
 
-  test("routes multi-series styling through the series editor", () => {
+  test("exposes comparison layout for multi-price charts", () => {
     const spec = buildComparisonChartPreset(["AAPL", "MSFT"]);
     const definition = buildChartComposerPaneSettingsDef({
       [CHART_SPEC_SETTING_KEY]: spec,
     });
 
+    expect(definition.fields.map((entry) => entry.key)).toContain(CHART_SETTING_KEYS.layout);
     expect(definition.fields.map((entry) => entry.key)).not.toContain(CHART_SETTING_KEYS.mode);
-    expect(() => applyChartComposerPaneSetting(
+    expect(definition.values[CHART_SETTING_KEYS.layout]).toBe("percent");
+    const panes = applyChartComposerPaneSetting(
       { [CHART_SPEC_SETTING_KEY]: spec },
-      field(CHART_SETTING_KEYS.mode, "select"),
-      "area",
-    )).toThrow("Series editor");
+      field(CHART_SETTING_KEYS.layout, "select"),
+      "panes",
+    )[CHART_SPEC_SETTING_KEY] as typeof spec;
+    expect(panes.series.map((series) => series.panelId)).toEqual(["main", "panel-2"]);
     expect(getChartInlineStyleTarget({
       ...spec,
       series: [

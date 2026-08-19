@@ -400,17 +400,10 @@ export function useSeriesEditorController({
       panels: transform === "log"
         ? current.panels.map((panel) => panel.id === selected.panelId ? { ...panel, scale: "linear" } : panel)
         : current.panels,
-      series: replaceAt(current.series, selectedIndex, (() => {
-        const currentSeries = current.series[selectedIndex]!;
-        const ohlcStyle = currentSeries.style === "candles" || currentSeries.style === "ohlc" || currentSeries.style === "hlc";
-        return {
-          ...currentSeries,
-          style: transform !== "raw" && ohlcStyle
-            ? getCompatibleSeriesStyles(seriesFieldId(currentSeries)).find((style) => style === "line" || style === "area") ?? "line"
-            : currentSeries.style,
-          transform,
-        };
-      })()),
+      series: replaceAt(current.series, selectedIndex, {
+        ...current.series[selectedIndex]!,
+        transform,
+      }),
     }));
   };
 

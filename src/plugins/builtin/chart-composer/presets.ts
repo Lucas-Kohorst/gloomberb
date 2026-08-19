@@ -21,7 +21,6 @@ import {
 import {
   coerceSeriesInterpolationForStyle,
   coerceSeriesTransformForStyle,
-  isOhlcSeriesStyle,
 } from "../../../time-series/spec";
 import { sourceFallbackLabel } from "../../../time-series/series-label";
 import {
@@ -554,25 +553,103 @@ function uniqueSeriesId(series: readonly ChartSeriesSpec[], preferredId: string)
   return `${preferredId}-${suffix}`;
 }
 
-function coerceOhlcPanelCollision(
-  series: ChartSeriesSpec,
-  existing: readonly ChartSeriesSpec[],
-): ChartSeriesSpec {
-  return isOhlcSeriesStyle(series.style)
-    && existing.some((entry) => (
-      entry.panelId === series.panelId && isOhlcSeriesStyle(entry.style)
-    ))
-    ? applySeriesStyle(series, "line")
-    : series;
-}
-
 function isFinancialSeries(series: ChartSeriesSpec): boolean {
   return series.source.kind === "security" && isFundamentalFieldId(series.source.fieldId);
 }
 
-function isMarketPriceSeries(series: ChartSeriesSpec): boolean {
+export function isMarketPriceSeries(series: ChartSeriesSpec): boolean {
   return series.source.kind === "security"
     && getTimeSeriesField(series.source.fieldId)?.unitGroup === "price";
+}
+
+export const PRICE_COMPARISON_LAYOUTS = ["percent", "price", "panes"] as const;
+export type PriceComparisonLayout = (typeof PRICE_COMPARISON_LAYOUTS)[number];
+
+export const PRICE_COMPARISON_LAYOUT_OPTIONS: Array<{
+  value: PriceComparisonLayout;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "percent",
+    label: "% Scale",
+    description: "Overlay both series on one pane as percent change from the first bar.",
+  },
+  {
+    value: "price",
+    label: "Price Scale",
+    description: "Overlay both series on one pane using absolute prices.",
+  },
+  {
+    value: "panes",
+    label: "Separate Panes",
+    description: "Give each series its own pane and price scale.",
+  },
+];
+
+export function detectPriceComparisonLayout(spec: ChartSpec): PriceComparisonLayout | null {
+  const price = spec.series.filter(isMarketPriceSeries);
+  if (price.length < 2) return null;
+  const panels = new Set(price.map((series) => series.panelId));
+  if (panels.size > 1) return "panes";
+  if (price.every((series) => series.transform === "percent")) return "percent";
+  return "price";
+}
+
+function marketPricePanelLabel(series: ChartSeriesSpec): string {
+  if (series.source.kind === "security") return series.source.instrument.symbol;
+  return chartSeriesLabel(series);
+}
+
+export function applyPriceComparisonLayout(spec: ChartSpec, layout: PriceComparisonLayout): ChartSpec {
+  const priceIndexes = spec.series
+    .map((series, index) => ({ series, index }))
+    .filter(({ series }) => isMarketPriceSeries(series));
+  if (priceIndexes.length < 2) return spec;
+
+  let series: ChartSeriesSpec[];
+  if (layout === "panes") {
+    const reserved = new Set(spec.series.filter((entry) => !isMarketPriceSeries(entry)).map((entry) => entry.panelId));
+    reserved.add("main");
+    let nextPanel = 2;
+    const allocate = (preferred?: string) => {
+      if (preferred && !reserved.has(preferred)) {
+        reserved.add(preferred);
+        return preferred;
+      }
+      while (reserved.has(`panel-${nextPanel}`)) nextPanel += 1;
+      const id = `panel-${nextPanel}`;
+      reserved.add(id);
+      nextPanel += 1;
+      return id;
+    };
+    let priceOrder = 0;
+    series = spec.series.map((entry) => {
+      if (!isMarketPriceSeries(entry)) return entry;
+      const panelId = priceOrder === 0 ? "main" : allocate(entry.panelId.startsWith("panel-") ? entry.panelId : undefined);
+      priceOrder += 1;
+      return { ...entry, panelId, transform: "raw" };
+    });
+  } else {
+    const transform = layout === "percent" ? "percent" : "raw";
+    series = spec.series.map((entry) => (
+      isMarketPriceSeries(entry) ? { ...entry, panelId: "main", transform } : entry
+    ));
+  }
+
+  const panels = reconcilePanels(spec.panels, series, spec.studies).map((panel) => {
+    if (layout !== "panes" || panel.id === "main" || !/^panel-\d+$/.test(panel.id)) return panel;
+    const occupant = series.find((entry) => entry.panelId === panel.id && isMarketPriceSeries(entry));
+    return occupant ? { ...panel, label: marketPricePanelLabel(occupant), height: 0.45 } : panel;
+  });
+  return { ...spec, series, panels };
+}
+
+function withDefaultPriceComparison(series: ChartSeriesSpec[]): ChartSeriesSpec[] {
+  if (series.filter(isMarketPriceSeries).length < 2) return series;
+  return series.map((entry) => (
+    isMarketPriceSeries(entry) ? { ...entry, transform: "percent", panelId: "main" } : entry
+  ));
 }
 
 function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
@@ -712,25 +789,27 @@ export function appendChartSeries(
   spec: ChartSpec,
   expression: ParsedSeriesExpression,
 ): { spec: ChartSpec; series: ChartSeriesSpec } {
-  const built = coerceOhlcPanelCollision(
-    placeAppendedSeriesByDefault(
-      buildSeriesSpec(expression, spec.series.length),
-      spec,
-    ),
-    spec.series,
+  const built = placeAppendedSeriesByDefault(
+    buildSeriesSpec(expression, spec.series.length),
+    spec,
   );
   const series = {
     ...built,
     id: uniqueSeriesId(spec.series, built.id),
   };
   const nextSeries = [...spec.series, series];
+  let nextSpec: ChartSpec = {
+    ...spec,
+    series: nextSeries,
+    panels: ensureRequiredPanels(spec.panels, nextSeries, spec.studies),
+  };
+  const previousPriceCount = spec.series.filter(isMarketPriceSeries).length;
+  if (previousPriceCount < 2 && nextSeries.filter(isMarketPriceSeries).length >= 2) {
+    nextSpec = applyPriceComparisonLayout(nextSpec, "percent");
+  }
   return {
-    series,
-    spec: {
-      ...spec,
-      series: nextSeries,
-      panels: ensureRequiredPanels(spec.panels, nextSeries, spec.studies),
-    },
+    series: nextSpec.series.find((entry) => entry.id === series.id) ?? series,
+    spec: nextSpec,
   };
 }
 
@@ -751,7 +830,9 @@ function panelsForSeries(series: readonly ChartSeriesSpec[], studies: readonly C
 
 /** Keep arbitrary sources legible when one panel would require more than two axes. */
 function buildCustomSeries(expressions: readonly SeriesOrConstant[]): ChartSeriesSpec[] {
-  const parsedSeries = expressions.map((expression, index) => buildSeriesSpec(expression, index));
+  const parsedSeries = withDefaultPriceComparison(
+    expressions.map((expression, index) => buildSeriesSpec(expression, index)),
+  );
   const mixedPriceAndFinancial = parsedSeries.some(isMarketPriceSeries)
     && parsedSeries.some(isFinancialSeries);
   const reservedPanelIds = new Set([
@@ -805,7 +886,7 @@ function buildCustomSeries(expressions: readonly SeriesOrConstant[]): ChartSerie
         candidate = applySeriesTimestampMode(candidate, "available-at");
       }
     }
-    builtSeries.push(coerceOhlcPanelCollision(candidate, builtSeries));
+    builtSeries.push(candidate);
   });
   return builtSeries;
 }
@@ -924,9 +1005,9 @@ export function buildIntradayPriceChartPreset(symbol: string): ChartSpec {
 export function buildComparisonChartPreset(symbols: readonly string[]): ChartSpec {
   const normalized = symbols.map((symbol) => normalizeInstrument(symbol, true)).filter((entry): entry is NonNullable<typeof entry> => entry !== null).slice(0, MAX_CHART_COMPOSER_SERIES);
   return chartSpec(normalized.map((instrument, index) => buildSeriesSpec(
-    { kind: "security", ...instrument, fieldId: CHART_FIELD_IDS.close },
+    { kind: "security", ...instrument, fieldId: CHART_FIELD_IDS.price },
     index,
-    { style: "line", transform: "percent", axis: "left" },
+    { style: "candles", transform: "percent", axis: "left" },
   )), { range: "1Y", resolution: "1d" });
 }
 
