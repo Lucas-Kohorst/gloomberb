@@ -458,3 +458,45 @@ PRECIPITATION (IN)
     expect(blocked?.status).toBe(404);
   });
 });
+
+describe("Gloom Cloud /cloud origin gate", () => {
+  test("GET without Origin reaches auth instead of Invalid origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/sync/snapshot"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
+  });
+
+  test("allows terminal.kohor.st Origin on the workers.dev host", async () => {
+    const headers = new Headers();
+    headers.set("Origin", ORIGIN);
+    const request = new Request("https://gloomberb-cloud.kohorstlucas.workers.dev/cloud/sync/snapshot", {
+      method: "GET",
+      headers,
+    });
+    const response = await workerModule.default.fetch?.(request, makeEnv());
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
+    expect(response?.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+  });
+
+  test("rejects api.gloom.sh as a browser Origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/sync/snapshot", { origin: "https://api.gloom.sh" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toEqual({ error: "Invalid origin" });
+  });
+
+  test("rejects a PUT with no Origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("PUT", "/cloud/sync/snapshot", { body: "{}" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toEqual({ error: "Invalid origin" });
+  });
+});

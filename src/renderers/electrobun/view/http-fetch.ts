@@ -129,7 +129,11 @@ export function installHostedCloudApiFetchTransport(): void {
     const upstreamUrl = new URL(url);
     const headers = new Headers(init?.headers);
     headers.delete("Cookie");
+    // The API client stamps Origin as https://api.gloom.sh. That is the desktop
+    // Gloom Cloud host, not this SPA — the Worker CSRF check would 403 it.
     headers.delete("Origin");
+    const pageOrigin = typeof window !== "undefined" ? window.location?.origin : "";
+    if (pageOrigin) headers.set("Origin", pageOrigin);
     const response = await fetch(`/cloud${upstreamUrl.pathname}${upstreamUrl.search}`, {
       ...init,
       headers,
