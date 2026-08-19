@@ -4,10 +4,13 @@ import {
   catalogExpressionForRow,
   catalogPollSubjectsFromPolls,
   catalogPredictionSeriesLabel,
+  catalogRowsForResolvedInstruments,
   catalogRowsFromAaModels,
+  catalogRowsFromPollSubjects,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
   listStaticCatalogInventory,
+  looksLikeCatalogTickerQuery,
 } from "./catalog-inventory";
 import type { AaModelRow } from "../llm-stats/types";
 
@@ -227,6 +230,30 @@ describe("data catalog inventory", () => {
     expect(row.label.startsWith("Polymarket")).toBe(false);
   });
 
+  test("does not prefix FRED or Adjacent labels with the source column", () => {
+    const rows = listStaticCatalogInventory([]);
+    const fred = rows.find((row) => row.expression === "FRED:CPIAUCSL");
+    const adjacent = rows.find((row) => row.expression === "ADJ:red");
+    expect(fred?.label.startsWith("FRED")).toBe(false);
+    expect(fred?.source).toBe("FRED");
+    expect(adjacent?.label.startsWith("ADJ")).toBe(false);
+    expect(adjacent?.source).toBe("Adjacent");
+  });
+
+  test("resolves a ticker query onto chartable rows without treating field names as tickers", () => {
+    expect(looksLikeCatalogTickerQuery("AAPL")).toBe(true);
+    expect(looksLikeCatalogTickerQuery("btc-usd")).toBe(true);
+    expect(looksLikeCatalogTickerQuery("president")).toBe(false);
+    expect(looksLikeCatalogTickerQuery("close")).toBe(false);
+    expect(looksLikeCatalogTickerQuery("price")).toBe(false);
+
+    const resolved = catalogRowsForResolvedInstruments([AAPL]);
+    expect(resolved.some((row) => row.expression === "AAPL:close")).toBe(true);
+    expect(resolved.some((row) => row.expression === "AAPL:price")).toBe(true);
+    expect(resolved.every((row) => !row.needsTicker && row.label.startsWith("AAPL"))).toBe(true);
+    expect(filterCatalogRows(resolved, "securities", "AAPL").some((row) => row.expression === "AAPL:close")).toBe(true);
+  });
+
   test("collapses VoteHub polls onto unique subject and choice chart rows", () => {
     const subjects = catalogPollSubjectsFromPolls([
       {
@@ -239,13 +266,20 @@ describe("data catalog inventory", () => {
       },
       {
         subject: "Wisconsin Senate",
+        url: "https://votehub.com/polls/wi",
         answers: [{ choice: "Baldwin" }, { choice: "Hovde" }],
       },
     ]);
     expect(subjects).toEqual([
       { subject: "Donald Trump", choices: ["Approve", "Disapprove"] },
-      { subject: "Wisconsin Senate", choices: ["Baldwin", "Hovde"] },
+      {
+        subject: "Wisconsin Senate",
+        choices: ["Baldwin", "Hovde"],
+        url: "https://votehub.com/polls/wi",
+      },
     ]);
+    const [row] = catalogRowsFromPollSubjects(subjects.filter((subject) => subject.subject === "Wisconsin Senate"));
+    expect(row.url).toBe("https://votehub.com/polls/wi");
   });
 
   test("empty copy says loading until catalogs finish, even with a search query", () => {
@@ -258,6 +292,13 @@ describe("data catalog inventory", () => {
     expect(catalogEmptyCopy(false, "")).toEqual({
       title: "No series",
       hint: "Press / to search.",
+    });
+    expect(catalogEmptyCopy(false, "president", "couldn't load prediction markets")).toEqual({
+      title: "couldn't load prediction markets",
+      hint: "Press r to retry.",
+    });
+    expect(catalogEmptyCopy(true, "president", "couldn't load prediction markets")).toEqual({
+      title: "Loading catalog…",
     });
   });
 });

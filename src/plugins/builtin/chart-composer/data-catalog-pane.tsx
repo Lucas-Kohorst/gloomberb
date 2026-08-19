@@ -26,19 +26,27 @@ import {
   CATALOG_FILTERS,
   catalogEmptyCopy,
   catalogExpressionForRow,
+  catalogInstrumentMatchesQuery,
   catalogRowUrl,
+  catalogRowsForResolvedInstruments,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
   listStaticCatalogInventory,
+  looksLikeCatalogTickerQuery,
   type CatalogFilterId,
   type CatalogSeriesRow,
 } from "./catalog-inventory";
 import {
+  resetCatalogPrefetchCaches,
   useCatalogAaRows,
   useCatalogAdjacentIndices,
   useCatalogPollRows,
 } from "./catalog-prefetch";
-import { useCatalogUniverse, usePredictionMarketHits } from "./use-series-catalog";
+import {
+  resetCatalogPredictionHitsCache,
+  useCatalogUniverse,
+  usePredictionMarketHits,
+} from "./use-series-catalog";
 
 type CatalogColumnId = "series" | "source" | "kind" | "expression";
 type CatalogColumn = DataTableColumn & { id: CatalogColumnId };
@@ -96,25 +104,44 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<CatalogSortPreference>(DEFAULT_SORT);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const { instruments, loading: universeLoading } = useCatalogUniverse("");
-  const { markets, loading: marketsLoading } = usePredictionMarketHits(true);
-  const { rows: aaRows, loading: aaLoading } = useCatalogAaRows();
-  const { rows: pollRows, loading: pollsLoading } = useCatalogPollRows();
-  const { indices: adjacentIndices, loading: indicesLoading } = useCatalogAdjacentIndices();
-  const loading = universeLoading || marketsLoading || aaLoading || pollsLoading || indicesLoading;
-  const emptyCopy = catalogEmptyCopy(loading, searchQuery);
+  const tickerQuery = looksLikeCatalogTickerQuery(searchQuery);
+  const { instruments, loading: universeLoading } = useCatalogUniverse(
+    tickerQuery ? searchQuery : "",
+  );
+  const { markets, loading: marketsLoading, error: marketsError } = usePredictionMarketHits(
+    true,
+    refreshNonce,
+  );
+  const { rows: aaRows, loading: aaLoading } = useCatalogAaRows(refreshNonce);
+  const { rows: pollRows, loading: pollsLoading } = useCatalogPollRows(refreshNonce);
+  const { indices: adjacentIndices, loading: indicesLoading } = useCatalogAdjacentIndices(
+    refreshNonce,
+  );
+  const liveLoading = marketsLoading || aaLoading || pollsLoading || indicesLoading;
+  const predictionError = !marketsLoading && markets.length === 0 ? marketsError : null;
+  const emptyCopy = catalogEmptyCopy(
+    liveLoading || (tickerQuery && universeLoading),
+    searchQuery,
+    filter === "prediction" ? predictionError : null,
+  );
 
   const rows = useMemo(() => {
     const staticRows = listStaticCatalogInventory(instruments, { adjacentIndices });
     const liveRows = catalogRowsFromPredictionHits(markets);
+    const resolvedRows = tickerQuery
+      ? catalogRowsForResolvedInstruments(
+        instruments.filter((instrument) => catalogInstrumentMatchesQuery(instrument, searchQuery)),
+      )
+      : [];
     const merged = new Map<string, CatalogSeriesRow>();
     const withoutStaticLive = staticRows.filter((entry) => (
       (aaRows.length === 0 || entry.sourceId !== "benchmark")
       && (pollRows.length === 0 || entry.sourceId !== "poll")
     ));
-    for (const entry of [...liveRows, ...aaRows, ...pollRows, ...withoutStaticLive]) {
+    for (const entry of [...liveRows, ...aaRows, ...pollRows, ...resolvedRows, ...withoutStaticLive]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
     const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
@@ -125,7 +152,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [aaRows, adjacentIndices, filter, instruments, markets, pollRows, searchQuery, sortPreference]);
+  }, [aaRows, adjacentIndices, filter, instruments, markets, pollRows, searchQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -185,6 +212,13 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     openUrl(selectedUrl);
   }, [selectedUrl]);
 
+  const refreshCatalog = useCallback(() => {
+    if (liveLoading) return;
+    resetCatalogPrefetchCaches();
+    resetCatalogPredictionHitsCache();
+    setRefreshNonce((nonce) => nonce + 1);
+  }, [liveLoading]);
+
   useShortcut((event) => {
     if (!focused || searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "/")) {
@@ -212,6 +246,15 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     }
   }, { enabled: focused && !searchFocused && !!selectedUrl });
 
+  useShortcut((event) => {
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refreshCatalog();
+    }
+  }, { enabled: focused && !searchFocused });
+
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "/") {
       event.preventDefault?.();
@@ -231,8 +274,14 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       openSelected();
       return true;
     }
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refreshCatalog();
+      return true;
+    }
     return false;
-  }, [chartSelected, focusSearch, openSelected, selectedRow, selectedUrl]);
+  }, [chartSelected, focusSearch, openSelected, refreshCatalog, selectedRow, selectedUrl]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -271,13 +320,12 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     url: selectedUrl,
     source: footerSource,
     label: "source",
-    loading,
-    info: searchQuery.trim()
-      ? [{ id: "search", parts: [{ text: `filter: ${searchQuery.trim()}`, tone: "value" }] }]
-      : [],
+    loading: liveLoading,
+    error: predictionError,
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: () => chartSelected(selectedRow), disabled: !selectedRow },
       { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: refreshCatalog, disabled: liveLoading },
     ],
     showOpenHint: !!selectedUrl,
   });

@@ -1,3 +1,6 @@
+export const ADJACENT_PLUGIN_ID = "adjacent";
+export const ADJACENT_API_KEY_CONFIG = "adjacentApiKey";
+
 // Adjacent API (api.adjacent.markets) response types.
 // Markets are on a 0-100 cents scale; indices on a 50-150 scale.
 

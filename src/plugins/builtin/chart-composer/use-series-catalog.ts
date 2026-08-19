@@ -190,23 +190,43 @@ function hitsFromVenueSummaries(
 
 let catalogPredictionHitsCache: PredictionMarketSearchHit[] | null = null;
 let catalogPredictionHitsInflight: Promise<PredictionMarketSearchHit[]> | null = null;
+let catalogPredictionHitsError: string | null = null;
+
+export function peekCatalogPredictionHitsError(): string | null {
+  return catalogPredictionHitsError;
+}
 
 export function resetCatalogPredictionHitsCache(): void {
   catalogPredictionHitsCache = null;
   catalogPredictionHitsInflight = null;
+  catalogPredictionHitsError = null;
 }
 
-export function loadCatalogPredictionHits(): Promise<PredictionMarketSearchHit[]> {
+export function loadCatalogPredictionHits(loaders?: {
+  loadKalshi?: typeof loadKalshiCatalog;
+  loadPolymarket?: typeof loadPolymarketCatalog;
+}): Promise<PredictionMarketSearchHit[]> {
   if (catalogPredictionHitsCache) return Promise.resolve(catalogPredictionHitsCache);
   if (catalogPredictionHitsInflight) return catalogPredictionHitsInflight;
+  const loadKalshi = loaders?.loadKalshi ?? loadKalshiCatalog;
+  const loadPolymarket = loaders?.loadPolymarket ?? loadPolymarketCatalog;
   catalogPredictionHitsInflight = Promise.allSettled([
-    loadKalshiCatalog("", "all", "top"),
-    loadPolymarketCatalog("", "all", "top"),
+    loadKalshi("", "all", "top"),
+    loadPolymarket("", "all", "top"),
   ]).then((results) => {
     const markets = results.flatMap((result) => (
       result.status === "fulfilled" ? hitsFromVenueSummaries(result.value) : []
     ));
-    if (markets.length > 0) catalogPredictionHitsCache = markets;
+    const venuesFailed = results.every((result) => result.status === "rejected")
+      || (markets.length === 0 && results.some((result) => result.status === "rejected"));
+    if (markets.length > 0) {
+      catalogPredictionHitsCache = markets;
+      catalogPredictionHitsError = null;
+    } else if (venuesFailed) {
+      catalogPredictionHitsError = "couldn't load prediction markets";
+    } else {
+      catalogPredictionHitsError = null;
+    }
     return markets;
   }).finally(() => {
     catalogPredictionHitsInflight = null;
@@ -216,17 +236,20 @@ export function loadCatalogPredictionHits(): Promise<PredictionMarketSearchHit[]
 
 export function usePredictionMarketHits(
   enabled: boolean,
-): { markets: PredictionMarketSearchHit[]; loading: boolean } {
+  refreshNonce = 0,
+): { markets: PredictionMarketSearchHit[]; loading: boolean; error: string | null } {
   const [markets, setMarkets] = useState<PredictionMarketSearchHit[]>(
     catalogPredictionHitsCache ?? [],
   );
   const [loading, setLoading] = useState(enabled && catalogPredictionHitsCache == null);
+  const [error, setError] = useState<string | null>(catalogPredictionHitsError);
 
   useEffect(() => {
     if (!enabled) return;
     if (catalogPredictionHitsCache) {
       setMarkets(catalogPredictionHitsCache);
       setLoading(false);
+      setError(null);
       return;
     }
 
@@ -236,15 +259,19 @@ export function usePredictionMarketHits(
       if (cancelled) return;
       setMarkets(hits);
       setLoading(false);
+      setError(catalogPredictionHitsError);
     }).catch(() => {
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setError(catalogPredictionHitsError ?? "couldn't load prediction markets");
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, refreshNonce]);
 
-  return { markets, loading };
+  return { markets, loading, error };
 }
 
 export interface SeriesCatalogSearchResult {

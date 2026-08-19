@@ -88,7 +88,7 @@ describe("catalog live-source prefetch cache", () => {
     const pollsSecond = await loadCatalogPollRows();
     expect(pollsFirst.some((row) => row.expression === "POLL:Donald Trump:Approve")).toBe(true);
     expect(pollsSecond).toBe(pollsFirst);
-    expect(pollCalls).toBe(1 + VOTEHUB_POLL_TYPES.length);
+    expect(pollCalls).toBe(VOTEHUB_POLL_TYPES.length);
 
     const indicesFirst = await loadCatalogAdjacentIndices();
     const indicesSecond = await loadCatalogAdjacentIndices();

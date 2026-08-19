@@ -318,7 +318,7 @@ describe("loadConfig", () => {
   test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: 19,
       disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
     }));
 
@@ -330,7 +330,7 @@ describe("loadConfig", () => {
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: 19,
       pluginConfig: {
         options: {
           selectedExpiration: "2026-06-19",
@@ -361,6 +361,30 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
 
     expect(config.disabledPlugins).toEqual(["news"]);
+  });
+
+  test("moves Adjacent API keys off Gloom Cloud plugin config", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 20,
+      pluginConfig: {
+        "gloomberb-cloud": {
+          lastChatChannelId: "options",
+          adjacentApiKey: "adj-key",
+        },
+      },
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.pluginConfig).toEqual({
+      adjacent: {
+        adjacentApiKey: "adj-key",
+      },
+      "gloomberb-cloud": {
+        lastChatChannelId: "options",
+      },
+    });
   });
 
   test("preserves IBKR gateway configs without migration rewrites", async () => {
