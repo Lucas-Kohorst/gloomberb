@@ -89,6 +89,9 @@ export function createChatPane(ChatContent: (props: ChatPaneContentProps) => Rea
     }, [dispatch, paneId, stateRef]);
     const [channelId, setLocalChannelId] = useState(initialChannelIdRef.current);
     const pendingChannelIdRef = useRef<string | null>(null);
+    if (!pendingChannelIdRef.current && channelId !== persistedChannelId) {
+      setLocalChannelId(persistedChannelId);
+    }
 
     useEffect(() => {
       if (rawPaneChannelId) return;

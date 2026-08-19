@@ -28,7 +28,7 @@ function getFeedItems(
   selectedJinaContent: string | null,
 ): FeedDataTableItem[] {
   return news.map((item) => {
-    const preview = summaryCache.get(item.url) ?? item.summary ?? undefined;
+    const preview = summaryCache.get(item.url) ?? item.body ?? item.summary ?? undefined;
     const isSelected = item.url === selectedUrl;
     const fallbackBody = preview ?? (loadingSummary ? "Loading preview..." : "No preview available.");
     return {
@@ -103,7 +103,10 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
   const selectedSummary = useResolvedEntryValue(articleSummaryEntry);
   const loadingSummary = articleSummaryEntry?.phase === "loading" || articleSummaryEntry?.phase === "refreshing";
-  const jina = useJinaArticle(selected?.url ?? "", !!selected?.url);
+  const jina = useJinaArticle(
+    selected?.url ?? "",
+    !!selected?.url && (selected.body ?? "").trim().length < 400,
+  );
 
   useEffect(() => {
     if (!selected?.summary) return;

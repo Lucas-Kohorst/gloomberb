@@ -113,4 +113,24 @@ describe("parseRssFeed", () => {
 
     expect(items[1]!.categories).toContain("markets");
   });
+
+  test("keeps content:encoded as the article body for the reader", () => {
+    const body = `${"The Federal Reserve held rates steady. ".repeat(20)}Apple (AAPL) rallied.`;
+    const xml = `<rss version="2.0"><channel>
+      <item>
+        <title>Fed holds, Apple (AAPL) rallies</title>
+        <link>https://example.com/fed-apple</link>
+        <pubDate>Thu, 10 Apr 2026 14:30:00 GMT</pubDate>
+        <description>Short teaser.</description>
+        <content:encoded><![CDATA[<p>${body}</p>]]></content:encoded>
+        <category>AAPL</category>
+      </item>
+    </channel></rss>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.summary).toBe("Short teaser.");
+    expect(items[0]!.body).toContain("Federal Reserve held rates steady");
+    expect(items[0]!.categories).toContain("AAPL");
+  });
 });

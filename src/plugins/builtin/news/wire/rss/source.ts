@@ -4,6 +4,7 @@ import type { NewsQuery, MarketNewsItem } from "../../../../../types/news-source
 import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
+import type { ArticleTickerContext } from "../../../../../news/article-tickers";
 import { withConnectionRequest } from "../../../connections/register";
 
 const RSS_CACHE_KIND = "rss-feed";
@@ -32,7 +33,7 @@ const rssClient = createThrottledFetch({
 
 export interface RssNewsCapabilityOptions {
   /** Resolved at fetch time so newly added tickers are matched without a restart. */
-  knownTickers?: () => Promise<Set<string>>;
+  knownTickers?: () => Promise<ArticleTickerContext | Set<string>>;
   persistence?: PluginPersistence;
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
 }
@@ -64,6 +65,7 @@ function deserializeItem(item: unknown): MarketNewsItem | null {
     source: record.source,
     publishedAt,
     summary: typeof record.summary === "string" ? record.summary : undefined,
+    body: typeof record.body === "string" ? record.body : undefined,
     imageUrl: typeof record.imageUrl === "string" ? record.imageUrl : undefined,
     topic: typeof record.topic === "string" ? record.topic : "general",
     topics: Array.isArray(record.topics)

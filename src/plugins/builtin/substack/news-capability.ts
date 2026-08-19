@@ -5,6 +5,7 @@ import { extractArticleContent } from "./content";
 import { loadSubstackHome } from "./api/loaders";
 import { readResource } from "./api/store";
 import { SubstackAuthError } from "./api/types";
+import { extractArticleTickers } from "../../../news/article-tickers";
 import { withConnectionRequest } from "../connections/register";
 
 const SUBSTACK_FEED_CACHE_KIND = "feed";
@@ -48,7 +49,9 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
     topics: [],
     sectors: [],
     categories: ["newsletter"],
-    tickers: [],
+    tickers: extractArticleTickers(
+      [article.title, article.subtitle, article.previewText, body].filter(Boolean).join(" "),
+    ),
     scores: {
       importance: 50,
       urgency: 0,

@@ -63,7 +63,11 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const shareArticle = article
     ? () => copyShareLink(newsArticleSharePayload(article))
     : undefined;
-  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
+  const knownBody = article?.body ?? article?.summary ?? "";
+  const jina = useJinaArticle(
+    article?.url ?? url,
+    !!(article?.url ?? url) && knownBody.trim().length < 400,
+  );
 
   useNewsArticleFooter({
     registrationId: "news-article-reader",
@@ -104,7 +108,7 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
         height={height}
         focused={focused}
         state={jina}
-        knownBody={article.body ?? article.summary ?? ""}
+        knownBody={knownBody}
       />
     </Box>
   );

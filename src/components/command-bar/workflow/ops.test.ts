@@ -234,6 +234,69 @@ describe("createPaneTemplateOrThrow", () => {
     expect(focused).toEqual(["chat:main"]);
     expect(placed).toEqual([]);
   });
+
+  test("singleton template applies an explicit channel and message target to the existing instance", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const layout = cloneLayout(config.layout);
+    const chatInstance = {
+      instanceId: "chat:main",
+      paneId: "chat",
+      title: "Chat #equities",
+      settings: { channelId: "equities" },
+    };
+    layout.instances = [...layout.instances, chatInstance];
+    layout.floating = [...layout.floating, { instanceId: "chat:main", x: 0, y: 0, width: 80, height: 30 }];
+    const state = createInitialState({ ...config, layout });
+    const focused: string[] = [];
+    const dispatched: Array<{ type: string; layout?: LayoutConfig }> = [];
+
+    await createPaneTemplateOrThrow("new-chat-pane", {
+      arg: "everyone",
+      values: { messageId: "m1" },
+    }, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: (action) => { dispatched.push(action as { type: string; layout?: LayoutConfig }); },
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["new-chat-pane", {
+            id: "new-chat-pane",
+            paneId: "chat",
+            label: "New Chat Pane",
+            description: "Chat",
+            singleton: true,
+            createInstance: (_context: unknown, options?: { arg?: string; values?: Record<string, string> }) => ({
+              placement: "floating",
+              title: `Chat #${options?.arg ?? "general"}`,
+              settings: {
+                channelId: options?.arg ?? "general",
+                ...(options?.values?.messageId ? { targetMessageId: options.values.messageId } : {}),
+              },
+            }),
+          }],
+        ]),
+        panes: new Map([
+          ["chat", { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" }],
+        ]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => ({ instanceId: "chat:dup", paneId: "chat" }) as any,
+      placePaneInstance: () => {},
+      focusPaneInstance: (id) => { focused.push(id); },
+    });
+
+    expect(focused).toEqual(["chat:main"]);
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]?.type).toBe("UPDATE_LAYOUT");
+    const updated = dispatched[0]?.layout?.instances.find((instance) => instance.instanceId === "chat:main");
+    expect(updated?.title).toBe("Chat #everyone");
+    expect(updated?.settings).toMatchObject({
+      channelId: "everyone",
+      targetMessageId: "m1",
+    });
+  });
 });
 
 describe("applyPaneSettingFieldValue", () => {

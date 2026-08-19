@@ -157,7 +157,13 @@ export const newsWireModule: PluginModule = {
         persistence: ctx.persistence,
         knownTickers: async () => {
           const tickers = await ctx.tickerRepository.loadAllTickers();
-          return new Set(tickers.map((ticker) => ticker.metadata.ticker.toUpperCase()));
+          return {
+            symbols: tickers.map((ticker) => ticker.metadata.ticker.toUpperCase()),
+            names: tickers.map((ticker) => ({
+              symbol: ticker.metadata.ticker.toUpperCase(),
+              name: ticker.metadata.name,
+            })),
+          };
         },
       },
     );

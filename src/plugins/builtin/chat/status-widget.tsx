@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, hoverBg } from "../../../theme/colors";
+import type { AppConfig } from "../../../types/config";
+import type { PaneTemplateCreateOptions } from "../../../types/plugin";
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
 import { InlineAuthActions } from "../cloud/auth-actions";
@@ -17,6 +19,29 @@ type ChatStatusSnapshot = ReturnType<ChatController["getSnapshot"]>;
 
 function getTotalUnreadCount(snapshot: ChatStatusSnapshot) {
   return snapshot.channelStates.reduce((total, state) => total + Math.max(0, state.unreadCount), 0);
+}
+
+function getLatestMessageId(snapshot: ChatStatusSnapshot) {
+  return snapshot.messages.at(-1)?.id?.trim() || undefined;
+}
+
+export function resolveChatStatusClick(args: {
+  config: AppConfig;
+  snapshot: ChatStatusSnapshot;
+  getChannelSnapshot: (channelId: string) => ChatStatusSnapshot;
+}): { templateId: "new-chat-pane"; options: PaneTemplateCreateOptions } | { templateId: "account-management-pane" } {
+  if (getTotalUnreadCount(args.snapshot) <= 0) {
+    return { templateId: "account-management-pane" };
+  }
+  const channelId = getPreferredChatOpenChannelId(args.config, args.snapshot);
+  const messageId = getLatestMessageId(args.getChannelSnapshot(channelId));
+  return {
+    templateId: "new-chat-pane",
+    options: {
+      arg: channelId,
+      ...(messageId ? { values: { messageId } } : {}),
+    },
+  };
 }
 
 function CloudStatusIcon() {
@@ -62,11 +87,18 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   const unreadCount = getTotalUnreadCount(snapshot);
   const [hovered, setHovered] = useState(false);
 
-  const openChat = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+  const openFromStatus = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    const channelId = getPreferredChatOpenChannelId(config, snapshot);
-    createPaneFromTemplate("new-chat-pane", { arg: channelId });
+    const target = resolveChatStatusClick({
+      config,
+      snapshot,
+      getChannelSnapshot: (channelId) => controller.getSnapshot(channelId),
+    });
+    createPaneFromTemplate(
+      target.templateId,
+      target.templateId === "new-chat-pane" ? target.options : undefined,
+    );
   };
 
   useEffect(() => {
@@ -95,7 +127,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           backgroundColor={hovered ? hoverBg() : undefined}
           onMouseOver={() => setHovered((current) => (current ? current : true))}
           onMouseOut={() => setHovered((current) => (current ? false : current))}
-          onMouseDown={openChat}
+          onMouseDown={openFromStatus}
           data-gloom-interactive="true"
         >
           <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
