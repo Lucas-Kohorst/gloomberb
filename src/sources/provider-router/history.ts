@@ -6,9 +6,11 @@ import type { TimeRange } from "../../time-series/range";
 import {
   isIntradayResolution,
   normalizeChartResolutionSupport,
+  TIME_RANGE_ORDER,
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../time-series/resolution";
+import { clipPriceHistoryToRange } from "../../time-series/history-window";
 import { repairIsolatedIntradayOhlcOutliers } from "../../time-series/history-quality";
 import { canonicalExchange } from "../../utils/exchanges";
 import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
@@ -35,6 +37,8 @@ const PRICE_HISTORY_CACHE_VERSION = 4;
 interface HistoryRequestDescriptor {
   identity: RouterRequestIdentity;
   cacheVariantKeys: string[];
+  exactCacheVariantKeys: string[];
+  requestedRange?: TimeRange;
   context?: MarketDataRequestContext;
   cachePolicyKey: PriceHistoryCachePolicyKey;
   missingProviderError?: string;
@@ -68,20 +72,53 @@ function makeHistoryRequestIdentity(
     variantParts: Array<[string, string | number | undefined | null]>;
     fallbackVariantParts: Array<[string, string | number | undefined | null]>;
   },
-): Pick<HistoryRequestDescriptor, "identity" | "cacheVariantKeys"> {
+): Pick<HistoryRequestDescriptor, "identity" | "cacheVariantKeys" | "exactCacheVariantKeys"> {
   const identity = makeRouterRequestIdentity(deps, {
     kind: input.kind,
     ticker: input.ticker,
     context: input.context,
     variantParts: priceHistoryVariantParts(input.variantParts, input.exchange),
   });
+  const cacheVariantKeys = [
+    identity.variantKey,
+    buildVariantKey(priceHistoryVariantParts(input.fallbackVariantParts, input.exchange)),
+  ];
   return {
     identity,
-    cacheVariantKeys: [
-      identity.variantKey,
-      buildVariantKey(priceHistoryVariantParts(input.fallbackVariantParts, input.exchange)),
-    ],
+    cacheVariantKeys,
+    exactCacheVariantKeys: cacheVariantKeys,
   };
+}
+
+function expandedHistoryCacheVariantKeys(
+  deps: Pick<ProviderRouterCoreDeps, "getEntityKey">,
+  input: {
+    ticker: string;
+    exchange: string;
+    context?: MarketDataRequestContext;
+    range: TimeRange;
+    resolution?: ManualChartResolution;
+  },
+): string[] {
+  const start = TIME_RANGE_ORDER.indexOf(input.range);
+  const ranges = start >= 0 ? TIME_RANGE_ORDER.slice(start) : [input.range];
+  const keys: string[] = [];
+  for (const range of ranges) {
+    const { cacheVariantKeys } = makeHistoryRequestIdentity(deps, {
+      kind: "price-history",
+      ticker: input.ticker,
+      exchange: input.exchange,
+      context: input.context,
+      variantParts: input.resolution
+        ? [["exchange", canonicalExchange(input.exchange)], ["range", range], ["resolution", input.resolution]]
+        : [["exchange", canonicalExchange(input.exchange)], ["range", range]],
+      fallbackVariantParts: input.resolution
+        ? [["range", range], ["resolution", input.resolution]]
+        : [["range", range]],
+    });
+    keys.push(...cacheVariantKeys);
+  }
+  return [...new Set(keys)];
 }
 
 function normalizeRequestHistory(
@@ -96,6 +133,7 @@ function normalizeRequestHistory(
 
 export class ProviderRouterHistoryRoutes {
   constructor(private readonly deps: ProviderRouterCoreDeps) {}
+  private readonly historyRefreshInFlight = new Map<string, Promise<void>>();
 
   async getPriceHistory(
     ticker: string,
@@ -114,6 +152,8 @@ export class ProviderRouterHistoryRoutes {
     const intraday = isIntradayRange(range);
     return this.executeHistoryRequest({
       ...identity,
+      cacheVariantKeys: expandedHistoryCacheVariantKeys(this.deps, { ticker, exchange, context, range }),
+      requestedRange: range,
       context,
       cachePolicyKey: intraday ? "priceHistoryIntraday" : "priceHistoryDaily",
       missingProviderError: `No history provider available for ${ticker}`,
@@ -154,6 +194,14 @@ export class ProviderRouterHistoryRoutes {
     const intraday = isIntradayResolution(resolution);
     return this.executeHistoryRequest({
       ...identity,
+      cacheVariantKeys: expandedHistoryCacheVariantKeys(this.deps, {
+        ticker,
+        exchange,
+        context,
+        range: bufferRange,
+        resolution,
+      }),
+      requestedRange: bufferRange,
       context,
       cachePolicyKey: intraday ? "priceHistoryIntraday" : "priceHistoryDaily",
       missingProviderError: `No resolution-aware history provider available for ${ticker}`,
@@ -296,8 +344,15 @@ export class ProviderRouterHistoryRoutes {
     const cachedValue = cached ? normalizeRequestHistory(cached.value, request) : [];
     const cachedHistoryStale = request.isCachedValueStale(cachedValue);
     const forceRefresh = request.context?.cacheMode === "refresh";
-    if (cachedValue.length > 0 && !forceRefresh && cached && !cached.stale && !cachedHistoryStale) {
-      return cachedValue;
+    const usableCached = cachedValue.length > 0 && cached && !cached.expired && !cachedHistoryStale;
+    if (usableCached && !forceRefresh) {
+      const exactHit = request.exactCacheVariantKeys.includes(cached.variantKey);
+      if (cached.stale && exactHit) {
+        this.scheduleHistoryRefresh(request);
+      }
+      return request.requestedRange
+        ? clipPriceHistoryToRange(cachedValue, request.requestedRange)
+        : cachedValue;
     }
 
     const brokerResult = await withBrokerTimeout(this.fetchBrokerHistory(request, brokerCandidates));
@@ -305,11 +360,35 @@ export class ProviderRouterHistoryRoutes {
 
     const providerResult = await this.fetchProviderHistory(request);
     if (providerResult && providerResult.value.length > 0) return providerResult.value;
-    if (cachedValue.length > 0 && !cachedHistoryStale) return cachedValue;
+    if (cachedValue.length > 0 && !cachedHistoryStale) {
+      return request.requestedRange
+        ? clipPriceHistoryToRange(cachedValue, request.requestedRange)
+        : cachedValue;
+    }
     if (!providerResult && request.missingProviderError) {
       throw new Error(request.missingProviderError);
     }
     return providerResult?.value ?? [];
+  }
+
+  private scheduleHistoryRefresh(request: HistoryRequestDescriptor): void {
+    const key = `${request.identity.kind}|${request.identity.entityKey}|${request.identity.variantKey}`;
+    if (this.historyRefreshInFlight.has(key)) return;
+    const pending = this.refreshHistory(request).finally(() => {
+      this.historyRefreshInFlight.delete(key);
+    });
+    this.historyRefreshInFlight.set(key, pending);
+  }
+
+  private async refreshHistory(request: HistoryRequestDescriptor): Promise<void> {
+    const brokerCandidates = this.deps.getBrokerCandidatesForContext(request.context, false);
+    try {
+      const brokerResult = await withBrokerTimeout(this.fetchBrokerHistory(request, brokerCandidates));
+      if (brokerResult && brokerResult.value.length > 0) return;
+      await this.fetchProviderHistory(request);
+    } catch {
+      // Background refresh is best-effort; callers already have cached points.
+    }
   }
 
   private fetchBrokerHistory(
@@ -371,20 +450,55 @@ export class ProviderRouterHistoryRoutes {
   private async firstProviderArrayResult<T>(
     fetch: (provider: DataProvider) => Promise<T[] | null>,
   ): Promise<SourceResult<T[]> | null> {
+    const providers = this.deps.providersInPriorityOrder();
     let firstEmptyResult: SourceResult<T[]> | null = null;
-    for (const provider of this.deps.providersInPriorityOrder()) {
+    const tryProvider = async (provider: DataProvider): Promise<SourceResult<T[]> | null> => {
       try {
         const value = await fetch(provider);
-        if (value === null) continue;
+        if (value === null) return null;
         const result = { sourceKey: this.deps.providerSourceKey(provider), value };
-        if (value.length > 0) return result;
-        firstEmptyResult ??= result;
+        if (value.length === 0) firstEmptyResult ??= result;
+        return result;
       } catch (error) {
         if (shouldLogProviderError(error)) {
           this.deps.logProviderError(`${provider.id} failed: ${error}`);
         }
+        return null;
       }
+    };
+
+    if (providers.length <= 1) {
+      for (const provider of providers) {
+        const result = await tryProvider(provider);
+        if (result && result.value.length > 0) return result;
+      }
+      return firstEmptyResult;
     }
-    return firstEmptyResult;
+
+    const preferred = tryProvider(providers[0]!);
+    const speculativeDelay = new Promise<"timeout">((resolve) => {
+      setTimeout(() => resolve("timeout"), 200);
+    });
+    const first = await Promise.race([preferred, speculativeDelay]);
+    if (first !== "timeout" && first && first.value.length > 0) return first;
+
+    const remaining = providers.slice(1).map((provider) => tryProvider(provider));
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (result: SourceResult<T[]> | null) => {
+        if (settled || !result || result.value.length === 0) return;
+        settled = true;
+        resolve(result);
+      };
+      void preferred.then((result) => {
+        if (result && result.value.length > 0) finish(result);
+      });
+      for (const pending of remaining) {
+        void pending.then(finish);
+      }
+      void Promise.all([preferred, ...remaining]).then(() => {
+        if (!settled) resolve(firstEmptyResult);
+      });
+    });
   }
 }

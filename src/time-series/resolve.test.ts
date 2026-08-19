@@ -211,6 +211,62 @@ describe("resolveChartSpecData", () => {
     }
   });
 
+  test("skips financials and broker resolution support for ohlcv charts with an exchange", async () => {
+    let financialCalls = 0;
+    let resolveSupport: (() => void) | null = null;
+    const supportGate = new Promise<void>((resolve) => {
+      resolveSupport = resolve;
+    });
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => {
+        financialCalls += 1;
+        return emptyFinancials();
+      },
+      getChartResolutionSupport: async () => {
+        await supportGate;
+        return [{ resolution: "1d" as const, maxRange: "5Y" as const }];
+      },
+      getPriceHistoryForResolution: async () => [
+        { date: new Date("2025-01-07T16:00:00Z"), close: 100 },
+      ],
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "5Y", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "price",
+        source: {
+          kind: "security",
+          instrument: { symbol: "TEST", exchange: "NASDAQ" },
+          fieldId: "market.ohlcv",
+        },
+        style: "candles",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+
+    const result = await Promise.race([
+      resolveChartSpecData(spec, {
+        dataProvider: provider,
+        now: new Date("2025-01-08T00:00:00Z"),
+        loadFredSeries: async () => fredLoad(),
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("hung waiting for broker resolution support")), 200);
+      }),
+    ]);
+
+    expect(financialCalls).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(result.series[0]?.points).toHaveLength(1);
+    resolveSupport?.();
+  });
+
   test("does not relabel provider-default history as a manually requested resolution", async () => {
     let genericHistoryCalls = 0;
     const provider = createTestDataProvider({
@@ -1425,6 +1481,26 @@ describe("resolveChartSpecData", () => {
     const result = await resolveChartSpecData(spec, {
       dataProvider: provider,
       now: new Date(now),
+      quoteOverrides: new Map([[
+        chartQuoteOverrideKeyForSource({
+          kind: "security",
+          instrument: { symbol: "FRESH", exchange: "XNAS" },
+          fieldId: "market.ohlcv",
+        }),
+        {
+          symbol: "FRESH",
+          price: 130,
+          currency: "USD",
+          change: 30,
+          changePercent: 30,
+          lastUpdated: quoteTime,
+          listingExchangeName: "XNAS",
+          marketState: "POST",
+          postMarketPrice: 129,
+          postMarketChange: -1,
+          postMarketChangePercent: -0.77,
+        },
+      ]]),
       loadFredSeries: async () => fredLoad(),
     });
 

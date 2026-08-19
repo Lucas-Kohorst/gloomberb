@@ -86,6 +86,16 @@ export function parseChartSpec(value: unknown): ChartSpec | null {
 }
 
 export function parseChartSpecOr(value: unknown, fallback: ChartSpec): ChartSpec {
+  if (
+    isRecord(value)
+    && value.version === CHART_SPEC_VERSION
+    && Array.isArray(value.series)
+    && Array.isArray(value.panels)
+    && Array.isArray(value.studies)
+  ) {
+    const spec = value as unknown as ChartSpec;
+    if (validateChartSpec(spec).valid) return spec;
+  }
   return parseChartSpec(value) ?? normalizeChartSpec(fallback, DEFAULT_CHART_SPEC);
 }
 

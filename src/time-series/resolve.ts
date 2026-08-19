@@ -7,12 +7,14 @@ import {
 import {
   CHART_RESOLUTION_STEP_MS,
   clampTimeRangeToMaxRange,
+  DEFAULT_CHART_RESOLUTION_SUPPORT,
   getBestSupportedResolutionForVisibleWindow,
   getNextBufferRange,
   getPresetResolution,
   getSupportMaxRange,
   intersectChartResolutionSupport,
   isIntradayResolution,
+  normalizeChartResolutionSupport,
   TIME_RANGE_ORDER,
   type ChartResolutionSupport,
   type ManualChartResolution,
@@ -26,6 +28,7 @@ import {
   getTimeSeriesField,
   isFundamentalFieldId,
   isMarketFieldId,
+  isPriceOnlyMarketFieldId,
 } from "./field-catalog";
 import {
   fundamentalSeriesUsesAvailabilityFallback,
@@ -43,6 +46,10 @@ import { clipSeriesToWindow } from "./alignment";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 import { chartSeriesSourceKey } from "../capabilities/chart-series";
 import { resolutionForExplicitMarketPeriods } from "./market-resolution";
+import {
+  rememberParsedPriceHistory,
+  parsedPriceHistoryKey,
+} from "./parsed-history-cache";
 import {
   canonicalExchange,
   publicTickerKey,
@@ -360,6 +367,56 @@ function emptyFinancials(priceHistory: TickerFinancials["priceHistory"] = []): T
   return { annualStatements: [], quarterlyStatements: [], priceHistory };
 }
 
+export function seedChartResolutionResult(
+  spec: ChartSpec,
+  historyByInstrument: ReadonlyMap<string, TickerFinancials["priceHistory"]>,
+): ChartResolutionResult | null {
+  const series: ResolvedSeries[] = [];
+  spec.series.forEach((seriesSpec, index) => {
+    if (seriesSpec.visible === false || seriesSpec.source.kind !== "security") return;
+    if (!isMarketFieldId(seriesSpec.source.fieldId)) return;
+    const history = historyByInstrument.get(instrumentKey(seriesSpec.source));
+    if (!history?.length) return;
+    const resolved = baseSecuritySeries(seriesSpec, emptyFinancials(history), index);
+    if (resolved?.points.length) series.push(resolved);
+  });
+  if (series.length === 0) return null;
+  return {
+    series,
+    legendSeries: series,
+    bufferedSeries: series,
+    loading: false,
+    errors: [],
+    warnings: [],
+  };
+}
+
+function isThenable<T>(value: unknown): value is Promise<T> {
+  return typeof value === "object" && value !== null && "then" in value;
+}
+
+function readImmediateResolutionSupport(
+  provider: DataProvider,
+  source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+): ChartResolutionSupport[] {
+  if (!provider.getChartResolutionSupport) return [];
+  const result = provider.getChartResolutionSupport(
+    source.instrument.symbol,
+    source.instrument.exchange ?? "",
+    requestContext(source),
+  );
+  if (Array.isArray(result)) return normalizeChartResolutionSupport(result);
+  if (isThenable(result)) return DEFAULT_CHART_RESOLUTION_SUPPORT;
+  return [];
+}
+
+function chartIsPriceOnly(spec: ChartSpec, calculationSeriesIds: ReadonlySet<string>): boolean {
+  return spec.series.every((entry) => {
+    if (!calculationSeriesIds.has(entry.id) || entry.source.kind !== "security") return true;
+    return isPriceOnlyMarketFieldId(entry.source.fieldId);
+  });
+}
+
 function isSortedPriceHistory(points: TickerFinancials["priceHistory"]): boolean {
   let previous = Number.NEGATIVE_INFINITY;
   for (const point of points) {
@@ -530,6 +587,15 @@ async function loadPriceHistory(
         resolved.length > 0
         && (!request.explicitWindow || historyIntersectsBounds(resolved, request.visibleBounds))
       ) {
+        rememberParsedPriceHistory(
+          parsedPriceHistoryKey(
+            source.instrument.symbol,
+            source.instrument.exchange ?? "",
+            request.fallbackRange,
+            request.resolution,
+          ),
+          resolved,
+        );
         return resolved;
       }
     } catch {
@@ -832,17 +898,20 @@ export async function resolveChartSpecData(
   };
   const loadResolutionSupport = (
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+    immediate: boolean,
   ) => {
     const provider = sources.dataProvider!;
     if (!provider.getChartResolutionSupport) return Promise.resolve([]);
-    const key = `${provider.id}|${instrumentKey(source)}`;
+    const key = `${provider.id}|${instrumentKey(source)}|${immediate ? "immediate" : "live"}`;
     let pending = cache.resolutionSupportByInstrument.get(key);
     if (!pending) {
-      pending = Promise.resolve(provider.getChartResolutionSupport(
-        source.instrument.symbol,
-        source.instrument.exchange ?? "",
-        requestContext(source),
-      )).catch(() => []);
+      pending = immediate
+        ? Promise.resolve().then(() => readImmediateResolutionSupport(provider, source))
+        : Promise.resolve(provider.getChartResolutionSupport(
+          source.instrument.symbol,
+          source.instrument.exchange ?? "",
+          requestContext(source),
+        )).catch(() => []);
       cache.resolutionSupportByInstrument.set(key, pending);
     }
     return pending;
@@ -871,6 +940,7 @@ export async function resolveChartSpecData(
       ? [[instrumentKey(entry.source), entry.source] as const]
       : []
   ))).values()];
+  const priceOnly = chartIsPriceOnly(spec, calculationSeriesIds);
   const resolutionSupportSources = await Promise.all(activeMarketSources.map(async (source) => (
     source.instrument.exchange?.trim()
       ? source
@@ -878,7 +948,7 @@ export async function resolveChartSpecData(
   )));
   const sharedSupport = activeMarketSources.length > 0
     ? intersectChartResolutionSupport(await Promise.all(
-        resolutionSupportSources.map((source) => loadResolutionSupport(source)),
+        resolutionSupportSources.map((source) => loadResolutionSupport(source, priceOnly)),
       ))
     : [];
   const initialResolution = requestResolution(
@@ -909,7 +979,7 @@ export async function resolveChartSpecData(
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
     all = false,
   ) => {
-    const support = await loadResolutionSupport(source);
+    const support = await loadResolutionSupport(source, priceOnly);
     const maxRange = getSupportMaxRange(support, initialResolution);
     const historyBounds = clampHistoryBoundsToSupport(initialCalculationBounds, maxRange);
     const requestedFallbackRange = all
@@ -1015,10 +1085,12 @@ export async function resolveChartSpecData(
       const marketField = isMarketFieldId(source.fieldId);
       const quoteDerivedValuation = valuationSeriesUsesLiveQuote(source.fieldId);
       const needsHistory = marketField || quoteDerivedValuation;
+      const needsFinancials = !isPriceOnlyMarketFieldId(source.fieldId)
+        || !source.instrument.exchange?.trim();
       const quoteOverride = marketField || quoteDerivedValuation
         ? sources.quoteOverrides?.get(chartQuoteOverrideKeyForSource(source))
         : undefined;
-      const financialsPromise = loadFinancials(source);
+      const financialsPromise = needsFinancials ? loadFinancials(source) : Promise.resolve(null);
       let resolvedSource = source;
       let financials: TickerFinancials | null;
       let history: TickerFinancials["priceHistory"] | null;
