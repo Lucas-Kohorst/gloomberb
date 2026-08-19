@@ -16,6 +16,7 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
+import { weatherPlugin } from "./builtin/weather";
 import { llmStatsPlugin } from "./builtin/llm-stats";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
@@ -35,6 +36,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   llmStatsPlugin,
   predictionMarketsPlugin,
   adjacentPlugin,
+  weatherPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,

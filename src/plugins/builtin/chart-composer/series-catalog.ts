@@ -23,6 +23,9 @@ import {
   type FuturesCatalogEntry,
   type TreasuryCatalogEntry,
 } from "./universal-series";
+import { WEATHER_STATIONS } from "../weather/stations";
+import { weatherMetricLabel } from "../weather/mapping";
+import type { WeatherMetric } from "../weather/types";
 import {
   formatPredictionSeriesExpression,
   looksLikePredictionMarketQuery,
@@ -293,6 +296,14 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
         detail: "Poll",
         expression,
       };
+    case "weather":
+      return {
+        id: `wx:${expression.stationId}:${expression.metric}`,
+        label: `WX · ${expression.stationId} ${weatherMetricLabel(expression.metric)}`,
+        description: "Weather Company settlement observation",
+        detail: "WX",
+        expression,
+      };
     case "prediction-market":
       return {
         id: `pm:${expression.venue}:${expression.marketId}`,
@@ -332,6 +343,8 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
       return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    case "weather":
+      return `${SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
     case "prediction-market":
       return formatPredictionSeriesExpression(expression);
     default:
@@ -366,8 +379,9 @@ export function buildChartSeriesAssistContext(): string {
     + "FUT:code for futures (e.g. FUT:ES), "
     + "UST:maturity for Treasury yields (e.g. UST:10Y), "
     + "BENCH:selector:metric for AI benchmarks (e.g. BENCH:gpt-4o:intelligence), "
-    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve). "
-    + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
+    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
+    + "WX:station:metric for Weather Company settlement obs (e.g. WX:LAX:high, WX:CLILAX:low, WX:NYC:hourly). "
+    + "Natural language such as 'adjacent red index', 'trump kalshi', 'LA weather high', or 'will fed cut polymarket' maps onto those expressions.";
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -533,6 +547,29 @@ function appendUniversalSuggestions(
     }
   }
 
+  const weatherMetrics: WeatherMetric[] = ["high", "low", "hourly"];
+  for (const station of WEATHER_STATIONS) {
+    if (station.scope !== "domestic") continue;
+    for (const metric of weatherMetrics) {
+      const score = universalScore(q, qCompact, [
+        station.id,
+        station.city,
+        station.icao,
+        `CLI${station.id}`,
+        metric,
+        weatherMetricLabel(metric),
+        "weather",
+        "wx",
+        "climate",
+        "temperature",
+        "kalshi",
+      ]);
+      if (score >= 0) {
+        scored.push({ suggestion: weatherSuggestion(station.id, station.city, metric), score });
+      }
+    }
+  }
+
   scored.sort((left, right) => right.score - left.score);
   for (const { suggestion } of scored.slice(0, remaining)) {
     if (!suggestions.some((entry) => entry.id === suggestion.id)) {
@@ -599,6 +636,21 @@ function pollSuggestion(subject: string, choice: string): SeriesCatalogSuggestio
     description: "VoteHub poll series",
     detail: "Poll",
     expression: { kind: "poll", subject, choice },
+  };
+}
+
+function weatherSuggestion(stationId: string, city: string, metric: WeatherMetric): SeriesCatalogSuggestion {
+  return {
+    id: `wx:${stationId}:${metric}`,
+    label: `${city} · ${weatherMetricLabel(metric)}`,
+    description: `Weather Company · WX:${stationId}:${metric}`,
+    detail: "WX",
+    expression: {
+      kind: "weather",
+      stationId,
+      metric,
+      label: `${city} ${weatherMetricLabel(metric)}`,
+    },
   };
 }
 

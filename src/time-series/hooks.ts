@@ -25,6 +25,9 @@ import { loadVenuePredictionMarketSeries } from "../plugins/prediction-markets/s
 import { fetchArtificialAnalysisData } from "../plugins/builtin/llm-stats/client";
 import { aaMetricValue, matchingAaRows } from "../plugins/builtin/llm-stats/normalize";
 import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
+import { loadWeatherSeries as loadWeatherSeriesFromClient } from "../plugins/builtin/weather/client";
+import { findWeatherStation } from "../plugins/builtin/weather/stations";
+import { weatherMetricLabel } from "../plugins/builtin/weather/mapping";
 import {
   computePollTrend,
   normalizeVoteHubPoll,
@@ -200,6 +203,25 @@ export async function loadPollSeries(
   };
 }
 
+export async function loadWeatherSeries(
+  stationId: string,
+  metric: "high" | "low" | "precip" | "hourly",
+): Promise<UniversalSeriesLoadResult> {
+  const loaded = await loadWeatherSeriesFromClient(stationId, metric);
+  const station = findWeatherStation(stationId);
+  return {
+    points: loaded.points.map((point) => ({
+      date: point.date,
+      observedAt: point.date,
+      value: point.value,
+      provenance: { providerId: "twc-kalshi", quality: "reported" },
+    })),
+    unit: loaded.unit,
+    unitGroup: loaded.unitGroup,
+    label: loaded.label || `${station?.city ?? stationId} ${weatherMetricLabel(metric)}`,
+  };
+}
+
 export function hydrateChartSpecInstruments(
   spec: ChartSpec,
   tickers: ReadonlyMap<string, TickerRecord>,
@@ -245,6 +267,7 @@ export function useResolvedChartSpec(
       loadAdjacentIndexSeries,
       loadBenchmarkSeries,
       loadPollSeries,
+      loadWeatherSeries,
       loadPredictionMarketSeries,
     }),
     [dataProvider],

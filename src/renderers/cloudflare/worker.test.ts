@@ -429,3 +429,36 @@ describe("hosted share Worker endpoint", () => {
     expect(body.id).toHaveLength(12);
   });
 });
+
+describe("hosted Weather Company proxy", () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
+  test("forwards Kalshi climate JSON and rejects other weather.com paths", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response(JSON.stringify({ date: "2026-08-18", results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const ok = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/kalshi/api/climate/primary?date=2026-08-18"),
+      makeEnv(),
+    );
+    expect(ok?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://weather.com/kalshi/api/climate/primary?date=2026-08-18");
+
+    fetchedUrl = "";
+    const denied = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/v3/wx/observations"),
+      makeEnv(),
+    );
+    expect(denied?.status).toBe(404);
+    expect(fetchedUrl).toBe("");
+  });
+});
+

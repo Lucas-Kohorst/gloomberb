@@ -88,6 +88,8 @@ export interface ChartResolveSources {
   loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
   /** Loads a VoteHub poll time series for a subject/choice pair. */
   loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
+  /** Loads Weather Company settlement observations (daily high/low/precip or hourly). */
+  loadWeatherSeries?: (stationId: string, metric: "high" | "low" | "precip" | "hourly") => Promise<UniversalSeriesLoadResult>;
   /** Loads a Kalshi/Polymarket yes-price history. */
   loadPredictionMarketSeries?: (
     venue: "kalshi" | "polymarket",
@@ -1070,7 +1072,7 @@ export async function resolveChartSpecData(
   };
 
   const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll" | "prediction-market",
+    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "prediction-market",
     key: string,
     loader: () => Promise<UniversalSeriesLoadResult>,
   ): Promise<UniversalSeriesLoadResult> => {
@@ -1140,6 +1142,19 @@ export async function resolveChartSpecData(
           "poll",
           `${subject}:${choice}`,
           () => sources.loadPollSeries!(subject, choice),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "weather") {
+        if (!sources.loadWeatherSeries) {
+          throw new Error("Weather data source is not available.");
+        }
+        const { stationId, metric } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "weather",
+          `${stationId}:${metric}`,
+          () => sources.loadWeatherSeries!(stationId, metric),
         );
         return baseUniversalSeries(seriesSpec, data, index);
       }
