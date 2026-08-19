@@ -65,3 +65,19 @@ export function kalshiWeightedImpliedTemp(
 export function roundImpliedTemp(value: number): number {
   return Math.round(value);
 }
+
+/** Max bucket share of total yes-weight that still counts as a live book. */
+export const SETTLED_IMPLIED_DOMINANCE = 0.9;
+
+/** True when one bucket holds essentially all the weight (settled 0/1). */
+export function impliedBookLooksSettled(buckets: readonly WeatherImpliedBucket[]): boolean {
+  let max = 0;
+  let sum = 0;
+  for (const bucket of buckets) {
+    const weight = finite(bucket.yesPrice) ? Math.max(0, bucket.yesPrice) : 0;
+    if (weight <= 0) continue;
+    max = Math.max(max, weight);
+    sum += weight;
+  }
+  return sum <= 0 || max / sum >= SETTLED_IMPLIED_DOMINANCE;
+}

@@ -136,6 +136,37 @@ export function zonedDateKey(timeZone: string, now = Date.now()): string {
   return `${year}-${month}-${day}`;
 }
 
+function zonedWallTimeUtc(utcMs: number, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(utcMs));
+  const read = (type: Intl.DateTimeFormatPartTypes) => (
+    Number(parts.find((part) => part.type === type)?.value)
+  );
+  return Date.UTC(read("year"), read("month") - 1, read("day"), read("hour"), read("minute"), read("second"));
+}
+
+/** UTC ms of 00:00:00 on `dateKey` in `timeZone`. */
+export function zonedMidnightUtcMs(dateKey: string, timeZone: string): number {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return Date.parse(`${dateKey}T00:00:00Z`);
+  const desired = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 0, 0, 0);
+  let utc = desired;
+  for (let i = 0; i < 8; i += 1) {
+    const delta = zonedWallTimeUtc(utc, timeZone) - desired;
+    if (delta === 0) return utc;
+    utc -= delta;
+  }
+  return utc;
+}
+
 export function parseKalshiWeatherEventStamp(eventTicker: string | undefined): {
   date: string;
   hour: number | null;

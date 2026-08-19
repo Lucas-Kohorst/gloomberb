@@ -8,6 +8,7 @@ import {
   parseKalshiWeatherSeriesTicker,
   parseWeatherMetric,
   resolveWeatherSettlement,
+  zonedMidnightUtcMs,
 } from "./mapping";
 import {
   normalizeInternationalClimatePayload,
@@ -64,6 +65,17 @@ const PRIMARY_FIXTURE = {
     },
   ],
 };
+
+describe("zoned midnight freeze", () => {
+  test("maps local calendar midnight onto UTC for PDT and EDT", () => {
+    expect(new Date(zonedMidnightUtcMs("2026-08-18", "America/Los_Angeles")).toISOString()).toBe(
+      "2026-08-18T07:00:00.000Z",
+    );
+    expect(new Date(zonedMidnightUtcMs("2026-08-18", "America/New_York")).toISOString()).toBe(
+      "2026-08-18T04:00:00.000Z",
+    );
+  });
+});
 
 describe("weather station tokens", () => {
   test("normalizes CLI products, ICAO, and Kalshi city aliases", () => {

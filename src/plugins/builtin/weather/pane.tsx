@@ -34,9 +34,11 @@ import {
   mergeWeatherArchive,
   type WeatherArchiveState,
 } from "./archive";
+import { impliedBackfillJobs, loadImpliedBackfill, officialArchiveObservations } from "./backfill";
 import {
   fetchInternationalClimate,
   fetchMetarObservations,
+  fetchOfficialClimateHistory,
   fetchPrimaryClimate,
   loadWeatherHourly,
 } from "./client";
@@ -315,6 +317,20 @@ function emptyWeatherRow(station: {
   };
 }
 
+function overlayYesterdayFromArchive(rows: WeatherRow[], archive: WeatherArchiveState, now = Date.now()): WeatherRow[] {
+  return rows.map((row) => {
+    const localDate = zonedDateKey(row.timezone || "UTC", now);
+    const yesterday = addUtcDays(localDate, -1);
+    const yday = findWeatherDayRecord(archive, row.stationId, yesterday);
+    if (!yday) return row;
+    return {
+      ...row,
+      yForecast: yday.forecastHigh ?? yday.impliedHigh ?? row.yForecast,
+      ySettlement: yday.settlementHigh ?? row.ySettlement,
+    };
+  });
+}
+
 export function WeatherPane({ focused, width, height }: PaneProps) {
   const [tab, setTab] = useState<WeatherPaneTab>("domestic");
   const scope: WeatherScope = tab === "report" ? "domestic" : tab;
@@ -323,7 +339,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     EMPTY_WEATHER_ARCHIVE,
     { schemaVersion: WEATHER_ARCHIVE_SCHEMA_VERSION },
   );
-  const [reportKind, setReportKind] = useState<WeatherForecastKind>("twc");
+  const [reportKind, setReportKind] = useState<WeatherForecastKind>("implied");
   const [rowsByScope, setRowsByScope] = useState<Partial<Record<WeatherScope, WeatherRow[]>>>({});
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -347,7 +363,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const archiveRef = useRef(archive);
   archiveRef.current = archive;
 
-  const allRows = rowsByScope[scope] ?? [];
+  const rawRows = rowsByScope[scope] ?? [];
+  const allRows = useMemo(
+    () => overlayYesterdayFromArchive(rawRows, archive),
+    [archive, rawRows],
+  );
   const filteredRows = useMemo(
     () => allRows.filter((row) => matchesQuery(row, searchQuery)),
     [allRows, searchQuery],
@@ -458,7 +478,12 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           now,
           today: utcToday,
         });
-        setArchive(nextArchive);
+        setArchive((current) => mergeWeatherArchive(current, {
+          observations,
+          implied,
+          now,
+          today: utcToday,
+        }));
         const impliedByStation = new Map(implied.map((row) => [row.stationId, row] as const));
         const nextRows = baseRows.map((row) => {
           const localDate = zonedDateKey(row.timezone || "UTC", now);
@@ -487,6 +512,37 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     load(scope);
   }, [load, scope]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const now = Date.now();
+    const today = new Date(now).toISOString().slice(0, 10);
+    void (async () => {
+      const history = await fetchOfficialClimateHistory().catch(() => []);
+      if (cancelled || history.length === 0) return;
+      setArchive((current) => mergeWeatherArchive(current, {
+        observations: officialArchiveObservations(history),
+        now,
+        today,
+      }));
+      const jobs = impliedBackfillJobs(archiveRef.current, today);
+      if (jobs.length === 0) return;
+      await loadImpliedBackfill(jobs, {
+        isCancelled: () => cancelled,
+        onBatch: (rows) => {
+          if (cancelled || rows.length === 0) return;
+          setArchive((current) => mergeWeatherArchive(current, {
+            implied: rows,
+            now,
+            today,
+          }));
+        },
+      });
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [setArchive]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -722,7 +778,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           getItemKey={(row) => row.stationId}
           renderCell={renderReport}
           emptyStateTitle={report.samples === 0 ? "No stored forecast days yet." : "No matching cities."}
-          emptyStateHint="HIGH/IMPL freeze when first seen; official prints fill Y.ST the next day."
+          emptyStateHint="Kalshi Y.FC is implied at local midnight vs official print. TWC HIGH freezes on first visit."
         />
       </Box>
     );
