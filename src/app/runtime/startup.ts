@@ -18,6 +18,7 @@ import type { DataProvider } from "../../types/data-provider";
 import type { BrokerAccount } from "../../types/trading";
 import { debugLog } from "../../utils/debug-log";
 import { measurePerfAsync } from "../../utils/perf-marks";
+import { getHostedConfigUserId } from "../../data/config/hosted-user-persist";
 
 const appLog = debugLog.createLogger("app");
 
@@ -87,6 +88,7 @@ export function useAppStartupRuntime({
           refreshQuotesBatch,
           autoImportBrokerPositions,
           persistedBrokerAccounts,
+          seedDefaultTickers: !getHostedConfigUserId(),
         }), {
           brokerInstanceCount: state.config.brokerInstances.length,
           layoutPaneCount: state.config.layout.instances.length,

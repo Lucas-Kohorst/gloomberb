@@ -58,6 +58,7 @@ export interface InitializeAppStateArgs {
   refreshQuotesBatch?: (entries: Array<{ ticker: TickerRecord; priority: number }>) => void;
   autoImportBrokerPositions: (tickerMap: Map<string, TickerRecord>) => Promise<void>;
   persistedBrokerAccounts?: Record<string, BrokerAccount[]>;
+  seedDefaultTickers?: boolean;
 }
 
 function buildPaneStateSeed(
@@ -271,6 +272,7 @@ export async function initializeAppState({
   refreshQuotesBatch,
   autoImportBrokerPositions,
   persistedBrokerAccounts = {},
+  seedDefaultTickers = true,
 }: InitializeAppStateArgs): Promise<void> {
   startupLog.info("initialize start", {
     layoutPaneCount: config.layout.instances.length,
@@ -284,8 +286,9 @@ export async function initializeAppState({
   let tickers = await measurePerfAsync("startup.load-tickers", () => tickerRepository.loadAllTickers());
   startupLog.info("tickers loaded", { count: tickers.length });
 
-  // Seed default watchlist tickers on first run
-  if (tickers.length === 0) {
+  // Seed default watchlist tickers on first run. Hosted signed-in sessions skip
+  // this so an empty Worker store cannot stamp demo names over the user's lists.
+  if (tickers.length === 0 && seedDefaultTickers) {
     const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
     const seeded: TickerRecord[] = [];
     await measurePerfAsync("startup.seed-default-tickers", async () => {
