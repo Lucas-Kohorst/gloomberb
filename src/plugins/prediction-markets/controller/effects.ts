@@ -38,6 +38,7 @@ interface UsePredictionControllerEffectsOptions {
   selectedRow: PredictionListRow | null;
   selectedRowKey: string | null;
   setDetailOpen: Dispatch<SetStateAction<boolean>>;
+  setExpandedGroupKey: Dispatch<SetStateAction<string | null>>;
   setInitialParamsApplied: Dispatch<SetStateAction<boolean>>;
   setLastVenueScope: Dispatch<SetStateAction<PredictionVenueScope>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
@@ -69,6 +70,7 @@ export function usePredictionControllerEffects({
   selectedRow,
   selectedRowKey,
   setDetailOpen,
+  setExpandedGroupKey,
   setInitialParamsApplied,
   setLastVenueScope,
   setSearchQuery,
@@ -144,6 +146,7 @@ export function usePredictionControllerEffects({
       headerScrollBox.scrollLeft = 0;
     }
     setDetailOpen(false);
+    setExpandedGroupKey(null);
     setSelectedRowKey((current) => (current == null ? current : null));
     setSelectedDetailMarketKey((current) => (current == null ? current : null));
   }, [
@@ -155,6 +158,7 @@ export function usePredictionControllerEffects({
     previousFilterResetKeyRef,
     scrollRef,
     setDetailOpen,
+    setExpandedGroupKey,
     setSelectedDetailMarketKey,
     setSelectedRowKey,
   ]);

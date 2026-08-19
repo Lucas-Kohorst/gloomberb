@@ -99,6 +99,7 @@ export function usePredictionMarketsController({
     );
 
   const [detailOpen, setDetailOpen] = useState(false);
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
   const appViewport = useViewport();
@@ -129,6 +130,7 @@ export function usePredictionMarketsController({
     detailOpen,
     detailTab,
     effectiveVenueScope,
+    expandedGroupKey,
     focused,
     historyRange,
     includeKalshi,
@@ -162,6 +164,7 @@ export function usePredictionMarketsController({
     selectedRow: data.selectedRow,
     selectedRowKey,
     setDetailOpen,
+    setExpandedGroupKey,
     setInitialParamsApplied,
     setLastVenueScope,
     setSearchQuery,
@@ -205,7 +208,7 @@ export function usePredictionMarketsController({
   );
 
   const setBrowseSelection = useCallback(
-    (rowKey: string, options?: { debounceDetail?: boolean }) => {
+    (rowKey: string, options?: { debounceDetail?: boolean; expandGroup?: boolean }) => {
       setSearchFocused(false);
       data.actions.setNextDetailLoadDelay(
         options?.debounceDetail ? KEYBOARD_DETAIL_LOAD_DELAY_MS : 0,
@@ -213,9 +216,23 @@ export function usePredictionMarketsController({
       setSelectedRowKey(rowKey, {
         immediate: !options?.debounceDetail || selectedRowKey == null,
       });
+      if (!options?.expandGroup) return;
+      const row = data.visibleRows.find((candidate) => candidate.key === rowKey);
+      if (row?.kind === "group") setExpandedGroupKey(row.key);
     },
-    [data.actions, selectedRowKey, setSelectedRowKey],
+    [data.actions, data.visibleRows, selectedRowKey, setSelectedRowKey],
   );
+
+  const handleBrowseEscape = useCallback(() => {
+    const row = data.selectedRow;
+    if (row?.kind === "strike") {
+      setSelectedRowKey(row.parentKey, { immediate: true });
+      return;
+    }
+    if (row?.kind === "group" && expandedGroupKey === row.key) {
+      setExpandedGroupKey(null);
+    }
+  }, [data.selectedRow, expandedGroupKey, setSelectedRowKey]);
 
   const openSelectedRow = useCallback(
     (rowKey: string) => {
@@ -223,18 +240,39 @@ export function usePredictionMarketsController({
       if (!row) return;
       setSearchFocused(false);
       data.actions.setNextDetailLoadDelay(0);
-      setSelectedRowKey(row.key, { immediate: true });
+      if (row.kind === "group") {
+        if (expandedGroupKey !== row.key) {
+          setExpandedGroupKey(row.key);
+          setSelectedRowKey(row.key, { immediate: true });
+          return;
+        }
+        setSelectedRowKey(row.key, { immediate: true });
+        setSelectedDetailMarketKey(row.focusMarketKey, { immediate: true });
+        setDetailOpen(true);
+        return;
+      }
+      const detailKey = row.kind === "strike" ? row.parentKey : row.key;
+      setSelectedRowKey(detailKey, { immediate: true });
       setSelectedDetailMarketKey(row.focusMarketKey, { immediate: true });
       setDetailOpen(true);
     },
-    [data.actions, data.visibleRows, setSelectedDetailMarketKey, setSelectedRowKey],
+    [
+      data.actions,
+      data.visibleRows,
+      expandedGroupKey,
+      setSelectedDetailMarketKey,
+      setSelectedRowKey,
+    ],
   );
 
   const selectMarket = useCallback(
     (marketKey: string) => {
       setSearchFocused(false);
       data.actions.setNextDetailLoadDelay(0);
-      const row = data.visibleRows.find((candidate) =>
+      const row = data.visibleRows.find((candidate) => (
+        candidate.kind === "group"
+        && candidate.markets.some((market) => market.key === marketKey)
+      )) ?? data.visibleRows.find((candidate) =>
         candidate.markets.some((market) => market.key === marketKey),
       );
       if (!row) {
@@ -310,6 +348,7 @@ export function usePredictionMarketsController({
     effectiveVenueScope,
     focused,
     hideTabs: paneSettings.hideTabs,
+    onBrowseEscape: handleBrowseEscape,
     searchFocused,
     selectedRow: data.selectedRow,
     selectedSummaryKey: data.selectedSummaryKey,
@@ -350,6 +389,7 @@ export function usePredictionMarketsController({
     searchLoading,
     searchQuery,
     selectedRow: data.selectedRow,
+    detailRow: data.detailRow,
     selectedIndex: data.selectedIndex,
     selectedSummary: data.selectedSummary,
     sortPreference,
