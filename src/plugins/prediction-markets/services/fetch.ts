@@ -7,16 +7,28 @@ import {
 import { withConnectionRequest } from "../../builtin/connections/register";
 
 const DEFAULT_SOURCE_KEY = "remote";
+const PREDICTION_FETCH_HEADERS = {
+  Accept: "application/json",
+  "User-Agent": "gloomberb-prediction-markets",
+} as const;
+
 const PREDICTION_FETCH = createThrottledFetch({
   requestsPerMinute: 60,
   maxRetries: 2,
   timeoutMs: 10_000,
   backoffBaseMs: 1_000,
   dedupeGetRequests: false,
-  defaultHeaders: {
-    Accept: "application/json",
-    "User-Agent": "gloomberb-prediction-markets",
-  },
+  defaultHeaders: PREDICTION_FETCH_HEADERS,
+  transport: httpFetch,
+});
+
+const PREDICTION_FETCH_NO_RETRY = createThrottledFetch({
+  requestsPerMinute: 60,
+  maxRetries: 0,
+  timeoutMs: 10_000,
+  backoffBaseMs: 1_000,
+  dedupeGetRequests: false,
+  defaultHeaders: PREDICTION_FETCH_HEADERS,
   transport: httpFetch,
 });
 
@@ -48,10 +60,13 @@ function connectionIdForPredictionUrl(url: string): string | null {
   return null;
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
+async function fetchPredictionJson<T>(
+  url: string,
+  client: typeof PREDICTION_FETCH,
+): Promise<T> {
   const connectionId = connectionIdForPredictionUrl(url);
   const run = async (): Promise<T> => {
-    const response = await PREDICTION_FETCH.fetch(url);
+    const response = await client.fetch(url);
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${url}`);
     }
@@ -69,6 +84,15 @@ export async function fetchJson<T>(url: string): Promise<T> {
     return withConnectionRequest(connectionId, "fetch", run);
   }
   return run();
+}
+
+export async function fetchJson<T>(url: string): Promise<T> {
+  return fetchPredictionJson(url, PREDICTION_FETCH);
+}
+
+/** Kalshi list endpoints 429 on the hosted Worker IP; fail immediately so we can fall back. */
+export async function fetchJsonNoRetry<T>(url: string): Promise<T> {
+  return fetchPredictionJson(url, PREDICTION_FETCH_NO_RETRY);
 }
 
 export function getCachedPredictionResource<T>(
