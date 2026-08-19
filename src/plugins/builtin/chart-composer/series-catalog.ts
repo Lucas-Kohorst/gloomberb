@@ -26,6 +26,7 @@ export interface SeriesCatalogInstrument {
   symbol: string;
   exchange?: string;
   name?: string;
+  assetCategory?: string;
 }
 
 export interface SeriesCatalogSuggestion {
@@ -184,7 +185,7 @@ export function analyzeSeriesSearchQuery(query: string): SeriesSearchAnalysis {
   };
 }
 
-function fieldCategory(field: TimeSeriesFieldDefinition): string {
+export function fieldCategory(field: TimeSeriesFieldDefinition): string {
   if (field.id.startsWith("market.")) return "Market";
   if (field.id.startsWith("valuation.")) return "Valuation";
   return "Fundamentals";

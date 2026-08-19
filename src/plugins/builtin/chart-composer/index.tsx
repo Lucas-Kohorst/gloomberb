@@ -8,6 +8,12 @@ import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
+import { DataCatalogPane } from "./data-catalog-pane";
+import {
+  CHART_COMPOSER_TEMPLATE_ID,
+  DATA_CATALOG_PANE_ID,
+  DATA_CATALOG_TEMPLATE_ID,
+} from "./catalog-inventory";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   buildComparisonChartPreset,
@@ -23,8 +29,6 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
-
-const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
 
 function normalizedSymbol(value: string | null | undefined): string | null {
   const symbol = value?.trim().toUpperCase() ?? "";
@@ -148,6 +152,34 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
     },
   },
+  {
+    id: DATA_CATALOG_TEMPLATE_ID,
+    paneId: DATA_CATALOG_PANE_ID,
+    label: "Data Catalog",
+    description: "Browse and search the series Custom Chart already knows: securities, options, crypto, FRED, treasuries, and futures.",
+    keywords: [
+      "catalog",
+      "series",
+      "data",
+      "chart",
+      "fred",
+      "futures",
+      "treasury",
+      "crypto",
+      "options",
+      "option",
+    ],
+    shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
+    canCreate: () => true,
+    createInstance: (_context, options) => {
+      const query = options?.arg?.trim() ?? options?.values?.query?.trim() ?? "";
+      return {
+        title: query ? `Catalog · ${query}` : "Data Catalog",
+        placement: "floating" as const,
+        ...(query ? { settings: { query } } : {}),
+      };
+    },
+  },
   securityTemplate({
     id: "graph-price-pane",
     prefix: "GP",
@@ -212,6 +244,14 @@ export const chartComposerModule: PluginModule = {
       ),
       context.settings,
     ),
+  }, {
+    id: DATA_CATALOG_PANE_ID,
+    name: "Data Catalog",
+    icon: "C",
+    component: DataCatalogPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 110, height: 32 },
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {

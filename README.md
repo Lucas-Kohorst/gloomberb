@@ -210,6 +210,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `DES <ticker>` / `T <ticker>` | Security details for a ticker |
 | `FA <ticker>` | Financial statement view |
 | `G <series>` | Custom chart composer |
+| `CAT [query]` | Browse and search chartable series |
 | `GP <ticker>` | Price chart |
 | `GIP <ticker>` | Intraday price chart |
 | `HP <ticker>` | Historical OHLCV prices |
@@ -235,7 +236,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 
 ### Chart Composer
 
-`G`, `GP`, `GIP`, `CMP`, `GF`, and `GE` all open the same chart composer with different starting presets. A custom expression can mix unrelated data sources on one synchronized timeline:
+`G`, `GP`, `GIP`, `CMP`, `GF`, and `GE` all open the same chart composer with different starting presets. `CAT` opens a searchable catalog of those chartable series so you can graph one without typing the expression. A custom expression can mix unrelated data sources on one synchronized timeline:
 
 ```text
 G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
