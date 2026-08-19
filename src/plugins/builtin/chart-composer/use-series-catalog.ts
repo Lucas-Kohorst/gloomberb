@@ -180,57 +180,71 @@ function hitsFromVenueSummaries(
     return [{
       venue: summary.venue,
       marketId,
-      title: summary.marketLabel.trim() || summary.title.trim() || marketId,
+      title: summary.title.trim() || summary.marketLabel.trim() || marketId,
       ...(summary.eventLabel.trim() ? { eventLabel: summary.eventLabel } : {}),
+      ...(summary.marketLabel.trim() ? { marketLabel: summary.marketLabel } : {}),
       ...(summary.url.trim() ? { url: summary.url } : {}),
     }];
   });
 }
 
+let catalogPredictionHitsCache: PredictionMarketSearchHit[] | null = null;
+let catalogPredictionHitsInflight: Promise<PredictionMarketSearchHit[]> | null = null;
+
+export function resetCatalogPredictionHitsCache(): void {
+  catalogPredictionHitsCache = null;
+  catalogPredictionHitsInflight = null;
+}
+
+export function loadCatalogPredictionHits(): Promise<PredictionMarketSearchHit[]> {
+  if (catalogPredictionHitsCache) return Promise.resolve(catalogPredictionHitsCache);
+  if (catalogPredictionHitsInflight) return catalogPredictionHitsInflight;
+  catalogPredictionHitsInflight = Promise.allSettled([
+    loadKalshiCatalog("", "all", "top"),
+    loadPolymarketCatalog("", "all", "top"),
+  ]).then((results) => {
+    const markets = results.flatMap((result) => (
+      result.status === "fulfilled" ? hitsFromVenueSummaries(result.value) : []
+    ));
+    if (markets.length > 0) catalogPredictionHitsCache = markets;
+    return markets;
+  }).finally(() => {
+    catalogPredictionHitsInflight = null;
+  });
+  return catalogPredictionHitsInflight;
+}
+
 export function usePredictionMarketHits(
-  query: string,
   enabled: boolean,
 ): { markets: PredictionMarketSearchHit[]; loading: boolean } {
-  const trimmed = query.trim();
-  const [search, setSearch] = useState<{
-    query: string;
-    markets: PredictionMarketSearchHit[];
-    loading: boolean;
-  }>({ query: "", markets: [], loading: false });
+  const [markets, setMarkets] = useState<PredictionMarketSearchHit[]>(
+    catalogPredictionHitsCache ?? [],
+  );
+  const [loading, setLoading] = useState(enabled && catalogPredictionHitsCache == null);
 
   useEffect(() => {
-    if (!enabled || trimmed.includes(":")) {
-      setSearch({ query: "", markets: [], loading: false });
+    if (!enabled) return;
+    if (catalogPredictionHitsCache) {
+      setMarkets(catalogPredictionHitsCache);
+      setLoading(false);
       return;
     }
 
     let cancelled = false;
-    setSearch({ query: trimmed, markets: [], loading: true });
-    const timer = setTimeout(() => {
-      // Same venue catalogs as the Prediction pane. Adjacent /public/markets is
-      // empty or 401 on hosted, which is why CAT Prediction showed nothing.
-      void Promise.allSettled([
-        loadKalshiCatalog(trimmed, "all", "top"),
-        loadPolymarketCatalog(trimmed, "all", "top"),
-      ]).then((results) => {
-        if (cancelled) return;
-        const markets = results.flatMap((result) => (
-          result.status === "fulfilled" ? hitsFromVenueSummaries(result.value) : []
-        ));
-        setSearch({ query: trimmed, markets, loading: false });
-      });
-    }, trimmed.length >= 3 ? 120 : 0);
-
+    setLoading(true);
+    void loadCatalogPredictionHits().then((hits) => {
+      if (cancelled) return;
+      setMarkets(hits);
+      setLoading(false);
+    }).catch(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
-  }, [enabled, trimmed]);
+  }, [enabled]);
 
-  return {
-    markets: search.query === trimmed ? search.markets : [],
-    loading: search.loading && search.query === trimmed,
-  };
+  return { markets, loading };
 }
 
 export interface SeriesCatalogSearchResult {
@@ -257,7 +271,6 @@ export function useSeriesCatalogSuggestions({
     loading: boolean;
   }>({ query: "", instruments: [], loading: false });
   const predictionSearch = usePredictionMarketHits(
-    query,
     enabled && looksLikePredictionMarketQuery(query.trim()),
   );
 
