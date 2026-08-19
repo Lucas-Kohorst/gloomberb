@@ -8,8 +8,10 @@ import {
   computeGridLines,
   renderChart,
   type RenderChartOptions,
+  type RenderChartResult,
 } from "../../core/renderer";
 import { renderNativeChartBase, type NativeChartBitmap } from "../../native/chart-rasterizer";
+import { useShowChartTextFallback } from "../../native/use-chart-text-fallback";
 import { useStaticChartBitmapSize } from "./bitmap";
 import {
   StaticXAxisLabels,
@@ -103,6 +105,7 @@ export function StaticChartSurface({
 }: StaticChartSurfaceProps) {
   const themeColors = useThemeColors();
   const { cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
+  const showTextFallback = useShowChartTextFallback();
   const plotRef = useRef<BoxRenderable | null>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const xAxisRows = showTimeAxis || (xAxisLabels?.length ?? 0) > 0 ? 1 : 0;
@@ -157,13 +160,13 @@ export function StaticChartSurface({
   const axisGap = axisWidth > 0 ? 1 : 0;
   const plotWidth = Math.max(1, totalWidth - axisWidth - axisGap);
   const bitmapSize = useStaticChartBitmapSize(plotWidth, plotHeight);
-  const renderOptions = useMemo<RenderChartOptions>(() => ({
+  const plotOptions = useMemo<RenderChartOptions>(() => ({
     width: plotWidth,
     height: plotHeight,
     showVolume,
     volumeHeight,
-    cursorX: cursor?.x ?? null,
-    cursorY: cursor?.y ?? null,
+    cursorX: null,
+    cursorY: null,
     mode,
     axisMode,
     currency,
@@ -180,15 +183,38 @@ export function StaticChartSurface({
     mode,
     plotHeight,
     plotWidth,
-    cursor,
     showVolume,
     timeAxisDates,
     volumeHeight,
   ]);
-  const textResult = useMemo(
-    () => renderChart(points, renderOptions),
-    [points, renderOptions],
+  const cursorOptions = useMemo<RenderChartOptions>(() => ({
+    ...plotOptions,
+    cursorX: cursor?.x ?? null,
+    cursorY: cursor?.y ?? null,
+  }), [cursor, plotOptions]);
+  const cursorScene = useMemo(
+    () => buildChartScene(points, cursorOptions),
+    [cursorOptions, points],
   );
+  const textResult = useMemo<RenderChartResult>(() => {
+    if (showTextFallback) return renderChart(points, cursorOptions);
+    return {
+      lines: [],
+      axisLabels: [],
+      timeLabels: cursorScene?.timeLabels ?? "",
+      activePoint: cursorScene?.activePoint ?? null,
+      priceAtCursor: cursorScene?.priceAtCursor ?? null,
+      crosshairPrice: cursorScene?.crosshairPrice ?? null,
+      dateAtCursor: cursorScene?.dateAtCursor ?? null,
+      changeAtCursor: cursorScene?.changeAtCursor ?? null,
+      changePctAtCursor: cursorScene?.changePctAtCursor ?? null,
+      cursorColumn: cursorScene?.cursorColumn ?? null,
+      cursorRow: cursorScene?.cursorRow ?? null,
+      axisFractionDigits: null,
+      priceRange: cursorScene ? cursorScene.max - cursorScene.min : null,
+      pixelBuffer: null,
+    };
+  }, [cursorOptions, cursorScene, points, showTextFallback]);
   const effectiveAxisLabelsByRow = useMemo(() => {
     return new Map(axisLabels.map((entry) => [entry.row, entry.label] as const));
   }, [axisLabels]);
@@ -204,10 +230,10 @@ export function StaticChartSurface({
   const effectiveAxisGap = effectiveAxisWidth > 0 ? 1 : 0;
   const bitmap = useMemo<NativeChartBitmap | null>(() => {
     if (!bitmapSize) return null;
-    const scene = buildChartScene(points, renderOptions);
+    const scene = buildChartScene(points, plotOptions);
     if (!scene) return null;
     return renderNativeChartBase(scene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
-  }, [bitmapSize, points, renderOptions]);
+  }, [bitmapSize, plotOptions, points]);
   const canvasCrosshair = useMemo<ChartSurfaceProps["crosshair"]>(() => {
     if (!bitmap || !cursor) return null;
     return {

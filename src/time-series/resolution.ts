@@ -169,6 +169,16 @@ export function normalizeChartResolutionSupport(support: readonly ChartResolutio
   );
 }
 
+/** Yahoo-shaped support used for first paint when broker/provider support is async. */
+export const DEFAULT_CHART_RESOLUTION_SUPPORT: ChartResolutionSupport[] = normalizeChartResolutionSupport([
+  { resolution: "5m", maxRange: "1W" },
+  { resolution: "15m", maxRange: "1M" },
+  { resolution: "1h", maxRange: "3M" },
+  { resolution: "1d", maxRange: "5Y" },
+  { resolution: "1wk", maxRange: "ALL" },
+  { resolution: "1mo", maxRange: "ALL" },
+]);
+
 export function intersectChartResolutionSupport(
   supportSets: Array<readonly ChartResolutionSupport[]>,
 ): ChartResolutionSupport[] {
