@@ -22,9 +22,13 @@ import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { fetchArtificialAnalysisData } from "../llm-stats/client";
 import { ARTIFICIAL_ANALYSIS_ATTRIBUTION } from "../llm-stats/types";
 import { fetchVoteHubPolls } from "../polls/client";
+import { getSharedAdjacentClient } from "../adjacent/client";
+import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
+import { type PromptContext, useDialog } from "../../../ui/dialog";
 import {
   CATALOG_FILTERS,
   VOTEHUB_POLL_TYPES,
+  catalogExpressionForRow,
   catalogPollSubjectsFromPolls,
   catalogRowUrl,
   catalogRowsFromAaModels,
@@ -85,6 +89,7 @@ function buildColumns(width: number): CatalogColumn[] {
 
 export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const { createPaneFromTemplate } = usePluginAppActions();
+  const dialog = useDialog();
   const [seedQuery] = usePaneSettingValue("query", "");
   const [searchQuery, setSearchQuery] = useState(seedQuery);
   const [filter, setFilter] = useState<CatalogFilterId>("all");
@@ -96,12 +101,14 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [aaLoading, setAaLoading] = useState(true);
   const [pollRows, setPollRows] = useState<CatalogSeriesRow[]>([]);
   const [pollsLoading, setPollsLoading] = useState(true);
+  const [adjacentIndices, setAdjacentIndices] = useState<Array<{ indexId: string; name: string; ticker?: string }>>([]);
+  const [indicesLoading, setIndicesLoading] = useState(true);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const { instruments, loading: universeLoading } = useCatalogUniverse(searchQuery);
   const loadMarkets = filter === "all" || filter === "prediction";
   const { markets, loading: marketsLoading } = usePredictionMarketHits(searchQuery, loadMarkets);
-  const loading = universeLoading || marketsLoading || aaLoading || pollsLoading;
+  const loading = universeLoading || marketsLoading || aaLoading || pollsLoading || indicesLoading;
 
   useEffect(() => {
     let cancelled = false;
@@ -139,8 +146,36 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setIndicesLoading(true);
+    getSharedAdjacentClient().getIndices()
+      .then((response) => {
+        if (cancelled) return;
+        setAdjacentIndices((response.data ?? []).flatMap((index) => {
+          const indexId = index.index_id?.trim();
+          if (!indexId) return [];
+          return [{
+            indexId,
+            name: index.name,
+            ...(index.ticker ? { ticker: index.ticker } : {}),
+          }];
+        }));
+        setIndicesLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAdjacentIndices([]);
+          setIndicesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rows = useMemo(() => {
-    const staticRows = listStaticCatalogInventory(instruments);
+    const staticRows = listStaticCatalogInventory(instruments, { adjacentIndices });
     const liveRows = catalogRowsFromPredictionHits(markets);
     const merged = new Map<string, CatalogSeriesRow>();
     const withoutStaticLive = staticRows.filter((entry) => (
@@ -158,7 +193,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [aaRows, filter, instruments, markets, pollRows, searchQuery, sortPreference]);
+  }, [aaRows, adjacentIndices, filter, instruments, markets, pollRows, searchQuery, sortPreference]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -184,10 +219,31 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     setSearchFocused(false);
   }, []);
 
-  const chartSelected = useCallback((row: CatalogSeriesRow | null) => {
+  const chartSelected = useCallback(async (row: CatalogSeriesRow | null) => {
     if (!row) return;
+    if (row.needsTicker) {
+      const ticker = await dialog.prompt<string>({
+        closeOnClickOutside: true,
+        content: (context: PromptContext<string>) => (
+          <PaneTemplateInputStep
+            {...context}
+            step={{
+              key: "ticker",
+              label: `Chart ${row.label}`,
+              placeholder: "AAPL",
+              type: "text",
+              body: [`Enter a ticker to chart ${row.label}.`],
+            }}
+          />
+        ),
+      }).catch(() => undefined);
+      const expression = catalogExpressionForRow(row, ticker);
+      if (!expression) return;
+      createPaneFromTemplate("chart-composer-pane", { arg: expression });
+      return;
+    }
     createPaneFromTemplate("chart-composer-pane", { arg: row.expression });
-  }, [createPaneFromTemplate]);
+  }, [createPaneFromTemplate, dialog]);
 
   const openSelected = useCallback(() => {
     if (!selectedUrl) return;

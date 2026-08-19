@@ -1,15 +1,16 @@
 import { Box } from "../../../../ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Tabs,
   usePaneFooter,
   type DataTableKeyEvent,
   type TickerListVisibleRange,
 } from "../../../../components";
-import { usePluginTickerActions } from "../../../runtime";
+import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
 import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { useAppActive } from "../../../../state/app/activity";
 import {
+  useAppDispatch,
   useAppSelector,
   usePaneCollection,
   usePaneInstance,
@@ -18,9 +19,12 @@ import {
   type CollectionSortPreference,
 } from "../../../../state/app/context";
 import { selectEffectiveExchangeRates } from "../../../../utils/exchange-rate-map";
+import { isPlainKey } from "../../../../utils/keyboard";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
 import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
+import { tf } from "../../../../i18n";
+import { getSharedRegistry } from "../../../registry";
 import { calculatePortfolioSummaryTotals, resolveCollectionSortPreference, type ColumnContext } from "../metrics";
 import {
   PortfolioCashMarginDrawer,
@@ -40,8 +44,8 @@ import { useQuoteFlashMap } from "../../../../components/quote-flash";
 import { PortfolioTickerTable } from "../table";
 import { PortfolioGrid } from "../grid";
 import { useThrottledCursorSymbol } from "../use-throttled-cursor-symbol";
-import { isManualPortfolio } from "../mutations";
-import { QuickAddTickerInput, type QuickAddCollectionKind } from "../quick-add";
+import { isManualPortfolio, removeTickerFromPortfolio, removeTickerFromWatchlist } from "../mutations";
+import { QuickAddTickerInput, type QuickAddCollectionKind, type QuickAddTickerInputHandle } from "../quick-add";
 import {
   buildTrackedCurrencies,
   getCollectionTickersFromConfig,
@@ -56,6 +60,8 @@ import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
+  const { notify } = usePluginAppActions();
+  const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
   const config = useAppSelector((state) => state.config);
@@ -76,6 +82,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [now, setNow] = useState(Date.now());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const [quickAddFocused, setQuickAddFocused] = useState(false);
+  const quickAddRef = useRef<QuickAddTickerInputHandle | null>(null);
 
   const {
     cursorSymbol,
@@ -255,8 +262,77 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setCursorSymbol(symbol, { immediate: true });
   }, [setCursorSymbol]);
 
+  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
+    if (!activeCollectionId) return null;
+    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
+    if (collectionType === "watchlist") return "watchlist";
+    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
+      return "portfolio";
+    }
+    return null;
+  }, [activeCollectionId, config, currentPortfolio]);
+  const canMutateCollection = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const selectedTicker = sortedTickers[safeSelectedIdx] ?? null;
+
+  const toggleAdd = useCallback(() => {
+    if (!canMutateCollection) return;
+    quickAddRef.current?.toggle();
+  }, [canMutateCollection]);
+
+  const deleteSelectedTicker = useCallback(() => {
+    if (!canMutateCollection || !activeCollectionId || !quickAddCollectionKind) return;
+    if (!selectedTicker) return;
+    const collectionName = activeCollectionEntry?.name ?? activeCollectionId;
+    const result = quickAddCollectionKind === "portfolio"
+      ? removeTickerFromPortfolio(selectedTicker, activeCollectionId)
+      : removeTickerFromWatchlist(selectedTicker, activeCollectionId);
+    if (!result.changed) {
+      notify({
+        type: "info",
+        body: tf("{symbol} is not in {collection}.", {
+          symbol: selectedTicker.metadata.ticker,
+          collection: collectionName,
+        }),
+      });
+      return;
+    }
+
+    const registry = getSharedRegistry();
+    if (!registry) {
+      notify({ type: "error", body: tf("Failed to remove {symbol}.", { symbol: selectedTicker.metadata.ticker }) });
+      return;
+    }
+
+    void (async () => {
+      try {
+        await registry.tickerRepository.saveTicker(result.ticker);
+        dispatch({ type: "UPDATE_TICKER", ticker: result.ticker });
+        notify({
+          type: "success",
+          body: tf("Removed {symbol} from {collection}.", {
+            symbol: result.ticker.metadata.ticker,
+            collection: collectionName,
+          }),
+        });
+      } catch {
+        notify({
+          type: "error",
+          body: tf("Failed to remove {symbol}.", { symbol: selectedTicker.metadata.ticker }),
+        });
+      }
+    })();
+  }, [
+    activeCollectionEntry?.name,
+    activeCollectionId,
+    canMutateCollection,
+    dispatch,
+    notify,
+    quickAddCollectionKind,
+    selectedTicker,
+  ]);
+
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (!focused) return;
+    if (!focused || quickAddFocused) return;
 
     const key = event.name;
     const isEnter = key === "enter" || key === "return";
@@ -285,12 +361,22 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       return true;
     }
 
+    if (isPlainKey(event, "d") && canMutateCollection) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      deleteSelectedTicker();
+      return true;
+    }
+
     return false;
   }, [
+    canMutateCollection,
     cashDrawerExpanded,
+    deleteSelectedTicker,
     focused,
     isPortfolioTab,
     openTickerFloating,
+    quickAddFocused,
     safeSelectedIdx,
     setCashDrawerExpanded,
     showCashDrawer,
@@ -373,30 +459,43 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("portfolio-list", () => ({
     info: summaryFooterInfo,
-    hints: showCashDrawer
-      ? [{
-          id: "cash",
-          key: "c",
-          label: "ash",
-          onPress: () => setCashDrawerExpanded(!cashDrawerExpanded),
-        }]
-      : [],
-  }), [cashDrawerExpanded, setCashDrawerExpanded, showCashDrawer, summaryFooterInfo]);
+    hints: [
+      ...(canMutateCollection ? [
+        { id: "add", key: "a", label: "dd", onPress: toggleAdd },
+        {
+          id: "delete",
+          key: "d",
+          label: "elete",
+          onPress: deleteSelectedTicker,
+          disabled: !selectedTicker,
+        },
+      ] : []),
+      ...(showCashDrawer
+        ? [{
+            id: "cash",
+            key: "c",
+            label: "ash",
+            onPress: () => setCashDrawerExpanded(!cashDrawerExpanded),
+          }]
+        : []),
+    ],
+  }), [
+    canMutateCollection,
+    cashDrawerExpanded,
+    deleteSelectedTicker,
+    selectedTicker,
+    setCashDrawerExpanded,
+    showCashDrawer,
+    summaryFooterInfo,
+    toggleAdd,
+  ]);
 
-  const quickAddCollectionKind = useMemo<QuickAddCollectionKind | null>(() => {
-    if (!activeCollectionId) return null;
-    const collectionType = getCollectionTypeFromConfig(config, activeCollectionId);
-    if (collectionType === "watchlist") return "watchlist";
-    if (collectionType === "portfolio" && currentPortfolio && isManualPortfolio(currentPortfolio)) {
-      return "portfolio";
-    }
-    return null;
-  }, [activeCollectionId, config, currentPortfolio]);
-  const showQuickAdd = !!(activeCollectionId && activeCollectionEntry && quickAddCollectionKind);
+  const showQuickAdd = canMutateCollection;
   const quickAddHeight = showQuickAdd ? 1 : 0;
   const contentHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight);
   const quickAddRow = activeCollectionId && activeCollectionEntry && quickAddCollectionKind ? (
     <QuickAddTickerInput
+      ref={quickAddRef}
       collectionId={activeCollectionId}
       collectionKind={quickAddCollectionKind}
       collectionName={activeCollectionEntry.name}
@@ -455,6 +554,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           setCursorSymbol={(symbol) => setCursorSymbol(symbol)}
           onRowActivate={handleRowActivate}
           onToggleViewMode={toggleViewMode}
+          onDeleteSelected={canMutateCollection ? deleteSelectedTicker : undefined}
           focused={focused && !quickAddFocused}
           width={width}
           height={contentHeight}

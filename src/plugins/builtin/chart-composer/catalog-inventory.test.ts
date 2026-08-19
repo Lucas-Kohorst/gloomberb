@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  catalogExpressionForRow,
   catalogPollSubjectsFromPolls,
   catalogRowsFromAaModels,
   catalogRowsFromPredictionHits,
@@ -10,12 +11,6 @@ import type { AaModelRow } from "../llm-stats/types";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 const MSFT = { symbol: "MSFT", exchange: "NASDAQ", name: "Microsoft Corp." };
-const OPTION = {
-  symbol: "AAPL 260618C00200000",
-  exchange: "CBOE",
-  name: "AAPL Jun18'26 200 Call",
-  assetCategory: "OPT",
-};
 
 function language(overrides: Partial<AaModelRow> = {}): AaModelRow {
   return {
@@ -51,8 +46,8 @@ describe("data catalog inventory", () => {
     const rows = listStaticCatalogInventory([AAPL]);
     const byExpression = new Map(rows.map((row) => [row.expression, row]));
 
-    expect(byExpression.get("AAPL:XNAS:price")).toMatchObject({ source: "Yahoo", kind: "Market" });
-    expect(byExpression.get("AAPL:XNAS:dvd")).toMatchObject({ source: "Yahoo", kind: "Dividends" });
+    expect(byExpression.get("TICKER:price")).toMatchObject({ source: "Yahoo", kind: "Market", label: "Price (OHLCV)", needsTicker: true });
+    expect(byExpression.get("TICKER:dvd")).toMatchObject({ source: "Yahoo", kind: "Dividends", label: "Dividends", needsTicker: true });
     expect(byExpression.get("FRED:CPIAUCSL")).toMatchObject({ source: "FRED", kind: "Economic" });
     expect(byExpression.get("UST:10Y")).toMatchObject({ source: "FRED", kind: "Treasury" });
     expect(byExpression.get("ADJ:red")).toMatchObject({ source: "Adjacent", kind: "Index" });
@@ -61,36 +56,45 @@ describe("data catalog inventory", () => {
     expect(rows.some((row) => row.source === "Artificial Analysis" && row.kind === "Benchmark")).toBe(true);
   });
 
-  test("labels security fields as ticker - field without loading series", () => {
+  test("lists equity fields once and asks for a ticker when graphing", () => {
     const rows = listStaticCatalogInventory([AAPL, MSFT]);
-    expect(rows.some((row) => row.label === "AAPL - PEG Ratio")).toBe(true);
-    expect(rows.some((row) => row.label === "MSFT - PEG Ratio")).toBe(true);
-    expect(rows.some((row) => row.label === "AAPL - Close")).toBe(true);
-    expect(rows.every((row) => row.sourceId !== "security" || row.label.includes(" - "))).toBe(true);
+    const securities = filterCatalogRows(rows, "securities", "");
+    expect(securities.some((row) => row.label === "Close")).toBe(true);
+    expect(securities.some((row) => row.label === "PEG Ratio")).toBe(true);
+    expect(securities.every((row) => row.needsTicker && row.expression.startsWith("TICKER:"))).toBe(true);
+    expect(securities.every((row) => !row.label.includes("AAPL") && !row.label.includes("MSFT"))).toBe(true);
+    expect(securities.filter((row) => row.label === "Close")).toHaveLength(1);
 
-    const expressions = new Set(rows.map((row) => row.expression));
-    expect(expressions.has("AAPL:XNAS:price")).toBe(true);
-    expect(expressions.has("MSFT:XNAS:price")).toBe(true);
-    expect(expressions.has("AAPL:XNAS:dvd")).toBe(true);
-    expect(expressions.has("MSFT:XNAS:dvd")).toBe(true);
-    expect(filterCatalogRows(rows, "securities", "dvd").some((row) => row.expression.endsWith(":dvd"))).toBe(true);
+    const close = securities.find((row) => row.label === "Close");
+    expect(catalogExpressionForRow(close!, "aapl")).toBe("AAPL:close");
+    expect(catalogExpressionForRow(close!, "")).toBeNull();
   });
 
-  test("option contracts emit Options kind and stay in the securities filter", () => {
-    const parsed = listStaticCatalogInventory([{
-      symbol: "AAPL 260618C00200000",
-      name: "AAPL call",
-    }]);
-    expect(parsed.some((row) => row.kind === "Options")).toBe(true);
+  test("crypto tab lists pairs like prediction markets, not equity fields", () => {
+    const rows = listStaticCatalogInventory([
+      AAPL,
+      { symbol: "ETH-USD", exchange: "CCC", name: "Ethereum USD" },
+    ]);
+    const crypto = filterCatalogRows(rows, "crypto", "");
+    expect(crypto.length).toBeGreaterThan(0);
+    expect(crypto.every((row) => row.sourceId === "crypto" && row.kind === "Crypto")).toBe(true);
+    expect(crypto.some((row) => row.expression === "ETH-USD:price")).toBe(true);
+    expect(crypto.some((row) => row.expression === "BTC-USD:price")).toBe(true);
+    expect(crypto.every((row) => !row.needsTicker)).toBe(true);
+    expect(filterCatalogRows(rows, "securities", "").some((row) => row.sourceId === "crypto")).toBe(false);
+  });
 
-    const rows = listStaticCatalogInventory([AAPL, OPTION]);
-    const optionRows = rows.filter((row) => row.kind === "Options");
-    expect(optionRows.length).toBeGreaterThan(0);
-    expect(optionRows.every((row) => row.source === "Yahoo" && row.sourceId === "security")).toBe(true);
-
-    const securities = filterCatalogRows(rows, "securities", "");
-    expect(securities.some((row) => row.kind === "Options")).toBe(true);
-    expect(securities.some((row) => row.kind === "Market")).toBe(true);
+  test("live Adjacent indices replace the three-entry fallback", () => {
+    const rows = listStaticCatalogInventory([], {
+      adjacentIndices: [
+        { indexId: "blue", name: "BLUE Index", ticker: "BLUE" },
+        { indexId: "red", name: "RED Index", ticker: "RED" },
+        { indexId: "senate", name: "Senate Control", ticker: "SEN" },
+      ],
+    });
+    const other = filterCatalogRows(rows, "other", "");
+    expect(other.filter((row) => row.sourceId === "adjacent")).toHaveLength(3);
+    expect(other.some((row) => row.expression === "ADJ:senate")).toBe(true);
   });
 
   test("maps AA models onto BENCH rows with artificialanalysis.ai attribution", () => {
@@ -103,8 +107,8 @@ describe("data catalog inventory", () => {
     expect(rows.some((row) => row.expression === "BENCH:gpt-4o:coding")).toBe(false);
   });
 
-  test("ai filter is benchmarks; other is adjacent and polls; securities includes options", () => {
-    const rows = listStaticCatalogInventory([AAPL, OPTION]);
+  test("ai filter is benchmarks; other is adjacent and polls; securities are field templates", () => {
+    const rows = listStaticCatalogInventory([AAPL]);
     const ai = filterCatalogRows(rows, "ai", "");
     expect(ai.length).toBeGreaterThan(0);
     expect(ai.every((row) => row.sourceId === "benchmark")).toBe(true);
@@ -116,8 +120,8 @@ describe("data catalog inventory", () => {
     expect(other.some((row) => row.sourceId === "poll")).toBe(true);
 
     const securities = filterCatalogRows(rows, "securities", "");
-    expect(securities.every((row) => row.sourceId === "security")).toBe(true);
-    expect(securities.some((row) => row.kind === "Options")).toBe(true);
+    expect(securities.every((row) => row.sourceId === "security" && row.needsTicker)).toBe(true);
+    expect(securities.some((row) => row.kind === "Market")).toBe(true);
   });
 
   test("prediction filter is Kalshi/Polymarket only; adjacent stays in other", () => {

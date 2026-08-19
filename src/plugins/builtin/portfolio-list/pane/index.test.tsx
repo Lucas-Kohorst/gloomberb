@@ -27,6 +27,8 @@ import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../runtime
 import { PluginRegistry, setSharedMarketDataForTests, setSharedRegistryForTests } from "../../../registry";
 import type { BrokerAdapter } from "../../../../types/broker";
 import { colors } from "../../../../theme/colors";
+import { Box } from "../../../../ui";
+import { PaneFooterBar, PaneFooterProvider } from "../../../../components/layout/pane/footer";
 import { portfolioListModule } from "..";
 
 const TEST_PANE_ID = "portfolio-list:test";
@@ -280,6 +282,7 @@ function PortfolioHarness({
   runtime = createTestPluginRuntime(),
   paneHeight = 24,
   paneFocused = true,
+  showFooter = false,
 }: {
   config: AppConfig;
   collectionId: string;
@@ -292,6 +295,7 @@ function PortfolioHarness({
   runtime?: PluginRuntimeAccess;
   paneHeight?: number;
   paneFocused?: boolean;
+  showFooter?: boolean;
 }) {
   const initialState = createPortfolioState(config, collectionId, expanded, {
     ticker,
@@ -304,17 +308,30 @@ function PortfolioHarness({
   harnessDispatch = dispatch;
   harnessState = state;
 
+  const pane = (
+    <PortfolioPane
+      paneId={TEST_PANE_ID}
+      paneType="portfolio-list"
+      focused={paneFocused}
+      width={100}
+      height={showFooter ? Math.max(1, paneHeight - 1) : paneHeight}
+    />
+  );
+
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
         <PluginRenderProvider pluginId="portfolio" runtime={runtime}>
-          <PortfolioPane
-            paneId={TEST_PANE_ID}
-            paneType="portfolio-list"
-            focused={paneFocused}
-            width={100}
-            height={paneHeight}
-          />
+          {showFooter ? (
+            <PaneFooterProvider>
+              {(footer) => (
+                <Box flexDirection="column" width={100} height={paneHeight}>
+                  {pane}
+                  <PaneFooterBar footer={footer} focused={paneFocused} width={100} />
+                </Box>
+              )}
+            </PaneFooterProvider>
+          ) : pane}
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
@@ -584,6 +601,45 @@ describe("PortfolioListPane cash and margin UI", () => {
     expect(notifications.at(-1)).toMatchObject({
       type: "success",
       body: "Added MSFT to Watchlist.",
+    });
+  });
+
+  test("footer add and delete remove the selected watchlist ticker", async () => {
+    const config = createManualCollectionConfig("watchlist");
+    const notifications: Array<{ type?: string; body: string }> = [];
+    installQuickAddRegistry(createQuickAddProvider(true));
+
+    testSetup = await testRender(
+      <PortfolioHarness
+        config={config}
+        collectionId="watchlist"
+        ticker={makeTicker({ portfolios: [], watchlists: ["watchlist"], positions: [] })}
+        runtime={createTestPluginRuntime({
+          notify: (notification) => notifications.push(notification),
+        })}
+        paneHeight={12}
+        showFooter
+      />,
+      { width: 100, height: 12 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[a]dd");
+    expect(frame).toContain("[d]elete");
+    expect(frame).toContain("AAPL");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("d");
+      await Promise.resolve();
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(harnessState?.tickers.get("AAPL")?.metadata.watchlists).toEqual([]);
+    expect(notifications.at(-1)).toMatchObject({
+      type: "success",
+      body: "Removed AAPL from Watchlist.",
     });
   });
 

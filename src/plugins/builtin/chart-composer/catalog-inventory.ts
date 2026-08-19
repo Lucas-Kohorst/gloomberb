@@ -1,5 +1,4 @@
 import { isDividendFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
-import { publicTickerKey } from "../../../utils/exchanges";
 import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 import {
@@ -31,6 +30,7 @@ export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
 
 export type CatalogSourceId =
   | "security"
+  | "crypto"
   | "fred"
   | "adjacent"
   | "kalshi"
@@ -43,6 +43,7 @@ export type CatalogSourceId =
 export type CatalogFilterId =
   | "all"
   | "securities"
+  | "crypto"
   | "fred"
   | "prediction"
   | "futures"
@@ -58,11 +59,14 @@ export interface CatalogSeriesRow {
   expression: string;
   url?: string;
   searchText: string;
+  needsTicker?: boolean;
+  fieldToken?: string;
 }
 
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
   { id: "all", label: "All" },
   { id: "securities", label: "Securities" },
+  { id: "crypto", label: "Crypto" },
   { id: "fred", label: "FRED" },
   { id: "prediction", label: "Prediction" },
   { id: "futures", label: "Futures" },
@@ -73,12 +77,34 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
   all: null,
   securities: new Set(["security"]),
+  crypto: new Set(["crypto"]),
   fred: new Set(["fred", "treasury"]),
   prediction: new Set(["kalshi", "polymarket"]),
   futures: new Set(["futures"]),
   ai: new Set(["benchmark"]),
   other: new Set(["adjacent", "poll"]),
 };
+
+const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
+  { symbol: "BTC-USD", name: "Bitcoin" },
+  { symbol: "ETH-USD", name: "Ethereum" },
+  { symbol: "SOL-USD", name: "Solana" },
+  { symbol: "XRP-USD", name: "XRP" },
+  { symbol: "BNB-USD", name: "BNB" },
+  { symbol: "DOGE-USD", name: "Dogecoin" },
+  { symbol: "ADA-USD", name: "Cardano" },
+  { symbol: "AVAX-USD", name: "Avalanche" },
+  { symbol: "LINK-USD", name: "Chainlink" },
+  { symbol: "DOT-USD", name: "Polkadot" },
+  { symbol: "LTC-USD", name: "Litecoin" },
+  { symbol: "UNI-USD", name: "Uniswap" },
+  { symbol: "ATOM-USD", name: "Cosmos" },
+  { symbol: "NEAR-USD", name: "NEAR" },
+  { symbol: "APT-USD", name: "Aptos" },
+  { symbol: "SUI-USD", name: "Sui" },
+  { symbol: "TON-USD", name: "Toncoin" },
+  { symbol: "SHIB-USD", name: "Shiba Inu" },
+];
 
 export const VOTEHUB_POLL_TYPES = [
   "approval",
@@ -115,6 +141,8 @@ function row(entry: {
   expression: string;
   url?: string;
   searchExtra?: string;
+  needsTicker?: boolean;
+  fieldToken?: string;
 }): CatalogSeriesRow {
   const { searchExtra, ...fields } = entry;
   return {
@@ -130,8 +158,29 @@ function row(entry: {
   };
 }
 
+export function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
+  if (isOptionInstrument(instrument)) return false;
+  const exchange = instrument.exchange?.trim().toUpperCase();
+  if (exchange === "CCC") return true;
+  const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
+  if (category.includes("CRYPTO") || category === "COIN" || category === "TOKEN") return true;
+  return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
+}
+
+export function catalogTickerFromInput(value: string): string | null {
+  const symbol = value.trim().toUpperCase();
+  return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
+}
+
+export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
+  if (!entry.needsTicker) return entry.expression;
+  const symbol = ticker ? catalogTickerFromInput(ticker) : null;
+  if (!symbol || !entry.fieldToken) return null;
+  return `${symbol}:${entry.fieldToken}`;
+}
+
 function catalogSecuritySymbol(instrument: SeriesCatalogInstrument): string {
-  return instrument.symbol.trim() || publicTickerKey(instrument.symbol, instrument.exchange);
+  return instrument.symbol.trim();
 }
 
 export function catalogRowUrl(row: CatalogSeriesRow): string | null {
@@ -179,26 +228,68 @@ export function catalogRowsFromAaModels(models: readonly AaModelRow[]): CatalogS
   }));
 }
 
-function securityRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
-  return instruments.flatMap((instrument) => {
-    const ticker = publicTickerKey(instrument.symbol, instrument.exchange);
-    const symbol = catalogSecuritySymbol(instrument);
-    const option = isOptionInstrument(instrument);
-    return listTimeSeriesFields().flatMap((field) => {
-      if (option && (field.id.startsWith("fundamental.") || field.id.startsWith("valuation.") || isDividendFieldId(field.id))) {
-        return [];
-      }
-      const token = shortChartFieldToken(field.id);
-      return [row({
-        id: `${ticker}:${field.id}`,
-        label: `${symbol} - ${field.label}`,
-        source: "Yahoo",
-        sourceId: "security",
-        kind: fieldKind(field.id, option),
-        expression: `${ticker}:${token}`,
-        searchExtra: instrument.name,
-      })];
+function securityFieldRows(): CatalogSeriesRow[] {
+  return listTimeSeriesFields().map((field) => {
+    const token = shortChartFieldToken(field.id);
+    return row({
+      id: `field:${field.id}`,
+      label: field.label,
+      source: "Yahoo",
+      sourceId: "security",
+      kind: fieldKind(field.id),
+      expression: `TICKER:${token}`,
+      needsTicker: true,
+      fieldToken: token,
+      searchExtra: field.shortLabel,
     });
+  });
+}
+
+function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
+  return row({
+    id: `crypto:${symbol.toUpperCase()}`,
+    label: name ? `${symbol} · ${name}` : symbol,
+    source: "Yahoo",
+    sourceId: "crypto",
+    kind: "Crypto",
+    expression: `${symbol}:price`,
+    searchExtra: name,
+  });
+}
+
+function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
+  const seen = new Set<string>();
+  const rows: CatalogSeriesRow[] = [];
+  const add = (symbol: string, name?: string) => {
+    const key = symbol.trim().toUpperCase().replace("/", "-");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rows.push(cryptoPairRow(key, name));
+  };
+  for (const instrument of instruments) {
+    if (!isCatalogCryptoInstrument(instrument)) continue;
+    add(catalogSecuritySymbol(instrument), instrument.name);
+  }
+  for (const entry of CRYPTO_CATALOG) add(entry.symbol, entry.name);
+  return rows;
+}
+
+export function catalogRowsFromAdjacentIndices(
+  indices: readonly { indexId: string; name: string; ticker?: string }[],
+): CatalogSeriesRow[] {
+  return indices.flatMap((index) => {
+    const indexId = index.indexId.trim();
+    if (!indexId) return [];
+    return [row({
+      id: `adj:${indexId}`,
+      label: `ADJ · ${index.name.trim() || index.ticker?.trim() || indexId}`,
+      source: "Adjacent",
+      sourceId: "adjacent",
+      kind: "Index",
+      expression: `ADJ:${indexId}`,
+      url: "https://adjacent.markets",
+      searchExtra: index.ticker,
+    })];
   });
 }
 
@@ -242,10 +333,14 @@ export function catalogRowsFromPollSubjects(
 }
 
 export function listStaticCatalogInventory(
-  instruments: readonly SeriesCatalogInstrument[],
-  options?: { pollSubjects?: readonly PollSubjectEntry[] },
+  instruments: readonly SeriesCatalogInstrument[] = [],
+  options?: {
+    pollSubjects?: readonly PollSubjectEntry[];
+    adjacentIndices?: readonly { indexId: string; name: string; ticker?: string }[];
+  },
 ): CatalogSeriesRow[] {
-  const securities = securityRows(instruments);
+  const securities = securityFieldRows();
+  const crypto = cryptoRows(instruments);
 
   const fred = listKnownFredSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
@@ -276,15 +371,18 @@ export function listStaticCatalogInventory(
     expression: `FUT:${entry.code}`,
   }));
 
-  const adjacent = ADJACENT_INDEX_CATALOG.map((entry) => row({
-    id: `adj:${entry.indexId}`,
-    label: `ADJ · ${entry.name}`,
-    source: "Adjacent",
-    sourceId: "adjacent",
-    kind: "Index",
-    expression: `ADJ:${entry.indexId}`,
-    url: "https://adjacent.markets",
-  }));
+  const liveAdjacent = catalogRowsFromAdjacentIndices(options?.adjacentIndices ?? []);
+  const adjacent = liveAdjacent.length > 0
+    ? liveAdjacent
+    : ADJACENT_INDEX_CATALOG.map((entry) => row({
+      id: `adj:${entry.indexId}`,
+      label: `ADJ · ${entry.name}`,
+      source: "Adjacent",
+      sourceId: "adjacent",
+      kind: "Index",
+      expression: `ADJ:${entry.indexId}`,
+      url: "https://adjacent.markets",
+    }));
 
   const polls = catalogRowsFromPollSubjects(options?.pollSubjects ?? POLL_SUBJECTS);
 
@@ -305,6 +403,7 @@ export function listStaticCatalogInventory(
 
   return [
     ...securities,
+    ...crypto,
     ...fred,
     ...treasuries,
     ...futures,
