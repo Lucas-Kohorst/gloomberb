@@ -44,6 +44,7 @@ function createChannelPane(
   controller: ReturnType<typeof createController>,
   initialChannelId = "equities",
   onChannelChange?: (channelId: string) => void,
+  height = 12,
 ) {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
 
@@ -55,7 +56,7 @@ function createChannelPane(
           <ChatContent
             controller={controller}
             width={90}
-            height={12}
+            height={height}
             focused
             channelId={channelId}
             onChannelChange={(nextChannelId) => {
@@ -310,6 +311,61 @@ describe("ChatContent channel sidebar", () => {
     await flushFrame();
 
     expect(setup().captureCharFrame()).toContain("● 6 online");
+  });
+
+  test("pins the online count and scrolls overflowing channel rows", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const overflowingChannels = [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "etfs", name: "etfs", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "semis", name: "semis", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "options", name: "options", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "macro", name: "macro", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "crypto", name: "crypto", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "energy", name: "energy", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "contributors", name: "contributors", created_at: "2026-05-09T00:00:00.000Z" },
+      { id: "help", name: "help", created_at: "2026-05-09T00:00:00.000Z" },
+      {
+        id: "grp:jeff-alec",
+        name: "@jeff, @alecxbt",
+        kind: "group" as const,
+        created_at: "2026-05-09T00:00:00.000Z",
+      },
+    ];
+    installServerChannels(controller, overflowingChannels);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.onlineCount = 20;
+    const ChannelPane = createChannelPane(controller, "everyone", undefined, 8);
+
+    await act(async () => {
+      testSetup = await testRender(<ChannelPane />, {
+        width: 90,
+        height: 8,
+      });
+    });
+
+    await flushFrame();
+    const initialFrame = setup().captureCharFrame();
+    const initialLines = initialFrame.split("\n");
+    expect(initialLines.some((line) => line.includes("● 20 online"))).toBe(true);
+    expect(initialFrame).toContain("#everyone");
+    expect(initialFrame).not.toContain("@jeff");
+    expect(initialFrame).not.toContain("contributors");
+
+    await emitKeypress({ name: "left", sequence: "\u001b[D" });
+    for (let index = 0; index < overflowingChannels.length - 1; index += 1) {
+      await emitKeypress({ name: "down", sequence: "\u001b[B" });
+    }
+    await flushFrame();
+
+    const scrolledFrame = setup().captureCharFrame();
+    expect(scrolledFrame).toContain("@jeff");
+    expect(scrolledFrame).toContain("● 20 online");
   });
 
   test("uses arrows to move between channel sidebar and chat content", async () => {

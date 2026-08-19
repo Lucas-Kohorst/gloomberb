@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   getPaneSidebarWidth,
   PaneSidebar,
@@ -6,8 +6,8 @@ import {
   PaneSidebarRow,
   shouldShowPaneSidebar,
 } from "../../../components";
-import { Box, Span, Text, useUiCapabilities } from "../../../ui";
-import { TextAttributes } from "../../../ui";
+import { Box, ScrollBox, Span, Text, useUiCapabilities } from "../../../ui";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
 import type { ChatChannel } from "../../../api-client";
@@ -20,6 +20,12 @@ import {
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
+const NATIVE_SIDEBAR_LABEL_STYLE = {
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  flexShrink: 1,
+} as const;
 
 export function shouldShowChannelSidebar(channelCount: number, width: number, height: number): boolean {
   return shouldShowPaneSidebar(channelCount, width, height);
@@ -145,6 +151,20 @@ export function ChannelSidebar({
     ...(conversationChannels.length > 0 || canCreateConversation ? [{ kind: "direct-header" as const }] : []),
     ...(directExpanded ? conversationChannels.map((channel) => ({ kind: "channel" as const, channel })) : []),
   ], [canCreateConversation, conversationChannels, directExpanded, publicChannels]);
+  const scrollRef = useRef<ScrollBoxRenderable>(null);
+  const activeRowIndex = sidebarRows.findIndex((row) => row.kind === "channel" && row.channel.id === activeChannelId);
+  const footerRows = 1 + (loading && focused ? 1 : 0);
+
+  useEffect(() => {
+    const scrollBox = scrollRef.current;
+    if (!scrollBox || activeRowIndex < 0) return;
+    const viewportHeight = Math.max(scrollBox.viewport?.height ?? 1, 1);
+    if (activeRowIndex < scrollBox.scrollTop) {
+      scrollBox.scrollTo(activeRowIndex);
+    } else if (activeRowIndex >= scrollBox.scrollTop + viewportHeight) {
+      scrollBox.scrollTo(activeRowIndex - viewportHeight + 1);
+    }
+  }, [activeRowIndex]);
 
   return (
     <PaneSidebar
@@ -157,6 +177,15 @@ export function ChannelSidebar({
         const labelWidth = Math.max(listWidth - 3 - notificationWidth, 1);
         return (
           <>
+            <ScrollBox
+              ref={scrollRef}
+              height={nativePaneChrome ? undefined : Math.max(1, height - footerRows)}
+              flexGrow={1}
+              flexShrink={1}
+              minHeight={0}
+              scrollY
+              focusable={false}
+            >
             {sidebarRows.map((row) => {
               if (row.kind === "direct-header") {
                 return (
@@ -220,7 +249,16 @@ export function ChannelSidebar({
                     <>
                       <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}> </Text>
                       <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
-                      <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{truncateChannelLabel(label, labelWidth)}</Text>
+                      <Text
+                        fg={foregroundColor}
+                        attributes={unread ? TextAttributes.BOLD : 0}
+                        selectable={false}
+                        onMouseDown={onMouseDown}
+                        data-gloom-role="pane-sidebar-label"
+                        style={nativePaneChrome ? NATIVE_SIDEBAR_LABEL_STYLE : undefined}
+                      >
+                        {nativePaneChrome ? label : truncateChannelLabel(label, labelWidth)}
+                      </Text>
                       <Box flexGrow={1} onMouseDown={onMouseDown} />
                       {canManageNotifications && (
                         <PaneSidebarAction
@@ -239,13 +277,20 @@ export function ChannelSidebar({
                 </PaneSidebarRow>
               );
             })}
-            <Box flexGrow={1} />
+            </ScrollBox>
             {loading && focused && (
-              <Box height={1} width={listWidth} flexDirection="row">
+              <Box height={1} width={listWidth} flexDirection="row" flexShrink={0}>
                 <Text fg={colors.textDim}>{` ${t("syncing")}`}</Text>
               </Box>
             )}
-            <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX}>
+            <Box
+              height={1}
+              width={listWidth}
+              flexDirection="row"
+              flexShrink={0}
+              paddingX={onlineCountPaddingX}
+              data-gloom-role="pane-sidebar-status"
+            >
               <Text fg={colors.positive}>●</Text>
               <Text fg={colors.textDim}>
                 {` ${truncateChannelLabel(tf("{count} online", { count: onlineCount }), Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}
