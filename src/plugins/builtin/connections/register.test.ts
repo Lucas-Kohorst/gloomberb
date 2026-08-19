@@ -17,23 +17,23 @@ describe("connection source registry", () => {
 
   test("lists registered first-party APIs and reports request outcomes", () => {
     const dispose = registerConnectionSource({
-      id: "votehub",
-      name: "VoteHub",
+      id: "example-api",
+      name: "Example API",
       kind: "api",
-      pluginId: "polls",
+      pluginId: "example",
     });
     disposers.push(dispose);
-    expect(listConnectionSources().some((source) => source.id === "votehub")).toBe(true);
+    expect(listConnectionSources().some((source) => source.id === "example-api")).toBe(true);
 
     const reports: Array<{ id: string; ok: boolean }> = [];
     setConnectionRequestReporter((id, report) => {
       reports.push({ id, ok: report.success });
     });
-    reportConnectionRequest("votehub", { success: true, durationMs: 12, operation: "polls" });
-    expect(reports).toEqual([{ id: "votehub", ok: true }]);
+    reportConnectionRequest("example-api", { success: true, durationMs: 12, operation: "polls" });
+    expect(reports).toEqual([{ id: "example-api", ok: true }]);
 
     dispose();
-    expect(listConnectionSources().some((source) => source.id === "votehub")).toBe(false);
+    expect(listConnectionSources().some((source) => source.id === "example-api")).toBe(false);
   });
 
   test("persists authRequired on the source definition", () => {

@@ -35,7 +35,7 @@ export const connectionsModule: PluginModule = {
   ],
 
   setup(ctx) {
-    // Adjacent, llm-stats, TWC, and NWS CLI report through this one row.
+    // Adjacent, llm-stats, TWC, NWS CLI, and VoteHub report through this one row.
     disposeAdjacentCloudConnection = registerConnectionSource({
       id: ADJACENT_CLOUD_CONNECTION_ID,
       name: ADJACENT_CLOUD_CONNECTION_NAME,

@@ -1,4 +1,4 @@
-/** One Connections row for fork-only keyed APIs on GET /api/data. */
+/** One Connections row for Adjacent Cloud keyed APIs on GET /api/data. */
 export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
 export const ADJACENT_CLOUD_CONNECTION_NAME = "Adjacent Cloud";
 
@@ -8,6 +8,7 @@ export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "nws-cli",
   "llm-stats",
   "adjacent",
+  "votehub",
 ] as const;
 
 export function isHostedWebClient(): boolean {

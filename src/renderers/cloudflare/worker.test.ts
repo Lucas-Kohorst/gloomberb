@@ -323,6 +323,7 @@ describe("Adjacent Cloud keyed-data providers", () => {
       "llm-stats",
       "nws-cli",
       "twc-kalshi",
+      "votehub",
     ]);
   });
 
@@ -425,5 +426,35 @@ PRECIPITATION (IN)
       makeEnv(),
     );
     expect(badAdjacent?.status).toBe(400);
+  });
+
+  test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
+    let upstreamHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      upstreamHits += 1;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      expect(url).toBe("https://api.votehub.com/polls?poll_type=approval");
+      return Response.json([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+    }) as typeof globalThis.fetch;
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval&callback=evil"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=900");
+    expect(upstreamHits).toBe(1);
+    expect(await first?.json()).toEqual([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
   });
 });
