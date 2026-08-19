@@ -6,28 +6,16 @@ import {
 } from "../../../utils/throttled-fetch";
 
 const DEFAULT_SOURCE_KEY = "remote";
-const PREDICTION_FETCH_HEADERS = {
-  Accept: "application/json",
-  "User-Agent": "gloomberb-prediction-markets",
-} as const;
-
 const PREDICTION_FETCH = createThrottledFetch({
   requestsPerMinute: 120,
   maxRetries: 2,
   timeoutMs: 10_000,
   backoffBaseMs: 250,
   dedupeGetRequests: false,
-  defaultHeaders: PREDICTION_FETCH_HEADERS,
-  transport: httpFetch,
-});
-
-const PREDICTION_FETCH_NO_RETRY = createThrottledFetch({
-  requestsPerMinute: 120,
-  maxRetries: 0,
-  timeoutMs: 10_000,
-  backoffBaseMs: 250,
-  dedupeGetRequests: false,
-  defaultHeaders: PREDICTION_FETCH_HEADERS,
+  defaultHeaders: {
+    Accept: "application/json",
+    "User-Agent": "gloomberb-prediction-markets",
+  },
   transport: httpFetch,
 });
 
@@ -52,12 +40,8 @@ export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
 }
 
-async function fetchPredictionJson<T>(
-  url: string,
-  client: typeof PREDICTION_FETCH,
-  signal?: AbortSignal,
-): Promise<T> {
-  const response = await client.fetch(url, { signal });
+export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await PREDICTION_FETCH.fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}) for ${url}`);
   }
@@ -70,15 +54,6 @@ async function fetchPredictionJson<T>(
       url: summarizePredictionFetchUrl(url),
     },
   );
-}
-
-export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  return fetchPredictionJson(url, PREDICTION_FETCH, signal);
-}
-
-/** Kalshi list endpoints 429 on shared egress; fail immediately so callers can fall back. */
-export async function fetchJsonNoRetry<T>(url: string, signal?: AbortSignal): Promise<T> {
-  return fetchPredictionJson(url, PREDICTION_FETCH_NO_RETRY, signal);
 }
 
 export function getCachedPredictionResource<T>(

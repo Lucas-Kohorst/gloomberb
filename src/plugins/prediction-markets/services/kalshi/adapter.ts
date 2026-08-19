@@ -15,18 +15,10 @@ import type {
 } from "../../types";
 import {
   fetchJson,
-  fetchJsonNoRetry,
   loadCachedPredictionResource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
-import {
-  isKalshiRateLimitedError,
-  kalshiSeriesTickerFromEvent,
-  loadKalshiAdjacentHistory,
-  loadKalshiAdjacentMarket,
-  loadKalshiCatalogFromAdjacent,
-} from "./adjacent-fallback";
 import {
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
@@ -48,6 +40,13 @@ const KALSHI_EVENT_PAGE_LIMIT = 200;
 const DEFAULT_KALSHI_EVENT_MAX_PAGES = 3;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 3;
 
+function kalshiSeriesTickerFromEvent(eventTicker: string | undefined): string | undefined {
+  const trimmed = eventTicker?.trim().toUpperCase();
+  if (!trimmed) return undefined;
+  const withoutDateSuffix = trimmed.replace(/-[0-9].*$/, "");
+  return withoutDateSuffix || trimmed;
+}
+
 function buildKalshiCatalogUrl(cursor?: string, category?: string, limit = KALSHI_EVENT_PAGE_LIMIT): string {
   const url = new URL("https://api.elections.kalshi.com/trade-api/v2/events");
   url.searchParams.set("limit", String(limit));
@@ -67,7 +66,7 @@ async function fetchKalshiCatalogEvents(
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page += 1) {
-    const response = await fetchJsonNoRetry<KalshiEventsResponse>(
+    const response = await fetchJson<KalshiEventsResponse>(
       buildKalshiCatalogUrl(cursor, undefined, limit),
       signal,
     );
@@ -92,7 +91,7 @@ async function fetchKalshiCatalogEventsForCategory(
   for (const category of categories) {
     let cursor: string | undefined;
     for (let page = 0; page < maxPages; page += 1) {
-      const response = await fetchJsonNoRetry<KalshiEventsResponse>(
+      const response = await fetchJson<KalshiEventsResponse>(
         buildKalshiCatalogUrl(cursor, category, limit),
         signal,
       );
@@ -121,22 +120,10 @@ export async function loadKalshiCatalog(
     "catalog",
     `${buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery)}:${requestedLimit}`,
     async () => {
-      try {
-        const events = categoryId === "all"
-          ? await fetchKalshiCatalogEvents(maxPages, pageLimit, options.signal)
-          : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages, pageLimit, options.signal);
-        return normalizeKalshiCatalog(events, normalizedQuery, categoryId).slice(0, requestedLimit);
-      } catch (error) {
-        if (isKalshiRateLimitedError(error)) {
-          const fallback = await loadKalshiCatalogFromAdjacent(
-            normalizedQuery,
-            categoryId,
-            options.signal,
-          );
-          return fallback.slice(0, requestedLimit);
-        }
-        throw error;
-      }
+      const events = categoryId === "all"
+        ? await fetchKalshiCatalogEvents(maxPages, pageLimit, options.signal)
+        : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages, pageLimit, options.signal);
+      return normalizeKalshiCatalog(events, normalizedQuery, categoryId).slice(0, requestedLimit);
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );
@@ -151,7 +138,7 @@ async function loadKalshiEvent(
       "rules",
       `kalshi:event:${eventTicker}`,
       async () =>
-        await fetchJsonNoRetry<KalshiEventResponse>(
+        await fetchJson<KalshiEventResponse>(
           `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
@@ -166,20 +153,16 @@ export async function resolveKalshiChartSummary(
   marketTicker: string,
   signal?: AbortSignal,
 ): Promise<PredictionMarketSummary> {
-  try {
-    const response = await fetchJsonNoRetry<KalshiEventResponse>(
-      `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
-      signal,
-    );
-    const market = response.markets?.find((candidate) => candidate.ticker === marketTicker);
-    const summary = market ? normalizeKalshiMarket(market, response.event) : null;
-    if (summary) return summary;
-  } catch (error) {
-    if (!isKalshiRateLimitedError(error)) throw error;
+  const response = await fetchJson<KalshiEventResponse>(
+    `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
+    signal,
+  );
+  const market = response.markets?.find((candidate) => candidate.ticker === marketTicker);
+  const summary = market ? normalizeKalshiMarket(market, response.event) : null;
+  if (!summary) {
+    throw new Error(`Kalshi market ${marketTicker} in event ${eventTicker} is no longer resolvable. Remove or replace this chart series.`);
   }
-  const fallback = await loadKalshiAdjacentMarket(marketTicker, signal);
-  if (fallback) return fallback;
-  throw new Error(`Kalshi market ${marketTicker} in event ${eventTicker} is no longer resolvable. Remove or replace this chart series.`);
+  return summary;
 }
 
 async function loadKalshiTrades(
@@ -246,8 +229,6 @@ export async function loadKalshiHistory(
 ): Promise<PredictionHistoryPoint[]> {
   const seriesTicker = summary.seriesTicker ?? (await loadKalshiEvent(summary.eventTicker))?.event?.series_ticker;
   if (!seriesTicker) {
-    const fallback = await loadKalshiAdjacentHistory(summary.marketId, options.signal);
-    if (fallback.length > 0) return fallback;
     if (options.strict) throw new Error(`Kalshi event ${summary.eventTicker ?? "unknown"} no longer exposes chart history.`);
     return [];
   }
@@ -269,7 +250,7 @@ export async function loadKalshiHistory(
       "history",
       `${summary.key}:${range}:${start}:${now}`,
       async () => {
-        const response = await fetchJsonNoRetry<KalshiCandlestickResponse>(
+        const response = await fetchJson<KalshiCandlestickResponse>(
           `https://api.elections.kalshi.com/trade-api/v2/series/${seriesTicker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
           options.signal,
         );
@@ -290,9 +271,6 @@ export async function loadKalshiHistory(
       PREDICTION_CACHE_POLICIES.history,
     );
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    const fallback = await loadKalshiAdjacentHistory(summary.marketId, options.signal);
-    if (fallback.length > 0) return fallback;
     if (options.strict) throw error;
     return [];
   }
@@ -304,7 +282,7 @@ async function loadKalshiSeriesSettlement(
   const ticker = seriesTicker?.trim();
   if (!ticker) return undefined;
   try {
-    const response = await fetchJsonNoRetry<KalshiSeriesResponse>(
+    const response = await fetchJson<KalshiSeriesResponse>(
       `https://api.elections.kalshi.com/trade-api/v2/series/${encodeURIComponent(ticker)}`,
     );
     const names = (response.series?.settlement_sources ?? [])
