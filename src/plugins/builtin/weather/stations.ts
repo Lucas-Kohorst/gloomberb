@@ -20,7 +20,7 @@ const DOMESTIC: ReadonlyArray<Omit<WeatherStation, "scope" | "aliases"> & { alia
   { id: "NYC", city: "New York City", country: "United States", icao: "KNYC", timezone: "America/New_York", aliases: ["NY"] },
   { id: "OKC", city: "Oklahoma City", country: "United States", icao: "KOKC", timezone: "America/Chicago" },
   { id: "ORD", city: "Chicago (O'Hare)", country: "United States", icao: "KORD", timezone: "America/Chicago" },
-  { id: "PHL", city: "Philadelphia", country: "United States", icao: "KPHL", timezone: "America/New_York" },
+  { id: "PHL", city: "Philadelphia", country: "United States", icao: "KPHL", timezone: "America/New_York", aliases: ["PHIL"] },
   { id: "PHX", city: "Phoenix", country: "United States", icao: "KPHX", timezone: "America/Phoenix" },
   { id: "SAN", city: "San Diego", country: "United States", icao: "KSAN", timezone: "America/Los_Angeles" },
   { id: "SAT", city: "San Antonio", country: "United States", icao: "KSAT", timezone: "America/Chicago" },

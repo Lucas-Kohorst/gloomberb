@@ -164,6 +164,21 @@ export async function loadKalshiCatalog(
   );
 }
 
+export function kalshiResponseMarkets(
+  payload: Pick<KalshiEventResponse, "event" | "markets"> | KalshiEventRecord | null | undefined,
+): KalshiMarketRecord[] {
+  if (!payload) return [];
+  if (payload.markets?.length) return payload.markets;
+  if ("event" in payload) return payload.event?.markets ?? [];
+  return [];
+}
+
+export async function loadKalshiEventByTicker(
+  eventTicker: string | undefined,
+): Promise<KalshiEventResponse | null> {
+  return loadKalshiEvent(eventTicker);
+}
+
 async function loadKalshiEvent(
   eventTicker: string | undefined,
 ): Promise<KalshiEventResponse | null> {
@@ -481,7 +496,7 @@ export async function loadKalshiDetail(
         loadKalshiSeriesSettlement(seriesTicker),
       ]);
       const eventMeta = event?.event;
-      const siblings: PredictionSiblingMarket[] = (event?.markets ?? [])
+      const siblings: PredictionSiblingMarket[] = kalshiResponseMarkets(event)
         .map((market) =>
           normalizeKalshiMarket(market, {
             title: eventMeta?.title,

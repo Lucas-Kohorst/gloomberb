@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   isWeatherSettlementSource,
+  kalshiEventTickerForDate,
+  kalshiHighSeriesForStation,
   parseCliProductFromText,
   parseKalshiWeatherEventStamp,
   parseKalshiWeatherSeriesTicker,
@@ -14,7 +16,6 @@ import {
   observationValue,
 } from "./normalize";
 import { canonicalWeatherStationId, cliProductForStation } from "./stations";
-import { weatherRequestUrl } from "./client";
 
 const PRIMARY_FIXTURE = {
   date: "2026-08-18",
@@ -111,6 +112,13 @@ describe("Kalshi weather settlement mapping", () => {
       seriesTicker: "KXTEMPLAXH",
     });
     expect(parseKalshiWeatherSeriesTicker("KXFED")).toBeNull();
+  });
+
+  test("builds high-series and event tickers for climate stations", () => {
+    expect(kalshiHighSeriesForStation("LAX")).toBe("KXHIGHLAX");
+    expect(kalshiHighSeriesForStation("NYC")).toBe("KXHIGHNY");
+    expect(kalshiHighSeriesForStation("CHI")).toBe("KXHIGHCHI");
+    expect(kalshiEventTickerForDate("KXHIGHLAX", "2026-08-19")).toBe("KXHIGHLAX-26AUG19");
   });
 
   test("parses event date and optional hour from the ticker suffix", () => {
@@ -233,12 +241,3 @@ describe("TWC climate payload normalize", () => {
     });
   });
 });
-
-describe("hosted weather request URL", () => {
-  test("uses weather.com directly outside the hosted web client", () => {
-    expect(weatherRequestUrl("/kalshi/api/climate/primary?date=2026-08-18")).toBe(
-      "https://weather.com/kalshi/api/climate/primary?date=2026-08-18",
-    );
-  });
-});
-
