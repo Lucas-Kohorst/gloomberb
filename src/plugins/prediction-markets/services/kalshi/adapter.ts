@@ -15,10 +15,18 @@ import type {
 } from "../../types";
 import {
   fetchJson,
+  fetchJsonNoRetry,
   loadCachedPredictionResource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
+import {
+  isKalshiRateLimitedError,
+  kalshiSeriesTickerFromEvent,
+  loadKalshiAdjacentHistory,
+  loadKalshiAdjacentMarket,
+  loadKalshiCatalogFromAdjacent,
+} from "./adjacent-fallback";
 import {
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
@@ -30,6 +38,7 @@ import type {
   KalshiEventResponse,
   KalshiEventsResponse,
   KalshiOrderbookResponse,
+  KalshiSeriesResponse,
   KalshiTradesResponse,
 } from "./types";
 
@@ -58,7 +67,7 @@ async function fetchKalshiCatalogEvents(
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page += 1) {
-    const response = await fetchJson<KalshiEventsResponse>(
+    const response = await fetchJsonNoRetry<KalshiEventsResponse>(
       buildKalshiCatalogUrl(cursor, undefined, limit),
       signal,
     );
@@ -83,7 +92,7 @@ async function fetchKalshiCatalogEventsForCategory(
   for (const category of categories) {
     let cursor: string | undefined;
     for (let page = 0; page < maxPages; page += 1) {
-      const response = await fetchJson<KalshiEventsResponse>(
+      const response = await fetchJsonNoRetry<KalshiEventsResponse>(
         buildKalshiCatalogUrl(cursor, category, limit),
         signal,
       );
@@ -112,10 +121,22 @@ export async function loadKalshiCatalog(
     "catalog",
     `${buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery)}:${requestedLimit}`,
     async () => {
-      const events = categoryId === "all"
-        ? await fetchKalshiCatalogEvents(maxPages, pageLimit, options.signal)
-        : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages, pageLimit, options.signal);
-      return normalizeKalshiCatalog(events, normalizedQuery, categoryId).slice(0, requestedLimit);
+      try {
+        const events = categoryId === "all"
+          ? await fetchKalshiCatalogEvents(maxPages, pageLimit, options.signal)
+          : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages, pageLimit, options.signal);
+        return normalizeKalshiCatalog(events, normalizedQuery, categoryId).slice(0, requestedLimit);
+      } catch (error) {
+        if (isKalshiRateLimitedError(error)) {
+          const fallback = await loadKalshiCatalogFromAdjacent(
+            normalizedQuery,
+            categoryId,
+            options.signal,
+          );
+          return fallback.slice(0, requestedLimit);
+        }
+        throw error;
+      }
     },
     PREDICTION_CACHE_POLICIES.catalog,
   );
@@ -130,7 +151,7 @@ async function loadKalshiEvent(
       "rules",
       `kalshi:event:${eventTicker}`,
       async () =>
-        await fetchJson<KalshiEventResponse>(
+        await fetchJsonNoRetry<KalshiEventResponse>(
           `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
@@ -145,16 +166,20 @@ export async function resolveKalshiChartSummary(
   marketTicker: string,
   signal?: AbortSignal,
 ): Promise<PredictionMarketSummary> {
-  const response = await fetchJson<KalshiEventResponse>(
-    `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
-    signal,
-  );
-  const market = response.markets?.find((candidate) => candidate.ticker === marketTicker);
-  const summary = market ? normalizeKalshiMarket(market, response.event) : null;
-  if (!summary) {
-    throw new Error(`Kalshi market ${marketTicker} in event ${eventTicker} is no longer resolvable. Remove or replace this chart series.`);
+  try {
+    const response = await fetchJsonNoRetry<KalshiEventResponse>(
+      `https://api.elections.kalshi.com/trade-api/v2/events/${eventTicker}`,
+      signal,
+    );
+    const market = response.markets?.find((candidate) => candidate.ticker === marketTicker);
+    const summary = market ? normalizeKalshiMarket(market, response.event) : null;
+    if (summary) return summary;
+  } catch (error) {
+    if (!isKalshiRateLimitedError(error)) throw error;
   }
-  return summary;
+  const fallback = await loadKalshiAdjacentMarket(marketTicker, signal);
+  if (fallback) return fallback;
+  throw new Error(`Kalshi market ${marketTicker} in event ${eventTicker} is no longer resolvable. Remove or replace this chart series.`);
 }
 
 async function loadKalshiTrades(
@@ -221,6 +246,8 @@ export async function loadKalshiHistory(
 ): Promise<PredictionHistoryPoint[]> {
   const seriesTicker = summary.seriesTicker ?? (await loadKalshiEvent(summary.eventTicker))?.event?.series_ticker;
   if (!seriesTicker) {
+    const fallback = await loadKalshiAdjacentHistory(summary.marketId, options.signal);
+    if (fallback.length > 0) return fallback;
     if (options.strict) throw new Error(`Kalshi event ${summary.eventTicker ?? "unknown"} no longer exposes chart history.`);
     return [];
   }
@@ -242,7 +269,7 @@ export async function loadKalshiHistory(
       "history",
       `${summary.key}:${range}:${start}:${now}`,
       async () => {
-        const response = await fetchJson<KalshiCandlestickResponse>(
+        const response = await fetchJsonNoRetry<KalshiCandlestickResponse>(
           `https://api.elections.kalshi.com/trade-api/v2/series/${seriesTicker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
           options.signal,
         );
@@ -263,8 +290,29 @@ export async function loadKalshiHistory(
       PREDICTION_CACHE_POLICIES.history,
     );
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    const fallback = await loadKalshiAdjacentHistory(summary.marketId, options.signal);
+    if (fallback.length > 0) return fallback;
     if (options.strict) throw error;
     return [];
+  }
+}
+
+async function loadKalshiSeriesSettlement(
+  seriesTicker: string | undefined,
+): Promise<string | undefined> {
+  const ticker = seriesTicker?.trim();
+  if (!ticker) return undefined;
+  try {
+    const response = await fetchJsonNoRetry<KalshiSeriesResponse>(
+      `https://api.elections.kalshi.com/trade-api/v2/series/${encodeURIComponent(ticker)}`,
+    );
+    const names = (response.series?.settlement_sources ?? [])
+      .map((source) => source.name?.trim())
+      .filter((name): name is string => !!name);
+    return names.length > 0 ? names.join(", ") : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -276,11 +324,14 @@ export async function loadKalshiDetail(
     "detail",
     buildPredictionDetailResourceKey(summary.key, range),
     async () => {
-      const [event, history, book, trades] = await Promise.all([
+      const seriesTicker = summary.seriesTicker
+        || kalshiSeriesTickerFromEvent(summary.eventTicker);
+      const [event, history, book, trades, resolutionSource] = await Promise.all([
         loadKalshiEvent(summary.eventTicker),
         loadKalshiHistory(summary, range),
         loadKalshiBook(summary),
         loadKalshiTrades(summary),
+        loadKalshiSeriesSettlement(seriesTicker),
       ]);
       const eventMeta = event?.event;
       const siblings: PredictionSiblingMarket[] = (event?.markets ?? [])
@@ -306,7 +357,8 @@ export async function loadKalshiDetail(
           ...summary,
           eventLabel: event?.event?.title ?? summary.eventLabel,
           category: event?.event?.category ?? summary.category,
-          seriesTicker: event?.event?.series_ticker ?? summary.seriesTicker,
+          seriesTicker: event?.event?.series_ticker ?? seriesTicker,
+          resolutionSource: resolutionSource ?? summary.resolutionSource,
           tags: summary.tags?.length
             ? summary.tags
             : event?.event?.category

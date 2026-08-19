@@ -74,6 +74,20 @@ export interface KalshiOrderbookResponse {
   };
 }
 
+export interface KalshiSettlementSource {
+  name?: string;
+  url?: string;
+}
+
+export interface KalshiSeriesResponse {
+  series?: {
+    ticker?: string;
+    title?: string;
+    category?: string;
+    settlement_sources?: KalshiSettlementSource[];
+  };
+}
+
 export interface KalshiCandlestickResponse {
   candlesticks?: Array<{
     end_period_ts: number;
