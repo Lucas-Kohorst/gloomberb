@@ -79,6 +79,12 @@ export interface ChartResolveSources {
   loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
   /** Loads a VoteHub poll time series for a subject/choice pair. */
   loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
+  /** Loads a TWC or NWS CLI weather print series keyed by station / ICAO. */
+  loadWeatherSeries?: (
+    provider: "twc-kalshi" | "nws-cli",
+    stationId: string,
+    metric: "high" | "low" | "precip" | "hourly",
+  ) => Promise<UniversalSeriesLoadResult>;
   /** Loads a Kalshi/Polymarket yes-price history. */
   loadPredictionMarketSeries?: (
     venue: "kalshi" | "polymarket",
@@ -647,6 +653,7 @@ function baseUniversalSeries(
     spec.source.kind !== "adjacent-index"
     && spec.source.kind !== "benchmark"
     && spec.source.kind !== "poll"
+    && spec.source.kind !== "weather"
     && spec.source.kind !== "prediction-market"
   ) {
     return null;
@@ -983,7 +990,7 @@ export async function resolveChartSpecData(
   };
 
   const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll" | "prediction-market",
+    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "prediction-market",
     key: string,
     loader: () => Promise<UniversalSeriesLoadResult>,
   ): Promise<UniversalSeriesLoadResult> => {
@@ -1053,6 +1060,19 @@ export async function resolveChartSpecData(
           "poll",
           `${subject}:${choice}`,
           () => sources.loadPollSeries!(subject, choice),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "weather") {
+        if (!sources.loadWeatherSeries) {
+          throw new Error("Weather data source is not available.");
+        }
+        const { provider, stationId, metric } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "weather",
+          `${provider}:${stationId}:${metric}`,
+          () => sources.loadWeatherSeries!(provider, stationId, metric),
         );
         return baseUniversalSeries(seriesSpec, data, index);
       }

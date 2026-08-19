@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { resetKeyedDataCache } from "./data-providers/handle";
 
 /**
  * Tests for the hosted config snapshot Worker endpoints.
@@ -301,5 +302,89 @@ describe("hosted share Worker endpoint", () => {
     expect(response?.status).toBe(200);
     const body = await response?.json() as { id: string };
     expect(body.id).toHaveLength(12);
+  });
+});
+
+describe("Adjacent Cloud keyed-data providers", () => {
+  afterEach(() => {
+    resetKeyedDataCache();
+    restoreFetch();
+  });
+
+  test("lists registered providers without one-off routes", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { providers: Array<{ id: string }> };
+    expect(body.providers.map((provider) => provider.id).sort()).toEqual(["nws-cli", "twc-kalshi"]);
+  });
+
+  test("TWC alias allowlists kalshi/api and rejects other weather.com paths", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("{\"ok\":true}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const ok = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/kalshi/api/climate/primary?date=2026-08-18"),
+      makeEnv(),
+    );
+    expect(ok?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://weather.com/kalshi/api/climate/primary?date=2026-08-18");
+    expect(ok?.headers.get("cache-control")).toContain("max-age=60");
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/v3/wx/observations"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
+  });
+
+  test("NWS CLI provider returns a first-final print keyed by ICAO", async () => {
+    const cliText = `CLINYC
+
+CLIMATE REPORT
+...THE CENTRAL PARK NY CLIMATE SUMMARY FOR AUGUST 18 2026...
+TEMPERATURE (F)
+ YESTERDAY
+  MAXIMUM         87
+  MINIMUM         70
+PRECIPITATION (IN)
+  YESTERDAY        0.00
+`;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/stations/KNYC")) {
+        return Response.json({ geometry: { coordinates: [-73.96, 40.77] } });
+      }
+      if (url.includes("/points/")) {
+        return Response.json({ properties: { cwa: "OKX" } });
+      }
+      if (url.includes("/products/types/CLI/locations/OKX")) {
+        return Response.json({
+          "@graph": [{ id: "final", "@id": "https://api.weather.gov/products/final", issuanceTime: "2026-08-19T05:32:00Z" }],
+        });
+      }
+      if (url.endsWith("/products/final")) {
+        return Response.json({ issuanceTime: "2026-08-19T05:32:00Z", productText: cliText });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/nws-cli/KNYC"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { icao: string; highF: number; printKind: string };
+    expect(body.icao).toBe("KNYC");
+    expect(body.highF).toBe(87);
+    expect(body.printKind).toBe("final");
   });
 });

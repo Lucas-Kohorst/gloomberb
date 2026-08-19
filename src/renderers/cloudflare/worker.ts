@@ -2,6 +2,8 @@ import { handleHostedBackendRpc } from "./backend";
 import { isShareDocumentPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
+import { handleKeyedDataRequest } from "./data-providers/handle";
+import { KEYED_DATA_PATH, TWC_KALSHI_ALIAS_PATH } from "./data-providers/types";
 import {
   clearSessionCookieHeader,
   extractSessionToken,
@@ -23,6 +25,13 @@ export default {
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
+    if (
+      url.pathname === KEYED_DATA_PATH
+      || url.pathname.startsWith(`${KEYED_DATA_PATH}/`)
+      || url.pathname.startsWith(TWC_KALSHI_ALIAS_PATH)
+    ) {
+      return handleKeyedDataRequest(request, env, url);
+    }
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);

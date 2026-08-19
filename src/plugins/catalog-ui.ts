@@ -19,6 +19,7 @@ import {
 import { llmStatsPlugin } from "./builtin/llm-stats";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
+import { weatherPlugin } from "./builtin/weather";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
@@ -41,6 +42,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   alertsPlugin,
   pluginMarketPlugin,
   treasuryAuctionsPlugin,
+  weatherPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {

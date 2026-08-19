@@ -13,6 +13,8 @@ export function sourceFallbackLabel(source: ChartSeriesSpec["source"]): string {
       return `${source.selector} ${source.metric}`;
     case "poll":
       return `${source.subject} ${source.choice}`;
+    case "weather":
+      return `${source.provider === "nws-cli" ? "NWS" : "WX"} ${source.stationId} ${source.metric}`;
     case "prediction-market":
       return `${source.venue === "kalshi" ? "KALSHI" : "POLY"} ${source.marketId}`;
     case "constant":
