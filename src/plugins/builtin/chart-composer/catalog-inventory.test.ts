@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  catalogPollSubjectsFromPolls,
   catalogRowsFromAaModels,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
@@ -60,13 +61,19 @@ describe("data catalog inventory", () => {
     expect(rows.some((row) => row.source === "Artificial Analysis" && row.kind === "Benchmark")).toBe(true);
   });
 
-  test("builds security fields from every instrument in the universe", () => {
+  test("labels security fields as ticker - field without loading series", () => {
     const rows = listStaticCatalogInventory([AAPL, MSFT]);
+    expect(rows.some((row) => row.label === "AAPL - PEG Ratio")).toBe(true);
+    expect(rows.some((row) => row.label === "MSFT - PEG Ratio")).toBe(true);
+    expect(rows.some((row) => row.label === "AAPL - Close")).toBe(true);
+    expect(rows.every((row) => row.sourceId !== "security" || row.label.includes(" - "))).toBe(true);
+
     const expressions = new Set(rows.map((row) => row.expression));
     expect(expressions.has("AAPL:XNAS:price")).toBe(true);
     expect(expressions.has("MSFT:XNAS:price")).toBe(true);
     expect(expressions.has("AAPL:XNAS:dvd")).toBe(true);
     expect(expressions.has("MSFT:XNAS:dvd")).toBe(true);
+    expect(filterCatalogRows(rows, "securities", "dvd").some((row) => row.expression.endsWith(":dvd"))).toBe(true);
   });
 
   test("option contracts emit Options kind and stay in the securities filter", () => {
@@ -96,7 +103,7 @@ describe("data catalog inventory", () => {
     expect(rows.some((row) => row.expression === "BENCH:gpt-4o:coding")).toBe(false);
   });
 
-  test("ai filter is benchmarks; other is polls; securities includes options", () => {
+  test("ai filter is benchmarks; other is adjacent and polls; securities includes options", () => {
     const rows = listStaticCatalogInventory([AAPL, OPTION]);
     const ai = filterCatalogRows(rows, "ai", "");
     expect(ai.length).toBeGreaterThan(0);
@@ -104,23 +111,35 @@ describe("data catalog inventory", () => {
 
     const other = filterCatalogRows(rows, "other", "");
     expect(other.length).toBeGreaterThan(0);
-    expect(other.every((row) => row.sourceId === "poll")).toBe(true);
+    expect(other.every((row) => row.sourceId === "poll" || row.sourceId === "adjacent")).toBe(true);
+    expect(other.some((row) => row.expression === "ADJ:red")).toBe(true);
+    expect(other.some((row) => row.sourceId === "poll")).toBe(true);
 
     const securities = filterCatalogRows(rows, "securities", "");
     expect(securities.every((row) => row.sourceId === "security")).toBe(true);
     expect(securities.some((row) => row.kind === "Options")).toBe(true);
   });
 
-  test("filters by source and search text", () => {
-    const rows = listStaticCatalogInventory([AAPL]);
-    const dividends = filterCatalogRows(rows, "securities", "dvd");
-    expect(dividends.some((row) => row.expression.endsWith(":dvd"))).toBe(true);
+  test("prediction filter is Kalshi/Polymarket only; adjacent stays in other", () => {
+    const rows = [
+      ...listStaticCatalogInventory([AAPL]),
+      ...catalogRowsFromPredictionHits([{
+        venue: "kalshi",
+        marketId: "KXPRESPERSON",
+        title: "Who will be the next president?",
+      }, {
+        venue: "polymarket",
+        marketId: "0xabc",
+        title: "Will BTC hit 200k?",
+      }]),
+    ];
+    const prediction = filterCatalogRows(rows, "prediction", "");
+    expect(prediction.length).toBeGreaterThan(0);
+    expect(prediction.every((row) => row.sourceId === "kalshi" || row.sourceId === "polymarket")).toBe(true);
+    expect(prediction.some((row) => row.sourceId === "adjacent")).toBe(false);
 
-    const prediction = filterCatalogRows(rows, "prediction", "red");
-    expect(prediction.every((row) => (
-      row.sourceId === "adjacent" || row.sourceId === "kalshi" || row.sourceId === "polymarket"
-    ))).toBe(true);
-    expect(prediction.some((row) => row.expression === "ADJ:red")).toBe(true);
+    const other = filterCatalogRows(rows, "other", "red");
+    expect(other.some((row) => row.expression === "ADJ:red")).toBe(true);
   });
 
   test("maps live prediction hits onto chartable rows with venue URLs", () => {
@@ -136,5 +155,26 @@ describe("data catalog inventory", () => {
       source: "Kalshi",
       url: "https://kalshi.com/markets/KXPRESPERSON",
     });
+  });
+
+  test("collapses VoteHub polls onto unique subject and choice chart rows", () => {
+    const subjects = catalogPollSubjectsFromPolls([
+      {
+        subject: "Donald Trump",
+        answers: [{ choice: "Approve" }, { choice: "Disapprove" }],
+      },
+      {
+        subject: "Donald Trump",
+        answers: [{ choice: "Approve" }, { choice: "Disapprove" }],
+      },
+      {
+        subject: "Wisconsin Senate",
+        answers: [{ choice: "Baldwin" }, { choice: "Hovde" }],
+      },
+    ]);
+    expect(subjects).toEqual([
+      { subject: "Donald Trump", choices: ["Approve", "Disapprove"] },
+      { subject: "Wisconsin Senate", choices: ["Baldwin", "Hovde"] },
+    ]);
   });
 });

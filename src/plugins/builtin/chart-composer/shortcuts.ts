@@ -2,10 +2,11 @@ import type { KeyEventLike } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 
 export type ChartComposerShortcut =
+  | "add"
+  | "delete"
   | "series"
   | "dates"
   | "mode"
-  | "resolution"
   | "reload"
   | "share"
   | { type: "range"; index: number };
@@ -16,17 +17,12 @@ export function resolveChartComposerShortcut(
 ): ChartComposerShortcut | null {
   if (event.defaultPrevented || event.propagationStopped || event.targetEditable) return null;
 
-  const exactShiftReload = event.name === "r"
-    && event.shift
-    && !event.ctrl
-    && !event.meta
-    && !event.super
-    && !event.alt;
-  if (exactShiftReload) return "reload";
+  if (isPlainKey(event, "a")) return "add";
+  if (isPlainKey(event, "d")) return "delete";
   if (isPlainKey(event, "s")) return "series";
   if (isPlainKey(event, "w")) return "dates";
   if (isPlainKey(event, "m")) return "mode";
-  if (isPlainKey(event, "r")) return "resolution";
+  if (isPlainKey(event, "r")) return "reload";
   if (isPlainKey(event, "y")) return "share";
   if (!isPlainKey(event, event.name ?? "")) return null;
 

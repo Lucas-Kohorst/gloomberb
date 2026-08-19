@@ -20,7 +20,7 @@ import { AppContext, createInitialState } from "../../../state/app/context";
 import { createDefaultConfig } from "../../../types/config";
 import type { ChartSpec } from "../../../time-series/types";
 import { buildPriceChartPreset } from "./presets";
-import { ChartSeriesQuickAdd, isChartQuickAddMouseTarget } from "./quick-add";
+import { ChartSeriesQuickAdd, isChartQuickAddMouseTarget, type ChartSeriesQuickAddHandle } from "./quick-add";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let capturedInputProps: Record<string, any> | null = null;
@@ -121,12 +121,16 @@ describe("chart series inline quick add", () => {
   test("stays visible and adds a smart ticker-metric suggestion", async () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-chart-quick-add"));
     const startingSpec = buildPriceChartPreset("AAPL");
+    let quickAdd: ChartSeriesQuickAddHandle | null = null;
     let updatedSpec: ChartSpec | undefined;
     let renderedWidth = 0;
 
     testSetup = await testRender(
       <AppContext.Provider value={{ state: initial, dispatch: () => {} }}>
         <ChartSeriesQuickAdd
+          ref={(handle) => {
+            quickAdd = handle;
+          }}
           spec={startingSpec}
           setSpec={(next) => {
             updatedSpec = next;
@@ -151,7 +155,10 @@ describe("chart series inline quick add", () => {
     expect(testSetup.captureCharFrame()).toContain("add series");
     expect(renderedWidth).toBe(14);
 
-    await emitKey("n", "n");
+    await act(async () => {
+      quickAdd?.toggle();
+      await testSetup!.renderOnce();
+    });
     await act(async () => {
       await testSetup!.mockInput.typeText("MSFT revenue");
       await testSetup!.renderOnce();
@@ -192,6 +199,7 @@ describe("chart series inline quick add", () => {
     const startingSpec = buildPriceChartPreset("AAPL");
     const activeStates: boolean[] = [];
     let seriesShortcutCount = 0;
+    let quickAdd: ChartSeriesQuickAddHandle | null = null;
 
     function Harness() {
       const [capturing, setCapturing] = useState(false);
@@ -204,6 +212,9 @@ describe("chart series inline quick add", () => {
       }, { enabled: !capturing });
       return (
         <ChartSeriesQuickAdd
+          ref={(handle) => {
+            quickAdd = handle;
+          }}
           spec={startingSpec}
           setSpec={() => {}}
           focused
@@ -229,7 +240,10 @@ describe("chart series inline quick add", () => {
     await act(async () => {
       await testSetup!.renderOnce();
     });
-    await emitKey("n", "n");
+    await act(async () => {
+      quickAdd?.toggle();
+      await testSetup!.renderOnce();
+    });
     expect(activeStates.at(-1)).toBe(true);
 
     await act(async () => {

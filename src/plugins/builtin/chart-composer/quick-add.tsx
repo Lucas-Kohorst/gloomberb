@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import {
   Box,
   Text,
@@ -82,18 +82,11 @@ function defaultCatalogInstrument(spec: ChartSpec): SeriesCatalogInstrument {
   };
 }
 
-export function ChartSeriesQuickAdd({
-  spec,
-  setSpec,
-  focused,
-  width,
-  height,
-  shortcutEnabled,
-  shortcutBlocked,
-  onActivatePane,
-  onActiveChange,
-  onWidthChange,
-}: {
+export interface ChartSeriesQuickAddHandle {
+  toggle(): void;
+}
+
+export const ChartSeriesQuickAdd = forwardRef<ChartSeriesQuickAddHandle, {
   spec: ChartSpec;
   setSpec: (spec: ChartSpec) => void;
   focused: boolean;
@@ -104,7 +97,18 @@ export function ChartSeriesQuickAdd({
   onActivatePane: () => void;
   onActiveChange?: (active: boolean) => void;
   onWidthChange?: (width: number) => void;
-}) {
+}>(function ChartSeriesQuickAdd({
+  spec,
+  setSpec,
+  focused,
+  width,
+  height,
+  shortcutEnabled,
+  shortcutBlocked,
+  onActivatePane,
+  onActiveChange,
+  onWidthChange,
+}, ref) {
   const ui = useUiHost();
   const nativeRenderer = useNativeRenderer();
   const paneId = useOptionalPaneInstanceId();
@@ -287,24 +291,15 @@ export function ChartSeriesQuickAdd({
     onActiveChange?.(false);
     setError(null);
   }, [cancelPendingBlur, clearInput, onActiveChange]);
+  const toggle = useCallback(() => {
+    if (active && inputFocused) cancel();
+    else focusInput();
+  }, [active, cancel, focusInput, inputFocused]);
+
+  useImperativeHandle(ref, () => ({ toggle }), [toggle]);
 
   useShortcut((event) => {
-    if (!focused) return;
-    if (!active) {
-      if (
-        event.name === "n"
-        && event.targetEditable !== true
-        && !event.ctrl
-        && !event.meta
-        && !event.super
-        && !event.alt
-      ) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusInput();
-      }
-      return;
-    }
+    if (!focused || !active) return;
     if (event.name === "escape") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -430,4 +425,4 @@ export function ChartSeriesQuickAdd({
       ) : null}
     </Box>
   );
-}
+});

@@ -57,6 +57,15 @@ export class ArtificialAnalysisAuthError extends Error {
   }
 }
 
+function readProcessEnv(name: string): string | undefined {
+  try {
+    if (typeof process === "undefined") return undefined;
+    return process.env?.[name]?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolveArtificialAnalysisApiKey(): string | undefined {
   try {
     const registry = getSharedRegistry();
@@ -67,8 +76,7 @@ export function resolveArtificialAnalysisApiKey(): string | undefined {
   } catch {
     // Registry is not always installed in tests or headless loaders.
   }
-  const env = process.env[ARTIFICIAL_ANALYSIS_ENV_VAR]?.trim();
-  return env || undefined;
+  return readProcessEnv(ARTIFICIAL_ANALYSIS_ENV_VAR);
 }
 
 export function clearArtificialAnalysisCache(): void {
@@ -226,10 +234,12 @@ async function aaFetch(path: string, apiKey: string | undefined): Promise<Respon
   return CLIENT.fetch(`${ARTIFICIAL_ANALYSIS_API_BASE}${path}`, { headers });
 }
 
+function throwUnauthorized(): never {
+  throw new ArtificialAnalysisAuthError("unauthorized", "Add an Artificial Analysis API key.");
+}
+
 function throwForStatus(response: Response): void {
-  if (response.status === 401) {
-    throw new ArtificialAnalysisAuthError("unauthorized", "Add an Artificial Analysis API key.");
-  }
+  if (response.status === 401) throwUnauthorized();
   if (!response.ok && response.status !== 403) {
     throw new Error(`Artificial Analysis request failed (${response.status})`);
   }
@@ -245,6 +255,7 @@ async function fetchLanguageModels(apiKey: string | undefined): Promise<{
   let intelligenceIndexVersion: number | null = null;
   for (let page = 1; page <= MAX_LANGUAGE_PAGES; page += 1) {
     const response = await aaFetch(`/language/models/free?page=${page}`, apiKey);
+    if (page === 1 && response.status === 403) throwUnauthorized();
     throwForStatus(response);
     if (response.status === 403) break;
     const body: unknown = await response.json();

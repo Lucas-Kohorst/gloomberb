@@ -206,6 +206,22 @@ export async function createPaneTemplateOrThrow(
   );
   if (existing) {
     deps.focusPaneInstance(existing);
+    const hasExplicitTarget = Boolean(
+      resolvedOptions?.arg?.trim()
+      || resolvedOptions?.values?.messageId?.trim(),
+    );
+    if (template.singleton && hasExplicitTarget) {
+      const currentState = deps.getState();
+      const nextLayout = updatePaneInstance(currentState.config.layout, existing, (instance) => ({
+        ...instance,
+        title: spec.title ?? instance.title,
+        settings: {
+          ...(instance.settings ?? {}),
+          ...(spec.settings ?? {}),
+        },
+      }));
+      deps.dispatch({ type: "UPDATE_LAYOUT", layout: nextLayout });
+    }
     return;
   }
 

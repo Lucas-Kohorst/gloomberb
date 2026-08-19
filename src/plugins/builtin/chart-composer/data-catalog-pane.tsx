@@ -21,10 +21,14 @@ import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { fetchArtificialAnalysisData } from "../llm-stats/client";
 import { ARTIFICIAL_ANALYSIS_ATTRIBUTION } from "../llm-stats/types";
+import { fetchVoteHubPolls } from "../polls/client";
 import {
   CATALOG_FILTERS,
+  VOTEHUB_POLL_TYPES,
+  catalogPollSubjectsFromPolls,
   catalogRowUrl,
   catalogRowsFromAaModels,
+  catalogRowsFromPollSubjects,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
   listStaticCatalogInventory,
@@ -90,13 +94,14 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [aaRows, setAaRows] = useState<CatalogSeriesRow[]>([]);
   const [aaLoading, setAaLoading] = useState(true);
+  const [pollRows, setPollRows] = useState<CatalogSeriesRow[]>([]);
+  const [pollsLoading, setPollsLoading] = useState(true);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const { instruments, loading: universeLoading } = useCatalogUniverse(searchQuery);
-  const searchMarkets = searchQuery.trim().length >= 3
-    && (filter === "all" || filter === "prediction");
-  const { markets, loading: marketsLoading } = usePredictionMarketHits(searchQuery, searchMarkets);
-  const loading = universeLoading || marketsLoading || aaLoading;
+  const loadMarkets = filter === "all" || filter === "prediction";
+  const { markets, loading: marketsLoading } = usePredictionMarketHits(searchQuery, loadMarkets);
+  const loading = universeLoading || marketsLoading || aaLoading || pollsLoading;
 
   useEffect(() => {
     let cancelled = false;
@@ -118,14 +123,31 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setPollsLoading(true);
+    void Promise.all([
+      fetchVoteHubPolls().catch(() => []),
+      ...VOTEHUB_POLL_TYPES.map((pollType) => fetchVoteHubPolls({ pollType }).catch(() => [])),
+    ]).then((batches) => {
+      if (cancelled) return;
+      setPollRows(catalogRowsFromPollSubjects(catalogPollSubjectsFromPolls(batches.flat())));
+      setPollsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rows = useMemo(() => {
     const staticRows = listStaticCatalogInventory(instruments);
     const liveRows = catalogRowsFromPredictionHits(markets);
     const merged = new Map<string, CatalogSeriesRow>();
-    const withoutStaticBench = aaRows.length > 0
-      ? staticRows.filter((entry) => entry.sourceId !== "benchmark")
-      : staticRows;
-    for (const entry of [...liveRows, ...aaRows, ...withoutStaticBench]) {
+    const withoutStaticLive = staticRows.filter((entry) => (
+      (aaRows.length === 0 || entry.sourceId !== "benchmark")
+      && (pollRows.length === 0 || entry.sourceId !== "poll")
+    ));
+    for (const entry of [...liveRows, ...aaRows, ...pollRows, ...withoutStaticLive]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
     const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
@@ -136,7 +158,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [aaRows, filter, instruments, markets, searchQuery, sortPreference]);
+  }, [aaRows, filter, instruments, markets, pollRows, searchQuery, sortPreference]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -319,7 +341,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         onActivate={chartSelected}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? `No series matching "${searchQuery.trim()}"` : "No series"}
-        emptyStateHint={loading ? "Searching prediction markets…" : "Press / to search."}
+        emptyStateHint={loading ? "Loading catalog…" : "Press / to search."}
       />
     </Box>
   );

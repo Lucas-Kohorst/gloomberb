@@ -486,8 +486,9 @@ export function ChatContent({
   });
 
   const handledTargetMessageRef = useRef<string | null>(null);
+  const hasTargetMessage = Boolean(targetMessageId && messages.some((message) => message.id === targetMessageId));
   useEffect(() => {
-    if (!targetMessageId || loading || messages.length === 0) return;
+    if (!targetMessageId || loading || !hasTargetMessage) return;
     const targetKey = `${channelId}:${targetMessageId}`;
     if (handledTargetMessageRef.current === targetKey) return;
     handledTargetMessageRef.current = targetKey;
@@ -495,9 +496,9 @@ export function ChatContent({
     onTargetMessageHandled?.();
   }, [
     channelId,
+    hasTargetMessage,
     jumpToMessage,
     loading,
-    messages.length,
     onTargetMessageHandled,
     targetMessageId,
   ]);

@@ -32,11 +32,13 @@ describe("resolveChartComposerShortcut", () => {
   });
 
   test("matches only exact chart shortcuts", () => {
+    expect(resolveChartComposerShortcut(keyEvent("a"), 8)).toBe("add");
+    expect(resolveChartComposerShortcut(keyEvent("d"), 8)).toBe("delete");
     expect(resolveChartComposerShortcut(keyEvent("s"), 8)).toBe("series");
     expect(resolveChartComposerShortcut(keyEvent("w"), 8)).toBe("dates");
     expect(resolveChartComposerShortcut(keyEvent("m"), 8)).toBe("mode");
-    expect(resolveChartComposerShortcut(keyEvent("r"), 8)).toBe("resolution");
-    expect(resolveChartComposerShortcut(keyEvent("r", { shift: true }), 8)).toBe("reload");
+    expect(resolveChartComposerShortcut(keyEvent("r"), 8)).toBe("reload");
+    expect(resolveChartComposerShortcut(keyEvent("r", { shift: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("3"), 8)).toEqual({ type: "range", index: 2 });
     expect(resolveChartComposerShortcut(keyEvent("9"), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("3", { alt: true }), 8)).toBeNull();

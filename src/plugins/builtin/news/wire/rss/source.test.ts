@@ -13,7 +13,7 @@ const FEED: RssFeedConfig = {
 };
 
 const RSS_FIXTURE = `<rss version="2.0"><channel><item>
-  <title>Breaking: NVIDIA rallies on AI demand</title>
+  <title>Breaking: NVIDIA (NVDA) rallies on AI demand</title>
   <link>https://example.com/nvda</link>
   <pubDate>${new Date().toUTCString()}</pubDate>
   <description>NVIDIA shares moved higher.</description>
@@ -34,6 +34,7 @@ describe("createRssNewsCapability", () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.importance).toBeGreaterThanOrEqual(FEED.authority);
     expect(items[0]!.isBreaking).toBe(true);
+    expect(items[0]!.tickers).toContain("NVDA");
     expect(source.provider.getCachedNews?.({ scope: "global" })).toHaveLength(1);
   });
 

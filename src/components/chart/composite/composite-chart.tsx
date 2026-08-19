@@ -1185,6 +1185,7 @@ function CompositeLegend({
   onToggleSeries,
   isSeriesToggleable,
   keyboardIndex,
+  onSelectLegend,
 }: {
   scene: CompositeChartScene | null;
   series: ResolvedSeries[];
@@ -1198,6 +1199,7 @@ function CompositeLegend({
   onToggleSeries: CompositeChartProps["onToggleSeries"];
   isSeriesToggleable: CompositeChartProps["isSeriesToggleable"];
   keyboardIndex?: number | null;
+  onSelectLegend?: (index: number) => void;
 }) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -1331,14 +1333,17 @@ function CompositeLegend({
                 flexShrink={0}
                 overflow="hidden"
                 backgroundColor={keyboardIndex === index ? themeColors.selected : undefined}
-                hoverBackgroundColor={toggleable ? hoverBg() : undefined}
-                onMouseDown={toggleable ? (event: ChartMouseEvent) => {
+                hoverBackgroundColor={toggleable || onSelectLegend ? hoverBg() : undefined}
+                onMouseOver={onSelectLegend ? () => onSelectLegend(index) : undefined}
+                onMouseDown={(event: ChartMouseEvent) => {
+                  onSelectLegend?.(index);
+                  if (!toggleable) return;
                   onActivate?.();
                   consumeChartMouseEvent(event);
                   onToggleSeries?.(entry.id);
-                } : undefined}
-                cursor={toggleable ? "pointer" : undefined}
-                data-gloom-interactive={toggleable ? "true" : undefined}
+                }}
+                cursor={toggleable || onSelectLegend ? "pointer" : undefined}
+                data-gloom-interactive={toggleable || onSelectLegend ? "true" : undefined}
                 data-gloom-role="composite-chart-legend-series"
                 data-gloom-label={`${toggleable
                   ? `${entryVisible ? "Hide" : "Show"} `
@@ -1417,6 +1422,7 @@ export function CompositeChart({
   onActivate,
   onToggleSeries,
   isSeriesToggleable,
+  onLegendSelectionChange,
 }: CompositeChartProps) {
   const { cellWidthPx = 8 } = useUiCapabilities();
   const isDesktopWeb = useUiHost().kind === "desktop-web";
@@ -1473,6 +1479,15 @@ export function CompositeChart({
     () => legendSeries ?? visibleSeries,
     [legendSeries, visibleSeries],
   );
+  const selectLegend = useCallback((index: number) => {
+    setLegendKeyboardIndex(index);
+    onActivate?.();
+  }, [onActivate]);
+  useEffect(() => {
+    onLegendSelectionChange?.(
+      legendKeyboardIndex === null ? null : visibleLegendSeries[legendKeyboardIndex]?.id ?? null,
+    );
+  }, [legendKeyboardIndex, onLegendSelectionChange, visibleLegendSeries]);
   const visibleSeriesIds = useMemo(
     () => new Set(visibleSeries.map((entry) => entry.id)),
     [visibleSeries],
@@ -1920,6 +1935,7 @@ export function CompositeChart({
             onToggleSeries={onToggleSeries}
             isSeriesToggleable={isSeriesToggleable}
             keyboardIndex={legendKeyboardIndex}
+            onSelectLegend={selectLegend}
           />
         ) : null}
         {emptyPlotHeight > 0 ? (
@@ -2002,6 +2018,7 @@ export function CompositeChart({
           onToggleSeries={onToggleSeries}
           isSeriesToggleable={isSeriesToggleable}
           keyboardIndex={legendKeyboardIndex}
+          onSelectLegend={selectLegend}
         />
       ) : null}
       {interactive && plotWidth > CHART_TOOLBAR_WIDTH + 4 ? (

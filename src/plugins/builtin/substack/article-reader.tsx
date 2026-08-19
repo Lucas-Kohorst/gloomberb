@@ -106,7 +106,11 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const shareHint: PaneHint[] = article
     ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
     : [];
-  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
+  const knownBody = detail.data?.contentText ?? "";
+  const jina = useJinaArticle(
+    article?.url ?? url,
+    !detail.loading && !!(article?.url ?? url) && knownBody.trim().length < 400,
+  );
 
   usePaneStatusLinkFooter({
     registrationId: "substack-article-reader",
@@ -146,6 +150,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
         height={height}
         focused={focused}
         state={jina}
+        knownBody={knownBody}
       />
     </Box>
   );

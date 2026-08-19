@@ -40,8 +40,12 @@ describe("normalizeSubstackArticle", () => {
     expect(article?.body).toBeUndefined();
   });
 
-  test("marks the newsletter category", () => {
-    const article = normalizeSubstackArticle(makeSummary());
-    expect(article?.categories).toContain("newsletter");
+  test("tags tickers from the title and body", () => {
+    const article = normalizeSubstackArticle(makeSummary({
+      title: "Why I still own Apple (AAPL)",
+      bodyHtml: "<p>Also added $NVDA on the dip.</p>",
+    }));
+    expect(article?.tickers).toContain("AAPL");
+    expect(article?.tickers).toContain("NVDA");
   });
 });

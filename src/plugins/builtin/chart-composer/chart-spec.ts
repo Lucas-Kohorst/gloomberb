@@ -27,6 +27,31 @@ export function toggleChartSeries(spec: ChartSpec, seriesId: string): ChartSpec 
   };
 }
 
+export function canRemoveChartSeries(spec: ChartSpec, seriesId: string): boolean {
+  return spec.series.length > 1 && spec.series.some((series) => series.id === seriesId);
+}
+
+export function removeChartSeries(spec: ChartSpec, seriesId: string): ChartSpec {
+  if (!canRemoveChartSeries(spec, seriesId)) return spec;
+  const series = spec.series.filter((entry) => entry.id !== seriesId);
+  const seriesIds = new Set(series.map((entry) => entry.id));
+  const studies = spec.studies.filter((study) => {
+    const requiredInputs = study.kind === "ratio" || study.kind === "spread" || study.kind === "correlation" ? 2 : 1;
+    return study.inputSeriesIds.length === requiredInputs
+      && study.inputSeriesIds.every((id) => seriesIds.has(id));
+  });
+  const usedPanelIds = new Set([
+    "main",
+    ...series.map((entry) => entry.panelId),
+    ...studies.map((study) => study.panelId),
+  ]);
+  const panels = spec.panels.filter((panel) => usedPanelIds.has(panel.id));
+  if (!panels.some((panel) => panel.id === "main")) {
+    panels.unshift({ id: "main" });
+  }
+  return { ...spec, series, studies, panels };
+}
+
 /**
  * Project the latest resolved data through the authored visibility immediately.
  * Resolution continues in the background, but hiding/restoring a loaded base

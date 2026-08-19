@@ -1335,12 +1335,12 @@ describe("ChatContent", () => {
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
     });
-    const openedTemplates: Array<{ templateId: string; options?: { arg?: string } }> = [];
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string; values?: Record<string, string> } }> = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
     const runtime = createTestPluginRuntime({
-      createPaneFromTemplate(templateId: string, options?: { arg?: string }) {
+      createPaneFromTemplate(templateId: string, options?: { arg?: string; values?: Record<string, string> }) {
         openedTemplates.push({ templateId, options });
       },
     });
@@ -1384,7 +1384,10 @@ describe("ChatContent", () => {
       await setup().renderOnce();
     });
 
-    expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: "everyone" } }]);
+    expect(openedTemplates).toEqual([{
+      templateId: "new-chat-pane",
+      options: { arg: "everyone", values: { messageId: "m1" } },
+    }]);
   });
 
   test("opens an unread direct-message channel from the status widget", async () => {
@@ -1403,12 +1406,12 @@ describe("ChatContent", () => {
         dmUser: { id: "u2", username: "bob", displayName: "Bob" },
       },
     ]);
-    const openedTemplates: Array<{ templateId: string; options?: { arg?: string } }> = [];
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string; values?: Record<string, string> } }> = [];
     const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
     state.config.disabledPlugins = [];
 
     const runtime = createTestPluginRuntime({
-      createPaneFromTemplate(templateId: string, options?: { arg?: string }) {
+      createPaneFromTemplate(templateId: string, options?: { arg?: string; values?: Record<string, string> }) {
         openedTemplates.push({ templateId, options });
       },
     });
@@ -1453,7 +1456,56 @@ describe("ChatContent", () => {
       await setup().renderOnce();
     });
 
-    expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: dmChannelId } }]);
+    expect(openedTemplates).toEqual([{
+      templateId: "new-chat-pane",
+      options: { arg: dmChannelId, values: { messageId: "dm-m1" } },
+    }]);
+  });
+
+  test("opens account management from the status widget when there are no unread messages", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    const openedTemplates: Array<{ templateId: string; options?: { arg?: string; values?: Record<string, string> } }> = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+    state.config.disabledPlugins = [];
+
+    const runtime = createTestPluginRuntime({
+      createPaneFromTemplate(templateId: string, options?: { arg?: string; values?: Record<string, string> }) {
+        openedTemplates.push({ templateId, options });
+      },
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={runtime}>
+            <ChatStatusWidget controller={controller} />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 40, height: 1 },
+      );
+    });
+
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("vince");
+    expect(frame).not.toContain("[1]");
+
+    const line = frame.split("\n")[0] ?? "";
+    const usernameCol = line.indexOf("vince");
+
+    expect(usernameCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(usernameCol + 1, 0);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    expect(openedTemplates).toEqual([{ templateId: "account-management-pane", options: undefined }]);
   });
 
 });

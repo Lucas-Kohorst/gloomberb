@@ -64,6 +64,25 @@ function extractImageUrl(block: string): string | undefined {
   return undefined;
 }
 
+function extractCategories(block: string, fallback?: string): string[] {
+  const categories: string[] = [];
+  const categoryRe = /<category\b[^>]*>([\s\S]*?)<\/category>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = categoryRe.exec(block)) !== null) {
+    const category = extractText(match[1]!);
+    if (category) categories.push(category);
+  }
+  if (categories.length > 0) return [...new Set(categories)];
+  return fallback ? [fallback] : [];
+}
+
+function extractArticleBody(block: string, description?: string): string | undefined {
+  const encoded = extractText(getTagContent(block, "content:encoded"));
+  if (encoded.length >= 400) return encoded;
+  if ((description?.length ?? 0) >= 800) return description;
+  return undefined;
+}
+
 function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
   const itemRe = /<item>([\s\S]*?)<\/item>/gi;
   const items: MarketNewsItem[] = [];
@@ -77,8 +96,8 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
     const pubDateRaw = extractText(getTagContent(block, "pubDate"));
     const descRaw = getTagContent(block, "description");
     const desc = descRaw ? extractText(descRaw) : undefined;
-    const categoryRaw = getTagContent(block, "category");
-    const category = categoryRaw ? extractText(categoryRaw) : undefined;
+    const categories = extractCategories(block, config.category);
+    const body = extractArticleBody(block, desc);
 
     if (!title && !url) continue;
 
@@ -88,7 +107,6 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
 
     const id = hashString(`${url}|${title}`);
     const publishedAt = parseDate(pubDateRaw);
-    const categories = category ? [category] : config.category ? [config.category] : [];
     const imageUrl = extractImageUrl(block);
 
     items.push({
@@ -98,6 +116,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
       source: config.name,
       publishedAt,
       summary,
+      body,
       imageUrl,
       topic: categories[0] ?? "general",
       topics: categories,
@@ -146,11 +165,12 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       extractText(getTagContent(block, "published")) ||
       extractText(getTagContent(block, "updated"));
 
-    const summaryRaw = getTagContent(block, "summary") || getTagContent(block, "content");
+    const summaryRaw = getTagContent(block, "content") || getTagContent(block, "summary");
     const summaryFull = summaryRaw ? extractText(summaryRaw) : undefined;
     const summary = summaryFull
       ? summaryFull.slice(0, 300) + (summaryFull.length > 300 ? "…" : "")
       : undefined;
+    const body = summaryFull && summaryFull.length >= 400 ? summaryFull : undefined;
 
     if (!title && !url) continue;
 
@@ -166,6 +186,7 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       source: config.name,
       publishedAt,
       summary,
+      body,
       imageUrl,
       topic: categories[0] ?? "general",
       topics: categories,

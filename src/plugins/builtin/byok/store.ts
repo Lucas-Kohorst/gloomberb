@@ -84,6 +84,15 @@ export async function deleteByokKey(ctx: GloomPluginContext, id: string): Promis
   await setByokKeys(ctx, keys);
 }
 
+function readProcessEnv(name: string): string | undefined {
+  try {
+    if (typeof process === "undefined") return undefined;
+    return process.env?.[name];
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Resolves the API key for a service, checking stored BYOK entries first and
  * falling back to the service's configured environment variable.
@@ -98,7 +107,7 @@ export function resolveApiKey(config: AppConfig, serviceId: string): string | un
 
   const service = getByokKnownService(serviceId);
   if (service?.envVar) {
-    const envValue = process.env[service.envVar];
+    const envValue = readProcessEnv(service.envVar);
     if (envValue) return envValue;
   }
   return undefined;
@@ -120,7 +129,7 @@ export function getAvailableByokServices(config: AppConfig): Array<{ serviceId: 
   const allServices = getByokKnownServices();
   for (const service of allServices) {
     if (storedServiceIds.has(service.id)) continue;
-    if (service.envVar && process.env[service.envVar]) {
+    if (service.envVar && readProcessEnv(service.envVar)) {
       result.push({ serviceId: service.id, source: "env" });
     }
   }

@@ -495,4 +495,38 @@ describe("initializeAppState", () => {
 
     persistence.close();
   });
+
+  test("keeps seeded watchlist tickers when the ticker store cannot round-trip", async () => {
+    const dbPath = createTempDbPath("app-bootstrap-hosted-tickers");
+    const created: string[] = [];
+    const actions: AppAction[] = [];
+
+    await initializeAppState({
+      config: createDefaultConfig(dbPath),
+      tickerRepository: {
+        loadAllTickers: async () => [],
+        loadTicker: async () => null,
+        saveTicker: async () => {},
+        createTicker: async (metadata) => {
+          created.push(metadata.ticker);
+          return { metadata };
+        },
+        deleteTicker: async () => {},
+      },
+      dataProvider: {} as any,
+      sessionSnapshot: null,
+      dispatch: (action) => { actions.push(action); },
+      refreshTicker: () => {},
+      refreshQuote: () => {},
+      autoImportBrokerPositions: async () => {},
+    });
+
+    const setTickers = actions.find((action) => action.type === "SET_TICKERS");
+    expect(setTickers?.type).toBe("SET_TICKERS");
+    if (setTickers?.type !== "SET_TICKERS") return;
+    expect(setTickers.tickers.size).toBe(created.length);
+    expect(setTickers.tickers.has("AAPL")).toBe(true);
+    expect(setTickers.tickers.has("NVDA")).toBe(true);
+    expect(setTickers.tickers.has("BTC-USD")).toBe(true);
+  });
 });
