@@ -9,7 +9,7 @@ describe("adjacentCloudDataUrl", () => {
     );
   });
 
-  test("fork-only data plugins are the Adjacent Cloud provider set", () => {
+  test("Adjacent Cloud provider set includes VoteHub", () => {
     expect([...ADJACENT_CLOUD_PROVIDER_IDS].sort()).toEqual([
       "adjacent",
       "llm-stats",
