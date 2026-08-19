@@ -153,4 +153,5 @@ export interface CompositeChartProps {
   onActivate?: () => void;
   onToggleSeries?: (seriesId: string) => void;
   isSeriesToggleable?: (series: ResolvedSeries) => boolean;
+  onLegendSelectionChange?: (seriesId: string | null) => void;
 }

@@ -3,6 +3,7 @@ import {
   canToggleChartSeries,
   parseChartSpec,
   projectVisibleChartSeries,
+  removeChartSeries,
   serializeChartSpec,
   toggleChartSeries,
 } from "./chart-spec";
@@ -374,6 +375,13 @@ describe("chart composer presets and formulas", () => {
     const restored = toggleChartSeries(withHiddenSecond, spec.series[1]!.id);
     expect(projectVisibleChartSeries(restored, [], resolved).map((series) => series.id))
       .toEqual(spec.series.map((series) => series.id));
+  });
+
+  test("removes the selected ticker series and keeps a last remaining series", () => {
+    const spec = buildComparisonChartPreset(["AAPL", "MSFT"]);
+    const removed = removeChartSeries(spec, spec.series[1]!.id);
+    expect(removed.series.map((series) => series.id)).toEqual([spec.series[0]!.id]);
+    expect(removeChartSeries(removed, removed.series[0]!.id)).toBe(removed);
   });
 
   test("includes volume in fresh price and followed-ticker defaults", () => {
