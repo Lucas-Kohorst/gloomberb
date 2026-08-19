@@ -61,6 +61,17 @@ export function kalshiSeriesTickerFromEvent(eventTicker: string | undefined): st
   return withoutDateSuffix || trimmed;
 }
 
+/** Event ticker candidates for a Kalshi market id (`KXHIGHLAX-26AUG19-B82.5` → `KXHIGHLAX-26AUG19`). */
+export function kalshiParentTickers(ticker: string): string[] {
+  const parts = ticker.trim().toUpperCase().split("-").filter(Boolean);
+  const parents: string[] = [];
+  for (let i = parts.length - 1; i >= 1; i -= 1) {
+    const parent = parts.slice(0, i).join("-");
+    if (/[0-9]/.test(parent)) parents.push(parent);
+  }
+  return parents;
+}
+
 function centsOrShare(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   return value > 1 ? value / 100 : value;

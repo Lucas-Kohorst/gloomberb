@@ -23,6 +23,7 @@ import {
 } from "../fetch";
 import {
   isKalshiRateLimitedError,
+  kalshiParentTickers,
   kalshiSeriesTickerFromEvent,
   loadKalshiAdjacentHistory,
   loadKalshiAdjacentMarket,
@@ -173,7 +174,7 @@ async function loadKalshiEvent(
       `kalshi:event:${eventTicker}`,
       async () =>
         await fetchJsonNoRetry<KalshiEventResponse>(
-          `${KALSHI_API_BASE}/events/${eventTicker}`,
+          `${KALSHI_API_BASE}/events/${encodeURIComponent(eventTicker)}?with_nested_markets=true`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
     );
@@ -222,6 +223,47 @@ function compareKalshiMarketProminence(
   return (right.openInterest ?? 0) - (left.openInterest ?? 0);
 }
 
+function kalshiEventMeta(event: KalshiEventRecord): {
+  title?: string;
+  category?: string;
+  series_ticker?: string;
+  sub_title?: string;
+} {
+  return {
+    title: event.title,
+    category: event.category,
+    series_ticker: event.series_ticker,
+    sub_title: event.sub_title,
+  };
+}
+
+function eventRecordFromResponse(event: KalshiEventResponse): KalshiEventRecord {
+  return {
+    title: event.event.title,
+    category: event.event.category,
+    series_ticker: event.event.series_ticker,
+    sub_title: event.event.sub_title,
+    markets: event.markets,
+  };
+}
+
+function findKalshiMarketByTicker(
+  events: KalshiEventRecord[],
+  ticker: string,
+): PredictionMarketSummary | null {
+  const needle = ticker.trim().toUpperCase();
+  for (const event of events) {
+    for (const record of event.markets ?? []) {
+      if (record.ticker?.toUpperCase() !== needle) continue;
+      const summary = normalizeKalshiMarket(record, kalshiEventMeta(event), {
+        allowDormant: true,
+      });
+      if (summary) return summary;
+    }
+  }
+  return null;
+}
+
 function pickBusiestKalshiMarket(
   events: KalshiEventRecord[],
 ): PredictionMarketSummary | null {
@@ -230,12 +272,7 @@ function pickBusiestKalshiMarket(
     for (const record of event.markets ?? []) {
       const summary = normalizeKalshiMarket(
         record,
-        {
-          title: event.title,
-          category: event.category,
-          series_ticker: event.series_ticker,
-          sub_title: event.sub_title,
-        },
+        kalshiEventMeta(event),
         { allowDormant: true },
       );
       if (!summary) continue;
@@ -248,8 +285,10 @@ function pickBusiestKalshiMarket(
 /**
  * Resolves a venue-native Kalshi identifier onto a chartable market. Callers
  * hand us whatever the user or a search hit produced, which can be a market
- * ticker (`CONTROLS-2026-R`), an event ticker (`CONTROLS-2026`), or a series
- * ticker (`CONTROLS`); the latter two settle on their busiest market.
+ * ticker (`KXHIGHLAX-26AUG19-B82.5`), an event ticker (`KXHIGHLAX-26AUG19`),
+ * or a series ticker (`KXHIGHLAX`). Event/series ids settle on their busiest
+ * market; market ids prefer an exact nested-event match so decimal strikes
+ * still chart when GET /markets/{ticker} 404s.
  */
 export async function resolveKalshiMarketByTicker(
   ticker: string,
@@ -274,18 +313,25 @@ export async function resolveKalshiMarketByTicker(
 
   const event = await loadKalshiEvent(normalized);
   if (event?.markets?.length) {
-    return pickBusiestKalshiMarket([
-      {
-        title: event.event.title,
-        category: event.event.category,
-        series_ticker: event.event.series_ticker,
-        sub_title: event.event.sub_title,
-        markets: event.markets,
-      },
-    ]);
+    const wrapped = [eventRecordFromResponse(event)];
+    return findKalshiMarketByTicker(wrapped, normalized)
+      ?? pickBusiestKalshiMarket(wrapped);
   }
 
-  const fromSeries = pickBusiestKalshiMarket(await fetchKalshiEventsForSeries(normalized));
+  for (const parent of kalshiParentTickers(normalized)) {
+    const parentEvent = await loadKalshiEvent(parent);
+    if (!parentEvent?.markets?.length) continue;
+    const exact = findKalshiMarketByTicker(
+      [eventRecordFromResponse(parentEvent)],
+      normalized,
+    );
+    if (exact) return exact;
+  }
+
+  const seriesEvents = await fetchKalshiEventsForSeries(normalized);
+  const exactFromSeries = findKalshiMarketByTicker(seriesEvents, normalized);
+  if (exactFromSeries) return exactFromSeries;
+  const fromSeries = pickBusiestKalshiMarket(seriesEvents);
   if (fromSeries) return fromSeries;
   return await loadKalshiAdjacentMarket(normalized);
 }
@@ -375,7 +421,7 @@ export async function loadKalshiHistory(
       `${summary.key}:${range}`,
       async () => {
         const response = await fetchJsonNoRetry<KalshiCandlestickResponse>(
-          `${KALSHI_API_BASE}/series/${seriesTicker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
+          `${KALSHI_API_BASE}/series/${encodeURIComponent(seriesTicker)}/markets/${encodeURIComponent(summary.marketId)}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
         );
         return (response.candlesticks ?? [])
           .map((candle) => ({

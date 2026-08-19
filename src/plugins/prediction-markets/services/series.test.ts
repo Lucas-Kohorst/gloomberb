@@ -181,4 +181,56 @@ describe("venue-direct prediction market series", () => {
 
     expect(await loadVenuePredictionMarketSeries("kalshi", "NOPE-1")).toBeNull();
   });
+
+  test("charts a decimal Kalshi strike when GET /markets/{ticker} 404s", async () => {
+    const ticker = "KXHIGHLAX-26AUG19-B82.5";
+    const target = {
+      ticker,
+      title: "Will the maximum temperature be 82-83° on Aug 19, 2026?",
+      yes_sub_title: "82° to 83°",
+      event_ticker: "KXHIGHLAX-26AUG19",
+      status: "active",
+      market_type: "binary",
+      strike_type: "between",
+      floor_strike: 82,
+      cap_strike: 83,
+      last_price_dollars: "0.6300",
+      volume_24h_fp: "800.00",
+      notional_value_dollars: "1.0000",
+    };
+    const quieter = {
+      ...target,
+      ticker: "KXHIGHLAX-26AUG19-T83",
+      title: "Will the maximum temperature be 84° or above on Aug 19, 2026?",
+      yes_sub_title: "84° or above",
+      last_price_dollars: "0.2700",
+      volume_24h_fp: "9000.00",
+    };
+    const requested = mockTransport([
+      ["/candlesticks", CANDLESTICKS],
+      [`/markets/${ticker}`, 404],
+      [`/events/${ticker}`, 404],
+      [
+        "/events/KXHIGHLAX-26AUG19",
+        {
+          event: {
+            title: "Highest temperature in Los Angeles on Aug 19, 2026?",
+            series_ticker: "KXHIGHLAX",
+          },
+          markets: [quieter, target],
+        },
+      ],
+    ]);
+
+    const series = await loadVenuePredictionMarketSeries("kalshi", ticker);
+
+    expect(series?.marketId).toBe(ticker);
+    expect(series?.points.map((point) => point.close)).toEqual([0.51, 0.53]);
+    expect(series?.label).toContain("82° to 83°");
+    expect(
+      requested.some((url) =>
+        url.includes(`/series/KXHIGHLAX/markets/${ticker}/candlesticks`),
+      ),
+    ).toBe(true);
+  });
 });
