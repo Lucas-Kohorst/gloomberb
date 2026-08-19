@@ -12,6 +12,8 @@
  * - `UST:maturity`      — US Treasury constant-rate yield (backed by FRED)
  * - `BENCH:selector:metric` — AI model benchmark metric at release date (scatter)
  * - `POLL:subject:choice`   — VoteHub poll percentage for a choice over time
+ * - `WX:station:metric`     — Weather Company Kalshi climate / hourly (LAX, high)
+ * - `NWS:icao:metric`       — NWS Daily Climate Report first-final print (KNYC, high)
  */
 
 export const SERIES_PREFIX = {
@@ -23,6 +25,8 @@ export const SERIES_PREFIX = {
   treasury: "UST",
   benchmark: "BENCH",
   poll: "POLL",
+  weather: "WX",
+  nwsCli: "NWS",
 } as const;
 
 export type PredictionMarketVenue = "kalshi" | "polymarket";

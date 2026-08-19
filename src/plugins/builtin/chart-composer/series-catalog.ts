@@ -23,6 +23,8 @@ import {
   type FuturesCatalogEntry,
   type TreasuryCatalogEntry,
 } from "./universal-series";
+import { WEATHER_STATIONS } from "../weather/stations";
+import { weatherMetricLabel } from "../weather/mapping";
 import {
   formatPredictionSeriesExpression,
   normalizePredictionMarketId,
@@ -289,6 +291,16 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
         detail: "Poll",
         expression,
       };
+    case "weather":
+      return {
+        id: `${expression.provider}:${expression.stationId}:${expression.metric}`,
+        label: `${expression.provider === "nws-cli" ? "NWS" : "WX"} · ${expression.stationId} ${expression.metric}`,
+        description: expression.provider === "nws-cli"
+          ? "NWS Daily Climate Report (first final CLI print)"
+          : "Weather Company Kalshi climate / hourly",
+        detail: expression.provider === "nws-cli" ? "NWS" : "WX",
+        expression,
+      };
     case "prediction-market":
       return {
         id: `pm:${expression.venue}:${expression.marketId}`,
@@ -328,6 +340,8 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
       return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    case "weather":
+      return `${expression.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
     case "prediction-market":
       return formatPredictionSeriesExpression(expression);
     default:
@@ -362,7 +376,9 @@ export function buildChartSeriesAssistContext(): string {
     + "FUT:code for futures (e.g. FUT:ES), "
     + "UST:maturity for Treasury yields (e.g. UST:10Y), "
     + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
-    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve). "
+    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
+    + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
+    + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high). "
     + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
 }
 
@@ -518,6 +534,56 @@ function appendUniversalSuggestions(
     ]);
     if (score >= 0) {
       scored.push({ suggestion: adjacentIndexSuggestion(entry.indexId, entry.name), score });
+    }
+  }
+
+  for (const station of WEATHER_STATIONS) {
+    for (const metric of ["high", "low", "precip"] as const) {
+      const score = universalScore(q, qCompact, [
+        station.id,
+        station.icao,
+        station.city,
+        metric,
+        weatherMetricLabel(metric),
+        "weather",
+        "wx",
+        "nws",
+        "cli",
+        "climate",
+      ]);
+      if (score < 0) continue;
+      scored.push({
+        suggestion: {
+          id: `wx:${station.id}:${metric}`,
+          label: `WX · ${station.city} ${metric}`,
+          description: "Weather Company Kalshi climate",
+          detail: "WX",
+          expression: {
+            kind: "weather",
+            provider: "twc-kalshi",
+            stationId: station.id,
+            metric,
+            label: `${station.id} ${weatherMetricLabel(metric)}`,
+          },
+        },
+        score,
+      });
+      scored.push({
+        suggestion: {
+          id: `nws:${station.icao}:${metric}`,
+          label: `NWS · ${station.icao} ${metric}`,
+          description: "NWS Daily Climate Report (first final CLI)",
+          detail: "NWS",
+          expression: {
+            kind: "weather",
+            provider: "nws-cli",
+            stationId: station.icao,
+            metric,
+            label: `${station.icao} NWS ${weatherMetricLabel(metric)}`,
+          },
+        },
+        score,
+      });
     }
   }
 

@@ -29,6 +29,8 @@ import {
   computePollTrend,
   normalizeVoteHubPoll,
 } from "../plugins/builtin/polls/normalize";
+import { loadWeatherSeries as loadTwcWeatherSeries } from "../plugins/builtin/weather/client";
+import { loadNwsCliSeries } from "../plugins/builtin/weather/nws-client";
 import {
   BENCHMARK_METRICS,
 } from "../plugins/builtin/chart-composer/universal-series";
@@ -215,6 +217,30 @@ export async function loadPollSeries(
   };
 }
 
+export async function loadWeatherSeries(
+  provider: "twc-kalshi" | "nws-cli",
+  stationId: string,
+  metric: "high" | "low" | "precip" | "hourly",
+): Promise<UniversalSeriesLoadResult> {
+  const loaded = provider === "nws-cli"
+    ? await loadNwsCliSeries(stationId, metric)
+    : await loadTwcWeatherSeries(stationId, metric);
+  return {
+    points: loaded.points.map((point) => ({
+      date: point.date,
+      observedAt: point.date,
+      value: point.value,
+      provenance: {
+        providerId: provider,
+        quality: "reported",
+      },
+    })),
+    label: loaded.label,
+    unit: loaded.unit,
+    unitGroup: loaded.unitGroup,
+  };
+}
+
 export function hydrateChartSpecInstruments(
   spec: ChartSpec,
   tickers: ReadonlyMap<string, TickerRecord>,
@@ -260,6 +286,7 @@ export function useResolvedChartSpec(
       loadAdjacentIndexSeries,
       loadBenchmarkSeries,
       loadPollSeries,
+      loadWeatherSeries,
       loadPredictionMarketSeries,
     }),
     [dataProvider],
