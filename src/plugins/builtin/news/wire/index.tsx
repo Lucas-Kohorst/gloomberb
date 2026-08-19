@@ -171,10 +171,10 @@ export const newsWireModule: PluginModule = {
     });
     disposeJinaConnection = registerConnectionSource({
       id: "jina-ai",
-      name: "Jina AI Reader",
-      kind: "news",
+      name: "Jina",
+      kind: "api",
       pluginId: "news",
-      priority: 450,
+      priority: 410,
       authRequired: false,
     });
 

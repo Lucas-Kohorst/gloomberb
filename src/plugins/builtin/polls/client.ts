@@ -1,6 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
+import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import type { VoteHubPoll } from "./types";
 
 const BASE_URL = "https://api.votehub.com";
@@ -15,7 +16,10 @@ const VOTEHUB_FETCH = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-polls",
   },
-  transport: httpFetch,
+  transport: (url, init) => {
+    if (url.startsWith("/")) return globalThis.fetch(url, init);
+    return httpFetch(url, init);
+  },
 });
 
 export function parseVoteHubPollsPayload(body: unknown): VoteHubPoll[] {
@@ -32,6 +36,13 @@ function isVoteHubPoll(value: unknown): value is VoteHubPoll {
   return typeof poll.id === "string" && typeof poll.pollster === "string" && typeof poll.subject === "string";
 }
 
+function voteHubPollsSearch(params?: { pollType?: string; subject?: string }): string {
+  const search = new URLSearchParams();
+  if (params?.pollType) search.set("poll_type", params.pollType);
+  if (params?.subject) search.set("subject", params.subject);
+  return search.toString();
+}
+
 function buildUrl(path: string, params?: Record<string, string | undefined>): string {
   const url = new URL(`${BASE_URL}${path}`);
   if (params) {
@@ -46,11 +57,14 @@ export async function fetchVoteHubPolls(params?: {
   pollType?: string;
   subject?: string;
 }): Promise<VoteHubPoll[]> {
-  const url = buildUrl("/polls", {
-    poll_type: params?.pollType,
-    subject: params?.subject,
-  });
-  return withConnectionRequest("votehub", "polls", async () => {
+  const search = voteHubPollsSearch(params);
+  const url = isHostedWebClient()
+    ? adjacentCloudDataUrl("votehub", "polls", search)
+    : buildUrl("/polls", {
+        poll_type: params?.pollType,
+        subject: params?.subject,
+      });
+  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "polls", async () => {
     const response = await VOTEHUB_FETCH.fetch(url);
     if (!response.ok) {
       throw new Error(`VoteHub request failed (${response.status})`);

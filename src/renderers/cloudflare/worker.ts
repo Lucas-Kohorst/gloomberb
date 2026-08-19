@@ -9,6 +9,8 @@ import {
   extractSessionToken,
   fetchSessionUser,
   gloomFetch,
+  gloomApiBaseUrl,
+  GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   readSessionCookie,
   relayError,
   resolveSessionUser,
@@ -33,6 +35,7 @@ export default {
       return handleKeyedDataRequest(request, env, url);
     }
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
+    if (url.pathname === "/cloud/ws") return proxyGloomCloudWebSocket(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -208,6 +211,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     method: request.method,
     body: hasBody ? request.body : null,
     token,
+    timeoutMs: GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   });
 
   const headers = new Headers();
@@ -222,6 +226,32 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
   if (!upstream.ok) return relayError(upstream);
   return new Response(upstream.body, { status: upstream.status, headers });
+}
+
+async function proxyGloomCloudWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.headers.get("Origin") !== url.origin) {
+    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  }
+  const token = readSessionCookie(request);
+  if (!token) return Response.json({ error: "Authentication required." }, { status: 401 });
+  const baseUrl = gloomApiBaseUrl(env);
+  const headers = new Headers();
+  headers.set("Upgrade", request.headers.get("Upgrade") ?? "websocket");
+  headers.set("Connection", request.headers.get("Connection") ?? "Upgrade");
+  const key = request.headers.get("Sec-WebSocket-Key");
+  const version = request.headers.get("Sec-WebSocket-Version");
+  const protocol = request.headers.get("Sec-WebSocket-Protocol");
+  if (key) headers.set("Sec-WebSocket-Key", key);
+  if (version) headers.set("Sec-WebSocket-Version", version);
+  if (protocol) headers.set("Sec-WebSocket-Protocol", protocol);
+  headers.set("Origin", baseUrl);
+  headers.set(
+    "Cookie",
+    ["__Secure-gloomberb.session_token", "gloomberb.session_token"]
+      .map((name) => `${name}=${token}`)
+      .join("; "),
+  );
+  return fetch(`${baseUrl.replace(/^http/, "ws")}/cloud/ws`, { headers });
 }
 
 async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {

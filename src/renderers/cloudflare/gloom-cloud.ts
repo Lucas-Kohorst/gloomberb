@@ -12,6 +12,7 @@ const UPSTREAM_SESSION_COOKIES = ["__Secure-gloomberb.session_token", "gloomberb
  * that never settles leaves the app stuck on its loading placeholder forever.
  */
 export const GLOOM_FETCH_TIMEOUT_MS = 8_000;
+export const GLOOM_CLOUD_PROXY_TIMEOUT_MS = 20_000;
 
 /**
  * Session resolution gates the first render, so it needs a ceiling — but not a

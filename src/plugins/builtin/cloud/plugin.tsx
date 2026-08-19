@@ -24,7 +24,7 @@ import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
-import { registerConnectionSource } from "../connections/register";
+import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
@@ -60,8 +60,12 @@ export function createGloomberbCloudSyncTransport(
   return {
     id: "gloomberb-cloud",
     isAvailable,
-    pullSnapshot: () => apiClient.getSyncSnapshot(),
-    pushSnapshot: (snapshot, options) => apiClient.putSyncSnapshot(snapshot, options),
+    pullSnapshot: () => withConnectionRequest("gloom-cloud", "pullSnapshot", () => apiClient.getSyncSnapshot()),
+    pushSnapshot: (snapshot, options) => withConnectionRequest(
+      "gloom-cloud",
+      "pushSnapshot",
+      () => apiClient.putSyncSnapshot(snapshot, options),
+    ),
   };
 }
 

@@ -22,10 +22,16 @@ import type {
   AdjacentTradesResponse,
 } from "./types";
 import { unwrapAdjacentMarketIds, unwrapAdjacentNewsArticles } from "./normalize";
+import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
 const DEFAULT_SOURCE_KEY = "adjacent";
+
+function adjacentTransport(url: string, init?: RequestInit): Promise<Response> {
+  if (url.startsWith("/")) return globalThis.fetch(url, init);
+  return httpFetch(url, init);
+}
 
 const ADJACENT_FETCH = createThrottledFetch({
   requestsPerMinute: 60,
@@ -37,7 +43,7 @@ const ADJACENT_FETCH = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-adjacent",
   },
-  transport: httpFetch,
+  transport: adjacentTransport,
 });
 
 export const ADJACENT_CACHE_POLICIES = {
@@ -72,13 +78,21 @@ export interface AdjacentClientOptions {
 }
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
-  const url = new URL(`${BASE_URL}${path}`);
+  const origin = isHostedWebClient()
+    ? adjacentCloudDataUrl("adjacent", path.replace(/^\//, ""))
+    : `${BASE_URL}${path}`;
+  const url = origin.startsWith("/")
+    ? new URL(origin, "https://adjacent-cloud.local")
+    : new URL(origin);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) {
         url.searchParams.set(key, String(value));
       }
     }
+  }
+  if (origin.startsWith("/")) {
+    return `${url.pathname}${url.search}`;
   }
   return url.toString();
 }
@@ -96,8 +110,8 @@ async function adjacentFetchJson<T>(
   url: string,
   apiKey: string | null | undefined,
 ): Promise<T> {
-  return withConnectionRequest("adjacent", "fetch", async () => {
-    const headers = authHeaders(apiKey);
+  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "fetch", async () => {
+    const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
     const response = await ADJACENT_FETCH.fetch(url, { headers });
     if (!response.ok) {
       throw new Error(`Adjacent request failed (${response.status}) for ${url}`);

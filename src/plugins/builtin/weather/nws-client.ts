@@ -5,21 +5,12 @@ import type { NwsCliPrint, NwsCliPrintSet } from "../../../sources/nws-cli/types
 import { NWS_CLI_USER_AGENT } from "../../../sources/nws-cli/types";
 import { normalizeIcaoStation } from "../../../sources/nws-cli/parse";
 import { loadNwsCliPrints } from "../../../sources/nws-cli/load";
+import { ADJACENT_CLOUD_CONNECTION_ID, isHostedWebClient } from "../connections/adjacent-cloud";
 import { findWeatherStation } from "./stations";
-import { NWS_CLI_CONNECTION_ID, type WeatherMetric } from "./types";
-
-function isHostedWebClient(): boolean {
-  try {
-    return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
-  } catch {
-    return false;
-  }
-}
+import type { WeatherMetric } from "./types";
 
 function nwsRequestUrl(icao: string, query: string): string {
-  const path = `/api/data/nws-cli/${encodeURIComponent(icao)}${query}`;
-  if (isHostedWebClient()) return path;
-  return path;
+  return `/api/data/nws-cli/${encodeURIComponent(icao)}${query}`;
 }
 
 const NWS_FETCH = createThrottledFetch({
@@ -60,7 +51,7 @@ async function fetchHostedPrints(icao: string, search: string): Promise<NwsCliPr
 export async function fetchNwsCliHistory(stationToken: string, days = 30): Promise<NwsCliPrint[]> {
   const icao = nwsIcaoForStation(stationToken);
   if (!icao) throw new Error("Unknown ICAO station.");
-  return withConnectionRequest(NWS_CLI_CONNECTION_ID, "cli-history", async () => {
+  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "cli-history", async () => {
     if (isHostedWebClient()) {
       return fetchHostedPrints(icao, `?days=${encodeURIComponent(String(days))}`);
     }

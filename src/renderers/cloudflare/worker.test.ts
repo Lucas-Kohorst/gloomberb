@@ -318,7 +318,13 @@ describe("Adjacent Cloud keyed-data providers", () => {
     );
     expect(response?.status).toBe(200);
     const body = await response?.json() as { providers: Array<{ id: string }> };
-    expect(body.providers.map((provider) => provider.id).sort()).toEqual(["nws-cli", "twc-kalshi"]);
+    expect(body.providers.map((provider) => provider.id).sort()).toEqual([
+      "adjacent",
+      "llm-stats",
+      "nws-cli",
+      "twc-kalshi",
+      "votehub",
+    ]);
   });
 
   test("TWC alias allowlists kalshi/api and rejects other weather.com paths", async () => {
@@ -386,5 +392,69 @@ PRECIPITATION (IN)
     expect(body.icao).toBe("KNYC");
     expect(body.highF).toBe(87);
     expect(body.printKind).toBe("final");
+  });
+
+  test("llm-stats and Adjacent share GET /api/data", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof globalThis.fetch;
+
+    const llm = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/llm-stats/v1/models"),
+      makeEnv(),
+    );
+    expect(llm?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
+
+    const adjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/public/markets?limit=5"),
+      makeEnv(),
+    );
+    expect(adjacent?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/public/markets?limit=5");
+
+    const unknown = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/jina-ai/read?url=https://example.com/story"),
+      makeEnv(),
+    );
+    expect(unknown?.status).toBe(404);
+
+    const badAdjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/http://evil.example"),
+      makeEnv(),
+    );
+    expect(badAdjacent?.status).toBe(400);
+  });
+
+  test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
+    let upstreamHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      upstreamHits += 1;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      expect(url).toBe("https://api.votehub.com/polls?poll_type=approval");
+      return Response.json([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+    }) as typeof globalThis.fetch;
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval&callback=evil"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=900");
+    expect(upstreamHits).toBe(1);
+    expect(await first?.json()).toEqual([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
   });
 });

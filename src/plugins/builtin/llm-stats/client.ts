@@ -1,9 +1,9 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
+import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import {
   LLM_STATS_API_BASE,
-  LLM_STATS_CONNECTION_ID,
   LLM_STATS_SITE_BASE,
   type LlmStatsData,
   type LlmStatsModel,
@@ -21,7 +21,10 @@ const CLIENT = createThrottledFetch({
     Accept: "application/json",
     "User-Agent": "gloomberb-llm-stats",
   },
-  transport: httpFetch,
+  transport: (url, init) => {
+    if (url.startsWith("/")) return globalThis.fetch(url, init);
+    return httpFetch(url, init);
+  },
 });
 
 function isModel(value: unknown): value is LlmStatsModel {
@@ -97,10 +100,16 @@ function joinRows(
  * into the rows the pane renders. Both endpoints are public (keyless).
  */
 export async function fetchLlmStatsData(): Promise<LlmStatsData> {
-  return withConnectionRequest(LLM_STATS_CONNECTION_ID, "stats", async () => {
+  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "stats", async () => {
+    const modelsUrl = isHostedWebClient()
+      ? adjacentCloudDataUrl("llm-stats", "v1/models")
+      : `${LLM_STATS_API_BASE}/v1/models`;
+    const metricsUrl = isHostedWebClient()
+      ? adjacentCloudDataUrl("llm-stats", "v1/models/metrics")
+      : `${LLM_STATS_API_BASE}/v1/models/metrics`;
     const [modelsRes, metricsRes] = await Promise.all([
-      CLIENT.fetch(`${LLM_STATS_API_BASE}/v1/models`),
-      CLIENT.fetch(`${LLM_STATS_API_BASE}/v1/models/metrics`),
+      CLIENT.fetch(modelsUrl),
+      CLIENT.fetch(metricsUrl),
     ]);
     if (!modelsRes.ok) {
       throw new Error(`llm-stats models request failed (${modelsRes.status})`);

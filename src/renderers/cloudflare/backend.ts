@@ -197,6 +197,9 @@ async function dispatch(
     case "config.import":
       throw new Error(`Config file management is ${NOT_AVAILABLE.toLowerCase()}`);
     case "capability.invoke":
+      // Hosted/web disables plugin.capabilities invoke. Asset data, tickers,
+      // chat, and sync must use renderer-side Gloom Cloud (`/cloud` proxy),
+      // not this RPC.
       throw new Error(`Hosted data capabilities are ${NOT_AVAILABLE.toLowerCase()}`);
     case "capability.subscribe":
     case "capability.unsubscribe":

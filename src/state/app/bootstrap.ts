@@ -284,8 +284,10 @@ export async function initializeAppState({
   let tickers = await measurePerfAsync("startup.load-tickers", () => tickerRepository.loadAllTickers());
   startupLog.info("tickers loaded", { count: tickers.length });
 
-  // Seed default watchlist tickers on first run
-  if (tickers.length === 0) {
+  const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+  // Hosted tickers come from local persist + Gloom Cloud sync. Seeding the
+  // default watchlist here would push dummy names into `/sync/snapshot`.
+  if (tickers.length === 0 && !hosted) {
     const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
     await measurePerfAsync("startup.seed-default-tickers", async () => {
       for (const entry of DEFAULT_WATCHLIST_TICKERS) {
