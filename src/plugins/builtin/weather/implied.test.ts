@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { impliedBucketMidpoint, kalshiWeightedImpliedTemp } from "./implied";
+import { impliedBookLooksSettled, impliedBucketMidpoint, kalshiWeightedImpliedTemp } from "./implied";
 
 describe("kalshi temperature implied", () => {
   test("uses integer tails and the midpoint of a between bucket", () => {
@@ -28,5 +28,17 @@ describe("kalshi temperature implied", () => {
       { strikeType: "greater", floorStrike: 83, yesPrice: 0 },
     ]);
     expect(forecast?.implied).toBe(82.5);
+  });
+
+  test("detects settled books so historical last prices are not treated as forecasts", () => {
+    expect(impliedBookLooksSettled([
+      { strikeType: "between", floorStrike: 81, capStrike: 82, yesPrice: 0.99 },
+      { strikeType: "greater", floorStrike: 82, yesPrice: 0.01 },
+    ])).toBe(true);
+    expect(impliedBookLooksSettled([
+      { strikeType: "between", floorStrike: 79, capStrike: 80, yesPrice: 0.65 },
+      { strikeType: "between", floorStrike: 81, capStrike: 82, yesPrice: 0.22 },
+      { strikeType: "greater", floorStrike: 82, yesPrice: 0.04 },
+    ])).toBe(false);
   });
 });
