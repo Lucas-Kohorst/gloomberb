@@ -16,10 +16,18 @@ import type {
 } from "../../types";
 import {
   fetchJson,
+  fetchJsonNoRetry,
   loadCachedPredictionResource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
+import {
+  isKalshiRateLimitedError,
+  kalshiSeriesTickerFromEvent,
+  loadKalshiAdjacentHistory,
+  loadKalshiAdjacentMarket,
+  loadKalshiCatalogFromAdjacent,
+} from "./adjacent-fallback";
 import { revivePredictionHistoryPoints } from "../history";
 import {
   isOpenKalshiStatus,
@@ -34,6 +42,7 @@ import type {
   KalshiEventsResponse,
   KalshiMarketRecord,
   KalshiOrderbookResponse,
+  KalshiSeriesResponse,
   KalshiTradesResponse,
 } from "./types";
 
@@ -64,7 +73,7 @@ async function fetchKalshiCatalogEvents(
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page += 1) {
-    const response = await fetchJson<KalshiEventsResponse>(
+    const response = await fetchJsonNoRetry<KalshiEventsResponse>(
       buildKalshiCatalogUrl(cursor),
     );
     events.push(...(response.events ?? []));
@@ -86,7 +95,7 @@ async function fetchKalshiCatalogEventsForCategory(
   for (const category of categories) {
     let cursor: string | undefined;
     for (let page = 0; page < maxPages; page += 1) {
-      const response = await fetchJson<KalshiEventsResponse>(
+      const response = await fetchJsonNoRetry<KalshiEventsResponse>(
         buildKalshiCatalogUrl(cursor, category),
       );
       for (const event of response.events ?? []) {
@@ -109,9 +118,17 @@ async function loadKalshiVenueCatalog(
   const maxPages = searchQuery
     ? SEARCH_KALSHI_EVENT_MAX_PAGES
     : DEFAULT_KALSHI_EVENT_MAX_PAGES;
-  const events = categoryId === "all"
-    ? await fetchKalshiCatalogEvents(maxPages)
-    : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
+  let events: KalshiEventRecord[];
+  try {
+    events = categoryId === "all"
+      ? await fetchKalshiCatalogEvents(maxPages)
+      : await fetchKalshiCatalogEventsForCategory(categoryId, maxPages);
+  } catch (error) {
+    if (isKalshiRateLimitedError(error)) {
+      return await loadKalshiCatalogFromAdjacent(searchQuery, categoryId, browseTab);
+    }
+    throw error;
+  }
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
   return [...fromEvents].sort((left, right) => {
     if (browseTab === "ending") {
@@ -138,9 +155,8 @@ export async function loadKalshiCatalog(
   return await loadCachedPredictionResource(
     "catalog",
     buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
-    // Browse/search hits Kalshi directly. Adjacent is reserved for indices and
-    // detail enrichments — routing the PM catalog through it added a multi-page
-    // hop before the venue call, which is what made the pane feel stuck.
+    // Browse hits Kalshi directly. Hosted Worker egress is rate-limited on
+    // /events; in that case we fall back to Adjacent's public Kalshi catalog.
     async () => await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab),
     PREDICTION_CACHE_POLICIES.catalog,
     options,
@@ -156,7 +172,7 @@ async function loadKalshiEvent(
       "rules",
       `kalshi:event:${eventTicker}`,
       async () =>
-        await fetchJson<KalshiEventResponse>(
+        await fetchJsonNoRetry<KalshiEventResponse>(
           `${KALSHI_API_BASE}/events/${eventTicker}`,
         ),
       PREDICTION_CACHE_POLICIES.rules,
@@ -170,7 +186,7 @@ async function fetchKalshiMarketByTicker(
   ticker: string,
 ): Promise<KalshiMarketRecord | null> {
   try {
-    const response = await fetchJson<{ market?: KalshiMarketRecord }>(
+    const response = await fetchJsonNoRetry<{ market?: KalshiMarketRecord }>(
       `${KALSHI_API_BASE}/markets/${encodeURIComponent(ticker)}`,
     );
     return response.market ?? null;
@@ -187,7 +203,7 @@ async function fetchKalshiEventsForSeries(
   url.searchParams.set("with_nested_markets", "true");
   url.searchParams.set("limit", String(KALSHI_SERIES_EVENT_LIMIT));
   try {
-    const response = await fetchJson<KalshiEventsResponse>(url.toString());
+    const response = await fetchJsonNoRetry<KalshiEventsResponse>(url.toString());
     return response.events ?? [];
   } catch {
     return [];
@@ -269,7 +285,9 @@ export async function resolveKalshiMarketByTicker(
     ]);
   }
 
-  return pickBusiestKalshiMarket(await fetchKalshiEventsForSeries(normalized));
+  const fromSeries = pickBusiestKalshiMarket(await fetchKalshiEventsForSeries(normalized));
+  if (fromSeries) return fromSeries;
+  return await loadKalshiAdjacentMarket(normalized);
 }
 
 async function loadKalshiTrades(
@@ -334,7 +352,10 @@ export async function loadKalshiHistory(
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionHistoryPoint[]> {
   const event = await loadKalshiEvent(summary.eventTicker);
-  if (!event?.event?.series_ticker) return [];
+  const seriesTicker = event?.event?.series_ticker ?? summary.seriesTicker;
+  if (!seriesTicker) {
+    return await loadKalshiAdjacentHistory(summary.marketId);
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const rangeSeconds =
@@ -353,8 +374,8 @@ export async function loadKalshiHistory(
       "history",
       `${summary.key}:${range}`,
       async () => {
-        const response = await fetchJson<KalshiCandlestickResponse>(
-          `${KALSHI_API_BASE}/series/${event.event.series_ticker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
+        const response = await fetchJsonNoRetry<KalshiCandlestickResponse>(
+          `${KALSHI_API_BASE}/series/${seriesTicker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
         );
         return (response.candlesticks ?? [])
           .map((candle) => ({
@@ -374,7 +395,25 @@ export async function loadKalshiHistory(
     );
     return revivePredictionHistoryPoints(points);
   } catch {
-    return [];
+    return await loadKalshiAdjacentHistory(summary.marketId);
+  }
+}
+
+async function loadKalshiSeriesSettlement(
+  seriesTicker: string | undefined,
+): Promise<string | undefined> {
+  const ticker = seriesTicker?.trim();
+  if (!ticker) return undefined;
+  try {
+    const response = await fetchJsonNoRetry<KalshiSeriesResponse>(
+      `${KALSHI_API_BASE}/series/${encodeURIComponent(ticker)}`,
+    );
+    const names = (response.series?.settlement_sources ?? [])
+      .map((source) => source.name?.trim())
+      .filter((name): name is string => !!name);
+    return names.length > 0 ? names.join(", ") : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -386,11 +425,14 @@ export async function loadKalshiDetail(
     "detail",
     buildPredictionDetailResourceKey(summary.key, range),
     async () => {
-      const [event, history, book, trades] = await Promise.all([
+      const seriesTicker = summary.seriesTicker
+        || kalshiSeriesTickerFromEvent(summary.eventTicker);
+      const [event, history, book, trades, resolutionSource] = await Promise.all([
         loadKalshiEvent(summary.eventTicker),
         loadKalshiHistory(summary, range),
         loadKalshiBook(summary),
         loadKalshiTrades(summary),
+        loadKalshiSeriesSettlement(seriesTicker),
       ]);
       const eventMeta = event?.event;
       const siblings: PredictionSiblingMarket[] = (event?.markets ?? [])
@@ -416,7 +458,8 @@ export async function loadKalshiDetail(
           ...summary,
           eventLabel: event?.event?.title ?? summary.eventLabel,
           category: event?.event?.category ?? summary.category,
-          seriesTicker: event?.event?.series_ticker ?? summary.seriesTicker,
+          seriesTicker: event?.event?.series_ticker ?? seriesTicker,
+          resolutionSource: resolutionSource ?? summary.resolutionSource,
           tags: summary.tags?.length
             ? summary.tags
             : event?.event?.category
