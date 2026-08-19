@@ -9,6 +9,7 @@ import {
 } from "./chart-spec";
 import {
   appendChartSeries,
+  applyPriceComparisonLayout,
   buildComparisonChartPreset,
   buildCustomChartPreset,
   buildFundamentalChartPreset,
@@ -17,6 +18,7 @@ import {
   buildSeriesSpec,
   applySeriesStyle,
   applySeriesTimestampMode,
+  detectPriceComparisonLayout,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
   parseBinarySeriesExpression,
@@ -114,7 +116,7 @@ describe("chart composer expressions", () => {
     });
   });
 
-  test("renders an appended secondary OHLCV price as a valid comparison line", () => {
+  test("appends a second OHLCV price as overlay candles on a percent scale", () => {
     const initial = buildPriceChartPreset("AAPL");
     const appended = appendChartSeries(initial, {
       kind: "security",
@@ -123,32 +125,75 @@ describe("chart composer expressions", () => {
     });
 
     expect(initial.series[0]).toMatchObject({ style: "candles", panelId: "main" });
+    expect(appended.spec.series.map((series) => ({
+      symbol: series.source.kind === "security" ? series.source.instrument.symbol : "",
+      style: series.style,
+      transform: series.transform,
+      panelId: series.panelId,
+    }))).toEqual([
+      { symbol: "AAPL", style: "candles", transform: "percent", panelId: "main" },
+      { symbol: "META", style: "candles", transform: "percent", panelId: "main" },
+    ]);
     expect(appended.series).toMatchObject({
       source: {
         kind: "security",
         instrument: { symbol: "META" },
         fieldId: "market.ohlcv",
       },
-      style: "line",
-      transform: "raw",
+      style: "candles",
+      transform: "percent",
       interpolation: "none",
       panelId: "main",
     });
     expect(parseChartSpec(appended.spec)).not.toBeNull();
   });
 
-  test("keeps bulk custom price expressions valid with one OHLC presentation per panel", () => {
-    const spec = buildCustomChartPreset("AAPL:price, META:price");
+  test("defaults comma-separated prices to overlay candles on a percent scale", () => {
+    const spec = buildCustomChartPreset("BTC-USD, ETH-USD");
 
-    expect(spec.series.map(({ style, transform, interpolation }) => ({
-      style,
-      transform,
-      interpolation,
+    expect(spec.series.map((series) => ({
+      symbol: series.source.kind === "security" ? series.source.instrument.symbol : "",
+      style: series.style,
+      transform: series.transform,
+      panelId: series.panelId,
     }))).toEqual([
-      { style: "candles", transform: "raw", interpolation: "none" },
-      { style: "line", transform: "raw", interpolation: "none" },
+      { symbol: "BTC-USD", style: "candles", transform: "percent", panelId: "main" },
+      { symbol: "ETH-USD", style: "candles", transform: "percent", panelId: "main" },
     ]);
     expect(parseChartSpec(spec)).not.toBeNull();
+  });
+
+  test("switches a multi-price chart between percent, price, and separate panes", () => {
+    const spec = buildCustomChartPreset("AAPL:price, META:price");
+    expect(detectPriceComparisonLayout(spec)).toBe("percent");
+
+    const price = applyPriceComparisonLayout(spec, "price");
+    expect(detectPriceComparisonLayout(price)).toBe("price");
+    expect(price.series.map((series) => ({
+      style: series.style,
+      transform: series.transform,
+      panelId: series.panelId,
+    }))).toEqual([
+      { style: "candles", transform: "raw", panelId: "main" },
+      { style: "candles", transform: "raw", panelId: "main" },
+    ]);
+    expect(parseChartSpec(price)).not.toBeNull();
+
+    const panes = applyPriceComparisonLayout(spec, "panes");
+    expect(detectPriceComparisonLayout(panes)).toBe("panes");
+    expect(panes.series.map((series) => ({
+      style: series.style,
+      transform: series.transform,
+      panelId: series.panelId,
+    }))).toEqual([
+      { style: "candles", transform: "raw", panelId: "main" },
+      { style: "candles", transform: "raw", panelId: "panel-2" },
+    ]);
+    expect(panes.panels.find((panel) => panel.id === "panel-2")).toMatchObject({
+      label: "META",
+      height: 0.45,
+    });
+    expect(parseChartSpec(panes)).not.toBeNull();
   });
 
   test("accepts catalog aliases and FRED series in one expression", () => {
@@ -335,8 +380,8 @@ describe("chart composer presets and formulas", () => {
 
     const comparison = buildComparisonChartPreset(["aapl", "msft"]);
     expect(comparison.series.map((series) => ({ style: series.style, transform: series.transform }))).toEqual([
-      { style: "line", transform: "percent" },
-      { style: "line", transform: "percent" },
+      { style: "candles", transform: "percent" },
+      { style: "candles", transform: "percent" },
     ]);
 
     const fundamental = buildFundamentalChartPreset(["aapl"]);
@@ -396,12 +441,12 @@ describe("chart composer presets and formulas", () => {
     expect(followed).toEqual(price);
   });
 
-  test("forces raw values when a series changes to an OHLC presentation", () => {
+  test("keeps a percent transform when a series changes to an OHLC presentation", () => {
     const price = buildPriceChartPreset("AAPL").series[0]!;
     const transformed = { ...price, style: "line" as const, transform: "percent" as const };
     expect(applySeriesStyle(transformed, "candles")).toMatchObject({
       style: "candles",
-      transform: "raw",
+      transform: "percent",
     });
   });
 
@@ -606,7 +651,7 @@ describe("chart composer CLI options", () => {
       "price-chart",
       { axisMode: "percent" },
     );
-    expect(candle.series[0]).toMatchObject({ style: "candles", transform: "raw" });
+    expect(candle.series[0]).toMatchObject({ style: "candles", transform: "percent" });
 
     const comparison = applyChartComposerCapabilityOptions(
       buildComparisonChartPreset(["AAPL", "MSFT"]),

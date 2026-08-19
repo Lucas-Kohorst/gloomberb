@@ -148,7 +148,7 @@ describe("chart spec normalization and validation", () => {
     }).series[0]?.source).toMatchObject({ timestampMode: "available-at" });
   });
 
-  test("rejects annual QoQ, duplicate OHLC series, and missing study inputs", () => {
+  test("rejects annual QoQ and missing study inputs", () => {
     const normalized = normalizeChartSpec({
       viewport: { range: "5Y", resolution: "1d" },
       panels: [{ id: "main" }],
@@ -167,12 +167,25 @@ describe("chart spec normalization and validation", () => {
     const result = validateChartSpec(normalized);
     expect(result.valid).toBe(false);
     expect(result.errors.map(({ code }) => code)).toContain("qoq-annual");
-    expect(result.errors.map(({ code }) => code)).toContain("multiple-ohlc");
-    // The blocking series is usually hidden or drawn as a line for lack of OHLC
-    // data, so the message has to name it or it reads as a phantom conflict.
-    expect(result.errors.find(({ code }) => code === "multiple-ohlc")?.message)
-      .toBe("A already uses a candle or OHLC style on main. Give it another style first.");
     expect(result.errors.map(({ code }) => code)).toContain("missing-input");
+  });
+
+  test("allows multiple OHLC series on the same panel", () => {
+    const normalized = normalizeChartSpec({
+      viewport: { range: "1Y", resolution: "1d" },
+      panels: [{ id: "main" }],
+      series: ["btc", "eth"].map((id) => ({
+        id,
+        source: { kind: "security", instrument: { symbol: id.toUpperCase() }, fieldId: "market.ohlcv" },
+        style: "candles" as const,
+        transform: "percent" as const,
+        axis: "auto" as const,
+        panelId: "main",
+        interpolation: "none" as const,
+      })),
+      studies: [],
+    });
+    expect(validateChartSpec(normalized).valid).toBe(true);
   });
 
   test("rejects applying logarithms twice", () => {

@@ -38,19 +38,23 @@ import {
   toggleChartSeries,
 } from "./chart-spec";
 import {
+  applyPriceComparisonLayout,
+  applySeriesStyle,
   buildEmptyChartPreset,
   buildPriceChartPreset,
-  applySeriesStyle,
   chartSeriesLabel,
   defaultFinancialTimestampMode,
+  detectPriceComparisonLayout,
   formatSeriesExpression,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
+  PRICE_COMPARISON_LAYOUT_OPTIONS,
   setBuiltinStudies,
   setPairStudies,
   rebindChartSecuritySymbol,
   type BuiltinStudySelection,
   type PairStudySelection,
+  type PriceComparisonLayout,
 } from "./presets";
 import {
   CHART_FORMULA_OPTIONS,
@@ -187,6 +191,8 @@ function ChartComposerSurface({
   const selectedPairStudies = getSelectedPairStudies(spec);
   const inlineStyleTarget = useMemo(() => getChartInlineStyleTarget(spec), [spec]);
   const styles = useMemo(() => getChartInlineStyles(spec), [spec]);
+  const comparisonLayout = useMemo(() => detectPriceComparisonLayout(spec), [spec]);
+  const modeEnabled = Boolean(comparisonLayout) || styles.length > 0;
   const inlineStyle = inlineStyleTarget?.style ?? "line";
   const inlineStyleLabel = inlineStyleTarget ? chartSeriesLabel(inlineStyleTarget) : "";
   const viewport = resolution.viewport;
@@ -418,30 +424,64 @@ function ChartComposerSurface({
       setInteractionCaptured("prompt", false);
     }
   }, [dialog, setInteractionCaptured, setRange, spec.viewport.dateWindow, spec.viewport.range]);
+  const setComparisonLayout = useCallback((layout: PriceComparisonLayout) => {
+    setSpec(applyPriceComparisonLayout(spec, layout));
+  }, [setSpec, spec]);
   const openModePicker = useCallback(async () => {
-    if (styles.length === 0) return;
+    if (!modeEnabled) return;
     setInteractionCaptured("prompt", true);
     try {
       const next = await dialog.prompt<string>({
         closeOnClickOutside: true,
         content: (context: PromptContext<string>) => (
-          <ChoiceDialog
-            {...context}
-            title={`${inlineStyleLabel} Style`}
-            selectedChoiceId={inlineStyle}
-            choices={styles.map((value) => ({
-              id: value,
-              label: value.toUpperCase(),
-              description: `Draw ${inlineStyleLabel} as ${value}.`,
-            }))}
-          />
+          comparisonLayout
+            ? (
+              <ChoiceDialog
+                {...context}
+                title="Compare"
+                selectedChoiceId={comparisonLayout}
+                choices={PRICE_COMPARISON_LAYOUT_OPTIONS.map((option) => ({
+                  id: option.value,
+                  label: option.label,
+                  description: option.description,
+                }))}
+              />
+            )
+            : (
+              <ChoiceDialog
+                {...context}
+                title={`${inlineStyleLabel} Style`}
+                selectedChoiceId={inlineStyle}
+                choices={styles.map((value) => ({
+                  id: value,
+                  label: value.toUpperCase(),
+                  description: `Draw ${inlineStyleLabel} as ${value}.`,
+                }))}
+              />
+            )
         ),
       }).catch(() => "");
-      if (styles.includes(next as SeriesStyle)) setInlineStyle(next as SeriesStyle);
+      if (comparisonLayout) {
+        if (PRICE_COMPARISON_LAYOUT_OPTIONS.some((option) => option.value === next)) {
+          setComparisonLayout(next as PriceComparisonLayout);
+        }
+      } else if (styles.includes(next as SeriesStyle)) {
+        setInlineStyle(next as SeriesStyle);
+      }
     } finally {
       setInteractionCaptured("prompt", false);
     }
-  }, [dialog, inlineStyle, inlineStyleLabel, setInlineStyle, setInteractionCaptured, styles]);
+  }, [
+    comparisonLayout,
+    dialog,
+    inlineStyle,
+    inlineStyleLabel,
+    modeEnabled,
+    setComparisonLayout,
+    setInlineStyle,
+    setInteractionCaptured,
+    styles,
+  ]);
   const toggleSeries = useCallback((seriesId: string) => {
     const next = toggleChartSeries(spec, seriesId);
     if (next !== spec) setSpec(next);
@@ -535,7 +575,7 @@ function ChartComposerSurface({
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "dates", key: "w", label: "indow", onPress: footerDates },
-      { id: "mode", key: "m", label: "ode", onPress: footerMode, disabled: styles.length === 0 },
+      { id: "mode", key: "m", label: "ode", onPress: footerMode, disabled: !modeEnabled },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
       { id: "reload", key: "r", label: "efresh", onPress: footerReload },
       { id: "share", key: "y", label: " share", onPress: shareChart },
@@ -553,8 +593,8 @@ function ChartComposerSurface({
     resolution.errors,
     resolution.loading,
     resolution.warnings,
+    modeEnabled,
     shareChart,
-    styles.length,
   ]);
 
   const emptyMessage = spec.series.length === 0
