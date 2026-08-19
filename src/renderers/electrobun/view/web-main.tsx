@@ -28,6 +28,7 @@ import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-pe
 import {
   fetchHostedConfigSnapshot,
   mergeRemoteConfigSnapshot,
+  rememberHostedSnapshotConfig,
 } from "../../../data/config/hosted-config-snapshot";
 import {
   getHostedConfigUserId,
@@ -38,6 +39,7 @@ import {
   setHostedConfigUserId,
   writeHostedUserConfig,
 } from "../../../data/config/hosted-user-persist";
+import { hydrateHostedUserTickersFromSnapshot, adoptGuestHostedTickers } from "../../../data/config/hosted-user-tickers";
 import { apiClient } from "../../../api-client";
 import {
   createHostedFallbackInit,
@@ -97,6 +99,7 @@ async function boot(): Promise<void> {
     if (hostedSession.user) {
       rememberHostedUserId(hostedSession.user.id);
       setHostedConfigUserId(hostedSession.user.id);
+      adoptGuestHostedTickers(hostedSession.user.id);
     } else if (hostedSession.degraded) {
       // Gloom Cloud never answered. Keep the last user's config so a slow
       // upstream does not look like a wiped account, but leave the api client
@@ -153,10 +156,12 @@ async function boot(): Promise<void> {
           writeHostedUserConfig(init.config);
           hydrateHostedByokConfig(init.config);
         }
+        hydrateHostedUserTickersFromSnapshot(remote.tickers, remote.updatedAt);
       } catch {
         // Network or parse failure — proceed with whatever local hydration gave us.
       }
     }
+    rememberHostedSnapshotConfig(init.config);
   }
   window.__GLOOM_CLOUD_DEGRADED = degraded;
   installElectrobunAiHost();

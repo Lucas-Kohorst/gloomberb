@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore, type Dispatch } from "react";
 import { apiClient } from "../api-client";
 import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
 import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
+import { hydrateHostedUserTickersFromSnapshot, readHostedUserTickers, adoptGuestHostedTickers } from "../data/config/hosted-user-tickers";
 import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
@@ -50,6 +51,7 @@ export function useCloudSyncRuntime({
     const syncSignedInUser = async () => {
       const userId = apiClient.getCurrentUser()?.id ?? null;
       setHostedConfigUserId(userId);
+      if (userId) adoptGuestHostedTickers(userId);
       if (!initialized) return;
       if (userId && userId !== lastUserId) {
         // User signed in (possibly after sign-out). Reset the sync pull state
@@ -70,6 +72,12 @@ export function useCloudSyncRuntime({
             writeHostedUserConfig(merged);
             hydrateHostedByokConfig(merged);
           }
+          hydrateHostedUserTickersFromSnapshot(remote.tickers, remote.updatedAt, userId);
+          const restored = readHostedUserTickers(userId);
+          dispatch({
+            type: "SET_TICKERS",
+            tickers: new Map(restored.map((ticker) => [ticker.metadata.ticker, ticker])),
+          });
         } catch {
           // Network failure — the sync pull will still run as a fallback.
         }

@@ -3,6 +3,7 @@ import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
+import { peekHostedUserTickerStamp, readHostedUserTickers } from "./hosted-user-tickers";
 
 const CONFIG_SNAPSHOT_ENDPOINT = "/api/config";
 const SNAPSHOT_PUSH_DEBOUNCE_MS = 2000;
@@ -12,11 +13,13 @@ export interface HostedConfigSnapshotEnvelope {
   userId: string;
   updatedAt: string;
   config: Record<string, unknown>;
+  tickers?: unknown[];
 }
 
 export interface HostedConfigSnapshotResponse {
   config: Record<string, unknown> | null;
   updatedAt: string | null;
+  tickers?: unknown[] | null;
 }
 
 /**
@@ -43,35 +46,49 @@ export function stripByokKeysForSnapshot(config: AppConfig): AppConfig {
 export async function fetchHostedConfigSnapshot(): Promise<HostedConfigSnapshotResponse> {
   return withConnectionRequest("hosted-config", "fetch-snapshot", async () => {
     const response = await fetch(CONFIG_SNAPSHOT_ENDPOINT, { credentials: "include" });
-    if (response.status === 401) return { config: null, updatedAt: null };
+    if (response.status === 401) return { config: null, updatedAt: null, tickers: null };
     if (!response.ok) throw new Error(`Config snapshot fetch failed (${response.status}).`);
     const body = await response.json().catch(() => null) as HostedConfigSnapshotResponse | null;
-    if (!body) return { config: null, updatedAt: null };
+    if (!body) return { config: null, updatedAt: null, tickers: null };
     return {
       config: isRecord(body.config) ? body.config : null,
       updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : null,
+      tickers: Array.isArray(body.tickers) ? body.tickers : null,
     };
   });
 }
 
-/** Pushes the signed-in user's config snapshot to the Worker (debounced). */
-export function createHostedConfigSnapshotPusher(): {
+type HostedConfigSnapshotPusher = {
+  remember: (config: AppConfig) => void;
   schedule: (config: AppConfig) => void;
+  scheduleTickers: () => void;
   flush: () => Promise<void>;
   cancel: () => void;
-} {
+};
+
+let hostedSnapshotPusher: HostedConfigSnapshotPusher | null = null;
+
+/** Pushes the signed-in user's config snapshot to the Worker (debounced). */
+export function createHostedConfigSnapshotPusher(): HostedConfigSnapshotPusher {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingConfig: AppConfig | null = null;
+  let lastConfig: AppConfig | null = null;
   let inFlight: Promise<void> = Promise.resolve();
 
   async function push(config: AppConfig): Promise<void> {
     const stripped = stripByokKeysForSnapshot(config);
     const persisted = normalizeConfigForSave(stripped);
     const updatedAt = new Date().toISOString();
-    const body = JSON.stringify({
+    const payload: Record<string, unknown> = {
       config: persisted as unknown as Record<string, unknown>,
       updatedAt,
-    });
+    };
+    // Only attach tickers once this browser has a local persist stamp, so a
+    // config-only save cannot wipe another device's collections.
+    if (peekHostedUserTickerStamp()) {
+      payload.tickers = readHostedUserTickers().map((ticker) => ticker.metadata);
+    }
+    const body = JSON.stringify(payload);
     if (new TextEncoder().encode(body).byteLength > SNAPSHOT_PUSH_MAX_BODY_BYTES) return;
 
     await withConnectionRequest("hosted-config", "push-snapshot", async () => {
@@ -94,11 +111,22 @@ export function createHostedConfigSnapshotPusher(): {
     return inFlight;
   }
 
+  function queue(config: AppConfig): void {
+    lastConfig = config;
+    pendingConfig = config;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; void drain(); }, SNAPSHOT_PUSH_DEBOUNCE_MS);
+  }
+
   return {
+    remember(config: AppConfig): void {
+      lastConfig = config;
+    },
     schedule(config: AppConfig): void {
-      pendingConfig = config;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { timer = null; void drain(); }, SNAPSHOT_PUSH_DEBOUNCE_MS);
+      queue(config);
+    },
+    scheduleTickers(): void {
+      if (lastConfig) queue(lastConfig);
     },
     flush(): Promise<void> {
       return drain();
@@ -108,6 +136,23 @@ export function createHostedConfigSnapshotPusher(): {
       pendingConfig = null;
     },
   };
+}
+
+function hostedSnapshotPusherSingleton(): HostedConfigSnapshotPusher {
+  if (!hostedSnapshotPusher) hostedSnapshotPusher = createHostedConfigSnapshotPusher();
+  return hostedSnapshotPusher;
+}
+
+export function rememberHostedSnapshotConfig(config: AppConfig): void {
+  hostedSnapshotPusherSingleton().remember(config);
+}
+
+export function scheduleHostedConfigSnapshot(config: AppConfig): void {
+  hostedSnapshotPusherSingleton().schedule(config);
+}
+
+export function scheduleHostedTickerSnapshot(): void {
+  hostedSnapshotPusherSingleton().scheduleTickers();
 }
 
 /**

@@ -26,6 +26,7 @@ import {
 } from "../plugins/ownership";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
 import { peekHostedUserConfigStamp } from "../data/config/hosted-user-persist";
+import { peekHostedUserTickerStamp, writeHostedUserTickers } from "../data/config/hosted-user-tickers";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -463,8 +464,20 @@ export const coreCollectionsSyncContributor: SyncContributor = {
     state.financials,
     state.exchangeRates,
   ),
-  apply: async (payload, { getState, isCurrent, dispatch, tickerRepository }) => {
+  apply: async (payload, { snapshot, getState, isCurrent, dispatch, tickerRepository }) => {
     if (!isPlainObject(payload)) return;
+    const localStamp = peekHostedUserTickerStamp();
+    const snapshotCreatedAt = snapshot?.createdAt ? Date.parse(snapshot.createdAt) : Number.NaN;
+    const localUpdatedAt = localStamp ? Date.parse(localStamp.updatedAt) : Number.NaN;
+    if (
+      Number.isFinite(localUpdatedAt)
+      && Number.isFinite(snapshotCreatedAt)
+      && localUpdatedAt > snapshotCreatedAt
+    ) {
+      // Hosted local persist is newer than the cloud snapshot. Keep it and let
+      // the following push publish it instead of reverting to a stale pull.
+      return;
+    }
     hydrateProfileAnalytics(payload);
     const incomingRecords: TickerRecord[] = [];
     const rawTickers = Array.isArray(payload.tickers) ? payload.tickers : [];
@@ -490,6 +503,7 @@ export const coreCollectionsSyncContributor: SyncContributor = {
       nextTickers.set(record.metadata.ticker, record);
     }
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
+    writeHostedUserTickers([...nextTickers.values()]);
   },
 };
 

@@ -135,6 +135,89 @@ describe("core sync contributors", () => {
     setHostedConfigUserId(null);
   });
 
+  test("keeps newer hosted local tickers instead of applying a stale pull", async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          values.set(key, value);
+        },
+        removeItem: (key: string) => {
+          values.delete(key);
+        },
+        clear: () => values.clear(),
+        key: (index: number) => [...values.keys()][index] ?? null,
+        get length() {
+          return values.size;
+        },
+      } satisfies Storage,
+    });
+
+    const { setHostedConfigUserId } = await import("../data/config/hosted-user-persist");
+    const { writeHostedUserTickers } = await import("../data/config/hosted-user-tickers");
+    setHostedConfigUserId("user-1");
+    const localTicker: TickerRecord = {
+      metadata: {
+        ticker: "AAPL",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Apple",
+        portfolios: ["main"],
+        watchlists: [],
+        positions: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    writeHostedUserTickers([localTicker]);
+
+    const state = createInitialState(createDefaultConfig("cloud://users/user-1"));
+    state.tickers = new Map([["AAPL", localTicker]]);
+    const saved: TickerRecord[] = [];
+    const applied: unknown[] = [];
+
+    await coreCollectionsSyncContributor.apply?.(
+      {
+        tickers: [{
+          ticker: "AAPL",
+          exchange: "NASDAQ",
+          currency: "USD",
+          name: "Apple",
+          portfolios: [],
+          watchlists: ["watchlist"],
+          positions: [],
+          custom: {},
+          tags: [],
+        }],
+      },
+      {
+        snapshot: {
+          schemaVersion: 1,
+          appId: "gloomberb",
+          clientId: "client",
+          createdAt: "2020-01-01T00:00:00.000Z",
+          contributors: {},
+        },
+        baselineState: state,
+        state,
+        getState: () => state,
+        isCurrent: () => true,
+        dispatch: (action) => applied.push(action),
+        tickerRepository: {
+          saveTicker: async (ticker) => {
+            saved.push(ticker);
+          },
+        } as never,
+      },
+    );
+
+    expect(saved).toEqual([]);
+    expect(applied).toEqual([]);
+    setHostedConfigUserId(null);
+  });
+
   test("keeps local BYOK keys when a sanitized pull omits them", () => {
     const localByok = {
       keys: [{

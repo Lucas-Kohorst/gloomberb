@@ -101,6 +101,60 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(body.updatedAt).toBe("2026-08-17T12:00:00.000Z");
   });
 
+  test("stores tickers with the snapshot and keeps them on a config-only write", async () => {
+    mockSessionUser = { id: "user-A" };
+    installMockFetch();
+    const env = makeEnv();
+    const tickers = [{
+      ticker: "AAPL",
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: "Apple",
+      portfolios: ["main"],
+      watchlists: [],
+      positions: [],
+      custom: {},
+      tags: [],
+    }];
+    await workerModule.default.fetch?.(
+      makeRequest("PUT", "/api/config", {
+        body: JSON.stringify({
+          config: { theme: "amber" },
+          tickers,
+          updatedAt: "2026-08-17T12:00:00.000Z",
+        }),
+        origin: ORIGIN,
+        sessionToken: "tok",
+      }),
+      env,
+    );
+
+    const withTickers = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/config", { sessionToken: "tok" }),
+      env,
+    );
+    expect((await withTickers?.json())?.tickers).toEqual(tickers);
+
+    await workerModule.default.fetch?.(
+      makeRequest("PUT", "/api/config", {
+        body: JSON.stringify({
+          config: { theme: "default" },
+          updatedAt: "2026-08-17T13:00:00.000Z",
+        }),
+        origin: ORIGIN,
+        sessionToken: "tok",
+      }),
+      env,
+    );
+    const afterConfigOnly = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/config", { sessionToken: "tok" }),
+      env,
+    );
+    const body = await afterConfigOnly?.json();
+    expect(body.config).toEqual({ theme: "default" });
+    expect(body.tickers).toEqual(tickers);
+  });
+
   test("one user cannot read another user's snapshot", async () => {
     // user-A writes a snapshot
     mockSessionUser = { id: "user-A" };
