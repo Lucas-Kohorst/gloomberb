@@ -6,6 +6,7 @@ import { valueToPixelY, type MultiLineChartScene, type MultiLineProjectedPoint }
 export {
   buildMultiLineChartScene,
   resolveMultiLineCursorDate,
+  valueToPixelY,
 } from "./scene";
 export type {
   MultiLineChartColors,

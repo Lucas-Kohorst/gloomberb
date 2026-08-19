@@ -7,7 +7,11 @@ export interface StaticChartBitmapSize {
   pixelHeight: number;
 }
 
-export function useStaticChartBitmapSize(width: number, height: number): StaticChartBitmapSize | null {
+export function useStaticChartBitmapSize(
+  width: number,
+  height: number,
+  enabled = true,
+): StaticChartBitmapSize | null {
   const {
     canvasCharts,
     nativeCharts,
@@ -22,6 +26,7 @@ export function useStaticChartBitmapSize(width: number, height: number): StaticC
   const rendererTerminalHeight = nativeRenderer.terminalHeight;
 
   return useMemo(() => {
+    if (!enabled) return null;
     if (shouldRenderNativeBitmap(nativeRenderer, nativeCharts === true)) {
       return resolveNativeBitmapSize({
         width,
@@ -44,6 +49,7 @@ export function useStaticChartBitmapSize(width: number, height: number): StaticC
     canvasCharts,
     cellHeightPx,
     cellWidthPx,
+    enabled,
     height,
     nativeCharts,
     nativeRenderer,
