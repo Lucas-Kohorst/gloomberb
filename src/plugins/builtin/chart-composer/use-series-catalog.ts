@@ -6,7 +6,9 @@ import {
 import { useOptionalAppSelector } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
 import { getSharedRegistry } from "../../registry";
-import { getSharedAdjacentClient } from "../adjacent/client";
+import { loadKalshiCatalog } from "../../prediction-markets/services/kalshi/adapter";
+import { loadPolymarketCatalog } from "../../prediction-markets/services/polymarket/adapter";
+import type { PredictionMarketSummary } from "../../prediction-markets/types";
 import {
   analyzeSeriesSearchQuery,
   buildSeriesCatalogSuggestions,
@@ -15,10 +17,8 @@ import {
 } from "./series-catalog";
 import {
   looksLikePredictionMarketQuery,
-  mapAdjacentMarketToHit,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
-import type { AdjacentMarket, AdjacentMarketsResponse } from "../adjacent/types";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
 const EMPTY_RECENT: readonly string[] = [];
@@ -171,16 +171,19 @@ export function useCatalogUniverse(query: string): {
   };
 }
 
-function adjacentMarketList(response: AdjacentMarketsResponse | { data?: AdjacentMarket[] }): AdjacentMarket[] {
-  if (Array.isArray(response.markets) && response.markets.length > 0) return response.markets;
-  const data = "data" in response && Array.isArray(response.data) ? response.data : [];
-  return data.length > 0 ? data : (response.markets ?? []);
-}
-
-function hitsFromAdjacentMarkets(markets: readonly AdjacentMarket[]): PredictionMarketSearchHit[] {
-  return markets.flatMap((market) => {
-    const hit = mapAdjacentMarketToHit(market);
-    return hit ? [hit] : [];
+function hitsFromVenueSummaries(
+  summaries: readonly PredictionMarketSummary[],
+): PredictionMarketSearchHit[] {
+  return summaries.flatMap((summary) => {
+    const marketId = summary.marketId.trim();
+    if (!marketId) return [];
+    return [{
+      venue: summary.venue,
+      marketId,
+      title: summary.marketLabel.trim() || summary.title.trim() || marketId,
+      ...(summary.eventLabel.trim() ? { eventLabel: summary.eventLabel } : {}),
+      ...(summary.url.trim() ? { url: summary.url } : {}),
+    }];
   });
 }
 
@@ -204,24 +207,17 @@ export function usePredictionMarketHits(
     let cancelled = false;
     setSearch({ query: trimmed, markets: [], loading: true });
     const timer = setTimeout(() => {
-      const client = getSharedAdjacentClient();
-      const request = trimmed.length >= 3
-        ? client.searchMarkets(trimmed, 48)
-        : Promise.all([
-          client.getMarkets({ platform: "kalshi", limit: 48 }),
-          client.getMarkets({ platform: "polymarket", limit: 48 }),
-        ]).then(([kalshi, polymarket]) => ({
-          markets: [...adjacentMarketList(kalshi), ...adjacentMarketList(polymarket)],
-        }));
-      void request.then((response) => {
+      // Same venue catalogs as the Prediction pane. Adjacent /public/markets is
+      // empty or 401 on hosted, which is why CAT Prediction showed nothing.
+      void Promise.allSettled([
+        loadKalshiCatalog(trimmed, "all", "top"),
+        loadPolymarketCatalog(trimmed, "all", "top"),
+      ]).then((results) => {
         if (cancelled) return;
-        setSearch({
-          query: trimmed,
-          markets: hitsFromAdjacentMarkets(adjacentMarketList(response)),
-          loading: false,
-        });
-      }).catch(() => {
-        if (!cancelled) setSearch({ query: trimmed, markets: [], loading: false });
+        const markets = results.flatMap((result) => (
+          result.status === "fulfilled" ? hitsFromVenueSummaries(result.value) : []
+        ));
+        setSearch({ query: trimmed, markets, loading: false });
       });
     }, trimmed.length >= 3 ? 120 : 0);
 

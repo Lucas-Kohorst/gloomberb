@@ -226,9 +226,9 @@ export function catalogRowsFromPredictionHits(
       sourceId: hit.venue,
       kind: "Prediction",
       expression,
-      url: hit.venue === "kalshi"
+      url: hit.url ?? (hit.venue === "kalshi"
         ? `https://kalshi.com/markets/${hit.marketId}`
-        : `https://polymarket.com/event/${hit.marketId}`,
+        : `https://polymarket.com/event/${hit.marketId}`),
     })];
   });
 }
