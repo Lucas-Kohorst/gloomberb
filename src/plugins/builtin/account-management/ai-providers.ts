@@ -263,17 +263,23 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
   };
 }
 
+const EMPTY_BYOK_KEYS: ByokApiKeyEntry[] = [];
+
 /** Reads BYOK key entries from an AppConfig, for components without a plugin context. */
 export function readAiByokKeys(config: AppConfig): ByokApiKeyEntry[] {
   return readByokKeysFromConfig(config);
 }
 
-/** Returns the config path where BYOK keys are stored, for useAppSelector. */
+/**
+ * Returns the config path where BYOK keys are stored, for useAppSelector.
+ * The empty result is a stable instance — a fresh `[]` each call makes
+ * useSyncExternalStore treat the store as changed and hit React error #185.
+ */
 export function byokKeysConfigSelector(state: { config: AppConfig }): ByokApiKeyEntry[] {
   const stored = state.config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY] as
     | { keys?: ByokApiKeyEntry[] }
     | undefined;
-  if (!stored?.keys || !Array.isArray(stored.keys)) return [];
+  if (!stored?.keys || !Array.isArray(stored.keys)) return EMPTY_BYOK_KEYS;
   return stored.keys;
 }
 

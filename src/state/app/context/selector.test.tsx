@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useRef, type Dispatch } from "react";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { AppProvider, PaneInstanceProvider, useAppDispatch, useAppSelector, usePaneTicker, type AppAction } from "./index";
+import { byokKeysConfigSelector } from "../../../plugins/builtin/account-management/ai-providers";
 import { cloneLayout, createDefaultConfig, type AppConfig } from "../../../types/config";
 import { applyTheme } from "../../../theme/colors";
 import { useThemeId } from "../../../theme/theme-context";
@@ -53,6 +54,11 @@ function ThemeSelectorHarness() {
 function ActiveLayoutHarness() {
   const activeLayoutIndex = useAppSelector((state) => state.config.activeLayoutIndex);
   return <text>{`layout:${activeLayoutIndex}`}</text>;
+}
+
+function ByokKeysHarness() {
+  const keys = useAppSelector(byokKeysConfigSelector);
+  return <text>{`keys:${keys.length}`}</text>;
 }
 
 function createDesktopBridge(
@@ -352,5 +358,29 @@ describe("pane selectors", () => {
     await testSetup.renderOnce();
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain(`${TEST_PANE_ID}:green`);
+  });
+});
+
+describe("useAppSelector snapshot identity", () => {
+  afterEach(async () => {
+    if (testSetup) {
+      await act(async () => {
+        testSetup!.renderer.destroy();
+      });
+    }
+    testSetup = undefined;
+    applyTheme("amber");
+  });
+
+  test("empty BYOK keys do not exceed React's update depth", async () => {
+    testSetup = await testRender(
+      <AppProvider config={createDefaultConfig("/tmp/gloomberb-ai-byok")}>
+        <ByokKeysHarness />
+      </AppProvider>,
+      { width: 16, height: 3 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("keys:0");
   });
 });
