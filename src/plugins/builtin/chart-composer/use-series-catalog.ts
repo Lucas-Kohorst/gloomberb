@@ -18,6 +18,7 @@ import {
   mapAdjacentMarketToHit,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
+import type { AdjacentMarket, AdjacentMarketsResponse } from "../adjacent/types";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
 const EMPTY_RECENT: readonly string[] = [];
@@ -170,6 +171,19 @@ export function useCatalogUniverse(query: string): {
   };
 }
 
+function adjacentMarketList(response: AdjacentMarketsResponse | { data?: AdjacentMarket[] }): AdjacentMarket[] {
+  if (Array.isArray(response.markets) && response.markets.length > 0) return response.markets;
+  const data = "data" in response && Array.isArray(response.data) ? response.data : [];
+  return data.length > 0 ? data : (response.markets ?? []);
+}
+
+function hitsFromAdjacentMarkets(markets: readonly AdjacentMarket[]): PredictionMarketSearchHit[] {
+  return markets.flatMap((market) => {
+    const hit = mapAdjacentMarketToHit(market);
+    return hit ? [hit] : [];
+  });
+}
+
 export function usePredictionMarketHits(
   query: string,
   enabled: boolean,
@@ -192,20 +206,20 @@ export function usePredictionMarketHits(
     const timer = setTimeout(() => {
       const client = getSharedAdjacentClient();
       const request = trimmed.length >= 3
-        ? client.searchMarkets(trimmed, 24)
+        ? client.searchMarkets(trimmed, 48)
         : Promise.all([
-          client.getMarkets({ platform: "kalshi", limit: 24 }),
-          client.getMarkets({ platform: "polymarket", limit: 24 }),
+          client.getMarkets({ platform: "kalshi", limit: 48 }),
+          client.getMarkets({ platform: "polymarket", limit: 48 }),
         ]).then(([kalshi, polymarket]) => ({
-          markets: [...(kalshi.markets ?? []), ...(polymarket.markets ?? [])],
+          markets: [...adjacentMarketList(kalshi), ...adjacentMarketList(polymarket)],
         }));
       void request.then((response) => {
         if (cancelled) return;
-        const markets = (response.markets ?? []).flatMap((market) => {
-          const hit = mapAdjacentMarketToHit(market);
-          return hit ? [hit] : [];
+        setSearch({
+          query: trimmed,
+          markets: hitsFromAdjacentMarkets(adjacentMarketList(response)),
+          loading: false,
         });
-        setSearch({ query: trimmed, markets, loading: false });
       }).catch(() => {
         if (!cancelled) setSearch({ query: trimmed, markets: [], loading: false });
       });
