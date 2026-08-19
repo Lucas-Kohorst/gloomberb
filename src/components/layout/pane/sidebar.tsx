@@ -78,6 +78,7 @@ export function PaneSidebar({
         height={sidebarLayoutHeight}
         flexDirection="row"
         position="relative"
+        overflow="hidden"
         style={nativeFillStyle}
         data-gloom-role="pane-sidebar"
       >
@@ -86,6 +87,7 @@ export function PaneSidebar({
           height={sidebarLayoutHeight}
           flexDirection="column"
           backgroundColor={backgroundColor}
+          overflow="hidden"
           style={nativeFillStyle}
         >
           {typeof children === "function" ? children(renderState) : children}
