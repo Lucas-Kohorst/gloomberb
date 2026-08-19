@@ -52,6 +52,7 @@ export interface PredictionMarketSearchHit {
   marketId: string;
   title: string;
   eventLabel?: string;
+  url?: string;
 }
 
 export type PredictionSeriesExpression =
