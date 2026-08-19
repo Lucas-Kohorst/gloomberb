@@ -183,6 +183,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "dividends",
       "dvd",
       "crypto",
+      "options",
+      "option",
       "artificial analysis",
       "benchmark",
     ],

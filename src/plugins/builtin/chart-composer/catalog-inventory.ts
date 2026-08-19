@@ -1,4 +1,4 @@
-import { isDividendFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { isDividendFieldId, isMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 import {
@@ -30,6 +30,7 @@ export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
 
 export type CatalogSourceId =
   | "security"
+  | "option"
   | "crypto"
   | "fred"
   | "adjacent"
@@ -43,6 +44,7 @@ export type CatalogSourceId =
 export type CatalogFilterId =
   | "all"
   | "securities"
+  | "options"
   | "crypto"
   | "fred"
   | "prediction"
@@ -66,6 +68,7 @@ export interface CatalogSeriesRow {
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
   { id: "all", label: "All" },
   { id: "securities", label: "Securities" },
+  { id: "options", label: "Options" },
   { id: "crypto", label: "Crypto" },
   { id: "fred", label: "FRED" },
   { id: "prediction", label: "Prediction" },
@@ -77,6 +80,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
   all: null,
   securities: new Set(["security"]),
+  options: new Set(["option"]),
   crypto: new Set(["crypto"]),
   fred: new Set(["fred", "treasury"]),
   prediction: new Set(["kalshi", "polymarket"]),
@@ -167,7 +171,25 @@ export function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): 
   return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
 }
 
+const COMPACT_OCC_RE = /^([A-Z]{1,6})(\d{6}[CP]\d{8})$/;
+
+function compactOccSymbol(value: string): string | null {
+  const upper = value.trim().toUpperCase();
+  const compact = COMPACT_OCC_RE.exec(upper.replace(/\s+/g, ""));
+  if (compact) return `${compact[1]}${compact[2]}`;
+  const spaced = parseOptionSymbol(upper);
+  if (!spaced) return null;
+  const expiry = new Date(spaced.expTs * 1000);
+  const yy = String(expiry.getUTCFullYear()).slice(2);
+  const mm = String(expiry.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(expiry.getUTCDate()).padStart(2, "0");
+  const strike = String(Math.round(spaced.strike * 1000)).padStart(8, "0");
+  return `${spaced.underlying}${yy}${mm}${dd}${spaced.side}${strike}`;
+}
+
 export function catalogTickerFromInput(value: string): string | null {
+  const option = compactOccSymbol(value);
+  if (option) return option;
   const symbol = value.trim().toUpperCase();
   return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
 }
@@ -242,6 +264,24 @@ function securityFieldRows(): CatalogSeriesRow[] {
       fieldToken: token,
       searchExtra: field.shortLabel,
     });
+  });
+}
+
+function optionFieldRows(): CatalogSeriesRow[] {
+  return listTimeSeriesFields().flatMap((field) => {
+    if (!isMarketFieldId(field.id)) return [];
+    const token = shortChartFieldToken(field.id);
+    return [row({
+      id: `option:${field.id}`,
+      label: field.label,
+      source: "Yahoo",
+      sourceId: "option",
+      kind: "Options",
+      expression: `TICKER:${token}`,
+      needsTicker: true,
+      fieldToken: token,
+      searchExtra: `option ${field.shortLabel}`,
+    })];
   });
 }
 
@@ -340,6 +380,7 @@ export function listStaticCatalogInventory(
   },
 ): CatalogSeriesRow[] {
   const securities = securityFieldRows();
+  const optionFields = optionFieldRows();
   const crypto = cryptoRows(instruments);
 
   const fred = listKnownFredSeries().map((entry) => row({
@@ -403,6 +444,7 @@ export function listStaticCatalogInventory(
 
   return [
     ...securities,
+    ...optionFields,
     ...crypto,
     ...fred,
     ...treasuries,

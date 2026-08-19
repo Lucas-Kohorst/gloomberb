@@ -222,6 +222,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const chartSelected = useCallback(async (row: CatalogSeriesRow | null) => {
     if (!row) return;
     if (row.needsTicker) {
+      const option = row.sourceId === "option";
       const ticker = await dialog.prompt<string>({
         closeOnClickOutside: true,
         content: (context: PromptContext<string>) => (
@@ -230,9 +231,11 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
             step={{
               key: "ticker",
               label: `Chart ${row.label}`,
-              placeholder: "AAPL",
+              placeholder: option ? "AAPL 260618C00200000" : "AAPL",
               type: "text",
-              body: [`Enter a ticker to chart ${row.label}.`],
+              body: [option
+                ? `Enter an option symbol to chart ${row.label}.`
+                : `Enter a ticker to chart ${row.label}.`],
             }}
           />
         ),

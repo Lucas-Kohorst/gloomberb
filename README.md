@@ -254,7 +254,7 @@ G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
 G AAPL:dvd
 ```
 
-`CAT [query]` opens the Data Catalog — a searchable, filterable inventory of chartable series. Securities list field names (`Close`, `PEG Ratio`); `[g]`raph asks for a ticker. Crypto lists pairs the same way Prediction lists markets. Adjacent indices and VoteHub polls live under Other. Enter or `[g]`raph charts the selected series.
+`CAT [query]` opens the Data Catalog — a searchable, filterable inventory of chartable series. Securities list field names (`Close`, `PEG Ratio`); `[g]`raph asks for a ticker. Options lists contract price/volume fields and asks for an option symbol. Crypto lists pairs the same way Prediction lists markets. Adjacent indices and VoteHub polls live under Other. Enter or `[g]`raph charts the selected series.
 
 Open **Series** to add, remove, reorder, or hide series and choose each series' field, chart style, transform, axis, panel, period, and panel scale. Price data supports candles, OHLC, HLC, line, and area; scalar data supports its compatible line, area, step, column, and point modes. Panels can use independent left/right axes and linear or logarithmic scales.
 
