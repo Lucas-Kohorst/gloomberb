@@ -10,6 +10,7 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { debugPlugin } from "./builtin/debug";
+import { adjacentPlugin } from "./builtin/adjacent";
 import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
@@ -36,6 +37,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   aiPlugin,
   llmStatsPlugin,
   predictionMarketsBackendPlugin,
+  adjacentPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,

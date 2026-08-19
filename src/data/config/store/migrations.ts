@@ -23,6 +23,7 @@ const CLOUD_DEFAULT_CONFIG_VERSION = 13;
 const CLOUD_MACRO_SPLIT_CONFIG_VERSION = 15;
 const PORTFOLIO_DEFAULT_COLUMNS_CONFIG_VERSION = 17;
 const BUILTIN_OWNERSHIP_AND_CHART_CONFIG_VERSION = 20;
+const ADJACENT_PLUGIN_SPLIT_CONFIG_VERSION = 21;
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
@@ -78,6 +79,11 @@ const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
     name: "consolidate-builtins-and-chart-state",
     toVersion: BUILTIN_OWNERSHIP_AND_CHART_CONFIG_VERSION,
     migrate: migrateBuiltinOwnershipAndChartState,
+  },
+  {
+    name: "split-adjacent-from-gloom-cloud",
+    toVersion: ADJACENT_PLUGIN_SPLIT_CONFIG_VERSION,
+    migrate: migrateAdjacentPluginSplit,
   },
 ];
 
@@ -252,6 +258,35 @@ function migrateSavedLayouts(
       paneState: migrated.paneState,
     };
   });
+}
+
+function migrateAdjacentPluginSplit(saved: Record<string, unknown>): Record<string, unknown> {
+  const pluginConfig = pluginConfigMap(saved.pluginConfig);
+  const cloudConfig = pluginConfig["gloomberb-cloud"];
+  const existingAdjacent = pluginConfig.adjacent;
+  const cloudKey = typeof cloudConfig?.adjacentApiKey === "string" ? cloudConfig.adjacentApiKey : null;
+  const adjacentKey = typeof existingAdjacent?.adjacentApiKey === "string"
+    ? existingAdjacent.adjacentApiKey
+    : null;
+
+  if (cloudKey && !adjacentKey?.trim()) {
+    pluginConfig.adjacent = {
+      ...(existingAdjacent ?? {}),
+      adjacentApiKey: cloudKey,
+    };
+  }
+
+  if (cloudConfig && Object.prototype.hasOwnProperty.call(cloudConfig, "adjacentApiKey")) {
+    const restCloud = { ...cloudConfig };
+    delete restCloud.adjacentApiKey;
+    if (Object.keys(restCloud).length > 0) pluginConfig["gloomberb-cloud"] = restCloud;
+    else delete pluginConfig["gloomberb-cloud"];
+  }
+
+  return {
+    ...saved,
+    pluginConfig,
+  };
 }
 
 function migrateBuiltinOwnershipAndChartState(
