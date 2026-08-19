@@ -4,6 +4,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   DataTableStackView,
+  DataTableView,
   EmptyState,
   InputSearchBar,
   Spinner,
@@ -21,19 +22,40 @@ import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
+import { usePluginState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import {
+  EMPTY_WEATHER_ARCHIVE,
+  WEATHER_ARCHIVE_SCHEMA_VERSION,
+  WEATHER_ARCHIVE_STATE_KEY,
+  addUtcDays,
+  findWeatherDayRecord,
+  mergeWeatherArchive,
+  type WeatherArchiveState,
+} from "./archive";
 import {
   fetchInternationalClimate,
   fetchMetarObservations,
   fetchPrimaryClimate,
   loadWeatherHourly,
 } from "./client";
+import { loadKalshiImpliedHighs } from "./kalshi-forecast";
+import { zonedDateKey } from "./mapping";
+import {
+  buildWeatherAccuracyReport,
+  formatBias,
+  formatHitRate,
+  type WeatherCityAccuracy,
+  type WeatherForecastKind,
+} from "./report";
 import { WEATHER_STATIONS, cliProductForStation, findWeatherStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
-type WeatherSortColumnId = "city" | "station" | "high" | "low" | "now" | "status";
+type WeatherPaneTab = WeatherScope | "report";
+type WeatherSortColumnId = "city" | "station" | "high" | "implied" | "yForecast" | "ySettlement" | "low" | "now" | "status";
+type ReportSortColumnId = "city" | "hit" | "mae" | "bias" | "samples";
 
 interface WeatherRow {
   id: string;
@@ -42,6 +64,9 @@ interface WeatherRow {
   icao: string;
   scope: WeatherScope;
   high: number | null;
+  implied: number | null;
+  yForecast: number | null;
+  ySettlement: number | null;
   low: number | null;
   now: number | null;
   precip: number | null;
@@ -54,8 +79,10 @@ interface WeatherColumn extends DataTableColumn {
   id: WeatherSortColumnId;
 }
 
-function formatTemp(value: number | null): string {
-  return value == null ? "—" : `${Math.round(value)}`;
+function formatTemp(value: number | null, decimals = 0): string {
+  if (value == null) return "—";
+  if (decimals > 0 && !Number.isInteger(value)) return value.toFixed(decimals);
+  return `${Math.round(value)}`;
 }
 
 function statusLabel(status: WeatherReportStatus): string {
@@ -79,15 +106,24 @@ function statusColor(status: WeatherReportStatus, selected: boolean): string {
 function createColumns(width: number): WeatherColumn[] {
   const stationWidth = 5;
   const highWidth = 5;
-  const lowWidth = 5;
-  const nowWidth = width >= 42 ? 5 : 0;
-  const statusWidth = width >= 52 ? 8 : 0;
-  const cityWidth = Math.max(10, width - stationWidth - highWidth - lowWidth - nowWidth - statusWidth - 8);
+  const impliedWidth = width >= 44 ? 5 : 0;
+  const yForecastWidth = width >= 62 ? 5 : 0;
+  const ySettlementWidth = width >= 54 ? 5 : 0;
+  const lowWidth = width >= 72 ? 5 : 0;
+  const nowWidth = width >= 80 ? 5 : 0;
+  const statusWidth = width >= 90 ? 8 : 0;
+  const cityWidth = Math.max(
+    10,
+    width - stationWidth - highWidth - impliedWidth - yForecastWidth - ySettlementWidth - lowWidth - nowWidth - statusWidth - 8,
+  );
   return [
     { id: "city", label: "CITY", width: cityWidth, align: "left" },
     { id: "station", label: "STN", width: stationWidth, align: "left" },
     { id: "high", label: "HIGH", width: highWidth, align: "right" },
-    { id: "low", label: "LOW", width: lowWidth, align: "right" },
+    ...(impliedWidth ? [{ id: "implied" as const, label: "IMPL", width: impliedWidth, align: "right" as const }] : []),
+    ...(yForecastWidth ? [{ id: "yForecast" as const, label: "Y.FC", width: yForecastWidth, align: "right" as const }] : []),
+    ...(ySettlementWidth ? [{ id: "ySettlement" as const, label: "Y.ST", width: ySettlementWidth, align: "right" as const }] : []),
+    ...(lowWidth ? [{ id: "low" as const, label: "LOW", width: lowWidth, align: "right" as const }] : []),
     ...(nowWidth ? [{ id: "now" as const, label: "NOW", width: nowWidth, align: "right" as const }] : []),
     ...(statusWidth ? [{ id: "status" as const, label: "PRINT", width: statusWidth, align: "left" as const }] : []),
   ];
@@ -102,6 +138,12 @@ function renderWeatherCell(row: WeatherRow, column: WeatherColumn, selected: boo
       return { text: row.stationId, color: sel ?? colors.textDim };
     case "high":
       return { text: formatTemp(row.high), color: sel ?? colors.text };
+    case "implied":
+      return { text: formatTemp(row.implied, 1), color: sel ?? colors.text };
+    case "yForecast":
+      return { text: formatTemp(row.yForecast, 1), color: sel ?? colors.text };
+    case "ySettlement":
+      return { text: formatTemp(row.ySettlement), color: sel ?? colors.text };
     case "low":
       return { text: formatTemp(row.low), color: sel ?? colors.text };
     case "now":
@@ -119,6 +161,12 @@ function compareWeatherRows(left: WeatherRow, right: WeatherRow, columnId: Weath
       return left.stationId.localeCompare(right.stationId);
     case "high":
       return (left.high ?? -Infinity) - (right.high ?? -Infinity);
+    case "implied":
+      return (left.implied ?? -Infinity) - (right.implied ?? -Infinity);
+    case "yForecast":
+      return (left.yForecast ?? -Infinity) - (right.yForecast ?? -Infinity);
+    case "ySettlement":
+      return (left.ySettlement ?? -Infinity) - (right.ySettlement ?? -Infinity);
     case "low":
       return (left.low ?? -Infinity) - (right.low ?? -Infinity);
     case "now":
@@ -156,10 +204,21 @@ function WeatherDetail({
         </Text>
         <Text fg={colors.text}>
           {row.date ? `${row.date}  ` : ""}
-          high {formatTemp(row.high)}°F · low {formatTemp(row.low)}°F
+          high {formatTemp(row.high)}°F
+          {row.implied != null ? ` · Kalshi ${formatTemp(row.implied, 1)}°F` : ""}
+          {` · low ${formatTemp(row.low)}°F`}
           {row.precip != null ? ` · precip ${row.precip}` : ""}
           {` · ${statusLabel(row.status)}`}
         </Text>
+        {(row.yForecast != null || row.ySettlement != null) && (
+          <Text fg={colors.textMuted}>
+            Yesterday forecast {formatTemp(row.yForecast, 1)}°F
+            {` · settlement ${formatTemp(row.ySettlement)}°F`}
+            {row.yForecast != null && row.ySettlement != null
+              ? ` · ${row.ySettlement - row.yForecast >= 0 ? "+" : ""}${(row.ySettlement - row.yForecast).toFixed(1)}`
+              : ""}
+          </Text>
+        )}
         {row.now != null && (
           <Text fg={colors.textMuted}>Latest hourly {formatTemp(row.now)}°F</Text>
         )}
@@ -180,8 +239,91 @@ function WeatherDetail({
   );
 }
 
+interface ReportColumn extends DataTableColumn {
+  id: ReportSortColumnId;
+}
+
+function createReportColumns(width: number): ReportColumn[] {
+  const hitWidth = 6;
+  const maeWidth = 5;
+  const biasWidth = 6;
+  const samplesWidth = width >= 48 ? 4 : 0;
+  const cityWidth = Math.max(10, width - hitWidth - maeWidth - biasWidth - samplesWidth - 6);
+  return [
+    { id: "city", label: "CITY", width: cityWidth, align: "left" },
+    { id: "hit", label: "HIT", width: hitWidth, align: "right" },
+    { id: "mae", label: "MAE", width: maeWidth, align: "right" },
+    { id: "bias", label: "BIAS", width: biasWidth, align: "right" },
+    ...(samplesWidth ? [{ id: "samples" as const, label: "N", width: samplesWidth, align: "right" as const }] : []),
+  ];
+}
+
+function compareReportRows(left: WeatherCityAccuracy, right: WeatherCityAccuracy, columnId: ReportSortColumnId): number {
+  switch (columnId) {
+    case "city":
+      return left.city.localeCompare(right.city);
+    case "hit":
+      return left.hitRate - right.hitRate;
+    case "mae":
+      return left.mae - right.mae;
+    case "bias":
+      return left.bias - right.bias;
+    case "samples":
+      return left.samples - right.samples;
+  }
+}
+
+function renderReportCell(row: WeatherCityAccuracy, column: ReportColumn, selected: boolean): DataTableCell {
+  const sel = selected ? colors.selectedText : undefined;
+  switch (column.id) {
+    case "city":
+      return { text: row.city, color: sel ?? colors.textBright, attributes: TextAttributes.BOLD };
+    case "hit":
+      return { text: formatHitRate(row.hitRate), color: sel ?? colors.text };
+    case "mae":
+      return { text: row.mae.toFixed(1), color: sel ?? colors.text };
+    case "bias":
+      return { text: formatBias(row.bias), color: sel ?? (row.bias > 0 ? colors.negative : row.bias < 0 ? colors.positive : colors.text) };
+    case "samples":
+      return { text: String(row.samples), color: sel ?? colors.textDim };
+  }
+}
+
+function emptyWeatherRow(station: {
+  id: string;
+  city: string;
+  icao: string;
+  scope: WeatherScope;
+  timezone: string;
+}, date = ""): WeatherRow {
+  return {
+    id: station.id,
+    city: station.city,
+    stationId: station.id,
+    icao: station.icao,
+    scope: station.scope,
+    high: null,
+    implied: null,
+    yForecast: null,
+    ySettlement: null,
+    low: null,
+    now: null,
+    precip: null,
+    status: "no_report",
+    date,
+    timezone: station.timezone,
+  };
+}
+
 export function WeatherPane({ focused, width, height }: PaneProps) {
-  const [scope, setScope] = useState<WeatherScope>("domestic");
+  const [tab, setTab] = useState<WeatherPaneTab>("domestic");
+  const scope: WeatherScope = tab === "report" ? "domestic" : tab;
+  const [archive, setArchive] = usePluginState<WeatherArchiveState>(
+    WEATHER_ARCHIVE_STATE_KEY,
+    EMPTY_WEATHER_ARCHIVE,
+    { schemaVersion: WEATHER_ARCHIVE_SCHEMA_VERSION },
+  );
+  const [reportKind, setReportKind] = useState<WeatherForecastKind>("twc");
   const [rowsByScope, setRowsByScope] = useState<Partial<Record<WeatherScope, WeatherRow[]>>>({});
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +333,10 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     columnId: "city",
     direction: "asc",
   });
+  const [reportSort, setReportSort] = useState<StackSortPreference<ReportSortColumnId>>({
+    columnId: "hit",
+    direction: "desc",
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
@@ -198,6 +344,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
+  const archiveRef = useRef(archive);
+  archiveRef.current = archive;
 
   const allRows = rowsByScope[scope] ?? [];
   const filteredRows = useMemo(
@@ -209,6 +357,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [filteredRows, sortPreference],
   );
   const selected = rows.find((row) => row.id === selectedId) ?? null;
+  const report = useMemo(() => buildWeatherAccuracyReport(archive, reportKind), [archive, reportKind]);
+  const reportRows = useMemo(
+    () => sortStackItems(report.cities, reportSort, compareReportRows),
+    [report.cities, reportSort],
+  );
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -223,76 +376,48 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     const gen = genRef.current;
     setStatus("loading");
     setError(null);
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
-    const yesterdayDate = new Date(now);
-    yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
-    const yesterday = yesterdayDate.toISOString().slice(0, 10);
+    const now = Date.now();
+    const utcToday = new Date(now).toISOString().slice(0, 10);
+    const utcYesterday = addUtcDays(utcToday, -1);
     const climate = nextScope === "international"
-      ? Promise.all([fetchInternationalClimate(yesterday), fetchInternationalClimate(today)])
-      : Promise.all([fetchPrimaryClimate(yesterday), fetchPrimaryClimate(today)]);
+      ? Promise.all([fetchInternationalClimate(utcYesterday), fetchInternationalClimate(utcToday)])
+      : Promise.all([fetchPrimaryClimate(utcYesterday), fetchPrimaryClimate(utcToday)]);
     const metar = fetchMetarObservations(nextScope === "international" ? "international" : "primary");
     Promise.all([climate, metar])
-      .then(([[previous, current], hourly]) => {
+      .then(async ([[previous, current], hourly]) => {
         if (genRef.current !== gen) return;
         const latestByStation = new Map<string, WeatherRow>();
         const seed = WEATHER_STATIONS.filter((station) => station.scope === nextScope);
         for (const station of seed) {
-          latestByStation.set(station.id, {
-            id: station.id,
-            city: station.city,
-            stationId: station.id,
-            icao: station.icao,
-            scope: station.scope,
-            high: null,
-            low: null,
-            now: null,
-            precip: null,
-            status: "no_report",
-            date: "",
-            timezone: station.timezone,
-          });
+          latestByStation.set(station.id, emptyWeatherRow(station));
         }
         for (const snapshot of [previous, current]) {
           for (const station of snapshot.stations) {
             if (!latestByStation.has(station.id)) {
-              latestByStation.set(station.id, {
-                id: station.id,
-                city: station.city,
-                stationId: station.id,
-                icao: station.icao,
-                scope: station.scope,
-                high: null,
-                low: null,
-                now: null,
-                precip: null,
-                status: "no_report",
-                date: snapshot.date,
-                timezone: station.timezone,
-              });
+              latestByStation.set(station.id, emptyWeatherRow(station, snapshot.date));
             }
           }
           for (const observation of snapshot.observations) {
             const existing = latestByStation.get(observation.stationId);
             const station = findWeatherStation(observation.stationId);
             const nextRow: WeatherRow = {
-              id: observation.stationId,
+              ...(existing ?? emptyWeatherRow({
+                id: observation.stationId,
+                city: station?.city ?? observation.stationId,
+                icao: station?.icao ?? observation.stationId,
+                scope: station?.scope ?? nextScope,
+                timezone: station?.timezone ?? "",
+              })),
               city: existing?.city ?? station?.city ?? observation.stationId,
-              stationId: observation.stationId,
-              icao: existing?.icao ?? station?.icao ?? observation.stationId,
-              scope: existing?.scope ?? station?.scope ?? nextScope,
               high: observation.maxTemp ?? existing?.high ?? null,
               low: observation.minTemp ?? existing?.low ?? null,
-              now: existing?.now ?? null,
               precip: observation.precipitation ?? existing?.precip ?? null,
               status: observation.status,
               date: observation.date || snapshot.date,
-              timezone: existing?.timezone ?? station?.timezone ?? "",
             };
-            const previousRow = existing;
-            const previousHasPrint = previousRow?.high != null || previousRow?.low != null;
+            const previousHasPrint = existing?.high != null || existing?.low != null;
             const nextHasPrint = nextRow.high != null || nextRow.low != null;
-            if (!previousRow || (nextHasPrint && (!previousHasPrint || nextRow.date >= previousRow.date))) {
+            if (!existing || (nextHasPrint && (!previousHasPrint || nextRow.date >= existing.date))) {
               latestByStation.set(observation.stationId, nextRow);
             }
           }
@@ -302,10 +427,52 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           if (obs.tempF == null) continue;
           latestHourly.set(obs.stationId, obs.tempF);
         }
-        const nextRows = [...latestByStation.values()].map((row) => ({
+        const baseRows = [...latestByStation.values()].map((row) => ({
           ...row,
           now: latestHourly.get(row.stationId) ?? row.now,
         }));
+        const impliedByDate = new Map<string, string[]>();
+        for (const row of baseRows) {
+          const date = zonedDateKey(row.timezone || "UTC", now);
+          const list = impliedByDate.get(date);
+          if (list) list.push(row.stationId);
+          else impliedByDate.set(date, [row.stationId]);
+        }
+        const implied = (await Promise.all(
+          [...impliedByDate.entries()].map(([date, stationIds]) => (
+            loadKalshiImpliedHighs(stationIds, date, now).catch(() => [])
+          )),
+        )).flat();
+        if (genRef.current !== gen) return;
+        const observations = [previous, current].flatMap((snapshot) => (
+          snapshot.observations.map((row) => ({
+            stationId: row.stationId,
+            date: row.date || snapshot.date,
+            high: row.maxTemp,
+            official: row.official || row.status === "official",
+          }))
+        ));
+        const nextArchive = mergeWeatherArchive(archiveRef.current, {
+          observations,
+          implied,
+          now,
+          today: utcToday,
+        });
+        setArchive(nextArchive);
+        const impliedByStation = new Map(implied.map((row) => [row.stationId, row] as const));
+        const nextRows = baseRows.map((row) => {
+          const localDate = zonedDateKey(row.timezone || "UTC", now);
+          const yesterday = addUtcDays(localDate, -1);
+          const yday = findWeatherDayRecord(nextArchive, row.stationId, yesterday);
+          return {
+            ...row,
+            implied: impliedByStation.get(row.stationId)?.impliedHigh
+              ?? findWeatherDayRecord(nextArchive, row.stationId, localDate)?.impliedHigh
+              ?? null,
+            yForecast: yday?.forecastHigh ?? yday?.impliedHigh ?? null,
+            ySettlement: yday?.settlementHigh ?? null,
+          };
+        });
         setRowsByScope((current) => ({ ...current, [nextScope]: nextRows }));
         setStatus("loaded");
         setLastUpdated(Date.now());
@@ -315,7 +482,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setStatus("error");
       });
-  }, []);
+  }, [setArchive]);
 
   useEffect(() => {
     load(scope);
@@ -377,8 +544,14 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       openSelected();
       return true;
     }
+    if (tab === "report" && isPlainKey(event, "k")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setReportKind((current) => current === "twc" ? "implied" : "twc");
+      return true;
+    }
     return false;
-  }, [focusSearch, load, openSelected, scope]);
+  }, [focusSearch, load, openSelected, scope, tab]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
@@ -386,6 +559,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+    }
+    if (tab === "report" && event.name === "k") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setReportKind((current) => current === "twc" ? "implied" : "twc");
     }
   }, { enabled: focused && !detailOpen && !searchFocused });
 
@@ -406,6 +584,20 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   }, [load, openSelected, scope]);
 
   const columns = useMemo(() => createColumns(width), [width]);
+  const reportColumns = useMemo(() => createReportColumns(width), [width]);
+  const filteredReportRows = useMemo(
+    () => reportRows.filter((row) => {
+      const needle = searchQuery.trim().toLowerCase();
+      if (!needle) return true;
+      return row.city.toLowerCase().includes(needle) || row.stationId.toLowerCase().includes(needle);
+    }),
+    [reportRows, searchQuery],
+  );
+  const renderReport = useCallback(
+    (row: WeatherCityAccuracy, column: ReportColumn, _index: number, rowState: { selected: boolean }) =>
+      renderReportCell(row, column, rowState.selected),
+    [],
+  );
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(scope));
   const renderCell = useCallback(
@@ -423,11 +615,19 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     loading: status === "loading",
     error,
     info: [
-      ...(officialDate ? [{ id: "print", parts: [{ text: officialDate, tone: "muted" as const }] }] : []),
+      ...(tab === "report" && report.samples > 0
+        ? [{ id: "hit", parts: [{ text: `${formatHitRate(report.hitRate)} on ${reportKind === "implied" ? "Kalshi" : "TWC"} fcst`, tone: "muted" as const }] }]
+        : []),
+      ...(tab === "report" && report.samples > 0
+        ? [{ id: "bias", parts: [{ text: `bias ${formatBias(report.bias)}`, tone: "muted" as const }] }]
+        : []),
+      ...(tab !== "report" && officialDate ? [{ id: "print", parts: [{ text: officialDate, tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      ...(tab === "report"
+        ? [{ id: "kind", key: "k", label: reportKind === "twc" ? "alshi implied" : " TWC forecast", onPress: () => setReportKind((current) => current === "twc" ? "implied" : "twc") }]
+        : (!detailOpen ? [{ id: "search", key: "s", label: "earch", onPress: focusSearch }] : [])),
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(scope) },
       { id: "open", key: "o", label: "pen", onPress: openSelected },
     ],
@@ -439,10 +639,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         tabs={[
           { value: "domestic", label: "US" },
           { value: "international", label: "World" },
+          { value: "report", label: "30d" },
         ]}
-        activeValue={scope}
+        activeValue={tab}
         onSelect={(value) => {
-          setScope(value as WeatherScope);
+          setTab(value as WeatherPaneTab);
           setDetailOpen(false);
           setSearchQuery("");
         }}
@@ -470,7 +671,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     />
   );
 
-  if (status === "loading" && allRows.length === 0) {
+  if (status === "loading" && allRows.length === 0 && tab !== "report") {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
@@ -481,13 +682,48 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     );
   }
 
-  if (error && allRows.length === 0) {
+  if (error && allRows.length === 0 && tab !== "report") {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
           <EmptyState title="Weather unavailable." message={error} hint="Press r to retry." />
         </Box>
+      </Box>
+    );
+  }
+
+  if (tab === "report") {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <DataTableView<WeatherCityAccuracy, ReportColumn>
+          focused={focused}
+          rootWidth={width}
+          rootHeight={Math.max(1, height - 1)}
+          selection={{
+            kind: "id",
+            selectedId,
+            getId: (row) => row.stationId,
+            onChange: (id) => setSelectedId(id),
+          }}
+          columns={reportColumns}
+          items={filteredReportRows}
+          sortColumnId={reportSort.columnId}
+          sortDirection={reportSort.direction}
+          onHeaderClick={(columnId) => {
+            const next = columnId as ReportSortColumnId;
+            setReportSort((current) => nextStackSortPreference(
+              current,
+              next,
+              next === "city" ? "asc" : "desc",
+            ));
+          }}
+          getItemKey={(row) => row.stationId}
+          renderCell={renderReport}
+          emptyStateTitle={report.samples === 0 ? "No stored forecast days yet." : "No matching cities."}
+          emptyStateHint="HIGH/IMPL freeze when first seen; official prints fill Y.ST the next day."
+        />
       </Box>
     );
   }

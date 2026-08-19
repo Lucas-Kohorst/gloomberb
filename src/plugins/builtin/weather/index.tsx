@@ -31,7 +31,7 @@ export const weatherPlugin: GloomPlugin = {
       paneId: WEATHER_PANE_ID,
       label: "Weather",
       description:
-        "Browse Weather Company settlement observations used by Kalshi climate markets. Chart one with G WX:LAX:high.",
+    "Browse Weather Company settlement observations used by Kalshi climate markets. Chart one with G WX:LAX:high. 30d tab reports forecast vs settlement.",
       keywords: [
         "weather",
         "climate",

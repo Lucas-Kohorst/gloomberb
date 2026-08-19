@@ -3,6 +3,7 @@ import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { EmptyState } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PredictionMarketSummary } from "../../prediction-markets/types";
+import { loadKalshiImpliedHigh } from "./kalshi-forecast";
 import { loadWeatherHourly, loadWeatherObservation } from "./client";
 import { resolveWeatherSettlement, weatherMetricLabel } from "./mapping";
 import { cliProductForStation, findWeatherStation } from "./stations";
@@ -77,6 +78,7 @@ export function PredictionWeatherSettlementTab({
   );
   const [observation, setObservation] = useState<WeatherDailyObservation | null>(null);
   const [hourly, setHourly] = useState<WeatherHourlyObservation[]>([]);
+  const [implied, setImplied] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -85,15 +87,20 @@ export function PredictionWeatherSettlementTab({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setImplied(null);
     const daily = loadWeatherObservation(settlement.stationId, settlement.date);
     const hours = settlement.metric === "hourly"
       ? loadWeatherHourly(settlement.stationId)
       : Promise.resolve([] as WeatherHourlyObservation[]);
-    Promise.all([daily, hours])
-      .then(([nextObservation, nextHourly]) => {
+    const kalshi = settlement.metric === "high"
+      ? loadKalshiImpliedHigh(settlement.stationId, settlement.date).catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([daily, hours, kalshi])
+      .then(([nextObservation, nextHourly, nextImplied]) => {
         if (cancelled) return;
         setObservation(nextObservation);
         setHourly(nextHourly.filter((row) => !settlement.date || row.date === settlement.date));
+        setImplied(nextImplied?.impliedHigh ?? null);
         setLoading(false);
       })
       .catch((loadError) => {
@@ -148,6 +155,14 @@ export function PredictionWeatherSettlementTab({
             {observation.status}
             {observation.maxTemp != null ? ` · high ${formatTemp(observation.maxTemp)}` : ""}
             {observation.minTemp != null ? ` · low ${formatTemp(observation.minTemp)}` : ""}
+          </Text>
+        )}
+        {implied != null && settlement.metric === "high" && (
+          <Text fg={colors.text}>
+            Kalshi implied {implied.toFixed(1)}°F
+            {observation?.maxTemp != null
+              ? ` · vs print ${observation.maxTemp - implied >= 0 ? "+" : ""}${(observation.maxTemp - implied).toFixed(1)}`
+              : ""}
           </Text>
         )}
         {settlement.hour != null && settlement.metric === "hourly" && (

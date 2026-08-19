@@ -84,6 +84,58 @@ export function parseCliProductFromText(text: string | undefined): string | null
   return match?.[1] ? canonicalWeatherStationId(match[1]) : null;
 }
 
+const MONTH_TOKENS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"] as const;
+
+/** Series tickers that are not `KXHIGH{stationId}`. */
+const KALSHI_HIGH_SERIES_BY_STATION: Readonly<Record<string, string>> = {
+  NYC: "KXHIGHNY",
+  MDW: "KXHIGHCHI",
+  PHL: "KXHIGHPHIL",
+  DCA: "KXHIGHTDC",
+  BOS: "KXHIGHTBOS",
+  ATL: "KXHIGHTATL",
+  PHX: "KXHIGHTPHX",
+  SEA: "KXHIGHTSEA",
+  SFO: "KXHIGHTSFO",
+  SAN: "KXHIGHTSAN",
+  DFW: "KXHIGHTDAL",
+  LAS: "KXHIGHTLV",
+  SAT: "KXHIGHTSATX",
+  MSY: "KXHIGHTNOLA",
+  MSP: "KXHIGHTMIN",
+  OKC: "KXHIGHTOKC",
+  HOU: "KXHOBBYTEMP",
+  DEN: "KXHIGHDEN",
+};
+
+export function kalshiHighSeriesForStation(stationId: string): string | null {
+  const canonical = canonicalWeatherStationId(stationId);
+  if (!canonical) return null;
+  return KALSHI_HIGH_SERIES_BY_STATION[canonical] ?? `KXHIGH${canonical}`;
+}
+
+export function kalshiEventTickerForDate(seriesTicker: string, dateKey: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const month = MONTH_TOKENS[Number(match[2]) - 1];
+  if (!month) return null;
+  return `${seriesTicker.trim().toUpperCase()}-${match[1]!.slice(2)}${month}${match[3]}`;
+}
+
+export function zonedDateKey(timeZone: string, now = Date.now()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(now));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  if (!year || !month || !day) return new Date(now).toISOString().slice(0, 10);
+  return `${year}-${month}-${day}`;
+}
+
 export function parseKalshiWeatherEventStamp(eventTicker: string | undefined): {
   date: string;
   hour: number | null;
@@ -153,7 +205,7 @@ export function resolveWeatherSettlement(hints: WeatherSettlementHints): Weather
   const stamp = parseKalshiWeatherEventStamp(hints.eventTicker ?? hints.marketId ?? undefined);
   const fromRules = parseCliProductFromText(textBlob(hints));
   const stationId = fromRules ?? series?.stationId ?? null;
-  if (!stationId || !findWeatherStation(stationId) && !canonicalWeatherStationId(stationId)) {
+  if (!stationId || (!findWeatherStation(stationId) && !canonicalWeatherStationId(stationId))) {
     return null;
   }
   if (!isWeatherSettlementSource(hints) && !series) return null;

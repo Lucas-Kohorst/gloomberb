@@ -55,8 +55,9 @@ export interface KalshiEventResponse {
     category?: string;
     event_ticker?: string;
     series_ticker?: string;
+    markets?: KalshiMarketRecord[];
   };
-  markets: KalshiMarketRecord[];
+  markets?: KalshiMarketRecord[];
 }
 
 interface KalshiTradeRecord {
