@@ -66,10 +66,9 @@ export function loadCatalogAaRows(): Promise<CatalogSeriesRow[]> {
 export function loadCatalogPollRows(): Promise<CatalogSeriesRow[]> {
   if (catalogPollRowsCache) return Promise.resolve(catalogPollRowsCache);
   if (catalogPollRowsInflight) return catalogPollRowsInflight;
-  catalogPollRowsInflight = Promise.all([
-    fetchVoteHubPolls().catch(() => []),
-    ...VOTEHUB_POLL_TYPES.map((pollType) => fetchVoteHubPolls({ pollType }).catch(() => [])),
-  ]).then((batches) => {
+  catalogPollRowsInflight = Promise.all(
+    VOTEHUB_POLL_TYPES.map((pollType) => fetchVoteHubPolls({ pollType }).catch(() => [])),
+  ).then((batches) => {
     const rows = catalogRowsFromPollSubjects(catalogPollSubjectsFromPolls(batches.flat()));
     if (rows.length > 0) catalogPollRowsCache = rows;
     return rows;
@@ -132,7 +131,7 @@ export function scheduleDataCatalogWarm(): void {
   setTimeout(run, 0);
 }
 
-export function useCatalogAaRows(): { rows: CatalogSeriesRow[]; loading: boolean } {
+export function useCatalogAaRows(refreshNonce = 0): { rows: CatalogSeriesRow[]; loading: boolean } {
   const [rows, setRows] = useState<CatalogSeriesRow[]>(catalogAaRowsCache ?? []);
   const [loading, setLoading] = useState(catalogAaRowsCache == null);
 
@@ -154,12 +153,12 @@ export function useCatalogAaRows(): { rows: CatalogSeriesRow[]; loading: boolean
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshNonce]);
 
   return { rows, loading };
 }
 
-export function useCatalogPollRows(): { rows: CatalogSeriesRow[]; loading: boolean } {
+export function useCatalogPollRows(refreshNonce = 0): { rows: CatalogSeriesRow[]; loading: boolean } {
   const [rows, setRows] = useState<CatalogSeriesRow[]>(catalogPollRowsCache ?? []);
   const [loading, setLoading] = useState(catalogPollRowsCache == null);
 
@@ -181,12 +180,12 @@ export function useCatalogPollRows(): { rows: CatalogSeriesRow[]; loading: boole
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshNonce]);
 
   return { rows, loading };
 }
 
-export function useCatalogAdjacentIndices(): {
+export function useCatalogAdjacentIndices(refreshNonce = 0): {
   indices: CatalogAdjacentIndex[];
   loading: boolean;
 } {
@@ -211,7 +210,7 @@ export function useCatalogAdjacentIndices(): {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshNonce]);
 
   return { indices, loading };
 }

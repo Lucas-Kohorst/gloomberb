@@ -7,6 +7,7 @@ import {
   type AaModelRow,
 } from "../llm-stats/types";
 import { aaCatalogMetricsForRow, aaChartExpression } from "../llm-stats/normalize";
+import type { PollTabId } from "../polls/types";
 import {
   type SeriesCatalogInstrument,
 } from "./series-catalog";
@@ -110,18 +111,17 @@ const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "SHIB-USD", name: "Shiba Inu" },
 ];
 
-export const VOTEHUB_POLL_TYPES = [
+/** Same VoteHub tabs the Polls pane loads — keep CAT inside that rate budget. */
+export const VOTEHUB_POLL_TYPES: readonly PollTabId[] = [
   "approval",
   "favorability",
   "generic-ballot",
   "us-senator",
   "governor",
   "us-representative",
-  "mayor",
-  "attorney-general",
-  "presidential-primary",
-  "proposition-50",
-] as const;
+];
+
+type CatalogPollSubject = PollSubjectEntry & { url?: string };
 
 function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
   const category = instrument.assetCategory?.trim().toUpperCase();
@@ -192,6 +192,79 @@ export function catalogTickerFromInput(value: string): string | null {
   if (option) return option;
   const symbol = value.trim().toUpperCase();
   return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
+}
+
+function isCatalogFieldNameQuery(query: string): boolean {
+  const lower = query.trim().toLowerCase();
+  if (!lower) return false;
+  return listTimeSeriesFields().some((field) => (
+    field.label.toLowerCase() === lower
+    || field.shortLabel.toLowerCase() === lower
+    || (field.id.split(".").at(-1)?.toLowerCase() === lower)
+  ));
+}
+
+/** True when CAT search should resolve a ticker without refetching live catalogs. */
+export function looksLikeCatalogTickerQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || /\s/.test(trimmed) || trimmed.includes(":")) return false;
+  const symbol = catalogTickerFromInput(trimmed);
+  if (!symbol) return false;
+  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^/_]/.test(symbol)) return true;
+  if (isCatalogFieldNameQuery(trimmed)) return false;
+  return symbol.length <= 6;
+}
+
+export function catalogInstrumentMatchesQuery(
+  instrument: SeriesCatalogInstrument,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return false;
+  if (instrument.symbol.toLowerCase().includes(needle)) return true;
+  return (instrument.name ?? "").toLowerCase().includes(needle);
+}
+
+export function catalogRowsForResolvedInstruments(
+  instruments: readonly SeriesCatalogInstrument[],
+): CatalogSeriesRow[] {
+  return instruments.flatMap((instrument) => {
+    if (isCatalogCryptoInstrument(instrument)) {
+      return [cryptoPairRow(catalogSecuritySymbol(instrument), instrument.name)];
+    }
+    if (isOptionInstrument(instrument)) {
+      const symbol = compactOccSymbol(instrument.symbol)
+        ?? catalogTickerFromInput(instrument.symbol);
+      if (!symbol) return [];
+      return listTimeSeriesFields().flatMap((field) => {
+        if (!isMarketFieldId(field.id)) return [];
+        const token = shortChartFieldToken(field.id);
+        return [row({
+          id: `option:${symbol}:${field.id}`,
+          label: `${symbol} · ${field.label}`,
+          source: "Yahoo",
+          sourceId: "option",
+          kind: "Options",
+          expression: `${symbol}:${token}`,
+          searchExtra: [instrument.name, "option", field.shortLabel].filter(Boolean).join(" "),
+        })];
+      });
+    }
+    const symbol = catalogTickerFromInput(instrument.symbol);
+    if (!symbol) return [];
+    return listTimeSeriesFields().map((field) => {
+      const token = shortChartFieldToken(field.id);
+      return row({
+        id: `ticker:${symbol}:${field.id}`,
+        label: `${symbol} · ${field.label}`,
+        source: "Yahoo",
+        sourceId: "security",
+        kind: fieldKind(field.id),
+        expression: `${symbol}:${token}`,
+        searchExtra: [instrument.name, field.shortLabel].filter(Boolean).join(" "),
+      });
+    });
+  });
 }
 
 export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
@@ -352,7 +425,7 @@ export function catalogRowsFromAdjacentIndices(
     if (!indexId) return [];
     return [row({
       id: `adj:${indexId}`,
-      label: `ADJ · ${index.name.trim() || index.ticker?.trim() || indexId}`,
+      label: index.name.trim() || index.ticker?.trim() || indexId,
       source: "Adjacent",
       sourceId: "adjacent",
       kind: "Index",
@@ -364,9 +437,13 @@ export function catalogRowsFromAdjacentIndices(
 }
 
 export function catalogPollSubjectsFromPolls(
-  polls: readonly { subject: string; answers?: ReadonlyArray<{ choice: string }> }[],
-): PollSubjectEntry[] {
-  const bySubject = new Map<string, { subject: string; choices: Set<string> }>();
+  polls: readonly {
+    subject: string;
+    url?: string | null;
+    answers?: ReadonlyArray<{ choice: string }>;
+  }[],
+): CatalogPollSubject[] {
+  const bySubject = new Map<string, { subject: string; choices: Set<string>; url?: string }>();
   for (const poll of polls) {
     const subject = poll.subject.trim();
     if (!subject) continue;
@@ -375,6 +452,8 @@ export function catalogPollSubjectsFromPolls(
       entry = { subject, choices: new Set() };
       bySubject.set(subject.toLowerCase(), entry);
     }
+    const pollUrl = poll.url?.trim();
+    if (!entry.url && pollUrl) entry.url = pollUrl;
     for (const answer of poll.answers ?? []) {
       const choice = answer.choice.trim();
       if (choice) entry.choices.add(choice);
@@ -383,12 +462,16 @@ export function catalogPollSubjectsFromPolls(
   return [...bySubject.values()].flatMap((entry) => (
     entry.choices.size === 0
       ? []
-      : [{ subject: entry.subject, choices: [...entry.choices] }]
+      : [{
+        subject: entry.subject,
+        choices: [...entry.choices],
+        ...(entry.url ? { url: entry.url } : {}),
+      }]
   ));
 }
 
 export function catalogRowsFromPollSubjects(
-  subjects: readonly PollSubjectEntry[],
+  subjects: readonly CatalogPollSubject[],
 ): CatalogSeriesRow[] {
   return subjects.flatMap((subject) => (
     subject.choices.map((choice) => row({
@@ -398,6 +481,7 @@ export function catalogRowsFromPollSubjects(
       sourceId: "poll",
       kind: "Poll",
       expression: `POLL:${subject.subject}:${choice}`,
+      ...(subject.url ? { url: subject.url } : {}),
     }))
   ));
 }
@@ -415,7 +499,7 @@ export function listStaticCatalogInventory(
 
   const fred = listKnownFredSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
-    label: `FRED · ${entry.label}`,
+    label: entry.label,
     source: "FRED",
     sourceId: "fred",
     kind: "Economic",
@@ -447,7 +531,7 @@ export function listStaticCatalogInventory(
     ? liveAdjacent
     : ADJACENT_INDEX_CATALOG.map((entry) => row({
       id: `adj:${entry.indexId}`,
-      label: `ADJ · ${entry.name}`,
+      label: entry.name,
       source: "Adjacent",
       sourceId: "adjacent",
       kind: "Index",
@@ -503,8 +587,13 @@ export function filterCatalogRows(
   ));
 }
 
-export function catalogEmptyCopy(loading: boolean, searchQuery: string): { title: string; hint?: string } {
+export function catalogEmptyCopy(
+  loading: boolean,
+  searchQuery: string,
+  error?: string | null,
+): { title: string; hint?: string } {
   if (loading) return { title: "Loading catalog…" };
+  if (error) return { title: error, hint: "Press r to retry." };
   const query = searchQuery.trim();
   if (query) return { title: `No series matching "${query}"`, hint: "Press / to search." };
   return { title: "No series", hint: "Press / to search." };
