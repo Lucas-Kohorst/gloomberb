@@ -399,7 +399,7 @@ function readImmediateResolutionSupport(
   provider: DataProvider,
   source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
 ): ChartResolutionSupport[] {
-  if (!provider.getChartResolutionSupport) return [];
+  if (!provider.getChartResolutionSupport) return DEFAULT_CHART_RESOLUTION_SUPPORT;
   const result = provider.getChartResolutionSupport(
     source.instrument.symbol,
     source.instrument.exchange ?? "",
@@ -407,7 +407,7 @@ function readImmediateResolutionSupport(
   );
   if (Array.isArray(result)) return normalizeChartResolutionSupport(result);
   if (isThenable(result)) return DEFAULT_CHART_RESOLUTION_SUPPORT;
-  return [];
+  return DEFAULT_CHART_RESOLUTION_SUPPORT;
 }
 
 function chartIsPriceOnly(spec: ChartSpec, calculationSeriesIds: ReadonlySet<string>): boolean {

@@ -615,6 +615,7 @@ interface CompositePanelSurfaceProps {
   onZoomViewport: (zoomFactor: number, anchorRatio: number) => void;
   onSetViewport: (range: CompositeViewportRange) => void;
   onToolSpanChange: (span: ChartToolSpan | null) => void;
+  showTextFallback: boolean;
 }
 
 function CompositePanelSurface({
@@ -641,11 +642,11 @@ function CompositePanelSurface({
   onZoomViewport,
   onSetViewport,
   onToolSpanChange,
+  showTextFallback,
 }: CompositePanelSurfaceProps) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
-  const showTextFallback = useShowChartTextFallback();
   const plotRef = useRef<BoxRenderable | null>(null);
   const [cursorYRatio, setCursorYRatio] = useState<number | null>(null);
   const seriesCursorYRatio = useMemo(
@@ -1445,6 +1446,7 @@ export function CompositeChart({
 }: CompositeChartProps) {
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
   const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
   const [toolSpan, setToolSpan] = useState<ChartToolSpan | null>(null);
@@ -2088,6 +2090,7 @@ export function CompositeChart({
           onZoomViewport={zoomViewport}
           onSetViewport={setViewportRange}
           onToolSpanChange={setToolSpan}
+          showTextFallback={showTextFallback}
         />
       ))}
       {timeAxisLayout ? (

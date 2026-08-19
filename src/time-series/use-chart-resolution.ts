@@ -50,7 +50,7 @@ function hasRenderableData(result: ChartResolutionResult): boolean {
   return (result.bufferedSeries ?? result.series).some((series) => series.points.length > 0);
 }
 
-function collectSeedHistory(spec: ChartSpec, _coordinatorVersion: number): Map<string, PricePoint[]> {
+function collectSeedHistory(spec: ChartSpec): Map<string, PricePoint[]> {
   const history = new Map<string, PricePoint[]>();
   const coordinator = getSharedMarketDataCoordinator();
   for (const series of spec.series) {
@@ -60,18 +60,19 @@ function collectSeedHistory(spec: ChartSpec, _coordinatorVersion: number): Map<s
     if (history.has(key)) continue;
     const symbol = source.instrument.symbol;
     const exchange = source.instrument.exchange ?? "";
+    const baseline = createBaselineChartRequest(source.instrument);
     const presetResolution = spec.viewport.resolution === "auto"
       ? getPresetResolution(spec.viewport.range)
       : spec.viewport.resolution;
-    const remembered = readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, "ALL", "1wk"))
+    const remembered = readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, baseline.resolution))
       ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, spec.viewport.range, presetResolution))
-      ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, "ALL", presetResolution));
+      ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, presetResolution));
     if (remembered?.length) {
       history.set(key, remembered);
       continue;
     }
     if (!coordinator) continue;
-    const entry = coordinator.getChartEntry(createBaselineChartRequest(source.instrument));
+    const entry = coordinator.getChartEntry(baseline);
     const data = resolveEntryData(entry);
     if (data?.length) history.set(key, data);
   }
@@ -97,13 +98,22 @@ export function useChartResolution(
   options: UseChartResolutionOptions = {},
 ): UseChartResolutionResult {
   const coordinator = getSharedMarketDataCoordinator();
-  const coordinatorVersion = useSyncExternalStore(
-    (listener) => coordinator?.subscribe(listener) ?? (() => {}),
-    () => coordinator?.getVersion() ?? 0,
-    () => 0,
+  const [result, setResult] = useState<ChartResolutionResult>(
+    () => seedChartResolutionResult(spec, collectSeedHistory(spec)) ?? EMPTY_RESULT,
   );
-  const seeded = seedChartResolutionResult(spec, collectSeedHistory(spec, coordinatorVersion));
-  const [result, setResult] = useState<ChartResolutionResult>(() => seeded ?? EMPTY_RESULT);
+  const needsSeed = !hasRenderableData(result);
+  const subscribeSeed = useCallback((listener: () => void) => {
+    if (!needsSeed || !coordinator) return () => {};
+    return coordinator.subscribe(listener);
+  }, [coordinator, needsSeed]);
+  const getSeedSnapshot = useCallback(() => {
+    if (!needsSeed || !coordinator) return 0;
+    return coordinator.getVersion();
+  }, [coordinator, needsSeed]);
+  useSyncExternalStore(subscribeSeed, getSeedSnapshot, () => 0);
+  const seeded = needsSeed
+    ? seedChartResolutionResult(spec, collectSeedHistory(spec))
+    : null;
   const displayed = hasRenderableData(result) ? result : (seeded ?? result);
   const resultRef = useRef(displayed);
   resultRef.current = displayed;

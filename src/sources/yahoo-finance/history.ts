@@ -1,7 +1,7 @@
 import type { TimeRange } from "../../time-series/range";
 import {
+  DEFAULT_CHART_RESOLUTION_SUPPORT,
   isIntradayResolution,
-  normalizeChartResolutionSupport,
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../time-series/resolution";
@@ -22,14 +22,7 @@ const RANGE_PARAMS: Record<TimeRange, { range: string; interval: ManualChartReso
   "ALL": { range: "max", interval: "1wk" },
 };
 
-const YAHOO_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
-  { resolution: "5m", maxRange: "1W" },
-  { resolution: "15m", maxRange: "1M" },
-  { resolution: "1h", maxRange: "3M" },
-  { resolution: "1d", maxRange: "5Y" },
-  { resolution: "1wk", maxRange: "ALL" },
-  { resolution: "1mo", maxRange: "ALL" },
-]);
+const YAHOO_RESOLUTION_SUPPORT = DEFAULT_CHART_RESOLUTION_SUPPORT;
 
 type YahooChartFetcher = (
   symbol: string,

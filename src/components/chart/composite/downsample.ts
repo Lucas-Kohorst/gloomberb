@@ -1,4 +1,4 @@
-import type { SeriesStyle } from "../../../time-series/types";
+import { isOhlcSeriesStyle } from "../../../time-series/spec";
 import type { TimeSeriesPoint } from "../../../time-series/types";
 import type {
   CompositeChartScene,
@@ -9,10 +9,6 @@ import type {
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-function isOhlcStyle(style: SeriesStyle): boolean {
-  return style === "candles" || style === "ohlc" || style === "hlc";
 }
 
 function splitConnectedSegments(
@@ -158,12 +154,16 @@ export function downsampleOhlcProjectedPoints(
   const budget = Math.max(Math.floor(targetWidth), 1);
   if (points.length <= budget) return points as CompositeProjectedPoint[];
 
-  const buckets: CompositeProjectedPoint[][] = Array.from({ length: budget }, () => []);
+  const buckets = new Map<number, CompositeProjectedPoint[]>();
   for (const point of points) {
     const index = Math.min(budget - 1, Math.max(0, Math.floor(point.xRatio * budget)));
-    buckets[index]!.push(point);
+    const bucket = buckets.get(index);
+    if (bucket) bucket.push(point);
+    else buckets.set(index, [point]);
   }
-  return buckets.flatMap((bucket) => (bucket.length > 0 ? [aggregateOhlcProjectedBucket(bucket)] : []));
+  return [...buckets.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([, bucket]) => aggregateOhlcProjectedBucket(bucket));
 }
 
 export function downsampleProjectedSeries(
@@ -172,7 +172,7 @@ export function downsampleProjectedSeries(
 ): CompositeProjectedSeries {
   const width = Math.max(Math.floor(pixelWidth), 1);
   if (series.points.length <= 1 || width <= 1) return series;
-  const points = isOhlcStyle(series.source.style)
+  const points = isOhlcSeriesStyle(series.source.style)
     ? downsampleOhlcProjectedPoints(series.points, Math.max(Math.floor(width / 2), 1))
     : downsampleLineProjectedPoints(series.points, width);
   return points === series.points ? series : { ...series, points };

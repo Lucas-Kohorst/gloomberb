@@ -26,7 +26,7 @@ import {
   type ProviderRouterCachePolicyKey,
 } from "./cache";
 import type { ProviderRouterCoreDeps, SourceResult } from "./route-types";
-import { makeRouterRequestIdentity, type RouterRequestIdentity } from "./routing";
+import { makeRouterRequestIdentity, scheduleRouterRevalidation, type RouterRequestIdentity } from "./routing";
 
 type PriceHistoryCachePolicyKey = Extract<
   ProviderRouterCachePolicyKey,
@@ -133,7 +133,7 @@ function normalizeRequestHistory(
 
 export class ProviderRouterHistoryRoutes {
   constructor(private readonly deps: ProviderRouterCoreDeps) {}
-  private readonly historyRefreshInFlight = new Map<string, Promise<void>>();
+  private readonly historyRefreshInFlight = new Map<string, Promise<unknown>>();
 
   async getPriceHistory(
     ticker: string,
@@ -348,11 +348,11 @@ export class ProviderRouterHistoryRoutes {
     if (usableCached && !forceRefresh) {
       const exactHit = request.exactCacheVariantKeys.includes(cached.variantKey);
       if (cached.stale && exactHit) {
-        this.scheduleHistoryRefresh(request);
+        scheduleRouterRevalidation(this.historyRefreshInFlight, request.identity.revalidationKey, () => this.refreshHistory(request));
       }
-      return request.requestedRange
-        ? clipPriceHistoryToRange(cachedValue, request.requestedRange)
-        : cachedValue;
+      return exactHit || !request.requestedRange
+        ? cachedValue
+        : clipPriceHistoryToRange(cachedValue, request.requestedRange);
     }
 
     const brokerResult = await withBrokerTimeout(this.fetchBrokerHistory(request, brokerCandidates));
@@ -369,15 +369,6 @@ export class ProviderRouterHistoryRoutes {
       throw new Error(request.missingProviderError);
     }
     return providerResult?.value ?? [];
-  }
-
-  private scheduleHistoryRefresh(request: HistoryRequestDescriptor): void {
-    const key = `${request.identity.kind}|${request.identity.entityKey}|${request.identity.variantKey}`;
-    if (this.historyRefreshInFlight.has(key)) return;
-    const pending = this.refreshHistory(request).finally(() => {
-      this.historyRefreshInFlight.delete(key);
-    });
-    this.historyRefreshInFlight.set(key, pending);
   }
 
   private async refreshHistory(request: HistoryRequestDescriptor): Promise<void> {

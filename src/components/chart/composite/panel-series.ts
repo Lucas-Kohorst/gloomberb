@@ -1,37 +1,5 @@
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 
-/**
- * Groups series by panelId. When `previous` is supplied, reuses each panel's
- * array identity if the member series refs are unchanged.
- */
-export function groupSeriesByPanelId(
-  series: readonly ResolvedSeries[],
-  previous?: ReadonlyMap<string, readonly ResolvedSeries[]>,
-): Map<string, ResolvedSeries[]> {
-  const grouped = new Map<string, ResolvedSeries[]>();
-  for (const entry of series) {
-    const list = grouped.get(entry.panelId);
-    if (list) list.push(entry);
-    else grouped.set(entry.panelId, [entry]);
-  }
-  if (!previous || previous.size === 0) return grouped;
-
-  const next = new Map<string, ResolvedSeries[]>();
-  for (const [panelId, members] of grouped) {
-    const prior = previous.get(panelId);
-    if (
-      prior
-      && prior.length === members.length
-      && prior.every((entry, index) => entry === members[index])
-    ) {
-      next.set(panelId, prior as ResolvedSeries[]);
-    } else {
-      next.set(panelId, members);
-    }
-  }
-  return next;
-}
-
 function sameTime(left: Date | undefined, right: Date | undefined): boolean {
   if (left === right) return true;
   if (!left || !right) return left == right;
@@ -100,15 +68,20 @@ export function reuseResolvedSeriesIdentity(
     return previous;
   }
   if (previous.points.length !== next.points.length) return next;
+  const lastPrev = previous.points[previous.points.length - 1]!;
+  const lastNext = next.points[next.points.length - 1]!;
+  if (!samePoint(lastPrev, lastNext)) {
+    if (!prefixPointsEqual(previous.points, next.points)) return next;
+    previous.points[previous.points.length - 1] = lastNext;
+    previous.latestChangePercent = next.latestChangePercent;
+    return previous;
+  }
   if (previous.points.every((point, index) => samePoint(point, next.points[index]!))) {
     if (previous.latestChangePercent === next.latestChangePercent) return previous;
     previous.latestChangePercent = next.latestChangePercent;
     return previous;
   }
-  if (!prefixPointsEqual(previous.points, next.points)) return next;
-  previous.points[previous.points.length - 1] = next.points[next.points.length - 1]!;
-  previous.latestChangePercent = next.latestChangePercent;
-  return previous;
+  return next;
 }
 
 export function reuseResolvedSeriesList(

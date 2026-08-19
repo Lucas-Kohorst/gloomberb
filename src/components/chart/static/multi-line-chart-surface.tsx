@@ -116,8 +116,8 @@ export function StaticMultiLineChartSurface({
     [plotOptions, series],
   );
   const cursorScene = useMemo(
-    () => buildMultiLineChartScene(series, { ...plotOptions, cursorDate }),
-    [cursorDate, plotOptions, series],
+    () => cursorDate == null ? scene : buildMultiLineChartScene(series, { ...plotOptions, cursorDate }),
+    [cursorDate, plotOptions, scene, series],
   );
   const showTextFallback = useShowChartTextFallback();
   const textLines = useMemo(() => {

@@ -192,9 +192,16 @@ export function StaticChartSurface({
     cursorX: cursor?.x ?? null,
     cursorY: cursor?.y ?? null,
   }), [cursor, plotOptions]);
+  const plotScene = useMemo(
+    () => buildChartScene(points, plotOptions),
+    [plotOptions, points],
+  );
   const cursorScene = useMemo(
-    () => buildChartScene(points, cursorOptions),
-    [cursorOptions, points],
+    () => {
+      if (showTextFallback || !cursor) return plotScene;
+      return buildChartScene(points, cursorOptions);
+    },
+    [cursor, cursorOptions, plotScene, points, showTextFallback],
   );
   const textResult = useMemo<RenderChartResult>(() => {
     if (showTextFallback) return renderChart(points, cursorOptions);
@@ -229,11 +236,9 @@ export function StaticChartSurface({
   const effectiveAxisWidth = axisWidth;
   const effectiveAxisGap = effectiveAxisWidth > 0 ? 1 : 0;
   const bitmap = useMemo<NativeChartBitmap | null>(() => {
-    if (!bitmapSize) return null;
-    const scene = buildChartScene(points, plotOptions);
-    if (!scene) return null;
-    return renderNativeChartBase(scene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
-  }, [bitmapSize, plotOptions, points]);
+    if (!bitmapSize || !plotScene) return null;
+    return renderNativeChartBase(plotScene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
+  }, [bitmapSize, plotScene]);
   const canvasCrosshair = useMemo<ChartSurfaceProps["crosshair"]>(() => {
     if (!bitmap || !cursor) return null;
     return {
