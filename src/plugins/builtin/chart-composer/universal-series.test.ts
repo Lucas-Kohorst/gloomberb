@@ -105,6 +105,35 @@ describe("universal series expression parsing", () => {
     });
   });
 
+  test("parses WX:station:metric including CLI and ICAO aliases", () => {
+    expect(parseSeriesExpression("WX:LAX:high")).toEqual({
+      kind: "weather",
+      stationId: "LAX",
+      metric: "high",
+      label: "LAX Daily high",
+    });
+    expect(parseSeriesExpression("wx:clilax:tmax")).toEqual({
+      kind: "weather",
+      stationId: "LAX",
+      metric: "high",
+      label: "LAX Daily high",
+    });
+    expect(parseSeriesExpression("WX:NY:low")).toEqual({
+      kind: "weather",
+      stationId: "NYC",
+      metric: "low",
+      label: "NYC Daily low",
+    });
+    expect(parseSeriesExpression("WX:CHI:hourly")).toEqual({
+      kind: "weather",
+      stationId: "MDW",
+      metric: "hourly",
+      label: "MDW Hourly temp",
+    });
+    expect(parseSeriesExpression("WX:LAX")).toBeNull();
+    expect(parseSeriesExpression("WX:LAX:nope")).toBeNull();
+  });
+
   test("parses KALSHI:ticker, POLY:marketId, and PM:venue:id", () => {
     expect(parseSeriesExpression("KALSHI:KXPRESPERSON")).toEqual({
       kind: "prediction-market",
@@ -224,6 +253,8 @@ describe("universal series formatting and labels", () => {
       .toBe("BENCH:OpenAI:tps");
     expect(formatParsedSeriesExpression(parseSeriesExpression("POLL:Donald Trump:Approve")!))
       .toBe("POLL:Donald Trump:Approve");
+    expect(formatParsedSeriesExpression(parseSeriesExpression("WX:CLILAX:high")!))
+      .toBe("WX:LAX:high");
     expect(formatParsedSeriesExpression(parseSeriesExpression("KALSHI:KXPRESPERSON")!))
       .toBe("KALSHI:KXPRESPERSON");
     expect(formatParsedSeriesExpression(parseSeriesExpression("POLY:fed-cut-september")!))
@@ -329,6 +360,7 @@ describe("universal series catalog suggestions", () => {
     expect(ctx).toContain("UST:");
     expect(ctx).toContain("BENCH:");
     expect(ctx).toContain("POLL:");
+    expect(ctx).toContain("WX:");
   });
 });
 

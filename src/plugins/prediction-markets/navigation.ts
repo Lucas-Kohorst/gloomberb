@@ -1,8 +1,10 @@
 import type {
   PredictionBrowseTab,
   PredictionDetailTab,
+  PredictionMarketSummary,
   PredictionVenueScope,
 } from "./types";
+import { resolveWeatherSettlement } from "../builtin/weather/mapping";
 
 export const VENUE_TABS: ReadonlyArray<{
   label: string;
@@ -32,6 +34,7 @@ export const DETAIL_TABS: ReadonlyArray<{
   { label: "Book", value: "book" },
   { label: "Trades", value: "trades" },
   { label: "Rules", value: "rules" },
+  { label: "Settlement", value: "settlement" },
   { label: "Similar", value: "similar" },
   { label: "News", value: "news" },
 ];
@@ -43,9 +46,41 @@ const LIVE_DETAIL_TABS = new Set<PredictionDetailTab>([
   "trades",
 ]);
 
-/** Rules, similar, and news are static, so they should not drive venue polling. */
+/** Rules, similar, news, and settlement are static, so they should not drive venue polling. */
 export function isLivePredictionDetailTab(tab: PredictionDetailTab): boolean {
   return LIVE_DETAIL_TABS.has(tab);
+}
+
+export function predictionDetailTabsFor(
+  summary: Pick<
+    PredictionMarketSummary,
+    | "venue"
+    | "seriesTicker"
+    | "eventTicker"
+    | "marketId"
+    | "category"
+    | "title"
+    | "description"
+    | "rulesPrimary"
+    | "rulesSecondary"
+    | "resolutionSource"
+  > | null,
+): typeof DETAIL_TABS {
+  if (!summary) return DETAIL_TABS.filter((tab) => tab.value !== "settlement") as typeof DETAIL_TABS;
+  const weather = resolveWeatherSettlement({
+    venue: summary.venue,
+    seriesTicker: summary.seriesTicker,
+    eventTicker: summary.eventTicker,
+    marketId: summary.marketId,
+    category: summary.category,
+    title: summary.title,
+    description: summary.description,
+    rulesPrimary: summary.rulesPrimary,
+    rulesSecondary: summary.rulesSecondary,
+    resolutionSource: summary.resolutionSource,
+  });
+  if (weather) return DETAIL_TABS;
+  return DETAIL_TABS.filter((tab) => tab.value !== "settlement") as typeof DETAIL_TABS;
 }
 
 export function parsePredictionVenueScope(

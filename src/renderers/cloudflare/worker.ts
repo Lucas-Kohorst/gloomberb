@@ -22,6 +22,7 @@ export default {
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
+    if (url.pathname.startsWith("/api/weather/twc")) return proxyTwcKalshi(request, url);
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
@@ -45,6 +46,35 @@ async function allocateShareId(env: Env): Promise<string | null> {
     if (await env.SHARES.get(id) == null) return id;
   }
   return null;
+}
+
+
+async function proxyTwcKalshi(request: Request, url: URL): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
+  const suffix = url.pathname.slice("/api/weather/twc".length) + url.search;
+  if (!suffix.startsWith("/kalshi/api/")) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const target = new URL(`https://weather.com${suffix}`);
+  if (target.hostname !== "weather.com" || !target.pathname.startsWith("/kalshi/api/")) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const upstream = await fetch(target.toString(), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "gloomberb-weather",
+    },
+  });
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+      "cache-control": "public, max-age=60",
+    },
+  });
 }
 
 async function handleShareRequest(request: Request, env: Env, url: URL): Promise<Response> {

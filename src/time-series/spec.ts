@@ -152,6 +152,17 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!subject || !choice) return null;
     return { kind: "poll", subject, choice };
   }
+  if (source.kind === "weather") {
+    const stationId = nonEmptyString(source.stationId)?.toUpperCase();
+    const metric = source.metric === "high"
+      || source.metric === "low"
+      || source.metric === "precip"
+      || source.metric === "hourly"
+      ? source.metric
+      : null;
+    if (!stationId || !metric) return null;
+    return { kind: "weather", stationId, metric };
+  }
   if (source.kind === "prediction-market") {
     const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
     const marketId = nonEmptyString(source.marketId);
@@ -480,6 +491,21 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (!entry.source.choice.trim()) {
         errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
+      }
+    } else if (entry.source.kind === "weather") {
+      if (!entry.source.stationId.trim()) {
+        errors.push(issue(`${path}.source.stationId`, "missing-station", "Weather station ID is required."));
+      }
+      if (
+        entry.source.metric !== "high"
+        && entry.source.metric !== "low"
+        && entry.source.metric !== "precip"
+        && entry.source.metric !== "hourly"
+      ) {
+        errors.push(issue(`${path}.source.metric`, "invalid-metric", "Weather metric must be high, low, precip, or hourly."));
+      }
+      if (!ECONOMIC_STYLES.has(entry.style)) {
+        errors.push(issue(`${path}.style`, "unsupported-style", `${entry.style} is not valid for a weather series.`));
       }
     } else if (entry.source.kind === "prediction-market") {
       if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {

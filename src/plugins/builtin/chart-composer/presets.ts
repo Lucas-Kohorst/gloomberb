@@ -35,6 +35,14 @@ import {
   findTreasuryCatalogEntry,
 } from "./universal-series";
 import {
+  canonicalWeatherStationId,
+} from "../weather/stations";
+import {
+  parseWeatherMetric,
+  weatherMetricLabel,
+} from "../weather/mapping";
+import type { WeatherMetric } from "../weather/types";
+import {
   normalizePredictionMarketId,
   resolveAdjacentIndexQuery,
 } from "./prediction-series";
@@ -63,6 +71,7 @@ export type ParsedSeriesExpression =
   | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
   | { kind: "benchmark"; selector: string; metric: string; label?: string }
   | { kind: "poll"; subject: string; choice: string; label?: string }
+  | { kind: "weather"; stationId: string; metric: WeatherMetric; label?: string }
   | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
 
 /** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
@@ -189,6 +198,19 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     return { kind: "poll", subject, choice };
   }
 
+  if (prefix === SERIES_PREFIX.weather) {
+    if (parts.length < 3) return null;
+    const stationId = canonicalWeatherStationId(parts[1] ?? "");
+    const metric = parseWeatherMetric(parts.slice(2).join(":"));
+    if (!stationId || !metric) return null;
+    return {
+      kind: "weather",
+      stationId,
+      metric,
+      label: `${stationId} ${weatherMetricLabel(metric)}`,
+    };
+  }
+
   if (prefix === SERIES_PREFIX.kalshi) {
     const marketId = normalizePredictionMarketId("kalshi", parts.slice(1).join(":"));
     return marketId ? { kind: "prediction-market", venue: "kalshi", marketId } : null;
@@ -297,7 +319,7 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
     if (parsed) return parsed;
     const display = leg.trim() || "empty series";
     throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, or POLL:subject:choice.`,
+      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, POLL:subject:choice, or WX:station:metric.`,
     );
   });
 }
@@ -312,6 +334,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
       return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
+    case "weather":
+      return `${SERIES_PREFIX.weather}:${series.source.stationId}:${series.source.metric}`;
     case "prediction-market":
       return `${series.source.venue === "kalshi" ? SERIES_PREFIX.kalshi : SERIES_PREFIX.polymarket}:${series.source.marketId}`;
     case "constant":
@@ -502,6 +526,21 @@ export function buildSeriesSpec(
     };
   }
 
+  if (expression.kind === "weather") {
+    const style = overrides.style ?? "line";
+    return {
+      id: `wx-${slug(expression.stationId)}-${expression.metric}-${index + 1}`,
+      source: { kind: "weather", stationId: expression.stationId, metric: expression.metric },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   if (expression.kind === "prediction-market") {
     const style = overrides.style ?? "line";
     return {
@@ -666,6 +705,8 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
       return `benchmark:${series.source.metric}`;
     case "poll":
       return `poll:${series.source.subject}`;
+    case "weather":
+      return series.source.metric === "precip" ? "weather-precip" : "weather-temp";
     case "prediction-market":
       return `prediction-market:${series.source.venue}`;
     case "constant":

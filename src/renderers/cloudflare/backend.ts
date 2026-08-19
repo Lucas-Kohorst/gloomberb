@@ -89,6 +89,9 @@ function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest): number
   }
   if (hostname === "stockanalysis.com" || hostname.endsWith(".stockanalysis.com")) return 120;
   if (hostname === "www.nasdaqtrader.com" || hostname === "nasdaqtrader.com") return 60;
+  if (hostname === "weather.com" || hostname.endsWith(".weather.com")) {
+    if (pathname.startsWith("/kalshi/api/")) return 60;
+  }
   return null;
 }
 

@@ -9,6 +9,8 @@ import {
   type DataTableRootKeyContext,
 } from "../../components";
 import { openUrl } from "../../components/ui/external-link";
+import { resolveWeatherSettlement } from "../builtin/weather/mapping";
+import { TWC_KALSHI_URL } from "../builtin/weather/types";
 import { useShortcut } from "../../react/input";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
@@ -86,16 +88,33 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     selectedSummary: controller.selectedSummary,
   });
   const marketUrl = controller.selectedSummary?.url || controller.selectedRow?.url || null;
+  const settlement = controller.selectedSummary
+    ? resolveWeatherSettlement({
+        venue: controller.selectedSummary.venue,
+        seriesTicker: controller.selectedSummary.seriesTicker,
+        eventTicker: controller.selectedSummary.eventTicker,
+        marketId: controller.selectedSummary.marketId,
+        category: controller.selectedSummary.category,
+        title: controller.selectedSummary.title,
+        description: controller.selectedSummary.description,
+        rulesPrimary: controller.selectedSummary.rulesPrimary,
+        rulesSecondary: controller.selectedSummary.rulesSecondary,
+        resolutionSource: controller.selectedSummary.resolutionSource,
+      })
+    : null;
+  const openHref = controller.detailOpen && controller.detailTab === "settlement"
+    ? (settlement?.settlementUrl || TWC_KALSHI_URL)
+    : marketUrl;
   const openMarket = useCallback(() => {
-    if (!marketUrl) return;
-    openUrl(marketUrl);
-  }, [marketUrl]);
+    if (!openHref) return;
+    openUrl(openHref);
+  }, [openHref]);
   useShortcut((event) => {
-    if (!focused || event.name !== "o" || !marketUrl) return;
+    if (!focused || event.name !== "o" || !openHref) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     openMarket();
-  }, { enabled: focused && !!marketUrl });
+  }, { enabled: focused && !!openHref });
   usePaneFooter("prediction-markets", () => {
     return {
       info: controller.detailOpen
@@ -123,7 +142,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
             },
           },
         ] : []),
-        ...(marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
+        ...(openHref ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
       ],
     };
   }, [
@@ -132,10 +151,11 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
     controller.detailOpen,
+    controller.detailTab,
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
-    marketUrl,
+    openHref,
     openMarket,
   ]);
 

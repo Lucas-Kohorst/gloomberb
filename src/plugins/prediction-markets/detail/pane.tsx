@@ -6,7 +6,8 @@ import { EmptyState } from "../../../components/ui/status";
 import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
-import { DETAIL_TABS } from "../navigation";
+import { predictionDetailTabsFor } from "../navigation";
+import { PredictionWeatherSettlementTab } from "../../builtin/weather/settlement-tab";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import { PredictionSimilarTab, PredictionNewsTab } from "./adjacent-tabs";
 import {
@@ -203,6 +204,10 @@ export function PredictionMarketDetailPane({
   const detailLoading = detailLoadCount > 0 && !detail;
   const detailTextWidth = Math.max(detailWidth, 12);
   const showDetailError = Boolean(detailError) && !detail;
+  const detailTabs = predictionDetailTabsFor(summaryMetrics);
+  const activeDetailTab = detailTabs.some((tab) => tab.value === detailTab)
+    ? detailTab
+    : "overview";
   const chromeRows =
     headerHeight +
     3 +
@@ -257,11 +262,11 @@ export function PredictionMarketDetailPane({
 
       <Box paddingBottom={1}>
         <Tabs
-          tabs={DETAIL_TABS.map((tab) => ({
+          tabs={detailTabs.map((tab) => ({
             label: tab.label,
             value: tab.value,
           }))}
-          activeValue={detailTab}
+          activeValue={activeDetailTab}
           onSelect={(value) => onDetailTabChange(value as PredictionDetailTab)}
           compact
           focused={focused}
@@ -281,9 +286,9 @@ export function PredictionMarketDetailPane({
         </Box>
       )}
 
-      {detailTab === "overview" || detailTab === "rules" ? (
+      {activeDetailTab === "overview" || activeDetailTab === "rules" ? (
         <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
-          {detailTab === "overview" && (
+          {activeDetailTab === "overview" && (
             <PredictionMarketOverviewView
               detailWidth={detailWidth}
               onSelectMarket={onSelectMarket}
@@ -292,7 +297,7 @@ export function PredictionMarketDetailPane({
             />
           )}
 
-          {detailTab === "rules" && (
+          {activeDetailTab === "rules" && (
             <PredictionMarketRulesView
               detailWidth={detailTextWidth}
               rules={detail?.rules ?? []}
@@ -301,7 +306,7 @@ export function PredictionMarketDetailPane({
         </ScrollBox>
       ) : null}
 
-      {detailTab === "chart" && (
+      {activeDetailTab === "chart" && (
         <PredictionMarketChartTab
           detail={detail}
           detailWidth={detailWidth}
@@ -313,7 +318,7 @@ export function PredictionMarketDetailPane({
         />
       )}
 
-      {detailTab === "book" && (
+      {activeDetailTab === "book" && (
         detail ? (
           <PredictionMarketBookView
             detail={detail}
@@ -331,7 +336,7 @@ export function PredictionMarketDetailPane({
         )
       )}
 
-      {detailTab === "trades" && (
+      {activeDetailTab === "trades" && (
         <PredictionMarketTradesView
           focused={focused}
           trades={detail?.trades ?? []}
@@ -339,7 +344,7 @@ export function PredictionMarketDetailPane({
         />
       )}
 
-      {detailTab === "similar" && (
+      {activeDetailTab === "similar" && (
         <PredictionSimilarTab
           client={adjacentClient}
           marketTitle={summaryMetrics.title}
@@ -349,10 +354,16 @@ export function PredictionMarketDetailPane({
         />
       )}
 
-      {detailTab === "news" && (
+      {activeDetailTab === "news" && (
         <PredictionNewsTab
           client={adjacentClient}
           marketTitle={summaryMetrics.title}
+        />
+      )}
+      {activeDetailTab === "settlement" && (
+        <PredictionWeatherSettlementTab
+          summary={summaryMetrics}
+          width={detailTextWidth}
         />
       )}
     </>

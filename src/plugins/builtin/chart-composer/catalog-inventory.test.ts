@@ -138,9 +138,10 @@ describe("data catalog inventory", () => {
 
     const other = filterCatalogRows(rows, "other", "");
     expect(other.length).toBeGreaterThan(0);
-    expect(other.every((row) => row.sourceId === "poll" || row.sourceId === "adjacent")).toBe(true);
+    expect(other.every((row) => row.sourceId === "poll" || row.sourceId === "adjacent" || row.sourceId === "weather")).toBe(true);
     expect(other.some((row) => row.expression === "ADJ:red")).toBe(true);
     expect(other.some((row) => row.sourceId === "poll")).toBe(true);
+    expect(other.some((row) => row.expression === "WX:LAX:high")).toBe(true);
 
     const securities = filterCatalogRows(rows, "securities", "");
     expect(securities.every((row) => row.sourceId === "security" && row.needsTicker)).toBe(true);

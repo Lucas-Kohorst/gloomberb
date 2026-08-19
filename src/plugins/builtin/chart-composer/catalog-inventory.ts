@@ -25,6 +25,9 @@ import {
   TREASURY_CATALOG,
   type PollSubjectEntry,
 } from "./universal-series";
+import { TWC_KALSHI_URL, type WeatherMetric } from "../weather/types";
+import { WEATHER_STATIONS } from "../weather/stations";
+import { weatherMetricLabel } from "../weather/mapping";
 
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
@@ -40,7 +43,8 @@ export type CatalogSourceId =
   | "futures"
   | "treasury"
   | "poll"
-  | "benchmark";
+  | "benchmark"
+  | "weather";
 
 export type CatalogFilterId =
   | "all"
@@ -87,7 +91,7 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   prediction: new Set(["kalshi", "polymarket"]),
   futures: new Set(["futures"]),
   ai: new Set(["benchmark"]),
-  other: new Set(["adjacent", "poll"]),
+  other: new Set(["adjacent", "poll", "weather"]),
 };
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
@@ -541,6 +545,20 @@ export function listStaticCatalogInventory(
 
   const polls = catalogRowsFromPollSubjects(options?.pollSubjects ?? POLL_SUBJECTS);
 
+  const weatherMetrics: WeatherMetric[] = ["high", "low", "hourly"];
+  const weather = WEATHER_STATIONS.flatMap((station) => (
+    weatherMetrics.map((metric) => row({
+      id: `wx:${station.id}:${metric}`,
+      label: `${station.city} · ${weatherMetricLabel(metric)}`,
+      source: "Weather Company",
+      sourceId: "weather",
+      kind: metric === "hourly" ? "Hourly" : "Climate",
+      expression: `WX:${station.id}:${metric}`,
+      url: TWC_KALSHI_URL,
+      searchExtra: [station.icao, `CLI${station.id}`, station.country, "kalshi", "twc", metric].join(" "),
+    }))
+  ));
+
   const benchmarks = BENCHMARK_ORGS.flatMap((org) => (
     BENCHMARK_METRICS.map((metric) => row({
       id: `bench:${org}:${metric.code}`,
@@ -565,6 +583,7 @@ export function listStaticCatalogInventory(
     ...futures,
     ...adjacent,
     ...polls,
+    ...weather,
     ...benchmarks,
   ];
 }

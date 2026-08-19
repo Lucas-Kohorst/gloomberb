@@ -44,6 +44,12 @@ export interface PollSeriesSource {
   choice: string;
 }
 
+export interface WeatherSeriesSource {
+  kind: "weather";
+  stationId: string;
+  metric: "high" | "low" | "precip" | "hourly";
+}
+
 export interface PredictionMarketSeriesSource {
   kind: "prediction-market";
   venue: "kalshi" | "polymarket";
@@ -62,6 +68,7 @@ export type ChartSeriesSource =
   | AdjacentIndexSeriesSource
   | BenchmarkSeriesSource
   | PollSeriesSource
+  | WeatherSeriesSource
   | PredictionMarketSeriesSource
   | ConstantSeriesSource;
 

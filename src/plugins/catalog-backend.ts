@@ -11,6 +11,7 @@ import {
 } from "./builtin/composite-plugins";
 import { debugPlugin } from "./builtin/debug";
 import { adjacentPlugin } from "./builtin/adjacent";
+import { weatherPlugin } from "./builtin/weather";
 import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
@@ -38,6 +39,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   llmStatsPlugin,
   predictionMarketsBackendPlugin,
   adjacentPlugin,
+  weatherPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
