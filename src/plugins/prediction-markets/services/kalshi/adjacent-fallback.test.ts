@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { setHttpFetchTransport } from "../../../../utils/http-transport";
 import { loadKalshiCatalog, loadKalshiHistory, resolveKalshiMarketByTicker } from "./adapter";
 import {
+  kalshiParentTickers,
   kalshiSeriesTickerFromEvent,
   normalizeKalshiAdjacentMarket,
 } from "./adjacent-fallback";
@@ -46,6 +47,14 @@ describe("Kalshi Adjacent fallback mapping", () => {
     expect(kalshiSeriesTickerFromEvent("KXPRESNOMD-28")).toBe("KXPRESNOMD");
     expect(kalshiSeriesTickerFromEvent("KXHIGHNY-26AUG19")).toBe("KXHIGHNY");
     expect(kalshiSeriesTickerFromEvent("KXFED")).toBe("KXFED");
+  });
+
+  test("derives parent event tickers from a market ticker", () => {
+    expect(kalshiParentTickers("KXHIGHLAX-26AUG19-B82.5")).toEqual(["KXHIGHLAX-26AUG19"]);
+    expect(kalshiParentTickers("KXHIGHLAX-26AUG19-T76")).toEqual(["KXHIGHLAX-26AUG19"]);
+    expect(kalshiParentTickers("CONTROLS-2026-R")).toEqual(["CONTROLS-2026"]);
+    expect(kalshiParentTickers("KXPRESNOMD-28-REMA")).toEqual(["KXPRESNOMD-28"]);
+    expect(kalshiParentTickers("KXHIGHLAX")).toEqual([]);
   });
 });
 

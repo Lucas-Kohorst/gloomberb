@@ -121,6 +121,11 @@ describe("universal series expression parsing", () => {
       venue: "kalshi",
       marketId: "KX-FED-CUT",
     });
+    expect(parseSeriesExpression("KALSHI:KXHIGHLAX-26AUG19-B82.5")).toEqual({
+      kind: "prediction-market",
+      venue: "kalshi",
+      marketId: "KXHIGHLAX-26AUG19-B82.5",
+    });
   });
 
   test("maps Adjacent index natural language onto ADJ:indexId", () => {
