@@ -320,7 +320,6 @@ describe("Adjacent Cloud keyed-data providers", () => {
     const body = await response?.json() as { providers: Array<{ id: string }> };
     expect(body.providers.map((provider) => provider.id).sort()).toEqual([
       "adjacent",
-      "jina-ai",
       "llm-stats",
       "nws-cli",
       "twc-kalshi",
@@ -394,7 +393,7 @@ PRECIPITATION (IN)
     expect(body.printKind).toBe("final");
   });
 
-  test("llm-stats, Adjacent, and Jina share GET /api/data", async () => {
+  test("llm-stats and Adjacent share GET /api/data", async () => {
     let fetchedUrl = "";
     globalThis.fetch = (async (input: URL | RequestInfo) => {
       fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
@@ -415,18 +414,11 @@ PRECIPITATION (IN)
     expect(adjacent?.status).toBe(200);
     expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/public/markets?limit=5");
 
-    const jina = await workerModule.default.fetch?.(
+    const unknown = await workerModule.default.fetch?.(
       makeRequest("GET", "/api/data/jina-ai/read?url=https://example.com/story"),
       makeEnv(),
     );
-    expect(jina?.status).toBe(200);
-    expect(fetchedUrl).toBe("https://r.jina.ai/https://example.com/story");
-
-    const blocked = await workerModule.default.fetch?.(
-      makeRequest("GET", "/api/data/jina-ai/read?url=http://127.0.0.1/secret"),
-      makeEnv(),
-    );
-    expect(blocked?.status).toBe(403);
+    expect(unknown?.status).toBe(404);
 
     const badAdjacent = await workerModule.default.fetch?.(
       makeRequest("GET", "/api/data/adjacent/http://evil.example"),

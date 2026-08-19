@@ -9,7 +9,7 @@
  * Secrets stay on the Worker. Clients call `/api/data/{providerId}/…` and
  * never receive upstream API keys.
  *
- * Current providers: twc-kalshi, nws-cli, llm-stats, jina-ai, adjacent.
+ * Current providers: twc-kalshi, nws-cli, llm-stats, adjacent.
  * They share one Connections row ("Adjacent Cloud").
  */
 
