@@ -4,6 +4,10 @@ import { testRender } from "../renderers/opentui/test-utils";
 import { createTestDataProvider } from "../test-support/data-provider";
 import type { DataProvider } from "../types/data-provider";
 import type { PricePoint, TickerFinancials } from "../types/financials";
+import {
+  setSharedMarketDataCoordinator,
+} from "../market-data/coordinator";
+import { createIdleEntry } from "../market-data/result-types";
 import type { ChartResolveSources } from "./resolve";
 import { CHART_SPEC_VERSION, type ChartSpec } from "./types";
 import {
@@ -16,6 +20,7 @@ type AutoViewport = NonNullable<Parameters<typeof useChartResolution>[2]["autoVi
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let setAutoViewport: ((viewport: AutoViewport | null) => void) | null = null;
 let setRequestViewport: ((viewport: AutoViewport | null) => void) | null = null;
+let setChartSpec: ((spec: ChartSpec) => void) | null = null;
 let latestResult: UseChartResolutionResult | null = null;
 
 const EMPTY_FINANCIALS: TickerFinancials = {
@@ -85,17 +90,34 @@ function sourcesFor(dataProvider: DataProvider): ChartResolveSources {
 
 function ResolutionHarness({
   sources,
+  spec = SPEC,
 }: {
   sources: ChartResolveSources;
+  spec?: ChartSpec;
 }) {
   const [autoViewport, setAutoViewportState] = useState<AutoViewport | null>(null);
   const [requestViewport, setRequestViewportState] = useState<AutoViewport | null>(null);
   setAutoViewport = setAutoViewportState;
   setRequestViewport = setRequestViewportState;
-  latestResult = useChartResolution(SPEC, sources, {
+  latestResult = useChartResolution(spec, sources, {
     autoViewport,
     requestViewport,
     targetPointCount: 100,
+    liveRefreshIntervalMs: 0,
+  });
+  const pointCount = (latestResult.bufferedSeries ?? latestResult.series)
+    .reduce((total, series) => total + series.points.length, 0);
+  return <text>{`${latestResult.loading ? "loading" : "settled"}:${pointCount}`}</text>;
+}
+
+function MutableSpecHarness({
+  sources,
+}: {
+  sources: ChartResolveSources;
+}) {
+  const [spec, setSpecState] = useState(SPEC);
+  setChartSpec = setSpecState;
+  latestResult = useChartResolution(spec, sources, {
     liveRefreshIntervalMs: 0,
   });
   const pointCount = (latestResult.bufferedSeries ?? latestResult.series)
@@ -138,7 +160,9 @@ afterEach(async () => {
   }
   setAutoViewport = null;
   setRequestViewport = null;
+  setChartSpec = null;
   latestResult = null;
+  setSharedMarketDataCoordinator(null);
 });
 
 describe("useChartResolution", () => {
@@ -391,5 +415,85 @@ describe("useChartResolution", () => {
 
     expect(latestResult?.series.every((series) => series.points.length === 0)).toBe(true);
     expect(latestResult?.errors).toEqual([]);
+  });
+
+  test("paints coordinator-cached candles on the first frame", async () => {
+    const history = deferred<PricePoint[]>();
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => EMPTY_FINANCIALS,
+      getPriceHistoryForResolution: async () => history.promise,
+      getPriceHistory: async () => [],
+    });
+    setSharedMarketDataCoordinator({
+      subscribe: () => () => {},
+      getVersion: () => 1,
+      getKeysVersion: () => 1,
+      getChartEntry: () => ({
+        ...createIdleEntry<PricePoint[]>(),
+        phase: "ready",
+        data: INITIAL_HISTORY,
+        lastGoodData: INITIAL_HISTORY,
+        source: "test",
+        fetchedAt: Date.now(),
+      }),
+    } as never);
+
+    testSetup = await testRender(<ResolutionHarness sources={sourcesFor(provider)} spec={{
+      ...SPEC,
+      viewport: { range: "5Y", resolution: "auto" },
+    }} />, {
+      width: 24,
+      height: 1,
+    });
+
+    expect(latestResult?.series[0]?.points.length).toBe(2);
+    expect(latestResult?.loading).toBe(false);
+
+    await act(async () => {
+      history.resolve(INITIAL_HISTORY);
+      await testSetup!.renderOnce();
+    });
+    await waitFor(() => latestResult?.loading === false);
+  });
+
+  test("reuses cached history when the spec object identity changes", async () => {
+    const initialHistory = deferred<PricePoint[]>();
+    let historyCalls = 0;
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => EMPTY_FINANCIALS,
+      getPriceHistoryForResolution: async () => {
+        historyCalls += 1;
+        return historyCalls === 1 ? initialHistory.promise : INITIAL_HISTORY;
+      },
+      getPriceHistory: async () => [],
+    });
+    testSetup = await testRender(<MutableSpecHarness sources={sourcesFor(provider)} />, {
+      width: 24,
+      height: 1,
+    });
+
+    await waitFor(() => historyCalls === 1);
+    await act(async () => {
+      initialHistory.resolve(INITIAL_HISTORY);
+      await testSetup!.renderOnce();
+    });
+    await waitFor(() => latestResult?.loading === false && latestResult.series[0]?.points.length === 2);
+
+    await act(async () => {
+      setChartSpec?.({
+        ...SPEC,
+        series: [{
+          ...SPEC.series[0]!,
+          style: "line",
+        }],
+      });
+      await testSetup!.renderOnce();
+    });
+    await flushEffects(3);
+
+    expect(historyCalls).toBe(1);
+    expect(latestResult?.loading).toBe(false);
+    expect(latestResult?.series[0]?.points.length).toBe(2);
+    expect(latestResult?.series[0]?.style).toBe("line");
   });
 });

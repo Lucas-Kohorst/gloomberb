@@ -21,6 +21,7 @@ import {
   buildSecFilingsKey,
   buildSnapshotKey,
 } from "./selectors";
+import { createBaselineChartRequest } from "./coordinator/chart";
 
 const TICKER_FINANCIALS_LOAD_DELAY_MS = 250;
 export const DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS = 60_000;
@@ -104,7 +105,7 @@ export function useTickerFinancials(symbol: string | null | undefined, ticker: T
       ? [
         buildSnapshotKey(instrument),
         buildQuoteKey(instrument),
-        buildChartKey({ instrument, bufferRange: "5Y", granularity: "range" }),
+        buildChartKey(createBaselineChartRequest(instrument)),
       ]
       : []
   ), [instrument?.brokerId, instrument?.brokerInstanceId, instrument?.exchange, instrument?.instrument?.conId, instrument?.symbol]);
@@ -134,7 +135,7 @@ function buildTickerFinancialsKeys(tickers: TickerRecord[], options: TickerInstr
     keys.push(
       buildSnapshotKey(instrument),
       buildQuoteKey(instrument),
-      buildChartKey({ instrument, bufferRange: "5Y", granularity: "range" }),
+      buildChartKey(createBaselineChartRequest(instrument)),
     );
   }
   return keys;

@@ -283,8 +283,8 @@ describe("AssetDataRouter chart history", () => {
     persistence.close();
   });
 
-  test("refreshes stale cached chart history before falling back to cache", async () => {
-    const dbPath = createTempDbPath("stale-chart-refresh");
+  test("returns stale unexpired chart history immediately and refreshes in the background", async () => {
+    const dbPath = createTempDbPath("stale-chart-hit");
     const persistence = new AppPersistence(dbPath);
 
     const seedRouter = new AssetDataRouter({
@@ -299,19 +299,68 @@ describe("AssetDataRouter chart history", () => {
       .query("UPDATE resource_cache SET stale_at = ? WHERE namespace = ? AND kind = ? AND entity_key = ?")
       .run(Date.now() - 1, "market", "price-history", "AAPL");
 
+    let resolveFresh!: (points: Array<{ date: Date; close: number }>) => void;
+    const freshHistory = new Promise<Array<{ date: Date; close: number }>>((resolve) => {
+      resolveFresh = resolve;
+    });
     let providerCalls = 0;
     const refreshRouter = new AssetDataRouter({
       ...fallbackProvider,
       async getPriceHistory() {
         providerCalls += 1;
-        return [{ date: new Date("2026-03-28T00:00:00Z"), close: 202 }];
+        return freshHistory;
       },
     }, [], persistence.resources);
 
     const history = await refreshRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
 
+    expect(history[0]?.close).toBe(101);
+    await Promise.resolve();
     expect(providerCalls).toBe(1);
-    expect(history[0]?.close).toBe(202);
+
+    resolveFresh([{ date: new Date("2026-03-28T00:00:00Z"), close: 202 }]);
+    await freshHistory;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const refreshed = await refreshRouter.getPriceHistory("AAPL", "NASDAQ", "1Y");
+    expect(refreshed[0]?.close).toBe(202);
+
+    persistence.close();
+  });
+
+  test("clips a shorter resolution range from a wider cached series", async () => {
+    const dbPath = createTempDbPath("clip-wider-chart-cache");
+    const persistence = new AppPersistence(dbPath);
+    const now = Date.parse("2026-03-28T00:00:00Z");
+    const sixYearsAgo = new Date(now - 6 * 365 * 24 * 60 * 60_000);
+    const twoYearsAgo = new Date(now - 2 * 365 * 24 * 60 * 60_000);
+    const latest = new Date(now);
+
+    const seedRouter = new AssetDataRouter({
+      ...fallbackProvider,
+      async getPriceHistoryForResolution() {
+        return [
+          { date: sixYearsAgo, close: 50 },
+          { date: twoYearsAgo, close: 101 },
+          { date: latest, close: 110 },
+        ];
+      },
+    }, [], persistence.resources);
+    await seedRouter.getPriceHistoryForResolution("AAPL", "NASDAQ", "ALL", "1wk");
+
+    let providerCalls = 0;
+    const clipRouter = new AssetDataRouter({
+      ...fallbackProvider,
+      async getPriceHistoryForResolution() {
+        providerCalls += 1;
+        return [{ date: latest, close: 999 }];
+      },
+    }, [], persistence.resources);
+
+    const history = await clipRouter.getPriceHistoryForResolution("AAPL", "NASDAQ", "5Y", "1wk");
+
+    expect(providerCalls).toBe(0);
+    expect(history.map((point) => point.close)).toEqual([101, 110]);
 
     persistence.close();
   });
