@@ -177,16 +177,14 @@ export async function fetchDailyHistory(
   return fetchClimateHistory("primary", days, now);
 }
 
-/** Official TWC CLI prints for the archive window (both scopes). */
+/** Official TWC CLI prints for the archive window. */
 export async function fetchOfficialClimateHistory(
   days = HISTORY_DAYS,
   now = Date.now(),
+  scopes: ReadonlyArray<"primary" | "international"> = ["primary"],
 ): Promise<WeatherDailyObservation[]> {
-  const [primary, international] = await Promise.all([
-    fetchClimateHistory("primary", days, now),
-    fetchClimateHistory("international", days, now),
-  ]);
-  return [...primary, ...international].filter((row) => row.official || row.status === "official");
+  const snapshots = await Promise.all(scopes.map((scope) => fetchClimateHistory(scope, days, now)));
+  return snapshots.flat().filter((row) => row.official || row.status === "official");
 }
 
 export function latestObservationForStation(

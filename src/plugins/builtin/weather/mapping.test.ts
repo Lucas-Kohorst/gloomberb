@@ -130,6 +130,8 @@ describe("Kalshi weather settlement mapping", () => {
     expect(kalshiHighSeriesForStation("LAX")).toBe("KXHIGHLAX");
     expect(kalshiHighSeriesForStation("NYC")).toBe("KXHIGHNY");
     expect(kalshiHighSeriesForStation("CHI")).toBe("KXHIGHCHI");
+    expect(kalshiHighSeriesForStation("YYZ")).toBeNull();
+    expect(kalshiHighSeriesForStation("LHR")).toBeNull();
     expect(kalshiEventTickerForDate("KXHIGHLAX", "2026-08-19")).toBe("KXHIGHLAX-26AUG19");
   });
 
@@ -222,8 +224,8 @@ describe("TWC climate payload normalize", () => {
     });
     expect(snapshot.observations[0]).toMatchObject({
       stationId: "LHR",
-      maxTemp: 24,
-      minTemp: 14,
+      maxTemp: 75,
+      minTemp: 57,
       status: "official",
     });
   });

@@ -43,7 +43,7 @@ import {
   loadWeatherHourly,
 } from "./client";
 import { loadKalshiImpliedHighs } from "./kalshi-forecast";
-import { zonedDateKey } from "./mapping";
+import { kalshiHighSeriesForStation, zonedDateKey } from "./mapping";
 import {
   buildWeatherAccuracyReport,
   formatBias,
@@ -51,8 +51,8 @@ import {
   type WeatherCityAccuracy,
   type WeatherForecastKind,
 } from "./report";
-import { WEATHER_STATIONS, cliProductForStation, findWeatherStation } from "./stations";
-import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
+import { WEATHER_STATIONS, cliProductForStation } from "./stations";
+import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
@@ -331,6 +331,20 @@ function overlayYesterdayFromArchive(rows: WeatherRow[], archive: WeatherArchive
   });
 }
 
+function observationOnDate(
+  snapshots: readonly WeatherDailySnapshot[],
+  stationId: string,
+  date: string,
+): WeatherDailyObservation | null {
+  let found: WeatherDailyObservation | null = null;
+  for (const snapshot of snapshots) {
+    for (const observation of snapshot.observations) {
+      if (observation.stationId === stationId && observation.date === date) found = observation;
+    }
+  }
+  return found;
+}
+
 export function WeatherPane({ focused, width, height }: PaneProps) {
   const [tab, setTab] = useState<WeatherPaneTab>("domestic");
   const scope: WeatherScope = tab === "report" ? "domestic" : tab;
@@ -358,6 +372,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
+  const [backfillPending, setBackfillPending] = useState(false);
+  const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
   const archiveRef = useRef(archive);
@@ -399,60 +415,83 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     const now = Date.now();
     const utcToday = new Date(now).toISOString().slice(0, 10);
     const utcYesterday = addUtcDays(utcToday, -1);
-    const climate = nextScope === "international"
-      ? Promise.all([fetchInternationalClimate(utcYesterday), fetchInternationalClimate(utcToday)])
-      : Promise.all([fetchPrimaryClimate(utcYesterday), fetchPrimaryClimate(utcToday)]);
+    const utcTomorrow = addUtcDays(utcToday, 1);
+    const climateDates = nextScope === "international"
+      ? [utcYesterday, utcToday, utcTomorrow]
+      : [utcYesterday, utcToday];
+    const climate = Promise.all(climateDates.map((date) => (
+      nextScope === "international" ? fetchInternationalClimate(date) : fetchPrimaryClimate(date)
+    )));
     const metar = fetchMetarObservations(nextScope === "international" ? "international" : "primary");
-    Promise.all([climate, metar])
-      .then(async ([[previous, current], hourly]) => {
+    climate
+      .then(async (snapshots) => {
         if (genRef.current !== gen) return;
         const latestByStation = new Map<string, WeatherRow>();
         const seed = WEATHER_STATIONS.filter((station) => station.scope === nextScope);
-        for (const station of seed) {
-          latestByStation.set(station.id, emptyWeatherRow(station));
-        }
-        for (const snapshot of [previous, current]) {
+        const applyStation = (
+          station: { id: string; city: string; icao: string; scope: WeatherScope; timezone: string },
+        ) => {
+          const localDate = zonedDateKey(station.timezone || "UTC", now);
+          const todayObs = observationOnDate(snapshots, station.id, localDate);
+          latestByStation.set(station.id, {
+            ...emptyWeatherRow(station, localDate),
+            high: todayObs?.maxTemp ?? null,
+            low: todayObs?.minTemp ?? null,
+            precip: todayObs?.precipitation ?? null,
+            status: todayObs?.status ?? "no_report",
+            date: todayObs?.date || localDate,
+          });
+        };
+        for (const station of seed) applyStation(station);
+        for (const snapshot of snapshots) {
           for (const station of snapshot.stations) {
-            if (!latestByStation.has(station.id)) {
-              latestByStation.set(station.id, emptyWeatherRow(station, snapshot.date));
-            }
-          }
-          for (const observation of snapshot.observations) {
-            const existing = latestByStation.get(observation.stationId);
-            const station = findWeatherStation(observation.stationId);
-            const nextRow: WeatherRow = {
-              ...(existing ?? emptyWeatherRow({
-                id: observation.stationId,
-                city: station?.city ?? observation.stationId,
-                icao: station?.icao ?? observation.stationId,
-                scope: station?.scope ?? nextScope,
-                timezone: station?.timezone ?? "",
-              })),
-              city: existing?.city ?? station?.city ?? observation.stationId,
-              high: observation.maxTemp ?? existing?.high ?? null,
-              low: observation.minTemp ?? existing?.low ?? null,
-              precip: observation.precipitation ?? existing?.precip ?? null,
-              status: observation.status,
-              date: observation.date || snapshot.date,
-            };
-            const previousHasPrint = existing?.high != null || existing?.low != null;
-            const nextHasPrint = nextRow.high != null || nextRow.low != null;
-            if (!existing || (nextHasPrint && (!previousHasPrint || nextRow.date >= existing.date))) {
-              latestByStation.set(observation.stationId, nextRow);
-            }
+            if (!latestByStation.has(station.id)) applyStation(station);
           }
         }
+        const baseRows = [...latestByStation.values()];
+        const observations = snapshots.flatMap((snapshot) => (
+          snapshot.observations.map((row) => ({
+            stationId: row.stationId,
+            date: row.date || snapshot.date,
+            high: row.maxTemp,
+            official: row.official || row.status === "official",
+          }))
+        ));
+        const nextArchive = mergeWeatherArchive(archiveRef.current, {
+          observations,
+          now,
+          today: utcToday,
+        });
+        setArchive((current) => mergeWeatherArchive(current, {
+          observations,
+          now,
+          today: utcToday,
+        }));
+        const withYesterday = overlayYesterdayFromArchive(baseRows, nextArchive, now);
+        setRowsByScope((current) => ({ ...current, [nextScope]: withYesterday }));
+        setStatus("loaded");
+        setArchiveReady(true);
+        setLastUpdated(Date.now());
+
+        const hourly = await metar.catch(() => ({ observations: [] as WeatherHourlyObservation[] }));
+        if (genRef.current !== gen) return;
         const latestHourly = new Map<string, number>();
         for (const obs of hourly.observations) {
           if (obs.tempF == null) continue;
           latestHourly.set(obs.stationId, obs.tempF);
         }
-        const baseRows = [...latestByStation.values()].map((row) => ({
+        const withNow = baseRows.map((row) => ({
           ...row,
           now: latestHourly.get(row.stationId) ?? row.now,
         }));
+        setRowsByScope((current) => ({
+          ...current,
+          [nextScope]: overlayYesterdayFromArchive(withNow, archiveRef.current, now),
+        }));
+
         const impliedByDate = new Map<string, string[]>();
         for (const row of baseRows) {
+          if (!kalshiHighSeriesForStation(row.stationId)) continue;
           const date = zonedDateKey(row.timezone || "UTC", now);
           const list = impliedByDate.get(date);
           if (list) list.push(row.stationId);
@@ -464,43 +503,24 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           )),
         )).flat();
         if (genRef.current !== gen) return;
-        const observations = [previous, current].flatMap((snapshot) => (
-          snapshot.observations.map((row) => ({
-            stationId: row.stationId,
-            date: row.date || snapshot.date,
-            high: row.maxTemp,
-            official: row.official || row.status === "official",
-          }))
-        ));
-        const nextArchive = mergeWeatherArchive(archiveRef.current, {
-          observations,
+        const impliedArchive = mergeWeatherArchive(archiveRef.current, {
           implied,
           now,
           today: utcToday,
         });
         setArchive((current) => mergeWeatherArchive(current, {
-          observations,
           implied,
           now,
           today: utcToday,
         }));
         const impliedByStation = new Map(implied.map((row) => [row.stationId, row] as const));
-        const nextRows = baseRows.map((row) => {
-          const localDate = zonedDateKey(row.timezone || "UTC", now);
-          const yesterday = addUtcDays(localDate, -1);
-          const yday = findWeatherDayRecord(nextArchive, row.stationId, yesterday);
-          return {
-            ...row,
-            implied: impliedByStation.get(row.stationId)?.impliedHigh
-              ?? findWeatherDayRecord(nextArchive, row.stationId, localDate)?.impliedHigh
-              ?? null,
-            yForecast: yday?.forecastHigh ?? yday?.impliedHigh ?? null,
-            ySettlement: yday?.settlementHigh ?? null,
-          };
-        });
+        const nextRows = overlayYesterdayFromArchive(withNow, impliedArchive, now).map((row) => ({
+          ...row,
+          implied: impliedByStation.get(row.stationId)?.impliedHigh
+            ?? findWeatherDayRecord(impliedArchive, row.stationId, zonedDateKey(row.timezone || "UTC", now))?.impliedHigh
+            ?? null,
+        }));
         setRowsByScope((current) => ({ ...current, [nextScope]: nextRows }));
-        setStatus("loaded");
-        setLastUpdated(Date.now());
       })
       .catch((loadError) => {
         if (genRef.current !== gen) return;
@@ -514,19 +534,23 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   }, [load, scope]);
 
   useEffect(() => {
+    if (!archiveReady) return;
     let cancelled = false;
     const now = Date.now();
     const today = new Date(now).toISOString().slice(0, 10);
     void (async () => {
-      const history = await fetchOfficialClimateHistory().catch(() => []);
-      if (cancelled || history.length === 0) return;
-      setArchive((current) => mergeWeatherArchive(current, {
-        observations: officialArchiveObservations(history),
-        now,
-        today,
-      }));
+      const history = await fetchOfficialClimateHistory(undefined, now, ["primary"]).catch(() => []);
+      if (cancelled) return;
+      if (history.length > 0) {
+        setArchive((current) => mergeWeatherArchive(current, {
+          observations: officialArchiveObservations(history),
+          now,
+          today,
+        }));
+      }
       const jobs = impliedBackfillJobs(archiveRef.current, today);
       if (jobs.length === 0) return;
+      setBackfillPending(true);
       await loadImpliedBackfill(jobs, {
         isCancelled: () => cancelled,
         onBatch: (rows) => {
@@ -538,11 +562,32 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           }));
         },
       });
-    })().catch(() => undefined);
+      if (!cancelled) setBackfillPending(false);
+    })().catch(() => {
+      if (!cancelled) setBackfillPending(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [setArchive]);
+  }, [archiveReady, setArchive]);
+
+  useEffect(() => {
+    if (tab !== "international" || status !== "loaded") return;
+    let cancelled = false;
+    const now = Date.now();
+    const today = new Date(now).toISOString().slice(0, 10);
+    void fetchOfficialClimateHistory(undefined, now, ["international"]).then((history) => {
+      if (cancelled || history.length === 0) return;
+      setArchive((current) => mergeWeatherArchive(current, {
+        observations: officialArchiveObservations(history),
+        now,
+        today,
+      }));
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [setArchive, status, tab]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -678,6 +723,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         ? [{ id: "bias", parts: [{ text: `bias ${formatBias(report.bias)}`, tone: "muted" as const }] }]
         : []),
       ...(tab !== "report" && officialDate ? [{ id: "print", parts: [{ text: officialDate, tone: "muted" as const }] }] : []),
+      ...(backfillPending ? [{ id: "backfill", parts: [{ text: "backfilling Y.FC", tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [

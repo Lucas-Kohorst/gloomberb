@@ -31,6 +31,11 @@ function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function celsiusToFahrenheit(value: number | null): number | null {
+  if (value == null) return null;
+  return Math.round((value * 9) / 5 + 32);
+}
+
 export function normalizeWeatherReportStatus(value: unknown): WeatherReportStatus {
   const status = asString(value)?.toLowerCase().replace(/\s+/g, "_");
   if (status === "official" || status === "preliminary" || status === "pending" || status === "no_report") {
@@ -134,8 +139,8 @@ export function normalizeInternationalClimatePayload(
     observations.push({
       stationId: station.id,
       date: asString(record.date) ?? date,
-      maxTemp: asNumber(record.maxTemp),
-      minTemp: asNumber(record.minTemp),
+      maxTemp: celsiusToFahrenheit(asNumber(record.maxTemp)),
+      minTemp: celsiusToFahrenheit(asNumber(record.minTemp)),
       precipitation: null,
       snowfall: null,
       status,

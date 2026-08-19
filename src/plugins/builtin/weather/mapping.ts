@@ -111,7 +111,13 @@ const KALSHI_HIGH_SERIES_BY_STATION: Readonly<Record<string, string>> = {
 export function kalshiHighSeriesForStation(stationId: string): string | null {
   const canonical = canonicalWeatherStationId(stationId);
   if (!canonical) return null;
-  return KALSHI_HIGH_SERIES_BY_STATION[canonical] ?? `KXHIGH${canonical}`;
+  const mapped = KALSHI_HIGH_SERIES_BY_STATION[canonical];
+  if (mapped) return mapped;
+  const station = findWeatherStation(canonical);
+  // International climate cities are not `KXHIGH{id}` markets. Guessing that
+  // ticker 404s every World refresh and starves US implied / Y.FC backfill.
+  if (station?.scope === "international") return null;
+  return `KXHIGH${canonical}`;
 }
 
 export function kalshiEventTickerForDate(seriesTicker: string, dateKey: string): string | null {
