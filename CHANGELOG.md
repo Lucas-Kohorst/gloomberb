@@ -37,6 +37,7 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 - **AIBENCH** — AI model intelligence from Artificial Analysis (Intelligence/Coding/Agentic, price vs speed, image/video/audio). Requires an API key.
 - **SEC** — `[o]`pen works on the selected filing row, not only after drill-in.
 - **Alerts** — `SA AAPL halted`, `SA AAPL short 5`, and `SA AAPL exdiv 7` in addition to price triggers.
+- **Portfolio / Watchlist** — `[g]`raph charts the selected ticker through the same `G` series composer as CAT.
 
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 
