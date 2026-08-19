@@ -19,26 +19,25 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
-import { fetchArtificialAnalysisData } from "../llm-stats/client";
 import { ARTIFICIAL_ANALYSIS_ATTRIBUTION } from "../llm-stats/types";
-import { fetchVoteHubPolls } from "../polls/client";
-import { getSharedAdjacentClient } from "../adjacent/client";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import { type PromptContext, useDialog } from "../../../ui/dialog";
 import {
   CATALOG_FILTERS,
-  VOTEHUB_POLL_TYPES,
+  catalogEmptyCopy,
   catalogExpressionForRow,
-  catalogPollSubjectsFromPolls,
   catalogRowUrl,
-  catalogRowsFromAaModels,
-  catalogRowsFromPollSubjects,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
   listStaticCatalogInventory,
   type CatalogFilterId,
   type CatalogSeriesRow,
 } from "./catalog-inventory";
+import {
+  useCatalogAaRows,
+  useCatalogAdjacentIndices,
+  useCatalogPollRows,
+} from "./catalog-prefetch";
 import { useCatalogUniverse, usePredictionMarketHits } from "./use-series-catalog";
 
 type CatalogColumnId = "series" | "source" | "kind" | "expression";
@@ -97,82 +96,15 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<CatalogSortPreference>(DEFAULT_SORT);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [aaRows, setAaRows] = useState<CatalogSeriesRow[]>([]);
-  const [aaLoading, setAaLoading] = useState(true);
-  const [pollRows, setPollRows] = useState<CatalogSeriesRow[]>([]);
-  const [pollsLoading, setPollsLoading] = useState(true);
-  const [adjacentIndices, setAdjacentIndices] = useState<Array<{ indexId: string; name: string; ticker?: string }>>([]);
-  const [indicesLoading, setIndicesLoading] = useState(true);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
-  const { instruments, loading: universeLoading } = useCatalogUniverse(searchQuery);
-  const loadMarkets = filter === "all" || filter === "prediction";
-  const { markets, loading: marketsLoading } = usePredictionMarketHits(searchQuery, loadMarkets);
+  const { instruments, loading: universeLoading } = useCatalogUniverse("");
+  const { markets, loading: marketsLoading } = usePredictionMarketHits(true);
+  const { rows: aaRows, loading: aaLoading } = useCatalogAaRows();
+  const { rows: pollRows, loading: pollsLoading } = useCatalogPollRows();
+  const { indices: adjacentIndices, loading: indicesLoading } = useCatalogAdjacentIndices();
   const loading = universeLoading || marketsLoading || aaLoading || pollsLoading || indicesLoading;
-
-  useEffect(() => {
-    let cancelled = false;
-    setAaLoading(true);
-    fetchArtificialAnalysisData()
-      .then((data) => {
-        if (cancelled) return;
-        setAaRows(catalogRowsFromAaModels(data.rows));
-        setAaLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAaRows([]);
-          setAaLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setPollsLoading(true);
-    void Promise.all([
-      fetchVoteHubPolls().catch(() => []),
-      ...VOTEHUB_POLL_TYPES.map((pollType) => fetchVoteHubPolls({ pollType }).catch(() => [])),
-    ]).then((batches) => {
-      if (cancelled) return;
-      setPollRows(catalogRowsFromPollSubjects(catalogPollSubjectsFromPolls(batches.flat())));
-      setPollsLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setIndicesLoading(true);
-    getSharedAdjacentClient().getIndices()
-      .then((response) => {
-        if (cancelled) return;
-        setAdjacentIndices((response.data ?? []).flatMap((index) => {
-          const indexId = index.index_id?.trim();
-          if (!indexId) return [];
-          return [{
-            indexId,
-            name: index.name,
-            ...(index.ticker ? { ticker: index.ticker } : {}),
-          }];
-        }));
-        setIndicesLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAdjacentIndices([]);
-          setIndicesLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const emptyCopy = catalogEmptyCopy(loading, searchQuery);
 
   const rows = useMemo(() => {
     const staticRows = listStaticCatalogInventory(instruments, { adjacentIndices });
@@ -399,8 +331,8 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         getItemKey={(row) => row.id}
         onActivate={chartSelected}
         renderCell={renderCell}
-        emptyStateTitle={searchQuery.trim() ? `No series matching "${searchQuery.trim()}"` : "No series"}
-        emptyStateHint={loading ? "Loading catalog…" : "Press / to search."}
+        emptyStateTitle={emptyCopy.title}
+        emptyStateHint={emptyCopy.hint}
       />
     </Box>
   );

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  catalogEmptyCopy,
   catalogExpressionForRow,
   catalogPollSubjectsFromPolls,
+  catalogPredictionSeriesLabel,
   catalogRowsFromAaModels,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
@@ -175,12 +177,54 @@ describe("data catalog inventory", () => {
       title: "Who will be the next president?",
     }]);
     expect(row).toMatchObject({
+      label: "Who will be the next president?",
       expression: "KALSHI:KXPRESPERSON",
       sourceId: "kalshi",
       kind: "Prediction",
       source: "Kalshi",
       url: "https://kalshi.com/markets/KXPRESPERSON",
     });
+  });
+
+  test("prediction series titles use the event question, not the strike-only label", () => {
+    expect(catalogPredictionSeriesLabel({
+      venue: "polymarket",
+      marketId: "0xabc",
+      title: "What will the price of Bitcoin be on December 31?",
+      eventLabel: "Bitcoin price on Dec 31",
+      marketLabel: "↑ $10,000",
+    })).toBe("What will the price of Bitcoin be on December 31? · ↑ $10,000");
+
+    expect(catalogPredictionSeriesLabel({
+      venue: "polymarket",
+      marketId: "0xdef",
+      title: "-No Qualifying Event-",
+      eventLabel: "-No Qualifying Event-",
+      marketLabel: "-No Qualifying Event-",
+    })).toBe("-No Qualifying Event-");
+    expect(catalogRowsFromPredictionHits([{
+      venue: "polymarket",
+      marketId: "0xdef",
+      title: "-No Qualifying Event-",
+      marketLabel: "-No Qualifying Event-",
+    }])).toEqual([]);
+
+    expect(catalogPredictionSeriesLabel({
+      venue: "kalshi",
+      marketId: "KXFED",
+      title: "Will the Fed cut rates?",
+      eventLabel: "Will the Fed cut rates?",
+      marketLabel: "Yes",
+    })).toBe("Will the Fed cut rates?");
+
+    const [row] = catalogRowsFromPredictionHits([{
+      venue: "polymarket",
+      marketId: "0xabc",
+      title: "What will the price of Bitcoin be on December 31?",
+      marketLabel: "↑ $10,000",
+    }]);
+    expect(row.label).toBe("What will the price of Bitcoin be on December 31? · ↑ $10,000");
+    expect(row.label.startsWith("Polymarket")).toBe(false);
   });
 
   test("collapses VoteHub polls onto unique subject and choice chart rows", () => {
@@ -202,5 +246,18 @@ describe("data catalog inventory", () => {
       { subject: "Donald Trump", choices: ["Approve", "Disapprove"] },
       { subject: "Wisconsin Senate", choices: ["Baldwin", "Hovde"] },
     ]);
+  });
+
+  test("empty copy says loading until catalogs finish, even with a search query", () => {
+    expect(catalogEmptyCopy(true, "president")).toEqual({ title: "Loading catalog…" });
+    expect(catalogEmptyCopy(true, "")).toEqual({ title: "Loading catalog…" });
+    expect(catalogEmptyCopy(false, "president")).toEqual({
+      title: 'No series matching "president"',
+      hint: "Press / to search.",
+    });
+    expect(catalogEmptyCopy(false, "")).toEqual({
+      title: "No series",
+      hint: "Press / to search.",
+    });
   });
 });

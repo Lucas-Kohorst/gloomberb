@@ -11,6 +11,7 @@ import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import { DATA_CATALOG_PANE_ID, DATA_CATALOG_TEMPLATE_ID } from "./catalog-inventory";
+import { scheduleDataCatalogWarm } from "./catalog-prefetch";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   buildComparisonChartPreset,
@@ -282,6 +283,7 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
+    scheduleDataCatalogWarm();
   },
 };
 

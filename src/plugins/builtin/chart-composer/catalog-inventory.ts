@@ -209,6 +209,33 @@ export function catalogRowUrl(row: CatalogSeriesRow): string | null {
   return row.url ?? null;
 }
 
+function isPlaceholderPredictionLabel(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return /^-?no qualifying event-?$/i.test(trimmed);
+}
+
+function catalogPredictionPrimaryTitle(hit: PredictionMarketSearchHit): string {
+  const title = hit.title.trim();
+  const event = hit.eventLabel?.trim() ?? "";
+  if (!isPlaceholderPredictionLabel(event) && event) {
+    if (!title || isPlaceholderPredictionLabel(title)) return event;
+    if (event.toLowerCase().includes(title.toLowerCase())) return event;
+    if (title.toLowerCase().includes(event.toLowerCase())) return title;
+    return event.length >= title.length ? event : title;
+  }
+  return title || event || hit.marketId;
+}
+
+export function catalogPredictionSeriesLabel(hit: PredictionMarketSearchHit): string {
+  const primary = catalogPredictionPrimaryTitle(hit);
+  const outcome = hit.marketLabel?.trim() ?? "";
+  if (!outcome || isPlaceholderPredictionLabel(outcome)) return primary;
+  if (primary.toLowerCase().includes(outcome.toLowerCase())) return primary;
+  if (/^(yes|no)$/i.test(outcome)) return primary;
+  return `${primary} · ${outcome}`;
+}
+
 export function catalogRowsFromPredictionHits(
   hits: readonly PredictionMarketSearchHit[],
 ): CatalogSeriesRow[] {
@@ -219,9 +246,11 @@ export function catalogRowsFromPredictionHits(
       marketId: hit.marketId,
       label: hit.title,
     });
+    const label = catalogPredictionSeriesLabel(hit);
+    if (isPlaceholderPredictionLabel(label)) return [];
     return [row({
       id: `pm:${hit.venue}:${hit.marketId}`,
-      label: `${hit.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${hit.title}`,
+      label,
       source: hit.venue === "kalshi" ? "Kalshi" : "Polymarket",
       sourceId: hit.venue,
       kind: "Prediction",
@@ -229,6 +258,7 @@ export function catalogRowsFromPredictionHits(
       url: hit.url ?? (hit.venue === "kalshi"
         ? `https://kalshi.com/markets/${hit.marketId}`
         : `https://polymarket.com/event/${hit.marketId}`),
+      searchExtra: [hit.title, hit.eventLabel, hit.marketLabel].filter(Boolean).join(" "),
     })];
   });
 }
@@ -471,4 +501,11 @@ export function filterCatalogRows(
     (sources ? sources.has(entry.sourceId) : true)
     && matchesCatalogQuery(entry, query)
   ));
+}
+
+export function catalogEmptyCopy(loading: boolean, searchQuery: string): { title: string; hint?: string } {
+  if (loading) return { title: "Loading catalog…" };
+  const query = searchQuery.trim();
+  if (query) return { title: `No series matching "${query}"`, hint: "Press / to search." };
+  return { title: "No series", hint: "Press / to search." };
 }
