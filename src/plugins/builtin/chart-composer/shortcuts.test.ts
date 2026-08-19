@@ -32,8 +32,8 @@ describe("resolveChartComposerShortcut", () => {
   });
 
   test("matches only exact chart shortcuts", () => {
-    expect(resolveChartComposerShortcut(keyEvent("a"), 8)).toBe("add");
-    expect(resolveChartComposerShortcut(keyEvent("d"), 8)).toBe("delete");
+    expect(resolveChartComposerShortcut(keyEvent("a"), 8)).toBeNull();
+    expect(resolveChartComposerShortcut(keyEvent("d"), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("s"), 8)).toBe("series");
     expect(resolveChartComposerShortcut(keyEvent("w"), 8)).toBe("dates");
     expect(resolveChartComposerShortcut(keyEvent("m"), 8)).toBe("mode");

@@ -31,12 +31,10 @@ import { SeriesEditorDialog } from "./editor";
 import { DateWindowDialog, type DateWindowDialogResult } from "./date-window-dialog";
 import { chartComposerSemanticMetadata } from "./semantic";
 import {
-  canRemoveChartSeries,
   canToggleChartSeries,
   CHART_SPEC_SETTING_KEY,
   parseChartSpecOr,
   projectVisibleChartSeries,
-  removeChartSeries,
   toggleChartSeries,
 } from "./chart-spec";
 import {
@@ -63,7 +61,7 @@ import {
   getChartInlineStyleTarget,
 } from "./settings";
 import { resolveChartComposerShortcut } from "./shortcuts";
-import { ChartSeriesQuickAdd, type ChartSeriesQuickAddHandle } from "./quick-add";
+import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { useShareView } from "../shared/use-share-view";
 import { buildChartSharePayload, describeChartSpec } from "../../../shares/chart-snapshot";
@@ -238,8 +236,6 @@ function ChartComposerSurface({
   const interactionCaptureSourcesRef = useRef(new Set<string>());
   const indicatorsDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
   const formulasDialogRef = useRef<MultiSelectDialogButtonHandle | null>(null);
-  const quickAddRef = useRef<ChartSeriesQuickAddHandle | null>(null);
-  const [selectedLegendId, setSelectedLegendId] = useState<string | null>(null);
   const indicatorsDisabled = !isPriceStudyTarget(spec);
   const formulasDisabled = spec.series.length < 2;
   const setInteractionCaptured = useCallback((source: string, captured: boolean) => {
@@ -470,8 +466,6 @@ function ChartComposerSurface({
     openModePicker,
     openRangePicker,
     reload: resolution.reload,
-    toggleAdd: () => {},
-    deleteSelected: () => {},
   });
   currentActionsRef.current = {
     openSeriesEditor,
@@ -479,21 +473,12 @@ function ChartComposerSurface({
     openModePicker,
     openRangePicker,
     reload: resolution.reload,
-    toggleAdd: () => quickAddRef.current?.toggle(),
-    deleteSelected: () => {
-      if (!selectedLegendId) return;
-      const next = removeChartSeries(spec, selectedLegendId);
-      if (next !== spec) setSpec(next);
-    },
   };
   const footerSeries = useCallback(() => { void currentActionsRef.current.openSeriesEditor(); }, []);
   const footerDates = useCallback(() => { void currentActionsRef.current.openDateWindow(); }, []);
   const footerMode = useCallback(() => { void currentActionsRef.current.openModePicker(); }, []);
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
   const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
-  const footerAdd = useCallback(() => { currentActionsRef.current.toggleAdd(); }, []);
-  const footerDelete = useCallback(() => { currentActionsRef.current.deleteSelected(); }, []);
-  const canDeleteSelected = selectedLegendId != null && canRemoveChartSeries(spec, selectedLegendId);
   const shareView = useShareView();
   // The snapshot carries the plotted points, so a shared link renders without
   // the recipient re-resolving providers they may have no access to. The spec
@@ -519,12 +504,6 @@ function ChartComposerSurface({
       return;
     }
     switch (shortcut) {
-      case "add":
-        currentActionsRef.current.toggleAdd();
-        return;
-      case "delete":
-        currentActionsRef.current.deleteSelected();
-        return;
       case "reload":
         resolution.reload();
         return;
@@ -552,8 +531,6 @@ function ChartComposerSurface({
         : []),
     ],
     hints: [
-      { id: "add", key: "a", label: "dd", onPress: footerAdd },
-      { id: "delete", key: "d", label: "elete", onPress: footerDelete, disabled: !canDeleteSelected },
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
@@ -564,10 +541,7 @@ function ChartComposerSurface({
       { id: "share", key: "y", label: " share", onPress: shareChart },
     ],
   }), [
-    canDeleteSelected,
-    footerAdd,
     footerDates,
-    footerDelete,
     footerMode,
     footerRange,
     footerReload,
@@ -682,11 +656,9 @@ function ChartComposerSurface({
           onActivate={activatePane}
           onToggleSeries={toggleSeries}
           isSeriesToggleable={isSeriesToggleable}
-          onLegendSelectionChange={setSelectedLegendId}
           emptyMessage={emptyMessage}
           legendAccessory={(
             <ChartSeriesQuickAdd
-              ref={quickAddRef}
               spec={spec}
               setSpec={setSpec}
               focused={focused}
