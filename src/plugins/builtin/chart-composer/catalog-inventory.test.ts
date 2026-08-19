@@ -44,10 +44,11 @@ function language(overrides: Partial<AaModelRow> = {}): AaModelRow {
 describe("data catalog inventory", () => {
   test("maps source to the provider and kind to the series class", () => {
     const rows = listStaticCatalogInventory([AAPL]);
+    const byId = new Map(rows.map((row) => [row.id, row]));
     const byExpression = new Map(rows.map((row) => [row.expression, row]));
 
-    expect(byExpression.get("TICKER:price")).toMatchObject({ source: "Yahoo", kind: "Market", label: "Price (OHLCV)", needsTicker: true });
-    expect(byExpression.get("TICKER:dvd")).toMatchObject({ source: "Yahoo", kind: "Dividends", label: "Dividends", needsTicker: true });
+    expect(byId.get("field:market.ohlcv")).toMatchObject({ source: "Yahoo", kind: "Market", label: "Price (OHLCV)", needsTicker: true, expression: "TICKER:price" });
+    expect(byId.get("field:market.dividends")).toMatchObject({ source: "Yahoo", kind: "Dividends", label: "Dividends", needsTicker: true, expression: "TICKER:dvd" });
     expect(byExpression.get("FRED:CPIAUCSL")).toMatchObject({ source: "FRED", kind: "Economic" });
     expect(byExpression.get("UST:10Y")).toMatchObject({ source: "FRED", kind: "Treasury" });
     expect(byExpression.get("ADJ:red")).toMatchObject({ source: "Adjacent", kind: "Index" });
@@ -67,6 +68,23 @@ describe("data catalog inventory", () => {
 
     const close = securities.find((row) => row.label === "Close");
     expect(catalogExpressionForRow(close!, "aapl")).toBe("AAPL:close");
+    expect(catalogExpressionForRow(close!, "")).toBeNull();
+  });
+
+  test("options tab lists contract market fields and asks for an option symbol", () => {
+    const rows = listStaticCatalogInventory([AAPL]);
+    const options = filterCatalogRows(rows, "options", "");
+    expect(options.some((row) => row.label === "Close")).toBe(true);
+    expect(options.some((row) => row.label === "Volume")).toBe(true);
+    expect(options.some((row) => row.label === "Price (OHLCV)")).toBe(true);
+    expect(options.every((row) => row.needsTicker && row.expression.startsWith("TICKER:"))).toBe(true);
+    expect(options.every((row) => row.kind === "Options" && row.sourceId === "option")).toBe(true);
+    expect(options.some((row) => row.label === "PEG Ratio")).toBe(false);
+    expect(options.some((row) => row.label === "Dividends")).toBe(false);
+
+    const close = options.find((row) => row.label === "Close");
+    expect(catalogExpressionForRow(close!, "AAPL 260618C00200000")).toBe("AAPL260618C00200000:close");
+    expect(catalogExpressionForRow(close!, "aapl260618c00200000")).toBe("AAPL260618C00200000:close");
     expect(catalogExpressionForRow(close!, "")).toBeNull();
   });
 
@@ -122,6 +140,10 @@ describe("data catalog inventory", () => {
     const securities = filterCatalogRows(rows, "securities", "");
     expect(securities.every((row) => row.sourceId === "security" && row.needsTicker)).toBe(true);
     expect(securities.some((row) => row.kind === "Market")).toBe(true);
+
+    const options = filterCatalogRows(rows, "options", "");
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.every((row) => row.sourceId === "option" && row.kind === "Options")).toBe(true);
   });
 
   test("prediction filter is Kalshi/Polymarket only; adjacent stays in other", () => {
