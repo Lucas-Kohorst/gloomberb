@@ -287,9 +287,10 @@ export async function initializeAppState({
   // Seed default watchlist tickers on first run
   if (tickers.length === 0) {
     const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
+    const seeded: TickerRecord[] = [];
     await measurePerfAsync("startup.seed-default-tickers", async () => {
       for (const entry of DEFAULT_WATCHLIST_TICKERS) {
-        await tickerRepository.createTicker({
+        seeded.push(await tickerRepository.createTicker({
           ...entry,
           portfolios: [],
           watchlists: [defaultWatchlistId],
@@ -297,10 +298,11 @@ export async function initializeAppState({
           broker_contracts: [],
           custom: {},
           tags: [],
-        });
+        }));
       }
     }, { count: DEFAULT_WATCHLIST_TICKERS.length });
     tickers = await measurePerfAsync("startup.reload-default-tickers", () => tickerRepository.loadAllTickers());
+    if (tickers.length === 0) tickers = seeded;
     startupLog.info("default tickers seeded", {
       defaultWatchlistId,
       count: tickers.length,

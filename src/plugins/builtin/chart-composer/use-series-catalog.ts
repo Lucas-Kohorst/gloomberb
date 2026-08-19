@@ -20,11 +20,21 @@ import {
 } from "./prediction-series";
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
-const DEFAULT_CATALOG_INSTRUMENT: SeriesCatalogInstrument = {
-  symbol: "AAPL",
-  exchange: "NASDAQ",
-  name: "Apple Inc.",
-};
+const EMPTY_RECENT: readonly string[] = [];
+const DEFAULT_CATALOG_INSTRUMENTS: readonly SeriesCatalogInstrument[] = [
+  { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." },
+  { symbol: "MSFT", exchange: "NASDAQ", name: "Microsoft Corporation" },
+  { symbol: "GOOGL", exchange: "NASDAQ", name: "Alphabet Inc." },
+  { symbol: "AMZN", exchange: "NASDAQ", name: "Amazon.com Inc." },
+  { symbol: "NVDA", exchange: "NASDAQ", name: "NVIDIA Corporation" },
+  { symbol: "TSLA", exchange: "NASDAQ", name: "Tesla Inc." },
+  { symbol: "META", exchange: "NASDAQ", name: "Meta Platforms Inc." },
+  { symbol: "BRK.B", exchange: "NYSE", name: "Berkshire Hathaway Inc." },
+  { symbol: "JPM", exchange: "NYSE", name: "JPMorgan Chase & Co." },
+  { symbol: "V", exchange: "NYSE", name: "Visa Inc." },
+  { symbol: "BTC-USD", exchange: "CCC", name: "Bitcoin USD" },
+  { symbol: "ETH-USD", exchange: "CCC", name: "Ethereum USD" },
+];
 
 function instrumentFromTicker(ticker: TickerRecord): SeriesCatalogInstrument {
   return {
@@ -71,9 +81,19 @@ export function useCatalogUniverse(query: string): {
   loading: boolean;
 } {
   const tickers = useOptionalAppSelector((state) => state.tickers, EMPTY_TICKERS);
+  const recentSymbols = useOptionalAppSelector((state) => state.recentTickers, EMPTY_RECENT);
   const watchlist = useMemo(
     () => [...tickers.values()].map(instrumentFromTicker),
     [tickers],
+  );
+  const recents = useMemo(
+    () => recentSymbols.flatMap((symbol) => {
+      const ticker = tickers.get(symbol);
+      if (ticker) return [instrumentFromTicker(ticker)];
+      const trimmed = symbol.trim();
+      return trimmed ? [{ symbol: trimmed }] : [];
+    }),
+    [recentSymbols, tickers],
   );
   const [search, setSearch] = useState<{
     query: string;
@@ -140,9 +160,9 @@ export function useCatalogUniverse(query: string): {
 
   const searched = search.query === query.trim() ? search.instruments : [];
   const instruments = useMemo(() => {
-    const merged = uniqueCatalogInstruments([...watchlist, ...searched]);
-    return merged.length > 0 ? merged : [DEFAULT_CATALOG_INSTRUMENT];
-  }, [searched, watchlist]);
+    const merged = uniqueCatalogInstruments([...watchlist, ...recents, ...searched]);
+    return merged.length > 0 ? merged : [...DEFAULT_CATALOG_INSTRUMENTS];
+  }, [recents, searched, watchlist]);
 
   return {
     instruments,
@@ -162,7 +182,7 @@ export function usePredictionMarketHits(
   }>({ query: "", markets: [], loading: false });
 
   useEffect(() => {
-    if (!enabled || !trimmed || trimmed.includes(":")) {
+    if (!enabled || trimmed.includes(":")) {
       setSearch({ query: "", markets: [], loading: false });
       return;
     }
@@ -170,7 +190,16 @@ export function usePredictionMarketHits(
     let cancelled = false;
     setSearch({ query: trimmed, markets: [], loading: true });
     const timer = setTimeout(() => {
-      void getSharedAdjacentClient().searchMarkets(trimmed, 12).then((response) => {
+      const client = getSharedAdjacentClient();
+      const request = trimmed.length >= 3
+        ? client.searchMarkets(trimmed, 24)
+        : Promise.all([
+          client.getMarkets({ platform: "kalshi", limit: 24 }),
+          client.getMarkets({ platform: "polymarket", limit: 24 }),
+        ]).then(([kalshi, polymarket]) => ({
+          markets: [...(kalshi.markets ?? []), ...(polymarket.markets ?? [])],
+        }));
+      void request.then((response) => {
         if (cancelled) return;
         const markets = (response.markets ?? []).flatMap((market) => {
           const hit = mapAdjacentMarketToHit(market);
@@ -180,7 +209,7 @@ export function usePredictionMarketHits(
       }).catch(() => {
         if (!cancelled) setSearch({ query: trimmed, markets: [], loading: false });
       });
-    }, 120);
+    }, trimmed.length >= 3 ? 120 : 0);
 
     return () => {
       cancelled = true;

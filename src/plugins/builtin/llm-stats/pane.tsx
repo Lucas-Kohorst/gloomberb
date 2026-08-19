@@ -446,16 +446,28 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
     );
   }
 
-  if (rows.length === 0 && (authError || error)) {
+  if (rows.length === 0 && authError) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         <Box padding={1}>
           <EmptyState
             title="Add an Artificial Analysis API key."
-            message={authError
-              ? "Open KEYS or set ARTIFICIAL_ANALYSIS_API_KEY. Hosted workers use wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY."
-              : (error ?? undefined)}
+            message="Open KEYS or set ARTIFICIAL_ANALYSIS_API_KEY. Hosted workers use wrangler secret put ARTIFICIAL_ANALYSIS_API_KEY."
             hint="Press r to retry after adding a key."
+          />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (rows.length === 0 && error) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        <Box padding={1}>
+          <EmptyState
+            title="AI benchmarks unavailable."
+            message={error}
+            hint="Press r to retry."
           />
         </Box>
       </Box>

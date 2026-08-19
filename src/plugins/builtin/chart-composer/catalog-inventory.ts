@@ -23,6 +23,7 @@ import {
   FUTURES_CATALOG,
   POLL_SUBJECTS,
   TREASURY_CATALOG,
+  type PollSubjectEntry,
 } from "./universal-series";
 
 export const DATA_CATALOG_PANE_ID = "data-catalog";
@@ -73,11 +74,24 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   all: null,
   securities: new Set(["security"]),
   fred: new Set(["fred", "treasury"]),
-  prediction: new Set(["adjacent", "kalshi", "polymarket"]),
+  prediction: new Set(["kalshi", "polymarket"]),
   futures: new Set(["futures"]),
   ai: new Set(["benchmark"]),
-  other: new Set(["poll"]),
+  other: new Set(["adjacent", "poll"]),
 };
+
+export const VOTEHUB_POLL_TYPES = [
+  "approval",
+  "favorability",
+  "generic-ballot",
+  "us-senator",
+  "governor",
+  "us-representative",
+  "mayor",
+  "attorney-general",
+  "presidential-primary",
+  "proposition-50",
+] as const;
 
 function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
   const category = instrument.assetCategory?.trim().toUpperCase();
@@ -100,17 +114,24 @@ function row(entry: {
   kind: string;
   expression: string;
   url?: string;
+  searchExtra?: string;
 }): CatalogSeriesRow {
+  const { searchExtra, ...fields } = entry;
   return {
-    ...entry,
+    ...fields,
     searchText: [
       entry.label,
       entry.source,
       entry.kind,
       entry.expression,
       entry.sourceId,
-    ].join(" ").toLowerCase(),
+      searchExtra,
+    ].filter(Boolean).join(" ").toLowerCase(),
   };
+}
+
+function catalogSecuritySymbol(instrument: SeriesCatalogInstrument): string {
+  return instrument.symbol.trim() || publicTickerKey(instrument.symbol, instrument.exchange);
 }
 
 export function catalogRowUrl(row: CatalogSeriesRow): string | null {
@@ -161,6 +182,7 @@ export function catalogRowsFromAaModels(models: readonly AaModelRow[]): CatalogS
 function securityRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
   return instruments.flatMap((instrument) => {
     const ticker = publicTickerKey(instrument.symbol, instrument.exchange);
+    const symbol = catalogSecuritySymbol(instrument);
     const option = isOptionInstrument(instrument);
     return listTimeSeriesFields().flatMap((field) => {
       if (option && (field.id.startsWith("fundamental.") || field.id.startsWith("valuation.") || isDividendFieldId(field.id))) {
@@ -169,18 +191,59 @@ function securityRows(instruments: readonly SeriesCatalogInstrument[]): CatalogS
       const token = shortChartFieldToken(field.id);
       return [row({
         id: `${ticker}:${field.id}`,
-        label: `${ticker} · ${field.label}`,
+        label: `${symbol} - ${field.label}`,
         source: "Yahoo",
         sourceId: "security",
         kind: fieldKind(field.id, option),
         expression: `${ticker}:${token}`,
+        searchExtra: instrument.name,
       })];
     });
   });
 }
 
+export function catalogPollSubjectsFromPolls(
+  polls: readonly { subject: string; answers?: ReadonlyArray<{ choice: string }> }[],
+): PollSubjectEntry[] {
+  const bySubject = new Map<string, { subject: string; choices: Set<string> }>();
+  for (const poll of polls) {
+    const subject = poll.subject.trim();
+    if (!subject) continue;
+    let entry = bySubject.get(subject.toLowerCase());
+    if (!entry) {
+      entry = { subject, choices: new Set() };
+      bySubject.set(subject.toLowerCase(), entry);
+    }
+    for (const answer of poll.answers ?? []) {
+      const choice = answer.choice.trim();
+      if (choice) entry.choices.add(choice);
+    }
+  }
+  return [...bySubject.values()].flatMap((entry) => (
+    entry.choices.size === 0
+      ? []
+      : [{ subject: entry.subject, choices: [...entry.choices] }]
+  ));
+}
+
+export function catalogRowsFromPollSubjects(
+  subjects: readonly PollSubjectEntry[],
+): CatalogSeriesRow[] {
+  return subjects.flatMap((subject) => (
+    subject.choices.map((choice) => row({
+      id: `poll:${subject.subject}:${choice}`,
+      label: `${subject.subject} · ${choice}`,
+      source: "VoteHub",
+      sourceId: "poll",
+      kind: "Poll",
+      expression: `POLL:${subject.subject}:${choice}`,
+    }))
+  ));
+}
+
 export function listStaticCatalogInventory(
   instruments: readonly SeriesCatalogInstrument[],
+  options?: { pollSubjects?: readonly PollSubjectEntry[] },
 ): CatalogSeriesRow[] {
   const securities = securityRows(instruments);
 
@@ -223,16 +286,7 @@ export function listStaticCatalogInventory(
     url: "https://adjacent.markets",
   }));
 
-  const polls = POLL_SUBJECTS.flatMap((subject) => (
-    subject.choices.map((choice) => row({
-      id: `poll:${subject.subject}:${choice}`,
-      label: `${subject.subject} · ${choice}`,
-      source: "VoteHub",
-      sourceId: "poll",
-      kind: "Poll",
-      expression: `POLL:${subject.subject}:${choice}`,
-    }))
-  ));
+  const polls = catalogRowsFromPollSubjects(options?.pollSubjects ?? POLL_SUBJECTS);
 
   const benchmarks = BENCHMARK_ORGS.flatMap((org) => (
     BENCHMARK_METRICS.map((metric) => row({
