@@ -4,14 +4,17 @@ import {
   SESSION_SAVE_DEBOUNCE_MS,
 } from "../../../../state/persist-scheduler";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "../backend-rpc";
+import { getHostedConfigUserId, readLastHostedUserId } from "../../../../data/config/hosted-user-persist";
 import { DesktopMemoryResourceStore } from "../resource-store";
 
 const PLUGIN_STATE_BACKEND_FLUSH_DELAY_MS = 25;
 
 // On the hosted client the backend intentionally no-ops plugin state (persistence
 // is owned by Gloom Cloud sync), but some plugin state — e.g. Substack auth — is
-// not part of the synced config. Mirror it to localStorage so it survives reloads.
-const HOSTED_PLUGIN_STATE_STORAGE_KEY = "gloomberb:hosted-plugin-state";
+// not part of the synced config. Mirror it to per-user localStorage so it
+// survives reloads without leaking across Gloom Cloud accounts.
+const HOSTED_PLUGIN_STATE_STORAGE_PREFIX = "gloomberb:hosted-plugin-state:";
+const LEGACY_HOSTED_PLUGIN_STATE_STORAGE_KEY = "gloomberb:hosted-plugin-state";
 const BACKEND_MANAGED_PLUGIN_IDS = new Set(["gloomberb-cloud"]);
 
 class RemoteSessionStore {
@@ -78,9 +81,18 @@ class RemotePluginStateStore {
 
   private restoreLocalState(): void {
     if (typeof window === "undefined") return;
+    const userId = getHostedConfigUserId();
+    if (!userId) return;
     let raw: string | null = null;
     try {
-      raw = window.localStorage.getItem(HOSTED_PLUGIN_STATE_STORAGE_KEY);
+      raw = window.localStorage.getItem(`${HOSTED_PLUGIN_STATE_STORAGE_PREFIX}${userId}`);
+      if (!raw && readLastHostedUserId() === userId) {
+        raw = window.localStorage.getItem(LEGACY_HOSTED_PLUGIN_STATE_STORAGE_KEY);
+        if (raw) {
+          window.localStorage.setItem(`${HOSTED_PLUGIN_STATE_STORAGE_PREFIX}${userId}`, raw);
+          window.localStorage.removeItem(LEGACY_HOSTED_PLUGIN_STATE_STORAGE_KEY);
+        }
+      }
     } catch {
       return;
     }
@@ -109,8 +121,13 @@ class RemotePluginStateStore {
       if (BACKEND_MANAGED_PLUGIN_IDS.has(pluginId) || values.size === 0) continue;
       snapshot[pluginId] = Object.fromEntries(values);
     }
+    const userId = getHostedConfigUserId();
+    if (!userId) return;
     try {
-      window.localStorage.setItem(HOSTED_PLUGIN_STATE_STORAGE_KEY, JSON.stringify(snapshot));
+      window.localStorage.setItem(
+        `${HOSTED_PLUGIN_STATE_STORAGE_PREFIX}${userId}`,
+        JSON.stringify(snapshot),
+      );
     } catch {
       // Ignore storage quota or security errors.
     }

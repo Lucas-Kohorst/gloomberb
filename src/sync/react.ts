@@ -2,12 +2,15 @@ import { useEffect, useSyncExternalStore, type Dispatch } from "react";
 import { apiClient } from "../api-client";
 import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
 import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
+import { hydrateHostedWorkspaceFromCloud } from "../data/config/hosted-sync-hydrate";
+import { readHostedTickers } from "../data/config/hosted-ticker-persist";
 import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginRegistry } from "../plugins/registry";
 import { subscribeToCloudVerification } from "./auth-transition";
 import { cloudSyncController } from "./controller";
+import type { TickerRecord } from "../types/ticker";
 
 interface CloudSyncRuntimeOptions {
   state: AppState;
@@ -16,6 +19,10 @@ interface CloudSyncRuntimeOptions {
   tickerRepository: AppTickerRepositoryPort;
   pluginRegistry: PluginRegistry;
   initialized: boolean;
+}
+
+function tickerMap(tickers: TickerRecord[]): Map<string, TickerRecord> {
+  return new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
 }
 
 export function useCloudSyncRuntime({
@@ -59,27 +66,42 @@ export function useCloudSyncRuntime({
       const userId = apiClient.getCurrentUser()?.id ?? null;
       setHostedConfigUserId(userId);
       if (!initialized) return;
+      if (userId !== lastUserId) {
+        // Switching Gloom Cloud accounts must not keep the previous book.
+        // Account 2 with no snapshot stays empty.
+        const localTickers = readHostedTickers(userId);
+        dispatch({ type: "SET_TICKERS", tickers: tickerMap(localTickers) });
+      }
       if (userId && userId !== lastUserId) {
         // User signed in (possibly after sign-out). Reset the sync pull state
-        // so Gloom Cloud is re-pulled with the new session, and try to restore
-        // the server-side config snapshot before the sync pull runs.
+        // so Gloom Cloud is re-pulled with the new session, and restore the
+        // Worker + Cloud snapshots the same way boot does.
         cloudSyncController.resetPullState();
         try {
-          const remote = await fetchHostedConfigSnapshot();
-          const localStamp = peekHostedUserConfigStamp();
           const currentState = getState();
-          const merged = mergeRemoteConfigSnapshot(
-            currentState.config,
-            remote,
-            localStamp?.updatedAt ?? null,
-          );
-          if (merged) {
-            dispatch({ type: "SET_CONFIG", config: merged });
-            writeHostedUserConfig(merged);
-            hydrateHostedByokConfig(merged);
+          const hydrated = await hydrateHostedWorkspaceFromCloud(currentState.config, {
+            pullConfig: fetchHostedConfigSnapshot,
+            pullSync: () => apiClient.getSyncSnapshot(),
+          });
+          dispatch({ type: "SET_CONFIG", config: hydrated.config });
+          dispatch({ type: "SET_TICKERS", tickers: tickerMap(hydrated.tickers) });
+          for (const ticker of hydrated.tickers) {
+            await tickerRepository.saveTicker(ticker);
           }
         } catch {
-          // Network failure — the sync pull will still run as a fallback.
+          const remote = await fetchHostedConfigSnapshot().catch(() => null);
+          if (remote) {
+            const merged = mergeRemoteConfigSnapshot(
+              getState().config,
+              remote,
+              peekHostedUserConfigStamp()?.updatedAt ?? null,
+            );
+            if (merged) {
+              dispatch({ type: "SET_CONFIG", config: merged });
+              writeHostedUserConfig(merged);
+              hydrateHostedByokConfig(merged);
+            }
+          }
         }
       }
       lastUserId = userId;
@@ -88,7 +110,7 @@ export function useCloudSyncRuntime({
     };
     void syncSignedInUser();
     return apiClient.subscribeCurrentUser(() => void syncSignedInUser());
-  }, [initialized, dispatch, getState]);
+  }, [initialized, dispatch, getState, tickerRepository]);
 }
 
 export function useCloudSyncStatus() {

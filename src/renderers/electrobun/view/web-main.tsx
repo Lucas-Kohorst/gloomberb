@@ -26,17 +26,11 @@ import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
 import {
-  fetchHostedConfigSnapshot,
-  mergeRemoteConfigSnapshot,
-} from "../../../data/config/hosted-config-snapshot";
-import {
   getHostedConfigUserId,
   hydrateHostedUserConfig,
-  peekHostedUserConfigStamp,
   readLastHostedUserId,
   rememberHostedUserId,
   setHostedConfigUserId,
-  writeHostedUserConfig,
 } from "../../../data/config/hosted-user-persist";
 import { apiClient } from "../../../api-client";
 import {
@@ -44,6 +38,7 @@ import {
   resolveHostedInit,
   resolveHostedSession,
 } from "./hosted-boot";
+import { hydrateHostedWorkspaceFromCloud } from "../../../data/config/hosted-sync-hydrate";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -136,23 +131,15 @@ async function boot(): Promise<void> {
   if (isHosted) {
     hydrateHostedUserConfig(init.config);
     hydrateHostedByokConfig(init.config);
-    // After local hydration, try the server-side snapshot. If it is newer than
-    // the local save (e.g. browser data was cleared, or a different device),
-    // overlay it and persist it locally so the next boot is fast.
+    // Overlay per-user localStorage, Worker `/api/config`, and Gloom Cloud
+    // `/sync/snapshot` before the first render so Main Portfolio and the saved
+    // default layout are already in the boot config. Worker ticker RPCs stay
+    // no-ops; the book lives in hosted ticker persist + sync.
     if (hostedSession?.user) {
       try {
-        const remote = await fetchHostedConfigSnapshot();
-        const localStamp = peekHostedUserConfigStamp();
-        const merged = mergeRemoteConfigSnapshot(
-          init.config,
-          remote,
-          localStamp?.updatedAt ?? null,
-        );
-        if (merged) {
-          Object.assign(init.config, merged);
-          writeHostedUserConfig(init.config);
-          hydrateHostedByokConfig(init.config);
-        }
+        await hydrateHostedWorkspaceFromCloud(init.config, {
+          pullSync: () => apiClient.getSyncSnapshot(),
+        });
       } catch {
         // Network or parse failure — proceed with whatever local hydration gave us.
       }

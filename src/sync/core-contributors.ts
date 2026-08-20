@@ -26,6 +26,8 @@ import {
 } from "../plugins/ownership";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
 import { peekHostedUserConfigStamp } from "../data/config/hosted-user-persist";
+import { shouldKeepNewerHostedLocalConfig } from "../data/config/hosted-config-snapshot";
+import { parseIncomingTickerRecords } from "../data/config/hosted-ticker-persist";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -349,6 +351,21 @@ function normalizeSyncedLayouts(layouts: AppConfig["layouts"]): AppConfig["layou
   });
 }
 
+function mergeNamedEntries<T extends { id: string }>(
+  local: T[],
+  incoming: unknown,
+): T[] {
+  if (!Array.isArray(incoming) || incoming.length === 0) return local;
+  const byId = new Map(local.map((entry) => [entry.id, entry]));
+  for (const raw of incoming) {
+    if (!isPlainObject(raw) || typeof raw.id !== "string" || !raw.id.trim()) continue;
+    const id = raw.id.trim();
+    const current = byId.get(id);
+    byId.set(id, { ...(current ?? {}), ...raw, id } as T);
+  }
+  return [...byId.values()];
+}
+
 function mergeConfigPayload(
   config: AppConfig,
   payload: unknown,
@@ -447,13 +464,7 @@ export const coreConfigSyncContributor: SyncContributor = {
   collect: ({ state }) => collectCoreConfigPayload(state.config),
   apply: (payload, { snapshot, baselineState, state, dispatch }) => {
     const localStamp = peekHostedUserConfigStamp();
-    const snapshotCreatedAt = snapshot?.createdAt ? Date.parse(snapshot.createdAt) : Number.NaN;
-    const localUpdatedAt = localStamp ? Date.parse(localStamp.updatedAt) : Number.NaN;
-    if (
-      Number.isFinite(localUpdatedAt)
-      && Number.isFinite(snapshotCreatedAt)
-      && localUpdatedAt > snapshotCreatedAt
-    ) {
+    if (shouldKeepNewerHostedLocalConfig(state.config, localStamp?.updatedAt, snapshot?.createdAt)) {
       // Hosted local persist is newer than the cloud snapshot. Keep it and let
       // the following push publish it instead of reverting to a stale pull.
       return;
@@ -477,18 +488,32 @@ export const coreCollectionsSyncContributor: SyncContributor = {
   apply: async (payload, { getState, isCurrent, dispatch, tickerRepository }) => {
     if (!isPlainObject(payload)) return;
     hydrateProfileAnalytics(payload);
+
+    const currentState = getState();
+    const nextPortfolios = mergeNamedEntries<Portfolio>(currentState.config.portfolios, payload.portfolios);
+    const nextWatchlists = mergeNamedEntries<Watchlist>(currentState.config.watchlists, payload.watchlists);
+    if (
+      nextPortfolios !== currentState.config.portfolios
+      || nextWatchlists !== currentState.config.watchlists
+    ) {
+      const nextConfig: AppConfig = {
+        ...currentState.config,
+        portfolios: nextPortfolios,
+        watchlists: nextWatchlists,
+      };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      scheduleConfigSave(nextConfig);
+    }
+
     const incomingRecords: TickerRecord[] = [];
-    const rawTickers = Array.isArray(payload.tickers) ? payload.tickers : [];
-    for (const rawTicker of rawTickers) {
+    for (const parsed of parseIncomingTickerRecords(payload)) {
       if (!isCurrent()) return;
-      if (!isPlainObject(rawTicker)) continue;
-      const current = typeof rawTicker.ticker === "string"
-        ? getState().tickers.get(rawTicker.ticker)
-        : null;
+      const current = getState().tickers.get(parsed.metadata.ticker);
       const metadata = hydrateTickerMetadata({
         ...current?.metadata,
-        ...rawTicker,
-        broker_contracts: current?.metadata.broker_contracts ?? [],
+        ...parsed.metadata,
+        ticker: parsed.metadata.ticker,
+        broker_contracts: current?.metadata.broker_contracts ?? parsed.metadata.broker_contracts ?? [],
       });
       const record: TickerRecord = { metadata };
       await tickerRepository.saveTicker(record);
@@ -503,6 +528,14 @@ export const coreCollectionsSyncContributor: SyncContributor = {
     dispatch({ type: "SET_TICKERS", tickers: nextTickers });
   },
 };
+
+export function overlayCoreConfigPayload(
+  config: AppConfig,
+  payload: unknown,
+  baselineConfig: AppConfig = config,
+): AppConfig | null {
+  return mergeConfigPayload(config, payload, baselineConfig);
+}
 
 export function createCoreSyncContributors(): SyncContributor[] {
   return [coreConfigSyncContributor, coreCollectionsSyncContributor];
