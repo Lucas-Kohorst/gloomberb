@@ -5,6 +5,8 @@ import type {
   ChatPresence,
   CloudQuotePayload,
   QuoteStreamTarget,
+  ScannerFeedEvent,
+  ScannerKind,
 } from "./types";
 import {
   normalizeChatMessage,
@@ -25,6 +27,12 @@ type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => vo
 type QuoteSubscription = {
   target: QuoteStreamTarget;
   listener: QuoteListener;
+};
+type ScannerListener = (event: ScannerFeedEvent) => void;
+
+const SCANNER_MESSAGE_KINDS: Record<string, ScannerKind> = {
+  "scanner.hilo": "hilo",
+  "scanner.flow": "flow",
 };
 
 function mergeQuoteStreamSubscriptions(
@@ -88,6 +96,8 @@ export class CloudApiSocket {
   private readonly pendingQuoteSubscribes = new Map<string, QuoteStreamTarget>();
   private readonly pendingQuoteUnsubscribes = new Map<string, QuoteStreamTarget>();
   private quoteSubscriptionFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly scannerListeners = new Map<ScannerKind, Set<ScannerListener>>();
+  private readonly scannerSnapshots = new Map<ScannerKind, ScannerFeedEvent>();
 
   constructor(private readonly delegate: CloudApiSocketDelegate) {}
 
@@ -180,6 +190,37 @@ export class CloudApiSocket {
     this.chatPresenceListeners.add(listener);
     return () => {
       this.chatPresenceListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Subscribes to a shared server-computed scanner. Every open pane of the same
+   * kind shares one upstream subscription; the socket fans the payload out.
+   */
+  subscribeScanner(scanner: ScannerKind, listener: ScannerListener): () => void {
+    const listeners = this.scannerListeners.get(scanner) ?? new Set<ScannerListener>();
+    const firstListener = listeners.size === 0;
+    listeners.add(listener);
+    this.scannerListeners.set(scanner, listeners);
+    this.ensureSocket();
+    if (firstListener) {
+      this.sendSocketMessage({ type: "scanner.subscribe", scanner });
+    } else {
+      const snapshot = this.scannerSnapshots.get(scanner);
+      if (snapshot) listener(snapshot);
+    }
+
+    return () => {
+      const current = this.scannerListeners.get(scanner);
+      if (!current || !current.delete(listener)) return;
+      if (current.size === 0) {
+        this.scannerListeners.delete(scanner);
+        this.scannerSnapshots.delete(scanner);
+        this.sendSocketMessage({ type: "scanner.unsubscribe", scanner });
+      }
+      if (!this.shouldKeepSocketOpen()) {
+        this.teardown();
+      }
     };
   }
 
@@ -284,6 +325,8 @@ export class CloudApiSocket {
     this.quoteTargets.clear();
     this.pendingQuoteSubscribes.clear();
     this.pendingQuoteUnsubscribes.clear();
+    this.scannerListeners.clear();
+    this.scannerSnapshots.clear();
     if (this.quoteSubscriptionFlushTimer) {
       clearTimeout(this.quoteSubscriptionFlushTimer);
       this.quoteSubscriptionFlushTimer = null;
@@ -316,7 +359,7 @@ export class CloudApiSocket {
         return;
       }
       this.delegate.markCurrentUserUnverified();
-      if (this.quoteTargets.size > 0) {
+      if (this.quoteTargets.size > 0 || this.scannerListeners.size > 0) {
         return;
       }
       this.teardown();
@@ -348,6 +391,24 @@ export class CloudApiSocket {
       return;
     }
 
+    const scannerKind = typeof parsed?.type === "string" ? SCANNER_MESSAGE_KINDS[parsed.type] : undefined;
+    if (scannerKind) {
+      const { type: _type, ...payload } = parsed;
+      this.emitScannerEvent(scannerKind, { type: "data", payload });
+      return;
+    }
+
+    if (parsed?.type === "scanner.denied") {
+      const denied = SCANNER_MESSAGE_KINDS[`scanner.${parsed.scanner}`];
+      if (denied) {
+        this.emitScannerEvent(denied, {
+          type: "denied",
+          reason: typeof parsed.reason === "string" ? parsed.reason : "pro_required",
+        });
+      }
+      return;
+    }
+
     if (parsed?.type === "market.quote" && parsed.quote && typeof parsed.symbol === "string") {
       const key = marketKey(parsed.symbol, parsed.exchange);
       const quote: CloudQuotePayload = {
@@ -369,8 +430,15 @@ export class CloudApiSocket {
     return baseUrl.replace(/^https?/, wsProtocol);
   }
 
+  private emitScannerEvent(scanner: ScannerKind, event: ScannerFeedEvent): void {
+    this.scannerSnapshots.set(scanner, event);
+    for (const listener of this.scannerListeners.get(scanner) ?? []) {
+      listener(event);
+    }
+  }
+
   private shouldKeepSocketOpen(): boolean {
-    if (this.quoteTargets.size > 0) return true;
+    if (this.quoteTargets.size > 0 || this.scannerListeners.size > 0) return true;
     return !!this.delegate.getSocketAuthToken()
       && this.delegate.hasVerifiedUser()
       && this.channelListeners.size > 0;
@@ -456,6 +524,8 @@ export class CloudApiSocket {
         || type === "market.unsubscribe"
         || type === "chat.subscribe"
         || type === "chat.unsubscribe"
+        || type === "scanner.subscribe"
+        || type === "scanner.unsubscribe"
       ) {
         cloudApiLog.info("send websocket message", payload);
       }
@@ -468,6 +538,10 @@ export class CloudApiSocket {
 
     for (const channelId of this.channelListeners.keys()) {
       this.sendSocketMessage({ type: "chat.subscribe", channelId });
+    }
+
+    for (const scanner of this.scannerListeners.keys()) {
+      this.sendSocketMessage({ type: "scanner.subscribe", scanner });
     }
 
     if (this.quoteTargets.size > 0) {

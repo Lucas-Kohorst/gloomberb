@@ -1,6 +1,4 @@
-import type { GloomPlugin } from "../../../types/plugin";
-import { attachFredSeriesPersistence } from "../../../data/fred-series";
-import { FRED_EXTENDED_SERIES_ENABLED } from "../../../data/fred-extended-series";
+import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { BondSearchPane } from "./pane";
 import { BOND_SEARCH_PANE_ID } from "./model";
@@ -10,13 +8,7 @@ export const BOND_SEARCH_PLUGIN_ID = "bond-search";
 
 let disposeConnection: (() => void) | null = null;
 
-export const bondSearchPlugin: GloomPlugin = {
-  id: BOND_SEARCH_PLUGIN_ID,
-  name: "Bond Search",
-  version: "1.0.0",
-  description: "Corporate and municipal bond yields, spreads vs. Treasury, and search.",
-  toggleable: true,
-
+export const bondSearchModule: PluginModule = {
   panes: [
     {
       id: BOND_SEARCH_PANE_ID,
@@ -51,15 +43,11 @@ export const bondSearchPlugin: GloomPlugin = {
         "HY",
       ],
       shortcut: { prefix: "BOND" },
-      canCreate: () => FRED_EXTENDED_SERIES_ENABLED,
       createInstance: () => ({ placement: "floating" }),
     },
   ],
 
-  setup(ctx) {
-    // Share the FRED series cache/persistence namespace used by the econ plugin.
-    attachFredSeriesPersistence(ctx.persistence);
-    // Bond Search is a FRED consumer (Gloom Cloud /cloud/econ), not an Adjacent Cloud origin.
+  setup() {
     disposeConnection = registerConnectionSource({
       id: FRED_CORPORATE_YIELDS_CONNECTION_ID,
       name: "FRED Corporate Yields",

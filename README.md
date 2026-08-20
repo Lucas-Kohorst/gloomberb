@@ -276,13 +276,16 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `ECON` | Economic events and releases |
 | `GC` | Yield curve |
 | `AUCT` | Treasury auction results |
+| `CRD` | ICE BofA US corporate option-adjusted spreads |
 | `BOND` | Corporate bond yields and spreads |
+| `VIX` | Volatility and term-structure dashboard |
+| `HILO` | Session new highs and lows |
+| `FLOW` | Unusual options activity |
 | `ERN` | Earnings calendar |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |
-| `VIX` | Volatility and term-structure dashboard |
 
 ### Workspace and App Controls
 
