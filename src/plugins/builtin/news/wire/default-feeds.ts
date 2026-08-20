@@ -8,6 +8,7 @@ import type { RssFeedConfig } from "./rss/parser";
 // Invariants (enforced by default-feeds.test.ts): unique ids, http(s) urls,
 // authority in 0-100.
 export const DEFAULT_FEEDS: RssFeedConfig[] = [
+  { id: "adjacent-press", url: "https://adjacent.markets/press/rss", name: "Adjacent Press", category: "general", authority: 82, enabled: true },
   { id: "bbc-business", url: "https://feeds.bbci.co.uk/news/business/rss.xml", name: "BBC Business", category: "general", authority: 80, enabled: true },
   { id: "bbc-world", url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: "BBC World", category: "general", authority: 80, enabled: true },
   { id: "bbc-tech", url: "https://feeds.bbci.co.uk/news/technology/rss.xml", name: "BBC Technology", category: "tech", authority: 74, enabled: true },
