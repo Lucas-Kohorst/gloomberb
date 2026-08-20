@@ -11,6 +11,7 @@ export const DEFAULT_CHAT_CHANNEL_ID = "everyone";
 export const LAST_VISITED_CHAT_CHANNEL_KEY = "lastChatChannelId";
 
 const CHAT_USERNAME_ARG = /^@?([A-Za-z][A-Za-z0-9_]{2,29})$/;
+const CHAT_MENTION_ARG = /^@([A-Za-z][A-Za-z0-9_]{2,29})$/;
 
 export function normalizeChannelId(channelId: string | null | undefined) {
   const trimmed = channelId?.trim();
@@ -84,37 +85,89 @@ function openDefaultChatPane(
   openChatChannelFromCommand(ctx, getPreferredChatOpenChannelId(config, chatController.getSnapshot()));
 }
 
-export async function openDmTargetFromCommand(ctx: GloomPluginContext, usernames: string[]): Promise<void> {
+export function parseMentionUsernames(value: string): string[] {
+  const usernames = new Set<string>();
+  for (const rawPart of value.split(/[\s,]+/)) {
+    const part = rawPart.trim();
+    if (!part) continue;
+    const match = part.match(CHAT_MENTION_ARG);
+    if (!match?.[1]) continue;
+    usernames.add(match[1].toLowerCase());
+  }
+  return [...usernames];
+}
+
+export function parseGroupCreateName(value: string): string | undefined {
+  const mentions = parseMentionUsernames(value);
+  if (mentions.length < 2) return undefined;
+  const leftover = value
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !CHAT_MENTION_ARG.test(part))
+    .join(" ")
+    .trim();
+  return leftover || undefined;
+}
+
+export function parseConversationCreateArg(value: string): { usernames: string[]; name?: string } | null {
+  const name = parseGroupCreateName(value);
+  if (name) {
+    return { usernames: parseMentionUsernames(value), name };
+  }
+  const usernames = parseDmUsernames(value);
+  if (usernames.length === 0 || !hasOnlyDmUsernameArgs(value)) return null;
+  return { usernames };
+}
+
+export function isValidConversationCreateArg(value: string): boolean {
+  return parseConversationCreateArg(value) !== null;
+}
+
+export async function openDmTargetFromCommand(
+  ctx: GloomPluginContext,
+  usernames: string[],
+  name?: string,
+): Promise<void> {
   if (usernames.length === 0) {
     openDefaultChatPane(ctx);
     return;
   }
   const channel = usernames.length === 1
     ? await chatController.openDirectChannel({ username: usernames[0] })
-    : await chatController.openGroupChannel({ usernames });
+    : await chatController.openGroupChannel({
+      usernames,
+      name: name?.trim() || undefined,
+    });
   openChatChannelFromCommand(ctx, channel.id);
 }
 
 export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): CommandResultDef[] {
   const trimmed = arg.trim();
   if (trimmed) {
-    const usernames = parseDmUsernames(trimmed);
-    const valid = hasOnlyDmUsernameArgs(trimmed) && usernames.length > 0;
+    const created = parseConversationCreateArg(trimmed);
+    const usernames = created?.usernames ?? parseDmUsernames(trimmed);
+    const groupName = created?.name;
+    const valid = created !== null;
     const label = usernames.length <= 1
       ? `DM ${usernames[0] ? `@${usernames[0]}` : trimmed}`
-      : `Group ${usernames.map((username) => `@${username}`).join(", ")}`;
+      : groupName
+        ? `Group ${groupName}`
+        : `Group ${usernames.map((username) => `@${username}`).join(", ")}`;
     return [{
       id: `start:${valid ? usernames.join(",") : trimmed}`,
       label,
       detail: valid
         ? usernames.length === 1
           ? t("Start or open direct message")
-          : t("Start group chat")
-        : t("Use @username, or multiple usernames for a group chat"),
+          : groupName
+            ? t("Start named group chat")
+            : t("Start group chat")
+        : t("Use @username, or multiple usernames and an optional name for a group"),
       category: t("Chat"),
       right: "DM",
       disabled: !valid,
-      execute: () => openDmTargetFromCommand(ctx, usernames),
+      execute: () => openDmTargetFromCommand(ctx, usernames, groupName),
     }];
   }
 

@@ -2,6 +2,7 @@ import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
 import { InputSearchBar, usePaneFooter, type PaneFooterSegment } from "../../../../components";
+import { PageStackView } from "../../../../components/ui";
 import { t } from "../../../../i18n";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
 import { useInlineTickers } from "../../../../state/hooks/inline-tickers";
@@ -86,6 +87,7 @@ export function ChatContent({
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [followMessages, setFollowMessages] = useState(true);
   const [newDmOpen, setNewDmOpen] = useState(false);
+  const [conversationOpen, setConversationOpen] = useState(true);
   const inputRef = useRef<TextareaRenderable>(null);
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const searchInputRef = useRef<InputRenderable>(null);
@@ -165,6 +167,8 @@ export function ChatContent({
     channelCount: channels.length,
     nativePaneChrome,
   });
+  const stackedNav = !showChannelSidebar;
+  const stackedConversationOpen = stackedNav && conversationOpen;
   composerTextWidthRef.current = composerTextWidth;
   const canSend = !!user?.emailVerified;
   const trimmedSearchQuery = searchQuery.trim();
@@ -250,6 +254,7 @@ export function ChatContent({
     nativePaneChrome,
     replyTo,
     searchRows: searchOpen ? 1 : 0,
+    headerRows: stackedConversationOpen ? (nativePaneChrome ? 2 : 1) : 0,
   });
   const {
     cancelProfilePopoverClose,
@@ -335,6 +340,7 @@ export function ChatContent({
     onChannelChange,
     resetTranscriptSelection,
     showChannelSidebar,
+    channelListVisible: showChannelSidebar || (stackedNav && !conversationOpen),
   });
 
   const focusInput = useCallback(() => {
@@ -358,15 +364,34 @@ export function ChatContent({
     dispatch({ type: "SET_INPUT_CAPTURED", captured: true });
   }, [blurInput, closeProfilePopover, dispatch, setSidebarFocused]);
 
-  const openConversationFromDialog = useCallback(async (usernames: string[]) => {
+  const openConversationFromDialog = useCallback(async (usernames: string[], name?: string) => {
     const channel = usernames.length === 1
       ? await controller.openDirectChannel({ username: usernames[0] })
-      : await controller.openGroupChannel({ usernames });
+      : await controller.openGroupChannel({
+        usernames,
+        name: name?.trim() || undefined,
+      });
     setDirectExpanded(true);
     selectSidebarChannel(channel.id);
+    setConversationOpen(true);
     setSidebarFocused(false);
     closeNewDmDialog();
   }, [closeNewDmDialog, controller, selectSidebarChannel, setDirectExpanded, setSidebarFocused]);
+
+  const closeConversation = useCallback(() => {
+    blurInput();
+    closeSearch();
+    closeNewDmDialog();
+    closeProfilePopover();
+    setConversationOpen(false);
+    setSidebarFocused(true);
+  }, [blurInput, closeNewDmDialog, closeProfilePopover, closeSearch, setSidebarFocused]);
+
+  const selectChannelFromList = useCallback((nextChannelId: string) => {
+    selectSidebarChannel(nextChannelId);
+    setConversationOpen(true);
+    setSidebarFocused(false);
+  }, [selectSidebarChannel, setSidebarFocused]);
 
   useEffect(() => {
     if (!focused && newDmOpen) {
@@ -539,10 +564,13 @@ export function ChatContent({
     setSelectedIdx,
     shouldLeaveComposerForSelection,
     showChannelSidebar,
+    channelListVisible: showChannelSidebar || (stackedNav && !conversationOpen),
     sidebarFocusedRef,
     searchFocused: searchOpen && searchFocused,
     openSearch,
     closeSearch,
+    stackedConversationOpen,
+    onLeaveConversation: closeConversation,
   });
 
   usePaneFooter("chat", () => {
@@ -559,9 +587,11 @@ export function ChatContent({
     }
     return {
       info,
-      hints: [{ id: "search", key: "s", label: "earch", onPress: openSearch }],
+      hints: stackedConversationOpen || showChannelSidebar
+        ? [{ id: "search", key: "s", label: "earch", onPress: openSearch }]
+        : [],
     };
-  }, [canSend, loading, openSearch, searching, user, visibleMessages.length]);
+  }, [canSend, loading, openSearch, searching, showChannelSidebar, stackedConversationOpen, user, visibleMessages.length]);
 
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
@@ -569,48 +599,41 @@ export function ChatContent({
   const chatLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
 
-  return (
+  const channelSidebar = (
+    <ChannelSidebar
+      channels={channels}
+      channelStates={channelStates}
+      activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
+      onlineCount={onlineCount}
+      width={stackedNav ? width : channelSidebarWidth}
+      height={height}
+      focused={focused}
+      keyboardFocused={sidebarFocused}
+      loading={channelsLoading}
+      canManageNotifications={!!user?.emailVerified}
+      canCreateConversation={!!user?.emailVerified}
+      directExpanded={directExpanded}
+      onSelect={stackedNav ? selectChannelFromList : selectSidebarChannel}
+      onFocusRequest={() => setSidebarFocused(true)}
+      onCreateConversation={openNewDmDialog}
+      onToggleNotifications={(nextChannelId, enabled) => {
+        controller.setChannelNotificationsEnabled(nextChannelId, enabled);
+      }}
+      onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
+    />
+  );
+
+  const threadPane = (
     <Box
-      flexDirection="row"
-      width={width}
+      flexDirection="column"
+      width={chatWidth}
       height={chatLayoutHeight}
       flexGrow={nativePaneChrome ? 1 : undefined}
+      backgroundColor={chatContentBg}
+      position="relative"
+      onMouseDown={() => focusChatContent()}
       style={nativeFillStyle}
     >
-      {showChannelSidebar && (
-        <ChannelSidebar
-          channels={channels}
-          channelStates={channelStates}
-          activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
-          onlineCount={onlineCount}
-          width={channelSidebarWidth}
-          height={height}
-          focused={focused}
-          keyboardFocused={sidebarFocused}
-          loading={channelsLoading}
-          canManageNotifications={!!user?.emailVerified}
-          canCreateConversation={!!user?.emailVerified}
-          directExpanded={directExpanded}
-          onSelect={selectSidebarChannel}
-          onFocusRequest={() => setSidebarFocused(true)}
-          onCreateConversation={openNewDmDialog}
-          onToggleNotifications={(nextChannelId, enabled) => {
-            controller.setChannelNotificationsEnabled(nextChannelId, enabled);
-          }}
-          onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
-        />
-      )}
-
-      <Box
-        flexDirection="column"
-        width={chatWidth}
-        height={chatLayoutHeight}
-        flexGrow={nativePaneChrome ? 1 : undefined}
-        backgroundColor={chatContentBg}
-        position="relative"
-        onMouseDown={() => focusChatContent()}
-        style={nativeFillStyle}
-      >
       {!nativePaneChrome && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
@@ -666,17 +689,6 @@ export function ChatContent({
         onSetUpProfile={openProfileSetup}
       />
 
-      {newDmOpen ? (
-        <NewDmDialog
-          width={chatWidth}
-          height={height}
-          userByUsername={userByUsername}
-          currentUserId={user?.id}
-          onCancel={closeNewDmDialog}
-          onSubmit={openConversationFromDialog}
-        />
-      ) : null}
-
       {!nativePaneChrome && !canSend && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
@@ -710,7 +722,56 @@ export function ChatContent({
         onMentionSelect={commitMentionSelection}
         user={user}
       />
+    </Box>
+  );
+
+  const newDmDialog = newDmOpen ? (
+    <NewDmDialog
+      width={stackedNav ? width : chatWidth}
+      height={height}
+      userByUsername={userByUsername}
+      currentUserId={user?.id}
+      onCancel={closeNewDmDialog}
+      onSubmit={openConversationFromDialog}
+    />
+  ) : null;
+
+  if (stackedNav) {
+    return (
+      <Box
+        flexDirection="column"
+        width={width}
+        height={chatLayoutHeight}
+        flexGrow={nativePaneChrome ? 1 : undefined}
+        position="relative"
+        style={nativeFillStyle}
+      >
+        <PageStackView
+          focused={focused && !newDmOpen}
+          detailOpen={conversationOpen}
+          onBack={closeConversation}
+          backLabel={t("Chats")}
+          detailTitle={activeChannelTitle}
+          rootContent={channelSidebar}
+          detailContent={threadPane}
+        />
+        {newDmDialog}
       </Box>
+    );
+  }
+
+  return (
+    <Box
+      flexDirection="row"
+      width={width}
+      height={chatLayoutHeight}
+      flexGrow={nativePaneChrome ? 1 : undefined}
+      position="relative"
+      style={nativeFillStyle}
+    >
+      {channelSidebar}
+      {threadPane}
+      {newDmDialog}
     </Box>
   );
 }
