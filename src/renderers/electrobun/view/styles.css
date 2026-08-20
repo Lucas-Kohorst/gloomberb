@@ -58,6 +58,14 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-titlebar-overlay="true"] [data-gloom-interactive="true"] {
   cursor: pointer;
 }
+[data-titlebar-overlay="true"] [data-gloom-role="header-ticker-slot"],
+[data-titlebar-overlay="true"] [data-gloom-role="header-ticker-input"] {
+  cursor: text;
+}
+[data-gloom-role="header-ticker-input"]::placeholder {
+  color: color-mix(in srgb, var(--gloom-header-text, #f2f2f2) 55%, transparent);
+  font-weight: 600;
+}
 [data-gloom-role="window-controls"] {
   height: 100%;
   color: var(--gloom-header-text, #f2f2f2);

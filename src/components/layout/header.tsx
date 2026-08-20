@@ -20,6 +20,7 @@ import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../market-data/market/format";
 import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
 import { getTitlebarLeadingInset } from "./titlebar-overlay";
+import { HeaderTickerSlot } from "./header-ticker";
 import { PaneSuggestions } from "./pane-suggestions";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
@@ -203,7 +204,7 @@ export function Header({ onOpenHelp }: { onOpenHelp?: () => void }) {
         }}
       >
         <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" gap={1}>
-          <PaneSuggestions paneId={focusedPaneType} tickerSymbol={focusedTicker} />
+          <HeaderTickerSlot />
         </Box>
         <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
           <UpdateStatus />
