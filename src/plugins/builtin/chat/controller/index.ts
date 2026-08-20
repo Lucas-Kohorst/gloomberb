@@ -97,6 +97,8 @@ export class ChatController {
     isSessionChecked: () => this.session.sessionChecked,
     hasSessionToken: () => !!this.session.sessionToken,
     getOnlineCount: () => this.channelCatalog.getOnlineCount(),
+    getOnlineUserIds: () => this.channelCatalog.getOnlineUserIds(),
+    getOnlineUsernames: () => this.channelCatalog.getOnlineUsernames(),
     getUser: () => this.session.user,
     getListenerSnapshot: (channelId) => this.getSnapshot(channelId),
     getVisibleMessages: (channelId) => this.getVisibleMessages(channelId),
@@ -114,8 +116,8 @@ export class ChatController {
     getUser: () => this.session.user,
     refreshSession: () => this.refreshSession(),
     handleNotification: (notification) => this.handleChatNotification(notification),
-    setOnlineCount: (onlineCount) => {
-      this.channelCatalog.setOnlineCount(onlineCount);
+    applyPresence: (presence) => {
+      this.channelCatalog.applyPresence(presence);
     },
     emit: () => this.emit(),
     getSafetyRefreshChannelIds: () => getChannelIdsForSafetyRefresh(this.storage.channelStates),

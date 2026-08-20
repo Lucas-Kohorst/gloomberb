@@ -17,6 +17,7 @@ import {
   formatChannelLabel,
   truncateChannelLabel,
 } from "./channels";
+import { isDirectPeerOnline } from "./peer-online";
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
@@ -96,11 +97,51 @@ function ChannelNotificationIcon({
   );
 }
 
+function OnlinePresenceDot({
+  onMouseDown,
+}: {
+  onMouseDown?: (event: any) => void;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+  if (!nativePaneChrome) {
+    return (
+      <Text fg={colors.positive} selectable={false} onMouseDown={onMouseDown}>●</Text>
+    );
+  }
+
+  return (
+    <Span
+      fg={colors.positive}
+      onMouseDown={onMouseDown}
+      aria-label="Online"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 8,
+        height: 16,
+        flexShrink: 0,
+      }}
+    >
+      <Box
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          backgroundColor: colors.positive,
+        }}
+      />
+    </Span>
+  );
+}
+
 export function ChannelSidebar({
   channels,
   channelStates,
   activeChannelId,
   onlineCount,
+  onlineUserIds,
+  onlineUsernames,
   width,
   height,
   focused,
@@ -119,6 +160,8 @@ export function ChannelSidebar({
   channelStates: ReturnType<ChatController["getSnapshot"]>["channelStates"];
   activeChannelId: string;
   onlineCount: number;
+  onlineUserIds?: readonly string[];
+  onlineUsernames?: readonly string[];
   width: number;
   height: number;
   focused: boolean;
@@ -201,6 +244,7 @@ export function ChannelSidebar({
               const channelState = channelStateById.get(channel.id);
               const notificationsEnabled = channelState?.notificationsEnabled === true;
               const unread = (channelState?.unreadCount ?? 0) > 0;
+              const peerOnline = isDirectPeerOnline(channel, { onlineUserIds, onlineUsernames });
               const label = formatChannelLabel(channel, channel.id);
               const selectChannel = () => {
                 onFocusRequest?.();
@@ -219,7 +263,11 @@ export function ChannelSidebar({
                   {({ foregroundColor, onMouseDown }) => (
                     <>
                       <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}> </Text>
-                      <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
+                      {peerOnline ? (
+                        <OnlinePresenceDot onMouseDown={onMouseDown} />
+                      ) : (
+                        <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
+                      )}
                       <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{truncateChannelLabel(label, labelWidth)}</Text>
                       <Box flexGrow={1} onMouseDown={onMouseDown} />
                       {canManageNotifications && (
