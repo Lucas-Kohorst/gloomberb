@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import type { VoteHubPoll } from "./types";
 
 const BASE_URL = "https://api.votehub.com";
@@ -64,7 +64,7 @@ export async function fetchVoteHubPolls(params?: {
         poll_type: params?.pollType,
         subject: params?.subject,
       });
-  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "polls", async () => {
+  return withConnectionRequest("votehub", "polls", async () => {
     const response = await VOTEHUB_FETCH.fetch(url);
     if (!response.ok) {
       throw new Error(`VoteHub request failed (${response.status})`);

@@ -2,7 +2,6 @@ import type { GloomPlugin } from "../types/plugin";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
-import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
@@ -16,10 +15,9 @@ import {
   marketOverviewPlugin,
   portfolioPlugin,
 } from "./builtin/composite-plugins";
-import { llmStatsPlugin } from "./builtin/llm-stats";
+import { adjacentPlugin } from "./builtin/adjacent";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
-import { weatherPlugin } from "./builtin/weather";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
@@ -30,19 +28,17 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   ibkrPlugin,
   applicationPlugin,
   newsPlugin,
-  pollsPlugin,
+  adjacentPlugin,
   substackPlugin,
   notesPlugin,
   pluginDiscoveryPlugin,
   aiPlugin,
-  llmStatsPlugin,
   predictionMarketsPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
   treasuryAuctionsPlugin,
-  weatherPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {

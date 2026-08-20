@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.12.3 — Adjacent Cloud data terminal
+
+Hosted users share one cached origin pull for reference prints. Polls, AI Benchmarks, and Weather fold into the Adjacent Cloud plugin. The Worker exposes `GET /api/data/{provider}` instead of one-off routes.
+
+### Adjacent Cloud
+
+- **Adjacent Cloud** owns Polls (`POLL`), AI Benchmarks (`AIBENCH`), Weather (`WX`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream (VoteHub, llm-stats, TWC, NWS CLI, Adjacent, US listings).
+- Hosted clients fetch those sources through `/api/data/{provider}` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
+- Weather pane + `G WX:LAX:high` / `G NWS:KNYC:high` series. Climate prediction markets get a Settlement tab that opens the TWC print.
+- US listed-universe security master at `/api/data/us-listings/universe` (Nasdaq Trader + SEC OTC, 12h cache).
+
+### Worker secrets
+
+CoS sets Worker secrets on gloomberb-cloud. Do not commit values.
+
+- `wrangler secret put ADJACENT_API_KEY`
+
+### Next settlement prints (not registered yet)
+
+BLS first print, EIA weekly, NOAA/NCEI normals, CME settlements, CF Benchmarks (license), AP Elections. Do not scrape Weather Underground. Kalshi/Polymarket/RSS/X/Jina stay off this registry; FRED stays on Gloom Cloud.
+
 ## v0.12.0 — Alt-data panes, denser news wire, and security hardening
 
 Security, performance, and discovery work from the improve cycle, plus Treasury auctions and a much denser RSS firehose. Bond search and VIX term-structure panes are built but stay hidden until the Gloom Cloud FRED proxy allowlists their series.

@@ -1,8 +1,4 @@
-/** One Connections row for Adjacent Cloud keyed APIs on GET /api/data. */
-export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
-export const ADJACENT_CLOUD_CONNECTION_NAME = "Adjacent Cloud";
-
-/** Worker provider ids that report through Adjacent Cloud. */
+/** Worker provider ids served by GET `/api/data/{provider}` on gloomberb-cloud. */
 export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "twc-kalshi",
   "nws-cli",

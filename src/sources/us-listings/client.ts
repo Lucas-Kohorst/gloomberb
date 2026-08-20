@@ -3,7 +3,6 @@ import type { InstrumentSearchResult } from "../../types/instrument";
 import { createThrottledFetch } from "../../utils/throttled-fetch";
 import { httpFetch } from "../../utils/http-transport";
 import {
-  ADJACENT_CLOUD_CONNECTION_ID,
   adjacentCloudDataUrl,
   isHostedWebClient,
 } from "../../plugins/builtin/connections/adjacent-cloud";
@@ -61,7 +60,7 @@ export function resetUsListingsClient(): void {
 }
 
 async function fetchUniverse(): Promise<UsListingsUniverse | null> {
-  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "us-listings", async () => {
+  return withConnectionRequest(US_LISTINGS_PROVIDER_ID, "us-listings", async () => {
     const response = await LISTINGS_FETCH.fetch(usListingsUniverseUrl());
     if (!response.ok) return null;
     const universe = printToUniverse(await response.json() as Record<string, unknown>);

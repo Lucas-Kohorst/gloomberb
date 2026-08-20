@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Box } from "../../../ui";
+import { useMemo } from "react";
 import type { PaneProps } from "../../../types/plugin";
-import type { PluginModule } from "../plugin-module";
+import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
+import { pollsModule } from "../polls";
+import { llmStatsModule } from "../llm-stats";
+import { weatherModule } from "../weather";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -11,11 +13,16 @@ import {
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { createAdjacentNewsCapability } from "./news";
+import { registerConnectionSource } from "../connections/register";
 import { usePluginConfigState } from "../../runtime";
+import { ADJACENT_API_KEY_CONFIG, ADJACENT_PLUGIN_ID } from "./types";
+import { US_LISTINGS_PROVIDER_ID } from "../../../sources/us-listings/types";
 
-const ADJACENT_API_KEY_CONFIG = "adjacentApiKey";
+export { ADJACENT_PLUGIN_ID, ADJACENT_API_KEY_CONFIG };
 
 let adjacentClient: AdjacentClient | null = null;
+let disposeAdjacentConnection: (() => void) | null = null;
+let disposeListingsConnection: (() => void) | null = null;
 
 function getOrCreateClient(apiKey: string | null): AdjacentClient {
   const normalizedKey = apiKey ?? null;
@@ -49,7 +56,7 @@ function AdjacentRatesPaneWrapper(props: PaneProps) {
   return <AdjacentRatesPane client={client} {...props} />;
 }
 
-export const adjacentModule: PluginModule = {
+const adjacentMarketsModule: PluginModule = {
   panes: [
     {
       id: "adjacent-indices",
@@ -101,10 +108,24 @@ export const adjacentModule: PluginModule = {
     adjacentClient = new AdjacentClient({ apiKey: apiKey ?? undefined });
     setSharedAdjacentApiKey(apiKey ?? null);
 
-    // Register news capability (best-effort in partial/test contexts).
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
+    disposeAdjacentConnection = registerConnectionSource({
+      id: "adjacent",
+      name: "Adjacent",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 200,
+      authRequired: false,
+    });
+    disposeListingsConnection = registerConnectionSource({
+      id: US_LISTINGS_PROVIDER_ID,
+      name: "US listed universe",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 280,
+      authRequired: false,
+    });
 
-    // Commands
     ctx.registerCommand({
       id: "adjacent-markets-search",
       label: "Search Adjacent Markets",
@@ -132,7 +153,6 @@ export const adjacentModule: PluginModule = {
           ctx.notify({ body: "Enter a search query.", type: "error" });
           return;
         }
-        // Focus the prediction markets pane and seed the search
         ctx.resume.setPaneState("prediction-markets:main", "searchQuery", query);
         ctx.resume.setPaneState("prediction-markets:main", "venueScope", "all");
         ctx.resume.setPaneState("prediction-markets:main", "selectedMarketKey", null);
@@ -142,7 +162,23 @@ export const adjacentModule: PluginModule = {
   },
 
   dispose() {
+    disposeAdjacentConnection?.();
+    disposeAdjacentConnection = null;
+    disposeListingsConnection?.();
+    disposeListingsConnection = null;
     resetAdjacentPersistence();
     adjacentClient = null;
   },
 };
+
+export const adjacentPlugin = composeBuiltinPlugin({
+  id: ADJACENT_PLUGIN_ID,
+  name: "Adjacent Cloud",
+  version: "1.0.0",
+  description:
+    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, Weather Company / NWS settlements, and llm-stats benchmarks.",
+  toggleable: true,
+  modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule],
+});
+
+export default adjacentPlugin;

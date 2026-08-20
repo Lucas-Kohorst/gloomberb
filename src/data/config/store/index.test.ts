@@ -571,6 +571,18 @@ describe("loadConfig", () => {
     expect(persisted.activeLayoutIndex).toBe(1);
     expect(persisted.layouts[1]?.layout).toEqual(DEFAULT_LAYOUT as unknown as Record<string, unknown>);
   });
+
+  test("folds polls and llm-stats disabled flags into Adjacent Cloud", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 20,
+      disabledPlugins: ["polls", "llm-stats"],
+    }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.disabledPlugins).toEqual(["adjacent"]);
+    expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
+  });
 });
 
 describe("config backup files", () => {

@@ -1,5 +1,6 @@
 export const CONNECTION_KINDS = [
   "asset-data",
+  "data",
   "news",
   "broker",
   "prediction-market",

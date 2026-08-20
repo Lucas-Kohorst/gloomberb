@@ -1,14 +1,12 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { PollsPane } from "./pane";
-import { POLLS_PANE_ID, POLLS_PLUGIN_ID } from "./types";
+import { POLLS_PANE_ID } from "./types";
+import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
 
-export const pollsPlugin: GloomPlugin = {
-  id: POLLS_PLUGIN_ID,
-  name: "Polls",
-  version: "1.0.0",
-  description: "Political polls from VoteHub (CC BY 4.0)",
-  toggleable: true,
+let disposeVoteHubConnection: (() => void) | null = null;
 
+export const pollsModule: PluginModule = {
   panes: [
     {
       id: POLLS_PANE_ID,
@@ -28,10 +26,25 @@ export const pollsPlugin: GloomPlugin = {
       label: "Polls",
       description: "Browse VoteHub political polls by type — approval, favorability, generic ballot, Senate, governor, House — with trend charts, pollster breakdowns, search, and source links.",
       keywords: ["polls", "votehub", "approval", "favorability", "generic", "ballot", "senate", "governor"],
+      category: "Data",
       shortcut: { prefix: "POLL" },
       createInstance: () => ({ placement: "floating" }),
     },
   ],
-};
 
-export default pollsPlugin;
+  setup() {
+    disposeVoteHubConnection = registerConnectionSource({
+      id: "votehub",
+      name: "VoteHub",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 300,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeVoteHubConnection?.();
+    disposeVoteHubConnection = null;
+  },
+};

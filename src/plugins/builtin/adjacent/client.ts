@@ -22,7 +22,7 @@ import type {
   AdjacentTradesResponse,
 } from "./types";
 import { unwrapAdjacentMarketIds, unwrapAdjacentNewsArticles } from "./normalize";
-import { ADJACENT_CLOUD_CONNECTION_ID, adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
@@ -110,7 +110,7 @@ async function adjacentFetchJson<T>(
   url: string,
   apiKey: string | null | undefined,
 ): Promise<T> {
-  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, "fetch", async () => {
+  return withConnectionRequest("adjacent", "fetch", async () => {
     const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
     const response = await ADJACENT_FETCH.fetch(url, { headers });
     if (!response.ok) {

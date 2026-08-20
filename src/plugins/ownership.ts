@@ -27,6 +27,9 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   thirteenf: "ticker-research",
   "ticker-detail": "ticker-research",
   "world-indices": "market-overview",
+  polls: "adjacent",
+  "llm-stats": "adjacent",
+  weather: "adjacent",
 };
 
 const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
@@ -39,6 +42,7 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   application: ["layout-manager", "help", "changelog", "byok", "connections"],
   portfolio: ["portfolio-list", "analytics", "kelly-sizer"],
+  adjacent: ["polls", "llm-stats", "weather"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {
@@ -65,7 +69,7 @@ export function normalizeBuiltinDisabledPluginIds(pluginIds: readonly string[]):
 export function normalizeBuiltinPluginStateMap(
   value: Record<string, Record<string, unknown>>,
 ): Record<string, Record<string, unknown>> {
-  return Object.fromEntries(
+  const remapped = Object.fromEntries(
     Object.entries(value).reduce<Array<[string, Record<string, unknown>]>>((entries, [pluginId, state]) => {
       const normalizedPluginId = normalizeBuiltinPluginOwnerId(pluginId);
       const existing = entries.find(([entryPluginId]) => entryPluginId === normalizedPluginId);
@@ -79,6 +83,30 @@ export function normalizeBuiltinPluginStateMap(
       return entries;
     }, []),
   );
+  return liftAdjacentConfigFromCloud(remapped);
+}
+
+/**
+ * Adjacent used to live under the Gloom Cloud composite. Lift its API key into
+ * the adjacent plugin namespace so saved keys survive the extraction.
+ */
+function liftAdjacentConfigFromCloud(
+  value: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  const cloud = value["gloomberb-cloud"];
+  if (!cloud || !Object.prototype.hasOwnProperty.call(cloud, "adjacentApiKey")) {
+    return value;
+  }
+  const { adjacentApiKey, ...cloudRest } = cloud;
+  const adjacent = { ...(value.adjacent ?? {}) };
+  if (!Object.prototype.hasOwnProperty.call(adjacent, "adjacentApiKey")) {
+    adjacent.adjacentApiKey = adjacentApiKey;
+  }
+  return {
+    ...value,
+    "gloomberb-cloud": cloudRest,
+    adjacent,
+  };
 }
 
 /**

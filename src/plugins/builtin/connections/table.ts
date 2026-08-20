@@ -45,6 +45,7 @@ export function statusLabel(status: ConnectionStatus): string {
 export function kindLabel(kind: ConnectionState["kind"]): string {
   switch (kind) {
     case "asset-data": return t("Asset Data");
+    case "data": return t("Data");
     case "news": return t("News");
     case "broker": return t("Broker");
     case "prediction-market": return t("Prediction");

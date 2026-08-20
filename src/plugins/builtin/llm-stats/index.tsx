@@ -1,17 +1,15 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
+import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
 import {
+  LLM_STATS_CONNECTION_ID,
   LLM_STATS_PANE_ID,
-  LLM_STATS_PLUGIN_ID,
 } from "./types";
 
-export const llmStatsPlugin: GloomPlugin = {
-  id: LLM_STATS_PLUGIN_ID,
-  name: "AI Benchmarks",
-  version: "1.0.0",
-  description: "Benchmark-first AI model intelligence from llm-stats.com: derived benchmark leaders, price/performance, context, providers, and the full model list.",
-  toggleable: true,
+let disposeConnection: (() => void) | null = null;
 
+export const llmStatsModule: PluginModule = {
   panes: [
     {
       id: LLM_STATS_PANE_ID,
@@ -43,10 +41,25 @@ export const llmStatsPlugin: GloomPlugin = {
         "llm-stats",
         "inference",
       ],
+      category: "Data",
       shortcut: { prefix: "AIBENCH" },
       createInstance: () => ({ placement: "floating" }),
     },
   ],
-};
 
-export default llmStatsPlugin;
+  setup() {
+    disposeConnection = registerConnectionSource({
+      id: LLM_STATS_CONNECTION_ID,
+      name: "llm-stats",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 300,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+};
