@@ -36,6 +36,7 @@ export interface SeriesCatalogInstrument {
   symbol: string;
   exchange?: string;
   name?: string;
+  assetCategory?: string;
 }
 
 export interface SeriesCatalogSuggestion {
@@ -59,6 +60,7 @@ const PREFERRED_FIELD_IDS = [
   "fundamental.eps",
   "fundamental.freeCashFlow",
   "market.volume",
+  "market.dividends",
   "valuation.trailingPE",
   "valuation.evEbitda",
 ] as const;
@@ -66,6 +68,7 @@ const PREFERRED_FIELD_IDS = [
 const FIELD_ALIASES: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "market.ohlcv": ["stock price", "share price"],
   "market.volume": ["trading volume"],
+  "market.dividends": ["dividend", "dividends", "div", "dvd"],
   "fundamental.totalRevenue": ["sales"],
   "fundamental.operatingCashFlow": ["cash from operations", "cfo"],
   "valuation.trailingPE": ["price earnings", "price to earnings"],
@@ -355,7 +358,7 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
  * assistant never has to emit the verbose `fundamental.totalRevenue` form.
  */
 const ASSIST_FIELD_NAMES = [
-  "price", "close", "volume",
+  "price", "close", "volume", "div", "dvd",
   "revenue", "grossProfit", "grossMargin", "operatingIncome", "netIncome", "netMargin",
   "freeCashFlow", "eps", "totalAssets", "totalDebt", "totalEquity",
   "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",

@@ -138,6 +138,23 @@ export function addTickerToWatchlist(
   };
 }
 
+export function removeTickerFromWatchlist(
+  ticker: TickerRecord,
+  watchlistId: string,
+): { changed: boolean; ticker: TickerRecord } {
+  if (!ticker.metadata.watchlists.includes(watchlistId)) {
+    return { changed: false, ticker };
+  }
+
+  return {
+    changed: true,
+    ticker: replaceTickerMetadata(ticker, {
+      ...ticker.metadata,
+      watchlists: ticker.metadata.watchlists.filter((entry) => entry !== watchlistId),
+    }),
+  };
+}
+
 export function removeTickerFromPortfolio(
   ticker: TickerRecord,
   portfolioId: string,

@@ -5,7 +5,10 @@ import {
   reportConnectionRequest,
   setConnectionRequestReporter,
 } from "./register";
-import { createInitialConnectionState } from "./types";
+import {
+  createInitialConnectionState,
+  recordRequest,
+} from "./types";
 
 describe("connection source registry", () => {
   const disposers: Array<() => void> = [];
@@ -57,5 +60,31 @@ describe("connection source registry", () => {
     expect(state2.authRequired).toBe(true);
     const state3 = createInitialConnectionState("z", "Z", "api", "p", 100, false);
     expect(state3.authRequired).toBeUndefined();
+  });
+});
+
+describe("recordRequest rate limits", () => {
+  test("a first 429 is reconnecting, not error", () => {
+    const idle = createInitialConnectionState("kalshi", "Kalshi", "prediction-market", "pm");
+    const next = recordRequest(idle, {
+      success: false,
+      durationMs: 40,
+      operation: "fetch",
+      error: "Request failed (429) for https://external-api.kalshi.com/trade-api/v2/events",
+    });
+    expect(next.status).toBe("reconnecting");
+    expect(next.lastError).toContain("429");
+  });
+
+  test("a later 429 does not drop a live connection to error", () => {
+    const idle = createInitialConnectionState("yahoo-short-interest", "Yahoo", "api", "si");
+    const live = recordRequest(idle, { success: true, durationMs: 80, operation: "fetch" });
+    const limited = recordRequest(live, {
+      success: false,
+      durationMs: 20,
+      operation: "fetch",
+      error: "Yahoo Finance request failed (429): Too Many Requests",
+    });
+    expect(limited.status).toBe("connected");
   });
 });

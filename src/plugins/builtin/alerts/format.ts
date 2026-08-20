@@ -1,6 +1,7 @@
 import { formatMarketPrice } from "../../../market-data/market/format";
 import { formatQuoteAgeWithSource } from "../../../market-data/quotes/time";
 import type { AlertCondition, AlertRule } from "./types";
+import { isPriceAlertCondition } from "./types";
 
 export function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -16,6 +17,18 @@ export function relativeTime(ts: number): string {
 
 export function formatCurrentPrice(alert: AlertRule, maxWidth = 9): string {
   if (alert.lastCheckError) return "No quote";
+  if (alert.condition === "halted") {
+    if (alert.lastCheckedPrice == null) return "-";
+    return alert.lastCheckedPrice > 0 ? "Halted" : "Open";
+  }
+  if (alert.condition === "short_float") {
+    return alert.lastCheckedPrice == null ? "-" : `${alert.lastCheckedPrice.toFixed(1)}%`;
+  }
+  if (alert.condition === "ex_div") {
+    if (alert.lastCheckedPrice == null) return "-";
+    const days = Math.round(alert.lastCheckedPrice);
+    return days === 0 ? "today" : `${days}d`;
+  }
   return alert.lastCheckedPrice == null
     ? "-"
     : formatMarketPrice(alert.lastCheckedPrice, {
@@ -25,6 +38,9 @@ export function formatCurrentPrice(alert: AlertRule, maxWidth = 9): string {
 }
 
 export function formatAlertTargetPrice(alert: AlertRule, maxWidth = 9): string {
+  if (alert.condition === "halted") return "—";
+  if (alert.condition === "short_float") return `${alert.targetPrice}%`;
+  if (alert.condition === "ex_div") return `${alert.targetPrice}d`;
   return formatMarketPrice(alert.targetPrice, {
     maxWidth,
     minimumFractionDigits: 2,
@@ -32,6 +48,7 @@ export function formatAlertTargetPrice(alert: AlertRule, maxWidth = 9): string {
 }
 
 export function formatAlertDistance(alert: AlertRule): string {
+  if (!isPriceAlertCondition(alert.condition)) return "-";
   const currentPrice = alert.lastCheckedPrice;
   if (alert.lastCheckError) return "-";
   if (currentPrice == null || !Number.isFinite(currentPrice) || currentPrice === 0) {
@@ -64,5 +81,11 @@ export function conditionLabel(condition: AlertCondition): string {
       return "Below";
     case "crosses":
       return "Cross";
+    case "halted":
+      return "Halt";
+    case "short_float":
+      return "SI %";
+    case "ex_div":
+      return "Ex-div";
   }
 }
