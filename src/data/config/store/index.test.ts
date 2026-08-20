@@ -351,6 +351,18 @@ describe("loadConfig", () => {
     expect(config.pluginConfig["llm-stats"]).toBeUndefined();
   });
 
+  test("folds Weather into Adjacent Cloud", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 22,
+      disabledPlugins: ["weather"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["adjacent"]);
+  });
+
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({

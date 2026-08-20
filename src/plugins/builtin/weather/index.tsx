@@ -1,18 +1,12 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { WeatherPane } from "./pane";
-import { TWC_KALSHI_URL, WEATHER_CONNECTION_ID, WEATHER_PANE_ID, WEATHER_PLUGIN_ID } from "./types";
+import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
+import { TWC_KALSHI_URL, WEATHER_CONNECTION_ID, WEATHER_PANE_ID } from "./types";
 
 let disposeWeatherConnection: (() => void) | null = null;
 
-export const weatherPlugin: GloomPlugin = {
-  id: WEATHER_PLUGIN_ID,
-  name: "Weather",
-  version: "1.0.0",
-  description:
-    "Weather Company settlement observations used by Kalshi climate markets.",
-  toggleable: true,
-
+export const weatherModule: PluginModule = {
   panes: [
     {
       id: WEATHER_PANE_ID,
@@ -53,7 +47,7 @@ export const weatherPlugin: GloomPlugin = {
       id: WEATHER_CONNECTION_ID,
       name: "The Weather Company (Kalshi)",
       kind: "data",
-      pluginId: WEATHER_PLUGIN_ID,
+      pluginId: ADJACENT_PLUGIN_ID,
       priority: 260,
       authRequired: false,
     });
@@ -66,4 +60,3 @@ export const weatherPlugin: GloomPlugin = {
 };
 
 export { TWC_KALSHI_URL };
-export default weatherPlugin;
