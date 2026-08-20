@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { CloudTweetPayload } from "../../../api-client";
 import {
+  DEFAULT_TWEET_SORT,
   DEFAULT_TWITTER_FEED_QUERY,
   DEFAULT_TWITTER_FEED_TITLE,
   TWEET_CELL_MAX_CHARS,
@@ -12,6 +14,7 @@ import {
   persistTwitterFeedState,
   resolvePersistedTwitterFeeds,
   resolveTwitterFeedQuery,
+  sortedTweets,
   tweetTextRowHeight,
 } from "./model";
 
@@ -25,6 +28,27 @@ function feed(id: string, query: string) {
     updatedAt: 1,
     lastSuccessAt: null,
     lastError: null,
+  };
+}
+
+function makeTweet(overrides: Partial<CloudTweetPayload> = {}): CloudTweetPayload {
+  return {
+    id: "123",
+    url: "https://x.com/marketsbot/status/123",
+    text: "Markets rally",
+    createdAt: "2026-08-20T12:00:00.000Z",
+    lang: "en",
+    isReply: false,
+    author: { id: "1", userName: "marketsbot", name: "Markets Bot" },
+    metrics: {
+      retweets: 0,
+      replies: 0,
+      likes: 0,
+      quotes: 0,
+      views: 0,
+      bookmarks: 0,
+    },
+    ...overrides,
   };
 }
 
@@ -104,6 +128,16 @@ describe("twitter feed persistence", () => {
       paneActiveFeedId: "b",
     });
     expect(resolved.activeFeedId).toBe("b");
+  });
+});
+
+describe("tweet table sort", () => {
+  test("time desc puts newest tweets first even when older tweets have more views", () => {
+    const older = makeTweet({ id: "old", createdAt: "2026-08-20T10:00:00.000Z", metrics: { views: 9000, likes: 50, retweets: 0, replies: 0, quotes: 0, bookmarks: 0 } });
+    const newer = makeTweet({ id: "new", createdAt: "2026-08-20T12:00:00.000Z", metrics: { views: 10, likes: 1, retweets: 0, replies: 0, quotes: 0, bookmarks: 0 } });
+    const mid = makeTweet({ id: "mid", createdAt: "2026-08-20T11:00:00.000Z", metrics: { views: 500, likes: 20, retweets: 0, replies: 0, quotes: 0, bookmarks: 0 } });
+    const rows = sortedTweets([older, newer, mid], DEFAULT_TWEET_SORT.columnId, DEFAULT_TWEET_SORT.direction);
+    expect(rows.map((tweet) => tweet.id)).toEqual(["new", "mid", "old"]);
   });
 });
 

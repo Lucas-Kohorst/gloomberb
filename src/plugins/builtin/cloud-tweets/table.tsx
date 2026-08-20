@@ -18,6 +18,7 @@ import { CloudAuthNotice } from "../cloud/auth-actions";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   buildTweetColumns,
+  DEFAULT_TWEET_SORT,
   formatMetric,
   formatRelativeShort,
   formatTweetCellText,
@@ -190,10 +191,9 @@ export function TweetSearchTable({
   useAutoRefresh(lastUpdated, reload, poll.intervalMinutes);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>({
-    columnId: "views",
-    direction: "desc",
-  });
+  const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>(
+    DEFAULT_TWEET_SORT,
+  );
   const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
   const columns = useMemo(() => buildTweetColumns(width), [width]);
   const tweetColumnWidth = columns.find((column) => column.id === "text")?.width ?? 40;
