@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { HostedTickerRepository } from "./hosted-ticker-repository";
 import type { TickerRecord } from "../../../../types/ticker";
+import { setHostedConfigUserId } from "../../../../data/config/hosted-user-persist";
 
 function record(symbol: string): TickerRecord {
   return {
@@ -44,6 +45,7 @@ describe("HostedTickerRepository", () => {
       configurable: true,
       value: localStorage,
     });
+    setHostedConfigUserId("user-1");
 
     const first = new HostedTickerRepository([]);
     await first.saveTicker(record("AAPL"));

@@ -1,4 +1,4 @@
-import type { AppConfig } from "../../types/config";
+import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
@@ -111,6 +111,33 @@ export function createHostedConfigSnapshotPusher(): {
 }
 
 /**
+ * True when hosted local config is still the boot default. A timestamped
+ * placeholder must not beat a richer Worker / Gloom Cloud snapshot.
+ */
+export function isPlaceholderHostedConfig(config: AppConfig): boolean {
+  const defaults = createDefaultConfig(config.dataDir);
+  return config.layouts.length === defaults.layouts.length
+    && config.activeLayoutIndex === defaults.activeLayoutIndex
+    && config.layouts.every((layout, index) => layout.name === defaults.layouts[index]?.name)
+    && Object.keys(config.pluginConfig).length === 0
+    && config.recentTickers.length === 0;
+}
+
+/** True when a newer real local save should win over a stale cloud snapshot. */
+export function shouldKeepNewerHostedLocalConfig(
+  config: AppConfig,
+  localUpdatedAt: string | null | undefined,
+  remoteCreatedAt: string | null | undefined,
+): boolean {
+  const remoteTime = remoteCreatedAt ? Date.parse(remoteCreatedAt) : Number.NaN;
+  const localTime = localUpdatedAt ? Date.parse(localUpdatedAt) : Number.NaN;
+  if (!Number.isFinite(localTime) || !Number.isFinite(remoteTime) || localTime <= remoteTime) {
+    return false;
+  }
+  return !isPlaceholderHostedConfig(config);
+}
+
+/**
  * Restores a config from a remote snapshot. Returns the merged config if the
  * remote snapshot is newer than the local stamp, or null if the local copy
  * should be kept.
@@ -121,10 +148,7 @@ export function mergeRemoteConfigSnapshot(
   localUpdatedAt: string | null,
 ): AppConfig | null {
   if (!remote.config || !remote.updatedAt) return null;
-  const remoteTime = Date.parse(remote.updatedAt);
-  const localTime = localUpdatedAt ? Date.parse(localUpdatedAt) : Number.NaN;
-  // If local is newer, keep it — a stale remote must never clobber it.
-  if (Number.isFinite(localTime) && Number.isFinite(remoteTime) && localTime > remoteTime) {
+  if (shouldKeepNewerHostedLocalConfig(baseConfig, localUpdatedAt, remote.updatedAt)) {
     return null;
   }
   const loaded = normalizeLoadedConfig(remote.config, baseConfig.dataDir).config;
