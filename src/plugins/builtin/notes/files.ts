@@ -1,3 +1,10 @@
+import {
+  hostedNotesUserIdFromDataDir,
+  readHostedNotes,
+  writeHostedNotes,
+} from "../../../data/config/hosted-notes-persist";
+import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
+
 export interface QuickNoteEntry {
   id: string;
   title: string;
@@ -52,6 +59,10 @@ async function deleteTextFile(path: string): Promise<void> {
   getLocalStorage()?.removeItem(`gloomberb:notes:${path}`);
 }
 
+function isHostedNotesDir(dataDir: string): boolean {
+  return dataDir.startsWith("cloud:") && typeof Bun === "undefined";
+}
+
 export class NotesFiles {
   constructor(private readonly dataDir: string) {}
 
@@ -59,7 +70,20 @@ export class NotesFiles {
     return joinPath(this.dataDir, `${symbol}.md`);
   }
 
+  private hostedUserId(): string | null {
+    if (!isHostedNotesDir(this.dataDir)) return null;
+    return hostedNotesUserIdFromDataDir(this.dataDir);
+  }
+
   async load(symbol: string): Promise<string> {
+    const userId = this.hostedUserId();
+    if (userId) {
+      const payload = readHostedNotes(userId, this.dataDir);
+      if (symbol.startsWith("__note-") && symbol.endsWith("__")) {
+        return payload.quickNotes[symbol.slice("__note-".length, -2)] ?? "";
+      }
+      return payload.tickerNotes[symbol] ?? "";
+    }
     try {
       return await readTextFile(this.pathFor(symbol));
     } catch {
@@ -68,10 +92,31 @@ export class NotesFiles {
   }
 
   async save(symbol: string, notes: string): Promise<void> {
+    const userId = this.hostedUserId();
+    if (userId) {
+      const payload = readHostedNotes(userId, this.dataDir);
+      if (symbol.startsWith("__note-") && symbol.endsWith("__")) {
+        const id = symbol.slice("__note-".length, -2);
+        if (notes) payload.quickNotes[id] = notes;
+        else delete payload.quickNotes[id];
+      } else if (notes) {
+        payload.tickerNotes[symbol] = notes;
+      } else {
+        delete payload.tickerNotes[symbol];
+      }
+      writeHostedNotes(payload, userId);
+      getHostedConfigSnapshotPusher().scheduleFromLast();
+      return;
+    }
     await writeTextFile(this.pathFor(symbol), notes || "");
   }
 
   async delete(symbol: string): Promise<void> {
+    const userId = this.hostedUserId();
+    if (userId) {
+      await this.save(symbol, "");
+      return;
+    }
     try {
       await deleteTextFile(this.pathFor(symbol));
     } catch {
@@ -84,6 +129,8 @@ export class NotesFiles {
   }
 
   async loadQuickNotesIndex(): Promise<QuickNoteEntry[]> {
+    const userId = this.hostedUserId();
+    if (userId) return readHostedNotes(userId, this.dataDir).quickNotesIndex;
     try {
       const raw = await readTextFile(this.indexPath());
       return JSON.parse(raw);
@@ -93,6 +140,14 @@ export class NotesFiles {
   }
 
   async saveQuickNotesIndex(entries: QuickNoteEntry[]): Promise<void> {
+    const userId = this.hostedUserId();
+    if (userId) {
+      const payload = readHostedNotes(userId, this.dataDir);
+      payload.quickNotesIndex = entries;
+      writeHostedNotes(payload, userId);
+      getHostedConfigSnapshotPusher().scheduleFromLast();
+      return;
+    }
     await writeTextFile(this.indexPath(), JSON.stringify(entries));
   }
 
@@ -101,6 +156,8 @@ export class NotesFiles {
   }
 
   async listAllNoteSymbols(): Promise<string[]> {
+    const userId = this.hostedUserId();
+    if (userId) return Object.keys(readHostedNotes(userId, this.dataDir).tickerNotes);
     if (typeof Bun !== "undefined") {
       const fsModulePath = "fs/promises";
       const { readdir } = await import(fsModulePath) as typeof import("fs/promises");

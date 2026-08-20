@@ -1,6 +1,6 @@
 import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config/store";
 import { writeHostedUserConfig } from "../../../data/config/hosted-user-persist";
-import { createHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
+import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
 import { writeHostedByokKeys } from "../../../plugins/builtin/byok/hosted-persist";
 import type { AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
@@ -8,8 +8,6 @@ import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc"
 function isHostedClient(): boolean {
   return getElectrobunBackendInitSnapshot()?.desktopPlatform === "cloud";
 }
-
-let hostedSnapshotPusher: ReturnType<typeof createHostedConfigSnapshotPusher> | null = null;
 
 const electrobunConfigStoreHost: ConfigStoreHost = {
   async getDataDir() {
@@ -24,8 +22,7 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
     if (isHostedClient()) {
       writeHostedUserConfig(config);
       writeHostedByokKeys(config);
-      if (!hostedSnapshotPusher) hostedSnapshotPusher = createHostedConfigSnapshotPusher();
-      hostedSnapshotPusher.schedule(config);
+      getHostedConfigSnapshotPusher().schedule(config);
     }
     await backendRequest("config.save", { config });
   },

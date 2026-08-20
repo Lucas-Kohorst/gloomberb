@@ -4,7 +4,8 @@ import {
   readHostedTickers,
   writeHostedTickers,
 } from "../../../../data/config/hosted-ticker-persist";
-import { getHostedConfigUserId } from "../../../../data/config/hosted-user-persist";
+import { getHostedConfigSnapshotPusher } from "../../../../data/config/hosted-config-snapshot";
+import { resolveHostedPersistUserId } from "../../../../data/config/hosted-user-persist";
 
 /**
  * Hosted ticker persistence. The Worker `ticker.*` RPCs are intentional
@@ -25,6 +26,7 @@ export class HostedTickerRepository {
   replaceAll(tickers: Iterable<TickerRecord>): void {
     this.tickers = this.toMap(tickers);
     writeHostedTickers([...this.tickers.values()]);
+    getHostedConfigSnapshotPusher().scheduleFromLast();
   }
 
   async loadAllTickers(): Promise<TickerRecord[]> {
@@ -38,12 +40,13 @@ export class HostedTickerRepository {
   }
 
   async saveTicker(ticker: TickerRecord): Promise<void> {
-    if (!getHostedConfigUserId()) {
+    if (!resolveHostedPersistUserId()) {
       this.tickers.set(ticker.metadata.ticker, ticker);
       return;
     }
     mergeHostedTickers([ticker]);
     this.reload();
+    getHostedConfigSnapshotPusher().scheduleFromLast();
   }
 
   async createTicker(metadata: TickerMetadata): Promise<TickerRecord> {
@@ -56,6 +59,7 @@ export class HostedTickerRepository {
     this.reload();
     this.tickers.delete(symbol);
     writeHostedTickers([...this.tickers.values()]);
+    getHostedConfigSnapshotPusher().scheduleFromLast();
   }
 
   private toMap(tickers: Iterable<TickerRecord>): Map<string, TickerRecord> {

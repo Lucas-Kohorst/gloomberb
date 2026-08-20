@@ -64,7 +64,13 @@ export function useCloudSyncRuntime({
     let lastUserId: string | null = apiClient.getCurrentUser()?.id ?? null;
     const syncSignedInUser = async () => {
       const userId = apiClient.getCurrentUser()?.id ?? null;
-      setHostedConfigUserId(userId);
+      const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+      const hostedAuthenticated = (globalThis as { __GLOOM_CLOUD_AUTHENTICATED?: boolean }).__GLOOM_CLOUD_AUTHENTICATED === true;
+      if (userId) {
+        setHostedConfigUserId(userId);
+      } else if (!hosted || !hostedAuthenticated) {
+        setHostedConfigUserId(userId);
+      }
       if (!initialized) return;
       if (userId !== lastUserId) {
         // Switching Gloom Cloud accounts must not keep the previous book.

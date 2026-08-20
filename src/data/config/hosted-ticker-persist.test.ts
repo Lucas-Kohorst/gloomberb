@@ -110,4 +110,13 @@ describe("hosted ticker persist", () => {
     mergeHostedTickers([record("MSFT")]);
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
   });
+
+  test("writes tickers using the remembered user when the active id was cleared", () => {
+    rememberHostedUserId("user-1");
+    setHostedConfigUserId(null);
+    writeHostedTickers([record("ETH-USD")]);
+    expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
+    setHostedConfigUserId("user-1");
+    expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
+  });
 });
