@@ -1,8 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { NewsArticle } from "../../../../news/types";
+import { setSharedNewsService } from "../../../../news/hooks";
 import { normalizeAdjacentNewsArticle, parseAdjacentNewsArticle } from "../../adjacent/normalize";
 import {
+  ARTICLE_SEARCH_QUERY,
+  cancelRssNewsWarm,
   looksLikeArticleQuery,
+  scheduleRssNewsWarm,
   searchNewsArticles,
   tokenizeArticleQuery,
 } from "./article-search";
@@ -75,5 +79,30 @@ describe("searchNewsArticles", () => {
       "adjacent article on the strait",
     );
     expect(matches.map((item) => item.id)).toEqual(["adjacent:ap-hormuz"]);
+  });
+});
+
+describe("scheduleRssNewsWarm", () => {
+  afterEach(() => {
+    cancelRssNewsWarm();
+    setSharedNewsService(null);
+  });
+
+  test("polls ARTICLE_SEARCH_QUERY and cancel stops a pending timer", async () => {
+    const polls: unknown[] = [];
+    setSharedNewsService({
+      poll: async (query: unknown) => {
+        polls.push(query);
+      },
+    } as never);
+
+    scheduleRssNewsWarm();
+    cancelRssNewsWarm();
+    await Bun.sleep(20);
+    expect(polls).toEqual([]);
+
+    scheduleRssNewsWarm();
+    await Bun.sleep(20);
+    expect(polls).toEqual([ARTICLE_SEARCH_QUERY]);
   });
 });
