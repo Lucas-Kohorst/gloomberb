@@ -21,6 +21,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 - News rows roll in; blocked article readers show a clear empty state.
 - Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
 - Polls default to All; Adjacent ships as a default layout + watchlist.
+- Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).
 `,
 };
 
@@ -39,7 +40,6 @@ const RELEASE_0_12_3: ChangelogRelease = {
 - Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
 - Weather pane plus \`G WX:LAX:high\` / \`G NWS:KNYC:high\` series. Climate prediction markets get a Settlement tab that opens the TWC print.
 - US listed-universe security master at \`/api/data/us-listings/universe\` (Nasdaq Trader + SEC OTC, 12h cache).
-- Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).
 
 ## Worker secrets
 
