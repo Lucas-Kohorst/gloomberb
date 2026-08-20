@@ -36,6 +36,7 @@ export interface SeriesCatalogInstrument {
   symbol: string;
   exchange?: string;
   name?: string;
+  assetCategory?: string;
 }
 
 export interface SeriesCatalogSuggestion {

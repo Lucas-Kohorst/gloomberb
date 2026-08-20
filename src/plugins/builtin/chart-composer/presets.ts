@@ -64,6 +64,15 @@ const CHART_FIELD_IDS = {
   evEbitda: "valuation.evEbitda",
 } as const;
 
+const SHORT_FIELD_TOKENS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token])),
+);
+
+/** Short token used in catalog / command-bar copy (`AAPL:price`, `AAPL:close`). */
+export function shortChartFieldToken(fieldId: string): string {
+  return SHORT_FIELD_TOKENS[fieldId] ?? fieldId.split(".").at(-1) ?? fieldId;
+}
+
 export type ParsedSeriesExpression =
   | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string }
   | { kind: "economic"; provider: "fred"; seriesId: string; label?: string }
