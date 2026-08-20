@@ -82,7 +82,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     (controller.catalogLoadCount > 0 || controller.searchLoading);
   const detailTitle = resolvePredictionDetailTitle({
     detail: controller.detail,
-    selectedRow: controller.selectedRow,
+    selectedRow: controller.selectedDetailRow,
     selectedSummary: controller.selectedSummary,
   });
   const marketUrl = controller.selectedSummary?.url || controller.selectedRow?.url || null;
@@ -271,7 +271,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   }, [controller.actions.focusSearch]);
 
   const detailContent =
-    controller.selectedSummary && controller.selectedRow ? (
+    controller.selectedSummary && controller.selectedDetailRow ? (
       <Box
         flexDirection="column"
         flexGrow={1}
@@ -294,7 +294,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           onPreviewOrder={controller.actions.previewOrder}
           onSelectMarket={controller.actions.selectMarket}
           scrollRef={controller.detailScrollRef}
-          selectedRow={controller.selectedRow}
+          selectedRow={controller.selectedDetailRow}
           selectedSummary={controller.selectedSummary}
         />
       </Box>

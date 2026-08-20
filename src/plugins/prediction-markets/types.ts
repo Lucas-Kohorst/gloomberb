@@ -142,6 +142,7 @@ export interface PredictionColumnDef extends ColumnConfig {
 interface PredictionListRowBase {
   key: string;
   kind: "market" | "group";
+  parentKey?: string;
   venue: PredictionVenue;
   representative: PredictionMarketSummary;
   focusMarketKey: string;
@@ -182,6 +183,7 @@ export interface PredictionSingleListRow extends PredictionListRowBase {
 
 export interface PredictionGroupedListRow extends PredictionListRowBase {
   kind: "group";
+  expanded?: boolean;
   marketCount: number;
   yesPriceLow: number | null;
   yesPriceHigh: number | null;
