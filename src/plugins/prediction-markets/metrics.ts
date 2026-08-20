@@ -267,8 +267,10 @@ export function getPredictionColumnValue(
       return {
         text:
           market.kind === "group"
-            ? `${market.title} · ${market.marketCount} targets`
-            : market.title,
+            ? `${market.expanded ? "▾" : "▸"} ${market.title}`
+            : market.parentKey
+              ? `  ${market.title}`
+              : market.title,
       };
     case "target":
       return { text: market.focusMarketLabel };

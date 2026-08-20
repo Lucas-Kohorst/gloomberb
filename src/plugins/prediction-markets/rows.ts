@@ -81,6 +81,56 @@ function sortGroupMembers(
   });
 }
 
+function buildChildRow(
+  summary: PredictionMarketSummary,
+  parentKey: string,
+): PredictionSingleListRow {
+  return {
+    ...buildSingleRow(summary),
+    title: summary.marketLabel || summary.title,
+    parentKey,
+  };
+}
+
+export function resolvePredictionListActivation(
+  row: Pick<PredictionListRow, "kind">,
+): "toggle-group" | "open-detail" {
+  return row.kind === "group" ? "toggle-group" : "open-detail";
+}
+
+export function togglePredictionGroupExpanded(
+  expandedKeys: ReadonlySet<string>,
+  groupKey: string,
+): Set<string> {
+  const next = new Set(expandedKeys);
+  if (next.has(groupKey)) {
+    next.delete(groupKey);
+  } else {
+    next.add(groupKey);
+  }
+  return next;
+}
+
+export function flattenPredictionListRows(
+  rows: PredictionListRow[],
+  expandedKeys: ReadonlySet<string>,
+): PredictionListRow[] {
+  const flattened: PredictionListRow[] = [];
+  for (const row of rows) {
+    if (row.kind !== "group") {
+      flattened.push(row);
+      continue;
+    }
+    const expanded = expandedKeys.has(row.key);
+    flattened.push({ ...row, expanded });
+    if (!expanded) continue;
+    for (const market of row.markets) {
+      flattened.push(buildChildRow(market, row.key));
+    }
+  }
+  return flattened;
+}
+
 function buildSingleRow(summary: PredictionMarketSummary): PredictionSingleListRow {
   return {
     key: summary.key,

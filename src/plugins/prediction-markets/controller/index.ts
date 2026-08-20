@@ -13,6 +13,10 @@ import { usePredictionControllerEffects } from "./effects";
 import { usePredictionControllerKeyboard } from "./keyboard";
 import { getDefaultPredictionSort, getNextPredictionSort } from "../metrics";
 import {
+  resolvePredictionListActivation,
+  togglePredictionGroupExpanded,
+} from "../rows";
+import {
   getPredictionMarketsPaneSettings,
   resolvePredictionColumns,
 } from "../settings";
@@ -99,6 +103,9 @@ export function usePredictionMarketsController({
     );
 
   const [detailOpen, setDetailOpen] = useState(false);
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [searchFocused, setSearchFocused] = useState(false);
   const [initialParamsApplied, setInitialParamsApplied] = useState(false);
   const appViewport = useViewport();
@@ -138,6 +145,7 @@ export function usePredictionMarketsController({
     selectedRowKey,
     sortPreference,
     watchlistSet,
+    expandedGroupKeys,
   });
 
   usePredictionControllerEffects({
@@ -222,6 +230,13 @@ export function usePredictionMarketsController({
       const row = data.visibleRows.find((candidate) => candidate.key === rowKey);
       if (!row) return;
       setSearchFocused(false);
+      if (resolvePredictionListActivation(row) === "toggle-group") {
+        setExpandedGroupKeys((current) =>
+          togglePredictionGroupExpanded(current, row.key),
+        );
+        setSelectedRowKey(row.key, { immediate: true });
+        return;
+      }
       data.actions.setNextDetailLoadDelay(0);
       setSelectedRowKey(row.key, { immediate: true });
       setSelectedDetailMarketKey(row.focusMarketKey, { immediate: true });
@@ -234,9 +249,14 @@ export function usePredictionMarketsController({
     (marketKey: string) => {
       setSearchFocused(false);
       data.actions.setNextDetailLoadDelay(0);
-      const row = data.visibleRows.find((candidate) =>
-        candidate.markets.some((market) => market.key === marketKey),
+      const childRow = data.visibleRows.find(
+        (candidate) => candidate.kind === "market" && candidate.key === marketKey,
       );
+      const row =
+        childRow ??
+        data.visibleRows.find((candidate) =>
+          candidate.markets.some((market) => market.key === marketKey),
+        );
       if (!row) {
         setDetailOpen(false);
         setSelectedRowKey(null);
@@ -350,6 +370,7 @@ export function usePredictionMarketsController({
     searchLoading,
     searchQuery,
     selectedRow: data.selectedRow,
+    selectedDetailRow: data.selectedDetailRow,
     selectedIndex: data.selectedIndex,
     selectedSummary: data.selectedSummary,
     sortPreference,

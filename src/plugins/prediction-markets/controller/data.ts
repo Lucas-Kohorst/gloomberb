@@ -14,7 +14,7 @@ import {
 } from "../metrics";
 import { sortPredictionOutcomeMarkets } from "../outcome-order";
 import { isLivePredictionDetailTab } from "../navigation";
-import { buildPredictionListRows } from "../rows";
+import { buildPredictionListRows, flattenPredictionListRows } from "../rows";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -39,12 +39,14 @@ export function usePredictionMarketsDataState({
   selectedRowKey,
   sortPreference,
   watchlistSet,
+  expandedGroupKeys,
 }: {
   browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   detailOpen: boolean;
   detailTab: PredictionDetailTab;
   effectiveVenueScope: PredictionVenueScope;
+  expandedGroupKeys: ReadonlySet<string>;
   focused: boolean;
   historyRange: PredictionHistoryRange;
   includeKalshi: boolean;
@@ -88,12 +90,13 @@ export function usePredictionMarketsDataState({
         debouncedSearchQuery,
         watchlistSet,
       );
-      return sortPredictionMarkets(
+      const sorted = sortPredictionMarkets(
         filtered,
         sortPreference.columnId
           ? sortPreference
           : getDefaultPredictionSort(browseTab),
       );
+      return flattenPredictionListRows(sorted, expandedGroupKeys);
     }, {
       browseTab,
       categoryId,
@@ -109,6 +112,7 @@ export function usePredictionMarketsDataState({
     categoryId,
     debouncedSearchQuery,
     effectiveVenueScope,
+    expandedGroupKeys,
     sortPreference,
     watchlistSet,
   ]);
@@ -123,23 +127,30 @@ export function usePredictionMarketsDataState({
     [selectedRowKey, visibleRowLookup],
   );
   const selectedRow = selectedRowState.row;
+  const selectedDetailRow = useMemo(() => {
+    if (!selectedRow?.parentKey) return selectedRow;
+    return (
+      visibleRows.find((candidate) => candidate.key === selectedRow.parentKey) ??
+      selectedRow
+    );
+  }, [selectedRow, visibleRows]);
   const selectedSummary = useMemo(
     () =>
       resolvePredictionSelectedSummary({
         detailOpen,
         selectedDetailMarketKey,
-        selectedRow,
+        selectedRow: selectedDetailRow,
       }),
-    [detailOpen, selectedDetailMarketKey, selectedRow],
+    [detailOpen, selectedDetailMarketKey, selectedDetailRow],
   );
   const selectedSummaryKey = selectedSummary?.key ?? null;
   const selectedIndex = selectedRowState.index;
   const sortedOutcomeMarkets = useMemo(
     () =>
-      selectedRow?.kind === "group"
-        ? sortPredictionOutcomeMarkets(selectedRow.markets)
+      selectedDetailRow?.kind === "group"
+        ? sortPredictionOutcomeMarkets(selectedDetailRow.markets)
         : [],
-    [selectedRow],
+    [selectedDetailRow],
   );
   const {
     detail,
@@ -166,6 +177,7 @@ export function usePredictionMarketsDataState({
     lastRefreshAt,
     selectedIndex,
     selectedRow,
+    selectedDetailRow,
     selectedSummary,
     selectedSummaryKey,
     sortedOutcomeMarkets,
