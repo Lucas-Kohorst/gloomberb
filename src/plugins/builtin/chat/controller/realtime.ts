@@ -1,4 +1,4 @@
-import { apiClient, type ChatNotification } from "../../../../api-client";
+import { apiClient, type ChatNotification, type ChatPresence } from "../../../../api-client";
 import {
   SAFETY_REFRESH_MS,
   VERIFICATION_POLL_MS,
@@ -10,7 +10,7 @@ interface ChatControllerRealtimeOptions {
   getUser: () => { emailVerified?: boolean } | null;
   refreshSession: () => Promise<void>;
   handleNotification: (notification: ChatNotification) => void;
-  setOnlineCount: (onlineCount: number) => void;
+  applyPresence: (presence: ChatPresence) => void;
   emit: () => void;
   getSafetyRefreshChannelIds: () => string[];
   runSafetyRefresh: (channelId: string) => Promise<void>;
@@ -43,8 +43,8 @@ export class ChatControllerRealtime {
       });
     }
     if (!this.chatPresenceUnsubscribe) {
-      this.chatPresenceUnsubscribe = apiClient.subscribeChatPresence((onlineCount) => {
-        this.options.setOnlineCount(onlineCount);
+      this.chatPresenceUnsubscribe = apiClient.subscribeChatPresence((presence) => {
+        this.options.applyPresence(presence);
         this.options.emit();
       });
     }

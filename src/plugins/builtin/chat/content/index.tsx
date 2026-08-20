@@ -136,6 +136,8 @@ export function ChatContent({
     loadingOlderMessages,
     messages,
     onlineCount,
+    onlineUserIds,
+    onlineUsernames,
     replyTo,
     setReplyTo,
     user,
@@ -617,6 +619,8 @@ export function ChatContent({
       channelStates={channelStates}
       activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
       onlineCount={onlineCount}
+      onlineUserIds={onlineUserIds}
+      onlineUsernames={onlineUsernames}
       width={stackedNav ? width : channelSidebarWidth}
       height={height}
       focused={focused}

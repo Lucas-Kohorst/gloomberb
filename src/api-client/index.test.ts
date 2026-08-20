@@ -819,14 +819,19 @@ describe("apiClient chat timestamps", () => {
         body: null,
       },
     ]);
-    expect(presence).toEqual({ onlineCount: 4 });
+    expect(presence).toEqual({
+      onlineCount: 4,
+      onlineUserIds: [],
+      onlineUsernames: [],
+      hasUserList: false,
+    });
   });
 
   test("emits websocket chat presence and notification events", async () => {
     const seenPresence: number[] = [];
     const seenNotifications: string[] = [];
-    const unsubscribePresence = apiClient.subscribeChatPresence((onlineCount) => {
-      seenPresence.push(onlineCount);
+    const unsubscribePresence = apiClient.subscribeChatPresence((presence) => {
+      seenPresence.push(presence.onlineCount);
     });
     const unsubscribeNotifications = apiClient.subscribeChatNotifications((notification) => {
       seenNotifications.push(`${notification.id}:${notification.message.createdAt}`);

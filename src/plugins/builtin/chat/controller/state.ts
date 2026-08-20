@@ -52,6 +52,8 @@ export interface ChatControllerSnapshot {
   hasOlderMessages: boolean;
   hasSavedSession: boolean;
   onlineCount: number;
+  onlineUserIds: string[];
+  onlineUsernames: string[];
   user: { id: string; username: string; emailVerified: boolean } | null;
   messages: ChatMessage[];
   /** The latest message load hard-failed (network/HTTP), distinct from an empty channel. */

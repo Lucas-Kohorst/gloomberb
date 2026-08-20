@@ -2,12 +2,14 @@ import type {
   AuthUser,
   ChatMessage,
   ChatNotification,
+  ChatPresence,
   CloudQuotePayload,
   QuoteStreamTarget,
 } from "./types";
 import {
   normalizeChatMessage,
   normalizeChatNotification,
+  normalizeChatPresence,
 } from "./normalizers";
 import { debugLog } from "../utils/debug-log";
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
@@ -18,7 +20,7 @@ const cloudApiLog = debugLog.createLogger("cloud-api");
 
 type ChannelListener = (message: ChatMessage) => void;
 type ChatNotificationListener = (notification: ChatNotification) => void;
-type ChatPresenceListener = (onlineCount: number) => void;
+type ChatPresenceListener = (presence: ChatPresence) => void;
 type QuoteListener = (target: QuoteStreamTarget, quote: CloudQuotePayload) => void;
 type QuoteSubscription = {
   target: QuoteStreamTarget;
@@ -337,9 +339,11 @@ export class CloudApiSocket {
       return;
     }
 
-    if (parsed?.type === "chat.presence" && typeof parsed.onlineCount === "number") {
+    if (parsed?.type === "chat.presence") {
+      const presence = normalizeChatPresence(parsed);
+      if (!presence.hasUserList && typeof parsed.onlineCount !== "number") return;
       for (const listener of this.chatPresenceListeners) {
-        listener(parsed.onlineCount);
+        listener(presence);
       }
       return;
     }

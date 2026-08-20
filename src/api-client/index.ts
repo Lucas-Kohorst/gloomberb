@@ -21,6 +21,7 @@ import type {
   ChatChannel,
   ChatChannelState,
   ChatNotification,
+  ChatPresence,
   ChatStateResponse,
   AuthUser,
   PersistedAuthUser,
@@ -62,6 +63,7 @@ import type { SyncSettings, SyncSnapshot } from "../sync/types";
 
 export type * from "./types";
 export { setCloudApiFetchTransport } from "./request";
+export { emptyChatPresence, mergeChatPresence, normalizeChatPresence } from "./normalizers";
 
 /** Server-side caps for `/assist/command`; enforced here so a 422 is never sent. */
 const ASSIST_QUERY_MAX_LENGTH = 200;
@@ -357,7 +359,7 @@ class GloomApiClient {
     return this.chat.getChannels();
   }
 
-  async getChatPresence(): Promise<{ onlineCount: number }> {
+  async getChatPresence(): Promise<ChatPresence> {
     return this.chat.getPresence();
   }
 
@@ -411,7 +413,7 @@ class GloomApiClient {
     return this.chat.subscribeNotifications(listener);
   }
 
-  subscribeChatPresence(listener: (onlineCount: number) => void): () => void {
+  subscribeChatPresence(listener: (presence: ChatPresence) => void): () => void {
     return this.chat.subscribePresence(listener);
   }
 

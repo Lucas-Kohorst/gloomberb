@@ -478,7 +478,7 @@ describe("ChatContent channel sidebar", () => {
     installServerChannels(controller);
     controller.refreshChannels = async () => {};
     controller.refreshChannelMessages = async () => {};
-    (controller as any).channelCatalog.onlineCount = 6;
+    (controller as any).channelCatalog.applyPresence({ onlineCount: 6 });
 
     await act(async () => {
       testSetup = await testRender(createHarness(controller, { width: 90, height: 12 }), {
@@ -490,6 +490,48 @@ describe("ChatContent channel sidebar", () => {
     await flushFrame();
 
     expect(setup().captureCharFrame()).toContain("● 6 online");
+  });
+
+  test("shows a green online dot next to a direct message whose peer is online", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+      {
+        id: "dm:bob",
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+      },
+      {
+        id: "dm:cara",
+        name: "@cara",
+        kind: "direct",
+        created_at: "2026-07-03T09:31:00.000Z",
+        dmUser: { id: "u3", username: "cara", displayName: "Cara" },
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 2,
+      userIds: ["u2"],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 90, height: 14 }), {
+        width: 90,
+        height: 14,
+      });
+    });
+
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("●@bob");
+    expect(frame).not.toContain("●@cara");
+    expect(frame).toContain("@cara");
   });
 
   test("uses arrows to move between channel sidebar and chat content", async () => {

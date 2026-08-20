@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { AppNotificationRequest } from "../../../types/plugin";
 import { MemoryPluginPersistence as MemoryPersistence } from "../../../test-support/plugin-persistence";
-import { apiClient, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../api-client";
+import { apiClient, emptyChatPresence, type ChatChannel, type ChatMessage, type ChatNotification } from "../../../api-client";
 import { ChatController } from "./controller";
 
 const TRANSCRIPT_KIND = "channel-transcript";
@@ -67,7 +67,7 @@ class TrackingPersistence extends MemoryPersistence {
 }
 
 beforeEach(() => {
-  apiClient.getChatPresence = async () => ({ onlineCount: 0 });
+  apiClient.getChatPresence = async () => emptyChatPresence();
   apiClient.getChatState = async () => ({
     channels: SERVER_CHAT_CHANNELS,
     onlineCount: 0,
