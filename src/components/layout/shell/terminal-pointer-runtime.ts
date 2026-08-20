@@ -14,7 +14,9 @@ import {
 import {
   resolveTerminalPaneHeaderGeometry,
   terminalPaneHeaderControlAt,
+  terminalPaneHeaderTitleHit,
 } from "../pane/terminal-header-geometry";
+import { canRetargetPaneTicker } from "../../../plugins/ticker-follow";
 import type { ActionMenuState } from "./action-menu-overlay";
 import type {
   ShellDragRuntimeState,
@@ -41,6 +43,7 @@ interface UseShellTerminalPointerRuntimeOptions {
     rect: LayoutBounds,
     event?: { preventDefault?: () => void; stopPropagation?: () => void },
   ) => void;
+  openPaneTickerSearch?: (paneId: string) => void;
   paneMap: Map<string, ResolvedPane>;
   selectWindowModePane: (paneId: string) => void;
   setHoveredMenuItemId: Dispatch<SetStateAction<string | null>>;
@@ -103,6 +106,7 @@ export function useShellTerminalPointerRuntime({
   hoveredPaneId,
   menuState,
   openPaneMenu,
+  openPaneTickerSearch,
   paneMap,
   selectWindowModePane,
   setHoveredMenuItemId,
@@ -245,6 +249,16 @@ export function useShellTerminalPointerRuntime({
           event.preventDefault();
           return;
         }
+        if (
+          relativeY === 0
+          && terminalPaneHeaderTitleHit(headerGeometry, relativeX)
+          && canRetargetPaneTicker(pane.instance)
+        ) {
+          openPaneTickerSearch?.(paneId);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
         const resizeHandle = resolveTerminalResizeHandle(relativeX, relativeY, rect);
         if (resizeHandle) {
           dragRef.current = {
@@ -331,6 +345,16 @@ export function useShellTerminalPointerRuntime({
           event.preventDefault();
           return;
         }
+        if (
+          relativeY === 0
+          && terminalPaneHeaderTitleHit(headerGeometry, relativeX)
+          && canRetargetPaneTicker(pane.instance)
+        ) {
+          openPaneTickerSearch?.(leaf.instanceId);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
         if (relativeY === 0 && transientFocusActive) {
           event.stopPropagation();
           event.preventDefault();
@@ -372,6 +396,7 @@ export function useShellTerminalPointerRuntime({
     hoveredPaneId,
     menuState,
     openPaneMenu,
+    openPaneTickerSearch,
     paneMap,
     selectWindowModePane,
     setHoveredMenuItemId,

@@ -29,6 +29,7 @@ interface FloatingPaneWrapperProps {
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
+  onTitleMouseDown?: (event: any) => void;
   onResizeMouseDown?: (corner: FloatingResizeCorner, event: any) => void;
   onResizeMouseDrag?: (event: any) => void;
   onResizeMouseDragEnd?: (event: any) => void;
@@ -77,6 +78,7 @@ export function FloatingPaneWrapper({
   onActionMouseDown,
   onFloatToggleMouseDown,
   onCloseMouseDown,
+  onTitleMouseDown,
   onResizeMouseDown,
   onResizeMouseDrag,
   onResizeMouseDragEnd,
@@ -132,6 +134,7 @@ export function FloatingPaneWrapper({
         onActionMouseDown={onActionMouseDown}
         onFloatToggleMouseDown={onFloatToggleMouseDown}
         onCloseMouseDown={onCloseMouseDown}
+        onTitleMouseDown={onTitleMouseDown}
       />
 
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>

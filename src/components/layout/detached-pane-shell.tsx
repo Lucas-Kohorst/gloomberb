@@ -13,6 +13,7 @@ import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
 import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
+import { canRetargetPaneTicker } from "../../plugins/ticker-follow";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 import {
@@ -195,7 +196,24 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                 style={{ position: "relative" }}
               >
                 <Box minWidth={0} flexShrink={1} overflow="hidden">
-                  <Text fg={paneTitleText(focused, true, colors)} selectable={false} data-gloom-role="pane-title">{title}</Text>
+                  <Text
+                    fg={paneTitleText(focused, true, colors)}
+                    selectable={false}
+                    data-gloom-role="pane-title"
+                    data-gloom-interactive={instance && canRetargetPaneTicker(instance) ? "true" : undefined}
+                    className={instance && canRetargetPaneTicker(instance) ? "electrobun-webkit-app-region-no-drag" : undefined}
+                    onMouseDown={instance && canRetargetPaneTicker(instance) ? (event: any) => {
+                      stopMouse(event);
+                      dispatch({
+                        type: "SET_COMMAND_BAR",
+                        open: true,
+                        query: "",
+                        launch: { kind: "ticker-search", query: "", replacePaneId: instance.instanceId },
+                      });
+                    } : undefined}
+                  >
+                    {title}
+                  </Text>
                 </Box>
                 {quickSettings.map((setting) => (
                   <Box

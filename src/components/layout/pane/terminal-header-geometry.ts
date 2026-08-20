@@ -4,6 +4,7 @@ export const PANE_HEADER_ACTION = " ... ";
 export const PANE_HEADER_CLOSE = " x ";
 export const PANE_HEADER_TILED = "T▦";
 export const PANE_HEADER_FLOATING = "F◇";
+export const PANE_HEADER_GRIP = ":: ";
 
 export type TerminalPaneHeaderControl = "toggle" | "action" | "close";
 
@@ -107,4 +108,15 @@ export function terminalPaneHeaderControlAt(
   x: number,
 ): TerminalPaneHeaderControl | null {
   return geometry.segments.find((segment) => x >= segment.start && x < segment.end)?.control ?? null;
+}
+
+export function terminalPaneHeaderTitleHit(
+  geometry: TerminalPaneHeaderGeometry,
+  x: number,
+): boolean {
+  if (terminalPaneHeaderControlAt(geometry, x)) return false;
+  const gripWidth = displayWidth(PANE_HEADER_GRIP);
+  const titleStart = geometry.contentStart + gripWidth;
+  const titleEnd = geometry.contentStart + geometry.contentWidth;
+  return x >= titleStart && x < titleEnd;
 }

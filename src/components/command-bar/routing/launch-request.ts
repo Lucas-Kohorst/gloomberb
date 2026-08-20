@@ -40,7 +40,13 @@ export function useCommandBarLaunchRequest({
     processedLaunchSequenceRef.current = launch.sequence;
 
     if (launch.kind === "ticker-search") {
-      openModeRoute("ticker-search", launch.query ?? "");
+      openModeRoute(
+        "ticker-search",
+        launch.query ?? "",
+        launch.replacePaneId
+          ? { action: "replace-pane", paneId: launch.replacePaneId }
+          : undefined,
+      );
       return;
     }
 

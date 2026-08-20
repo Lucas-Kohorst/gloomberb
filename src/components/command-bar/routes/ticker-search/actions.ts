@@ -18,7 +18,9 @@ interface UseCommandBarTickerSearchActionsOptions {
   closeAll: (options?: { revertThemePreview?: boolean }) => void;
   dispatch: (action: any) => void;
   focusTicker: (symbol: string, options?: { forceNewPane?: boolean }) => void;
+  getReplacePaneId?: () => string | null;
   pluginRegistry: Pick<PluginRegistry, "events">;
+  replacePaneTicker?: (paneId: string, symbol: string) => void;
   tickerRepository: AppTickerRepositoryPort;
   tickers: AppState["tickers"];
 }
@@ -27,11 +29,24 @@ export function useCommandBarTickerSearchActions({
   closeAll,
   dispatch,
   focusTicker,
+  getReplacePaneId,
   pluginRegistry,
+  replacePaneTicker,
   tickerRepository,
   tickers,
 }: UseCommandBarTickerSearchActionsOptions) {
   const tickerSearchCacheRef = useRef<Map<string, TickerSearchCandidate[]>>(new Map());
+
+  const openResolvedTicker = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
+    const replacePaneId = options?.forceNewPane ? null : getReplacePaneId?.();
+    if (replacePaneId && replacePaneTicker) {
+      replacePaneTicker(replacePaneId, symbol);
+      closeAll({ revertThemePreview: false });
+      return;
+    }
+    focusTicker(symbol, options);
+    closeAll({ revertThemePreview: false });
+  }, [closeAll, focusTicker, getReplacePaneId, replacePaneTicker]);
 
   const openTickerResearch = useCallback((result: any, options?: { forceNewPane?: boolean }) => {
     (async () => {
@@ -40,10 +55,9 @@ export function useCommandBarTickerSearchActions({
       if (created) {
         pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
       }
-      focusTicker(ticker.metadata.ticker, options);
-      closeAll({ revertThemePreview: false });
+      openResolvedTicker(ticker.metadata.ticker, options);
     })();
-  }, [closeAll, dispatch, focusTicker, pluginRegistry.events, tickerRepository]);
+  }, [dispatch, openResolvedTicker, pluginRegistry.events, tickerRepository]);
 
   const mapTickerSearchCandidateToResultItem = useCallback((candidate: TickerSearchCandidate): ResultItem => {
     const detail = formatTickerSearchDetail(candidate);
@@ -58,12 +72,10 @@ export function useCommandBarTickerSearchActions({
         category: candidate.category,
         kind: "ticker",
         secondaryAction: () => {
-          focusTicker(candidate.ticker!.metadata.ticker, { forceNewPane: true });
-          closeAll({ revertThemePreview: false });
+          openResolvedTicker(candidate.ticker!.metadata.ticker, { forceNewPane: true });
         },
         action: () => {
-          focusTicker(candidate.ticker!.metadata.ticker);
-          closeAll({ revertThemePreview: false });
+          openResolvedTicker(candidate.ticker!.metadata.ticker);
         },
       };
     }
@@ -78,7 +90,7 @@ export function useCommandBarTickerSearchActions({
       secondaryAction: () => openTickerResearch(candidate.result!, { forceNewPane: true }),
       action: () => openTickerResearch(candidate.result!),
     };
-  }, [closeAll, focusTicker, openTickerResearch]);
+  }, [openResolvedTicker, openTickerResearch]);
 
   const buildTickerSearchResultItems = useCallback((candidates: TickerSearchCandidate[], query: string): ResultItem[] => (
     candidates.length > 0

@@ -7,6 +7,7 @@ import {
   PANE_HEADER_ACTION,
   PANE_HEADER_CLOSE,
   PANE_HEADER_FLOATING,
+  PANE_HEADER_GRIP,
   PANE_HEADER_TILED,
   resolveTerminalPaneHeaderGeometry,
 } from "./terminal-header-geometry";
@@ -15,11 +16,11 @@ export {
   PANE_HEADER_ACTION,
   PANE_HEADER_CLOSE,
   PANE_HEADER_FLOATING,
+  PANE_HEADER_GRIP,
   PANE_HEADER_TILED,
 } from "./terminal-header-geometry";
 
 const PANE_HEADER_HEIGHT = 1;
-const PANE_HEADER_GRIP = ":: ";
 
 interface PaneHeaderProps {
   title: string;
@@ -37,6 +38,7 @@ interface PaneHeaderProps {
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
   onCloseMouseDown?: (event: any) => void;
+  onTitleMouseDown?: (event: any) => void;
 }
 
 export interface PaneHeaderQuickSetting {
@@ -149,6 +151,7 @@ export function PaneHeader({
   onActionMouseDown,
   onFloatToggleMouseDown,
   onCloseMouseDown,
+  onTitleMouseDown,
 }: PaneHeaderProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const uiKind = useUiHost().kind;
@@ -205,11 +208,18 @@ export function PaneHeader({
             fg={textColor}
             selectable={false}
             data-gloom-role="pane-title"
+            data-gloom-interactive={onTitleMouseDown ? "true" : undefined}
+            onMouseDown={onTitleMouseDown ? (event: any) => {
+              event.stopPropagation?.();
+              event.preventDefault?.();
+              onTitleMouseDown(event);
+            } : undefined}
             style={{
               fontWeight: visuallyFocused ? 700 : 600,
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              cursor: onTitleMouseDown ? "text" : undefined,
             }}
           >
             {title}
