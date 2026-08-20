@@ -5,6 +5,7 @@ import {
   isTickerPaneId,
   normalizePaneId,
   TICKER_RESEARCH_PANE_ID,
+  TRADINGVIEW_PANE_ID,
   type LayoutConfig,
   type PaneInstanceConfig,
 } from "../types/config";
@@ -15,7 +16,9 @@ export const TICKER_FOLLOW_PINNED_VALUE = "fixed";
 
 export function isTickerLinkedPane(instance: PaneInstanceConfig): boolean {
   const paneId = normalizePaneId(instance.paneId);
-  return isTickerPaneId(paneId) || paneId === CHART_COMPOSER_PANE_ID;
+  return isTickerPaneId(paneId)
+    || paneId === CHART_COMPOSER_PANE_ID
+    || paneId === TRADINGVIEW_PANE_ID;
 }
 
 export function canRetargetPaneTicker(instance: PaneInstanceConfig): boolean {

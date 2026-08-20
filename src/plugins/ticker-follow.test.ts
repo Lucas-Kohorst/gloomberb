@@ -56,6 +56,7 @@ describe("canRetargetPaneTicker", () => {
     expect(canRetargetPaneTicker(createPaneInstance("ticker-detail"))).toBe(true);
     expect(canRetargetPaneTicker(createPaneInstance("ticker-news"))).toBe(true);
     expect(canRetargetPaneTicker(createPaneInstance("chart-composer"))).toBe(true);
+    expect(canRetargetPaneTicker(createPaneInstance("tradingview"))).toBe(true);
     expect(canRetargetPaneTicker(createPaneInstance("portfolio-list"))).toBe(false);
     expect(canRetargetPaneTicker(createPaneInstance("chat"))).toBe(false);
   });

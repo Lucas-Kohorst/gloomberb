@@ -30,6 +30,10 @@ Unifies `integration/v0.12.0` (Adjacent Cloud, Data Catalog, Godel panes) with `
 - Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable plugins.
 - Polls default to an All tab; Adjacent ships as a default layout + watchlist.
 
+### Charts
+
+- **TradingView** pane (`TVC`): ticker-linked Lightweight Charts surface (candles, volume, log scale, drawings, MA/EMA/BB/VWAP). Not TradingView’s licensed Charting Library.
+
 ### Worker secrets
 
 CoS sets Worker secrets on gloomberb-cloud. Do not commit values.

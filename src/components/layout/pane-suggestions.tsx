@@ -14,6 +14,7 @@ export interface PaneSuggestion {
 
 const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
   "ticker-research": [
+    { templateId: "tradingview-pane", label: "TradingView", shortcut: "TVC", needsTicker: true },
     { templateId: "chart-composer-pane", label: "Chart", shortcut: "G", needsTicker: true },
     { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
     { templateId: "sec-pane", label: "SEC", shortcut: "SEC", needsTicker: true },
@@ -27,6 +28,13 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
     { templateId: "market-movers-pane", label: "Movers", shortcut: "MOST" },
   ],
   "chart-composer": [
+    { templateId: "tradingview-pane", label: "TradingView", shortcut: "TVC", needsTicker: true },
+    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+    { templateId: "sec-pane", label: "SEC", shortcut: "SEC", needsTicker: true },
+    { templateId: "earnings-calendar-pane", label: "Earnings", shortcut: "ERN", needsTicker: true },
+    { templateId: "new-ticker-detail-pane", label: "Ticker", shortcut: "T", needsTicker: true },
+  ],
+  tradingview: [
     { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
     { templateId: "sec-pane", label: "SEC", shortcut: "SEC", needsTicker: true },
     { templateId: "earnings-calendar-pane", label: "Earnings", shortcut: "ERN", needsTicker: true },
@@ -50,6 +58,7 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
 };
 
 const DEFAULT_SUGGESTIONS: PaneSuggestion[] = [
+  { templateId: "tradingview-pane", label: "TradingView", shortcut: "TVC", needsTicker: true },
   { templateId: "chart-composer-pane", label: "Chart", shortcut: "G", needsTicker: true },
   { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
   { templateId: "market-movers-pane", label: "Movers", shortcut: "MOST" },

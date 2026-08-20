@@ -1419,7 +1419,9 @@ export function CompositeChart({
   isSeriesToggleable,
 }: CompositeChartProps) {
   const { cellWidthPx = 8 } = useUiCapabilities();
-  const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const ui = useUiHost();
+  const isDesktopWeb = ui.kind === "desktop-web";
+  const nativeTvChrome = !!ui.TradingViewChart;
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);
   const [toolSpan, setToolSpan] = useState<ChartToolSpan | null>(null);
@@ -1661,7 +1663,7 @@ export function CompositeChart({
   const legendRows = showLegend && (visibleSeries.length > 0 || legendAccessory)
     ? 1
     : 0;
-  const timeAxisRows = showTimeAxis ? 1 : 0;
+  const timeAxisRows = nativeTvChrome ? 0 : (showTimeAxis ? 1 : 0);
   const panelCount = new Set(visibleSeries.map((entry) => entry.panelId)).size;
   const plotHeight = Math.max(panelCount, totalHeight - legendRows - timeAxisRows);
   const resolvedColors = useMemo<CompositeChartColors>(() => ({
@@ -1701,9 +1703,9 @@ export function CompositeChart({
       ]),
     ),
   ), [maximumAxisWidth, projectedScene]);
-  const leftAxisWidth = hasLeftAxis ? resolvedAxisWidth : 0;
-  const rightAxisWidth = hasRightAxis ? resolvedAxisWidth : 0;
-  const axisGap = resolvedAxisWidth > 0 ? 1 : 0;
+  const leftAxisWidth = nativeTvChrome ? 0 : (hasLeftAxis ? resolvedAxisWidth : 0);
+  const rightAxisWidth = nativeTvChrome ? 0 : (hasRightAxis ? resolvedAxisWidth : 0);
+  const axisGap = nativeTvChrome ? 0 : (resolvedAxisWidth > 0 ? 1 : 0);
   const horizontalReserved = leftAxisWidth + rightAxisWidth
     + axisGap * ((leftAxisWidth ? 1 : 0) + (rightAxisWidth ? 1 : 0));
   const plotWidth = Math.max(1, totalWidth - horizontalReserved);
@@ -1889,10 +1891,10 @@ export function CompositeChart({
 
   const leftPadding = leftAxisWidth + (leftAxisWidth ? axisGap : 0);
   const rightPadding = rightAxisWidth + (rightAxisWidth ? axisGap : 0);
-  const timeAxisLayout = scene && showTimeAxis
+  const timeAxisLayout = scene && showTimeAxis && !nativeTvChrome
     ? buildCompositeTimeAxisLayout(scene, plotWidth)
     : null;
-  const emptyTimeAxisLayout = !scene && showTimeAxis && effectiveViewport
+  const emptyTimeAxisLayout = !scene && showTimeAxis && !nativeTvChrome && effectiveViewport
     ? buildCompositeViewportTimeAxisLayout(effectiveViewport, plotWidth)
     : null;
 

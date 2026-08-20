@@ -265,6 +265,7 @@ describe("study resolution", () => {
       study("rsi", "rsi", ["a"], { period: 14 }),
       study("macd", "macd", ["a"], { fast: 12, slow: 26, signal: 9 }),
       study("volume", "volume", ["a"]),
+      study("vwap", "vwap", ["a"]),
       study("ratio", "ratio", ["a", "b"]),
       study("spread", "spread", ["a", "b"], { multiplier: 0.5 }),
       study("correlation", "correlation", ["a", "b"], { period: 10 }),
@@ -277,6 +278,7 @@ describe("study resolution", () => {
     expect(result.series.find(({ id }) => id === "rsi")?.points.every(({ value }) => value === 100)).toBe(true);
     expect(result.series.find(({ id }) => id === "macd:histogram")?.style).toBe("columns");
     expect(result.series.find(({ id }) => id === "volume")?.points[0]?.value).toBe(1_000);
+    expect(result.series.find(({ id }) => id === "vwap")?.points.at(-1)?.value).toBe(60);
     expect(result.series.find(({ id }) => id === "ratio")?.points.every(({ value }) => value === 0.5)).toBe(true);
     expect(result.series.find(({ id }) => id === "spread")?.points.every(({ value }) => value === 0)).toBe(true);
     const correlations = result.series.find(({ id }) => id === "correlation")?.points ?? [];

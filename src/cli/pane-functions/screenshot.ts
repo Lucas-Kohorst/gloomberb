@@ -1,7 +1,7 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import { CHART_COMPOSER_PANE_ID } from "../../types/config";
+import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../types/config";
 import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
@@ -53,10 +53,14 @@ const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
 const OPTIONS_PANE_ID = "options";
 
+function isComposerChartPane(paneId: string): boolean {
+  return paneId === CHART_COMPOSER_PANE_ID || paneId === TRADINGVIEW_PANE_ID;
+}
+
 async function collectShotFredSeries(
   resolved: ResolvedPaneFunction,
 ): Promise<Array<[string, FredSeriesCacheEntry]>> {
-  if (resolved.pane.id !== CHART_COMPOSER_PANE_ID) return [];
+  if (!isComposerChartPane(resolved.pane.id)) return [];
   const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
   if (!spec) return [];
   const seriesIds = [...new Set(spec.series.flatMap((series) => (
@@ -609,7 +613,7 @@ function shotExpectedChart(
   resolved: ResolvedPaneFunction,
   payload: DesktopPaneShotPayload,
 ): PaneScreenshotExpectedChartEvidence | null {
-  if (resolved.pane.id === CHART_COMPOSER_PANE_ID) {
+  if (isComposerChartPane(resolved.pane.id)) {
     const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
     if (!spec) return null;
     return {
@@ -981,7 +985,7 @@ function shotExpectedText(
     const period = resolved.options.period as FundamentalPeriod;
     const periodCount = resolved.options.periods == null ? null : Number(resolved.options.periods);
     expected.push(definition.label);
-    if (resolved.pane.id === CHART_COMPOSER_PANE_ID) return expected.filter(Boolean);
+    if (isComposerChartPane(resolved.pane.id)) return expected.filter(Boolean);
     for (const [symbol, financials] of payload.financials) {
       const latestRow = limitGraphRowsBySymbol(
         graphRowsForFinancials(financials, graphKind, metric, period, symbol),
@@ -1018,7 +1022,7 @@ function shotExpectedText(
 function shotExpectedSelections(
   resolved: ResolvedPaneFunction,
 ): PaneScreenshotExpectedSelection[] {
-  if (resolved.pane.id === CHART_COMPOSER_PANE_ID) return [];
+  if (isComposerChartPane(resolved.pane.id)) return [];
   if (shotGraphKind(resolved)) {
     return [{
       control: "metric",

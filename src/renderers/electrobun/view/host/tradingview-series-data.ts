@@ -2,7 +2,7 @@ import { scalarPointValue } from "../../../../time-series/alignment";
 import { isOhlcSeriesStyle } from "../../../../time-series/spec";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 
-export type TradingViewSeriesType = "Line" | "Area" | "Candlestick" | "Histogram";
+export type TradingViewSeriesType = "Line" | "Area" | "Bar" | "Candlestick" | "Histogram";
 
 export function utcTimestampSeconds(ms: number): number {
   return Math.floor(ms / 1000);
@@ -37,6 +37,9 @@ export function orderedPointsBySecond(
 export function tradingViewSeriesTypeFor(series: ResolvedSeries): TradingViewSeriesType {
   if (series.style === "columns") return "Histogram";
   if (series.style === "area") return "Area";
+  if (series.style === "ohlc" || series.style === "hlc") {
+    return series.points.some(hasOhlc) ? "Bar" : "Line";
+  }
   if (isOhlcSeriesStyle(series.style) && series.points.some(hasOhlc)) return "Candlestick";
   return "Line";
 }
@@ -47,6 +50,25 @@ export function tradingViewCandleData(points: readonly TimeSeriesPoint[]) {
       ? [{ time, open: point.open, high: point.high, low: point.low, close: point.close }]
       : []
   ));
+}
+
+export function tradingViewBarData(points: readonly TimeSeriesPoint[]) {
+  return tradingViewCandleData(points);
+}
+
+export function tradingViewHistogramData(
+  points: readonly TimeSeriesPoint[],
+  colors: { up: string; down: string },
+) {
+  let previousClose: number | null = null;
+  return orderedPointsBySecond(points).flatMap(([time, point]) => {
+    const value = scalarPointValue(point);
+    if (value === null) return [];
+    const close = finite(point.close) ? point.close : value;
+    const up = previousClose === null || close >= previousClose;
+    previousClose = close;
+    return [{ time, value, color: up ? colors.up : colors.down }];
+  });
 }
 
 export function tradingViewScalarData(points: readonly TimeSeriesPoint[]) {

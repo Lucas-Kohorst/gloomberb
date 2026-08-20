@@ -37,6 +37,7 @@ describe("chart composer pane settings", () => {
       CHART_SETTING_KEYS.range,
       CHART_SETTING_KEYS.resolution,
       CHART_SETTING_KEYS.mode,
+      CHART_SETTING_KEYS.scale,
     ]);
     expect(definition.values).toMatchObject({
       [CHART_SETTING_KEYS.series]: "AAPL:market.ohlcv",
@@ -45,8 +46,10 @@ describe("chart composer pane settings", () => {
       [CHART_SETTING_KEYS.range]: "5Y",
       [CHART_SETTING_KEYS.resolution]: "auto",
       [CHART_SETTING_KEYS.mode]: "candles",
+      [CHART_SETTING_KEYS.scale]: "linear",
     });
-    expect(definition.fields.at(-1)?.label).toBe("Style (AAPL Price)");
+    expect(definition.fields.find((entry) => entry.key === CHART_SETTING_KEYS.mode)?.label)
+      .toBe("Style (AAPL Price)");
     expect(definition.applyValue).toBe(applyChartComposerPaneSetting);
   });
 
