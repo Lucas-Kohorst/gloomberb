@@ -365,7 +365,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
 
   const copyShareLink = useCopyShareLink();
   const shareSelectedArticle = useCallback(() => {
-    if (!selectedArticle) return;
+    // Grid rows only have the feed teaser. Share from the open article so the
+    // snapshot includes bodyHtml instead of a subtitle-only link.
+    if (!detailOpen || !selectedArticle) return;
     const cached = details[selectedArticle.id]?.data ?? null;
     void (async () => {
       if (cached?.bodyHtml || cached?.contentText) {
@@ -379,7 +381,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
         await copyShareLink(substackArticleSharePayload(selectedArticle));
       }
     })();
-  }, [copyShareLink, details, selectedArticle]);
+  }, [copyShareLink, detailOpen, details, selectedArticle]);
 
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
@@ -411,12 +413,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       openSelectedArticle();
       return true;
     }
-    if (isPlainKey(event, "y")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      shareSelectedArticle();
-      return true;
-    }
     if (isPlainKey(event, "p")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -424,7 +420,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [openSelectedArticle, popOutSelectedArticle, refreshActive, shareSelectedArticle]);
+  }, [openSelectedArticle, popOutSelectedArticle, refreshActive]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "j", "down")) {
@@ -485,7 +481,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
-      { id: "share", key: "y", label: " share", onPress: shareSelectedArticle, disabled: !selectedArticle },
+      ...(detailOpen && selectedArticle
+        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
+        : []),
       { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
     ] : [],
   }), [
