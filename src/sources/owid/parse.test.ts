@@ -4,8 +4,10 @@ import {
   normalizeOwidSlug,
   parseCsv,
   parseOwidCsvPrint,
+  parseOwidMetadataPrint,
   parseOwidSearchPrint,
   parseOwidShortcutArg,
+  pickDefaultOwidEntityCode,
   seriesJoinKey,
 } from "./parse";
 
@@ -21,6 +23,7 @@ describe("OWID parse", () => {
   test("allowlists grapher slugs and ISO / OWID entity codes", () => {
     expect(normalizeOwidSlug("Life-Expectancy")).toBe("life-expectancy");
     expect(normalizeOwidSlug("charts")).toBeNull();
+    expect(normalizeOwidSlug("meta")).toBeNull();
     expect(normalizeOwidSlug("../secret")).toBeNull();
     expect(normalizeOwidEntityCode("usa")).toBe("USA");
     expect(normalizeOwidEntityCode("OWID_WRL")).toBe("OWID_WRL");
@@ -93,5 +96,26 @@ describe("OWID parse", () => {
     expect(print.results).toHaveLength(1);
     expect(print.results[0]?.slug).toBe("life-expectancy");
     expect(print.license).toBe("CC BY 4.0");
+  });
+
+  test("metadata print extracts citation and entity codes without CSV", () => {
+    const print = parseOwidMetadataPrint({
+      chart: { title: "Life expectancy", citation: "UN WPP" },
+      columns: {
+        "Life expectancy": {
+          unit: "years",
+          entities: {
+            USA: { name: "United States" },
+            OWID_WRL: { name: "World" },
+          },
+        },
+      },
+    }, "life-expectancy");
+    expect(print.license).toBe("CC BY 4.0");
+    expect(print.citation).toBe("UN WPP");
+    expect(print.entities.map((row) => row.code).sort()).toEqual(["OWID_WRL", "USA"]);
+    expect(pickDefaultOwidEntityCode(["United States", "World"], print.entities)).toBe("OWID_WRL");
+    expect(pickDefaultOwidEntityCode(["United States"])).toBeNull();
+    expect(pickDefaultOwidEntityCode(["USA"])).toBe("USA");
   });
 });

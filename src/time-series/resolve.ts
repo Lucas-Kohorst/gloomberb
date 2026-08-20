@@ -87,6 +87,8 @@ export interface ChartResolveSources {
     stationId: string,
     metric: "high" | "low" | "precip" | "hourly",
   ) => Promise<UniversalSeriesLoadResult>;
+  /** Loads an Our World in Data grapher series keyed by slug + entity code. */
+  loadOwidSeries?: (slug: string, entity: string) => Promise<UniversalSeriesLoadResult>;
   /** Loads a Kalshi/Polymarket yes-price history. */
   loadPredictionMarketSeries?: (
     venue: "kalshi" | "polymarket",
@@ -694,6 +696,7 @@ function baseUniversalSeries(
     && spec.source.kind !== "benchmark"
     && spec.source.kind !== "poll"
     && spec.source.kind !== "weather"
+    && spec.source.kind !== "owid"
     && spec.source.kind !== "prediction-market"
   ) {
     return null;
@@ -1129,6 +1132,19 @@ export async function resolveChartSpecData(
           "weather",
           `${provider}:${stationId}:${metric}`,
           () => sources.loadWeatherSeries!(provider, stationId, metric),
+        );
+        return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "owid") {
+        if (!sources.loadOwidSeries) {
+          throw new Error("OWID data source is not available.");
+        }
+        const { slug, entity } = seriesSpec.source;
+        const data = await loadUniversalSeries(
+          "owid",
+          `${slug}:${entity}`,
+          () => sources.loadOwidSeries!(slug, entity),
         );
         return baseUniversalSeries(seriesSpec, data, index);
       }

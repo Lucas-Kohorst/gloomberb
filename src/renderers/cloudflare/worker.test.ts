@@ -594,6 +594,45 @@ IBM|International Business Machines Corporation Common Stock|N|IBM|N|100|N|IBM
     expect(nonRedistributable?.status).toBe(403);
     const errorBody = await nonRedistributable?.json() as { error: string };
     expect(errorBody.error).toContain("non-redistributable");
+
+    metaHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("life-expectancy.metadata.json")) {
+        metaHits += 1;
+        return Response.json({ chart: { title: "Life expectancy", citation: "UN WPP" }, columns: {} });
+      }
+      if (url.includes("secret-chart.metadata.json")) {
+        return Response.json({ error: "Non-redistributable data" }, { status: 403 });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const meta = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/meta/life-expectancy"),
+      makeEnv(),
+    );
+    const metaAgain = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/meta/life-expectancy"),
+      makeEnv(),
+    );
+    expect(meta?.status).toBe(200);
+    expect(metaAgain?.status).toBe(200);
+    expect(metaHits).toBe(1);
+    const metaBody = await meta?.json() as { slug: string; license: string };
+    expect(metaBody.slug).toBe("life-expectancy");
+    expect(metaBody.license).toBe("CC BY 4.0");
+
+    const blockedMeta = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/meta/secret-chart"),
+      makeEnv(),
+    );
+    const blockedMetaAgain = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/meta/secret-chart"),
+      makeEnv(),
+    );
+    expect(blockedMeta?.status).toBe(403);
+    expect(blockedMetaAgain?.status).toBe(403);
   });
 });
 

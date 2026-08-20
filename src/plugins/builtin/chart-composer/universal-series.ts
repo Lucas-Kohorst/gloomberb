@@ -14,6 +14,7 @@
  * - `POLL:subject:choice`   — VoteHub poll percentage for a choice over time
  * - `WX:station:metric`     — Weather Company Kalshi climate / hourly (LAX, high)
  * - `NWS:icao:metric`       — NWS Daily Climate Report first-final print (KNYC, high)
+ * - `OWID:slug:entity`      — Our World in Data grapher series (life-expectancy, USA)
  */
 
 export const SERIES_PREFIX = {
@@ -27,6 +28,7 @@ export const SERIES_PREFIX = {
   poll: "POLL",
   weather: "WX",
   nwsCli: "NWS",
+  owid: "OWID",
 } as const;
 
 export type PredictionMarketVenue = "kalshi" | "polymarket";

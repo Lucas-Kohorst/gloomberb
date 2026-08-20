@@ -169,7 +169,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Search, filter, and chart every series the composer knows — securities, crypto, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls, llm-stats benchmarks, and weather.",
+    description: "Search, filter, and chart every series the composer knows — securities, crypto, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls, llm-stats benchmarks, weather, and Our World in Data.",
     keywords: [
       "catalog",
       "series",
@@ -192,6 +192,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "benchmark",
       "weather",
       "nws",
+      "owid",
+      "our world in data",
     ],
     shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
     canCreate: () => true,

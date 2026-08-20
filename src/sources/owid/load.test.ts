@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadOwidChartPrint, loadOwidChartSearch, owidCsvUrl, owidMetadataUrl, owidSearchUrl } from "./load";
+import { loadOwidChartMetadata, loadOwidChartPrint, loadOwidChartSearch, owidCsvUrl, owidMetadataUrl, owidSearchUrl } from "./load";
 import { OwidUpstreamError } from "./types";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -51,6 +51,21 @@ describe("OWID load", () => {
       expect(error).toBeInstanceOf(OwidUpstreamError);
       expect((error as OwidUpstreamError).status).toBe(403);
       expect((error as Error).message).toContain("non-redistributable");
+    }
+  });
+
+  test("metadata probe surfaces 403 without fetching CSV", async () => {
+    const blocked = (async (input: URL | RequestInfo) => {
+      const url = String(input);
+      expect(url).toBe(owidMetadataUrl("secret-chart"));
+      return jsonResponse({ error: "Non-redistributable data" }, 403);
+    }) as typeof fetch;
+    try {
+      await loadOwidChartMetadata({ slug: "secret-chart", fetchImpl: blocked });
+      throw new Error("expected 403");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OwidUpstreamError);
+      expect((error as OwidUpstreamError).status).toBe(403);
     }
   });
 });

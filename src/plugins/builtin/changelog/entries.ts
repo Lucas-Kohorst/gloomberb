@@ -15,6 +15,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 - Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
 - Restore Data Catalog (\`CAT\`) and Godel panes (SI, DVD, HALT, IPO, OVME) that v0.12.0 parked.
 - Our World in Data pane (\`OWID\`): grapher series keyed by chart slug + entity code, CC BY 4.0.
+- Data Catalog (\`CAT\`) lists redistributable OWID grapher series (search/browse; 403 charts stay out).
 
 ## Chat, news, alt-data
 

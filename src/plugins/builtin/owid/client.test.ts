@@ -11,5 +11,8 @@ describe("OWID hosted URL", () => {
       "/api/data/owid/life-expectancy/USA",
     );
     expect(adjacentCloudDataUrl("owid", "charts", "q=gdp")).toBe("/api/data/owid/charts?q=gdp");
+    expect(adjacentCloudDataUrl("owid", "meta/life-expectancy")).toBe(
+      "/api/data/owid/meta/life-expectancy",
+    );
   });
 });

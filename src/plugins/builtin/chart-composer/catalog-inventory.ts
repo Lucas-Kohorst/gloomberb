@@ -23,6 +23,8 @@ import {
 import { TWC_KALSHI_URL, type WeatherMetric } from "../weather/types";
 import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
+import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
+import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
 
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
@@ -39,7 +41,8 @@ export type CatalogSourceId =
   | "treasury"
   | "poll"
   | "benchmark"
-  | "weather";
+  | "weather"
+  | "owid";
 
 export type CatalogFilterId =
   | "all"
@@ -63,6 +66,8 @@ export interface CatalogSeriesRow {
   searchText: string;
   needsTicker?: boolean;
   fieldToken?: string;
+  needsEntity?: boolean;
+  owidSlug?: string;
 }
 
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
@@ -86,7 +91,7 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   prediction: new Set(["kalshi", "polymarket"]),
   futures: new Set(["futures"]),
   ai: new Set(["benchmark"]),
-  other: new Set(["adjacent", "poll", "weather"]),
+  other: new Set(["adjacent", "poll", "weather", "owid"]),
 };
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
@@ -146,6 +151,8 @@ function row(entry: {
   searchExtra?: string;
   needsTicker?: boolean;
   fieldToken?: string;
+  needsEntity?: boolean;
+  owidSlug?: string;
 }): CatalogSeriesRow {
   const { searchExtra, ...fields } = entry;
   return {
@@ -267,6 +274,12 @@ export function catalogRowsForResolvedInstruments(
 }
 
 export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
+  if (entry.needsEntity) {
+    const slug = entry.owidSlug?.trim();
+    const entity = ticker ? normalizeOwidEntityCode(ticker) : null;
+    if (!slug || !entity) return null;
+    return `OWID:${slug}:${entity}`;
+  }
   if (!entry.needsTicker) return entry.expression;
   const symbol = ticker ? catalogTickerFromInput(ticker) : null;
   if (!symbol || !entry.fieldToken) return null;
@@ -373,6 +386,50 @@ export function catalogRowsFromLlmStatsRows(models: readonly LlmStatsRow[]): Cat
       })];
     })
   ));
+}
+
+/** CAT discovery query for OWID search. Null skips the live origin (ticker lookups). */
+export function catalogOwidDiscoveryQuery(query: string): string | null {
+  const trimmed = query.trim();
+  if (/^(owid|our world in data)$/i.test(trimmed)) return "";
+  if (looksLikeCatalogTickerQuery(trimmed)) return null;
+  return trimmed;
+}
+
+export function catalogRowsFromOwidHits(
+  hits: readonly OwidChartSearchHit[],
+  metadataBySlug: ReadonlyMap<string, OwidChartMetadataPrint>,
+): CatalogSeriesRow[] {
+  return hits.flatMap((hit) => {
+    const metadata = metadataBySlug.get(hit.slug);
+    if (!metadata) return [];
+    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata.entities);
+    const needsEntity = !entity;
+    const expression = entity ? `OWID:${hit.slug}:${entity}` : `OWID:${hit.slug}`;
+    return [row({
+      id: `owid:${hit.slug}`,
+      label: metadata.title || hit.title,
+      source: "Our World in Data",
+      sourceId: "owid",
+      kind: "OWID",
+      expression,
+      url: hit.url || metadata.url,
+      searchExtra: [
+        hit.slug,
+        hit.subtitle,
+        metadata.citation,
+        metadata.unit,
+        "owid",
+        "our world in data",
+        "cc by",
+        "cc by 4.0",
+        ...hit.availableEntities.slice(0, 12),
+        ...metadata.entities.slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
+      ].filter(Boolean).join(" "),
+      needsEntity,
+      owidSlug: hit.slug,
+    })];
+  });
 }
 
 function securityFieldRows(): CatalogSeriesRow[] {

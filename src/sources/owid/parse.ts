@@ -2,6 +2,7 @@ import {
   OWID_LICENSE,
   OWID_ORIGIN,
   OWID_RESERVED_PATHS,
+  type OwidChartMetadataPrint,
   type OwidChartPrint,
   type OwidChartSearchHit,
   type OwidChartSearchPrint,
@@ -241,4 +242,79 @@ export function parseOwidCsvPrint(
 
 export function seriesJoinKey(slug: string, entityCode: string): string {
   return `${slug}:${entityCode}`;
+}
+
+function addEntity(into: Map<string, OwidEntity>, code: string, name: string): void {
+  const normalized = normalizeOwidEntityCode(code);
+  if (!normalized) return;
+  const label = name.trim() || normalized;
+  if (!into.has(normalized)) into.set(normalized, { code: normalized, name: label });
+}
+
+function extractMetadataEntities(meta: Record<string, unknown> | null): OwidEntity[] {
+  const into = new Map<string, OwidEntity>();
+  const rootEntities = meta?.entities;
+  if (Array.isArray(rootEntities)) {
+    for (const item of rootEntities) {
+      const row = asRecord(item);
+      if (!row) continue;
+      addEntity(into, str(row.code) ?? str(row.id) ?? "", str(row.name) ?? "");
+    }
+  }
+  const dimensions = asRecord(meta?.dimensions);
+  const dimensionEntities = asRecord(dimensions?.entities);
+  const dimensionValues = dimensionEntities?.values;
+  if (Array.isArray(dimensionValues)) {
+    for (const item of dimensionValues) {
+      const row = asRecord(item);
+      if (!row) continue;
+      addEntity(into, str(row.code) ?? str(row.id) ?? "", str(row.name) ?? "");
+    }
+  }
+  const columns = asRecord(meta?.columns);
+  if (columns) {
+    for (const columnValue of Object.values(columns)) {
+      const column = asRecord(columnValue);
+      const entities = asRecord(column?.entities);
+      if (!entities) continue;
+      for (const [code, value] of Object.entries(entities)) {
+        const row = asRecord(value);
+        addEntity(into, code, str(row?.name) ?? code);
+      }
+    }
+  }
+  return [...into.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function parseOwidMetadataPrint(body: unknown, slug: string): OwidChartMetadataPrint {
+  const meta = asRecord(body);
+  const titles = metadataTitle(meta);
+  return {
+    slug,
+    title: titles.title ?? slug,
+    subtitle: titles.subtitle,
+    citation: titles.citation,
+    unit: titles.unit,
+    license: OWID_LICENSE,
+    url: `${OWID_ORIGIN}/grapher/${slug}`,
+    entities: extractMetadataEntities(meta),
+  };
+}
+
+/** Prefer World, then the first metadata code, then a code-shaped search entity. */
+export function pickDefaultOwidEntityCode(
+  availableEntities: readonly string[] = [],
+  metadataEntities: readonly OwidEntity[] = [],
+): string | null {
+  const world = metadataEntities.find((entity) => (
+    entity.code === "OWID_WRL" || entity.name.trim().toLowerCase() === "world"
+  ));
+  if (world) return world.code;
+  if (availableEntities.some((name) => name.trim().toLowerCase() === "world")) return "OWID_WRL";
+  if (metadataEntities[0]) return metadataEntities[0].code;
+  for (const name of availableEntities) {
+    const code = normalizeOwidEntityCode(name);
+    if (code && name.trim().toUpperCase() === code) return code;
+  }
+  return null;
 }

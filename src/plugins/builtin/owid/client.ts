@@ -2,8 +2,8 @@ import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
-import { loadOwidChartPrint, loadOwidChartSearch } from "../../../sources/owid/load";
-import type { OwidChartPrint, OwidChartSearchPrint } from "../../../sources/owid/types";
+import { loadOwidChartMetadata, loadOwidChartPrint, loadOwidChartSearch } from "../../../sources/owid/load";
+import type { OwidChartMetadataPrint, OwidChartPrint, OwidChartSearchPrint } from "../../../sources/owid/types";
 import { OWID_CONNECTION_ID } from "./types";
 
 const CLIENT = createThrottledFetch({
@@ -50,6 +50,15 @@ export async function fetchOwidChartSearch(query: string): Promise<OwidChartSear
       return readHostedJson<OwidChartSearchPrint>("charts", search.toString());
     }
     return loadOwidChartSearch({ query, fetchImpl: hostedFetchImpl as typeof fetch });
+  });
+}
+
+export async function fetchOwidChartMetadata(slug: string): Promise<OwidChartMetadataPrint> {
+  return withConnectionRequest(OWID_CONNECTION_ID, "metadata", async () => {
+    if (isHostedWebClient()) {
+      return readHostedJson<OwidChartMetadataPrint>(`meta/${slug}`);
+    }
+    return loadOwidChartMetadata({ slug, fetchImpl: hostedFetchImpl as typeof fetch });
   });
 }
 

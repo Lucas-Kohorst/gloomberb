@@ -1,5 +1,5 @@
 import type { KeyedDataProvider, ProviderPlan } from "./types";
-import { loadOwidChartPrint, loadOwidChartSearch } from "../../../sources/owid/load";
+import { loadOwidChartMetadata, loadOwidChartPrint, loadOwidChartSearch } from "../../../sources/owid/load";
 import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
 import {
   OWID_PROVIDER_ID,
@@ -23,8 +23,9 @@ function parsePage(raw: string | null): number | null {
 
 /**
  * Adjacent Cloud OWID origin. Hosted clients call
- * `GET /api/data/owid/charts?q=` and `GET /api/data/owid/{slug}/{entity}`.
- * Desktop hits ourworldindata.org directly. Worker caches CSV + metadata.
+ * `GET /api/data/owid/charts?q=`, `GET /api/data/owid/meta/{slug}`, and
+ * `GET /api/data/owid/{slug}/{entity}`.
+ * Desktop hits ourworldindata.org directly. Worker caches successful prints only.
  */
 export const owidProvider: KeyedDataProvider = {
   id: OWID_PROVIDER_ID,
@@ -47,6 +48,21 @@ export const owidProvider: KeyedDataProvider = {
         kind: "print",
         cacheKey: `owid:charts:${query}:${page}:${hitsPerPage}`,
         load: (fetchImpl) => loadOwidChartSearch({ query, page, hitsPerPage, fetchImpl }),
+      };
+    }
+
+    if (segments[0] === "meta") {
+      if (segments.length !== 2) {
+        return { kind: "error", status: 404, error: "Unknown OWID path" };
+      }
+      const slug = normalizeOwidSlug(segments[1] ?? "");
+      if (!slug) {
+        return { kind: "error", status: 404, error: "Unknown OWID path" };
+      }
+      return {
+        kind: "print",
+        cacheKey: `owid:meta:${slug}`,
+        load: (fetchImpl) => loadOwidChartMetadata({ slug, fetchImpl }),
       };
     }
 

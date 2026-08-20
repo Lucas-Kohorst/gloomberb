@@ -2,12 +2,14 @@ import {
   normalizeOwidEntityCode,
   normalizeOwidSlug,
   parseOwidCsvPrint,
+  parseOwidMetadataPrint,
   parseOwidSearchPrint,
 } from "./parse";
 import {
   OWID_ORIGIN,
   OWID_USER_AGENT,
   OwidUpstreamError,
+  type OwidChartMetadataPrint,
   type OwidChartPrint,
   type OwidChartSearchPrint,
 } from "./types";
@@ -78,6 +80,21 @@ export async function loadOwidChartSearch(
   const fetchImpl = options.fetchImpl ?? fetch;
   const response = await fetchOwid(fetchImpl, owidSearchUrl(query, page, hitsPerPage), "application/json");
   return parseOwidSearchPrint(await response.json(), query, page, hitsPerPage);
+}
+
+export async function loadOwidChartMetadata(
+  options: {
+    slug: string;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<OwidChartMetadataPrint> {
+  const slug = normalizeOwidSlug(options.slug);
+  if (!slug) {
+    throw new OwidUpstreamError("Invalid OWID chart slug.", 400);
+  }
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchOwid(fetchImpl, owidMetadataUrl(slug), "application/json");
+  return parseOwidMetadataPrint(await response.json(), slug);
 }
 
 export async function loadOwidChartPrint(

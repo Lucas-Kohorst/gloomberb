@@ -41,6 +41,7 @@ import {
   useCatalogBenchRows,
   useCatalogPollRows,
 } from "./catalog-prefetch";
+import { resetCatalogOwidCaches, useCatalogOwidRows } from "./catalog-owid";
 import {
   resetCatalogPredictionHitsCache,
   useCatalogUniverse,
@@ -116,10 +117,11 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   );
   const { rows: benchRows, loading: benchLoading } = useCatalogBenchRows(refreshNonce);
   const { rows: pollRows, loading: pollsLoading } = useCatalogPollRows(refreshNonce);
+  const { rows: owidRows, loading: owidLoading } = useCatalogOwidRows(searchQuery, refreshNonce);
   const { indices: adjacentIndices, loading: indicesLoading } = useCatalogAdjacentIndices(
     refreshNonce,
   );
-  const liveLoading = marketsLoading || benchLoading || pollsLoading || indicesLoading;
+  const liveLoading = marketsLoading || benchLoading || pollsLoading || indicesLoading || owidLoading;
   const predictionError = !marketsLoading && markets.length === 0 ? marketsError : null;
   const emptyCopy = catalogEmptyCopy(
     liveLoading || (tickerQuery && universeLoading),
@@ -140,7 +142,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       (benchRows.length === 0 || entry.sourceId !== "benchmark")
       && (pollRows.length === 0 || entry.sourceId !== "poll")
     ));
-    for (const entry of [...liveRows, ...benchRows, ...pollRows, ...resolvedRows, ...withoutStaticLive]) {
+    for (const entry of [...liveRows, ...benchRows, ...pollRows, ...owidRows, ...resolvedRows, ...withoutStaticLive]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
     const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
@@ -151,7 +153,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [adjacentIndices, benchRows, filter, instruments, markets, pollRows, searchQuery, sortPreference, tickerQuery]);
+  }, [adjacentIndices, benchRows, filter, instruments, markets, owidRows, pollRows, searchQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -177,6 +179,27 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
 
   const chartSelected = useCallback(async (row: CatalogSeriesRow | null) => {
     if (!row) return;
+    if (row.needsEntity) {
+      const entity = await dialog.prompt<string>({
+        closeOnClickOutside: true,
+        content: (context: PromptContext<string>) => (
+          <PaneTemplateInputStep
+            {...context}
+            step={{
+              key: "entity",
+              label: `Chart ${row.label}`,
+              placeholder: "USA",
+              type: "text",
+              body: [`Enter an ISO alpha-3 or OWID entity code to chart ${row.label} (e.g. USA, OWID_WRL).`],
+            }}
+          />
+        ),
+      }).catch(() => undefined);
+      const expression = catalogExpressionForRow(row, entity);
+      if (!expression) return;
+      createPaneFromTemplate("chart-composer-pane", { arg: expression });
+      return;
+    }
     if (row.needsTicker) {
       const option = row.sourceId === "option";
       const ticker = await dialog.prompt<string>({
@@ -213,6 +236,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     if (liveLoading) return;
     resetCatalogPrefetchCaches();
     resetCatalogPredictionHitsCache();
+    resetCatalogOwidCaches();
     setRefreshNonce((nonce) => nonce + 1);
   }, [liveLoading]);
 

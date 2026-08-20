@@ -51,6 +51,12 @@ export interface WeatherSeriesSource {
   metric: "high" | "low" | "precip" | "hourly";
 }
 
+export interface OwidSeriesSource {
+  kind: "owid";
+  slug: string;
+  entity: string;
+}
+
 export interface PredictionMarketSeriesSource {
   kind: "prediction-market";
   venue: "kalshi" | "polymarket";
@@ -70,6 +76,7 @@ export type ChartSeriesSource =
   | BenchmarkSeriesSource
   | PollSeriesSource
   | WeatherSeriesSource
+  | OwidSeriesSource
   | PredictionMarketSeriesSource
   | ConstantSeriesSource;
 
