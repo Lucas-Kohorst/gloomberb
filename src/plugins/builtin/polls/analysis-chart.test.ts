@@ -6,6 +6,7 @@ import {
 } from "./analysis-chart";
 import { normalizeVoteHubPoll } from "./normalize";
 import {
+  loadPollRaceMarketOverlay,
   pickAdjacentMarketForPoll,
   pollRaceGeography,
   pollRaceMarketQuery,
@@ -78,6 +79,22 @@ describe("poll race market overlay matching", () => {
     expect(scoreAdjacentMarketForPoll(texas, query, "michigan")).toBe(0);
     expect(pickAdjacentMarketForPoll([texas, michigan], query, "michigan")?.id).toBe("mi-sen");
     expect(pickAdjacentMarketForPoll([texas], query, "michigan")).toBeNull();
+  });
+
+  test("loadPollRaceMarketOverlay returns a Promise, not an uninvoked async function", async () => {
+    const row = normalizeVoteHubPoll(makePoll());
+    const pending = loadPollRaceMarketOverlay(row, "Slotkin", {
+      search: async () => [market({})],
+      series: async () => ({
+        label: "Michigan Senate",
+        points: [{ date: new Date("2026-02-01T00:00:00Z"), close: 51 }],
+      }),
+    });
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).resolves.toMatchObject({
+      marketId: "KXMI-SEN-2026",
+      venue: "kalshi",
+    });
   });
 });
 

@@ -149,7 +149,7 @@ export async function loadPollRaceMarketOverlay(
     }
     overlayCache.set(cacheKey, null);
     return null;
-  }).finally(() => {
+  })().finally(() => {
     overlayInFlight.delete(cacheKey);
   });
 
