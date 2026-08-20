@@ -790,6 +790,36 @@ describe("share document serving", () => {
     expect(asset.headers.get("Cookie")).toBeNull();
     expect(asset.headers.get("If-None-Match")).toBeNull();
   });
+
+  test("GET hashed share-main.js does not forward Cookie or If-None-Match", async () => {
+    const captured: Request[] = [];
+    const env = makeEnv();
+    env.ASSETS = {
+      fetch: async (request: RequestInfo) => {
+        captured.push(request instanceof Request ? request : new Request(request));
+        return new Response("export {}", {
+          headers: { "content-type": "text/javascript", etag: '"old-share-main"' },
+        });
+      },
+    } as unknown as Fetcher;
+
+    const headers = new Headers();
+    headers.set("Cookie", `${SESSION_COOKIE}=logged-in`);
+    headers.set("If-None-Match", '"old-share-main"');
+    headers.set("Accept", "*/*");
+    const response = await workerModule.default.fetch?.(
+      new Request(`${ORIGIN}/share-main.a1b2c3d4e5.js`, { method: "GET", headers }),
+      env,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toContain("no-store");
+    expect(captured).toHaveLength(1);
+    const asset = captured[0]!;
+    expect(new URL(asset.url).pathname).toBe("/share-main.a1b2c3d4e5.js");
+    expect(asset.headers.get("Cookie")).toBeNull();
+    expect(asset.headers.get("If-None-Match")).toBeNull();
+  });
 });
 
 describe("hosted Gloom Cloud WebSocket proxy", () => {
