@@ -64,6 +64,7 @@ function deserializeItem(item: unknown): MarketNewsItem | null {
     source: record.source,
     publishedAt,
     summary: typeof record.summary === "string" ? record.summary : undefined,
+    body: typeof record.body === "string" && record.body.trim() ? record.body : undefined,
     imageUrl: typeof record.imageUrl === "string" ? record.imageUrl : undefined,
     topic: typeof record.topic === "string" ? record.topic : "general",
     topics: Array.isArray(record.topics)

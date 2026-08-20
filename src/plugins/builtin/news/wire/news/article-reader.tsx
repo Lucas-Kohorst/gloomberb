@@ -8,6 +8,7 @@ import type { PaneProps } from "../../../../../types/plugin";
 import { useNewsArticleFooter } from "./footer";
 import { getStashedNewsArticle } from "./article-stash";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
+import { shouldSkipJinaForKnownBody } from "../../../shared/jina-article-text";
 import { JinaArticleReader, useJinaArticle } from "../../../shared/jina-reader";
 
 export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
@@ -63,7 +64,10 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const shareArticle = article
     ? () => copyShareLink(newsArticleSharePayload(article))
     : undefined;
-  const skipJina = article?.origin === "x-feed" && !!(article.body || article.summary);
+  const skipJina = (
+    (article?.origin === "x-feed" && !!(article.body || article.summary))
+    || shouldSkipJinaForKnownBody(article?.body)
+  );
   const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url) && !skipJina);
 
   useNewsArticleFooter({

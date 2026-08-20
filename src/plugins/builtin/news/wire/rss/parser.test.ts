@@ -108,6 +108,28 @@ describe("parseRssFeed", () => {
     expect(items[1]!.title).toBe("Titleonly item");
   });
 
+  test("stores content:encoded as body and keeps a truncated summary", () => {
+    const longEncoded = `<p>${"Full article paragraph. ".repeat(40)}</p>`;
+    const xml = `<?xml version="1.0"?>
+      <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+      <channel>
+        <item>
+          <title>Encoded item</title>
+          <link>https://example.com/encoded</link>
+          <description>Short teaser.</description>
+          <content:encoded><![CDATA[${longEncoded}]]></content:encoded>
+        </item>
+      </channel>
+      </rss>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]!.summary).toBe("Short teaser.");
+    expect(items[0]!.body).toContain("Full article paragraph.");
+    expect(items[0]!.body!.length).toBeGreaterThan(500);
+    expect(items[0]!.body).not.toContain("<p>");
+  });
+
   test("uses config category when the item has none", () => {
     const items = parseRssFeed(RSS2_FIXTURE, { ...DEFAULT_CONFIG, category: "markets" });
 

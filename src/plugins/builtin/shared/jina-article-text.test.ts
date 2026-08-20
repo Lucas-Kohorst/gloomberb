@@ -7,6 +7,7 @@ import {
   isBoilerplateArticleBody,
   preferredArticleBody,
   readerFallbackNotice,
+  shouldSkipJinaForKnownBody,
   stripJinaPreamble,
 } from "./jina-article-text";
 
@@ -265,6 +266,13 @@ describe("classifyReaderThrow", () => {
   test("passes through structured ReaderFailure objects thrown from HTTP handling", () => {
     const failure = classifyReaderHttpFailure(403, "AbuseAlleviationError: blocked");
     expect(classifyReaderThrow(Object.assign(new Error(failure.status), { readerFailure: failure }))).toEqual(failure);
+  });
+});
+
+describe("shouldSkipJinaForKnownBody", () => {
+  test("skips extraction only when RSS already returned a long article body", () => {
+    expect(shouldSkipJinaForKnownBody("short teaser")).toBe(false);
+    expect(shouldSkipJinaForKnownBody("x".repeat(500))).toBe(true);
   });
 });
 
