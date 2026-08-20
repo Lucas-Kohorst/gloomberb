@@ -18,6 +18,10 @@ export const TWEET_SEARCH_DEBOUNCE_MS = 450;
 export const TWITTER_FEED_PANE_ID = "twitter-feed";
 export const TWITTER_FEED_LAUNCH_STATE_KEY = "twitter-feed-launch";
 export const TWITTER_FEED_LAUNCH_SCHEMA_VERSION = 1;
+export const DEFAULT_TWITTER_FEED_QUERY = "list:2090433878028685747";
+export const DEFAULT_TWITTER_FEED_TITLE = "Markets";
+export const TWEET_CELL_MAX_CHARS = 240;
+export const TWEET_ROW_MAX_LINES = 8;
 
 const TWITTER_USERNAME_RE = /^[A-Za-z0-9_]{1,15}$/;
 
@@ -63,7 +67,20 @@ function generateFeedId(): string {
   return `${Date.now()}-${nextTwitterFeedId++}`;
 }
 
+export function resolveTwitterFeedQuery(query: string | null | undefined): string {
+  const trimmed = typeof query === "string" ? query.trim() : "";
+  return trimmed || DEFAULT_TWITTER_FEED_QUERY;
+}
+
+export function namedTwitterFeedTitle(query: string): string | null {
+  return normalizeFeedQuery(query) === normalizeFeedQuery(DEFAULT_TWITTER_FEED_QUERY)
+    ? DEFAULT_TWITTER_FEED_TITLE
+    : null;
+}
+
 export function deriveFeedTitle(query: string): string {
+  const named = namedTwitterFeedTitle(query);
+  if (named) return named;
   const tickers = collectUniqueTickerSymbols([query]);
   if (tickers.length > 0) return tickers.slice(0, 3).map((ticker) => `$${ticker}`).join(" ");
   return truncateWithEllipsis(query.replace(/\s+/g, " ").trim(), 24) || "New";
@@ -109,7 +126,8 @@ export function normalizeFeeds(value: unknown): TwitterFeed[] {
     ))
     .map((entry) => ({
       ...entry,
-      title: typeof entry.title === "string" && entry.title.trim() ? entry.title : deriveFeedTitle(entry.query),
+      title: namedTwitterFeedTitle(entry.query)
+        ?? (typeof entry.title === "string" && entry.title.trim() ? entry.title : deriveFeedTitle(entry.query)),
       queryType: entry.queryType === "Top" ? "Top" : "Latest",
       createdAt: typeof entry.createdAt === "number" ? entry.createdAt : Date.now(),
       updatedAt: typeof entry.updatedAt === "number" ? entry.updatedAt : Date.now(),
@@ -134,6 +152,21 @@ export function normalizeTweetDisplayText(value: string): string {
 
 export function normalizeTweetCellText(value: string): string {
   return normalizeTweetText(value);
+}
+
+export function formatTweetCellText(value: string): string {
+  const normalized = normalizeTweetCellText(value);
+  return normalized.length <= TWEET_CELL_MAX_CHARS
+    ? normalized
+    : normalized.slice(0, TWEET_CELL_MAX_CHARS);
+}
+
+export function tweetTextRowHeight(textWidth: number): number {
+  const width = Math.max(1, Math.floor(textWidth));
+  return Math.min(
+    TWEET_ROW_MAX_LINES,
+    Math.max(3, Math.ceil(TWEET_CELL_MAX_CHARS / width)),
+  );
 }
 
 export function tweetTickers(tweet: CloudTweetPayload): string[] {
@@ -239,17 +272,24 @@ export function tweetImageUrls(tweet: CloudTweetPayload): string[] {
 export function buildTweetColumns(width: number): TweetColumn[] {
   const timeWidth = 7;
   const authorWidth = 16;
-  const tickersWidth = 24;
+  const tickersWidth = 12;
   const likesWidth = 7;
   const viewsWidth = 8;
   const textWidth = Math.max(
-    20,
+    32,
     width - timeWidth - authorWidth - tickersWidth - likesWidth - viewsWidth - 9,
   );
   return [
     { id: "time", label: "TIME", width: timeWidth, align: "left" },
     { id: "author", label: "AUTHOR", width: authorWidth, align: "left" },
-    { id: "text", label: "TWEET", width: textWidth, align: "left" },
+    {
+      id: "text",
+      label: "TWEET",
+      width: textWidth,
+      align: "left",
+      flexGrow: 1,
+      wrap: true,
+    },
     { id: "tickers", label: "TICKERS", width: tickersWidth, align: "left" },
     { id: "likes", label: "LIKES", width: likesWidth, align: "right" },
     { id: "views", label: "VIEWS", width: viewsWidth, align: "right" },

@@ -9,6 +9,7 @@ export type DataTableColumn = Pick<
   headerColor?: string;
   headerBackgroundColor?: string;
   flexGrow?: number;
+  wrap?: boolean;
 };
 
 export interface DataTableCell {
@@ -94,6 +95,8 @@ export interface DataTableProps<
   horizontalPadding?: number;
   fillAvailableWidth?: boolean;
   showHorizontalScrollbar?: boolean;
+  /** Terminal rows / CSS cell multiples for each data row. Defaults to 1. */
+  rowHeight?: number;
   scrollToIndex?: number | null;
   scrollToIndexAlign?: DataTableScrollAlign;
   scrollToIndexVersion?: number;

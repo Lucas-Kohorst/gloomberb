@@ -5,6 +5,7 @@ interface DataTableVisibleWindowOptions<T> {
   items: T[];
   measuredViewportHeight: number | undefined;
   overscan: number;
+  rowHeight?: number;
   scrollTop: number;
   virtualize: boolean;
 }
@@ -14,6 +15,13 @@ export interface DataTableVisibleWindow<T> {
   startIndex: number;
   viewportHeight: number;
   visibleItems: T[];
+}
+
+export function normalizeDataTableRowHeight(rowHeight: number | undefined): number {
+  if (typeof rowHeight !== "number" || !Number.isFinite(rowHeight) || rowHeight < 1) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(rowHeight));
 }
 
 export function resolveDataTableScrollTop(
@@ -40,21 +48,28 @@ export function resolveDataTableVisibleWindow<T>({
   items,
   measuredViewportHeight,
   overscan,
+  rowHeight,
   scrollTop,
   virtualize,
 }: DataTableVisibleWindowOptions<T>): DataTableVisibleWindow<T> {
+  const size = normalizeDataTableRowHeight(rowHeight);
   const viewportHeight = virtualize
     ? Math.max(
         1,
         Math.min(
-          measuredViewportHeight ?? Math.min(items.length, 16),
+          measuredViewportHeight ?? Math.min(items.length * size, 16),
           Math.max(1, Math.ceil(appViewportHeight)),
         ),
       )
+    : items.length * size;
+  const startIndex = virtualize
+    ? Math.max(Math.floor(scrollTop / size) - overscan, 0)
+    : 0;
+  const viewportRows = virtualize
+    ? Math.max(1, Math.ceil(viewportHeight / size))
     : items.length;
-  const startIndex = virtualize ? Math.max(scrollTop - overscan, 0) : 0;
   const endIndex = virtualize
-    ? Math.min(startIndex + viewportHeight + overscan * 2, items.length)
+    ? Math.min(startIndex + viewportRows + overscan * 2, items.length)
     : items.length;
 
   return {

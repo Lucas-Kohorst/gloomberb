@@ -6,6 +6,7 @@ import { blendHex } from "../../../../theme/color-utils";
 import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
 import { useViewport } from "../../../../react/input";
 import { padTo } from "../../../../utils/format";
+import { wrapTextLines } from "../../../../utils/text-wrap";
 import { measurePerf } from "../../../../utils/perf-marks";
 import { useDoubleClickActivation } from "../../../use-double-click-activation";
 import { useScrollBoxScrollActivity } from "../../../table-view-shared";
@@ -24,6 +25,7 @@ import type {
 } from "../types";
 import { resolveDataTableVisibleRange } from "../visible-range";
 import {
+  normalizeDataTableRowHeight,
   resolveDataTableScrollTop,
   resolveDataTableVisibleWindow,
 } from "./model";
@@ -69,6 +71,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   horizontalPadding = 1,
   fillAvailableWidth = true,
   showHorizontalScrollbar = true,
+  rowHeight,
   scrollToIndex,
   scrollToIndexAlign = "nearest",
   scrollToIndexVersion = 0,
@@ -84,6 +87,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     key: string | number | undefined;
     range: DataTableVisibleRange;
   } | null>(null);
+  const rowHeightCells = normalizeDataTableRowHeight(rowHeight);
   const scrollTop = virtualize ? (scrollRef.current?.scrollTop ?? 0) : 0;
   const measuredViewportHeight = scrollRef.current?.viewport?.height;
   const tableWindow = useMemo(
@@ -94,6 +98,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         items,
         measuredViewportHeight,
         overscan,
+        rowHeight: rowHeightCells,
         scrollTop,
         virtualize,
       }),
@@ -111,6 +116,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
       items.length,
       measuredViewportHeight,
       overscan,
+      rowHeightCells,
       scrollTop,
       scrollVersion,
       virtualize,
@@ -138,7 +144,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     const scrollBox = scrollRef.current;
     const range = resolveDataTableVisibleRange({
       itemCount: items.length,
-      rowSize: 1,
+      rowSize: rowHeightCells,
       scrollOffset: scrollBox?.scrollTop ?? scrollTop,
       viewportSize: scrollBox?.viewport?.height ?? viewportHeight,
     });
@@ -151,7 +157,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     ) return;
     lastVisibleRangeRef.current = { key: visibleRangeKey, range };
     onVisibleRangeChange(range);
-  }, [items.length, onVisibleRangeChange, scrollRef, scrollTop, viewportHeight, visibleRangeKey]);
+  }, [items.length, onVisibleRangeChange, rowHeightCells, scrollRef, scrollTop, viewportHeight, visibleRangeKey]);
   const handleRowMouseDown =
     useDoubleClickActivation<DataTableRowPointerTarget<T>>({
       onSelect: ({ item, index }) => {
@@ -200,20 +206,21 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     if (!scrollBox?.viewport) return false;
 
     const targetIndex = Math.max(0, Math.min(scrollToIndex, items.length - 1));
-    const visibleHeight = Math.max(
+    const visibleHeightCells = Math.max(
       1,
       Math.min(scrollBox.viewport.height, Math.ceil(appViewport.height)),
     );
-    const currentTop = scrollBox.scrollTop;
+    const visibleRows = Math.max(1, Math.floor(visibleHeightCells / rowHeightCells));
+    const currentTop = Math.floor(scrollBox.scrollTop / rowHeightCells);
     const nextTop = resolveDataTableScrollTop(
       targetIndex,
       currentTop,
-      visibleHeight,
+      visibleRows,
       items.length,
       scrollToIndexAlign,
-    );
+    ) * rowHeightCells;
 
-    if (nextTop === currentTop) return true;
+    if (nextTop === scrollBox.scrollTop) return true;
     scrollBox.scrollTo(nextTop);
     if (scrollBox.scrollTop !== nextTop) return false;
     if (virtualize) {
@@ -225,6 +232,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   }, [
     appViewport.height,
     items.length,
+    rowHeightCells,
     scrollRef,
     scrollToIndex,
     scrollToIndexAlign,
@@ -249,13 +257,13 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
         body.horizontalScrollBar.visible = horizontalScrollbarVisible;
       }
       if (body.verticalScrollBar && body.viewport) {
-        body.verticalScrollBar.visible = items.length > body.viewport.height;
+        body.verticalScrollBar.visible = items.length * rowHeightCells > body.viewport.height;
       }
       if (!horizontalScrollbarVisible) {
         body.scrollLeft = 0;
       }
     }
-  }, [columns.length, headerScrollRef, horizontalScrollbarVisible, items.length, measuredViewportHeight, scrollRef]);
+  }, [columns.length, headerScrollRef, horizontalScrollbarVisible, items.length, measuredViewportHeight, rowHeightCells, scrollRef]);
 
   useEffect(() => {
     if (scrollToIndex == null) {
@@ -378,7 +386,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
           )
         ) : (
           <>
-            {virtualize && startIndex > 0 && <Box height={startIndex} />}
+            {virtualize && startIndex > 0 && <Box height={startIndex * rowHeightCells} />}
             {measurePerf(
               "data-table.render-visible-rows",
               () => visibleItems.map((item, visibleIndex) => {
@@ -430,7 +438,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                   <Box
                     key={getItemKey(item, index)}
                     flexDirection="row"
-                    height={1}
+                    height={rowHeightCells}
                     {...tableContentWidthProps(contentWidth)}
                     paddingX={horizontalPadding}
                     backgroundColor={rowBg}
@@ -481,6 +489,21 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                         >
                           {cell.content !== undefined ? (
                             cell.content
+                          ) : column.wrap ? (
+                            <Box flexDirection="column" width={column.width} height={rowHeightCells}>
+                              {wrapTextLines(cell.text, Math.max(1, column.width), rowHeightCells).map((line, lineIndex) => (
+                                <Text
+                                  key={lineIndex}
+                                  attributes={cell.attributes ?? TextAttributes.NONE}
+                                  fg={
+                                    cell.color ??
+                                    (selected ? colors.selectedText : colors.text)
+                                  }
+                                >
+                                  {padTo(line, column.width, column.align)}
+                                </Text>
+                              ))}
+                            </Box>
                           ) : (
                             <Text
                               attributes={cell.attributes ?? TextAttributes.NONE}
@@ -511,7 +534,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
               },
             )}
             {virtualize && endIndex < items.length && (
-              <Box height={Math.max(items.length - endIndex, 0)} />
+              <Box height={Math.max((items.length - endIndex) * rowHeightCells, 0)} />
             )}
             {bodyAfter}
           </>

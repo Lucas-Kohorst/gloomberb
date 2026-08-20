@@ -193,7 +193,7 @@ function WebDataTableRowInner<
     display: "grid",
     gridTemplateColumns,
     columnGap: columnGapCss(columnGap),
-    alignItems: "center",
+    alignItems: "start",
     width: "100%",
     minWidth: 0,
     height: rowSize,
@@ -283,7 +283,7 @@ function WebDataTableRowInner<
             data-gloom-role="data-table-cell"
             style={{
               minWidth: 0,
-              height: WEB_CELL_HEIGHT,
+              height: "100%",
               overflow: "hidden",
               backgroundColor: cell.backgroundColor ?? rowBg,
             }}
@@ -319,7 +319,7 @@ function WebDataTableRowInner<
                 title={cell.text}
                 style={{
                   display: "flex",
-                  alignItems: "center",
+                  alignItems: "flex-start",
                   justifyContent: contentJustifyForAlign(column.align),
                   width: "100%",
                   height: "100%",

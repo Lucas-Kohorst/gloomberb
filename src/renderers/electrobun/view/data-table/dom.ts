@@ -55,14 +55,18 @@ export function clippedCellTextStyle(
   color: string,
   attributes: number | undefined,
 ): CSSProperties {
+  const wrap = column.wrap === true;
   return {
     ...cellTextStyle(color, attributes),
     display: "block",
     width: "100%",
     maxWidth: "100%",
+    height: wrap ? "100%" : undefined,
     overflow: "hidden",
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
+    whiteSpace: wrap ? "pre-wrap" : "nowrap",
+    textOverflow: wrap ? "clip" : "ellipsis",
+    overflowWrap: wrap ? "anywhere" : undefined,
+    wordBreak: wrap ? "break-word" : undefined,
     textAlign: column.align,
   };
 }

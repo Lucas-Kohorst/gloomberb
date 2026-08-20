@@ -20,6 +20,7 @@ import {
   deriveFeedTitle,
   normalizeFeedQuery,
   normalizeFeeds,
+  resolveTwitterFeedQuery,
   type PersistedTwitterFeedState,
   type TwitterFeed,
   type TwitterFeedLaunchRequest,
@@ -141,28 +142,44 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     if (initializedRef.current) return;
+    if (feeds.length > 0) {
+      initializedRef.current = true;
+      return;
+    }
+    const launchTargetsThisPane = !!launchRequest && (
+      !launchRequest.targetPaneId || launchRequest.targetPaneId === paneId
+    );
+    if (launchTargetsThisPane) {
+      initializedRef.current = true;
+      return;
+    }
+
     initializedRef.current = true;
-    if (feeds.length > 0) return;
-    const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query : "";
+    const seedQuery = resolveTwitterFeedQuery(
+      typeof paneInstance?.params?.query === "string" ? paneInstance.params.query : "",
+    );
     const seedType = paneInstance?.params?.queryType === "Top" ? "Top" : "Latest";
     const feed = createFeed(seedQuery, seedType);
     setPersistedState({ feeds: [feed] });
     setActiveFeedId(feed.id);
-    if (!seedQuery.trim()) focusSearch();
-  }, [feeds.length, focusSearch, paneInstance?.params?.query, paneInstance?.params?.queryType, setActiveFeedId, setPersistedState]);
+  }, [
+    feeds.length,
+    launchRequest,
+    paneId,
+    paneInstance?.params?.query,
+    paneInstance?.params?.queryType,
+    setActiveFeedId,
+    setPersistedState,
+  ]);
 
   useEffect(() => {
     if (!launchRequest) return;
     if (launchRequest.targetPaneId && launchRequest.targetPaneId !== paneId) return;
 
     const queryType = launchRequest.queryType === "Top" ? "Top" : "Latest";
-    if (launchRequest.query.trim()) {
-      openOrCreateFeed(launchRequest.query, queryType);
-    } else if (feeds.length === 0) {
-      addFeed("", queryType);
-    }
+    openOrCreateFeed(resolveTwitterFeedQuery(launchRequest.query), queryType);
     setLaunchRequest(null);
-  }, [addFeed, feeds.length, launchRequest, openOrCreateFeed, paneId, setLaunchRequest]);
+  }, [launchRequest, openOrCreateFeed, paneId, setLaunchRequest]);
 
   useEffect(() => {
     if (feeds.length === 0) {
