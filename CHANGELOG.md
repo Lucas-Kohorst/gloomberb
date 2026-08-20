@@ -10,6 +10,7 @@ Hosted users share one cached origin pull for reference prints. Polls, AI Benchm
 - Hosted clients fetch those sources through `/api/data/{provider}` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
 - Weather pane + `G WX:LAX:high` / `G NWS:KNYC:high` series. Climate prediction markets get a Settlement tab that opens the TWC print.
 - US listed-universe security master at `/api/data/us-listings/universe` (Nasdaq Trader + SEC OTC, 12h cache).
+- Restore Data Catalog (`CAT`) and watchlist/portfolio `[a]dd` / `[d]elete` / `[g]raph` from v0.11.1 — those shipped live and were dropped on the v0.12.0 cut. Benchmarks in CAT use llm-stats (`BENCH:model:tps`), not Artificial Analysis.
 
 ### Worker secrets
 

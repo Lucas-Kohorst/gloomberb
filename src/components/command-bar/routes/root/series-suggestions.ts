@@ -40,6 +40,8 @@ export interface ChartSeriesSuggestionOptions {
   enabled: boolean;
   /** Called with the completed expression (without the `G ` prefix). */
   onRun: (expression: string) => void;
+  /** Opens the Data Catalog pane, optionally pre-filtered. */
+  onOpenCatalog?: (query: string) => void;
   limit?: number;
 }
 
@@ -54,6 +56,7 @@ export function useChartSeriesSuggestions({
   defaultInstrument,
   enabled,
   onRun,
+  onOpenCatalog,
   limit = 6,
 }: ChartSeriesSuggestionOptions): ResultItem[] {
   const { prefix, leg } = useMemo(() => splitCurrentLeg(argText), [argText]);
@@ -65,25 +68,47 @@ export function useChartSeriesSuggestions({
   });
 
   return useMemo(() => {
-    if (!enabled || !argText.trim()) return [];
+    if (!enabled) return [];
+    const catalogItem: ResultItem | null = onOpenCatalog
+      ? {
+          id: "chart-series:data-catalog",
+          label: trimmedLeg
+            ? t("Browse Data Catalog")
+            : t("Data Catalog"),
+          detail: trimmedLeg
+            ? `Search “${trimmedLeg}” across every series`
+            : t("Search every chartable series"),
+          category: CHART_SERIES_CATEGORY,
+          kind: "action",
+          right: "CAT",
+          shortcutQuery: "CAT",
+          searchText: [trimmedLeg, "catalog", "series", "kalshi", "polymarket", "fred"].join(" "),
+          action: () => onOpenCatalog(trimmedLeg),
+        }
+      : null;
+    if (!argText.trim()) return catalogItem ? [catalogItem] : [];
     if (suggestions.length === 0) {
       if (loading && trimmedLeg.length > 0) {
-        return [{
-          id: "chart-series:loading",
-          label: t("Searching instruments…"),
-          detail: "",
-          category: CHART_SERIES_CATEGORY,
-          kind: "info",
-          defaultSelectable: false,
-          action: () => {},
-        }];
+        return [
+          {
+            id: "chart-series:loading",
+            label: t("Searching series…"),
+            detail: "",
+            category: CHART_SERIES_CATEGORY,
+            kind: "info",
+            defaultSelectable: false,
+            action: () => {},
+          },
+          ...(catalogItem ? [catalogItem] : []),
+        ];
       }
-      return [];
+      return catalogItem ? [catalogItem] : [];
     }
-    return suggestions.slice(0, limit).map((suggestion) =>
+    const seriesItems = suggestions.slice(0, limit).map((suggestion) =>
       buildChartSeriesItem({ suggestion, prefix, onRun }),
     );
-  }, [argText, enabled, limit, loading, onRun, prefix, suggestions, trimmedLeg.length]);
+    return catalogItem ? [...seriesItems, catalogItem] : seriesItems;
+  }, [argText, enabled, limit, loading, onOpenCatalog, onRun, prefix, suggestions, trimmedLeg]);
 }
 
 function buildChartSeriesItem(options: {
