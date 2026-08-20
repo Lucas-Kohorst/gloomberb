@@ -7,7 +7,8 @@ import {
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app/context";
 import { usePluginConfigState, usePluginPaneState, usePluginState } from "../../runtime";
-import { apiClient, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
+import { type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
+import { getXTickerTweets, searchXFeedTweets } from "./client";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import {
   DEFAULT_TWEET_HOURS,
@@ -38,7 +39,7 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
   const { symbol } = usePaneTicker();
   const load = useCallback(() => {
     if (!symbol) throw new Error("No ticker selected");
-    return apiClient.getCloudTickerTweets({
+    return getXTickerTweets({
       ticker: symbol,
       hours: DEFAULT_TWEET_HOURS,
       limit: DEFAULT_TWEET_LIMIT,
@@ -283,7 +284,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   const searchEnabled = activeFeedQuery.length > 0;
   const loadActiveFeed = useCallback(() => {
     if (!activeFeedQuery) throw new Error("No X feed selected");
-    return apiClient.searchCloudTweets({
+    return searchXFeedTweets({
       query: activeFeedQuery,
       queryType: activeFeedQueryType,
       hours: DEFAULT_TWEET_HOURS,

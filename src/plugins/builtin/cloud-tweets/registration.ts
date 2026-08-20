@@ -1,8 +1,13 @@
 import type { GloomPluginContext } from "../../../types/plugin";
+import { apiClient } from "../../../api-client";
+import { getSharedNewsService } from "../../../news/hooks";
+import { registerConnectionSource } from "../connections/register";
+import { createXMarketsNewsCapability } from "./news-capability";
 import {
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
+  X_FEED_CONNECTION_ID,
   resolveTwitterFeedQuery,
   type TwitterFeedLaunchRequest,
 } from "./model";
@@ -10,6 +15,9 @@ import {
   TwitterFeedPane,
   TwitterTickerTab,
 } from "./pane";
+
+let disposeXFeedConnection: (() => void) | null = null;
+let disposeXFeedAuthWatch: (() => void) | null = null;
 
 export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
   ctx.registerTickerResearchTab({
@@ -65,6 +73,28 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
       openTwitterFeed(ctx, typeof values?.query === "string" ? values.query : "");
     },
   });
+
+  ctx.registerCapability(createXMarketsNewsCapability());
+  // Logging in/out flips this source between empty and populated; re-run the
+  // watched news queries so the firehose merges Markets tweets without a reload.
+  disposeXFeedAuthWatch = apiClient.subscribeCurrentUser(() => {
+    void getSharedNewsService()?.refreshWatchedQueries();
+  });
+  disposeXFeedConnection = registerConnectionSource({
+    id: X_FEED_CONNECTION_ID,
+    name: "X",
+    kind: "news",
+    pluginId: "gloomberb-cloud",
+    priority: 500,
+    authRequired: true,
+  });
+}
+
+export function disposeTwitterFeedFeature(): void {
+  disposeXFeedConnection?.();
+  disposeXFeedConnection = null;
+  disposeXFeedAuthWatch?.();
+  disposeXFeedAuthWatch = null;
 }
 
 function openTwitterFeed(ctx: GloomPluginContext, query = "") {
