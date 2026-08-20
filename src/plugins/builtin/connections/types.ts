@@ -65,7 +65,7 @@ export function createInitialConnectionState(
     id,
     name,
     kind,
-    status: "idle",
+    status: authRequired === false ? "connected" : "idle",
     priority,
     lastPolledAt: null,
     lastLatencyMs: null,

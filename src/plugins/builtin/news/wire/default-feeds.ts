@@ -10,6 +10,7 @@ import type { RssFeedConfig } from "./rss/parser";
 // authority in 0-100.
 export const DEFAULT_FEEDS: RssFeedConfig[] = [
   // -- Wires & national general news ----------------------------------------
+  { id: "adjacent-press", url: "https://adjacent.markets/press/rss", name: "Adjacent Press", category: "general", authority: 82, enabled: true },
   { id: "reuters-world", url: "https://www.reuters.com/arc/outboundfeeds/rss/?outputType=xml", name: "Reuters World", category: "general", authority: 85, enabled: true },
   { id: "ap-topnews", url: "https://rsshub.app/apnews/topics/apf-topnews", name: "AP Top News", category: "general", authority: 85, enabled: true },
   { id: "bbc-business", url: "https://feeds.bbci.co.uk/news/business/rss.xml", name: "BBC Business", category: "general", authority: 80, enabled: true },

@@ -87,10 +87,13 @@ describe("connection source registry", () => {
   test("createInitialConnectionState propagates authRequired", () => {
     const state = createInitialConnectionState("x", "X", "api", "p", 100, false, false);
     expect(state.authRequired).toBe(false);
+    expect(state.status).toBe("connected");
     const state2 = createInitialConnectionState("y", "Y", "api", "p", 100, false, true);
     expect(state2.authRequired).toBe(true);
+    expect(state2.status).toBe("idle");
     const state3 = createInitialConnectionState("z", "Z", "api", "p", 100, false);
     expect(state3.authRequired).toBeUndefined();
+    expect(state3.status).toBe("idle");
   });
 });
 

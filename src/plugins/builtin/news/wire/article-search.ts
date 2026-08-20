@@ -60,6 +60,23 @@ const COMMAND_WORDS = new Set([
 
 export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
 
+let rssWarmTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
+export function scheduleRssNewsWarm(): void {
+  cancelRssNewsWarm();
+  rssWarmTimer = setTimeout(() => {
+    rssWarmTimer = null;
+    void getSharedNewsService()?.poll(ARTICLE_SEARCH_QUERY);
+  }, 0);
+}
+
+export function cancelRssNewsWarm(): void {
+  if (rssWarmTimer == null) return;
+  clearTimeout(rssWarmTimer);
+  rssWarmTimer = null;
+}
+
 export function tokenizeArticleQuery(query: string): string[] {
   // `ART trump` is the command prefix plus a topic — "art" is not a search term.
   const withoutArtPrefix = query.replace(/^\s*art\b/i, " ");
