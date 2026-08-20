@@ -53,7 +53,9 @@ export function useSubstackPaneFooter({
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
-      { id: "share", key: "y", label: " share", onPress: shareSelectedArticle, disabled: !selectedArticle },
+      ...(detailOpen && selectedArticle
+        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
+        : []),
       { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
     ] : [],
   }), [
