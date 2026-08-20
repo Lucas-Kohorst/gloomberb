@@ -121,5 +121,8 @@ export function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest):
   if (hostname === "llm-stats.com" || hostname.endsWith(".llm-stats.com")) {
     return clientAuth ? null : 900;
   }
+  if (hostname === "ourworldindata.org" || hostname.endsWith(".ourworldindata.org")) {
+    return 6 * 60 * 60;
+  }
   return null;
 }

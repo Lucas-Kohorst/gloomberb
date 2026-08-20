@@ -322,6 +322,7 @@ describe("Adjacent Cloud keyed-data providers", () => {
       "adjacent",
       "llm-stats",
       "nws-cli",
+      "owid",
       "twc-kalshi",
       "us-listings",
       "votehub",
@@ -518,6 +519,81 @@ IBM|International Business Machines Corporation Common Stock|N|IBM|N|100|N|IBM
       makeEnv(),
     );
     expect(blocked?.status).toBe(404);
+  });
+
+  test("OWID caches grapher CSV+metadata and allowlists slug/entity paths", async () => {
+    let csvHits = 0;
+    let metaHits = 0;
+    let searchHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("/api/search?")) {
+        searchHits += 1;
+        return Response.json({
+          nbHits: 1,
+          results: [{ title: "Life expectancy", slug: "life-expectancy", availableEntities: ["United States"] }],
+        });
+      }
+      if (url.includes("life-expectancy.csv")) {
+        csvHits += 1;
+        return new Response("Entity,Code,Year,Life expectancy\nUnited States,USA,2020,77.28\n", {
+          status: 200,
+          headers: { "content-type": "text/csv" },
+        });
+      }
+      if (url.endsWith("life-expectancy.metadata.json")) {
+        metaHits += 1;
+        return Response.json({ chart: { title: "Life expectancy", citation: "UN WPP" }, columns: {} });
+      }
+      if (url.includes("secret-chart.csv") || url.includes("secret-chart.metadata.json")) {
+        return Response.json({ error: "Non-redistributable data" }, { status: 403 });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const search = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/charts?q=life&callback=evil"),
+      makeEnv(),
+    );
+    const searchAgain = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/charts?q=life"),
+      makeEnv(),
+    );
+    expect(search?.status).toBe(200);
+    expect(searchAgain?.status).toBe(200);
+    expect(searchHits).toBe(1);
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/life-expectancy/USA"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/life-expectancy/USA"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=21600");
+    expect(csvHits).toBe(1);
+    expect(metaHits).toBe(1);
+    const body = await first?.json() as { slug: string; entity: { code: string }; license: string };
+    expect(body.slug).toBe("life-expectancy");
+    expect(body.entity.code).toBe("USA");
+    expect(body.license).toBe("CC BY 4.0");
+
+    const blockedPath = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/../secret"),
+      makeEnv(),
+    );
+    expect(blockedPath?.status).toBe(404);
+
+    const nonRedistributable = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/owid/secret-chart"),
+      makeEnv(),
+    );
+    expect(nonRedistributable?.status).toBe(403);
+    const errorBody = await nonRedistributable?.json() as { error: string };
+    expect(errorBody.error).toContain("non-redistributable");
   });
 });
 

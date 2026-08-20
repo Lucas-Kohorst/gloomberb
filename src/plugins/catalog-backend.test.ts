@@ -35,6 +35,7 @@ describe("desktop backend plugin catalog", () => {
       "polls",
       "llm-stats",
       "weather",
+      "owid",
     ]);
     expect(cloud?.panes?.some((pane) => pane.id.startsWith("adjacent-"))).toBe(false);
   });

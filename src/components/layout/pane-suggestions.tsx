@@ -55,6 +55,11 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
     { templateId: "prediction-markets-pane", label: "PM", shortcut: "PM" },
     { templateId: "adjacent-indices-pane", label: "Indices", shortcut: "ADI" },
   ],
+  owid: [
+    { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
+    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+    { templateId: "new-quick-notes-pane", label: "Notes", shortcut: "NOTE" },
+  ],
 };
 
 const DEFAULT_SUGGESTIONS: PaneSuggestion[] = [

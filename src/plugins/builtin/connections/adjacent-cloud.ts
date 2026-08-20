@@ -6,6 +6,7 @@ export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "adjacent",
   "votehub",
   "us-listings",
+  "owid",
 ] as const;
 
 export function isHostedWebClient(): boolean {

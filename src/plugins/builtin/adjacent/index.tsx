@@ -4,6 +4,7 @@ import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { pollsModule } from "../polls";
 import { llmStatsModule } from "../llm-stats";
 import { weatherModule } from "../weather";
+import { owidModule } from "../owid";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -176,9 +177,9 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, Weather Company / NWS settlements, and llm-stats benchmarks.",
+    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
   toggleable: true,
-  modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule],
+  modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule, owidModule],
 });
 
 export default adjacentPlugin;
