@@ -38,6 +38,7 @@ Five new panes closing the gap with Godel Terminal's equity analysis toolkit.
 - **SEC** — `[o]`pen works on the selected filing row, not only after drill-in.
 - **Alerts** — `SA AAPL halted`, `SA AAPL short 5`, and `SA AAPL exdiv 7` in addition to price triggers.
 - **Portfolio / Watchlist** — `[g]`raph charts the selected ticker through the same `G` series composer as CAT.
+- **Adjacent Cloud** — Adjacent, VoteHub polls, and Artificial Analysis live in one Data plugin. Hosted GETs are edge-cached so every user shares one origin pull. RSS stays on News.
 
 ## v0.11.0 — Web terminal: panes, shares, charts, and a hosted client that loads
 

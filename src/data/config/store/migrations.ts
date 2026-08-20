@@ -24,6 +24,7 @@ const CLOUD_MACRO_SPLIT_CONFIG_VERSION = 15;
 const PORTFOLIO_DEFAULT_COLUMNS_CONFIG_VERSION = 17;
 const BUILTIN_OWNERSHIP_AND_CHART_CONFIG_VERSION = 20;
 const ADJACENT_PLUGIN_SPLIT_CONFIG_VERSION = 21;
+const ADJACENT_CLOUD_DATA_CONFIG_VERSION = 22;
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
@@ -84,6 +85,11 @@ const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
     name: "split-adjacent-from-gloom-cloud",
     toVersion: ADJACENT_PLUGIN_SPLIT_CONFIG_VERSION,
     migrate: migrateAdjacentPluginSplit,
+  },
+  {
+    name: "fold-polls-and-aibench-into-adjacent-cloud",
+    toVersion: ADJACENT_CLOUD_DATA_CONFIG_VERSION,
+    migrate: migrateAdjacentCloudDataFold,
   },
 ];
 
@@ -286,6 +292,14 @@ function migrateAdjacentPluginSplit(saved: Record<string, unknown>): Record<stri
   return {
     ...saved,
     pluginConfig,
+  };
+}
+
+function migrateAdjacentCloudDataFold(saved: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...saved,
+    disabledPlugins: normalizeBuiltinDisabledPluginIds(stringList(saved.disabledPlugins)),
+    pluginConfig: normalizeBuiltinPluginStateMap(pluginConfigMap(saved.pluginConfig)),
   };
 }
 

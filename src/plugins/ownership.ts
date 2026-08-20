@@ -27,6 +27,8 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   thirteenf: "ticker-research",
   "ticker-detail": "ticker-research",
   "world-indices": "market-overview",
+  polls: "adjacent",
+  "llm-stats": "adjacent",
 };
 
 const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
@@ -39,6 +41,7 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   application: ["layout-manager", "help", "changelog", "byok", "connections"],
   portfolio: ["portfolio-list", "analytics", "kelly-sizer"],
+  adjacent: ["polls", "llm-stats"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {
