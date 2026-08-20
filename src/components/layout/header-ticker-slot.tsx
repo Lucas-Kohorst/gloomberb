@@ -8,8 +8,6 @@ import { selectFocusedPaneId } from "../../state/selectors-ui";
 import { findPaneInstance } from "../../types/config";
 import { buildHeaderTickerSearchLaunch, HEADER_TICKER_PLACEHOLDER } from "./header-ticker";
 
-export { buildHeaderTickerSearchLaunch, HEADER_TICKER_PLACEHOLDER } from "./header-ticker";
-
 export function HeaderTickerSlot() {
   const colors = useThemeColors();
   const dispatch = useAppDispatch();

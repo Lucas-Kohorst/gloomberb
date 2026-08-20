@@ -20,7 +20,7 @@ import { formatPercentRaw } from "../../utils/format";
 import { formatMarketPrice } from "../../market-data/market/format";
 import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
 import { getTitlebarLeadingInset } from "./titlebar-overlay";
-import { HeaderTickerSlot } from "./header-ticker";
+import { HeaderTickerSlot } from "./header-ticker-slot";
 import { PaneSuggestions } from "./pane-suggestions";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
