@@ -323,6 +323,7 @@ describe("Adjacent Cloud keyed-data providers", () => {
       "llm-stats",
       "nws-cli",
       "twc-kalshi",
+      "us-listings",
       "votehub",
     ]);
   });
@@ -453,6 +454,67 @@ PRECIPITATION (IN)
 
     const blocked = await workerModule.default.fetch?.(
       makeRequest("GET", "/api/data/votehub/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
+  });
+
+  test("US listings master caches Nasdaq/NYSE files for 12 hours", async () => {
+    let nasdaqHits = 0;
+    let otherHits = 0;
+    let secHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("nasdaqlisted.txt")) {
+        nasdaqHits += 1;
+        return new Response(`Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
+AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N
+`, { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      if (url.includes("otherlisted.txt")) {
+        otherHits += 1;
+        return new Response(`ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol
+IBM|International Business Machines Corporation Common Stock|N|IBM|N|100|N|IBM
+`, { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      if (url.includes("company_tickers_exchange.json")) {
+        secHits += 1;
+        return Response.json({
+          fields: ["cik", "name", "ticker", "exchange"],
+          data: [[1, "Pink Example", "EXMPL", "OTC"]],
+        });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/universe"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/universe"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=43200");
+    expect(nasdaqHits).toBe(1);
+    expect(otherHits).toBe(1);
+    expect(secHits).toBe(1);
+
+    const body = await first?.json() as {
+      ttlSeconds: number;
+      securities: Array<{ s: string; e: string; src: string }>;
+    };
+    expect(body.ttlSeconds).toBe(43200);
+    expect(body.securities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ s: "AAPL", e: "NASDAQ", src: "nasdaqlisted" }),
+      expect.objectContaining({ s: "IBM", e: "NYSE", src: "otherlisted" }),
+      expect.objectContaining({ s: "EXMPL", e: "OTC", src: "sec-otc" }),
+    ]));
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/secret"),
       makeEnv(),
     );
     expect(blocked?.status).toBe(404);

@@ -9,8 +9,12 @@
  * Secrets stay on the Worker. Clients call `/api/data/{providerId}/…` and
  * never receive upstream API keys.
  *
- * Current providers: twc-kalshi, nws-cli, llm-stats, adjacent, votehub.
- * They share one Connections row ("Adjacent Cloud").
+ * Current providers: twc-kalshi, nws-cli, llm-stats, adjacent, votehub,
+ * us-listings. They share one Connections row ("Adjacent Cloud").
+ *
+ * us-listings caches official Nasdaq Trader listed-symbol files (plus cheap
+ * SEC OTC) for 12 hours. Clients hydrate search from GET
+ * `/api/data/us-listings/universe` — Yahoo typeahead is not the master.
  */
 
 export const KEYED_DATA_PATH = "/api/data";

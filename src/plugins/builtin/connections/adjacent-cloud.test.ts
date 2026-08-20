@@ -15,6 +15,7 @@ describe("adjacentCloudDataUrl", () => {
       "llm-stats",
       "nws-cli",
       "twc-kalshi",
+      "us-listings",
       "votehub",
     ]);
   });
