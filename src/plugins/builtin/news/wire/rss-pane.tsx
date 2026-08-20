@@ -25,6 +25,7 @@ import { usePopOutNewsArticle } from "./news/pop-out";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
+import { useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
@@ -422,6 +423,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const popOutSelectedArticle = useCallback(() => {
     popOutArticle(readableArticle);
   }, [popOutArticle, readableArticle]);
+  const poll = useFeedPollInterval();
 
   useShortcut((event) => {
     if (!focused || !readableArticle) return;
@@ -473,7 +475,10 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   }, [onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   usePaneFooter("rss-articles", () => ({
-    info: loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : [],
+    info: [
+      poll.segment,
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+    ],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
@@ -481,7 +486,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       ...(readableArticle ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [loading, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }), [loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;

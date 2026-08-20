@@ -1,5 +1,7 @@
 import { usePaneFooter } from "../../../components";
 import { formatTimeAgo } from "../../../utils/format";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import type {
   CloudCongressHousePayload,
   CloudCongressTradePayload,
@@ -23,6 +25,7 @@ export function useCongressTradesFooter({
   payload,
   selectedTrade,
   status,
+  lastUpdated,
 }: {
   activeTab: CongressTab;
   detailMode: DetailMode;
@@ -35,9 +38,13 @@ export function useCongressTradesFooter({
   payload: CloudCongressHousePayload | null;
   selectedTrade: CloudCongressTradePayload | null;
   status: LoadStatus;
+  lastUpdated: number | null;
 }) {
+  const poll = useFeedPollInterval();
+  useAutoRefresh(lastUpdated, () => load(true), poll.intervalMinutes);
   usePaneFooter(CONGRESS_TRADES_PANE_ID, () => ({
     info: [
+      poll.segment,
       { id: "source", parts: [{ text: "House PTR", tone: "value" as const }] },
       ...(payload ? [
         { id: "filings", parts: [{ text: `${payload.filingsScanned}/${payload.filingCount} filings`, tone: "muted" as const }] },
@@ -63,11 +70,13 @@ export function useCongressTradesFooter({
     detailTrade,
     error,
     load,
+    lastUpdated,
     openSelectedTicker,
     openSelectedTradeMember,
     openSelectedTradeSource,
     payload,
     selectedTrade,
     status,
+    poll.segment,
   ]);
 }

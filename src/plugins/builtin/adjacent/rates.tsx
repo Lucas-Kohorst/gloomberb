@@ -17,6 +17,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import type { AdjacentClient } from "./client";
 import type { AdjacentRateRow, AdjacentRateSource } from "./types";
 import { normalizeAdjacentRate } from "./normalize";
@@ -244,10 +245,12 @@ export function AdjacentRatesPane({
   }, [load]);
 
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
+  const poll = useFeedPollInterval();
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, load, poll.intervalMinutes);
 
   usePaneFooter("adjacent-rates", () => ({
     info: [
+      poll.segment,
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
@@ -255,7 +258,7 @@ export function AdjacentRatesPane({
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],
-  }), [error, load, status, updatedAgo]);
+  }), [error, load, poll.segment, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (

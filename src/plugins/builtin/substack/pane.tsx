@@ -11,6 +11,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useDebouncedPluginPaneState, usePluginAppActions, usePluginPaneState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import {
   SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
 } from "../shared/article-pop-out";
@@ -466,9 +467,11 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
   const activeDetail = selectedArticle ? details[selectedArticle.id] ?? emptyLoadState<SubstackArticleDetail>() : emptyLoadState<SubstackArticleDetail>();
   const updatedAgo = useUpdatedAgo(activeFeedState.fetchedAt ?? null);
-  useAutoRefresh(auth ? activeFeedState.fetchedAt ?? null : null, refreshActive);
+  const poll = useFeedPollInterval();
+  useAutoRefresh(auth ? activeFeedState.fetchedAt ?? null : null, refreshActive, poll.intervalMinutes);
   usePaneFooter("substack", () => ({
     info: [
+      poll.segment,
       ...(!auth ? [{ id: "auth", parts: [{ text: "login required", tone: "warning" as const }] }] : []),
       ...(updatedAgo && auth ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(activeFeedState.loading || activeFeedState.loadingMore
@@ -502,6 +505,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     selectedArticle,
     shareSelectedArticle,
     updatedAgo,
+    poll.segment,
   ]);
 
   if (!auth) {

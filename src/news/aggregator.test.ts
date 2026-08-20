@@ -325,6 +325,42 @@ describe("NewsService", () => {
     disposeRemount();
   });
 
+  it("reads a live pollIntervalMs getter on each scheduled cycle", async () => {
+    const scheduled: number[] = [];
+    let current = 20_000;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalClearTimeout = globalThis.clearTimeout;
+    const pending = new Map<number, () => void>();
+    let nextId = 1;
+    globalThis.setTimeout = ((handler: TimerHandler, ms?: number) => {
+      const id = nextId++;
+      scheduled.push(ms ?? 0);
+      pending.set(id, () => {
+        pending.delete(id);
+        if (typeof handler === "function") handler();
+      });
+      return id as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = ((id?: ReturnType<typeof setTimeout>) => {
+      pending.delete(id as unknown as number);
+    }) as typeof clearTimeout;
+
+    try {
+      agg.stop();
+      agg = new NewsService({ pollIntervalMs: () => current });
+      agg.start();
+      expect(scheduled[0]).toBe(20_000);
+      current = 45_000;
+      pending.get(1)?.();
+      await new Promise((resolve) => originalSetTimeout(resolve, 0));
+      expect(scheduled[1]).toBe(45_000);
+      agg.stop();
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      globalThis.clearTimeout = originalClearTimeout;
+    }
+  });
+
   it("bounds inactive query state by LRU and TTL", async () => {
     let now = 0;
     agg = new NewsService({

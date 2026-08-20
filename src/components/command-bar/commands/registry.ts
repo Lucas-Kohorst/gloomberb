@@ -177,7 +177,7 @@ export const commands: Command[] = [
     id: "set-refresh-interval",
     prefix: "RI",
     label: "Set Refresh Interval",
-    description: "Set the polling interval for active panes (in minutes)",
+    description: "Set the system-wide poll interval for news and alt-data feeds (minutes; shown in those pane footers)",
     hasArg: true,
     argPlaceholder: "minutes",
     category: "Config",
