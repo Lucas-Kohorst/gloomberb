@@ -4,6 +4,7 @@ import { TickerRepository } from "../data/ticker-repository";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../market-data/coordinator";
 import { NewsService } from "../news/aggregator";
 import { setSharedNewsService } from "../news/hooks";
+import { newsPollIntervalMsFromMinutes } from "../news/poll-interval";
 import { PluginRegistry } from "../plugins/registry";
 import { AssetDataRouter } from "../sources/provider-router";
 import { assetDataProvider, newsProvider } from "../capabilities";
@@ -43,7 +44,10 @@ export function createAppServices({
   const dataProvider: DataProvider = providerRouter;
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence);
-  const newsService = new NewsService();
+  pluginRegistry.getConfigFn = () => config;
+  const newsService = new NewsService({
+    pollIntervalMs: () => newsPollIntervalMsFromMinutes(pluginRegistry.getConfigFn().refreshIntervalMinutes),
+  });
   pluginRegistry.capabilities.register("core", assetDataProvider(providerRouter));
   pluginRegistry.capabilities.register("core", {
     ...newsProvider({
@@ -61,7 +65,6 @@ export function createAppServices({
   });
 
   providerRouter.attachRegistry(pluginRegistry);
-  pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
   pluginRegistry.registerNewsCapabilityFn = (capability) => newsService.register(capability);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);

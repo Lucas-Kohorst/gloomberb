@@ -6,6 +6,7 @@ import { useAppLanguage } from "../../../../../i18n/react";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../shared/plan-access";
 import { usePaneStatusLinkFooter } from "../../../shared/pane-footer";
+import { useFeedPollInterval } from "../../../shared/feed-poll-interval";
 
 interface NewsFooterArticle {
   source?: string | null;
@@ -49,7 +50,11 @@ export function useNewsArticleFooter({
     }
     return segment ? [segment] : [];
   }, [access.isPayingPro, language, segment]);
-  const footerInfo = useMemo(() => [...accessInfo, ...(info ?? [])], [accessInfo, info]);
+  const poll = useFeedPollInterval();
+  const footerInfo = useMemo(
+    () => [...accessInfo, poll.segment, ...(info ?? [])],
+    [accessInfo, info, poll.segment],
+  );
   const hints = useMemo<PaneHint[]>(() => (
     onRefresh
       ? [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }]

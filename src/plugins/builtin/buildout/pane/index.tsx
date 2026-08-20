@@ -47,6 +47,8 @@ import {
   tickerSearchText,
   tickerSymbol,
 } from "../format";
+import { useAutoRefresh } from "../../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { BuildoutPaneHeader } from "./header";
 import {
   activeBuildoutPage,
@@ -150,6 +152,12 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
     if (!detailCompanyTicker) return;
     openTicker(detailCompanyTicker);
   }, [detailCompanyTicker, openTicker]);
+  const poll = useFeedPollInterval();
+  useAutoRefresh(
+    state.status === "ready" ? state.loadedAt : null,
+    refresh,
+    poll.intervalMinutes,
+  );
   const footerHints = useMemo<PaneHint[]>(() => {
     const hints: PaneHint[] = [];
     if (state.status === "ready" && state.access !== "pro") {
@@ -163,9 +171,9 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
   }, [detailCompanyTicker, openDetailTicker, refresh, startUpgrade, state]);
 
   usePaneFooter("buildout", () => ({
-    info: updateBuildoutFooterInfo(state, activeTab, selectedList, favoriteMessage),
+    info: [poll.segment, ...updateBuildoutFooterInfo(state, activeTab, selectedList, favoriteMessage)],
     hints: footerHints,
-  }), [activeTab, favoriteMessage, footerHints, selectedList, state]);
+  }), [activeTab, favoriteMessage, footerHints, poll.segment, selectedList, state]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     const nextColumnId = columnId as BuildoutColumnId;

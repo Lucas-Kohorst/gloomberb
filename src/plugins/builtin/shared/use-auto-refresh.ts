@@ -1,35 +1,36 @@
 import { useEffect, useRef } from "react";
 import { useAppSelector } from "../../../state/app/context";
 
-const CHECK_INTERVAL_MS = 30_000;
-
 /**
- * When the global auto-refresh setting is enabled (non-zero), periodically
- * checks whether `lastUpdated` is older than the configured threshold and
- * calls `refresh` if so.  When the setting is off (0) this is a no-op.
+ * Re-pull a pane once its data is older than the global refresh interval
+ * (`refreshIntervalMinutes`, RI), so network panes follow the cadence the
+ * user already configured instead of each hardcoding its own.
  *
- * `refresh` is kept in a ref so callers do not need to memoize it, but
- * `lastUpdated` should be a real timestamp that changes when data is fetched.
+ * Pass `intervalMinutes` to use a per-pane override (TWIT defaults to 1m).
+ * The timer runs on the interval itself rather than a faster poll: a load
+ * that failed is retried on the next tick, and a load that succeeded early
+ * is left alone.
  */
 export function useAutoRefresh(
   lastUpdated: number | null,
   refresh: () => void,
+  intervalMinutes?: number,
 ): void {
-  const intervalMinutes = useAppSelector((state) => state.config.autoRefreshInterval);
+  const globalMinutes = useAppSelector((state) => state.config.refreshIntervalMinutes);
+  const resolvedMinutes = intervalMinutes ?? globalMinutes;
   const refreshRef = useRef(refresh);
+  const lastUpdatedRef = useRef(lastUpdated);
   refreshRef.current = refresh;
+  lastUpdatedRef.current = lastUpdated;
 
   useEffect(() => {
-    if (!intervalMinutes || intervalMinutes < 1) return;
-
-    const intervalMs = intervalMinutes * 60_000;
-
+    if (!(resolvedMinutes > 0)) return;
+    const intervalMs = resolvedMinutes * 60_000;
     const timer = setInterval(() => {
-      if (!lastUpdated || Date.now() - lastUpdated >= intervalMs) {
-        refreshRef.current();
-      }
-    }, CHECK_INTERVAL_MS);
-
+      const previous = lastUpdatedRef.current;
+      if (previous && Date.now() - previous < intervalMs) return;
+      refreshRef.current();
+    }, intervalMs);
     return () => clearInterval(timer);
-  }, [intervalMinutes, lastUpdated]);
+  }, [resolvedMinutes]);
 }

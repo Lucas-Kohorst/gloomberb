@@ -49,6 +49,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const [payload, setPayload] = useState<CloudCongressHousePayload | null>(null);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePluginPaneState<CongressTab>("activeTab", "trades");
   const [selectedTradeId, setSelectedTradeId] = useDebouncedPluginPaneState<string | null>("selectedTradeId", null);
   const [selectedMemberId, setSelectedMemberId] = useDebouncedPluginPaneState<string | null>("selectedMemberId", null);
@@ -77,6 +78,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
         if (fetchGenRef.current !== gen) return;
         setPayload(nextPayload);
         setStatus("loaded");
+        setLastUpdated(Date.now());
       })
       .catch((loadError) => {
         if (fetchGenRef.current !== gen) return;
@@ -189,6 +191,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     payload,
     selectedTrade,
     status,
+    lastUpdated,
   });
 
   const detailContent = detailTrade ? (

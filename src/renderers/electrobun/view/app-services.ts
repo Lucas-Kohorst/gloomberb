@@ -2,6 +2,7 @@ import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../
 import { createRemoteBrokerAdapter } from "../../../brokers/remote-broker-adapter";
 import { NewsService } from "../../../news/aggregator";
 import { setSharedNewsService } from "../../../news/hooks";
+import { newsPollIntervalMsFromMinutes } from "../../../news/poll-interval";
 import { PluginRegistry } from "../../../plugins/registry";
 import type { AppRuntimeServices, AppServicesFactoryOptions } from "../../../core/app-service-ports";
 import { newsProvider } from "../../../capabilities";
@@ -48,9 +49,11 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     enableCapabilityHandlers: false,
     wrapBrokerAdapter: (broker) => createRemoteBrokerAdapter(broker),
   });
-  const newsService = new NewsService();
-
   pluginRegistry.getConfigFn = () => config;
+  const newsService = new NewsService({
+    pollIntervalMs: () => newsPollIntervalMsFromMinutes(pluginRegistry.getConfigFn().refreshIntervalMinutes),
+  });
+
   pluginRegistry.getLayoutFn = () => config.layout;
   pluginRegistry.registerNewsCapabilityFn = (capability) => newsService.register(capability);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
