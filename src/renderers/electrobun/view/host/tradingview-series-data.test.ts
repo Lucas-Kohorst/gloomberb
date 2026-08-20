@@ -71,8 +71,8 @@ describe("tradingview series data", () => {
       points: [point("2024-01-01T12:00:00.000Z", { open: 1, high: 2, low: 0.5, close: 1.5 })],
     }))).toBe("Candlestick");
     expect(tradingViewSeriesTypeFor(series({
-      style: "candles",
-      points: [point("2024-01-01T12:00:00.000Z", { value: 1 })],
-    }))).toBe("Line");
+      style: "ohlc",
+      points: [point("2024-01-01T12:00:00.000Z", { open: 1, high: 2, low: 0.5, close: 1.5 })],
+    }))).toBe("Bar");
   });
 });

@@ -15,6 +15,7 @@ function tickerTemplate(id: string, prefix: string): PaneTemplateDef {
 const paneTemplates: PaneTemplateDef[] = [
   tickerTemplate("financial-analysis-pane", "FA"),
   tickerTemplate("graph-price-pane", "GP"),
+  tickerTemplate("tradingview-pane", "TVC"),
   tickerTemplate("graph-intraday-price-pane", "GIP"),
   tickerTemplate("historical-prices-pane", "HP"),
   {
@@ -79,6 +80,7 @@ describe("ticker data root shortcuts", () => {
   test.each([
     ["FA AAPL", "financial-analysis-pane"],
     ["GP AAPL", "graph-price-pane"],
+    ["TVC AAPL", "tradingview-pane"],
     ["GIP AAPL", "graph-intraday-price-pane"],
     ["HP AAPL", "historical-prices-pane"],
     ["GF AAPL", "fundamental-graph-pane"],

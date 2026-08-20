@@ -941,6 +941,25 @@ export function buildPriceChartPreset(symbol: string): ChartSpec {
   );
 }
 
+/** Candles + volume, the closest Lightweight Charts default to a TradingView chart. */
+export function buildTradingViewChartPreset(symbol: string): ChartSpec {
+  return buildPriceChartPreset(symbol);
+}
+
+export function toggleMainPanelScale(spec: ChartSpec): ChartSpec {
+  const current = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
+  const next = current === "log" ? "linear" : "log";
+  return {
+    ...spec,
+    panels: spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale: next } : panel),
+    series: next === "log"
+      ? spec.series.map((series) => series.panelId === "main" && series.transform === "log"
+        ? { ...series, transform: "raw" }
+        : series)
+      : spec.series,
+  };
+}
+
 /** Rebind research-context series without discarding authored chart choices. */
 export function rebindChartSecuritySymbol(spec: ChartSpec, previous: string, next: string): ChartSpec {
   const previousInstrument = normalizeInstrument(previous, true);
@@ -1026,6 +1045,7 @@ const STUDY_DEFAULTS = {
   sma200: { kind: "sma", panelId: "main", parameters: { period: 200 } },
   ema20: { kind: "ema", panelId: "main", parameters: { period: 20 } },
   bollinger20: { kind: "bollinger", panelId: "main", parameters: { period: 20, stdDev: 2 } },
+  vwap: { kind: "vwap", panelId: "main", parameters: {} },
   rsi14: { kind: "rsi", panelId: "rsi", parameters: { period: 14 } },
   macd: { kind: "macd", panelId: "macd", parameters: { fast: 12, slow: 26, signal: 9 } },
 } as const satisfies Record<string, {

@@ -313,6 +313,45 @@ function resolveVolume(spec: ChartStudySpec, input: ResolvedSeries, color: strin
   })];
 }
 
+function typicalPrice(point: TimeSeriesPoint): number | null {
+  if (finiteNumber(point.high) && finiteNumber(point.low) && finiteNumber(point.close)) {
+    return (point.high + point.low + point.close) / 3;
+  }
+  return scalarPointValue(point);
+}
+
+function sessionKey(date: Date): string {
+  return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+}
+
+/** Session VWAP: cumulative typical-price × volume, reset at each UTC day. */
+function resolveVwap(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  const ordered = [...input.points].sort((left, right) => left.date.getTime() - right.date.getTime());
+  let day: string | null = null;
+  let cumulativePv = 0;
+  let cumulativeVolume = 0;
+  const points: TimeSeriesPoint[] = [];
+  for (const point of ordered) {
+    const price = typicalPrice(point);
+    const volume = finiteNumber(point.volume) ? point.volume : null;
+    if (price === null || volume === null || volume <= 0) continue;
+    const key = sessionKey(point.date);
+    if (day !== key) {
+      day = key;
+      cumulativePv = 0;
+      cumulativeVolume = 0;
+    }
+    cumulativePv += price * volume;
+    cumulativeVolume += volume;
+    points.push(derivedPoint({ point, value: price }, cumulativePv / cumulativeVolume));
+  }
+  return [outputSeries(spec, input, {
+    label: `VWAP ${input.label}`,
+    points,
+    color,
+  })];
+}
+
 interface PairedSample {
   point: TimeSeriesPoint;
   left: number;
@@ -542,6 +581,7 @@ export function resolveStudies(
     else if (spec.kind === "rsi") outputs = resolveRsi(spec, input, color);
     else if (spec.kind === "macd") outputs = resolveMacd(spec, input, color);
     else if (spec.kind === "volume") outputs = resolveVolume(spec, input, color);
+    else if (spec.kind === "vwap") outputs = resolveVwap(spec, input, color);
     else {
       const pairedInput = inputs[1]!;
       const inputUnit = seriesUnit(input);

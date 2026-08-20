@@ -93,6 +93,7 @@ export type ChartStudyKind =
   | "bollinger"
   | "rsi"
   | "macd"
+  | "vwap"
   | "ratio"
   | "spread"
   | "correlation";
