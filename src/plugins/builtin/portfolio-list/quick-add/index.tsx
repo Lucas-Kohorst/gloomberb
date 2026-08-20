@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, forwardRef } from "react";
 import { Box, Text, type InputRenderable } from "../../../../ui";
 import { InlineQuickAddRow } from "../../../../components/ui";
 import { useShortcut } from "../../../../react/input";
@@ -26,6 +26,10 @@ import {
 const QUICK_ADD_DEBOUNCE_MS = 300;
 
 export type { QuickAddCollectionKind } from "./resolution";
+
+export type QuickAddTickerInputHandle = {
+  toggle(): void;
+};
 
 function QuickAddPreview({
   validation,
@@ -81,15 +85,7 @@ function QuickAddPreview({
   );
 }
 
-export function QuickAddTickerInput({
-  collectionId,
-  collectionKind,
-  collectionName,
-  focused,
-  width,
-  onAdded,
-  onFocusChange,
-}: {
+export const QuickAddTickerInput = forwardRef<QuickAddTickerInputHandle, {
   collectionId: string;
   collectionKind: QuickAddCollectionKind;
   collectionName: string;
@@ -97,7 +93,15 @@ export function QuickAddTickerInput({
   width: number;
   onAdded: (symbol: string) => void;
   onFocusChange?: (focused: boolean) => void;
-}) {
+}>(function QuickAddTickerInput({
+  collectionId,
+  collectionKind,
+  collectionName,
+  focused,
+  width,
+  onAdded,
+  onFocusChange,
+}, ref) {
   const dispatch = useAppDispatch();
   const { notify } = usePluginAppActions();
   const tickers = useAppSelector((state) => state.tickers);
@@ -298,6 +302,17 @@ export function QuickAddTickerInput({
     }
   }, { phase: "before", allowEditable: true });
 
+  const toggle = useCallback(() => {
+    if (inputFocused) {
+      inputRef.current?.blur?.();
+      resetInput();
+      blurInput();
+      return;
+    }
+    focusInput();
+  }, [blurInput, focusInput, inputFocused, resetInput]);
+  useImperativeHandle(ref, () => ({ toggle }), [toggle]);
+
   return (
     <InlineQuickAddRow
       value={inputValue}
@@ -325,4 +340,4 @@ export function QuickAddTickerInput({
       )}
     />
   );
-}
+});

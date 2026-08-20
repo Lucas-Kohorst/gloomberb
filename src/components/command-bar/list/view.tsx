@@ -81,7 +81,7 @@ export const CommandBarListHeader = memo(function CommandBarListHeader({
             ref={inputRef}
             value={query}
             onInput={onQueryChange}
-            placeholder={kind === "root" ? t("Command or plain English…") : title === "Security Description" ? t("Search tickers") : t("Filter")}
+            placeholder={kind === "root" ? t("Command or plain English…") : (title === "Security Description" || title === "Replace ticker") ? t("Search tickers") : t("Filter")}
             focused
             data-gloom-remote-scope="command-bar"
             data-gloom-remote-surface="command-bar"

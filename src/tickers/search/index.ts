@@ -1,3 +1,4 @@
+import { searchUsListedUniverse } from "../../sources/us-listings/client";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
@@ -236,6 +237,22 @@ async function searchProviderResults(
 ): Promise<InstrumentSearchResult[]> {
   const merged: InstrumentSearchResult[] = [];
   const seen = new Set<string>();
+  const push = (results: InstrumentSearchResult[]) => {
+    for (const result of results) {
+      const key = buildProviderSearchResultKey(result);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(result);
+    }
+  };
+
+  // Listed-universe master (Adjacent Cloud hydrate) first. Yahoo/cloud
+  // typeahead is a supplement, not the security master.
+  try {
+    push(await searchUsListedUniverse(query));
+  } catch {
+    // listings miss must not block saved/typeahead search
+  }
 
   for (const searchQuery of buildProviderSearchQueries(query)) {
     let results: InstrumentSearchResult[] = [];
@@ -244,13 +261,7 @@ async function searchProviderResults(
     } catch {
       results = [];
     }
-
-    for (const result of results) {
-      const key = buildProviderSearchResultKey(result);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(result);
-    }
+    push(results);
   }
 
   return merged;

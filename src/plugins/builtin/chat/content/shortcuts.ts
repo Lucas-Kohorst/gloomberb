@@ -41,10 +41,13 @@ export function useChatContentShortcuts({
   setSelectedIdx,
   shouldLeaveComposerForSelection,
   showChannelSidebar,
+  channelListVisible = showChannelSidebar,
   sidebarFocusedRef,
   searchFocused,
   openSearch,
   closeSearch,
+  stackedConversationOpen = false,
+  onLeaveConversation,
   onRefresh,
 }: {
   beginEditLatestMessage: (options?: { deferFocus?: boolean }) => boolean;
@@ -82,10 +85,13 @@ export function useChatContentShortcuts({
   setSelectedIdx: (selectedIdx: number) => void;
   shouldLeaveComposerForSelection: (direction: "up" | "down") => boolean;
   showChannelSidebar: boolean;
+  channelListVisible?: boolean;
   sidebarFocusedRef: MutableRefObject<boolean>;
   searchFocused: boolean;
   openSearch: () => void;
   closeSearch: () => void;
+  stackedConversationOpen?: boolean;
+  onLeaveConversation?: () => void;
   onRefresh: () => void;
 }) {
   useShortcut((event) => {
@@ -120,7 +126,7 @@ export function useChatContentShortcuts({
       return;
     }
 
-    if (sidebarFocusedRef.current && showChannelSidebar) {
+    if (sidebarFocusedRef.current && channelListVisible) {
       if (isEnterKey) {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -149,6 +155,17 @@ export function useChatContentShortcuts({
         }
         return;
       }
+    }
+
+    if (
+      isPlainKey(event, "left") &&
+      stackedConversationOpen &&
+      (!inputFocused || inputValueRef.current.length === 0)
+    ) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      onLeaveConversation?.();
+      return;
     }
 
     if (
@@ -257,6 +274,8 @@ export function useChatContentShortcuts({
       if (selectedIdx >= 0) {
         setSelectedIdx(-1);
         setFollowMessages(true);
+      } else if (stackedConversationOpen) {
+        onLeaveConversation?.();
       }
       return;
     }

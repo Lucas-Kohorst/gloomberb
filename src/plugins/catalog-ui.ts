@@ -2,7 +2,6 @@ import type { GloomPlugin } from "../types/plugin";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
-import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
@@ -21,7 +20,6 @@ import { adjacentPlugin } from "./builtin/adjacent";
 import { bondSearchPlugin } from "./builtin/bond-search";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
-import { llmStatsPlugin } from "./builtin/llm-stats";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
@@ -36,9 +34,8 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   ibkrPlugin,
   applicationPlugin,
   newsPlugin,
-  // Alt-data panes — independently toggleable product areas.
-  pollsPlugin,
-  llmStatsPlugin,
+  // Adjacent Cloud owns Polls, AI Benchmarks, and Weather. Other alt-data
+  // panes stay independently toggleable product areas.
   adjacentPlugin,
   predictionMarketsPlugin,
   treasuryAuctionsPlugin,

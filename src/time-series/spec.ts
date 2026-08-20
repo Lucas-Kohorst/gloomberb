@@ -152,6 +152,16 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!subject || !choice) return null;
     return { kind: "poll", subject, choice };
   }
+  if (source.kind === "weather") {
+    const stationId = nonEmptyString(source.stationId);
+    const metric = source.metric;
+    const provider = source.provider === "nws-cli" ? "nws-cli" : "twc-kalshi";
+    if (!stationId || (metric !== "high" && metric !== "low" && metric !== "precip" && metric !== "hourly")) {
+      return null;
+    }
+    if (provider === "nws-cli" && metric === "hourly") return null;
+    return { kind: "weather", provider, stationId: stationId.toUpperCase(), metric };
+  }
   if (source.kind === "prediction-market") {
     const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
     const marketId = nonEmptyString(source.marketId);
@@ -482,6 +492,13 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (!entry.source.choice.trim()) {
         errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
+      }
+    } else if (entry.source.kind === "weather") {
+      if (!entry.source.stationId.trim()) {
+        errors.push(issue(`${path}.source.stationId`, "missing-station", "Weather station is required."));
+      }
+      if (entry.source.provider === "nws-cli" && entry.source.metric === "hourly") {
+        errors.push(issue(`${path}.source.metric`, "unsupported-metric", "NWS CLI is daily high/low/precip only."));
       }
     } else if (entry.source.kind === "prediction-market") {
       if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {

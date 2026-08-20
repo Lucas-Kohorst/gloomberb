@@ -14,12 +14,10 @@ import { bondSearchPlugin } from "./builtin/bond-search";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { debugPlugin } from "./builtin/debug";
-import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
-import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
@@ -37,8 +35,6 @@ const desktopBackendPlugins: GloomPlugin[] = [
   ibkrPlugin,
   applicationPlugin,
   newsPlugin,
-  pollsPlugin,
-  llmStatsPlugin,
   adjacentPlugin,
   predictionMarketsBackendPlugin,
   treasuryAuctionsPlugin,

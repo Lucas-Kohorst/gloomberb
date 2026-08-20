@@ -10,10 +10,13 @@ import { fearGreedModule } from "./fear-greed";
 import { futuresModule } from "./futures";
 import { fxMatrixModule } from "./fx-matrix";
 import { helpModule } from "./help";
+import { ipoCalendarModule } from "./ipo-calendar";
 import { positionSizerModule } from "./kelly-sizer";
 import { layoutManagerModule } from "./layout-manager";
+import { marketHaltsModule } from "./market-halts";
 import { marketHeatmapModule } from "./market-heatmap";
 import { marketMoversModule } from "./market-movers";
+import { optionsCalcModule } from "./options-calc";
 import { tvModule } from "./tv";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
@@ -35,7 +38,7 @@ export const portfolioPlugin = composeBuiltinPlugin({
   version: "1.0.0",
   description: "Portfolio and watchlist management, analytics, and position sizing.",
   toggleable: true,
-  modules: [portfolioListModule, portfolioAnalyticsModule, positionSizerModule],
+  modules: [portfolioListModule, portfolioAnalyticsModule, positionSizerModule, optionsCalcModule],
 });
 
 export const brokerPlugin = composeBuiltinPlugin({
@@ -59,6 +62,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     futuresModule,
     marketHeatmapModule,
     marketMoversModule,
+    marketHaltsModule,
     fearGreedModule,
     sectorsModule,
     fxMatrixModule,
@@ -69,7 +73,8 @@ export const macroPlugin = composeBuiltinPlugin({
   id: "macro",
   name: "Macro",
   version: "1.0.0",
-  description: "Economic calendar, yield curve, earnings calendar, and live financial TV.",
+  description:
+    "Economic calendar, yield curve, earnings calendar, IPO calendar, and live financial TV.",
   toggleable: true,
-  modules: [economicCalendarModule, yieldCurveModule, earningsModule, tvModule],
+  modules: [economicCalendarModule, yieldCurveModule, earningsModule, ipoCalendarModule, tvModule],
 });

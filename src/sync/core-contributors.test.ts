@@ -104,7 +104,7 @@ describe("core sync contributors", () => {
     const { setHostedConfigUserId, writeHostedUserConfig } = await import("../data/config/hosted-user-persist");
     setHostedConfigUserId("user-1");
     const local = createDefaultConfig("cloud://users/user-1");
-    local.theme = "amber";
+    local.layouts[0] = { ...local.layouts[0]!, name: "Trading" };
     writeHostedUserConfig(local);
 
     const remote = createDefaultConfig("cloud://users/user-1");
@@ -229,8 +229,9 @@ describe("core sync contributors", () => {
       "portfolio-list",
       "analytics",
       "kelly-sizer",
+      "options-calc",
     ]);
-    for (const pluginId of ["portfolio", "portfolio-list", "analytics", "kelly-sizer"]) {
+    for (const pluginId of ["portfolio", "portfolio-list", "analytics", "kelly-sizer", "options-calc"]) {
       expect(payload.pluginConfig[pluginId]).toEqual(config.pluginConfig.portfolio);
       expect(
         payload.layouts[0].paneState["portfolio-list:main"].pluginState[pluginId],
@@ -535,5 +536,40 @@ describe("core sync contributors", () => {
       oneYearReturn: 0.27,
       spyBeta: 1.1,
     });
+  });
+
+  test("hydrates nested snapshot tickers into the ticker map", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    const state = createInitialState(config);
+    const saved: string[] = [];
+
+    await coreCollectionsSyncContributor.apply?.({
+      tickers: [
+        { metadata: { ticker: "AAPL", portfolios: ["main"] } },
+      ],
+    }, {
+      snapshot: {
+        schemaVersion: 1,
+        appId: "gloomberb",
+        clientId: "test-client",
+        createdAt: "2026-07-21T22:03:59.832Z",
+        contributors: {},
+      },
+      baselineState: state,
+      state,
+      getState: () => state,
+      isCurrent: () => true,
+      dispatch: (action) => {
+        if (action.type === "SET_TICKERS") state.tickers = action.tickers;
+      },
+      tickerRepository: {
+        saveTicker: async (ticker) => {
+          saved.push(ticker.metadata.ticker);
+        },
+      } as never,
+    });
+
+    expect(saved).toEqual(["AAPL"]);
+    expect(state.tickers.get("AAPL")?.metadata.portfolios).toEqual(["main"]);
   });
 });

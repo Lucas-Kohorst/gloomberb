@@ -25,4 +25,20 @@ describe("normalizeBuiltinPluginStateMap", () => {
       adjacent: { adjacentApiKey: "new" },
     });
   });
+
+  test("folds polls, llm-stats, and weather config into Adjacent Cloud", () => {
+    expect(normalizeBuiltinPluginStateMap({
+      polls: { tab: "approval" },
+      "llm-stats": { sort: "tps" },
+      weather: { station: "LAX" },
+      adjacent: { adjacentApiKey: "adj-key" },
+    })).toEqual({
+      adjacent: {
+        tab: "approval",
+        sort: "tps",
+        station: "LAX",
+        adjacentApiKey: "adj-key",
+      },
+    });
+  });
 });

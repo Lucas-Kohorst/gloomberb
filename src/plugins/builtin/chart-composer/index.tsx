@@ -9,6 +9,9 @@ import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
+import { DataCatalogPane } from "./data-catalog-pane";
+import { DATA_CATALOG_PANE_ID, DATA_CATALOG_TEMPLATE_ID } from "./catalog-inventory";
+import { scheduleDataCatalogWarm } from "./catalog-prefetch";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   buildComparisonChartPreset,
@@ -160,6 +163,45 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
     },
   },
+  {
+    id: DATA_CATALOG_TEMPLATE_ID,
+    paneId: DATA_CATALOG_PANE_ID,
+    label: "Data Catalog",
+    description: "Search, filter, and chart every series the composer knows — securities, crypto, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls, llm-stats benchmarks, and weather.",
+    keywords: [
+      "catalog",
+      "series",
+      "data",
+      "chart",
+      "fred",
+      "kalshi",
+      "polymarket",
+      "adjacent",
+      "prediction",
+      "futures",
+      "treasury",
+      "polls",
+      "dividends",
+      "dvd",
+      "crypto",
+      "options",
+      "option",
+      "llm-stats",
+      "benchmark",
+      "weather",
+      "nws",
+    ],
+    shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
+    canCreate: () => true,
+    createInstance: (_context, options) => {
+      const query = options?.arg?.trim() ?? options?.values?.query?.trim() ?? "";
+      return {
+        title: query ? `Catalog · ${query}` : "Data Catalog",
+        placement: "floating" as const,
+        ...(query ? { settings: { query } } : {}),
+      };
+    },
+  },
   securityTemplate({
     id: "graph-price-pane",
     prefix: "GP",
@@ -224,6 +266,14 @@ export const chartComposerModule: PluginModule = {
       ),
       context.settings,
     ),
+  }, {
+    id: DATA_CATALOG_PANE_ID,
+    name: "Data Catalog",
+    icon: "C",
+    component: DataCatalogPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 110, height: 32 },
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {
@@ -235,6 +285,7 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
+    scheduleDataCatalogWarm();
   },
 };
 

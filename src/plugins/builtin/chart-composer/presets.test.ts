@@ -227,6 +227,16 @@ describe("chart composer expressions", () => {
     expect(spec.studies.filter((study) => study.kind === "ratio" || study.kind === "spread")).toHaveLength(0);
   });
 
+  test("plots dividend history from G AAPL:div and G AAPL:dvd", () => {
+    expect(parseChartExpression("AAPL:div")).toEqual([
+      { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },
+    ]);
+    expect(parseChartExpression("AAPL:DVD")).toEqual([
+      { kind: "security", symbol: "AAPL", fieldId: "market.dividends" },
+    ]);
+    expect(resolveChartFieldAlias("dvd")).toBe("market.dividends");
+  });
+
   test("parses exchange-qualified tickers without confusing the exchange for a field", () => {
     const spec = buildCustomChartPreset("3hnx:lse, 3HNX:LSE:revenue");
 

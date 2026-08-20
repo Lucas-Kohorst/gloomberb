@@ -24,6 +24,7 @@ export function useChatChannelNavigation({
   onChannelChange,
   resetTranscriptSelection,
   showChannelSidebar,
+  channelListVisible = showChannelSidebar,
 }: {
   blurInput: () => void;
   channelId: string;
@@ -35,6 +36,7 @@ export function useChatChannelNavigation({
   onChannelChange?: (channelId: string) => void;
   resetTranscriptSelection: () => void;
   showChannelSidebar: boolean;
+  channelListVisible?: boolean;
 }): {
   cycleChannel: (direction: 1 | -1) => boolean;
   directExpanded: boolean;
@@ -106,7 +108,7 @@ export function useChatChannelNavigation({
   }, [channelIdRef, channels, onChannelChange, setSidebarCursorChannelId]);
 
   const focusChannelSidebar = useCallback(() => {
-    if (!showChannelSidebar || !onChannelChange) return false;
+    if (!channelListVisible || !onChannelChange) return false;
     if (inputFocused) {
       blurInput();
     }
@@ -122,18 +124,18 @@ export function useChatChannelNavigation({
     replaceSidebarCursorChannelId,
     resetTranscriptSelection,
     setSidebarFocused,
-    showChannelSidebar,
+    channelListVisible,
   ]);
 
   const focusChatContent = useCallback(() => {
-    if (!showChannelSidebar) return false;
+    if (!channelListVisible) return false;
     flushSidebarCursorChannelId(sidebarCursorChannelIdRef.current);
     setSidebarFocused(false);
     return true;
-  }, [flushSidebarCursorChannelId, setSidebarFocused, showChannelSidebar, sidebarCursorChannelIdRef]);
+  }, [channelListVisible, flushSidebarCursorChannelId, setSidebarFocused, sidebarCursorChannelIdRef]);
 
   const moveSidebarChannelSelection = useCallback((direction: "up" | "down") => {
-    if (!showChannelSidebar || sidebarNavigationChannels.length <= 1 || !onChannelChange) return false;
+    if (!channelListVisible || sidebarNavigationChannels.length <= 1 || !onChannelChange) return false;
     const currentIndex = sidebarNavigationChannels.findIndex((channel) => channel.id === sidebarCursorChannelIdRef.current);
     const baseIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = direction === "down"
@@ -145,8 +147,8 @@ export function useChatChannelNavigation({
     return true;
   }, [
     onChannelChange,
+    channelListVisible,
     setSidebarCursorChannelId,
-    showChannelSidebar,
     sidebarCursorChannelIdRef,
     sidebarNavigationChannels,
   ]);
@@ -156,9 +158,9 @@ export function useChatChannelNavigation({
   }, [setSidebarCursorChannelId]);
 
   useEffect(() => {
-    if (focused && showChannelSidebar) return;
+    if (focused && channelListVisible) return;
     setSidebarFocused(false);
-  }, [focused, setSidebarFocused, showChannelSidebar]);
+  }, [channelListVisible, focused, setSidebarFocused]);
 
   return {
     cycleChannel,

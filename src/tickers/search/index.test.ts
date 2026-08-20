@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { createTestDataProvider } from "../../test-support/data-provider";
+import { setUsListingsUniverseForTests } from "../../sources/us-listings/client";
 import {
   buildTickerSearchCandidates,
   createLocalTickerSearchCandidates,
@@ -58,6 +59,14 @@ function makeDataProvider(results: InstrumentSearchResult[]): DataProvider {
 }
 
 describe("ticker-search utilities", () => {
+  beforeEach(() => {
+    setUsListingsUniverseForTests(null);
+  });
+
+  afterEach(() => {
+    setUsListingsUniverseForTests(undefined);
+  });
+
   test("normalizes explicit and focused ticker inputs", () => {
     expect(normalizeTickerInput("AAPL", undefined)).toBe("AAPL");
     expect(normalizeTickerInput("AAPL", " msft ")).toBe("MSFT");
@@ -530,5 +539,41 @@ describe("ticker-search utilities", () => {
         kind: "ticker",
       }),
     ]);
+  });
+
+  test("resolves listed names Yahoo typeahead never returned", async () => {
+    setUsListingsUniverseForTests({
+      asOf: "2026-08-20T00:00:00.000Z",
+      ttlSeconds: 43200,
+      sources: [],
+      securities: [
+        {
+          symbol: "ZUMZ",
+          name: "Zumiez Inc. - Common Stock",
+          exchange: "NASDAQ",
+          type: "EQUITY",
+          source: "nasdaqlisted",
+        },
+      ],
+    });
+
+    const results = await searchTickerCandidates({
+      query: "zumiez",
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("AAPL", "Apple Inc"),
+      ]),
+    });
+
+    expect(results.some((item) => item.symbol === "ZUMZ")).toBe(true);
+    expect(results.find((item) => item.symbol === "ZUMZ")?.result?.providerId).toBe("us-listings");
+
+    const resolved = await resolveTickerSearch({
+      query: "ZUMZ",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([]),
+    });
+    expect(resolved).toMatchObject({ kind: "provider", symbol: "ZUMZ" });
   });
 });

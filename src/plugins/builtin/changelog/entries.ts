@@ -1,5 +1,57 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_0: ChangelogRelease = {
+  id: "hosted-v0-13-0",
+  tagName: "v0.13.0",
+  version: "0.13.0",
+  title: "Feature parity: Adjacent Cloud + hosted 0.12.1/0.12.2",
+  publishedAt: "2026-08-20T13:00:00.000Z",
+  url: "",
+  body: `Unifies integration/v0.12.0 (Adjacent Cloud, Data Catalog, Godel panes) with main through release/v0.12.2.
+
+## Adjacent Cloud
+
+- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream.
+- Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
+- Restore Data Catalog (\`CAT\`) and Godel panes (SI, DVD, HALT, IPO, OVME) that v0.12.0 parked.
+
+## Chat, news, alt-data
+
+- Hosted chat realtime works again (same-origin GET without Origin; Worker relays \`/cloud/ws\`).
+- News rows roll in; blocked article readers show a clear empty state.
+- Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
+- Polls default to All; Adjacent ships as a default layout + watchlist.
+`,
+};
+
+const RELEASE_0_12_3: ChangelogRelease = {
+  id: "hosted-v0-12-3",
+  tagName: "v0.12.3",
+  version: "0.12.3",
+  title: "Adjacent Cloud data terminal",
+  publishedAt: "2026-08-20T12:00:00.000Z",
+  url: "",
+  body: `Hosted users share one cached origin pull for reference prints. Polls, AI Benchmarks, and Weather fold into the Adjacent Cloud plugin.
+
+## Adjacent Cloud
+
+- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream (VoteHub, llm-stats, TWC, NWS CLI, Adjacent, US listings).
+- Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
+- Weather pane plus \`G WX:LAX:high\` / \`G NWS:KNYC:high\` series. Climate prediction markets get a Settlement tab that opens the TWC print.
+- US listed-universe security master at \`/api/data/us-listings/universe\` (Nasdaq Trader + SEC OTC, 12h cache).
+
+## Worker secrets
+
+CoS sets Worker secrets on gloomberb-cloud. Do not commit values.
+
+- \`wrangler secret put ADJACENT_API_KEY\`
+
+## Next settlement prints
+
+BLS first print, EIA weekly, NOAA/NCEI normals, CME settlements, and CF Benchmarks (license) register as new keyed-data providers — not new Worker routes. Weather Underground stays off until a first-party API exists. Kalshi, Polymarket, RSS, X, and Jina stay off this registry; FRED stays on Gloom Cloud.
+`,
+};
+
 const RELEASE_0_12_2: ChangelogRelease = {
   id: "hosted-v0-12-2",
   tagName: "v0.12.2",
@@ -117,6 +169,8 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_0,
+  RELEASE_0_12_3,
   RELEASE_0_12_2,
   RELEASE_0_12_1,
   RELEASE_0_12_0,

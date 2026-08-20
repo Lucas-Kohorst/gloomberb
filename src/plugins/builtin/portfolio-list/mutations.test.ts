@@ -6,6 +6,7 @@ import {
   deleteManualPortfolio,
   isManualPortfolio,
   removeTickerFromPortfolio,
+  removeTickerFromWatchlist,
   resolveManualPositionCurrency,
   setManualPortfolioPosition,
 } from "./mutations";
@@ -100,6 +101,20 @@ describe("portfolio-list mutations", () => {
         }],
       }),
     ]);
+  });
+
+  test("removing a ticker from a watchlist leaves portfolio memberships alone", () => {
+    const ticker = makeTicker({
+      portfolios: ["main"],
+      watchlists: ["tech", "core"],
+    });
+
+    const result = removeTickerFromWatchlist(ticker, "tech");
+
+    expect(result.changed).toBe(true);
+    expect(result.ticker.metadata.watchlists).toEqual(["core"]);
+    expect(result.ticker.metadata.portfolios).toEqual(["main"]);
+    expect(removeTickerFromWatchlist(ticker, "missing").changed).toBe(false);
   });
 
   test("removing a ticker from a portfolio also removes its positions", () => {

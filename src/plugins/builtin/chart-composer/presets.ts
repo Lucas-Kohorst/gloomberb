@@ -36,6 +36,15 @@ import {
   findTreasuryCatalogEntry,
 } from "./universal-series";
 import {
+  canonicalWeatherStationId,
+  findWeatherStation,
+} from "../weather/stations";
+import {
+  parseWeatherMetric,
+  weatherMetricLabel,
+} from "../weather/mapping";
+import type { WeatherPrintProvider } from "../weather/types";
+import {
   normalizePredictionMarketId,
   resolveAdjacentIndexQuery,
 } from "./prediction-series";
@@ -44,6 +53,7 @@ const CHART_FIELD_IDS = {
   price: "market.ohlcv",
   close: "market.close",
   volume: "market.volume",
+  dividends: "market.dividends",
   revenue: "fundamental.totalRevenue",
   grossProfit: "fundamental.grossProfit",
   operatingIncome: "fundamental.operatingIncome",
@@ -55,6 +65,25 @@ const CHART_FIELD_IDS = {
   evEbitda: "valuation.evEbitda",
 } as const;
 
+const CHART_FIELD_TOKEN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  div: CHART_FIELD_IDS.dividends,
+  dvd: CHART_FIELD_IDS.dividends,
+  dividend: CHART_FIELD_IDS.dividends,
+  dividends: CHART_FIELD_IDS.dividends,
+});
+
+const SHORT_FIELD_TOKENS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries([
+    ...Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token]),
+    [CHART_FIELD_IDS.dividends, "dvd"],
+  ]),
+);
+
+/** Short token used in catalog / command-bar copy (`AAPL:dvd`, `AAPL:price`). */
+export function shortChartFieldToken(fieldId: string): string {
+  return SHORT_FIELD_TOKENS[fieldId] ?? fieldId.split(".").at(-1) ?? fieldId;
+}
+
 export type ParsedSeriesExpression =
   | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string }
   | { kind: "economic"; provider: "fred"; seriesId: string; label?: string }
@@ -63,6 +92,7 @@ export type ParsedSeriesExpression =
   | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
   | { kind: "benchmark"; selector: string; metric: string; label?: string }
   | { kind: "poll"; subject: string; choice: string; label?: string }
+  | { kind: "weather"; provider: WeatherPrintProvider; stationId: string; metric: "high" | "low" | "precip" | "hourly"; label?: string }
   | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
 
 /** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
@@ -100,6 +130,8 @@ function normalizeInstrument(
 export function resolveChartFieldAlias(value: string | undefined): string {
   if (!value?.trim()) return CHART_FIELD_IDS.price;
   const trimmed = value.trim();
+  const alias = CHART_FIELD_TOKEN_ALIASES[trimmed.toLowerCase()];
+  if (alias) return alias;
   const canonical = canonicalTimeSeriesFieldId(trimmed);
   if (getTimeSeriesField(canonical)) return canonical;
   const searchable = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -166,6 +198,35 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     const choice = rest.slice(lastColon + 1).trim();
     if (!subject || !choice) return null;
     return { kind: "poll", subject, choice };
+  }
+
+  if (prefix === SERIES_PREFIX.weather || prefix === SERIES_PREFIX.nwsCli) {
+    if (parts.length < 3) return null;
+    const provider: WeatherPrintProvider = prefix === SERIES_PREFIX.nwsCli ? "nws-cli" : "twc-kalshi";
+    const metric = parseWeatherMetric(parts.slice(2).join(":"));
+    if (!metric) return null;
+    if (provider === "nws-cli") {
+      if (metric === "hourly") return null;
+      const station = findWeatherStation(parts[1] ?? "");
+      const icao = station?.icao ?? (parts[1] ?? "").trim().toUpperCase();
+      if (!/^[A-Z]{4}$/.test(icao)) return null;
+      return {
+        kind: "weather",
+        provider,
+        stationId: icao,
+        metric,
+        label: `${icao} NWS ${weatherMetricLabel(metric)}`,
+      };
+    }
+    const stationId = canonicalWeatherStationId(parts[1] ?? "");
+    if (!stationId) return null;
+    return {
+      kind: "weather",
+      provider,
+      stationId,
+      metric,
+      label: `${stationId} ${weatherMetricLabel(metric)}`,
+    };
   }
 
   if (prefix === SERIES_PREFIX.kalshi) {
@@ -291,6 +352,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
       return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
     case "poll":
       return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
+    case "weather":
+      return `${series.source.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${series.source.stationId}:${series.source.metric}`;
     case "prediction-market":
       return `${series.source.venue === "kalshi" ? SERIES_PREFIX.kalshi : SERIES_PREFIX.polymarket}:${series.source.marketId}`;
     case "constant":
@@ -481,6 +544,26 @@ export function buildSeriesSpec(
     };
   }
 
+  if (expression.kind === "weather") {
+    const style = overrides.style ?? (expression.metric === "precip" ? "columns" : "line");
+    return {
+      id: `wx-${expression.provider}-${slug(expression.stationId)}-${expression.metric}-${index + 1}`,
+      source: {
+        kind: "weather",
+        provider: expression.provider,
+        stationId: expression.stationId,
+        metric: expression.metric,
+      },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   if (expression.kind === "prediction-market") {
     const style = overrides.style ?? "line";
     return {
@@ -567,6 +650,8 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
       return `benchmark:${series.source.metric}`;
     case "poll":
       return `poll:${series.source.subject}`;
+    case "weather":
+      return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
     case "prediction-market":
       return `prediction-market:${series.source.venue}`;
     case "constant":

@@ -56,6 +56,22 @@ function marketKey(symbol: string, exchange?: string): string {
   return normalizedExchangeValue ? `${normalizedSymbolValue}:${normalizedExchangeValue}` : normalizedSymbolValue;
 }
 
+function hostedCloudWebSocketUrl(): string | null {
+  try {
+    if ((globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED !== true) {
+      return null;
+    }
+    const location = (globalThis as { location?: { protocol?: string; host?: string } }).location;
+    if (!location?.host) return null;
+    const wsProtocol = location.protocol === "https:" ? "wss" : "ws";
+    // Same-origin Worker proxy. The real session is the HttpOnly cookie — never
+    // the placeholder `hosted-session` token the renderer uses for REST.
+    return `${wsProtocol}://${location.host}/cloud/ws`;
+  } catch {
+    return null;
+  }
+}
+
 export class CloudApiSocket {
   private ws: WebSocket | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -364,10 +380,12 @@ export class CloudApiSocket {
     // Hosted connects same-origin to the Worker and authenticates with the
     // HttpOnly cookie sent on the handshake, so the opaque hosted-session
     // sentinel must never be placed in the query string.
+    const hostedSocketUrl = hostedCloudWebSocketUrl();
     const cookieAuthenticated = this.delegate.isCookieAuthenticated();
-    const url = socketToken && !cookieAuthenticated
-      ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
-      : `${this.getWebSocketBaseUrl()}/cloud/ws`;
+    const url = hostedSocketUrl
+      ?? (socketToken && !cookieAuthenticated
+        ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
+        : `${this.getWebSocketBaseUrl()}/cloud/ws`);
     cloudApiLog.info("open websocket", {
       hasToken: !!socketToken,
       tokenSource: cookieAuthenticated ? "cookie" : usingWebSocketToken ? "websocket" : "session",

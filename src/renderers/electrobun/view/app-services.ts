@@ -15,6 +15,7 @@ import { RemotePersistence } from "./remote/persistence";
 import { RemoteTickerRepository } from "./remote/ticker-repository";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 import { createGloomberbCloudSyncTransport } from "../../../plugins/builtin/cloud/plugin";
+import { getElectrobunBackendInitSnapshot } from "./backend-rpc";
 
 declare global {
   interface Window {
@@ -32,7 +33,8 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
   });
   const persistence = measurePerf("startup.services.persistence", () => new RemotePersistence());
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new RemoteTickerRepository());
-  const hosted = window.__GLOOM_CLOUD_HOSTED === true;
+  const hosted = window.__GLOOM_CLOUD_HOSTED === true
+    || getElectrobunBackendInitSnapshot()?.desktopPlatform === "cloud";
   const cloudProvider = hosted ? createGloomberbCloudProvider() : null;
   const cloudNewsCapability = cloudProvider
     ? createGloomberbCloudCapabilities(cloudProvider).find(

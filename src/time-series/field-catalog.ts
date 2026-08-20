@@ -66,6 +66,20 @@ const FIELDS = [
     defaultInterpolation: "none",
   }),
   field({
+    id: "market.dividends",
+    label: "Dividends",
+    shortLabel: "Div",
+    sourceKind: "security",
+    dataShape: "scalar",
+    unit: "currency/share",
+    unitGroup: "price",
+    nativeFrequency: "quarterly",
+    styles: ["columns", "points", "step"],
+    defaultStyle: "columns",
+    transforms: ["raw", "percent", "index100", "yoy", "qoq", "log"],
+    defaultInterpolation: "none",
+  }),
+  field({
     id: "fundamental.totalRevenue",
     label: "Revenue",
     shortLabel: "Revenue",
@@ -267,6 +281,10 @@ const fieldAliases: Record<string, string> = {
   low: "market.low",
   "price.low": "market.low",
   volume: "market.volume",
+  div: "market.dividends",
+  dvd: "market.dividends",
+  dividend: "market.dividends",
+  dividends: "market.dividends",
   revenue: "fundamental.totalRevenue",
   "fundamental.revenue": "fundamental.totalRevenue",
   "income.revenue": "fundamental.totalRevenue",
@@ -297,7 +315,22 @@ export function listTimeSeriesFields(): readonly TimeSeriesFieldDefinition[] {
 }
 
 export function isMarketFieldId(id: string): boolean {
-  return canonicalTimeSeriesFieldId(id).startsWith("market.");
+  const canonical = canonicalTimeSeriesFieldId(id);
+  return canonical.startsWith("market.") && canonical !== "market.dividends";
+}
+
+export function isPriceOnlyMarketFieldId(id: string): boolean {
+  const canonical = canonicalTimeSeriesFieldId(id);
+  return canonical === "market.ohlcv"
+    || canonical === "market.open"
+    || canonical === "market.high"
+    || canonical === "market.low"
+    || canonical === "market.close"
+    || canonical === "market.volume";
+}
+
+export function isDividendFieldId(id: string): boolean {
+  return canonicalTimeSeriesFieldId(id) === "market.dividends";
 }
 
 export function isFundamentalFieldId(id: string): boolean {

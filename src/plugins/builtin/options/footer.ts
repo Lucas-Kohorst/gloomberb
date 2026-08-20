@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PaneFooterSegment } from "../../../components";
+import type { PaneFooterSegment, PaneHint } from "../../../components";
 import { t, tf } from "../../../i18n";
 import type { OptionsChain } from "../../../types/financials";
 import { useCloudAccessFooter } from "../shared/cloud-upgrade";
@@ -33,12 +33,14 @@ export function useOptionsAccessFooter({
   focused,
   loading,
   quoteCoverage,
+  hints,
 }: {
   chain: OptionsChain | null | undefined;
   error?: string | null;
   focused: boolean;
   loading?: boolean;
   quoteCoverage: Pick<OptionQuoteCoverage, "status">;
+  hints?: PaneHint[];
 }): void {
   const { access, segment } = useCloudAccessFooter({
     delayLabel: resolveOptionsDelayLabel(chain),
@@ -63,5 +65,6 @@ export function useOptionsAccessFooter({
     loading,
     error,
     info,
+    hints,
   });
 }

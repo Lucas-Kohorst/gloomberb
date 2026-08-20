@@ -6,7 +6,12 @@ import {
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
-import { buildPredictionListRows } from "./rows";
+import {
+  buildPredictionListRows,
+  flattenPredictionListRows,
+  resolvePredictionListActivation,
+  togglePredictionGroupExpanded,
+} from "./rows";
 import { getPredictionColumnValue } from "./metrics";
 import {
   attachPredictionMarketsPersistence,
@@ -183,6 +188,36 @@ describe("prediction markets plugin registration and services", () => {
     expect(rows[0]?.focusMarketKey).toBe("kalshi:KXFED-27APR-T4.25");
     expect(rows[0]?.focusYesPrice).toBe(0.48);
     expect(rows[0]?.volume24h).toBe(27000);
+
+    expect(resolvePredictionListActivation(rows[0]!)).toBe("toggle-group");
+
+    const collapsed = flattenPredictionListRows(rows, new Set());
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0]?.kind).toBe("group");
+    expect(collapsed[0]?.kind === "group" && collapsed[0].expanded).toBe(false);
+    expect(getPredictionColumnValue(
+      { id: "market", label: "MARKET", width: 34, align: "left", description: "" },
+      collapsed[0]!,
+      false,
+    ).text).toMatch(/^▸ /);
+
+    const expandedKeys = togglePredictionGroupExpanded(new Set(), rows[0]!.key);
+    expect(expandedKeys.has(rows[0]!.key)).toBe(true);
+    const expanded = flattenPredictionListRows(rows, expandedKeys);
+    expect(expanded.map((row) => row.kind)).toEqual(["group", "market", "market"]);
+    expect(expanded[0]?.kind === "group" && expanded[0].expanded).toBe(true);
+    expect(expanded[1]?.title).toBe("Above 4.25%");
+    expect(expanded[1] && "parentKey" in expanded[1] ? expanded[1].parentKey : null)
+      .toBe(rows[0]!.key);
+    expect(resolvePredictionListActivation(expanded[1]!)).toBe("open-detail");
+    expect(getPredictionColumnValue(
+      { id: "market", label: "MARKET", width: 34, align: "left", description: "" },
+      expanded[0]!,
+      false,
+    ).text).toMatch(/^▾ /);
+
+    const collapsedAgain = togglePredictionGroupExpanded(expandedKeys, rows[0]!.key);
+    expect(collapsedAgain.has(rows[0]!.key)).toBe(false);
   });
 
   test("styles YES consistently and uses the lead contract quote on grouped rows", () => {

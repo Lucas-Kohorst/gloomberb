@@ -183,6 +183,7 @@ interface UseShellPointerRuntimeOptions {
     rect: LayoutBounds,
     event?: { preventDefault?: () => void; stopPropagation?: () => void },
   ) => void;
+  openPaneTickerSearch?: (paneId: string) => void;
   paneMap: Map<string, ResolvedPane>;
   persistLayout: (nextLayout: LayoutConfig, options?: { pushHistory?: boolean }) => void;
   precisePointer: boolean | undefined;
@@ -216,6 +217,7 @@ export function useShellPointerRuntime({
   menuState,
   nativePaneChrome,
   openPaneMenu,
+  openPaneTickerSearch,
   paneMap,
   persistLayout,
   precisePointer,
@@ -265,6 +267,7 @@ export function useShellPointerRuntime({
     hoveredPaneId,
     menuState,
     openPaneMenu,
+    openPaneTickerSearch,
     paneMap,
     selectWindowModePane,
     setHoveredMenuItemId,

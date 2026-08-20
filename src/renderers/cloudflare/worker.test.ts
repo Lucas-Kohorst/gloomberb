@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { resetKeyedDataCache } from "./data-providers/handle";
 
 /**
  * Tests for the hosted config snapshot Worker endpoints.
@@ -304,6 +305,222 @@ describe("hosted share Worker endpoint", () => {
   });
 });
 
+describe("Adjacent Cloud keyed-data providers", () => {
+  afterEach(() => {
+    resetKeyedDataCache();
+    restoreFetch();
+  });
+
+  test("lists registered providers without one-off routes", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { providers: Array<{ id: string }> };
+    expect(body.providers.map((provider) => provider.id).sort()).toEqual([
+      "adjacent",
+      "llm-stats",
+      "nws-cli",
+      "twc-kalshi",
+      "us-listings",
+      "votehub",
+    ]);
+  });
+
+  test("TWC alias allowlists kalshi/api and rejects other weather.com paths", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("{\"ok\":true}", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const ok = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/kalshi/api/climate/primary?date=2026-08-18"),
+      makeEnv(),
+    );
+    expect(ok?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://weather.com/kalshi/api/climate/primary?date=2026-08-18");
+    expect(ok?.headers.get("cache-control")).toContain("max-age=60");
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/weather/twc/v3/wx/observations"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
+  });
+
+  test("NWS CLI provider returns a first-final print keyed by ICAO", async () => {
+    const cliText = `CLINYC
+
+CLIMATE REPORT
+...THE CENTRAL PARK NY CLIMATE SUMMARY FOR AUGUST 18 2026...
+TEMPERATURE (F)
+ YESTERDAY
+  MAXIMUM         87
+  MINIMUM         70
+PRECIPITATION (IN)
+  YESTERDAY        0.00
+`;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/stations/KNYC")) {
+        return Response.json({ geometry: { coordinates: [-73.96, 40.77] } });
+      }
+      if (url.includes("/points/")) {
+        return Response.json({ properties: { cwa: "OKX" } });
+      }
+      if (url.includes("/products/types/CLI/locations/OKX")) {
+        return Response.json({
+          "@graph": [{ id: "final", "@id": "https://api.weather.gov/products/final", issuanceTime: "2026-08-19T05:32:00Z" }],
+        });
+      }
+      if (url.endsWith("/products/final")) {
+        return Response.json({ issuanceTime: "2026-08-19T05:32:00Z", productText: cliText });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/nws-cli/KNYC"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { icao: string; highF: number; printKind: string };
+    expect(body.icao).toBe("KNYC");
+    expect(body.highF).toBe(87);
+    expect(body.printKind).toBe("final");
+  });
+
+  test("llm-stats and Adjacent share GET /api/data", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof globalThis.fetch;
+
+    const llm = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/llm-stats/v1/models"),
+      makeEnv(),
+    );
+    expect(llm?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
+
+    const adjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/public/markets?limit=5"),
+      makeEnv(),
+    );
+    expect(adjacent?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/public/markets?limit=5");
+
+    const unknown = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/jina-ai/read?url=https://example.com/story"),
+      makeEnv(),
+    );
+    expect(unknown?.status).toBe(404);
+
+    const badAdjacent = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/http://evil.example"),
+      makeEnv(),
+    );
+    expect(badAdjacent?.status).toBe(400);
+  });
+
+  test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
+    let upstreamHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      upstreamHits += 1;
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      expect(url).toBe("https://api.votehub.com/polls?poll_type=approval");
+      return Response.json([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+    }) as typeof globalThis.fetch;
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval&callback=evil"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/polls?poll_type=approval"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=900");
+    expect(upstreamHits).toBe(1);
+    expect(await first?.json()).toEqual([{ id: "p1", pollster: "Ipsos", subject: "Donald Trump" }]);
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/votehub/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
+  });
+
+  test("US listings master caches Nasdaq/NYSE files for 12 hours", async () => {
+    let nasdaqHits = 0;
+    let otherHits = 0;
+    let secHits = 0;
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes("nasdaqlisted.txt")) {
+        nasdaqHits += 1;
+        return new Response(`Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
+AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N
+`, { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      if (url.includes("otherlisted.txt")) {
+        otherHits += 1;
+        return new Response(`ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol
+IBM|International Business Machines Corporation Common Stock|N|IBM|N|100|N|IBM
+`, { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      if (url.includes("company_tickers_exchange.json")) {
+        secHits += 1;
+        return Response.json({
+          fields: ["cik", "name", "ticker", "exchange"],
+          data: [[1, "Pink Example", "EXMPL", "OTC"]],
+        });
+      }
+      return new Response("missing", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const first = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/universe"),
+      makeEnv(),
+    );
+    const second = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/universe"),
+      makeEnv(),
+    );
+    expect(first?.status).toBe(200);
+    expect(second?.status).toBe(200);
+    expect(first?.headers.get("cache-control")).toContain("max-age=43200");
+    expect(nasdaqHits).toBe(1);
+    expect(otherHits).toBe(1);
+    expect(secHits).toBe(1);
+
+    const body = await first?.json() as {
+      ttlSeconds: number;
+      securities: Array<{ s: string; e: string; src: string }>;
+    };
+    expect(body.ttlSeconds).toBe(43200);
+    expect(body.securities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ s: "AAPL", e: "NASDAQ", src: "nasdaqlisted" }),
+      expect.objectContaining({ s: "IBM", e: "NYSE", src: "otherlisted" }),
+      expect.objectContaining({ s: "EXMPL", e: "OTC", src: "sec-otc" }),
+    ]));
+
+    const blocked = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/us-listings/secret"),
+      makeEnv(),
+    );
+    expect(blocked?.status).toBe(404);
+  });
+});
+
 interface CapturedUpstream {
   url: string;
   method: string;
@@ -347,9 +564,107 @@ function makeWebSocketRequest(
   return new Request(`${ORIGIN}/cloud/ws`, { method: "GET", headers });
 }
 
-describe("hosted Gloom Cloud proxy origin gate", () => {
+describe("Gloom Cloud /cloud origin gate", () => {
   afterEach(() => {
     restoreFetch();
+  });
+
+  test("GET without Origin reaches auth instead of Invalid origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/sync/snapshot"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
+  });
+
+  test("allows terminal.kohor.st Origin on the workers.dev host", async () => {
+    const headers = new Headers();
+    headers.set("Origin", ORIGIN);
+    const request = new Request("https://gloomberb-cloud.kohorstlucas.workers.dev/cloud/sync/snapshot", {
+      method: "GET",
+      headers,
+    });
+    const response = await workerModule.default.fetch?.(request, makeEnv());
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
+    expect(response?.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+  });
+
+  test("rejects api.gloom.sh as a browser Origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/sync/snapshot", { origin: "https://api.gloom.sh" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toEqual({ error: "Invalid origin" });
+  });
+
+  test("rejects a PUT with no Origin", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("PUT", "/cloud/sync/snapshot", { body: "{}" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+    expect(await response?.json()).toEqual({ error: "Invalid origin" });
+  });
+
+  test("GET /cloud/econ/calendar with a session proxies to api.gloom.sh/cloud/econ/calendar", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/econ/calendar") {
+        return Response.json([{
+          id: "cpi",
+          date: "2026-08-20T12:30:00.000Z",
+          time: "08:30",
+          country: "US",
+          event: "CPI",
+          actual: null,
+          forecast: null,
+          prior: null,
+          impact: "high",
+        }]);
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/econ/calendar", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/econ/calendar");
+    expect(upstream.some((url) => url === "https://api.gloom.sh/econ/calendar")).toBe(false);
+  });
+
+  test("GET /cloud/cloud/econ/calendar with a session also reaches the Cloud calendar", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/econ/calendar") {
+        return Response.json([]);
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/cloud/econ/calendar", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/econ/calendar");
+  });
+
+  test("GET /cloud/econ/calendar without a session is 401, not an empty calendar", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/econ/calendar", { origin: ORIGIN }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
   });
 
   test("allows a same-origin GET that omits the Origin header", async () => {

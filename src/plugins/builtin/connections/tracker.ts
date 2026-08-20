@@ -173,7 +173,19 @@ export class ConnectionTracker {
     isWebSocket: boolean,
     authRequired?: boolean,
   ): boolean {
-    if (this.states.has(id)) return false;
+    if (this.states.has(id)) {
+      const existing = this.states.get(id)!;
+      let next = existing;
+      if (authRequired !== undefined && existing.authRequired !== authRequired) {
+        next = { ...next, authRequired };
+      }
+      if (authRequired === false && next.status === "idle") {
+        next = { ...next, status: "connected" };
+      }
+      if (next === existing) return false;
+      this.states.set(id, next);
+      return true;
+    }
     this.states.set(id, createInitialConnectionState(id, name, kind, pluginId, priority, isWebSocket, authRequired));
     return true;
   }

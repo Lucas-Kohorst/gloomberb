@@ -28,8 +28,10 @@ import {
 import {
   buildOpenArticleCommandResults,
   cachedNewsArticles,
+  cancelRssNewsWarm,
   loadNewsArticles,
   openNewsArticle,
+  scheduleRssNewsWarm,
   searchNewsArticles,
 } from "./article-search";
 import { searchAdjacentRelatedArticles } from "../../adjacent/news";
@@ -168,13 +170,15 @@ export const newsWireModule: PluginModule = {
       kind: "news",
       pluginId: "news",
       priority: 400,
+      authRequired: false,
     });
+    scheduleRssNewsWarm();
     disposeJinaConnection = registerConnectionSource({
       id: "jina-ai",
-      name: "Jina AI Reader",
-      kind: "news",
+      name: "Jina",
+      kind: "api",
       pluginId: "news",
-      priority: 450,
+      priority: 410,
       authRequired: false,
     });
 
@@ -261,6 +265,7 @@ export const newsWireModule: PluginModule = {
     disposeBreakingNewsNotifications = setupBreakingNewsNotifications(ctx);
   },
   dispose() {
+    cancelRssNewsWarm();
     disposeBreakingNewsNotifications?.();
     disposeBreakingNewsNotifications = null;
     disposeRssConnection?.();

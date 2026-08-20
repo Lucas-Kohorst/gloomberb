@@ -8,6 +8,8 @@ import { apiClient, type CloudFredObservationPayload } from "../../../api-client
 import { isPlainKey } from "../../../utils/keyboard";
 import { useShortcut } from "../../../react/input";
 import { usePluginTickerActions } from "../../runtime";
+import { withConnectionRequest } from "../connections/register";
+import { ECON_CALENDAR_CONNECTION_ID } from "./calendar-source";
 import { resolveFredMapping } from "./fred-series-map";
 import {
   getCachedFredSeries,
@@ -85,10 +87,11 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
 
     loadCachedFredSeries(
       request,
-      () => apiClient.getCloudFredSeries(request.seriesId, {
-        startDate: request.startDate,
-        sortOrder: request.sortOrder,
-      }),
+      () => withConnectionRequest(ECON_CALENDAR_CONNECTION_ID, request.seriesId, () =>
+        apiClient.getCloudFredSeries(request.seriesId, {
+          startDate: request.startDate,
+          sortOrder: request.sortOrder,
+        })),
     )
       .then((entry) => {
         setData(entry.data);

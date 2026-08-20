@@ -8,25 +8,33 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "chart-composer": "ticker-research",
   "comparison-chart": "ticker-research",
   correlation: "market-overview",
+  "dividend-yield": "ticker-research",
   "earnings-calendar": "macro",
   "fear-greed": "market-overview",
   "fx-matrix": "market-overview",
   help: "application",
   holders: "ticker-research",
   insider: "ticker-research",
+  "ipo-calendar": "macro",
   "kelly-sizer": "portfolio",
   "layout-manager": "application",
   "macro-tv": "macro",
+  "market-halts": "market-overview",
   "market-heatmap": "market-overview",
   "market-movers": "market-overview",
   options: "ticker-research",
+  "options-calc": "portfolio",
   "portfolio-list": "portfolio",
   research: "ticker-research",
   sectors: "market-overview",
   sec: "ticker-research",
+  "short-interest": "ticker-research",
   thirteenf: "ticker-research",
   "ticker-detail": "ticker-research",
   "world-indices": "market-overview",
+  polls: "adjacent",
+  "llm-stats": "adjacent",
+  weather: "adjacent",
 };
 
 const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
@@ -38,7 +46,11 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
 
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   application: ["layout-manager", "help", "changelog", "byok", "connections"],
-  portfolio: ["portfolio-list", "analytics", "kelly-sizer"],
+  portfolio: ["portfolio-list", "analytics", "kelly-sizer", "options-calc"],
+  "ticker-research": ["short-interest", "dividend-yield"],
+  "market-overview": ["market-halts"],
+  macro: ["ipo-calendar"],
+  adjacent: ["polls", "llm-stats", "weather"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {
@@ -84,7 +96,7 @@ export function normalizeBuiltinPluginStateMap(
 
 /**
  * Adjacent used to live under the Gloom Cloud composite. Lift its API key into
- * the new adjacent plugin namespace so saved keys survive the extraction.
+ * the adjacent plugin namespace so saved keys survive the extraction.
  */
 function liftAdjacentConfigFromCloud(
   value: Record<string, Record<string, unknown>>,

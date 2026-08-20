@@ -59,6 +59,7 @@ export const bondSearchPlugin: GloomPlugin = {
   setup(ctx) {
     // Share the FRED series cache/persistence namespace used by the econ plugin.
     attachFredSeriesPersistence(ctx.persistence);
+    // Bond Search is a FRED consumer (Gloom Cloud /cloud/econ), not an Adjacent Cloud origin.
     disposeConnection = registerConnectionSource({
       id: FRED_CORPORATE_YIELDS_CONNECTION_ID,
       name: "FRED Corporate Yields",

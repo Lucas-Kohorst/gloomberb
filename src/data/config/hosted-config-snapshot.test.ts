@@ -61,13 +61,13 @@ describe("hosted config snapshot", () => {
   test("a newer local save beats a stale remote snapshot", () => {
     setHostedConfigUserId("user-1");
     const local = createDefaultConfig("cloud://users/user-1");
-    local.theme = "amber";
-    // Write local at 2026-08-17T12:00:00Z
+    local.layouts[0] = { ...local.layouts[0]!, name: "Trading" };
     writeHostedUserConfig(local);
     const localStamp = peekHostedUserConfigStamp();
     expect(localStamp).not.toBeNull();
 
     const base = createDefaultConfig("cloud://users/user-1");
+    Object.assign(base, local);
     const remote = {
       config: { ...createDefaultConfig("cloud://users/user-1"), theme: "default" } as unknown as Record<string, unknown>,
       updatedAt: "2020-01-01T00:00:00.000Z",
@@ -76,6 +76,25 @@ describe("hosted config snapshot", () => {
     const merged = mergeRemoteConfigSnapshot(base, remote, localStamp?.updatedAt ?? null);
     // Local is newer — remote should not clobber.
     expect(merged).toBeNull();
+  });
+
+  test("a timestamped boot placeholder does not beat a richer remote snapshot", () => {
+    setHostedConfigUserId("user-1");
+    const local = createDefaultConfig("cloud://users/user-1");
+    writeHostedUserConfig(local);
+
+    const remoteConfig = createDefaultConfig("cloud://users/user-1");
+    remoteConfig.layouts[0] = { ...remoteConfig.layouts[0]!, name: "Trading" };
+    const remote = {
+      config: remoteConfig as unknown as Record<string, unknown>,
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    const merged = mergeRemoteConfigSnapshot(
+      createDefaultConfig("cloud://users/user-1"),
+      remote,
+      peekHostedUserConfigStamp()?.updatedAt ?? null,
+    );
+    expect(merged?.layouts[0]?.name).toBe("Trading");
   });
 
   test("a newer remote snapshot is applied when local is stale or absent", () => {

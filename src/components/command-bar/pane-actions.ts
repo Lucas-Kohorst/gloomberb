@@ -13,6 +13,7 @@ import {
   addPaneToLayout,
 } from "../../plugins/pane-manager";
 import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
+import { applyTickerRetarget } from "../../plugins/ticker-follow";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
 
@@ -57,6 +58,25 @@ export function useCommandBarPaneActions({
     dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
   }, [dispatch, stateRef]);
 
+  const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
+    pluginRegistry.updateLayoutFn(nextLayout);
+  }, [pluginRegistry]);
+
+  const replacePaneTicker = useCallback((paneId: string, symbol: string) => {
+    const currentState = stateRef.current;
+    const targetPane = findPaneInstance(currentState.config.layout, paneId);
+    if (!targetPane) return;
+
+    const result = applyTickerRetarget(currentState.config.layout, paneId, symbol);
+    if (result.cursor) {
+      dispatch({ type: "UPDATE_PANE_STATE", paneId: result.cursor.paneId, patch: { cursorSymbol: result.cursor.symbol } });
+    }
+    if (result.layout !== currentState.config.layout) {
+      persistLayoutChange(result.layout);
+    }
+    dispatch({ type: "FOCUS_PANE", paneId: targetPane.instanceId });
+  }, [dispatch, persistLayoutChange, stateRef]);
+
   const openFixedTickerPane = useCallback((symbol: string, options?: { forceNewPane?: boolean }) => {
     pluginRegistry.pinTicker(symbol, {
       floating: true,
@@ -91,10 +111,6 @@ export function useCommandBarPaneActions({
     openFixedTickerPane(symbol);
   }, [openFixedTickerPane, retargetTickerResearchPane, stateRef]);
 
-  const persistLayoutChange = useCallback((nextLayout: LayoutConfig) => {
-    pluginRegistry.updateLayoutFn(nextLayout);
-  }, [pluginRegistry]);
-
   const notifyGridlockRevert = useCallback(() => {
     notifyGridlockComplete(pluginRegistry.notify.bind(pluginRegistry), () => {
       dispatch({ type: "UNDO_LAYOUT" });
@@ -128,6 +144,7 @@ export function useCommandBarPaneActions({
     focusTicker,
     notifyGridlockRevert,
     persistLayoutChange,
+    replacePaneTicker,
     setActiveCollection,
   };
 }

@@ -328,10 +328,13 @@ export async function initializeAppState({
   let tickers = await measurePerfAsync("startup.load-tickers", () => tickerRepository.loadAllTickers());
   startupLog.info("tickers loaded", { count: tickers.length });
 
+  const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
   const adjacentWatchlistId = resolveAdjacentWatchlistId(config);
   const adjacentHasMembers = !!adjacentWatchlistId
     && tickers.some((ticker) => ticker.metadata.watchlists.includes(adjacentWatchlistId));
-  const shouldSeedDefaultWatchlist = tickers.length === 0;
+  // Hosted tickers come from local persist + Gloom Cloud sync. Seeding the
+  // default watchlist here would push dummy names into `/sync/snapshot`.
+  const shouldSeedDefaultWatchlist = tickers.length === 0 && !hosted;
   const shouldSeedAdjacentWatchlist = !!adjacentWatchlistId && !adjacentHasMembers;
 
   if (shouldSeedDefaultWatchlist || shouldSeedAdjacentWatchlist) {

@@ -2,18 +2,29 @@ import { handleHostedBackendRpc } from "./backend";
 import { isShareDocumentPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
+import { handleKeyedDataRequest } from "./data-providers/handle";
+import { KEYED_DATA_PATH, TWC_KALSHI_ALIAS_PATH } from "./data-providers/types";
 import {
   clearSessionCookieHeader,
   extractSessionToken,
   fetchSessionUser,
   gloomApiBaseUrl,
   gloomFetch,
+  gloomCloudProxyUpstreamPath,
+  GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   readSessionCookie,
   relayError,
   resolveSessionUser,
   sessionCookieHeader,
   upstreamSessionCookieHeader,
 } from "./gloom-cloud";
+import {
+  hasTrustedHostedOrigin,
+  hostedCorsHeaders,
+  isTrustedHostedOrigin,
+  isTrustedOrAbsentOrigin,
+  withHostedCors,
+} from "./hosted-origins";
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -25,7 +36,15 @@ export default {
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
+    if (
+      url.pathname === KEYED_DATA_PATH
+      || url.pathname.startsWith(`${KEYED_DATA_PATH}/`)
+      || url.pathname.startsWith(TWC_KALSHI_ALIAS_PATH)
+    ) {
+      return handleKeyedDataRequest(request, env, url);
+    }
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
+    if (url.pathname === "/cloud/ws") return proxyGloomCloudWebSocket(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
     if (request.method !== "GET" && request.method !== "HEAD") {
@@ -54,7 +73,7 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
   // Reads are public by design. Writes must carry a matching Origin: an absent
   // one cannot be trusted, or any non-browser client bypasses the check by
   // omitting the header.
-  if (request.method !== "GET" && request.headers.get("Origin") !== url.origin) {
+  if (request.method !== "GET" && !hasTrustedHostedOrigin(request, url)) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   }
 
@@ -136,7 +155,7 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
   if (request.method === "PUT") {
     // Strict origin check: an absent Origin cannot be trusted, or any
     // non-browser client bypasses the check by omitting the header.
-    if (request.headers.get("Origin") !== new URL(request.url).origin) {
+    if (!hasTrustedHostedOrigin(request, new URL(request.url))) {
       return Response.json({ error: "Invalid origin" }, { status: 403 });
     }
 
@@ -167,25 +186,8 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
   return Response.json({ error: "Method not allowed." }, { status: 405 });
 }
 
-function isSameOrigin(request: Request, url: URL): boolean {
-  const origin = request.headers.get("Origin");
-  return !origin || origin === url.origin;
-}
-
-/**
- * Origin gate for the Gloom Cloud proxy. Browsers omit the `Origin` header on
- * same-origin `GET`/`HEAD` requests, so a strict `Origin === url.origin` check
- * rejects every same-origin read (this is what broke hosted chat: message,
- * channel, and state loads are same-origin GETs and were answered with 403).
- *
- * A present `Origin` must still match exactly, and state-changing methods —
- * which browsers always send an `Origin` for — must carry a matching one, so a
- * non-browser client cannot bypass the check by omitting the header on a write.
- */
-function isAllowedCloudProxyOrigin(request: Request, url: URL): boolean {
-  const origin = request.headers.get("Origin");
-  if (origin !== null) return origin === url.origin;
-  return request.method === "GET" || request.method === "HEAD";
+function invalidOriginResponse(request: Request): Response {
+  return withHostedCors(request, Response.json({ error: "Invalid origin" }, { status: 403 }));
 }
 
 async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<Response> {
@@ -204,14 +206,21 @@ async function getSession(request: Request, env: Env): Promise<Response> {
 }
 
 async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<Response> {
-  const token = readSessionCookie(request);
-  if (!isAllowedCloudProxyOrigin(request, url)) {
-    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  const origin = request.headers.get("Origin");
+  if (request.method === "OPTIONS") {
+    if (!origin || !isTrustedHostedOrigin(origin, url)) return invalidOriginResponse(request);
+    return new Response(null, { status: 204, headers: hostedCorsHeaders(origin) });
+  }
+  if (!hasTrustedHostedOrigin(request, url)) {
+    return invalidOriginResponse(request);
   }
 
-  const path = url.pathname.slice("/cloud".length) + url.search;
+  const token = readSessionCookie(request);
+  const path = gloomCloudProxyUpstreamPath(url.pathname, url.search);
   const publicAuthPath = path === "/auth/sign-in/email" || path === "/auth/sign-up/email";
-  if (!token && !publicAuthPath) return Response.json({ error: "Authentication required." }, { status: 401 });
+  if (!token && !publicAuthPath) {
+    return withHostedCors(request, Response.json({ error: "Authentication required." }, { status: 401 }));
+  }
 
   // WebSocket upgrades cannot go through gloomFetch: it neither forwards the
   // Upgrade handshake nor relays the resulting 101, so hosted realtime never
@@ -221,7 +230,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
   // the upstream socket lives at `/cloud/ws`, so the full pathname is kept
   // rather than stripping the `/cloud` prefix.
   if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
-    return proxyGloomCloudWebSocket(request, env, url.pathname + url.search, token);
+    return proxyGloomCloudWebSocket(request, env, url);
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
@@ -229,6 +238,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     method: request.method,
     body: hasBody ? request.body : null,
     token,
+    timeoutMs: GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   });
 
   const headers = new Headers();
@@ -241,33 +251,30 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     headers.set("x-gloom-hosted-session", "1");
   }
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
-  if (!upstream.ok) return relayError(upstream);
+  if (!upstream.ok) {
+    return withHostedCors(request, await relayError(upstream));
+  }
   // A rotating session (e.g. sign-in) also carries the raw token in the JSON
   // body. The hosted client authenticates purely through the HttpOnly cookie,
   // so strip the token before the body can reach browser JS.
-  if (rotated) {
-    return new Response(await stripUpstreamTokenBody(upstream), { status: upstream.status, headers });
-  }
-  return new Response(upstream.body, { status: upstream.status, headers });
+  const body = rotated ? await stripUpstreamTokenBody(upstream) : upstream.body;
+  return withHostedCors(request, new Response(body, { status: upstream.status, headers }));
 }
 
 /**
- * Relay a browser WebSocket upgrade to Gloom Cloud. The caller has already
- * enforced the exact-origin check and required a hosted session, so this is
- * never an open relay. The browser's own `__Host-gloom.session` cookie is
- * dropped and replaced with the real upstream session token server-side, and
- * Cloudflare forwards the `Upgrade`/`Connection` handshake headers verbatim as
- * long as they are left intact.
+ * Relay a browser WebSocket upgrade to Gloom Cloud. Origin is already gated
+ * for `/cloud/` by the caller; the dedicated `/cloud/ws` route checks it here.
+ * The browser's own `__Host-gloom.session` cookie is dropped and replaced with
+ * the real upstream session token server-side.
  */
-async function proxyGloomCloudWebSocket(
-  request: Request,
-  env: Env,
-  upstreamPath: string,
-  token: string | null,
-): Promise<Response> {
+async function proxyGloomCloudWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
+  if (!isTrustedHostedOrigin(request.headers.get("Origin"), url)) {
+    return invalidOriginResponse(request);
+  }
+  const token = readSessionCookie(request);
   if (!token) return Response.json({ error: "Authentication required." }, { status: 401 });
   const baseUrl = gloomApiBaseUrl(env);
-  const upstreamRequest = new Request(`${baseUrl}${upstreamPath}`, request);
+  const upstreamRequest = new Request(`${baseUrl}${url.pathname}${url.search}`, request);
   upstreamRequest.headers.delete("Cookie");
   upstreamRequest.headers.set("Cookie", upstreamSessionCookieHeader(token));
   upstreamRequest.headers.set("Origin", baseUrl);
@@ -294,8 +301,8 @@ async function stripUpstreamTokenBody(upstream: Response): Promise<string> {
 }
 
 async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {
-  if (request.method !== "GET" && !isSameOrigin(request, url)) {
-    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  if (request.method !== "GET" && !isTrustedOrAbsentOrigin(request, url)) {
+    return invalidOriginResponse(request);
   }
   if (url.pathname === "/_gloomberb/rpc") {
     const requestPayload = await request.clone().json().catch(() => null) as {
@@ -477,7 +484,7 @@ function validateByokTarget(raw: string): ByokTarget {
  * regardless of the target's CORS headers, and returns a classified error
  * so the UI can show a precise, actionable message.
  *
- * Gated behind a verified Gloom Cloud session and an exact Origin match:
+ * Gated behind a verified Gloom Cloud session and a trusted hosted Origin:
  * without both, this route is an open proxy that would let anyone launder
  * arbitrary traffic through this worker.
  */
@@ -485,10 +492,8 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed." }, { status: 405 });
   }
-  // Deliberately stricter than isSameOrigin(): an absent Origin must fail,
-  // otherwise any non-browser client bypasses the check by omitting it.
-  if (request.headers.get("Origin") !== url.origin) {
-    return Response.json({ error: "Invalid origin" }, { status: 403 });
+  if (!hasTrustedHostedOrigin(request, url)) {
+    return invalidOriginResponse(request);
   }
 
   const token = readSessionCookie(request);

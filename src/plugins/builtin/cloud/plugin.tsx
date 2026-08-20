@@ -8,17 +8,16 @@ import {
   buildDmCommandResults,
   formatChatPaneTitle,
   getPreferredChatOpenChannelId,
-  hasOnlyDmUsernameArgs,
   normalizeShortcutChannelId,
   openDmTargetFromCommand,
-  parseDmUsernames,
+  parseConversationCreateArg,
 } from "../chat/channels";
 import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
-import { registerConnectionSource } from "../connections/register";
+import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
@@ -54,8 +53,12 @@ export function createGloomberbCloudSyncTransport(
   return {
     id: "gloomberb-cloud",
     isAvailable,
-    pullSnapshot: () => apiClient.getSyncSnapshot(),
-    pushSnapshot: (snapshot, options) => apiClient.putSyncSnapshot(snapshot, options),
+    pullSnapshot: () => withConnectionRequest("gloom-cloud", "pullSnapshot", () => apiClient.getSyncSnapshot()),
+    pushSnapshot: (snapshot, options) => withConnectionRequest(
+      "gloom-cloud",
+      "pushSnapshot",
+      () => apiClient.putSyncSnapshot(snapshot, options),
+    ),
   };
 }
 
@@ -113,18 +116,18 @@ function createChatModule(
         category: "navigation",
         shortcut: "DM",
         shortcutArg: {
-          placeholder: "@username [@username...]",
+          placeholder: "@username [@username...] [name]",
           kind: "text",
           parse: (arg) => ({ participants: arg.trim() }),
         },
         buildResults: (arg) => buildDmCommandResults(ctx, arg),
         execute: async (values) => {
           const participants = values?.participants ?? values?.shortcut ?? "";
-          const usernames = parseDmUsernames(participants);
-          if (participants.trim() && !hasOnlyDmUsernameArgs(participants)) {
-            throw new Error("Use @username, or multiple usernames for a group chat.");
+          const created = parseConversationCreateArg(participants);
+          if (participants.trim() && !created) {
+            throw new Error("Use @username, or multiple usernames and an optional name for a group.");
           }
-          await openDmTargetFromCommand(ctx, usernames);
+          await openDmTargetFromCommand(ctx, created?.usernames ?? [], created?.name);
         },
       });
     },

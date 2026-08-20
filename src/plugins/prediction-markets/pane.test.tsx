@@ -340,7 +340,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("/ search markets");
   });
 
-  test("supports detail outcome navigation and escape return from the keyboard", async () => {
+  test("toggles series expand/collapse with Enter and still opens child markets", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
     globalThis.fetch = (async (input: Request | string | URL) => {
@@ -456,6 +456,27 @@ describe("prediction markets pane interactions", () => {
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
     await flushFrames(testSetup);
 
+    await emitKeypress(testSetup, { name: "j", sequence: "j" });
+    await flushFrames(testSetup);
+    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    await flushFrames(testSetup);
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▾");
+    expect(frame).toContain("KXFED-27APR-T4.25");
+    expect(frame).toContain("KXFED-27APR-T4.50");
+    expect(frame).not.toContain("\u2190 Back");
+
+    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▸");
+    expect(frame).not.toContain("KXFED-27APR-T4.25");
+    expect(frame).not.toContain("\u2190 Back");
+
+    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    await flushFrames(testSetup);
     await emitKeypress(testSetup, { name: "j", sequence: "j" });
     await flushFrames(testSetup);
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
