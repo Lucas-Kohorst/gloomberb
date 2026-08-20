@@ -32,6 +32,11 @@ export type TweetColumn = DataTableColumn & { id: TweetColumnId };
 export type TweetSortColumnId = "time" | "likes" | "views";
 export type TweetSortDirection = "asc" | "desc";
 
+export const DEFAULT_TWEET_SORT: { columnId: TweetSortColumnId; direction: TweetSortDirection } = {
+  columnId: "time",
+  direction: "desc",
+};
+
 export interface TweetLoadState {
   data: CloudTweetSearchResponse | null;
   loading: boolean;
