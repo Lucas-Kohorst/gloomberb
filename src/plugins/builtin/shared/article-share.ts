@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { NewsArticle } from "../../../news/types";
-import type { SubstackArticleSummary } from "../substack/types";
+import type { SubstackArticleDetail, SubstackArticleSummary } from "../substack/types";
 import type { ChangelogRelease } from "../../../updater/github-releases";
 import { useRendererHost } from "../../../ui";
 import { getBrowserLocation } from "../../../utils/browser-location";
@@ -70,24 +70,30 @@ export function changelogReleaseSharePayload(release: ChangelogRelease): Article
   };
 }
 
-export function substackArticleSharePayload(article: SubstackArticleSummary): ArticleSharePayload {
+export function substackArticleSharePayload(
+  article: SubstackArticleSummary,
+  detail?: SubstackArticleDetail | null,
+): ArticleSharePayload {
+  const source = detail ?? article;
+  const bodyHtml = source.bodyHtml?.trim() || undefined;
+  const contentText = detail?.contentText?.trim() || undefined;
   return {
     type: "substack",
     id: article.id,
-    title: article.title,
-    url: article.url ?? "",
-    source: article.publicationName ?? "",
-    summary: article.previewText ?? undefined,
-    subtitle: article.subtitle ?? undefined,
-    publicationName: article.publicationName ?? undefined,
-    publicationBaseUrl: article.publicationBaseUrl ?? undefined,
-    slug: article.slug ?? undefined,
+    title: source.title || article.title,
+    url: source.url ?? article.url ?? "",
+    source: source.publicationName ?? article.publicationName ?? "",
+    summary: contentText || source.previewText || undefined,
+    subtitle: source.subtitle ?? article.subtitle ?? undefined,
+    publicationName: source.publicationName ?? article.publicationName ?? undefined,
+    publicationBaseUrl: source.publicationBaseUrl ?? article.publicationBaseUrl ?? undefined,
+    slug: source.slug ?? article.slug ?? undefined,
     previewText: article.previewText ?? undefined,
-    bodyHtml: article.bodyHtml ?? undefined,
-    imageUrls: article.imageUrls,
-    wordCount: article.wordCount || undefined,
-    readMinutes: article.readMinutes || undefined,
-    publishedAt: article.publishedAt ?? undefined,
+    bodyHtml,
+    imageUrls: source.imageUrls.length > 0 ? source.imageUrls : article.imageUrls,
+    wordCount: source.wordCount || article.wordCount || undefined,
+    readMinutes: source.readMinutes || article.readMinutes || undefined,
+    publishedAt: source.publishedAt ?? article.publishedAt ?? undefined,
   };
 }
 

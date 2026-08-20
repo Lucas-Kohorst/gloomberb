@@ -12,6 +12,7 @@ import {
   payloadToSubstackArticle,
   SHARE_HOSTED_ORIGIN,
   isPublicArticleShareLocation,
+  substackArticleSharePayload,
 } from "./article-share";
 
 function makeNewsArticle(overrides: Partial<NewsArticle> & Pick<NewsArticle, "id" | "title">): NewsArticle {
@@ -135,6 +136,21 @@ describe("article-share encode/decode", () => {
     expect(reconstructed.url).toBe(original.url);
     expect(reconstructed.publicationName).toBe(original.publicationName);
     expect(reconstructed.previewText).toBe(original.previewText);
+  });
+
+  test("substack share payload prefers loaded post HTML over the feed teaser", () => {
+    const summary = makeSubstackArticle({ id: "post-123", title: "The Fed Pivot" });
+    const payload = substackArticleSharePayload(summary, {
+      ...summary,
+      bodyHtml: "<p>Full post</p><img src=\"https://kalshi.com/chart.png\" alt=\"House odds\" />",
+      contentText: "Full post with charts.",
+      contentBlocks: [],
+      linkUrls: [],
+    });
+    expect(payload.bodyHtml).toContain("Full post");
+    expect(payload.bodyHtml).toContain("https://kalshi.com/chart.png");
+    expect(payload.summary).toBe("Full post with charts.");
+    expect(payload.previewText).toBe("Preview text here");
   });
 
   test("buildShareUrl produces a legacy public /article URL with the encoded payload", () => {

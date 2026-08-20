@@ -366,8 +366,20 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const copyShareLink = useCopyShareLink();
   const shareSelectedArticle = useCallback(() => {
     if (!selectedArticle) return;
-    void copyShareLink(substackArticleSharePayload(selectedArticle));
-  }, [copyShareLink, selectedArticle]);
+    const cached = details[selectedArticle.id]?.data ?? null;
+    void (async () => {
+      if (cached?.bodyHtml || cached?.contentText) {
+        await copyShareLink(substackArticleSharePayload(selectedArticle, cached));
+        return;
+      }
+      try {
+        const entry = await loadSubstackArticleDetail(selectedArticle);
+        await copyShareLink(substackArticleSharePayload(selectedArticle, entry.data));
+      } catch {
+        await copyShareLink(substackArticleSharePayload(selectedArticle));
+      }
+    })();
+  }, [copyShareLink, details, selectedArticle]);
 
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
