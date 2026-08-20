@@ -63,7 +63,8 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
   const shareArticle = article
     ? () => copyShareLink(newsArticleSharePayload(article))
     : undefined;
-  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
+  const skipJina = article?.origin === "x-feed" && !!(article.body || article.summary);
+  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url) && !skipJina);
 
   useNewsArticleFooter({
     registrationId: "news-article-reader",

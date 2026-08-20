@@ -21,6 +21,7 @@ export const TWITTER_FEED_LAUNCH_STATE_KEY = "twitter-feed-launch";
 export const TWITTER_FEED_LAUNCH_SCHEMA_VERSION = 1;
 export const DEFAULT_TWITTER_FEED_QUERY = "list:2090433878028685747";
 export const DEFAULT_TWITTER_FEED_TITLE = "Markets";
+export const X_FEED_CONNECTION_ID = "x-feed";
 export const TWEET_CELL_MAX_CHARS = 240;
 export const TWEET_ROW_MAX_LINES = 8;
 

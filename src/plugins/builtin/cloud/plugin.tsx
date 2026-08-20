@@ -12,7 +12,7 @@ import {
   openDmTargetFromCommand,
   parseConversationCreateArg,
 } from "../chat/channels";
-import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
+import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
@@ -167,6 +167,7 @@ const accountModule: PluginModule = {
 
 const twitterModule: PluginModule = {
   setup: registerTwitterFeedFeature,
+  dispose: disposeTwitterFeedFeature,
 };
 
 export function createGloomberbCloudPlugin({
