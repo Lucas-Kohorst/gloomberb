@@ -172,6 +172,9 @@ const ALLOWED_TAGS = new Set([
 /** Tags that only ever wrapped layout; their children are kept, they are not. */
 const UNWRAPPED_TAGS = new Set(["DIV", "SPAN", "SECTION", "FIGURE"]);
 
+/** Never unwrap these — their text is code or hidden chrome, not article copy. */
+const DROPPED_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
+
 const VOID_TAGS = new Set(["BR", "HR", "IMG"]);
 
 function convertNode(node: Node, key: string): ReactNode {
@@ -180,6 +183,7 @@ function convertNode(node: Node, key: string): ReactNode {
 
   const element = node as Element;
   const tag = element.tagName.toUpperCase();
+  if (DROPPED_TAGS.has(tag)) return null;
   const children = VOID_TAGS.has(tag) ? null : convertChildren(element, key);
   if (!ALLOWED_TAGS.has(tag)) {
     // Keep children of unknown wrappers. Dropping them eats plaintext that
