@@ -26,6 +26,27 @@ export function gloomApiBaseUrl(env: Env): string {
   return env.GLOOM_CLOUD_API_URL || "https://api.gloom.sh";
 }
 
+/**
+ * Map a hosted `/cloud/...` request onto the Gloom Cloud upstream path.
+ *
+ * The hosted client prefixes `/cloud` onto the API client path. Most routes
+ * (`/auth`, `/sync`, `/market`) therefore arrive as `/cloud/auth/...` and we
+ * strip one `/cloud`. Economic calendar already lives at `/cloud/econ/...` on
+ * api.gloom.sh, so a same-origin GET `/cloud/econ/calendar` must stay
+ * `/cloud/econ/calendar` upstream — not `/econ/calendar`. The doubled hosted
+ * path `/cloud/cloud/econ/calendar` still strips once to `/cloud/econ/calendar`.
+ */
+export function gloomCloudProxyUpstreamPath(pathname: string, search = ""): string {
+  if (pathname.startsWith("/cloud/econ/") || pathname === "/cloud/econ") {
+    return `${pathname}${search}`;
+  }
+  const stripped = pathname.startsWith("/cloud") ? pathname.slice("/cloud".length) : pathname;
+  const rest = stripped.startsWith("/") || stripped === "" || stripped.startsWith("?")
+    ? stripped
+    : `/${stripped}`;
+  return `${rest}${search}`;
+}
+
 /** Server-side call to the Gloom Cloud API, attaching the user's session token when present. */
 export async function gloomFetch(
   env: Env,

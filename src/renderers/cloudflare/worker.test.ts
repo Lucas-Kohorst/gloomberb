@@ -460,6 +460,10 @@ PRECIPITATION (IN)
 });
 
 describe("Gloom Cloud /cloud origin gate", () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
   test("GET without Origin reaches auth instead of Invalid origin", async () => {
     const response = await workerModule.default.fetch?.(
       makeRequest("GET", "/cloud/sync/snapshot"),
@@ -498,5 +502,63 @@ describe("Gloom Cloud /cloud origin gate", () => {
     );
     expect(response?.status).toBe(403);
     expect(await response?.json()).toEqual({ error: "Invalid origin" });
+  });
+
+  test("GET /cloud/econ/calendar with a session proxies to api.gloom.sh/cloud/econ/calendar", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/econ/calendar") {
+        return Response.json([{
+          id: "cpi",
+          date: "2026-08-20T12:30:00.000Z",
+          time: "08:30",
+          country: "US",
+          event: "CPI",
+          actual: null,
+          forecast: null,
+          prior: null,
+          impact: "high",
+        }]);
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/econ/calendar", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/econ/calendar");
+    expect(upstream.some((url) => url === "https://api.gloom.sh/econ/calendar")).toBe(false);
+  });
+
+  test("GET /cloud/cloud/econ/calendar with a session also reaches the Cloud calendar", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/econ/calendar") {
+        return Response.json([]);
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/cloud/econ/calendar", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/econ/calendar");
+  });
+
+  test("GET /cloud/econ/calendar without a session is 401, not an empty calendar", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/econ/calendar", { origin: ORIGIN }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+    expect(await response?.json()).toEqual({ error: "Authentication required." });
   });
 });
