@@ -21,6 +21,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 
 - Hosted chat realtime works again (same-origin GET without Origin; Worker relays \`/cloud/ws\`).
 - News rows roll in; blocked article readers show a clear empty state.
+- Default RSS wire culled from 336 to **229** feeds: keep hosts Jina can render or that already ship a full RSS body. Adjacent Press stays. Investing.com, NYT, WSJ, and other 403/paywall hosts are out of the defaults (user-added feeds unchanged).
 - Bond Search (\`BOND\`), Volatility (\`VIX\`), Treasury Auctions (\`AUCT\`), and Credit Spreads (\`CRD\`) live under Macro. New Highs/Lows (\`HILO\`) and Options Flow (\`FLOW\`) live under Market Overview.
 - Polls default to All; Adjacent ships as a default layout + watchlist.
 - Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).

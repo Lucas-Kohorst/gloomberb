@@ -33,6 +33,13 @@ export const JINA_READER_HEADERS: Record<string, string> = {
   "X-Retain-Images": "none",
 };
 
+/** RSS content:encoded (or a long description) is already a full article. */
+export const RSS_INLINE_BODY_MIN_CHARS = 500;
+
+export function shouldSkipJinaForKnownBody(body: string | undefined | null): boolean {
+  return (body?.trim().length ?? 0) >= RSS_INLINE_BODY_MIN_CHARS;
+}
+
 const BOT_WALL_RE = (
   /javascript and cookies|please enable javascript|please enable cookies|enable javascript and cookies|ad[\s-]?blocker enabled|you have an ad[\s-]?blocker|disable your ad[\s-]?blocker|whitelist(?:ed)? this (?:site|page)|press\s*(?:&|and)\s*hold to confirm|confirm you are\s*(?:a )?human|(?:a )?human \(and not a bot\)|access to this page has been denied|before we continue/i
 );

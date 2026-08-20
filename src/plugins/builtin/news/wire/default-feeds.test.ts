@@ -27,4 +27,10 @@ describe("default RSS feeds", () => {
       expect(feed.authority, feed.id).toBeLessThanOrEqual(100);
     }
   });
+
+  test("keeps Adjacent Press as a default source", () => {
+    const adjacent = DEFAULT_FEEDS.find((feed) => feed.id === "adjacent-press");
+    expect(adjacent?.url).toBe("https://adjacent.markets/press/rss");
+    expect(adjacent?.enabled).toBe(true);
+  });
 });

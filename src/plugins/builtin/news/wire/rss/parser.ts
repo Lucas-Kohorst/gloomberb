@@ -29,6 +29,35 @@ function getTagContent(xml: string, tag: string): string {
   return m ? m[1]!.trim() : "";
 }
 
+/** Full item text from content:encoded plus description, HTML-stripped. */
+export function combineRssFullText(encoded: string, description: string): string {
+  const a = encoded.trim();
+  const b = description.trim();
+  if (!a) return b;
+  if (!b) return a;
+  if (a.includes(b) || b.includes(a)) return a.length >= b.length ? a : b;
+  return `${a}\n\n${b}`;
+}
+
+/** Prefer the encoded article body; fall back to a long description. */
+export function rssInlineBody(encoded: string, description: string): string | undefined {
+  const encodedText = encoded.trim();
+  const combined = combineRssFullText(encodedText, description);
+  if (encodedText) return combined || undefined;
+  if (combined.length > 500) return combined;
+  return undefined;
+}
+
+export function rssFullTextFromItemXml(block: string): string {
+  const encoded = extractText(
+    getTagContent(block, "content:encoded") || getTagContent(block, "content"),
+  );
+  const description = extractText(
+    getTagContent(block, "description") || getTagContent(block, "summary"),
+  );
+  return combineRssFullText(encoded, description);
+}
+
 function parseDate(s: string): Date {
   if (!s) return new Date(0);
   const d = new Date(s);
@@ -76,7 +105,8 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
     const url = extractText(getTagContent(block, "link"));
     const pubDateRaw = extractText(getTagContent(block, "pubDate"));
     const descRaw = getTagContent(block, "description");
-    const desc = descRaw ? extractText(descRaw) : undefined;
+    const desc = descRaw ? extractText(descRaw) : "";
+    const encoded = extractText(getTagContent(block, "content:encoded"));
     const categoryRaw = getTagContent(block, "category");
     const category = categoryRaw ? extractText(categoryRaw) : undefined;
 
@@ -85,6 +115,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
     const summary = desc
       ? desc.slice(0, 300) + (desc.length > 300 ? "…" : "")
       : undefined;
+    const body = rssInlineBody(encoded, desc);
 
     const id = hashString(`${url}|${title}`);
     const publishedAt = parseDate(pubDateRaw);
@@ -98,6 +129,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
       source: config.name,
       publishedAt,
       summary,
+      body,
       imageUrl,
       topic: categories[0] ?? "general",
       topics: categories,
@@ -146,11 +178,14 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       extractText(getTagContent(block, "published")) ||
       extractText(getTagContent(block, "updated"));
 
-    const summaryRaw = getTagContent(block, "summary") || getTagContent(block, "content");
-    const summaryFull = summaryRaw ? extractText(summaryRaw) : undefined;
+    const summaryRaw = getTagContent(block, "summary");
+    const contentRaw = getTagContent(block, "content");
+    const summaryFull = summaryRaw ? extractText(summaryRaw) : "";
+    const contentFull = contentRaw ? extractText(contentRaw) : "";
     const summary = summaryFull
       ? summaryFull.slice(0, 300) + (summaryFull.length > 300 ? "…" : "")
       : undefined;
+    const body = rssInlineBody(contentFull, summaryFull);
 
     if (!title && !url) continue;
 
@@ -166,6 +201,7 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       source: config.name,
       publishedAt,
       summary,
+      body,
       imageUrl,
       topic: categories[0] ?? "general",
       topics: categories,

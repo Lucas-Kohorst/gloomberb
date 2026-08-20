@@ -1,18 +1,17 @@
 import type { RssFeedConfig } from "./rss/parser";
 
-// The firehose fills gaps only when enough independent sources are polling, so
-// this list is intentionally broad: wires, national papers, sector trades,
-// government/central-bank releases, and market blogs. Fetches are throttled
-// per-host and failures degrade to cache, so a dead feed costs nothing but the
-// breadth keeps the wire dense between high-authority updates.
+// Default wire is the Jina-readable subset of the expanded RSS list, plus
+// feeds whose RSS already carries a full content:encoded body. Publishers
+// that only return 403/paywall/boilerplate (Investing.com, NYT, WSJ, …) are
+// omitted; user-added feeds and per-feed disable settings are unchanged.
+// Adjacent Press is always included.
 //
 // Invariants (enforced by default-feeds.test.ts): unique ids, http(s) urls,
 // authority in 0-100.
 export const DEFAULT_FEEDS: RssFeedConfig[] = [
+
   // -- Wires & national general news ----------------------------------------
   { id: "adjacent-press", url: "https://adjacent.markets/press/rss", name: "Adjacent Press", category: "general", authority: 82, enabled: true },
-  { id: "reuters-world", url: "https://www.reuters.com/arc/outboundfeeds/rss/?outputType=xml", name: "Reuters World", category: "general", authority: 85, enabled: true },
-  { id: "ap-topnews", url: "https://rsshub.app/apnews/topics/apf-topnews", name: "AP Top News", category: "general", authority: 85, enabled: true },
   { id: "bbc-business", url: "https://feeds.bbci.co.uk/news/business/rss.xml", name: "BBC Business", category: "general", authority: 80, enabled: true },
   { id: "bbc-world", url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: "BBC World", category: "general", authority: 80, enabled: true },
   { id: "bbc-tech", url: "https://feeds.bbci.co.uk/news/technology/rss.xml", name: "BBC Technology", category: "tech", authority: 74, enabled: true },
@@ -28,17 +27,12 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "npr-business", url: "https://feeds.npr.org/1006/rss.xml", name: "NPR Business", category: "general", authority: 76, enabled: true },
   { id: "npr-economy", url: "https://feeds.npr.org/1017/rss.xml", name: "NPR Economy", category: "macro", authority: 76, enabled: true },
   { id: "npr-tech", url: "https://feeds.npr.org/1019/rss.xml", name: "NPR Technology", category: "tech", authority: 70, enabled: true },
-  { id: "skynews-business", url: "https://feeds.skynews.com/feeds/rss/business.xml", name: "Sky News Business", category: "general", authority: 72, enabled: true },
-  { id: "skynews-world", url: "https://feeds.skynews.com/feeds/rss/world.xml", name: "Sky News World", category: "general", authority: 72, enabled: true },
-  { id: "skynews-tech", url: "https://feeds.skynews.com/feeds/rss/technology.xml", name: "Sky News Technology", category: "tech", authority: 66, enabled: true },
   { id: "aljazeera-all", url: "https://www.aljazeera.com/xml/rss/all.xml", name: "Al Jazeera", category: "general", authority: 74, enabled: true },
   { id: "cbc-business", url: "https://www.cbc.ca/webfeed/rss/rss-business", name: "CBC Business", category: "general", authority: 72, enabled: true },
   { id: "cbc-world", url: "https://www.cbc.ca/webfeed/rss/rss-world", name: "CBC World", category: "general", authority: 72, enabled: true },
-  { id: "dw-business", url: "https://rss.dw.com/rdf/rss-en-bus", name: "Deutsche Welle Business", category: "general", authority: 72, enabled: true },
   { id: "france24-business", url: "https://www.france24.com/en/business/rss", name: "France 24 Business", category: "general", authority: 70, enabled: true },
   { id: "abc-au-business", url: "https://www.abc.net.au/news/feed/51892/rss.xml", name: "ABC Australia Business", category: "general", authority: 70, enabled: true },
   { id: "japan-times", url: "https://www.japantimes.co.jp/feed/", name: "The Japan Times", category: "general", authority: 70, enabled: true },
-  { id: "nikkei-asia", url: "https://asia.nikkei.com/rss/feed/nar", name: "Nikkei Asia", category: "general", authority: 78, enabled: true },
 
   // -- CNBC sections --------------------------------------------------------
   { id: "cnbc-top-news", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", name: "CNBC Top News", category: "general", authority: 85, enabled: true },
@@ -46,22 +40,7 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "cnbc-business", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147", name: "CNBC Business", category: "general", authority: 78, enabled: true },
   { id: "cnbc-markets", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069", name: "CNBC Markets", category: "finance", authority: 80, enabled: true },
   { id: "cnbc-finance", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664", name: "CNBC Finance", category: "finance", authority: 76, enabled: true },
-  { id: "cnbc-tech", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001689", name: "CNBC Technology", category: "tech", authority: 75, enabled: true },
-  { id: "cnbc-energy", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=48333730", name: "CNBC Energy", category: "energy", authority: 75, enabled: true },
   { id: "cnbc-healthcare", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000739", name: "CNBC Healthcare", category: "healthcare", authority: 75, enabled: true },
-
-  // -- Wall Street Journal / Dow Jones --------------------------------------
-  { id: "wsj-markets-main", url: "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", name: "WSJ Markets", category: "finance", authority: 85, enabled: true },
-  { id: "wsj-world", url: "https://feeds.a.dj.com/rss/RSSWorldNews.xml", name: "WSJ World News", category: "general", authority: 85, enabled: true },
-  { id: "wsj-business", url: "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml", name: "WSJ US Business", category: "general", authority: 84, enabled: true },
-  { id: "wsj-tech", url: "https://feeds.a.dj.com/rss/RSSWSJD.xml", name: "WSJ Technology", category: "tech", authority: 82, enabled: true },
-  { id: "wsj-opinion", url: "https://feeds.a.dj.com/rss/RSSOpinion.xml", name: "WSJ Opinion", category: "general", authority: 76, enabled: true },
-
-  // -- MarketWatch ----------------------------------------------------------
-  { id: "marketwatch-top", url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", name: "MarketWatch Top Stories", category: "general", authority: 80, enabled: true },
-  { id: "marketwatch-markets", url: "https://feeds.content.dowjones.io/public/rss/mw_marketpulse", name: "MarketWatch Market Pulse", category: "finance", authority: 78, enabled: true },
-  { id: "marketwatch-realtime", url: "https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines", name: "MarketWatch Real-time Headlines", category: "finance", authority: 78, enabled: true },
-  { id: "marketwatch-bulletins", url: "https://feeds.content.dowjones.io/public/rss/mw_bulletins", name: "MarketWatch Bulletins", category: "finance", authority: 80, enabled: true },
 
   // -- Financial Times ------------------------------------------------------
   { id: "ft-home", url: "https://www.ft.com/rss/home", name: "Financial Times", category: "general", authority: 88, enabled: true },
@@ -70,37 +49,16 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "ft-world", url: "https://www.ft.com/world?format=rss", name: "FT World", category: "general", authority: 84, enabled: true },
   { id: "ft-tech", url: "https://www.ft.com/technology?format=rss", name: "FT Technology", category: "tech", authority: 82, enabled: true },
 
-  // -- New York Times sections ----------------------------------------------
-  { id: "nyt-business", url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", name: "NYT Business", category: "general", authority: 82, enabled: true },
-  { id: "nyt-economy", url: "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml", name: "NYT Economy", category: "macro", authority: 80, enabled: true },
-  { id: "nyt-dealbook", url: "https://rss.nytimes.com/services/xml/rss/nyt/Dealbook.xml", name: "NYT DealBook", category: "finance", authority: 80, enabled: true },
-  { id: "nyt-tech", url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml", name: "NYT Technology", category: "tech", authority: 78, enabled: true },
-  { id: "nyt-world", url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", name: "NYT World", category: "general", authority: 80, enabled: true },
-  { id: "nyt-energy", url: "https://rss.nytimes.com/services/xml/rss/nyt/EnergyEnvironment.xml", name: "NYT Energy & Environment", category: "energy", authority: 76, enabled: true },
-  { id: "nyt-yourmoney", url: "https://rss.nytimes.com/services/xml/rss/nyt/YourMoney.xml", name: "NYT Your Money", category: "finance", authority: 74, enabled: true },
-  { id: "nyt-personaltech", url: "https://rss.nytimes.com/services/xml/rss/nyt/PersonalTech.xml", name: "NYT Personal Tech", category: "tech", authority: 72, enabled: true },
-
   // -- Markets, finance media & blogs ---------------------------------------
   { id: "yahoo-finance", url: "https://finance.yahoo.com/news/rssindex", name: "Yahoo Finance", category: "general", authority: 72, enabled: true },
-  { id: "barrons", url: "https://www.barrons.com/feed", name: "Barron's", category: "finance", authority: 82, enabled: true },
   { id: "seeking-alpha-currents", url: "https://seekingalpha.com/market_currents.xml", name: "Seeking Alpha Market Currents", category: "finance", authority: 70, enabled: true },
   { id: "seeking-alpha-all", url: "https://seekingalpha.com/feed.xml", name: "Seeking Alpha", category: "finance", authority: 68, enabled: true },
-  { id: "investopedia", url: "https://www.investopedia.com/feed/", name: "Investopedia", category: "finance", authority: 60, enabled: true },
   { id: "motley-fool", url: "https://www.fool.com/feeds/index.aspx", name: "The Motley Fool", category: "general", authority: 55, enabled: true },
   { id: "business-insider-markets", url: "https://markets.businessinsider.com/rss/news", name: "Business Insider Markets", category: "finance", authority: 62, enabled: true },
   { id: "benzinga", url: "https://www.benzinga.com/feed", name: "Benzinga", category: "finance", authority: 58, enabled: true },
   { id: "the-street", url: "https://www.thestreet.com/.rss/full/", name: "TheStreet", category: "finance", authority: 60, enabled: true },
-  { id: "investing-news", url: "https://www.investing.com/rss/news.rss", name: "Investing.com News", category: "finance", authority: 62, enabled: true },
-  { id: "investing-stock", url: "https://www.investing.com/rss/news_25.rss", name: "Investing.com Stock Market", category: "finance", authority: 62, enabled: true },
-  { id: "investing-economy", url: "https://www.investing.com/rss/news_14.rss", name: "Investing.com Economy", category: "macro", authority: 62, enabled: true },
-  { id: "investing-commodities", url: "https://www.investing.com/rss/news_11.rss", name: "Investing.com Commodities", category: "energy", authority: 62, enabled: true },
   { id: "kiplinger", url: "https://www.kiplinger.com/rss", name: "Kiplinger", category: "finance", authority: 60, enabled: true },
-  { id: "forbes-business", url: "https://www.forbes.com/business/feed/", name: "Forbes Business", category: "general", authority: 66, enabled: true },
-  { id: "forbes-markets", url: "https://www.forbes.com/markets/feed/", name: "Forbes Markets", category: "finance", authority: 66, enabled: true },
-  { id: "forbes-money", url: "https://www.forbes.com/money/feed/", name: "Forbes Money", category: "finance", authority: 64, enabled: true },
   { id: "fortune", url: "https://fortune.com/feed/", name: "Fortune", category: "general", authority: 70, enabled: true },
-  { id: "economist-finance", url: "https://www.economist.com/finance-and-economics/rss.xml", name: "The Economist Finance & Economics", category: "macro", authority: 84, enabled: true },
-  { id: "economist-business", url: "https://www.economist.com/business/rss.xml", name: "The Economist Business", category: "general", authority: 84, enabled: true },
   { id: "investorplace", url: "https://investorplace.com/feed/", name: "InvestorPlace", category: "finance", authority: 52, enabled: true },
   { id: "247-wall-st", url: "https://247wallst.com/feed/", name: "24/7 Wall St.", category: "finance", authority: 54, enabled: true },
   { id: "money-com", url: "https://money.com/feed/", name: "Money", category: "finance", authority: 56, enabled: true },
@@ -118,12 +76,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "mish-talk", url: "https://mishtalk.com/feed/", name: "MishTalk", category: "macro", authority: 50, enabled: true },
   { id: "econbrowser", url: "https://econbrowser.com/feed", name: "Econbrowser", category: "macro", authority: 58, enabled: true },
 
-  // -- Axios ----------------------------------------------------------------
-  { id: "axios-business", url: "https://api.axios.com/feed/business", name: "Axios Business", category: "general", authority: 72, enabled: true },
-  { id: "axios-markets", url: "https://api.axios.com/feed/markets", name: "Axios Markets", category: "finance", authority: 72, enabled: true },
-  { id: "axios-economy", url: "https://api.axios.com/feed/economy", name: "Axios Economy", category: "macro", authority: 72, enabled: true },
-  { id: "axios-technology", url: "https://api.axios.com/feed/technology", name: "Axios Technology", category: "tech", authority: 70, enabled: true },
-
   // -- Government, central banks & data --------------------------------------
   { id: "fed-press", url: "https://www.federalreserve.gov/feeds/press_all.xml", name: "Federal Reserve", category: "macro", authority: 95, enabled: true },
   { id: "fed-monetary", url: "https://www.federalreserve.gov/feeds/press_monetary.xml", name: "Fed Monetary Policy", category: "macro", authority: 95, enabled: true },
@@ -131,24 +83,12 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "fed-testimony", url: "https://www.federalreserve.gov/feeds/testimony.xml", name: "Fed Testimony", category: "macro", authority: 90, enabled: true },
   { id: "fred-blog", url: "https://fredblog.stlouisfed.org/feed/", name: "FRED Blog", category: "macro", authority: 80, enabled: true },
   { id: "sec-press", url: "https://www.sec.gov/news/pressreleases.rss", name: "SEC Press Releases", category: "finance", authority: 90, enabled: true },
-  { id: "sec-litigation", url: "https://www.sec.gov/rss/litigation/litreleases.xml", name: "SEC Litigation", category: "finance", authority: 86, enabled: true },
-  { id: "bls-latest", url: "https://www.bls.gov/feed/bls_latest.rss", name: "BLS Releases", category: "macro", authority: 90, enabled: true },
-  { id: "bls-cpi", url: "https://www.bls.gov/feed/cpi.rss", name: "BLS Consumer Prices (CPI)", category: "macro", authority: 92, enabled: true },
-  { id: "bls-empsit", url: "https://www.bls.gov/feed/empsit.rss", name: "BLS Employment Situation", category: "macro", authority: 92, enabled: true },
-  { id: "bls-ppi", url: "https://www.bls.gov/feed/ppi.rss", name: "BLS Producer Prices (PPI)", category: "macro", authority: 90, enabled: true },
-  { id: "bls-jolts", url: "https://www.bls.gov/feed/jolts.rss", name: "BLS Job Openings (JOLTS)", category: "macro", authority: 90, enabled: true },
-  { id: "treasury-press", url: "https://home.treasury.gov/rss/press.xml", name: "US Treasury", category: "macro", authority: 88, enabled: true },
-  { id: "bea-news", url: "https://apps.bea.gov/rss/rss.xml", name: "Bureau of Economic Analysis", category: "macro", authority: 90, enabled: true },
-  { id: "whitehouse-briefing", url: "https://www.whitehouse.gov/briefing-room/feed/", name: "White House Briefing Room", category: "geopolitical", authority: 82, enabled: true },
   { id: "bank-of-england", url: "https://www.bankofengland.co.uk/rss/news", name: "Bank of England", category: "macro", authority: 90, enabled: true },
-  { id: "imf-news", url: "https://www.imf.org/en/News/RSS", name: "IMF News", category: "macro", authority: 88, enabled: true },
   { id: "fda-press", url: "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml", name: "FDA Press Releases", category: "healthcare", authority: 88, enabled: true },
   { id: "eia-today", url: "https://www.eia.gov/rss/todayinenergy.xml", name: "EIA Today in Energy", category: "energy", authority: 88, enabled: true },
-  { id: "eia-press", url: "https://www.eia.gov/rss/press_releases.xml", name: "EIA Press Releases", category: "energy", authority: 86, enabled: true },
 
   // -- Business wires & press releases --------------------------------------
   { id: "pr-newswire", url: "https://www.prnewswire.com/rss/news-releases-list.rss", name: "PR Newswire", category: "earnings", authority: 60, enabled: true },
-  { id: "globenewswire", url: "https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20Room", name: "GlobeNewswire", category: "earnings", authority: 60, enabled: true },
 
   // -- Technology -----------------------------------------------------------
   { id: "ars-technica", url: "https://feeds.arstechnica.com/arstechnica/index", name: "Ars Technica", category: "tech", authority: 70, enabled: true },
@@ -170,7 +110,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "techradar", url: "https://www.techradar.com/rss", name: "TechRadar", category: "tech", authority: 58, enabled: true },
   { id: "toms-hardware", url: "https://www.tomshardware.com/feeds/all", name: "Tom's Hardware", category: "tech", authority: 60, enabled: true },
   { id: "ieee-spectrum", url: "https://spectrum.ieee.org/feeds/feed.rss", name: "IEEE Spectrum", category: "tech", authority: 72, enabled: true },
-  { id: "slashdot", url: "https://rss.slashdot.org/Slashdot/slashdotMain", name: "Slashdot", category: "tech", authority: 56, enabled: true },
   { id: "the-next-web", url: "https://thenextweb.com/feed", name: "The Next Web", category: "tech", authority: 58, enabled: true },
   { id: "digital-trends", url: "https://www.digitaltrends.com/feed/", name: "Digital Trends", category: "tech", authority: 56, enabled: true },
   { id: "bleeping-computer", url: "https://www.bleepingcomputer.com/feed/", name: "BleepingComputer", category: "tech", authority: 64, enabled: true },
@@ -179,7 +118,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
 
   // -- Artificial intelligence ----------------------------------------------
   { id: "google-ai-blog", url: "https://blog.google/technology/ai/rss/", name: "Google AI", category: "tech", authority: 74, enabled: true },
-  { id: "huggingface-blog", url: "https://huggingface.co/blog/feed.xml", name: "Hugging Face Blog", category: "tech", authority: 66, enabled: true },
   { id: "nvidia-blog", url: "https://blogs.nvidia.com/feed/", name: "NVIDIA Blog", category: "tech", authority: 68, enabled: true },
   { id: "aws-ml-blog", url: "https://aws.amazon.com/blogs/machine-learning/feed/", name: "AWS Machine Learning", category: "tech", authority: 66, enabled: true },
   { id: "venturebeat-ai", url: "https://venturebeat.com/category/ai/feed/", name: "VentureBeat AI", category: "tech", authority: 64, enabled: true },
@@ -196,19 +134,14 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "electrek", url: "https://electrek.co/feed/", name: "Electrek", category: "energy", authority: 58, enabled: true },
   { id: "carbon-brief", url: "https://www.carbonbrief.org/feed/", name: "Carbon Brief", category: "energy", authority: 66, enabled: true },
   { id: "offshore-technology", url: "https://www.offshore-technology.com/feed/", name: "Offshore Technology", category: "energy", authority: 58, enabled: true },
-  { id: "desmog", url: "https://www.desmog.com/feed/", name: "DeSmog", category: "energy", authority: 54, enabled: true },
 
   // -- Healthcare & biotech -------------------------------------------------
   { id: "stat-news", url: "https://www.statnews.com/feed/", name: "STAT News", category: "healthcare", authority: 74, enabled: true },
-  { id: "fierce-biotech", url: "https://www.fiercebiotech.com/rss/xml", name: "Fierce Biotech", category: "healthcare", authority: 68, enabled: true },
-  { id: "fierce-pharma", url: "https://www.fiercepharma.com/rss/xml", name: "Fierce Pharma", category: "healthcare", authority: 68, enabled: true },
-  { id: "endpoints-news", url: "https://endpts.com/feed/", name: "Endpoints News", category: "healthcare", authority: 70, enabled: true },
   { id: "medcity-news", url: "https://medcitynews.com/feed/", name: "MedCity News", category: "healthcare", authority: 60, enabled: true },
   { id: "biopharma-dive", url: "https://www.biopharmadive.com/feeds/news/", name: "BioPharma Dive", category: "healthcare", authority: 66, enabled: true },
   { id: "healthcare-dive", url: "https://www.healthcaredive.com/feeds/news/", name: "Healthcare Dive", category: "healthcare", authority: 64, enabled: true },
 
   // -- Crypto ---------------------------------------------------------------
-  { id: "coindesk", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", name: "CoinDesk", category: "crypto", authority: 70, enabled: true },
   { id: "cointelegraph", url: "https://cointelegraph.com/rss", name: "Cointelegraph", category: "crypto", authority: 66, enabled: true },
   { id: "decrypt", url: "https://decrypt.co/feed", name: "Decrypt", category: "crypto", authority: 64, enabled: true },
   { id: "the-block", url: "https://www.theblock.co/rss.xml", name: "The Block", category: "crypto", authority: 68, enabled: true },
@@ -222,9 +155,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "foreign-policy", url: "https://foreignpolicy.com/feed/", name: "Foreign Policy", category: "geopolitical", authority: 72, enabled: true },
   { id: "defense-news", url: "https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml", name: "Defense News", category: "geopolitical", authority: 70, enabled: true },
   { id: "war-on-the-rocks", url: "https://warontherocks.com/feed/", name: "War on the Rocks", category: "geopolitical", authority: 68, enabled: true },
-  { id: "politico-economy", url: "https://rss.politico.com/economy.xml", name: "Politico Economy", category: "geopolitical", authority: 72, enabled: true },
-  { id: "the-hill-finance", url: "https://thehill.com/policy/finance/feed/", name: "The Hill Finance", category: "geopolitical", authority: 68, enabled: true },
-  { id: "brookings", url: "https://www.brookings.edu/feed/", name: "Brookings", category: "geopolitical", authority: 74, enabled: true },
 
   // -- International / regional markets -------------------------------------
   { id: "economic-times-top", url: "https://economictimes.indiatimes.com/rssfeedstopstories.cms", name: "Economic Times Top Stories", category: "general", authority: 68, enabled: true },
@@ -232,15 +162,10 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "livemint-markets", url: "https://www.livemint.com/rss/markets", name: "Mint Markets", category: "finance", authority: 66, enabled: true },
   { id: "livemint-companies", url: "https://www.livemint.com/rss/companies", name: "Mint Companies", category: "finance", authority: 64, enabled: true },
   { id: "business-standard-markets", url: "https://www.business-standard.com/rss/markets-106.rss", name: "Business Standard Markets", category: "finance", authority: 66, enabled: true },
-  { id: "moneycontrol-latest", url: "https://www.moneycontrol.com/rss/latestnews.xml", name: "Moneycontrol Latest", category: "finance", authority: 64, enabled: true },
-  { id: "moneycontrol-business", url: "https://www.moneycontrol.com/rss/business.xml", name: "Moneycontrol Business", category: "finance", authority: 64, enabled: true },
-  { id: "times-of-india-business", url: "https://timesofindia.indiatimes.com/rssfeeds/1898055.cms", name: "Times of India Business", category: "general", authority: 62, enabled: true },
   { id: "the-hindu-business", url: "https://www.thehindu.com/business/feeder/default.rss", name: "The Hindu Business", category: "general", authority: 64, enabled: true },
   { id: "financial-post", url: "https://financialpost.com/feed", name: "Financial Post", category: "finance", authority: 68, enabled: true },
-  { id: "globe-mail-business", url: "https://www.theglobeandmail.com/business/?service=rss", name: "The Globe and Mail Business", category: "general", authority: 70, enabled: true },
   { id: "straits-times-business", url: "https://www.straitstimes.com/news/business/rss.xml", name: "The Straits Times Business", category: "general", authority: 66, enabled: true },
   { id: "bangkok-post-business", url: "https://www.bangkokpost.com/rss/data/business.xml", name: "Bangkok Post Business", category: "general", authority: 60, enabled: true },
-  { id: "arabian-business", url: "https://www.arabianbusiness.com/feed", name: "Arabian Business", category: "general", authority: 60, enabled: true },
 
   // -- More national general news & sections --------------------------------
   { id: "bbc-us-canada", url: "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", name: "BBC US & Canada", category: "general", authority: 78, enabled: true },
@@ -254,12 +179,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "guardian-science", url: "https://www.theguardian.com/science/rss", name: "The Guardian Science", category: "general", authority: 70, enabled: true },
   { id: "guardian-media", url: "https://www.theguardian.com/media/rss", name: "The Guardian Media", category: "general", authority: 66, enabled: true },
   { id: "guardian-crypto", url: "https://www.theguardian.com/technology/cryptocurrencies/rss", name: "The Guardian Cryptocurrencies", category: "crypto", authority: 66, enabled: true },
-  { id: "nyt-us", url: "https://rss.nytimes.com/services/xml/rss/nyt/US.xml", name: "NYT US", category: "general", authority: 80, enabled: true },
-  { id: "nyt-politics", url: "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml", name: "NYT Politics", category: "geopolitical", authority: 80, enabled: true },
-  { id: "nyt-climate", url: "https://rss.nytimes.com/services/xml/rss/nyt/Climate.xml", name: "NYT Climate", category: "energy", authority: 76, enabled: true },
-  { id: "nyt-media", url: "https://rss.nytimes.com/services/xml/rss/nyt/MediaandAdvertising.xml", name: "NYT Media & Advertising", category: "general", authority: 74, enabled: true },
-  { id: "nyt-realestate", url: "https://rss.nytimes.com/services/xml/rss/nyt/RealEstate.xml", name: "NYT Real Estate", category: "finance", authority: 72, enabled: true },
-  { id: "nyt-science", url: "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml", name: "NYT Science", category: "general", authority: 76, enabled: true },
 
   // -- More markets, finance media & blogs ----------------------------------
   { id: "valuewalk", url: "https://www.valuewalk.com/feed/", name: "ValueWalk", category: "finance", authority: 54, enabled: true },
@@ -286,8 +205,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "unite-ai", url: "https://www.unite.ai/feed/", name: "Unite.AI", category: "tech", authority: 52, enabled: true },
 
   // -- More energy & climate ------------------------------------------------
-  { id: "natural-gas-intel", url: "https://www.naturalgasintel.com/feed/", name: "Natural Gas Intelligence", category: "energy", authority: 60, enabled: true },
-  { id: "energy-voice", url: "https://www.energyvoice.com/feed/", name: "Energy Voice", category: "energy", authority: 58, enabled: true },
   { id: "cleantechnica", url: "https://cleantechnica.com/feed/", name: "CleanTechnica", category: "energy", authority: 56, enabled: true },
   { id: "climate-home", url: "https://www.climatechangenews.com/feed/", name: "Climate Home News", category: "energy", authority: 58, enabled: true },
   { id: "inside-climate-news", url: "https://insideclimatenews.org/feed/", name: "Inside Climate News", category: "energy", authority: 62, enabled: true },
@@ -295,33 +212,22 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   // -- More healthcare & biotech --------------------------------------------
   { id: "kff-health-news", url: "https://kffhealthnews.org/feed/", name: "KFF Health News", category: "healthcare", authority: 66, enabled: true },
   { id: "science-daily-health", url: "https://www.sciencedaily.com/rss/health_medicine.xml", name: "ScienceDaily Health", category: "healthcare", authority: 58, enabled: true },
-  { id: "mobihealthnews", url: "https://www.mobihealthnews.com/rss.xml", name: "MobiHealthNews", category: "healthcare", authority: 58, enabled: true },
 
   // -- More crypto ----------------------------------------------------------
-  { id: "blockworks", url: "https://blockworks.co/feed", name: "Blockworks", category: "crypto", authority: 64, enabled: true },
   { id: "the-defiant", url: "https://thedefiant.io/feed/", name: "The Defiant", category: "crypto", authority: 58, enabled: true },
   { id: "coingape", url: "https://coingape.com/feed/", name: "CoinGape", category: "crypto", authority: 50, enabled: true },
-  { id: "ambcrypto", url: "https://ambcrypto.com/feed/", name: "AMBCrypto", category: "crypto", authority: 50, enabled: true },
   { id: "u-today", url: "https://u.today/rss", name: "U.Today", category: "crypto", authority: 50, enabled: true },
   { id: "cryptopotato", url: "https://cryptopotato.com/feed/", name: "CryptoPotato", category: "crypto", authority: 50, enabled: true },
 
   // -- More geopolitics & policy --------------------------------------------
-  { id: "the-diplomat", url: "https://thediplomat.com/feed/", name: "The Diplomat", category: "geopolitical", authority: 66, enabled: true },
   { id: "foreign-affairs", url: "https://www.foreignaffairs.com/rss.xml", name: "Foreign Affairs", category: "geopolitical", authority: 74, enabled: true },
-  { id: "lawfare", url: "https://www.lawfaremedia.org/feed", name: "Lawfare", category: "geopolitical", authority: 68, enabled: true },
   { id: "atlantic-council", url: "https://www.atlanticcouncil.org/feed/", name: "Atlantic Council", category: "geopolitical", authority: 68, enabled: true },
   { id: "responsible-statecraft", url: "https://responsiblestatecraft.org/feed/", name: "Responsible Statecraft", category: "geopolitical", authority: 60, enabled: true },
 
   // -- National papers & wires (US/UK) --------------------------------------
-  { id: "cnn-business", url: "https://rss.cnn.com/rss/edition_business.rss", name: "CNN Business", category: "general", authority: 76, enabled: true },
-  { id: "cnn-money", url: "https://rss.cnn.com/rss/money_latest.rss", name: "CNN Money", category: "finance", authority: 74, enabled: true },
-  { id: "cnn-tech", url: "https://rss.cnn.com/rss/edition_technology.rss", name: "CNN Technology", category: "tech", authority: 72, enabled: true },
   { id: "wapo-business", url: "https://feeds.washingtonpost.com/rss/business", name: "Washington Post Business", category: "general", authority: 82, enabled: true },
   { id: "wapo-tech", url: "https://feeds.washingtonpost.com/rss/business/technology", name: "Washington Post Technology", category: "tech", authority: 80, enabled: true },
-  { id: "usa-today-money", url: "https://rssfeeds.usatoday.com/usatodaycommoney-topstories", name: "USA Today Money", category: "finance", authority: 70, enabled: true },
-  { id: "usa-today-tech", url: "https://rssfeeds.usatoday.com/usatodaycomtech-topstories", name: "USA Today Tech", category: "tech", authority: 68, enabled: true },
   { id: "la-times-business", url: "https://www.latimes.com/business/rss2.0.xml", name: "Los Angeles Times Business", category: "general", authority: 74, enabled: true },
-  { id: "telegraph-business", url: "https://www.telegraph.co.uk/business/rss.xml", name: "The Telegraph Business", category: "general", authority: 74, enabled: true },
   { id: "independent-business", url: "https://www.independent.co.uk/news/business/rss", name: "The Independent Business", category: "general", authority: 70, enabled: true },
   { id: "standard-business", url: "https://www.standard.co.uk/business/rss", name: "Evening Standard Business", category: "general", authority: 66, enabled: true },
   { id: "quartz", url: "https://qz.com/rss", name: "Quartz", category: "general", authority: 68, enabled: true },
@@ -358,8 +264,6 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "pcmag", url: "https://www.pcmag.com/feeds/rss/latest", name: "PCMag", category: "tech", authority: 58, enabled: true },
   { id: "pcworld", url: "https://www.pcworld.com/index.rss", name: "PCWorld", category: "tech", authority: 56, enabled: true },
   { id: "computerworld", url: "https://www.computerworld.com/index.rss", name: "Computerworld", category: "tech", authority: 58, enabled: true },
-  { id: "infoworld", url: "https://www.infoworld.com/index.rss", name: "InfoWorld", category: "tech", authority: 58, enabled: true },
-  { id: "csoonline", url: "https://www.csoonline.com/index.rss", name: "CSO Online", category: "tech", authority: 60, enabled: true },
   { id: "dark-reading", url: "https://www.darkreading.com/rss.xml", name: "Dark Reading", category: "tech", authority: 62, enabled: true },
   { id: "securityweek", url: "https://feeds.feedburner.com/securityweek", name: "SecurityWeek", category: "tech", authority: 60, enabled: true },
   { id: "the-record", url: "https://therecord.media/feed/", name: "The Record", category: "tech", authority: 62, enabled: true },
@@ -374,42 +278,24 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "finbold", url: "https://finbold.com/feed/", name: "Finbold", category: "finance", authority: 50, enabled: true },
 
   // -- More healthcare ------------------------------------------------------
-  { id: "fierce-healthcare", url: "https://www.fiercehealthcare.com/rss/xml", name: "Fierce Healthcare", category: "healthcare", authority: 66, enabled: true },
-  { id: "healthcare-it-news", url: "https://www.healthcareitnews.com/home/feed", name: "Healthcare IT News", category: "healthcare", authority: 60, enabled: true },
   { id: "genengnews", url: "https://www.genengnews.com/feed/", name: "GEN (Genetic Engineering News)", category: "healthcare", authority: 62, enabled: true },
 
   // -- More geopolitics & defense -------------------------------------------
   { id: "defense-one", url: "https://www.defenseone.com/rss/all/", name: "Defense One", category: "geopolitical", authority: 66, enabled: true },
   { id: "breaking-defense", url: "https://breakingdefense.com/feed/", name: "Breaking Defense", category: "geopolitical", authority: 64, enabled: true },
   { id: "military-times", url: "https://www.militarytimes.com/arc/outboundfeeds/rss/?outputType=xml", name: "Military Times", category: "geopolitical", authority: 62, enabled: true },
-  { id: "csis-analysis", url: "https://www.csis.org/analysis/feed", name: "CSIS Analysis", category: "geopolitical", authority: 68, enabled: true },
 
   // -- More government, central banks & data --------------------------------
   { id: "fed-orders", url: "https://www.federalreserve.gov/feeds/press_orders.xml", name: "Fed Enforcement Orders", category: "macro", authority: 88, enabled: true },
   { id: "fed-bcreg", url: "https://www.federalreserve.gov/feeds/press_bcreg.xml", name: "Fed Banking Regulation", category: "macro", authority: 88, enabled: true },
-  { id: "bls-ces", url: "https://www.bls.gov/feed/ces.rss", name: "BLS Employment (CES)", category: "macro", authority: 88, enabled: true },
-  { id: "bls-eci", url: "https://www.bls.gov/feed/eci.rss", name: "BLS Employment Cost Index", category: "macro", authority: 88, enabled: true },
-  { id: "cbo", url: "https://www.cbo.gov/publications/all/rss.xml", name: "Congressional Budget Office", category: "macro", authority: 86, enabled: true },
-  { id: "doj-news", url: "https://www.justice.gov/feeds/opa/justice-news.xml", name: "US Justice Department", category: "geopolitical", authority: 84, enabled: true },
   { id: "cftc", url: "https://www.cftc.gov/RSS/RSSGP/rssgp.xml", name: "CFTC", category: "finance", authority: 86, enabled: true },
-  { id: "rba-media", url: "https://www.rba.gov.au/rss/rss-cb-media-releases.xml", name: "Reserve Bank of Australia", category: "macro", authority: 86, enabled: true },
   { id: "ny-fed-liberty-street", url: "https://libertystreeteconomics.newyorkfed.org/feed/", name: "NY Fed Liberty Street Economics", category: "macro", authority: 82, enabled: true },
 
   // -- Policy sections, fintech & business media ----------------------------
   { id: "politico-tech", url: "https://rss.politico.com/technology.xml", name: "Politico Technology", category: "tech", authority: 70, enabled: true },
-  { id: "the-hill-tech", url: "https://thehill.com/policy/technology/feed/", name: "The Hill Technology", category: "tech", authority: 66, enabled: true },
-  { id: "the-hill-energy", url: "https://thehill.com/policy/energy-environment/feed/", name: "The Hill Energy & Environment", category: "energy", authority: 66, enabled: true },
-  { id: "forbes-tech", url: "https://www.forbes.com/technology/feed/", name: "Forbes Technology", category: "tech", authority: 64, enabled: true },
-  { id: "forbes-crypto", url: "https://www.forbes.com/crypto-blockchain/feed/", name: "Forbes Crypto & Blockchain", category: "crypto", authority: 62, enabled: true },
   { id: "cnbc-real-estate", url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000115", name: "CNBC Real Estate", category: "finance", authority: 74, enabled: true },
-  { id: "entrepreneur", url: "https://www.entrepreneur.com/latest.rss", name: "Entrepreneur", category: "general", authority: 56, enabled: true },
   { id: "fast-company", url: "https://www.fastcompany.com/latest/rss", name: "Fast Company", category: "general", authority: 62, enabled: true },
   { id: "pymnts", url: "https://www.pymnts.com/feed/", name: "PYMNTS", category: "finance", authority: 58, enabled: true },
-  { id: "finextra", url: "https://www.finextra.com/rss/headlines.aspx", name: "Finextra", category: "finance", authority: 60, enabled: true },
-  { id: "coindesk-markets", url: "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml&category=markets", name: "CoinDesk Markets", category: "crypto", authority: 68, enabled: true },
-  { id: "bis-press", url: "https://www.bis.org/list/press_releases/rss.xml", name: "Bank for International Settlements", category: "macro", authority: 86, enabled: true },
   { id: "ecb-press", url: "https://www.ecb.europa.eu/rss/press.html", name: "European Central Bank", category: "macro", authority: 90, enabled: true },
-  { id: "world-bank-news", url: "https://www.worldbank.org/en/news/all.rss", name: "World Bank News", category: "macro", authority: 84, enabled: true },
-  { id: "morningstar", url: "https://www.morningstar.com/feeds/articles.xml", name: "Morningstar", category: "finance", authority: 72, enabled: true },
   { id: "sec-speeches", url: "https://www.sec.gov/news/speeches-statements.rss", name: "SEC Speeches & Statements", category: "finance", authority: 84, enabled: true },
 ];
