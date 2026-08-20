@@ -19,6 +19,7 @@ import {
   markChatChannelViewedThroughLatestMessage,
   mergeChatMessages,
 } from "./messages";
+import { listUnreadInboxItems } from "../unread-inbox";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
   normalizeChannelId,
@@ -152,6 +153,20 @@ export class ChatController {
 
   getSnapshot(channelId = DEFAULT_CHAT_CHANNEL_ID): ChatControllerSnapshot {
     return this.view.getSnapshot(channelId);
+  }
+
+  listUnreadInbox(limit?: number) {
+    return listUnreadInboxItems({
+      channels: this.channelCatalog.getChannels(),
+      user: this.session.user,
+      limit,
+      states: [...this.storage.channelStates.entries()].map(([channelId, channel]) => ({
+        channelId,
+        unreadCount: channel.unreadCount,
+        lastViewedMessageId: channel.lastViewedMessageId,
+        messages: channel.messages,
+      })),
+    });
   }
 
   getChannels(): ChatChannel[] {

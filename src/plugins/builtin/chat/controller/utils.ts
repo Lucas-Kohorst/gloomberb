@@ -20,14 +20,14 @@ export function chatMessageMentionsUsername(content: string, username: string): 
   return false;
 }
 
-function formatMessageSnippet(content: string): string {
+export function formatChatMessageSnippet(content: string): string {
   const normalized = content.replace(/\s+/g, " ").trim();
   return normalized.length > 72 ? `${normalized.slice(0, 69)}...` : normalized;
 }
 
 export function formatMentionToast(message: ChatMessage): string {
   const author = message.user.username || t("Someone");
-  const snippet = formatMessageSnippet(message.content);
+  const snippet = formatChatMessageSnippet(message.content);
   if (!snippet) {
     return tf("@{author} mentioned you in chat.", { author });
   }
@@ -36,7 +36,7 @@ export function formatMentionToast(message: ChatMessage): string {
 
 export function formatReplyToast(message: ChatMessage): string {
   const author = message.user.username || t("Someone");
-  const snippet = formatMessageSnippet(message.content);
+  const snippet = formatChatMessageSnippet(message.content);
   if (!snippet) {
     return tf("@{author} replied to you.", { author });
   }
@@ -45,7 +45,7 @@ export function formatReplyToast(message: ChatMessage): string {
 
 export function formatChannelToast(channelTitle: string, message: ChatMessage, channelKind?: ChatChannel["kind"]): string {
   const author = message.user.username || t("Someone");
-  const snippet = formatMessageSnippet(message.content);
+  const snippet = formatChatMessageSnippet(message.content);
   if (channelKind === "direct") {
     return snippet ? `@${author}: ${snippet}` : tf("@{author} sent a message.", { author });
   }
