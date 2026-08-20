@@ -10,13 +10,13 @@ import {
 } from "./normalize";
 import {
   TWC_KALSHI_ORIGIN,
+  WEATHER_CONNECTION_ID,
   type WeatherDailyObservation,
   type WeatherDailySnapshot,
   type WeatherHourlyObservation,
   type WeatherHourlySnapshot,
   type WeatherMetric,
 } from "./types";
-import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 
 const DAILY_CACHE_TTL_MS = 10 * 60_000;
 const TODAY_CACHE_TTL_MS = 60_000;
@@ -89,7 +89,7 @@ function cacheSet<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, t
 }
 
 async function fetchJson(pathAndQuery: string, operation: string): Promise<unknown> {
-  return withConnectionRequest(ADJACENT_CLOUD_CONNECTION_ID, operation, async () => {
+  return withConnectionRequest(WEATHER_CONNECTION_ID, operation, async () => {
     const response = await WEATHER_FETCH.fetch(weatherRequestUrl(pathAndQuery));
     if (!response.ok) {
       throw new Error(`Weather Company request failed (${response.status})`);

@@ -2,19 +2,38 @@
  * Adjacent Cloud keyed-data providers.
  *
  * Official prints are series keyed by station / ticker / series id — not
- * prediction-market tickers. Adding a source (NWS CLI, BLS first print,
- * CF Benchmarks, …) is a new {@link KeyedDataProvider} registration, not a
- * new one-off Worker route.
+ * prediction-market tickers. Adding a source is a new
+ * {@link KeyedDataProvider} registration, not a new one-off Worker route.
  *
  * Secrets stay on the Worker. Clients call `/api/data/{providerId}/…` and
- * never receive upstream API keys.
+ * never receive upstream API keys. Hosted users share one origin pull plus
+ * isolate cache; desktop still hits public endpoints directly.
  *
- * Current providers: twc-kalshi, nws-cli, llm-stats, adjacent, votehub,
- * us-listings. They share one Connections row ("Adjacent Cloud").
+ * Registered now:
+ * - `twc-kalshi` — The Weather Company Kalshi climate / hourly (alias `/api/weather/twc`)
+ * - `nws-cli` — NWS Daily Climate Report first-final CLI print
+ * - `votehub` — VoteHub polls
+ * - `llm-stats` — AI model metadata + runtime metrics
+ * - `adjacent` — Adjacent indices, rates, markets
+ * - `us-listings` — Nasdaq Trader listed files + SEC OTC, 12h cache
  *
- * us-listings caches official Nasdaq Trader listed-symbol files (plus cheap
- * SEC OTC) for 12 hours. Clients hydrate search from GET
- * `/api/data/us-listings/universe` — Yahoo typeahead is not the master.
+ * Worker secrets (CoS sets these; do not commit values):
+ *   wrangler secret put ADJACENT_API_KEY
+ *
+ * Next settlement / reference prints (register here when a first-party API
+ * exists; do not scrape):
+ * - BLS first print (CPI, employment)
+ * - EIA weekly petroleum and electricity
+ * - NOAA / NCEI climate normals
+ * - CME daily settlements
+ * - CF Benchmarks crypto reference rates (license)
+ * - AP Elections / Decision Desk
+ * - BEA GDP and Census retail sales
+ * - CFTC COT
+ *
+ * Do not proxy Kalshi, Polymarket, Substack, RSS, X, or Jina.
+ * Bond Search / FRED stays on Gloom Cloud. Weather Underground stays off
+ * until a first-party API exists.
  */
 
 export const KEYED_DATA_PATH = "/api/data";

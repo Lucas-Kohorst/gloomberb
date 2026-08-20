@@ -1,16 +1,19 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { WeatherPane } from "./pane";
-import { TWC_KALSHI_URL, WEATHER_PANE_ID, WEATHER_PLUGIN_ID } from "./types";
+import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
+import {
+  NWS_CLI_CONNECTION_ID,
+  TWC_KALSHI_URL,
+  WEATHER_CONNECTION_ID,
+  WEATHER_PANE_ID,
+} from "./types";
 import { PredictionWeatherSettlementTab } from "./settlement-tab";
 
-export const weatherPlugin: GloomPlugin = {
-  id: WEATHER_PLUGIN_ID,
-  name: "Weather",
-  version: "1.0.0",
-  description:
-    "Official weather prints: Weather Company Kalshi hourly/climate (WX) and NWS Daily Climate Report CLI (NWS), keyed by station/ICAO.",
-  toggleable: true,
+let disposeWeatherConnection: (() => void) | null = null;
+let disposeNwsConnection: (() => void) | null = null;
 
+export const weatherModule: PluginModule = {
   panes: [
     {
       id: WEATHER_PANE_ID,
@@ -47,7 +50,32 @@ export const weatherPlugin: GloomPlugin = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
+
+  setup() {
+    disposeWeatherConnection = registerConnectionSource({
+      id: WEATHER_CONNECTION_ID,
+      name: "The Weather Company (Kalshi)",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 260,
+      authRequired: false,
+    });
+    disposeNwsConnection = registerConnectionSource({
+      id: NWS_CLI_CONNECTION_ID,
+      name: "NWS Daily Climate Report",
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
+      priority: 261,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeWeatherConnection?.();
+    disposeWeatherConnection = null;
+    disposeNwsConnection?.();
+    disposeNwsConnection = null;
+  },
 };
 
 export { TWC_KALSHI_URL, PredictionWeatherSettlementTab };
-export default weatherPlugin;

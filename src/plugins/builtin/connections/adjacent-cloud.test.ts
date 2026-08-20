@@ -9,7 +9,7 @@ describe("adjacentCloudDataUrl", () => {
     );
   });
 
-  test("Adjacent Cloud provider set includes VoteHub", () => {
+  test("Adjacent Cloud provider set covers settlement and reference prints", () => {
     expect([...ADJACENT_CLOUD_PROVIDER_IDS].sort()).toEqual([
       "adjacent",
       "llm-stats",

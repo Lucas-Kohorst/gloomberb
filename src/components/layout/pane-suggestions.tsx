@@ -37,6 +37,16 @@ const SUGGESTIONS_BY_PANE: Record<string, PaneSuggestion[]> = {
     { templateId: "new-quick-notes-pane", label: "Notes", shortcut: "NOTE" },
     { templateId: "new-chat-pane", label: "Chat", shortcut: "CHAT" },
   ],
+  weather: [
+    { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
+    { templateId: "prediction-markets-pane", label: "PM", shortcut: "PM" },
+    { templateId: "news-top-pane", label: "News", shortcut: "TOP" },
+  ],
+  polls: [
+    { templateId: "chart-composer-pane", label: "Chart", shortcut: "G" },
+    { templateId: "prediction-markets-pane", label: "PM", shortcut: "PM" },
+    { templateId: "adjacent-indices-pane", label: "Indices", shortcut: "ADI" },
+  ],
 };
 
 const DEFAULT_SUGGESTIONS: PaneSuggestion[] = [

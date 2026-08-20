@@ -9,17 +9,15 @@ import {
   marketOverviewPlugin,
   portfolioPlugin,
 } from "./builtin/composite-plugins";
+import { adjacentPlugin } from "./builtin/adjacent";
 import { debugPlugin } from "./builtin/debug";
-import { llmStatsPlugin } from "./builtin/llm-stats";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
-import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
 import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
-import { weatherPlugin } from "./builtin/weather";
 import { yahooPlugin } from "./builtin/yahoo";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
@@ -33,19 +31,17 @@ const desktopBackendPlugins: GloomPlugin[] = [
   ibkrPlugin,
   applicationPlugin,
   newsPlugin,
-  pollsPlugin,
+  adjacentPlugin,
   substackPlugin,
   notesPlugin,
   pluginDiscoveryPlugin,
   aiPlugin,
-  llmStatsPlugin,
   predictionMarketsBackendPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
   treasuryAuctionsPlugin,
-  weatherPlugin,
   debugPlugin,
 ];
 
