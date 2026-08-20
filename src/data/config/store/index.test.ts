@@ -327,6 +327,30 @@ describe("loadConfig", () => {
     expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
   });
 
+  test("folds Polls and AI Benchmarks into Adjacent Cloud", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 21,
+      disabledPlugins: ["polls", "llm-stats"],
+      pluginConfig: {
+        polls: { tab: "approval" },
+        "llm-stats": { family: "language" },
+        adjacent: { adjacentApiKey: "keep" },
+      },
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["adjacent"]);
+    expect(config.pluginConfig.adjacent).toEqual({
+      adjacentApiKey: "keep",
+      tab: "approval",
+      family: "language",
+    });
+    expect(config.pluginConfig.polls).toBeUndefined();
+    expect(config.pluginConfig["llm-stats"]).toBeUndefined();
+  });
+
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({

@@ -1,26 +1,19 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { registerByokKnownService } from "../byok/services";
 import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
+import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
 import {
   ARTIFICIAL_ANALYSIS_API_BASE,
   ARTIFICIAL_ANALYSIS_ENV_VAR,
   ARTIFICIAL_ANALYSIS_SERVICE_ID,
   LLM_STATS_CONNECTION_ID,
   LLM_STATS_PANE_ID,
-  LLM_STATS_PLUGIN_ID,
 } from "./types";
 
 let disposeConnection: (() => void) | null = null;
 
-export const llmStatsPlugin: GloomPlugin = {
-  id: LLM_STATS_PLUGIN_ID,
-  name: "AI Benchmarks",
-  version: "1.0.0",
-  description:
-    "AI model intelligence from Artificial Analysis: Intelligence/Coding/Agentic indices, price vs speed, and image/video/speech/music arenas.",
-  toggleable: true,
-
+export const llmStatsModule: PluginModule = {
   panes: [
     {
       id: LLM_STATS_PANE_ID,
@@ -53,6 +46,7 @@ export const llmStatsPlugin: GloomPlugin = {
         "artificial analysis",
         "artificialanalysis",
       ],
+      category: "Data",
       shortcut: { prefix: "AIBENCH" },
       createInstance: () => ({ placement: "floating" }),
     },
@@ -71,8 +65,8 @@ export const llmStatsPlugin: GloomPlugin = {
     disposeConnection = registerConnectionSource({
       id: LLM_STATS_CONNECTION_ID,
       name: "Artificial Analysis",
-      kind: "api",
-      pluginId: LLM_STATS_PLUGIN_ID,
+      kind: "data",
+      pluginId: ADJACENT_PLUGIN_ID,
       priority: 300,
       authRequired: true,
     });
@@ -83,5 +77,3 @@ export const llmStatsPlugin: GloomPlugin = {
     disposeConnection = null;
   },
 };
-
-export default llmStatsPlugin;

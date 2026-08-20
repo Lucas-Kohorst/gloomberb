@@ -1,7 +1,6 @@
 import type { GloomPlugin } from "../types/plugin";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
-import { pollsPlugin } from "./builtin/polls";
 import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
@@ -17,7 +16,6 @@ import {
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
 import { weatherPlugin } from "./builtin/weather";
-import { llmStatsPlugin } from "./builtin/llm-stats";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 
@@ -29,11 +27,9 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   ibkrPlugin,
   applicationPlugin,
   newsPlugin,
-  pollsPlugin,
   substackPlugin,
   notesPlugin,
   aiPlugin,
-  llmStatsPlugin,
   predictionMarketsPlugin,
   adjacentPlugin,
   weatherPlugin,

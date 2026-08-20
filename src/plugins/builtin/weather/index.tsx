@@ -52,7 +52,7 @@ export const weatherPlugin: GloomPlugin = {
     disposeWeatherConnection = registerConnectionSource({
       id: WEATHER_CONNECTION_ID,
       name: "The Weather Company (Kalshi)",
-      kind: "api",
+      kind: "data",
       pluginId: WEATHER_PLUGIN_ID,
       priority: 260,
       authRequired: false,

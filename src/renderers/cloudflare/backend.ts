@@ -8,6 +8,10 @@ import {
 } from "../electrobun/shared/http-fetch";
 import { decodeRpcValue, encodeRpcValue } from "../electrobun/view/rpc-codec";
 import { gloomFetch, readSessionCookie } from "./gloom-cloud";
+import {
+  applyHostedSharedVendorKeys,
+  hostedPublicGetCacheTtlSeconds,
+} from "./data-cache";
 
 /**
  * The hosted backend is a thin bootstrap layer over Gloom Cloud: the app's own
@@ -65,35 +69,7 @@ type HostedBackendRequest =
 
 const NOT_AVAILABLE = "Not available in the hosted client yet.";
 
-// Hosted users share this Worker's egress IP. Public GETs for rate-limited
-// vendors are edge-cached and in-flight identical URLs are coalesced.
 const hostedPublicGetInflight = new Map<string, Promise<SharedHttpFetchResponse>>();
-
-function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest): number | null {
-  if (typeof payload.url !== "string") return null;
-  const method = (payload.init?.method ?? "GET").trim().toUpperCase();
-  if (method !== "GET" && method !== "HEAD") return null;
-  let hostname: string;
-  let pathname: string;
-  try {
-    const parsed = new URL(payload.url);
-    hostname = parsed.hostname;
-    pathname = parsed.pathname;
-  } catch {
-    return null;
-  }
-  if (hostname === "kalshi.com" || hostname.endsWith(".kalshi.com")) return 60;
-  if (hostname === "query1.finance.yahoo.com" || hostname === "query2.finance.yahoo.com") {
-    if (pathname.includes("/getcrumb")) return null;
-    return 60;
-  }
-  if (hostname === "stockanalysis.com" || hostname.endsWith(".stockanalysis.com")) return 120;
-  if (hostname === "www.nasdaqtrader.com" || hostname === "nasdaqtrader.com") return 60;
-  if (hostname === "weather.com" || hostname.endsWith(".weather.com")) {
-    if (pathname.startsWith("/kalshi/api/")) return 60;
-  }
-  return null;
-}
 
 function handleCachedPublicGet(
   payload: SharedHttpFetchRequest,
@@ -183,28 +159,7 @@ async function dispatch(
       // Cloud API calls get the user's Gloom Cloud session attached; anything
       // else is proxied untouched, mirroring the desktop http.fetch contract.
       const url = typeof request.payload?.url === "string" ? request.payload.url : "";
-      let payload = request.payload;
-      try {
-        const hostname = new URL(url).hostname;
-        if (hostname === "artificialanalysis.ai" || hostname.endsWith(".artificialanalysis.ai")) {
-          const headers = { ...(payload.init?.headers ?? {}) };
-          const hasKey = Object.entries(headers).some(([key, value]) => (
-            key.toLowerCase() === "x-api-key" && value.trim().length > 0
-          ));
-          const envKey = (env as { ARTIFICIAL_ANALYSIS_API_KEY?: string }).ARTIFICIAL_ANALYSIS_API_KEY?.trim();
-          if (!hasKey && envKey) {
-            payload = {
-              ...payload,
-              init: {
-                ...payload.init,
-                headers: { ...headers, "x-api-key": envKey },
-              },
-            };
-          }
-        }
-      } catch {
-        // Invalid URL — handleHttpFetch will reject it.
-      }
+      const payload = applyHostedSharedVendorKeys(request.payload, env);
       if (url.startsWith("https://api.gloom.sh/")) {
         const token = readSessionCookie(rawRequest);
         if (!token) throw new Error("Authentication required.");

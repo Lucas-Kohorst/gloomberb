@@ -1,5 +1,8 @@
 import { useMemo } from "react";
-import type { GloomPlugin, PaneProps } from "../../../types/plugin";
+import type { PaneProps } from "../../../types/plugin";
+import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
+import { pollsModule } from "../polls";
+import { llmStatsModule } from "../llm-stats";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -48,13 +51,7 @@ function AdjacentRatesPaneWrapper(props: PaneProps) {
   return <AdjacentRatesPane client={client} {...props} />;
 }
 
-export const adjacentPlugin: GloomPlugin = {
-  id: ADJACENT_PLUGIN_ID,
-  name: "Adjacent",
-  version: "1.0.0",
-  description: "Prediction-market indices, reference rates, and news from Adjacent.",
-  toggleable: true,
-
+const adjacentMarketsModule: PluginModule = {
   panes: [
     {
       id: "adjacent-indices",
@@ -111,13 +108,12 @@ export const adjacentPlugin: GloomPlugin = {
     disposeAdjacentConnection = registerConnectionSource({
       id: "adjacent",
       name: "Adjacent",
-      kind: "prediction-market",
+      kind: "data",
       pluginId: ADJACENT_PLUGIN_ID,
       priority: 200,
       authRequired: false,
     });
 
-    // Commands
     ctx.registerCommand({
       id: "adjacent-markets-search",
       label: "Search Adjacent Markets",
@@ -145,7 +141,6 @@ export const adjacentPlugin: GloomPlugin = {
           ctx.notify({ body: "Enter a search query.", type: "error" });
           return;
         }
-        // Focus the prediction markets pane and seed the search
         ctx.resume.setPaneState("prediction-markets:main", "searchQuery", query);
         ctx.resume.setPaneState("prediction-markets:main", "venueScope", "all");
         ctx.resume.setPaneState("prediction-markets:main", "selectedMarketKey", null);
@@ -161,5 +156,15 @@ export const adjacentPlugin: GloomPlugin = {
     adjacentClient = null;
   },
 };
+
+export const adjacentPlugin = composeBuiltinPlugin({
+  id: ADJACENT_PLUGIN_ID,
+  name: "Adjacent Cloud",
+  version: "1.0.0",
+  description:
+    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, and Artificial Analysis benchmarks.",
+  toggleable: true,
+  modules: [adjacentMarketsModule, pollsModule, llmStatsModule],
+});
 
 export default adjacentPlugin;
