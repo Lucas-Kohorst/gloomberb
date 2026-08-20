@@ -43,6 +43,8 @@ export interface PollRow {
   partisan: string | null;
   internal: boolean;
   answers: VoteHubPollAnswer[];
+  /** VoteHub seat label when present; otherwise the race is `subject`. */
+  seatName: string | null;
 }
 
 export type PollTabId =
@@ -55,11 +57,18 @@ export type PollTabId =
   | "us-representative";
 
 export type PollDetailTab = "overview" | "trend" | "pollsters";
+export type PollAnalysisGroup = "house" | "race";
+export type PollAnalysisView = "overlay" | "scatter";
 
 export interface PollTrendPoint {
   date: string;
   value: number;
   pollster: string;
+}
+
+export interface PollsterSeries {
+  pollster: string;
+  points: PollTrendPoint[];
 }
 
 export interface PollsterAverage {

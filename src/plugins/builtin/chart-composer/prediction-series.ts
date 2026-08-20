@@ -216,3 +216,20 @@ export function formatPredictionSeriesExpression(
     : SERIES_PREFIX.polymarket;
   return `${prefix}:${expression.marketId}`;
 }
+
+/** Same venue id the chart catalog uses for `KALSHI:` / `POLY:` overlays. */
+export function venueChartHitFromAdjacentMarket(
+  market: { platform?: string; slug?: string | null; id: string; title: string; subtitle?: string | null },
+): PredictionMarketSearchHit | null {
+  if (market.platform !== "kalshi" && market.platform !== "polymarket") return null;
+  const marketId = market.platform === "kalshi"
+    ? (market.slug?.trim() || market.id)
+    : market.id;
+  if (!marketId) return null;
+  return {
+    venue: market.platform,
+    marketId,
+    title: market.title,
+    ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
+  };
+}

@@ -3,6 +3,7 @@ import type {
   PollRow,
   PollTrendPoint,
   PollsterAverage,
+  PollsterSeries,
   VoteHubPoll,
   VoteHubPollAnswer,
 } from "./types";
@@ -124,7 +125,17 @@ export function normalizeVoteHubPoll(poll: VoteHubPoll): PollRow {
     partisan: typeof poll.partisan === "string" ? poll.partisan : null,
     internal: poll.internal === true,
     answers: sortedAnswers(poll.answers),
+    seatName: typeof poll.seat_name === "string" && poll.seat_name.trim() ? poll.seat_name.trim() : null,
   };
+}
+
+/** Race/geography key: VoteHub `seat_name` when present, otherwise `subject`. */
+export function pollRaceKey(row: Pick<PollRow, "subject" | "seatName">): string {
+  return row.seatName?.trim() || row.subject;
+}
+
+export function rowMatchesRace(row: PollRow, raceKey: string): boolean {
+  return pollRaceKey(row) === raceKey || row.subject === raceKey;
 }
 
 export type PollSortColumnId = "date" | "subject" | "pollster" | "pop" | "result";
@@ -183,7 +194,8 @@ export function filterPollRows(rows: PollRow[], query: string): PollRow[] {
   return rows.filter((row) =>
     row.subject.toLowerCase().includes(trimmed) ||
     row.pollster.toLowerCase().includes(trimmed) ||
-    row.pollTypeLabel.toLowerCase().includes(trimmed),
+    row.pollTypeLabel.toLowerCase().includes(trimmed) ||
+    (row.seatName?.toLowerCase().includes(trimmed) ?? false),
   );
 }
 
@@ -193,13 +205,16 @@ export function filterPollRows(rows: PollRow[], query: string): PollRow[] {
  */
 export function computePollTrend(
   rows: PollRow[],
-  subject: string,
+  raceKey: string,
   choice: string,
+  pollster?: string,
 ): PollTrendPoint[] {
   const target = choice.toLowerCase();
+  const house = pollster?.trim();
   const points: PollTrendPoint[] = [];
   for (const row of rows) {
-    if (row.subject !== subject) continue;
+    if (!rowMatchesRace(row, raceKey)) continue;
+    if (house && row.pollster !== house) continue;
     const answer = row.answers.find((a) => a.choice.toLowerCase() === target);
     if (!answer) continue;
     const date = row.endDate ?? row.startDate;
@@ -207,6 +222,37 @@ export function computePollTrend(
     points.push({ date, value: answer.pct, pollster: row.pollster });
   }
   return points.sort((a, b) => dateValue(a.date) - dateValue(b.date));
+}
+
+export function computePollsterHouseSeries(
+  rows: PollRow[],
+  raceKey: string,
+  pollster: string,
+  choice: string,
+): PollTrendPoint[] {
+  return computePollTrend(rows, raceKey, choice, pollster);
+}
+
+/**
+ * One series per pollster for a race, most-polled first. Caps at `limit`
+ * so overlay legends stay readable.
+ */
+export function groupPollTrendByPollster(
+  rows: PollRow[],
+  raceKey: string,
+  choice: string,
+  limit = 8,
+): PollsterSeries[] {
+  const byPollster = new Map<string, PollTrendPoint[]>();
+  for (const point of computePollTrend(rows, raceKey, choice)) {
+    const existing = byPollster.get(point.pollster);
+    if (existing) existing.push(point);
+    else byPollster.set(point.pollster, [point]);
+  }
+  return [...byPollster.entries()]
+    .map(([pollster, points]) => ({ pollster, points }))
+    .sort((left, right) => right.points.length - left.points.length || left.pollster.localeCompare(right.pollster))
+    .slice(0, Math.max(1, limit));
 }
 
 /**
@@ -243,7 +289,7 @@ export function computePollsterAverages(
   const target = choice?.toLowerCase();
   const byPollster = new Map<string, { sum: number; weight: number; count: number; lastDate: string | null }>();
   for (const row of rows) {
-    if (row.subject !== subject) continue;
+    if (!rowMatchesRace(row, subject)) continue;
     const answer = target
       ? row.answers.find((a) => a.choice.toLowerCase() === target)
       : row.answers[0];
@@ -289,7 +335,7 @@ export function computePollAverages(
   recentCount: number,
 ): PollAverageSummary[] {
   const matching = rows
-    .filter((row) => row.subject === subject)
+    .filter((row) => rowMatchesRace(row, subject))
     .sort((a, b) => dateValue(b.endDate ?? b.startDate) - dateValue(a.endDate ?? a.startDate))
     .slice(0, Math.max(1, recentCount));
 

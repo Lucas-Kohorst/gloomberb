@@ -21,6 +21,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 - News rows roll in; blocked article readers show a clear empty state.
 - Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
 - Polls default to All; Adjacent ships as a default layout + watchlist.
+- Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).
 `,
 };
 

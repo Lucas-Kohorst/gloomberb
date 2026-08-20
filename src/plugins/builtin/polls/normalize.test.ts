@@ -5,10 +5,13 @@ import {
   computeMovingAverage,
   computePollAverages,
   computePollsterAverages,
+  computePollsterHouseSeries,
   computePollTrend,
   filterPollRows,
+  groupPollTrendByPollster,
   normalizeVoteHubPoll,
   parseSampleSize,
+  pollRaceKey,
   populationLabel,
   sortPollRows,
   summarizeAnswers,
@@ -80,6 +83,7 @@ describe("VoteHub normalize", () => {
     expect(row.leadChoice).toBe("Rep");
     expect(row.lead).toBeCloseTo(4);
     expect(row.marginOfError).not.toBeNull();
+    expect(row.seatName).toBeNull();
     expect(parseSampleSize("800")).toBe(800);
     expect(populationLabel("rv")).toBe("RV");
   });
@@ -232,5 +236,65 @@ describe("computePollAverages", () => {
     const approve = result.find((r) => r.choice === "Approve")!;
     expect(approve.pollCount).toBe(1);
     expect(approve.avgPct).toBe(44);
+  });
+});
+
+describe("poll analysis grouping", () => {
+  const michigan = [
+    makePoll({
+      id: "m1",
+      poll_type: "us-senator",
+      subject: "2026 Michigan",
+      pollster: "EPIC-MRA",
+      end_date: "2026-01-10",
+      answers: [{ choice: "Slotkin", pct: 46 }, { choice: "Rogers", pct: 42 }],
+    }),
+    makePoll({
+      id: "m2",
+      poll_type: "us-senator",
+      subject: "2026 Michigan",
+      pollster: "EPIC-MRA",
+      end_date: "2026-03-12",
+      answers: [{ choice: "Slotkin", pct: 48 }, { choice: "Rogers", pct: 41 }],
+    }),
+    makePoll({
+      id: "m3",
+      poll_type: "us-senator",
+      subject: "2026 Michigan",
+      pollster: "Trafalgar",
+      end_date: "2026-02-08",
+      answers: [{ choice: "Slotkin", pct: 44 }, { choice: "Rogers", pct: 45 }],
+    }),
+    makePoll({
+      id: "m4",
+      poll_type: "us-senator",
+      subject: "2026 Maine",
+      pollster: "EPIC-MRA",
+      end_date: "2026-02-01",
+      answers: [{ choice: "Slotkin", pct: 99 }, { choice: "Rogers", pct: 1 }],
+    }),
+  ].map(normalizeVoteHubPoll);
+
+  test("prefers seat_name as the race key when VoteHub provides it", () => {
+    const row = normalizeVoteHubPoll(makePoll({
+      subject: "2026 Michigan",
+      seat_name: "MI-SEN-2026",
+    }));
+    expect(row.seatName).toBe("MI-SEN-2026");
+    expect(pollRaceKey(row)).toBe("MI-SEN-2026");
+  });
+
+  test("keeps one pollster's house series inside a race", () => {
+    const series = computePollsterHouseSeries(michigan, "2026 Michigan", "EPIC-MRA", "Slotkin");
+    expect(series.map((point) => point.value)).toEqual([46, 48]);
+    expect(series.every((point) => point.pollster === "EPIC-MRA")).toBe(true);
+  });
+
+  test("overlays a race across pollsters without mixing other states", () => {
+    const grouped = groupPollTrendByPollster(michigan, "2026 Michigan", "Slotkin");
+    expect(grouped.map((entry) => entry.pollster)).toEqual(["EPIC-MRA", "Trafalgar"]);
+    expect(grouped[0]!.points).toHaveLength(2);
+    expect(grouped[1]!.points).toHaveLength(1);
+    expect(computePollTrend(michigan, "2026 Michigan", "Slotkin")).toHaveLength(3);
   });
 });
