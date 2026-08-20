@@ -7,6 +7,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
+import { useArticleArchiveAction } from "../shared/article-archive";
 import { substackReaderBody } from "./content";
 import { loadSubstackArticleDetail } from "./api/loaders";
 import { SubstackAuthError } from "./api/types";
@@ -107,17 +108,28 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     })();
   }, [article, copyShareLink, detail.data]);
 
+  const archiveAction = useArticleArchiveAction(article?.url ?? url);
+
   useShortcut((event) => {
     if (!focused || !article) return;
     if (isPlainKey(event, "y")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       shareArticle();
+      return;
+    }
+    if (isPlainKey(event, "a") && (article.url ?? url)) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      archiveAction.archive();
     }
   }, { enabled: focused && !!article });
 
   const shareHint: PaneHint[] = article
     ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
+    : [];
+  const archiveHint: PaneHint[] = (article?.url ?? url)
+    ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]
     : [];
   const knownBody = substackReaderBody(article, detail.data);
   const skipJina = knownBody.length >= 400 || knownBody.includes("\n\n");
@@ -129,8 +141,8 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     url: article?.url ?? url,
     source: article?.publicationName,
     label: "article",
-    loading: (!skipJina && jina.loading) || (detail.loading && !knownBody),
-    error: detail.error ?? jina.error,
+    loading: (!skipJina && jina.loading) || (detail.loading && !knownBody) || archiveAction.loading,
+    error: detail.error ?? jina.error ?? archiveAction.error,
     hints: article
       ? [{
         id: "refresh",
@@ -140,7 +152,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
       }]
       : [],
     showOpenHint: true,
-    trailingHints: shareHint,
+    trailingHints: [...shareHint, ...archiveHint],
   });
 
   if (!article) {

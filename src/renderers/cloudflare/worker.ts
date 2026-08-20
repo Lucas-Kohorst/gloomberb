@@ -1,4 +1,5 @@
 import { handleHostedBackendRpc } from "./backend";
+import { lookupArchiveIsSnapshot, publisherArticleUrl } from "../../shares/archive";
 import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
@@ -33,6 +34,7 @@ export default {
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
     }
+    if (url.pathname === "/api/archive") return handleArchiveRequest(request, url);
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
@@ -378,7 +380,7 @@ const APP_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
+  "connect-src 'self' https://api.gloom.sh https://r.jina.ai https://archive.is",
   "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -386,18 +388,30 @@ const APP_CSP = [
 ].join("; ");
 
 async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
-  const response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+  const shareDocument = assetPath === "/share.html" || (assetPath != null && isShareScriptPath(assetPath));
+  let response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+  if (shareDocument && response.status === 304) {
+    response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+  }
   const headers = new Headers(response.headers);
   headers.set(
     "cache-control",
-    assetPath === "/share.html" || (assetPath != null && isShareScriptPath(assetPath))
-      ? "private, no-store"
-      : "private, max-age=0, must-revalidate",
+    shareDocument ? "private, no-store" : "private, max-age=0, must-revalidate",
   );
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("content-security-policy-report-only", APP_CSP);
+  if (shareDocument) {
+    // A 304 here would reuse the browser's cached body for `/s/{id}`. Logged-in
+    // profiles still hold index.html from when this path was the SPA, so a
+    // share.html ETag match (or a leftover index ETag) boots the workspace
+    // instead of the public reader. Always send the share document.
+    headers.delete("etag");
+    headers.delete("last-modified");
+    const status = response.status === 304 ? 200 : response.status;
+    return new Response(response.body, { status, headers });
+  }
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -414,7 +428,41 @@ function assetsRequest(request: Request, assetPath?: string): Request {
   const headers = new Headers();
   const accept = request.headers.get("Accept");
   if (accept) headers.set("Accept", accept);
+  headers.set("Cache-Control", "no-cache");
   return new Request(new URL(assetPath, request.url), { method: "GET", headers });
+}
+
+const ARCHIVE_LOOKUP_TIMEOUT_MS = 12_000;
+
+async function handleArchiveRequest(request: Request, url: URL): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+  const sourceUrl = publisherArticleUrl(url.searchParams.get("url"));
+  if (!sourceUrl) {
+    return Response.json({ error: "No publisher URL to archive." }, { status: 400 });
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ARCHIVE_LOOKUP_TIMEOUT_MS);
+  try {
+    const result = await lookupArchiveIsSnapshot(sourceUrl, fetch, controller.signal);
+    const status = result.status === "error" ? 502 : 200;
+    return Response.json(result, { status, headers: { "cache-control": "private, no-store" } });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return Response.json(
+        { status: "error", message: "archive.is lookup timed out." },
+        { status: 504, headers: { "cache-control": "private, no-store" } },
+      );
+    }
+    const message = error instanceof Error ? error.message : "Could not reach archive.is.";
+    return Response.json(
+      { status: "error", message },
+      { status: 502, headers: { "cache-control": "private, no-store" } },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

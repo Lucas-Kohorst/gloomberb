@@ -973,7 +973,70 @@ describe("share document serving", () => {
     expect(asset.headers.get("Cookie")).toBeNull();
     expect(asset.headers.get("If-None-Match")).toBeNull();
   });
+
+  test("GET /s/{id} never 304s a cached SPA body for a logged-in browser", async () => {
+    const env = makeEnv();
+    env.ASSETS = {
+      fetch: async () => new Response("<html>share</html>", {
+        status: 304,
+        headers: { etag: '"index-html-etag"', "content-type": "text/html" },
+      }),
+    } as unknown as Fetcher;
+
+    const headers = new Headers();
+    headers.set("Cookie", `${SESSION_COOKIE}=logged-in`);
+    headers.set("If-None-Match", '"index-html-etag"');
+    const response = await workerModule.default.fetch?.(
+      new Request(`${ORIGIN}/s/cqT4HwQPu8J2`, { method: "GET", headers }),
+      env,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("etag")).toBeNull();
+    expect(response?.headers.get("cache-control")).toContain("no-store");
+  });
 });
+
+describe("hosted archive.is lookup", () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
+  test("looks up the publisher URL and returns submit when archive.is has no snapshot", async () => {
+    const article = "https://www.fastcompany.com/91593204/housing-market-homebuilding-berkshire-hathaway-taylor-morrison-inside-details";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = String(input);
+      expect(url).toBe(`https://archive.is/${article}`);
+      return new Response("<html>No results</html>", { status: 200 });
+    }) as typeof fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/archive?url=${encodeURIComponent(article)}`),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({
+      status: "submit",
+      url: `https://archive.is/submit/?url=${encodeURIComponent(article)}`,
+    });
+  });
+
+  test("refuses to archive a gloomberb share URL", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("nope");
+    }) as typeof fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `/api/archive?url=${encodeURIComponent("https://terminal.kohor.st/s/cqT4HwQPu8J2")}`),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(400);
+    expect(called).toBe(false);
+  });
+});
+
 
 describe("hosted Gloom Cloud WebSocket proxy", () => {
   afterEach(() => {

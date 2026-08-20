@@ -29,6 +29,8 @@ export interface ShareShellProps {
   footer?: ReactNode;
   /** Destination that opens this view live in the terminal. */
   openInTerminalHref?: string | null;
+  onArchive?: (() => void) | null;
+  archiveEnabled?: boolean;
   children: ReactNode;
 }
 
@@ -43,6 +45,8 @@ export function ShareShell({
   title,
   footer,
   openInTerminalHref,
+  onArchive,
+  archiveEnabled = false,
   children,
 }: ShareShellProps) {
   const heading = title?.trim() || "Gloomberb";
@@ -56,17 +60,23 @@ export function ShareShell({
   }, [title]);
 
   useEffect(() => {
-    if (!openInTerminalHref) return;
+    if (!openInTerminalHref && !onArchive) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       if (isTypingTarget(event.target)) return;
-      if (event.key !== "o" && event.key !== "O") return;
-      event.preventDefault();
-      window.location.assign(openInTerminalHref);
+      if ((event.key === "o" || event.key === "O") && openInTerminalHref) {
+        event.preventDefault();
+        window.location.assign(openInTerminalHref);
+        return;
+      }
+      if ((event.key === "a" || event.key === "A") && onArchive && archiveEnabled) {
+        event.preventDefault();
+        onArchive();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openInTerminalHref]);
+  }, [archiveEnabled, onArchive, openInTerminalHref]);
 
   return (
     <div className="share-workspace">
@@ -79,8 +89,19 @@ export function ShareShell({
           </nav>
         </header>
         <div className="share-pane-body">{children}</div>
-        <footer className="share-pane-footer" data-empty={!footer && !openInTerminalHref ? "true" : undefined}>
+        <footer className="share-pane-footer" data-empty={!footer && !openInTerminalHref && !onArchive ? "true" : undefined}>
           <div className="share-pane-status">{footer}</div>
+          <nav className="share-pane-hints">
+          {onArchive && archiveEnabled ? (
+            <button
+              type="button"
+              className="share-pane-hint"
+              onClick={onArchive}
+              aria-label="Archive publisher article"
+            >
+              <span className="share-pane-hint-key">[a]</span>rchive
+            </button>
+          ) : null}
           {openInTerminalHref ? (
             <a
               className="share-pane-hint"
@@ -90,6 +111,7 @@ export function ShareShell({
               <span className="share-pane-hint-key">[o]</span>{openLabel}
             </a>
           ) : null}
+          </nav>
         </footer>
       </section>
     </div>

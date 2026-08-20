@@ -22,7 +22,7 @@ import {
   JINA_READER_HEADERS,
 } from "../../plugins/builtin/shared/jina-article-text";
 import { MarkdownBody, SanitizedHtmlBody } from "./rich-text";
-import { ShareShell, formatShareTimestamp } from "./shell";
+import { useShareArticleArchive } from "./archive-action";
 
 export { preferredArticleBody };
 
@@ -129,6 +129,7 @@ export function ArticleShareView({
   const full = useFullArticleText(payload.url, needsFullText);
   const source = articleShareBodySource(payload, full.text);
   const fallbackNotice = readerFallbackNotice(full.failureKind, source.kind !== "empty");
+  const archive = useShareArticleArchive(payload.url);
 
   const published = formatShareTimestamp(payload.publishedAt);
   const byline = payload.source || payload.publicationName || "";
@@ -145,10 +146,18 @@ export function ArticleShareView({
   );
 
   return (
-    <ShareShell title={payload.title} footer={footer} openInTerminalHref={openInTerminalHref}>
+    <ShareShell
+      title={payload.title}
+      footer={footer}
+      openInTerminalHref={openInTerminalHref}
+      onArchive={archive.archive}
+      archiveEnabled={archive.enabled}
+    >
       {payload.subtitle ? <p className="share-subtitle">{payload.subtitle}</p> : null}
 
       {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
+      {archive.error ? <p className="share-note">{archive.error}</p> : null}
+      {archive.loading ? <p className="share-note">Looking up archive.is…</p> : null}
 
       {source.kind === "html" ? <SanitizedHtmlBody html={source.html} /> : source.kind === "markdown"
         ? <MarkdownBody text={source.text} />

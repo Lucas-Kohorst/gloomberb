@@ -67,6 +67,7 @@ import {
 import { stashSubstackArticle } from "./article-stash";
 import { useSubstackReadState } from "./read-state";
 import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
+import { useArticleArchiveAction } from "../shared/article-archive";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
@@ -384,6 +385,8 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     })();
   }, [copyShareLink, detailOpen, details, selectedArticle]);
 
+  const archiveAction = useArticleArchiveAction(selectedArticle?.url);
+
   const handleLogin = useCallback((nextAuth: SubstackAuthState) => {
     setAuth(nextAuth);
     setActiveTab(SUBSTACK_FEED_TAB_ID);
@@ -448,6 +451,12 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       shareSelectedArticle();
       return true;
     }
+    if (isPlainKey(event, "a") && selectedArticle?.url) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      archiveAction.archive();
+      return true;
+    }
     if (isPlainKey(event, "p")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -461,7 +470,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle, shareSelectedArticle]);
+  }, [archiveAction, loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle, shareSelectedArticle]);
 
   const includePublication = !activePublication;
   const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
@@ -480,12 +489,17 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(activeDetail.loading && detailOpen ? [{ id: "detail-loading", parts: [{ text: "loading article", tone: "muted" as const }] }] : []),
       ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
       ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
+      ...(archiveAction.error && detailOpen ? [{ id: "archive-error", parts: [{ text: archiveAction.error, tone: "warning" as const }] }] : []),
+      ...(archiveAction.loading && detailOpen ? [{ id: "archive-loading", parts: [{ text: "archiving", tone: "muted" as const }] }] : []),
     ],
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
       ...(detailOpen && selectedArticle
         ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
+        : []),
+      ...(detailOpen && selectedArticle?.url
+        ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]
         : []),
       { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
     ] : [],
@@ -504,6 +518,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     selectedArticle?.url,
     selectedArticle,
     shareSelectedArticle,
+    archiveAction.archive,
+    archiveAction.error,
+    archiveAction.loading,
     updatedAgo,
     poll.segment,
   ]);

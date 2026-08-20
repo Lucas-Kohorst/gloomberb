@@ -2,6 +2,7 @@ import { saveConfig } from "../data/config/store";
 import type { AppConfig } from "../types/config";
 import { debugLog } from "../utils/debug-log";
 import { measurePerfAsync } from "../utils/perf-marks";
+import { isPublicShareLocation } from "../plugins/builtin/shared/share-link";
 import {
   CONFIG_SAVE_DEBOUNCE_MS,
   createPersistScheduler,
@@ -18,9 +19,11 @@ const configSaveScheduler = createPersistScheduler<AppConfig>({
 });
 
 export function scheduleConfigSave(config: AppConfig): void {
+  if (isPublicShareLocation()) return;
   configSaveScheduler.schedule(config);
 }
 
 export async function saveConfigImmediately(config: AppConfig): Promise<void> {
+  if (isPublicShareLocation()) return;
   await configSaveScheduler.saveImmediately(config);
 }
