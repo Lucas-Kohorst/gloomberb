@@ -172,9 +172,14 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
       return Response.json({ error: "Config snapshot is too large." }, { status: 413 });
     }
 
-    let body: { config?: unknown; updatedAt?: unknown } | null;
+    let body: { config?: unknown; updatedAt?: unknown; tickers?: unknown; notes?: unknown } | null;
     try {
-      body = JSON.parse(rawBody || "null") as { config?: unknown; updatedAt?: unknown } | null;
+      body = JSON.parse(rawBody || "null") as {
+        config?: unknown;
+        updatedAt?: unknown;
+        tickers?: unknown;
+        notes?: unknown;
+      } | null;
     } catch {
       return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
     }
@@ -182,10 +187,25 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
       return Response.json({ error: "Invalid config snapshot." }, { status: 400 });
     }
 
+    const existingRaw = await env.SHARES.get(configSnapshotKey(user.id));
+    let existingTickers: unknown;
+    let existingNotes: unknown;
+    if (existingRaw) {
+      try {
+        const existing = JSON.parse(existingRaw) as { tickers?: unknown; notes?: unknown };
+        existingTickers = existing.tickers;
+        existingNotes = existing.notes;
+      } catch {
+        // Keep going with the incoming body only.
+      }
+    }
+
     const record = JSON.stringify({
       userId: user.id,
       updatedAt: body.updatedAt,
       config: body.config,
+      tickers: Array.isArray(body.tickers) ? body.tickers : existingTickers,
+      notes: isPlainObject(body.notes) ? body.notes : existingNotes,
     });
     await env.SHARES.put(configSnapshotKey(user.id), record);
     return Response.json({ ok: true, updatedAt: body.updatedAt });

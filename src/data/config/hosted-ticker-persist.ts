@@ -2,7 +2,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { hydrateTickerMetadata } from "../../tickers/metadata";
 import { tryLocalStorage } from "../../utils/browser-storage";
 import { isRecord } from "../../utils/is-record";
-import { getHostedConfigUserId, readLastHostedUserId } from "./hosted-user-persist";
+import { readLastHostedUserId, resolveHostedPersistUserId } from "./hosted-user-persist";
 
 const STORAGE_PREFIX = "gloomberb:hosted-tickers:";
 const LEGACY_STORAGE_KEY = "gloomberb:hosted-tickers";
@@ -81,7 +81,7 @@ function maybeMigrateLegacyTickers(userId: string): TickerRecord[] {
 }
 
 /** Reads the signed-in user's hosted ticker book. Empty when none exists. */
-export function readHostedTickers(userId = getHostedConfigUserId()): TickerRecord[] {
+export function readHostedTickers(userId = resolveHostedPersistUserId()): TickerRecord[] {
   if (!userId) return [];
   const backend = tryLocalStorage();
   const stored = parseTickerList(backend?.getItem(storageKey(userId)) ?? null);
@@ -90,7 +90,7 @@ export function readHostedTickers(userId = getHostedConfigUserId()): TickerRecor
 }
 
 /** Replaces the signed-in user's hosted ticker book. */
-export function writeHostedTickers(tickers: TickerRecord[], userId = getHostedConfigUserId()): void {
+export function writeHostedTickers(tickers: TickerRecord[], userId = resolveHostedPersistUserId()): void {
   if (!userId) return;
   writeTickers(userId, tickers);
 }
@@ -101,7 +101,7 @@ export function writeHostedTickers(tickers: TickerRecord[], userId = getHostedCo
  */
 export function mergeHostedTickers(
   incoming: Iterable<TickerRecord>,
-  userId = getHostedConfigUserId(),
+  userId = resolveHostedPersistUserId(),
 ): TickerRecord[] {
   if (!userId) return [...incoming];
   const merged = new Map<string, TickerRecord>();

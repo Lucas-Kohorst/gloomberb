@@ -102,6 +102,44 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(body.updatedAt).toBe("2026-08-17T12:00:00.000Z");
   });
 
+  test("stores tickers and notes beside the config without dropping them on a config-only PUT", async () => {
+    mockSessionUser = { id: "user-A" };
+    installMockFetch();
+    const env = makeEnv();
+    const first = JSON.stringify({
+      config: { theme: "amber" },
+      updatedAt: "2026-08-20T12:00:00.000Z",
+      tickers: [{ ticker: "ETH-USD", portfolios: ["main"] }],
+      notes: { tickerNotes: { "ETH-USD": "watch the merge" }, quickNotes: {}, quickNotesIndex: [] },
+    });
+    expect((await workerModule.default.fetch?.(
+      makeRequest("PUT", "/api/config", { body: first, origin: ORIGIN, sessionToken: "tok" }),
+      env,
+    ))?.status).toBe(200);
+
+    const configOnly = JSON.stringify({
+      config: { theme: "default" },
+      updatedAt: "2026-08-20T13:00:00.000Z",
+    });
+    await workerModule.default.fetch?.(
+      makeRequest("PUT", "/api/config", { body: configOnly, origin: ORIGIN, sessionToken: "tok" }),
+      env,
+    );
+
+    const getResponse = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/config", { sessionToken: "tok" }),
+      env,
+    );
+    const body = await getResponse?.json() as {
+      config: { theme: string };
+      tickers: unknown;
+      notes: { tickerNotes: Record<string, string> };
+    };
+    expect(body.config.theme).toBe("default");
+    expect(body.tickers).toEqual([{ ticker: "ETH-USD", portfolios: ["main"] }]);
+    expect(body.notes.tickerNotes["ETH-USD"]).toBe("watch the merge");
+  });
+
   test("one user cannot read another user's snapshot", async () => {
     // user-A writes a snapshot
     mockSessionUser = { id: "user-A" };

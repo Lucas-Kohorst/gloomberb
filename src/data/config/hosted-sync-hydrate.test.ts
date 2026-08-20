@@ -103,4 +103,19 @@ describe("hosted workspace hydrate", () => {
     expect(result.tickers).toEqual([]);
     expect(readHostedTickers()).toEqual([]);
   });
+
+  test("merges Worker snapshot tickers even when Gloom Cloud collections are empty", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    const result = await hydrateHostedWorkspaceFromCloud(config, {
+      pullConfig: async () => ({
+        config: { theme: "amber" } as Record<string, unknown>,
+        updatedAt: "2026-08-20T00:00:00.000Z",
+        tickers: [{ ticker: "ETH-USD", portfolios: ["main"] }],
+      }),
+      pullSync: async () => ({ snapshot: snapshot({ theme: "amber" }, { tickers: [] }) }),
+    });
+    expect(result.tickers.map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
+    expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
+  });
 });

@@ -38,7 +38,8 @@ import {
   resolveHostedInit,
   resolveHostedSession,
 } from "./hosted-boot";
-import { hydrateHostedWorkspaceFromCloud } from "../../../data/config/hosted-sync-hydrate";
+import { hydrateHostedWorkspaceFromCloud, restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
+import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -134,7 +135,9 @@ async function boot(): Promise<void> {
   }
   if (isHosted) {
     hydrateHostedUserConfig(init.config);
+    restoreHostedLocalWorkspaceExtras();
     hydrateHostedByokConfig(init.config);
+    getHostedConfigSnapshotPusher().schedule(init.config);
     // Overlay per-user localStorage, Worker `/api/config`, and Gloom Cloud
     // `/sync/snapshot` before the first render so Main Portfolio and the saved
     // default layout are already in the boot config. Worker ticker RPCs stay
@@ -144,6 +147,7 @@ async function boot(): Promise<void> {
         await hydrateHostedWorkspaceFromCloud(init.config, {
           pullSync: () => apiClient.getSyncSnapshot(),
         });
+        getHostedConfigSnapshotPusher().schedule(init.config);
       } catch {
         // Network or parse failure — proceed with whatever local hydration gave us.
       }

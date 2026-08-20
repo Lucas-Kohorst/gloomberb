@@ -8,8 +8,9 @@ import {
   shouldKeepNewerHostedLocalConfig,
   type HostedConfigSnapshotResponse,
 } from "./hosted-config-snapshot";
-import { peekHostedUserConfigStamp, writeHostedUserConfig } from "./hosted-user-persist";
+import { peekHostedUserConfigStamp, readHostedUserConfigRecord, writeHostedUserConfig } from "./hosted-user-persist";
 import { mergeHostedTickers, parseIncomingTickerRecords, readHostedTickers } from "./hosted-ticker-persist";
+import { applyHostedNotesPayload } from "./hosted-notes-persist";
 import { hydrateHostedByokConfig } from "../../plugins/builtin/byok/hosted-persist";
 import { isRecord } from "../../utils/is-record";
 
@@ -20,6 +21,15 @@ export interface HostedSyncPull {
 
 function contributorPayload(snapshot: SyncSnapshot | null, id: string): unknown {
   return snapshot?.contributors[id]?.payload;
+}
+
+/** Restores tickers/notes stored beside the per-user config blob. */
+export function restoreHostedLocalWorkspaceExtras(): void {
+  const record = readHostedUserConfigRecord();
+  if (!record) return;
+  const fromRecord = parseIncomingTickerRecords(record.tickers);
+  if (fromRecord.length > 0) mergeHostedTickers(fromRecord);
+  if (record.notes) applyHostedNotesPayload(record.notes);
 }
 
 function overlayCoreConfigFromSnapshot(
@@ -46,15 +56,19 @@ export async function hydrateHostedWorkspaceFromCloud(
     pullSync?: () => Promise<HostedSyncPull>;
   } = {},
 ): Promise<{ config: AppConfig; tickers: TickerRecord[] }> {
+  restoreHostedLocalWorkspaceExtras();
   const pullConfig = pull.pullConfig ?? fetchHostedConfigSnapshot;
+  let remote: HostedConfigSnapshotResponse | null = null;
   try {
-    const remote = await pullConfig();
+    remote = await pullConfig();
     const merged = mergeRemoteConfigSnapshot(
       config,
       remote,
       peekHostedUserConfigStamp()?.updatedAt ?? null,
     );
     if (merged) Object.assign(config, merged, { dataDir: config.dataDir });
+    if (remote.tickers) mergeHostedTickers(parseIncomingTickerRecords(remote.tickers));
+    if (remote.notes) applyHostedNotesPayload(remote.notes);
   } catch {
     // Network or parse failure — continue with local hydration.
   }
@@ -86,7 +100,8 @@ export async function hydrateHostedWorkspaceFromCloud(
     }
   }
   const incoming = parseIncomingTickerRecords(collectionsPayload);
-  const tickers = incoming.length > 0 ? mergeHostedTickers(incoming) : readHostedTickers();
+  if (incoming.length > 0) mergeHostedTickers(incoming);
+  const tickers = readHostedTickers();
   writeHostedUserConfig(config);
   hydrateHostedByokConfig(config);
   return { config, tickers };

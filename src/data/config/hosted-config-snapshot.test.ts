@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "../../plugins/builtin/byok/types";
 import {
+  isPlaceholderHostedConfig,
   mergeRemoteConfigSnapshot,
   stripByokKeysForSnapshot,
 } from "./hosted-config-snapshot";
@@ -56,6 +57,34 @@ describe("hosted config snapshot", () => {
     expect(stripped.pluginConfig.news).toEqual(config.pluginConfig.news);
     expect(stripped.theme).toBe("amber");
     expect(JSON.stringify(stripped)).not.toContain("sk-live-secret-123");
+  });
+
+  test("a customized Home layout is not a placeholder and beats a newer default snapshot", () => {
+    setHostedConfigUserId("user-1");
+    const local = createDefaultConfig("cloud://users/user-1");
+    const home = local.layouts[0]!.layout;
+    if (home.dockRoot?.kind === "split") home.dockRoot.ratio = 0.5;
+    home.instances.push({
+      instanceId: "twitter-feed:markets",
+      paneId: "twitter-feed",
+      params: { query: "list:2090433878028685747" },
+      binding: { kind: "none" },
+    });
+    local.layouts[0] = { ...local.layouts[0]!, layout: home };
+    local.layout = home;
+    writeHostedUserConfig(local);
+
+    const remote = {
+      config: createDefaultConfig("cloud://users/user-1") as unknown as Record<string, unknown>,
+      updatedAt: "2099-01-01T00:00:00.000Z",
+    };
+    const merged = mergeRemoteConfigSnapshot(
+      local,
+      remote,
+      peekHostedUserConfigStamp()?.updatedAt ?? null,
+    );
+    expect(isPlaceholderHostedConfig(local)).toBe(false);
+    expect(merged).toBeNull();
   });
 
   test("a newer local save beats a stale remote snapshot", () => {

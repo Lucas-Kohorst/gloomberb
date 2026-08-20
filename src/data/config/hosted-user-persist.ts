@@ -13,12 +13,25 @@ export interface HostedUserConfigStamp {
 
 interface HostedUserConfigRecord extends HostedUserConfigStamp {
   config: Record<string, unknown>;
+  tickers?: unknown;
+  notes?: unknown;
 }
 
 let activeUserId: string | null = null;
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
+}
+
+/**
+ * Hosted writes must not no-op just because apiClient briefly lost the user.
+ * Prefer the signed-in id, then the last remembered account on this browser.
+ */
+export function resolveHostedPersistUserId(userId?: string | null): string | null {
+  const explicit = userId?.trim() || "";
+  if (explicit) return explicit;
+  if (activeUserId) return activeUserId;
+  return readLastHostedUserId();
 }
 
 function parseRecord(raw: string | null): HostedUserConfigRecord | null {
@@ -29,7 +42,13 @@ function parseRecord(raw: string | null): HostedUserConfigRecord | null {
     const userId = typeof parsed.userId === "string" ? parsed.userId.trim() : "";
     const updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : "";
     if (!userId || !updatedAt || !isRecord(parsed.config)) return null;
-    return { userId, updatedAt, config: parsed.config };
+    return {
+      userId,
+      updatedAt,
+      config: parsed.config,
+      ...(parsed.tickers !== undefined ? { tickers: parsed.tickers } : {}),
+      ...(parsed.notes !== undefined ? { notes: parsed.notes } : {}),
+    };
   } catch {
     return null;
   }
@@ -87,24 +106,58 @@ export function hostedUserConfigStorageKey(userId: string): string {
   return storageKey(userId);
 }
 
-export function peekHostedUserConfigStamp(userId = activeUserId): HostedUserConfigStamp | null {
+export function peekHostedUserConfigStamp(userId = resolveHostedPersistUserId()): HostedUserConfigStamp | null {
   if (!userId) return null;
   const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return null;
   return { userId: record.userId, updatedAt: record.updatedAt };
 }
 
+export function readHostedUserConfigRecord(userId = resolveHostedPersistUserId()): HostedUserConfigRecord | null {
+  if (!userId) return null;
+  return parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
+}
+
 /** Writes the signed-in user's AppConfig to hosted localStorage. */
-export function writeHostedUserConfig(config: AppConfig, userId = activeUserId): void {
+export function writeHostedUserConfig(config: AppConfig, userId = resolveHostedPersistUserId()): void {
   if (!userId) return;
   const backend = tryLocalStorage();
   if (!backend) return;
   try {
     const persisted = normalizeConfigForSave(config);
+    const existing = parseRecord(backend.getItem(storageKey(userId)));
     const record: HostedUserConfigRecord = {
       userId,
       updatedAt: new Date().toISOString(),
       config: persisted as unknown as Record<string, unknown>,
+      ...(existing?.tickers ? { tickers: existing.tickers } : {}),
+      ...(existing?.notes ? { notes: existing.notes } : {}),
+    };
+    backend.setItem(storageKey(userId), JSON.stringify(record));
+  } catch {
+    // Ignore quota or security errors.
+  }
+}
+
+/**
+ * Stores tickers / notes beside the config blob so a later visit can restore
+ * the workspace even if the dedicated ticker/notes keys are missing.
+ */
+export function attachHostedUserWorkspaceExtras(
+  extras: { tickers?: unknown; notes?: unknown },
+  userId = resolveHostedPersistUserId(),
+): void {
+  if (!userId) return;
+  const backend = tryLocalStorage();
+  if (!backend) return;
+  const existing = parseRecord(backend.getItem(storageKey(userId)));
+  if (!existing) return;
+  try {
+    const record: HostedUserConfigRecord = {
+      ...existing,
+      updatedAt: new Date().toISOString(),
+      ...(extras.tickers !== undefined ? { tickers: extras.tickers } : {}),
+      ...(extras.notes !== undefined ? { notes: extras.notes } : {}),
     };
     backend.setItem(storageKey(userId), JSON.stringify(record));
   } catch {
@@ -113,7 +166,7 @@ export function writeHostedUserConfig(config: AppConfig, userId = activeUserId):
 }
 
 /** Overlays the signed-in user's last hosted config onto the boot config. */
-export function hydrateHostedUserConfig(config: AppConfig, userId = activeUserId): AppConfig {
+export function hydrateHostedUserConfig(config: AppConfig, userId = resolveHostedPersistUserId()): AppConfig {
   if (!userId) return config;
   const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return config;
