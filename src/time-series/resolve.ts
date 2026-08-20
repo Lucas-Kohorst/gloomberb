@@ -1049,7 +1049,7 @@ export async function resolveChartSpecData(
   };
 
   const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "prediction-market",
+    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "owid" | "prediction-market",
     key: string,
     loader: () => Promise<UniversalSeriesLoadResult>,
   ): Promise<UniversalSeriesLoadResult> => {
