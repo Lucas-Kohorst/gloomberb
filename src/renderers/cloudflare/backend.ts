@@ -1,9 +1,13 @@
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { resolveHostedTvStream } from "../../plugins/builtin/tv/youtube-embed";
 import type { LiveStreamResolveRequest } from "../../types/media";
-import { handleHttpFetch, type SharedHttpFetchRequest } from "../electrobun/shared/http-fetch";
+import { handleHttpFetch, type SharedHttpFetchRequest, type SharedHttpFetchResponse } from "../electrobun/shared/http-fetch";
 import { decodeRpcValue, encodeRpcValue } from "../electrobun/view/rpc-codec";
 import { gloomFetch, readSessionCookie } from "./gloom-cloud";
+import {
+  applyHostedSharedVendorKeys,
+  hostedPublicGetCacheTtlSeconds,
+} from "./data-cache";
 
 /**
  * The hosted backend is a thin bootstrap layer over Gloom Cloud: the app's own
@@ -60,6 +64,22 @@ type HostedBackendRequest =
   | { method: "remote.forward"; payload: unknown };
 
 const NOT_AVAILABLE = "Not available in the hosted client yet.";
+
+const hostedPublicGetInflight = new Map<string, Promise<SharedHttpFetchResponse>>();
+
+function handleCachedPublicGet(
+  payload: SharedHttpFetchRequest,
+  ttlSeconds: number,
+): Promise<SharedHttpFetchResponse> {
+  const existing = hostedPublicGetInflight.get(payload.url);
+  if (existing) return existing;
+  const request = handleHttpFetch(payload, { edgeCacheTtlSeconds: ttlSeconds })
+    .finally(() => {
+      hostedPublicGetInflight.delete(payload.url);
+    });
+  hostedPublicGetInflight.set(payload.url, request);
+  return request;
+}
 
 export async function handleHostedBackendRpc(env: Env, user: HostedUser | null, request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -140,6 +160,10 @@ async function dispatch(
       // Cloud API calls get the user's Gloom Cloud session attached; anything
       // else is proxied untouched, mirroring the desktop http.fetch contract.
       const url = typeof request.payload?.url === "string" ? request.payload.url : "";
+      const payload = applyHostedSharedVendorKeys(request.payload, {
+        ADJACENT_API_KEY: (env as Env & { ADJACENT_API_KEY?: string }).ADJACENT_API_KEY,
+        ARTIFICIAL_ANALYSIS_API_KEY: (env as Env & { ARTIFICIAL_ANALYSIS_API_KEY?: string }).ARTIFICIAL_ANALYSIS_API_KEY,
+      });
       if (url.startsWith("https://api.gloom.sh/")) {
         const token = readSessionCookie(rawRequest);
         if (!token) throw new Error("Authentication required.");
@@ -176,7 +200,11 @@ async function dispatch(
       ) {
         throw new Error("Blocked: http.fetch to private/internal host");
       }
-      return handleHttpFetch(request.payload);
+      const publicGetTtl = hostedPublicGetCacheTtlSeconds(payload);
+      if (publicGetTtl != null) {
+        return handleCachedPublicGet(payload, publicGetTtl);
+      }
+      return handleHttpFetch(payload);
     }
     case "ticker.loadAll":
       return [];

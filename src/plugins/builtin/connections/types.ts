@@ -47,6 +47,11 @@ export interface ConnectionSnapshot {
 
 const MAX_RECENT_REQUESTS = 20;
 
+export function isRateLimitedError(error: string | undefined): boolean {
+  if (!error) return false;
+  return /429|too many requests|rate.?limit/i.test(error);
+}
+
 export function createInitialConnectionState(
   id: string,
   name: string,
@@ -85,13 +90,19 @@ export function recordRequest(
   const recentRequests = [fullRecord, ...state.recentRequests].slice(0, MAX_RECENT_REQUESTS);
   const successCount = state.successCount + (record.success ? 1 : 0);
   const failureCount = state.failureCount + (record.success ? 0 : 1);
+  const rateLimited = !record.success && isRateLimitedError(record.error);
+  const status: ConnectionStatus = record.success
+    ? "connected"
+    : rateLimited
+      ? (successCount > 0 || state.status === "connected" ? "connected" : "reconnecting")
+      : "error";
   return {
     ...state,
     lastPolledAt: now,
     lastLatencyMs: record.durationMs,
     successCount,
     failureCount,
-    status: record.success ? "connected" : "error",
+    status,
     lastError: record.success ? null : (record.error ?? "Request failed"),
     recentRequests,
   };

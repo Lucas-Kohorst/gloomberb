@@ -11,6 +11,8 @@ Hosted users share one cached origin pull for reference prints. Polls, AI Benchm
 - Weather pane + `G WX:LAX:high` / `G NWS:KNYC:high` series. Climate prediction markets get a Settlement tab that opens the TWC print.
 - US listed-universe security master at `/api/data/us-listings/universe` (Nasdaq Trader + SEC OTC, 12h cache).
 - Restore Data Catalog (`CAT`) and watchlist/portfolio `[a]dd` / `[d]elete` / `[g]raph` from v0.11.1 — those shipped live and were dropped on the v0.12.0 cut. Benchmarks in CAT use llm-stats (`BENCH:model:tps`), not Artificial Analysis.
+- Restore Godel Terminal parity panes that v0.12.0 parked as plans 025–029: Short Interest (`SI`), Dividend Yield (`DVD`), Market Halts (`HALT`), IPO Calendar (`IPO`), Black-Scholes (`OVME`), options chain `[c]`alc, `G AAPL:div` / `G AAPL:dvd`, and `SA` halt / short-float / ex-div alerts. Hosted Yahoo / Nasdaq Trader / stockanalysis GETs share the Worker cache again.
+- Hosted Worker deploys to `terminal.kohor.st` on push to `main` and `integration/v0.12.0` (`bun run cloud:deploy`). GitHub Actions needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; existing Worker secrets are left in place.
 
 ### Worker secrets
 
@@ -31,7 +33,7 @@ Security, performance, and discovery work from the improve cycle, plus Treasury 
 - **Treasury auctions** (`AUCT`) from Treasury Fiscal Data — Bills, Notes, Bonds/TIPS with sortable auction tables.
 - **Plugin discovery** pane — search GitHub for Gloomberb plugins and install from the command bar / pane UI.
 - **Bond search** and **Volatility / VIX term structure** panes are implemented and connection-registered, but gated off until the hosted FRED proxy allowlists their series ids (no empty-table ship).
-- Plans for Godel Terminal parity follow-ups: short interest, dividend yield, market halts, IPO calendar, Black-Scholes calculator (`plans/025–029`).
+- Godel Terminal parity panes (SI, DVD, HALT, IPO, OVME) shipped on v0.11.1 and are restored in v0.12.3; they are not remaining plans.
 
 ### News & shares
 

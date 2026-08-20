@@ -50,6 +50,7 @@ describe("data catalog inventory", () => {
     const byExpression = new Map(rows.map((row) => [row.expression, row]));
 
     expect(byId.get("field:market.ohlcv")).toMatchObject({ source: "Yahoo", kind: "Market", label: "Price (OHLCV)", needsTicker: true, expression: "TICKER:price" });
+    expect(byId.get("field:market.dividends")).toMatchObject({ source: "Yahoo", kind: "Dividends", label: "Dividends", needsTicker: true, expression: "TICKER:dvd" });
     expect(byExpression.get("FRED:CPIAUCSL")).toMatchObject({ source: "FRED", kind: "Economic" });
     expect(byExpression.get("UST:10Y")).toMatchObject({ source: "FRED", kind: "Treasury" });
     expect(byExpression.get("ADJ:red")).toMatchObject({ source: "Adjacent", kind: "Index" });

@@ -1,4 +1,4 @@
-import { isMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { isDividendFieldId, isMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 import { LLM_STATS_SITE_BASE, type LlmStatsRow } from "../llm-stats/types";
@@ -129,6 +129,7 @@ function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
 
 function fieldKind(fieldId: string, option = false): string {
   if (option) return "Options";
+  if (isDividendFieldId(fieldId)) return "Dividends";
   if (fieldId.startsWith("market.")) return "Market";
   if (fieldId.startsWith("valuation.")) return "Valuation";
   return "Fundamentals";

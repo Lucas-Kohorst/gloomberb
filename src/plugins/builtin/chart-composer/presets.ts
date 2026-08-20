@@ -53,6 +53,7 @@ const CHART_FIELD_IDS = {
   price: "market.ohlcv",
   close: "market.close",
   volume: "market.volume",
+  dividends: "market.dividends",
   revenue: "fundamental.totalRevenue",
   grossProfit: "fundamental.grossProfit",
   operatingIncome: "fundamental.operatingIncome",
@@ -64,11 +65,21 @@ const CHART_FIELD_IDS = {
   evEbitda: "valuation.evEbitda",
 } as const;
 
+const CHART_FIELD_TOKEN_ALIASES: Readonly<Record<string, string>> = Object.freeze({
+  div: CHART_FIELD_IDS.dividends,
+  dvd: CHART_FIELD_IDS.dividends,
+  dividend: CHART_FIELD_IDS.dividends,
+  dividends: CHART_FIELD_IDS.dividends,
+});
+
 const SHORT_FIELD_TOKENS: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries(Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token])),
+  Object.fromEntries([
+    ...Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token]),
+    [CHART_FIELD_IDS.dividends, "dvd"],
+  ]),
 );
 
-/** Short token used in catalog / command-bar copy (`AAPL:price`, `AAPL:close`). */
+/** Short token used in catalog / command-bar copy (`AAPL:dvd`, `AAPL:price`). */
 export function shortChartFieldToken(fieldId: string): string {
   return SHORT_FIELD_TOKENS[fieldId] ?? fieldId.split(".").at(-1) ?? fieldId;
 }
@@ -119,6 +130,8 @@ function normalizeInstrument(
 export function resolveChartFieldAlias(value: string | undefined): string {
   if (!value?.trim()) return CHART_FIELD_IDS.price;
   const trimmed = value.trim();
+  const alias = CHART_FIELD_TOKEN_ALIASES[trimmed.toLowerCase()];
+  if (alias) return alias;
   const canonical = canonicalTimeSeriesFieldId(trimmed);
   if (getTimeSeriesField(canonical)) return canonical;
   const searchable = trimmed.toLowerCase().replace(/[^a-z0-9]/g, "");

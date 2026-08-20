@@ -34,12 +34,16 @@ import {
 } from "./live-quotes";
 import { useOptionsAccessFooter } from "./footer";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
+import { usePluginAppActions } from "../../runtime";
+import { buildOvmeSeed, serializeOvmeSeed, type OvmeOptionType } from "../options-calc/seed";
 
 export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
   const { ticker, financials } = usePaneTicker();
   const liveStreaming = useLiveStreamingSetting();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [expIdx, setExpIdx] = useState(0);
   const [strikeIdx, setStrikeIdx] = useState(0);
+  const [selectedSide, setSelectedSide] = useState<OvmeOptionType>("call");
   const [autoScrollVersion, setAutoScrollVersion] = useState(0);
   const [scrollToIndexAlign, setScrollToIndexAlign] = useState<"nearest" | "center">("nearest");
   const [visibleStrikeViewport, setVisibleStrikeViewport] = useState<{
@@ -199,12 +203,57 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     headerColor: optionColumnColor(column.id, colors.panel),
   }));
 
+  const openCalc = useCallback(() => {
+    const row = rows[strikeIdx];
+    const contract = selectedSide === "put"
+      ? row?.put ?? row?.call
+      : row?.call ?? row?.put;
+    if (!contract) return;
+    const type: OvmeOptionType = row?.put && contract === row.put ? "put" : "call";
+    const seed = buildOvmeSeed({
+      contract,
+      type,
+      spot: financials?.quote?.price ?? null,
+      dividendYield: financials?.fundamentals?.dividendYield ?? null,
+    });
+    createPaneFromTemplate("options-calc-pane", { values: serializeOvmeSeed(seed) });
+  }, [createPaneFromTemplate, financials?.fundamentals?.dividendYield, financials?.quote?.price, rows, selectedSide, strikeIdx]);
+
+  const calcHints = useMemo(() => (
+    rows[strikeIdx]?.call || rows[strikeIdx]?.put
+      ? [{ id: "calc", key: "c", label: "alc", onPress: openCalc }]
+      : []
+  ), [openCalc, rows, strikeIdx]);
+
+  const renderCell = useCallback((
+    row: OptionTableRow,
+    column: OptionColumn,
+    index: number,
+    rowState: { selected: boolean },
+  ) => {
+    const cell = renderOptionCell(row, column, index, rowState);
+    const side: OvmeOptionType | null = column.id.startsWith("call")
+      ? "call"
+      : column.id.startsWith("put")
+        ? "put"
+        : null;
+    if (!side) return cell;
+    return {
+      ...cell,
+      onMouseDown: (event: unknown) => {
+        cell.onMouseDown?.(event);
+        setSelectedSide(side);
+      },
+    };
+  }, []);
+
   useOptionsAccessFooter({
     chain,
     error,
     focused,
     loading,
     quoteCoverage: optionQuoteCoverage,
+    hints: calcHints,
   });
 
   useEffect(() => {
@@ -251,6 +300,12 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       event.preventDefault();
       event.stopPropagation();
       selectAdjacentExpiration(1);
+      return;
+    }
+    if (isPlainKey(event, "c")) {
+      event.preventDefault();
+      event.stopPropagation();
+      openCalc();
     }
   }, { enabled: focused, phase: "before" });
 
@@ -300,9 +355,15 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       setStrikeIdx((i) => Math.max(i - 1, 0));
       return true;
     }
+    if (isPlainKey(event, "c")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openCalc();
+      return true;
+    }
 
     return false;
-  }, [enterInteractive, exitInteractive, interactive, selectAdjacentExpiration, strikes.length]);
+  }, [enterInteractive, exitInteractive, interactive, openCalc, selectAdjacentExpiration, strikes.length]);
 
   if (!ticker) return <EmptyState title="Select a ticker to view options." />;
   if (loading && !chain) return <LoadingState title="Loading options..." />;
@@ -377,7 +438,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         visibleRangeKey={viewportKey}
         onVisibleRangeChange={handleVisibleStrikeRangeChange}
         getItemKey={(row) => String(row.strike)}
-        renderCell={renderOptionCell}
+        renderCell={renderCell}
         emptyStateTitle="No strikes available."
         columnGap={0}
         horizontalPadding={0}
