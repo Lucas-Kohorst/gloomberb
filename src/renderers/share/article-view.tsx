@@ -25,6 +25,13 @@ import { ShareShell, formatShareTimestamp } from "./shell";
 
 export { preferredArticleBody };
 
+export function articleShareNeedsReader(payload: ArticleSharePayload): boolean {
+  if (payload.bodyHtml?.trim()) return false;
+  if (!payload.url) return false;
+  if (payload.items?.length) return false;
+  return payload.type === "news" || payload.type === "substack";
+}
+
 function useFullArticleText(url: string, enabled: boolean) {
   const [state, setState] = useState<{
     text: string | null;
@@ -47,7 +54,10 @@ function useFullArticleText(url: string, enabled: boolean) {
     setState({ text: null, loading: true, failureKind: null, failureMessage: null });
     fetch(`${JINA_READER_ENDPOINT}${url}`, {
       signal: controller.signal,
-      headers: JINA_READER_HEADERS,
+      headers: {
+        ...JINA_READER_HEADERS,
+        "X-Retain-Images": "all",
+      },
     })
       .then(async (response) => {
         const raw = await response.text();
@@ -88,13 +98,10 @@ export function ArticleShareView({
 }) {
   const embedded = payload.bodyHtml?.trim() || "";
   const summary = payload.summary?.trim() || payload.previewText?.trim() || "";
-  // Substack shares embed the body, and clustered wire stories are summaries of
-  // other stories rather than one page to extract. Only a bare news link needs
-  // the reader.
-  const needsFullText = !embedded
-    && payload.type === "news"
-    && !payload.items?.length
-    && !!payload.url;
+  // News and Substack shares often only snapshot a teaser. Fetch the full
+  // article when the payload has no HTML body; clustered wire stories stay
+  // as summaries because they are not one page to extract.
+  const needsFullText = articleShareNeedsReader(payload);
   const full = useFullArticleText(payload.url, needsFullText);
   const body = preferredArticleBody(summary, full.text);
   const fallbackNotice = readerFallbackNotice(full.failureKind, !!body.trim());

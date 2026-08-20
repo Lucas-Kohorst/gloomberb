@@ -44,6 +44,12 @@ describe("shared article markdown", () => {
     expect(unsafe).not.toContain("javascript:");
     expect(unsafe).toContain("click");
   });
+
+  test("renders markdown images with http sources", () => {
+    expect(markdown("![House odds](https://kalshi.com/chart.png)"))
+      .toContain('src="https://kalshi.com/chart.png"');
+    expect(markdown("![x](javascript:alert(1))")).not.toContain("<img");
+  });
 });
 
 describe("shared article HTML sanitization", () => {

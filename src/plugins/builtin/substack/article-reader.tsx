@@ -91,8 +91,20 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const copyShareLink = useCopyShareLink();
   const shareArticle = useCallback(() => {
     if (!article) return;
-    void copyShareLink(substackArticleSharePayload(article));
-  }, [article, copyShareLink]);
+    const cached = detail.data;
+    void (async () => {
+      if (cached?.bodyHtml || cached?.contentText) {
+        await copyShareLink(substackArticleSharePayload(article, cached));
+        return;
+      }
+      try {
+        const entry = await loadSubstackArticleDetail(article);
+        await copyShareLink(substackArticleSharePayload(article, entry.data));
+      } catch {
+        await copyShareLink(substackArticleSharePayload(article));
+      }
+    })();
+  }, [article, copyShareLink, detail.data]);
 
   useShortcut((event) => {
     if (!focused || !article) return;

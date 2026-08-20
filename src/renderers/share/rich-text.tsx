@@ -109,6 +109,16 @@ export function MarkdownBody({ text }: { text: string }) {
       continue;
     }
 
+    const image = line.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
+    if (image) {
+      flushParagraph();
+      const src = safeUrl(image[2]);
+      if (src) {
+        blocks.push(<img key={`m${key++}`} src={src} alt={image[1] ?? ""} loading="lazy" />);
+      }
+      continue;
+    }
+
     if (line.trimStart().startsWith(">")) {
       flushParagraph();
       const quoted: string[] = [];

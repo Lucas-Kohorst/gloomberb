@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { preferredArticleBody } from "./article-view";
+import { articleShareNeedsReader, preferredArticleBody } from "./article-view";
 
 describe("preferredArticleBody", () => {
   test("uses the extracted article when it adds text", () => {
@@ -24,5 +24,55 @@ describe("preferredArticleBody", () => {
     expect(preferredArticleBody("The fund declared a $0.055 dividend.", "")).toBe(
       "The fund declared a $0.055 dividend.",
     );
+  });
+});
+
+describe("articleShareNeedsReader", () => {
+  test("loads the full Substack post when the share only stored a teaser", () => {
+    expect(articleShareNeedsReader({
+      type: "substack",
+      id: "1",
+      title: "Could Prediction Markets Start Having A Republican Problem",
+      url: "https://eventhorizon.substack.com/p/example",
+      source: "The Event Horizon",
+      previewText: "There's a lot of noise about elections.",
+    })).toBe(true);
+  });
+
+  test("does not refetch when the share already embedded HTML", () => {
+    expect(articleShareNeedsReader({
+      type: "substack",
+      id: "1",
+      title: "t",
+      url: "https://eventhorizon.substack.com/p/example",
+      source: "The Event Horizon",
+      bodyHtml: "<p>full post</p>",
+    })).toBe(false);
+  });
+
+  test("still loads a bare news article and skips clustered wire stories", () => {
+    expect(articleShareNeedsReader({
+      type: "news",
+      id: "n",
+      title: "t",
+      url: "https://reuters.com/x",
+      source: "Reuters",
+      summary: "short",
+    })).toBe(true);
+    expect(articleShareNeedsReader({
+      type: "news",
+      id: "n",
+      title: "t",
+      url: "https://reuters.com/x",
+      source: "Reuters",
+      items: [{
+        id: "i",
+        sourceKey: "reuters",
+        sourceName: "Reuters",
+        title: "related",
+        url: "https://reuters.com/y",
+        publishedAt: "2026-08-20T00:00:00.000Z",
+      }],
+    })).toBe(false);
   });
 });
