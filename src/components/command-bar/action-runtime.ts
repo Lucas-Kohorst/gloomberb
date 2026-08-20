@@ -82,12 +82,21 @@ export function useCommandBarActionRuntime({
     focusTicker,
     notifyGridlockRevert,
     persistLayoutChange,
+    replacePaneTicker,
     setActiveCollection,
   } = useCommandBarPaneActions({
     dispatch,
     pluginRegistry,
     stateRef,
   });
+
+  const getReplacePaneId = useCallback(() => {
+    if (currentRoute?.kind === "mode" && currentRoute.screen === "ticker-search" && currentRoute.payload?.action === "replace-pane") {
+      const paneId = typeof currentRoute.payload.paneId === "string" ? currentRoute.payload.paneId : "";
+      return paneId || null;
+    }
+    return null;
+  }, [currentRoute]);
 
   const {
     buildTickerSearchResultItems,
@@ -99,7 +108,9 @@ export function useCommandBarActionRuntime({
     closeAll,
     dispatch,
     focusTicker,
+    getReplacePaneId,
     pluginRegistry,
+    replacePaneTicker,
     tickerRepository,
     tickers,
   });

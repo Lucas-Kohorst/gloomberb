@@ -41,6 +41,7 @@ interface ShellPaneLayersProps {
   handleNativePaneMouseDown: (paneId: string, event: any) => void;
   handlePaneAction: (paneId: string, rect: LayoutBounds, event: any) => void;
   handlePaneFloatToggle: (paneId: string, event: any) => void;
+  onTitleMouseDown?: (paneId: string, event: any) => void;
   hoveredPaneId: string | null;
   menuPaneId: string | null;
   nativeContextMenu?: boolean;
@@ -76,6 +77,7 @@ export function ShellPaneLayers({
   handleNativePaneMouseDown,
   handlePaneAction,
   handlePaneFloatToggle,
+  onTitleMouseDown,
   hoveredPaneId,
   menuPaneId,
   nativeContextMenu,
@@ -146,6 +148,7 @@ export function ShellPaneLayers({
                     onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
                     onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
                     onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
+                    onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(leaf.instanceId, event) : undefined}
                   >
                     <PaneContent
                       component={pane.def.component}
@@ -209,6 +212,7 @@ export function ShellPaneLayers({
                   onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
                   onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(pane.instance.instanceId, event) : undefined}
                   onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
+                  onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(pane.instance.instanceId, event) : undefined}
                   onResizeMouseDown={nativePaneChrome
                     ? (corner, event) => startNativeFloatResize(pane.instance.instanceId, preview, corner, event)
                     : undefined}

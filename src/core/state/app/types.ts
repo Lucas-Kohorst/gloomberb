@@ -38,6 +38,7 @@ interface CommandBarPluginLaunchRequest extends CommandBarLaunchRequestBase {
 interface CommandBarTickerSearchLaunchRequest extends CommandBarLaunchRequestBase {
   kind: "ticker-search";
   query?: string;
+  replacePaneId?: string;
 }
 
 export interface AppState {
@@ -88,7 +89,7 @@ export type AppAction =
       type: "SET_COMMAND_BAR";
       open: boolean;
       query?: string;
-      launch?: { kind: "plugin-command"; commandId: string } | { kind: "ticker-search"; query?: string } | null;
+      launch?: { kind: "plugin-command"; commandId: string } | { kind: "ticker-search"; query?: string; replacePaneId?: string } | null;
     }
   | { type: "SET_COMMAND_BAR_QUERY"; query: string }
   | { type: "SET_REFRESHING"; symbol: string; refreshing: boolean }

@@ -128,10 +128,13 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
       case "ticker-search": {
         const results = tickerSearchResults.map((item) => adaptTickerSearchRouteResult(item, currentRoute.payload));
         const emptyState = getEmptyState("search", currentRoute.query, currentRoute.query);
+        const replacePane = currentRoute.payload?.action === "replace-pane";
         return {
           kind: "mode",
-          title: "Security Description",
-          subtitle: "Resolve a ticker, then open its Ticker Research pane.",
+          title: replacePane ? "Replace ticker" : "Security Description",
+          subtitle: replacePane
+            ? "Type a symbol to show in this pane. Linked follow panes update with the source."
+            : "Resolve a ticker, then open its Ticker Research pane.",
           query: currentRoute.query,
           selectedIdx: currentRoute.selectedIdx,
           hoveredIdx: currentRoute.hoveredIdx,

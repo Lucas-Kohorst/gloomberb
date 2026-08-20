@@ -27,6 +27,7 @@ interface PaneWrapperProps {
   onFloatToggleMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
   children: ReactNode;
+  onTitleMouseDown?: (event: any) => void;
 }
 
 export function PaneWrapper({
@@ -50,6 +51,7 @@ export function PaneWrapper({
   onFloatToggleMouseDown,
   footer,
   children,
+  onTitleMouseDown,
 }: PaneWrapperProps) {
   const { nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
@@ -99,6 +101,7 @@ export function PaneWrapper({
           onHeaderContextMenu={onHeaderContextMenu}
           onActionMouseDown={onActionMouseDown}
           onFloatToggleMouseDown={onFloatToggleMouseDown}
+          onTitleMouseDown={onTitleMouseDown}
         />
       )}
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>

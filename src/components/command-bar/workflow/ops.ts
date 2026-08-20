@@ -5,6 +5,7 @@ import type { PluginRegistry } from "../../../plugins/registry";
 import { formatTickerListInput } from "../../../tickers/list";
 import { updatePaneInstance, setPaneSettings } from "../../../pane-settings";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import { setPaneFollowSource, TICKER_FOLLOW_SOURCE_KEY } from "../../../plugins/ticker-follow";
 import { cleanPortfolioPaneSettings, resolvePortfolioPaneCollectionId } from "../../../plugins/builtin/portfolio-list/settings";
 import {
   DEFAULT_RELATIONSHIP_SECOND_SYMBOL,
@@ -248,6 +249,17 @@ export async function applyPaneSettingFieldValue(
   const clearOnChange = !Object.is(descriptor.context.settings[field.key], value)
     ? Object.fromEntries((field.clearOnChange ?? []).map((key) => [key, ""]))
     : {};
+
+  if (field.key === TICKER_FOLLOW_SOURCE_KEY) {
+    const nextLayout = setPaneFollowSource(
+      state.config.layout,
+      targetId,
+      typeof value === "string" ? value : "",
+      descriptor.context.activeTicker,
+    );
+    deps.persistLayout(nextLayout, { pushHistory: shouldPushHistory });
+    return;
+  }
 
   if (field.storage === "plugin") {
     if (!descriptor.pluginId) {

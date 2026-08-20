@@ -259,6 +259,7 @@ function getCommandBarPanelTitle(route: CommandBarRoute | null): string {
   if (route.kind === "mode") {
     if (route.screen === "plugins") return "Manage Plugins";
     if (route.screen === "layout") return "Layout Actions";
+    if (route.payload?.action === "replace-pane") return "Replace ticker";
     return "Security Description";
   }
   if (route.kind === "picker") return route.title;
