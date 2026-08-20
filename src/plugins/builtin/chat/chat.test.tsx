@@ -1378,7 +1378,7 @@ describe("ChatContent", () => {
     expect(openedQueries).toEqual(["Log In"]);
   });
 
-  test("shows an unread mention badge and opens chat from the status widget", async () => {
+  test("shows an unread mention badge and opens the unread inbox from it", async () => {
     const controller = createController({
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
@@ -1432,10 +1432,10 @@ describe("ChatContent", () => {
       await setup().renderOnce();
     });
 
-    expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: "everyone" } }]);
+    expect(openedTemplates).toEqual([{ templateId: "unread-inbox-pane" }]);
   });
 
-  test("opens an unread direct-message channel from the status widget", async () => {
+  test("opens an unread direct-message channel from the status username", async () => {
     const controller = createController({
       sessionToken: "token-123",
       user: { id: "u1", username: "vince", emailVerified: true },
@@ -1491,12 +1491,12 @@ describe("ChatContent", () => {
     expect(frame).toContain("[1]");
 
     const line = frame.split("\n")[0] ?? "";
-    const badgeCol = line.indexOf("[1]");
+    const usernameCol = line.indexOf("vince");
 
-    expect(badgeCol).toBeGreaterThanOrEqual(0);
+    expect(usernameCol).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
-      await setup().mockMouse.click(badgeCol + 1, 0);
+      await setup().mockMouse.click(usernameCol + 1, 0);
       await setup().renderOnce();
       await setup().renderOnce();
     });
