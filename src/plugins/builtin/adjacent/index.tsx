@@ -3,6 +3,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { pollsModule } from "../polls";
 import { llmStatsModule } from "../llm-stats";
+import { weatherModule } from "../weather";
 import {
   AdjacentClient,
   attachAdjacentPersistence,
@@ -162,9 +163,9 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, and Artificial Analysis benchmarks.",
+    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, Weather Company settlements, and Artificial Analysis benchmarks.",
   toggleable: true,
-  modules: [adjacentMarketsModule, pollsModule, llmStatsModule],
+  modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule],
 });
 
 export default adjacentPlugin;
