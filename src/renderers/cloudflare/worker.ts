@@ -1,5 +1,4 @@
 import { handleHostedBackendRpc } from "./backend";
-import { lookupArchiveIsSnapshot, publisherArticleUrl } from "../../shares/archive";
 import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
@@ -34,7 +33,6 @@ export default {
     if (url.pathname === "/api/share" || url.pathname.startsWith("/api/share/")) {
       return handleShareRequest(request, env, url);
     }
-    if (url.pathname === "/api/archive") return handleArchiveRequest(request, url);
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
@@ -380,7 +378,7 @@ const APP_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.gloom.sh https://r.jina.ai https://archive.is",
+  "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
   "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -430,39 +428,6 @@ function assetsRequest(request: Request, assetPath?: string): Request {
   if (accept) headers.set("Accept", accept);
   headers.set("Cache-Control", "no-cache");
   return new Request(new URL(assetPath, request.url), { method: "GET", headers });
-}
-
-const ARCHIVE_LOOKUP_TIMEOUT_MS = 12_000;
-
-async function handleArchiveRequest(request: Request, url: URL): Promise<Response> {
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return Response.json({ error: "Method not allowed." }, { status: 405 });
-  }
-  const sourceUrl = publisherArticleUrl(url.searchParams.get("url"));
-  if (!sourceUrl) {
-    return Response.json({ error: "No publisher URL to archive." }, { status: 400 });
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ARCHIVE_LOOKUP_TIMEOUT_MS);
-  try {
-    const result = await lookupArchiveIsSnapshot(sourceUrl, fetch, controller.signal);
-    const status = result.status === "error" ? 502 : 200;
-    return Response.json(result, { status, headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    if (controller.signal.aborted) {
-      return Response.json(
-        { status: "error", message: "archive.is lookup timed out." },
-        { status: 504, headers: { "cache-control": "private, no-store" } },
-      );
-    }
-    const message = error instanceof Error ? error.message : "Could not reach archive.is.";
-    return Response.json(
-      { status: "error", message },
-      { status: 502, headers: { "cache-control": "private, no-store" } },
-    );
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 /**

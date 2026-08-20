@@ -118,7 +118,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
       shareArticle();
       return;
     }
-    if (isPlainKey(event, "a") && (article.url ?? url)) {
+    if (isPlainKey(event, "a") && archiveAction.enabled) {
       event.stopPropagation?.();
       event.preventDefault?.();
       archiveAction.archive();
@@ -128,7 +128,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const shareHint: PaneHint[] = article
     ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
     : [];
-  const archiveHint: PaneHint[] = (article?.url ?? url)
+  const archiveHint: PaneHint[] = archiveAction.enabled
     ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]
     : [];
   const knownBody = substackReaderBody(article, detail.data);
@@ -141,8 +141,8 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     url: article?.url ?? url,
     source: article?.publicationName,
     label: "article",
-    loading: (!skipJina && jina.loading) || (detail.loading && !knownBody) || archiveAction.loading,
-    error: detail.error ?? jina.error ?? archiveAction.error,
+    loading: (!skipJina && jina.loading) || (detail.loading && !knownBody),
+    error: detail.error ?? jina.error,
     hints: article
       ? [{
         id: "refresh",

@@ -451,7 +451,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       shareSelectedArticle();
       return true;
     }
-    if (isPlainKey(event, "a") && selectedArticle?.url) {
+    if (isPlainKey(event, "a") && archiveAction.enabled) {
       event.preventDefault?.();
       event.stopPropagation?.();
       archiveAction.archive();
@@ -489,8 +489,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(activeDetail.loading && detailOpen ? [{ id: "detail-loading", parts: [{ text: "loading article", tone: "muted" as const }] }] : []),
       ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
       ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
-      ...(archiveAction.error && detailOpen ? [{ id: "archive-error", parts: [{ text: archiveAction.error, tone: "warning" as const }] }] : []),
-      ...(archiveAction.loading && detailOpen ? [{ id: "archive-loading", parts: [{ text: "archiving", tone: "muted" as const }] }] : []),
     ],
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
@@ -498,7 +496,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(detailOpen && selectedArticle
         ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
         : []),
-      ...(detailOpen && selectedArticle?.url
+      ...(detailOpen && archiveAction.enabled
         ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]
         : []),
       { id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle, disabled: !selectedArticle },
@@ -519,8 +517,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     selectedArticle,
     shareSelectedArticle,
     archiveAction.archive,
-    archiveAction.error,
-    archiveAction.loading,
+    archiveAction.enabled,
     updatedAgo,
     poll.segment,
   ]);

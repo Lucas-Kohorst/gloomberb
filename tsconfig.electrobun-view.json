@@ -5,6 +5,7 @@
   },
   "files": [
     "src/renderers/electrobun/view/main.tsx",
-    "src/renderers/electrobun/view/cli-pane-shot-entry.tsx"
+    "src/renderers/electrobun/view/cli-pane-shot-entry.tsx",
+    "src/renderers/share/share-main.tsx"
   ]
 }

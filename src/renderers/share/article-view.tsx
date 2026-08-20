@@ -23,6 +23,7 @@ import {
 } from "../../plugins/builtin/shared/jina-article-text";
 import { MarkdownBody, SanitizedHtmlBody } from "./rich-text";
 import { useShareArticleArchive } from "./archive-action";
+import { ShareShell, formatShareTimestamp } from "./shell";
 
 export { preferredArticleBody };
 
@@ -156,8 +157,6 @@ export function ArticleShareView({
       {payload.subtitle ? <p className="share-subtitle">{payload.subtitle}</p> : null}
 
       {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
-      {archive.error ? <p className="share-note">{archive.error}</p> : null}
-      {archive.loading ? <p className="share-note">Looking up archive.is…</p> : null}
 
       {source.kind === "html" ? <SanitizedHtmlBody html={source.html} /> : source.kind === "markdown"
         ? <MarkdownBody text={source.text} />
