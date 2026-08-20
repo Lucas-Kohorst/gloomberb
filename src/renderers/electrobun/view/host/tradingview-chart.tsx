@@ -2,11 +2,16 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import {
   AreaSeries,
+  BarSeries,
   CandlestickSeries,
   ColorType,
-  createChart,
+  CrosshairMode,
   HistogramSeries,
+  LastPriceAnimationMode,
   LineSeries,
+  LineType,
+  PriceScaleMode,
+  createChart,
   type IChartApi,
   type ISeriesApi,
   type MouseEventHandler,
@@ -24,7 +29,9 @@ import {
   wheelZoomFactorFromDelta,
 } from "./tradingview-interactions";
 import {
+  tradingViewBarData,
   tradingViewCandleData,
+  tradingViewHistogramData,
   tradingViewScalarData,
   tradingViewSeriesTypeFor,
   utcTimestampSeconds,
@@ -51,12 +58,19 @@ function timeToMs(time: Time): number | null {
   return null;
 }
 
+function priceScaleIdFor(series: ResolvedSeries): "left" | "right" {
+  return series.axis === "left" ? "left" : "right";
+}
+
 function createSeries(
   chart: IChartApi,
   series: ResolvedSeries,
   type: TradingViewSeriesType,
   colors: TradingViewChartProps["colors"],
-): ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram"> {
+): ISeriesApi<"Line" | "Area" | "Bar" | "Candlestick" | "Histogram"> {
+  const priceScaleId = priceScaleIdFor(series);
+  const lastValueVisible = true;
+  const priceLineVisible = true;
   switch (type) {
     case "Candlestick":
       return chart.addSeries(CandlestickSeries, {
@@ -65,12 +79,28 @@ function createSeries(
         borderVisible: false,
         wickUpColor: series.color,
         wickDownColor: colors.negative,
+        priceScaleId,
+        lastValueVisible,
+        priceLineVisible,
+      });
+    case "Bar":
+      return chart.addSeries(BarSeries, {
+        upColor: series.color,
+        downColor: colors.negative,
+        openVisible: series.style !== "hlc",
+        thinBars: false,
+        priceScaleId,
+        lastValueVisible,
+        priceLineVisible,
       });
     case "Histogram":
       return chart.addSeries(HistogramSeries, {
         color: series.color,
         priceFormat: { type: "volume" },
         base: 0,
+        priceScaleId,
+        lastValueVisible,
+        priceLineVisible,
       });
     case "Area":
       return chart.addSeries(AreaSeries, {
@@ -78,13 +108,23 @@ function createSeries(
         topColor: `${series.color}55`,
         bottomColor: `${series.color}08`,
         lineWidth: 2,
+        priceScaleId,
+        lastValueVisible,
+        priceLineVisible,
+        lastPriceAnimation: LastPriceAnimationMode.OnDataUpdate,
       });
     default:
       return chart.addSeries(LineSeries, {
         color: series.color,
         lineWidth: 2,
-        lineType: series.style === "step" ? 1 : 0,
+        lineVisible: series.style !== "points",
+        lineType: series.style === "step" ? LineType.WithSteps : LineType.Simple,
+        pointMarkersVisible: series.style === "points",
         crosshairMarkerVisible: true,
+        priceScaleId,
+        lastValueVisible,
+        priceLineVisible,
+        lastPriceAnimation: LastPriceAnimationMode.OnDataUpdate,
       });
   }
 }
@@ -102,13 +142,18 @@ function applySeriesColors(
       wickUpColor: series.color,
       wickDownColor: colors.negative,
     });
+  } else if (type === "Bar") {
+    api.applyOptions({
+      upColor: series.color,
+      downColor: colors.negative,
+    });
   } else if (type === "Area") {
     api.applyOptions({
       lineColor: series.color,
       topColor: `${series.color}55`,
       bottomColor: `${series.color}08`,
     });
-  } else {
+  } else if (type !== "Histogram") {
     api.applyOptions({ color: series.color });
   }
 }
@@ -117,12 +162,19 @@ function syncSeriesData(
   api: SeriesEntry["api"],
   type: TradingViewSeriesType,
   series: ResolvedSeries,
+  colors: TradingViewChartProps["colors"],
 ): void {
-  if (type === "Candlestick") {
-    api.setData(tradingViewCandleData(series.points).map((point) => ({
-      ...point,
-      time: point.time as Time,
-    })));
+  if (type === "Candlestick" || type === "Bar") {
+    const data = (type === "Bar" ? tradingViewBarData : tradingViewCandleData)(series.points)
+      .map((point) => ({ ...point, time: point.time as Time }));
+    api.setData(data);
+    return;
+  }
+  if (type === "Histogram") {
+    api.setData(tradingViewHistogramData(series.points, {
+      up: series.color,
+      down: colors.negative,
+    }).map((point) => ({ ...point, time: point.time as Time })));
     return;
   }
   api.setData(tradingViewScalarData(series.points).map((point) => ({
@@ -140,7 +192,7 @@ type SeriesEntry = {
   key: string;
   type: TradingViewSeriesType;
   style: ResolvedSeries["style"];
-  api: ISeriesApi<"Line" | "Area" | "Candlestick" | "Histogram">;
+  api: ISeriesApi<"Line" | "Area" | "Bar" | "Candlestick" | "Histogram">;
   label: string;
   /** Last data written, so a pan does not re-set identical points. */
   points: readonly TimeSeriesPoint[];
@@ -148,6 +200,7 @@ type SeriesEntry = {
 };
 
 export function WebTradingViewChart({
+  panel,
   seriesData,
   colors,
   viewport,
@@ -193,11 +246,28 @@ export function WebTradingViewChart({
     if (!container) return;
     const chart = createChart(container, {
       autoSize: true,
-      layout: chartOptions.layout,
+      layout: {
+        ...chartOptions.layout,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        attributionLogo: true,
+      },
       grid: chartOptions.grid,
-      crosshair: { mode: 0 },
-      rightPriceScale: { visible: false },
-      leftPriceScale: { visible: false },
+      crosshair: {
+        mode: CrosshairMode.Magnet,
+        vertLine: { visible: true, labelVisible: true },
+        horzLine: { visible: true, labelVisible: true },
+      },
+      rightPriceScale: {
+        visible: true,
+        borderVisible: false,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+        mode: PriceScaleMode.Normal,
+      },
+      leftPriceScale: {
+        visible: false,
+        borderVisible: false,
+        scaleMargins: { top: 0.08, bottom: 0.08 },
+      },
       timeScale: {
         visible: true,
         rightOffset: 2,
@@ -329,7 +399,7 @@ export function WebTradingViewChart({
             existing.colorKey = colorKey;
           }
           if (existing.points !== series.points) {
-            syncSeriesData(existing.api, type, series);
+            syncSeriesData(existing.api, type, series, colors);
             existing.points = series.points;
           }
           existing.style = series.style;
@@ -340,7 +410,7 @@ export function WebTradingViewChart({
         chart.removeSeries(existing.api);
       }
       const api = createSeries(chart, series, type, colors);
-      syncSeriesData(api, type, series);
+      syncSeriesData(api, type, series, colors);
       next.push({
         key: series.id,
         type,
@@ -353,7 +423,22 @@ export function WebTradingViewChart({
     }
     for (const [, entry] of byKey) chart.removeSeries(entry.api);
     seriesRef.current = next;
-  }, [chartEpoch, colors, seriesData]);
+    const usesLeft = seriesData.some((series) => series.axis === "left");
+    const usesRight = seriesData.some((series) => series.axis !== "left");
+    const logarithmic = panel.scale === "log" && panel.id !== "volume";
+    chart.applyOptions({
+      leftPriceScale: { visible: usesLeft },
+      rightPriceScale: {
+        visible: usesRight || !usesLeft,
+        mode: logarithmic ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      },
+    });
+    if (usesLeft) {
+      chart.priceScale("left").applyOptions({
+        mode: logarithmic ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      });
+    }
+  }, [chartEpoch, colors, panel.id, panel.scale, seriesData]);
 
   useEffect(() => {
     const chart = chartRef.current;

@@ -22,7 +22,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 - Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
 - Polls default to All; Adjacent ships as a default layout + watchlist.
 - Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).
-- Restored the system-wide news/alt-data poll interval (RI). Footers show poll 1m/5m/15m/30m; click to cycle. TWIT defaults to 1m.
+- **TradingView** pane (\`TVC\`): ticker-linked Lightweight Charts surface (candles, volume, log scale, drawings, MA/EMA/BB/VWAP). Not the licensed Charting Library.
 `,
 };
 

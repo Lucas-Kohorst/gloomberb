@@ -25,7 +25,7 @@ import {
   usePaneTicker,
 } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
+import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { SeriesEditorDialog } from "./editor";
 import { DateWindowDialog, type DateWindowDialogResult } from "./date-window-dialog";
@@ -40,6 +40,7 @@ import {
 import {
   buildEmptyChartPreset,
   buildPriceChartPreset,
+  buildTradingViewChartPreset,
   applySeriesStyle,
   chartSeriesLabel,
   defaultFinancialTimestampMode,
@@ -49,6 +50,7 @@ import {
   setBuiltinStudies,
   setPairStudies,
   rebindChartSecuritySymbol,
+  toggleMainPanelScale,
   type BuiltinStudySelection,
   type PairStudySelection,
 } from "./presets";
@@ -513,6 +515,7 @@ function ChartComposerSurface({
   const footerResolution = useCallback(() => { void currentActionsRef.current.openResolutionPicker(); }, []);
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
   const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
+  const footerLog = useCallback(() => setSpec(toggleMainPanelScale(spec)), [setSpec, spec]);
   const shareView = useShareView();
   // The snapshot carries the plotted points, so a shared link renders without
   // the recipient re-resolving providers they may have no access to. The spec
@@ -556,6 +559,9 @@ function ChartComposerSurface({
       case "share":
         shareChart();
         return;
+      case "log":
+        setSpec(toggleMainPanelScale(spec));
+        return;
     }
   }, { enabled: focused && !dialogOpen });
 
@@ -573,6 +579,12 @@ function ChartComposerSurface({
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "dates", key: "w", label: "indow", onPress: footerDates },
       { id: "mode", key: "m", label: "ode", onPress: footerMode, disabled: styles.length === 0 },
+      {
+        id: "scale",
+        key: "l",
+        label: spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "inear" : "og",
+        onPress: footerLog,
+      },
       { id: "resolution", key: "r", label: "es", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
       { id: "reload", key: "Shift+R", label: "reload", onPress: footerReload },
@@ -580,6 +592,7 @@ function ChartComposerSurface({
     ],
   }), [
     footerDates,
+    footerLog,
     footerMode,
     footerRange,
     footerReload,
@@ -593,6 +606,7 @@ function ChartComposerSurface({
     resolution.loading,
     resolution.warnings,
     shareChart,
+    spec.panels,
     styles.length,
   ]);
 
@@ -717,29 +731,9 @@ function ChartComposerSurface({
   );
 }
 
-export function ChartComposerPane({ paneId, focused, width, height }: PaneProps) {
+function useBoundChartSpec(fallbackFor: (symbol: string | null) => ChartSpec) {
   const { symbol } = usePaneTicker();
-  const fallback = useMemo(
-    () => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
-    [symbol],
-  );
-  const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
-  const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
-  return (
-    <ChartComposerSurface
-      spec={spec}
-      setSpec={setStoredSpec}
-      focused={focused}
-      width={width}
-      height={height}
-      footerId={`${CHART_COMPOSER_PANE_ID}:${paneId}`}
-    />
-  );
-}
-
-export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
-  const { symbol } = usePaneTicker();
-  const fallback = useMemo(() => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(), [symbol]);
+  const fallback = useMemo(() => fallbackFor(symbol), [fallbackFor, symbol]);
   const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
   const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
   const previousSymbolRef = useRef(symbol);
@@ -752,10 +746,61 @@ export function ChartComposerResearchTab({ focused, width, height, onCapture }: 
     if (rebound !== spec) setStoredSpec(rebound);
   }, [setStoredSpec, spec, symbol]);
 
+  useEffect(() => {
+    if (!symbol || spec.series.length > 0) return;
+    const next = fallbackFor(symbol);
+    if (next.series.length > 0) setStoredSpec(next);
+  }, [fallbackFor, setStoredSpec, spec.series.length, symbol]);
+
+  return { spec, setSpec: setStoredSpec };
+}
+
+export function ChartComposerPane({ paneId, focused, width, height }: PaneProps) {
+  const fallbackFor = useCallback(
+    (symbol: string | null) => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
+    [],
+  );
+  const { spec, setSpec } = useBoundChartSpec(fallbackFor);
   return (
     <ChartComposerSurface
       spec={spec}
-      setSpec={setStoredSpec}
+      setSpec={setSpec}
+      focused={focused}
+      width={width}
+      height={height}
+      footerId={`${CHART_COMPOSER_PANE_ID}:${paneId}`}
+    />
+  );
+}
+
+export function TradingViewPane({ paneId, focused, width, height }: PaneProps) {
+  const fallbackFor = useCallback(
+    (symbol: string | null) => symbol ? buildTradingViewChartPreset(symbol) : buildEmptyChartPreset(),
+    [],
+  );
+  const { spec, setSpec } = useBoundChartSpec(fallbackFor);
+  return (
+    <ChartComposerSurface
+      spec={spec}
+      setSpec={setSpec}
+      focused={focused}
+      width={width}
+      height={height}
+      footerId={`${TRADINGVIEW_PANE_ID}:${paneId}`}
+    />
+  );
+}
+
+export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
+  const fallbackFor = useCallback(
+    (symbol: string | null) => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
+    [],
+  );
+  const { spec, setSpec } = useBoundChartSpec(fallbackFor);
+  return (
+    <ChartComposerSurface
+      spec={spec}
+      setSpec={setSpec}
       focused={focused}
       width={width}
       height={height}

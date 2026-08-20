@@ -54,6 +54,7 @@ export const CHART_STUDY_OPTIONS: Array<PaneSettingOption & { value: BuiltinStud
   { value: "sma200", label: "SMA 200", description: "200-bar simple moving average on the primary price series." },
   { value: "ema20", label: "EMA 20", description: "20-bar exponential moving average on the primary price series." },
   { value: "bollinger20", label: "Bollinger 20", description: "20-bar Bollinger Bands at two standard deviations." },
+  { value: "vwap", label: "VWAP", description: "Session volume-weighted average price on the primary price series." },
   { value: "rsi14", label: "RSI 14", description: "14-bar Relative Strength Index in a lower panel." },
   { value: "macd", label: "MACD", description: "12/26/9 MACD in a lower panel." },
 ];
@@ -72,6 +73,7 @@ export const CHART_SETTING_KEYS = {
   range: "chartRange",
   resolution: "chartResolution",
   mode: "chartMode",
+  scale: "chartScale",
 } as const;
 
 function fallbackSpec(symbol: string | null | undefined): ChartSpec {
@@ -310,6 +312,20 @@ export function applyChartComposerPaneSetting(
       };
       break;
     }
+    case CHART_SETTING_KEYS.scale: {
+      const scale = requireString(value, "Scale");
+      if (scale !== "linear" && scale !== "log") throw new Error("Choose a linear or logarithmic scale.");
+      nextSpec = {
+        ...spec,
+        panels: spec.panels.map((panel) => panel.id === "main" ? { ...panel, scale } : panel),
+        series: scale === "log"
+          ? spec.series.map((series) => series.panelId === "main" && series.transform === "log"
+            ? { ...series, transform: "raw" }
+            : series)
+          : spec.series,
+      };
+      break;
+    }
     default:
       return { ...settings, [field.key]: value };
   }
@@ -324,6 +340,7 @@ export function buildChartComposerPaneSettingsDef(
   const spec = parseChartSpecOr(settings[CHART_SPEC_SETTING_KEY], fallbackSpec(activeTicker));
   const inlineStyleTarget = getChartInlineStyleTarget(spec);
   const modes = getChartInlineStyles(spec);
+  const mainScale = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
 
   return {
     title: "Chart Settings",
@@ -335,6 +352,7 @@ export function buildChartComposerPaneSettingsDef(
       [CHART_SETTING_KEYS.range]: spec.viewport.range,
       [CHART_SETTING_KEYS.resolution]: spec.viewport.resolution,
       [CHART_SETTING_KEYS.mode]: inlineStyleTarget?.style ?? "",
+      [CHART_SETTING_KEYS.scale]: mainScale,
     },
     fields: [
       {
@@ -391,6 +409,16 @@ export function buildChartComposerPaneSettingsDef(
           options: modes.map((mode) => ({ value: mode, label: mode.toUpperCase() })),
         }]
         : []),
+      {
+        key: CHART_SETTING_KEYS.scale,
+        label: "Price scale",
+        description: "Linear or logarithmic scale on the main pane. Lightweight Charts supports both; full TradingView also has percent/indexed-to-100 as a dedicated axis mode.",
+        type: "select",
+        options: [
+          { value: "linear", label: "Linear" },
+          { value: "log", label: "Log" },
+        ],
+      },
     ],
     applyValue: applyChartComposerPaneSetting,
   };

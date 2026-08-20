@@ -7,6 +7,7 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "company-research": "ticker-research",
   "chart-composer": "ticker-research",
   "comparison-chart": "ticker-research",
+  tradingview: "ticker-research",
   correlation: "market-overview",
   "dividend-yield": "ticker-research",
   "earnings-calendar": "macro",

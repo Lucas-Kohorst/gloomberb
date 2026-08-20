@@ -42,6 +42,7 @@ const STUDIES = new Set<ChartStudyKind>([
   "bollinger",
   "rsi",
   "macd",
+  "vwap",
   "ratio",
   "spread",
   "correlation",
