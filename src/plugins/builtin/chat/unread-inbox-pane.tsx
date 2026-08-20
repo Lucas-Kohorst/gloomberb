@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ListView, type ListViewItem } from "../../../components/ui";
 import { t } from "../../../i18n";
+import { useShortcut } from "../../../react/input";
 import {
   syncConfigActiveLayoutState,
   useAppDispatch,
@@ -10,6 +11,7 @@ import {
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import type { PaneProps } from "../../../types/plugin";
 import { Box } from "../../../ui";
+import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginAppActions } from "../../runtime";
 import { chatController, type ChatController } from "./controller";
 import { applyUnreadInboxItemToConfig } from "./pane-state";
@@ -25,6 +27,7 @@ interface UnreadInboxPaneProps extends PaneProps {
 export function UnreadInboxPane({
   width,
   height,
+  focused = false,
   controller = chatController,
 }: UnreadInboxPaneProps) {
   const dispatch = useAppDispatch();
@@ -74,6 +77,33 @@ export function UnreadInboxPane({
   const safeSelectedIndex = listItems.length === 0
     ? 0
     : Math.min(selectedIndex, listItems.length - 1);
+
+  const activateSelected = useCallback(() => {
+    const item = items[safeSelectedIndex];
+    if (item) openItem(item);
+  }, [items, openItem, safeSelectedIndex]);
+
+  useShortcut((event) => {
+    if (!focused || event.defaultPrevented || event.propagationStopped) return;
+    if (items.length === 0) return;
+    if (isPlainKey(event, "up", "k")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setSelectedIndex((current) => Math.max(0, Math.min(current, items.length - 1) - 1));
+      return;
+    }
+    if (isPlainKey(event, "down", "j")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      setSelectedIndex((current) => Math.min(items.length - 1, current + 1));
+      return;
+    }
+    if (event.name === "enter" || event.name === "return") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      activateSelected();
+    }
+  }, { enabled: focused });
 
   return (
     <Box flexDirection="column" width={width} height={height}>
