@@ -72,6 +72,10 @@ export class ChatControllerView {
       onlineCount: this.options.getOnlineCount(),
       user: this.options.getUser(),
       messages: this.options.getVisibleMessages(normalizedChannelId),
+      // Only surface a load failure to signed-in users. A signed-out visitor
+      // hitting an auth-gated channel is the expected read-only case, not a
+      // broken chat, and already shows the read-only footer.
+      loadFailed: channel.loadFailed && this.options.hasSessionToken(),
       draft: channel.draft,
       replyToId: channel.replyToId,
       unreadMentionCount: this.options.getUnreadMentionCount(normalizedChannelId),

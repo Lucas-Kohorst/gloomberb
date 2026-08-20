@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  clearPendingConnectionReports,
   listConnectionSources,
   registerConnectionSource,
   reportConnectionRequest,
@@ -13,8 +14,15 @@ import {
 describe("connection source registry", () => {
   const disposers: Array<() => void> = [];
 
+  // Buffered reports are process-wide, so traffic from any other module loaded
+  // in this test process would otherwise replay into the reporter under test.
+  beforeEach(() => {
+    clearPendingConnectionReports();
+  });
+
   afterEach(() => {
     setConnectionRequestReporter(null);
+    clearPendingConnectionReports();
     while (disposers.length > 0) disposers.pop()?.();
   });
 
@@ -37,6 +45,29 @@ describe("connection source registry", () => {
 
     dispose();
     expect(listConnectionSources().some((source) => source.id === "example-api")).toBe(false);
+  });
+
+  test("buffers reports until a reporter attaches", () => {
+    const dispose = registerConnectionSource({
+      id: "rss",
+      name: "RSS Feeds",
+      kind: "news",
+      pluginId: "news",
+    });
+    disposers.push(dispose);
+
+    reportConnectionRequest("rss", { success: true, durationMs: 40, operation: "Reuters" });
+    reportConnectionRequest("rss", { success: false, durationMs: 12, operation: "Bloomberg", error: "timeout" });
+
+    const reports: Array<{ id: string; ok: boolean; operation?: string }> = [];
+    setConnectionRequestReporter((id, report) => {
+      reports.push({ id, ok: report.success, operation: report.operation });
+    });
+
+    expect(reports).toEqual([
+      { id: "rss", ok: true, operation: "Reuters" },
+      { id: "rss", ok: false, operation: "Bloomberg" },
+    ]);
   });
 
   test("persists authRequired on the source definition", () => {

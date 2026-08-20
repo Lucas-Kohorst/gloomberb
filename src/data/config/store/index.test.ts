@@ -5,13 +5,16 @@ import { tmpdir } from "os";
 import { exportConfig, importConfig, loadConfig, sanitizeLayout, saveConfig } from "./index";
 import {
   CURRENT_CONFIG_VERSION,
+  DEFAULT_ADJACENT_LAYOUT,
   DEFAULT_COLUMNS,
   DEFAULT_LAYOUT,
   DEFAULT_PORTFOLIO_COLUMN_IDS,
+  createDefaultConfig,
   findPaneInstance,
 } from "../../../types/config";
 import { getDockedPaneIds } from "../../../plugins/pane-manager";
 
+const PRE_BUILTIN_OWNERSHIP_VERSION = 19;
 const tempDirs: string[] = [];
 
 afterEach(async () => {
@@ -72,6 +75,36 @@ describe("sanitizeLayout", () => {
       second: { kind: "pane", instanceId: "ticker-detail:main" },
     });
     expect(DEFAULT_LAYOUT.floating).toEqual([]);
+  });
+
+  test("ships an Adjacent layout with firehose, indices, a dedicated collection, and polls", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-adjacent-layout");
+    expect(config.layouts.map((entry) => entry.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
+
+    expect(DEFAULT_ADJACENT_LAYOUT.instances.map((instance) => instance.instanceId)).toEqual([
+      "portfolio-list:adjacent",
+      "adjacent-indices:main",
+      "polls:main",
+      "news-firehose:main",
+    ]);
+    expect(getDockedPaneIds(DEFAULT_ADJACENT_LAYOUT)).toEqual([
+      "portfolio-list:adjacent",
+      "adjacent-indices:main",
+      "polls:main",
+      "news-firehose:main",
+    ]);
+    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "portfolio-list:adjacent")).toMatchObject({
+      paneId: "portfolio-list",
+      params: { collectionId: "adjacent" },
+      settings: {
+        collectionScope: "custom",
+        visibleCollectionIds: ["adjacent"],
+      },
+    });
+    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "news-firehose:main")?.paneId).toBe("news-firehose");
+    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "adjacent-indices:main")?.paneId).toBe("adjacent-indices");
+    expect(findPaneInstance(DEFAULT_ADJACENT_LAYOUT, "polls:main")?.paneId).toBe("polls");
   });
 
   test("keeps the default research layout free of retired chart settings", () => {
@@ -390,7 +423,7 @@ describe("loadConfig", () => {
   test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
       disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
     }));
 
@@ -402,7 +435,7 @@ describe("loadConfig", () => {
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
       pluginConfig: {
         options: {
           selectedExpiration: "2026-06-19",
@@ -557,7 +590,7 @@ describe("loadConfig", () => {
 
     expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
     expect(config.activeLayoutIndex).toBe(1);
-    expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research"]);
+    expect(config.layouts.map((layout) => layout.name)).toEqual(["Default", "Research", "Adjacent"]);
     expect(config.layout).toEqual(DEFAULT_LAYOUT);
 
     await saveConfig(config);
@@ -582,6 +615,50 @@ describe("loadConfig", () => {
     const config = await loadConfig(dataDir);
     expect(config.disabledPlugins).toEqual(["adjacent"]);
     expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
+  });
+
+  test("adds the Adjacent default layout and watchlist without replacing existing layouts", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 21,
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+      layouts: [
+        { name: "Home", layout: DEFAULT_LAYOUT },
+        { name: "Monitor", layout: DEFAULT_LAYOUT },
+      ],
+    }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.layouts.map((layout) => layout.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
+    expect(getDockedPaneIds(config.layouts[2]!.layout)).toEqual([
+      "portfolio-list:adjacent",
+      "adjacent-indices:main",
+      "polls:main",
+      "news-firehose:main",
+    ]);
+  });
+
+  test("restores the Adjacent default layout on already-migrated configs that lost it", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: CURRENT_CONFIG_VERSION,
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+      layouts: [
+        { name: "Home", layout: DEFAULT_LAYOUT },
+        { name: "Monitor", layout: DEFAULT_LAYOUT },
+      ],
+    }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.layouts.map((layout) => layout.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
+    expect(getDockedPaneIds(config.layouts[2]!.layout)).toEqual([
+      "portfolio-list:adjacent",
+      "adjacent-indices:main",
+      "polls:main",
+      "news-firehose:main",
+    ]);
   });
 });
 

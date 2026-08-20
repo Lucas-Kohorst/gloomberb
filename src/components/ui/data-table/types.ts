@@ -82,6 +82,8 @@ export interface DataTableProps<
     index: number,
     rowState: DataTableRowState,
   ) => string | undefined;
+  /** True while a row should show a brief roll-in reveal (web CSS + terminal tint). */
+  isRowArriving?: (item: T, index: number) => boolean;
   emptyContent?: ReactNode;
   bodyAfter?: ReactNode;
   emptyStateTitle: string;

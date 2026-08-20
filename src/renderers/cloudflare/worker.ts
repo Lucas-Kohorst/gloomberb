@@ -8,14 +8,15 @@ import {
   clearSessionCookieHeader,
   extractSessionToken,
   fetchSessionUser,
-  gloomFetch,
   gloomApiBaseUrl,
+  gloomFetch,
   gloomCloudProxyUpstreamPath,
   GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   readSessionCookie,
   relayError,
   resolveSessionUser,
   sessionCookieHeader,
+  upstreamSessionCookieHeader,
 } from "./gloom-cloud";
 import {
   hasTrustedHostedOrigin,
@@ -220,6 +221,18 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
   if (!token && !publicAuthPath) {
     return withHostedCors(request, Response.json({ error: "Authentication required." }, { status: 401 }));
   }
+
+  // WebSocket upgrades cannot go through gloomFetch: it neither forwards the
+  // Upgrade handshake nor relays the resulting 101, so hosted realtime never
+  // connects. Relay the upgrade to api.gloom.sh with the server-held session,
+  // so the socket authenticates upstream without the raw token ever reaching
+  // the browser (it only holds the opaque hosted-session cookie). Unlike REST,
+  // the upstream socket lives at `/cloud/ws`, so the full pathname is kept
+  // rather than stripping the `/cloud` prefix.
+  if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+    return proxyGloomCloudWebSocket(request, env, url);
+  }
+
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const upstream = await gloomFetch(env, path, {
     method: request.method,
@@ -238,12 +251,22 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
     headers.set("x-gloom-hosted-session", "1");
   }
   if (path === "/auth/sign-out") headers.set("Set-Cookie", clearSessionCookieHeader());
-  const response = !upstream.ok
-    ? await relayError(upstream)
-    : new Response(upstream.body, { status: upstream.status, headers });
-  return withHostedCors(request, response);
+  if (!upstream.ok) {
+    return withHostedCors(request, await relayError(upstream));
+  }
+  // A rotating session (e.g. sign-in) also carries the raw token in the JSON
+  // body. The hosted client authenticates purely through the HttpOnly cookie,
+  // so strip the token before the body can reach browser JS.
+  const body = rotated ? await stripUpstreamTokenBody(upstream) : upstream.body;
+  return withHostedCors(request, new Response(body, { status: upstream.status, headers }));
 }
 
+/**
+ * Relay a browser WebSocket upgrade to Gloom Cloud. Origin is already gated
+ * for `/cloud/` by the caller; the dedicated `/cloud/ws` route checks it here.
+ * The browser's own `__Host-gloom.session` cookie is dropped and replaced with
+ * the real upstream session token server-side.
+ */
 async function proxyGloomCloudWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
   if (!isTrustedHostedOrigin(request.headers.get("Origin"), url)) {
     return invalidOriginResponse(request);
@@ -251,23 +274,30 @@ async function proxyGloomCloudWebSocket(request: Request, env: Env, url: URL): P
   const token = readSessionCookie(request);
   if (!token) return Response.json({ error: "Authentication required." }, { status: 401 });
   const baseUrl = gloomApiBaseUrl(env);
-  const headers = new Headers();
-  headers.set("Upgrade", request.headers.get("Upgrade") ?? "websocket");
-  headers.set("Connection", request.headers.get("Connection") ?? "Upgrade");
-  const key = request.headers.get("Sec-WebSocket-Key");
-  const version = request.headers.get("Sec-WebSocket-Version");
-  const protocol = request.headers.get("Sec-WebSocket-Protocol");
-  if (key) headers.set("Sec-WebSocket-Key", key);
-  if (version) headers.set("Sec-WebSocket-Version", version);
-  if (protocol) headers.set("Sec-WebSocket-Protocol", protocol);
-  headers.set("Origin", baseUrl);
-  headers.set(
-    "Cookie",
-    ["__Secure-gloomberb.session_token", "gloomberb.session_token"]
-      .map((name) => `${name}=${token}`)
-      .join("; "),
-  );
-  return fetch(`${baseUrl.replace(/^http/, "ws")}/cloud/ws`, { headers });
+  const upstreamRequest = new Request(`${baseUrl}${url.pathname}${url.search}`, request);
+  upstreamRequest.headers.delete("Cookie");
+  upstreamRequest.headers.set("Cookie", upstreamSessionCookieHeader(token));
+  upstreamRequest.headers.set("Origin", baseUrl);
+  return fetch(upstreamRequest);
+}
+
+/**
+ * Return the upstream JSON body with any top-level `token` removed. Falls back
+ * to the raw text when the body is not a JSON object, so non-auth responses are
+ * passed through untouched.
+ */
+async function stripUpstreamTokenBody(upstream: Response): Promise<string> {
+  const text = await upstream.text();
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (isPlainObject(parsed) && "token" in parsed) {
+      delete (parsed as Record<string, unknown>).token;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON — pass the original text through unchanged.
+  }
+  return text;
 }
 
 async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {

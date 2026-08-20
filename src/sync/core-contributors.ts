@@ -1,6 +1,6 @@
 import { scheduleConfigSave } from "../state/config-save-scheduler";
 import { stableStringify } from "../remote/revision";
-import type { AppConfig, BrokerInstanceConfig } from "../types/config";
+import { withAdjacentDefaultWorkspace, type AppConfig, type BrokerInstanceConfig } from "../types/config";
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { Portfolio, TickerMetadata, TickerPosition, TickerRecord, Watchlist } from "../types/ticker";
 import { hydrateTickerMetadata } from "../tickers/metadata";
@@ -455,7 +455,7 @@ function mergeConfigPayload(
       };
     });
   }
-  return next;
+  return withAdjacentDefaultWorkspace(next);
 }
 
 export const coreConfigSyncContributor: SyncContributor = {

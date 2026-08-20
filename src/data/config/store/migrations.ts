@@ -1,7 +1,9 @@
 import {
+  ADJACENT_WATCHLIST_ID,
   cloneLayout,
   createDefaultConfig,
   CURRENT_CONFIG_VERSION,
+  DEFAULT_ADJACENT_LAYOUT,
   DEFAULT_COLUMNS,
   DEFAULT_PORTFOLIO_COLUMN_IDS,
   type LayoutConfig,
@@ -24,6 +26,7 @@ const CLOUD_MACRO_SPLIT_CONFIG_VERSION = 15;
 const PORTFOLIO_DEFAULT_COLUMNS_CONFIG_VERSION = 17;
 const BUILTIN_OWNERSHIP_AND_CHART_CONFIG_VERSION = 20;
 const ADJACENT_CLOUD_DATA_CONFIG_VERSION = 21;
+const ADJACENT_DEFAULT_LAYOUT_CONFIG_VERSION = 22;
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
@@ -84,6 +87,11 @@ const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
     name: "fold-polls-aibench-weather-into-adjacent-cloud",
     toVersion: ADJACENT_CLOUD_DATA_CONFIG_VERSION,
     migrate: migrateAdjacentCloudDataFold,
+  },
+  {
+    name: "add-adjacent-default-layout",
+    toVersion: ADJACENT_DEFAULT_LAYOUT_CONFIG_VERSION,
+    migrate: migrateAdjacentDefaultLayout,
   },
 ];
 
@@ -288,5 +296,30 @@ function migrateAdjacentCloudDataFold(saved: Record<string, unknown>): Record<st
     ...saved,
     disabledPlugins: normalizeBuiltinDisabledPluginIds(stringList(saved.disabledPlugins)),
     pluginConfig: normalizeBuiltinPluginStateMap(pluginConfigMap(saved.pluginConfig)),
+  };
+}
+
+function migrateAdjacentDefaultLayout(saved: Record<string, unknown>): Record<string, unknown> {
+  const layouts = Array.isArray(saved.layouts) ? [...saved.layouts] : saved.layouts;
+  const watchlists = Array.isArray(saved.watchlists) ? [...saved.watchlists] : saved.watchlists;
+
+  const nextLayouts = Array.isArray(layouts)
+    && !layouts.some((entry) =>
+      isPlainRecord(entry)
+      && typeof entry.name === "string"
+      && entry.name.trim().toLowerCase() === "adjacent"
+    )
+    ? [...layouts, { name: "Adjacent", layout: cloneLayout(DEFAULT_ADJACENT_LAYOUT), paneState: {} }]
+    : layouts;
+
+  const nextWatchlists = Array.isArray(watchlists)
+    && !watchlists.some((entry) => isPlainRecord(entry) && entry.id === ADJACENT_WATCHLIST_ID)
+    ? [...watchlists, { id: ADJACENT_WATCHLIST_ID, name: "Adjacent" }]
+    : watchlists;
+
+  return {
+    ...saved,
+    layouts: nextLayouts,
+    watchlists: nextWatchlists,
   };
 }

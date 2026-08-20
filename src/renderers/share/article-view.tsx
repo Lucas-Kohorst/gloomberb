@@ -12,7 +12,11 @@ import { useEffect, useState } from "react";
 import type { ArticleSharePayload } from "../../shares/payload";
 import {
   cleanJinaArticle,
+  classifyReaderHttpFailure,
+  classifyReaderThrow,
   preferredArticleBody,
+  readerFallbackNotice,
+  type ReaderFailureKind,
   JINA_READER_ENDPOINT,
   JINA_READER_HEADERS,
 } from "../../plugins/builtin/shared/jina-article-text";
@@ -22,26 +26,52 @@ import { ShareShell, formatShareTimestamp } from "./shell";
 export { preferredArticleBody };
 
 function useFullArticleText(url: string, enabled: boolean) {
-  const [state, setState] = useState<{ text: string | null; loading: boolean }>({
+  const [state, setState] = useState<{
+    text: string | null;
+    loading: boolean;
+    failureKind: ReaderFailureKind | null;
+    failureMessage: string | null;
+  }>({
     text: null,
     loading: enabled,
+    failureKind: null,
+    failureMessage: null,
   });
 
   useEffect(() => {
     if (!enabled || !/^https?:\/\//i.test(url)) {
-      setState({ text: null, loading: false });
+      setState({ text: null, loading: false, failureKind: null, failureMessage: null });
       return;
     }
     const controller = new AbortController();
-    setState({ text: null, loading: true });
+    setState({ text: null, loading: true, failureKind: null, failureMessage: null });
     fetch(`${JINA_READER_ENDPOINT}${url}`, {
       signal: controller.signal,
       headers: JINA_READER_HEADERS,
     })
-      .then((response) => (response.ok ? response.text() : Promise.reject(new Error(""))))
-      .then((raw) => setState({ text: cleanJinaArticle(raw), loading: false }))
-      .catch(() => {
-        if (!controller.signal.aborted) setState({ text: null, loading: false });
+      .then(async (response) => {
+        const raw = await response.text();
+        if (!response.ok) {
+          const failure = classifyReaderHttpFailure(response.status, raw);
+          throw Object.assign(new Error(failure.status), { readerFailure: failure });
+        }
+        return raw;
+      })
+      .then((raw) => setState({
+        text: cleanJinaArticle(raw),
+        loading: false,
+        failureKind: null,
+        failureMessage: null,
+      }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const failure = classifyReaderThrow(error);
+        setState({
+          text: null,
+          loading: false,
+          failureKind: failure.kind,
+          failureMessage: failure.message,
+        });
       });
     return () => controller.abort();
   }, [enabled, url]);
@@ -67,6 +97,7 @@ export function ArticleShareView({
     && !!payload.url;
   const full = useFullArticleText(payload.url, needsFullText);
   const body = preferredArticleBody(summary, full.text);
+  const fallbackNotice = readerFallbackNotice(full.failureKind, !!body.trim());
 
   const published = formatShareTimestamp(payload.publishedAt);
   const source = payload.source || payload.publicationName || "";
@@ -86,10 +117,23 @@ export function ArticleShareView({
     <ShareShell title={payload.title} footer={footer} openInTerminalHref={openInTerminalHref}>
       {payload.subtitle ? <p className="share-subtitle">{payload.subtitle}</p> : null}
 
+      {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
+
       {embedded ? <SanitizedHtmlBody html={embedded} /> : body
         ? <MarkdownBody text={body} />
         : !full.loading
-          ? <p className="share-note">No article text was included in this link.</p>
+          ? (
+            <p className="share-note">
+              {full.failureMessage
+                ?? "No article text was included in this link."}
+              {payload.url && full.failureMessage ? (
+                <>
+                  {" "}
+                  <a href={payload.url} target="_blank" rel="noreferrer noopener">Open source</a>
+                </>
+              ) : null}
+            </p>
+          )
           : null}
 
       {full.loading ? (

@@ -38,8 +38,9 @@ function isVoteHubPoll(value: unknown): value is VoteHubPoll {
 
 function voteHubPollsSearch(params?: { pollType?: string; subject?: string }): string {
   const search = new URLSearchParams();
-  if (params?.pollType) search.set("poll_type", params.pollType);
-  if (params?.subject) search.set("subject", params.subject);
+  for (const [key, value] of Object.entries(voteHubPollQuery(params))) {
+    if (value) search.set(key, value);
+  }
   return search.toString();
 }
 
@@ -53,17 +54,24 @@ function buildUrl(path: string, params?: Record<string, string | undefined>): st
   return url.toString();
 }
 
+export function voteHubPollQuery(params?: {
+  pollType?: string;
+  subject?: string;
+}): Record<string, string | undefined> {
+  const pollType = params?.pollType?.trim();
+  return {
+    poll_type: !pollType || pollType === "all" ? undefined : pollType,
+    subject: params?.subject,
+  };
+}
+
 export async function fetchVoteHubPolls(params?: {
   pollType?: string;
   subject?: string;
 }): Promise<VoteHubPoll[]> {
-  const search = voteHubPollsSearch(params);
   const url = isHostedWebClient()
-    ? adjacentCloudDataUrl("votehub", "polls", search)
-    : buildUrl("/polls", {
-        poll_type: params?.pollType,
-        subject: params?.subject,
-      });
+    ? adjacentCloudDataUrl("votehub", "polls", voteHubPollsSearch(params))
+    : buildUrl("/polls", voteHubPollQuery(params));
   return withConnectionRequest("votehub", "polls", async () => {
     const response = await VOTEHUB_FETCH.fetch(url);
     if (!response.ok) {

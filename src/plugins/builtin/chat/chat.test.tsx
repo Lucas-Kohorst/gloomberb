@@ -105,6 +105,32 @@ afterEach(async () => {
 });
 
 describe("ChatContent", () => {
+  test("shows a distinct error state and refresh hint when the load failed", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      user: { id: "u0", username: "vince", emailVerified: true },
+    });
+    // A hard load failure for a signed-in user (mapping covered by the
+    // controller unit tests); assert the pane renders it as an error, not the
+    // ambiguous "No messages yet." empty state.
+    (controller as any).storage.ensureChannelState("everyone").loadFailed = true;
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 72, height: 14, withFooter: true }), {
+        width: 72,
+        height: 14,
+      });
+    });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("Couldn't load messages");
+    expect(frame).not.toContain("No messages yet");
+    // Footer surfaces the changeable error status and a bound refresh hint.
+    expect(frame).toContain("couldn't reach chat");
+    expect(frame).toContain("efresh");
+  });
+
   test("keeps a persisted DM selected while private channels refresh", async () => {
     const controller = createController();
     const dmChannelId = "dm:test";

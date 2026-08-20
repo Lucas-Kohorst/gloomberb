@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.13.0 — Feature parity: Adjacent Cloud + hosted 0.12.1/0.12.2
+
+Unifies `integration/v0.12.0` (Adjacent Cloud, Data Catalog, Godel panes) with `main` through `release/v0.12.2` (news roll-in, hosted chat realtime, first-class alt-data panes, Polls All tab, Adjacent default layout).
+
+### Adjacent Cloud
+
+- **Adjacent Cloud** owns Polls (`POLL`), AI Benchmarks (`AIBENCH`), Weather (`WX`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream (VoteHub, llm-stats, TWC, NWS CLI, Adjacent, US listings).
+- Hosted clients fetch those sources through `/api/data/{provider}` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
+- Weather pane + `G WX:LAX:high` / `G NWS:KNYC:high` series. Climate prediction markets get a Settlement tab that opens the TWC print.
+- US listed-universe security master at `/api/data/us-listings/universe` (Nasdaq Trader + SEC OTC, 12h cache).
+- Restore Data Catalog (`CAT`) and watchlist/portfolio `[a]`dd / `[d]`elete / `[g]`raph from v0.11.1. Benchmarks in CAT use llm-stats (`BENCH:model:tps`), not Artificial Analysis.
+- Restore Godel Terminal parity panes: Short Interest (`SI`), Dividend Yield (`DVD`), Market Halts (`HALT`), IPO Calendar (`IPO`), Black-Scholes (`OVME`), options chain `[c]`alc, `G AAPL:div` / `G AAPL:dvd`, and `SA` halt / short-float / ex-div alerts.
+- Hosted Worker deploys to `terminal.kohor.st` on push to `main` (`bun run cloud:deploy`).
+
+### Chat
+
+- Hosted chat can load history, send, and receive live messages. Same-origin `GET`s that omit `Origin` are allowed; writes still require a matching one.
+- Realtime authenticates via the Worker: the hosted socket connects same-origin (no token in the URL), and the Worker relays `/cloud/ws` to Gloom Cloud under the server-held session.
+- Gloom Cloud chat REST traffic reports through the Connections pane.
+
+### News & reader
+
+- New headlines briefly roll in after the first silent hydrate.
+- When Jina or the publisher returns 403/blocked, show a “full text unavailable” empty state with RSS-summary fallback.
+
+### Alt-data panes
+
+- Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable plugins.
+- Polls default to an All tab; Adjacent ships as a default layout + watchlist.
+
+### Worker secrets
+
+CoS sets Worker secrets on gloomberb-cloud. Do not commit values.
+
+- `wrangler secret put ADJACENT_API_KEY`
+
+### Next settlement prints (not registered yet)
+
+BLS first print, EIA weekly, NOAA/NCEI normals, CME settlements, CF Benchmarks (license), AP Elections. Do not scrape Weather Underground. Kalshi/Polymarket/RSS/X/Jina stay off this registry; FRED stays on Gloom Cloud.
+
 ## v0.12.3 — Adjacent Cloud data terminal
 
 Hosted users share one cached origin pull for reference prints. Polls, AI Benchmarks, and Weather fold into the Adjacent Cloud plugin. The Worker exposes `GET /api/data/{provider}` instead of one-off routes.
@@ -23,6 +63,30 @@ CoS sets Worker secrets on gloomberb-cloud. Do not commit values.
 ### Next settlement prints (not registered yet)
 
 BLS first print, EIA weekly, NOAA/NCEI normals, CME settlements, CF Benchmarks (license), AP Elections. Do not scrape Weather Underground. Kalshi/Polymarket/RSS/X/Jina stay off this registry; FRED stays on Gloom Cloud.
+## v0.12.2 — Hosted chat realtime fix
+
+Hosted chat at terminal.kohor.st can load history, send, and receive live messages again.
+
+### Chat
+
+- Fixed hosted chat showing "couldn't reach chat": the Gloom Cloud proxy rejected same-origin `GET`s because browsers omit the `Origin` header on safe methods, so channel/state/message loads were answered with `403`. Reads now allow an absent `Origin`, while writes still require a matching one.
+- Realtime now authenticates: the hosted socket connects same-origin to the Worker (no token in the URL), and the Worker relays the `/cloud/ws` upgrade to Gloom Cloud under the server-held session. The browser only ever holds the opaque hosted-session cookie — the raw upstream token is stripped from responses and never captured client-side.
+- Gloom Cloud chat REST traffic now reports through the Connections pane.
+
+## v0.12.1 — News roll-in and blocked-reader fallback
+
+News rows briefly roll in when they arrive, and the article reader stays useful when publishers block automated extraction.
+
+### News
+
+- New headlines in firehose, RSS wire, breaking, industry, presets, and ticker news briefly roll in after the first silent hydrate (terminal row tint; web/desktop opacity/brightness).
+- Arrival tracking keys on stable article ids so filter hide/show does not re-animate already-seen rows.
+
+### Reader
+
+- When Jina or the publisher returns 403/blocked (common on Investing.com and similar), show a clear “full text unavailable” empty state with RSS-summary fallback when present, instead of a raw `Reader request failed (403)`.
+- Footer keeps a short status (`blocked`) plus `[r]`efresh / `[o]`pen / `[y]` share — no duplicated error string in the body and footer.
+- Same path covers the terminal reader, Substack reader, and public article share pages.
 
 ## v0.12.0 — Alt-data panes, denser news wire, and security hardening
 

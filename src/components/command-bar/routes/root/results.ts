@@ -22,6 +22,13 @@ import { buildRootShortcutItem } from "./shortcut-items";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
+/** The ART plugin command claims the prefix, so article rows must still be shown. */
+export function isArticleLookupShortcut(intent: RootShortcutIntent): boolean {
+  return intent.kind !== "none"
+    && intent.source === "plugin-command"
+    && intent.command.id === "open-news-article";
+}
+
 interface PaneTemplateItemOptions {
   category?: string;
   createOptions?: PaneTemplateCreateOptions;
@@ -183,8 +190,14 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     && rootShortcutIntent.source === "plugin-command"
     && shortcutItem
   ) {
-    const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
-    items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    // ART's buildResults only sees the in-memory news cache, which is empty
+    // until a news pane has loaded. Live rows come from articleResultItems.
+    if (isArticleLookupShortcut(rootShortcutIntent)) {
+      items.push(shortcutItem);
+    } else {
+      const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
+      items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+    }
   } else if (match && match.command.id === "plugins") {
     items.push(...buildPluginItems(match.arg));
   } else if (match && match.command.id === "layout") {
@@ -242,8 +255,10 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...matchedItems);
   }
 
-  if (rootShortcutIntent.kind === "none") {
+  if (rootShortcutIntent.kind === "none" || isArticleLookupShortcut(rootShortcutIntent)) {
     items.push(...articleResultItems);
+  }
+  if (rootShortcutIntent.kind === "none") {
     items.push(...chartSeriesItems);
   }
 

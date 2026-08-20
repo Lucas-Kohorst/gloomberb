@@ -132,6 +132,7 @@ export function ChatContent({
     hasOlderMessages,
     hasSavedSession,
     loading,
+    loadFailed,
     loadingOlderMessages,
     messages,
     onlineCount,
@@ -293,6 +294,13 @@ export function ChatContent({
     setSelectedIdx(-1);
     setFollowMessages(true);
   }, []);
+
+  const retryMessages = useCallback(() => {
+    void (useDefaultControllerChannel
+      ? controller.refreshMessages()
+      : controller.refreshChannelMessages(channelId)).catch(() => {});
+    void controller.refreshChatState().catch(() => {});
+  }, [channelId, controller, useDefaultControllerChannel]);
 
   useEffect(() => {
     onChannelTitleChange?.(activeChannelTitle);
@@ -571,12 +579,15 @@ export function ChatContent({
     closeSearch,
     stackedConversationOpen,
     onLeaveConversation: closeConversation,
+    onRefresh: retryMessages,
   });
 
   usePaneFooter("chat", () => {
     const info: PaneFooterSegment[] = [];
     if (loading) {
       info.push({ id: "loading", parts: [{ text: t("loading"), tone: "muted" }] });
+    } else if (loadFailed) {
+      info.push({ id: "error", parts: [{ text: t("couldn't reach chat"), tone: "negative" }] });
     } else if (!user) {
       info.push({ id: "auth", parts: [{ text: t("read-only"), tone: "warning" }] });
     } else if (!canSend) {
@@ -587,11 +598,12 @@ export function ChatContent({
     }
     return {
       info,
-      hints: stackedConversationOpen || showChannelSidebar
-        ? [{ id: "search", key: "s", label: "earch", onPress: openSearch }]
-        : [],
+      hints: [
+        { id: "refresh", key: "r", label: "efresh", onPress: retryMessages },
+        { id: "search", key: "s", label: "earch", onPress: openSearch },
+      ],
     };
-  }, [canSend, loading, openSearch, searching, showChannelSidebar, stackedConversationOpen, user, visibleMessages.length]);
+  }, [canSend, loadFailed, loading, openSearch, retryMessages, searching, showChannelSidebar, stackedConversationOpen, user, visibleMessages.length]);
 
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
@@ -672,7 +684,13 @@ export function ChatContent({
         messageAreaHeight={messageAreaHeight}
         messageBodyWidth={messageBodyWidth}
         messages={visibleMessages}
-        emptyStateLabel={searching ? t("No messages match this search.") : undefined}
+        emptyStateLabel={
+          searching
+            ? t("No messages match this search.")
+            : loadFailed
+              ? t("Couldn't load messages. Press [r] to retry.")
+              : undefined
+        }
         nativePaneChrome={nativePaneChrome}
         latestEditableMessageId={latestEditableMessageId}
         openTicker={openTicker}

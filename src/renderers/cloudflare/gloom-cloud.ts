@@ -63,7 +63,7 @@ export async function gloomFetch(
   headers.set("Origin", baseUrl);
   if (init.body != null) headers.set("Content-Type", "application/json");
   if (init.token) {
-    headers.set("Cookie", UPSTREAM_SESSION_COOKIES.map((name) => `${name}=${init.token}`).join("; "));
+    headers.set("Cookie", upstreamSessionCookieHeader(init.token));
   }
   return fetch(`${baseUrl}${path}`, {
     method: init.method ?? "GET",
@@ -71,6 +71,15 @@ export async function gloomFetch(
     body: init.body ?? null,
     signal: AbortSignal.timeout(init.timeoutMs ?? GLOOM_FETCH_TIMEOUT_MS),
   });
+}
+
+/**
+ * Cookie header value that authenticates a server-side request to Gloom Cloud
+ * with the user's real session token. Kept in one place so the WebSocket proxy
+ * and `gloomFetch` present the token under the same upstream cookie names.
+ */
+export function upstreamSessionCookieHeader(token: string): string {
+  return UPSTREAM_SESSION_COOKIES.map((name) => `${name}=${token}`).join("; ");
 }
 
 /** Extract the Gloom Cloud session token from an upstream response's Set-Cookie headers. */

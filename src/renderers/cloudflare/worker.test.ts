@@ -521,6 +521,49 @@ IBM|International Business Machines Corporation Common Stock|N|IBM|N|100|N|IBM
   });
 });
 
+interface CapturedUpstream {
+  url: string;
+  method: string;
+  headers: Headers;
+}
+
+/**
+ * Records every upstream call the Worker makes and lets a test decide the
+ * response. Normalizes string-URL and Request-object fetch inputs so both the
+ * REST (`gloomFetch`) and WebSocket (`new Request(...)`) paths are captured.
+ */
+function installUpstreamCapture(
+  respond: (req: CapturedUpstream) => Response,
+): CapturedUpstream[] {
+  const captured: CapturedUpstream[] = [];
+  globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+    const request = typeof input === "string" || input instanceof URL
+      ? new Request(input, init)
+      : input;
+    const entry: CapturedUpstream = {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+    };
+    captured.push(entry);
+    return respond(entry);
+  }) as typeof globalThis.fetch;
+  return captured;
+}
+
+function makeWebSocketRequest(
+  options: { origin?: string; sessionToken?: string | null } = {},
+): Request {
+  const headers = new Headers();
+  headers.set("Upgrade", "websocket");
+  headers.set("Connection", "Upgrade");
+  headers.set("Sec-WebSocket-Version", "13");
+  headers.set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+  if (options.origin !== undefined) headers.set("Origin", options.origin);
+  if (options.sessionToken) headers.set("Cookie", `${SESSION_COOKIE}=${options.sessionToken}`);
+  return new Request(`${ORIGIN}/cloud/ws`, { method: "GET", headers });
+}
+
 describe("Gloom Cloud /cloud origin gate", () => {
   afterEach(() => {
     restoreFetch();
@@ -622,5 +665,144 @@ describe("Gloom Cloud /cloud origin gate", () => {
     );
     expect(response?.status).toBe(401);
     expect(await response?.json()).toEqual({ error: "Authentication required." });
+  });
+
+  test("allows a same-origin GET that omits the Origin header", async () => {
+    // Browsers do not send an Origin header on same-origin GETs; the chat
+    // message/channel/state loads are exactly this shape, so they must proxy.
+    const captured = installUpstreamCapture(() => new Response(JSON.stringify([{ id: "everyone" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/chat/channels", { sessionToken: "real-upstream-token" }),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.url).toBe("https://api.gloom.sh/chat/channels");
+    // The Worker swaps the opaque hosted cookie for the real upstream session.
+    const cookie = captured[0]!.headers.get("Cookie") ?? "";
+    expect(cookie).toContain("__Secure-gloomberb.session_token=real-upstream-token");
+    expect(cookie).not.toContain("__Host-gloom.session");
+  });
+
+  test("rejects a cross-origin GET", async () => {
+    installUpstreamCapture(() => new Response("should-not-run", { status: 200 }));
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/chat/channels", {
+        origin: "https://evil.example.com",
+        sessionToken: "real-upstream-token",
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+  });
+
+  test("rejects a write that omits the Origin header", async () => {
+    installUpstreamCapture(() => new Response("should-not-run", { status: 200 }));
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/cloud/chat/channels/everyone/messages", {
+        body: JSON.stringify({ content: "hi" }),
+        sessionToken: "real-upstream-token",
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+  });
+
+  test("allows a same-origin write with a matching Origin", async () => {
+    const captured = installUpstreamCapture(() => new Response(JSON.stringify({ id: "m1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/cloud/chat/channels/everyone/messages", {
+        origin: ORIGIN,
+        body: JSON.stringify({ content: "hi" }),
+        sessionToken: "real-upstream-token",
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(captured[0]!.url).toBe("https://api.gloom.sh/chat/channels/everyone/messages");
+  });
+
+  test("strips the raw upstream token from a rotating response body", async () => {
+    // Sign-in rotates the session and echoes the raw token in its body; the
+    // hosted client must never receive it (it authenticates via the cookie).
+    installUpstreamCapture(() => new Response(
+      JSON.stringify({ token: "raw-upstream-token", user: { id: "user-A" } }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": "__Secure-gloomberb.session_token=raw-upstream-token; Path=/; HttpOnly",
+        },
+      },
+    ));
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/cloud/auth/sign-in/email", {
+        origin: ORIGIN,
+        body: JSON.stringify({ email: "a@example.com", password: "pw" }),
+      }),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("x-gloom-hosted-session")).toBe("1");
+    const body = await response?.json() as { token?: string; user?: { id: string } };
+    expect(body.token).toBeUndefined();
+    expect(body.user?.id).toBe("user-A");
+  });
+});
+
+describe("hosted Gloom Cloud WebSocket proxy", () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
+  test("rejects an unauthenticated upgrade", async () => {
+    installUpstreamCapture(() => new Response(null, { status: 500 }));
+    const response = await workerModule.default.fetch?.(
+      makeWebSocketRequest({ origin: ORIGIN }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+  });
+
+  test("rejects a cross-origin upgrade", async () => {
+    installUpstreamCapture(() => new Response(null, { status: 500 }));
+    const response = await workerModule.default.fetch?.(
+      makeWebSocketRequest({ origin: "https://evil.example.com", sessionToken: "real-upstream-token" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+  });
+
+  test("relays an authenticated upgrade to Gloom Cloud with the server-held session", async () => {
+    const captured = installUpstreamCapture(() => (
+      { status: 101, webSocket: {} } as unknown as Response
+    ));
+
+    const response = await workerModule.default.fetch?.(
+      makeWebSocketRequest({ origin: ORIGIN, sessionToken: "real-upstream-token" }),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(101);
+    expect(captured).toHaveLength(1);
+    const upstream = captured[0]!;
+    expect(upstream.url).toBe("https://api.gloom.sh/cloud/ws");
+    expect(upstream.headers.get("Upgrade")).toBe("websocket");
+    expect(upstream.headers.get("Origin")).toBe("https://api.gloom.sh");
+    const cookie = upstream.headers.get("Cookie") ?? "";
+    expect(cookie).toContain("__Secure-gloomberb.session_token=real-upstream-token");
+    expect(cookie).toContain("gloomberb.session_token=real-upstream-token");
+    // The browser-facing hosted cookie must not leak to the upstream socket.
+    expect(cookie).not.toContain("__Host-gloom.session");
   });
 });

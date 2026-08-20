@@ -229,8 +229,9 @@ describe("core sync contributors", () => {
       "portfolio-list",
       "analytics",
       "kelly-sizer",
+      "options-calc",
     ]);
-    for (const pluginId of ["portfolio", "portfolio-list", "analytics", "kelly-sizer"]) {
+    for (const pluginId of ["portfolio", "portfolio-list", "analytics", "kelly-sizer", "options-calc"]) {
       expect(payload.pluginConfig[pluginId]).toEqual(config.pluginConfig.portfolio);
       expect(
         payload.layouts[0].paneState["portfolio-list:main"].pluginState[pluginId],
@@ -293,6 +294,20 @@ describe("core sync contributors", () => {
     expect(merged?.layout).toBe(config.layout);
     expect(merged?.layouts).toBe(config.layouts);
     expect(merged?.activeLayoutIndex).toBe(config.activeLayoutIndex);
+  });
+
+  test("keeps the Adjacent default layout when a cloud snapshot omits it", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    const remoteLayouts = config.layouts.slice(0, 2);
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(config, {
+      layout: remoteLayouts[0]!.layout,
+      layouts: remoteLayouts,
+      activeLayoutIndex: 0,
+      watchlists: [{ id: "watchlist", name: "Watchlist" }],
+    });
+
+    expect(merged?.layouts.map((layout) => layout.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(merged?.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
   });
 
   test("syncs collection memberships and sanitized positions", async () => {

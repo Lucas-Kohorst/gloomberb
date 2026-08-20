@@ -1,5 +1,29 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_0: ChangelogRelease = {
+  id: "hosted-v0-13-0",
+  tagName: "v0.13.0",
+  version: "0.13.0",
+  title: "Feature parity: Adjacent Cloud + hosted 0.12.1/0.12.2",
+  publishedAt: "2026-08-20T13:00:00.000Z",
+  url: "",
+  body: `Unifies integration/v0.12.0 (Adjacent Cloud, Data Catalog, Godel panes) with main through release/v0.12.2.
+
+## Adjacent Cloud
+
+- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream.
+- Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
+- Restore Data Catalog (\`CAT\`) and Godel panes (SI, DVD, HALT, IPO, OVME) that v0.12.0 parked.
+
+## Chat, news, alt-data
+
+- Hosted chat realtime works again (same-origin GET without Origin; Worker relays \`/cloud/ws\`).
+- News rows roll in; blocked article readers show a clear empty state.
+- Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
+- Polls default to All; Adjacent ships as a default layout + watchlist.
+`,
+};
+
 const RELEASE_0_12_3: ChangelogRelease = {
   id: "hosted-v0-12-3",
   tagName: "v0.12.3",
@@ -25,6 +49,45 @@ CoS sets Worker secrets on gloomberb-cloud. Do not commit values.
 ## Next settlement prints
 
 BLS first print, EIA weekly, NOAA/NCEI normals, CME settlements, and CF Benchmarks (license) register as new keyed-data providers — not new Worker routes. Weather Underground stays off until a first-party API exists. Kalshi, Polymarket, RSS, X, and Jina stay off this registry; FRED stays on Gloom Cloud.
+`,
+};
+
+const RELEASE_0_12_2: ChangelogRelease = {
+  id: "hosted-v0-12-2",
+  tagName: "v0.12.2",
+  version: "0.12.2",
+  title: "Hosted chat realtime fix",
+  publishedAt: "2026-08-18T13:00:00.000Z",
+  url: "",
+  body: `Hosted chat can load history, send, and receive live messages again.
+
+## Chat
+
+- Fixed hosted chat showing “couldn't reach chat”: the Gloom Cloud proxy rejected same-origin \`GET\`s because browsers omit the \`Origin\` header on safe methods, so channel/state/message loads were answered with \`403\`. Reads now allow an absent \`Origin\`, while writes still require a matching one.
+- Realtime now authenticates: the hosted socket connects same-origin to the Worker (no token in the URL), and the Worker relays the \`/cloud/ws\` upgrade to Gloom Cloud under the server-held session. The browser only ever holds the opaque hosted-session cookie — the raw upstream token is stripped from responses and never captured client-side.
+- Gloom Cloud chat REST traffic now reports through the Connections pane.
+`,
+};
+
+const RELEASE_0_12_1: ChangelogRelease = {
+  id: "hosted-v0-12-1",
+  tagName: "v0.12.1",
+  version: "0.12.1",
+  title: "News roll-in and blocked-reader fallback",
+  publishedAt: "2026-08-18T01:30:00.000Z",
+  url: "",
+  body: `News rows briefly roll in when they arrive, and the article reader stays useful when publishers block automated extraction.
+
+## News
+
+- New headlines in firehose, RSS wire, breaking, industry, presets, and ticker news briefly roll in after the first silent hydrate (terminal row tint; web/desktop opacity/brightness).
+- Arrival tracking keys on stable article ids so filter hide/show does not re-animate already-seen rows.
+
+## Reader
+
+- When Jina or the publisher returns 403/blocked (common on Investing.com and similar), show a clear “full text unavailable” empty state with RSS-summary fallback when present, instead of a raw \`Reader request failed (403)\`.
+- Footer keeps a short status (\`blocked\`) plus \`[r]\`efresh / \`[o]\`pen / \`[y]\` share — no duplicated error string in the body and footer.
+- Same path covers the terminal reader, Substack reader, and public article share pages.
 `,
 };
 
@@ -106,7 +169,10 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_0,
   RELEASE_0_12_3,
+  RELEASE_0_12_2,
+  RELEASE_0_12_1,
   RELEASE_0_12_0,
   RELEASE_0_11_0,
 ];

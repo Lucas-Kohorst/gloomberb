@@ -36,6 +36,8 @@ function mergeQuoteStreamSubscriptions(
 type CloudApiSocketDelegate = {
   getBaseUrl: () => string;
   getSocketAuthToken: () => string | null;
+  /** Hosted web client: authenticate via the same-origin session cookie, not a token query param. */
+  isCookieAuthenticated: () => boolean;
   hasVerifiedUser: () => boolean;
   isUsingWebSocketToken: () => boolean;
   clearWebSocketTokenForFallback: () => boolean;
@@ -375,14 +377,18 @@ export class CloudApiSocket {
 
     const socketToken = this.delegate.getSocketAuthToken();
     const usingWebSocketToken = this.delegate.isUsingWebSocketToken();
+    // Hosted connects same-origin to the Worker and authenticates with the
+    // HttpOnly cookie sent on the handshake, so the opaque hosted-session
+    // sentinel must never be placed in the query string.
     const hostedSocketUrl = hostedCloudWebSocketUrl();
+    const cookieAuthenticated = this.delegate.isCookieAuthenticated();
     const url = hostedSocketUrl
-      ?? (socketToken
+      ?? (socketToken && !cookieAuthenticated
         ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
         : `${this.getWebSocketBaseUrl()}/cloud/ws`);
     cloudApiLog.info("open websocket", {
       hasToken: !!socketToken,
-      tokenSource: usingWebSocketToken ? "websocket" : "session",
+      tokenSource: cookieAuthenticated ? "cookie" : usingWebSocketToken ? "websocket" : "session",
       quoteTargets: this.quoteTargets.size,
       channelTargets: this.channelListeners.size,
     });

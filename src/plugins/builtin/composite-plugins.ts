@@ -1,4 +1,3 @@
-import { bondSearchModule } from "./bond-search";
 import { portfolioAnalyticsModule } from "./analytics";
 import { brokerManagerModule } from "./broker-manager";
 import { byokModule } from "./byok";
@@ -22,7 +21,6 @@ import { tvModule } from "./tv";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
 import { sectorsModule } from "./sectors";
-import { volatilityModule } from "./volatility";
 import { worldIndicesModule } from "./world-indices";
 import { yieldCurveModule } from "./yield-curve";
 
@@ -66,7 +64,6 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     marketMoversModule,
     marketHaltsModule,
     fearGreedModule,
-    volatilityModule,
     sectorsModule,
     fxMatrixModule,
   ],
@@ -77,7 +74,7 @@ export const macroPlugin = composeBuiltinPlugin({
   name: "Macro",
   version: "1.0.0",
   description:
-    "Economic calendar, yield curve, corporate bond yields, earnings calendar, IPO calendar, and live financial TV.",
+    "Economic calendar, yield curve, earnings calendar, IPO calendar, and live financial TV.",
   toggleable: true,
-  modules: [economicCalendarModule, yieldCurveModule, bondSearchModule, earningsModule, ipoCalendarModule, tvModule],
+  modules: [economicCalendarModule, yieldCurveModule, earningsModule, ipoCalendarModule, tvModule],
 });

@@ -1,6 +1,6 @@
 import type { Dispatch } from "react";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
-import { findPaneInstance, isTickerPaneId, type AppConfig } from "../../types/config";
+import { findPaneInstance, isTickerPaneId, ADJACENT_WATCHLIST_ID, type AppConfig } from "../../types/config";
 import type { CachedFinancialsTarget, DataProvider } from "../../types/data-provider";
 import type { TickerFinancials } from "../../types/financials";
 import type { BrokerAccount } from "../../types/trading";
@@ -24,6 +24,17 @@ const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange
   { ticker: "V", exchange: "NYSE", currency: "USD", name: "Visa Inc." },
   { ticker: "BTC-USD", exchange: "CCC", currency: "USD", name: "Bitcoin USD" },
   { ticker: "ETH-USD", exchange: "CCC", currency: "USD", name: "Ethereum USD" },
+];
+
+const DEFAULT_ADJACENT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
+  { ticker: "SPX", exchange: "INDEX", currency: "USD", name: "S&P 500" },
+  { ticker: "QQQ", exchange: "NASDAQ", currency: "USD", name: "Invesco QQQ Trust" },
+  { ticker: "TSLA", exchange: "NASDAQ", currency: "USD", name: "Tesla Inc." },
+  { ticker: "SPCX", exchange: "NASDAQ", currency: "USD", name: "SPCX" },
+  { ticker: "BTC-USD", exchange: "CCC", currency: "USD", name: "Bitcoin USD" },
+  { ticker: "ETH-USD", exchange: "CCC", currency: "USD", name: "Ethereum USD" },
+  { ticker: "SOL-USD", exchange: "CCC", currency: "USD", name: "Solana USD" },
+  { ticker: "ZEC-USD", exchange: "CCC", currency: "USD", name: "Zcash USD" },
 ];
 
 interface StartupPaneStateSeed {
@@ -258,6 +269,39 @@ async function resolveCachedFinancialPrimeEntries(
   return primedEntries;
 }
 
+async function seedWatchlistTickers(
+  tickerRepository: AppTickerRepositoryPort,
+  watchlistId: string,
+  entries: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">>,
+  existingBySymbol: Map<string, TickerRecord>,
+): Promise<void> {
+  for (const entry of entries) {
+    const existing = existingBySymbol.get(entry.ticker);
+    if (existing) {
+      if (!existing.metadata.watchlists.includes(watchlistId)) {
+        existing.metadata.watchlists = [...existing.metadata.watchlists, watchlistId];
+        await tickerRepository.saveTicker(existing);
+      }
+      continue;
+    }
+
+    const ticker = await tickerRepository.createTicker({
+      ...entry,
+      portfolios: [],
+      watchlists: [watchlistId],
+      positions: [],
+      broker_contracts: [],
+      custom: {},
+      tags: [],
+    });
+    existingBySymbol.set(entry.ticker, ticker);
+  }
+}
+
+function resolveAdjacentWatchlistId(config: AppConfig): string | null {
+  return config.watchlists.find((watchlist) => watchlist.id === ADJACENT_WATCHLIST_ID)?.id ?? null;
+}
+
 export async function initializeAppState({
   config,
   tickerRepository,
@@ -285,26 +329,44 @@ export async function initializeAppState({
   startupLog.info("tickers loaded", { count: tickers.length });
 
   const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+  const adjacentWatchlistId = resolveAdjacentWatchlistId(config);
+  const adjacentHasMembers = !!adjacentWatchlistId
+    && tickers.some((ticker) => ticker.metadata.watchlists.includes(adjacentWatchlistId));
   // Hosted tickers come from local persist + Gloom Cloud sync. Seeding the
   // default watchlist here would push dummy names into `/sync/snapshot`.
-  if (tickers.length === 0 && !hosted) {
-    const defaultWatchlistId = config.watchlists[0]?.id ?? "watchlist";
+  const shouldSeedDefaultWatchlist = tickers.length === 0 && !hosted;
+  const shouldSeedAdjacentWatchlist = !!adjacentWatchlistId && !adjacentHasMembers;
+
+  if (shouldSeedDefaultWatchlist || shouldSeedAdjacentWatchlist) {
+    const defaultWatchlistId = config.watchlists.find((watchlist) => watchlist.id !== ADJACENT_WATCHLIST_ID)?.id
+      ?? config.watchlists[0]?.id
+      ?? "watchlist";
     await measurePerfAsync("startup.seed-default-tickers", async () => {
-      for (const entry of DEFAULT_WATCHLIST_TICKERS) {
-        await tickerRepository.createTicker({
-          ...entry,
-          portfolios: [],
-          watchlists: [defaultWatchlistId],
-          positions: [],
-          broker_contracts: [],
-          custom: {},
-          tags: [],
-        });
+      const existingBySymbol = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
+      if (shouldSeedDefaultWatchlist) {
+        await seedWatchlistTickers(
+          tickerRepository,
+          defaultWatchlistId,
+          DEFAULT_WATCHLIST_TICKERS,
+          existingBySymbol,
+        );
       }
-    }, { count: DEFAULT_WATCHLIST_TICKERS.length });
+      if (shouldSeedAdjacentWatchlist && adjacentWatchlistId) {
+        await seedWatchlistTickers(
+          tickerRepository,
+          adjacentWatchlistId,
+          DEFAULT_ADJACENT_WATCHLIST_TICKERS,
+          existingBySymbol,
+        );
+      }
+    }, {
+      defaultWatchlist: shouldSeedDefaultWatchlist,
+      adjacentWatchlist: shouldSeedAdjacentWatchlist,
+    });
     tickers = await measurePerfAsync("startup.reload-default-tickers", () => tickerRepository.loadAllTickers());
     startupLog.info("default tickers seeded", {
       defaultWatchlistId,
+      adjacentWatchlistId,
       count: tickers.length,
     });
   }

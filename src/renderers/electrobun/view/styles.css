@@ -1,4 +1,14 @@
 @keyframes gloom-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes gloom-row-roll-in {
+  from {
+    opacity: 0.42;
+    filter: brightness(1.22);
+  }
+  to {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
 html, body, #root { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: var(--gloom-bg, #272a34); }
 #root:focus { outline: none; }
 body {
@@ -26,6 +36,9 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover,
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
   background-color: var(--gloom-hover-bg) !important;
+}
+[data-gloom-role="data-table-row"][data-roll-in="true"]:not([data-selected="true"]) {
+  animation: gloom-row-roll-in 700ms ease-out;
 }
 [data-gloom-role="pane-window"] {
   background-clip: padding-box;

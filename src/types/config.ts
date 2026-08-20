@@ -1,7 +1,7 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
 
-export const CURRENT_CONFIG_VERSION = 21;
+export const CURRENT_CONFIG_VERSION = 22;
 
 type ChartRendererPreference = "auto" | "kitty" | "braille";
 
@@ -217,6 +217,17 @@ export const DEFAULT_PORTFOLIO_COLUMN_IDS = [
   "pnl_pct",
 ];
 
+export const ADJACENT_WATCHLIST_ID = "adjacent";
+
+export const DEFAULT_WATCHLIST_COLUMN_IDS = [
+  "ticker",
+  "name",
+  "price",
+  "change_pct",
+  "sparkline",
+  "latency",
+];
+
 const DEFAULT_HOME_LAYOUT: LayoutConfig = {
   dockRoot: {
     kind: "split",
@@ -305,6 +316,59 @@ const DEFAULT_MONITOR_LAYOUT: LayoutConfig = {
     {
       instanceId: "econ-calendar:main",
       paneId: "econ-calendar",
+      binding: { kind: "none" },
+    },
+  ],
+  floating: [],
+  detached: [],
+};
+
+export const DEFAULT_ADJACENT_LAYOUT: LayoutConfig = {
+  dockRoot: {
+    kind: "split",
+    axis: "vertical",
+    ratio: 0.48,
+    first: {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.32,
+      first: { kind: "pane", instanceId: "portfolio-list:adjacent" },
+      second: {
+        kind: "split",
+        axis: "horizontal",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "adjacent-indices:main" },
+        second: { kind: "pane", instanceId: "polls:main" },
+      },
+    },
+    second: { kind: "pane", instanceId: "news-firehose:main" },
+  },
+  instances: [
+    {
+      instanceId: "portfolio-list:adjacent",
+      paneId: "portfolio-list",
+      params: { collectionId: ADJACENT_WATCHLIST_ID },
+      settings: {
+        columnIds: [...DEFAULT_WATCHLIST_COLUMN_IDS],
+        collectionScope: "custom",
+        visibleCollectionIds: [ADJACENT_WATCHLIST_ID],
+        viewMode: "table",
+      },
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "adjacent-indices:main",
+      paneId: "adjacent-indices",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "polls:main",
+      paneId: "polls",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "news-firehose:main",
+      paneId: "news-firehose",
       binding: { kind: "none" },
     },
   ],
@@ -604,6 +668,21 @@ export function cloneLayout(layout: LayoutConfig): LayoutConfig {
   };
 }
 
+export function withAdjacentDefaultWorkspace<T extends Pick<AppConfig, "layouts" | "watchlists">>(config: T): T {
+  const hasLayout = config.layouts.some((layout) => layout.name.trim().toLowerCase() === "adjacent");
+  const hasWatchlist = config.watchlists.some((watchlist) => watchlist.id === ADJACENT_WATCHLIST_ID);
+  if (hasLayout && hasWatchlist) return config;
+  return {
+    ...config,
+    layouts: hasLayout
+      ? config.layouts
+      : [...config.layouts, { name: "Adjacent", layout: cloneLayout(DEFAULT_ADJACENT_LAYOUT), paneState: {} }],
+    watchlists: hasWatchlist
+      ? config.watchlists
+      : [...config.watchlists, { id: ADJACENT_WATCHLIST_ID, name: "Adjacent" }],
+  };
+}
+
 export function createBlankLayout(): LayoutConfig {
   return cloneLayout(BLANK_LAYOUT);
 }
@@ -620,11 +699,15 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     baseCurrency: "USD",
     refreshIntervalMinutes: 30,
     portfolios: [{ id: "main", name: "Main Portfolio", currency: "USD" }],
-    watchlists: [{ id: "watchlist", name: "Watchlist" }],
+    watchlists: [
+      { id: "watchlist", name: "Watchlist" },
+      { id: ADJACENT_WATCHLIST_ID, name: "Adjacent" },
+    ],
     layout,
     layouts: [
       { name: "Home", layout: cloneLayout(layout), paneState: {} },
       { name: "Monitor", layout: cloneLayout(DEFAULT_MONITOR_LAYOUT), paneState: {} },
+      { name: "Adjacent", layout: cloneLayout(DEFAULT_ADJACENT_LAYOUT), paneState: {} },
     ],
     activeLayoutIndex: 0,
     brokerInstances: [],

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useNativeRenderer } from "../../../../ui";
 import { hoverBg } from "../../../../theme/colors";
 import { useThemeColors } from "../../../../theme/theme-context";
+import { blendHex } from "../../../../theme/color-utils";
 import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
 import { useViewport } from "../../../../react/input";
 import { padTo } from "../../../../utils/format";
@@ -57,6 +58,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   renderCell,
   renderSectionHeader,
   getRowBackgroundColor,
+  isRowArriving,
   emptyContent,
   bodyAfter,
   emptyStateTitle,
@@ -416,9 +418,12 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                   index,
                   rowState,
                 );
+                const arriving = !selected && (isRowArriving?.(item, index) ?? false);
                 const rowBg = selected
                   ? colors.selected
-                  : rowBackgroundColor ?? colors.bg;
+                  : rowBackgroundColor
+                    ?? (arriving ? blendHex(colors.bg, colors.selected, 0.34) : undefined)
+                    ?? colors.bg;
                 const rowHoverBg = selected ? undefined : hoverBg(colors);
 
                 return (

@@ -84,6 +84,10 @@ async function boot(): Promise<void> {
   let hostedSession: Awaited<ReturnType<typeof resolveHostedSession>> | null = null;
   if (isHosted) {
     installHostedCloudApiFetchTransport();
+    // Route the realtime socket through the Worker's own origin so it relays to
+    // Gloom Cloud with the server-held session; the browser only ever holds the
+    // opaque hosted-session cookie.
+    apiClient.setHostedSocketBaseUrl(window.location.origin);
     hostedSession = await resolveHostedSession(fetch);
     degraded = hostedSession.degraded;
     window.__GLOOM_CLOUD_AUTHENTICATED = !!hostedSession.user;

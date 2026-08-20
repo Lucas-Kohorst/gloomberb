@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   cleanJinaArticle,
+  classifyReaderHttpFailure,
+  classifyReaderThrow,
   isBoilerplateArticleBody,
   preferredArticleBody,
+  readerFallbackNotice,
   stripJinaPreamble,
 } from "./jina-article-text";
 
@@ -211,5 +214,56 @@ describe("preferredArticleBody", () => {
     expect(preferredArticleBody("summary", null)).toBe("summary");
     expect(preferredArticleBody("", "extracted")).toBe("extracted");
     expect(preferredArticleBody("", "")).toBe("");
+  });
+});
+
+describe("classifyReaderHttpFailure", () => {
+  test("treats Investing.com-style Jina abuse blocks as publisher blocked, not a raw 403", () => {
+    const body = [
+      "AbuseAlleviationError: Anonymous access to domain www.investing.com blocked until",
+      "Fri Dec 30 2039 due to previous abuse found on https://www.investing.com/news/...:",
+      "DDoS attack suspected: Too many requests",
+    ].join(" ");
+    const failure = classifyReaderHttpFailure(403, body);
+    expect(failure.kind).toBe("blocked");
+    expect(failure.status).toBe("blocked");
+    expect(failure.message).toContain("blocks automated readers");
+    expect(failure.message).not.toContain("403");
+    expect(failure.status).not.toBe(failure.message);
+  });
+
+  test("keeps auth failures distinct from publisher blocks", () => {
+    const failure = classifyReaderHttpFailure(401, "AuthenticationFailedError: Invalid API key");
+    expect(failure.kind).toBe("auth");
+    expect(failure.status).toBe("reader auth failed");
+  });
+
+  test("maps rate limits and server errors without leaking raw status into the body copy for blocks", () => {
+    expect(classifyReaderHttpFailure(429).kind).toBe("blocked");
+    expect(classifyReaderHttpFailure(503).kind).toBe("http");
+    expect(classifyReaderHttpFailure(502).message).toContain("temporarily unavailable");
+  });
+});
+
+describe("classifyReaderThrow", () => {
+  test("maps abort and network errors to distinct kinds", () => {
+    const abort = new Error("The operation was aborted");
+    abort.name = "AbortError";
+    expect(classifyReaderThrow(abort).kind).toBe("timeout");
+    expect(classifyReaderThrow(new TypeError("Failed to fetch")).kind).toBe("network");
+  });
+
+  test("passes through structured ReaderFailure objects thrown from HTTP handling", () => {
+    const failure = classifyReaderHttpFailure(403, "AbuseAlleviationError: blocked");
+    expect(classifyReaderThrow(Object.assign(new Error(failure.status), { readerFailure: failure }))).toEqual(failure);
+  });
+});
+
+describe("readerFallbackNotice", () => {
+  test("only annotates the body when a summary fallback is present", () => {
+    expect(readerFallbackNotice("blocked", true)).toContain("full text blocked");
+    expect(readerFallbackNotice("blocked", false)).toBeNull();
+    expect(readerFallbackNotice("network", true)).toContain("could not be loaded");
+    expect(readerFallbackNotice(null, true)).toBeNull();
   });
 });

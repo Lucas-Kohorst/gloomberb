@@ -74,6 +74,7 @@ export class ConnectionTracker {
 
     this.syncFromRegistry();
     this.wrapMarketData();
+    this.wrapCloudChat();
     this.subscribeCloudUserChanges();
     setConnectionRequestReporter((id, report) => {
       if (report.success) this.recordSuccess(id, report.operation ?? "request", report.durationMs);
@@ -228,6 +229,48 @@ export class ConnectionTracker {
     }
   }
 
+  // -- Cloud chat wrapping ---------------------------------------------------
+
+  /**
+   * Chat REST calls go straight through the api client, bypassing the market
+   * data router that `wrapMarketData` instruments, so their traffic never
+   * reached Connections. Wrap them so chat activity reports against the Gloom
+   * Cloud REST connection like every other integration.
+   */
+  private wrapCloudChat(): void {
+    const client = apiClient as unknown as Record<string, unknown>;
+    const tracker = this;
+    const chatOps = [
+      "getChannels",
+      "getChatState",
+      "getChatPresence",
+      "getMessages",
+      "sendMessage",
+      "editMessage",
+      "openDirectChannel",
+      "openGroupChannel",
+      "updateChatChannelState",
+      "markChatNotificationsDelivered",
+    ];
+
+    for (const op of chatOps) {
+      const original = client[op];
+      if (typeof original !== "function") continue;
+      const run = original as (...args: unknown[]) => Promise<unknown>;
+      client[op] = async function (...args: unknown[]): Promise<unknown> {
+        const start = Date.now();
+        try {
+          const result = await run.apply(apiClient, args);
+          tracker.recordSuccess(CLOUD_REST_ID, op, Date.now() - start);
+          return result;
+        } catch (error) {
+          tracker.recordFailure(CLOUD_REST_ID, op, Date.now() - start, error);
+          throw error;
+        }
+      };
+    }
+  }
+
   // -- Cloud socket monitoring -----------------------------------------------
 
   private subscribeCloudUserChanges(): void {
@@ -263,18 +306,40 @@ export class ConnectionTracker {
   // -- Request recording -----------------------------------------------------
 
   private recordSuccess(id: string, operation: string, durationMs: number): void {
-    const state = this.states.get(id);
+    const state = this.ensureStateForReport(id);
     if (!state) return;
     this.states.set(id, recordRequest(state, { success: true, durationMs, operation }));
     this.notify();
   }
 
   private recordFailure(id: string, operation: string, durationMs: number, error: unknown): void {
-    const state = this.states.get(id);
+    const state = this.ensureStateForReport(id);
     if (!state) return;
     const message = error instanceof Error ? error.message : String(error);
     this.states.set(id, recordRequest(state, { success: false, durationMs, operation, error: message }));
     this.notify();
+  }
+
+  /**
+   * Traffic can arrive before syncFromRegistry observes a just-registered
+   * source (parallel plugin setup). Hydrate from the source registry so the
+   * report is not dropped into a permanent Idle row.
+   */
+  private ensureStateForReport(id: string): ConnectionState | null {
+    const existing = this.states.get(id);
+    if (existing) return existing;
+    const source = listConnectionSources().find((entry) => entry.id === id);
+    if (!source) return null;
+    this.ensureConnection(
+      source.id,
+      source.name,
+      source.kind,
+      source.pluginId,
+      source.priority ?? 1000,
+      source.isWebSocket === true,
+      source.authRequired,
+    );
+    return this.states.get(id) ?? null;
   }
 
   // -- Snapshot + notify -----------------------------------------------------
