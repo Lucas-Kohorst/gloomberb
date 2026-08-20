@@ -25,6 +25,7 @@ import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
 import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
+import { isPublicShareLocation } from "../../../plugins/builtin/shared/share-link";
 import {
   getHostedConfigUserId,
   hydrateHostedUserConfig,
@@ -134,22 +135,25 @@ async function boot(): Promise<void> {
     bootLog.warn("backend init timed out; booting from local config");
   }
   if (isHosted) {
-    hydrateHostedUserConfig(init.config);
-    restoreHostedLocalWorkspaceExtras();
+    const publicShare = isPublicShareLocation();
     hydrateHostedByokConfig(init.config);
-    getHostedConfigSnapshotPusher().schedule(init.config);
-    // Overlay per-user localStorage, Worker `/api/config`, and Gloom Cloud
-    // `/sync/snapshot` before the first render so Main Portfolio and the saved
-    // default layout are already in the boot config. Worker ticker RPCs stay
-    // no-ops; the book lives in hosted ticker persist + sync.
-    if (hostedSession?.user) {
-      try {
-        await hydrateHostedWorkspaceFromCloud(init.config, {
-          pullSync: () => apiClient.getSyncSnapshot(),
-        });
-        getHostedConfigSnapshotPusher().schedule(init.config);
-      } catch {
-        // Network or parse failure — proceed with whatever local hydration gave us.
+    if (!publicShare) {
+      hydrateHostedUserConfig(init.config);
+      restoreHostedLocalWorkspaceExtras();
+      getHostedConfigSnapshotPusher().schedule(init.config);
+      // Overlay per-user localStorage, Worker `/api/config`, and Gloom Cloud
+      // `/sync/snapshot` before the first render so Main Portfolio and the saved
+      // default layout are already in the boot config. Worker ticker RPCs stay
+      // no-ops; the book lives in hosted ticker persist + sync.
+      if (hostedSession?.user) {
+        try {
+          await hydrateHostedWorkspaceFromCloud(init.config, {
+            pullSync: () => apiClient.getSyncSnapshot(),
+          });
+          getHostedConfigSnapshotPusher().schedule(init.config);
+        } catch {
+          // Network or parse failure — proceed with whatever local hydration gave us.
+        }
       }
     }
   }

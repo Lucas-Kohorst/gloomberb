@@ -2,6 +2,7 @@ import { setConfigStoreHost, type ConfigStoreHost } from "../../../data/config/s
 import { writeHostedUserConfig } from "../../../data/config/hosted-user-persist";
 import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
 import { writeHostedByokKeys } from "../../../plugins/builtin/byok/hosted-persist";
+import { isPublicShareLocation } from "../../../plugins/builtin/shared/share-link";
 import type { AppConfig } from "../../../types/config";
 import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
 
@@ -19,6 +20,7 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
     return config;
   },
   async saveConfig(config: AppConfig) {
+    if (isPublicShareLocation()) return;
     if (isHostedClient()) {
       writeHostedUserConfig(config);
       writeHostedByokKeys(config);

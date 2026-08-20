@@ -726,7 +726,7 @@ export function useDesktopDeepLinkRuntime({
     if (!browserLocation) return;
     const match = /^\/s\/([A-Za-z0-9_-]+)$/.exec(browserLocation.pathname);
     if (!match) return;
-    handleDesktopDeepLink(`https://terminal.kohor.st/share?s=${match[1]}`, {
+    handleDesktopDeepLink(`gloomberb://share?s=${match[1]}`, {
       dispatch,
       pluginRegistry,
       stateRef,
