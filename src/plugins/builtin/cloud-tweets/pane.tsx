@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { Box, type InputRenderable } from "../../../ui";
 import {
   EmptyState,
@@ -6,8 +6,9 @@ import {
 } from "../../../components";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app/context";
-import { usePluginPaneState, usePluginState } from "../../runtime";
-import { apiClient, type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
+import { usePluginConfigState, usePluginPaneState, usePluginState } from "../../runtime";
+import { type CloudTweetQueryType, type CloudTweetSearchResponse } from "../../../api-client";
+import { getXTickerTweets, searchXFeedTweets } from "./client";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import {
   DEFAULT_TWEET_HOURS,
@@ -16,11 +17,15 @@ import {
   TWEET_SEARCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
+  TWITTER_FEEDS_CONFIG_KEY,
   createFeed,
   deriveFeedTitle,
   normalizeFeedQuery,
-  normalizeFeeds,
+  parseTwitterFeedState,
+  persistTwitterFeedState,
+  resolvePersistedTwitterFeeds,
   resolveTwitterFeedQuery,
+  twitterFeedResumeStateKey,
   type PersistedTwitterFeedState,
   type TwitterFeed,
   type TwitterFeedLaunchRequest,
@@ -34,7 +39,7 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
   const { symbol } = usePaneTicker();
   const load = useCallback(() => {
     if (!symbol) throw new Error("No ticker selected");
-    return apiClient.getCloudTickerTweets({
+    return getXTickerTweets({
       ticker: symbol,
       hours: DEFAULT_TWEET_HOURS,
       limit: DEFAULT_TWEET_LIMIT,
@@ -61,8 +66,12 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
 export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
-  const [persistedState, setPersistedState] = usePluginState<PersistedTwitterFeedState>(
-    `twitter-feed:${paneId}`,
+  const [configState, setConfigState] = usePluginConfigState<PersistedTwitterFeedState>(
+    TWITTER_FEEDS_CONFIG_KEY,
+    EMPTY_FEED_STATE,
+  );
+  const [resumeState, setResumeState] = usePluginState<PersistedTwitterFeedState>(
+    twitterFeedResumeStateKey(paneId),
     EMPTY_FEED_STATE,
     { schemaVersion: TWEET_SEARCH_SCHEMA_VERSION },
   );
@@ -71,12 +80,39 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     null,
     { schemaVersion: TWITTER_FEED_LAUNCH_SCHEMA_VERSION },
   );
-  const [activeFeedId, setActiveFeedId] = usePluginPaneState<string | null>("activeFeedId", null);
+  const [legacyPaneActiveFeedId] = usePluginPaneState<string | null>("activeFeedId", null);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const initializedRef = useRef(false);
-  const feeds = useMemo(() => normalizeFeeds(persistedState), [persistedState]);
+  const resumeStateRef = useRef(resumeState);
+  resumeStateRef.current = resumeState;
+  const legacyPaneActiveFeedIdRef = useRef(legacyPaneActiveFeedId);
+  legacyPaneActiveFeedIdRef.current = legacyPaneActiveFeedId;
+
+  const persistedState = useMemo(() => resolvePersistedTwitterFeeds({
+    config: configState,
+    resume: resumeState,
+    paneActiveFeedId: legacyPaneActiveFeedId,
+  }), [configState, legacyPaneActiveFeedId, resumeState]);
+  const feeds = persistedState.feeds;
+  const activeFeedId = persistedState.activeFeedId ?? null;
+
+  const setPersistedState = useCallback((next: SetStateAction<PersistedTwitterFeedState>) => {
+    setConfigState((current) => {
+      const parsed = resolvePersistedTwitterFeeds({
+        config: current,
+        resume: resumeStateRef.current,
+        paneActiveFeedId: legacyPaneActiveFeedIdRef.current,
+      });
+      const resolved = typeof next === "function" ? next(parsed) : next;
+      return persistTwitterFeedState(resolved);
+    });
+  }, [setConfigState]);
+
+  const setActiveFeedId = useCallback((id: string | null) => {
+    setPersistedState((current) => ({ ...current, activeFeedId: id }));
+  }, [setPersistedState]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -88,16 +124,21 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const updateFeeds = useCallback((updater: (feeds: TwitterFeed[]) => TwitterFeed[]) => {
-    setPersistedState((current) => ({ feeds: updater(normalizeFeeds(current)) }));
+    setPersistedState((current) => ({
+      ...current,
+      feeds: updater(current.feeds),
+    }));
   }, [setPersistedState]);
 
   const addFeed = useCallback((query = "", queryType: CloudTweetQueryType = "Latest") => {
     const feed = createFeed(query, queryType);
-    updateFeeds((current) => [...current, feed]);
-    setActiveFeedId(feed.id);
+    setPersistedState((current) => ({
+      feeds: [...current.feeds, feed],
+      activeFeedId: feed.id,
+    }));
     focusSearch();
     return feed.id;
-  }, [focusSearch, setActiveFeedId, updateFeeds]);
+  }, [focusSearch, setPersistedState]);
 
   const openOrCreateFeed = useCallback((
     query: string,
@@ -110,20 +151,19 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       return;
     }
 
-    let nextActiveId: string | null = null;
-    updateFeeds((current) => {
-      const existing = current.find((feed) => normalizeFeedQuery(feed.query) === normalizedQuery);
+    setPersistedState((current) => {
+      const existing = current.feeds.find((feed) => normalizeFeedQuery(feed.query) === normalizedQuery);
       if (existing) {
-        nextActiveId = existing.id;
-        return current;
+        return { ...current, activeFeedId: existing.id };
       }
       const feed = createFeed(query, queryType);
-      nextActiveId = feed.id;
-      return [...current, feed];
+      return {
+        feeds: [...current.feeds, feed],
+        activeFeedId: feed.id,
+      };
     });
-    if (nextActiveId) setActiveFeedId(nextActiveId);
     if (options?.focusSearch) focusSearch();
-  }, [addFeed, feeds.length, focusSearch, setActiveFeedId, updateFeeds]);
+  }, [addFeed, feeds.length, focusSearch, setPersistedState]);
 
   const updateFeedQuery = useCallback((feedId: string, query: string) => {
     const now = Date.now();
@@ -144,6 +184,13 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     if (initializedRef.current) return;
     if (feeds.length > 0) {
       initializedRef.current = true;
+      if (parseTwitterFeedState(configState).feeds.length === 0) {
+        setPersistedState({
+          feeds,
+          activeFeedId,
+        });
+        setResumeState(EMPTY_FEED_STATE);
+      }
       return;
     }
     const launchTargetsThisPane = !!launchRequest && (
@@ -160,16 +207,17 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     );
     const seedType = paneInstance?.params?.queryType === "Top" ? "Top" : "Latest";
     const feed = createFeed(seedQuery, seedType);
-    setPersistedState({ feeds: [feed] });
-    setActiveFeedId(feed.id);
+    setPersistedState({ feeds: [feed], activeFeedId: feed.id });
   }, [
-    feeds.length,
+    activeFeedId,
+    configState,
+    feeds,
     launchRequest,
     paneId,
     paneInstance?.params?.query,
     paneInstance?.params?.queryType,
-    setActiveFeedId,
     setPersistedState,
+    setResumeState,
   ]);
 
   useEffect(() => {
@@ -194,26 +242,23 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   const activeFeed = feeds.find((feed) => feed.id === activeFeedId) ?? feeds[0] ?? null;
 
   const removeFeed = useCallback((feedId: string) => {
-    let nextActiveId: string | null = null;
     let createdEmpty = false;
-    updateFeeds((current) => {
-      const next = current.filter((feed) => feed.id !== feedId);
+    setPersistedState((current) => {
+      const next = current.feeds.filter((feed) => feed.id !== feedId);
       if (next.length === 0) {
         const feed = createFeed("", "Latest");
-        nextActiveId = feed.id;
         createdEmpty = true;
-        return [feed];
+        return { feeds: [feed], activeFeedId: feed.id };
       }
-      nextActiveId = activeFeedId === feedId
+      const nextActiveId = current.activeFeedId === feedId
         ? next[0]!.id
-        : activeFeedId && next.some((feed) => feed.id === activeFeedId)
-          ? activeFeedId
+        : current.activeFeedId && next.some((feed) => feed.id === current.activeFeedId)
+          ? current.activeFeedId
           : next[0]!.id;
-      return next;
+      return { feeds: next, activeFeedId: nextActiveId };
     });
-    if (nextActiveId) setActiveFeedId(nextActiveId);
     if (createdEmpty) focusSearch();
-  }, [activeFeedId, focusSearch, setActiveFeedId, updateFeeds]);
+  }, [focusSearch, setPersistedState]);
 
   const cycleFeeds = useCallback((direction: -1 | 1) => {
     if (!activeFeed || feeds.length <= 1) return;
@@ -239,7 +284,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   const searchEnabled = activeFeedQuery.length > 0;
   const loadActiveFeed = useCallback(() => {
     if (!activeFeedQuery) throw new Error("No X feed selected");
-    return apiClient.searchCloudTweets({
+    return searchXFeedTweets({
       query: activeFeedQuery,
       queryType: activeFeedQueryType,
       hours: DEFAULT_TWEET_HOURS,

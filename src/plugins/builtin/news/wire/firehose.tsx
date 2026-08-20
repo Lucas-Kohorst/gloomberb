@@ -240,7 +240,7 @@ export const firehoseModule: PluginModule = {
       paneId: "news-firehose",
       label: "News Firehose",
       description:
-        "Every article source in one reverse-chronological stream — RSS, Adjacent, Substack, Yahoo, and Gloom Cloud. Search with [s], sort columns by clicking headers, open with [o], pop out with [p].",
+        "Every article source in one reverse-chronological stream — RSS, Adjacent, Substack, Yahoo, X Markets tweets, and Gloom Cloud. Search with [s], sort columns by clicking headers, open with [o], pop out with [p].",
       keywords: [
         "firehose",
         "news",
@@ -251,6 +251,11 @@ export const firehoseModule: PluginModule = {
         "substack",
         "adjacent",
         "yahoo",
+        "x",
+        "twitter",
+        "tweets",
+        "markets",
+        "twit",
         "cloud",
         "feed",
         "headlines",

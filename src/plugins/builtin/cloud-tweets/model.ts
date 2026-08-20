@@ -16,10 +16,12 @@ export const DEFAULT_TWEET_LIMIT = 50;
 export const TWEET_SEARCH_SCHEMA_VERSION = 1;
 export const TWEET_SEARCH_DEBOUNCE_MS = 450;
 export const TWITTER_FEED_PANE_ID = "twitter-feed";
+export const TWITTER_FEEDS_CONFIG_KEY = "twitterFeeds";
 export const TWITTER_FEED_LAUNCH_STATE_KEY = "twitter-feed-launch";
 export const TWITTER_FEED_LAUNCH_SCHEMA_VERSION = 1;
 export const DEFAULT_TWITTER_FEED_QUERY = "list:2090433878028685747";
 export const DEFAULT_TWITTER_FEED_TITLE = "Markets";
+export const X_FEED_CONNECTION_ID = "x-feed";
 export const TWEET_CELL_MAX_CHARS = 240;
 export const TWEET_ROW_MAX_LINES = 8;
 
@@ -49,6 +51,7 @@ export interface TwitterFeed {
 
 export interface PersistedTwitterFeedState {
   feeds: TwitterFeed[];
+  activeFeedId?: string | null;
 }
 
 export interface TwitterFeedLaunchRequest {
@@ -59,7 +62,11 @@ export interface TwitterFeedLaunchRequest {
   queryType?: CloudTweetQueryType;
 }
 
-export const EMPTY_FEED_STATE: PersistedTwitterFeedState = { feeds: [] };
+export const EMPTY_FEED_STATE: PersistedTwitterFeedState = { feeds: [], activeFeedId: null };
+
+export function twitterFeedResumeStateKey(paneId: string): string {
+  return `twitter-feed:${paneId}`;
+}
 
 let nextTwitterFeedId = 1;
 
@@ -134,6 +141,45 @@ export function normalizeFeeds(value: unknown): TwitterFeed[] {
       lastSuccessAt: typeof entry.lastSuccessAt === "number" ? entry.lastSuccessAt : null,
       lastError: typeof entry.lastError === "string" ? entry.lastError : null,
     }));
+}
+
+function resolvedActiveFeedId(feeds: TwitterFeed[], candidate: unknown): string | null {
+  return typeof candidate === "string" && feeds.some((feed) => feed.id === candidate)
+    ? candidate
+    : null;
+}
+
+export function parseTwitterFeedState(value: unknown): PersistedTwitterFeedState {
+  const feeds = normalizeFeeds(value);
+  const rawActive = value && typeof value === "object"
+    ? (value as PersistedTwitterFeedState).activeFeedId
+    : null;
+  return {
+    feeds,
+    activeFeedId: resolvedActiveFeedId(feeds, rawActive),
+  };
+}
+
+export function persistTwitterFeedState(state: PersistedTwitterFeedState): PersistedTwitterFeedState {
+  const feeds = normalizeFeeds(state);
+  return {
+    feeds,
+    activeFeedId: resolvedActiveFeedId(feeds, state.activeFeedId) ?? feeds[0]?.id ?? null,
+  };
+}
+
+export function resolvePersistedTwitterFeeds(options: {
+  config: unknown;
+  resume?: unknown;
+  paneActiveFeedId?: string | null;
+}): PersistedTwitterFeedState {
+  const fromConfig = parseTwitterFeedState(options.config);
+  const parsed = fromConfig.feeds.length > 0 ? fromConfig : parseTwitterFeedState(options.resume);
+  const paneActiveFeedId = resolvedActiveFeedId(parsed.feeds, options.paneActiveFeedId);
+  return persistTwitterFeedState({
+    feeds: parsed.feeds,
+    activeFeedId: parsed.activeFeedId ?? paneActiveFeedId,
+  });
 }
 
 export function formatRelativeShort(value: string): string {

@@ -10,6 +10,7 @@ const ORIGIN_LABELS: Record<string, string> = {
   adjacent: "Adjacent",
   yahoo: "Yahoo",
   "gloomberb-cloud": "Wire",
+  "x-feed": "X",
 };
 
 export function newsOriginLabel(origin: string | undefined): string {
