@@ -163,6 +163,12 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (provider === "nws-cli" && metric === "hourly") return null;
     return { kind: "weather", provider, stationId: stationId.toUpperCase(), metric };
   }
+  if (source.kind === "owid") {
+    const slug = nonEmptyString(source.slug)?.toLowerCase();
+    const entity = nonEmptyString(source.entity)?.toUpperCase();
+    if (!slug || !entity) return null;
+    return { kind: "owid", slug, entity };
+  }
   if (source.kind === "prediction-market") {
     const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
     const marketId = nonEmptyString(source.marketId);
@@ -500,6 +506,13 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (entry.source.provider === "nws-cli" && entry.source.metric === "hourly") {
         errors.push(issue(`${path}.source.metric`, "unsupported-metric", "NWS CLI is daily high/low/precip only."));
+      }
+    } else if (entry.source.kind === "owid") {
+      if (!entry.source.slug.trim()) {
+        errors.push(issue(`${path}.source.slug`, "missing-slug", "OWID chart slug is required."));
+      }
+      if (!entry.source.entity.trim()) {
+        errors.push(issue(`${path}.source.entity`, "missing-entity", "OWID entity code is required."));
       }
     } else if (entry.source.kind === "prediction-market") {
       if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {

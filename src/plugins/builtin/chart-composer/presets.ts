@@ -48,6 +48,7 @@ import {
   normalizePredictionMarketId,
   resolveAdjacentIndexQuery,
 } from "./prediction-series";
+import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -93,6 +94,7 @@ export type ParsedSeriesExpression =
   | { kind: "benchmark"; selector: string; metric: string; label?: string }
   | { kind: "poll"; subject: string; choice: string; label?: string }
   | { kind: "weather"; provider: WeatherPrintProvider; stationId: string; metric: "high" | "low" | "precip" | "hourly"; label?: string }
+  | { kind: "owid"; slug: string; entity: string; label?: string }
   | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
 
 /** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
@@ -229,6 +231,16 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     };
   }
 
+  if (prefix === SERIES_PREFIX.owid) {
+    const rest = parts.slice(1).join(":");
+    const lastColon = rest.lastIndexOf(":");
+    if (lastColon < 0) return null;
+    const slug = normalizeOwidSlug(rest.slice(0, lastColon));
+    const entity = normalizeOwidEntityCode(rest.slice(lastColon + 1));
+    if (!slug || !entity) return null;
+    return { kind: "owid", slug, entity };
+  }
+
   if (prefix === SERIES_PREFIX.kalshi) {
     const marketId = normalizePredictionMarketId("kalshi", parts.slice(1).join(":"));
     return marketId ? { kind: "prediction-market", venue: "kalshi", marketId } : null;
@@ -337,7 +349,7 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
     if (parsed) return parsed;
     const display = leg.trim() || "empty series";
     throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, or POLL:subject:choice.`,
+      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, POLL:subject:choice, or OWID:slug:entity.`,
     );
   });
 }
@@ -354,6 +366,8 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
       return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
     case "weather":
       return `${series.source.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${series.source.stationId}:${series.source.metric}`;
+    case "owid":
+      return `${SERIES_PREFIX.owid}:${series.source.slug}:${series.source.entity}`;
     case "prediction-market":
       return `${series.source.venue === "kalshi" ? SERIES_PREFIX.kalshi : SERIES_PREFIX.polymarket}:${series.source.marketId}`;
     case "constant":
@@ -564,6 +578,21 @@ export function buildSeriesSpec(
     };
   }
 
+  if (expression.kind === "owid") {
+    const style = overrides.style ?? "line";
+    return {
+      id: `owid-${slug(expression.slug)}-${slug(expression.entity)}-${index + 1}`,
+      source: { kind: "owid", slug: expression.slug, entity: expression.entity },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+
   if (expression.kind === "prediction-market") {
     const style = overrides.style ?? "line";
     return {
@@ -652,6 +681,8 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
       return `poll:${series.source.subject}`;
     case "weather":
       return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
+    case "owid":
+      return `owid:${series.source.slug}`;
     case "prediction-market":
       return `prediction-market:${series.source.venue}`;
     case "constant":

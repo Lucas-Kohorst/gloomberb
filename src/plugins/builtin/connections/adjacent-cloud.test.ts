@@ -14,6 +14,7 @@ describe("adjacentCloudDataUrl", () => {
       "adjacent",
       "llm-stats",
       "nws-cli",
+      "owid",
       "twc-kalshi",
       "us-listings",
       "votehub",

@@ -304,6 +304,14 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
         detail: expression.provider === "nws-cli" ? "NWS" : "WX",
         expression,
       };
+    case "owid":
+      return {
+        id: `owid:${expression.slug}:${expression.entity}`,
+        label: `OWID · ${expression.slug} ${expression.entity}`,
+        description: "Our World in Data grapher series (CC BY 4.0)",
+        detail: "OWID",
+        expression,
+      };
     case "prediction-market":
       return {
         id: `pm:${expression.venue}:${expression.marketId}`,
@@ -345,6 +353,8 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
       return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
     case "weather":
       return `${expression.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
+    case "owid":
+      return `${SERIES_PREFIX.owid}:${expression.slug}:${expression.entity}`;
     case "prediction-market":
       return formatPredictionSeriesExpression(expression);
     default:
@@ -381,7 +391,8 @@ export function buildChartSeriesAssistContext(): string {
     + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
     + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
     + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
-    + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high). "
+    + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
+    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA). "
     + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
 }
 

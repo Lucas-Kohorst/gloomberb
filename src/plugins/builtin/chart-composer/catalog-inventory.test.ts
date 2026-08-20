@@ -6,6 +6,8 @@ import {
   catalogPredictionSeriesLabel,
   catalogRowsForResolvedInstruments,
   catalogRowsFromLlmStatsRows,
+  catalogOwidDiscoveryQuery,
+  catalogRowsFromOwidHits,
   catalogRowsFromPollSubjects,
   catalogRowsFromPredictionHits,
   filterCatalogRows,
@@ -136,7 +138,7 @@ describe("data catalog inventory", () => {
 
     const other = filterCatalogRows(rows, "other", "");
     expect(other.length).toBeGreaterThan(0);
-    expect(other.every((row) => row.sourceId === "poll" || row.sourceId === "adjacent" || row.sourceId === "weather")).toBe(true);
+    expect(other.every((row) => row.sourceId === "poll" || row.sourceId === "adjacent" || row.sourceId === "weather" || row.sourceId === "owid")).toBe(true);
     expect(other.some((row) => row.expression === "ADJ:red")).toBe(true);
     expect(other.some((row) => row.sourceId === "poll")).toBe(true);
     expect(other.some((row) => row.expression === "WX:LAX:high")).toBe(true);
@@ -300,5 +302,71 @@ describe("data catalog inventory", () => {
     expect(catalogEmptyCopy(true, "president", "couldn't load prediction markets")).toEqual({
       title: "Loading catalog…",
     });
+  });
+
+  test("maps redistributable OWID hits onto CAT rows and asks for an entity when World is unknown", () => {
+    expect(catalogOwidDiscoveryQuery("")).toBe("");
+    expect(catalogOwidDiscoveryQuery("owid")).toBe("");
+    expect(catalogOwidDiscoveryQuery("life expectancy")).toBe("life expectancy");
+    expect(catalogOwidDiscoveryQuery("AAPL")).toBeNull();
+
+    const rows = catalogRowsFromOwidHits(
+      [
+        {
+          title: "Life expectancy",
+          slug: "life-expectancy",
+          subtitle: null,
+          url: "https://ourworldindata.org/grapher/life-expectancy",
+          availableEntities: ["World", "United States"],
+        },
+        {
+          title: "Secret chart",
+          slug: "secret-chart",
+          subtitle: null,
+          url: "https://ourworldindata.org/grapher/secret-chart",
+          availableEntities: ["World"],
+        },
+        {
+          title: "Coal production",
+          slug: "coal-production",
+          subtitle: null,
+          url: "https://ourworldindata.org/grapher/coal-production",
+          availableEntities: ["United States"],
+        },
+      ],
+      new Map([
+        ["life-expectancy", {
+          slug: "life-expectancy",
+          title: "Life expectancy",
+          subtitle: null,
+          citation: "UN WPP",
+          unit: "years",
+          license: "CC BY 4.0",
+          url: "https://ourworldindata.org/grapher/life-expectancy",
+          entities: [{ code: "OWID_WRL", name: "World" }, { code: "USA", name: "United States" }],
+        }],
+        ["coal-production", {
+          slug: "coal-production",
+          title: "Coal production",
+          subtitle: null,
+          citation: null,
+          unit: "TWh",
+          license: "CC BY 4.0",
+          url: "https://ourworldindata.org/grapher/coal-production",
+          entities: [],
+        }],
+      ]),
+    );
+    expect(rows.map((row) => row.expression)).toEqual([
+      "OWID:life-expectancy:OWID_WRL",
+      "OWID:coal-production",
+    ]);
+    expect(rows.every((row) => row.source === "Our World in Data" && row.sourceId === "owid")).toBe(true);
+    expect(rows[0]?.needsEntity).toBe(false);
+    expect(rows[1]?.needsEntity).toBe(true);
+    expect(catalogExpressionForRow(rows[1]!, "usa")).toBe("OWID:coal-production:USA");
+    expect(catalogExpressionForRow(rows[1]!, "")).toBeNull();
+    expect(filterCatalogRows(rows, "other", "owid").some((row) => row.expression === "OWID:life-expectancy:OWID_WRL")).toBe(true);
+    expect(filterCatalogRows(rows, "fred", "").some((row) => row.sourceId === "owid")).toBe(false);
   });
 });

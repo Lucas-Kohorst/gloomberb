@@ -16,6 +16,7 @@
  * - `llm-stats` — AI model metadata + runtime metrics
  * - `adjacent` — Adjacent indices, rates, markets
  * - `us-listings` — Nasdaq Trader listed files + SEC OTC, 12h cache
+ * - `owid` — Our World in Data grapher CSV + metadata (slug + entity code)
  *
  * Worker secrets (CoS sets these; do not commit values):
  *   wrangler secret put ADJACENT_API_KEY

@@ -105,6 +105,21 @@ describe("universal series expression parsing", () => {
     });
   });
 
+  test("parses OWID:slug:entity join keys", () => {
+    expect(parseSeriesExpression("OWID:life-expectancy:USA")).toEqual({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "USA",
+    });
+    expect(parseSeriesExpression("owid:life-expectancy:OWID_WRL")).toEqual({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "OWID_WRL",
+    });
+    expect(parseSeriesExpression("OWID:life-expectancy")).toBeNull();
+    expect(parseSeriesExpression("OWID:charts:USA")).toBeNull();
+  });
+
   test("parses WX and NWS climate series keyed by station / ICAO, not market tickers", () => {
     expect(parseSeriesExpression("WX:LAX:high")).toEqual({
       kind: "weather",
@@ -242,6 +257,8 @@ describe("universal series formatting and labels", () => {
       .toBe("WX:LAX:high");
     expect(formatParsedSeriesExpression(parseSeriesExpression("NWS:KNYC:high")!))
       .toBe("NWS:KNYC:high");
+    expect(formatParsedSeriesExpression(parseSeriesExpression("OWID:life-expectancy:USA")!))
+      .toBe("OWID:life-expectancy:USA");
     expect(formatParsedSeriesExpression(parseSeriesExpression("KALSHI:KXPRESPERSON")!))
       .toBe("KALSHI:KXPRESPERSON");
     expect(formatParsedSeriesExpression(parseSeriesExpression("POLY:fed-cut-september")!))
@@ -349,6 +366,7 @@ describe("universal series catalog suggestions", () => {
     expect(ctx).toContain("POLL:");
     expect(ctx).toContain("WX:");
     expect(ctx).toContain("NWS:");
+    expect(ctx).toContain("OWID:");
   });
 });
 

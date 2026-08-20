@@ -11,9 +11,11 @@ const RELEASE_0_13_0: ChangelogRelease = {
 
 ## Adjacent Cloud
 
-- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream.
+- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), Our World in Data (\`OWID\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream.
 - Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
 - Restore Data Catalog (\`CAT\`) and Godel panes (SI, DVD, HALT, IPO, OVME) that v0.12.0 parked.
+- Our World in Data pane (\`OWID\`): grapher series keyed by chart slug + entity code, CC BY 4.0.
+- Data Catalog (\`CAT\`) lists redistributable OWID grapher series (search/browse; 403 charts stay out).
 
 ## Chat, news, alt-data
 
@@ -37,10 +39,11 @@ const RELEASE_0_12_3: ChangelogRelease = {
 
 ## Adjacent Cloud
 
-- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream (VoteHub, llm-stats, TWC, NWS CLI, Adjacent, US listings).
+- **Adjacent Cloud** owns Polls (\`POLL\`), AI Benchmarks (\`AIBENCH\`), Weather (\`WX\`), Our World in Data (\`OWID\`), and Adjacent indices/rates. One plugin toggle; Connections lists each upstream (VoteHub, llm-stats, TWC, NWS CLI, Adjacent, US listings, OWID).
 - Hosted clients fetch those sources through \`GET /api/data/{provider}\` so the Worker injects secrets, caches prints, and serves every session from one origin pull.
 - Weather pane plus \`G WX:LAX:high\` / \`G NWS:KNYC:high\` series. Climate prediction markets get a Settlement tab that opens the TWC print.
 - US listed-universe security master at \`/api/data/us-listings/universe\` (Nasdaq Trader + SEC OTC, 12h cache).
+- Our World in Data at \`/api/data/owid/{slug}/{entity}\` (grapher CSV + metadata, 6h cache, CC BY 4.0).
 
 ## Worker secrets
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   AI_PROVIDER_IDS,
   getAiProvider,
@@ -13,6 +13,9 @@ import {
 } from "./pi/providers";
 
 describe("Pi provider catalog", () => {
+  afterEach(() => {
+    delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+  });
   test("exposes exactly the curated canonical providers in a stable order", () => {
     expect(AI_PROVIDER_IDS).toEqual([
       "browser-builtin",

@@ -42,6 +42,12 @@ describe("hosted data cache", () => {
     })).toBeNull();
   });
 
+  test("caches OWID grapher GETs for six hours", () => {
+    expect(hostedPublicGetCacheTtlSeconds({
+      url: "https://ourworldindata.org/grapher/life-expectancy.csv",
+    })).toBe(21600);
+  });
+
   test("does not cache RSS hosts", () => {
     expect(hostedPublicGetCacheTtlSeconds({ url: "https://feeds.bbci.co.uk/news/rss.xml" })).toBeNull();
     expect(hostedPublicGetCacheTtlSeconds({ url: "https://www.theverge.com/rss/index.xml" })).toBeNull();
