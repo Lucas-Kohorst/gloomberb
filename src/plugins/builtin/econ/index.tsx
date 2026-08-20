@@ -31,7 +31,14 @@ import {
   type ImpactFilter,
 } from "./calendar-model";
 import { attachFredSeriesPersistence } from "../../../data/fred-series";
+import { registerConnectionSource } from "../connections/register";
+import {
+  ECON_CALENDAR_CONNECTION_ID,
+  ECON_CALENDAR_CONNECTION_NAME,
+} from "./calendar-source";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+
+let disposeEconCalendarConnection: (() => void) | null = null;
 
 function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [initialCache] = useState(() => getCalendarCache());
@@ -366,12 +373,23 @@ export const economicCalendarModule: PluginModule = {
     description: "Upcoming economic events, releases, and indicators.",
     keywords: ["econ", "economic", "calendar", "events", "macro", "releases", "fed", "cpi", "gdp"],
     shortcut: { prefix: "ECON" },
+    createInstance: () => ({ placement: "floating" as const }),
   }],
   setup(ctx) {
     attachEconCalendarPersistence(ctx.persistence);
     attachFredSeriesPersistence(ctx.persistence);
+    disposeEconCalendarConnection = registerConnectionSource({
+      id: ECON_CALENDAR_CONNECTION_ID,
+      name: ECON_CALENDAR_CONNECTION_NAME,
+      kind: "api",
+      pluginId: "macro",
+      authRequired: true,
+      priority: 280,
+    });
   },
   dispose() {
+    disposeEconCalendarConnection?.();
+    disposeEconCalendarConnection = null;
     resetEconCalendarPersistence();
   },
 };

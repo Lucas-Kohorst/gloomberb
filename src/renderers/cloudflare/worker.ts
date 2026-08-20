@@ -10,6 +10,7 @@ import {
   fetchSessionUser,
   gloomFetch,
   gloomApiBaseUrl,
+  gloomCloudProxyUpstreamPath,
   GLOOM_CLOUD_PROXY_TIMEOUT_MS,
   readSessionCookie,
   relayError,
@@ -214,7 +215,7 @@ async function proxyToGloomCloud(request: Request, env: Env, url: URL): Promise<
   }
 
   const token = readSessionCookie(request);
-  const path = url.pathname.slice("/cloud".length) + url.search;
+  const path = gloomCloudProxyUpstreamPath(url.pathname, url.search);
   const publicAuthPath = path === "/auth/sign-in/email" || path === "/auth/sign-up/email";
   if (!token && !publicAuthPath) {
     return withHostedCors(request, Response.json({ error: "Authentication required." }, { status: 401 }));

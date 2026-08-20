@@ -134,6 +134,10 @@ export function installHostedCloudApiFetchTransport(): void {
     headers.delete("Origin");
     const pageOrigin = typeof window !== "undefined" ? window.location?.origin : "";
     if (pageOrigin) headers.set("Origin", pageOrigin);
+    // Prefix `/cloud` onto the API client path so the Worker can attach the
+    // hosted session cookie. Paths that already start with `/cloud/` (econ
+    // calendar) become `/cloud/cloud/...`; the Worker maps both that and
+    // `/cloud/econ/calendar` onto `https://api.gloom.sh/cloud/econ/calendar`.
     const response = await fetch(`/cloud${upstreamUrl.pathname}${upstreamUrl.search}`, {
       ...init,
       headers,
