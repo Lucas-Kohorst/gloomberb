@@ -1,4 +1,5 @@
 import type { NewsCapability } from "../capabilities";
+import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 import {
   DEFAULT_GLOBAL_QUERY,
@@ -16,7 +17,8 @@ import {
 export { buildNewsQueryKey } from "./news-model";
 
 export interface NewsServiceOptions {
-  pollIntervalMs?: number;
+  /** Pass a function to follow the user's configured refresh interval. */
+  pollIntervalMs?: number | (() => number);
   inactiveQueryTtlMs?: number;
   maxInactiveQueries?: number;
   now?: () => number;
@@ -68,14 +70,16 @@ export class NewsService {
   private readonly queries = new Map<string, NewsQueryEntry>();
   private articles: NewsArticle[] = [];
   private version = 0;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly pollIntervalMs: number;
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private polling = false;
+  private readonly pollIntervalMs: () => number;
   private readonly inactiveQueryTtlMs: number;
   private readonly maxInactiveQueries: number;
   private readonly now: () => number;
 
   constructor(options: NewsServiceOptions = {}) {
-    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    const pollInterval = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    this.pollIntervalMs = typeof pollInterval === "function" ? pollInterval : () => pollInterval;
     this.inactiveQueryTtlMs = Math.max(1, options.inactiveQueryTtlMs ?? DEFAULT_INACTIVE_QUERY_TTL_MS);
     this.maxInactiveQueries = Math.max(1, Math.floor(options.maxInactiveQueries ?? DEFAULT_MAX_INACTIVE_QUERIES));
     this.now = options.now ?? Date.now;
@@ -84,7 +88,7 @@ export class NewsService {
   register(source: NewsCapability): () => void {
     this.sources.set(source.id, source);
     this.seedCachedSource(source);
-    if (this.pollTimer !== null) {
+    if (this.polling) {
       void this.pollActiveQueries();
     }
     return () => {
@@ -99,15 +103,27 @@ export class NewsService {
   }
 
   start(): void {
-    if (this.pollTimer !== null) return;
-    this.pollTimer = setInterval(() => void this.pollActiveQueries(), this.pollIntervalMs);
+    if (this.polling) return;
+    this.polling = true;
+    this.scheduleNextPoll();
   }
 
   stop(): void {
+    this.polling = false;
     if (this.pollTimer !== null) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
+  }
+
+  /** Rescheduled every cycle so a config change takes effect on the next tick. */
+  private scheduleNextPoll(): void {
+    if (!this.polling) return;
+    const interval = Math.max(MIN_NEWS_POLL_INTERVAL_MS, this.pollIntervalMs());
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.pollActiveQueries().catch(() => {}).then(() => this.scheduleNextPoll());
+    }, interval);
   }
 
   subscribe(listener: () => void): () => void {

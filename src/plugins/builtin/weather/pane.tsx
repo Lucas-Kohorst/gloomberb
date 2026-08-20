@@ -24,6 +24,7 @@ import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { usePluginState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import {
   EMPTY_WEATHER_ARCHIVE,
@@ -700,7 +701,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [],
   );
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(scope));
+  const poll = useFeedPollInterval();
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(scope), poll.intervalMinutes);
   const renderCell = useCallback(
     (row: WeatherRow, column: WeatherColumn, _index: number, rowState: { selected: boolean }) =>
       renderWeatherCell(row, column, rowState.selected),
@@ -716,6 +718,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     loading: status === "loading",
     error,
     info: [
+      poll.segment,
       ...(tab === "report" && report.samples > 0
         ? [{ id: "hit", parts: [{ text: `${formatHitRate(report.hitRate)} on ${reportKind === "implied" ? "Kalshi" : "TWC"} fcst`, tone: "muted" as const }] }]
         : []),

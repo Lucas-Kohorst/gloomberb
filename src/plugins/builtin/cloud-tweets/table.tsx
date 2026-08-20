@@ -35,6 +35,12 @@ import {
   type TweetSortDirection,
 } from "./model";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
+import {
+  DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
+  TWITTER_POLL_INTERVAL_CONFIG_KEY,
+  useFeedPollInterval,
+} from "../shared/feed-poll-interval";
 
 function isAuthError(error: string | null): boolean {
   return !!error && /unauthorized|verification/i.test(error);
@@ -103,6 +109,7 @@ function useTweetSearchData(
     loading: false,
     error: null,
   });
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const fetchGenRef = useRef(0);
   const onResultRef = useRef(onResult);
   const onErrorRef = useRef(onError);
@@ -127,6 +134,7 @@ function useTweetSearchData(
       .then((data) => {
         if (fetchGenRef.current !== gen) return;
         setState({ data, loading: false, error: null });
+        setLastUpdated(Date.now());
         onResultRef.current?.(data);
       })
       .catch((error) => {
@@ -141,7 +149,7 @@ function useTweetSearchData(
     reload();
   }, [reload, requestKey]);
 
-  return { ...state, reload };
+  return { ...state, lastUpdated, reload };
 }
 
 export function TweetSearchTable({
@@ -174,7 +182,12 @@ export function TweetSearchTable({
   emptyStateHint?: string;
 }) {
   const { createPaneFromTemplate } = usePluginAppActions();
-  const { data, loading, error, reload } = useTweetSearchData(requestKey, load, onResult, onError, enabled);
+  const { data, loading, error, lastUpdated, reload } = useTweetSearchData(requestKey, load, onResult, onError, enabled);
+  const poll = useFeedPollInterval({
+    overrideConfigKey: TWITTER_POLL_INTERVAL_CONFIG_KEY,
+    defaultMinutes: DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
+  });
+  useAutoRefresh(lastUpdated, reload, poll.intervalMinutes);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>({
@@ -197,6 +210,7 @@ export function TweetSearchTable({
       : null,
     loading,
     error,
+    info: [poll.segment],
     showOpenHint: !!selectedTweet?.url,
     hints: [
       ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),

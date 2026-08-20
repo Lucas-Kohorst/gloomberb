@@ -45,6 +45,7 @@ import {
   type AdjacentIndexSortColumnId,
 } from "./normalize";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
 
 export type AdjacentTab = "indices" | "rates";
 export type IndexDetailTab = "overview" | "chart" | "news";
@@ -429,7 +430,8 @@ export function AdjacentIndicesPane({
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
+  const poll = useFeedPollInterval();
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, load, poll.intervalMinutes);
 
   useEffect(() => {
     if (visibleIndices.length === 0) return;
@@ -473,6 +475,7 @@ export function AdjacentIndicesPane({
 
   usePaneFooter("adjacent-indices", () => ({
     info: [
+      poll.segment,
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
@@ -481,7 +484,7 @@ export function AdjacentIndicesPane({
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "share", key: "y", label: " share", onPress: shareIndices },
     ],
-  }), [error, load, shareIndices, status, updatedAgo]);
+  }), [error, load, poll.segment, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
