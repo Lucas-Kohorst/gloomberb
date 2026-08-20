@@ -180,9 +180,12 @@ function convertNode(node: Node, key: string): ReactNode {
 
   const element = node as Element;
   const tag = element.tagName.toUpperCase();
-  if (!ALLOWED_TAGS.has(tag)) return null;
-
   const children = VOID_TAGS.has(tag) ? null : convertChildren(element, key);
+  if (!ALLOWED_TAGS.has(tag)) {
+    // Keep children of unknown wrappers. Dropping them eats plaintext that
+    // DOMParser treated as a bogus tag (autolinks like `<https://...>`).
+    return children;
+  }
 
   if (tag === "A") {
     const href = safeUrl(element.getAttribute("href"));

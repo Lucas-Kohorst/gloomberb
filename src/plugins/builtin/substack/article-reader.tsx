@@ -7,6 +7,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
+import { substackReaderBody } from "./content";
 import { loadSubstackArticleDetail } from "./api/loaders";
 import { SubstackAuthError } from "./api/types";
 import { getStashedSubstackArticle } from "./article-stash";
@@ -118,7 +119,9 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const shareHint: PaneHint[] = article
     ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
     : [];
-  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url));
+  const knownBody = substackReaderBody(article, detail.data);
+  const skipJina = knownBody.length >= 400 || knownBody.includes("\n\n");
+  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url) && !skipJina);
 
   usePaneStatusLinkFooter({
     registrationId: "substack-article-reader",
@@ -126,9 +129,16 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     url: article?.url ?? url,
     source: article?.publicationName,
     label: "article",
-    loading: detail.loading || jina.loading,
+    loading: (!skipJina && jina.loading) || (detail.loading && !knownBody),
     error: detail.error ?? jina.error,
-    hints: article ? [{ id: "refresh", key: "r", label: "efresh", onPress: jina.refresh }] : [],
+    hints: article
+      ? [{
+        id: "refresh",
+        key: "r",
+        label: "efresh",
+        onPress: skipJina ? () => loadDetail(article, true) : jina.refresh,
+      }]
+      : [],
     showOpenHint: true,
     trailingHints: shareHint,
   });
@@ -141,7 +151,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
     );
   }
 
-  if (detail.loading && !detail.data) {
+  if (detail.loading && !detail.data && !knownBody) {
     return (
       <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
         <Spinner label="Loading article..." />
@@ -158,6 +168,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
         height={height}
         focused={focused}
         state={jina}
+        knownBody={knownBody}
       />
     </Box>
   );

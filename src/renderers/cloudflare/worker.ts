@@ -358,16 +358,34 @@ const APP_CSP = [
 ].join("; ");
 
 async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
-  const response = await env.ASSETS.fetch(assetPath
-    ? new Request(new URL(assetPath, request.url), { method: "GET", headers: request.headers })
-    : request);
+  const response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
   const headers = new Headers(response.headers);
-  headers.set("cache-control", "private, max-age=0, must-revalidate");
+  headers.set(
+    "cache-control",
+    assetPath === "/share.html"
+      ? "private, no-store"
+      : "private, max-age=0, must-revalidate",
+  );
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("content-security-policy-report-only", APP_CSP);
   return new Response(response.body, { status: response.status, headers });
+}
+
+/**
+ * Static asset fetches must not inherit the document request's cookies or
+ * cache validators. `/s/{id}` used to fall through to the SPA, so a logged-in
+ * browser can still send `If-None-Match` for that cached index.html; forwarding
+ * it onto `/share.html` 304s the wrong body and the terminal boots instead of
+ * the snapshot.
+ */
+function assetsRequest(request: Request, assetPath?: string): Request {
+  if (!assetPath) return request;
+  const headers = new Headers();
+  const accept = request.headers.get("Accept");
+  if (accept) headers.set("Accept", accept);
+  return new Request(new URL(assetPath, request.url), { method: "GET", headers });
 }
 
 /**

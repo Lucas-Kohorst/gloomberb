@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { articleShareNeedsReader, preferredArticleBody } from "./article-view";
+import { articleShareBodySource, articleShareNeedsReader, preferredArticleBody } from "./article-view";
 
 describe("preferredArticleBody", () => {
   test("uses the extracted article when it adds text", () => {
@@ -27,6 +27,25 @@ describe("preferredArticleBody", () => {
   });
 });
 
+describe("articleShareBodySource", () => {
+  test("renders plaintext bodyHtml with autolinks as markdown, not HTML", () => {
+    const bodyHtml = [
+      "Kalshi is opening the door to institutions.",
+      "",
+      "See <https://kalshi.com/markets> for the contracts.",
+    ].join("\n");
+    expect(articleShareBodySource({
+      type: "substack",
+      id: "1",
+      title: "Roundup",
+      url: "https://eventhorizon.substack.com/p/example",
+      source: "The Event Horizon",
+      bodyHtml,
+      subtitle: "Prediction markets news roundup: Kalshi embraces institutional trading.",
+    })).toEqual({ kind: "markdown", text: bodyHtml });
+  });
+});
+
 describe("articleShareNeedsReader", () => {
   test("loads the full Substack post when the share only stored a teaser", () => {
     expect(articleShareNeedsReader({
@@ -36,6 +55,31 @@ describe("articleShareNeedsReader", () => {
       url: "https://eventhorizon.substack.com/p/example",
       source: "The Event Horizon",
       previewText: "There's a lot of noise about elections.",
+    })).toBe(true);
+  });
+
+  test("skips Jina when the snapshot already has a long extracted post", () => {
+    const body = "Kalshi is opening the door to institutional trading. ".repeat(12);
+    expect(body.length).toBeGreaterThanOrEqual(400);
+    expect(articleShareNeedsReader({
+      type: "substack",
+      id: "1",
+      title: "Roundup",
+      url: "https://eventhorizon.substack.com/p/example",
+      source: "The Event Horizon",
+      bodyHtml: body,
+      summary: body,
+    })).toBe(false);
+  });
+
+  test("still fetches a short news summary that is not a full article", () => {
+    expect(articleShareNeedsReader({
+      type: "news",
+      id: "n",
+      title: "t",
+      url: "https://reuters.com/x",
+      source: "Reuters",
+      summary: "Prediction markets news roundup: Kalshi embraces institutional trading; betting on the fattest bear in Alaska; BTC price discovery",
     })).toBe(true);
   });
 
@@ -50,15 +94,7 @@ describe("articleShareNeedsReader", () => {
     })).toBe(false);
   });
 
-  test("still loads a bare news article and skips clustered wire stories", () => {
-    expect(articleShareNeedsReader({
-      type: "news",
-      id: "n",
-      title: "t",
-      url: "https://reuters.com/x",
-      source: "Reuters",
-      summary: "short",
-    })).toBe(true);
+  test("skips clustered wire stories that are not a single page to extract", () => {
     expect(articleShareNeedsReader({
       type: "news",
       id: "n",

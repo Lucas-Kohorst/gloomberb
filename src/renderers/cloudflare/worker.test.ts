@@ -760,6 +760,38 @@ describe("Gloom Cloud /cloud origin gate", () => {
   });
 });
 
+describe("share document serving", () => {
+  test("GET /s/{id} fetches /share.html without Cookie or If-None-Match", async () => {
+    const captured: Request[] = [];
+    const env = makeEnv();
+    env.ASSETS = {
+      fetch: async (request: RequestInfo) => {
+        captured.push(request instanceof Request ? request : new Request(request));
+        return new Response("<html>share</html>", {
+          headers: { "content-type": "text/html", etag: '"share-html"' },
+        });
+      },
+    } as unknown as Fetcher;
+
+    const headers = new Headers();
+    headers.set("Cookie", `${SESSION_COOKIE}=logged-in`);
+    headers.set("If-None-Match", '"index-html-etag"');
+    headers.set("Accept", "text/html");
+    const response = await workerModule.default.fetch?.(
+      new Request(`${ORIGIN}/s/SdIc3WRwjojR`, { method: "GET", headers }),
+      env,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("cache-control")).toContain("no-store");
+    expect(captured).toHaveLength(1);
+    const asset = captured[0]!;
+    expect(new URL(asset.url).pathname).toBe("/share.html");
+    expect(asset.headers.get("Cookie")).toBeNull();
+    expect(asset.headers.get("If-None-Match")).toBeNull();
+  });
+});
+
 describe("hosted Gloom Cloud WebSocket proxy", () => {
   afterEach(() => {
     restoreFetch();

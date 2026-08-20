@@ -176,6 +176,7 @@ export function payloadToNewsArticle(payload: ArticleSharePayload): NewsArticle 
 }
 
 export function payloadToSubstackArticle(payload: ArticleSharePayload): SubstackArticleSummary {
+  const previewText = longerShareText(payload.summary, payload.previewText);
   return {
     id: payload.id,
     title: payload.title,
@@ -187,12 +188,23 @@ export function payloadToSubstackArticle(payload: ArticleSharePayload): Substack
     slug: payload.slug ?? null,
     publishedAt: payload.publishedAt ?? null,
     subtitle: payload.subtitle ?? null,
-    previewText: payload.previewText ?? null,
-    bodyHtml: payload.bodyHtml ?? null,
+    previewText,
+    bodyHtml: payload.bodyHtml ?? previewText,
     imageUrls: payload.imageUrls ?? [],
     wordCount: payload.wordCount ?? 0,
     readMinutes: payload.readMinutes ?? 0,
   };
+}
+
+function longerShareText(
+  ...values: Array<string | null | undefined>
+): string | null {
+  let best: string | null = null;
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed && (!best || trimmed.length > best.length)) best = trimmed;
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
