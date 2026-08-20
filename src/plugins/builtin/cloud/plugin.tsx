@@ -12,6 +12,8 @@ import {
   openDmTargetFromCommand,
   parseConversationCreateArg,
 } from "../chat/channels";
+import { UnreadInboxPane } from "../chat/unread-inbox-pane";
+import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
 import { registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
@@ -75,6 +77,14 @@ function createChatModule(
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+    }, {
+      id: UNREAD_INBOX_PANE_ID,
+      name: "Unread",
+      icon: "@",
+      component: UnreadInboxPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 56, height: 16 },
     }],
     paneTemplates: [{
       id: "new-chat-pane",
@@ -101,6 +111,15 @@ function createChatModule(
           },
         };
       },
+    }, {
+      id: UNREAD_INBOX_TEMPLATE_ID,
+      paneId: UNREAD_INBOX_PANE_ID,
+      label: "Unread Messages",
+      description: "Open unread chat messages and jump to the channel",
+      keywords: ["unread", "inbox", "mentions", "messages", "chat"],
+      shortcut: { prefix: "UNREAD" },
+      singleton: true,
+      createInstance: () => ({ placement: "floating", title: "Unread" }),
     }],
     slots: {
       "status:widget": () => <ChatStatusWidget />,

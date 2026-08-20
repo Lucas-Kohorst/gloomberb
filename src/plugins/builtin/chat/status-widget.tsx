@@ -8,6 +8,7 @@ import {
   getPreferredChatOpenChannelId,
 } from "./channels";
 import { chatController, type ChatController } from "./controller";
+import { UNREAD_INBOX_TEMPLATE_ID } from "./unread-inbox";
 
 interface ChatStatusWidgetProps {
   controller?: Pick<ChatController, "getSnapshot" | "refreshSession" | "subscribe">;
@@ -69,6 +70,12 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
     createPaneFromTemplate("new-chat-pane", { arg: channelId });
   };
 
+  const openUnreadInbox = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    createPaneFromTemplate(UNREAD_INBOX_TEMPLATE_ID);
+  };
+
   useEffect(() => {
     const unsubscribe = controller.subscribe((nextSnapshot) => {
       setSnapshot(nextSnapshot);
@@ -95,20 +102,27 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
           backgroundColor={hovered ? hoverBg() : undefined}
           onMouseOver={() => setHovered((current) => (current ? current : true))}
           onMouseOut={() => setHovered((current) => (current ? false : current))}
-          onMouseDown={openChat}
-          data-gloom-interactive="true"
         >
-          <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
-            <Span fg={colors.positive}>@</Span>
-            {username ? (
-              <>
-                {" "}
-                <Span fg={colors.positive}>{username}</Span>
-              </>
-            ) : null}
-          </Text>
+          <Box
+            flexDirection="row"
+            alignItems="center"
+            onMouseDown={openChat}
+            data-gloom-interactive="true"
+          >
+            <Text fg={unreadCount > 0 ? colors.text : colors.textDim}>
+              <Span fg={colors.positive}>@</Span>
+              {username ? (
+                <>
+                  {" "}
+                  <Span fg={colors.positive}>{username}</Span>
+                </>
+              ) : null}
+            </Text>
+          </Box>
           {unreadCount > 0 ? (
-            <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadCount}]`}</Text>
+            <Box onMouseDown={openUnreadInbox} data-gloom-interactive="true">
+              <Text fg={colors.positive} attributes={TextAttributes.BOLD}>{` [${unreadCount}]`}</Text>
+            </Box>
           ) : null}
         </Box>
       )}
