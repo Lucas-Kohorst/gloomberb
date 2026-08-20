@@ -76,7 +76,6 @@ const FeedPane = createNewsPresetPane({
 let disposeBreakingNewsNotifications: (() => void) | null = null;
 let disposeRssConnection: (() => void) | null = null;
 let disposeJinaConnection: (() => void) | null = null;
-let disposeArchiveConnection: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
@@ -182,14 +181,6 @@ export const newsWireModule: PluginModule = {
       priority: 410,
       authRequired: false,
     });
-    disposeArchiveConnection = registerConnectionSource({
-      id: "archive-is",
-      name: "archive.is",
-      kind: "api",
-      pluginId: "news",
-      priority: 411,
-      authRequired: false,
-    });
 
     ctx.registerCommand({
       id: "open-news-article",
@@ -281,7 +272,5 @@ export const newsWireModule: PluginModule = {
     disposeRssConnection = null;
     disposeJinaConnection?.();
     disposeJinaConnection = null;
-    disposeArchiveConnection?.();
-    disposeArchiveConnection = null;
   },
 };

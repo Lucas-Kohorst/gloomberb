@@ -67,14 +67,14 @@ export function useNewsArticleFooter({
     if (onShare && article) {
       trailing.push({ id: "share", key: "y", label: " share", onPress: onShare });
     }
-    if (article?.url) {
+    if (archiveAction.enabled) {
       trailing.push({ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive });
     }
     if (onPopOut && article) {
       trailing.push({ id: "pop-out", key: "p", label: "op out", onPress: onPopOut });
     }
     return trailing;
-  }, [archiveAction.archive, article, onPopOut, onShare]);
+  }, [archiveAction.archive, archiveAction.enabled, article, onPopOut, onShare]);
 
   useShortcut((event) => {
     const key = (event.name ?? event.key ?? "").toLowerCase();
@@ -91,7 +91,7 @@ export function useNewsArticleFooter({
       onShare();
       return;
     }
-    if (article?.url && key === "a") {
+    if (archiveAction.enabled && key === "a") {
       event.stopPropagation?.();
       event.preventDefault?.();
       archiveAction.archive();
@@ -102,7 +102,7 @@ export function useNewsArticleFooter({
       event.preventDefault?.();
       onPopOut();
     }
-  }, { enabled: focused && (!!onPopOut && !!article || !!onRefresh || !!onShare || !!article?.url) });
+  }, { enabled: focused && (!!onPopOut && !!article || !!onRefresh || !!onShare || archiveAction.enabled) });
 
   usePaneStatusLinkFooter({
     registrationId,
@@ -113,7 +113,7 @@ export function useNewsArticleFooter({
     hints,
     trailingHints,
     showOpenHint: true,
-    loading: loading || archiveAction.loading,
-    error: error ?? archiveAction.error,
+    loading,
+    error,
   });
 }

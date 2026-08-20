@@ -441,7 +441,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       shareSelectedArticle();
       return;
     }
-    if (isPlainKey(event, "a") && readableArticle?.url) {
+    if (isPlainKey(event, "a") && archiveAction.enabled) {
       event.stopPropagation?.();
       event.preventDefault?.();
       archiveAction.archive();
@@ -473,7 +473,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       shareSelectedArticle();
       return true;
     }
-    if (isPlainKey(event, "a") && readableArticle?.url) {
+    if (isPlainKey(event, "a") && archiveAction.enabled) {
       event.preventDefault?.();
       event.stopPropagation?.();
       archiveAction.archive();
@@ -492,18 +492,16 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     info: [
       poll.segment,
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(archiveAction.loading ? [{ id: "archive-loading", parts: [{ text: "archiving", tone: "muted" as const }] }] : []),
-      ...(archiveAction.error ? [{ id: "archive-error", parts: [{ text: archiveAction.error, tone: "warning" as const }] }] : []),
     ],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }] : []),
-      ...(readableArticle?.url ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
+      ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.error, archiveAction.loading, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }), [archiveAction.archive, archiveAction.enabled, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
