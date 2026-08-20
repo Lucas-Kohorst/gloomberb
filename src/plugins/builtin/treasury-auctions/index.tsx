@@ -1,4 +1,4 @@
-import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { TreasuryAuctionsPane } from "./pane";
 import {
@@ -9,14 +9,7 @@ import {
 
 let disposeTreasuryConnection: (() => void) | null = null;
 
-export const treasuryAuctionsPlugin: GloomPlugin = {
-  id: TREASURY_AUCTIONS_PLUGIN_ID,
-  name: "Treasury Auctions",
-  version: "1.0.0",
-  description:
-    "Recent Treasury auction results from Treasury Fiscal Data (rates, bid-to-cover, indirect awards).",
-  toggleable: true,
-
+export const treasuryAuctionsModule: PluginModule = {
   panes: [
     {
       id: TREASURY_AUCTIONS_PANE_ID,

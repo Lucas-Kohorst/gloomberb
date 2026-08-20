@@ -19,7 +19,7 @@ const RELEASE_0_13_0: ChangelogRelease = {
 
 - Hosted chat realtime works again (same-origin GET without Origin; Worker relays \`/cloud/ws\`).
 - News rows roll in; blocked article readers show a clear empty state.
-- Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable.
+- Bond Search (\`BOND\`), Volatility (\`VIX\`), Treasury Auctions (\`AUCT\`), and Credit Spreads (\`CRD\`) live under Macro. New Highs/Lows (\`HILO\`) and Options Flow (\`FLOW\`) live under Market Overview.
 - Polls default to All; Adjacent ships as a default layout + watchlist.
 - Polls analysis: pollster house series, race overlay + scatter, and a Kalshi/Polymarket series on the same chart (venue history client-side; polls stay Adjacent Cloud).
 - **TradingView** pane (\`TVC\`): ticker-linked Lightweight Charts surface (candles, volume, log scale, drawings, MA/EMA/BB/VWAP). Not the licensed Charting Library.

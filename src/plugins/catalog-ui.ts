@@ -17,13 +17,10 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
-import { bondSearchPlugin } from "./builtin/bond-search";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
-import { treasuryAuctionsPlugin } from "./builtin/treasury-auctions";
-import { volatilityPlugin } from "./builtin/volatility";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -38,9 +35,6 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   // panes stay independently toggleable product areas.
   adjacentPlugin,
   predictionMarketsPlugin,
-  treasuryAuctionsPlugin,
-  bondSearchPlugin,
-  volatilityPlugin,
   congressTradesPlugin,
   buildoutPlugin,
   substackPlugin,

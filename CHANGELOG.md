@@ -27,7 +27,7 @@ Unifies `integration/v0.12.0` (Adjacent Cloud, Data Catalog, Godel panes) with `
 
 ### Alt-data panes
 
-- Bond Search, Volatility, Congress Trades, TheBuildout, and Treasury Auctions are independently toggleable plugins.
+- Bond Search (`BOND`), Volatility (`VIX`), Treasury Auctions (`AUCT`), and Credit Spreads (`CRD`) live under Macro. New Highs/Lows (`HILO`) and Options Flow (`FLOW`) live under Market Overview.
 - Polls default to an All tab; Adjacent ships as a default layout + watchlist.
 
 ### Charts
