@@ -3,6 +3,7 @@ import {
   buildTerminalArticleUrl,
   buildTerminalShareUrl,
   isShareDocumentPath,
+  isShareScriptPath,
   parseShortShareId,
 } from "./routes";
 
@@ -16,6 +17,13 @@ describe("share document routing", () => {
     for (const path of ["/", "/web-main.js", "/share.html", "/api/share/abcdef12", "/s/a/b"]) {
       expect(isShareDocumentPath(path)).toBe(false);
     }
+  });
+
+  test("claims the share page script, hashed or not", () => {
+    expect(isShareScriptPath("/share-main.js")).toBe(true);
+    expect(isShareScriptPath("/share-main.a1b2c3d4e5.js")).toBe(true);
+    expect(isShareScriptPath("/web-main.js")).toBe(false);
+    expect(isShareScriptPath("/share.html")).toBe(false);
   });
 
   test("claims an unresolvable id so the share page can say the link expired", () => {

@@ -41,6 +41,16 @@ export function isShareDocumentPath(pathname: string): boolean {
 }
 
 /**
+ * Share page JavaScript. The document is `no-store`, but a stable
+ * `/share-main.js` URL can still be held as an immutable disk cache from an
+ * older deploy — logged-in Work profiles kept the pre-autolink bundle while
+ * incognito fetched the new one.
+ */
+export function isShareScriptPath(pathname: string): boolean {
+  return pathname === "/share-main.js" || /^\/share-main\.[A-Za-z0-9_-]+\.js$/.test(pathname);
+}
+
+/**
  * Deep link that reopens a stored share inside the terminal. Used by the slim
  * page's "open in terminal" affordance and by the hand-off for shares the slim
  * page cannot draw itself.

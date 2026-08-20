@@ -13,6 +13,7 @@
  * condition, so the failure lands in CI instead of production.
  */
 import { dirname, join } from "path";
+import { readdir } from "fs/promises";
 import { Window } from "happy-dom";
 import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
@@ -91,11 +92,12 @@ for (const document of ["index.html", "share.html"]) {
 
 // A share link that costs a terminal-sized download is the thing this page
 // exists to avoid, so the size gap is worth failing on rather than trusting.
-const shareBundle = Bun.file(join(outdir, "share-main.js"));
-if (!await shareBundle.exists()) {
-  console.error(`No share bundle at ${join(outdir, "share-main.js")}. Run \`bun run cloud:build\` first.`);
+const shareFiles = (await readdir(outdir)).filter((name) => /^share-main(\.[A-Za-z0-9_-]+)?\.js$/.test(name));
+if (shareFiles.length === 0) {
+  console.error(`No share bundle at ${join(outdir, "share-main*.js")}. Run \`bun run cloud:build\` first.`);
   process.exit(1);
 }
+const shareBundle = Bun.file(join(outdir, shareFiles[0]!));
 const shareBytes = shareBundle.size;
 const terminalBytes = bundle.size;
 if (shareBytes > terminalBytes / 4) {

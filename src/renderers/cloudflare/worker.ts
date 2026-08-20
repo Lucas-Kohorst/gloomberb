@@ -1,5 +1,5 @@
 import { handleHostedBackendRpc } from "./backend";
-import { isShareDocumentPath } from "../../shares/routes";
+import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
 import { handleKeyedDataRequest } from "./data-providers/handle";
@@ -53,6 +53,9 @@ export default {
     // Share URLs get the slim share document rather than the terminal SPA, so
     // opening a link does not download the whole workspace first.
     if (isShareDocumentPath(url.pathname)) return serveApp(request, env, "/share.html");
+    // Same isolation as share.html: a logged-in If-None-Match for an older
+    // share-main.js must not 304 the stale autolink-as-HTML bundle.
+    if (isShareScriptPath(url.pathname)) return serveApp(request, env, url.pathname);
     return serveApp(request, env);
   },
 } satisfies ExportedHandler<Env>;
@@ -117,7 +120,12 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
     }
     const value = await env.SHARES.get(id);
     if (!value) return Response.json({ error: "Share not found." }, { status: 404 });
-    return new Response(value, { headers: { "content-type": "application/json" } });
+    return new Response(value, {
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "private, no-store",
+      },
+    });
   }
 
   return Response.json({ error: "Method not allowed." }, { status: 405 });
@@ -350,7 +358,7 @@ const APP_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.gloom.sh",
+  "connect-src 'self' https://api.gloom.sh https://r.jina.ai",
   "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
@@ -362,7 +370,7 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
   const headers = new Headers(response.headers);
   headers.set(
     "cache-control",
-    assetPath === "/share.html"
+    assetPath === "/share.html" || (assetPath != null && isShareScriptPath(assetPath))
       ? "private, no-store"
       : "private, max-age=0, must-revalidate",
   );
@@ -378,7 +386,8 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
  * cache validators. `/s/{id}` used to fall through to the SPA, so a logged-in
  * browser can still send `If-None-Match` for that cached index.html; forwarding
  * it onto `/share.html` 304s the wrong body and the terminal boots instead of
- * the snapshot.
+ * the snapshot. The same trap applies to `/share-main.js`: a stale ETag 304s
+ * the bundle that treated plaintext autolinks as HTML.
  */
 function assetsRequest(request: Request, assetPath?: string): Request {
   if (!assetPath) return request;

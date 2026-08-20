@@ -1,5 +1,5 @@
-import { copyFile, readFile, writeFile } from "fs/promises";
-import { join, relative } from "path";
+import { copyFile, readFile, rename, writeFile } from "fs/promises";
+import { dirname, join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 import { toRootAbsoluteAssetUrl } from "./asset-urls";
 
@@ -95,6 +95,7 @@ export async function writeSharePage(options: {
   }
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
   if (!entry) throw new Error("Share page build did not produce a JavaScript entrypoint");
+  const hashedEntryPath = await hashShareEntrypoint(entry.path);
 
   const htmlPath = join(options.outdir, "share.html");
   await writeFile(htmlPath, renderSharePageHtml({
@@ -103,10 +104,25 @@ export async function writeSharePage(options: {
     stylesheet: await readFile(join(SHARE_VIEW_DIR, "styles.css"), "utf8"),
     // The share document is served for `/s/{id}` and `/article`, so a relative
     // URL would resolve under the route and hit the SPA fallback.
-    entrySrc: toRootAbsoluteAssetUrl(`./${relative(options.outdir, entry.path).replaceAll("\\", "/")}`),
+    entrySrc: toRootAbsoluteAssetUrl(`./${relative(options.outdir, hashedEntryPath).replaceAll("\\", "/")}`),
     faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
   }));
   return htmlPath;
+}
+
+/**
+ * `/share-main.js` is a stable URL. Browsers that once received `immutable`
+ * keep that file for a year without revalidating, so a logged-in profile can
+ * keep rendering autolinks as HTML while incognito gets the current bundle.
+ * Hash the filename; share.html is already no-store, so it picks up the new URL.
+ */
+async function hashShareEntrypoint(entryPath: string): Promise<string> {
+  const bytes = await Bun.file(entryPath).arrayBuffer();
+  const hash = Bun.hash(new Uint8Array(bytes)).toString(16).padStart(16, "0").slice(0, 10);
+  const hashedPath = join(dirname(entryPath), `share-main.${hash}.js`);
+  if (hashedPath === entryPath) return entryPath;
+  await rename(entryPath, hashedPath);
+  return hashedPath;
 }
 
 function renderSharePageHtml({
