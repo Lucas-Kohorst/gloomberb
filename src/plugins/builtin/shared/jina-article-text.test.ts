@@ -3,6 +3,7 @@ import {
   cleanJinaArticle,
   classifyReaderHttpFailure,
   classifyReaderThrow,
+  htmlMarkupPresent,
   isBoilerplateArticleBody,
   preferredArticleBody,
   readerFallbackNotice,
@@ -92,6 +93,14 @@ const SEEKING_ALPHA_DUMP = [
   "* [IHD: Emerging Markets Equities CEF](https://seekingalpha.com/article/4858673)",
   "* [Voya to merge IHD into IEMLX](https://seekingalpha.com/article/4912141)",
 ].join("\n");
+
+describe("htmlMarkupPresent", () => {
+  test("detects real HTML elements and ignores autolinks and comparisons", () => {
+    expect(htmlMarkupPresent("<p>full post</p>")).toBe(true);
+    expect(htmlMarkupPresent("See <https://kalshi.com/markets> for the contracts.")).toBe(false);
+    expect(htmlMarkupPresent("polls < 50%")).toBe(false);
+  });
+});
 
 describe("stripJinaPreamble", () => {
   test("removes the reader metadata header", () => {

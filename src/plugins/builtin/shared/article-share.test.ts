@@ -138,6 +138,28 @@ describe("article-share encode/decode", () => {
     expect(reconstructed.previewText).toBe(original.previewText);
   });
 
+  test("payloadToSubstackArticle prefers a longer summary over a teaser previewText", () => {
+    const teaser = "Prediction markets news roundup: Kalshi embraces institutional trading; betting on the fattest bear in Alaska; BTC price discovery";
+    const full = [
+      "Kalshi is opening the door to institutional trading.",
+      "",
+      "Alaska is taking bets on the fattest bear.",
+      "",
+      "Bitcoin's price discovery continues on the prediction venues.",
+    ].join("\n");
+    const reconstructed = payloadToSubstackArticle({
+      type: "substack",
+      id: "roundup",
+      title: "Roundup",
+      url: "https://eventhorizon.substack.com/p/roundup",
+      source: "The Event Horizon",
+      summary: full,
+      previewText: teaser,
+    });
+    expect(reconstructed.previewText).toBe(full);
+    expect(reconstructed.bodyHtml).toBe(full);
+  });
+
   test("substack share payload prefers loaded post HTML over the feed teaser", () => {
     const summary = makeSubstackArticle({ id: "post-123", title: "The Fed Pivot" });
     const payload = substackArticleSharePayload(summary, {

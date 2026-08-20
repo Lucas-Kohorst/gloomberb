@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractArticleContent } from "./content";
+import { extractArticleContent, substackReaderBody } from "./content";
 import {
   articleMatchesPublication,
   normalizeFeedItems,
@@ -69,6 +69,42 @@ describe("Substack article extraction", () => {
       dateLabel: "Jun 5, 2026",
       imageUrls: ["https://pbs.substack.com/media/HKCSNYaa8AAq-06.jpg"],
     });
+  });
+
+  test("extracts plaintext bodyHtml as article text", () => {
+    const plaintext = [
+      "Kalshi is opening the door to institutional trading.",
+      "",
+      "Alaska is taking bets on the fattest bear.",
+    ].join("\n");
+    const content = extractArticleContent(plaintext);
+    expect(content.text).toContain("Kalshi is opening the door to institutional trading.");
+    expect(content.text).toContain("Alaska is taking bets on the fattest bear.");
+  });
+
+  test("keeps a plaintext autolink when HTML stripping would empty the body", () => {
+    const content = extractArticleContent("<https://kalshi.com/markets/kxhigh>");
+    expect(content.text).toContain("https://kalshi.com/markets/kxhigh");
+  });
+
+  test("substackReaderBody prefers a longer snapshot over a paywall teaser", () => {
+    const snapshot = "Kalshi is opening the door to institutional trading.\n\nAlaska is taking bets on the fattest bear.\n\nBitcoin price discovery continues.";
+    const teaser = "Prediction markets news roundup: Kalshi embraces institutional trading; betting on the fattest bear in Alaska; BTC price discovery";
+    expect(substackReaderBody(
+      {
+        title: "Roundup",
+        publicationBaseUrl: null,
+        previewText: snapshot,
+        bodyHtml: snapshot,
+      },
+      {
+        title: "Roundup",
+        publicationBaseUrl: null,
+        previewText: teaser,
+        bodyHtml: `<p>${teaser}</p>`,
+        contentText: teaser,
+      },
+    )).toBe(snapshot);
   });
 });
 

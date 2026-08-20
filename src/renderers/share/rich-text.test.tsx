@@ -88,4 +88,12 @@ describe("shared article HTML sanitization", () => {
     expect(output).toContain('target="_blank"');
     expect(output).toContain('rel="noreferrer noopener"');
   });
+
+  test("unwraps unknown autolink tags so surrounding article text is kept", () => {
+    // DOMParser treats `<https://...>` as an element that wraps everything
+    // after it. Dropping that node used to eat the rest of the post.
+    const output = html("Intro. See <https://kalshi.com> the rest of the post.");
+    expect(output).toContain("Intro.");
+    expect(output).toContain("the rest of the post.");
+  });
 });

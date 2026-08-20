@@ -1,5 +1,6 @@
 import { decodeHtmlEntities } from "../../../utils/html-entities";
-import type { ExtractedArticleContent, SubstackContentBlock } from "./types";
+import { htmlMarkupPresent } from "../shared/jina-article-text";
+import type { ExtractedArticleContent, SubstackArticleSummary, SubstackContentBlock } from "./types";
 import {
   asRecord,
   extractAttribute,
@@ -453,7 +454,13 @@ export function extractArticleContent(
   ].map((url) => normalizeUrl(url, baseUrl)));
   const linkUrls = extractLinkUrlsFromHtml(html, baseUrl).filter((url) => !isLikelyImageUrl(url));
   const blocks = extractArticleContentBlocks(bodyHtml, options);
-  const text = stripDuplicateLeadingTitle(articleTextFromBlocks(blocks), options.title);
+  let text = stripDuplicateLeadingTitle(articleTextFromBlocks(blocks), options.title);
+  // Shares and some reader payloads store the extracted post as plain text in
+  // `bodyHtml`. The HTML block parser then finds nothing, and the share/reader
+  // would fall back to the feed teaser.
+  if (!text && html.trim() && !htmlMarkupPresent(html)) {
+    text = stripDuplicateLeadingTitle(normalizeArticleText(html), options.title);
+  }
   const words = wordCount(text);
   return {
     text,
@@ -463,6 +470,36 @@ export function extractArticleContent(
     wordCount: words,
     readMinutes: estimateReadingMinutes(words),
   };
+}
+
+type ReaderBodySource = Pick<
+  SubstackArticleSummary,
+  "bodyHtml" | "previewText" | "publicationBaseUrl" | "title"
+> & { contentText?: string | null };
+
+/**
+ * Longest usable body from a stashed summary, a loaded detail, or both.
+ *
+ * Share snapshots put the full post in `bodyHtml` / `previewText` / `summary`.
+ * A later Substack fetch can return a paywall teaser; keep the longer snapshot.
+ */
+export function substackReaderBody(
+  ...articles: Array<ReaderBodySource | null | undefined>
+): string {
+  let best = "";
+  for (const article of articles) {
+    if (!article) continue;
+    const extracted = extractArticleContent(article.bodyHtml, {
+      baseUrl: article.publicationBaseUrl,
+      title: article.title,
+    }).text.trim();
+    const contentText = article.contentText?.trim() ?? "";
+    const preview = article.previewText?.trim() ?? "";
+    for (const candidate of [extracted, contentText, preview]) {
+      if (candidate.length > best.length) best = candidate;
+    }
+  }
+  return best;
 }
 
 function stripDuplicateLeadingTitle(text: string, title: string | null | undefined): string {

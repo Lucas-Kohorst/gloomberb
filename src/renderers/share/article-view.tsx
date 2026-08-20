@@ -14,6 +14,7 @@ import {
   cleanJinaArticle,
   classifyReaderHttpFailure,
   classifyReaderThrow,
+  htmlMarkupPresent,
   preferredArticleBody,
   readerFallbackNotice,
   type ReaderFailureKind,
@@ -25,8 +26,33 @@ import { ShareShell, formatShareTimestamp } from "./shell";
 
 export { preferredArticleBody };
 
+export type ArticleShareBodySource =
+  | { kind: "html"; html: string }
+  | { kind: "markdown"; text: string }
+  | { kind: "empty" };
+
+/**
+ * Snapshot text wins. `bodyHtml` is post markup when the sharer had HTML, and
+ * plain text when the reader extracted the post. Treating the latter as HTML
+ * lets `DOMParser` eat the article at the first `<https://...>` autolink.
+ */
+export function articleShareBodySource(
+  payload: ArticleSharePayload,
+  extractedText: string | null = null,
+): ArticleShareBodySource {
+  const embedded = payload.bodyHtml?.trim() || "";
+  const summary = payload.summary?.trim() || payload.previewText?.trim() || "";
+  if (embedded && htmlMarkupPresent(embedded)) return { kind: "html", html: embedded };
+  const text = preferredArticleBody(summary, embedded || extractedText);
+  return text ? { kind: "markdown", text } : { kind: "empty" };
+}
+
 export function articleShareNeedsReader(payload: ArticleSharePayload): boolean {
-  if (payload.bodyHtml?.trim()) return false;
+  if (payload.bodyHtml?.trim() && htmlMarkupPresent(payload.bodyHtml)) return false;
+  const snapshot = articleShareBodySource(payload);
+  // A full extracted post in the snapshot should not be replaced by a later
+  // Jina fetch that often returns the Substack teaser for logged-in visitors.
+  if (snapshot.kind === "markdown" && snapshot.text.length >= 400) return false;
   if (!payload.url) return false;
   if (payload.items?.length) return false;
   return payload.type === "news" || payload.type === "substack";
@@ -96,24 +122,22 @@ export function ArticleShareView({
   payload: ArticleSharePayload;
   openInTerminalHref?: string | null;
 }) {
-  const embedded = payload.bodyHtml?.trim() || "";
-  const summary = payload.summary?.trim() || payload.previewText?.trim() || "";
   // News and Substack shares often only snapshot a teaser. Fetch the full
-  // article when the payload has no HTML body; clustered wire stories stay
-  // as summaries because they are not one page to extract.
+  // article when the payload has no body; clustered wire stories stay as
+  // summaries because they are not one page to extract.
   const needsFullText = articleShareNeedsReader(payload);
   const full = useFullArticleText(payload.url, needsFullText);
-  const body = preferredArticleBody(summary, full.text);
-  const fallbackNotice = readerFallbackNotice(full.failureKind, !!body.trim());
+  const source = articleShareBodySource(payload, full.text);
+  const fallbackNotice = readerFallbackNotice(full.failureKind, source.kind !== "empty");
 
   const published = formatShareTimestamp(payload.publishedAt);
-  const source = payload.source || payload.publicationName || "";
+  const byline = payload.source || payload.publicationName || "";
   const footer = (
     <>
-      {[source, published].filter(Boolean).join(" · ")}
+      {[byline, published].filter(Boolean).join(" · ")}
       {payload.url ? (
         <>
-          {source || published ? " · " : null}
+          {byline || published ? " · " : null}
           <a href={payload.url} target="_blank" rel="noreferrer noopener">view original</a>
         </>
       ) : null}
@@ -126,8 +150,8 @@ export function ArticleShareView({
 
       {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
 
-      {embedded ? <SanitizedHtmlBody html={embedded} /> : body
-        ? <MarkdownBody text={body} />
+      {source.kind === "html" ? <SanitizedHtmlBody html={source.html} /> : source.kind === "markdown"
+        ? <MarkdownBody text={source.text} />
         : !full.loading
           ? (
             <p className="share-note">

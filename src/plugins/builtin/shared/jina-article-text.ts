@@ -9,6 +9,17 @@
 export const JINA_READER_ENDPOINT = "https://r.jina.ai/";
 
 /**
+ * True when the string contains a real HTML element.
+ *
+ * Autolinks (`<https://...>`) and comparisons (`polls < 50%`) must not count:
+ * `DOMParser` will treat those as tags and an allowlist sanitizer will drop
+ * everything inside them.
+ */
+export function htmlMarkupPresent(value: string): boolean {
+  return /<\/?[a-zA-Z][a-zA-Z0-9]*(\s|\/?>)/.test(value);
+}
+
+/**
  * Jina's default content timing is `resource-idle`: it waits for images,
  * fonts, and other subresources to go quiet. Articles only need readable
  * text, and images are unused in the terminal reader.
