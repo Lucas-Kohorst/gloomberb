@@ -143,6 +143,7 @@ async function renderSettled() {
   await act(async () => {
     await testSetup!.renderOnce();
     await testSetup!.renderOnce();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
   });
 }
 

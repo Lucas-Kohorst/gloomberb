@@ -6,7 +6,6 @@ import { blendHex } from "../../../../theme/color-utils";
 import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
 import { useViewport } from "../../../../react/input";
 import { padTo } from "../../../../utils/format";
-import { wrapTextLines } from "../../../../utils/text-wrap";
 import { measurePerf } from "../../../../utils/perf-marks";
 import { useDoubleClickActivation } from "../../../use-double-click-activation";
 import { useScrollBoxScrollActivity } from "../../../table-view-shared";
@@ -490,19 +489,19 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
                           {cell.content !== undefined ? (
                             cell.content
                           ) : column.wrap ? (
-                            <Box flexDirection="column" width={column.width} height={rowHeightCells}>
-                              {wrapTextLines(cell.text, Math.max(1, column.width), rowHeightCells).map((line, lineIndex) => (
-                                <Text
-                                  key={lineIndex}
-                                  attributes={cell.attributes ?? TextAttributes.NONE}
-                                  fg={
-                                    cell.color ??
-                                    (selected ? colors.selectedText : colors.text)
-                                  }
-                                >
-                                  {padTo(line, column.width, column.align)}
-                                </Text>
-                              ))}
+                            <Box width={column.width} height={rowHeightCells} overflow="hidden">
+                              <Text
+                                width={column.width}
+                                wrapText
+                                wrapMode="word"
+                                attributes={cell.attributes ?? TextAttributes.NONE}
+                                fg={
+                                  cell.color ??
+                                  (selected ? colors.selectedText : colors.text)
+                                }
+                              >
+                                {cell.text}
+                              </Text>
                             </Box>
                           ) : (
                             <Text

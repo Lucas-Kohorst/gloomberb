@@ -9,7 +9,7 @@ import {
   runCli,
   searchCandidatesForCli,
 } from "./cli/index";
-import { createDefaultConfig } from "./types/config";
+import { createDefaultConfig, ADJACENT_WATCHLIST_ID } from "./types/config";
 import { TickerRepository } from "./data/ticker-repository";
 import type { TickerRecord } from "./types/ticker";
 import { createTestDataProvider } from "./test-support/data-provider";
@@ -161,7 +161,10 @@ describe("CLI watchlist commands", () => {
     const { stdout } = await captureConsole(() => runCli(["watchlist", "create", "Growth Radar"]));
     const config = await loadConfig(dataDir);
 
-    expect(config.watchlists).toEqual([{ id: "growth-radar", name: "Growth Radar" }]);
+    expect(config.watchlists).toEqual([
+      { id: ADJACENT_WATCHLIST_ID, name: "Adjacent" },
+      { id: "growth-radar", name: "Growth Radar" },
+    ]);
     expect(stdout).toContain('Created watchlist "Growth Radar".');
     expect(stdout).toContain("growth-radar");
   });
@@ -187,7 +190,9 @@ describe("CLI watchlist commands", () => {
     expect(deleteResult.stdout).toContain("Cleaned Tickers");
 
     const config = await loadConfig(dataDir);
-    expect(config.watchlists).toEqual([]);
+    expect(config.watchlists).toEqual([
+      { id: ADJACENT_WATCHLIST_ID, name: "Adjacent" },
+    ]);
 
     persistence = new AppPersistence(join(dataDir, ".gloomberb-cache.db"));
     store = new TickerRepository(persistence.tickers);
