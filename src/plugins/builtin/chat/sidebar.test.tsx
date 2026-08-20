@@ -111,7 +111,80 @@ describe("ChatContent channel sidebar", () => {
     });
 
     await flushFrame();
-    expect(setup().captureCharFrame()).not.toContain("options");
+    const stackedFrame = setup().captureCharFrame();
+    expect(stackedFrame).toContain("← Chats");
+    expect(stackedFrame).toContain("#options");
+  });
+
+  test("returns to the full channel list from a stacked narrow conversation", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
+      {
+        id: "dm:bob",
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+      },
+      {
+        id: "grp:vista",
+        name: "VistaDex trading",
+        kind: "group",
+        created_at: "2026-07-03T09:31:00.000Z",
+        members: [
+          { id: "u2", username: "bob", displayName: "Bob" },
+          { id: "u3", username: "cara", displayName: "Cara" },
+        ],
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={60}
+              height={14}
+              focused
+              channelId="grp:vista"
+              onChannelChange={() => {}}
+            />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 60, height: 14 },
+      );
+    });
+
+    await flushFrame();
+    expect(setup().captureCharFrame()).toContain("← Chats");
+    expect(setup().captureCharFrame()).toContain("VistaDex trading");
+
+    const lines = setup().captureCharFrame().split("\n");
+    const row = lines.findIndex((line) => line.includes("← Chats"));
+    const col = lines[row]?.indexOf("←") ?? -1;
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await setup().mockMouse.click(col, row);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+    await flushFrame();
+
+    const listFrame = setup().captureCharFrame();
+    expect(listFrame).not.toContain("← Chats");
+    expect(listFrame).toContain("everyone");
+    expect(listFrame).toContain("equities");
+    expect(listFrame).toContain("@bob");
+    expect(listFrame).toContain("VistaDex trading");
   });
 
   test("selects a sidebar channel from a single text click", async () => {
@@ -290,6 +363,113 @@ describe("ChatContent channel sidebar", () => {
       expect(setup().captureCharFrame()).not.toContain("New DM");
     } finally {
       apiClient.openDirectChannel = originalOpenDirectChannel;
+    }
+  });
+
+  test("creates a named group from the new-conversation dialog", async () => {
+    const controller = createController({
+      messages: [{
+        ...makeMessage(1),
+        user: { id: "u2", username: "bob", displayName: "Bob" },
+      }, {
+        ...makeMessage(2),
+        user: { id: "u3", username: "cara", displayName: "Cara" },
+      }],
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    const openedGroups: Array<{ usernames?: string[]; name?: string }> = [];
+    const originalOpenGroupChannel = apiClient.openGroupChannel.bind(apiClient);
+    apiClient.openGroupChannel = async (body) => {
+      openedGroups.push(body);
+      return {
+        id: "grp:vista",
+        name: body.name?.trim() || "Group",
+        kind: "group",
+        created_at: "2026-07-03T09:31:00.000Z",
+      };
+    };
+    const selectedChannels: string[] = [];
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    function ChannelPane() {
+      const [channelId, setChannelId] = useState("everyone");
+      return (
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={16}
+              focused
+              channelId={channelId}
+              onChannelChange={(nextChannelId) => {
+                selectedChannels.push(nextChannelId);
+                setChannelId(nextChannelId);
+              }}
+            />
+          </PluginRenderProvider>
+        </AppContext>
+      );
+    }
+
+    try {
+      await act(async () => {
+        testSetup = await testRender(<ChannelPane />, {
+          width: 90,
+          height: 16,
+        });
+      });
+
+      await flushFrame();
+      const lines = setup().captureCharFrame().split("\n");
+      const row = lines.findIndex((line) => line.includes("DMs"));
+      const col = lines[row]?.lastIndexOf("+") ?? -1;
+      expect(row).toBeGreaterThanOrEqual(0);
+      expect(col).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup().mockMouse.click(col, row);
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      await act(async () => {
+        await setup().mockInput.typeText("@bob @cara");
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      expect(setup().captureCharFrame()).toContain("New group");
+      expect(setup().captureCharFrame()).toContain("Group name");
+
+      const nameLines = setup().captureCharFrame().split("\n");
+      const nameRow = nameLines.findIndex((line) => line.includes("Group name"));
+      const nameCol = nameLines[nameRow]?.indexOf("Group name") ?? -1;
+      expect(nameRow).toBeGreaterThanOrEqual(0);
+      expect(nameCol).toBeGreaterThanOrEqual(0);
+
+      await act(async () => {
+        await setup().mockMouse.click(nameCol + 1, nameRow);
+        await setup().renderOnce();
+        await setup().mockInput.typeText("VistaDex trading");
+        setup().mockInput.pressEnter();
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      expect(openedGroups).toEqual([{ usernames: ["bob", "cara"], name: "VistaDex trading" }]);
+      expect(selectedChannels).toEqual(["grp:vista"]);
+      expect(setup().captureCharFrame()).toContain("VistaDex tra");
+      expect(setup().captureCharFrame()).not.toContain("New group");
+    } finally {
+      apiClient.openGroupChannel = originalOpenGroupChannel;
     }
   });
 

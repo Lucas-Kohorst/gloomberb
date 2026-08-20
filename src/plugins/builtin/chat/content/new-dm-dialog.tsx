@@ -16,6 +16,7 @@ const MAX_RECENT_USERS = 6;
 const MIN_DIALOG_WIDTH = 32;
 const MAX_DIALOG_WIDTH = 52;
 const DIALOG_HEIGHT = 10;
+const GROUP_DIALOG_HEIGHT = 12;
 
 interface DmUserCandidate {
   username: string;
@@ -71,20 +72,27 @@ export function NewDmDialog({
   userByUsername: Map<string, ChatUserSummary>;
   currentUserId?: string | null;
   onCancel: () => void;
-  onSubmit: (usernames: string[]) => Promise<void>;
+  onSubmit: (usernames: string[], name?: string) => Promise<void>;
 }) {
   const inputRef = useRef<InputRenderable | null>(null);
+  const nameInputRef = useRef<InputRenderable | null>(null);
   const [value, setValue] = useState("");
   const valueRef = useRef("");
+  const [groupName, setGroupName] = useState("");
+  const groupNameRef = useRef("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectedUsernames = useMemo(() => parseDmUsernames(value), [value]);
+  const isGroup = selectedUsernames.length > 1;
   const dialogWidth = Math.max(MIN_DIALOG_WIDTH, Math.min(MAX_DIALOG_WIDTH, width - 4));
-  const dialogHeight = Math.min(DIALOG_HEIGHT, Math.max(7, height - 2));
+  const dialogHeight = Math.min(
+    isGroup ? GROUP_DIALOG_HEIGHT : DIALOG_HEIGHT,
+    Math.max(7, height - 2),
+  );
   const left = Math.max(0, Math.floor((width - dialogWidth) / 2));
   const top = Math.max(0, Math.floor((height - dialogHeight) / 2));
   const contentWidth = Math.max(1, dialogWidth - 4);
-  const selectedUsernames = useMemo(() => parseDmUsernames(value), [value]);
   const selectedUsernameSet = useMemo(() => new Set(selectedUsernames), [selectedUsernames]);
   const allCandidates = useMemo(() => candidateUsers(userByUsername, currentUserId), [currentUserId, userByUsername]);
   const query = currentTokenQuery(value);
@@ -131,7 +139,10 @@ export function NewDmDialog({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(submittedUsernames);
+      await onSubmit(
+        submittedUsernames,
+        submittedUsernames.length > 1 ? groupNameRef.current.trim() || undefined : undefined,
+      );
     } catch {
       setError(t("Could not start conversation."));
       setSubmitting(false);
@@ -188,7 +199,7 @@ export function NewDmDialog({
       style={{ zIndex: 8 }}
     >
       <Box height={1} flexDirection="row">
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("New DM")}</Text>
+        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{isGroup ? t("New group") : t("New DM")}</Text>
         <Box flexGrow={1} />
         <Box width={3} height={1} backgroundColor={colors.panel} onMouseDown={onCancel} style={{ cursor: "pointer" }}>
           <Text fg={colors.text}> x </Text>
@@ -207,6 +218,21 @@ export function NewDmDialog({
         }}
         onSubmit={() => { void submit(); }}
       />
+      {isGroup ? (
+        <TextField
+          inputRef={nameInputRef}
+          value={groupName}
+          placeholder={t("Group name")}
+          focused={false}
+          width={contentWidth}
+          backgroundColor={colors.panel}
+          onChange={(nextValue) => {
+            groupNameRef.current = nextValue;
+            setGroupName(nextValue);
+          }}
+          onSubmit={() => { void submit(); }}
+        />
+      ) : null}
       <Box height={1}>
         <Text fg={selectedUsernames.length > 0 ? colors.textMuted : colors.textDim}>
           {selectedUsernames.length > 0 ? usernamesLabel(selectedUsernames, contentWidth) : t("Recent users")}
@@ -215,7 +241,7 @@ export function NewDmDialog({
       <ListView
         items={items}
         selectedIndex={items.length > 0 ? selectedIndex : -1}
-        height={Math.max(1, dialogHeight - 6)}
+        height={Math.max(1, dialogHeight - (isGroup ? 8 : 6))}
         bgColor={colors.bg}
         selectedBgColor={colors.selected}
         hoverBgColor={hoverBg()}
