@@ -3,6 +3,7 @@ import {
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
+  resolveTwitterFeedQuery,
   type TwitterFeedLaunchRequest,
 } from "./model";
 import {
@@ -26,7 +27,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     component: TwitterFeedPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 94, height: 28 },
+    defaultFloatingSize: { width: 120, height: 36 },
   });
 
   ctx.registerPaneTemplate({
@@ -36,7 +37,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     description: "Open an X advanced-search feed.",
     keywords: ["twitter", "x", "tweet", "tweets", "feed", "social"],
     createInstance: (_context, options) => {
-      const query = options?.values?.query?.trim() || options?.arg?.trim() || "";
+      const query = resolveTwitterFeedQuery(options?.values?.query || options?.arg || "");
       return {
         title: "X Feed",
         placement: "floating",
@@ -61,7 +62,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
       parse: (arg) => ({ query: arg.trim() }),
     },
     execute: (values) => {
-      openTwitterFeed(ctx, values?.query ?? values?.shortcut ?? "");
+      openTwitterFeed(ctx, typeof values?.query === "string" ? values.query : "");
     },
   });
 }
@@ -72,7 +73,7 @@ function openTwitterFeed(ctx: GloomPluginContext, query = "") {
   ))?.instanceId ?? null;
   const now = Date.now();
   const launchRequest: TwitterFeedLaunchRequest = {
-    query: query.trim(),
+    query: resolveTwitterFeedQuery(query),
     targetPaneId,
     nonce: `${now}-${Math.random().toString(36).slice(2)}`,
     createdAt: now,

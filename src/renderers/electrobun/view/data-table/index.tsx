@@ -31,7 +31,6 @@ import {
   CSS_TEXT_DIM,
   cellTextStyle,
   toCellX,
-  toCellY,
   useScrollBoxHandle,
   useScrollbarState,
 } from "./dom";
@@ -78,6 +77,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   horizontalPadding = 1,
   fillAvailableWidth = true,
   showHorizontalScrollbar = true,
+  rowHeight,
   scrollToIndex,
   scrollToIndexAlign = "nearest",
   scrollToIndexVersion = 0,
@@ -89,6 +89,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     key: string | number | undefined;
     range: DataTableVisibleRange;
   } | null>(null);
+  const rowHeightCells = Math.max(1, Math.floor(rowHeight ?? 1) || 1);
+  const rowHeightPx = WEB_CELL_HEIGHT * rowHeightCells;
   const headerHorizontal = useScrollbarState(false);
   const headerVertical = useScrollbarState(false);
   const bodyHorizontal = useScrollbarState(showHorizontalScrollbar);
@@ -121,7 +123,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     if (!element) return;
     const range = resolveDataTableVisibleRange({
       itemCount: items.length,
-      rowSize: WEB_CELL_HEIGHT,
+      rowSize: rowHeightPx,
       scrollOffset: element.scrollTop,
       viewportSize: Math.max(0, element.clientHeight - WEB_CELL_HEIGHT),
     });
@@ -134,7 +136,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     ) return;
     lastVisibleRangeRef.current = { key: visibleRangeKey, range };
     onVisibleRangeChange(range);
-  }, [items.length, onVisibleRangeChange, visibleRangeKey]);
+  }, [items.length, onVisibleRangeChange, rowHeightPx, visibleRangeKey]);
   const handleBodyScrollActivity = useCallback(() => {
     onBodyScrollActivity();
     emitVisibleRange();
@@ -145,7 +147,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => bodyElementRef.current,
-    estimateSize: () => WEB_CELL_HEIGHT,
+    estimateSize: () => rowHeightPx,
     overscan,
     paddingStart: WEB_CELL_HEIGHT,
     scrollPaddingStart: WEB_CELL_HEIGHT,
@@ -157,18 +159,18 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
       return Array.from({ length: items.length }, (_, index) => ({
         index,
         key: getItemKey(items[index]!, index),
-        size: WEB_CELL_HEIGHT,
-        start: WEB_CELL_HEIGHT + index * WEB_CELL_HEIGHT,
+        size: rowHeightPx,
+        start: WEB_CELL_HEIGHT + index * rowHeightPx,
       }));
     },
-    [getItemKey, items, virtualize],
+    [getItemKey, items, rowHeightPx, virtualize],
   );
   const virtualRows = virtualize
     ? (rowVirtualizer.getVirtualItems() as VirtualRow[])
     : allRows;
   const totalHeight = virtualize
     ? rowVirtualizer.getTotalSize()
-    : WEB_CELL_HEIGHT + items.length * WEB_CELL_HEIGHT;
+    : WEB_CELL_HEIGHT + items.length * rowHeightPx;
   const bodyAfterHeight = bodyAfter ? WEB_CELL_HEIGHT * 6 : 0;
   const horizontalScrollEnabled = showHorizontalScrollbar
     && hasMeaningfulTableHorizontalOverflow(tableWidth, viewportWidth, columnGap);
@@ -212,8 +214,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     }
     const element = bodyElementRef.current;
     if (!element) return;
-    const viewportRows = Math.max(1, Math.floor(element.clientHeight / WEB_CELL_HEIGHT) - 1);
-    const currentTop = toCellY(element.scrollTop);
+    const viewportRows = Math.max(1, Math.floor(element.clientHeight / rowHeightPx) - 1);
+    const currentTop = Math.floor(element.scrollTop / rowHeightPx);
     let nextTop = currentTop;
     if (scrollToIndexAlign === "center") {
       nextTop = Math.max(0, targetIndex - Math.floor(viewportRows / 2));
@@ -223,7 +225,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
       nextTop = targetIndex - viewportRows + 1;
     }
     if (nextTop !== currentTop) {
-      element.scrollTop = nextTop * WEB_CELL_HEIGHT;
+      element.scrollTop = nextTop * rowHeightPx;
     }
     scheduleVisibleRangeMeasure();
   }, [
@@ -233,6 +235,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scrollToIndexAlign,
     scrollToIndexVersion,
     scheduleVisibleRangeMeasure,
+    rowHeightPx,
     virtualize,
   ]);
 

@@ -44,4 +44,20 @@ describe("OpenTUI data table model", () => {
     expect(resolveDataTableScrollTop(1, 8, 5, 20, "nearest")).toBe(1);
     expect(resolveDataTableScrollTop(18, 0, 5, 20, "center")).toBe(15);
   });
+
+  test("virtualizes taller rows using cell height instead of one-row units", () => {
+    const window = resolveDataTableVisibleWindow({
+      appViewportHeight: 30,
+      items: Array.from({ length: 20 }, (_, index) => index),
+      measuredViewportHeight: 8,
+      overscan: 1,
+      rowHeight: 4,
+      scrollTop: 8,
+      virtualize: true,
+    });
+
+    expect(window.startIndex).toBe(1);
+    expect(window.endIndex).toBe(5);
+    expect(window.visibleItems).toEqual([1, 2, 3, 4]);
+  });
 });

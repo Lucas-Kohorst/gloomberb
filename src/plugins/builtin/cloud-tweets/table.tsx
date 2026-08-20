@@ -20,10 +20,11 @@ import {
   buildTweetColumns,
   formatMetric,
   formatRelativeShort,
+  formatTweetCellText,
   isTweetSortColumnId,
   normalizeTwitterUsername,
-  normalizeTweetCellText,
   normalizeTweetDisplayText,
+  tweetTextRowHeight,
   sortedTweets,
   tweetImageUrls,
   tweetTickers,
@@ -182,6 +183,8 @@ export function TweetSearchTable({
   });
   const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
   const columns = useMemo(() => buildTweetColumns(width), [width]);
+  const tweetColumnWidth = columns.find((column) => column.id === "text")?.width ?? 40;
+  const rowHeight = tweetTextRowHeight(tweetColumnWidth);
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
@@ -287,7 +290,7 @@ export function TweetSearchTable({
           attributes: TextAttributes.BOLD,
         };
       case "text":
-        return { text: normalizeTweetCellText(tweet.text), color: selectedColor ?? colors.text };
+        return { text: formatTweetCellText(tweet.text), color: selectedColor ?? colors.text };
       case "tickers": {
         const tickers = tweetTickers(tweet);
         return {
@@ -337,6 +340,7 @@ export function TweetSearchTable({
       rootWidth={width}
       rootHeight={height}
       columns={columns}
+      rowHeight={rowHeight}
       items={rows}
       sortColumnId={sort.columnId}
       sortDirection={sort.direction}
