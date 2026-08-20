@@ -23,6 +23,33 @@ export function pollPointsToPricePoints(points: PollTrendPoint[]): PricePoint[] 
   });
 }
 
+export function pollSeriesTimeWindow(
+  points: PollTrendPoint[],
+  padDays = 14,
+): { startMs: number; endMs: number } | null {
+  const times = points.flatMap((point) => {
+    const time = new Date(`${point.date}T00:00:00Z`).getTime();
+    return Number.isFinite(time) ? [time] : [];
+  });
+  if (times.length === 0) return null;
+  const padMs = padDays * 24 * 60 * 60 * 1000;
+  return {
+    startMs: Math.min(...times) - padMs,
+    endMs: Math.max(...times) + padMs,
+  };
+}
+
+export function clipPricePointsToWindow(
+  points: PricePoint[],
+  window: { startMs: number; endMs: number } | null,
+): PricePoint[] {
+  if (!window) return [];
+  return points.filter((point) => {
+    const time = point.date instanceof Date ? point.date.getTime() : new Date(point.date).getTime();
+    return Number.isFinite(time) && time >= window.startMs && time <= window.endMs;
+  });
+}
+
 export function pollsterSeriesColor(index: number, palette: readonly string[]): string {
   return palette[index % palette.length] ?? palette[0] ?? "#888888";
 }
@@ -88,17 +115,21 @@ export function buildPollAnalysisSeries(options: {
   }
 
   if (options.market && options.market.points.length > 0) {
-    series.push(pricePointsToResolvedSeries(options.market.points, {
-      id: `pm:${options.market.marketId}`,
-      label: options.market.label,
-      color: options.marketColor ?? "#ddaa00",
-      unit: "%",
-      unitGroup: "percent",
-      style: "line",
-      axis: "left",
-      panelId: "pct",
-      providerId: "adjacent",
-    }));
+    const pollPoints = grouped.flatMap((entry) => entry.points);
+    const aligned = clipPricePointsToWindow(options.market.points, pollSeriesTimeWindow(pollPoints));
+    if (aligned.length > 0) {
+      series.push(pricePointsToResolvedSeries(aligned, {
+        id: `pm:${options.market.venue}:${options.market.marketId}`,
+        label: options.market.label,
+        color: options.marketColor ?? "#ddaa00",
+        unit: "%",
+        unitGroup: "percent",
+        style: "line",
+        axis: "left",
+        panelId: "pct",
+        providerId: options.market.venue,
+      }));
+    }
   }
 
   return series;

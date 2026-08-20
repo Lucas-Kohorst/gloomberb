@@ -18,6 +18,7 @@ import {
 } from "./series-catalog";
 import {
   looksLikePredictionMarketQuery,
+  venueChartHitFromAdjacentMarket,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
 
@@ -392,17 +393,8 @@ export function useSeriesCatalogSuggestions({
       void getSharedAdjacentClient().searchMarkets(trimmed, 6).then((response) => {
         if (cancelled) return;
         const markets: PredictionMarketSearchHit[] = (response.markets ?? []).flatMap((market) => {
-          if (market.platform !== "kalshi" && market.platform !== "polymarket") return [];
-          const marketId = market.platform === "kalshi"
-            ? (market.slug?.trim() || market.id)
-            : market.id;
-          if (!marketId) return [];
-          return [{
-            venue: market.platform,
-            marketId,
-            title: market.title,
-            ...(market.subtitle ? { eventLabel: market.subtitle } : {}),
-          }];
+          const hit = venueChartHitFromAdjacentMarket(market);
+          return hit ? [hit] : [];
         });
         setMarketSearch({ query: trimmed, markets, loading: false });
       }).catch(() => {

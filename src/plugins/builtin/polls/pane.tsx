@@ -42,7 +42,6 @@ import {
 } from "./normalize";
 import {
   loadPollRaceMarketOverlay,
-  pollRaceMarketQuery,
   type PollRaceMarketOverlay,
 } from "./overlay";
 import type { PollAnalysisGroup, PollAnalysisView, PollDetailTab, PollRow, PollTabId } from "./types";
@@ -302,10 +301,9 @@ function PollTrend({
       setMarketStatus("idle");
       return;
     }
-    const query = pollRaceMarketQuery(poll, leadingChoice);
     let cancelled = false;
     setMarketStatus("loading");
-    loadPollRaceMarketOverlay(query)
+    loadPollRaceMarketOverlay(poll, leadingChoice)
       .then((overlay) => {
         if (cancelled) return;
         setMarket(overlay);
@@ -344,7 +342,7 @@ function PollTrend({
       group,
       view: "scatter",
       palette: pollsterPalette(),
-      market: group === "race" ? market : null,
+      market,
       marketColor: colors.warning,
     });
   }, [allRows, poll, leadingChoice, group, market]);

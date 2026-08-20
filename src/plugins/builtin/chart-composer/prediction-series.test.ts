@@ -4,6 +4,7 @@ import {
   looksLikePredictionMarketQuery,
   resolveAdjacentIndexQuery,
   resolvePredictionSeriesQuery,
+  venueChartHitFromAdjacentMarket,
 } from "./prediction-series";
 
 describe("prediction-market NL → series expression", () => {
@@ -29,6 +30,19 @@ describe("prediction-market NL → series expression", () => {
 
   test("does not treat a bare color word as an Adjacent index", () => {
     expect(resolveAdjacentIndexQuery("red")).toBeNull();
+  });
+
+  test("maps Adjacent markets onto the same venue ids the catalog overlays", () => {
+    expect(venueChartHitFromAdjacentMarket({
+      id: "kalshi:KXMI",
+      platform: "kalshi",
+      slug: "KXMI-SEN-2026",
+      title: "Michigan Senate 2026",
+    })).toEqual({
+      venue: "kalshi",
+      marketId: "KXMI-SEN-2026",
+      title: "Michigan Senate 2026",
+    });
   });
 
   test("maps a Kalshi search hit onto KALSHI:ticker", () => {

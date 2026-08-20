@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { buildPollAnalysisSeries } from "./analysis-chart";
+import {
+  buildPollAnalysisSeries,
+  clipPricePointsToWindow,
+  pollSeriesTimeWindow,
+} from "./analysis-chart";
 import { normalizeVoteHubPoll } from "./normalize";
 import {
   pickAdjacentMarketForPoll,
+  pollRaceGeography,
   pollRaceMarketQuery,
   scoreAdjacentMarketForPoll,
 } from "./overlay";
 import type { VoteHubPoll } from "./types";
 import type { AdjacentMarket } from "../adjacent/types";
+import { venueChartHitFromAdjacentMarket } from "../chart-composer/prediction-series";
 
 function makePoll(overrides: Partial<VoteHubPoll> = {}): VoteHubPoll {
   return {
@@ -35,8 +41,9 @@ function makePoll(overrides: Partial<VoteHubPoll> = {}): VoteHubPoll {
 
 function market(overrides: Partial<AdjacentMarket>): AdjacentMarket {
   return {
-    id: "m1",
+    id: "kalshi:KXMI2026",
     platform: "kalshi",
+    slug: "KXMI-SEN-2026",
     title: "Will Slotkin win the 2026 Michigan Senate race?",
     status: "open",
     yes_price: 52,
@@ -46,21 +53,31 @@ function market(overrides: Partial<AdjacentMarket>): AdjacentMarket {
 }
 
 describe("poll race market overlay matching", () => {
-  test("builds a senate race query from subject + office + choice", () => {
+  test("builds a senate race query and geography from subject", () => {
     const row = normalizeVoteHubPoll(makePoll());
     expect(pollRaceMarketQuery(row, "Slotkin")).toBe("2026 Michigan senate Slotkin");
+    expect(pollRaceGeography(row)).toBe("michigan");
   });
 
-  test("picks the Adjacent market that shares race tokens, not the first result", () => {
-    const query = "2026 Michigan senate Slotkin";
-    const miss = market({
-      id: "noise",
-      title: "Fed cuts rates in 2026?",
+  test("maps Adjacent hits onto the same KALSHI/POLY ids the chart catalog uses", () => {
+    expect(venueChartHitFromAdjacentMarket(market({}))).toEqual({
+      venue: "kalshi",
+      marketId: "KXMI-SEN-2026",
+      title: "Will Slotkin win the 2026 Michigan Senate race?",
     });
-    const hit = market({ id: "mi-sen" });
-    expect(scoreAdjacentMarketForPoll(hit, query)).toBeGreaterThan(scoreAdjacentMarketForPoll(miss, query));
-    expect(pickAdjacentMarketForPoll([miss, hit], query)?.id).toBe("mi-sen");
-    expect(pickAdjacentMarketForPoll([miss], query)).toBeNull();
+  });
+
+  test("rejects a different state's market even when the year matches", () => {
+    const query = "2026 Michigan senate Slotkin";
+    const texas = market({
+      id: "noise",
+      slug: "KXTX-SEN-2026",
+      title: "Will Cruz win the 2026 Texas Senate race?",
+    });
+    const michigan = market({ id: "mi-sen" });
+    expect(scoreAdjacentMarketForPoll(texas, query, "michigan")).toBe(0);
+    expect(pickAdjacentMarketForPoll([texas, michigan], query, "michigan")?.id).toBe("mi-sen");
+    expect(pickAdjacentMarketForPoll([texas], query, "michigan")).toBeNull();
   });
 });
 
@@ -72,8 +89,18 @@ describe("poll analysis chart series", () => {
   ].map(normalizeVoteHubPoll);
   const poll = rows[0]!;
   const palette = ["#11aa55", "#ddaa00", "#4488ff"];
+  const marketOverlay = {
+    marketId: "KXMI-SEN-2026",
+    venue: "kalshi" as const,
+    label: "KALSHI Michigan Senate",
+    points: [
+      { date: new Date("2024-06-01T00:00:00Z"), close: 40 },
+      { date: new Date("2026-02-01T00:00:00Z"), close: 51 },
+      { date: new Date("2027-01-01T00:00:00Z"), close: 90 },
+    ],
+  };
 
-  test("house overlay is one pollster line series", () => {
+  test("house overlay is one pollster line plus the aligned PM series", () => {
     const series = buildPollAnalysisSeries({
       rows,
       poll,
@@ -81,14 +108,18 @@ describe("poll analysis chart series", () => {
       group: "house",
       view: "overlay",
       palette,
+      market: marketOverlay,
     });
     expect(series[0]!.id).toBe("pollster:EPIC-MRA");
     expect(series[0]!.style).toBe("line");
     expect(series[0]!.points.map((point) => point.value)).toEqual([46, 49]);
     expect(series.some((entry) => entry.id.includes("Trafalgar"))).toBe(false);
+    const pm = series.find((entry) => entry.id.startsWith("pm:"))!;
+    expect(pm.id).toBe("pm:kalshi:KXMI-SEN-2026");
+    expect(pm.points.map((point) => point.value)).toEqual([51]);
   });
 
-  test("race overlay and scatter reuse CompositeChart styles", () => {
+  test("race overlay and scatter reuse CompositeChart styles with a PM line", () => {
     const overlay = buildPollAnalysisSeries({
       rows,
       poll,
@@ -96,6 +127,7 @@ describe("poll analysis chart series", () => {
       group: "race",
       view: "overlay",
       palette,
+      market: marketOverlay,
     });
     const scatter = buildPollAnalysisSeries({
       rows,
@@ -104,16 +136,24 @@ describe("poll analysis chart series", () => {
       group: "race",
       view: "scatter",
       palette,
-      market: {
-        marketId: "mi-sen",
-        label: "PM Michigan Senate",
-        points: [{ date: new Date("2026-02-01T00:00:00Z"), close: 51 }],
-      },
+      market: marketOverlay,
     });
-    expect(overlay.map((entry) => entry.id)).toEqual(["pollster:EPIC-MRA", "pollster:Trafalgar"]);
-    expect(overlay.every((entry) => entry.style === "line")).toBe(true);
+    expect(overlay.map((entry) => entry.id)).toEqual([
+      "pollster:EPIC-MRA",
+      "pollster:Trafalgar",
+      "pm:kalshi:KXMI-SEN-2026",
+    ]);
+    expect(overlay.filter((entry) => entry.id.startsWith("pollster:")).every((entry) => entry.style === "line")).toBe(true);
     expect(scatter.filter((entry) => entry.id.startsWith("pollster:")).every((entry) => entry.style === "points")).toBe(true);
-    expect(scatter.at(-1)).toMatchObject({ id: "pm:mi-sen", style: "line", label: "PM Michigan Senate" });
-    expect(scatter.at(-1)!.points[0]!.value).toBe(51);
+    expect(scatter.at(-1)).toMatchObject({ id: "pm:kalshi:KXMI-SEN-2026", style: "line" });
+  });
+
+  test("clips a prediction series to the poll window so unrelated years drop out", () => {
+    const window = pollSeriesTimeWindow([
+      { date: "2026-01-10", value: 46, pollster: "EPIC-MRA" },
+      { date: "2026-03-10", value: 49, pollster: "EPIC-MRA" },
+    ]);
+    const clipped = clipPricePointsToWindow(marketOverlay.points, window);
+    expect(clipped.map((point) => point.close)).toEqual([51]);
   });
 });
