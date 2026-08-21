@@ -625,7 +625,7 @@ export function ChatContent({
       info,
       hints: [
         { id: "refresh", key: "r", label: "efresh", onPress: retryMessages },
-        { id: "search", key: "s", label: "earch", onPress: openSearch },
+        { id: "search", key: "/", label: "search", onPress: openSearch },
       ],
     };
   }, [canSend, loadFailed, loading, openSearch, retryMessages, searching, showChannelSidebar, stackedConversationOpen, user, visibleMessages.length]);

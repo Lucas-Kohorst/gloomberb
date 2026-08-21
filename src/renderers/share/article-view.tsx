@@ -64,7 +64,18 @@ export function articleShareNeedsReader(payload: ArticleSharePayload): boolean {
   if (snapshot.kind === "markdown" && snapshot.text.length >= 400) return false;
   if (!payload.url) return false;
   if (payload.items?.length) return false;
+  // Tweets already snapshot their text; x.com/twitter.com login walls are not articles.
+  if (isXStatusUrl(payload.url)) return false;
   return payload.type === "news" || payload.type === "substack";
+}
+
+function isXStatusUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+    return host === "x.com" || host === "twitter.com" || host === "mobile.twitter.com";
+  } catch {
+    return false;
+  }
 }
 
 function useFullArticleText(url: string, enabled: boolean) {
@@ -139,6 +150,12 @@ export function ArticleShareView({
   const source = articleShareBodySource(payload, full.text);
   const fallbackNotice = readerFallbackNotice(full.failureKind, source.kind !== "empty");
   const archive = useShareArticleArchive(payload.url);
+  const images = payload.imageUrls?.filter(Boolean).slice(0, 4) ?? [];
+  const bodyDuplicatesTitle = source.kind === "markdown"
+    && source.text.trim() === payload.title.trim();
+  const showEmptyNotice = !full.loading
+    && source.kind === "empty"
+    && images.length === 0;
 
   const published = formatShareTimestamp(payload.publishedAt);
   const byline = payload.source || payload.publicationName || "";
@@ -166,9 +183,9 @@ export function ArticleShareView({
 
       {fallbackNotice ? <p className="share-note">{fallbackNotice}</p> : null}
 
-      {source.kind === "html" ? <SanitizedHtmlBody html={source.html} /> : source.kind === "markdown"
+      {source.kind === "html" ? <SanitizedHtmlBody html={source.html} /> : source.kind === "markdown" && !bodyDuplicatesTitle
         ? <MarkdownBody text={source.text} />
-        : !full.loading
+        : showEmptyNotice
           ? (
             <p className="share-note">
               {full.failureMessage
@@ -182,6 +199,14 @@ export function ArticleShareView({
             </p>
           )
           : null}
+
+      {images.length > 0 ? (
+        <div className="share-images">
+          {images.map((src) => (
+            <img key={src} src={src} alt="" />
+          ))}
+        </div>
+      ) : null}
 
       {full.loading ? (
         <div className="share-loading-body">Loading full article&hellip;</div>

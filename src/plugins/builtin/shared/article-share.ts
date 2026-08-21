@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import type { CloudTweetPayload } from "../../../api-client";
 import type { NewsArticle } from "../../../news/types";
 import type { SubstackArticleDetail, SubstackArticleSummary } from "../substack/types";
 import type { ChangelogRelease } from "../../../updater/github-releases";
@@ -16,6 +17,12 @@ import {
   buildInlineArticleShareUrl,
   buildShortShareUrl,
 } from "../../../shares/routes";
+import {
+  normalizeTweetDisplayText,
+  tweetImageUrls,
+  tweetTickers,
+} from "../cloud-tweets/model";
+import { tweetAuthorHandle } from "../cloud-tweets/tweet-stash";
 
 export { decodeArticleSharePayload };
 export type { ArticleShareStoryItem, ArticleSharePayload } from "../../../shares/payload";
@@ -69,6 +76,29 @@ export function changelogReleaseSharePayload(release: ChangelogRelease): Article
     source: "Gloomberb Changelog",
     summary: release.body,
     publishedAt: release.publishedAt,
+  };
+}
+
+/**
+ * Tweets travel as news-shaped article payloads so a shared link opens the
+ * same reader as firehose/X articles. The share page must not send x.com
+ * through Jina — the snapshot already has the tweet text.
+ */
+export function tweetSharePayload(tweet: CloudTweetPayload): ArticleSharePayload {
+  const text = normalizeTweetDisplayText(tweet.text).trim() || "Tweet";
+  const url = tweet.url?.trim() ?? "";
+  const imageUrls = tweetImageUrls(tweet);
+  return {
+    type: "news",
+    id: tweet.id?.trim() ? `x:${tweet.id.trim()}` : url || text,
+    title: text,
+    url,
+    source: tweetAuthorHandle(tweet),
+    summary: text,
+    publishedAt: toDateISO(tweet.createdAt),
+    categories: ["twitter"],
+    tickers: tweetTickers(tweet),
+    imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
   };
 }
 

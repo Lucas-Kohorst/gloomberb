@@ -129,10 +129,10 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     onShare: shareArticle,
   });
 
-  // [s]earch hint — separate registration so it combines with the article footer.
+  // [/]search hint — separate registration so it combines with the article footer.
   usePaneFooter("news-wire:firehose:search", () => ({
     order: -1,
-    hints: [{ id: "search", key: "s", label: "earch", onPress: focusSearch }],
+    hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
   }), [focusSearch]);
 
   // [s] / [/] search shortcut — only when search is not already focused.
@@ -254,7 +254,7 @@ export const firehoseModule: PluginModule = {
       paneId: "news-firehose",
       label: "News Firehose",
       description:
-        "Every article source in one reverse-chronological stream — RSS, Adjacent, Substack, Yahoo, X Markets tweets, and Gloom Cloud. Search with [s], sort columns by clicking headers, open with [o], pop out with [p].",
+        "Every article source in one reverse-chronological stream — RSS, Adjacent, Substack, Yahoo, X Markets tweets, and Gloom Cloud. Search with [/], sort columns by clicking headers, open with [o], pop out with [p].",
       keywords: [
         "firehose",
         "news",

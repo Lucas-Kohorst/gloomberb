@@ -172,7 +172,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       ...(searchQuery ? [{ id: "search", parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
     showOpenHint: !error && !!selectedRecord?.secUrl,

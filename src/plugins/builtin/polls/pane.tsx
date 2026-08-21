@@ -689,7 +689,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ]
       : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ];

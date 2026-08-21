@@ -1,10 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { Box } from "../../../ui";
-import { EmptyState } from "../../../components";
+import { EmptyState, type PaneHint } from "../../../components";
 import { usePaneSettingValue } from "../../../state/app/context";
 import type { PaneProps } from "../../../types/plugin";
 import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { tweetSharePayload, useCopyShareLink } from "../shared/article-share";
 import { TweetDetail } from "./tweet-detail";
 import {
   getStashedTweet,
@@ -20,6 +21,7 @@ export function TweetReaderPane({ focused, width, height }: PaneProps) {
   const [source] = usePaneSettingValue("source", "");
   const [payload] = usePaneSettingValue("payload", "");
   const { createPaneFromTemplate } = usePluginAppActions();
+  const copyShareLink = useCopyShareLink();
 
   const tweet = useMemo(() => (
     (tweetId ? getStashedTweet(tweetId) : null)
@@ -28,6 +30,12 @@ export function TweetReaderPane({ focused, width, height }: PaneProps) {
 
   const handle = tweet ? tweetAuthorHandle(tweet) : (source || title || "Tweet");
   const tweetUrl = tweet?.url || url || null;
+  const shareTweet = tweet
+    ? () => copyShareLink(tweetSharePayload(tweet))
+    : undefined;
+  const shareHint: PaneHint[] = shareTweet
+    ? [{ id: "share", key: "y", label: " share", onPress: shareTweet }]
+    : [];
 
   usePaneStatusLinkFooter({
     registrationId: "x-tweet-reader",
@@ -35,6 +43,7 @@ export function TweetReaderPane({ focused, width, height }: PaneProps) {
     url: tweetUrl,
     source: handle,
     showOpenHint: !!tweetUrl,
+    trailingHints: shareHint,
   });
 
   const openUsernameFeed = useCallback((username: string) => {

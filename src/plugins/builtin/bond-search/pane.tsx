@@ -205,7 +205,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedEntry },
         { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
         ...(activeTab === "search"
-          ? [{ id: "search", key: "s", label: "earch", onPress: focusSearch }]
+          ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }]
           : []),
       ];
       return { info, hints };
