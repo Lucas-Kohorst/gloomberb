@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
+import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
   TickerBadgeList,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
+  type PaneHint,
 } from "../../../components";
-import { TickerBadgeText } from "../../../components/ticker/badge/text";
-import { RemoteImage } from "../../../components/ui";
-import { useInlineTickers } from "../../../state/hooks/inline-tickers";
 import { usePluginAppActions, usePluginConfigState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { encodeSortPreference } from "../../../components/data-table/sort-settings";
@@ -18,6 +16,7 @@ import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-c
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
 import { CloudAuthNotice } from "../cloud/auth-actions";
+import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   buildTweetColumns,
@@ -27,10 +26,8 @@ import {
   formatTweetCellText,
   isTweetSortColumnId,
   normalizeTwitterUsername,
-  normalizeTweetDisplayText,
   tweetTextRowHeight,
   sortedTweets,
-  tweetImageUrls,
   tweetTickers,
   twitterUserSearchQuery,
   type TweetColumn,
@@ -46,60 +43,11 @@ import {
   twitterLivePollIntervalMinutes,
   useFeedPollInterval,
 } from "../shared/feed-poll-interval";
+import { usePopOutTweet } from "./pop-out";
+import { TweetDetail } from "./tweet-detail";
 
 function isAuthError(error: string | null): boolean {
   return !!error && /unauthorized|verification/i.test(error);
-}
-
-function TweetDetail({
-  tweet,
-  width,
-  onOpenUsername,
-}: {
-  tweet: CloudTweetPayload;
-  width: number;
-  onOpenUsername: (username: string) => void;
-}) {
-  const lineWidth = Math.max(1, width - 2);
-  const tweetText = normalizeTweetDisplayText(tweet.text);
-  const imageUrls = tweetImageUrls(tweet);
-  const imageWidth = Math.min(lineWidth, 72);
-  const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.35)));
-  const { catalog, openTicker } = useInlineTickers([tweetText]);
-
-  return (
-    <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
-      <Box flexDirection="column" width={lineWidth} gap={1}>
-        <TickerBadgeText
-          text={tweetText}
-          lineWidth={lineWidth}
-          catalog={catalog}
-          textColor={colors.text}
-          openTicker={openTicker}
-          openUsername={onOpenUsername}
-        />
-        {imageUrls.length > 0 ? (
-          <Box flexDirection="column" gap={1}>
-            {imageUrls.slice(0, 4).map((url, index) => (
-              <RemoteImage
-                key={url}
-                src={url}
-                alt={`Tweet image ${index + 1}`}
-                width={imageWidth}
-                height={imageHeight}
-                label={imageUrls.length > 1 ? `image ${index + 1}` : "image"}
-              />
-            ))}
-          </Box>
-        ) : null}
-        <Box flexDirection="row" height={1}>
-          <Text fg={colors.textDim}>
-            {`likes ${formatMetric(tweet.metrics.likes)}  reposts ${formatMetric(tweet.metrics.retweets)}  replies ${formatMetric(tweet.metrics.replies)}  views ${formatMetric(tweet.metrics.views)}`}
-          </Text>
-        </Box>
-      </Box>
-    </ScrollBox>
-  );
 }
 
 function useTweetSearchData(
@@ -218,6 +166,13 @@ export function TweetSearchTable({
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
+  const closeDetail = useCallback(() => setDetailOpen(false), []);
+  const popOutSelectedTweet = usePopOutTweet(closeDetail);
+  const trailingHints = useMemo<PaneHint[]>(() => (
+    selectedTweet
+      ? [{ id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) }]
+      : []
+  ), [popOutSelectedTweet, selectedTweet]);
   const openSelectedTweet = usePaneStatusLinkFooter({
     registrationId: footerId,
     focused,
@@ -240,6 +195,7 @@ export function TweetSearchTable({
       ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),
       { id: "refresh", key: "r", label: "efresh", onPress: reload },
     ],
+    trailingHints,
   });
 
   useEffect(() => {
@@ -284,32 +240,44 @@ export function TweetSearchTable({
       onFocusSearch();
       return true;
     }
-    if (onFocusSearch && event.name === "/") {
+    if (onFocusSearch && isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       onFocusSearch();
       return true;
     }
-    if (event.name === "o" && selectedTweet?.url) {
+    if (isPlainKey(event, "o") && selectedTweet?.url) {
       event.preventDefault?.();
       event.stopPropagation?.();
       openSelectedTweet();
       return true;
     }
-    if (event.name !== "r") return false;
+    if (isPlainKey(event, "p") && selectedTweet) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelectedTweet(selectedTweet);
+      return true;
+    }
+    if (!isPlainKey(event, "r")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     reload();
     return true;
-  }, [onFocusSearch, openSelectedTweet, reload, selectedTweet?.url]);
+  }, [onFocusSearch, openSelectedTweet, popOutSelectedTweet, reload, selectedTweet]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name !== "o") return false;
+    if (isPlainKey(event, "p") && selectedTweet) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelectedTweet(selectedTweet);
+      return true;
+    }
+    if (!isPlainKey(event, "o")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     openSelectedTweet();
     return true;
-  }, [openSelectedTweet]);
+  }, [openSelectedTweet, popOutSelectedTweet, selectedTweet]);
 
   const renderCell = useCallback((
     tweet: CloudTweetPayload,

@@ -18,6 +18,13 @@ import {
   TwitterFeedPane,
   TwitterTickerTab,
 } from "./pane";
+import { TweetReaderPane } from "./tweet-reader";
+import {
+  ARTICLE_READER_FLOATING_SIZE,
+  TWEET_READER_PANE_ID,
+  TWEET_READER_TEMPLATE_ID,
+  articleReaderInstanceId,
+} from "../shared/article-pop-out";
 
 let disposeXFeedConnection: (() => void) | null = null;
 let disposeXFeedAuthWatch: (() => void) | null = null;
@@ -56,6 +63,41 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
         params: {
           query,
           queryType: options?.values?.queryType === "Top" ? "Top" : "Latest",
+        },
+      };
+    },
+  });
+
+  ctx.registerPane({
+    id: TWEET_READER_PANE_ID,
+    name: "Tweet",
+    icon: "X",
+    component: TweetReaderPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
+  });
+
+  ctx.registerPaneTemplate({
+    id: TWEET_READER_TEMPLATE_ID,
+    paneId: TWEET_READER_PANE_ID,
+    label: "Tweet",
+    description: "Read a popped-out tweet.",
+    keywords: ["twitter", "x", "tweet", "reader"],
+    canCreate: (_context, options) => !!options?.arg?.trim(),
+    createInstance: (_context, options) => {
+      const tweetId = options?.arg?.trim() ?? "";
+      if (!tweetId) return null;
+      return {
+        instanceId: articleReaderInstanceId(TWEET_READER_PANE_ID, tweetId),
+        title: options?.values?.title?.trim() || "Tweet",
+        placement: "floating",
+        settings: {
+          tweetId,
+          title: options?.values?.title ?? "",
+          url: options?.values?.url ?? "",
+          source: options?.values?.source ?? "",
+          payload: options?.values?.payload ?? "",
         },
       };
     },
