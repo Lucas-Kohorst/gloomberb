@@ -10,6 +10,7 @@ export type PredictionDetailTab =
   | "book"
   | "trades"
   | "rules"
+  | "data"
   | "similar"
   | "news";
 export type PredictionHistoryRange = "1D" | "1W" | "1M" | "ALL";

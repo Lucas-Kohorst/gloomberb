@@ -416,6 +416,7 @@ export function GroupedDetailHarness({
   detailTab?: PredictionDetailTab;
   loading?: boolean;
 } = {}) {
+  const runtime = useMemo(() => createRuntime(), []);
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
@@ -481,6 +482,7 @@ export function GroupedDetailHarness({
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>
+        <PluginRenderProvider pluginId="prediction-markets" runtime={runtime}>
         <PredictionMarketDetailPane
           detail={
             loading
@@ -528,6 +530,7 @@ export function GroupedDetailHarness({
           selectedRow={selectedRow!}
           selectedSummary={summary}
         />
+        </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
   );

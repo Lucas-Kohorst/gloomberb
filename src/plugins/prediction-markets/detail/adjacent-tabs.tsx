@@ -9,20 +9,35 @@ import {
   SimilarMarketsView,
   AdjacentMarketNewsView,
 } from "../../builtin/adjacent/prediction-integration";
-import { useAdjacentMarketMatch } from "./adjacent-match";
+import { normalizeAdjacentNewsArticle } from "../../builtin/adjacent/normalize";
+import { openNewsArticle } from "../../builtin/news/wire/article-search";
+import { usePluginAppActions } from "../../runtime";
+import {
+  useAdjacentMarketMatch,
+  type AdjacentMarketLookup,
+} from "./adjacent-match";
+
+function matchHint(triedIds: string[], subject: string): string {
+  if (triedIds.length > 0) {
+    const shown = triedIds.slice(0, 3).join(", ");
+    const extra = triedIds.length > 3 ? ` +${triedIds.length - 3}` : "";
+    return `Tried Adjacent ids ${shown}${extra}. Title search is last-resort (all-words AND).`;
+  }
+  return `Could not find this market on Adjacent to load ${subject}.`;
+}
 
 function AdjacentMarketTab({
   client,
-  marketTitle,
+  lookup,
   subject,
   render,
 }: {
   client: AdjacentClient | null;
-  marketTitle: string;
+  lookup: AdjacentMarketLookup;
   subject: string;
   render: (client: AdjacentClient, adjacentMarketId: string) => ReactNode;
 }) {
-  const match = useAdjacentMarketMatch(client, marketTitle);
+  const match = useAdjacentMarketMatch(client, lookup);
 
   if (!client) {
     return (
@@ -39,10 +54,11 @@ function AdjacentMarketTab({
 
   if (match.error) {
     return (
-      <Box paddingX={1}>
-        <Text fg={colors.textDim}>
-          Adjacent unavailable: {match.error}
-        </Text>
+      <Box paddingX={1} flexGrow={1} justifyContent="center">
+        <EmptyState
+          title="Adjacent lookup failed."
+          hint={match.error}
+        />
       </Box>
     );
   }
@@ -50,8 +66,8 @@ function AdjacentMarketTab({
   if (!match.marketId) {
     return (
       <EmptyState
-        title="No matching market found."
-        hint={`Could not find this market on Adjacent to load ${subject}.`}
+        title="No matching Adjacent market."
+        hint={matchHint(match.triedIds, subject)}
       />
     );
   }
@@ -61,17 +77,17 @@ function AdjacentMarketTab({
 
 export function PredictionSimilarTab({
   client,
-  marketTitle,
+  lookup,
   onSelectAdjacentMarket,
 }: {
   client: AdjacentClient | null;
-  marketTitle: string;
+  lookup: AdjacentMarketLookup;
   onSelectAdjacentMarket: (market: AdjacentSimilarMarket) => void;
 }) {
   return (
     <AdjacentMarketTab
       client={client}
-      marketTitle={marketTitle}
+      lookup={lookup}
       subject="similar markets"
       render={(adjacentClient, adjacentMarketId) => (
         <SimilarMarketsView
@@ -86,22 +102,27 @@ export function PredictionSimilarTab({
 
 export function PredictionNewsTab({
   client,
-  marketTitle,
+  lookup,
 }: {
   client: AdjacentClient | null;
-  marketTitle: string;
+  lookup: AdjacentMarketLookup;
 }) {
+  const { createPaneFromTemplate } = usePluginAppActions();
   return (
     <AdjacentMarketTab
       client={client}
-      marketTitle={marketTitle}
+      lookup={lookup}
       subject="related news"
       render={(adjacentClient, adjacentMarketId) => (
         <AdjacentMarketNewsView
           client={adjacentClient}
           marketId={adjacentMarketId}
           onSelectArticle={(article) => {
-            if (article.url) openUrl(article.url);
+            try {
+              openNewsArticle(normalizeAdjacentNewsArticle(article), createPaneFromTemplate);
+            } catch {
+              if (article.url) openUrl(article.url);
+            }
           }}
         />
       )}
