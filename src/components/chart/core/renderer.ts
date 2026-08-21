@@ -3,7 +3,6 @@ import type { ProjectedChartPoint } from "./data";
 import { buildTimeAxis } from "./time-axis";
 import {
   formatAxisValue,
-  formatPriceWithCurrency,
   getAxisFractionDigitFloor,
   resolveAxisFractionDigits,
 } from "./axis-format";
@@ -152,13 +151,13 @@ export function renderChart(
   const axisFractionDigits = axisMode === "price"
     ? resolveAxisFractionDigits(
       gridLines.map((line) => line.price),
-      (price, fixedFractionDigits) => formatPriceWithCurrency(
+      (price, fixedFractionDigits) => formatAxisValue(
         price,
+        axisMode,
+        points[0]!.close,
         currency,
         assetCategory,
         priceRange,
-        0,
-        0,
         fixedFractionDigits,
       ),
       getAxisFractionDigitFloor(assetCategory, priceRange),

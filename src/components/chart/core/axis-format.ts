@@ -1,4 +1,9 @@
-import { formatCompactMarketPriceWithCurrency, formatMarketPrice, resolveAssetDisplayKind } from "../../../market-data/market/format";
+import {
+  formatCompactMarketPriceWithCurrency,
+  formatMarketPrice,
+  formatMarketPriceWithCurrency,
+  resolveAssetDisplayKind,
+} from "../../../market-data/market/format";
 import type { ChartAxisMode } from "./types";
 
 export function formatPrice(
@@ -27,7 +32,7 @@ export function formatPriceWithCurrency(
   minimumFractionDigits = 0,
   fixedFractionDigits?: number,
 ): string {
-  return formatCompactMarketPriceWithCurrency(value, currency, {
+  return formatMarketPriceWithCurrency(value, currency, {
     assetCategory,
     fixedFractionDigits,
     minimumFractionDigits,
@@ -93,7 +98,11 @@ export function formatAxisValue(
   if (axisMode === "percent" && basePrice !== 0) {
     return formatPercentAxisValue(((value - basePrice) / basePrice) * 100);
   }
-  return formatPriceWithCurrency(value, currency, assetCategory, priceRange, 0, 0, fixedFractionDigits);
+  return formatCompactMarketPriceWithCurrency(value, currency, {
+    assetCategory,
+    fixedFractionDigits,
+    priceRange,
+  });
 }
 
 export function formatCursorAxisValue(
@@ -136,6 +145,7 @@ function getCursorAxisMinimumFractionDigits(value: number, assetCategory?: strin
     case "cash":
       return 4;
     case "crypto":
+      if (Math.abs(value) >= 100) return 2;
       return Math.abs(value) >= 1 ? 4 : 6;
     case "equity":
     case "contract":

@@ -1,3 +1,4 @@
+import { formatMarketPriceWithCurrency } from "../../../market-data/market/format";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../time-series/types";
 import type { CompositeAxisDomain } from "./types";
 
@@ -25,23 +26,37 @@ function compactNumber(value: number): string {
   return value.toPrecision(3);
 }
 
-function currencyPrefix(unit: string): string {
+function unitCurrencyCode(unit: string): string | null {
   const currency = unit.trim().toUpperCase().split(/[\s/]/)[0] ?? "";
-  return CURRENCY_SYMBOLS[currency] ?? "";
+  return CURRENCY_SYMBOLS[currency] ? currency : null;
+}
+
+function currencyPrefix(unit: string): string {
+  const currency = unitCurrencyCode(unit);
+  return currency ? CURRENCY_SYMBOLS[currency] ?? "" : "";
+}
+
+function formatFullCurrencyValue(value: number, unit: string): string | null {
+  const currency = unitCurrencyCode(unit);
+  return currency ? formatMarketPriceWithCurrency(value, currency) : null;
 }
 
 export function formatCompositeSeriesValue(value: number, series: ResolvedSeries): string {
-  const unit = series.unit.trim();
-  const group = series.unitGroup.toLowerCase();
+  return formatChartLegendValue(value, series.unit, series.unitGroup);
+}
+
+export function formatChartLegendValue(value: number, unit: string, unitGroup = ""): string {
+  const trimmed = unit.trim();
+  const group = unitGroup.toLowerCase();
   const compact = compactNumber(value);
-  if (group.includes("percent") || unit === "%" || unit.toLowerCase().includes("percent")) {
+  if (group.includes("percent") || trimmed === "%" || trimmed.toLowerCase().includes("percent")) {
     return `${compact}%`;
   }
-  if (group.includes("ratio") || unit.toLowerCase() === "x") return `${compact}x`;
-  if (group.startsWith("derived-unit:")) return `${compact} ${unit}`;
-  const currency = currencyPrefix(unit);
-  if (currency) return `${currency}${compact}`;
-  return unit && unit.length <= 6 ? `${compact}${unit.startsWith("/") ? "" : " "}${unit}` : compact;
+  if (group.includes("ratio") || trimmed.toLowerCase() === "x") return `${compact}x`;
+  if (group.startsWith("derived-unit:")) return `${compact} ${trimmed}`;
+  const fullPrice = formatFullCurrencyValue(value, trimmed);
+  if (fullPrice) return fullPrice;
+  return trimmed && trimmed.length <= 6 ? `${compact}${trimmed.startsWith("/") ? "" : " "}${trimmed}` : compact;
 }
 
 export function formatCompositeAxisValue(value: number, domain: CompositeAxisDomain): string {
@@ -53,6 +68,14 @@ export function formatCompositeAxisValue(value: number, domain: CompositeAxisDom
   // numeric so a narrow gutter cannot truncate USD/JPY into a false USD label.
   if (group.startsWith("derived-unit:")) return compact;
   return `${currencyPrefix(domain.unit)}${compact}`;
+}
+
+export function formatCompositeCursorValue(value: number, domain: CompositeAxisDomain): string {
+  const group = domain.unitGroup.toLowerCase();
+  if (group.startsWith("derived-unit:")) return compactNumber(value);
+  const fullPrice = formatFullCurrencyValue(value, domain.unit);
+  if (fullPrice) return fullPrice;
+  return formatCompositeAxisValue(value, domain);
 }
 
 export function compositeAxisTicks(domain: CompositeAxisDomain, count = 3): Array<{ ratio: number; value: number; label: string }> {

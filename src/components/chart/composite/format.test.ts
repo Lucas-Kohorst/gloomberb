@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CompositeChartScene } from "./types";
 import {
+  formatChartLegendValue,
   formatCompositeAxisValue,
   formatCompositeCursorDate,
+  formatCompositeCursorValue,
   formatCompositePointDetails,
   formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
@@ -146,5 +148,37 @@ describe("composite chart unit formatting", () => {
       unitGroup: "derived-unit:usd/jpy",
       seriesIds: ["ratio"],
     })).toBe("0.500");
+  });
+
+  test("shows full price precision in the legend and cursor, not compact axis ticks", () => {
+    const btc: ResolvedSeries = {
+      id: "btc",
+      label: "BTC-USD Price",
+      color: "#ffffff",
+      unit: "USD",
+      unitGroup: "price:USD",
+      nativeFrequency: "daily",
+      dataShape: "ohlcv",
+      style: "candles",
+      transform: "raw",
+      axis: "left",
+      panelId: "main",
+      interpolation: "none",
+      points: [],
+    };
+    const domain = {
+      side: "left" as const,
+      min: 70_000,
+      max: 80_000,
+      scale: "linear" as const,
+      unit: "USD",
+      unitGroup: "price:USD",
+      seriesIds: ["btc"],
+    };
+
+    expect(formatCompositeSeriesValue(79_432.18, btc)).toBe("$79,432.18");
+    expect(formatChartLegendValue(79_432.18, "USD", "price:USD")).toBe("$79,432.18");
+    expect(formatCompositeCursorValue(79_432.18, domain)).toBe("$79,432.18");
+    expect(formatCompositeAxisValue(79_432.18, domain)).toBe("$79K");
   });
 });

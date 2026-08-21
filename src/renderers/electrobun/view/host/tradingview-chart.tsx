@@ -20,6 +20,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { TradingViewChartProps } from "../../../../ui/host";
+import { formatChartLegendValue } from "../../../../components/chart/composite/format";
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 import {
@@ -194,6 +195,8 @@ type SeriesEntry = {
   style: ResolvedSeries["style"];
   api: ISeriesApi<"Line" | "Area" | "Bar" | "Candlestick" | "Histogram">;
   label: string;
+  unit: string;
+  unitGroup: string;
   /** Last data written, so a pan does not re-set identical points. */
   points: readonly TimeSeriesPoint[];
   colorKey: string;
@@ -326,7 +329,9 @@ export function WebTradingViewChart({
           | { value?: number; close?: number }
           | undefined;
         const numeric = value?.value ?? value?.close;
-        return finite(numeric) ? [`${entry.label}: ${numeric}`] : [];
+        return finite(numeric)
+          ? [`${entry.label}: ${formatChartLegendValue(numeric, entry.unit, entry.unitGroup)}`]
+          : [];
       });
       if (values.length === 0) {
         tooltip.hidden = true;
@@ -404,6 +409,8 @@ export function WebTradingViewChart({
           }
           existing.style = series.style;
           existing.label = series.label;
+          existing.unit = series.unit;
+          existing.unitGroup = series.unitGroup;
           next.push(existing);
           continue;
         }
@@ -417,6 +424,8 @@ export function WebTradingViewChart({
         style: series.style,
         api,
         label: series.label,
+        unit: series.unit,
+        unitGroup: series.unitGroup,
         points: series.points,
         colorKey,
       });
