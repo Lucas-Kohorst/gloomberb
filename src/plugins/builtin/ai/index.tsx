@@ -4,7 +4,6 @@ import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import {
   AI_PROVIDER_IDS,
   detectProviders,
-  getAiProviderDefinition,
   resolveDefaultAiProviderId,
   setDetectedProviders,
   type AiProvider,
@@ -12,7 +11,6 @@ import {
 } from "./providers";
 import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
 import { isHostedWebClient } from "./providers";
-import { registerConnectionSource } from "../connections/register";
 import { registerByokKnownService } from "../byok/services";
 import { aiProviderByokService } from "../account-management/ai-providers";
 import { AiScreenerPane } from "./screener/pane";
@@ -59,8 +57,6 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
-
-let connectionDisposers: Array<() => void> = [];
 
 function settingOrFallback(
   settings: Record<string, unknown>,
@@ -203,18 +199,8 @@ export const aiPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
-    // Register every AI provider as a Connection so it shows up in the
-    // Connections pane with real request traffic (per AGENTS.md).
-    const connectionDisposers = AI_PROVIDER_IDS.map((providerId) =>
-      registerConnectionSource({
-        id: `ai-${providerId}`,
-        name: getAiProviderDefinition(providerId)?.name ?? providerId,
-        kind: "api",
-        pluginId: "ai",
-        priority: 200,
-        authRequired: providerId !== "browser-builtin" && providerId !== "ollama",
-      }),
-    );
+    // AI keys live in ACM/BYOK. Do not register providers as Connections
+    // inventory rows. Request logging still uses withConnectionRequest.
 
     // Register BYOK known services for AI providers that accept API keys, so
     // users can add keys through the existing BYOK infrastructure rather than
@@ -487,9 +473,5 @@ export const aiPlugin: GloomPlugin = {
         };
       },
     });
-  },
-
-  dispose() {
-    for (const dispose of connectionDisposers) dispose();
   },
 };

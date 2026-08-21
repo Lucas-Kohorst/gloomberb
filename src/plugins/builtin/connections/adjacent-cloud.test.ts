@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ADJACENT_CLOUD_PROVIDER_IDS, adjacentCloudDataUrl } from "./adjacent-cloud";
+import {
+  ADJACENT_CLOUD_CONNECTION_ID,
+  ADJACENT_CLOUD_PROVIDER_IDS,
+  adjacentCloudDataUrl,
+  isAdjacentCloudChildSourceId,
+  resolveConnectionSourceId,
+} from "./adjacent-cloud";
 
 describe("adjacentCloudDataUrl", () => {
   test("builds same-origin keyed-data paths", () => {
@@ -19,5 +25,17 @@ describe("adjacentCloudDataUrl", () => {
       "us-listings",
       "votehub",
     ]);
+  });
+
+  test("folds child provider ids onto the Adjacent Cloud connection", () => {
+    expect(ADJACENT_CLOUD_CONNECTION_ID).toBe("adjacent-cloud");
+    for (const id of ADJACENT_CLOUD_PROVIDER_IDS) {
+      expect(isAdjacentCloudChildSourceId(id)).toBe(true);
+      expect(resolveConnectionSourceId(id)).toBe(ADJACENT_CLOUD_CONNECTION_ID);
+    }
+    expect(isAdjacentCloudChildSourceId(ADJACENT_CLOUD_CONNECTION_ID)).toBe(false);
+    expect(resolveConnectionSourceId(ADJACENT_CLOUD_CONNECTION_ID)).toBe(ADJACENT_CLOUD_CONNECTION_ID);
+    expect(resolveConnectionSourceId("yahoo")).toBe("yahoo");
+    expect(resolveConnectionSourceId("ai-anthropic")).toBe("ai-anthropic");
   });
 });

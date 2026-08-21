@@ -1,3 +1,6 @@
+/** Single Connections-pane row for every Adjacent Cloud keyed-data provider. */
+export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
+
 /** Worker provider ids served by GET `/api/data/{provider}` on gloomberb-cloud. */
 export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "twc-kalshi",
@@ -8,6 +11,21 @@ export const ADJACENT_CLOUD_PROVIDER_IDS = [
   "us-listings",
   "owid",
 ] as const;
+
+const ADJACENT_CLOUD_PROVIDER_ID_SET = new Set<string>(ADJACENT_CLOUD_PROVIDER_IDS);
+
+/** True for upstream prints that already traffic through Adjacent Cloud. */
+export function isAdjacentCloudChildSourceId(id: string): boolean {
+  return ADJACENT_CLOUD_PROVIDER_ID_SET.has(id);
+}
+
+/** Fold VoteHub / TWC / OWID / … reports onto the Adjacent Cloud connection. */
+export function resolveConnectionSourceId(id: string): string {
+  if (id === ADJACENT_CLOUD_CONNECTION_ID || isAdjacentCloudChildSourceId(id)) {
+    return ADJACENT_CLOUD_CONNECTION_ID;
+  }
+  return id;
+}
 
 export function isHostedWebClient(): boolean {
   try {

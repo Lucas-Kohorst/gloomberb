@@ -14,16 +14,15 @@ import {
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { createAdjacentNewsCapability } from "./news";
+import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
 import { usePluginConfigState } from "../../runtime";
 import { ADJACENT_API_KEY_CONFIG, ADJACENT_PLUGIN_ID } from "./types";
-import { US_LISTINGS_PROVIDER_ID } from "../../../sources/us-listings/types";
 
 export { ADJACENT_PLUGIN_ID, ADJACENT_API_KEY_CONFIG };
 
 let adjacentClient: AdjacentClient | null = null;
 let disposeAdjacentConnection: (() => void) | null = null;
-let disposeListingsConnection: (() => void) | null = null;
 
 function getOrCreateClient(apiKey: string | null): AdjacentClient {
   const normalizedKey = apiKey ?? null;
@@ -111,19 +110,11 @@ const adjacentMarketsModule: PluginModule = {
 
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
     disposeAdjacentConnection = registerConnectionSource({
-      id: "adjacent",
-      name: "Adjacent",
+      id: ADJACENT_CLOUD_CONNECTION_ID,
+      name: "Adjacent Cloud",
       kind: "data",
       pluginId: ADJACENT_PLUGIN_ID,
       priority: 200,
-      authRequired: false,
-    });
-    disposeListingsConnection = registerConnectionSource({
-      id: US_LISTINGS_PROVIDER_ID,
-      name: "US listed universe",
-      kind: "data",
-      pluginId: ADJACENT_PLUGIN_ID,
-      priority: 280,
       authRequired: false,
     });
 
@@ -165,8 +156,6 @@ const adjacentMarketsModule: PluginModule = {
   dispose() {
     disposeAdjacentConnection?.();
     disposeAdjacentConnection = null;
-    disposeListingsConnection?.();
-    disposeListingsConnection = null;
     resetAdjacentPersistence();
     adjacentClient = null;
   },

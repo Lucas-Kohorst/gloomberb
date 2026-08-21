@@ -14,6 +14,7 @@ import {
   recordRequest,
   updateWebSocketState,
 } from "./types";
+import { isAdjacentCloudChildSourceId } from "./adjacent-cloud";
 import {
   listConnectionSources,
   setConnectionRequestReporter,
@@ -152,10 +153,13 @@ export class ConnectionTracker {
     if (changed) this.notify();
   }
 
-  private providerEntryFromCapability(capability: PluginCapability, pluginId: string): ProviderEntry {
+  private providerEntryFromCapability(capability: PluginCapability, pluginId: string): ProviderEntry | null {
+    const id = capability.sourceId ?? capability.id;
+    // Adjacent News / listings / polls capabilities share the Adjacent Cloud row.
+    if (isAdjacentCloudChildSourceId(id)) return null;
     const kind = connectionKindFromCapability(capability.kind);
     return {
-      id: capability.sourceId ?? capability.id,
+      id,
       name: capability.name,
       kind,
       pluginId,
