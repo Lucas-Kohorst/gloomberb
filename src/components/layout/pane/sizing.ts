@@ -1,6 +1,13 @@
 
 const PANE_HEADER_ROWS = 1;
 const PANE_FOOTER_ROWS = 1;
+/** Native/web title bars are taller than one terminal cell so they stay grab-able. */
+export const NATIVE_PANE_HEADER_HEIGHT_PX = 28;
+const NATIVE_PANE_HEADER_CELL_HEIGHT = 18;
+
+export function resolveNativePaneHeaderRows(cellHeightPx = NATIVE_PANE_HEADER_CELL_HEIGHT): number {
+  return NATIVE_PANE_HEADER_HEIGHT_PX / Math.max(1, cellHeightPx);
+}
 
 const NATIVE_PANE_BODY_LAYOUT_PROPS = {
   flexGrow: 1,

@@ -11,7 +11,7 @@ import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane/footer";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
-import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
+import { NATIVE_PANE_HEADER_HEIGHT_PX, resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 import { getPaneDisplayTitle } from "./pane/title";
 import { canRetargetPaneTicker } from "../../plugins/ticker-follow";
 import { TITLEBAR_OVERLAY_HEIGHT_PX, getTitlebarLeadingInset } from "./titlebar-overlay";
@@ -145,7 +145,9 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
         const showFooter = hasPaneFooterContent(footer);
         const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
         const renderFooter = reserveFooter || showFooter;
-        const headerHeightRows = titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX / cellHeightPx : 1;
+        const headerHeightRows = (
+          titleBarOverlay ? TITLEBAR_OVERLAY_HEIGHT_PX : NATIVE_PANE_HEADER_HEIGHT_PX
+        ) / cellHeightPx;
         const background = floatingPaneBg(focused, colors);
         const titleBackground = floatingPaneTitleBg(focused, colors);
         const bodyFrame = resolvePaneBodyFrame({
@@ -174,7 +176,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
             onMouseDown={focusPane}
           >
             <Box
-              height={1}
+              height={headerHeightRows}
               width={width}
               backgroundColor={titleBackground}
               flexDirection="row"
@@ -182,6 +184,8 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
               data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
               data-floating="true"
               data-focused={focused ? "true" : "false"}
+              aria-label="Drag to move window"
+              title="Drag to move window"
               style={{ boxShadow: `0 -1px 0 ${titleBackground}, inset 0 1px 0 ${titleBackground}` }}
               onMouseDown={startWindowDrag}
             >

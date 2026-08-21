@@ -175,13 +175,28 @@ export function WebListView({
       );
     });
 
+  const fillParent = height == null;
+  const listFlexGrow = flexGrow ?? (fillParent ? 1 : undefined);
+
   return (
-    <Box flexDirection="column" height={height} flexGrow={flexGrow} gap={1}>
+    <Box
+      flexDirection="column"
+      height={height}
+      flexGrow={listFlexGrow}
+      flexShrink={fillParent ? 1 : undefined}
+      flexBasis={fillParent ? 0 : undefined}
+      minHeight={fillParent ? 0 : undefined}
+      gap={1}
+      data-gloom-role="desktop-list-view"
+    >
       {scrollable ? (
         <ScrollBox
           ref={scrollRef}
           height={height}
-          flexGrow={flexGrow}
+          flexGrow={listFlexGrow}
+          flexShrink={fillParent ? 1 : undefined}
+          flexBasis={fillParent ? 0 : undefined}
+          minHeight={fillParent ? 0 : undefined}
           scrollY
           focusable={false}
           style={frameStyle}

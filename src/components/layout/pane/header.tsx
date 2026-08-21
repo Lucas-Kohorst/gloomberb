@@ -11,6 +11,7 @@ import {
   PANE_HEADER_TILED,
   resolveTerminalPaneHeaderGeometry,
 } from "./terminal-header-geometry";
+import { resolveNativePaneHeaderRows } from "./sizing";
 
 export {
   PANE_HEADER_ACTION,
@@ -87,8 +88,8 @@ export function DesktopPaneButton({
         alignItems: "center",
         justifyContent: "center",
         height: "100%",
-        minWidth: 20,
-        paddingInline: 4,
+        minWidth: 28,
+        paddingInline: 6,
         backgroundColor: "transparent",
         cursor: onActivate ? "pointer" : "default",
       }}
@@ -153,11 +154,12 @@ export function PaneHeader({
   onCloseMouseDown,
   onTitleMouseDown,
 }: PaneHeaderProps) {
-  const { nativePaneChrome } = useUiCapabilities();
+  const { cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const uiKind = useUiHost().kind;
   const nativeRenderer = useNativeRenderer();
   const terminalHeaderRef = useRef<unknown>(null);
   const visuallyFocused = focused || windowModeSelected;
+  const headerHeight = nativePaneChrome ? resolveNativePaneHeaderRows(cellHeightPx) : PANE_HEADER_HEIGHT;
   const backgroundColor = floating ? floatingPaneTitleBg(visuallyFocused) : paneTitleBg(visuallyFocused);
   const floatToggleText = floating ? PANE_HEADER_FLOATING : PANE_HEADER_TILED;
   const floatToggleLabel = floating
@@ -177,7 +179,7 @@ export function PaneHeader({
   if (nativePaneChrome) {
     return (
       <Box
-        height={PANE_HEADER_HEIGHT}
+        height={headerHeight}
         width={width}
         backgroundColor={backgroundColor}
         flexDirection="row"
@@ -187,6 +189,8 @@ export function PaneHeader({
         data-floating={floating ? "true" : "false"}
         data-focused={focused ? "true" : "false"}
         data-window-mode-selected={windowModeSelected ? "true" : "false"}
+        aria-label="Drag to move pane"
+        title="Drag to move pane"
         onMouseDown={onHeaderMouseDown}
         onMouseMove={onHeaderMouseMove}
         onMouseDrag={onHeaderMouseDrag}
@@ -194,15 +198,36 @@ export function PaneHeader({
         onContextMenu={onHeaderContextMenu}
         style={{
           borderBottom: `1px solid ${visuallyFocused ? colors.borderFocused : colors.border}`,
-          paddingInline: 6,
+          paddingInline: 8,
           boxShadow: visuallyFocused
             ? `inset 0 -1px 0 ${blendHex(paneTitleBg(visuallyFocused), colors.borderFocused, 0.18)}`
             : `inset 0 -1px 0 ${blendHex(paneTitleBg(visuallyFocused), colors.textBright, 0.04)}`,
         }}
       >
-        <Text fg={visuallyFocused ? colors.borderFocused : colors.textMuted} selectable={false} data-gloom-role="pane-grip">
-          {PANE_HEADER_GRIP}
-        </Text>
+        <Box
+          data-gloom-role="pane-grip"
+          flexShrink={0}
+          alignItems="center"
+          justifyContent="center"
+          title="Drag to move pane"
+          style={{
+            width: 18,
+            height: 18,
+            color: visuallyFocused ? colors.borderFocused : colors.textMuted,
+            cursor: "grab",
+          }}
+        >
+          <Span style={{ display: "inline-flex", width: 10, height: 16, color: "inherit" }}>
+            <svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" aria-hidden="true">
+              <circle cx="3" cy="2.5" r="1.15" />
+              <circle cx="7" cy="2.5" r="1.15" />
+              <circle cx="3" cy="8" r="1.15" />
+              <circle cx="7" cy="8" r="1.15" />
+              <circle cx="3" cy="13.5" r="1.15" />
+              <circle cx="7" cy="13.5" r="1.15" />
+            </svg>
+          </Span>
+        </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
           <Text
             fg={textColor}

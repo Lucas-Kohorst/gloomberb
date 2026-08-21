@@ -4,7 +4,7 @@ import { paneBg } from "../../../theme/colors";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./header";
 import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./footer";
-import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
+import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
 
 interface PaneWrapperProps {
   paneId?: string;
@@ -53,7 +53,7 @@ export function PaneWrapper({
   children,
   onTitleMouseDown,
 }: PaneWrapperProps) {
-  const { nativePaneChrome } = useUiCapabilities();
+  const { cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
   const bg = paneBg(focused);
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = !!title && shouldReservePaneFooter(nativePaneChrome, showFooter);
@@ -63,7 +63,9 @@ export function PaneWrapper({
     nativePaneChrome,
     footerVisible: renderFooter,
     reserveFooter,
-    headerRows: title ? 1 : 0,
+    headerRows: title
+      ? nativePaneChrome ? resolveNativePaneHeaderRows(cellHeightPx) : 1
+      : 0,
   });
 
   return (

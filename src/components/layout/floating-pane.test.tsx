@@ -66,19 +66,20 @@ describe("FloatingPaneWrapper", () => {
 
     expect(resizeHandles.map((handle) => handle["data-corner"])).toEqual([
       "top-left",
-      "top-right",
       "top",
+      "top-right",
       "left",
       "right",
       "bottom-left",
       "bottom",
       "bottom-right",
     ]);
+    expect(resizeHandles.every((handle) => handle["data-gloom-interactive"] === "true")).toBe(true);
     expect(resizeHandles.filter((handle) => String(handle["data-corner"]).startsWith("top")))
       .toEqual([
         expect.objectContaining({ top: 0, left: 0, width: 2, height: 1 }),
-        expect.objectContaining({ top: 0, right: 0, width: 2, height: 1 }),
         expect.objectContaining({ top: 0, left: 14, width: 4, height: 1, zIndex: 1 }),
+        expect.objectContaining({ top: 0, right: 0, width: 2, height: 1 }),
       ]);
     expect(headerHitTargets).toEqual([
       expect.objectContaining({

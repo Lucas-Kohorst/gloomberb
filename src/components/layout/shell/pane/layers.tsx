@@ -15,7 +15,7 @@ import { PaneContent } from "../../pane/content";
 import { PaneWrapper } from "../../pane";
 import type { PaneHeaderQuickSetting } from "../../pane/header";
 import { hasPaneFooterContent, PaneFooterProvider } from "../../pane/footer";
-import { resolvePaneBodyFrame, shouldReservePaneFooter } from "../../pane/sizing";
+import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "../../pane/sizing";
 import type { DividerPreviewState } from "../native/window-state";
 
 type ShellMouseHandler = (event: any) => void;
@@ -96,6 +96,7 @@ export function ShellPaneLayers({
   windowModeDockResizePathKey,
   windowModePaneId,
 }: ShellPaneLayersProps) {
+  const headerRows = nativePaneChrome ? resolveNativePaneHeaderRows() : 1;
   return (
     <>
       {dockLeafLayouts.map((leaf) => {
@@ -128,6 +129,7 @@ export function ShellPaneLayers({
                   nativePaneChrome,
                   footerVisible: renderFooter,
                   reserveFooter,
+                  headerRows,
                 });
                 return (
                   <PaneWrapper
@@ -188,6 +190,7 @@ export function ShellPaneLayers({
                 nativePaneChrome,
                 footerVisible: renderFooter,
                 reserveFooter,
+                headerRows,
               });
               return (
                 <FloatingPaneWrapper
@@ -255,6 +258,8 @@ export function ShellPaneLayers({
               "data-gloom-role": "dock-divider",
               "data-axis": divider.axis,
               "data-active": active ? "true" : "false",
+              "data-gloom-interactive": "true",
+              title: divider.axis === "horizontal" ? "Drag to resize columns" : "Drag to resize rows",
               style: { "--divider-color": active ? colors.borderFocused : colors.border } as any,
             } : {})}
             onMouseDown={nativePaneChrome ? (event: any) => startNativeDividerDrag(divider, event) : undefined}
