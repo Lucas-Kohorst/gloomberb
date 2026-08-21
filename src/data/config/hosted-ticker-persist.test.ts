@@ -6,10 +6,13 @@ import {
   readHostedTickers,
   writeHostedTickers,
 } from "./hosted-ticker-persist";
+import { restoreHostedLocalWorkspaceExtras } from "./hosted-sync-hydrate";
 import {
   rememberHostedUserId,
   setHostedConfigUserId,
+  writeHostedUserConfig,
 } from "./hosted-user-persist";
+import { createDefaultConfig } from "../../types/config";
 
 function installMemoryStorage(): void {
   const values = new Map<string, string>();
@@ -109,6 +112,15 @@ describe("hosted ticker persist", () => {
     writeHostedTickers([record("AAPL")]);
     mergeHostedTickers([record("MSFT")]);
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
+  });
+
+  test("stores tickers beside the config blob so a missing dedicated key still restores", () => {
+    setHostedConfigUserId("user-1");
+    writeHostedUserConfig(createDefaultConfig("cloud://users/user-1"));
+    writeHostedTickers([record("AAPL"), record("NVDA")]);
+    globalThis.localStorage.removeItem("gloomberb:hosted-tickers:user-1");
+    restoreHostedLocalWorkspaceExtras();
+    expect(readHostedTickers().map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "NVDA"]);
   });
 
   test("writes tickers using the remembered user when the active id was cleared", () => {

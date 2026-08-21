@@ -2,7 +2,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { hydrateTickerMetadata } from "../../tickers/metadata";
 import { tryLocalStorage } from "../../utils/browser-storage";
 import { isRecord } from "../../utils/is-record";
-import { readLastHostedUserId, resolveHostedPersistUserId } from "./hosted-user-persist";
+import { attachHostedUserWorkspaceExtras, readLastHostedUserId, resolveHostedPersistUserId } from "./hosted-user-persist";
 
 const STORAGE_PREFIX = "gloomberb:hosted-tickers:";
 const LEGACY_STORAGE_KEY = "gloomberb:hosted-tickers";
@@ -52,6 +52,7 @@ function writeTickers(userId: string, tickers: TickerRecord[]): void {
   if (!backend) return;
   try {
     backend.setItem(storageKey(userId), JSON.stringify(tickers));
+    attachHostedUserWorkspaceExtras({ tickers }, userId);
   } catch {
     // Ignore quota or security errors.
   }

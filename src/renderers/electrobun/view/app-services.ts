@@ -15,6 +15,8 @@ import { createRemoteAssetDataClient } from "./remote/asset-data-client";
 import { RemotePersistence } from "./remote/persistence";
 import { RemoteTickerRepository } from "./remote/ticker-repository";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
+import { AssetDataRouter } from "../../../sources/provider-router";
+import { YahooFinanceClient } from "../../../sources/yahoo-finance";
 import { createGloomberbCloudSyncTransport } from "../../../plugins/builtin/cloud/plugin";
 import { getElectrobunBackendInitSnapshot } from "./backend-rpc";
 
@@ -43,7 +45,13 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     )
     : null;
   const remoteDataProvider = cloudProvider ? null : createRemoteAssetDataClient();
-  const dataProvider = measurePerf("startup.services.data-provider", () => cloudProvider ?? remoteDataProvider!);
+  // Hosted skips plugin.capabilities, so Cloud alone leaves quotes empty when
+  // the snapshot has no LAST (crypto, some equities). Yahoo is the delayed fallback.
+  const dataProvider = measurePerf("startup.services.data-provider", () => (
+    cloudProvider
+      ? new AssetDataRouter(new YahooFinanceClient(), [cloudProvider], persistence.resources)
+      : remoteDataProvider!
+  ));
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence, {
     enableCapabilityHandlers: false,
