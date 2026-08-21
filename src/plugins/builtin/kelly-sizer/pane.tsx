@@ -62,6 +62,14 @@ import {
 } from "./sections";
 import { getPortfolioPositionValue, resolveActivePortfolioId } from "./portfolio";
 import { useKellyCommonAssumptions } from "./state";
+import {
+  classifyKellyAsset,
+  contractMultiplierFromTicker,
+  contractProbabilityFromQuote,
+  isKellyModeAvailable,
+  kellyAssetLabel,
+  resolveKellyMode,
+} from "./asset";
 
 export function KellySizerPane({ focused, width, height }: PaneProps) {
   const paneInstance = usePaneInstance();
@@ -82,6 +90,8 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   const commandBarOpen = useAppSelector(selectCommandBarOpen);
 
   const [mode, setMode] = usePaneStateValue<KellySizingMode>("mode", "binary");
+  const assetClass = classifyKellyAsset(ticker);
+  const activeMode = resolveKellyMode(mode, assetClass);
   const [drafts, setDrafts] = usePaneStateValue<KellySizerModeDrafts>("drafts", cloneKellyDrafts());
   const [showSensitivity, setShowSensitivity] = usePaneStateValue<boolean>("showSensitivity", false);
   const [selectedPortfolioId, setSelectedPortfolioId] = usePaneStateValue<string | null>("portfolioId", null);
@@ -210,7 +220,8 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   const bankroll = bankrollOverride ?? sourceBankroll;
   const currentValue = currentValueOverride ?? sourceCurrentValue;
   const price = financials?.quote?.price ?? null;
-  const rawActiveDraft = drafts[mode] ?? DEFAULT_KELLY_DRAFTS[mode];
+  const contractMultiplier = contractMultiplierFromTicker(ticker);
+  const rawActiveDraft = drafts[activeMode] ?? DEFAULT_KELLY_DRAFTS[activeMode];
   const { commonAssumptions, updateCommon } = useKellyCommonAssumptions(rawActiveDraft);
   const activeDraft = useMemo(
     () => applyKellyCommonAssumptions(rawActiveDraft, commonAssumptions),
@@ -220,16 +231,33 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   const updateDraft = useCallback((patch: Partial<KellySizerDraft>) => {
     setDrafts((current) => ({
       ...cloneKellyDrafts(current),
-      [mode]: {
-        ...(current[mode] ?? DEFAULT_KELLY_DRAFTS[mode]),
+      [activeMode]: {
+        ...(current[activeMode] ?? DEFAULT_KELLY_DRAFTS[activeMode]),
         ...patch,
       } as KellySizerDraft,
     }));
-  }, [mode, setDrafts]);
+  }, [activeMode, setDrafts]);
+
+  useEffect(() => {
+    if (mode !== activeMode) setMode(activeMode);
+  }, [activeMode, mode, setMode]);
+
+  useEffect(() => {
+    if (assetClass !== "prediction") return;
+    const implied = contractProbabilityFromQuote(price);
+    if (implied == null) return;
+    setDrafts((current) => {
+      const next = cloneKellyDrafts(current);
+      const market = next["prediction-market"];
+      if (market.marketPrice !== DEFAULT_KELLY_DRAFTS["prediction-market"].marketPrice) return current;
+      next["prediction-market"] = { ...market, marketPrice: implied };
+      return next;
+    });
+  }, [assetClass, price, requestedSymbol, setDrafts]);
 
   const fields = useMemo(
-    () => buildModeFields({ mode, draft: activeDraft, updateDraft }),
-    [activeDraft, mode, updateDraft],
+    () => buildModeFields({ mode: activeMode, draft: activeDraft, updateDraft }),
+    [activeDraft, activeMode, updateDraft],
   );
   const commonFields = useMemo(
     () => buildCommonFields({ common: commonAssumptions, updateCommon }),
@@ -257,35 +285,36 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   const safeSelectedFieldIndex = Math.min(selectedFieldIndex, Math.max(0, editableFields.length - 1));
   const result = useMemo(
     () => calculateKellySizing({
-      mode,
+      mode: activeMode,
       draft: activeDraft,
       bankroll,
       currentValue,
       price,
+      contractMultiplier,
     }),
-    [activeDraft, bankroll, currentValue, mode, price],
+    [activeDraft, activeMode, bankroll, contractMultiplier, currentValue, price],
   );
-  const sensitivity = useMemo(() => buildSensitivityGrid(mode, activeDraft), [activeDraft, mode]);
+  const sensitivity = useMemo(() => buildSensitivityGrid(activeMode, activeDraft), [activeDraft, activeMode]);
   const curveMaxFraction = useMemo(
-    () => getKellyCurveMaxFraction(mode, activeDraft, [
+    () => getKellyCurveMaxFraction(activeMode, activeDraft, [
       result.currentFraction,
       result.clippedFraction,
       result.fullKellyFraction,
     ]),
-    [activeDraft, mode, result.clippedFraction, result.currentFraction, result.fullKellyFraction],
+    [activeDraft, activeMode, result.clippedFraction, result.currentFraction, result.fullKellyFraction],
   );
   const curvePoints = useMemo(
-    () => buildKellyCurvePoints(mode, activeDraft, curveMaxFraction),
-    [activeDraft, curveMaxFraction, mode],
+    () => buildKellyCurvePoints(activeMode, activeDraft, curveMaxFraction),
+    [activeDraft, activeMode, curveMaxFraction],
   );
   const curveXAxisLabels = useMemo(() => buildKellyCurveXAxisLabels(curveMaxFraction), [curveMaxFraction]);
   const currentGrowth = useMemo(
-    () => calculateExpectedLogGrowthAtFraction(mode, activeDraft, result.currentFraction),
-    [activeDraft, mode, result.currentFraction],
+    () => calculateExpectedLogGrowthAtFraction(activeMode, activeDraft, result.currentFraction),
+    [activeDraft, activeMode, result.currentFraction],
   );
   const targetGrowth = useMemo(
-    () => calculateExpectedLogGrowthAtFraction(mode, activeDraft, result.clippedFraction),
-    [activeDraft, mode, result.clippedFraction],
+    () => calculateExpectedLogGrowthAtFraction(activeMode, activeDraft, result.clippedFraction),
+    [activeDraft, activeMode, result.clippedFraction],
   );
   const curveMarkers = useMemo<StaticChartXMarker[]>(() => {
     if (!Number.isFinite(curveMaxFraction) || curveMaxFraction <= 0) return [];
@@ -321,8 +350,9 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
     result.currentFraction,
     result.fullKellyFraction,
   ]);
+  const assetLabel = kellyAssetLabel(assetClass);
   const summaryLine = requestedSymbol
-    ? `${requestedSymbol}${activePortfolio ? ` · ${activePortfolio.name}` : ""}`
+    ? `${requestedSymbol}${assetLabel ? ` · ${assetLabel}` : ""}${activePortfolio ? ` · ${activePortfolio.name}` : ""}`
     : "No ticker selected";
 
   const toggleSensitivity = useCallback(() => {
@@ -388,7 +418,8 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Position Sizer</Text>
         <Box height={1} />
-        <Text fg={colors.textMuted}>Select a ticker or open with KELLY &lt;ticker&gt;.</Text>
+        <Text fg={colors.textMuted}>Select a tradable quote or open with KELLY &lt;ticker&gt;.</Text>
+        <Text fg={colors.textDim}>Equity, crypto, FX, futures, and options use return %. Odds is for 0–1 yes/no contracts.</Text>
       </Box>
     );
   }
@@ -475,9 +506,14 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
 
       <Box height={1} paddingX={1}>
         <Tabs
-          tabs={KELLY_MODES.map((entry) => ({ label: entry.label, value: entry.id }))}
-          activeValue={mode}
+          tabs={KELLY_MODES.map((entry) => ({
+            label: entry.label,
+            value: entry.id,
+            disabled: !isKellyModeAvailable(entry.id, assetClass),
+          }))}
+          activeValue={activeMode}
           onSelect={(nextMode) => {
+            if (!isKellyModeAvailable(nextMode as KellySizingMode, assetClass)) return;
             setMode(nextMode as KellySizingMode);
             setSelectedFieldIndex(0);
             activateInput(null);

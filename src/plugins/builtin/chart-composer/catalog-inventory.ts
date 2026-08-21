@@ -45,6 +45,7 @@ export type CatalogSourceId =
   | "security"
   | "option"
   | "crypto"
+  | "fx"
   | "fred"
   | "adjacent"
   | "kalshi"
@@ -58,6 +59,8 @@ export type CatalogSourceId =
 
 export type CatalogFilterId =
   | "all"
+  | "assets"
+  | "data"
   | "securities"
   | "options"
   | "crypto"
@@ -85,6 +88,8 @@ export interface CatalogSeriesRow {
 
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
   { id: "all", label: "All" },
+  { id: "assets", label: "Assets" },
+  { id: "data", label: "Data" },
   { id: "securities", label: "Securities" },
   { id: "options", label: "Options" },
   { id: "crypto", label: "Crypto" },
@@ -96,8 +101,32 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "other", label: "Other" },
 ];
 
+/** Securities, crypto, FX, futures, options, and venue contracts. */
+export const CATALOG_ASSET_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
+  "security",
+  "option",
+  "crypto",
+  "fx",
+  "futures",
+  "kalshi",
+  "polymarket",
+]);
+
+/** FRED, treasuries, Adjacent indices/rates, polls, AI benchmarks, weather, OWID. */
+export const CATALOG_DATA_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
+  "fred",
+  "treasury",
+  "adjacent",
+  "poll",
+  "benchmark",
+  "weather",
+  "owid",
+]);
+
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
   all: null,
+  assets: CATALOG_ASSET_SOURCES,
+  data: CATALOG_DATA_SOURCES,
   securities: new Set(["security"]),
   options: new Set(["option"]),
   crypto: new Set(["crypto"]),
@@ -108,6 +137,16 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   owid: new Set(["owid"]),
   other: new Set(["adjacent", "poll", "weather", "owid"]),
 };
+
+const FX_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
+  { symbol: "EURUSD=X", name: "Euro / US Dollar" },
+  { symbol: "GBPUSD=X", name: "Pound / US Dollar" },
+  { symbol: "USDJPY=X", name: "US Dollar / Yen" },
+  { symbol: "USDCHF=X", name: "US Dollar / Swiss Franc" },
+  { symbol: "USDCAD=X", name: "US Dollar / Canadian Dollar" },
+  { symbol: "AUDUSD=X", name: "Aussie / US Dollar" },
+  { symbol: "NZDUSD=X", name: "Kiwi / US Dollar" },
+];
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "BTC-USD", name: "Bitcoin" },
@@ -207,12 +246,24 @@ function row(entry: {
 }
 
 export function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
-  if (isOptionInstrument(instrument)) return false;
+  if (isOptionInstrument(instrument) || isCatalogFxInstrument(instrument)) return false;
   const exchange = instrument.exchange?.trim().toUpperCase();
   if (exchange === "CCC") return true;
   const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
   if (category.includes("CRYPTO") || category === "COIN" || category === "TOKEN") return true;
   return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
+}
+
+const FX_CATEGORIES = new Set(["FX", "FOREX", "CCY", "CURRENCY", "CURRENCYPAIR"]);
+
+export function isCatalogFxInstrument(instrument: SeriesCatalogInstrument): boolean {
+  if (isOptionInstrument(instrument)) return false;
+  const exchange = instrument.exchange?.trim().toUpperCase();
+  if (exchange === "CCC") return false;
+  if (exchange === "CCY") return true;
+  const category = instrument.assetCategory?.trim().toUpperCase().replace(/[\s_-]+/g, "") ?? "";
+  if (FX_CATEGORIES.has(category)) return true;
+  return /=X$/i.test(instrument.symbol.trim());
 }
 
 const COMPACT_OCC_RE = /^([A-Z]{1,6})(\d{6}[CP]\d{8})$/;
@@ -235,7 +286,7 @@ export function catalogTickerFromInput(value: string): string | null {
   const option = compactOccSymbol(value);
   if (option) return option;
   const symbol = value.trim().toUpperCase();
-  return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
+  return /^[A-Z0-9^][A-Z0-9.^_/=-]{0,31}$/.test(symbol) ? symbol : null;
 }
 
 function isCatalogFieldNameQuery(query: string): boolean {
@@ -254,7 +305,7 @@ export function looksLikeCatalogTickerQuery(query: string): boolean {
   if (!trimmed || /\s/.test(trimmed) || trimmed.includes(":")) return false;
   const symbol = catalogTickerFromInput(trimmed);
   if (!symbol) return false;
-  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^/_]/.test(symbol)) return true;
+  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^_/=]/.test(symbol)) return true;
   if (isCatalogFieldNameQuery(trimmed)) return false;
   return symbol.length <= 6;
 }
@@ -275,6 +326,9 @@ export function catalogRowsForResolvedInstruments(
   return instruments.flatMap((instrument) => {
     if (isCatalogCryptoInstrument(instrument)) {
       return [cryptoPairRow(catalogSecuritySymbol(instrument), instrument.name)];
+    }
+    if (isCatalogFxInstrument(instrument)) {
+      return [fxPairRow(catalogSecuritySymbol(instrument), instrument.name)];
     }
     if (isOptionInstrument(instrument)) {
       const symbol = compactOccSymbol(instrument.symbol)
@@ -562,6 +616,18 @@ function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
   });
 }
 
+function fxPairRow(symbol: string, name?: string): CatalogSeriesRow {
+  return row({
+    id: `fx:${symbol.toUpperCase()}`,
+    label: name ? `${symbol} · ${name}` : symbol,
+    source: "Yahoo",
+    sourceId: "fx",
+    kind: "FX",
+    expression: `${symbol}:price`,
+    searchExtra: [name, "fx", "forex", "currency"].filter(Boolean).join(" "),
+  });
+}
+
 function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
   const seen = new Set<string>();
   const rows: CatalogSeriesRow[] = [];
@@ -576,6 +642,23 @@ function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSer
     add(catalogSecuritySymbol(instrument), instrument.name);
   }
   for (const entry of CRYPTO_CATALOG) add(entry.symbol, entry.name);
+  return rows;
+}
+
+function fxRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
+  const seen = new Set<string>();
+  const rows: CatalogSeriesRow[] = [];
+  const add = (symbol: string, name?: string) => {
+    const key = symbol.trim().toUpperCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rows.push(fxPairRow(key, name));
+  };
+  for (const instrument of instruments) {
+    if (!isCatalogFxInstrument(instrument)) continue;
+    add(catalogSecuritySymbol(instrument), instrument.name);
+  }
+  for (const entry of FX_CATALOG) add(entry.symbol, entry.name);
   return rows;
 }
 
@@ -658,6 +741,7 @@ export function listStaticCatalogInventory(
   const securities = securityFieldRows();
   const optionFields = optionFieldRows();
   const crypto = cryptoRows(instruments);
+  const fx = fxRows(instruments);
 
   const fred = listKnownFredSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
@@ -784,6 +868,7 @@ export function listStaticCatalogInventory(
     ...securities,
     ...optionFields,
     ...crypto,
+    ...fx,
     ...fred,
     ...treasuries,
     ...corporates,

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   catalogEmptyCopy,
   catalogExpressionForRow,
+  catalogTickerFromInput,
   catalogPollSubjectsFromPolls,
   catalogPredictionSeriesLabel,
   catalogRowsForResolvedInstruments,
@@ -15,6 +16,7 @@ import {
   looksLikeCatalogTickerQuery,
 } from "./catalog-inventory";
 import type { LlmStatsRow } from "../llm-stats/types";
+import { parseSeriesExpression } from "./presets";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 const MSFT = { symbol: "MSFT", exchange: "NASDAQ", name: "Microsoft Corp." };
@@ -112,6 +114,65 @@ describe("data catalog inventory", () => {
     expect(rows.some((row) => row.expression === "^TNX:price")).toBe(true);
     expect(rows.some((row) => row.label.includes("PEG"))).toBe(false);
     expect(rows.some((row) => row.expression === "TLT:price")).toBe(true);
+  });
+
+  test("assets vs data splits tradable quotes from macro series", () => {
+    const rows = [
+      ...listStaticCatalogInventory([
+        AAPL,
+        { symbol: "ETH-USD", exchange: "CCC", name: "Ethereum USD" },
+        { symbol: "EURUSD=X", exchange: "CCY", name: "EUR/USD" },
+      ]),
+      ...catalogRowsFromPredictionHits([{
+        venue: "kalshi",
+        marketId: "KXPRESPERSON",
+        title: "Who will be the next president?",
+      }]),
+    ];
+
+    const assets = filterCatalogRows(rows, "assets", "");
+    expect(assets.length).toBeGreaterThan(0);
+    expect(assets.every((row) => (
+      row.sourceId === "security"
+      || row.sourceId === "option"
+      || row.sourceId === "crypto"
+      || row.sourceId === "fx"
+      || row.sourceId === "futures"
+      || row.sourceId === "kalshi"
+      || row.sourceId === "polymarket"
+    ))).toBe(true);
+    expect(assets.some((row) => row.sourceId === "crypto")).toBe(true);
+    expect(assets.some((row) => row.expression === "EURUSD=X:price")).toBe(true);
+    expect(assets.some((row) => row.sourceId === "kalshi")).toBe(true);
+    expect(assets.some((row) => row.sourceId === "fred")).toBe(false);
+    expect(assets.some((row) => row.sourceId === "owid")).toBe(false);
+
+    const data = filterCatalogRows(rows, "data", "");
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.every((row) => (
+      row.sourceId === "fred"
+      || row.sourceId === "treasury"
+      || row.sourceId === "adjacent"
+      || row.sourceId === "poll"
+      || row.sourceId === "benchmark"
+      || row.sourceId === "weather"
+      || row.sourceId === "owid"
+    ))).toBe(true);
+    expect(data.some((row) => row.expression === "FRED:CPIAUCSL")).toBe(true);
+    expect(data.some((row) => row.expression === "UST:10Y")).toBe(true);
+    expect(data.some((row) => row.expression === "ADJ:red")).toBe(true);
+    expect(data.some((row) => row.sourceId === "crypto")).toBe(false);
+    expect(data.some((row) => row.sourceId === "kalshi")).toBe(false);
+
+    expect(filterCatalogRows(rows, "all", "cpi").some((row) => row.expression === "FRED:CPIAUCSL")).toBe(true);
+    expect(filterCatalogRows(rows, "all", "eth").some((row) => row.expression === "ETH-USD:price")).toBe(true);
+    expect(looksLikeCatalogTickerQuery("EURUSD=X")).toBe(true);
+    expect(catalogTickerFromInput("EURUSD=X")).toBe("EURUSD=X");
+    expect(parseSeriesExpression("EURUSD=X:price")).toMatchObject({
+      kind: "security",
+      symbol: "EURUSD=X",
+      fieldId: "market.ohlcv",
+    });
   });
 
   test("crypto tab lists pairs like prediction markets, not equity fields", () => {

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  classifyKellyAsset,
+  defaultKellyMode,
+  isKellyModeAvailable,
+} from "./asset";
+import {
   buildBinaryOutcomes,
   buildKellyCurvePoints,
   buildSensitivityGrid,
@@ -9,6 +14,24 @@ import {
   type PredictionMarketKellyAssumptions,
   type ScenarioKellyAssumptions,
 } from "./model";
+import type { TickerRecord } from "../../../types/ticker";
+
+function ticker(symbol: string, extras: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
+  return {
+    metadata: {
+      ticker: symbol,
+      exchange: extras.exchange ?? "NASDAQ",
+      currency: extras.currency ?? "USD",
+      name: symbol,
+      portfolios: [],
+      watchlists: [],
+      positions: extras.positions ?? [],
+      custom: {},
+      tags: [],
+      ...extras,
+    },
+  };
+}
 
 function expectClose(actual: number, expected: number, precision = 4) {
   expect(actual).toBeGreaterThan(expected - precision);
@@ -108,6 +131,40 @@ describe("kelly sizing model", () => {
     expectClose(result.unclippedFraction, 0.1);
     expectClose(result.clippedFraction, 0.1);
     expectClose(result.riskValue, 500);
+  });
+
+  test("crypto and FX keep return modes; odds is prediction contracts only", () => {
+    expect(classifyKellyAsset(ticker("BTC-USD", {
+      exchange: "CCC",
+      assetCategory: "CRYPTO",
+    }))).toBe("crypto");
+    expect(isKellyModeAvailable("binary", "crypto")).toBe(true);
+    expect(isKellyModeAvailable("prediction-market", "crypto")).toBe(false);
+    expect(isKellyModeAvailable("prediction-market", "fx")).toBe(false);
+    expect(isKellyModeAvailable("binary", "prediction")).toBe(false);
+    expect(isKellyModeAvailable("prediction-market", "prediction")).toBe(true);
+    expect(defaultKellyMode("crypto")).toBe("binary");
+    expect(defaultKellyMode("prediction")).toBe("prediction-market");
+  });
+
+  test("divides target value by last times futures multiplier", () => {
+    const draft: BinaryKellyAssumptions = {
+      winProbability: 0.6,
+      upsideReturn: 0.2,
+      downsideReturn: -0.1,
+      kellyFraction: 1,
+      maxNameFraction: 1,
+      maxLossFraction: 1,
+    };
+    const result = calculateKellySizing({
+      mode: "binary",
+      draft,
+      bankroll: 100_000,
+      currentValue: 0,
+      price: 4_000,
+      contractMultiplier: 50,
+    });
+    expect(result.estimatedUnits).toBeCloseTo(result.targetValue / (4_000 * 50), 6);
   });
 
   test("sizes prediction market yes contracts from probability and price", () => {

@@ -61,19 +61,24 @@ export function createSizerConfig(symbol = "AAPL"): AppConfig {
 export function createTicker({
   symbol = "AAPL",
   currency = "USD",
+  exchange = "NASDAQ",
+  assetCategory,
   positions,
 }: {
   symbol?: string;
   currency?: string;
+  exchange?: string;
+  assetCategory?: string;
   positions?: TickerRecord["metadata"]["positions"];
 } = {}): TickerRecord {
   return {
     metadata: {
       ticker: symbol,
-      exchange: "NASDAQ",
+      exchange,
       currency,
       name: symbol === "AAPL" ? "Apple" : symbol,
       sector: "Technology",
+      ...(assetCategory ? { assetCategory } : {}),
       portfolios: ["main"],
       watchlists: [],
       positions: positions ?? [{

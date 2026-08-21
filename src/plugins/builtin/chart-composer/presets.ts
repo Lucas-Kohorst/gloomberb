@@ -113,7 +113,7 @@ export type SeriesOrConstant = ParsedSeriesExpression | ConstantSeriesExpression
 
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
-  return /^[A-Z0-9^][A-Z0-9.^_-]{0,31}$/.test(symbol) ? symbol : null;
+  return /^[A-Z0-9^][A-Z0-9.^_=-]{0,31}$/.test(symbol) ? symbol : null;
 }
 
 function normalizeInstrument(

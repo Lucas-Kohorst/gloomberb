@@ -127,7 +127,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const emptyCopy = catalogEmptyCopy(
     liveLoading || (tickerQuery && universeLoading),
     searchQuery,
-    filter === "prediction" ? predictionError : null,
+    filter === "prediction" || filter === "assets" ? predictionError : null,
   );
 
   const rows = useMemo(() => {
