@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CommandDef, PaneTemplateDef } from "../../../types/plugin";
 import type { Command } from "../commands/registry";
+import { getLoadablePlugins } from "../../../plugins/catalog";
 import { applyChartSeriesContextToAssistInventory, applyNewsFeedContextToAssistInventory, buildAssistCommandInventory } from "./inventory";
 
 function command(overrides: Partial<Command> & { prefix: string }): Command {
@@ -103,15 +104,17 @@ describe("buildAssistCommandInventory", () => {
     expect(inventory[2]?.description).toBe("Browse indices");
   });
 
-  test("appends chart series vocabulary onto the G descriptor only", () => {
+  test("appends chart series vocabulary onto the G and CAT descriptors", () => {
     const inventory = applyChartSeriesContextToAssistInventory([
       { prefix: "G", name: "Custom Chart", description: "Chart arbitrary series." },
+      { prefix: "CAT", name: "Data Catalog", description: "Search every series." },
       { prefix: "GP", name: "Graph Price", description: "Open a price chart" },
     ], " Chart series fields: price, revenue. Syntax SYMBOL:field.");
 
     expect(inventory[0]?.description).toContain("Chart series fields:");
     expect(inventory[0]?.description).toContain("Chart arbitrary series.");
-    expect(inventory[1]?.description).toBe("Open a price chart");
+    expect(inventory[1]?.description).toContain("Chart series fields:");
+    expect(inventory[2]?.description).toBe("Open a price chart");
   });
 
   test("does not double-apply the chart series context", () => {
@@ -121,5 +124,71 @@ describe("buildAssistCommandInventory", () => {
     );
     const twice = applyChartSeriesContextToAssistInventory(once, " Chart series fields: revenue.");
     expect(twice[0]?.description).toBe(once[0]?.description);
+  });
+
+  test("folds plugin keywords into the assist description", () => {
+    const inventory = buildAssistCommandInventory({
+      commands: [],
+      pluginCommands: [],
+      paneTemplates: [
+        paneTemplate({
+          id: "weather-pane",
+          label: "Weather",
+          description: "Browse Weather Company climate.",
+          keywords: ["weather", "climate", "nws", "kalshi"],
+          shortcut: { prefix: "WX" },
+        }),
+      ],
+    });
+    expect(inventory[0]?.description).toContain("Browse Weather Company climate.");
+    expect(inventory[0]?.description).toContain("climate");
+    expect(inventory[0]?.description).toContain("nws");
+  });
+
+  test("includes installed plugin commands and pane prefixes in the same inventory", () => {
+    const inventory = buildAssistCommandInventory({
+      commands: [],
+      pluginCommands: [{
+        id: "external-widget-open",
+        label: "External Widget",
+        description: "Open a marketplace plugin widget",
+        keywords: ["external", "installed"],
+        category: "navigation",
+        shortcut: "EXTW",
+        execute: () => {},
+      }],
+      paneTemplates: [
+        paneTemplate({
+          id: "installed-plugin-pane",
+          label: "Installed Plugin",
+          description: "A pane from an installed plugin",
+          shortcut: { prefix: "FOOP" },
+        }),
+      ],
+    });
+    expect(inventory.map((entry) => entry.prefix)).toEqual(["EXTW", "FOOP"]);
+  });
+});
+
+describe("assist catalog coverage", () => {
+  test("exposes plugin pane prefixes including Adjacent Cloud data surfaces", () => {
+    const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
+    const inventory = buildAssistCommandInventory({
+      commands: [],
+      pluginCommands: [],
+      paneTemplates,
+    });
+    const prefixes = new Set(inventory.map((entry) => entry.prefix));
+    expect(prefixes.has("WX")).toBe(true);
+    expect(prefixes.has("POLL")).toBe(true);
+    expect(prefixes.has("OWID")).toBe(true);
+    expect(prefixes.has("AIBENCH")).toBe(true);
+    expect(prefixes.has("CAT")).toBe(true);
+    expect(prefixes.has("PM")).toBe(true);
+
+    const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
+    for (const template of prefixless) {
+      expect(template.canCreate).toBeTypeOf("function");
+    }
   });
 });
