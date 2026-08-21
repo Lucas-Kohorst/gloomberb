@@ -40,7 +40,6 @@ export function useAccountManagementKeyboard({
     if (activeField === "aiProvidersAction") return;
 
     const displayField = activeField === "themeAction"
-      || activeField === "fontFamilyAction"
       || activeField === "fontSizeAction";
 
     if (event.ctrl && event.name === "s") {

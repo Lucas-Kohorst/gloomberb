@@ -1,4 +1,3 @@
-import { FONT_FAMILIES, getFontFamilyIds } from "../../../theme/font-family";
 import { getThemeIds, themes } from "../../../theme/themes";
 import { clampFontSize, MAX_FONT_SIZE_PX, MIN_FONT_SIZE_PX } from "../../../theme/font-scale";
 
@@ -15,13 +14,6 @@ export function themeChoices(): Array<{ id: string; label: string; description: 
     label: themes[id]!.name,
     description: themes[id]!.description,
   }));
-}
-
-export function fontFamilyChoices(): Array<{ id: string; label: string; description: string }> {
-  return getFontFamilyIds().map((id) => {
-    const option = FONT_FAMILIES[id]!;
-    return { id, label: option.name, description: option.description };
-  });
 }
 
 export function nextFontSize(current: number, delta: number): number {

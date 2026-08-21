@@ -95,7 +95,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
     "bio",
     "sharedPortfolioId",
   ],
-  display: ["themeAction", "fontFamilyAction", "fontSizeAction"],
+  display: ["themeAction", "fontSizeAction"],
   emails: [
     "chatEmailNotificationsEnabled",
     "weeklyRoundupEnabled",
@@ -368,14 +368,14 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
   const config = useAppSelector((state) => state.config);
-  const persistDisplayConfig = useCallback((patch: { theme?: string; fontFamily?: string; fontSize?: number }) => {
+  const persistDisplayConfig = useCallback((patch: { theme?: string; fontSize?: number }) => {
     const current = stateRef.current;
     const nextTheme = patch.theme && getThemeIds().includes(patch.theme) ? patch.theme : current.config.theme;
     const nextConfig = syncConfigActiveLayoutState(
       {
         ...current.config,
         theme: nextTheme,
-        fontFamily: patch.fontFamily != null ? sanitizeFontFamily(patch.fontFamily) : current.config.fontFamily,
+        fontFamily: sanitizeFontFamily(current.config.fontFamily),
         fontSize: patch.fontSize != null ? clampFontSize(patch.fontSize) : current.config.fontSize,
       },
       current.paneState,
@@ -739,11 +739,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const cycleDisplayValue = useCallback((delta: number) => {
     const patch = cycleDisplayFieldValue(activeField, delta, {
       theme: config.theme,
-      fontFamily: config.fontFamily,
       fontSize: config.fontSize,
     });
     if (patch) persistDisplayConfig(patch);
-  }, [activeField, config.fontFamily, config.fontSize, config.theme, persistDisplayConfig]);
+  }, [activeField, config.fontSize, config.theme, persistDisplayConfig]);
 
   const cyclePortfolio = useCallback((delta: number) => {
     const optionIds = portfolioOptionIds(portfolios);
@@ -1109,11 +1108,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
             <DisplayTab
               activeField={activeField}
               focused={focused}
-              fontFamily={config.fontFamily}
               fontSize={config.fontSize}
               isDesktop={isDesktop}
               setActiveField={setActiveField}
-              setFontFamily={(id) => persistDisplayConfig({ fontFamily: id })}
               setFontSize={(size) => persistDisplayConfig({ fontSize: size })}
               setTheme={(id) => persistDisplayConfig({ theme: id })}
               theme={config.theme}
