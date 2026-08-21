@@ -243,6 +243,7 @@ export function useAppPaneRuntime({
     dispatch,
     notify,
     focusVisiblePane,
+    persistLayout,
     placePaneInstance,
     pluginRegistry,
     stateRef,

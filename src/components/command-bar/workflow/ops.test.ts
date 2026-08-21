@@ -180,28 +180,27 @@ describe("createPaneTemplateOrThrow", () => {
     expect(placed).toEqual([]);
   });
 
-  test("singleton template focuses an existing instance even when settings differ", async () => {
+  test("singleton template retargets an existing instance instead of spawning a duplicate", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
     const layout = cloneLayout(config.layout);
-    // An existing chat instance on a different channel than the template
-    // would resolve — a non-singleton template would miss this and duplicate.
-    const chatInstance = {
-      instanceId: "chat:main",
-      paneId: "chat",
-      title: "Chat #equities",
-      settings: { channelId: "equities" },
-    };
-    layout.instances = [...layout.instances, chatInstance];
-    layout.floating = [...layout.floating, { instanceId: "chat:main", x: 0, y: 0, width: 80, height: 30 }];
+    const chat = findPaneInstance(layout, "chat:main");
+    if (!chat) throw new Error("missing default chat pane");
+    chat.title = "Chat #equities";
+    chat.settings = { ...(chat.settings ?? {}), channelId: "equities", targetMessageId: "stale-jump" };
     const state = createInitialState({ ...config, layout });
     const focused: string[] = [];
     const placed: unknown[] = [];
+    const persisted: LayoutConfig[] = [];
 
-    await createPaneTemplateOrThrow("new-chat-pane", undefined, {
+    await createPaneTemplateOrThrow("new-chat-pane", { arg: "general" }, {
       dataProvider: makeDataProvider() as any,
       tickerRepository: makeTickerRepository() as any,
       dispatch: () => {},
       getState: () => state,
+      persistLayout: (nextLayout) => {
+        persisted.push(nextLayout);
+        state.config = { ...state.config, layout: nextLayout };
+      },
       pluginRegistry: {
         paneTemplates: new Map([
           ["new-chat-pane", {
@@ -233,6 +232,13 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(focused).toEqual(["chat:main"]);
     expect(placed).toEqual([]);
+    expect(persisted).toHaveLength(1);
+    const retargeted = findPaneInstance(persisted[0]!, "chat:main");
+    expect(retargeted?.title).toBe("Chat #general");
+    expect(retargeted?.settings).toEqual({
+      hideTabs: false,
+      channelId: "general",
+    });
   });
 });
 

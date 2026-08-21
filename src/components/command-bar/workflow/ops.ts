@@ -51,6 +51,7 @@ interface CreatePaneTemplateDeps extends SharedWorkflowDeps {
   ) => void;
   /** Focus/raise an existing instance instead of creating a duplicate. */
   focusPaneInstance: (instanceId: string) => void;
+  persistLayout?: (layout: LayoutConfig, options?: { pushHistory?: boolean }) => void;
 }
 
 interface ApplyPaneSettingDeps extends SharedWorkflowDeps {
@@ -133,6 +134,27 @@ async function resolvePaneTemplateOptions(
   };
 }
 
+function mergeSingletonPaneSettings(
+  current: Record<string, unknown> | undefined,
+  next: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!next) return current;
+  const merged = { ...(current ?? {}), ...next };
+  // A channel/conversation switch should not keep a previous unread jump.
+  if (!Object.prototype.hasOwnProperty.call(next, "targetMessageId")) {
+    delete merged.targetMessageId;
+  }
+  return merged;
+}
+
+function persistRetargetedLayout(layout: LayoutConfig, deps: CreatePaneTemplateDeps): void {
+  if (deps.persistLayout) {
+    deps.persistLayout(layout, { pushHistory: false });
+    return;
+  }
+  deps.dispatch({ type: "UPDATE_LAYOUT", layout });
+}
+
 /**
  * Two pane instances are "the same" when they share a pane id and have
  * equal binding, params, and settings. Title, placement, and z-order are
@@ -145,9 +167,8 @@ function findMatchingPaneInstance(
   spec: { binding?: PaneBinding; params?: Record<string, string>; settings?: Record<string, unknown> },
   options?: { singleton?: boolean },
 ): string | null {
-  // Singleton panes (e.g. Chat) represent a single shared surface whose
-  // runtime state can drift from the template's default create spec. Focus any
-  // existing instance of the same pane id instead of requiring an exact match.
+  // Singleton panes (e.g. Chat) represent a single shared surface. Reuse any
+  // existing instance of the same pane id; the caller retargets settings.
   if (options?.singleton) {
     for (const instance of instances) {
       if (instance.paneId === paneId) return instance.instanceId;
@@ -197,8 +218,9 @@ export async function createPaneTemplateOrThrow(
 
   // Reuse an existing instance with the same pane id + binding + params +
   // settings instead of opening a duplicate (e.g. re-running `SEC AAPL`).
-  // Singleton templates focus any existing instance of the pane id regardless
-  // of settings drift (e.g. Chat switching channels).
+  // Singleton templates reuse any existing instance of the pane id, then apply
+  // the new spec so `CHAT help` / `DM alice` switch the conversation instead of
+  // only focusing a stale channel.
   const existing = findMatchingPaneInstance(
     state.config.layout.instances,
     template.paneId,
@@ -206,7 +228,26 @@ export async function createPaneTemplateOrThrow(
     { singleton: template.singleton },
   );
   if (existing) {
+    const current = state.config.layout.instances.find((instance) => instance.instanceId === existing);
+    const nextSettings = mergeSingletonPaneSettings(current?.settings, spec.settings);
+    const nextTitle = spec.title ?? current?.title;
+    const nextBinding = spec.binding ?? current?.binding;
+    const nextParams = spec.params ?? current?.params;
+    const settingsChanged = JSON.stringify(nextSettings ?? {}) !== JSON.stringify(current?.settings ?? {});
+    const titleChanged = !!nextTitle && nextTitle !== current?.title;
+    const bindingChanged = JSON.stringify(nextBinding ?? { kind: "none" }) !== JSON.stringify(current?.binding ?? { kind: "none" });
+    const paramsChanged = JSON.stringify(nextParams ?? {}) !== JSON.stringify(current?.params ?? {});
+    // Focus first so a z-order persist cannot overwrite the conversation switch.
     deps.focusPaneInstance(existing);
+    if (current && (settingsChanged || titleChanged || bindingChanged || paramsChanged)) {
+      persistRetargetedLayout(updatePaneInstance(deps.getState().config.layout, existing, (instance) => ({
+        ...instance,
+        title: nextTitle ?? instance.title,
+        ...(nextBinding ? { binding: nextBinding } : {}),
+        ...(nextParams ? { params: nextParams } : {}),
+        settings: nextSettings,
+      })), deps);
+    }
     return;
   }
 
