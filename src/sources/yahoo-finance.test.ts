@@ -144,18 +144,34 @@ describe("YahooFinanceClient exchange aliases", () => {
     });
   });
 
-  test("does not fetch Yahoo quotes or history for crypto pairs", async () => {
+  test("fetches Yahoo quotes and history for crypto pairs", async () => {
     const provider = new YahooFinanceClient() as any;
-    provider.fetchChart = async () => {
-      throw new Error("Yahoo should not fetch crypto");
+    const fetched: string[] = [];
+    provider.fetchChart = async (symbol: string) => {
+      fetched.push(symbol);
+      return {
+        meta: {
+          currency: "USD",
+          regularMarketPrice: 111_000,
+          shortName: "Bitcoin USD",
+          regularMarketTime: 1_700_000_000,
+        },
+        history: [
+          { date: new Date("2026-08-20T00:00:00Z"), close: 109_000 },
+          { date: new Date("2026-08-21T00:00:00Z"), close: 111_000 },
+        ],
+      };
     };
-    expect(provider.canProvide("BTC-USD", "CCC")).toBe(false);
-    expect(provider.canProvide("SOL/USD")).toBe(false);
-    expect(provider.canProvide("ZEC/USD", "CCY")).toBe(false);
-    expect(provider.canProvide("BTCUSD=X")).toBe(false);
-    expect(provider.canProvide("AAPL", "NASDAQ")).toBe(true);
-    await expect(provider.getQuote("BTC-USD", "CCC")).rejects.toThrow(/CoinGecko/);
-    await expect(provider.getPriceHistory("ETH-USD", "CCC", "1Y")).rejects.toThrow(/CoinGecko/);
+    provider.fetchQuoteSupplement = async () => ({});
+    provider.fetchExtendedHoursData = async () => ({});
+
+    const quote = await provider.getQuote("BTC-USD", "CCC");
+    expect(quote.price).toBe(111_000);
+    expect(quote.providerId).toBe("yahoo");
+    expect(fetched[0]).toBe("BTC-USD");
+
+    const history = await provider.getPriceHistory("BTC-USD", "CCC", "1Y");
+    expect(history.at(-1)?.close).toBe(111_000);
   });
 
   test("normalizes compact crypto pairs to Yahoo symbols", () => {

@@ -759,7 +759,7 @@ function cryptoSuggestion(symbol: string, name: string): SeriesCatalogSuggestion
   return {
     id: `crypto:${symbol}`,
     label: `${symbol} · ${name}`,
-    description: "Crypto pair (CoinGecko)",
+    description: "Crypto pair (Yahoo)",
     detail: "Crypto",
     expression: { kind: "security", symbol, fieldId: "market.ohlcv" },
   };

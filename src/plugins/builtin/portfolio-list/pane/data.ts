@@ -5,7 +5,6 @@ import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { CollectionSortPreference } from "../../../../state/app/context";
 import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
-import { isCryptoMarketInstrument } from "../../../../sources/coingecko/ids";
 import { resolveQuoteAgeTimestamp } from "../../../../market-data/quotes/time";
 import { compareSortValues } from "../../../../utils/sort-values";
 import { getSortValue, type ColumnContext } from "../metrics";
@@ -111,8 +110,7 @@ export function warmupQuoteWithSnapshot(
 ): boolean {
   return liveStreaming
     && sortPreferenceUsesQuote(sortPreference)
-    && ticker.metadata.assetCategory !== "OPT"
-    && !isCryptoMarketInstrument(ticker.metadata.ticker, ticker.metadata.exchange);
+    && ticker.metadata.assetCategory !== "OPT";
 }
 
 export function selectQuoteWarmupTickers(

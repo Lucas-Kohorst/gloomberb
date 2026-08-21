@@ -7,7 +7,7 @@ const RELEASE_0_13_2: ChangelogRelease = {
   title: "Snappier first load, Gloom tweets, crypto quotes",
   publishedAt: "2026-08-21T18:00:00.000Z",
   url: "",
-  body: `Hosted first load no longer stalls behind RSS. Tweets follow your Gloom login, CoinGecko quotes work on the hosted terminal, and this batch's chat/share/footer polish.
+  body: `Hosted first load no longer stalls behind RSS. Tweets follow your Gloom login, Yahoo crypto quotes work on the hosted terminal, and this batch's chat/share/footer polish.
 
 ## Performance
 
@@ -30,7 +30,7 @@ const RELEASE_0_13_2: ChangelogRelease = {
 ## Fixes
 
 - CAT no longer crashes on boot. Column header sort works. Web and desktop keep the original system monospace; the IBM Plex font picker is gone.
-- Hosted crypto LAST/CHG%/MCAP comes from CoinGecko again. Pair spellings \`BTC-USD\`, \`SOL/USD\`, and \`ZEC/USD\` resolve to the same coin.
+- Hosted crypto LAST/CHG%/MCAP comes from Yahoo. Pair spellings \`BTC-USD\`, \`SOL/USD\`, and \`ZEC/USD\` resolve to the same coin.
 - Portfolio **52W** shows trailing return. The Polls pane loads instead of dying on a footer syntax error.
 - Watchlist tickers in Firehose / X / RSS matching keep the full symbol (\`HOOD\`, not \`H\`).
 `,

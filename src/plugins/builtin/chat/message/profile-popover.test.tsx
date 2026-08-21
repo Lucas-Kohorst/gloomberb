@@ -12,6 +12,7 @@ import { requestOpenChatProfile } from "../profile-request";
 import {
   hasPublicChatProfileInfo,
   shouldOfferChatProfileSetup,
+  UserProfilePopover,
 } from "./profile-popover";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -74,7 +75,37 @@ function RequestedProfileHarness() {
   );
 }
 
-function OwnProfileHarness({ user }: { user: ChatUserSummary }) {
+function PinnedProfileHarness({ user }: { user: ChatUserSummary }) {
+  const {
+    closeProfilePopover,
+    profilePopoverUser,
+    showProfilePopover,
+  } = useChatProfilePopover();
+
+  useEffect(() => {
+    showProfilePopover(user, { pin: true });
+  }, [showProfilePopover, user]);
+
+  if (!profilePopoverUser) {
+    return (
+      <Box width={50} height={8}>
+        <Text>none</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <Box width={50} height={8}>
+      <UserProfilePopover
+        user={profilePopoverUser}
+        width={50}
+        onClose={() => {}}
+        onDismiss={closeProfilePopover}
+        onKeepOpen={() => {}}
+      />
+    </Box>
+  );
+}
   const {
     profilePopoverUser,
     showProfilePopover,
@@ -184,5 +215,40 @@ describe("profile popover", () => {
     expect(shouldOfferChatProfileSetup(emptyProfile, true)).toBe(true);
     expect(shouldOfferChatProfileSetup(emptyProfile, false)).toBe(false);
     expect(shouldOfferChatProfileSetup(makeUser({ bio: "Already set up" }), true)).toBe(false);
+  });
+
+  test("dismisses a pinned profile card from the close control", async () => {
+    await act(async () => {
+      testSetup = await testRender(
+        <PinnedProfileHarness user={makeUser({
+          username: "lucas",
+          displayName: "Lucas",
+          company: "Adjacent",
+          bio: "Builds terminals",
+          xAccount: "lucas",
+        })} />,
+        { width: 50, height: 12 },
+      );
+    });
+    const setup = testSetup;
+    expect(setup).toBeDefined();
+    if (!setup) return;
+    await act(async () => {
+      await setup.renderOnce();
+    });
+
+    const openFrame = setup.captureCharFrame();
+    expect(openFrame).toContain("@lucas");
+    expect(openFrame).toContain(" x ");
+
+    const closeCol = openFrame.split("\n")[0]?.lastIndexOf("x") ?? -1;
+    expect(closeCol).toBeGreaterThan(0);
+    await act(async () => {
+      await setup.mockMouse.click(closeCol, 0);
+      await setup.renderOnce();
+    });
+
+    expect(setup.captureCharFrame()).toContain("none");
+    expect(setup.captureCharFrame()).not.toContain("@lucas");
   });
 });
