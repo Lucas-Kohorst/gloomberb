@@ -24,7 +24,10 @@ export type AccountFieldKey =
   | "aiProvidersAction"
   | "upgradeAction"
   | "passwordAction"
-  | "deleteAccountAction";
+  | "deleteAccountAction"
+  | "themeAction"
+  | "fontFamilyAction"
+  | "fontSizeAction";
 
 export interface AccountDraft {
   username: string;

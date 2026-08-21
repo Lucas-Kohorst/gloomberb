@@ -4,6 +4,7 @@ import type { AccountDraft, AccountFieldKey } from "./model";
 
 export function useAccountManagementKeyboard({
   activeField,
+  cycleDisplayValue,
   cycleField,
   cyclePortfolio,
   draftRef,
@@ -17,6 +18,7 @@ export function useAccountManagementKeyboard({
   turnOffEmailAlerts,
 }: {
   activeField: AccountFieldKey;
+  cycleDisplayValue: (delta: number) => void;
   cycleField: (delta: number) => void;
   cyclePortfolio: (delta: number) => void;
   draftRef: { current: AccountDraft };
@@ -36,6 +38,10 @@ export function useAccountManagementKeyboard({
     // activate, add-key, etc.). Skip the ACM field-cycling logic so arrow
     // keys and Tab reach the data table inside it.
     if (activeField === "aiProvidersAction") return;
+
+    const displayField = activeField === "themeAction"
+      || activeField === "fontFamilyAction"
+      || activeField === "fontSizeAction";
 
     if (event.ctrl && event.name === "s") {
       event.preventDefault?.();
@@ -84,6 +90,18 @@ export function useAccountManagementKeyboard({
       event.preventDefault?.();
       event.stopPropagation?.();
       setDraftValue("positionAlertsEnabled", !draftRef.current.positionAlertsEnabled);
+      return;
+    }
+    if (!event.targetEditable && displayField && isPlainKey(event, "left", "h", "[", "-")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      cycleDisplayValue(-1);
+      return;
+    }
+    if (!event.targetEditable && displayField && isPlainKey(event, "right", "l", "]", "+", "=")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      cycleDisplayValue(1);
       return;
     }
     if (!event.targetEditable && activeField === "sharedPortfolioId" && isPlainKey(event, "left", "h", "[")) {
