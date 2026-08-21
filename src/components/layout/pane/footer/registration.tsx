@@ -39,7 +39,11 @@ export function PaneFooterProvider({
   const register = useCallback((registrationId: string, registration: PaneFooterRegistration | null) => {
     setRegistrations((current) => {
       const next = new Map(current);
-      if (registration && ((registration.info?.length ?? 0) > 0 || (registration.hints?.length ?? 0) > 0)) {
+      if (registration && (
+        (registration.info?.length ?? 0) > 0
+        || (registration.trailingInfo?.length ?? 0) > 0
+        || (registration.hints?.length ?? 0) > 0
+      )) {
         next.set(registrationId, registration);
       } else {
         next.delete(registrationId);

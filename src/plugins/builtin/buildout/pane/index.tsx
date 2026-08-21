@@ -171,7 +171,8 @@ export function BuildoutPane({ focused, width, height }: PaneProps) {
   }, [detailCompanyTicker, openDetailTicker, refresh, startUpgrade, state]);
 
   usePaneFooter("buildout", () => ({
-    info: [poll.segment, ...updateBuildoutFooterInfo(state, activeTab, selectedList, favoriteMessage)],
+    info: updateBuildoutFooterInfo(state, activeTab, selectedList, favoriteMessage),
+    trailingInfo: [poll.segment],
     hints: footerHints,
   }), [activeTab, favoriteMessage, footerHints, poll.segment, selectedList, state]);
 

@@ -54,8 +54,12 @@ export function useNewsArticleFooter({
   }, [access.isPayingPro, language, segment]);
   const poll = useFeedPollInterval();
   const footerInfo = useMemo(
-    () => [...accessInfo, poll.segment, ...(info ?? [])],
-    [accessInfo, info, poll.segment],
+    () => [...accessInfo, ...(info ?? [])],
+    [accessInfo, info],
+  );
+  const trailingInfo = useMemo(
+    () => [poll.segment],
+    [poll.segment],
   );
   const hints = useMemo<PaneHint[]>(() => (
     onRefresh
@@ -110,6 +114,7 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
+    trailingInfo,
     hints,
     trailingHints,
     showOpenHint: true,

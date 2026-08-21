@@ -490,9 +490,9 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   usePaneFooter("rss-articles", () => ({
     info: [
-      poll.segment,
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },

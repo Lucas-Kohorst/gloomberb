@@ -480,7 +480,6 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   useAutoRefresh(auth ? activeFeedState.fetchedAt ?? null : null, refreshActive, poll.intervalMinutes);
   usePaneFooter("substack", () => ({
     info: [
-      poll.segment,
       ...(!auth ? [{ id: "auth", parts: [{ text: "login required", tone: "warning" as const }] }] : []),
       ...(updatedAgo && auth ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(activeFeedState.loading || activeFeedState.loadingMore
@@ -490,6 +489,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
       ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },

@@ -16,16 +16,15 @@ import {
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
 } from "../../../components";
-import {
-  CompositeChart,
-} from "../../../components/chart/composite";
+
 import { colors, priceColor } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { fetchVoteHubPolls } from "./client";
-import { buildPollAnalysisSeries } from "./analysis-chart";
+
 import {
   computePollAverages,
   computePollsterAverages,
@@ -44,7 +43,7 @@ import {
   loadPollRaceMarketOverlay,
   type PollRaceMarketOverlay,
 } from "./overlay";
-import type { PollAnalysisGroup, PollAnalysisView, PollDetailTab, PollRow, PollTabId } from "./types";
+import type { PollAnalysisGroup, PollDetailTab, PollRow, PollTabId } from "./types";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -74,18 +73,6 @@ const ANALYSIS_TABS: Array<{ value: PollAnalysisGroup; label: string }> = [
 ];
 
 const RECENT_POLL_COUNT = 10;
-const STACKED_CHART_MIN_HEIGHT = 22;
-
-function pollsterPalette(): string[] {
-  return [
-    colors.positive,
-    colors.warning,
-    colors.textBright,
-    colors.negative,
-    colors.neutral,
-    colors.textMuted,
-  ];
-}
 
 /**
  * Maps a poll answer label to a semantic color: approve/yes → positive,
@@ -235,31 +222,6 @@ function PollOverview({ poll, allRows, width }: { poll: PollRow; allRows: PollRo
   );
 }
 
-function PollAnalysisChart({
-  series,
-  width,
-  height,
-}: {
-  series: ReturnType<typeof buildPollAnalysisSeries>;
-  width: number;
-  height: number;
-}) {
-  return (
-    <CompositeChart
-      width={width}
-      height={height}
-      focused={false}
-      interactive={false}
-      series={series}
-      panels={[{ id: "pct", scale: "linear" }]}
-      axisWidth={8}
-      showLegend={true}
-      showTimeAxis={true}
-      formatValue={(value: number) => `${value.toFixed(1)}%`}
-    />
-  );
-}
-
 function PollTrend({
   poll,
   allRows,
@@ -267,7 +229,6 @@ function PollTrend({
   height,
   focused,
   group,
-  view,
   onGroupChange,
 }: {
   poll: PollRow;
@@ -276,7 +237,6 @@ function PollTrend({
   height: number;
   focused: boolean;
   group: PollAnalysisGroup;
-  view: PollAnalysisView;
   onGroupChange: (group: PollAnalysisGroup) => void;
 }) {
   const leadingChoice = poll.leadChoice ?? poll.answers[0]?.choice ?? null;
@@ -319,38 +279,7 @@ function PollTrend({
     };
   }, [poll, leadingChoice]);
 
-  const overlaySeries = useMemo(() => {
-    if (!leadingChoice) return [];
-    return buildPollAnalysisSeries({
-      rows: allRows,
-      poll,
-      choice: leadingChoice,
-      group,
-      view: "overlay",
-      palette: pollsterPalette(),
-      market,
-      movingAverageColor: colors.positive,
-      marketColor: colors.warning,
-    });
-  }, [allRows, poll, leadingChoice, group, market]);
-  const scatterSeries = useMemo(() => {
-    if (!leadingChoice) return [];
-    return buildPollAnalysisSeries({
-      rows: allRows,
-      poll,
-      choice: leadingChoice,
-      group,
-      view: "scatter",
-      palette: pollsterPalette(),
-      market,
-      marketColor: colors.warning,
-    });
-  }, [allRows, poll, leadingChoice, group, market]);
-
   const points = group === "house" ? housePoints : racePoints;
-  const stackBoth = group === "race" && height >= STACKED_CHART_MIN_HEIGHT;
-  const chromeHeight = 3;
-  const chartBodyHeight = Math.max(height - chromeHeight, 4);
 
   if (!leadingChoice || points.length === 0) {
     return (
@@ -397,18 +326,9 @@ function PollTrend({
         </Text>
         {marketLabel ? <Text fg={colors.warning} wrapMode="ellipsis">{marketLabel}</Text> : null}
       </Box>
-      {stackBoth ? (
-        <Box flexDirection="column" height={chartBodyHeight}>
-          <PollAnalysisChart series={overlaySeries} width={width} height={Math.max(4, Math.floor(chartBodyHeight * 0.55))} />
-          <PollAnalysisChart series={scatterSeries} width={width} height={Math.max(4, chartBodyHeight - Math.max(4, Math.floor(chartBodyHeight * 0.55)))} />
-        </Box>
-      ) : (
-        <PollAnalysisChart
-          series={view === "scatter" ? scatterSeries : overlaySeries}
-          width={width}
-          height={chartBodyHeight}
-        />
-      )}
+      <Box flexGrow={1} justifyContent="center">
+        <EmptyState title="Graph this poll." hint="Press [g] to open the chart pop-out." />
+      </Box>
     </Box>
   );
 }
@@ -501,7 +421,6 @@ function PollDetail({
   focused,
   detailTab,
   analysisGroup,
-  analysisView,
   onDetailTabChange,
   onAnalysisGroupChange,
 }: {
@@ -512,7 +431,6 @@ function PollDetail({
   focused: boolean;
   detailTab: PollDetailTab;
   analysisGroup: PollAnalysisGroup;
-  analysisView: PollAnalysisView;
   onDetailTabChange: (tab: PollDetailTab) => void;
   onAnalysisGroupChange: (group: PollAnalysisGroup) => void;
 }) {
@@ -540,7 +458,6 @@ function PollDetail({
           height={contentHeight}
           focused={focused}
           group={analysisGroup}
-          view={analysisView}
           onGroupChange={onAnalysisGroupChange}
         />
       </Box>
@@ -573,7 +490,6 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PollDetailTab>("overview");
   const [analysisGroup, setAnalysisGroup] = useState<PollAnalysisGroup>("race");
-  const [analysisView, setAnalysisView] = useState<PollAnalysisView>("overlay");
   const [sortPreference, setSortPreference] = useState<PollSortPreference>(DEFAULT_POLL_SORT);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -636,6 +552,13 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     if (!selected?.url) return;
     openUrl(selected.url);
   }, [selected]);
+  const popOutChart = useGraphChartPopOut();
+  const graphSelected = useCallback(() => {
+    if (!selected) return;
+    const choice = selected.leadChoice ?? selected.answers[0]?.choice;
+    if (!choice) return;
+    popOutChart(`POLL:${selected.subject}:${choice}`);
+  }, [popOutChart, selected]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -658,6 +581,12 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       load(tab);
       return true;
     }
+    if (isPlainKey(event, "g")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return true;
+    }
     if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -665,7 +594,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, load, openSelected, selected?.url, tab]);
+  }, [focusSearch, graphSelected, load, openSelected, selected?.url, tab]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
@@ -703,26 +632,26 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       load(tab);
       return true;
     }
+    if (isPlainKey(event, "g")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return true;
+    }
     if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       if (selected?.url) openUrl(selected.url);
       return true;
     }
-    if (detailTab === "trend" && isPlainKey(event, "g")) {
+    if (detailTab === "trend" && isPlainKey(event, "t")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       setAnalysisGroup((current) => current === "house" ? "race" : "house");
       return true;
     }
-    if (detailTab === "trend" && isPlainKey(event, "v")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      setAnalysisView((current) => current === "overlay" ? "scatter" : "overlay");
-      return true;
-    }
     return false;
-  }, [load, selected?.url, tab, detailTab]);
+  }, [graphSelected, load, selected?.url, tab, detailTab]);
 
   const columns = useMemo(() => createColumns(width), [width]);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -743,40 +672,37 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         ? [{ id: "analysis", parts: [{ text: analysisGroup === "house" ? "pollster" : "race", tone: "value" as const }] }]
         : []),
     ],
-    hints: detailOpen
-      ? [
-          ...(detailTab === "trend"
-            ? [
-                {
+    hints: [
+      { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selected },
+      ...(detailOpen
+        ? [
+            ...(detailTab === "trend"
+              ? [{
                   id: "group",
-                  key: "g",
-                  label: "roup",
+                  key: "t",
+                  label: "ype",
                   onPress: () => setAnalysisGroup((current) => current === "house" ? "race" : "house"),
-                },
-                {
-                  id: "view",
-                  key: "v",
-                  label: "iew",
-                  onPress: () => setAnalysisView((current) => current === "overlay" ? "scatter" : "overlay"),
-                },
-              ]
-            : []),
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
-          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-        ]
-      : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
-          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-        ],
+                }]
+              : []),
+            { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
+            { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+          ]
+        : [
+            { id: "search", key: "s", label: "earch", onPress: focusSearch },
+            { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
+            { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+          ]),
+    ],
   }), [
     error,
     detailOpen,
     detailTab,
     analysisGroup,
     focusSearch,
+    graphSelected,
     load,
     openSelected,
+    selected,
     selected?.url,
     status,
     searchQuery,
@@ -857,7 +783,6 @@ export function PollsPane({ focused, width, height }: PaneProps) {
               focused={focused && !searchFocused}
               detailTab={detailTab}
               analysisGroup={analysisGroup}
-              analysisView={analysisView}
               onDetailTabChange={setDetailTab}
               onAnalysisGroupChange={setAnalysisGroup}
             />

@@ -44,16 +44,13 @@ export function useCongressTradesFooter({
   useAutoRefresh(lastUpdated, () => load(true), poll.intervalMinutes);
   usePaneFooter(CONGRESS_TRADES_PANE_ID, () => ({
     info: [
-      poll.segment,
-      { id: "source", parts: [{ text: "House PTR", tone: "value" as const }] },
       ...(payload ? [
-        { id: "filings", parts: [{ text: `${payload.filingsScanned}/${payload.filingCount} filings`, tone: "muted" as const }] },
-        { id: "trades", parts: [{ text: `${payload.trades.length} trades`, tone: "muted" as const }] },
         { id: "asof", parts: [{ text: `updated ${formatTimeAgo(payload.asOf)}`, tone: "muted" as const }] },
       ] : []),
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: detailMode?.kind === "member"
       ? []
       : [

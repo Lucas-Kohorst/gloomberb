@@ -228,8 +228,8 @@ export function TweetSearchTable({
         parts: [{ text: livePolling ? "live" : "delayed", tone: "muted" }],
         onPress: () => setLivePolling(!livePolling),
       },
-      ...(livePolling ? [poll.segment] : []),
     ],
+    trailingInfo: livePolling ? [poll.segment] : [],
     showOpenHint: !!selectedTweet?.url,
     hints: [
       ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),

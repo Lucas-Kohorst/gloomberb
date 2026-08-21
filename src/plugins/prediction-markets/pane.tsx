@@ -10,6 +10,7 @@ import {
 } from "../../components";
 import { openUrl } from "../../components/ui/external-link";
 import { useShortcut } from "../../react/input";
+import { useGraphChartPopOut } from "../builtin/shared/graph-pop-out";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
@@ -90,12 +91,30 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     if (!marketUrl) return;
     openUrl(marketUrl);
   }, [marketUrl]);
+  const popOutChart = useGraphChartPopOut();
+  const graphExpression = useMemo(() => {
+    const summary = controller.selectedSummary ?? controller.selectedRow?.representative;
+    if (!summary) return null;
+    return summary.venue === "kalshi"
+      ? `KALSHI:${summary.marketId}`
+      : `POLY:${summary.marketId}`;
+  }, [controller.selectedRow?.representative, controller.selectedSummary]);
+  const graphSelected = useCallback(() => {
+    popOutChart(graphExpression);
+  }, [graphExpression, popOutChart]);
   useShortcut((event) => {
-    if (!focused || event.name !== "o" || !marketUrl) return;
+    if (!focused) return;
+    if (event.name === "g" && graphExpression) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return;
+    }
+    if (event.name !== "o" || !marketUrl) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     openMarket();
-  }, { enabled: focused && !!marketUrl });
+  }, { enabled: focused && (!!marketUrl || !!graphExpression) });
   usePaneFooter("prediction-markets", () => {
     return {
       info: controller.detailOpen
@@ -109,6 +128,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
             }] : []),
           ],
       hints: [
+        { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !graphExpression },
         ...(!controller.detailOpen ? [
           { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: controller.actions.refreshCatalog },
@@ -135,6 +155,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
+    graphExpression,
+    graphSelected,
     marketUrl,
     openMarket,
   ]);

@@ -250,11 +250,11 @@ export function AdjacentRatesPane({
 
   usePaneFooter("adjacent-rates", () => ({
     info: [
-      poll.segment,
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],

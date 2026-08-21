@@ -172,7 +172,6 @@ export function PluginDiscoveryPane({ width, height, focused }: PaneProps) {
       ...(status === "error" && error ? [{ id: "error", parts: [{ text: error, tone: "negative" as const }] }] : []),
       ...(installing ? [{ id: "installing", parts: [{ text: `Installing ${installing}…`, tone: "muted" as const }] }] : []),
       ...(installStatus ? [{ id: "install-status", parts: [{ text: installStatus, tone: installStatus.startsWith("Install failed") ? "negative" as const : "positive" as const }] }] : []),
-      ...(results.length > 0 ? [{ id: "count", parts: [{ text: `${results.length} plugins`, tone: "muted" as const }] }] : []),
     ],
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
@@ -180,7 +179,7 @@ export function PluginDiscoveryPane({ width, height, focused }: PaneProps) {
       ...(selected ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }] : []),
       ...(selected ? [{ id: "install", key: "i", label: "nstall", onPress: () => void handleInstall() }] : []),
     ],
-  }), [status, error, installing, installStatus, results.length, focusSearch, handleRefresh, handleOpen, handleInstall, selected]);
+  }), [status, error, installing, installStatus, focusSearch, handleRefresh, handleOpen, handleInstall, selected]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,

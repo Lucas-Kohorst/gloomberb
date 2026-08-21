@@ -17,7 +17,7 @@ import {
   type DataTableRootKeyContext,
   type StackSortPreference,
 } from "../../../components";
-import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
+
 import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
@@ -25,7 +25,8 @@ import type { PaneProps } from "../../../types/plugin";
 import { usePaneInstance } from "../../../state/app/context";
 import { usePluginPaneState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { parseOwidShortcutArg, seriesJoinKey } from "../../../sources/owid/parse";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
+import { parseOwidShortcutArg } from "../../../sources/owid/parse";
 import type { OwidChartPrint, OwidChartSearchHit, OwidObservation } from "../../../sources/owid/types";
 import { fetchOwidChart, fetchOwidChartSearch } from "./client";
 import { entityLatestRows } from "./normalize";
@@ -54,35 +55,12 @@ function formatValue(value: number | null): string {
 
 function OwidSeriesDetail({
   print,
-  width,
-  height,
 }: {
   print: OwidChartPrint;
   width: number;
   height: number;
 }) {
-  const points = print.observations.flatMap((row) => {
-    if (row.value == null) return [];
-    const date = print.timeKind === "day"
-      ? new Date(`${row.time}T00:00:00Z`)
-      : new Date(`${row.time}-01-01T00:00:00Z`);
-    if (!Number.isFinite(date.getTime())) return [];
-    return [{ date, close: row.value }];
-  });
-  const series = points.length > 0
-    ? [pricePointsToResolvedSeries(points, {
-      id: seriesJoinKey(print.slug, print.entity?.code ?? "series"),
-      label: print.columnTitle ?? print.title,
-      color: colors.positive,
-      unit: print.unit ?? "",
-      unitGroup: "owid",
-      style: "line",
-      nativeFrequency: print.timeKind === "day" ? "daily" : "monthly",
-      providerId: "owid",
-      panelId: "main",
-    })]
-    : [];
-  const chartHeight = Math.min(12, Math.max(7, Math.floor(height * 0.45)));
+  const hasSeries = print.observations.some((row) => row.value != null);
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box paddingX={1} paddingTop={1} flexDirection="column">
@@ -95,19 +73,10 @@ function OwidSeriesDetail({
           <Text fg={colors.textMuted} wrapMode="word">{print.citation}</Text>
         ) : null}
       </Box>
-      {series.length > 0 ? (
-        <CompositeChart
-          width={width}
-          height={chartHeight}
-          focused={false}
-          interactive={false}
-          series={series}
-          panels={[{ id: "main", scale: "linear" }]}
-          axisWidth={8}
-          showLegend={false}
-          showTimeAxis={true}
-          formatValue={(value: number) => formatValue(value)}
-        />
+      {hasSeries ? (
+        <Box paddingX={1} paddingTop={1}>
+          <EmptyState title="Graph this series." hint="Press [g] to open the chart pop-out." />
+        </Box>
       ) : null}
       <ScrollBox flexGrow={1} scrollY>
         <Box flexDirection="column" paddingX={1} paddingBottom={1}>
@@ -248,6 +217,13 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
     if (!url) return;
     openUrl(url);
   }, [selectedHit?.url, seriesPrint?.url]);
+  const popOutChart = useGraphChartPopOut();
+  const graphSelected = useCallback(() => {
+    const nextSlug = slug || selectedHit?.slug;
+    const nextEntity = entity || selectedEntityId;
+    if (!nextSlug || !nextEntity) return;
+    popOutChart(`OWID:${nextSlug}:${nextEntity}`);
+  }, [entity, popOutChart, selectedEntityId, selectedHit?.slug, slug]);
 
   const handleRootKeyDown = useCallback(
     (event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
@@ -268,6 +244,12 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
         load();
         return true;
       }
+      if (isPlainKey(event, "g")) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        graphSelected();
+        return true;
+      }
       if (isPlainKey(event, "o")) {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -276,7 +258,7 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
       }
       return false;
     },
-    [focusSearch, load, openSelected],
+    [focusSearch, graphSelected, load, openSelected],
   );
 
   useShortcut((event) => {
@@ -296,11 +278,12 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
+      { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(slug || selectedHit?.slug) || !(entity || selectedEntityId) },
       { id: "search", key: "s", label: "earch", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !(seriesPrint?.url || selectedHit?.url) },
     ],
-  }), [error, focusSearch, load, openSelected, selectedHit?.url, seriesPrint?.url, status, updatedAgo]);
+  }), [entity, error, focusSearch, graphSelected, load, openSelected, selectedEntityId, selectedHit?.slug, selectedHit?.url, seriesPrint?.url, slug, status, updatedAgo]);
 
   if (status === "loading" && hits.length === 0 && !print) {
     return (

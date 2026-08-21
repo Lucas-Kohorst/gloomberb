@@ -24,10 +24,7 @@ import { formatPercentRaw } from "../../../utils/format";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
-import {
-  CompositeChart,
-  pricePointsToResolvedSeries,
-} from "../../../components/chart/composite";
+
 import { useShareTable } from "../shared/use-share-table";
 import type { TableShareColumn } from "../../../shares/payload";
 import type { AdjacentClient } from "./client";
@@ -46,6 +43,7 @@ import {
 } from "./normalize";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
 
 export type AdjacentTab = "indices" | "rates";
 export type IndexDetailTab = "overview" | "chart" | "news";
@@ -341,16 +339,6 @@ function IndexChart({
   const last = pricePoints[pricePoints.length - 1]!;
   const delta = last.close - first.close;
   const deltaPct = first.close ? (delta / first.close) * 100 : 0;
-  const chartHeight = Math.max(height - 1, 3);
-  const series = pricePointsToResolvedSeries(pricePoints, {
-    id: "index-value",
-    label: "Index",
-    color: delta > 0 ? colors.positive : delta < 0 ? colors.negative : colors.text,
-    unit: "",
-    style: "area",
-    axis: "right",
-    panelId: "price",
-  });
 
   return (
     <Box flexDirection="column" height={height}>
@@ -363,16 +351,9 @@ function IndexChart({
           {formatPercentRaw(deltaPct)}
         </Text>
       </Box>
-      <CompositeChart
-        width={width}
-        height={chartHeight}
-        focused={false}
-        interactive={false}
-        series={[series]}
-        panels={[{ id: "price" }]}
-        axisWidth={8}
-        showLegend={false}
-      />
+      <Box flexGrow={1} justifyContent="center">
+        <EmptyState title="Graph this index." hint="Press [g] to open the chart pop-out." />
+      </Box>
     </Box>
   );
 }
@@ -447,6 +428,11 @@ export function AdjacentIndicesPane({
   );
 
   const shareTable = useShareTable();
+  const popOutChart = useGraphChartPopOut();
+  const graphSelected = useCallback(() => {
+    if (!selectedIndexRow) return;
+    popOutChart(`ADJ:${selectedIndexRow.id}`);
+  }, [popOutChart, selectedIndexRow]);
   const shareIndices = useCallback(() => {
     void shareTable({
       title: "Adjacent Indices",
@@ -460,6 +446,12 @@ export function AdjacentIndicesPane({
 
   useShortcut((event) => {
     if (!focused || detailOpen) return;
+    if (isPlainKey(event, "g") && selectedIndexRow) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return;
+    }
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -475,16 +467,17 @@ export function AdjacentIndicesPane({
 
   usePaneFooter("adjacent-indices", () => ({
     info: [
-      poll.segment,
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: [
+      { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow },
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "share", key: "y", label: " share", onPress: shareIndices },
     ],
-  }), [error, load, poll.segment, shareIndices, status, updatedAgo]);
+  }), [error, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (

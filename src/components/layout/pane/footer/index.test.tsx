@@ -31,11 +31,8 @@ function Registration({
     return {
       info: [
         {
-          id: "rows",
-          parts: [
-            { text: "Rows", tone: "label" },
-            { text: "12", tone: "value", bold: true },
-          ],
+          id: "status",
+          parts: [{ text: "loading", tone: "muted" }],
         },
       ],
       hints: [
@@ -43,6 +40,18 @@ function Registration({
       ],
     };
   }, [onRefresh, refreshDisabled]);
+  return null;
+}
+
+function PollTrailingRegistration({ onGraph }: { onGraph?: () => void }) {
+  usePaneFooter("poll-trailing", () => ({
+    info: [{ id: "status", parts: [{ text: "loading", tone: "muted" }] }],
+    trailingInfo: [{ id: "poll-interval", parts: [{ text: "poll 1m", tone: "muted" }] }],
+    hints: [
+      { id: "graph", key: "g", label: "raph", onPress: onGraph },
+      { id: "refresh", key: "r", label: "efresh" },
+    ],
+  }), [onGraph]);
   return null;
 }
 
@@ -97,6 +106,25 @@ function FooterHarness({
   );
 }
 
+function PollTrailingFooterHarness({
+  focused = true,
+  onGraph,
+}: {
+  focused?: boolean;
+  onGraph?: () => void;
+}) {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box width={64} height={1}>
+          <PollTrailingRegistration onGraph={onGraph} />
+          <PaneFooterBar footer={footer} focused={focused} width={64} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  );
+}
+
 function ExternalLinkFooterHarness() {
   return (
     <PaneFooterProvider>
@@ -140,8 +168,61 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Rows 12");
+    expect(frame).toContain("loading");
     expect(frame).not.toContain("[r]efresh");
+  });
+
+  test("renders poll interval on the right after action hints", async () => {
+    testSetup = await testRender(<PollTrailingFooterHarness />, { width: 64, height: 1 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const line = testSetup.captureCharFrame().split("\n")[0] ?? "";
+    const loadingIdx = line.indexOf("loading");
+    const graphIdx = line.indexOf("[g]raph");
+    const refreshIdx = line.indexOf("[r]efresh");
+    const pollIdx = line.indexOf("poll 1m");
+    expect(loadingIdx).toBeGreaterThanOrEqual(0);
+    expect(graphIdx).toBeGreaterThan(loadingIdx);
+    expect(refreshIdx).toBeGreaterThan(graphIdx);
+    expect(pollIdx).toBeGreaterThan(refreshIdx);
+  });
+
+  test("keeps poll interval visible when the pane is unfocused", async () => {
+    testSetup = await testRender(<PollTrailingFooterHarness focused={false} />, { width: 64, height: 1 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("loading");
+    expect(frame).toContain("poll 1m");
+    expect(frame).not.toContain("[g]raph");
+  });
+
+  test("calls [g]raph hint onPress from mouse interaction", async () => {
+    let graphCount = 0;
+    testSetup = await testRender(
+      <PollTrailingFooterHarness onGraph={() => { graphCount += 1; }} />,
+      { width: 64, height: 1 },
+    );
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const line = testSetup.captureCharFrame().split("\n")[0] ?? "";
+    const col = line.indexOf("[g]raph");
+    expect(col).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(col + 1, 0);
+      await testSetup!.renderOnce();
+    });
+    expect(graphCount).toBe(1);
   });
 
   test("keeps raw external URLs out of footer text", async () => {
@@ -168,7 +249,7 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Rows 12");
+    expect(frame).toContain("loading");
     expect(frame).not.toContain("[r]efresh");
   });
 

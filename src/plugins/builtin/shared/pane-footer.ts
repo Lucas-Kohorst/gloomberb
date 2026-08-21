@@ -5,8 +5,11 @@ import {
   type PaneFooterSegment,
   type PaneHint,
 } from "../../../components";
+import { useShortcut } from "../../../react/input";
 
 const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
+const EMPTY_TRAILING_INFO: PaneFooterSegment[] = [];
+const EMPTY_HINTS: PaneHint[] = [];
 
 function buildPaneStatusInfo({
   loading = false,
@@ -24,33 +27,74 @@ function buildPaneStatusInfo({
   ];
 }
 
+function isBindableHintKey(key: string): boolean {
+  if (key === "/") return true;
+  return key.length === 1;
+}
+
+export function usePaneFooterHintBindings(
+  focused: boolean,
+  hints: readonly PaneHint[] | undefined,
+  options?: { skipKeys?: ReadonlySet<string> },
+): void {
+  const skipKeys = options?.skipKeys;
+  const bindable = (hints ?? EMPTY_HINTS).filter((hint) => (
+    !hint.disabled
+    && !!hint.onPress
+    && isBindableHintKey(hint.key)
+    && !skipKeys?.has(hint.key.toLowerCase())
+  ));
+  useShortcut((event) => {
+    if (!focused || event.targetEditable) return;
+    if (event.ctrl || event.meta || event.alt) return;
+    const key = (event.name ?? event.key ?? "").toLowerCase();
+    if (!key) return;
+    const hint = bindable.find((candidate) => candidate.key.toLowerCase() === key);
+    if (!hint?.onPress) return;
+    event.stopPropagation?.();
+    event.preventDefault?.();
+    hint.onPress();
+  }, { enabled: focused && bindable.length > 0 });
+}
+
 export function usePaneStatusFooter({
   registrationId,
   loading = false,
   error,
   info = EMPTY_STATUS_INFO,
+  trailingInfo = EMPTY_TRAILING_INFO,
   hints,
+  focused = false,
   enabled = true,
 }: {
   registrationId: string;
   loading?: boolean;
   error?: string | null;
   info?: readonly PaneFooterSegment[];
+  trailingInfo?: readonly PaneFooterSegment[];
   hints?: PaneHint[];
+  focused?: boolean;
   enabled?: boolean;
 }) {
   const statusInfo = useMemo(
     () => buildPaneStatusInfo({ loading, error, info }),
     [error, info, loading],
   );
+  const trailing = useMemo(
+    () => (trailingInfo.length > 0 ? [...trailingInfo] : EMPTY_TRAILING_INFO),
+    [trailingInfo],
+  );
+  usePaneFooterHintBindings(focused, hints);
   usePaneFooter(
     registrationId,
-    () => enabled && (statusInfo.length > 0 || (hints?.length ?? 0) > 0)
-      ? { info: statusInfo, hints }
+    () => enabled && (statusInfo.length > 0 || trailing.length > 0 || (hints?.length ?? 0) > 0)
+      ? { info: statusInfo, trailingInfo: trailing, hints }
       : null,
-    [enabled, hints, registrationId, statusInfo],
+    [enabled, hints, registrationId, statusInfo, trailing],
   );
 }
+
+const OPEN_HINT_KEYS = new Set(["o"]);
 
 export function usePaneStatusLinkFooter({
   registrationId,
@@ -61,6 +105,7 @@ export function usePaneStatusLinkFooter({
   loading = false,
   error,
   info = EMPTY_STATUS_INFO,
+  trailingInfo,
   hints,
   trailingHints,
   showOpenHint = false,
@@ -73,6 +118,7 @@ export function usePaneStatusLinkFooter({
   loading?: boolean;
   error?: string | null;
   info?: readonly PaneFooterSegment[];
+  trailingInfo?: readonly PaneFooterSegment[];
   hints?: PaneHint[];
   trailingHints?: PaneHint[];
   showOpenHint?: boolean;
@@ -81,6 +127,15 @@ export function usePaneStatusLinkFooter({
     () => buildPaneStatusInfo({ loading, error, info }),
     [error, info, loading],
   );
+  const trailing = useMemo(
+    () => (trailingInfo && trailingInfo.length > 0 ? [...trailingInfo] : EMPTY_TRAILING_INFO),
+    [trailingInfo],
+  );
+  const boundHints = useMemo(
+    () => [...(hints ?? EMPTY_HINTS), ...(trailingHints ?? EMPTY_HINTS)],
+    [hints, trailingHints],
+  );
+  usePaneFooterHintBindings(focused, boundHints, { skipKeys: OPEN_HINT_KEYS });
   return useExternalLinkFooter({
     registrationId,
     focused,
@@ -88,6 +143,7 @@ export function usePaneStatusLinkFooter({
     source,
     label,
     info: statusInfo,
+    trailingInfo: trailing,
     hints,
     trailingHints,
     showHint: showOpenHint,

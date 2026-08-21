@@ -1,6 +1,8 @@
 export interface PaneFooterRegistration {
   order?: number;
   info?: PaneFooterSegment[];
+  /** Status that should sit on the right (e.g. poll cadence), after action hints. */
+  trailingInfo?: PaneFooterSegment[];
   hints?: PaneHint[];
 }
 
@@ -35,14 +37,17 @@ export interface PaneHint {
 
 export interface CombinedPaneFooter {
   info: PaneFooterSegment[];
+  trailingInfo: PaneFooterSegment[];
   hints: PaneHint[];
 }
 
-export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], hints: [] };
+export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], trailingInfo: [], hints: [] };
 
 export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
   if (!footer) return false;
-  return footer.info.length > 0 || footer.hints.some((hint) => !hint.disabled);
+  return footer.info.length > 0
+    || footer.trailingInfo.length > 0
+    || footer.hints.some((hint) => !hint.disabled);
 }
 
 export function combinePaneFooterRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
@@ -54,14 +59,16 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   });
 
   const info: PaneFooterSegment[] = [];
+  const trailingInfo: PaneFooterSegment[] = [];
   const hints: PaneHint[] = [];
   for (const [, registration] of ordered) {
     if (registration.info) info.push(...registration.info);
+    if (registration.trailingInfo) trailingInfo.push(...registration.trailingInfo);
     if (registration.hints) hints.push(...registration.hints);
   }
 
-  if (info.length === 0 && hints.length === 0) return EMPTY_FOOTER;
-  return { info, hints };
+  if (info.length === 0 && trailingInfo.length === 0 && hints.length === 0) return EMPTY_FOOTER;
+  return { info, trailingInfo, hints };
 }
 
 function sameFooterParts(left: PaneFooterPart[], right: PaneFooterPart[]): boolean {
@@ -83,18 +90,24 @@ export function samePaneFooterRegistration(
   if (!left || !right) return false;
   const leftInfo = left.info ?? [];
   const rightInfo = right.info ?? [];
+  const leftTrailing = left.trailingInfo ?? [];
+  const rightTrailing = right.trailingInfo ?? [];
   const leftHints = left.hints ?? [];
   const rightHints = right.hints ?? [];
-  return (left.order ?? 0) === (right.order ?? 0)
-    && leftInfo.length === rightInfo.length
-    && leftHints.length === rightHints.length
-    && leftInfo.every((segment, index) => {
-      const other = rightInfo[index];
+  const sameSegments = (leftSegments: PaneFooterSegment[], rightSegments: PaneFooterSegment[]) => (
+    leftSegments.length === rightSegments.length
+    && leftSegments.every((segment, index) => {
+      const other = rightSegments[index];
       return !!other
         && segment.id === other.id
         && segment.disabled === other.disabled
         && sameFooterParts(segment.parts, other.parts);
     })
+  );
+  return (left.order ?? 0) === (right.order ?? 0)
+    && sameSegments(leftInfo, rightInfo)
+    && sameSegments(leftTrailing, rightTrailing)
+    && leftHints.length === rightHints.length
     && leftHints.every((hint, index) => {
       const other = rightHints[index];
       return !!other
