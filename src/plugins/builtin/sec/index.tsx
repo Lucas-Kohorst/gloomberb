@@ -8,7 +8,6 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import type { ScrollBoxRenderable } from "../../../ui";
 import {
   FeedDataTableStackView,
   InputSearchBar,
