@@ -18,7 +18,6 @@ import { withConnectionRequest } from "../connections/register";
 import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
 import { buildYoutubeLiveEmbedUrl, isYoutubeEmbedUrl } from "./youtube-embed";
-import { resolveTvStream } from "./youtube-stream";
 
 const YOUTUBE_CONNECTION_ID = "youtube";
 
@@ -94,11 +93,13 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
     setPlaybackState("idle");
     setStream((current) => current?.sourceId === channel.id ? current : null);
     try {
-      const nextStream = await withConnectionRequest(YOUTUBE_CONNECTION_ID, channel.name, async () => (
-        renderer.resolveLiveStream
-          ? await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force })
-          : await resolveTvStream(channel, { force })
-      ));
+      const nextStream = await withConnectionRequest(YOUTUBE_CONNECTION_ID, channel.name, async () => {
+        if (renderer.resolveLiveStream) {
+          return await renderer.resolveLiveStream({ provider: "youtube", sourceId: channel.id, force });
+        }
+        const { resolveTvStream } = await import("./youtube-stream");
+        return await resolveTvStream(channel, { force });
+      });
       if (generation !== generationRef.current) return;
       setStream(nextStream);
       setLastUpdated(Date.now());

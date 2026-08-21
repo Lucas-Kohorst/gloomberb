@@ -14,6 +14,8 @@ type PageOptions = {
   title: string;
   loadingText: string;
   bootstrapScript: string;
+  /** Async chunks for heavy media/chart deps. Desktop stays a single file. */
+  splitting?: boolean;
 };
 
 const ELECTROBUN_VIEW_DIR = join(process.cwd(), "src", "renderers", "electrobun", "view");
@@ -47,6 +49,9 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
+    // youtubei.js / hls.js / lightweight-charts are dynamic imports. Without
+    // splitting Bun inlines them into web-main.js and Portfolio pays for TV.
+    splitting: true,
     extraAliasRules: [
       ["./backend-rpc", "web-backend-rpc.ts"],
       ...(options.extraAliasRules ?? []),
@@ -167,13 +172,14 @@ async function buildElectrobunViewBundle({
   extraAliasRules = [],
   failureMessage,
   missingEntryMessage,
+  splitting = false,
 }: PageOptions): Promise<{ entrySrc: string; stylesheet: string }> {
   const result = await Bun.build({
     entrypoints: [entrypoint],
     outdir,
     target: "browser",
     format: "esm",
-    splitting: false,
+    splitting,
     sourcemap: "external",
     minify: true,
     define: {

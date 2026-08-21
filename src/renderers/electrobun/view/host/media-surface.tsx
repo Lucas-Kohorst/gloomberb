@@ -1,9 +1,18 @@
 /** @jsxImportSource react */
-import Hls from "hls.js";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { isYoutubeEmbedUrl } from "../../../../plugins/builtin/tv/youtube-embed";
 import type { MediaSurfaceHandle, MediaSurfaceProps } from "../../../../ui/host";
 import { cleanDomProps, commonStyle } from "./style";
+
+type HlsModule = typeof import("hls.js");
+type HlsPlayer = InstanceType<HlsModule["default"]>;
+
+let hlsModulePromise: Promise<HlsModule> | null = null;
+
+function loadHlsModule(): Promise<HlsModule> {
+  hlsModulePromise ??= import("hls.js");
+  return hlsModulePromise;
+}
 
 function postYoutubeCommand(frame: HTMLIFrameElement | null, func: string, args: unknown[] = []): void {
   frame?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
@@ -114,7 +123,7 @@ export const WebMediaSurface = forwardRef<HTMLVideoElement, MediaSurfaceProps>(f
 
     setFailed(false);
     onPlaybackStateChange?.("loading");
-    let hls: Hls | null = null;
+    let hls: HlsPlayer | null = null;
 
     let active = true;
     const fail = (message: string) => {
@@ -148,21 +157,33 @@ export const WebMediaSurface = forwardRef<HTMLVideoElement, MediaSurfaceProps>(f
       video.src = mediaSrc;
       video.load();
       startPlayback();
-    } else if (Hls.isSupported()) {
-      hls = new Hls({
-        backBufferLength: 30,
-        enableWorker: true,
-        lowLatencyMode: true,
-      });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (!data.fatal) return;
-        fail(data.details ? `Stream playback failed: ${data.details}` : "Stream playback failed.");
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
-      hls.loadSource(mediaSrc);
-      hls.attachMedia(video);
     } else {
-      fail("HLS playback is unavailable in this desktop runtime.");
+      void loadHlsModule().then((module) => {
+        if (!active) return;
+        const Hls = module.default;
+        if (!Hls.isSupported()) {
+          fail("HLS playback is unavailable in this desktop runtime.");
+          return;
+        }
+        hls = new Hls({
+          backBufferLength: 30,
+          enableWorker: true,
+          lowLatencyMode: true,
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal) return;
+          fail(data.details ? `Stream playback failed: ${data.details}` : "Stream playback failed.");
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+        hls.loadSource(mediaSrc);
+        hls.attachMedia(video);
+        if (!active) {
+          hls.destroy();
+          hls = null;
+        }
+      }).catch((cause) => {
+        fail(cause instanceof Error ? cause.message : "HLS playback failed to load.");
+      });
     }
 
     return () => {

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { RendererHost, UiHost } from "../../../ui/host";
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { RendererHost, TradingViewChartProps, UiHost } from "../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { backendRequest } from "./backend-rpc";
 import { WebDataTable } from "./data-table";
@@ -17,7 +17,6 @@ import {
 import { WebPopover } from "./desktop/popover";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
-import { WebTradingViewChart } from "./host/tradingview-chart";
 import { installDisableAutofillPolicy } from "./host/disable-autofill";
 import { WebInput, WebTextarea } from "./host/input";
 import { WebMediaSurface } from "./host/media-surface";
@@ -40,6 +39,32 @@ function currentDesktopPlatform(): string {
     navigator.platform,
     navigator.userAgent,
   ].filter((value): value is string => Boolean(value)).join(" ");
+}
+
+const WebTradingViewChart = lazy(async () => {
+  const module = await import("./host/tradingview-chart");
+  return { default: module.WebTradingViewChart };
+});
+
+function LazyWebTradingViewChart(props: TradingViewChartProps) {
+  return (
+    <Suspense
+      fallback={(
+        <div
+          data-gloom-role="tradingview-chart"
+          style={{
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            minWidth: 0,
+            minHeight: 0,
+          }}
+        />
+      )}
+    >
+      <WebTradingViewChart {...props} />
+    </Suspense>
+  );
 }
 
 const DESKTOP_PLATFORM = currentDesktopPlatform();
@@ -105,7 +130,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
     DataTable: WebDataTable,
     Tabs: WebTabs,
     ChartSurface: WebChartSurface,
-    TradingViewChart: WebTradingViewChart,
+    TradingViewChart: LazyWebTradingViewChart,
     ImageSurface: ({ children, src, alt = "", objectFit = "contain", ...props }) => {
       const imageSrc = typeof src === "string" ? src.trim() : "";
       const [failed, setFailed] = useState(false);
