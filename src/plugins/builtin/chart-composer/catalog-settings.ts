@@ -7,8 +7,9 @@ import {
   encodeSortPreference,
   parseSortPreference,
 } from "../../../components/data-table/sort-settings";
+import { compareSortValues } from "../../../utils/sort-values";
 import type { PaneSettingsDef } from "../../../types/plugin";
-import { CATALOG_FILTERS, type CatalogFilterId } from "./catalog-inventory";
+import { CATALOG_FILTERS, type CatalogFilterId, type CatalogSeriesRow } from "./catalog-inventory";
 
 export type CatalogColumnId = "series" | "source" | "kind" | "expression";
 
@@ -28,6 +29,34 @@ export const CATALOG_COLUMN_DEFS = [
 
 export function isCatalogFilterId(value: unknown): value is CatalogFilterId {
   return typeof value === "string" && CATALOG_FILTERS.some((filter) => filter.id === value);
+}
+
+export function catalogColumnSortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
+  switch (columnId) {
+    case "series":
+      return row.label;
+    case "source":
+      return row.source;
+    case "kind":
+      return row.kind;
+    case "expression":
+      return row.expression;
+  }
+}
+
+export function sortCatalogRows(
+  rows: CatalogSeriesRow[],
+  preference: CatalogSortPreference,
+): CatalogSeriesRow[] {
+  if (!preference.columnId) return rows;
+  const { columnId, direction } = preference;
+  return [...rows].sort((left, right) => (
+    compareSortValues(
+      catalogColumnSortValue(columnId, left),
+      catalogColumnSortValue(columnId, right),
+      direction,
+    ) || left.label.localeCompare(right.label)
+  ));
 }
 
 export function getCatalogPaneSettings(settings: Record<string, unknown> | undefined): {

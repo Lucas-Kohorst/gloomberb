@@ -157,7 +157,7 @@ export interface AppConfig {
   valueFlashingEnabled: boolean;
   autoRefreshInterval: number;
   fontSize: number;
-  /** Web/desktop UI face. Ignored by the terminal renderer. */
+  /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
   fontFamily: string;
   recentTickers: string[];
   language?: LanguagePreference;
@@ -725,7 +725,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     valueFlashingEnabled: true,
     autoRefreshInterval: 0,
     fontSize: 12,
-    fontFamily: "ibm-plex-sans",
+    fontFamily: "system-mono",
     recentTickers: [],
   };
 }

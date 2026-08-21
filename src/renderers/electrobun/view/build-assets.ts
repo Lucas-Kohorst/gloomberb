@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rename, writeFile } from "fs/promises";
+import { copyFile, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 import { toRootAbsoluteAssetUrl } from "./asset-urls";
@@ -32,35 +32,12 @@ export function electrobunViewPath(...parts: string[]): string {
   return join(ELECTROBUN_VIEW_DIR, ...parts);
 }
 
-const WEB_FONT_FILES = [
-  "ibm-plex-sans-latin-400-normal.woff2",
-  "ibm-plex-sans-latin-500-normal.woff2",
-  "ibm-plex-sans-latin-600-normal.woff2",
-  "ibm-plex-sans-latin-700-normal.woff2",
-  "ibm-plex-mono-latin-400-normal.woff2",
-  "ibm-plex-mono-latin-500-normal.woff2",
-  "ibm-plex-mono-latin-600-normal.woff2",
-] as const;
-
-async function copyWebFonts(outdir: string): Promise<void> {
-  const destDir = join(outdir, "fonts");
-  await mkdir(destDir, { recursive: true });
-  await Promise.all(WEB_FONT_FILES.map((file) => (
-    copyFile(electrobunViewPath("fonts", file), join(destDir, file))
-  )));
-}
-
-function withFontUrlPrefix(stylesheet: string, prefix: string): string {
-  return stylesheet.replaceAll("__FONT_URL_PREFIX__", prefix);
-}
-
 export async function writeElectrobunViewPage(options: PageOptions): Promise<string> {
   const { entrySrc, stylesheet } = await buildElectrobunViewBundle(options);
-  await copyWebFonts(options.outdir);
   const htmlPath = join(options.outdir, "index.html");
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
-    stylesheet: withFontUrlPrefix(stylesheet, "./"),
+    stylesheet,
     entrySrc,
   }));
   return htmlPath;
@@ -76,7 +53,6 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     ],
   });
   await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
-  await copyWebFonts(options.outdir);
   const htmlPath = join(options.outdir, "index.html");
   // Nested routes (`/s/{id}`) serve this same document; relative `./web-main.js`
   // would resolve under `/s/` and the SPA fallback would return HTML instead of
@@ -85,7 +61,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
-    stylesheet: withFontUrlPrefix(stylesheet, "/"),
+    stylesheet,
     entrySrc: absoluteEntrySrc,
     faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
     bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,

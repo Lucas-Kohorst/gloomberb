@@ -1,14 +1,15 @@
 /**
- * Web/desktop UI typefaces. The terminal renderer ignores these — the emulator
+ * Web/desktop UI typeface. The terminal renderer ignores this — the emulator
  * owns the TUI font — so this only mutates DOM CSS variables.
  *
- * Default UI is IBM Plex Sans (not Inter/Roboto/Arial/system-ui). Data tables
- * stay on IBM Plex Mono for tabular figures even when the UI face is sans.
+ * Adjacent theming keeps the original system monospace stack. Font family is
+ * not user-configurable; stale ibm-plex-* ids from older configs remap here.
  */
 
-export const DEFAULT_FONT_FAMILY = "ibm-plex-sans";
+export const DEFAULT_FONT_FAMILY = "system-mono";
 
-const MONO_STACK = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+export const SYSTEM_MONO_STACK =
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
 
 export interface FontFamilyOption {
   id: string;
@@ -18,37 +19,23 @@ export interface FontFamilyOption {
   dataStack: string;
 }
 
-export const FONT_FAMILIES: Record<string, FontFamilyOption> = {
-  "ibm-plex-sans": {
-    id: "ibm-plex-sans",
-    name: "IBM Plex Sans",
-    description: "UI sans; IBM Plex Mono for tables",
-    uiStack: `"IBM Plex Sans", ${MONO_STACK}`,
-    dataStack: MONO_STACK,
-  },
-  "ibm-plex-mono": {
-    id: "ibm-plex-mono",
-    name: "IBM Plex Mono",
-    description: "Monospace UI and data",
-    uiStack: MONO_STACK,
-    dataStack: MONO_STACK,
-  },
+const SYSTEM_MONO: FontFamilyOption = {
+  id: DEFAULT_FONT_FAMILY,
+  name: "System Mono",
+  description: "Original terminal stack",
+  uiStack: SYSTEM_MONO_STACK,
+  dataStack: SYSTEM_MONO_STACK,
 };
 
 let appliedFontFamilyId = DEFAULT_FONT_FAMILY;
 let appliedToDocument = false;
 
-export function getFontFamilyIds(): string[] {
-  return Object.keys(FONT_FAMILIES);
-}
-
-export function sanitizeFontFamily(value: unknown): string {
-  if (typeof value === "string" && FONT_FAMILIES[value]) return value;
+export function sanitizeFontFamily(_value: unknown): string {
   return DEFAULT_FONT_FAMILY;
 }
 
-export function getFontFamily(id: string): FontFamilyOption {
-  return FONT_FAMILIES[sanitizeFontFamily(id)]!;
+export function getFontFamily(_id?: string): FontFamilyOption {
+  return SYSTEM_MONO;
 }
 
 export function getFontFamilyId(): string {
@@ -58,20 +45,19 @@ export function getFontFamilyId(): string {
 /**
  * Applies the UI/data font stacks. Returns true when the document changed.
  */
-export function syncFontFamily(fontFamilyId: unknown): boolean {
-  const id = sanitizeFontFamily(fontFamilyId);
+export function syncFontFamily(_fontFamilyId?: unknown): boolean {
+  const id = DEFAULT_FONT_FAMILY;
   if (id === appliedFontFamilyId && appliedToDocument) return false;
 
   appliedFontFamilyId = id;
-  const option = FONT_FAMILIES[id]!;
   const style = (globalThis as {
     document?: { body?: { style?: { setProperty: (name: string, value: string) => void } } };
   }).document?.body?.style;
   if (!style) return false;
 
-  style.setProperty("--gloom-ui-font", option.uiStack);
-  style.setProperty("--gloom-data-font", option.dataStack);
-  style.setProperty("font-family", option.uiStack);
+  style.setProperty("--gloom-ui-font", SYSTEM_MONO.uiStack);
+  style.setProperty("--gloom-data-font", SYSTEM_MONO.dataStack);
+  style.setProperty("font-family", SYSTEM_MONO.uiStack);
   appliedToDocument = true;
   return true;
 }

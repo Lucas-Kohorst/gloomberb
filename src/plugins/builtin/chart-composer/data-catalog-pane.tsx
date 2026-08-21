@@ -12,7 +12,6 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { openUrl } from "../../../components/ui/external-link";
-import { compareSortValues } from "../../../utils/sort-values";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -24,6 +23,7 @@ import {
   CATALOG_COLUMN_IDS,
   DEFAULT_CATALOG_SORT,
   getCatalogPaneSettings,
+  sortCatalogRows,
   type CatalogColumnId,
   type CatalogSortPreference,
 } from "./catalog-settings";
@@ -71,19 +71,6 @@ function nextSortPreference(
   return DEFAULT_CATALOG_SORT;
 }
 
-function sortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
-  switch (columnId) {
-    case "series":
-      return row.label;
-    case "source":
-      return row.source;
-    case "kind":
-      return row.kind;
-    case "expression":
-      return row.expression;
-  }
-}
-
 function buildColumns(width: number, columnIds: readonly CatalogColumnId[]): CatalogColumn[] {
   const layout: Record<CatalogColumnId, { label: string; width: number; flex?: boolean }> = {
     series: { label: "SERIES", width: 18, flex: true },
@@ -115,8 +102,8 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [searchQuery, setSearchQuery] = useState(seedQuery);
   const [filter, setFilter] = usePaneSettingValue<CatalogFilterId>("defaultTab", "all");
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", CATALOG_COLUMN_IDS);
-  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_CATALOG_SORT));
-  const paneSettings = getCatalogPaneSettings({ defaultTab: filter, columnIds, sort: sortValue });
+  const [sortSetting, setSortSetting] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_CATALOG_SORT));
+  const paneSettings = getCatalogPaneSettings({ defaultTab: filter, columnIds, sort: sortSetting });
   const resolvedFilter = paneSettings.defaultTab;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const sortPreference = paneSettings.sort;
@@ -164,13 +151,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
     const filtered = filterCatalogRows([...merged.values()], resolvedFilter, searchQuery);
-    if (!sortPreference.columnId) return filtered;
-    const direction = sortPreference.direction;
-    const columnId = sortPreference.columnId;
-    return [...filtered].sort((left, right) => (
-      compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
-      || left.label.localeCompare(right.label)
-    ));
+    return sortCatalogRows(filtered, sortPreference);
   }, [adjacentIndices, benchRows, resolvedFilter, instruments, markets, owidRows, pollRows, searchQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
@@ -414,7 +395,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         items={rows}
         sortColumnId={sortPreference.columnId}
         sortDirection={sortPreference.direction}
-        onHeaderClick={(columnId) => setSortValue(encodeSortPreference(nextSortPreference(sortPreference, columnId)))}
+        onHeaderClick={(columnId) => setSortSetting(encodeSortPreference(nextSortPreference(sortPreference, columnId)))}
         getItemKey={(row) => row.id}
         onActivate={chartSelected}
         renderCell={renderCell}

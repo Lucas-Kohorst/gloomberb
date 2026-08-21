@@ -5,7 +5,6 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { colors } from "../../../theme/colors";
-import { FONT_FAMILIES, getFontFamily } from "../../../theme/font-family";
 import { getTheme } from "../../../theme/themes";
 import { clampFontSize, MAX_FONT_SIZE_PX, MIN_FONT_SIZE_PX } from "../../../theme/font-scale";
 import { t, tf } from "../../../i18n";
@@ -13,7 +12,6 @@ import { openNativeSelect, type NativeSelectElement } from "../../../components/
 import { SelectRow } from "./form-components";
 import {
   cycleChoice,
-  fontFamilyChoices,
   fontSizeBoundsLabel,
   nextFontSize,
   themeChoices,
@@ -23,11 +21,9 @@ import type { AccountFieldKey } from "./model";
 export function DisplayTab({
   activeField,
   focused,
-  fontFamily,
   fontSize,
   isDesktop,
   setActiveField,
-  setFontFamily,
   setFontSize,
   setTheme,
   theme,
@@ -35,11 +31,9 @@ export function DisplayTab({
 }: {
   activeField: AccountFieldKey;
   focused: boolean;
-  fontFamily: string;
   fontSize: number;
   isDesktop: boolean;
   setActiveField: (field: AccountFieldKey) => void;
-  setFontFamily: (id: string) => void;
   setFontSize: (size: number) => void;
   setTheme: (id: string) => void;
   theme: string;
@@ -47,9 +41,7 @@ export function DisplayTab({
 }) {
   const dialog = useDialog();
   const themeSelectRef = useRef<NativeSelectElement | null>(null);
-  const fontSelectRef = useRef<NativeSelectElement | null>(null);
   const themes = useMemo(() => themeChoices(), []);
-  const families = useMemo(() => fontFamilyChoices(), []);
   const size = clampFontSize(fontSize);
   const bound = fontSizeBoundsLabel(size);
 
@@ -77,30 +69,6 @@ export function DisplayTab({
     if (selected) setTheme(selected);
   }, [dialog, isDesktop, setActiveField, setTheme, theme, themes]);
 
-  const openFontPicker = useCallback(async () => {
-    setActiveField("fontFamilyAction");
-    if (isDesktop) {
-      openNativeSelect(fontSelectRef.current);
-      return;
-    }
-    const selected = await dialog.prompt<string>({
-      closeOnClickOutside: true,
-      content: (context: PromptContext<string>) => (
-        <ChoiceDialog
-          {...context}
-          title={t("Font")}
-          choices={families.map((choice) => ({
-            id: choice.id,
-            label: choice.label,
-            description: choice.description,
-          }))}
-          selectedChoiceId={fontFamily}
-        />
-      ),
-    }).catch(() => null);
-    if (selected) setFontFamily(selected);
-  }, [dialog, families, fontFamily, isDesktop, setActiveField, setFontFamily]);
-
   const bumpSize = useCallback((delta: number) => {
     setActiveField("fontSizeAction");
     setFontSize(nextFontSize(size, delta));
@@ -112,19 +80,13 @@ export function DisplayTab({
       event.preventDefault?.();
       event.stopPropagation?.();
       void openThemePicker();
-      return;
-    }
-    if (!event.targetEditable && activeField === "fontFamilyAction" && isPlainKey(event, "space", "enter", "return")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      void openFontPicker();
     }
   }, { allowEditable: true });
 
   return (
     <>
       <Text fg={colors.textMuted} wrapText width={width}>
-        {t("Theme, typeface, and size apply to web and desktop. The terminal keeps the emulator font.")}
+        {t("Theme and size apply to web and desktop. The terminal keeps the emulator font.")}
       </Text>
       <SelectRow
         label={t("Theme")}
@@ -147,28 +109,6 @@ export function DisplayTab({
       />
       <Text fg={colors.textDim} wrapText width={width}>
         {getTheme(theme).description || getTheme(theme).name}
-      </Text>
-      <SelectRow
-        label={t("Font")}
-        value={fontFamily}
-        options={families.map((choice) => ({
-          value: choice.id,
-          label: choice.label,
-          description: choice.description,
-        }))}
-        active={activeField === "fontFamilyAction"}
-        width={width}
-        selectRef={(element) => {
-          fontSelectRef.current = element;
-        }}
-        onFocus={() => {
-          setActiveField("fontFamilyAction");
-          if (!isDesktop) void openFontPicker();
-        }}
-        onChange={setFontFamily}
-      />
-      <Text fg={colors.textDim} wrapText width={width}>
-        {getFontFamily(fontFamily).description}
       </Text>
       <Box
         height={1}
@@ -212,13 +152,10 @@ export function DisplayTab({
 export function cycleDisplayFieldValue(
   field: AccountFieldKey,
   delta: number,
-  current: { theme: string; fontFamily: string; fontSize: number },
-): { theme?: string; fontFamily?: string; fontSize?: number } | null {
+  current: { theme: string; fontSize: number },
+): { theme?: string; fontSize?: number } | null {
   if (field === "themeAction") {
     return { theme: cycleChoice(themeChoices().map((choice) => choice.id), current.theme, delta) };
-  }
-  if (field === "fontFamilyAction") {
-    return { fontFamily: cycleChoice(Object.keys(FONT_FAMILIES), current.fontFamily, delta) };
   }
   if (field === "fontSizeAction") {
     return { fontSize: nextFontSize(current.fontSize, delta) };

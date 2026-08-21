@@ -14,7 +14,7 @@ const RELEASE_0_13_1: ChangelogRelease = {
 - Top-left \`<ticker>\` slot is the command bar. Click it for the same prefixes and assist as Ctrl+P; backtick still opens ticker search.
 - Drag a pane from the title bar or 6-dot grip. Resize docked tiles on the splitter and floating panes from edges/corners. Keyboard window-edit still works.
 - Layout tabs and **Layouts** sit in the desktop titlebar next to Help. Status bar is Ctrl+P on the left and version / delayed data / Upgrade / chat on the right. The stray \`·\` between delayed data and Upgrade is gone.
-- **Adjacent** theme (dark ink/forest, RED/BLUE accents). Web/desktop default font is IBM Plex Sans, tables IBM Plex Mono. ACM **Display** tab sets theme, font family, and size (\`FONT+\` / \`FONT-\`).
+- **Adjacent** theme (dark ink/forest, RED/BLUE accents). Web/desktop keep the original system monospace stack. ACM **Display** tab sets theme and size (\`FONT+\` / \`FONT-\`).
 
 ## Hosted persist
 

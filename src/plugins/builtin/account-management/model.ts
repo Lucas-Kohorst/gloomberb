@@ -26,7 +26,6 @@ export type AccountFieldKey =
   | "passwordAction"
   | "deleteAccountAction"
   | "themeAction"
-  | "fontFamilyAction"
   | "fontSizeAction";
 
 export interface AccountDraft {
