@@ -188,7 +188,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const contentWidth = nativePaneChrome ? "100%" : innerW;
   const contentStyle = nativePaneChrome ? NATIVE_STRETCH_STYLE : undefined;
   const tickers = useMemo(
-    () => collectNewsDisplayTickers(item.tickers),
+    () => collectNewsDisplayTickers(item.tickers ?? []),
     [item.tickers],
   );
   const tickerTexts = useMemo(() => tickers.map((ticker) => `$${ticker}`), [tickers]);
@@ -282,13 +282,13 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               })}
             </Box>
           )}
-          {item.categories.length > 0 && (
+          {(item.categories?.length ?? 0) > 0 && (
             nativePaneChrome ? (
-              <TextLines text={item.categories.join(" · ")} width={innerW} color={colors.textMuted} nativePaneChrome />
+              <TextLines text={(item.categories ?? []).join(" · ")} width={innerW} color={colors.textMuted} nativePaneChrome />
             ) : (
               <Box height={1} flexDirection="row">
                 <Text fg={colors.textMuted}>
-                  {item.categories.join(" · ")}
+                  {(item.categories ?? []).join(" · ")}
                 </Text>
               </Box>
             )

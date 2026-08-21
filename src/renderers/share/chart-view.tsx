@@ -197,37 +197,39 @@ export function ChartShareView({
       footer={footer}
       openInTerminalHref={openInTerminalHref}
     >
-      <div className="share-chart">
-        {payload.series.length > 0 ? (
-          <ul className="share-legend">
-            {payload.series.map((entry) => {
-              const value = formatShareLegendValue(entry);
-              return (
-                <li key={entry.id}>
-                  <span className="share-swatch" style={{ backgroundColor: entry.color }} />
-                  {value ? `${entry.label} ${value}` : entry.label}
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+      <div className="share-chart-frame">
+        <div className="share-chart">
+          {payload.series.length > 0 ? (
+            <ul className="share-legend">
+              {payload.series.map((entry) => {
+                const value = formatShareLegendValue(entry);
+                return (
+                  <li key={entry.id}>
+                    <span className="share-swatch" style={{ backgroundColor: entry.color }} />
+                    {value ? `${entry.label} ${value}` : entry.label}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
 
-        {panels.length > 0 ? (
-          <div className="share-panels">
-            {panels.map(({ panel, series, heightPx }, index) => (
-              <ChartPanel
-                key={panel.id}
-                panel={panel}
-                series={series}
-                heightPx={heightPx}
-                logScale={panel.scale === "log"}
-                attribution={index === 0}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="share-note">This chart snapshot contains no plotted data.</p>
-        )}
+          {panels.length > 0 ? (
+            <div className="share-panels">
+              {panels.map(({ panel, series, heightPx }, index) => (
+                <ChartPanel
+                  key={panel.id}
+                  panel={panel}
+                  series={series}
+                  heightPx={heightPx}
+                  logScale={panel.scale === "log"}
+                  attribution={index === 0}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="share-note">This chart snapshot contains no plotted data.</p>
+          )}
+        </div>
       </div>
     </ShareShell>
   );

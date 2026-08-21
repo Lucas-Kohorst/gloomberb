@@ -10,6 +10,7 @@ import {
   classifyReaderHttpFailure,
   classifyReaderThrow,
   preferredArticleBody,
+  readableArticleText,
   readerFallbackNotice,
   type ReaderFailureKind,
   JINA_READER_ENDPOINT,
@@ -146,7 +147,7 @@ export function JinaArticleReader({
 }) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const lineWidth = Math.max(1, width - 4);
-  const body = preferredArticleBody(knownBody, state.content);
+  const body = preferredArticleBody(readableArticleText(knownBody), state.content);
   const notice = readerFallbackNotice(state.failureKind, !!body.trim());
 
   useEffect(() => {

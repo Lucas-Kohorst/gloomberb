@@ -104,15 +104,16 @@ export function looksLikeArticleQuery(query: string): boolean {
 
 export function scoreArticleMatch(article: NewsArticle, tokens: readonly string[]): number {
   if (tokens.length === 0) return 0;
-  const title = article.title.toLowerCase();
-  const source = article.source.toLowerCase();
+  const title = (article.title ?? "").toLowerCase();
+  const source = (article.source ?? "").toLowerCase();
   const haystack = [
     title,
     source,
     article.summary ?? "",
-    ...article.topics,
-    ...article.categories,
-    ...article.tickers,
+    article.body ?? "",
+    ...(article.topics ?? []),
+    ...(article.categories ?? []),
+    ...(article.tickers ?? []),
   ].join(" ").toLowerCase();
 
   let score = 0;

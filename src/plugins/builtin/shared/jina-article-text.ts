@@ -19,6 +19,46 @@ export function htmlMarkupPresent(value: string): boolean {
   return /<\/?[a-zA-Z][a-zA-Z0-9]*(\s|\/?>)/.test(value);
 }
 
+const HTML_DOCUMENT_RE = /<!DOCTYPE\s+html|<html[\s>]|<head[\s>]|<body[\s>]/i;
+
+/** True when Jina (or an RSS field) handed us a page dump rather than article text. */
+export function looksLikeHtmlDocument(value: string): boolean {
+  const sample = value.slice(0, 2000);
+  return HTML_DOCUMENT_RE.test(sample);
+}
+
+/**
+ * Turn HTML into readable plaintext. Script/style are dropped; block tags
+ * become paragraph breaks so a later markdown render still has structure.
+ */
+export function htmlToPlainText(value: string): string {
+  return value
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<head\b[\s\S]*?<\/head>/gi, " ")
+    .replace(/<title\b[\s\S]*?<\/title>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|tr|section|article|ul|ol)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Body a reader can show as markdown. HTML dumps become plaintext; already
+ * readable text is left alone so autolinks and markdown stay intact.
+ */
+export function readableArticleText(value: string | undefined | null): string {
+  const text = value?.replace(/\r\n?/g, "\n").trim() ?? "";
+  if (!text) return "";
+  if (looksLikeHtmlDocument(text) || htmlMarkupPresent(text)) return htmlToPlainText(text);
+  return text;
+}
+
 /**
  * Jina's default content timing is `resource-idle`: it waits for images,
  * fonts, and other subresources to go quiet. Articles only need readable
@@ -36,8 +76,23 @@ export const JINA_READER_HEADERS: Record<string, string> = {
 /** RSS content:encoded (or a long description) is already a full article. */
 export const RSS_INLINE_BODY_MIN_CHARS = 500;
 
+const PAYWALL_STUB_RE = (
+  /this (?:post|article|story) is for (?:paying |paid )?subscribers|subscribe to (?:continue|keep) reading|already a paid subscriber|continue reading this post|the rest of this (?:article|post) is (?:only )?for subscribers|become a (?:paid )?subscriber|sign up to (?:read|continue)|members[- ]only|subscriber[- ]only content/i
+);
+
+/** Paywall landing copy — keep a summary rather than publishing the stub. */
+export function isPaywallStub(text: string): boolean {
+  const visible = text.replace(/\s+/g, " ").trim();
+  if (!visible) return false;
+  if (visible.length > 400 && !PAYWALL_STUB_RE.test(visible.slice(0, 400))) return false;
+  return PAYWALL_STUB_RE.test(visible);
+}
+
 export function shouldSkipJinaForKnownBody(body: string | undefined | null): boolean {
-  return (body?.trim().length ?? 0) >= RSS_INLINE_BODY_MIN_CHARS;
+  const readable = readableArticleText(body);
+  if (readable.length < RSS_INLINE_BODY_MIN_CHARS) return false;
+  if (isPaywallStub(readable) || isBoilerplateArticleBody(readable)) return false;
+  return true;
 }
 
 const BOT_WALL_RE = (
@@ -96,8 +151,9 @@ export function stripJinaPreamble(raw: string): string {
  * share payload can keep its summary instead of replacing it with junk.
  */
 export function cleanJinaArticle(raw: string): string {
-  const stripped = stripJinaPreamble(raw);
+  const stripped = readableArticleText(stripJinaPreamble(raw));
   if (!stripped) return "";
+  if (isPaywallStub(stripped)) return "";
 
   const blocks = stripped.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
   if (blocks.length === 0) return "";
@@ -112,12 +168,14 @@ export function cleanJinaArticle(raw: string): string {
     if (kinds[i] === "chrome") continue;
     // A lone nav label can be a real subheading; a run of them is a menu.
     if (kinds[i] === "nav-label" && (kinds[i - 1] === "nav-label" || kinds[i + 1] === "nav-label")) continue;
+    if (isPaywallStub(blocks[i]!)) continue;
     const key = blockKey(blocks[i]!);
     if (key && seen.has(key)) continue;
     if (key) seen.add(key);
     kept.push(blocks[i]!);
   }
-  return kept.join("\n\n").trim();
+  const cleaned = kept.join("\n\n").trim();
+  return isPaywallStub(cleaned) ? "" : cleaned;
 }
 
 /**
@@ -148,11 +206,14 @@ export function isBoilerplateArticleBody(text: string): boolean {
  * which would replace a good summary with something worse.
  */
 export function preferredArticleBody(summary: string, fullText: string | null): string {
-  const extracted = fullText?.trim() ?? "";
+  const extractedRaw = fullText?.trim() ?? "";
+  const extracted = extractedRaw && (isPaywallStub(extractedRaw) || isBoilerplateArticleBody(extractedRaw))
+    ? ""
+    : extractedRaw;
   if (!extracted) return summary;
   const clean = summary.trim();
-  if (!clean) return isBoilerplateArticleBody(extracted) ? "" : extracted;
-  if (isBoilerplateArticleBody(extracted)) return summary;
+  if (!clean) return extracted;
+  if (isPaywallStub(clean)) return extracted;
   return extracted.length > clean.length ? extracted : summary;
 }
 

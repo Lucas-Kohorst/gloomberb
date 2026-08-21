@@ -1,5 +1,6 @@
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { decodeHtmlEntities } from "../../../../../utils/html-entities";
+import { htmlToPlainText, readableArticleText } from "../../../shared/jina-article-text";
 import { hashString } from "../hash";
 
 export interface RssFeedConfig {
@@ -16,12 +17,12 @@ function stripCdata(s: string): string {
 }
 
 function stripHtml(s: string): string {
-  return s.replace(/<[^>]*>/g, "");
+  return htmlToPlainText(s);
 }
 
 function extractText(s: string): string {
   // Decode entities first so escaped HTML tags become real tags, then strip them
-  return stripHtml(decodeHtmlEntities(stripCdata(s))).trim();
+  return readableArticleText(decodeHtmlEntities(stripCdata(s)));
 }
 
 function getTagContent(xml: string, tag: string): string {

@@ -30,25 +30,27 @@ function toDateISO(value: Date | string | null | undefined): string | undefined 
 // ---------------------------------------------------------------------------
 
 export function newsArticleSharePayload(article: NewsArticle): ArticleSharePayload {
+  const title = article.title?.trim() || "Untitled article";
+  const url = article.url?.trim() ?? "";
   return {
     type: "news",
-    id: article.id,
-    title: article.title,
-    url: article.url,
-    source: article.source,
-    summary: article.summary,
+    id: article.id?.trim() || url || title,
+    title,
+    url,
+    source: article.source?.trim() ?? "",
+    summary: longerShareText(article.body, article.summary) ?? undefined,
     publishedAt: toDateISO(article.publishedAt),
-    topics: article.topics,
-    categories: article.categories,
-    tickers: article.tickers,
+    topics: article.topics ?? [],
+    categories: article.categories ?? [],
+    tickers: article.tickers ?? [],
     importance: article.importance,
     items: article.items?.map((item) => ({
       id: item.id,
-      sourceKey: item.sourceKey,
-      sourceName: item.sourceName,
-      title: item.title,
+      sourceKey: item.sourceKey ?? "",
+      sourceName: item.sourceName ?? item.sourceKey ?? "",
+      title: item.title ?? "",
       summary: item.summary,
-      url: item.url,
+      url: item.url ?? "",
       publishedAt: toDateISO(item.publishedAt) ?? new Date(0).toISOString(),
     })),
   };
@@ -77,20 +79,21 @@ export function substackArticleSharePayload(
   const source = detail ?? article;
   const bodyHtml = source.bodyHtml?.trim() || undefined;
   const contentText = detail?.contentText?.trim() || undefined;
+  const imageUrls = (source.imageUrls?.length ? source.imageUrls : article.imageUrls) ?? [];
   return {
     type: "substack",
     id: article.id,
-    title: source.title || article.title,
+    title: source.title || article.title || "Untitled article",
     url: source.url ?? article.url ?? "",
     source: source.publicationName ?? article.publicationName ?? "",
-    summary: contentText || source.previewText || undefined,
+    summary: longerShareText(contentText, source.previewText) ?? undefined,
     subtitle: source.subtitle ?? article.subtitle ?? undefined,
     publicationName: source.publicationName ?? article.publicationName ?? undefined,
     publicationBaseUrl: source.publicationBaseUrl ?? article.publicationBaseUrl ?? undefined,
     slug: source.slug ?? article.slug ?? undefined,
     previewText: article.previewText ?? undefined,
     bodyHtml,
-    imageUrls: source.imageUrls.length > 0 ? source.imageUrls : article.imageUrls,
+    imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
     wordCount: source.wordCount || article.wordCount || undefined,
     readMinutes: source.readMinutes || article.readMinutes || undefined,
     publishedAt: source.publishedAt ?? article.publishedAt ?? undefined,
@@ -141,13 +144,17 @@ export function buildShareUrl(encodedPayload: string): string {
 
 export function payloadToNewsArticle(payload: ArticleSharePayload): NewsArticle {
   const publishedAt = payload.publishedAt ? new Date(payload.publishedAt) : new Date(0);
+  const body = payload.summary?.trim() && (payload.summary.trim().length >= 400 || payload.summary.includes("\n"))
+    ? payload.summary
+    : undefined;
   return {
     id: payload.id,
     title: payload.title,
     url: payload.url,
-    source: payload.source,
-    publishedAt,
+    source: payload.source ?? "",
+    publishedAt: Number.isNaN(publishedAt.getTime()) ? new Date(0) : publishedAt,
     summary: payload.summary,
+    body,
     topic: payload.topics?.[0] ?? "general",
     topics: payload.topics ?? [],
     sectors: [],
@@ -165,12 +172,12 @@ export function payloadToNewsArticle(payload: ArticleSharePayload): NewsArticle 
     importance: payload.importance ?? 0,
     items: payload.items?.map((item) => ({
       id: item.id,
-      sourceKey: item.sourceKey,
-      sourceName: item.sourceName,
-      title: item.title,
+      sourceKey: item.sourceKey ?? "",
+      sourceName: item.sourceName ?? item.sourceKey ?? "",
+      title: item.title ?? "",
       summary: item.summary,
-      url: item.url,
-      publishedAt: new Date(item.publishedAt),
+      url: item.url ?? "",
+      publishedAt: parseDisplayDate(item.publishedAt) ?? new Date(0),
     })),
   };
 }
@@ -195,6 +202,7 @@ export function payloadToSubstackArticle(payload: ArticleSharePayload): Substack
     readMinutes: payload.readMinutes ?? 0,
   };
 }
+
 
 function longerShareText(
   ...values: Array<string | null | undefined>

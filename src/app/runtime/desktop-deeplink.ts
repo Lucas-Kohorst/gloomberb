@@ -584,7 +584,8 @@ async function handleOpenShare(
     resolved = await resolveShare(action.shortId);
   } catch (error) {
     notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to resolve share.");
-    leaveUnresolvedShareLocation();
+    // Keep `/s/{id}` so a refresh still has the share. Replacing it with `/`
+    // is how an authed SPA boot used to swallow the public reader on a blip.
     return;
   }
   if (!resolved) {

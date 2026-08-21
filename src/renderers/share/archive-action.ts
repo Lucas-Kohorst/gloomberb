@@ -2,8 +2,7 @@ import { useCallback } from "react";
 import { archiveIsOpenUrl } from "../../shares/archive";
 
 function openArchiveUrl(url: string): void {
-  const opened = window.open(url, "_blank", "noopener,noreferrer");
-  if (!opened) window.location.assign(url);
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export function useShareArticleArchive(rawUrl: string | null | undefined): {
