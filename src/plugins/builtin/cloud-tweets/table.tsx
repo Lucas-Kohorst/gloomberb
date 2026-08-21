@@ -11,6 +11,9 @@ import { TickerBadgeText } from "../../../components/ticker/badge/text";
 import { RemoteImage } from "../../../components/ui";
 import { useInlineTickers } from "../../../state/hooks/inline-tickers";
 import { usePluginAppActions, usePluginConfigState } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { encodeSortPreference } from "../../../components/data-table/sort-settings";
+import { getTwitterFeedPaneSettings } from "./settings";
 import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
@@ -32,8 +35,6 @@ import {
   twitterUserSearchQuery,
   type TweetColumn,
   type TweetLoadState,
-  type TweetSortColumnId,
-  type TweetSortDirection,
 } from "./model";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
@@ -203,13 +204,17 @@ export function TweetSearchTable({
   );
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>(
-    DEFAULT_TWEET_SORT,
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", undefined);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_TWEET_SORT));
+  const [density] = usePaneSettingValue<"comfortable" | "compact">("density", "comfortable");
+  const paneSettings = getTwitterFeedPaneSettings({ columnIds, sort: sortValue, density });
+  const rows = useMemo(
+    () => sortedTweets(data?.tweets ?? [], paneSettings.sort.columnId, paneSettings.sort.direction),
+    [data?.tweets, paneSettings.sort.columnId, paneSettings.sort.direction],
   );
-  const rows = useMemo(() => sortedTweets(data?.tweets ?? [], sort.columnId, sort.direction), [data?.tweets, sort]);
-  const columns = useMemo(() => buildTweetColumns(width), [width]);
+  const columns = useMemo(() => buildTweetColumns(width, paneSettings.columnIds), [paneSettings.columnIds, width]);
   const tweetColumnWidth = columns.find((column) => column.id === "text")?.width ?? 40;
-  const rowHeight = tweetTextRowHeight(tweetColumnWidth);
+  const rowHeight = tweetTextRowHeight(tweetColumnWidth, paneSettings.density);
   const selectedIndex = rows.findIndex((tweet) => tweet.id === selectedTweetId);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
@@ -263,12 +268,12 @@ export function TweetSearchTable({
 
   const handleHeaderClick = useCallback((columnId: string) => {
     if (!isTweetSortColumnId(columnId)) return;
-    setSort((current) => (
-      current.columnId === columnId
-        ? { columnId, direction: current.direction === "desc" ? "asc" : "desc" }
-        : { columnId, direction: "desc" }
-    ));
-  }, []);
+    const current = paneSettings.sort;
+    const next = current.columnId === columnId
+      ? { columnId, direction: current.direction === "desc" ? "asc" : "desc" as const }
+      : { columnId, direction: "desc" as const };
+    setSortValue(encodeSortPreference(next));
+  }, [paneSettings.sort, setSortValue]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -375,8 +380,8 @@ export function TweetSearchTable({
       columns={columns}
       rowHeight={rowHeight}
       items={rows}
-      sortColumnId={sort.columnId}
-      sortDirection={sort.direction}
+      sortColumnId={paneSettings.sort.columnId}
+      sortDirection={paneSettings.sort.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(tweet) => tweet.id}
       renderCell={renderCell}

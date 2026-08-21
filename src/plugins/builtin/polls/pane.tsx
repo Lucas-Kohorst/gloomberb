@@ -23,6 +23,15 @@ import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { encodeSortPreference } from "../../../components/data-table/sort-settings";
+import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
+import {
+  getPollsPaneSettings,
+  POLL_COLUMN_DEFS,
+  POLL_COLUMN_IDS,
+  type PollColumnId,
+} from "./settings";
 import { fetchVoteHubPolls } from "./client";
 
 import {
@@ -37,7 +46,6 @@ import {
   pollRaceKey,
   sortPollRows,
   type PollSortColumnId,
-  type PollSortPreference,
 } from "./normalize";
 import {
   loadPollRaceMarketOverlay,
@@ -48,7 +56,7 @@ import type { PollAnalysisGroup, PollDetailTab, PollRow, PollTabId } from "./typ
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface PollColumn extends DataTableColumn {
-  id: "date" | "subject" | "pollster" | "pop" | "result";
+  id: PollColumnId;
 }
 
 const TABS: Array<{ value: PollTabId; label: string }> = [
@@ -87,19 +95,26 @@ function answerChoiceColor(choice: string): string | undefined {
   return undefined;
 }
 
-function createColumns(width: number): PollColumn[] {
-  const dateWidth = 8;
-  const popWidth = 4;
-  const resultWidth = 22;
-  const pollsterWidth = 14;
-  const subjectWidth = Math.max(12, width - dateWidth - popWidth - resultWidth - pollsterWidth - 8);
-  return [
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "subject", label: "SUBJECT", width: subjectWidth, align: "left" },
-    { id: "pollster", label: "POLLSTER", width: pollsterWidth, align: "left" },
-    { id: "pop", label: "POP", width: popWidth, align: "left" },
-    { id: "result", label: "RESULT", width: resultWidth, align: "left" },
-  ];
+function createColumns(width: number, columnIds: readonly PollColumnId[]): PollColumn[] {
+  const layout: Record<PollColumnId, { label: string; width: number; flex?: boolean }> = {
+    date: { label: "DATE", width: 8 },
+    subject: { label: "SUBJECT", width: 12, flex: true },
+    pollster: { label: "POLLSTER", width: 14 },
+    pop: { label: "POP", width: 4 },
+    result: { label: "RESULT", width: 22 },
+  };
+  const ids = resolveVisibleColumns(POLL_COLUMN_DEFS, columnIds, POLL_COLUMN_IDS)
+    .map((column) => column.id as PollColumnId);
+  const visible = ids.length > 0 ? ids : [...POLL_COLUMN_IDS];
+  const flexId = visible.includes("subject") ? "subject" : visible[0];
+  const fixedWidth = visible.filter((id) => id !== flexId).reduce((sum, id) => sum + layout[id]!.width, 0);
+  const flexWidth = Math.max(layout[flexId ?? "subject"]!.width, width - fixedWidth - visible.length - 3);
+  return visible.map((id) => ({
+    id,
+    label: layout[id]!.label,
+    width: id === flexId ? flexWidth : layout[id]!.width,
+    align: "left",
+  }));
 }
 
 function renderPollCell(row: PollRow, column: PollColumn, selected: boolean): DataTableCell {
@@ -482,7 +497,11 @@ function PollDetail({
 }
 
 export function PollsPane({ focused, width, height }: PaneProps) {
-  const [tab, setTab] = useState<PollTabId>("all");
+  const [tab, setTab] = usePaneSettingValue<PollTabId>("defaultTab", "all");
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", POLL_COLUMN_IDS);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_POLL_SORT));
+  const paneSettings = getPollsPaneSettings({ defaultTab: tab, columnIds, sort: sortValue });
+  const resolvedTab = paneSettings.defaultTab;
   const [rowsByTab, setRowsByTab] = useState<Partial<Record<PollTabId, PollRow[]>>>({});
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -490,7 +509,8 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<PollDetailTab>("overview");
   const [analysisGroup, setAnalysisGroup] = useState<PollAnalysisGroup>("race");
-  const [sortPreference, setSortPreference] = useState<PollSortPreference>(DEFAULT_POLL_SORT);
+  const [analysisView, setAnalysisView] = useState<PollAnalysisView>("overlay");
+  const sortPreference = paneSettings.sort;
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
@@ -498,7 +518,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const searchInputRef = useRef<InputRenderable | null>(null);
   const genRef = useRef(0);
 
-  const allRows = rowsByTab[tab] ?? [];
+  const allRows = rowsByTab[resolvedTab] ?? [];
   const filteredRows = useMemo(() => filterPollRows(allRows, searchQuery), [allRows, searchQuery]);
   const rows = useMemo(() => sortPollRows(filteredRows, sortPreference), [filteredRows, sortPreference]);
   const selected = rows.find((row) => row.id === selectedId) ?? null;
@@ -534,8 +554,8 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    load(tab);
-  }, [load, tab]);
+    load(resolvedTab);
+  }, [load, resolvedTab]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -578,7 +598,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      load(tab);
+      load(resolvedTab);
       return true;
     }
     if (isPlainKey(event, "g")) {
@@ -594,7 +614,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, graphSelected, load, openSelected, selected?.url, tab]);
+  }, [focusSearch, graphSelected, load, openSelected, selected?.url, resolvedTab]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
@@ -629,7 +649,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      load(tab);
+      load(resolvedTab);
       return true;
     }
     if (isPlainKey(event, "g")) {
@@ -651,11 +671,11 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [graphSelected, load, selected?.url, tab, detailTab]);
+  }, [graphSelected, load, selected?.url, resolvedTab, detailTab]);
 
-  const columns = useMemo(() => createColumns(width), [width]);
+  const columns = useMemo(() => createColumns(width, paneSettings.columnIds), [paneSettings.columnIds, width]);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(tab));
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(resolvedTab));
   const renderCell = useCallback(
     (row: PollRow, column: PollColumn, _index: number, rowState: { selected: boolean }) =>
       renderPollCell(row, column, rowState.selected),
@@ -682,17 +702,23 @@ export function PollsPane({ focused, width, height }: PaneProps) {
                   key: "t",
                   label: "ype",
                   onPress: () => setAnalysisGroup((current) => current === "house" ? "race" : "house"),
-                }]
-              : []),
-            { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
-            { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-          ]
-        : [
-            { id: "search", key: "s", label: "earch", onPress: focusSearch },
-            { id: "refresh", key: "r", label: "efresh", onPress: () => load(tab) },
-            { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-          ]),
-    ],
+                },
+                {
+                  id: "view",
+                  key: "v",
+                  label: "iew",
+                  onPress: () => setAnalysisView((current) => current === "overlay" ? "scatter" : "overlay"),
+                },
+              ]
+            : []),
+          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+        ]
+      : [
+          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+        ],
   }), [
     error,
     detailOpen,
@@ -706,7 +732,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     selected?.url,
     status,
     searchQuery,
-    tab,
+    resolvedTab,
     updatedAgo,
   ]);
 
@@ -714,7 +740,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     <Box height={1} flexShrink={0} overflow="hidden">
       <Tabs
         tabs={TABS}
-        activeValue={tab}
+        activeValue={resolvedTab}
         onSelect={(value) => {
           setTab(value as PollTabId);
           setDetailOpen(false);
@@ -810,15 +836,15 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         sortDirection={sortPreference.direction}
         onHeaderClick={(columnId) => {
           const next = columnId as PollSortColumnId;
-          setSortPreference((current) => nextStackSortPreference(
-            current,
+          setSortValue(encodeSortPreference(nextStackSortPreference(
+            sortPreference,
             next,
             next === "subject" || next === "pollster" || next === "pop" ? "asc" : "desc",
-          ));
+          )));
         }}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
-        emptyStateTitle={searchQuery.trim() ? "No matching polls." : tab === "all" ? "No polls." : "No polls in this category."}
+        emptyStateTitle={searchQuery.trim() ? "No matching polls." : resolvedTab === "all" ? "No polls." : "No polls in this category."}
         emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
       />
     </Box>

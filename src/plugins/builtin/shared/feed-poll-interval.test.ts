@@ -30,6 +30,7 @@ describe("feed poll interval", () => {
     expect(resolveFeedPollIntervalMinutes(30, null, undefined)).toBe(30);
     expect(resolveFeedPollIntervalMinutes(30, null, 1)).toBe(1);
     expect(resolveFeedPollIntervalMinutes(30, 15, 1)).toBe(15);
+    expect(resolveFeedPollIntervalMinutes(30, "5", 1)).toBe(5);
   });
 
   test("X live polling interval is 0 until xLivePollingEnabled is true", () => {

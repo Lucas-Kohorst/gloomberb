@@ -2,8 +2,10 @@ import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../../runtime";
+import { usePaneSettingValue } from "../../../../../state/app/context";
 import { Spinner } from "../../../../../components";
+import { encodeSortPreference } from "../../../../../components/data-table/sort-settings";
 import { NewsDetailView, useNewsArticleDetail } from "./detail-view";
 import {
   NewsArticleStackView,
@@ -15,6 +17,7 @@ import { usePopOutNewsArticle } from "./pop-out";
 import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
+import { getNewsPaneSettings } from "../settings";
 
 export function NewsPresetPane({
   focused,
@@ -43,12 +46,13 @@ export function NewsPresetPane({
     `${paneKey}:selectedArticleId`,
     null,
   );
-  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>(
-    `${paneKey}:sort`,
-    defaultSort,
-  );
-  const effectiveSortPreference = columns.includes(sortPreference.columnId)
-    ? sortPreference
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", columns);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(defaultSort));
+  const paneSettings = getNewsPaneSettings({ columnIds, sort: sortValue }, { columns, sort: defaultSort });
+  const visibleColumns = paneSettings.columnIds.filter((columnId) => columns.includes(columnId));
+  const effectiveColumns = visibleColumns.length > 0 ? visibleColumns : columns;
+  const effectiveSortPreference = effectiveColumns.includes(paneSettings.sort.columnId)
+    ? paneSettings.sort
     : defaultSort;
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
@@ -100,14 +104,14 @@ export function NewsPresetPane({
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={effectiveSortPreference}
-      setSortPreference={setSortPreference}
+      setSortPreference={(preference) => setSortValue(encodeSortPreference(preference))}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
-      columns={columns}
+      columns={effectiveColumns}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
       onPopOut={() => popOutArticle(readableArticle)}

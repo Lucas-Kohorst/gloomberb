@@ -10,8 +10,10 @@ import type { NewsQuery, NewsArticle } from "../../../../news/types";
 import { newsOriginLabel } from "../../../../news/origins";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import type { PaneProps } from "../../../../types/plugin";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../runtime";
+import { usePaneSettingValue } from "../../../../state/app/context";
 import { useShortcut } from "../../../../react/input";
+import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { NewsArticleStackView, type NewsColumnId, type NewsSortPreference } from "./news/table";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsArticleFooter } from "./news/footer";
@@ -20,6 +22,7 @@ import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import type { PluginModule } from "../../plugin-module";
+import { buildNewsPaneSettingsDef, getNewsPaneSettings } from "./settings";
 
 export const FIREHOSE_QUERY: NewsQuery = { feed: "latest", limit: 200 };
 const FIREHOSE_COLUMNS: NewsColumnId[] = ["time", "origin", "source", "title", "tickers", "categories"];
@@ -78,12 +81,19 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     "firehose:selectedArticleId",
     null,
   );
-  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>(
-    "firehose:sort",
-    FIREHOSE_DEFAULT_SORT,
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", FIREHOSE_COLUMNS);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>(
+    "sort",
+    encodeSortPreference(FIREHOSE_DEFAULT_SORT),
   );
-  const effectiveSortPreference = FIREHOSE_COLUMNS.includes(sortPreference.columnId)
-    ? sortPreference
+  const paneSettings = getNewsPaneSettings(
+    { columnIds, sort: sortValue },
+    { columns: FIREHOSE_COLUMNS, sort: FIREHOSE_DEFAULT_SORT },
+  );
+  const visibleColumns = paneSettings.columnIds.filter((columnId) => FIREHOSE_COLUMNS.includes(columnId));
+  const effectiveColumns = visibleColumns.length > 0 ? visibleColumns : FIREHOSE_COLUMNS;
+  const effectiveSortPreference = effectiveColumns.includes(paneSettings.sort.columnId)
+    ? paneSettings.sort
     : FIREHOSE_DEFAULT_SORT;
 
   const loadNewsStory = useLoadNewsStory();
@@ -185,14 +195,14 @@ function FirehosePane({ focused, width, height }: PaneProps) {
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={effectiveSortPreference}
-      setSortPreference={setSortPreference}
+      setSortPreference={(preference) => setSortValue(encodeSortPreference(preference))}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
       onBack={closeDetail}
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
-      columns={FIREHOSE_COLUMNS}
+      columns={effectiveColumns}
       rootBefore={
         <InputSearchBar
           value={searchQuery}
@@ -232,6 +242,10 @@ export const firehoseModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 36 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: FIREHOSE_COLUMNS,
+        sort: FIREHOSE_DEFAULT_SORT,
+      }, { title: "Firehose Settings" }),
     },
   ],
   paneTemplates: [

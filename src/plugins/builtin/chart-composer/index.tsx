@@ -25,6 +25,7 @@ import {
   chartSeriesLabel,
 } from "./presets";
 import { buildChartComposerPaneSettingsDef } from "./settings";
+import { buildDataCatalogPaneSettingsDef } from "./catalog-settings";
 import { getStashedChartSpec } from "./chart-stash";
 import type { PluginModule } from "../plugin-module";
 import {
@@ -330,6 +331,7 @@ export const chartComposerModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 110, height: 32 },
+    settings: (context) => buildDataCatalogPaneSettingsDef(context.settings),
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {

@@ -14,7 +14,9 @@ export function summarizePaneSettingValue(field: PaneSettingField, value: unknow
     case "text":
       return typeof value === "string" && value.trim().length > 0 ? value : t("Unset");
     case "select": {
-      const option = field.options.find((entry) => entry.value === value);
+      const option = field.options.find((entry) => (
+        entry.value === value || entry.value === String(value)
+      ));
       return option?.label ? t(option.label) : t("Unset");
     }
     case "multi-select":

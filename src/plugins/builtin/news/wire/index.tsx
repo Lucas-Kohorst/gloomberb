@@ -36,6 +36,7 @@ import {
 } from "./article-search";
 import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { registerConnectionSource } from "../../connections/register";
+import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -79,9 +80,55 @@ let disposeJinaConnection: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
-    { id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
-    { id: "news-feed", name: "News Feed", icon: "N", component: FeedPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },
-    { id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },    { id: "news-rss", name: "RSS Feeds", icon: "R", component: RssPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
+    {
+      id: "news-top",
+      name: "Top News",
+      icon: "T",
+      component: TopPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 90, height: 30 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "title", "tickers", "importance"],
+        sort: { columnId: "importance", direction: "desc" },
+      }, { title: "Top News Settings" }),
+    },
+    {
+      id: "news-feed",
+      name: "News Feed",
+      icon: "N",
+      component: FeedPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 35 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "source", "title", "tickers", "categories"],
+        sort: { columnId: "time", direction: "desc" },
+      }, { title: "News Feed Settings" }),
+    },
+    {
+      id: "news-industry",
+      name: "Sector News",
+      icon: "S",
+      component: IndustryPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 35 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "source", "title", "tickers", "categories"],
+        sort: { columnId: "time", direction: "desc" },
+      }, { title: "Sector News Settings", includeDefaultTab: true }),
+    },
+    {
+      id: "news-rss",
+      name: "RSS Feeds",
+      icon: "R",
+      component: RssPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 90, height: 30 },
+      settings: (context) => buildRssPaneSettingsDef(context.settings),
+    },
     { id: "news-breaking",
       name: "Breaking News",
       icon: "!",

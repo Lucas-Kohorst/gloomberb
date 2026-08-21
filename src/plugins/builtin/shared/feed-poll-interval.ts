@@ -2,9 +2,21 @@ import { useCallback, useMemo, useRef } from "react";
 import type { PaneFooterSegment } from "../../../components";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { useAppDispatch, useAppSelector, useAppStateRef } from "../../../state/app/context";
+import type { PaneSettingField } from "../../../types/plugin";
 import { usePluginConfigState } from "../../runtime";
 
-const FEED_POLL_INTERVAL_MINUTES = [1, 5, 15, 30] as const;
+export const FEED_POLL_INTERVAL_MINUTES = [1, 5, 15, 30] as const;
+
+export function coercePollIntervalMinutes(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
+    return Math.floor(value);
+  }
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 1) return parsed;
+  }
+  return null;
+}
 export const DEFAULT_TWITTER_POLL_INTERVAL_MINUTES = 1;
 export const TWITTER_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
 /** gloomberb-cloud pluginConfig. Off unless the stored value is exactly true. */
@@ -39,16 +51,29 @@ export function nextPollIntervalMinutes(current: number): number {
 
 export function resolveFeedPollIntervalMinutes(
   globalMinutes: number,
-  overrideMinutes?: number | null,
+  overrideMinutes?: unknown,
   defaultMinutes?: number,
 ): number {
-  if (typeof overrideMinutes === "number" && Number.isFinite(overrideMinutes) && overrideMinutes >= 1) {
-    return Math.floor(overrideMinutes);
-  }
+  const override = coercePollIntervalMinutes(overrideMinutes);
+  if (override != null) return override;
   if (typeof defaultMinutes === "number" && defaultMinutes >= 1) {
     return Math.floor(defaultMinutes);
   }
   return Math.max(1, Math.floor(globalMinutes || 1));
+}
+
+export function buildPollIntervalSettingField(key: string): PaneSettingField {
+  return {
+    key,
+    label: "Refresh interval",
+    description: "How often this pane reloads while it is open.",
+    type: "select",
+    storage: "plugin",
+    options: FEED_POLL_INTERVAL_MINUTES.map((minutes) => ({
+      value: String(minutes),
+      label: minutes === 1 ? "1 minute" : `${minutes} minutes`,
+    })),
+  };
 }
 
 function pollSegment(minutes: number, cycle: () => void): PaneFooterSegment {

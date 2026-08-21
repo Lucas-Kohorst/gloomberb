@@ -13,6 +13,7 @@ import {
   parseConversationCreateArg,
 } from "../chat/channels";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
+import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
 import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
@@ -77,6 +78,7 @@ function createChatModule(
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+      settings: (context) => buildChatPaneSettingsDef(context.settings),
     }, {
       id: UNREAD_INBOX_PANE_ID,
       name: "Unread",

@@ -87,7 +87,11 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   useQuoteUpdates(streamingTargets, { liveStreaming });
 
   const { collectionId } = usePaneCollection();
-  const [committedActiveTabId, setCommittedActiveTabId] = usePaneStateValue<string>("activeTabId", "overview");
+  const paneSettings = getTickerResearchPaneSettings(paneInstance?.settings);
+  const [committedActiveTabId, setCommittedActiveTabId] = usePaneStateValue<string>(
+    "activeTabId",
+    paneSettings.defaultTabId,
+  );
   const {
     value: activeTabId,
     setValue: setActiveTabId,
@@ -99,7 +103,6 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   );
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set());
-  const paneSettings = getTickerResearchPaneSettings(paneInstance?.settings);
   const hasOptionsChain = !!resolveOptionsTarget(ticker)?.effectiveTicker;
   const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
@@ -135,7 +138,11 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   });
   const resolvedTabId = paneSettings.hideTabs
     ? resolveLockedTabId(paneSettings, allTabs)
-    : (allTabs.some((tab) => tab.id === activeTabId) ? activeTabId : (allTabs[0]?.id ?? "overview"));
+    : (allTabs.some((tab) => tab.id === activeTabId)
+      ? activeTabId
+      : (allTabs.some((tab) => tab.id === paneSettings.defaultTabId)
+        ? paneSettings.defaultTabId
+        : (allTabs[0]?.id ?? "overview")));
   const tabBarHeight = paneSettings.hideTabs ? 0 : 1;
   const contentHeight = Math.max(1, height - tabBarHeight);
   const visibleTabIdKey = allTabs.map((tab) => tab.id).join("\0");

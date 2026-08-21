@@ -78,23 +78,41 @@ export function formatWordCount(words: number): string {
   return `${Math.max(0, Math.round(words))} words`;
 }
 
-export function buildSubstackColumns(width: number, includePublication: boolean): SubstackColumn[] {
+export function buildSubstackColumns(
+  width: number,
+  includePublication: boolean,
+  columnIds?: readonly SubstackSortColumnId[],
+): SubstackColumn[] {
   const publishedWidth = 13;
   const readWidth = 5;
   const publicationWidth = includePublication ? Math.max(12, Math.min(21, Math.floor(width * 0.18))) : 0;
-  const fixed = publishedWidth + readWidth + publicationWidth;
-  const titleWidth = Math.max(18, width - fixed - 4);
-  const columns: SubstackColumn[] = [
-    { id: "published", label: "Published", width: publishedWidth, align: "left" },
-  ];
-  if (includePublication) {
-    columns.push({ id: "publication", label: "Publication", width: publicationWidth, align: "left" });
-  }
-  columns.push(
-    { id: "title", label: "Title", width: titleWidth, align: "left", flexGrow: 1 },
-    { id: "read", label: "Read", width: readWidth, align: "right" },
-  );
-  return columns;
+  const requested = columnIds && columnIds.length > 0
+    ? columnIds.filter((id) => id !== "publication" || includePublication)
+    : undefined;
+  const visible = requested && requested.length > 0
+    ? (requested.includes("title") ? requested : [...requested, "title" as const])
+    : ([
+      "published",
+      ...(includePublication ? ["publication" as const] : []),
+      "title",
+      "read",
+    ] satisfies SubstackSortColumnId[]);
+  const layout: Record<SubstackSortColumnId, { label: string; width: number; align: "left" | "right"; flex?: boolean }> = {
+    published: { label: "Published", width: publishedWidth, align: "left" },
+    publication: { label: "Publication", width: publicationWidth, align: "left" },
+    title: { label: "Title", width: 18, align: "left", flex: true },
+    read: { label: "Read", width: readWidth, align: "right" },
+  };
+  const flexId = visible.includes("title") ? "title" : visible[0];
+  const fixed = visible.filter((id) => id !== flexId).reduce((sum, id) => sum + layout[id]!.width, 0);
+  const flexWidth = Math.max(layout[flexId ?? "title"]!.width, width - fixed - visible.length);
+  return visible.map((id) => ({
+    id,
+    label: layout[id]!.label,
+    width: id === flexId ? flexWidth : layout[id]!.width,
+    align: layout[id]!.align,
+    flexGrow: id === flexId ? 1 : undefined,
+  }));
 }
 
 export function tabIdForPublication(publication: SubstackPublication): string {
