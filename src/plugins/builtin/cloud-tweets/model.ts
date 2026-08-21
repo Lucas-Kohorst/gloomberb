@@ -38,6 +38,7 @@ export type TweetSortColumnId = "time" | "likes" | "views";
 export type TweetSortDirection = "asc" | "desc";
 export type TweetDensity = "comfortable" | "compact";
 export const TWEET_SORT_COLUMN_IDS: readonly TweetSortColumnId[] = ["time", "likes", "views"];
+export const TWEET_COLUMN_IDS: readonly TweetColumnId[] = ["time", "author", "text", "tickers", "likes", "views"];
 export const TWEET_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
   { id: "time", label: "TIME", description: "When the post was published." },
   { id: "author", label: "AUTHOR", description: "Account that posted." },

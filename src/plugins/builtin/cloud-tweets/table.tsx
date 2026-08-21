@@ -32,6 +32,7 @@ import {
   twitterUserSearchQuery,
   type TweetColumn,
   type TweetLoadState,
+  type TweetSortDirection,
 } from "./model";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
@@ -225,10 +226,10 @@ export function TweetSearchTable({
   const handleHeaderClick = useCallback((columnId: string) => {
     if (!isTweetSortColumnId(columnId)) return;
     const current = paneSettings.sort;
-    const next = current.columnId === columnId
-      ? { columnId, direction: current.direction === "desc" ? "asc" : "desc" as const }
-      : { columnId, direction: "desc" as const };
-    setSortValue(encodeSortPreference(next));
+    const direction: TweetSortDirection = current.columnId === columnId && current.direction === "desc"
+      ? "asc"
+      : "desc";
+    setSortValue(encodeSortPreference({ columnId, direction }));
   }, [paneSettings.sort, setSortValue]);
 
   const handleRootKeyDown = useCallback((

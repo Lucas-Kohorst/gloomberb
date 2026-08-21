@@ -19,10 +19,10 @@ import {
 import {
   DEFAULT_TWEET_SORT,
   TWEET_COLUMN_DEFS,
+  TWEET_COLUMN_IDS,
   TWEET_SORT_COLUMN_IDS,
   type TweetColumnId,
   type TweetDensity,
-  type TweetSortColumnId,
 } from "./model";
 
 export function getTwitterFeedPaneSettings(settings: Record<string, unknown> | undefined): {
@@ -33,10 +33,10 @@ export function getTwitterFeedPaneSettings(settings: Record<string, unknown> | u
   const columnIds = resolveVisibleColumns(
     TWEET_COLUMN_DEFS,
     settings?.columnIds,
-    TWEET_COLUMN_DEFS.map((column) => column.id),
-  ).map((column) => column.id) as TweetColumnId[];
+    TWEET_COLUMN_IDS,
+  ).map((column) => column.id as TweetColumnId);
   return {
-    columnIds: columnIds.length > 0 ? columnIds : TWEET_COLUMN_DEFS.map((column) => column.id),
+    columnIds: columnIds.length > 0 ? columnIds : [...TWEET_COLUMN_IDS],
     sort: parseSortPreference(settings?.sort, TWEET_SORT_COLUMN_IDS, DEFAULT_TWEET_SORT),
     density: settings?.density === "compact" ? "compact" : "comfortable",
   };
