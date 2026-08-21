@@ -25,6 +25,15 @@ import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
 import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
 import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
+import {
+  OWID_CATALOG,
+  findOwidCatalogEntryBySlug,
+  owidCatalogExpression,
+  owidCatalogSearchText,
+  owidGrapherUrl,
+  owidSeriesLabel,
+  type OwidCatalogEntry,
+} from "../owid/catalog";
 
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
@@ -53,6 +62,7 @@ export type CatalogFilterId =
   | "prediction"
   | "futures"
   | "ai"
+  | "owid"
   | "other";
 
 export interface CatalogSeriesRow {
@@ -79,6 +89,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "prediction", label: "Prediction" },
   { id: "futures", label: "Futures" },
   { id: "ai", label: "AI" },
+  { id: "owid", label: "OWID" },
   { id: "other", label: "Other" },
 ];
 
@@ -91,6 +102,7 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   prediction: new Set(["kalshi", "polymarket"]),
   futures: new Set(["futures"]),
   ai: new Set(["benchmark"]),
+  owid: new Set(["owid"]),
   other: new Set(["adjacent", "poll", "weather", "owid"]),
 };
 
@@ -396,38 +408,81 @@ export function catalogOwidDiscoveryQuery(query: string): string | null {
   return trimmed;
 }
 
+function owidCatalogRow(entry: {
+  slug: string;
+  title: string;
+  expression: string;
+  url?: string;
+  needsEntity: boolean;
+  searchExtra?: string;
+}): CatalogSeriesRow {
+  return row({
+    id: `owid:${entry.slug}`,
+    label: entry.title,
+    source: "Our World in Data",
+    sourceId: "owid",
+    kind: "OWID",
+    expression: entry.expression,
+    url: entry.url || owidGrapherUrl(entry.slug),
+    searchExtra: [
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      "owid",
+      "our world in data",
+      "cc by",
+      "cc by 4.0",
+      entry.searchExtra,
+    ].filter(Boolean).join(" "),
+    needsEntity: entry.needsEntity,
+    owidSlug: entry.slug,
+  });
+}
+
+export function catalogRowsFromOwidCatalog(
+  entries: readonly OwidCatalogEntry[] = OWID_CATALOG,
+): CatalogSeriesRow[] {
+  return entries.map((entry) => owidCatalogRow({
+    slug: entry.slug,
+    title: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    expression: owidCatalogExpression(entry),
+    searchExtra: owidCatalogSearchText(entry),
+    needsEntity: false,
+  }));
+}
+
 export function catalogRowsFromOwidHits(
   hits: readonly OwidChartSearchHit[],
   metadataBySlug: ReadonlyMap<string, OwidChartMetadataPrint>,
+  blockedSlugs: ReadonlySet<string> = new Set(),
 ): CatalogSeriesRow[] {
   return hits.flatMap((hit) => {
+    if (blockedSlugs.has(hit.slug)) return [];
     const metadata = metadataBySlug.get(hit.slug);
-    if (!metadata) return [];
-    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata.entities);
+    const catalog = findOwidCatalogEntryBySlug(hit.slug);
+    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata?.entities ?? [])
+      ?? catalog?.defaultEntity
+      ?? null;
     const needsEntity = !entity;
+    const title = metadata?.title || hit.title || catalog?.title || hit.slug;
+    const entityName = entity
+      ? metadata?.entities.find((row) => row.code === entity)?.name
+        ?? catalog?.defaultEntityName
+      : undefined;
     const expression = entity ? `OWID:${hit.slug}:${entity}` : `OWID:${hit.slug}`;
-    return [row({
-      id: `owid:${hit.slug}`,
-      label: metadata.title || hit.title,
-      source: "Our World in Data",
-      sourceId: "owid",
-      kind: "OWID",
+    return [owidCatalogRow({
+      slug: hit.slug,
+      title: entity ? owidSeriesLabel(title, entity, entityName) : title,
       expression,
-      url: hit.url || metadata.url,
-      searchExtra: [
-        hit.slug,
-        hit.subtitle,
-        metadata.citation,
-        metadata.unit,
-        "owid",
-        "our world in data",
-        "cc by",
-        "cc by 4.0",
-        ...hit.availableEntities.slice(0, 12),
-        ...metadata.entities.slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
-      ].filter(Boolean).join(" "),
+      url: hit.url || metadata?.url,
       needsEntity,
-      owidSlug: hit.slug,
+      searchExtra: [
+        hit.subtitle,
+        metadata?.citation,
+        metadata?.unit,
+        catalog ? owidCatalogSearchText(catalog) : null,
+        ...hit.availableEntities.slice(0, 12),
+        ...(metadata?.entities ?? []).slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
+      ].filter(Boolean).join(" "),
     })];
   });
 }
@@ -634,6 +689,8 @@ export function listStaticCatalogInventory(
     }))
   ));
 
+  const owid = catalogRowsFromOwidCatalog();
+
   const nwsMetrics: WeatherMetric[] = ["high", "low"];
   const nws = WEATHER_STATIONS.filter((station) => station.scope === "domestic").flatMap((station) => (
     nwsMetrics.map((metric) => row({
@@ -673,6 +730,7 @@ export function listStaticCatalogInventory(
     ...weather,
     ...nws,
     ...benchmarks,
+    ...owid,
   ];
 }
 

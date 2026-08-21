@@ -50,6 +50,10 @@ import {
   resolveAdjacentIndexQuery,
 } from "./prediction-series";
 import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
+import {
+  findOwidCatalogEntryBySlug,
+  owidSeriesLabel,
+} from "../owid/catalog";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -239,7 +243,18 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     const slug = normalizeOwidSlug(rest.slice(0, lastColon));
     const entity = normalizeOwidEntityCode(rest.slice(lastColon + 1));
     if (!slug || !entity) return null;
-    return { kind: "owid", slug, entity };
+    const catalog = findOwidCatalogEntryBySlug(slug);
+    const title = catalog?.title ?? slug.replaceAll("-", " ");
+    return {
+      kind: "owid",
+      slug,
+      entity,
+      label: owidSeriesLabel(
+        title,
+        entity,
+        catalog?.defaultEntity === entity ? catalog.defaultEntityName : undefined,
+      ),
+    };
   }
 
   if (prefix === SERIES_PREFIX.kalshi) {
@@ -596,13 +611,20 @@ export function buildSeriesSpec(
   if (expression.kind === "owid") {
     const source = { kind: "owid" as const, slug: expression.slug, entity: expression.entity };
     const presentation = defaultChartSeriesPresentation(source);
-    const style = overrides.style ?? presentation.style;
+    const style = overrides.style ?? presentation.style ?? "step";
+    const catalog = findOwidCatalogEntryBySlug(expression.slug);
+    const label = expression.label
+      ?? owidSeriesLabel(
+        catalog?.title ?? expression.slug.replaceAll("-", " "),
+        expression.entity,
+        catalog?.defaultEntity === expression.entity ? catalog.defaultEntityName : undefined,
+      );
     return {
       id: `owid-${slug(expression.slug)}-${slug(expression.entity)}-${index + 1}`,
       source,
-      ...(expression.label ? { label: expression.label } : {}),
+      label,
       transform: presentation.transform,
-      axis: "auto",
+      axis: "left",
       panelId: "main",
       ...overrides,
       style,
@@ -979,7 +1001,8 @@ export function buildCustomChartPreset(expression: string, fallbackSymbol?: stri
   }
   const parsed = parseChartExpression(expression);
   if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
-  return chartSpec(buildCustomSeries(parsed));
+  const owidOnly = parsed.every((entry) => entry.kind === "owid");
+  return chartSpec(buildCustomSeries(parsed), owidOnly ? { range: "ALL" } : {});
 }
 
 export function buildPriceChartPreset(symbol: string): ChartSpec {

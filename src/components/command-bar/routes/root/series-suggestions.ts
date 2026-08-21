@@ -82,7 +82,7 @@ export function useChartSeriesSuggestions({
           kind: "action",
           right: "CAT",
           shortcutQuery: "CAT",
-          searchText: [trimmedLeg, "catalog", "series", "kalshi", "polymarket", "fred"].join(" "),
+          searchText: [trimmedLeg, "catalog", "series", "kalshi", "polymarket", "fred", "owid", "our world in data"].join(" "),
           action: () => onOpenCatalog(trimmedLeg),
         }
       : null;

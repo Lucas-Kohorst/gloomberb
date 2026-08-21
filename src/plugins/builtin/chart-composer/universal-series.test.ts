@@ -111,11 +111,13 @@ describe("universal series expression parsing", () => {
       kind: "owid",
       slug: "life-expectancy",
       entity: "USA",
+      label: "Life expectancy · United States",
     });
     expect(parseSeriesExpression("owid:life-expectancy:OWID_WRL")).toEqual({
       kind: "owid",
       slug: "life-expectancy",
       entity: "OWID_WRL",
+      label: "Life expectancy · World",
     });
     expect(parseSeriesExpression("OWID:life-expectancy")).toBeNull();
     expect(parseSeriesExpression("OWID:charts:USA")).toBeNull();
@@ -230,6 +232,19 @@ describe("universal series spec building", () => {
     expect(spec.style).toBe("line");
   });
 
+  test("owid defaults to a long window, left axis, step style, and human label", () => {
+    const spec = buildCustomChartPreset("OWID:life-expectancy:USA");
+    expect(spec.viewport.range).toBe("ALL");
+    expect(spec.series[0]?.source).toEqual({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "USA",
+    });
+    expect(spec.series[0]?.axis).toBe("left");
+    expect(spec.series[0]?.style).toBe("step");
+    expect(spec.series[0]?.label).toBe("Life expectancy · United States");
+  });
+
   test("prediction-market builds a kalshi/polymarket source", () => {
     const spec = buildSeriesSpec(parseSeriesExpression("KALSHI:KXPRESPERSON")!, 0);
     expect(spec.source).toEqual({
@@ -341,6 +356,24 @@ describe("universal series catalog suggestions", () => {
     expect(benches.some((entry) => entry.label.includes("OpenAI"))).toBe(true);
   });
 
+  test("suggests OWID series from human names, topics, and slugs", () => {
+    const byName = buildSeriesCatalogSuggestions("life expectancy", AAPL);
+    expect(byName[0]?.expression).toMatchObject({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "OWID_WRL",
+    });
+    expect(formatParsedSeriesExpression(byName[0]!.expression)).toBe("OWID:life-expectancy:OWID_WRL");
+
+    const byTopic = buildSeriesCatalogSuggestions("co2 emissions", AAPL);
+    expect(byTopic.some((entry) => (
+      entry.expression.kind === "owid" && entry.expression.slug.includes("co2")
+    ))).toBe(true);
+
+    const bySlug = buildSeriesCatalogSuggestions("life-expectancy", AAPL);
+    expect(bySlug[0]?.expression).toMatchObject({ kind: "owid", slug: "life-expectancy" });
+  });
+
   test("suggests Adjacent indices from natural language", () => {
     const suggestions = buildSeriesCatalogSuggestions("adjacent red index", AAPL);
     expect(suggestions[0]?.expression).toMatchObject({
@@ -383,6 +416,9 @@ describe("universal series catalog suggestions", () => {
     });
     expect(buildSeriesCatalogSuggestions("KALSHI:KXPRESPERSON", AAPL)[0]).toMatchObject({
       expression: { kind: "prediction-market", venue: "kalshi", marketId: "KXPRESPERSON" },
+    });
+    expect(buildSeriesCatalogSuggestions("OWID:life-expectancy:USA", AAPL)[0]).toMatchObject({
+      expression: { kind: "owid", slug: "life-expectancy", entity: "USA" },
     });
   });
 

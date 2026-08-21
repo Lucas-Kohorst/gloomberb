@@ -1,4 +1,5 @@
 import type { OwidChartPrint, OwidChartSearchHit, OwidEntity, OwidObservation } from "../../../sources/owid/types";
+import { findOwidCatalogEntryBySlug, owidCatalogSearchText } from "./catalog";
 
 function latestObservation(print: OwidChartPrint, code: string): OwidObservation | null {
   const rows = print.observations.filter((row) => row.code === code && row.value != null);
@@ -17,11 +18,17 @@ export function entityLatestRows(print: OwidChartPrint): Array<OwidEntity & { la
 }
 
 export function filterChartHits(hits: readonly OwidChartSearchHit[], query: string): OwidChartSearchHit[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [...hits];
-  return hits.filter((hit) => (
-    hit.title.toLowerCase().includes(needle)
-    || hit.slug.includes(needle)
-    || (hit.subtitle?.toLowerCase().includes(needle) ?? false)
-  ));
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [...hits];
+  return hits.filter((hit) => {
+    const catalog = findOwidCatalogEntryBySlug(hit.slug);
+    const hay = [
+      hit.title,
+      hit.slug,
+      hit.slug.replaceAll("-", " "),
+      hit.subtitle,
+      catalog ? owidCatalogSearchText(catalog) : "",
+    ].join(" ").toLowerCase();
+    return tokens.every((token) => hay.includes(token) || hit.slug.includes(token));
+  });
 }

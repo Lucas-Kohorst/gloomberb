@@ -26,6 +26,12 @@ import {
 import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
 import {
+  OWID_CATALOG,
+  matchOwidCatalogEntries,
+  owidSeriesLabel,
+  type OwidCatalogEntry,
+} from "../owid/catalog";
+import {
   formatPredictionSeriesExpression,
   normalizePredictionMarketId,
   resolvePredictionSeriesQuery,
@@ -307,7 +313,7 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
     case "owid":
       return {
         id: `owid:${expression.slug}:${expression.entity}`,
-        label: `OWID · ${expression.slug} ${expression.entity}`,
+        label: expression.label ?? `OWID · ${expression.slug} ${expression.entity}`,
         description: "Our World in Data grapher series (CC BY 4.0)",
         detail: "OWID",
         expression,
@@ -392,8 +398,8 @@ export function buildChartSeriesAssistContext(): string {
     + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
     + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
     + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
-    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA). "
-    + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
+    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL). "
+    + "Natural language such as 'life expectancy', 'co2 emissions', 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -424,6 +430,13 @@ export function buildSeriesCatalogSuggestions(
     const nlSuggestion = predictionExpressionSuggestion(nl);
     if (!suggestions.some((entry) => entry.id === nlSuggestion.id)) {
       suggestions.unshift(nlSuggestion);
+    }
+  }
+  if (!query.includes(":") && !analysis.metricQuery) {
+    for (const suggestion of [...owidCatalogSuggestions(query)].reverse()) {
+      if (!suggestions.some((entry) => entry.id === suggestion.id)) {
+        suggestions.unshift(suggestion);
+      }
     }
   }
   const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
@@ -551,6 +564,18 @@ function appendUniversalSuggestions(
     }
   }
 
+  for (const entry of matchOwidCatalogEntries(query)) {
+    const score = universalScore(q, qCompact, [
+      entry.title,
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
+      "owid",
+      "our world in data",
+    ]);
+    if (score >= 0) scored.push({ suggestion: owidCatalogSuggestion(entry), score });
+  }
+
   for (const station of WEATHER_STATIONS) {
     for (const metric of ["high", "low", "precip"] as const) {
       const score = universalScore(q, qCompact, [
@@ -622,6 +647,42 @@ function universalScore(query: string, queryCompact: string, keywords: string[])
     }
   }
   return -1;
+}
+
+function owidCatalogSuggestion(entry: OwidCatalogEntry): SeriesCatalogSuggestion {
+  return {
+    id: `owid:${entry.slug}:${entry.defaultEntity}`,
+    label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    description: "Our World in Data grapher series (CC BY 4.0)",
+    detail: "OWID",
+    expression: {
+      kind: "owid",
+      slug: entry.slug,
+      entity: entry.defaultEntity,
+      label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    },
+  };
+}
+
+function owidCatalogSuggestions(query: string): SeriesCatalogSuggestion[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const q = trimmed.toLowerCase();
+  const qCompact = compact(q);
+  const browse = /^(owid|our world in data)$/i.test(trimmed);
+  const scored = OWID_CATALOG.map((entry) => ({
+    entry,
+    score: universalScore(q, qCompact, [
+      entry.title,
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
+      "owid",
+      "our world in data",
+    ]),
+  })).filter((row) => browse || row.score >= 1_000);
+  scored.sort((left, right) => right.score - left.score);
+  return scored.slice(0, 6).map((row) => owidCatalogSuggestion(row.entry));
 }
 
 function futuresSuggestion(entry: FuturesCatalogEntry): SeriesCatalogSuggestion {

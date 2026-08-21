@@ -41,7 +41,8 @@ import {
   useCatalogBenchRows,
   useCatalogPollRows,
 } from "./catalog-prefetch";
-import { resetCatalogOwidCaches, useCatalogOwidRows } from "./catalog-owid";
+import { resetCatalogOwidCaches } from "./catalog-owid";
+import { useCatalogOwidRows } from "./use-catalog-owid";
 import {
   resetCatalogPredictionHitsCache,
   useCatalogUniverse,

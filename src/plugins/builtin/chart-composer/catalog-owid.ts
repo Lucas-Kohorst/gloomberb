@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { fetchOwidChartMetadata, fetchOwidChartSearch } from "../owid/client";
 import { OwidUpstreamError } from "../../../sources/owid/types";
 import type { OwidChartMetadataPrint } from "../../../sources/owid/types";
@@ -10,6 +9,7 @@ import {
 
 const PROBE_CONCURRENCY = 4;
 const QUERY_CACHE_LIMIT = 8;
+export const OWID_SNAPSHOT_QUERY = "";
 
 const catalogOwidRowsCache = new Map<string, CatalogSeriesRow[]>();
 const catalogOwidRowsInflight = new Map<string, Promise<CatalogSeriesRow[]>>();
@@ -19,6 +19,10 @@ export function resetCatalogOwidCaches(): void {
   catalogOwidRowsCache.clear();
   catalogOwidRowsInflight.clear();
   catalogOwidMetadataCache.clear();
+}
+
+export function peekCatalogOwidRows(query = OWID_SNAPSHOT_QUERY): CatalogSeriesRow[] | null {
+  return catalogOwidRowsCache.get(catalogOwidDiscoveryQuery(query) ?? OWID_SNAPSHOT_QUERY) ?? null;
 }
 
 async function mapPool<T, R>(
@@ -81,13 +85,21 @@ export async function loadCatalogOwidRows(query: string): Promise<CatalogSeriesR
 
   const pending = (async () => {
     const search = await fetchOwidChartSearch(discovery).catch(() => null);
-    if (!search) return [] as CatalogSeriesRow[];
+    if (!search) {
+      rememberQueryRows(discovery, []);
+      return [] as CatalogSeriesRow[];
+    }
     const metadataBySlug = new Map<string, OwidChartMetadataPrint>();
+    const blockedSlugs = new Set<string>();
     await mapPool(search.results, PROBE_CONCURRENCY, async (hit) => {
       const metadata = await probeOwidMetadata(hit.slug);
-      if (metadata) metadataBySlug.set(hit.slug, metadata);
+      if (metadata) {
+        metadataBySlug.set(hit.slug, metadata);
+        return;
+      }
+      if (catalogOwidMetadataCache.get(hit.slug) === "blocked") blockedSlugs.add(hit.slug);
     });
-    const rows = catalogRowsFromOwidHits(search.results, metadataBySlug);
+    const rows = catalogRowsFromOwidHits(search.results, metadataBySlug, blockedSlugs);
     rememberQueryRows(discovery, rows);
     return rows;
   })().finally(() => {
@@ -96,46 +108,4 @@ export async function loadCatalogOwidRows(query: string): Promise<CatalogSeriesR
 
   catalogOwidRowsInflight.set(discovery, pending);
   return pending;
-}
-
-export function useCatalogOwidRows(
-  searchQuery: string,
-  refreshNonce = 0,
-): { rows: CatalogSeriesRow[]; loading: boolean } {
-  const discovery = catalogOwidDiscoveryQuery(searchQuery);
-  const [rows, setRows] = useState<CatalogSeriesRow[]>(
-    discovery != null ? catalogOwidRowsCache.get(discovery) ?? [] : [],
-  );
-  const [loading, setLoading] = useState(discovery != null && !catalogOwidRowsCache.has(discovery));
-
-  useEffect(() => {
-    if (discovery == null) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-    const cached = catalogOwidRowsCache.get(discovery);
-    if (cached) {
-      setRows(cached);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      setLoading(true);
-      void loadCatalogOwidRows(searchQuery).then((next) => {
-        if (cancelled) return;
-        setRows(next);
-        setLoading(false);
-      }).catch(() => {
-        if (!cancelled) setLoading(false);
-      });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [discovery, refreshNonce, searchQuery]);
-
-  return { rows, loading };
 }

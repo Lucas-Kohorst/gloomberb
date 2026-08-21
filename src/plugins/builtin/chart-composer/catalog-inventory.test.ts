@@ -57,6 +57,11 @@ describe("data catalog inventory", () => {
     expect(byExpression.get("UST:10Y")).toMatchObject({ source: "FRED", kind: "Treasury" });
     expect(byExpression.get("ADJ:red")).toMatchObject({ source: "Adjacent", kind: "Index" });
     expect(byExpression.get("FUT:ES")).toMatchObject({ source: "Yahoo" });
+    expect(byExpression.get("OWID:life-expectancy:OWID_WRL")).toMatchObject({
+      source: "Our World in Data",
+      kind: "OWID",
+      sourceId: "owid",
+    });
     expect(rows.some((row) => row.source === "VoteHub" && row.kind === "Poll")).toBe(true);
     expect(rows.some((row) => row.source === "llm-stats.com" && row.kind === "Benchmark")).toBe(true);
   });
@@ -144,6 +149,13 @@ describe("data catalog inventory", () => {
     expect(other.some((row) => row.sourceId === "poll")).toBe(true);
     expect(other.some((row) => row.expression === "WX:LAX:high")).toBe(true);
     expect(other.some((row) => row.expression === "NWS:KNYC:high")).toBe(true);
+
+    const owid = filterCatalogRows(rows, "owid", "");
+    expect(owid.length).toBeGreaterThan(0);
+    expect(owid.every((row) => row.sourceId === "owid")).toBe(true);
+    expect(filterCatalogRows(rows, "owid", "life expectancy").some((row) => (
+      row.expression === "OWID:life-expectancy:OWID_WRL"
+    ))).toBe(true);
 
     const securities = filterCatalogRows(rows, "securities", "");
     expect(securities.every((row) => row.sourceId === "security" && row.needsTicker)).toBe(true);
@@ -328,10 +340,10 @@ describe("data catalog inventory", () => {
           availableEntities: ["World"],
         },
         {
-          title: "Coal production",
-          slug: "coal-production",
+          title: "Mystery mix",
+          slug: "mystery-energy-mix",
           subtitle: null,
-          url: "https://ourworldindata.org/grapher/coal-production",
+          url: "https://ourworldindata.org/grapher/mystery-energy-mix",
           availableEntities: ["United States"],
         },
       ],
@@ -346,27 +358,30 @@ describe("data catalog inventory", () => {
           url: "https://ourworldindata.org/grapher/life-expectancy",
           entities: [{ code: "OWID_WRL", name: "World" }, { code: "USA", name: "United States" }],
         }],
-        ["coal-production", {
-          slug: "coal-production",
-          title: "Coal production",
+        ["mystery-energy-mix", {
+          slug: "mystery-energy-mix",
+          title: "Mystery mix",
           subtitle: null,
           citation: null,
           unit: "TWh",
           license: "CC BY 4.0",
-          url: "https://ourworldindata.org/grapher/coal-production",
+          url: "https://ourworldindata.org/grapher/mystery-energy-mix",
           entities: [],
         }],
       ]),
+      new Set(["secret-chart"]),
     );
     expect(rows.map((row) => row.expression)).toEqual([
       "OWID:life-expectancy:OWID_WRL",
-      "OWID:coal-production",
+      "OWID:mystery-energy-mix",
     ]);
     expect(rows.every((row) => row.source === "Our World in Data" && row.sourceId === "owid")).toBe(true);
     expect(rows[0]?.needsEntity).toBe(false);
+    expect(rows[0]?.label).toBe("Life expectancy · World");
     expect(rows[1]?.needsEntity).toBe(true);
-    expect(catalogExpressionForRow(rows[1]!, "usa")).toBe("OWID:coal-production:USA");
+    expect(catalogExpressionForRow(rows[1]!, "usa")).toBe("OWID:mystery-energy-mix:USA");
     expect(catalogExpressionForRow(rows[1]!, "")).toBeNull();
+    expect(filterCatalogRows(rows, "owid", "life expectancy").some((row) => row.expression === "OWID:life-expectancy:OWID_WRL")).toBe(true);
     expect(filterCatalogRows(rows, "other", "owid").some((row) => row.expression === "OWID:life-expectancy:OWID_WRL")).toBe(true);
     expect(filterCatalogRows(rows, "fred", "").some((row) => row.sourceId === "owid")).toBe(false);
   });
