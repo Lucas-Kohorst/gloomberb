@@ -7,7 +7,8 @@ import {
 } from "../time-series/resolution";
 import type { InstrumentSearchResult } from "../types/instrument";
 import { parseOptionSymbol } from "../utils/options";
-import { isCryptoMarketInstrument } from "./coingecko/ids";
+import { httpFetch } from "../utils/http-transport";
+import { canonicalCryptoInstrument, isCryptoMarketInstrument, isCryptoSearchType } from "./coingecko/ids";
 import { createProviderMiss } from "./provider-errors";
 import { SecEdgarClient } from "./sec-edgar";
 import { mergeFinancialStatementRows } from "../utils/financial-statements";
@@ -60,6 +61,38 @@ const SEC_STATEMENT_SUPPLEMENT_EXCHANGES = new Set([
   "OTC",
   "PINK",
 ]);
+
+export function mapYahooInstrumentSearchQuote(q: {
+  symbol?: string;
+  shortname?: string;
+  longname?: string;
+  exchDisp?: string;
+  exchange?: string;
+  quoteType?: string;
+}): InstrumentSearchResult {
+  const symbol = q.symbol || "";
+  const exchange = q.exchDisp || q.exchange || "";
+  const type = q.quoteType || "";
+  const cryptoHint = isCryptoSearchType(type) ? "CCC" : exchange;
+  const canonical = canonicalCryptoInstrument(symbol, cryptoHint);
+  if (canonical) {
+    return {
+      providerId: "yahoo",
+      symbol: canonical.symbol,
+      name: q.shortname || q.longname || "",
+      exchange: canonical.exchange,
+      type: "CRYPTO",
+      currency: canonical.symbol.split("-")[1] || "USD",
+    };
+  }
+  return {
+    providerId: "yahoo",
+    symbol,
+    name: q.shortname || q.longname || "",
+    exchange,
+    type,
+  };
+}
 
 export class YahooFinanceClient implements DataProvider {
   readonly id = "yahoo";
@@ -217,23 +250,17 @@ export class YahooFinanceClient implements DataProvider {
     return rate;
   }
 
-  /** Search for a ticker by name/symbol - uses direct fetch (no retry) for speed */
+  /** Search for a ticker by name/symbol. Hosted must use httpFetch so the Worker proxies CORS. */
   async search(query: string): Promise<InstrumentSearchResult[]> {
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
     try {
-      const resp = await fetch(url, {
+      const resp = await httpFetch(url, {
         headers: this.http.defaultHeaders(),
         signal: AbortSignal.timeout(5000),
       });
       if (!resp.ok) return [];
       const data = await resp.json() as any;
-      return (data.quotes || []).map((q: any) => ({
-        providerId: this.id,
-        symbol: q.symbol || "",
-        name: q.shortname || q.longname || "",
-        exchange: q.exchDisp || q.exchange || "",
-        type: q.quoteType || "",
-      }));
+      return (data.quotes || []).map((q: any) => mapYahooInstrumentSearchQuote(q));
     } catch {
       return [];
     }

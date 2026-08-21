@@ -225,7 +225,10 @@ export class CoinGeckoProvider implements AssetDataProvider {
     const mapped = resolveCoinGeckoPair(ticker, exchange);
     if (mapped) return mapped;
     if (!isCryptoMarketInstrument(ticker, exchange)) return null;
-    const query = ticker.trim().toUpperCase().replace(/[/-]USD[T]?$/i, "").replace(/[/\s]+/g, "");
+    const query = ticker.trim().toUpperCase()
+      .replace(/=X$/i, "")
+      .replace(/[/-]USD[T]?$/i, "")
+      .replace(/[/\s]+/g, "");
     if (!query) return null;
     const known = COINGECKO_BASE_IDS[query];
     if (known) {

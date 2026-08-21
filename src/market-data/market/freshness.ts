@@ -2,7 +2,7 @@ import type { MarketState } from "../../types/financials";
 import { canonicalExchange, EXCHANGE_TIME_ZONES } from "../../utils/exchanges";
 
 const US_EXTENDED_HOURS_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"]);
-const ALWAYS_OPEN_EXCHANGES = new Set(["CCC"]);
+const ALWAYS_OPEN_EXCHANGES = new Set(["CCC", "CRYPTO"]);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const OVERNIGHT_CLOSE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
 const REGULAR_OPEN_MINUTES: Record<string, number> = {
