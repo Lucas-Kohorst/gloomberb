@@ -47,6 +47,23 @@ const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
 const KALSHI_MARKET_MAX_PAGES = 5;
 const KALSHI_SERIES_EVENT_LIMIT = 20;
+const kalshiCursors = new Map<string, string | null>();
+
+function kalshiCursorKey(searchQuery: string, categoryId: PredictionCategoryId): string {
+  return `${categoryId}:${searchQuery.trim().toLowerCase()}`;
+}
+
+function rememberKalshiCursor(
+  searchQuery: string,
+  categoryId: PredictionCategoryId,
+  cursor: string | null,
+): void {
+  kalshiCursors.set(kalshiCursorKey(searchQuery, categoryId), cursor);
+}
+
+export function kalshiCatalogCursor(searchQuery: string, categoryId: PredictionCategoryId): string | null {
+  return kalshiCursors.get(kalshiCursorKey(searchQuery, categoryId)) ?? null;
+}
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
   const url = new URL(`${KALSHI_API_BASE}/events`);
@@ -69,9 +86,12 @@ function buildKalshiMarketsUrl(cursor?: string): string {
 
 async function fetchKalshiCatalogEvents(
   maxPages = DEFAULT_KALSHI_EVENT_MAX_PAGES,
-): Promise<KalshiEventRecord[]> {
+  _limit = KALSHI_EVENT_PAGE_LIMIT,
+  _signal?: AbortSignal,
+  startCursor?: string,
+): Promise<{ events: KalshiEventRecord[]; nextCursor: string | null }> {
   const events: KalshiEventRecord[] = [];
-  let cursor: string | undefined;
+  let cursor: string | undefined = startCursor;
 
   for (let page = 0; page < maxPages; page += 1) {
     const response = await fetchJson<KalshiEventsResponse>(
@@ -82,19 +102,23 @@ async function fetchKalshiCatalogEvents(
     if (!cursor) break;
   }
 
-  return events;
+  return { events, nextCursor: cursor ?? null };
 }
 
 async function fetchKalshiCatalogEventsForCategory(
   categoryId: PredictionCategoryId,
   maxPages = DEFAULT_KALSHI_EVENT_MAX_PAGES,
-): Promise<KalshiEventRecord[]> {
+  limit = KALSHI_EVENT_PAGE_LIMIT,
+  signal?: AbortSignal,
+  startCursor?: string,
+): Promise<{ events: KalshiEventRecord[]; nextCursor: string | null }> {
   const categories = getKalshiCategoryNames(categoryId);
-  if (categories.length === 0) return await fetchKalshiCatalogEvents(maxPages);
+  if (categories.length === 0) return await fetchKalshiCatalogEvents(maxPages, limit, signal, startCursor);
 
   const deduped = new Map<string, KalshiEventRecord>();
+  let nextCursor: string | null = null;
   for (const category of categories) {
-    let cursor: string | undefined;
+    let cursor: string | undefined = startCursor;
     for (let page = 0; page < maxPages; page += 1) {
       const response = await fetchJson<KalshiEventsResponse>(
         buildKalshiCatalogUrl(cursor, category),
@@ -106,9 +130,10 @@ async function fetchKalshiCatalogEventsForCategory(
       cursor = response.cursor?.trim() || undefined;
       if (!cursor) break;
     }
+    nextCursor = cursor ?? nextCursor;
   }
 
-  return [...deduped.values()];
+  return { events: [...deduped.values()], nextCursor };
 }
 
 async function fetchKalshiOpenMarkets(
@@ -135,7 +160,7 @@ async function loadKalshiVenueCatalog(
   const maxPages = searchQuery
     ? SEARCH_KALSHI_EVENT_MAX_PAGES
     : DEFAULT_KALSHI_EVENT_MAX_PAGES;
-  const [events, openMarkets] = await Promise.all([
+  const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
       ? fetchKalshiCatalogEvents(maxPages)
       : fetchKalshiCatalogEventsForCategory(categoryId, maxPages),
@@ -143,6 +168,8 @@ async function loadKalshiVenueCatalog(
       ? fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
       : Promise.resolve([] as KalshiMarketRecord[]),
   ]);
+  rememberKalshiCursor(searchQuery, categoryId, eventPage.nextCursor);
+  const events = eventPage.events;
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
   if (openMarkets.length === 0) return fromEvents;
   const fromMarkets = normalizeKalshiCatalog(
@@ -187,6 +214,24 @@ export async function loadKalshiCatalog(
     PREDICTION_CACHE_POLICIES.catalog,
     options,
   );
+}
+
+export async function loadMoreKalshiCatalog(
+  searchQuery: string,
+  categoryId: PredictionCategoryId,
+  cursor: string,
+  signal?: AbortSignal,
+): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const page = categoryId === "all"
+    ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
+    : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);
+  rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+  return {
+    markets: normalizeKalshiCatalog(page.events, normalizedQuery, categoryId),
+    nextCursor: page.nextCursor,
+    hasMore: !!page.nextCursor,
+  };
 }
 
 async function loadKalshiEvent(
