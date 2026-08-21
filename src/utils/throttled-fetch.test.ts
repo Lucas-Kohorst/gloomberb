@@ -177,6 +177,64 @@ describe("createThrottledFetch", () => {
     expect(transportMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test("caps in-flight requests across hosts", async () => {
+    let inflight = 0;
+    let peak = 0;
+    const started: string[] = [];
+    fetchMock = mock((url: string) => {
+      inflight += 1;
+      peak = Math.max(peak, inflight);
+      started.push(String(url));
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => {
+          inflight -= 1;
+          resolve(new Response("ok", { status: 200 }));
+        }, 30);
+      });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const client = createThrottledFetch({ maxConcurrent: 2, maxRetries: 0 });
+    await Promise.all([
+      client.fetch("https://a.example.com/1"),
+      client.fetch("https://b.example.com/2"),
+      client.fetch("https://c.example.com/3"),
+      client.fetch("https://d.example.com/4"),
+    ]);
+
+    expect(peak).toBe(2);
+    expect(started).toHaveLength(4);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  test("holds one concurrency slot across retries", async () => {
+    let inflight = 0;
+    let peak = 0;
+    let calls = 0;
+    fetchMock = mock(() => {
+      calls += 1;
+      inflight += 1;
+      peak = Math.max(peak, inflight);
+      const status = calls === 1 ? 500 : 200;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => {
+          inflight -= 1;
+          resolve(new Response("ok", { status }));
+        }, 15);
+      });
+    });
+    globalThis.fetch = fetchMock as any;
+
+    const client = createThrottledFetch({ maxConcurrent: 1, maxRetries: 1, backoffBaseMs: 0 });
+    await Promise.all([
+      client.fetch("https://a.example.com/1"),
+      client.fetch("https://b.example.com/2"),
+    ]);
+
+    expect(peak).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 // Restore

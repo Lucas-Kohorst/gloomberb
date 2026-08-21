@@ -27,6 +27,8 @@ export interface ThrottledFetchOptions {
   defaultHeaders?: Record<string, string>;
   /** Share concurrent GET requests to the same URL. Default: true */
   dedupeGetRequests?: boolean;
+  /** Cap in-flight requests for this client. Unlimited when omitted. */
+  maxConcurrent?: number;
   /** Override the underlying request transport for this client */
   transport?: ThrottledFetchTransport;
 }
@@ -51,6 +53,7 @@ export function createThrottledFetch(
   const backoffBaseMs = options.backoffBaseMs ?? BACKOFF_BASE_MS;
   const defaultHeaders = options.defaultHeaders ?? {};
   const dedupeGetRequests = options.dedupeGetRequests ?? true;
+  const maxConcurrent = options.maxConcurrent;
   const fetchTransport =
     options.transport ?? httpFetch;
 
@@ -59,6 +62,25 @@ export function createThrottledFetch(
 
   // Deduplication: in-flight requests by URL
   const inflight = new Map<string, Promise<Response>>();
+  let active = 0;
+  const waiters: Array<() => void> = [];
+
+  async function acquireSlot(): Promise<void> {
+    if (maxConcurrent == null) return;
+    while (active >= maxConcurrent) {
+      await new Promise<void>((resolve) => {
+        waiters.push(resolve);
+      });
+    }
+    active += 1;
+  }
+
+  function releaseSlot(): void {
+    if (maxConcurrent == null) return;
+    active = Math.max(0, active - 1);
+    const next = waiters.shift();
+    next?.();
+  }
 
   function getHost(url: string): string {
     try {
@@ -182,7 +204,14 @@ export function createThrottledFetch(
       }
     }
 
-    const promise = executeRequest(url, init, maxRetries).finally(() => {
+    const promise = (async () => {
+      await acquireSlot();
+      try {
+        return await executeRequest(url, init, maxRetries);
+      } finally {
+        releaseSlot();
+      }
+    })().finally(() => {
       inflight.delete(url);
     });
 

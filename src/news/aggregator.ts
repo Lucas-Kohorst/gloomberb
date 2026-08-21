@@ -367,7 +367,15 @@ export class NewsService {
     entry: NewsQueryEntry,
   ): Promise<SourceFetchResult> {
     await Promise.allSettled(sources.map(async (source) => {
-      const articles = (await source.provider.fetchNews(query))
+      const articles = (await source.provider.fetchNews(query, {
+        onPartial: (partial) => {
+          this.applySourceArticles(
+            entry,
+            newsCapabilitySourceId(source),
+            partial.map((article) => attributeArticle(source, article)),
+          );
+        },
+      }))
         .map((article) => attributeArticle(source, article));
       this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
     }));
@@ -417,7 +425,15 @@ export class NewsService {
     if (accepted.length === 0) return;
     await Promise.allSettled(accepted.map(async (entry) => {
       try {
-        const articles = (await source.provider.fetchNews(entry.query))
+        const articles = (await source.provider.fetchNews(entry.query, {
+          onPartial: (partial) => {
+            this.applySourceArticles(
+              entry,
+              newsCapabilitySourceId(source),
+              partial.map((article) => attributeArticle(source, article)),
+            );
+          },
+        }))
           .map((article) => attributeArticle(source, article));
         this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
       } catch {

@@ -80,6 +80,57 @@ describe("AssetDataRouter", () => {
     expect(yahooCalls).toEqual({ quote: 1, history: 1 });
   });
 
+  test("routes CCC crypto quotes to a CoinGecko extra source when Cloud and Yahoo refuse them", async () => {
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async canProvide(_ticker, exchange) {
+        return exchange !== "CCC";
+      },
+      async getQuote() {
+        throw new Error("Yahoo should not price CCC");
+      },
+    };
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      priority: 100,
+      async canProvide(_ticker, exchange) {
+        return exchange !== "CCC";
+      },
+      async getQuote() {
+        throw new Error("Cloud should not price CCC");
+      },
+    };
+    const coinGeckoProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "coingecko",
+      name: "CoinGecko",
+      priority: 80,
+      async canProvide(_ticker, exchange) {
+        return exchange === "CCC";
+      },
+      async getQuote(symbol) {
+        return makeQuote({
+          symbol,
+          providerId: "coingecko",
+          price: 64_000,
+          changePercent: 1.2,
+          marketCap: 1_200_000_000_000,
+        });
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider, coinGeckoProvider]);
+    const quote = await router.getQuote("BTC", "CCC");
+
+    expect(quote.providerId).toBe("coingecko");
+    expect(quote.price).toBe(64_000);
+    expect(quote.marketCap).toBe(1_200_000_000_000);
+  });
+
   test("serves USD exchange rate locally without provider revalidation", async () => {
     let providerCalls = 0;
     const router = new AssetDataRouter({

@@ -12,6 +12,8 @@ export interface RssFeedConfig {
   enabled: boolean;
 }
 
+export const RSS_FEED_ITEM_LIMIT = 40;
+
 function stripCdata(s: string): string {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, inner) => inner);
 }
@@ -100,6 +102,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
   let match: RegExpExecArray | null;
 
   while ((match = itemRe.exec(xml)) !== null) {
+    if (items.length >= RSS_FEED_ITEM_LIMIT) break;
     const block = match[1]!;
 
     const title = extractText(getTagContent(block, "title"));
@@ -159,6 +162,7 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
   let match: RegExpExecArray | null;
 
   while ((match = entryRe.exec(xml)) !== null) {
+    if (items.length >= RSS_FEED_ITEM_LIMIT) break;
     const block = match[1]!;
 
     const title = extractText(getTagContent(block, "title"));

@@ -24,15 +24,36 @@ interface CachedFeedPayload {
   items: CachedNewsItem[];
 }
 
+export const RSS_FETCH_CONCURRENCY = 6;
+
 const rssClient = createThrottledFetch({
   requestsPerMinute: 30,
   maxRetries: 1,
   timeoutMs: 10_000,
+  maxConcurrent: RSS_FETCH_CONCURRENCY,
   defaultHeaders: {
     "User-Agent": "Gloomberb/0.4.1",
     Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml",
   },
 });
+
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function run(): Promise<void> {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await worker(items[index]!);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => run()));
+  return results;
+}
 
 export interface RssNewsCapabilityOptions {
   /** Resolved at fetch time so newly added tickers are matched without a restart. */
@@ -156,6 +177,7 @@ export function createRssNewsCapability(
         const parsed = parseRssFeed(xml, feed)
           .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
         writeFeedCache(options.persistence, feed, parsed);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
         return parsed;
       });
       return { items, fromCache: false };
@@ -176,9 +198,12 @@ export function createRssNewsCapability(
         const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
         return enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []);
       },
-      async fetchNews(query: NewsQuery): Promise<MarketNewsItem[]> {
+      async fetchNews(query: NewsQuery, fetchOptions?: { onPartial?: (articles: MarketNewsItem[]) => void }): Promise<MarketNewsItem[]> {
         if (!supportsQuery(query)) return [];
-        const enabledFeeds = getFeeds().filter((f) => f.enabled);
+        const enabledFeeds = getFeeds()
+          .filter((feed) => feed.enabled)
+          .slice()
+          .sort((left, right) => right.authority - left.authority || left.name.localeCompare(right.name));
         let universePromise: Promise<ArticleTickerUniverse | undefined> | null = null;
         const resolveUniverse = () => {
           if (universePromise) return universePromise;
@@ -193,19 +218,39 @@ export function createRssNewsCapability(
           }
           return universePromise;
         };
-        const results = await Promise.allSettled(
-          enabledFeeds.map((feed) => fetchFeed(feed, resolveUniverse)),
-        );
-
-        const allItems: MarketNewsItem[] = [];
+        const collected: MarketNewsItem[] = [];
         let cacheOnlyHits = 0;
         let networkReports = 0;
-        for (const result of results) {
-          if (result.status !== "fulfilled") continue;
-          allItems.push(...result.value.items);
-          if (result.value.fromCache) cacheOnlyHits += 1;
-          else networkReports += 1;
+        let partialQueued = false;
+        const emitPartial = () => {
+          if (!fetchOptions?.onPartial || partialQueued) return;
+          partialQueued = true;
+          queueMicrotask(() => {
+            partialQueued = false;
+            fetchOptions.onPartial?.(collected.slice());
+          });
+        };
+
+        const pending: RssFeedConfig[] = [];
+        for (const feed of enabledFeeds) {
+          const fresh = readFeedCache(options.persistence, feed);
+          if (fresh) {
+            collected.push(...fresh);
+            cacheOnlyHits += 1;
+          } else {
+            pending.push(feed);
+          }
         }
+        if (collected.length > 0) emitPartial();
+
+        await mapPool(pending, RSS_FETCH_CONCURRENCY, async (feed) => {
+          const result = await fetchFeed(feed, resolveUniverse);
+          collected.push(...result.items);
+          if (result.fromCache) cacheOnlyHits += 1;
+          else networkReports += 1;
+          emitPartial();
+          return result;
+        });
 
         // When every feed is served from cache, no withConnectionRequest ran.
         // Emit one synthetic success so Connections reflects RSS as in use.
@@ -217,7 +262,7 @@ export function createRssNewsCapability(
           });
         }
 
-        return allItems;
+        return collected;
       },
     },
   });

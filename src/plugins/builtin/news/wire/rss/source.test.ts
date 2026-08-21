@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { MemoryPluginPersistence as MemoryPersistence } from "../../../../../test-support/plugin-persistence";
-import { createRssNewsCapability, RSS_FEED_CACHE_POLICY } from "./source";
+import { createRssNewsCapability, RSS_FEED_CACHE_POLICY, RSS_FETCH_CONCURRENCY } from "./source";
 import type { RssFeedConfig } from "./parser";
 import { buildArticleTickerUniverse } from "../../../../../news/article-tickers";
 
@@ -125,5 +125,57 @@ describe("createRssNewsCapability", () => {
 
     await source.provider.fetchNews({ scope: "global" });
     expect(universeCalls).toBe(2);
+  });
+
+  test("emits partial articles before every feed has finished", async () => {
+    const slow: RssFeedConfig = { ...FEED, id: "slow-feed", url: "https://example.com/slow.xml", authority: 50 };
+    const fast: RssFeedConfig = { ...FEED, id: "fast-feed", url: "https://example.com/fast.xml", authority: 90 };
+    let releaseSlow: (() => void) | undefined;
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const partials: number[] = [];
+    const source = createRssNewsCapability([slow, fast], {
+      fetchText: async (url) => {
+        if (url.includes("slow")) await slowGate;
+        return { ok: true, text: async () => RSS_FIXTURE };
+      },
+    });
+
+    const done = source.provider.fetchNews({ scope: "global" }, {
+      onPartial: (articles) => {
+        partials.push(articles.length);
+      },
+    });
+    await Bun.sleep(20);
+    expect(partials.some((count) => count > 0)).toBe(true);
+    releaseSlow?.();
+    const items = await done;
+    expect(items.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("does not start every feed at once", async () => {
+    const feeds: RssFeedConfig[] = Array.from({ length: RSS_FETCH_CONCURRENCY + 4 }, (_, index) => ({
+      ...FEED,
+      id: `feed-${index}`,
+      url: `https://example.com/${index}.xml`,
+      authority: 50 - index,
+    }));
+    let inflight = 0;
+    let peak = 0;
+    const source = createRssNewsCapability(feeds, {
+      fetchText: async () => {
+        inflight += 1;
+        peak = Math.max(peak, inflight);
+        await Bun.sleep(25);
+        inflight -= 1;
+        return { ok: true, text: async () => RSS_FIXTURE };
+      },
+    });
+
+    await source.provider.fetchNews({ scope: "global" });
+    expect(peak).toBeLessThanOrEqual(RSS_FETCH_CONCURRENCY);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThan(feeds.length);
   });
 });

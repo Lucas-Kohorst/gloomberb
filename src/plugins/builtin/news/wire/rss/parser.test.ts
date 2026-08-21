@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseRssFeed, type RssFeedConfig } from "./parser";
+import { parseRssFeed, type RssFeedConfig, RSS_FEED_ITEM_LIMIT } from "./parser";
 
 const DEFAULT_CONFIG: RssFeedConfig = {
   id: "test-feed",
@@ -134,5 +134,16 @@ describe("parseRssFeed", () => {
     const items = parseRssFeed(RSS2_FIXTURE, { ...DEFAULT_CONFIG, category: "markets" });
 
     expect(items[1]!.categories).toContain("markets");
+  });
+
+  test("caps parsed items per feed", () => {
+    const itemsXml = Array.from({ length: RSS_FEED_ITEM_LIMIT + 12 }, (_, index) => `
+      <item>
+        <title>Headline ${index}</title>
+        <link>https://example.com/${index}</link>
+      </item>
+    `).join("");
+    const xml = `<rss version="2.0"><channel>${itemsXml}</channel></rss>`;
+    expect(parseRssFeed(xml, DEFAULT_CONFIG)).toHaveLength(RSS_FEED_ITEM_LIMIT);
   });
 });

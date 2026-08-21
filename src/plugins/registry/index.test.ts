@@ -294,6 +294,22 @@ describe("PluginRegistry capabilities", () => {
     expect(registry.getCapability("asset-data.source-b")?.sourceId).toBe("source-b");
     expect(registry.getEnabledCapabilities("asset-data").map((entry) => entry.sourceId)).toEqual(["source-b"]);
   });
+
+  test("CoinGecko setup registers asset-data when plugin.capabilities are skipped", async () => {
+    const { coingeckoPlugin } = await import("../builtin/coingecko");
+    const registry = createRegistry({ enableCapabilityHandlers: false });
+    await registry.register(coingeckoPlugin);
+    expect(registry.getCapability("asset-data.coingecko")?.sourceId).toBe("coingecko");
+    registry.unregister(coingeckoPlugin.id);
+  });
+
+  test("CoinGecko setup does not double-register when capabilities already loaded", async () => {
+    const { coingeckoPlugin } = await import("../builtin/coingecko");
+    const registry = createRegistry();
+    await registry.register(coingeckoPlugin);
+    expect(registry.getEnabledCapabilities("asset-data").filter((entry) => entry.sourceId === "coingecko")).toHaveLength(1);
+    registry.unregister(coingeckoPlugin.id);
+  });
 });
 
 describe("PluginRegistry ticker research tabs", () => {
