@@ -124,4 +124,25 @@ describe("articleShareNeedsReader", () => {
       }],
     })).toBe(false);
   });
+
+  test("does not send x.com tweet URLs through Jina", () => {
+    const tweet = {
+      type: "news" as const,
+      id: "x:123",
+      title: "Markets rally on NVDA earnings",
+      url: "https://x.com/marketsbot/status/123",
+      source: "@marketsbot",
+      summary: "Markets rally on NVDA earnings",
+      categories: ["twitter"],
+    };
+    expect(articleShareNeedsReader(tweet)).toBe(false);
+    expect(articleShareNeedsReader({
+      ...tweet,
+      url: "https://twitter.com/marketsbot/status/123",
+    })).toBe(false);
+    expect(articleShareNeedsReader({
+      ...tweet,
+      url: "https://www.x.com/marketsbot/status/123",
+    })).toBe(false);
+  });
 });

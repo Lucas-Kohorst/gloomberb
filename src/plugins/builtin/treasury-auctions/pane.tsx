@@ -330,7 +330,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
             { id: "refresh", key: "r", label: "efresh", onPress: load },
           ]
         : [
-            { id: "search", key: "s", label: "earch", onPress: focusSearch },
+            { id: "search", key: "/", label: "search", onPress: focusSearch },
             { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
             { id: "refresh", key: "r", label: "efresh", onPress: load },
           ],

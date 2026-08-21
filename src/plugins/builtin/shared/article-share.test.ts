@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { NewsArticle } from "../../../news/types";
 import type { SubstackArticleSummary } from "../substack/types";
+import type { CloudTweetPayload } from "../../../api-client";
 import {
   buildShareUrl,
   changelogReleaseSharePayload,
@@ -13,6 +14,7 @@ import {
   SHARE_HOSTED_ORIGIN,
   isPublicArticleShareLocation,
   substackArticleSharePayload,
+  tweetSharePayload,
 } from "./article-share";
 
 function makeNewsArticle(overrides: Partial<NewsArticle> & Pick<NewsArticle, "id" | "title">): NewsArticle {
@@ -231,6 +233,38 @@ describe("article-share encode/decode", () => {
     expect(news.type).toBe("news");
     expect(changelog.id).toBe("changelog:hosted-v0-11-0");
     expect(changelog.summary).toBe("One release note.");
+  });
+
+  test("tweet share payload snapshots text, handle, images, and tickers without a Jina fetch", () => {
+    const tweet: CloudTweetPayload = {
+      id: "123",
+      url: "https://x.com/marketsbot/status/123",
+      text: "Markets rally on $NVDA earnings https://t.co/abcd",
+      createdAt: "2026-08-20T12:00:00.000Z",
+      lang: "en",
+      isReply: false,
+      author: { id: "1", userName: "marketsbot", name: "Markets Bot" },
+      metrics: {
+        retweets: 0,
+        replies: 0,
+        likes: 0,
+        quotes: 0,
+        views: 0,
+        bookmarks: 0,
+      },
+      media: [{ url: "https://pbs.twimg.com/media/photo.jpg" }],
+    };
+    const payload = tweetSharePayload(tweet);
+    expect(payload.type).toBe("news");
+    expect(payload.id).toBe("x:123");
+    expect(payload.url).toBe("https://x.com/marketsbot/status/123");
+    expect(payload.source).toBe("@marketsbot");
+    expect(payload.title).toContain("Markets rally on $NVDA earnings");
+    expect(payload.summary).toBe(payload.title);
+    expect(payload.categories).toEqual(["twitter"]);
+    expect(payload.tickers).toEqual(["NVDA"]);
+    expect(payload.imageUrls).toEqual(["https://pbs.twimg.com/media/photo.jpg"]);
+    expect(payload.publishedAt).toBe("2026-08-20T12:00:00.000Z");
   });
 
   test("decodeArticleSharePayload returns null for invalid input", () => {

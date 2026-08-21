@@ -424,7 +424,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         ]
       : [
           { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: busy },
-          { id: "search", key: "s", label: "earch", onPress: focusSearch, disabled: installMode },
+          { id: "search", key: "/", label: "search", onPress: focusSearch, disabled: installMode },
           { id: "toggle", key: "t", label: "oggle", onPress: toggleSelected, disabled: !canToggle || busy },
           ...(managementAvailable
             ? [{
@@ -524,7 +524,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     : "Search installed plugins or GitHub.";
   const emptyHint = searchQuery.trim()
     ? "Try another keyword, or press [i] to install user/repo."
-    : "Press [s] to search or [i] to install from GitHub.";
+    : "Press [/] to search or [i] to install from GitHub.";
 
   return (
     <Box flexDirection="column" width={width} height={height}>

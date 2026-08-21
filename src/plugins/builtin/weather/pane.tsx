@@ -753,7 +753,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         : []),
       ...(tab === "report"
         ? [{ id: "kind", key: "k", label: reportKind === "twc" ? "alshi implied" : " TWC forecast", onPress: () => setReportKind((current) => current === "twc" ? "implied" : "twc") }]
-        : (!detailOpen ? [{ id: "search", key: "s", label: "earch", onPress: focusSearch }] : [])),
+        : (!detailOpen ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }] : [])),
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(scope) },
       { id: "open", key: "o", label: "pen", onPress: openSelected },
     ],

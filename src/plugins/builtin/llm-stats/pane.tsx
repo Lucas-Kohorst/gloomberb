@@ -414,7 +414,7 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
     ],

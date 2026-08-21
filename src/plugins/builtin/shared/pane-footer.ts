@@ -6,6 +6,28 @@ import {
   type PaneHint,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
+import { isPlainKeyboardEvent } from "../../../utils/keyboard";
+
+/** Canonical pane-footer action keys. Search is `/`; refresh is `r`; open is `o`. */
+export const PANE_FOOTER_ACTION_KEYS = {
+  search: "/",
+  refresh: "r",
+  open: "o",
+} as const;
+
+export function paneSearchHint(
+  onPress: () => void,
+  extra?: Pick<PaneHint, "disabled">,
+): PaneHint {
+  return { id: "search", key: PANE_FOOTER_ACTION_KEYS.search, label: "search", onPress, ...extra };
+}
+
+export function paneRefreshHint(
+  onPress: () => void,
+  extra?: Pick<PaneHint, "disabled">,
+): PaneHint {
+  return { id: "refresh", key: PANE_FOOTER_ACTION_KEYS.refresh, label: "efresh", onPress, ...extra };
+}
 
 const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
 const EMPTY_TRAILING_INFO: PaneFooterSegment[] = [];
@@ -46,8 +68,9 @@ export function usePaneFooterHintBindings(
   ));
   useShortcut((event) => {
     if (!focused || event.targetEditable) return;
-    if (event.ctrl || event.meta || event.alt) return;
-    const key = (event.name ?? event.key ?? "").toLowerCase();
+    // Shifted letters are a different action (Shift+R is not [r]efresh).
+    if (!isPlainKeyboardEvent(event)) return;
+    const key = (event.name ?? event.key ?? event.sequence ?? "").toLowerCase();
     if (!key) return;
     const hint = bindable.find((candidate) => candidate.key.toLowerCase() === key);
     if (!hint?.onPress) return;

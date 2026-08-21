@@ -34,7 +34,8 @@ import {
   type TweetLoadState,
   type TweetSortDirection,
 } from "./model";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { usePaneStatusLinkFooter, paneSearchHint, paneRefreshHint } from "../shared/pane-footer";
+import { tweetSharePayload, useCopyShareLink } from "../shared/article-share";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
@@ -169,11 +170,19 @@ export function TweetSearchTable({
   const selectedTweet = rows[activeIndex] ?? null;
   const closeDetail = useCallback(() => setDetailOpen(false), []);
   const popOutSelectedTweet = usePopOutTweet(closeDetail);
-  const trailingHints = useMemo<PaneHint[]>(() => (
-    selectedTweet
-      ? [{ id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) }]
-      : []
-  ), [popOutSelectedTweet, selectedTweet]);
+  const copyShareLink = useCopyShareLink();
+  const shareSelectedTweet = selectedTweet
+    ? () => copyShareLink(tweetSharePayload(selectedTweet))
+    : undefined;
+  const trailingHints = useMemo<PaneHint[]>(() => {
+    if (!selectedTweet) return [];
+    return [
+      ...(shareSelectedTweet
+        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedTweet }]
+        : []),
+      { id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) },
+    ];
+  }, [popOutSelectedTweet, selectedTweet, shareSelectedTweet]);
   const openSelectedTweet = usePaneStatusLinkFooter({
     registrationId: footerId,
     focused,
@@ -193,8 +202,8 @@ export function TweetSearchTable({
     trailingInfo: livePolling ? [poll.segment] : [],
     showOpenHint: !!selectedTweet?.url,
     hints: [
-      ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),
-      { id: "refresh", key: "r", label: "efresh", onPress: reload },
+      ...(onFocusSearch ? [paneSearchHint(onFocusSearch)] : []),
+      paneRefreshHint(reload),
     ],
     trailingHints,
   });
@@ -253,6 +262,12 @@ export function TweetSearchTable({
       openSelectedTweet();
       return true;
     }
+    if (isPlainKey(event, "y") && shareSelectedTweet) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedTweet();
+      return true;
+    }
     if (isPlainKey(event, "p") && selectedTweet) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -264,9 +279,15 @@ export function TweetSearchTable({
     event.stopPropagation?.();
     reload();
     return true;
-  }, [onFocusSearch, openSelectedTweet, popOutSelectedTweet, reload, selectedTweet]);
+  }, [onFocusSearch, openSelectedTweet, popOutSelectedTweet, reload, selectedTweet, shareSelectedTweet]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (isPlainKey(event, "y") && shareSelectedTweet) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      shareSelectedTweet();
+      return true;
+    }
     if (isPlainKey(event, "p") && selectedTweet) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -278,7 +299,7 @@ export function TweetSearchTable({
     event.stopPropagation?.();
     openSelectedTweet();
     return true;
-  }, [openSelectedTweet, popOutSelectedTweet, selectedTweet]);
+  }, [openSelectedTweet, popOutSelectedTweet, selectedTweet, shareSelectedTweet]);
 
   const renderCell = useCallback((
     tweet: CloudTweetPayload,

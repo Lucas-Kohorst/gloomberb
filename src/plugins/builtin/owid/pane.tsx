@@ -279,7 +279,7 @@ export function OwidPane({ paneId, focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(slug || selectedHit?.slug) || !(entity || selectedEntityId) },
-      { id: "search", key: "s", label: "earch", onPress: focusSearch },
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !(seriesPrint?.url || selectedHit?.url) },
     ],
