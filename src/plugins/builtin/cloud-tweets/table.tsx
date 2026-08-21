@@ -35,6 +35,7 @@ import {
   type TweetSortDirection,
 } from "./model";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { twitterLivePollingLabel, useTwitterFetchStaleLabel } from "./footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
@@ -146,6 +147,7 @@ export function TweetSearchTable({
     false,
   );
   const livePolling = isXLivePollingEnabled(livePollingStored);
+  const staleLabel = useTwitterFetchStaleLabel(lastUpdated);
   useAutoRefresh(
     lastUpdated,
     reload,
@@ -174,6 +176,16 @@ export function TweetSearchTable({
       ? [{ id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) }]
       : []
   ), [popOutSelectedTweet, selectedTweet]);
+  const statusInfo = useMemo(() => [
+    {
+      id: "x-live-polling",
+      parts: [{ text: twitterLivePollingLabel(livePolling), tone: "muted" as const }],
+      onPress: () => setLivePolling(!livePolling),
+    },
+    ...(staleLabel
+      ? [{ id: "stale", parts: [{ text: staleLabel, tone: "muted" as const }] }]
+      : []),
+  ], [livePolling, staleLabel]);
   const openSelectedTweet = usePaneStatusLinkFooter({
     registrationId: footerId,
     focused,
@@ -183,13 +195,7 @@ export function TweetSearchTable({
       : null,
     loading,
     error,
-    info: [
-      {
-        id: "x-live-polling",
-        parts: [{ text: livePolling ? "live" : "delayed", tone: "muted" }],
-        onPress: () => setLivePolling(!livePolling),
-      },
-    ],
+    info: statusInfo,
     trailingInfo: livePolling ? [poll.segment] : [],
     showOpenHint: !!selectedTweet?.url,
     hints: [
