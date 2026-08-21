@@ -11,6 +11,7 @@ import { PluginRenderProvider } from "../../runtime";
 import { setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "./content";
 import { ChatStatusWidget } from "./status-widget";
+import { requestOpenChatProfile } from "./profile-request";
 import {
   cleanupChatTest,
   createChatTestControls,
@@ -1504,4 +1505,156 @@ describe("ChatContent", () => {
     expect(openedTemplates).toEqual([{ templateId: "new-chat-pane", options: { arg: dmChannelId } }]);
   });
 
+});
+
+describe("chat public profiles and presence", () => {
+  const bobMessage = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
+    id: "m-bob",
+    channelId: "everyone",
+    content: "hello from bob",
+    replyToId: null,
+    createdAt: "2026-07-03T09:31:00.000Z",
+    user: {
+      id: "u2",
+      username: "bob",
+      displayName: "Bob",
+      bio: "Trades energy",
+      company: "Gloom",
+      profilePublic: true,
+    },
+    ...overrides,
+  });
+
+  test("searching a user opens the public profile", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      messages: [bobMessage()],
+    });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 72, height: 14 }), {
+        width: 72,
+        height: 14,
+      });
+    });
+    await flushFrame();
+
+    await act(async () => {
+      requestOpenChatProfile({
+        id: "u2",
+        username: "bob",
+        displayName: "Bob",
+        bio: "Trades energy",
+        company: "Gloom",
+        profilePublic: true,
+      });
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("@bob");
+    expect(frame).toContain("Trades energy");
+  });
+
+  test("shows a presence dot on a message author the controller marks online", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      messages: [bobMessage()],
+    });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 1,
+      userIds: ["u2"],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 72, height: 14 }), {
+        width: 72,
+        height: 14,
+      });
+    });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("●bob");
+  });
+
+  test("shows a presence dot in a group member list when the controller marks a member online", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "grp:vista",
+        name: "VistaDex trading",
+        kind: "group",
+        created_at: "2026-07-03T09:31:00.000Z",
+        members: [
+          { id: "u2", username: "bob", displayName: "Bob" },
+          { id: "u3", username: "cara", displayName: "Cara" },
+        ],
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 1,
+      userIds: ["u2"],
+    });
+    const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <PluginRenderProvider pluginId="gloomberb-cloud" runtime={createTestPluginRuntime()}>
+            <ChatContent
+              controller={controller}
+              width={90}
+              height={14}
+              focused
+              channelId="grp:vista"
+              onChannelChange={() => {}}
+            />
+          </PluginRenderProvider>
+        </AppContext>,
+        { width: 90, height: 14 },
+      );
+    });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("●@bob");
+    expect(frame).toContain("@cara");
+  });
+
+  test("keyboard p on a selected message opens the author's public profile", async () => {
+    const controller = createController({
+      sessionToken: "token-123",
+      messages: [bobMessage()],
+    });
+    installServerChannels(controller);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 72, height: 14 }), {
+        width: 72,
+        height: 14,
+      });
+    });
+    await flushFrame();
+
+    await emitKeypress({ name: "k" });
+    await emitKeypress({ name: "p" });
+    await flushFrame();
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("@bob");
+    expect(frame).toContain("Trades energy");
+  });
 });

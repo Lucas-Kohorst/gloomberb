@@ -20,7 +20,13 @@ function hasPortfolioAnalytics(analytics: PublicPortfolioAnalytics | null | unde
 
 export function hasPublicChatProfileInfo(user: ChatUserSummary): boolean {
   if (user.profilePublic === false) return false;
-  return Boolean(user.bio?.trim() || user.title?.trim() || user.company?.trim() || hasPortfolioAnalytics(user.portfolioAnalytics));
+  return Boolean(
+    user.bio?.trim()
+    || user.title?.trim()
+    || user.company?.trim()
+    || user.xAccount?.trim()
+    || hasPortfolioAnalytics(user.portfolioAnalytics),
+  );
 }
 
 export function hasChatProfileDetails(user: ChatUserSummary): boolean {
@@ -128,6 +134,7 @@ export function UserProfilePopover({
   onClose,
   onKeepOpen,
   isOwnProfile = false,
+  online = false,
   onSetUpProfile,
 }: {
   user: ChatUserSummary;
@@ -135,13 +142,17 @@ export function UserProfilePopover({
   onClose: () => void;
   onKeepOpen: () => void;
   isOwnProfile?: boolean;
+  online?: boolean;
   onSetUpProfile?: () => void;
 }) {
   const [setupHovered, setSetupHovered] = useState(false);
   const popoverWidth = Math.max(24, Math.min(38, width - 4));
-  const meta = [user.title, user.company].filter(Boolean).join(" · ");
-  const bio = user.bio?.trim();
-  const analytics = user.portfolioAnalytics;
+  const publicProfile = user.profilePublic !== false;
+  const meta = publicProfile ? [user.title, user.company].filter(Boolean).join(" · ") : "";
+  const bio = publicProfile ? user.bio?.trim() : undefined;
+  const xHandle = publicProfile ? user.xAccount?.trim().replace(/^@+/, "") : undefined;
+  const displayName = user.displayName?.trim();
+  const analytics = publicProfile ? user.portfolioAnalytics : null;
   const metrics = analytics ? analyticsMetrics(analytics) : [];
   const headerWidth = Math.max(1, popoverWidth - 2);
   const maxStatsWidth = Math.max(0, headerWidth - 8);
@@ -180,12 +191,17 @@ export function UserProfilePopover({
         ) : null}
         <Box flexGrow={1} />
       </Box>
+      {displayName && displayName !== user.username ? (
+        <Text fg={colors.text}>{truncateChannelLabel(displayName, popoverWidth - 2)}</Text>
+      ) : null}
       {meta ? <Text fg={colors.textDim}>{truncateChannelLabel(meta, popoverWidth - 2)}</Text> : null}
       {bio ? (
         <Text fg={colors.text} wrapText width={popoverWidth - 2}>
           {bio}
         </Text>
       ) : null}
+      {xHandle ? <Text fg={colors.textDim}>{truncateChannelLabel(`x @${xHandle}`, popoverWidth - 2)}</Text> : null}
+      {online ? <Text fg={colors.positive}>online</Text> : null}
       {showSetupAction ? (
         <Box
           height={1}

@@ -49,6 +49,9 @@ export function useChatContentShortcuts({
   stackedConversationOpen = false,
   onLeaveConversation,
   onRefresh,
+  profileOpen = false,
+  closeProfile,
+  openSelectedProfile,
 }: {
   beginEditLatestMessage: (options?: { deferFocus?: boolean }) => boolean;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
@@ -93,6 +96,9 @@ export function useChatContentShortcuts({
   stackedConversationOpen?: boolean;
   onLeaveConversation?: () => void;
   onRefresh: () => void;
+  profileOpen?: boolean;
+  closeProfile?: () => void;
+  openSelectedProfile?: () => boolean;
 }) {
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
@@ -271,12 +277,22 @@ export function useChatContentShortcuts({
     if (event.name === "escape") {
       event.preventDefault?.();
       event.stopPropagation?.();
+      if (profileOpen) {
+        closeProfile?.();
+        return;
+      }
       if (selectedIdx >= 0) {
         setSelectedIdx(-1);
         setFollowMessages(true);
       } else if (stackedConversationOpen) {
         onLeaveConversation?.();
       }
+      return;
+    }
+
+    if (isPlainKey(event, "p") && openSelectedProfile?.()) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
       return;
     }
 

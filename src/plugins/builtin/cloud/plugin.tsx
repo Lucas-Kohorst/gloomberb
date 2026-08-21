@@ -12,6 +12,7 @@ import {
   openDmTargetFromCommand,
   parseConversationCreateArg,
 } from "../chat/channels";
+import { buildWhoCommandResults } from "../chat/profile-search";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
 import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
@@ -149,6 +150,32 @@ function createChatModule(
             throw new Error("Use @username, or multiple usernames and an optional name for a group.");
           }
           await openDmTargetFromCommand(ctx, created?.usernames ?? [], created?.name);
+        },
+      });
+      ctx.registerCommand({
+        id: "who-profile",
+        label: "WHO",
+        description: "Open a chat user's public profile",
+        keywords: ["who", "profile", "user", "username", "people", "chat"],
+        category: "navigation",
+        shortcut: "WHO",
+        shortcutArg: {
+          placeholder: "@username",
+          kind: "text",
+          parse: (arg) => ({ username: arg.trim() }),
+        },
+        buildResults: (arg) => buildWhoCommandResults(ctx, arg),
+        execute: async (values) => {
+          const results = buildWhoCommandResults(ctx, values?.username ?? values?.shortcut ?? "");
+          const match = results.find((result) => !result.disabled);
+          if (!match) {
+            ctx.notify({
+              body: "No chat user matched that search.",
+              type: "error",
+            });
+            return;
+          }
+          await match.execute();
         },
       });
     },

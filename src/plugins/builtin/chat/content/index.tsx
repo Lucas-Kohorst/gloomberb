@@ -18,9 +18,11 @@ import {
 } from "../channels";
 import { ChatComposerArea } from "./composer";
 import { ChatTranscript } from "./transcript";
+import { ChannelMemberList, listChannelMembers } from "./members";
 import {
   ChannelSidebar,
 } from "../sidebar";
+import { isChatUserOnline } from "../peer-online";
 import { useChatSnapshotState } from "./snapshot";
 import { useChatContentShortcuts } from "./shortcuts";
 import type { ChatContentController } from "./types";
@@ -258,6 +260,7 @@ export function ChatContent({
     replyTo,
     searchRows: searchOpen ? 1 : 0,
     headerRows: stackedConversationOpen ? (nativePaneChrome ? 2 : 1) : 0,
+    memberRows: listChannelMembers(channels.find((channel) => channel.id === channelId)).length > 0 ? 1 : 0,
   });
   const {
     cancelProfilePopoverClose,
@@ -265,11 +268,28 @@ export function ChatContent({
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,
-  } = useChatProfilePopover();
+  } = useChatProfilePopover(user?.id);
+
+  const presence = useMemo(() => ({ onlineUserIds, onlineUsernames }), [onlineUserIds, onlineUsernames]);
+  const channelMembers = useMemo(
+    () => listChannelMembers(activeChannel),
+    [activeChannel],
+  );
 
   const showUserProfilePopover = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
     showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
   }, [showProfilePopover, user?.id]);
+
+  const openUserProfile = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
+    showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id, pin: true });
+  }, [showProfilePopover, user?.id]);
+
+  const openSelectedProfile = useCallback(() => {
+    const selected = selectedIdx >= 0 ? visibleMessages[selectedIdx] : null;
+    if (!selected) return false;
+    openUserProfile(selected.user);
+    return true;
+  }, [openUserProfile, selectedIdx, visibleMessages]);
 
   const openProfileSetup = useCallback(() => {
     closeProfilePopover();
@@ -582,6 +602,9 @@ export function ChatContent({
     stackedConversationOpen,
     onLeaveConversation: closeConversation,
     onRefresh: retryMessages,
+    profileOpen: !!profilePopoverUser,
+    closeProfile: closeProfilePopover,
+    openSelectedProfile,
   });
 
   usePaneFooter("chat", () => {
@@ -656,6 +679,15 @@ export function ChatContent({
         </Box>
       )}
 
+      {channelMembers.length > 0 && (
+        <ChannelMemberList
+          members={channelMembers}
+          presence={presence}
+          width={contentWidth}
+          onOpenProfile={openUserProfile}
+        />
+      )}
+
       {searchOpen && (
         <InputSearchBar
           value={searchQuery}
@@ -705,6 +737,9 @@ export function ChatContent({
         selectedIdx={selectedIdx}
         setHoveredIdx={setHoveredIdx}
         showProfilePopover={showUserProfilePopover}
+        openProfile={openUserProfile}
+        presence={presence}
+        profileOnline={profilePopoverUser ? isChatUserOnline(profilePopoverUser, presence) : false}
         stickyTranscript={stickyTranscript}
         user={user}
         userByUsername={userByUsername}

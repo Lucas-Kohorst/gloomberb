@@ -11,6 +11,7 @@ import { PluginRenderProvider, type PluginRuntimeAccess } from "../../runtime";
 import { setSharedMarketDataForTests, setSharedRegistryForTests } from "../../registry";
 import { ChatContent } from "./content";
 import { ChatController } from "./controller";
+import { clearPendingChatProfile } from "./profile-request";
 
 const TRANSCRIPT_KIND = "channel-transcript";
 const TRANSCRIPT_KEY = "everyone";
@@ -45,6 +46,7 @@ export function installChatApiTestDefaults(): void {
 }
 
 export async function cleanupChatTest(testSetup: ChatTestSetup | undefined): Promise<void> {
+  clearPendingChatProfile();
   setSharedRegistryForTests(undefined);
   setSharedMarketDataForTests(undefined);
   apiClient.connectChannel = originalConnectChannel;

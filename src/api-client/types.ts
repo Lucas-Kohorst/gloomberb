@@ -17,6 +17,7 @@ export interface ChatUserSummary {
   bio?: string | null;
   company?: string | null;
   title?: string | null;
+  xAccount?: string | null;
   profilePublic?: boolean;
   acceptUnknownDms?: boolean;
   portfolioAnalytics?: PublicPortfolioAnalytics | null;

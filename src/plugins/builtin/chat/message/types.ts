@@ -13,6 +13,8 @@ export interface ChatMessageBaseProps {
   openTicker: (symbol: string) => void;
   onUserHover: (user: ChatUserSummary) => void;
   onUserHoverEnd: () => void;
+  onUserActivate: (user: ChatUserSummary) => void;
+  authorOnline?: boolean;
   beginReplyTo: (index: number, options?: { deferFocus?: boolean }) => void;
   beginEditMessage: (index: number, options?: { deferFocus?: boolean }) => boolean;
   jumpToMessage: (messageId: string) => void;

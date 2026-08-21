@@ -17,7 +17,8 @@ import {
   formatChannelLabel,
   truncateChannelLabel,
 } from "./channels";
-import { isDirectPeerOnline } from "./peer-online";
+import { isSidebarChannelOnline } from "./peer-online";
+import { OnlinePresenceDot } from "./presence-dot";
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
@@ -93,44 +94,6 @@ function ChannelNotificationIcon({
           />
         )}
       </svg>
-    </Span>
-  );
-}
-
-function OnlinePresenceDot({
-  onMouseDown,
-}: {
-  onMouseDown?: (event: any) => void;
-}) {
-  const { nativePaneChrome } = useUiCapabilities();
-  if (!nativePaneChrome) {
-    return (
-      <Text fg={colors.positive} selectable={false} onMouseDown={onMouseDown}>●</Text>
-    );
-  }
-
-  return (
-    <Span
-      fg={colors.positive}
-      onMouseDown={onMouseDown}
-      aria-label="Online"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 8,
-        height: 16,
-        flexShrink: 0,
-      }}
-    >
-      <Box
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          backgroundColor: colors.positive,
-        }}
-      />
     </Span>
   );
 }
@@ -244,7 +207,7 @@ export function ChannelSidebar({
               const channelState = channelStateById.get(channel.id);
               const notificationsEnabled = channelState?.notificationsEnabled === true;
               const unread = (channelState?.unreadCount ?? 0) > 0;
-              const peerOnline = isDirectPeerOnline(channel, { onlineUserIds, onlineUsernames });
+              const peerOnline = isSidebarChannelOnline(channel, { onlineUserIds, onlineUsernames });
               const label = formatChannelLabel(channel, channel.id);
               const selectChannel = () => {
                 onFocusRequest?.();
