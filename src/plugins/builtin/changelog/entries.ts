@@ -1,5 +1,55 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_1: ChangelogRelease = {
+  id: "hosted-v0-13-1",
+  tagName: "v0.13.1",
+  version: "0.13.1",
+  title: "Mouse layout, hosted persist, Assets/Data CAT",
+  publishedAt: "2026-08-21T00:00:00.000Z",
+  url: "",
+  body: `Mouse-first layout, hosted workspace persist, CAT split into Assets vs Data, CoinGecko crypto, and the chart/news/PM fixes that were in review.
+
+## Chrome
+
+- Top-left \`<ticker>\` slot is the command bar. Click it for the same prefixes and assist as Ctrl+P; backtick still opens ticker search.
+- Drag a pane from the title bar or 6-dot grip. Resize docked tiles on the splitter and floating panes from edges/corners. Keyboard window-edit still works.
+- Layout tabs and **Layouts** sit in the desktop titlebar next to Help. Status bar is Ctrl+P on the left and version / delayed data / Upgrade / chat on the right. The stray \`·\` between delayed data and Upgrade is gone.
+- **Adjacent** theme (dark ink/forest, RED/BLUE accents). Web/desktop default font is IBM Plex Sans, tables IBM Plex Mono. ACM **Display** tab sets theme, font family, and size (\`FONT+\` / \`FONT-\`).
+
+## Hosted persist
+
+- Watchlist tickers survive refresh. Hosted \`ticker.*\` RPCs are still no-ops; the book lives in per-user localStorage plus \`/api/config\`. An empty load no longer reseeds dummy Adjacent names over a missed hydrate.
+- Layouts, plugin config (RSS, TWIT, CAT specs), notes, chat read state, ACM drafts, theme, and font scale persist the same way. A stale Gloom Cloud pull does not wipe a newer local save. BYOK keys stay local.
+
+## CAT and charts
+
+- CAT and the command-bar data terminal group as **Assets** (securities, options, crypto, futures) vs **Data** (FRED, treasuries, Kalshi/Polymarket, Adjacent, polls, OWID, weather, benches). Search is unchanged.
+- Crypto LAST/CHG%/MCAP and history come from CoinGecko, not Yahoo. Equities stay on Yahoo. Connections lists CoinGecko.
+- OWID search matches title, topic, and slug. Selecting a series charts World by default (\`OWID:life-expectancy:OWID_WRL\`).
+- Bond Search (\`BOND\`), credit, VIX, and treasury series actually draw. ICE BofA yields use the real FRED ids; \`TNX\` / \`10Y\` map to \`UST:10Y\`; caret indices skip Yahoo suffix guessing.
+- Each series kind has a default spec (candles for assets, step for FRED, probability for PM, percent for polls). A failed series stays in the legend with an error instead of emptying the chart.
+- Legend and cursor show full prices (\`$79,432.18\`), not \`$79k\`. Axis ticks stay compact.
+- \`[g]\` pops Custom Chart except on DES. \`poll 1m\` sits on the right of the footer.
+
+## News, PM, chat
+
+- X/RSS/Substack share one ticker extractor: cashtags (\`$BTC\`, \`$BRK.B\`), exchange prefixes, and company names from the listings catalog. Firehose starts X and RSS at boot so they do not land minutes after Substack/wire.
+- Prediction **News** / **Similar** match on \`platform:raw\` ids, not a title AND search. New **Data** tab maps settlement text onto series we already have (weather highs, CPI, BTC) and \`[g]\` graphs them.
+- \`[p]\` pops a selected tweet into a floating reader. Article \`/s/\` links keep full text, open archive/live in a new tab even when signed in, and chart shares are centered with padding.
+- Click a chat username or \`WHO @user\` for the public profile. Green presence dots on authors, DMs, and group members come from the live presence list.
+
+## Connections, plugins, assist
+
+- Connections drops AI provider rows (keys stay in ACM/BYOK). VoteHub, OWID, weather, listings, and Adjacent News fold into one **Adjacent Cloud** row.
+- Plugin Marketplace (\`PLUGINS\`) is discovery: search installed + GitHub, then install/toggle/update/remove. \`PL\` is the fast toggle into that same list.
+- Assist inventory includes live plugin panes and CAT series (FRED, OWID, crypto, PM, weather). Unprefixed queries like \`cpi\` can suggest a chart.
+- High-traffic panes (news, FH, RSS, TWIT, CAT, DES, polls, Substack, chat) have settings panels for columns, default sort/tab, and (TWIT) density/refresh.
+- Kelly sizes equity/crypto/FX off last; futures/options only when a position multiplier exists; prediction contracts use the odds mode. Macro series are not positions.
+
+DefiLlama/Artemis/Dune were researched, not shipped. Free Llama TVL is the first candidate; Artemis REST and Dune credits stay BYOK-or-later. See issue #122.
+`,
+};
+
 const RELEASE_0_13_0: ChangelogRelease = {
   id: "hosted-v0-13-0",
   tagName: "v0.13.0",
@@ -175,6 +225,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_1,
   RELEASE_0_13_0,
   RELEASE_0_12_3,
   RELEASE_0_12_2,
