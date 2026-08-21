@@ -268,7 +268,8 @@ gloomberb
 | `TH <theme>` | 更换配色主题 |
 | `CR` | 切换图表渲染器 |
 | `LANG <locale>` | 切换界面语言（`auto`、`en`、`es`、`zh-CN`、`zh-TW`、`ja` 或 `ko`） |
-| `PL <plugin>` | 管理插件 |
+| `PL <plugin>` | 在命令栏切换插件 |
+| `PLUGINS` / `PLUG` | 插件市场：搜索已安装和 GitHub 插件，并安装、开关、更新或移除 |
 
 ## 本地化界面
 

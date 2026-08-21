@@ -240,15 +240,14 @@ export const commands: Command[] = [
     category: "Config",
   },
 
-  // Plugins — quick inline toggle. This is a lightweight command-bar mode that only
-  // flips plugins on/off without leaving the bar. For the full management experience
-  // (browse, install, update, remove, view source/version/errors) use the `PLUGINS`
-  // prefix to open the Plugin Marketplace pane (src/plugins/builtin/plugin-market).
+  // Plugins — fast keyboard toggle of the same installed list as the marketplace.
+  // Discovery, install, update, and remove live in the Plugin Marketplace pane
+  // (`PLUGINS` / `PLUG`). PL can jump there; it is not a second store.
   {
     id: "plugins",
     prefix: "PL",
     label: "Manage Plugins",
-    description: "Toggle plugins on/off",
+    description: "Toggle plugins, or open the Plugin Marketplace (PLUGINS)",
     hasArg: true,
     argPlaceholder: "plugin name",
     category: "Config",

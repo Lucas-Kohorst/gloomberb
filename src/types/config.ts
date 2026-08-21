@@ -178,6 +178,7 @@ export function normalizePaneId(paneId: string): string {
   if (paneId === "comparison-chart" || paneId === "ticker-chart" || paneId === "fundamental-graph") {
     return CHART_COMPOSER_PANE_ID;
   }
+  if (paneId === "plugin-discovery") return "plugin-market";
   return paneId;
 }
 

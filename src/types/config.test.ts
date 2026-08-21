@@ -3,6 +3,7 @@ import {
   createPaneInstance,
   findPrimaryPaneInstance,
   materializeDetachedPanesAsFloating,
+  normalizePaneId,
   normalizePaneLayout,
   resolveFollowBindingInstance,
   resolvePaneInstance,
@@ -66,6 +67,13 @@ describe("resolvePaneInstance", () => {
 
     expect(resolvePaneInstance(layout, "portfolio-list:main")?.instanceId).toBe("portfolio-list:main");
     expect(resolvePaneInstance(layout, "portfolio-list")?.instanceId).toBe("portfolio-list:main");
+  });
+});
+
+describe("normalizePaneId", () => {
+  test("folds the retired plugin-discovery pane into the marketplace", () => {
+    expect(normalizePaneId("plugin-discovery")).toBe("plugin-market");
+    expect(createPaneInstance("plugin-discovery").paneId).toBe("plugin-market");
   });
 });
 

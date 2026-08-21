@@ -189,7 +189,7 @@ export function buildImmediateRootSelection(options: RootSelectionCommandOptions
     return {
       id: "plugins-route",
       label: "Manage Plugins",
-      detail: "Toggle optional plugins without leaving the command bar",
+      detail: "Toggle plugins, or open the Plugin Marketplace to search GitHub and install",
       category: "Plugins",
       kind: "command",
       action: () => options.openModeRoute("plugins", match.arg),

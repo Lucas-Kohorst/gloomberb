@@ -76,7 +76,7 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
     case "theme":
       return { kind: "themes", badge: "THEMES", hint: t("Preview with arrows, Enter to save, Esc to revert") };
     case "plugins":
-      return { kind: "plugins", badge: "PLUGINS", hint: t("Toggle plugins without leaving the list") };
+      return { kind: "plugins", badge: "PLUGINS", hint: t("Toggle plugins, or open the Plugin Marketplace") };
     case "layout":
       return { kind: "layout", badge: "LAYOUT", hint: t("Organize panes, history, and saved layouts") };
     default:

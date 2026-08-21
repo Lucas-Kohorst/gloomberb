@@ -318,8 +318,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `TH <theme>` | Change color theme |
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
-| `PL <plugin>` | Manage plugins |
-| `PLUG` | Search and install plugins from GitHub |
+| `PL <plugin>` | Toggle plugins from the command bar |
+| `PLUGINS` / `PLUG` | Plugin Marketplace: search installed and GitHub plugins, then install, toggle, update, or remove |
 
 ## Gloom Cloud sign-in
 
