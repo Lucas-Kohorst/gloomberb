@@ -1,4 +1,4 @@
-import type { CachedResourceRecord, ResourceStore } from "../../data/resource-store";
+import type { CachedResourceRecord, ResourceStoreContract } from "../../data/resource-store";
 import type { TimeRange } from "../../time-series/range";
 import type { BrokerContractRef } from "../../types/instrument";
 import type { PricePoint } from "../../types/financials";
@@ -84,7 +84,7 @@ export function resolveCachePolicy(
 }
 
 export function cacheRouterResource<T>(
-  resources: ResourceStore | undefined,
+  resources: ResourceStoreContract | undefined,
   kind: string,
   entityKey: string,
   variantKey: string,
@@ -126,7 +126,7 @@ export function sortCachedRecords<T>(
 }
 
 export function listCachedResources<T>(
-  resources: ResourceStore | undefined,
+  resources: ResourceStoreContract | undefined,
   kind: string,
   entityKey: string,
   variantKeys: string[],
@@ -149,7 +149,7 @@ export function listCachedResources<T>(
 }
 
 export function selectCachedResource<T>(
-  resources: ResourceStore | undefined,
+  resources: ResourceStoreContract | undefined,
   kind: string,
   entityKey: string,
   variantKeys: string[],
@@ -160,7 +160,7 @@ export function selectCachedResource<T>(
 }
 
 export function selectCachedArrayResource<T>(
-  resources: ResourceStore | undefined,
+  resources: ResourceStoreContract | undefined,
   kind: string,
   entityKey: string,
   variantKeys: string[],
