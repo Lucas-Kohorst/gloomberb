@@ -128,8 +128,7 @@ describe("hosted config snapshot", () => {
 
   test("a newer remote snapshot is applied when local is stale or absent", () => {
     const base = createDefaultConfig("cloud://users/user-1");
-    base.theme = "default";
-    const remoteConfig = { ...createDefaultConfig("cloud://users/user-1"), theme: "amber" } as unknown as Record<string, unknown>;
+    const remoteConfig = { ...createDefaultConfig("cloud://users/user-1"), theme: "green" } as unknown as Record<string, unknown>;
     const remote = {
       config: remoteConfig,
       updatedAt: "2026-08-17T12:00:00.000Z",
@@ -138,12 +137,44 @@ describe("hosted config snapshot", () => {
     // No local stamp at all.
     const merged = mergeRemoteConfigSnapshot(base, remote, null);
     expect(merged).not.toBeNull();
-    expect(merged?.theme).toBe("amber");
+    expect(merged?.theme).toBe("green");
   });
 
   test("returns null when remote has no config", () => {
     const base = createDefaultConfig("cloud://users/user-1");
     const merged = mergeRemoteConfigSnapshot(base, { config: null, updatedAt: null }, null);
     expect(merged).toBeNull();
+  });
+
+  test("theme, font, watchlists, and pluginConfig-only saves are not placeholders and beat a stale remote", () => {
+    setHostedConfigUserId("user-1");
+    const local = createDefaultConfig("cloud://users/user-1");
+    local.theme = "green";
+    local.fontSize = 16;
+    local.language = "es";
+    local.watchlists = [...local.watchlists, { id: "custom", name: "Custom" }];
+    local.pluginConfig = {
+      news: { feeds: [{ id: "f1", url: "https://example.com/rss", name: "Feed" }] },
+      "gloomberb-cloud": {
+        twitterFeeds: { feeds: [{ id: "tw", query: "from:Reuters" }], activeFeedId: "tw" },
+        profileDraft: { username: "lucas", name: "Lucas" },
+      },
+      "chart-composer": { lastSpec: { series: ["AAPL"] } },
+    };
+    writeHostedUserConfig(local);
+
+    expect(isPlaceholderHostedConfig(local)).toBe(false);
+    const merged = mergeRemoteConfigSnapshot(
+      local,
+      {
+        config: createDefaultConfig("cloud://users/user-1") as unknown as Record<string, unknown>,
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      },
+      peekHostedUserConfigStamp()?.updatedAt ?? null,
+    );
+    expect(merged).toBeNull();
+    expect(local.theme).toBe("green");
+    expect(local.fontSize).toBe(16);
+    expect(local.pluginConfig.news).toEqual(local.pluginConfig.news);
   });
 });

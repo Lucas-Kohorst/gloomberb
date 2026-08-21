@@ -118,4 +118,30 @@ describe("hosted workspace hydrate", () => {
     expect(result.tickers.map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
   });
+
+  test("does not let a stale cloud collections pull wipe a newer local watchlist", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    config.watchlists = [...config.watchlists, { id: "custom", name: "Custom" }];
+    writeHostedUserConfig(config);
+
+    const result = await hydrateHostedWorkspaceFromCloud(config, {
+      pullConfig: async () => ({ config: null, updatedAt: null }),
+      pullSync: async () => ({
+        snapshot: {
+          ...snapshot(
+            { theme: "amber" },
+            {
+              watchlists: [{ id: "watchlist", name: "Watchlist" }],
+              portfolios: [{ id: "stale", name: "Stale", currency: "USD" }],
+            },
+          ),
+          createdAt: "2020-01-01T00:00:00.000Z",
+        },
+      }),
+    });
+
+    expect(result.config.watchlists.some((watchlist) => watchlist.id === "custom")).toBe(true);
+    expect(result.config.portfolios.some((portfolio) => portfolio.id === "stale")).toBe(false);
+  });
 });

@@ -65,6 +65,37 @@ describe("hosted user config persist", () => {
     expect(next.dataDir).toBe("cloud://users/user-1");
   });
 
+  test("hydrates theme, font scale, watchlists, and CAT pane settings", () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    config.theme = "green";
+    config.fontSize = 18;
+    config.watchlists = [...config.watchlists, { id: "custom", name: "Custom" }];
+    config.pluginConfig = {
+      "chart-composer": { lastRange: "1Y" },
+    };
+    const home = config.layouts[0]!.layout;
+    home.instances.push({
+      instanceId: "chart-composer:custom",
+      paneId: "chart-composer",
+      settings: { chartSpec: { id: "custom-spec" } },
+      binding: { kind: "none" },
+    });
+    config.layouts[0] = { ...config.layouts[0]!, layout: home };
+    config.layout = home;
+    writeHostedUserConfig(config);
+
+    const next = createDefaultConfig("cloud://users/user-1");
+    hydrateHostedUserConfig(next);
+    expect(next.theme).toBe("green");
+    expect(next.fontSize).toBe(18);
+    expect(next.watchlists.some((watchlist) => watchlist.id === "custom")).toBe(true);
+    expect(next.pluginConfig["chart-composer"]).toEqual({ lastRange: "1Y" });
+    expect(
+      next.layouts[0]?.layout.instances.find((instance) => instance.instanceId === "chart-composer:custom")?.settings,
+    ).toEqual({ chartSpec: { id: "custom-spec" } });
+  });
+
   test("does not leak one user's config into another account", () => {
     setHostedConfigUserId("user-1");
     const first = createDefaultConfig("cloud://users/user-1");

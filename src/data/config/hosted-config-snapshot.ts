@@ -56,13 +56,40 @@ function canonicalize(value: unknown): unknown {
   );
 }
 
-function layoutFingerprint(config: AppConfig): string {
+function pluginConfigForFingerprint(config: AppConfig): Record<string, Record<string, unknown>> {
+  const stripped = stripByokKeysForSnapshot(config).pluginConfig;
+  const next: Record<string, Record<string, unknown>> = {};
+  for (const [pluginId, state] of Object.entries(stripped)) {
+    if (pluginId === BYOK_PLUGIN_ID) {
+      const rest = { ...state };
+      delete rest[BYOK_API_KEYS_CONFIG_KEY];
+      if (Object.keys(rest).length === 0) continue;
+      next[pluginId] = rest;
+      continue;
+    }
+    next[pluginId] = state;
+  }
+  return next;
+}
+
+function workspaceFingerprint(config: AppConfig): string {
   return JSON.stringify(canonicalize({
     activeLayoutIndex: config.activeLayoutIndex,
     layouts: config.layouts.map((layout) => ({
       name: layout.name,
       layout: layout.layout,
+      paneState: layout.paneState ?? {},
     })),
+    pluginConfig: pluginConfigForFingerprint(config),
+    watchlists: config.watchlists.map((watchlist) => ({
+      id: watchlist.id,
+      name: watchlist.name,
+      description: watchlist.description,
+    })),
+    theme: config.theme,
+    fontSize: config.fontSize,
+    language: config.language ?? "auto",
+    recentTickers: config.recentTickers,
   }));
 }
 
@@ -170,13 +197,11 @@ export function createHostedConfigSnapshotPusher(): {
  * placeholder must not beat a richer Worker / Gloom Cloud snapshot.
  *
  * Layout *names* matching Home/Monitor/Adjacent is not enough: rearranging
- * panes or adding TWIT still uses those names.
+ * panes, CAT specs, theme, font, watchlists, or pluginConfig still count.
  */
 export function isPlaceholderHostedConfig(config: AppConfig): boolean {
   const defaults = createDefaultConfig(config.dataDir);
-  return layoutFingerprint(config) === layoutFingerprint(defaults)
-    && Object.keys(config.pluginConfig).length === 0
-    && config.recentTickers.length === 0;
+  return workspaceFingerprint(config) === workspaceFingerprint(defaults);
 }
 
 function remoteSnapshotIsPlaceholder(remote: HostedConfigSnapshotResponse, dataDir: string): boolean {

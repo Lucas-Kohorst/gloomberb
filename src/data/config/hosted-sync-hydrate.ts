@@ -86,7 +86,12 @@ export async function hydrateHostedWorkspaceFromCloud(
   Object.assign(config, overlaid, { dataDir: config.dataDir });
 
   const collectionsPayload = contributorPayload(snapshot, "core.collections");
-  if (isRecord(collectionsPayload)) {
+  const keepLocal = shouldKeepNewerHostedLocalConfig(
+    config,
+    peekHostedUserConfigStamp()?.updatedAt ?? null,
+    snapshot?.createdAt,
+  );
+  if (isRecord(collectionsPayload) && !keepLocal) {
     const collectionPatch: Record<string, unknown> = {};
     if (Array.isArray(collectionsPayload.portfolios)) {
       collectionPatch.portfolios = collectionsPayload.portfolios;
