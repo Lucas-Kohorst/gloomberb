@@ -366,9 +366,15 @@ export class AssetDataRouter implements DataProvider {
   }
 
   private sortedProviders(): DataProvider[] {
-    return this.sortedSources()
-      .map((source) => source.market)
-      .filter((provider): provider is DataProvider => !!provider);
+    const seen = new Set<string>();
+    const providers: DataProvider[] = [];
+    for (const source of this.sortedSources()) {
+      const provider = source.market;
+      if (!provider || seen.has(provider.id)) continue;
+      seen.add(provider.id);
+      providers.push(provider);
+    }
+    return providers;
   }
 
   private providersInPriorityOrder(): DataProvider[] {

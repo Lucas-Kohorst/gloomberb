@@ -552,6 +552,37 @@ describe("NewsService", () => {
     dispose();
   });
 
+  it("applies partial articles from one source before that source finishes", async () => {
+    let releaseSlow: (() => void) | undefined;
+    const slowGate = new Promise<void>((resolve) => {
+      releaseSlow = resolve;
+    });
+    const early = makeItem({ url: "https://rss.example/early" });
+    const late = makeItem({ url: "https://rss.example/late" });
+    agg.register(newsProvider({
+      id: "rss",
+      name: "rss",
+      provider: {
+        async fetchNews(_query, options) {
+          options?.onPartial?.([early]);
+          await slowGate;
+          return [early, late];
+        },
+      },
+    }));
+
+    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toEqual([early.url]);
+
+    releaseSlow?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url).sort()).toEqual(
+      [early.url, late.url].sort(),
+    );
+    dispose();
+  });
+
   it("ingests a source that registers while a refresh is in flight, without a pane remount", async () => {
     let releaseRss: ((items: MarketNewsItem[]) => void) | undefined;
     const rss = newsProvider({

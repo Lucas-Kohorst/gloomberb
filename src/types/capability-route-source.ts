@@ -5,7 +5,7 @@ import type { CachePolicyMap } from "./persistence";
 export interface NewsDataProvider {
   supports?(query: NewsQuery): boolean;
   getCachedNews?(query: NewsQuery): NewsArticle[];
-  fetchNews(query: NewsQuery): Promise<NewsArticle[]>;
+  fetchNews(query: NewsQuery, options?: { onPartial?: (articles: NewsArticle[]) => void }): Promise<NewsArticle[]>;
   fetchNewsStory?(storyId: string): Promise<NewsArticle | null>;
 }
 

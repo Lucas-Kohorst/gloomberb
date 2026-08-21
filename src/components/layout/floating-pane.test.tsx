@@ -104,6 +104,14 @@ describe("FloatingPaneWrapper", () => {
     expect(markup).toContain('aria-label="Pane is floating — tile pane"');
   });
 
+  test("keeps resize L-brackets hidden until the handle itself is hovered", async () => {
+    const css = await Bun.file(new URL("../../renderers/electrobun/view/styles.css", import.meta.url)).text();
+    expect(css).toContain('[data-gloom-role="resize-handle"]::after');
+    expect(css).toContain("opacity: 0;");
+    expect(css).toContain('[data-gloom-role="resize-handle"]:hover::after');
+    expect(css).not.toContain('[data-gloom-role="pane-window"]:hover [data-gloom-role="resize-handle"]::after');
+  });
+
   test("lets native pane-header buttons focus and activate without pane shortcuts or dragging", () => {
     let activations = 0;
     let focusedPaneShortcuts = 0;

@@ -29,6 +29,10 @@ export const coingeckoPlugin: GloomPlugin = {
       apiKey: apiKey ?? null,
       pro: Boolean(process.env.COINGECKO_PRO_API_KEY),
     });
+    for (const capability of createCoinGeckoCapabilities(provider)) {
+      const already = ctx.listCapabilities().some((entry) => entry.capability.id === capability.id);
+      if (!already) ctx.registerCapability(capability);
+    }
     disposeConnection = registerConnectionSource({
       id: COINGECKO_CONNECTION_ID,
       name: "CoinGecko",

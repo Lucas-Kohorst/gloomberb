@@ -386,7 +386,7 @@ body.gloom-dragging {
   content: "";
   position: absolute;
   pointer-events: none;
-  opacity: .55;
+  opacity: 0;
   border-color: currentColor;
   border-style: solid;
   border-width: 0;
@@ -422,10 +422,10 @@ body.gloom-dragging {
   height: 10px;
   border-right-width: 2px;
   border-bottom-width: 2px;
-  opacity: .75;
 }
 [data-gloom-role="resize-handle"]:hover::after,
-[data-gloom-role="pane-window"]:hover [data-gloom-role="resize-handle"]::after {
+[data-gloom-role="resize-handle"]:active::after,
+[data-gloom-role="resize-handle"]:focus-visible::after {
   opacity: .95;
   color: var(--gloom-border-focused);
 }
@@ -550,7 +550,7 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
 [data-gloom-role="dock-divider"]::after {
   background: color-mix(in srgb, var(--divider-color) 72%, var(--gloom-text-bright) 28%);
   border-radius: 999px;
-  opacity: .7;
+  opacity: 0;
 }
 [data-gloom-role="dock-divider"][data-axis="horizontal"] {
   cursor: col-resize;

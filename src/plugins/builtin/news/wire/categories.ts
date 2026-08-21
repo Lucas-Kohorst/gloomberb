@@ -85,7 +85,7 @@ export function enrichNewsItem(
     ? [...new Set([...item.categories, ...classifyArticle(item)])]
     : classifyArticle(item);
 
-  const text = `${item.title} ${item.summary ?? ""} ${item.body ?? ""}`;
+  const text = `${item.title} ${item.summary ?? ""}`;
   const tickers = [...new Set([...item.tickers, ...extractTickers(text, knownTickers)])];
   const isBreaking = detectBreaking(item.title, item.publishedAt, authority);
   const importance = scoreImportance(authority, item.publishedAt, isBreaking);
