@@ -31,6 +31,37 @@ body {
 #root > * { height: 100%; min-height: 100%; }
 input, textarea, button { font: inherit; }
 input, textarea { cursor: text; user-select: text; }
+/* Hide Safari/iCloud, Chrome, and password-manager suggestion UI on every field. */
+input::-webkit-credentials-auto-fill-button,
+textarea::-webkit-credentials-auto-fill-button,
+input::-webkit-contacts-auto-fill-button,
+textarea::-webkit-contacts-auto-fill-button,
+input::-webkit-strong-password-auto-fill-button,
+textarea::-webkit-strong-password-auto-fill-button,
+input::-webkit-caps-lock-indicator,
+textarea::-webkit-caps-lock-indicator {
+  visibility: hidden !important;
+  display: none !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  right: 0;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--gloom-text, #f2f2f2) !important;
+  caret-color: var(--gloom-text, #f2f2f2);
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  transition: background-color 99999s ease-out;
+}
 button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-hover-bg="true"]:hover {
   background-color: var(--gloom-box-hover-bg) !important;

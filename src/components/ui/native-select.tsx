@@ -81,6 +81,7 @@ export function NativeSelect({
       <select
         ref={selectRef}
         value={value}
+        autoComplete="off"
         data-gloom-interactive="true"
         onFocus={onFocus}
         onMouseDown={(event) => {

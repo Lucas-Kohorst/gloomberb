@@ -18,6 +18,7 @@ import { WebPopover } from "./desktop/popover";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
 import { WebTradingViewChart } from "./host/tradingview-chart";
+import { installDisableAutofillPolicy } from "./host/disable-autofill";
 import { WebInput, WebTextarea } from "./host/input";
 import { WebMediaSurface } from "./host/media-surface";
 import {
@@ -60,6 +61,7 @@ function usesWindowsWindowControls(desktopPlatform?: string): boolean {
 }
 
 export function createWebUiHost(desktopPlatform?: string): UiHost {
+  installDisableAutofillPolicy();
   const usesWindowsControls = usesWindowsWindowControls(desktopPlatform);
   // Only a real desktop window gets OS traffic lights drawn over our header.
   // The hosted client renders in a browser tab and passes no desktop platform,
