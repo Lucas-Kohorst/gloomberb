@@ -448,6 +448,13 @@ describe("renderChart", () => {
     expect(formatAxisValue(1.17364, "price", 0, "USD", "CURRENCY")).toBe("$1.17364");
   });
 
+  test("keeps legend and cursor prices precise while axis ticks stay compact", () => {
+    expect(formatAxisValue(79_432.18, "price", 0, "USD", "CRYPTO")).toBe("$79.4K");
+    expect(formatCursorAxisValue(79_432.18, "price", 0, "USD", "CRYPTO")).toBe("$79,432.18");
+    expect(formatAxisValue(79_432.18, "price", 0, "USD", "STK")).toBe("$79.4K");
+    expect(formatCursorAxisValue(79_432.18, "price", 0, "USD", "STK")).toBe("$79,432.18");
+  });
+
   test("adapts FX axis precision to the visible price range", () => {
     expect(formatAxisValue(1.167815, "price", 0, "USD", "CURRENCY", 0.12)).toBe("$1.17");
     expect(formatAxisValue(1.167815, "price", 0, "USD", "CURRENCY", 0.0024)).toBe("$1.1678");

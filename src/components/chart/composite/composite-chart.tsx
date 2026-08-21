@@ -38,6 +38,7 @@ import {
   compositeAxisTicks,
   formatCompositeAxisValue,
   formatCompositeCursorDate,
+  formatCompositeCursorValue,
   formatCompositePointDetails,
   formatCompositeSeriesValue,
   formatCompositeTimeAxisDate,
@@ -291,7 +292,7 @@ function cursorAxisLabel(
   const domain = panel.axes[side];
   if (!domain || cursorYRatio === null) return null;
   const value = unprojectCompositeValue(cursorYRatio, domain);
-  return value === null ? null : formatCompositeAxisValue(value, domain);
+  return value === null ? null : formatCompositeCursorValue(value, domain);
 }
 
 const MINIMUM_AXIS_LABEL_WIDTH = 3;
@@ -707,10 +708,10 @@ function CompositePanelSurface({
         domain: measureDomain,
       }),
       startValueLabel: measureDomain && startValue !== null
-        ? formatCompositeAxisValue(startValue, measureDomain)
+        ? formatCompositeCursorValue(startValue, measureDomain)
         : null,
       endValueLabel: measureDomain && endValue !== null
-        ? formatCompositeAxisValue(endValue, measureDomain)
+        ? formatCompositeCursorValue(endValue, measureDomain)
         : null,
     };
   }, [measureDomain, scene, toolDrag]);
