@@ -64,3 +64,14 @@ describe("extractArticleTickers", () => {
     ], catalog)).toEqual(["NVDA"]);
   });
 });
+
+describe("buildArticleTickerUniverse", () => {
+  test("copies full book tickers into the catalog, not their first letters", () => {
+    const universe = buildArticleTickerUniverse({
+      book: [{ symbol: "HOOD", name: "Robinhood Markets" }],
+    });
+    expect(universe.catalogSymbols.has("HOOD")).toBe(true);
+    expect(universe.catalogSymbols.has("H")).toBe(false);
+    expect(universe.catalogSymbols.has("M")).toBe(false);
+  });
+});
