@@ -93,6 +93,8 @@ function sortRows(rows: ResourceCacheRow[]): ResourceCacheRow[] {
   });
 }
 
+export type ResourceStoreContract = Pick<ResourceStore, "get" | "list" | "set" | "delete">;
+
 export class ResourceStore {
   private writesSinceMaintenance = 0;
   private bytesWrittenSinceMaintenance = 0;

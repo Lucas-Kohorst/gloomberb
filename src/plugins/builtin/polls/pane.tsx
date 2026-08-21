@@ -51,7 +51,7 @@ import {
   loadPollRaceMarketOverlay,
   type PollRaceMarketOverlay,
 } from "./overlay";
-import type { PollAnalysisGroup, PollDetailTab, PollRow, PollTabId } from "./types";
+import type { PollAnalysisGroup, PollAnalysisView, PollDetailTab, PollRow, PollTabId } from "./types";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
@@ -682,6 +682,45 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     [],
   );
 
+  const baseHints = useMemo(() => {
+    return detailOpen
+      ? [
+          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+        ]
+      : [
+          { id: "search", key: "s", label: "earch", onPress: focusSearch },
+          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+        ];
+  }, [detailOpen, load, openSelected, focusSearch, selected?.url, resolvedTab]);
+
+  const analysisHints = useMemo(() => {
+    if (!detailOpen) return [];
+    if (detailTab === "trend") {
+      return [
+        {
+          id: "group",
+          key: "t",
+          label: "ype",
+          onPress: () => setAnalysisGroup((current) => current === "house" ? "race" : "house"),
+        },
+        {
+          id: "view",
+          key: "v",
+          label: "iew",
+          onPress: () => setAnalysisView((current) => current === "overlay" ? "scatter" : "overlay"),
+        },
+      ];
+    }
+    return [];
+  }, [detailOpen, detailTab, setAnalysisGroup, setAnalysisView]);
+
+  const hints = useMemo(() => {
+    const graphHint = [{ id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selected }];
+    return [...graphHint, ...analysisHints, ...baseHints];
+  }, [graphSelected, selected, analysisHints, baseHints]);
+
   usePaneFooter("polls", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
@@ -692,48 +731,16 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         ? [{ id: "analysis", parts: [{ text: analysisGroup === "house" ? "pollster" : "race", tone: "value" as const }] }]
         : []),
     ],
-    hints: [
-      { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selected },
-      ...(detailOpen
-        ? [
-            ...(detailTab === "trend"
-              ? [{
-                  id: "group",
-                  key: "t",
-                  label: "ype",
-                  onPress: () => setAnalysisGroup((current) => current === "house" ? "race" : "house"),
-                },
-                {
-                  id: "view",
-                  key: "v",
-                  label: "iew",
-                  onPress: () => setAnalysisView((current) => current === "overlay" ? "scatter" : "overlay"),
-                },
-              ]
-            : []),
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
-          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-        ]
-      : [
-          { id: "search", key: "s", label: "earch", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
-          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
-        ],
+    hints,
   }), [
+    hints,
     error,
+    status,
+    searchQuery,
+    updatedAgo,
     detailOpen,
     detailTab,
     analysisGroup,
-    focusSearch,
-    graphSelected,
-    load,
-    openSelected,
-    selected,
-    selected?.url,
-    status,
-    searchQuery,
-    resolvedTab,
-    updatedAgo,
   ]);
 
   const tabs = (

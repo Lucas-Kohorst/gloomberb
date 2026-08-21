@@ -1,4 +1,4 @@
-import type { ResourceStore } from "../../data/resource-store";
+import type { ResourceStoreContract } from "../../data/resource-store";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { BrokerAdapter } from "../../types/broker";
 import type { AppConfig } from "../../types/config";
@@ -73,7 +73,7 @@ export class AssetDataRouter implements DataProvider {
   constructor(
     fallbackSource: CapabilityRouteSource | DataProvider | null = null,
     extraSources: Array<CapabilityRouteSource | DataProvider> = [],
-    private readonly resources?: ResourceStore,
+    private readonly resources?: ResourceStoreContract,
   ) {
     this.fallbackSource = fallbackSource ? normalizeRouteSource(fallbackSource) : null;
     this.extraSources = extraSources.map(normalizeRouteSource);
