@@ -19,7 +19,8 @@ export class ProviderRouterStreamingRoutes {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    const streamingProvider = this.deps.providersInPriorityOrder().find((provider) => typeof provider.subscribeQuotes === "function") ?? null;
+    const streamingProviders = this.deps.providersInPriorityOrder().filter((provider) => typeof provider.subscribeQuotes === "function");
+    const streamingProvider = streamingProviders[0] ?? null;
     const brokerGroups = new Map<string, { candidate: BrokerCandidate; targets: QuoteSubscriptionTarget[] }>();
     const providerTargets: QuoteSubscriptionTarget[] = [];
     const addBrokerTarget = (brokerCandidate: BrokerCandidate, target: QuoteSubscriptionTarget) => {
@@ -63,16 +64,18 @@ export class ProviderRouterStreamingRoutes {
       unsubscribers.push(candidate.broker.subscribeQuotes!(candidate.instance, brokerTargets, onQuote));
     }
 
-    if (providerTargets.length > 0 && streamingProvider?.subscribeQuotes) {
-      this.deps.logInfo("Delegating provider quote stream", {
-        providerId: streamingProvider.id,
-        targetCount: providerTargets.length,
-      });
-      unsubscribers.push(streamingProvider.subscribeQuotes(providerTargets, (target, quote) => {
-        if (isProviderQuoteUsableForCurrentSession(quote, target.exchange)) {
-          onQuote(target, quote);
-        }
-      }));
+    if (providerTargets.length > 0 && streamingProviders.length > 0) {
+      for (const provider of streamingProviders) {
+        this.deps.logInfo("Delegating provider quote stream", {
+          providerId: provider.id,
+          targetCount: providerTargets.length,
+        });
+        unsubscribers.push(provider.subscribeQuotes!(providerTargets, (target, quote) => {
+          if (isProviderQuoteUsableForCurrentSession(quote, target.exchange)) {
+            onQuote(target, quote);
+          }
+        }));
+      }
     }
 
     if (unsubscribers.length === 0) {

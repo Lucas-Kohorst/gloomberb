@@ -142,6 +142,120 @@ describe("AssetDataRouter", () => {
     }
   });
 
+  test("fills mixed portfolio quote batches from CoinGecko when Cloud and Yahoo skip crypto", async () => {
+    const prices: Record<string, number> = {
+      HOOD: 98.5,
+      "BTC-USD": 111_000,
+      "ETH-USD": 4_200,
+      "ZEC-USD": 42.5,
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      async canProvide(ticker, exchange) {
+        return !isCryptoMarketInstrument(ticker, exchange);
+      },
+      async getQuote(symbol) {
+        if (isCryptoMarketInstrument(symbol)) throw new Error("Yahoo should not price crypto");
+        return makeQuote({ symbol, providerId: "yahoo", price: prices[symbol], changePercent: 0.5 });
+      },
+    };
+    const cloudProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "gloomberb-cloud",
+      name: "Cloud",
+      priority: 100,
+      async canProvide(ticker, exchange) {
+        return !isCryptoMarketInstrument(ticker, exchange);
+      },
+      async getQuote() {
+        throw new Error("Cloud should not price crypto");
+      },
+      async getQuotesBatch(targets) {
+        return targets.map((target) => (
+          isCryptoMarketInstrument(target.symbol, target.exchange)
+            ? { target, quote: null }
+            : { target, quote: makeQuote({ symbol: target.symbol, providerId: "gloomberb-cloud", price: prices[target.symbol], changePercent: 0.4 }) }
+        ));
+      },
+      subscribeQuotes(targets, onQuote) {
+        for (const target of targets) {
+          if (isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
+          onQuote(target, makeQuote({
+            symbol: target.symbol,
+            providerId: "gloomberb-cloud",
+            price: prices[target.symbol],
+            changePercent: 0.4,
+          }));
+        }
+        return () => {};
+      },
+    };
+    const coinGeckoProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "coingecko",
+      name: "CoinGecko",
+      priority: 80,
+      async canProvide(ticker, exchange) {
+        return isCryptoMarketInstrument(ticker, exchange);
+      },
+      async getQuote(symbol) {
+        return makeQuote({
+          symbol,
+          providerId: "coingecko",
+          price: prices[symbol],
+          changePercent: 1.8,
+          marketCap: 1_000_000_000,
+        });
+      },
+      subscribeQuotes(targets, onQuote) {
+        for (const target of targets) {
+          if (!isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
+          onQuote(target, makeQuote({
+            symbol: target.symbol,
+            providerId: "coingecko",
+            price: prices[target.symbol],
+            changePercent: 1.8,
+            marketCap: 1_000_000_000,
+          }));
+        }
+        return () => {};
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider, coinGeckoProvider]);
+    const batch = await router.getQuotesBatch([
+      { symbol: "HOOD", exchange: "NASDAQ" },
+      { symbol: "BTC-USD", exchange: "CCC" },
+      { symbol: "ETH-USD", exchange: "CCC" },
+      { symbol: "ZEC-USD", exchange: "CCC" },
+    ], { forceRefresh: true });
+
+    expect(batch.map((item) => [item.target.symbol, item.quote?.providerId, item.quote?.price, item.quote?.changePercent])).toEqual([
+      ["HOOD", "gloomberb-cloud", 98.5, 0.4],
+      ["BTC-USD", "coingecko", 111_000, 1.8],
+      ["ETH-USD", "coingecko", 4_200, 1.8],
+      ["ZEC-USD", "coingecko", 42.5, 1.8],
+    ]);
+
+    const streamed: Array<[string, string | undefined, number | undefined]> = [];
+    router.subscribeQuotes([
+      { symbol: "HOOD", exchange: "NASDAQ" },
+      { symbol: "BTC-USD", exchange: "CCC" },
+      { symbol: "ETH-USD", exchange: "CCC" },
+      { symbol: "ZEC-USD", exchange: "CCC" },
+    ], (target, quote) => {
+      streamed.push([target.symbol, quote.providerId, quote.price]);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(streamed).toContainEqual(["HOOD", "gloomberb-cloud", 98.5]);
+    expect(streamed).toContainEqual(["BTC-USD", "coingecko", 111_000]);
+    expect(streamed).toContainEqual(["ETH-USD", "coingecko", 4_200]);
+    expect(streamed).toContainEqual(["ZEC-USD", "coingecko", 42.5]);
+  });
+
   test("serves USD exchange rate locally without provider revalidation", async () => {
     let providerCalls = 0;
     const router = new AssetDataRouter({
