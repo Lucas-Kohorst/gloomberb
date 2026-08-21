@@ -7,6 +7,20 @@ import { usePluginConfigState } from "../../runtime";
 const FEED_POLL_INTERVAL_MINUTES = [1, 5, 15, 30] as const;
 export const DEFAULT_TWITTER_POLL_INTERVAL_MINUTES = 1;
 export const TWITTER_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
+/** gloomberb-cloud pluginConfig. Off unless the stored value is exactly true. */
+export const X_LIVE_POLLING_CONFIG_KEY = "xLivePollingEnabled";
+
+export function isXLivePollingEnabled(value: unknown): boolean {
+  return value === true;
+}
+
+/** useAutoRefresh treats 0 as no interval timer. */
+export function twitterLivePollIntervalMinutes(
+  livePollingEnabled: boolean,
+  intervalMinutes: number,
+): number {
+  return livePollingEnabled ? intervalMinutes : 0;
+}
 
 export function formatPollIntervalFooterLabel(minutes: number): string {
   return `poll ${Math.max(1, Math.floor(minutes))}m`;

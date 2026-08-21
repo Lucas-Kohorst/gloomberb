@@ -10,7 +10,7 @@ import {
 import { TickerBadgeText } from "../../../components/ticker/badge/text";
 import { RemoteImage } from "../../../components/ui";
 import { useInlineTickers } from "../../../state/hooks/inline-tickers";
-import { usePluginAppActions } from "../../runtime";
+import { usePluginAppActions, usePluginConfigState } from "../../runtime";
 import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
@@ -40,6 +40,9 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
   DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
   TWITTER_POLL_INTERVAL_CONFIG_KEY,
+  X_LIVE_POLLING_CONFIG_KEY,
+  isXLivePollingEnabled,
+  twitterLivePollIntervalMinutes,
   useFeedPollInterval,
 } from "../shared/feed-poll-interval";
 
@@ -188,7 +191,16 @@ export function TweetSearchTable({
     overrideConfigKey: TWITTER_POLL_INTERVAL_CONFIG_KEY,
     defaultMinutes: DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
   });
-  useAutoRefresh(lastUpdated, reload, poll.intervalMinutes);
+  const [livePollingStored, setLivePolling] = usePluginConfigState<boolean>(
+    X_LIVE_POLLING_CONFIG_KEY,
+    false,
+  );
+  const livePolling = isXLivePollingEnabled(livePollingStored);
+  useAutoRefresh(
+    lastUpdated,
+    reload,
+    twitterLivePollIntervalMinutes(livePolling, poll.intervalMinutes),
+  );
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [sort, setSort] = useState<{ columnId: TweetSortColumnId; direction: TweetSortDirection }>(
@@ -210,7 +222,14 @@ export function TweetSearchTable({
       : null,
     loading,
     error,
-    info: [poll.segment],
+    info: [
+      {
+        id: "x-live-polling",
+        parts: [{ text: livePolling ? "live" : "delayed", tone: "muted" }],
+        onPress: () => setLivePolling(!livePolling),
+      },
+      ...(livePolling ? [poll.segment] : []),
+    ],
     showOpenHint: !!selectedTweet?.url,
     hints: [
       ...(onFocusSearch ? [{ id: "search", key: "/", label: "search", onPress: onFocusSearch }] : []),
