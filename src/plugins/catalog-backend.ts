@@ -20,11 +20,13 @@ import { pluginDiscoveryPlugin } from "./builtin/plugin-discovery";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
 import { yahooPlugin } from "./builtin/yahoo";
+import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
 
 const desktopBackendPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
+  coingeckoPlugin,
   yahooPlugin,
   portfolioPlugin,
   tickerResearchBackendPlugin,

@@ -20,6 +20,7 @@ import {
   getSelectedPairStudies,
   parseBinarySeriesExpression,
   parseChartExpression,
+  parseSeriesExpression,
   rebindChartSecuritySymbol,
   resolveChartFieldAlias,
   setBuiltinStudies,
@@ -148,6 +149,23 @@ describe("chart composer expressions", () => {
       { style: "candles", transform: "raw", interpolation: "none" },
       { style: "line", transform: "raw", interpolation: "none" },
     ]);
+    expect(parseChartSpec(spec)).not.toBeNull();
+  });
+
+  test("charts a crypto catalog row as SYMBOL:price", () => {
+    expect(parseSeriesExpression("ETH-USD:price")).toEqual({
+      kind: "security",
+      symbol: "ETH-USD",
+      fieldId: "market.ohlcv",
+    });
+    const spec = buildCustomChartPreset("ETH-USD:price");
+    expect(spec.series[0]).toMatchObject({
+      source: {
+        kind: "security",
+        instrument: { symbol: "ETH-USD" },
+        fieldId: "market.ohlcv",
+      },
+    });
     expect(parseChartSpec(spec)).not.toBeNull();
   });
 

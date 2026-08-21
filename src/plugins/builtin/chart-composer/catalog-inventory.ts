@@ -471,7 +471,7 @@ function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
   return row({
     id: `crypto:${symbol.toUpperCase()}`,
     label: name ? `${symbol} · ${name}` : symbol,
-    source: "Yahoo",
+    source: "CoinGecko",
     sourceId: "crypto",
     kind: "Crypto",
     expression: `${symbol}:price`,

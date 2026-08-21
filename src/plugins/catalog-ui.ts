@@ -6,6 +6,7 @@ import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { yahooPlugin } from "./builtin/yahoo";
+import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { alertsPlugin } from "./builtin/alerts";
@@ -24,6 +25,7 @@ import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
+  coingeckoPlugin,
   yahooPlugin,
   portfolioPlugin,
   tickerResearchPlugin,

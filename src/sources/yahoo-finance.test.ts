@@ -111,6 +111,17 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
 
+  test("does not fetch Yahoo quotes or history for crypto pairs", async () => {
+    const provider = new YahooFinanceClient() as any;
+    provider.fetchChart = async () => {
+      throw new Error("Yahoo should not fetch crypto");
+    };
+    expect(provider.canProvide("BTC-USD", "CCC")).toBe(false);
+    expect(provider.canProvide("AAPL", "NASDAQ")).toBe(true);
+    await expect(provider.getQuote("BTC-USD", "CCC")).rejects.toThrow(/CoinGecko/);
+    await expect(provider.getPriceHistory("ETH-USD", "CCC", "1Y")).rejects.toThrow(/CoinGecko/);
+  });
+
   test("normalizes compact crypto pairs to Yahoo symbols", () => {
     expect(getYahooSymbolsToTry("BTCUSD", "")[0]).toBe("BTC-USD");
     expect(getYahooSymbolsToTry("ETHUSDT", "")[0]).toBe("ETH-USDT");
