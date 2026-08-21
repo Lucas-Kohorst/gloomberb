@@ -38,3 +38,19 @@ export function OnlinePresenceDot({
     </Span>
   );
 }
+
+export function ChatTitlePresenceDot() {
+  const { nativePaneChrome } = useUiCapabilities();
+  return (
+    <>
+      {!nativePaneChrome ? <Text selectable={false}> </Text> : null}
+      <Box
+        data-gloom-role="pane-title-presence"
+        flexShrink={0}
+        style={nativePaneChrome ? { marginLeft: 6 } : undefined}
+      >
+        <OnlinePresenceDot />
+      </Box>
+    </>
+  );
+}

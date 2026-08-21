@@ -34,6 +34,8 @@ interface FloatingPaneWrapperProps {
   onResizeMouseDrag?: (event: any) => void;
   onResizeMouseDragEnd?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
+  titleAccessory?: ReactNode;
+  titleAccessoryWidth?: number;
   children: ReactNode;
 }
 
@@ -152,6 +154,8 @@ export function FloatingPaneWrapper({
   onResizeMouseDrag,
   onResizeMouseDragEnd,
   footer,
+  titleAccessory,
+  titleAccessoryWidth,
   children,
 }: FloatingPaneWrapperProps) {
   const { cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
@@ -208,6 +212,8 @@ export function FloatingPaneWrapper({
         onFloatToggleMouseDown={onFloatToggleMouseDown}
         onCloseMouseDown={onCloseMouseDown}
         onTitleMouseDown={onTitleMouseDown}
+        titleAccessory={titleAccessory}
+        titleAccessoryWidth={titleAccessoryWidth}
       />
 
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>

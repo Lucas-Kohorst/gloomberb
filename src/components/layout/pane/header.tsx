@@ -29,6 +29,8 @@ interface PaneHeaderProps {
   focused: boolean;
   windowModeSelected?: boolean;
   floating?: boolean;
+  titleAccessory?: ReactNode;
+  titleAccessoryWidth?: number;
   showActions?: boolean;
   quickSettings?: PaneHeaderQuickSetting[];
   onHeaderMouseMove?: (event: any) => void;
@@ -142,6 +144,8 @@ export function PaneHeader({
   focused,
   windowModeSelected = false,
   floating = false,
+  titleAccessory,
+  titleAccessoryWidth = 0,
   showActions = false,
   quickSettings = [],
   onHeaderMouseMove,
@@ -228,7 +232,7 @@ export function PaneHeader({
             </svg>
           </Span>
         </Box>
-        <Box flexGrow={1} minWidth={0} overflow="hidden">
+        <Box flexGrow={1} minWidth={0} overflow="hidden" flexDirection="row" alignItems="center">
           <Text
             fg={textColor}
             selectable={false}
@@ -244,11 +248,14 @@ export function PaneHeader({
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              flexShrink: 1,
+              minWidth: 0,
               cursor: onTitleMouseDown ? "text" : undefined,
             }}
           >
             {title}
           </Text>
+          {titleAccessory}
         </Box>
         {quickSettings.map((setting) => (
           <Box key={setting.key} data-gloom-role="pane-quick-setting" data-setting-key={setting.key}>
@@ -345,12 +352,14 @@ export function PaneHeader({
     );
   }
 
+  const accessoryWidth = Math.max(0, Math.floor(titleAccessoryWidth));
+
   if (visuallyFocused || floating) {
     const borderColor = visuallyFocused ? colors.borderFocused : colors.border;
     const grip = truncateTitle(PANE_HEADER_GRIP, terminalGeometry.contentWidth);
-    const titleWidth = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip));
+    const titleWidth = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip) - accessoryWidth);
     const clippedTitle = truncateTitle(title, titleWidth);
-    const fillLen = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip) - displayWidth(clippedTitle));
+    const fillLen = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip) - displayWidth(clippedTitle) - accessoryWidth);
     const fill = "─".repeat(fillLen);
 
     return (
@@ -373,9 +382,11 @@ export function PaneHeader({
         >
           {terminalGeometry.leftBorder}
         </Text>
-        <Text width={terminalGeometry.contentWidth} flexShrink={0} fg={textColor} selectable={false}>
-          {`${grip}${clippedTitle}${fill}`}
-        </Text>
+        <Box width={terminalGeometry.contentWidth} flexShrink={0} flexDirection="row">
+          <Text fg={textColor} selectable={false}>{`${grip}${clippedTitle}`}</Text>
+          {titleAccessory}
+          <Text fg={textColor} selectable={false}>{fill}</Text>
+        </Box>
         {terminalGeometry.controls.toggle && (
           <TerminalPaneButton
             text={terminalGeometry.controls.toggle.text}
@@ -413,7 +424,7 @@ export function PaneHeader({
   }
 
   const grip = truncateTitle(PANE_HEADER_GRIP, terminalGeometry.contentWidth);
-  const titleWidth = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip));
+  const titleWidth = Math.max(0, terminalGeometry.contentWidth - displayWidth(grip) - accessoryWidth);
   const clippedTitle = truncateTitle(title, titleWidth);
   const padding = " ".repeat(Math.max(0, titleWidth - displayWidth(clippedTitle)));
 
@@ -429,9 +440,11 @@ export function PaneHeader({
       onMouseDrag={onHeaderMouseDrag}
       onMouseDragEnd={onHeaderMouseDragEnd}
     >
-      <Text width={terminalGeometry.contentWidth} flexShrink={0} fg={textColor} selectable={false}>
-        {`${grip}${clippedTitle}${padding}`}
-      </Text>
+      <Box width={terminalGeometry.contentWidth} flexShrink={0} flexDirection="row">
+        <Text fg={textColor} selectable={false}>{`${grip}${clippedTitle}`}</Text>
+        {titleAccessory}
+        <Text fg={textColor} selectable={false}>{padding}</Text>
+      </Box>
       {terminalGeometry.controls.toggle && (
         <TerminalPaneButton
           text={terminalGeometry.controls.toggle.text}

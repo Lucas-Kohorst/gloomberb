@@ -15,6 +15,7 @@ import { PaneContent } from "../../pane/content";
 import { PaneWrapper } from "../../pane";
 import type { PaneHeaderQuickSetting } from "../../pane/header";
 import { hasPaneFooterContent, PaneFooterProvider } from "../../pane/footer";
+import { PaneHeaderAccessoryProvider } from "../../pane/header-accessory";
 import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "../../pane/sizing";
 import type { DividerPreviewState } from "../native/window-state";
 
@@ -119,50 +120,56 @@ export function ShellPaneLayers({
             height={rect.height}
           >
             <PaneFooterProvider>
-              {(footer) => {
-                const showFooter = hasPaneFooterContent(footer);
-                const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
-                const renderFooter = reserveFooter || showFooter;
-                const bodyFrame = resolvePaneBodyFrame({
-                  width: rect.width,
-                  height: rect.height,
-                  nativePaneChrome,
-                  footerVisible: renderFooter,
-                  reserveFooter,
-                  headerRows,
-                });
-                return (
-                  <PaneWrapper
-                    paneId={leaf.instanceId}
-                    title={getPaneTitle(pane)}
-                    focused={focused}
-                    width={rect.width}
-                    height={rect.height}
-                    showActions={showActions}
-                    quickSettings={getPaneQuickSettings(leaf.instanceId)}
-                    windowModeSelected={windowModeSelected}
-                    footer={footer}
-                    onMouseDownCapture={nativePaneChrome ? (event) => handleNativePaneMouseDown(leaf.instanceId, event) : undefined}
-                    onHeaderMouseMove={() => setHoveredPaneIfChanged(leaf.instanceId)}
-                    onHeaderMouseDown={nativePaneChrome && !transientFocusActive ? (event) => startNativeDockedDrag(leaf.instanceId, rect, event) : undefined}
-                    onHeaderMouseDrag={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
-                    onHeaderMouseDragEnd={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
-                    onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
-                    onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
-                    onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
-                    onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(leaf.instanceId, event) : undefined}
-                  >
-                    <PaneContent
-                      component={pane.def.component}
-                      paneId={pane.instance.instanceId}
-                      paneType={pane.instance.paneId}
-                      focused={focused}
-                      width={bodyFrame.width ?? 1}
-                      height={bodyFrame.height ?? 1}
-                    />
-                  </PaneWrapper>
-                );
-              }}
+              {(footer) => (
+                <PaneHeaderAccessoryProvider>
+                  {(titleAccessory) => {
+                    const showFooter = hasPaneFooterContent(footer);
+                    const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
+                    const renderFooter = reserveFooter || showFooter;
+                    const bodyFrame = resolvePaneBodyFrame({
+                      width: rect.width,
+                      height: rect.height,
+                      nativePaneChrome,
+                      footerVisible: renderFooter,
+                      reserveFooter,
+                      headerRows,
+                    });
+                    return (
+                      <PaneWrapper
+                        paneId={leaf.instanceId}
+                        title={getPaneTitle(pane)}
+                        focused={focused}
+                        width={rect.width}
+                        height={rect.height}
+                        showActions={showActions}
+                        quickSettings={getPaneQuickSettings(leaf.instanceId)}
+                        windowModeSelected={windowModeSelected}
+                        footer={footer}
+                        titleAccessory={titleAccessory?.node}
+                        titleAccessoryWidth={titleAccessory?.width}
+                        onMouseDownCapture={nativePaneChrome ? (event) => handleNativePaneMouseDown(leaf.instanceId, event) : undefined}
+                        onHeaderMouseMove={() => setHoveredPaneIfChanged(leaf.instanceId)}
+                        onHeaderMouseDown={nativePaneChrome && !transientFocusActive ? (event) => startNativeDockedDrag(leaf.instanceId, rect, event) : undefined}
+                        onHeaderMouseDrag={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
+                        onHeaderMouseDragEnd={nativePaneChrome && !transientFocusActive ? handleNativeDrag : undefined}
+                        onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
+                        onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
+                        onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
+                        onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(leaf.instanceId, event) : undefined}
+                      >
+                        <PaneContent
+                          component={pane.def.component}
+                          paneId={pane.instance.instanceId}
+                          paneType={pane.instance.paneId}
+                          focused={focused}
+                          width={bodyFrame.width ?? 1}
+                          height={bodyFrame.height ?? 1}
+                        />
+                      </PaneWrapper>
+                    );
+                  }}
+                </PaneHeaderAccessoryProvider>
+              )}
             </PaneFooterProvider>
           </Box>
         );
@@ -180,60 +187,66 @@ export function ShellPaneLayers({
         const showActions = focused || hoveredPaneId === pane.instance.instanceId || menuPaneId === pane.instance.instanceId;
         return (
           <PaneFooterProvider key={`float:${pane.instance.instanceId}`}>
-            {(footer) => {
-              const showFooter = hasPaneFooterContent(footer);
-              const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
-              const renderFooter = reserveFooter || showFooter;
-              const bodyFrame = resolvePaneBodyFrame({
-                width: preview.width,
-                height: preview.height,
-                nativePaneChrome,
-                footerVisible: renderFooter,
-                reserveFooter,
-                headerRows,
-              });
-              return (
-                <FloatingPaneWrapper
-                  paneId={pane.instance.instanceId}
-                  title={getPaneTitle(pane)}
-                  x={preview.x}
-                  y={preview.y}
-                  width={preview.width}
-                  height={preview.height}
-                  zIndex={pane.floating?.zIndex ?? 50}
-                  focused={focused}
-                  windowModeSelected={windowModeSelected}
-                  showActions={showActions}
-                  quickSettings={getPaneQuickSettings(pane.instance.instanceId)}
-                  footer={footer}
-                  onMouseDownCapture={nativePaneChrome ? (event) => handleNativePaneMouseDown(pane.instance.instanceId, event) : undefined}
-                  onHeaderMouseMove={() => setHoveredPaneIfChanged(pane.instance.instanceId)}
-                  onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
-                  onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
-                  onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
-                  onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(pane.instance.instanceId, preview, event) : undefined}
-                  onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
-                  onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(pane.instance.instanceId, event) : undefined}
-                  onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
-                  onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(pane.instance.instanceId, event) : undefined}
-                  onResizeMouseDown={nativePaneChrome
-                    ? (corner, event) => startNativeFloatResize(pane.instance.instanceId, preview, corner, event)
-                    : undefined}
-                  onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
-                  onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
-                >
-                  <PaneContent
-                    component={pane.def.component}
-                    paneId={pane.instance.instanceId}
-                    paneType={pane.instance.paneId}
-                    focused={focused}
-                    width={bodyFrame.width ?? 1}
-                    height={bodyFrame.height ?? 1}
-                    onClose={handleFloatingClose}
-                  />
-                </FloatingPaneWrapper>
-              );
-            }}
+            {(footer) => (
+              <PaneHeaderAccessoryProvider>
+                {(titleAccessory) => {
+                  const showFooter = hasPaneFooterContent(footer);
+                  const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
+                  const renderFooter = reserveFooter || showFooter;
+                  const bodyFrame = resolvePaneBodyFrame({
+                    width: preview.width,
+                    height: preview.height,
+                    nativePaneChrome,
+                    footerVisible: renderFooter,
+                    reserveFooter,
+                    headerRows,
+                  });
+                  return (
+                    <FloatingPaneWrapper
+                      paneId={pane.instance.instanceId}
+                      title={getPaneTitle(pane)}
+                      x={preview.x}
+                      y={preview.y}
+                      width={preview.width}
+                      height={preview.height}
+                      zIndex={pane.floating?.zIndex ?? 50}
+                      focused={focused}
+                      windowModeSelected={windowModeSelected}
+                      showActions={showActions}
+                      quickSettings={getPaneQuickSettings(pane.instance.instanceId)}
+                      footer={footer}
+                      titleAccessory={titleAccessory?.node}
+                      titleAccessoryWidth={titleAccessory?.width}
+                      onMouseDownCapture={nativePaneChrome ? (event) => handleNativePaneMouseDown(pane.instance.instanceId, event) : undefined}
+                      onHeaderMouseMove={() => setHoveredPaneIfChanged(pane.instance.instanceId)}
+                      onHeaderMouseDown={nativePaneChrome ? (event) => startNativeFloatingDrag(pane.instance.instanceId, preview, event) : undefined}
+                      onHeaderMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+                      onHeaderMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                      onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(pane.instance.instanceId, preview, event) : undefined}
+                      onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
+                      onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(pane.instance.instanceId, event) : undefined}
+                      onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
+                      onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(pane.instance.instanceId, event) : undefined}
+                      onResizeMouseDown={nativePaneChrome
+                        ? (corner, event) => startNativeFloatResize(pane.instance.instanceId, preview, corner, event)
+                        : undefined}
+                      onResizeMouseDrag={nativePaneChrome ? handleNativeDrag : undefined}
+                      onResizeMouseDragEnd={nativePaneChrome ? handleNativeDrag : undefined}
+                    >
+                      <PaneContent
+                        component={pane.def.component}
+                        paneId={pane.instance.instanceId}
+                        paneType={pane.instance.paneId}
+                        focused={focused}
+                        width={bodyFrame.width ?? 1}
+                        height={bodyFrame.height ?? 1}
+                        onClose={handleFloatingClose}
+                      />
+                    </FloatingPaneWrapper>
+                  );
+                }}
+              </PaneHeaderAccessoryProvider>
+            )}
           </PaneFooterProvider>
         );
       })}

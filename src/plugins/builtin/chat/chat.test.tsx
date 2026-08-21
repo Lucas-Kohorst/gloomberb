@@ -1636,6 +1636,48 @@ describe("chat public profiles and presence", () => {
     expect(frame).toContain("@cara");
   });
 
+  test("shows a presence dot after the pane title for an online DM peer while the composer is focused", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "dm:spencer",
+        name: "@spencer",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: {
+          id: "u2",
+          username: "spencer",
+          displayName: "Spencer",
+          profilePublic: true,
+        },
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 1,
+      userIds: ["u2"],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        createHarness(controller, {
+          width: 72,
+          height: 14,
+          channelId: "dm:spencer",
+          withPaneHeader: true,
+          paneTitle: "@spencer",
+        }),
+        { width: 72, height: 14 },
+      );
+    });
+    await flushFrame();
+
+    const headerLine = setup().captureCharFrame().split("\n")[0] ?? "";
+    expect(headerLine).toContain("@spencer ●");
+  });
+
   test("keyboard p on a selected message opens the author's public profile", async () => {
     const controller = createController({
       sessionToken: "token-123",

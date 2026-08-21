@@ -1,7 +1,7 @@
 import { Box, Text, useUiCapabilities } from "../../../../ui";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "../../../../ui";
-import { InputSearchBar, usePaneFooter, type PaneFooterSegment } from "../../../../components";
+import { InputSearchBar, usePaneFooter, usePaneHeaderAccessory, type PaneFooterSegment } from "../../../../components";
 import { PageStackView } from "../../../../components/ui";
 import { t } from "../../../../i18n";
 import { useAppDispatch, useAppSelector } from "../../../../state/app/context";
@@ -22,7 +22,8 @@ import { ChannelMemberList, listChannelMembers } from "./members";
 import {
   ChannelSidebar,
 } from "../sidebar";
-import { isChatUserOnline } from "../peer-online";
+import { isChatUserOnline, isSidebarChannelOnline } from "../peer-online";
+import { ChatTitlePresenceDot } from "../presence-dot";
 import { useChatSnapshotState } from "./snapshot";
 import { useChatContentShortcuts } from "./shortcuts";
 import type { ChatContentController } from "./types";
@@ -271,6 +272,7 @@ export function ChatContent({
   } = useChatProfilePopover(user?.id);
 
   const presence = useMemo(() => ({ onlineUserIds, onlineUsernames }), [onlineUserIds, onlineUsernames]);
+  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
   const channelMembers = useMemo(
     () => listChannelMembers(activeChannel),
     [activeChannel],
@@ -662,6 +664,14 @@ export function ChatContent({
     user,
     visibleMessages.length,
   ]);
+
+  usePaneHeaderAccessory("chat-presence", () => {
+    if (!channelOnline) return null;
+    return {
+      width: nativePaneChrome ? 0 : 2,
+      node: <ChatTitlePresenceDot />,
+    };
+  }, [channelOnline, nativePaneChrome]);
 
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
