@@ -37,6 +37,11 @@ import {
 import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { registerConnectionSource } from "../../connections/register";
 import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
+import {
+  buildArticleTickerUniverse,
+  setSharedArticleTickerUniverse,
+} from "../../../../news/article-tickers";
+import { ensureUsListingsUniverse } from "../../../../sources/us-listings/client";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -204,13 +209,42 @@ export const newsWireModule: PluginModule = {
       () => getEnabledNewsFeeds(loadNewsFeedSettings(ctx.configState)),
       {
         persistence: ctx.persistence,
-        knownTickers: async () => {
-          const tickers = await ctx.tickerRepository.loadAllTickers();
-          return new Set(tickers.map((ticker) => ticker.metadata.ticker.toUpperCase()));
+        tickerUniverse: async () => {
+          const [tickers, listings] = await Promise.all([
+            ctx.tickerRepository.loadAllTickers(),
+            ensureUsListingsUniverse(),
+          ]);
+          const universe = buildArticleTickerUniverse({
+            book: tickers.map((ticker) => ({
+              symbol: ticker.metadata.ticker,
+              name: ticker.metadata.name,
+            })),
+            catalog: listings?.securities.map((security) => ({
+              symbol: security.symbol,
+              name: security.name,
+            })) ?? [],
+          });
+          setSharedArticleTickerUniverse(universe);
+          return universe;
         },
       },
     );
     ctx.registerCapability(source);
+    void ensureUsListingsUniverse().then((listings) => {
+      if (!listings) return;
+      void ctx.tickerRepository.loadAllTickers().then((tickers) => {
+        setSharedArticleTickerUniverse(buildArticleTickerUniverse({
+          book: tickers.map((ticker) => ({
+            symbol: ticker.metadata.ticker,
+            name: ticker.metadata.name,
+          })),
+          catalog: listings.securities.map((security) => ({
+            symbol: security.symbol,
+            name: security.name,
+          })),
+        }));
+      });
+    });
     disposeRssConnection = registerConnectionSource({
       id: "rss",
       name: "RSS Feeds",

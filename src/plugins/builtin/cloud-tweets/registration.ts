@@ -5,6 +5,7 @@ import { registerConnectionSource } from "../connections/register";
 import { isXLivePollingEnabled, X_LIVE_POLLING_CONFIG_KEY } from "../shared/feed-poll-interval";
 import { buildTwitterFeedPaneSettingsDef } from "./settings";
 import { createXMarketsNewsCapability } from "./news-capability";
+import { scheduleLatestNewsWarm } from "../news/wire/article-search";
 import {
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
@@ -77,10 +78,10 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
   });
 
-  ctx.registerCapability({
-    ...createXMarketsNewsCapability(),
-    isEnabled: () => isXLivePollingEnabled(ctx.configState.get(X_LIVE_POLLING_CONFIG_KEY)),
-  });
+  ctx.registerCapability(createXMarketsNewsCapability());
+  // Firehose should fetch Markets tweets at startup even when TWIT live polling
+  // is off. Live polling only controls the X pane interval, not this source.
+  scheduleLatestNewsWarm();
   // Logging in/out flips this source between empty and populated; re-run the
   // watched news queries so the firehose merges Markets tweets without a reload.
   disposeXFeedAuthWatch = apiClient.subscribeCurrentUser(() => {

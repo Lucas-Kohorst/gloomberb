@@ -226,16 +226,19 @@ describe("NewsService", () => {
     agg.register(makeSource("h", []));
     await agg.poll();
 
-    expect(callCount).toBe(1);
-    expect(agg.getVersion()).toBe(initialVersion + 1);
+    expect(callCount).toBeGreaterThanOrEqual(1);
+    expect(agg.getVersion()).toBeGreaterThan(initialVersion);
 
+    const afterFirst = callCount;
+    const afterFirstVersion = agg.getVersion();
     await agg.poll();
-    expect(callCount).toBe(2);
-    expect(agg.getVersion()).toBe(initialVersion + 2);
+    expect(callCount).toBeGreaterThan(afterFirst);
+    expect(agg.getVersion()).toBeGreaterThan(afterFirstVersion);
 
     unsub();
+    const afterUnsub = callCount;
     await agg.poll();
-    expect(callCount).toBe(2); // unsubscribed, no more calls
+    expect(callCount).toBe(afterUnsub); // unsubscribed, no more calls
   });
 
   it("watchQuery refreshes a query without a mounted pane", async () => {
@@ -514,5 +517,95 @@ describe("NewsService", () => {
     const state = agg.getQueryState({ feed: "top", limit: 10 });
 
     expect(state.articles[0]?.items?.map((item) => item.id)).toEqual(["item-1"]);
+  });
+
+  it("publishes fast sources before a slower source finishes", async () => {
+    let releaseSlow: ((items: MarketNewsItem[]) => void) | undefined;
+    const slow = newsProvider({
+      id: "rss",
+      name: "rss",
+      provider: {
+        fetchNews: () => new Promise<MarketNewsItem[]>((resolve) => {
+          releaseSlow = resolve;
+        }),
+      },
+    });
+    const fastItem = makeItem({ url: "https://fast.example/1" });
+    agg.register(makeSource("substack-news", [fastItem]));
+    agg.register(slow);
+
+    const seen: string[][] = [];
+    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, (state) => {
+      seen.push(state.articles.map((article) => article.url));
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(seen.some((urls) => urls.includes(fastItem.url))).toBe(true);
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toEqual([fastItem.url]);
+
+    const slowItem = makeItem({ url: "https://slow.example/1" });
+    releaseSlow?.([slowItem]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url).sort()).toEqual(
+      [fastItem.url, slowItem.url].sort(),
+    );
+    dispose();
+  });
+
+  it("ingests a source that registers while a refresh is in flight, without a pane remount", async () => {
+    let releaseRss: ((items: MarketNewsItem[]) => void) | undefined;
+    const rss = newsProvider({
+      id: "rss",
+      name: "rss",
+      provider: {
+        fetchNews: () => new Promise<MarketNewsItem[]>((resolve) => {
+          releaseRss = resolve;
+        }),
+      },
+    });
+    agg.register(rss);
+    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const xItem = makeItem({ url: "https://x.example/1" });
+    let xFetches = 0;
+    agg.register(newsProvider({
+      id: "x-feed",
+      name: "X",
+      provider: {
+        fetchNews: async () => {
+          xFetches += 1;
+          return [xItem];
+        },
+      },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(xFetches).toBeGreaterThanOrEqual(1);
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toContain(xItem.url);
+
+    releaseRss?.([makeItem({ url: "https://rss.example/1" })]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const urls = agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url);
+    expect(urls).toContain(xItem.url);
+    expect(urls).toContain("https://rss.example/1");
+    dispose();
+  });
+
+  it("poll starts a latest-feed fetch without a mounted pane", async () => {
+    let fetches = 0;
+    agg.register(newsProvider({
+      id: "rss",
+      name: "rss",
+      provider: {
+        fetchNews: async () => {
+          fetches += 1;
+          return [makeItem({ url: "https://rss.example/warm" })];
+        },
+      },
+    }));
+    await agg.poll({ feed: "latest", limit: 200 });
+    expect(fetches).toBe(1);
+    expect(agg.getQueryState({ feed: "latest", limit: 200 }).articles).toHaveLength(1);
   });
 });

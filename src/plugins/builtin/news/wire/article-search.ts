@@ -62,13 +62,18 @@ export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
 
 let rssWarmTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
-export function scheduleRssNewsWarm(): void {
+/** Prefetch latest news (RSS, X, Substack, wire) without waiting for a pane to mount. */
+export function scheduleLatestNewsWarm(): void {
   cancelRssNewsWarm();
   rssWarmTimer = setTimeout(() => {
     rssWarmTimer = null;
     void getSharedNewsService()?.poll(ARTICLE_SEARCH_QUERY);
   }, 0);
+}
+
+/** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
+export function scheduleRssNewsWarm(): void {
+  scheduleLatestNewsWarm();
 }
 
 export function cancelRssNewsWarm(): void {

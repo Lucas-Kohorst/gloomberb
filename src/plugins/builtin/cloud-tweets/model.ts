@@ -9,6 +9,7 @@ import { normalizeTweetText } from "../../../utils/tweet-text";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import { toTimestampMillis } from "../../../utils/timestamp";
 import { collectUniqueTickerSymbols } from "../../../tickers/tokenizer";
+import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import { normalizedHttpUrl } from "../../../utils/url";
 import {
   resolveVisibleColumns,
@@ -243,8 +244,57 @@ export function tweetTextRowHeight(textWidth: number, density: TweetDensity = "c
   );
 }
 
+function nestedTweetText(value: unknown): string | null {
+  if (typeof value === "string") {
+    const text = normalizeTweetDisplayText(value).trim();
+    return text || null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const text = record.text ?? record.fullText ?? record.full_text ?? record.noteTweet;
+  if (typeof text === "string") {
+    const normalized = normalizeTweetDisplayText(text).trim();
+    return normalized || null;
+  }
+  if (text && typeof text === "object") {
+    const nested = (text as Record<string, unknown>).text;
+    if (typeof nested === "string") {
+      const normalized = normalizeTweetDisplayText(nested).trim();
+      return normalized || null;
+    }
+  }
+  return null;
+}
+
+/** Tweet body plus any quoted/retweeted text the payload still carries. */
+export function tweetTickerTexts(tweet: CloudTweetPayload): string[] {
+  const record = tweet as unknown as Record<string, unknown>;
+  const texts: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string | null) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    texts.push(value);
+  };
+
+  push(normalizeTweetDisplayText(tweet.text).trim() || null);
+  for (const key of [
+    "quotedTweet",
+    "quoted_tweet",
+    "quoted_status",
+    "retweetedTweet",
+    "retweeted_tweet",
+    "retweetedStatus",
+    "retweeted_status",
+    "legacyQuotedTweet",
+  ]) {
+    push(nestedTweetText(record[key]));
+  }
+  return texts;
+}
+
 export function tweetTickers(tweet: CloudTweetPayload): string[] {
-  return collectUniqueTickerSymbols([normalizeTweetDisplayText(tweet.text)]);
+  return extractArticleTickersFromParts(tweetTickerTexts(tweet));
 }
 
 function tweetCreatedAtMs(tweet: CloudTweetPayload): number {
