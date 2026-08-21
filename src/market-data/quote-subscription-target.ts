@@ -58,3 +58,13 @@ export function mergeQuoteSubscriptionTargets<T extends QuoteSubscriptionPriorit
   else delete merged.weight;
   return merged;
 }
+
+/** Live stream if selected, or if not explicitly hidden. Weight is priority among live targets only. */
+export function isLiveQuoteSubscriptionTarget(target: {
+  visible?: boolean;
+  selected?: boolean;
+}): boolean {
+  if (target.selected === true) return true;
+  if (target.visible === false) return false;
+  return true;
+}

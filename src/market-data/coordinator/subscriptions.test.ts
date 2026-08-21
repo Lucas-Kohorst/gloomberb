@@ -108,14 +108,38 @@ describe("MarketDataCoordinator key subscriptions", () => {
 
     unsubscribeDetail();
 
-    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions).toHaveLength(1);
     expect(disposals).toBe(1);
-    expect(subscriptions[1]?.[0]).toMatchObject({
-      surface: "portfolio",
-      visible: false,
-      selected: false,
-      weight: 10,
+  });
+
+  test("does not subscribe off-screen portfolio rows that are not selected", () => {
+    const subscriptions: QuoteSubscriptionTarget[][] = [];
+    const provider = createTestDataProvider({
+      id: "test-provider",
+      subscribeQuotes: (targets) => {
+        subscriptions.push(targets);
+        return () => {};
+      },
     });
+    const coordinator = new MarketDataCoordinator(provider);
+
+    coordinator.subscribeQuotes([
+      {
+        instrument: { symbol: "HOOD", exchange: "NASDAQ" },
+        priority: { surface: "portfolio", visible: true, selected: true, weight: 100 },
+      },
+      {
+        instrument: { symbol: "BTC-USD", exchange: "CCC" },
+        priority: { surface: "portfolio", visible: false, selected: false, weight: 10 },
+      },
+      {
+        instrument: { symbol: "AAPL", exchange: "NASDAQ" },
+        priority: { surface: "watchlist", visible: false, weight: 10 },
+      },
+    ]);
+
+    expect(subscriptions).toHaveLength(1);
+    expect(subscriptions[0]?.map((target) => target.symbol)).toEqual(["HOOD"]);
   });
 
   test("replaces a capped target window without retaining pending removals", () => {

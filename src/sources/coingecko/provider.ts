@@ -31,7 +31,6 @@ import {
   mapCoinGeckoOhlc,
 } from "./history";
 import {
-  COINGECKO_BASE_IDS,
   COINGECKO_EXCHANGE,
   COINGECKO_PROVIDER_ID,
   isCryptoMarketInstrument,
@@ -39,6 +38,7 @@ import {
   shouldSearchCoinGecko,
   type CoinGeckoPair,
 } from "./ids";
+import { CoinGeckoIdentityCache, liveCoinGeckoQuoteTargets, pickCoinGeckoSearchCoins } from "./identity";
 import { mapCoinGeckoCoinQuote, mapCoinGeckoSimpleQuote } from "./quotes";
 
 export const COINGECKO_QUOTE_POLL_INTERVAL_MS = 15_000;
@@ -49,8 +49,11 @@ export class CoinGeckoProvider implements AssetDataProvider {
   readonly id = COINGECKO_PROVIDER_ID;
   readonly name = "CoinGecko";
   readonly priority = 80;
+  private readonly identity: CoinGeckoIdentityCache;
 
-  constructor(private readonly http: CoinGeckoHttp = createCoinGeckoHttp()) {}
+  constructor(private readonly http: CoinGeckoHttp = createCoinGeckoHttp()) {
+    this.identity = new CoinGeckoIdentityCache(http);
+  }
 
   canProvide(ticker: string, exchange?: string, _context?: MarketDataRequestContext): boolean {
     return isCryptoMarketInstrument(ticker, exchange);
@@ -80,12 +83,7 @@ export class CoinGeckoProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     _options?: { forceRefresh?: boolean },
   ): Promise<QuoteBatchResult[]> {
-    const resolved = await Promise.all(targets.map(async (target) => ({
-      target,
-      pair: isCryptoMarketInstrument(target.symbol, target.exchange)
-        ? await this.resolvePair(target.symbol, target.exchange ?? "").catch(() => null)
-        : null,
-    })));
+    const resolved = await this.identity.resolveMany(targets);
     const idsByVs = new Map<string, string[]>();
     for (const entry of resolved) {
       if (!entry.pair) continue;
@@ -117,7 +115,7 @@ export class CoinGeckoProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    const cryptoTargets = targets.filter((target) => isCryptoMarketInstrument(target.symbol, target.exchange));
+    const cryptoTargets = liveCoinGeckoQuoteTargets(targets);
     if (cryptoTargets.length === 0) return () => {};
 
     let cancelled = false;
@@ -254,43 +252,9 @@ export class CoinGeckoProvider implements AssetDataProvider {
     return pair;
   }
 
-  private async resolvePair(ticker: string, exchange: string): Promise<CoinGeckoPair | null> {
-    const mapped = resolveCoinGeckoPair(ticker, exchange);
-    if (mapped) return mapped;
-    if (!isCryptoMarketInstrument(ticker, exchange)) return null;
-    const query = ticker.trim().toUpperCase()
-      .replace(/=X$/i, "")
-      .replace(/[/-]USD[T]?$/i, "")
-      .replace(/[/\s]+/g, "");
-    if (!query) return null;
-    const known = COINGECKO_BASE_IDS[query];
-    if (known) {
-      return { id: known, base: query, vsCurrency: "usd", symbol: `${query}-USD` };
-    }
-    const response = await fetchCoinGeckoSearch(query, this.http);
-    const match = pickCoinGeckoSearchCoins(response.coins ?? [], query)[0];
-    if (!match || match.symbol.toUpperCase() !== query) return null;
-    return {
-      id: match.id,
-      base: query,
-      vsCurrency: "usd",
-      symbol: `${query}-USD`,
-    };
+  private resolvePair(ticker: string, exchange: string): Promise<CoinGeckoPair | null> {
+    return this.identity.resolve(ticker, exchange);
   }
-}
-
-function pickCoinGeckoSearchCoins(
-  coins: Array<{ id: string; name: string; symbol: string; market_cap_rank?: number | null }>,
-  query: string,
-): Array<{ id: string; name: string; symbol: string }> {
-  const compactQuery = query.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
-  const exact = coins.filter((coin) => coin.symbol.trim().toUpperCase() === compactQuery);
-  const ranked = (exact.length > 0 ? exact : coins).slice().sort((a, b) => {
-    const aRank = a.market_cap_rank ?? Number.POSITIVE_INFINITY;
-    const bRank = b.market_cap_rank ?? Number.POSITIVE_INFINITY;
-    return aRank - bRank;
-  });
-  return ranked;
 }
 
 export function createCoinGeckoCapabilities(provider = new CoinGeckoProvider()) {
