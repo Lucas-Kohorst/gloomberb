@@ -4,6 +4,9 @@
  * kind that {@link parseSeriesExpression} recognises and
  * {@link buildSeriesCatalogSuggestions} surfaces in the command bar.
  *
+ * Default measures: assets/futures → price, FRED/UST/OWID/WX → level,
+ * prediction markets → probability (0–100), polls → percent (0–100).
+ *
  * Prefixes:
  * - `ADJ:indexId`       — Adjacent prediction-market index (50–150 scale)
  * - `KALSHI:ticker`     — Kalshi market yes-price

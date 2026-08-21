@@ -190,6 +190,15 @@ function seriesDomainValues(series: ResolvedSeries): number[] {
   return values;
 }
 
+function sharedValueRange(series: readonly ResolvedSeries[]): { min: number; max: number } | null {
+  const ranges = series.map((entry) => entry.valueRange);
+  if (ranges.length === 0 || ranges.some((range) => !range)) return null;
+  const min = Math.min(...ranges.map((range) => range!.min));
+  const max = Math.max(...ranges.map((range) => range!.max));
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return null;
+  return { min, max };
+}
+
 function paddedDomain(values: number[], scale: PanelScale): { min: number; max: number } {
   const usable = scale === "log" ? values.filter((value) => value > 0) : values;
   if (usable.length === 0) return scale === "log" ? { min: 1, max: 10 } : { min: 0, max: 1 };
@@ -228,7 +237,8 @@ function buildAxisDomain(
 ): CompositeAxisDomain | undefined {
   const axisSeries = series.filter((entry) => entry.axis === side);
   if (axisSeries.length === 0) return undefined;
-  const { min, max } = paddedDomain(axisSeries.flatMap(seriesDomainValues), scale);
+  const bounded = scale === "linear" ? sharedValueRange(axisSeries) : null;
+  const { min, max } = bounded ?? paddedDomain(axisSeries.flatMap(seriesDomainValues), scale);
   const first = axisSeries[0]!;
   return {
     side,

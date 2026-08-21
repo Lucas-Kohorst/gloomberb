@@ -65,6 +65,66 @@ export function coerceSeriesInterpolationForStyle(
   return style === "step" ? "step-after" : "none";
 }
 
+export interface ChartSeriesKindDefaults {
+  style: SeriesStyle;
+  transform: SeriesTransform;
+  unit: string;
+  unitGroup: string;
+  /** Inclusive y-axis for bounded measures. Omitted for auto-fit (price, level, % overlay). */
+  valueRange?: { min: number; max: number };
+}
+
+/**
+ * Working defaults for every catalog series kind:
+ * price for assets, level for macro, probability for prediction markets, % for polls.
+ */
+export function defaultChartSeriesPresentation(source: ChartSeriesSource): ChartSeriesKindDefaults {
+  switch (source.kind) {
+    case "security": {
+      const field = getTimeSeriesField(source.fieldId);
+      return {
+        style: field?.defaultStyle ?? "line",
+        transform: "raw",
+        unit: field?.unit ?? "currency/share",
+        unitGroup: field?.unitGroup ?? "price",
+      };
+    }
+    case "economic":
+      return { style: "step", transform: "raw", unit: "level", unitGroup: "level" };
+    case "adjacent-index":
+      return { style: "line", transform: "raw", unit: "index", unitGroup: "level" };
+    case "benchmark":
+      return { style: "points", transform: "raw", unit: "", unitGroup: `benchmark:${source.metric}` };
+    case "poll":
+      return {
+        style: "line",
+        transform: "raw",
+        unit: "%",
+        unitGroup: "percent",
+        valueRange: { min: 0, max: 100 },
+      };
+    case "prediction-market":
+      return {
+        style: "line",
+        transform: "raw",
+        unit: "%",
+        unitGroup: "probability",
+        valueRange: { min: 0, max: 100 },
+      };
+    case "weather":
+      return {
+        style: source.metric === "precip" ? "columns" : "line",
+        transform: "raw",
+        unit: source.metric === "precip" ? "in" : "°F",
+        unitGroup: `weather:${source.metric}`,
+      };
+    case "owid":
+      return { style: "line", transform: "raw", unit: "", unitGroup: `owid:${source.slug}` };
+    case "constant":
+      return { style: "step", transform: "raw", unit: "", unitGroup: "constant" };
+  }
+}
+
 export const MAX_CHART_SERIES = 10;
 
 export const DEFAULT_CHART_SPEC: ChartSpec = Object.freeze({
@@ -241,6 +301,7 @@ function normalizeSeries(
   const source = normalizeSource(entry.source);
   if (!source) return null;
   const definition = source.kind === "security" ? getTimeSeriesField(source.fieldId) : undefined;
+  const kindDefaults = defaultChartSeriesPresentation(source);
   const requestedStyle = STYLES.has(entry.style as SeriesStyle) ? entry.style as SeriesStyle : undefined;
   const requestedTransform = TRANSFORMS.has(entry.transform as SeriesTransform)
     ? entry.transform as SeriesTransform
@@ -250,15 +311,13 @@ function normalizeSeries(
       ? requestedStyle
       : definition.defaultStyle
     : source.kind === "economic"
-      ? requestedStyle && ECONOMIC_STYLES.has(requestedStyle) ? requestedStyle : "step"
-      : source.kind === "benchmark"
-        ? requestedStyle && STYLES.has(requestedStyle) ? requestedStyle : "points"
-        : requestedStyle ?? "line";
+      ? requestedStyle && ECONOMIC_STYLES.has(requestedStyle) ? requestedStyle : kindDefaults.style
+      : requestedStyle ?? kindDefaults.style;
   const transform = definition
     ? requestedTransform && definition.transforms.includes(requestedTransform)
       ? requestedTransform
-      : "raw"
-    : requestedTransform ?? "raw";
+      : kindDefaults.transform
+    : requestedTransform ?? kindDefaults.transform;
   const normalizedSource = source.kind === "security" && isFundamentalFieldId(source.fieldId)
     ? {
         ...source,

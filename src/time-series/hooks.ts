@@ -59,7 +59,7 @@ export async function loadAdjacentIndexSeries(indexId: string): Promise<Universa
   return {
     points,
     unit: "index",
-    unitGroup: `adjacent-index:${indexId}`,
+    unitGroup: "level",
   };
 }
 
@@ -104,7 +104,7 @@ export async function loadPredictionMarketSeries(
     return {
       points: predictionMarketPoints(venueSeries.points, venue),
       unit: "%",
-      unitGroup: `prediction-market:${venue}`,
+      unitGroup: "probability",
       label: venueSeries.label,
     };
   }
@@ -135,7 +135,7 @@ export async function loadPredictionMarketSeries(
   return {
     points: predictionMarketPoints(history, "adjacent"),
     unit: "%",
-    unitGroup: `prediction-market:${venue}`,
+    unitGroup: "probability",
     label: label ?? `${venue === "kalshi" ? "KALSHI" : "POLY"} ${marketId}`,
   };
 }
@@ -213,7 +213,7 @@ export async function loadPollSeries(
   return {
     points,
     unit: "%",
-    unitGroup: `poll:${subject}`,
+    unitGroup: "percent",
     label: `${subject} ${choice}`,
   };
 }

@@ -7,6 +7,7 @@ import {
   chartSeriesLabel,
   buildCustomChartPreset,
 } from "./presets";
+import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 import {
   formatParsedSeriesExpression,
   buildSeriesCatalogSuggestions,
@@ -238,6 +239,36 @@ describe("universal series spec building", () => {
     });
     expect(spec.style).toBe("line");
     expect(formatSeriesExpression(spec)).toBe("KALSHI:KXPRESPERSON");
+  });
+
+  test("every catalog series kind has a working default spec", () => {
+    const matrix = [
+      { expression: "AAPL", kind: "security", style: "candles", transform: "raw", unitGroup: "price" },
+      { expression: "FUT:ES", kind: "security", style: "candles", transform: "raw", unitGroup: "price" },
+      { expression: "FRED:CPIAUCSL", kind: "economic", style: "step", transform: "raw", unitGroup: "level" },
+      { expression: "UST:10Y", kind: "economic", style: "step", transform: "raw", unitGroup: "level" },
+      { expression: "ADJ:red", kind: "adjacent-index", style: "line", transform: "raw", unitGroup: "level" },
+      { expression: "OWID:life-expectancy:USA", kind: "owid", style: "line", transform: "raw", unitGroup: "owid:life-expectancy" },
+      { expression: "KALSHI:KXPRESPERSON", kind: "prediction-market", style: "line", transform: "raw", unitGroup: "probability", valueRange: { min: 0, max: 100 } },
+      { expression: "POLY:fed-cut-september", kind: "prediction-market", style: "line", transform: "raw", unitGroup: "probability", valueRange: { min: 0, max: 100 } },
+      { expression: "POLL:Donald Trump:Approve", kind: "poll", style: "line", transform: "raw", unitGroup: "percent", valueRange: { min: 0, max: 100 } },
+      { expression: "BENCH:OpenAI:tps", kind: "benchmark", style: "points", transform: "raw", unitGroup: "benchmark:tps" },
+      { expression: "WX:LAX:high", kind: "weather", style: "line", transform: "raw", unitGroup: "weather:high" },
+    ] as const;
+
+    for (const row of matrix) {
+      const parsed = parseSeriesExpression(row.expression);
+      expect(parsed, row.expression).not.toBeNull();
+      const spec = buildSeriesSpec(parsed!, 0);
+      const defaults = defaultChartSeriesPresentation(spec.source);
+      expect(spec.source.kind, row.expression).toBe(row.kind);
+      expect(spec.style, row.expression).toBe(row.style);
+      expect(spec.transform, row.expression).toBe(row.transform);
+      expect(defaults.unitGroup, row.expression).toBe(row.unitGroup);
+      expect(defaults.valueRange, row.expression).toEqual("valueRange" in row ? row.valueRange : undefined);
+      expect(chartSeriesLabel({ ...spec, label: "   " })).toBeTruthy();
+      expect(buildCustomChartPreset(row.expression).series.length).toBeGreaterThan(0);
+    }
   });
 });
 

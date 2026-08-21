@@ -26,6 +26,7 @@ import {
   setPairStudies,
 } from "./presets";
 import { applyChartComposerCapabilityOptions } from "./cli-options";
+import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 
 describe("chart composer expressions", () => {
   test("appends catalog series with required panels and collision-safe IDs", () => {
@@ -225,6 +226,26 @@ describe("chart composer expressions", () => {
   test("does not treat a single series as a binary expression", () => {
     const spec = buildCustomChartPreset("AAPL:revenue");
     expect(spec.studies.filter((study) => study.kind === "ratio" || study.kind === "spread")).toHaveLength(0);
+  });
+
+  test("defaults assets to price, macro to level, polls to percent, and PM to probability", () => {
+    const price = buildCustomChartPreset("AAPL");
+    const macro = buildCustomChartPreset("FRED:CPIAUCSL");
+    const poll = buildCustomChartPreset("POLL:Donald Trump:Approve");
+    const pm = buildCustomChartPreset("KALSHI:KXPRESPERSON");
+
+    expect(price.series[0]).toMatchObject({ style: "candles", transform: "raw" });
+    expect(defaultChartSeriesPresentation(price.series[0]!.source).unitGroup).toBe("price");
+    expect(macro.series[0]).toMatchObject({ style: "step", transform: "raw" });
+    expect(defaultChartSeriesPresentation(macro.series[0]!.source).unitGroup).toBe("level");
+    expect(defaultChartSeriesPresentation(poll.series[0]!.source)).toMatchObject({
+      unitGroup: "percent",
+      valueRange: { min: 0, max: 100 },
+    });
+    expect(defaultChartSeriesPresentation(pm.series[0]!.source)).toMatchObject({
+      unitGroup: "probability",
+      valueRange: { min: 0, max: 100 },
+    });
   });
 
   test("plots dividend history from G AAPL:div and G AAPL:dvd", () => {

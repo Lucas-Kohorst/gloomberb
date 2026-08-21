@@ -21,9 +21,10 @@ import {
 import {
   coerceSeriesInterpolationForStyle,
   coerceSeriesTransformForStyle,
+  defaultChartSeriesPresentation,
   isOhlcSeriesStyle,
 } from "../../../time-series/spec";
-import { sourceFallbackLabel } from "../../../time-series/series-label";
+import { seriesSpecLabel } from "../../../time-series/series-label";
 import {
   CANONICAL_EXCHANGE_ALIASES,
   canonicalExchange,
@@ -378,7 +379,7 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
-  return series.label?.trim() || sourceFallbackLabel(series.source);
+  return seriesSpecLabel(series);
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {
@@ -446,11 +447,13 @@ export function buildSeriesSpec(
   overrides: Partial<Omit<ChartSeriesSpec, "id" | "source">> = {},
 ): ChartSeriesSpec {
   if (expression.kind === "constant") {
-    const style = overrides.style ?? "step";
+    const source = { kind: "constant" as const, value: expression.value };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `const-${slug(String(expression.value))}-${index + 1}`,
-      source: { kind: "constant", value: expression.value },
-      transform: "raw",
+      source,
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -460,12 +463,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "economic") {
-    const style = overrides.style ?? "step";
+    const source = { kind: "economic" as const, provider: "fred" as const, seriesId: expression.seriesId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `fred-${slug(expression.seriesId)}-${index + 1}`,
-      source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -499,12 +504,14 @@ export function buildSeriesSpec(
 
   if (expression.kind === "treasury-yield") {
     // Treasury yields are FRED constant-rate series; reuse the economic pipeline.
-    const style = overrides.style ?? "step";
+    const source = { kind: "economic" as const, provider: "fred" as const, seriesId: expression.seriesId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `ust-${slug(expression.maturity)}-${index + 1}`,
-      source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -514,12 +521,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "adjacent-index") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "adjacent-index" as const, indexId: expression.indexId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `adj-${slug(expression.indexId)}-${index + 1}`,
-      source: { kind: "adjacent-index", indexId: expression.indexId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -529,12 +538,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "benchmark") {
-    const style = overrides.style ?? "points";
+    const source = { kind: "benchmark" as const, selector: expression.selector, metric: expression.metric };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `bench-${slug(expression.selector)}-${slug(expression.metric)}-${index + 1}`,
-      source: { kind: "benchmark", selector: expression.selector, metric: expression.metric },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -544,12 +555,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "poll") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "poll" as const, subject: expression.subject, choice: expression.choice };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `poll-${slug(expression.subject)}-${slug(expression.choice)}-${index + 1}`,
-      source: { kind: "poll", subject: expression.subject, choice: expression.choice },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -559,17 +572,19 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "weather") {
-    const style = overrides.style ?? (expression.metric === "precip" ? "columns" : "line");
+    const source = {
+      kind: "weather" as const,
+      provider: expression.provider,
+      stationId: expression.stationId,
+      metric: expression.metric,
+    };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `wx-${expression.provider}-${slug(expression.stationId)}-${expression.metric}-${index + 1}`,
-      source: {
-        kind: "weather",
-        provider: expression.provider,
-        stationId: expression.stationId,
-        metric: expression.metric,
-      },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -579,12 +594,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "owid") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "owid" as const, slug: expression.slug, entity: expression.entity };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `owid-${slug(expression.slug)}-${slug(expression.entity)}-${index + 1}`,
-      source: { kind: "owid", slug: expression.slug, entity: expression.entity },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -594,16 +611,18 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "prediction-market") {
-    const style = overrides.style ?? "line";
+    const source = {
+      kind: "prediction-market" as const,
+      venue: expression.venue,
+      marketId: expression.marketId,
+    };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `pm-${expression.venue}-${slug(expression.marketId)}-${index + 1}`,
-      source: {
-        kind: "prediction-market",
-        venue: expression.venue,
-        marketId: expression.marketId,
-      },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -674,17 +693,17 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
     case "economic":
       return `economic:${series.source.seriesId}`;
     case "adjacent-index":
-      return `adjacent-index:${series.source.indexId}`;
+      return "level";
     case "benchmark":
       return `benchmark:${series.source.metric}`;
     case "poll":
-      return `poll:${series.source.subject}`;
+      return "percent";
     case "weather":
       return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
     case "owid":
       return `owid:${series.source.slug}`;
     case "prediction-market":
-      return `prediction-market:${series.source.venue}`;
+      return "probability";
     case "constant":
       return "constant";
     default:

@@ -1215,7 +1215,7 @@ function CompositeLegend({
       ? ` ${formatPercentRaw(entry.latestChangePercent)}`
       : "";
     const fullText = entry.points.length === 0
-      ? `${entry.label}${entry.hidden ? "" : " no data"}`
+      ? `${entry.label}${entry.hidden ? "" : entry.error || entry.warning ? ` ${entry.error ?? entry.warning}` : " no data"}`
       : `${entry.label} ${legendValue(
         entry,
         cursorValue?.value ?? null,

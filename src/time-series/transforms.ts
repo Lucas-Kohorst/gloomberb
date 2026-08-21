@@ -170,6 +170,8 @@ export function applyResolvedSeriesTransform(
     transform,
     unit: percent ? "%" : transform === "index100" ? "index" : "log",
     unitGroup: percent ? "percent" : transform === "index100" ? "index" : "log",
+    // Percent/index overlays auto-fit; do not keep a 0–100 probability/poll range.
+    valueRange: undefined,
     dataShape: "scalar",
     style: series.style === "candles" || series.style === "ohlc" || series.style === "hlc"
       ? "line"

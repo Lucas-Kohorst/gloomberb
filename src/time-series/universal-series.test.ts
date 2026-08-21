@@ -175,7 +175,7 @@ describe("universal series resolution", () => {
           { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 60, provenance: { providerId: "adjacent", quality: "reported" } },
         ],
         unit: "index",
-        unitGroup: `adjacent-index:${indexId}`,
+        unitGroup: "level",
       }),
       loadBenchmarkSeries: async (selector, metric): Promise<UniversalSeriesLoadResult> => ({
         points: [
@@ -192,7 +192,7 @@ describe("universal series resolution", () => {
           { date: new Date("2024-02-05T00:00:00Z"), observedAt: new Date("2024-02-05T00:00:00Z"), value: 48, provenance: { providerId: "votehub", quality: "reported" } },
         ],
         unit: "%",
-        unitGroup: `poll:${subject}`,
+        unitGroup: "percent",
         label: `${subject} ${choice}`,
       }),
       loadPredictionMarketSeries: async (venue, marketId): Promise<UniversalSeriesLoadResult> => ({
@@ -201,7 +201,7 @@ describe("universal series resolution", () => {
           { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 48, provenance: { providerId: "adjacent", quality: "reported" } },
         ],
         unit: "%",
-        unitGroup: `prediction-market:${venue}`,
+        unitGroup: "probability",
         label: `${venue} ${marketId}`,
       }),
       ...overrides,
@@ -253,5 +253,44 @@ describe("universal series resolution", () => {
     expect(result.series).toHaveLength(1);
     expect(result.series[0]!.points).toHaveLength(0);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  test("keeps a failed series in the legend with a real error and a non-blank label", async () => {
+    const spec: ChartSpec = buildCustomChartPreset("POLL:Donald Trump:Approve, KALSHI:MISSING");
+    spec.series[1] = { ...spec.series[1]!, label: "   " };
+    const result = await resolveChartSpecData(spec, makeSources({
+      loadPredictionMarketSeries: async () => {
+        throw new Error("Kalshi history is unavailable.");
+      },
+    }));
+
+    expect(result.series.map((entry) => entry.id)).toEqual(spec.series.map((entry) => entry.id));
+    expect(result.legendSeries?.map((entry) => entry.id)).toEqual(spec.series.map((entry) => entry.id));
+    const failed = result.legendSeries?.find((entry) => entry.id === spec.series[1]!.id);
+    expect(failed?.points).toEqual([]);
+    expect(failed?.label.trim()).not.toBe("");
+    expect(failed?.error).toContain("Kalshi history is unavailable.");
+    expect(result.errors.some((entry) => entry.includes("Kalshi history is unavailable."))).toBe(true);
+    expect(result.series[0]?.points.length).toBeGreaterThan(0);
+  });
+
+  test("does not drop remaining series when market data is unavailable", async () => {
+    const spec: ChartSpec = buildCustomChartPreset("AAPL:price, POLL:Donald Trump:Approve");
+    const result = await resolveChartSpecData(spec, makeSources({ dataProvider: null }));
+    expect(result.legendSeries?.map((entry) => entry.id)).toEqual(spec.series.map((entry) => entry.id));
+    expect(result.series.find((entry) => entry.id === spec.series[0]!.id)?.error).toContain("Market data is unavailable.");
+    expect(result.series.find((entry) => entry.id === spec.series[1]!.id)?.points.length).toBeGreaterThan(0);
+    expect(result.errors.some((entry) => entry.includes("Market data is unavailable."))).toBe(true);
+  });
+
+  test("resolved poll and prediction-market series keep a 0-100 scale", async () => {
+    const poll = await resolveChartSpecData(buildCustomChartPreset("POLL:Donald Trump:Approve"), makeSources());
+    const pm = await resolveChartSpecData(buildCustomChartPreset("KALSHI:KXPRESPERSON"), makeSources());
+    expect(poll.series[0]?.unit).toBe("%");
+    expect(poll.series[0]?.unitGroup).toBe("percent");
+    expect(poll.series[0]?.valueRange).toEqual({ min: 0, max: 100 });
+    expect(pm.series[0]?.unit).toBe("%");
+    expect(pm.series[0]?.unitGroup).toBe("probability");
+    expect(pm.series[0]?.valueRange).toEqual({ min: 0, max: 100 });
   });
 });
