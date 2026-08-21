@@ -140,7 +140,10 @@ export function createRssNewsCapability(
   const fetchText = options.fetchText ?? ((url: string) => rssClient.fetch(url));
   const getFeeds = () => Array.isArray(feedsOrGetter) ? feedsOrGetter : feedsOrGetter();
 
-  async function fetchFeed(feed: RssFeedConfig): Promise<{ items: MarketNewsItem[]; fromCache: boolean }> {
+  async function fetchFeed(
+    feed: RssFeedConfig,
+    resolveUniverse: () => Promise<ArticleTickerUniverse | undefined>,
+  ): Promise<{ items: MarketNewsItem[]; fromCache: boolean }> {
     const freshCache = readFeedCache(options.persistence, feed);
     if (freshCache) return { items: freshCache, fromCache: true };
 
@@ -149,11 +152,7 @@ export function createRssNewsCapability(
         const resp = await fetchText(feed.url);
         if (!resp.ok) throw new Error("RSS request failed");
         const xml = await resp.text();
-        const knownTickers = options.tickerUniverse
-          ? await options.tickerUniverse()
-          : options.knownTickers
-            ? buildArticleTickerUniverse({ book: [...await options.knownTickers()] })
-            : undefined;
+        const knownTickers = await resolveUniverse();
         const parsed = parseRssFeed(xml, feed)
           .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
         writeFeedCache(options.persistence, feed, parsed);
@@ -180,8 +179,22 @@ export function createRssNewsCapability(
       async fetchNews(query: NewsQuery): Promise<MarketNewsItem[]> {
         if (!supportsQuery(query)) return [];
         const enabledFeeds = getFeeds().filter((f) => f.enabled);
+        let universePromise: Promise<ArticleTickerUniverse | undefined> | null = null;
+        const resolveUniverse = () => {
+          if (universePromise) return universePromise;
+          if (options.tickerUniverse) {
+            universePromise = options.tickerUniverse();
+          } else if (options.knownTickers) {
+            universePromise = options.knownTickers().then((tickers) => (
+              buildArticleTickerUniverse({ book: [...tickers] })
+            ));
+          } else {
+            universePromise = Promise.resolve(undefined);
+          }
+          return universePromise;
+        };
         const results = await Promise.allSettled(
-          enabledFeeds.map(fetchFeed),
+          enabledFeeds.map((feed) => fetchFeed(feed, resolveUniverse)),
         );
 
         const allItems: MarketNewsItem[] = [];

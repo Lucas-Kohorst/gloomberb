@@ -11,7 +11,6 @@ import type { ChartSpec } from "../../../time-series/types";
 import { ChartComposerPane, ChartComposerResearchTab, TradingViewPane } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import { DATA_CATALOG_PANE_ID, DATA_CATALOG_TEMPLATE_ID } from "./catalog-inventory";
-import { scheduleDataCatalogWarm } from "./catalog-prefetch";
 import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
 import {
   buildEmptyChartPreset,
@@ -343,7 +342,8 @@ export const chartComposerModule: PluginModule = {
       component: ChartComposerResearchTab,
       isVisible: ({ ticker }) => !!ticker,
     });
-    scheduleDataCatalogWarm();
+    // CAT is not on default layouts. Live catalog sources load when the pane
+    // mounts so first-load pointer frames are not blocked by Kalshi/VoteHub/OWID.
   },
 };
 

@@ -6,6 +6,7 @@ import {
   ARTICLE_SEARCH_QUERY,
   cancelRssNewsWarm,
   looksLikeArticleQuery,
+  NEWS_WARM_IDLE_TIMEOUT_MS,
   scheduleLatestNewsWarm,
   scheduleRssNewsWarm,
   searchNewsArticles,
@@ -127,5 +128,31 @@ describe("scheduleRssNewsWarm", () => {
     scheduleLatestNewsWarm();
     await Bun.sleep(20);
     expect(polls).toEqual([ARTICLE_SEARCH_QUERY]);
+  });
+
+  test("caps IdleCallback wait so Firehose still warms within seconds", () => {
+    const host = globalThis as typeof globalThis & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const previousIdle = host.requestIdleCallback;
+    const previousCancel = host.cancelIdleCallback;
+    const timeouts: number[] = [];
+    host.requestIdleCallback = (_callback, options) => {
+      timeouts.push(options?.timeout ?? -1);
+      return 1;
+    };
+    host.cancelIdleCallback = () => {};
+
+    try {
+      scheduleLatestNewsWarm();
+      expect(timeouts).toEqual([NEWS_WARM_IDLE_TIMEOUT_MS]);
+      cancelRssNewsWarm();
+    } finally {
+      if (previousIdle) host.requestIdleCallback = previousIdle;
+      else delete host.requestIdleCallback;
+      if (previousCancel) host.cancelIdleCallback = previousCancel;
+      else delete host.cancelIdleCallback;
+    }
   });
 });

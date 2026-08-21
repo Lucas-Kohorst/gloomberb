@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { MemoryPluginPersistence as MemoryPersistence } from "../../../../../test-support/plugin-persistence";
 import { createRssNewsCapability, RSS_FEED_CACHE_POLICY } from "./source";
 import type { RssFeedConfig } from "./parser";
+import { buildArticleTickerUniverse } from "../../../../../news/article-tickers";
 
 const FEED: RssFeedConfig = {
   id: "example-feed",
@@ -101,5 +102,28 @@ describe("createRssNewsCapability", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]!.title).toBe("Stale headline");
+  });
+
+  test("builds the ticker universe once per fetch across feeds", async () => {
+    const other: RssFeedConfig = { ...FEED, id: "other-feed", url: "https://example.com/other.xml" };
+    let universeCalls = 0;
+    const tickerUniverse = async () => {
+      universeCalls += 1;
+      await Bun.sleep(5);
+      return buildArticleTickerUniverse({ book: ["NVDA"] });
+    };
+    const source = createRssNewsCapability([FEED, other], {
+      tickerUniverse,
+      fetchText: async () => ({
+        ok: true,
+        text: async () => RSS_FIXTURE,
+      }),
+    });
+
+    await source.provider.fetchNews({ scope: "global" });
+    expect(universeCalls).toBe(1);
+
+    await source.provider.fetchNews({ scope: "global" });
+    expect(universeCalls).toBe(2);
   });
 });
