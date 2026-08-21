@@ -143,7 +143,7 @@ function renderSharePageHtml({
   faviconHref: string;
 }): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="en" autocomplete="off">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -214,7 +214,7 @@ function renderElectrobunViewHtml({
   faviconHref = "favicon.svg",
 }: PageOptions & { stylesheet: string; entrySrc: string; faviconHref?: string }): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="en" autocomplete="off">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
