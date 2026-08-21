@@ -142,6 +142,28 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
     inset 0 0 0 3px var(--gloom-border-focused),
     inset 0 0 0 6px color-mix(in srgb, var(--gloom-border-focused) 22%, transparent);
 }
+[data-gloom-role="app-header"] {
+  align-items: center;
+}
+[data-gloom-role="layout-switcher"] {
+  align-items: center;
+  min-width: 0;
+}
+[data-gloom-role="layout-switcher"] [data-gloom-role="tab-list"] {
+  max-width: 100%;
+}
+[data-gloom-role="layout-presets-button"] {
+  flex-shrink: 0;
+  align-items: center;
+}
+[data-gloom-role="app-header"] [data-gloom-role="layout-switcher"] [data-gloom-role="tab-button"],
+[data-gloom-role="header-help-action"] {
+  font-size: 11px;
+}
+[data-gloom-role="status-upgrade"] {
+  align-items: center;
+  white-space: nowrap;
+}
 [data-gloom-role="pane-header"] {
   align-items: center;
   min-height: 28px;
@@ -195,6 +217,7 @@ body.gloom-dragging {
   max-height: var(--cell-h);
   align-items: center;
   overflow: visible;
+  padding-inline: 8px;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
 }

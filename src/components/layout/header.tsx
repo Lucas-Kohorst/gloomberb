@@ -21,6 +21,7 @@ import { formatMarketPrice } from "../../market-data/market/format";
 import { marketStateLabel, marketStateColor, getActiveQuoteDisplay } from "../../market-data/market/status";
 import { getTitlebarLeadingInset } from "./titlebar-overlay";
 import { HeaderTickerSlot } from "./header-ticker-slot";
+import { LayoutSwitcherControl } from "./layout-switcher";
 import { PaneSuggestions } from "./pane-suggestions";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
@@ -47,7 +48,7 @@ function DesktopHeaderPill({
       backgroundColor={resolvedBackgroundColor}
       style={{
         border: `1px solid ${resolvedBorderColor}`,
-        borderRadius: 5,
+        borderRadius: 6,
         paddingInline: 6,
       }}
     >
@@ -198,24 +199,28 @@ export function Header({ onOpenHelp }: { onOpenHelp?: () => void }) {
         onMouseDown={startWindowDrag}
         style={{
           boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
-          paddingLeft: titlebarLeadingInset > 0 ? 8 : 0,
-          paddingRight: showWindowControls ? 0 : 12,
+          paddingLeft: 8,
+          paddingRight: showWindowControls ? 0 : 8,
+          gap: 8,
           position: "relative",
         }}
       >
-        <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" gap={1}>
+        <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" flexShrink={0}>
           <HeaderTickerSlot />
         </Box>
-        <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
+        <Box flexGrow={1} minWidth={0}>
           <UpdateStatus />
         </Box>
+        <LayoutSwitcherControl placement="header" />
         {onOpenHelp ? (
           <Box
             height={1}
             flexDirection="row"
             alignItems="center"
+            flexShrink={0}
             data-gloom-role="header-help-action"
             data-gloom-interactive="true"
+            className="electrobun-webkit-app-region-no-drag"
             role="button"
             tabIndex={0}
             aria-label="Open Help"
@@ -227,9 +232,8 @@ export function Header({ onOpenHelp }: { onOpenHelp?: () => void }) {
             hoverBackgroundColor={blendHex(colors.header, colors.headerText, 0.15)}
             style={{
               border: `1px solid ${blendHex(colors.border, colors.headerText, 0.28)}`,
-              borderRadius: 5,
-              paddingInline: 7,
-              marginRight: 8,
+              borderRadius: 6,
+              paddingInline: 6,
               backgroundColor: blendHex(colors.header, colors.headerText, 0.08),
               cursor: "pointer",
             }}
@@ -239,21 +243,15 @@ export function Header({ onOpenHelp }: { onOpenHelp?: () => void }) {
           </Box>
         ) : null}
         {mktLabel ? (
-          <Box paddingRight={1}>
-            <DesktopHeaderPill
-              backgroundColor={blendHex(colors.header, mktColor, 0.12)}
-              borderColor={blendHex(colors.border, mktColor, 0.3)}
-            >
-              <Text fg={mktColor} style={{ fontSize: 11, fontWeight: 700 }}>{mktLabel}</Text>
-            </DesktopHeaderPill>
-          </Box>
+          <DesktopHeaderPill
+            backgroundColor={blendHex(colors.header, mktColor, 0.12)}
+            borderColor={blendHex(colors.border, mktColor, 0.3)}
+          >
+            <Text fg={mktColor} style={{ fontSize: 11, fontWeight: 700 }}>{mktLabel}</Text>
+          </DesktopHeaderPill>
         ) : null}
-        <Box paddingRight={1}>
-          <Text fg={spyColor}>{spyText}</Text>
-        </Box>
-        <Box paddingRight={showWindowControls ? 1 : 0}>
-          <Text fg={colors.headerText}>{baseCurrency}</Text>
-        </Box>
+        <Text fg={spyColor}>{spyText}</Text>
+        <Text fg={colors.headerText}>{baseCurrency}</Text>
         {showWindowControls ? <Box flexShrink={0} width={`${WINDOWS_CONTROL_GROUP_WIDTH_PX}px`} /> : null}
         {showWindowControls ? <WindowControls /> : null}
       </Box>

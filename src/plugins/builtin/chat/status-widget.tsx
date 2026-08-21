@@ -53,6 +53,7 @@ function CloudStatusIcon() {
 }
 
 export function ChatStatusWidget({ controller = chatController }: ChatStatusWidgetProps) {
+  const { nativePaneChrome = false } = useUiCapabilities();
   const { createPaneFromTemplate } = usePluginAppActions();
   const config = useAppSelector((state) => state.config);
   const cloudPluginDisabled = config.disabledPlugins.includes("gloomberb-cloud");
@@ -89,7 +90,7 @@ export function ChatStatusWidget({ controller = chatController }: ChatStatusWidg
   if (cloudPluginDisabled) return null;
 
   return (
-    <Box flexDirection="row" alignItems="center" paddingRight={1}>
+    <Box flexDirection="row" alignItems="center" paddingRight={nativePaneChrome ? 0 : 1}>
       {!username && !hasSavedSession ? (
         <>
           <CloudStatusIcon />

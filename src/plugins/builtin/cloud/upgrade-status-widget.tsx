@@ -4,7 +4,7 @@ import { t, tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, hoverBg } from "../../../theme/colors";
-import { Box, Text } from "../../../ui";
+import { Box, Text, useUiCapabilities } from "../../../ui";
 import { chatController, type ChatController } from "../chat/controller";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { resolvePlanAccess } from "../shared/plan-access";
@@ -20,6 +20,7 @@ interface CloudUpgradeStatusWidgetProps {
  */
 export function CloudUpgradeStatusWidget({ controller = chatController }: CloudUpgradeStatusWidgetProps) {
   useAppLanguage();
+  const { nativePaneChrome = false } = useUiCapabilities();
   const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins).includes("gloomberb-cloud");
   const openUpgrade = useCloudUpgradeAction();
   const openPlan = useCloudPlanAction();
@@ -35,22 +36,33 @@ export function CloudUpgradeStatusWidget({ controller = chatController }: CloudU
   if (cloudPluginDisabled || !access.signedIn || access.isPayingPro) return null;
 
   const trial = access.isTrialActive;
-  const label = trial
-    ? tf("Pro trial {days}d", { days: access.trialDaysLeft })
-    : t("delayed data · upgrade");
+  const tone = trial ? colors.positive : colors.warning;
 
   return (
     <Box
       flexDirection="row"
       alignItems="center"
-      paddingRight={1}
+      paddingRight={nativePaneChrome ? 0 : 1}
       backgroundColor={hovered ? hoverBg() : undefined}
       onMouseOver={() => setHovered((current) => (current ? current : true))}
       onMouseOut={() => setHovered((current) => (current ? false : current))}
       onMouseDown={trial ? openPlan : openUpgrade}
+      data-gloom-role="status-upgrade"
       data-gloom-interactive="true"
+      {...(nativePaneChrome ? {
+        style: { cursor: "pointer", gap: 6, borderRadius: 4, paddingInline: 2 },
+      } : {})}
     >
-      <Text fg={trial ? colors.positive : colors.warning}>{label}</Text>
+      {trial ? (
+        <Text fg={tone}>{tf("Pro trial {days}d", { days: access.trialDaysLeft })}</Text>
+      ) : (
+        <>
+          <Text fg={tone}>{t("delayed data")}</Text>
+          <Text fg={hovered ? colors.textBright : tone}>
+            {nativePaneChrome ? t("Upgrade") : ` ${t("Upgrade")}`}
+          </Text>
+        </>
+      )}
     </Box>
   );
 }

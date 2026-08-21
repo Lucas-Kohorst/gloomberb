@@ -42,7 +42,7 @@ export function HeaderTickerSlot() {
       }}
       style={{
         border: `1px solid ${borderColor}`,
-        borderRadius: 5,
+        borderRadius: 6,
         paddingInline: 8,
         minWidth: 240,
         backgroundColor: blendHex(colors.header, colors.headerText, commandBarOpen ? 0.14 : 0.08),
