@@ -17,8 +17,8 @@ import {
   needsVisibleSnapshotWarmup,
   selectQuoteWarmupTickers,
   selectStreamTickers,
-  sortPreferenceUsesQuote,
   visibleWarmupKey,
+  warmupQuoteWithSnapshot,
   type VisibleWarmupRequirements,
 } from "./data";
 
@@ -112,7 +112,6 @@ export function usePortfolioPaneStreaming({
     const quoteSnapshotQueue: TickerRecord[] = [];
     const snapshotQueue: TickerRecord[] = [];
     const snapshotQueueSymbols = new Set<string>();
-    const useSnapshotForQuoteWarmup = liveStreaming && sortPreferenceUsesQuote(activeSort);
     const quoteWarmupTickers = liveStreaming
       ? selectQuoteWarmupTickers(
         sortedTickers,
@@ -125,7 +124,7 @@ export function usePortfolioPaneStreaming({
     for (const ticker of quoteWarmupTickers) {
       const financials = financialsMap.get(ticker.metadata.ticker);
       const quoteKey = visibleWarmupKey("quote", ticker);
-      const warmupWithSnapshot = useSnapshotForQuoteWarmup && ticker.metadata.assetCategory !== "OPT";
+      const warmupWithSnapshot = warmupQuoteWithSnapshot(ticker, liveStreaming, activeSort);
       const warmupKey = warmupWithSnapshot ? visibleWarmupKey("snapshot", ticker) : quoteKey;
       if (
         needsVisibleQuoteWarmup(financials, nowTimestamp)

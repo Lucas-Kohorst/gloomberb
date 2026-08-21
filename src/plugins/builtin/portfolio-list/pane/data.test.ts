@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Quote, TickerFinancials } from "../../../../types/financials";
+import type { TickerRecord } from "../../../../types/ticker";
 import {
   needsVisibleQuoteWarmup,
   needsVisibleQuoteWatchdogRefresh,
   VISIBLE_QUOTE_STREAM_MAX_AGE_MS,
+  warmupQuoteWithSnapshot,
 } from "./data";
 
 function quote(overrides: Partial<Quote> = {}): Quote {
@@ -50,5 +52,39 @@ describe("portfolio visible quote warmup", () => {
 
     expect(needsVisibleQuoteWarmup(data, now)).toBe(true);
     expect(needsVisibleQuoteWatchdogRefresh(data, now)).toBe(true);
+  });
+
+  test("does not snapshot-warmup BTC-USD style rows when the portfolio sorts by market value", () => {
+    const sort = { columnId: "mkt_value" as const, direction: "desc" as const };
+    const crypto: TickerRecord = {
+      metadata: {
+        ticker: "BTC-USD",
+        exchange: "CCC",
+        currency: "USD",
+        name: "Bitcoin USD",
+        assetCategory: "CRYPTO",
+        positions: [],
+        portfolios: [],
+        watchlists: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    const equity: TickerRecord = {
+      metadata: {
+        ticker: "HOOD",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Robinhood",
+        positions: [],
+        portfolios: [],
+        watchlists: [],
+        custom: {},
+        tags: [],
+      },
+    };
+
+    expect(warmupQuoteWithSnapshot(crypto, true, sort)).toBe(false);
+    expect(warmupQuoteWithSnapshot(equity, true, sort)).toBe(true);
   });
 });

@@ -40,6 +40,8 @@ import {
 } from "./ids";
 import { mapCoinGeckoCoinQuote, mapCoinGeckoSimpleQuote } from "./quotes";
 
+export const COINGECKO_QUOTE_POLL_INTERVAL_MS = 15_000;
+
 const OHLC_DAYS = new Set(["1", "7", "14", "30", "90", "180", "365", "max"]);
 
 export class CoinGeckoProvider implements AssetDataProvider {
@@ -108,6 +110,36 @@ export class CoinGeckoProvider implements AssetDataProvider {
       target,
       quote: quotes.get(`${target.symbol}:${target.exchange ?? ""}`) ?? null,
     }));
+  }
+
+  subscribeQuotes(
+    targets: QuoteSubscriptionTarget[],
+    onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
+  ): () => void {
+    const cryptoTargets = targets.filter((target) => isCryptoMarketInstrument(target.symbol, target.exchange));
+    if (cryptoTargets.length === 0) return () => {};
+
+    let cancelled = false;
+    const pull = async (): Promise<void> => {
+      try {
+        const results = await this.getQuotesBatch(cryptoTargets);
+        if (cancelled) return;
+        for (const item of results) {
+          if (item.quote) onQuote(item.target, item.quote);
+        }
+      } catch {
+        // Poll is best-effort; the next interval retries.
+      }
+    };
+
+    void pull();
+    const intervalId = setInterval(() => {
+      if (!cancelled) void pull();
+    }, COINGECKO_QUOTE_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }
 
   async getTickerFinancialsBatch(
