@@ -126,6 +126,8 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
       );
       const aliasScore = getItemSearchAliases(item)
         .reduce((best, alias) => Math.max(best, scoreSearchAlias(intent, alias)), 0);
+      const symbolMatchRank = scoreSymbolMatchRank(intent, item);
+      const usExactListingBonus = symbolMatchRank >= 2 && isUsPrimaryVenue(item) ? 800 : 0;
       const textScore = labelScore + detailScore + aliasScore;
       const saved = isSavedSearchItem(item);
       const explicitIntentScore = scoreAssetPreference(intent, item.instrumentClass)
@@ -142,9 +144,9 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
           : null,
         explicitIntentScore,
         normalizedSymbol: normalizeSearchText(item.symbol || item.label),
-        symbolMatchRank: scoreSymbolMatchRank(intent, item),
+        symbolMatchRank,
         textScore,
-        score: textScore + priorityScore + (textScore > 0 && saved ? SAVED_MATCH_BONUS : 0),
+        score: textScore + priorityScore + usExactListingBonus + (textScore > 0 && saved ? SAVED_MATCH_BONUS : 0),
       };
     });
 
@@ -445,6 +447,14 @@ function scoreListingPriority(item: Pick<TickerSearchRankableItem, "label"> & Pa
   if (item.label.includes(".")) score -= 140;
   if (item.label.length <= 5) score += 120;
   return score;
+}
+
+const US_PRIMARY_VENUES = new Set(["NASDAQ", "NMS", "NYSE", "AMEX", "ARCA", "NYSE ARCA", "BATS"]);
+
+function isUsPrimaryVenue(item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>): boolean {
+  return [item.exchangeLabel, item.primaryExchangeLabel, item.right]
+    .map((value) => normalizeSearchText(value || ""))
+    .some((exchange) => US_PRIMARY_VENUES.has(exchange));
 }
 
 function getCompanyNameKey(detail: string): string {

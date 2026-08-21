@@ -4,6 +4,7 @@ import {
   isCryptoMarketInstrument,
   parseCryptoPair,
   resolveCoinGeckoPair,
+  shouldSearchCoinGecko,
 } from "./ids";
 
 describe("CoinGecko pair mapping", () => {
@@ -47,6 +48,16 @@ describe("CoinGecko pair mapping", () => {
     expect(isCryptoMarketInstrument("COIN", "NASDAQ")).toBe(false);
     expect(canonicalCryptoInstrument("EURUSD=X")).toBeNull();
     expect(parseCryptoPair("EURUSD=X")).toBeNull();
+  });
+
+  test("does not send equity-style tickers through CoinGecko name search", () => {
+    expect(shouldSearchCoinGecko("COIN")).toBe(false);
+    expect(shouldSearchCoinGecko("MSTR")).toBe(false);
+    expect(shouldSearchCoinGecko("AAPL")).toBe(false);
+    expect(shouldSearchCoinGecko("BTC")).toBe(true);
+    expect(shouldSearchCoinGecko("BTC-USD")).toBe(true);
+    expect(shouldSearchCoinGecko("bitcoin")).toBe(true);
+    expect(shouldSearchCoinGecko("COIN", "NASDAQ")).toBe(false);
   });
 
   test("recognizes unmapped hyphenated USD pairs as crypto instruments", () => {

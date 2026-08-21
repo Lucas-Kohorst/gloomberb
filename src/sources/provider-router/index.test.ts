@@ -1004,6 +1004,45 @@ describe("AssetDataRouter", () => {
     expect(yahooCalls).toBe(0);
   });
 
+  test("keeps searching after CoinGecko name hits so COIN resolves as Coinbase", async () => {
+    const coinGeckoProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "coingecko",
+      name: "CoinGecko",
+      priority: 80,
+      async search() {
+        return [{
+          providerId: "coingecko",
+          symbol: "BTC-USD",
+          name: "Bitcoin",
+          exchange: "CCC",
+          type: "CRYPTO",
+        }];
+      },
+    };
+    const yahooProvider: DataProvider = {
+      ...fallbackProvider,
+      id: "yahoo",
+      name: "Yahoo",
+      priority: 1000,
+      async search() {
+        return [{
+          providerId: "yahoo",
+          symbol: "COIN",
+          name: "Coinbase Global, Inc.",
+          exchange: "NASDAQ",
+          type: "EQUITY",
+        }];
+      },
+    };
+
+    const router = new AssetDataRouter(yahooProvider, [coinGeckoProvider]);
+    const results = await router.search("COIN");
+
+    expect(results.some((result) => result.symbol === "COIN" && result.providerId === "yahoo")).toBe(true);
+    expect(results.find((result) => result.symbol === "COIN")?.name).toBe("Coinbase Global, Inc.");
+  });
+
   test("routes through registered asset-data capabilities", async () => {
     const cloudProvider: DataProvider = {
       ...fallbackProvider,

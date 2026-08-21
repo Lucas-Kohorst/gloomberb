@@ -68,4 +68,43 @@ describe("CoinGeckoProvider", () => {
     expect(quotes.has("HOOD")).toBe(false);
     unsubscribe();
   });
+
+  test("does not resolve COIN to a CoinGecko name hit", async () => {
+    const http: CoinGeckoHttp = {
+      async fetchJson(path) {
+        if (path !== "/search") throw new Error(`unexpected ${path}`);
+        return {
+          coins: [
+            { id: "bitcoin", name: "Bitcoin", symbol: "btc", market_cap_rank: 1 },
+            { id: "dogecoin", name: "Dogecoin", symbol: "doge", market_cap_rank: 11 },
+          ],
+        };
+      },
+    };
+    const provider = new CoinGeckoProvider(http);
+    expect(await provider.search("COIN")).toEqual([]);
+    expect(provider.canProvide("COIN", "NASDAQ")).toBe(false);
+  });
+
+  test("picks the highest-ranked exact symbol when mapping an unknown CCC coin", async () => {
+    const http: CoinGeckoHttp = {
+      async fetchJson(path) {
+        if (path === "/search") {
+          return {
+            coins: [
+              { id: "obscure-foo", name: "Obscure Foo", symbol: "FOO", market_cap_rank: 900 },
+              { id: "foo-token", name: "Foo", symbol: "FOO", market_cap_rank: 28 },
+            ],
+          };
+        }
+        if (path === "/simple/price") {
+          return { "foo-token": { usd: 1.25, usd_24h_change: 1 } };
+        }
+        throw new Error(`unexpected ${path}`);
+      },
+    };
+    const provider = new CoinGeckoProvider(http);
+    const quote = await provider.getQuote("FOO", "CCC");
+    expect(quote.price).toBe(1.25);
+  });
 });

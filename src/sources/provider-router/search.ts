@@ -1,5 +1,8 @@
 import type { DataProvider, SearchRequestContext } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
+import { parseCryptoPair } from "../coingecko/ids";
+import { compactSearchText, normalizeSearchText } from "../../tickers/search/ranking";
+import { getSearchResultSymbol } from "../../tickers/search/result";
 import type { BrokerCandidate } from "./brokers";
 import { shouldLogProviderError } from "../provider-errors";
 
@@ -146,7 +149,7 @@ export class ProviderRouterSearchRoutes {
         const items = await withSearchTimeout(provider.search(query, context));
         if (!items) continue;
         push(items);
-        if (results.length > 0) {
+        if (searchHitsQuery(query, results)) {
           cacheResults();
           return results;
         }
@@ -160,6 +163,25 @@ export class ProviderRouterSearchRoutes {
     cacheResults(Math.min(SEARCH_CACHE_TTL_MS, 5_000));
     return results;
   }
+}
+
+function searchHitsQuery(query: string, results: InstrumentSearchResult[]): boolean {
+  if (results.length === 0) return false;
+  const trimmed = query.trim();
+  const symbolLike = /^[A-Za-z0-9.^=\-/]+$/.test(trimmed);
+  if (!symbolLike) return true;
+
+  const compactQuery = compactSearchText(trimmed);
+  const normalizedQuery = normalizeSearchText(trimmed);
+  return results.some((result) => {
+    const resolved = getSearchResultSymbol(result);
+    const pair = parseCryptoPair(resolved);
+    const aliases = [resolved, result.symbol, pair?.base, pair ? `${pair.base}-${pair.quote}` : ""];
+    return aliases.some((alias) => {
+      if (!alias) return false;
+      return compactSearchText(alias) === compactQuery || normalizeSearchText(alias) === normalizedQuery;
+    });
+  });
 }
 
 function normalizeSearchKeyPart(value?: string): string {

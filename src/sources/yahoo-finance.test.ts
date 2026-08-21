@@ -170,6 +170,20 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("ETH", "CRYPTO")[0]).toBe("ETH");
   });
 
+  test("does not walk COIN onto COIN.JK when the exchange is unknown", () => {
+    expect(getYahooSymbolsToTry("COIN", "")).toEqual(["COIN"]);
+    expect(getYahooSymbolsToTry("AAPL", "")).toEqual(["AAPL"]);
+    expect(getYahooSymbolsToTry("COIN", "NASDAQ")).toEqual(["COIN"]);
+    expect(getYahooSymbolsToTry("COIN", "IDX")).toEqual(["COIN.JK"]);
+    expect(getYahooSymbolsToTry("COIN", "JKT")).toEqual(["COIN.JK"]);
+  });
+
+  test("still suffix-guesses numeric international tickers without an exchange", () => {
+    const symbols = getYahooSymbolsToTry("7203", "");
+    expect(symbols[0]).toBe("7203");
+    expect(symbols).toContain("7203.T");
+  });
+
   test("maps SPX to the Yahoo S&P 500 index symbol", () => {
     expect(getYahooSymbolsToTry("SPX", "INDEX")).toEqual(["^GSPC"]);
   });

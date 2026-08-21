@@ -36,6 +36,7 @@ import {
   COINGECKO_PROVIDER_ID,
   isCryptoMarketInstrument,
   resolveCoinGeckoPair,
+  shouldSearchCoinGecko,
   type CoinGeckoPair,
 } from "./ids";
 import { mapCoinGeckoCoinQuote, mapCoinGeckoSimpleQuote } from "./quotes";
@@ -205,10 +206,10 @@ export class CoinGeckoProvider implements AssetDataProvider {
 
   async search(query: string, _context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
     const trimmed = query.trim();
-    if (!trimmed) return [];
+    if (!shouldSearchCoinGecko(trimmed)) return [];
     const mapped = resolveCoinGeckoPair(trimmed, COINGECKO_EXCHANGE);
     const response = await fetchCoinGeckoSearch(mapped?.base ?? trimmed, this.http);
-    const coins = response.coins ?? [];
+    const coins = pickCoinGeckoSearchCoins(response.coins ?? [], mapped?.base ?? trimmed);
     return coins.slice(0, 10).map((coin) => {
       const base = coin.symbol.trim().toUpperCase();
       return {
@@ -267,8 +268,8 @@ export class CoinGeckoProvider implements AssetDataProvider {
       return { id: known, base: query, vsCurrency: "usd", symbol: `${query}-USD` };
     }
     const response = await fetchCoinGeckoSearch(query, this.http);
-    const match = (response.coins ?? []).find((coin) => coin.symbol.toUpperCase() === query);
-    if (!match) return null;
+    const match = pickCoinGeckoSearchCoins(response.coins ?? [], query)[0];
+    if (!match || match.symbol.toUpperCase() !== query) return null;
     return {
       id: match.id,
       base: query,
@@ -276,6 +277,20 @@ export class CoinGeckoProvider implements AssetDataProvider {
       symbol: `${query}-USD`,
     };
   }
+}
+
+function pickCoinGeckoSearchCoins(
+  coins: Array<{ id: string; name: string; symbol: string; market_cap_rank?: number | null }>,
+  query: string,
+): Array<{ id: string; name: string; symbol: string }> {
+  const compactQuery = query.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  const exact = coins.filter((coin) => coin.symbol.trim().toUpperCase() === compactQuery);
+  const ranked = (exact.length > 0 ? exact : coins).slice().sort((a, b) => {
+    const aRank = a.market_cap_rank ?? Number.POSITIVE_INFINITY;
+    const bRank = b.market_cap_rank ?? Number.POSITIVE_INFINITY;
+    return aRank - bRank;
+  });
+  return ranked;
 }
 
 export function createCoinGeckoCapabilities(provider = new CoinGeckoProvider()) {

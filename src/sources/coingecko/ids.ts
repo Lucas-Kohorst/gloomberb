@@ -68,8 +68,29 @@ export function isCryptoSearchType(type?: string): boolean {
   const normalized = type?.trim().toUpperCase() ?? "";
   return normalized === "CRYPTO"
     || normalized === "CRYPTOCURRENCY"
-    || normalized === "COIN"
     || normalized === "TOKEN";
+}
+
+/** 1-5 letter tickers that collide with CoinGecko name search (COIN, MSTR, …). */
+export function isBareEquityStyleSymbol(query: string): boolean {
+  const compact = query.trim().toUpperCase();
+  return /^[A-Z]{1,5}(?:\.[A-Z])?$/.test(compact);
+}
+
+/**
+ * CoinGecko `/search` matches coin *names*, so `COIN` returns Bitcoin/Dogecoin.
+ * Skip that for bare equity-style tickers that are not known crypto bases.
+ */
+export function shouldSearchCoinGecko(query: string, exchange?: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (isCryptoMarketInstrument(trimmed, exchange)) return true;
+  const compact = trimmed.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  if (COINGECKO_BASE_IDS[compact]) return true;
+  if (isBareEquityStyleSymbol(trimmed) && !COINGECKO_BASE_IDS[trimmed.toUpperCase().split(".")[0]!]) {
+    return false;
+  }
+  return true;
 }
 
 export function isCryptoMarketInstrument(ticker: string, exchange?: string): boolean {
