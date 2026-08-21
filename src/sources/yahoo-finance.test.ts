@@ -143,6 +143,8 @@ describe("YahooFinanceClient exchange aliases", () => {
       type: "CURRENCY",
     });
   });
+
+  test("does not fetch Yahoo quotes or history for crypto pairs", async () => {
     const provider = new YahooFinanceClient() as any;
     provider.fetchChart = async () => {
       throw new Error("Yahoo should not fetch crypto");
