@@ -136,7 +136,7 @@ describe("CommandBar AI assist", () => {
     expect(requests).toHaveLength(1);
     // Above the local matches, and holding the selection an untouched query
     // never moved: plain Enter runs the AI's best guess.
-    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Panes"));
+    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Chat"));
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "new-chat-pane", options: { arg: "#general" } }]);

@@ -1,3 +1,4 @@
+import { resolvePaneTemplateSection } from "../../../plugins/pane-sections";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type {
   PaneTemplateContext,
@@ -132,6 +133,11 @@ export function buildPaneTemplateItem(options: {
 }): ResultItem {
   const pluginId = options.pluginRegistry.getPaneTemplatePluginId(options.template.id);
   const pluginName = pluginId ? options.pluginRegistry.allPlugins.get(pluginId)?.name : null;
+  const section = resolvePaneTemplateSection({
+    templateId: options.template.id,
+    templateCategory: options.template.category,
+    pluginId,
+  });
   const displayLabel = getPaneTemplateDisplayLabel(options.template);
   const shortcutLabel = options.template.shortcut
     ? [options.template.shortcut.prefix, options.template.shortcut.argPlaceholder && `<${options.template.shortcut.argPlaceholder}>`]
@@ -167,7 +173,7 @@ export function buildPaneTemplateItem(options: {
     id: `pane-template:${options.template.id}:${arg || ""}`,
     label: displayLabel,
     detail: shortcutLabel ? `${options.template.description} · ${shortcutLabel}` : options.template.description,
-    category: options.category ?? options.template.category ?? (pluginName ? `${pluginName} Panes` : "Panes"),
+    category: options.category ?? section,
     kind: "action",
     right: options.showShortcut ? options.template.shortcut?.prefix : undefined,
     shortcutQuery: options.template.shortcut?.prefix,
@@ -189,7 +195,6 @@ export function buildPaneShortcutItems(options: {
   const items = options.templates
     .filter((template) => template.shortcut)
     .map((template) => options.createItem(template, {
-      category: template.category ?? "Panes",
       createOptions: options.createOptions,
       showShortcut: true,
     }));
@@ -206,7 +211,7 @@ export function buildNonShortcutPaneTemplateItems(options: {
 }): ResultItem[] {
   const items = options.templates
     .filter((template) => !template.shortcut)
-    .map((template) => options.createItem(template, { category: template.category ?? "Panes" }));
+    .map((template) => options.createItem(template));
 
   return options.filterQuery
     ? fuzzyFilter(items, options.filterQuery, (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`)

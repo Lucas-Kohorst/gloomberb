@@ -171,9 +171,11 @@ function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOr
     // General command-bar sections follow a stable, task-oriented order.
     search: 0,
     navigation: 10,
+    assets: 20,
     panes: 20,
     portfolio: 30,
     data: 40,
+    workspace: 45,
     actions: 50,
     config: 60,
     create: 70,

@@ -1,5 +1,7 @@
 import type { CommandDef, KeyboardShortcut } from "../../../types/plugin";
+import { getPluginCommandCategory } from "../../../components/command-bar/commands/plugin/items";
 import { commands as coreCommands } from "../../../components/command-bar/commands/registry";
+import { resolvePaneTemplateSection } from "../../pane-sections";
 import { getSharedRegistry } from "../../registry";
 import type { HelpShortcutEntry } from "./components";
 
@@ -9,7 +11,6 @@ export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEn
   if (!registry || !registry.paneTemplates) return [];
 
   const disabledPlugins = resolveDisabledPlugins(registry);
-  const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
 
   return [...registry.paneTemplates.values()]
     .filter((template) => template.shortcut)
@@ -20,7 +21,6 @@ export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEn
     .map((template) => {
       const shortcut = template.shortcut!;
       const pluginId = registry.getPaneTemplatePluginId?.(template.id);
-      const pluginName = pluginId ? allPlugins.get(pluginId)?.name : null;
       return {
         id: template.id,
         badges: [
@@ -28,7 +28,11 @@ export function resolveWindowTemplates(registry: SharedRegistry): HelpShortcutEn
           shortcut.argPlaceholder ? `<${shortcut.argPlaceholder}>` : null,
         ].filter((value): value is string => !!value),
         description: template.label,
-        category: pluginName ?? "Core Panes",
+        category: resolvePaneTemplateSection({
+          templateId: template.id,
+          templateCategory: template.category,
+          pluginId,
+        }),
       };
     })
     .sort(sortShortcutEntries);
@@ -72,7 +76,6 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
   if (!registry || !registry.commands) return coreRows;
 
   const disabledPlugins = resolveDisabledPlugins(registry);
-  const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
   const pluginRows = [...registry.commands.values()]
     .filter((command: CommandDef) => command.shortcut?.trim().length)
     .filter((command: CommandDef) => {
@@ -81,8 +84,6 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
       return !(command.hidden?.() ?? false);
     })
     .map((command: CommandDef) => {
-      const pluginId = registry.getCommandPluginId?.(command.id);
-      const pluginName = pluginId ? allPlugins.get(pluginId)?.name : null;
       return {
         id: `plugin-command:${command.id}`,
         badges: [
@@ -90,7 +91,7 @@ export function resolveCommandShortcuts(registry: SharedRegistry): HelpShortcutE
           formatPlaceholder(command.shortcutArg?.placeholder),
         ].filter((value): value is string => !!value),
         description: formatShortcutDescription(command.label),
-        category: pluginName ?? command.category,
+        category: getPluginCommandCategory(command),
       };
     })
     .sort(sortShortcutEntries);
@@ -113,7 +114,6 @@ export function resolvePluginShortcuts(registry: SharedRegistry): HelpShortcutEn
   if (!registry || !registry.shortcuts) return [];
 
   const disabledPlugins = resolveDisabledPlugins(registry);
-  const allPlugins = registry.allPlugins ?? new Map<string, { name?: string }>();
   return [...registry.shortcuts.values()]
     .filter((shortcut: KeyboardShortcut) => {
       const pluginId = registry.getShortcutPluginId?.(shortcut.id);
@@ -121,12 +121,11 @@ export function resolvePluginShortcuts(registry: SharedRegistry): HelpShortcutEn
     })
     .map((shortcut: KeyboardShortcut) => {
       const pluginId = registry.getShortcutPluginId?.(shortcut.id);
-      const pluginName = pluginId ? allPlugins.get(pluginId)?.name : null;
       return {
         id: `plugin-shortcut:${shortcut.id}`,
         badges: [formatShortcutKey(shortcut)],
         description: formatShortcutDescription(shortcut.description),
-        category: pluginName ?? "Plugin Shortcuts",
+        category: resolvePaneTemplateSection({ pluginId }),
       };
     })
     .sort(sortShortcutEntries);

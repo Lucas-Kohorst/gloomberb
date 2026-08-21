@@ -198,7 +198,7 @@ export const newsWireModule: PluginModule = {
         "hormuz",
         "strait",
       ],
-      category: "navigation",
+      category: "data",
       shortcut: "ART",
       shortcutArg: {
         placeholder: "headline or topic",

@@ -226,9 +226,22 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
       ["notes", { id: "notes", name: "Notes", version: "1.0.0", description: "Ticker notes", toggleable: true }],
     ]),
     getCommandPluginId: () => "news",
-    getPaneTemplatePluginId: (templateId: string) => (
-      templateId === "new-chat-pane" ? "news" : "notes"
-    ),
+    getPaneTemplatePluginId: (templateId: string) => {
+      switch (templateId) {
+        case "new-chat-pane":
+          return "gloomberb-cloud";
+        case "quote-monitor-pane":
+        case "new-ticker-detail-pane":
+          return "ticker-research";
+        case "new-portfolio-pane":
+        case "new-watchlist-pane":
+          return "portfolio";
+        case "new-ibkr-trading-pane":
+          return "ibkr";
+        default:
+          return "application";
+      }
+    },
     getPluginPaneIds: () => [],
     getPluginPaneTemplateIds: () => [],
     hasPaneSettings,

@@ -195,7 +195,7 @@ export interface PaneTemplateDef {
   label: string;
   description: string;
   keywords?: string[];
-  /** Command-bar section. Defaults to the owning plugin's pane section. */
+  /** Command-bar / help section. Defaults to Assets, Data, Portfolio, or Workspace. */
   category?: string;
   shortcut?: PaneTemplateShortcut;
   wizard?: WizardStep[];

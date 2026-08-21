@@ -249,6 +249,7 @@ export function useCommandBarRootRuntime({
     portfolios: state.config.portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg: null,
+    rootQuery,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,

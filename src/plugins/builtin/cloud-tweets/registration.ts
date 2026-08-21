@@ -73,7 +73,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     label: "X Feed",
     description: "Open an X advanced-search feed.",
     keywords: ["twitter", "x", "tweet", "tweets", "feed", "social", "twit"],
-    category: "navigation",
+    category: "data",
     shortcut: "TWIT",
     shortcutArg: {
       placeholder: "query",

@@ -60,16 +60,7 @@ export type CatalogSourceId =
 export type CatalogFilterId =
   | "all"
   | "assets"
-  | "data"
-  | "securities"
-  | "options"
-  | "crypto"
-  | "fred"
-  | "prediction"
-  | "futures"
-  | "ai"
-  | "owid"
-  | "other";
+  | "data";
 
 export interface CatalogSeriesRow {
   id: string;
@@ -90,15 +81,6 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "all", label: "All" },
   { id: "assets", label: "Assets" },
   { id: "data", label: "Data" },
-  { id: "securities", label: "Securities" },
-  { id: "options", label: "Options" },
-  { id: "crypto", label: "Crypto" },
-  { id: "fred", label: "FRED" },
-  { id: "prediction", label: "Prediction" },
-  { id: "futures", label: "Futures" },
-  { id: "ai", label: "AI" },
-  { id: "owid", label: "OWID" },
-  { id: "other", label: "Other" },
 ];
 
 /** Securities, crypto, FX, futures, options, and venue contracts. */
@@ -127,15 +109,6 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   all: null,
   assets: CATALOG_ASSET_SOURCES,
   data: CATALOG_DATA_SOURCES,
-  securities: new Set(["security"]),
-  options: new Set(["option"]),
-  crypto: new Set(["crypto"]),
-  fred: new Set(["fred", "treasury"]),
-  prediction: new Set(["kalshi", "polymarket"]),
-  futures: new Set(["futures"]),
-  ai: new Set(["benchmark"]),
-  owid: new Set(["owid"]),
-  other: new Set(["adjacent", "poll", "weather", "owid"]),
 };
 
 const FX_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
