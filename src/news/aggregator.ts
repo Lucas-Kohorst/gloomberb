@@ -3,6 +3,7 @@ import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 import {
   DEFAULT_GLOBAL_QUERY,
+  MAX_ARTICLES,
   buildNewsQueryKey,
   createIdleNewsQueryState,
   dedupeNewsArticles,
@@ -198,7 +199,7 @@ export class NewsService {
     const normalized = normalizeNewsQuery(query);
     const entry = this.queries.get(buildNewsQueryKey(normalized));
     if (!entry || entry.loadMoreInFlight || !entry.state.nextCursor || entry.state.loadingMore) return;
-    if (entry.state.articles.length >= 500) {
+    if (entry.state.articles.length >= MAX_ARTICLES) {
       entry.state = { ...entry.state, nextCursor: null };
       this.notify();
       return;
