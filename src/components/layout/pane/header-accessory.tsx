@@ -41,7 +41,10 @@ function combinePaneHeaderAccessories(
 ): PaneHeaderAccessory | null {
   const entries = [...registrations.entries()];
   if (entries.length === 0) return null;
-  if (entries.length === 1) return entries[0][1];
+  if (entries.length === 1) {
+    const only = entries[0];
+    return only ? only[1] : null;
+  }
   return {
     width: entries.reduce((total, [, accessory]) => total + Math.max(0, accessory.width), 0),
     node: (
