@@ -1,5 +1,39 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_2: ChangelogRelease = {
+  id: "hosted-v0-13-2",
+  tagName: "v0.13.2",
+  version: "0.13.2",
+  title: "Snappier first load, Gloom tweets, crypto quotes",
+  publishedAt: "2026-08-21T18:00:00.000Z",
+  url: "",
+  body: `Hosted first load no longer stalls behind RSS. Tweets follow your Gloom login, CoinGecko quotes work on the hosted terminal, and this batch's chat/share/footer polish.
+
+## Performance
+
+- RSS no longer fires all ~229 default feeds at once through the hosted Worker. A cap of 6 runs at a time; Firehose fills as each feed returns. Tweets, quotes, and TV streams are not stuck behind a multi-minute stampede.
+- Floating-pane resize L-brackets appear only when the pointer is on a corner handle.
+
+## Features
+
+- **TWIT** opens on Markets. Those tweets also show in Firehose. X Feed tabs persist on hosted. Live polling stays off until you turn it on.
+- Tweets come from Gloom Cloud (sign in to Gloom). You do not connect an X account; a logged-out session can look empty.
+- Command bar \`dm <user>\` and \`chat <channel>\` open that conversation, including when Chat is already on the layout.
+- Unread: Enter opens the selected channel mention; the status unread badge jumps to those messages.
+- Share a tweet with \`[y]\` from TWIT or the tweet pop-out — same \`/s/\` reader as articles. The snapshot is the tweet text (x.com is not scraped).
+- Substack \`[y]\` share only from the open article, so the link has the full post instead of the list teaser.
+- Pane footers use \`[r]\`efresh and \`[/]\` search, and those keys bind.
+- Web/desktop inputs opt out of iCloud Passwords, 1Password, and browser autofill.
+
+## Fixes
+
+- CAT no longer crashes on boot. Column header sort works. Web and desktop keep the original system monospace; the IBM Plex font picker is gone.
+- Hosted crypto LAST/CHG%/MCAP comes from CoinGecko again. Pair spellings \`BTC-USD\`, \`SOL/USD\`, and \`ZEC/USD\` resolve to the same coin.
+- Portfolio **52W** shows trailing return. The Polls pane loads instead of dying on a footer syntax error.
+- Watchlist tickers in Firehose / X / RSS matching keep the full symbol (\`HOOD\`, not \`H\`).
+`,
+};
+
 const RELEASE_0_13_1: ChangelogRelease = {
   id: "hosted-v0-13-1",
   tagName: "v0.13.1",
@@ -225,6 +259,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_2,
   RELEASE_0_13_1,
   RELEASE_0_13_0,
   RELEASE_0_12_3,
