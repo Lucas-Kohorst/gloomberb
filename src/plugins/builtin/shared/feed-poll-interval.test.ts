@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   formatPollIntervalFooterLabel,
+  isXLivePollingEnabled,
   nextPollIntervalMinutes,
   resolveFeedPollIntervalMinutes,
+  twitterLivePollIntervalMinutes,
+  X_LIVE_POLLING_CONFIG_KEY,
 } from "./feed-poll-interval";
 
 describe("feed poll interval", () => {
@@ -27,5 +30,13 @@ describe("feed poll interval", () => {
     expect(resolveFeedPollIntervalMinutes(30, null, undefined)).toBe(30);
     expect(resolveFeedPollIntervalMinutes(30, null, 1)).toBe(1);
     expect(resolveFeedPollIntervalMinutes(30, 15, 1)).toBe(15);
+  });
+
+  test("X live polling interval is 0 until xLivePollingEnabled is true", () => {
+    expect(X_LIVE_POLLING_CONFIG_KEY).toBe("xLivePollingEnabled");
+    expect(isXLivePollingEnabled(undefined)).toBe(false);
+    expect(isXLivePollingEnabled(true)).toBe(true);
+    expect(twitterLivePollIntervalMinutes(false, 1)).toBe(0);
+    expect(twitterLivePollIntervalMinutes(true, 5)).toBe(5);
   });
 });

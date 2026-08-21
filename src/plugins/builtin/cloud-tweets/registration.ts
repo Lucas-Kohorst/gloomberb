@@ -2,6 +2,7 @@ import type { GloomPluginContext } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
 import { getSharedNewsService } from "../../../news/hooks";
 import { registerConnectionSource } from "../connections/register";
+import { isXLivePollingEnabled, X_LIVE_POLLING_CONFIG_KEY } from "../shared/feed-poll-interval";
 import { createXMarketsNewsCapability } from "./news-capability";
 import {
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
@@ -36,6 +37,16 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 120, height: 36 },
+    settings: {
+      title: "X Feed Settings",
+      fields: [{
+        key: X_LIVE_POLLING_CONFIG_KEY,
+        label: "Live polling",
+        description: "Refresh X timelines and searches on an interval. Off by default. Opening the pane or a manual refresh still loads once.",
+        type: "toggle",
+        storage: "plugin",
+      }],
+    },
   });
 
   ctx.registerPaneTemplate({
@@ -74,7 +85,10 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
   });
 
-  ctx.registerCapability(createXMarketsNewsCapability());
+  ctx.registerCapability({
+    ...createXMarketsNewsCapability(),
+    isEnabled: () => isXLivePollingEnabled(ctx.configState.get(X_LIVE_POLLING_CONFIG_KEY)),
+  });
   // Logging in/out flips this source between empty and populated; re-run the
   // watched news queries so the firehose merges Markets tweets without a reload.
   disposeXFeedAuthWatch = apiClient.subscribeCurrentUser(() => {

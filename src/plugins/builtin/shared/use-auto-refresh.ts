@@ -6,7 +6,8 @@ import { useAppSelector } from "../../../state/app/context";
  * (`refreshIntervalMinutes`, RI), so network panes follow the cadence the
  * user already configured instead of each hardcoding its own.
  *
- * Pass `intervalMinutes` to use a per-pane override (TWIT defaults to 1m).
+ * Pass `intervalMinutes` to use a per-pane override (TWIT uses 1m when live
+ * polling is on, and 0 to disable the timer).
  * The timer runs on the interval itself rather than a faster poll: a load
  * that failed is retried on the next tick, and a load that succeeded early
  * is left alone.
