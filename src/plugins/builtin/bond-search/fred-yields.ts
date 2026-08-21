@@ -1,4 +1,5 @@
 import { apiClient, type CloudYieldPointPayload } from "../../../api-client";
+import { loadFredSeriesPayload } from "../../../data/fred-load";
 import { loadCachedFredSeries } from "../../../data/fred-series";
 import { withConnectionRequest } from "../connections/register";
 import type { CorporateYieldEntry } from "./types";
@@ -21,14 +22,14 @@ export interface CorporateSeriesMeta {
  * existing cloud FRED proxy.
  */
 export const CORPORATE_SERIES: readonly CorporateSeriesMeta[] = [
-  { seriesId: "BAMLC0A1CAAA", label: "IG AAA", rating: "AAA", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLC0A2A", label: "IG AA", rating: "AA", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLC0A3A", label: "IG A", rating: "A", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLC0A4CBBB", label: "IG BBB", rating: "BBB", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLC0A0CM", label: "IG All-Rated", rating: "IG", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLH0A0HYM", label: "High Yield", rating: "HY", maturityRange: "All", treasuryMaturity: "10Y" },
-  { seriesId: "BAMLC0A0C13Y", label: "IG 1-3Y", rating: "IG", maturityRange: "1-3Y", treasuryMaturity: "2Y" },
-  { seriesId: "BAMLC0A0C510Y", label: "IG 5-10Y", rating: "IG", maturityRange: "5-10Y", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC0A1CAAAEY", label: "IG AAA", rating: "AAA", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC0A2CAAEY", label: "IG AA", rating: "AA", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC0A3CAEY", label: "IG A", rating: "A", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC0A4CBBBEY", label: "IG BBB", rating: "BBB", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC0A0CMEY", label: "IG All-Rated", rating: "IG", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLH0A0HYM2EY", label: "High Yield", rating: "HY", maturityRange: "All", treasuryMaturity: "10Y" },
+  { seriesId: "BAMLC1A0C13YEY", label: "IG 1-3Y", rating: "IG", maturityRange: "1-3Y", treasuryMaturity: "2Y" },
+  { seriesId: "BAMLC4A0C710YEY", label: "IG 7-10Y", rating: "IG", maturityRange: "7-10Y", treasuryMaturity: "10Y" },
 ];
 
 export interface TreasuryYieldMap {
@@ -66,7 +67,7 @@ export async function loadCorporateYields(force = false): Promise<CorporateYield
           loadCachedFredSeries(
             { seriesId: meta.seriesId, startDate, sortOrder: "desc" },
             () =>
-              apiClient.getCloudFredSeries(meta.seriesId, {
+              loadFredSeriesPayload(meta.seriesId, {
                 startDate,
                 sortOrder: "desc",
                 limit: 5,

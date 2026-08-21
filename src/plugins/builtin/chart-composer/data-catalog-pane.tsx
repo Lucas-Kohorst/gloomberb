@@ -12,11 +12,21 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { openUrl } from "../../../components/ui/external-link";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues } from "../../../utils/sort-values";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { usePaneSettingValue } from "../../../state/app/context";
+import { encodeSortPreference } from "../../../components/data-table/sort-settings";
+import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
+import {
+  CATALOG_COLUMN_DEFS,
+  CATALOG_COLUMN_IDS,
+  DEFAULT_CATALOG_SORT,
+  getCatalogPaneSettings,
+  type CatalogColumnId,
+  type CatalogSortPreference,
+} from "./catalog-settings";
 import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
@@ -41,22 +51,15 @@ import {
   useCatalogBenchRows,
   useCatalogPollRows,
 } from "./catalog-prefetch";
-import { resetCatalogOwidCaches, useCatalogOwidRows } from "./catalog-owid";
+import { resetCatalogOwidCaches } from "./catalog-owid";
+import { useCatalogOwidRows } from "./use-catalog-owid";
 import {
   resetCatalogPredictionHitsCache,
   useCatalogUniverse,
   usePredictionMarketHits,
 } from "./use-series-catalog";
 
-type CatalogColumnId = "series" | "source" | "kind" | "expression";
 type CatalogColumn = DataTableColumn & { id: CatalogColumnId };
-
-interface CatalogSortPreference {
-  columnId: CatalogColumnId | null;
-  direction: SortDirection;
-}
-
-const DEFAULT_SORT: CatalogSortPreference = { columnId: "source", direction: "asc" };
 
 function nextSortPreference(
   current: CatalogSortPreference,
@@ -65,7 +68,7 @@ function nextSortPreference(
   const typed = columnId as CatalogColumnId;
   if (current.columnId !== typed) return { columnId: typed, direction: "asc" };
   if (current.direction === "asc") return { columnId: typed, direction: "desc" };
-  return DEFAULT_SORT;
+  return DEFAULT_CATALOG_SORT;
 }
 
 function sortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
@@ -81,17 +84,28 @@ function sortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
   }
 }
 
-function buildColumns(width: number): CatalogColumn[] {
-  const sourceWidth = 18;
-  const kindWidth = 12;
-  const expressionWidth = Math.min(28, Math.max(16, Math.floor(width * 0.28)));
-  const seriesWidth = Math.max(18, width - 2 - 4 - sourceWidth - kindWidth - expressionWidth);
-  return [
-    { id: "series", label: "SERIES", width: seriesWidth, align: "left" },
-    { id: "source", label: "SOURCE", width: sourceWidth, align: "left" },
-    { id: "kind", label: "KIND", width: kindWidth, align: "left" },
-    { id: "expression", label: "G", width: expressionWidth, align: "left" },
-  ];
+function buildColumns(width: number, columnIds: readonly CatalogColumnId[]): CatalogColumn[] {
+  const layout: Record<CatalogColumnId, { label: string; width: number; flex?: boolean }> = {
+    series: { label: "SERIES", width: 18, flex: true },
+    source: { label: "SOURCE", width: 18 },
+    kind: { label: "KIND", width: 12 },
+    expression: { label: "G", width: Math.min(28, Math.max(16, Math.floor(width * 0.28))) },
+  };
+  const visible = resolveVisibleColumns(
+    CATALOG_COLUMN_DEFS,
+    columnIds,
+    CATALOG_COLUMN_IDS,
+  ).map((column) => column.id as CatalogColumnId);
+  const ids = visible.length > 0 ? visible : [...CATALOG_COLUMN_IDS];
+  const flexId = ids.includes("series") ? "series" : ids[0];
+  const fixedWidth = ids.filter((id) => id !== flexId).reduce((sum, id) => sum + layout[id]!.width, 0);
+  const flexWidth = Math.max(layout[flexId ?? "series"]!.width, width - 2 - ids.length - fixedWidth);
+  return ids.map((id) => ({
+    id,
+    label: layout[id]!.label,
+    width: id === flexId ? flexWidth : layout[id]!.width,
+    align: "left",
+  }));
 }
 
 export function DataCatalogPane({ focused, width, height }: PaneProps) {
@@ -99,9 +113,13 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const [seedQuery] = usePaneSettingValue("query", "");
   const [searchQuery, setSearchQuery] = useState(seedQuery);
-  const [filter, setFilter] = useState<CatalogFilterId>("all");
+  const [filter, setFilter] = usePaneSettingValue<CatalogFilterId>("defaultTab", "all");
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", CATALOG_COLUMN_IDS);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_CATALOG_SORT));
+  const paneSettings = getCatalogPaneSettings({ defaultTab: filter, columnIds, sort: sortValue });
+  const resolvedFilter = paneSettings.defaultTab;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [sortPreference, setSortPreference] = useState<CatalogSortPreference>(DEFAULT_SORT);
+  const sortPreference = paneSettings.sort;
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -126,7 +144,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const emptyCopy = catalogEmptyCopy(
     liveLoading || (tickerQuery && universeLoading),
     searchQuery,
-    filter === "prediction" ? predictionError : null,
+    filter !== "data" ? predictionError : null,
   );
 
   const rows = useMemo(() => {
@@ -145,7 +163,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     for (const entry of [...liveRows, ...benchRows, ...pollRows, ...owidRows, ...resolvedRows, ...withoutStaticLive]) {
       if (!merged.has(entry.id)) merged.set(entry.id, entry);
     }
-    const filtered = filterCatalogRows([...merged.values()], filter, searchQuery);
+    const filtered = filterCatalogRows([...merged.values()], resolvedFilter, searchQuery);
     if (!sortPreference.columnId) return filtered;
     const direction = sortPreference.direction;
     const columnId = sortPreference.columnId;
@@ -153,7 +171,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [adjacentIndices, benchRows, filter, instruments, markets, owidRows, pollRows, searchQuery, sortPreference, tickerQuery]);
+  }, [adjacentIndices, benchRows, resolvedFilter, instruments, markets, owidRows, pollRows, searchQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;
@@ -167,7 +185,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const selectedUrl = selectedRow ? catalogRowUrl(selectedRow) : null;
   const footerSource = selectedRow?.source;
 
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(width, paneSettings.columnIds), [paneSettings.columnIds, width]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -378,7 +396,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
             />
             <Tabs
               tabs={tabs}
-              activeValue={filter}
+              activeValue={resolvedFilter}
               onSelect={(value) => setFilter(value as CatalogFilterId)}
               focused={focused && !searchFocused}
               compact
@@ -396,7 +414,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         items={rows}
         sortColumnId={sortPreference.columnId}
         sortDirection={sortPreference.direction}
-        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId))}
+        onHeaderClick={(columnId) => setSortValue(encodeSortPreference(nextSortPreference(sortPreference, columnId)))}
         getItemKey={(row) => row.id}
         onActivate={chartSelected}
         renderCell={renderCell}

@@ -21,9 +21,10 @@ import {
 import {
   coerceSeriesInterpolationForStyle,
   coerceSeriesTransformForStyle,
+  defaultChartSeriesPresentation,
   isOhlcSeriesStyle,
 } from "../../../time-series/spec";
-import { sourceFallbackLabel } from "../../../time-series/series-label";
+import { seriesSpecLabel } from "../../../time-series/series-label";
 import {
   CANONICAL_EXCHANGE_ALIASES,
   canonicalExchange,
@@ -34,6 +35,7 @@ import {
   SERIES_PREFIX,
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
+  findVolCatalogEntry,
 } from "./universal-series";
 import {
   canonicalWeatherStationId,
@@ -49,6 +51,10 @@ import {
   resolveAdjacentIndexQuery,
 } from "./prediction-series";
 import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
+import {
+  findOwidCatalogEntryBySlug,
+  owidSeriesLabel,
+} from "../owid/catalog";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -107,7 +113,7 @@ export type SeriesOrConstant = ParsedSeriesExpression | ConstantSeriesExpression
 
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
-  return /^[A-Z0-9^][A-Z0-9.^_-]{0,31}$/.test(symbol) ? symbol : null;
+  return /^[A-Z0-9^][A-Z0-9.^_=-]{0,31}$/.test(symbol) ? symbol : null;
 }
 
 function normalizeInstrument(
@@ -180,6 +186,19 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     return { kind: "treasury-yield", maturity: entry.maturity, seriesId: entry.seriesId, label: entry.label };
   }
 
+  // Bare TNX / 10Y / VIX tokens should not go through Yahoo — hosted charts 429
+  // after suffix-guessing, and the FRED series is the actual yield / vol print.
+  if (parts.length === 1) {
+    const treasury = findTreasuryCatalogEntry(trimmed);
+    if (treasury) {
+      return { kind: "treasury-yield", maturity: treasury.maturity, seriesId: treasury.seriesId, label: treasury.label };
+    }
+    const vol = findVolCatalogEntry(trimmed);
+    if (vol) {
+      return { kind: "economic", provider: "fred", seriesId: vol.seriesId, label: vol.label };
+    }
+  }
+
   if (prefix === SERIES_PREFIX.benchmark) {
     // BENCH:selector:metric  — selector may contain spaces; metric is the last colon segment.
     const rest = parts.slice(1).join(":");
@@ -238,7 +257,18 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     const slug = normalizeOwidSlug(rest.slice(0, lastColon));
     const entity = normalizeOwidEntityCode(rest.slice(lastColon + 1));
     if (!slug || !entity) return null;
-    return { kind: "owid", slug, entity };
+    const catalog = findOwidCatalogEntryBySlug(slug);
+    const title = catalog?.title ?? slug.replaceAll("-", " ");
+    return {
+      kind: "owid",
+      slug,
+      entity,
+      label: owidSeriesLabel(
+        title,
+        entity,
+        catalog?.defaultEntity === entity ? catalog.defaultEntityName : undefined,
+      ),
+    };
   }
 
   if (prefix === SERIES_PREFIX.kalshi) {
@@ -378,7 +408,7 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
-  return series.label?.trim() || sourceFallbackLabel(series.source);
+  return seriesSpecLabel(series);
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {
@@ -446,11 +476,13 @@ export function buildSeriesSpec(
   overrides: Partial<Omit<ChartSeriesSpec, "id" | "source">> = {},
 ): ChartSeriesSpec {
   if (expression.kind === "constant") {
-    const style = overrides.style ?? "step";
+    const source = { kind: "constant" as const, value: expression.value };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `const-${slug(String(expression.value))}-${index + 1}`,
-      source: { kind: "constant", value: expression.value },
-      transform: "raw",
+      source,
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -460,12 +492,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "economic") {
-    const style = overrides.style ?? "step";
+    const source = { kind: "economic" as const, provider: "fred" as const, seriesId: expression.seriesId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `fred-${slug(expression.seriesId)}-${index + 1}`,
-      source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -499,12 +533,14 @@ export function buildSeriesSpec(
 
   if (expression.kind === "treasury-yield") {
     // Treasury yields are FRED constant-rate series; reuse the economic pipeline.
-    const style = overrides.style ?? "step";
+    const source = { kind: "economic" as const, provider: "fred" as const, seriesId: expression.seriesId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `ust-${slug(expression.maturity)}-${index + 1}`,
-      source: { kind: "economic", provider: "fred", seriesId: expression.seriesId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -514,12 +550,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "adjacent-index") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "adjacent-index" as const, indexId: expression.indexId };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `adj-${slug(expression.indexId)}-${index + 1}`,
-      source: { kind: "adjacent-index", indexId: expression.indexId },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -529,12 +567,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "benchmark") {
-    const style = overrides.style ?? "points";
+    const source = { kind: "benchmark" as const, selector: expression.selector, metric: expression.metric };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `bench-${slug(expression.selector)}-${slug(expression.metric)}-${index + 1}`,
-      source: { kind: "benchmark", selector: expression.selector, metric: expression.metric },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -544,12 +584,14 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "poll") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "poll" as const, subject: expression.subject, choice: expression.choice };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `poll-${slug(expression.subject)}-${slug(expression.choice)}-${index + 1}`,
-      source: { kind: "poll", subject: expression.subject, choice: expression.choice },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -559,17 +601,19 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "weather") {
-    const style = overrides.style ?? (expression.metric === "precip" ? "columns" : "line");
+    const source = {
+      kind: "weather" as const,
+      provider: expression.provider,
+      stationId: expression.stationId,
+      metric: expression.metric,
+    };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `wx-${expression.provider}-${slug(expression.stationId)}-${expression.metric}-${index + 1}`,
-      source: {
-        kind: "weather",
-        provider: expression.provider,
-        stationId: expression.stationId,
-        metric: expression.metric,
-      },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -579,13 +623,22 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "owid") {
-    const style = overrides.style ?? "line";
+    const source = { kind: "owid" as const, slug: expression.slug, entity: expression.entity };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style ?? "step";
+    const catalog = findOwidCatalogEntryBySlug(expression.slug);
+    const label = expression.label
+      ?? owidSeriesLabel(
+        catalog?.title ?? expression.slug.replaceAll("-", " "),
+        expression.entity,
+        catalog?.defaultEntity === expression.entity ? catalog.defaultEntityName : undefined,
+      );
     return {
       id: `owid-${slug(expression.slug)}-${slug(expression.entity)}-${index + 1}`,
-      source: { kind: "owid", slug: expression.slug, entity: expression.entity },
-      ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
-      axis: "auto",
+      source,
+      label,
+      transform: presentation.transform,
+      axis: "left",
       panelId: "main",
       ...overrides,
       style,
@@ -594,16 +647,18 @@ export function buildSeriesSpec(
   }
 
   if (expression.kind === "prediction-market") {
-    const style = overrides.style ?? "line";
+    const source = {
+      kind: "prediction-market" as const,
+      venue: expression.venue,
+      marketId: expression.marketId,
+    };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `pm-${expression.venue}-${slug(expression.marketId)}-${index + 1}`,
-      source: {
-        kind: "prediction-market",
-        venue: expression.venue,
-        marketId: expression.marketId,
-      },
+      source,
       ...(expression.label ? { label: expression.label } : {}),
-      transform: "raw",
+      transform: presentation.transform,
       axis: "auto",
       panelId: "main",
       ...overrides,
@@ -674,17 +729,17 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
     case "economic":
       return `economic:${series.source.seriesId}`;
     case "adjacent-index":
-      return `adjacent-index:${series.source.indexId}`;
+      return "level";
     case "benchmark":
       return `benchmark:${series.source.metric}`;
     case "poll":
-      return `poll:${series.source.subject}`;
+      return "percent";
     case "weather":
       return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
     case "owid":
       return `owid:${series.source.slug}`;
     case "prediction-market":
-      return `prediction-market:${series.source.venue}`;
+      return "probability";
     case "constant":
       return "constant";
     default:
@@ -960,7 +1015,8 @@ export function buildCustomChartPreset(expression: string, fallbackSymbol?: stri
   }
   const parsed = parseChartExpression(expression);
   if (parsed.length === 0) return fallbackSymbol ? buildPriceChartPreset(fallbackSymbol) : buildEmptyChartPreset();
-  return chartSpec(buildCustomSeries(parsed));
+  const owidOnly = parsed.every((entry) => entry.kind === "owid");
+  return chartSpec(buildCustomSeries(parsed), owidOnly ? { range: "ALL" } : {});
 }
 
 export function buildPriceChartPreset(symbol: string): ChartSpec {

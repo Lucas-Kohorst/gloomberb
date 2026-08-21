@@ -1,13 +1,6 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
 import { LlmStatsPane } from "./pane";
-import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
-import {
-  LLM_STATS_CONNECTION_ID,
-  LLM_STATS_PANE_ID,
-} from "./types";
-
-let disposeConnection: (() => void) | null = null;
+import { LLM_STATS_PANE_ID } from "./types";
 
 export const llmStatsModule: PluginModule = {
   panes: [
@@ -46,20 +39,4 @@ export const llmStatsModule: PluginModule = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
-
-  setup() {
-    disposeConnection = registerConnectionSource({
-      id: LLM_STATS_CONNECTION_ID,
-      name: "llm-stats",
-      kind: "data",
-      pluginId: ADJACENT_PLUGIN_ID,
-      priority: 300,
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeConnection?.();
-    disposeConnection = null;
-  },
 };

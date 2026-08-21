@@ -136,6 +136,9 @@ export function usePredictionControllerKeyboard({
       }
 
       if (detailOpen) {
+        if (detailTab === "data" && (command === "move-down" || command === "move-up")) {
+          return;
+        }
         if (command === "move-down") {
           event.stopPropagation?.();
           event.preventDefault?.();

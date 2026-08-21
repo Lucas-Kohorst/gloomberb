@@ -8,6 +8,7 @@ import {
 import { testRender } from "../../../../renderers/opentui/test-utils";
 import { Box, Text } from "../../../../ui";
 import { useChatProfilePopover } from "../profile-popover";
+import { requestOpenChatProfile } from "../profile-request";
 import {
   hasPublicChatProfileInfo,
   shouldOfferChatProfileSetup,
@@ -64,6 +65,15 @@ function makeAccountProfile(overrides: Partial<AccountProfile> = {}): AccountPro
   };
 }
 
+function RequestedProfileHarness() {
+  const { profilePopoverUser } = useChatProfilePopover();
+  return (
+    <Box width={50} height={1}>
+      <Text>{profilePopoverUser ? `@${profilePopoverUser.username}` : "none"}</Text>
+    </Box>
+  );
+}
+
 function OwnProfileHarness({ user }: { user: ChatUserSummary }) {
   const {
     profilePopoverUser,
@@ -86,6 +96,29 @@ function OwnProfileHarness({ user }: { user: ChatUserSummary }) {
 }
 
 describe("profile popover", () => {
+  test("opens a requested public profile", async () => {
+    await act(async () => {
+      testSetup = await testRender(<RequestedProfileHarness />, { width: 50, height: 4 });
+    });
+    const setup = testSetup;
+    expect(setup).toBeDefined();
+    if (!setup) return;
+    await act(async () => {
+      await setup.renderOnce();
+    });
+
+    await act(async () => {
+      requestOpenChatProfile(makeUser({
+        username: "bob",
+        displayName: "Bob",
+        bio: "Trades energy",
+      }));
+      await setup.renderOnce();
+    });
+
+    expect(setup.captureCharFrame()).toContain("@bob");
+  });
+
   test("treats public portfolio analytics as hover profile information", () => {
     expect(hasPublicChatProfileInfo(makeUser({
       bio: null,

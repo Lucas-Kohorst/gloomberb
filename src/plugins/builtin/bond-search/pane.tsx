@@ -18,7 +18,7 @@ import {
 import { colors, priceColor } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
-import { usePluginPaneState } from "../../runtime";
+import { usePluginAppActions, usePluginPaneState } from "../../runtime";
 import { loadCorporateYields } from "./fred-yields";
 import {
   BOND_SEARCH_PANE_ID,
@@ -80,6 +80,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
     direction: "asc",
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const { createPaneFromTemplate } = usePluginAppActions();
 
   // Search bar (Phase 2 — present but not wired to a live bond search backend).
   const [searchQuery, setSearchQuery] = useState("");
@@ -114,6 +115,11 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
 
   const rows = useMemo(() => sortedYields(entries, sort), [entries, sort]);
   const columns = useMemo<YieldColumnDef[]>(() => buildYieldColumns(width), [width]);
+  const selectedEntry = rows[selectedIdx] ?? null;
+  const chartSelected = useCallback(() => {
+    if (!selectedEntry) return;
+    createPaneFromTemplate("chart-composer-pane", { arg: `FRED:${selectedEntry.seriesId}` });
+  }, [createPaneFromTemplate, selectedEntry]);
 
   // Keep selection in range when rows change.
   useEffect(() => {
@@ -147,6 +153,12 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         load(true);
         return true;
       }
+      if (event.name === "g" && selectedEntry) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        chartSelected();
+        return true;
+      }
       if (activeTab === "search") {
         if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
           stopSearchFocusNavigation(event);
@@ -162,7 +174,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       }
       return false;
     },
-    [activeTab, focusSearch, load],
+    [activeTab, chartSelected, focusSearch, load, selectedEntry],
   );
 
   useShortcut((event) => {
@@ -190,6 +202,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
       ];
       const hints = [
+        { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedEntry },
         { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
         ...(activeTab === "search"
           ? [{ id: "search", key: "s", label: "earch", onPress: focusSearch }]
@@ -197,7 +210,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       ];
       return { info, hints };
     },
-    [activeTab, error, focusSearch, focused, lastUpdated, load, status, updatedAgo],
+    [activeTab, chartSelected, error, focusSearch, focused, lastUpdated, load, selectedEntry, status, updatedAgo],
   );
 
   const tabs = (

@@ -286,7 +286,7 @@ describe("CommandBar pane and layout routes", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Panes");
+    expect(frame).toContain("Assets");
     expect(frame).toContain("Quote Monitor");
     expect(frame).toContain("QQ");
   });

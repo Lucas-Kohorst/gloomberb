@@ -7,6 +7,7 @@ import {
   chartSeriesLabel,
   buildCustomChartPreset,
 } from "./presets";
+import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 import {
   formatParsedSeriesExpression,
   buildSeriesCatalogSuggestions,
@@ -19,6 +20,7 @@ import {
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
   findBenchmarkMetric,
+  findVolCatalogEntry,
 } from "./universal-series";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
@@ -77,6 +79,27 @@ describe("universal series expression parsing", () => {
     expect(parseSeriesExpression("UST:99Y")).toBeNull();
   });
 
+  test("maps street treasury aliases onto UST yields instead of Yahoo tickers", () => {
+    expect(parseSeriesExpression("TNX")).toEqual({
+      kind: "treasury-yield",
+      maturity: "10Y",
+      seriesId: "DGS10",
+      label: "10Y Treasury Yield",
+    });
+    expect(parseSeriesExpression("^TNX")).toMatchObject({ kind: "treasury-yield", maturity: "10Y" });
+    expect(parseSeriesExpression("10Y")).toMatchObject({ kind: "treasury-yield", maturity: "10Y" });
+  });
+
+  test("maps VIX onto the FRED close series", () => {
+    expect(parseSeriesExpression("VIX")).toEqual({
+      kind: "economic",
+      provider: "fred",
+      seriesId: "VIXCLS",
+      label: "VIX",
+    });
+    expect(parseSeriesExpression("^VIX")).toMatchObject({ seriesId: "VIXCLS" });
+  });
+
   test("parses BENCH:selector:metric", () => {
     expect(parseSeriesExpression("BENCH:OpenAI:tps")).toEqual({
       kind: "benchmark",
@@ -110,11 +133,13 @@ describe("universal series expression parsing", () => {
       kind: "owid",
       slug: "life-expectancy",
       entity: "USA",
+      label: "Life expectancy · United States",
     });
     expect(parseSeriesExpression("owid:life-expectancy:OWID_WRL")).toEqual({
       kind: "owid",
       slug: "life-expectancy",
       entity: "OWID_WRL",
+      label: "Life expectancy · World",
     });
     expect(parseSeriesExpression("OWID:life-expectancy")).toBeNull();
     expect(parseSeriesExpression("OWID:charts:USA")).toBeNull();
@@ -229,6 +254,19 @@ describe("universal series spec building", () => {
     expect(spec.style).toBe("line");
   });
 
+  test("owid defaults to a long window, left axis, step style, and human label", () => {
+    const spec = buildCustomChartPreset("OWID:life-expectancy:USA");
+    expect(spec.viewport.range).toBe("ALL");
+    expect(spec.series[0]?.source).toEqual({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "USA",
+    });
+    expect(spec.series[0]?.axis).toBe("left");
+    expect(spec.series[0]?.style).toBe("step");
+    expect(spec.series[0]?.label).toBe("Life expectancy · United States");
+  });
+
   test("prediction-market builds a kalshi/polymarket source", () => {
     const spec = buildSeriesSpec(parseSeriesExpression("KALSHI:KXPRESPERSON")!, 0);
     expect(spec.source).toEqual({
@@ -238,6 +276,36 @@ describe("universal series spec building", () => {
     });
     expect(spec.style).toBe("line");
     expect(formatSeriesExpression(spec)).toBe("KALSHI:KXPRESPERSON");
+  });
+
+  test("every catalog series kind has a working default spec", () => {
+    const matrix = [
+      { expression: "AAPL", kind: "security", style: "candles", transform: "raw", unitGroup: "price" },
+      { expression: "FUT:ES", kind: "security", style: "candles", transform: "raw", unitGroup: "price" },
+      { expression: "FRED:CPIAUCSL", kind: "economic", style: "step", transform: "raw", unitGroup: "level" },
+      { expression: "UST:10Y", kind: "economic", style: "step", transform: "raw", unitGroup: "level" },
+      { expression: "ADJ:red", kind: "adjacent-index", style: "line", transform: "raw", unitGroup: "level" },
+      { expression: "OWID:life-expectancy:USA", kind: "owid", style: "line", transform: "raw", unitGroup: "owid:life-expectancy" },
+      { expression: "KALSHI:KXPRESPERSON", kind: "prediction-market", style: "line", transform: "raw", unitGroup: "probability", valueRange: { min: 0, max: 100 } },
+      { expression: "POLY:fed-cut-september", kind: "prediction-market", style: "line", transform: "raw", unitGroup: "probability", valueRange: { min: 0, max: 100 } },
+      { expression: "POLL:Donald Trump:Approve", kind: "poll", style: "line", transform: "raw", unitGroup: "percent", valueRange: { min: 0, max: 100 } },
+      { expression: "BENCH:OpenAI:tps", kind: "benchmark", style: "points", transform: "raw", unitGroup: "benchmark:tps" },
+      { expression: "WX:LAX:high", kind: "weather", style: "line", transform: "raw", unitGroup: "weather:high" },
+    ] as const;
+
+    for (const row of matrix) {
+      const parsed = parseSeriesExpression(row.expression);
+      expect(parsed, row.expression).not.toBeNull();
+      const spec = buildSeriesSpec(parsed!, 0);
+      const defaults = defaultChartSeriesPresentation(spec.source);
+      expect(spec.source.kind, row.expression).toBe(row.kind);
+      expect(spec.style, row.expression).toBe(row.style);
+      expect(spec.transform, row.expression).toBe(row.transform);
+      expect(defaults.unitGroup, row.expression).toBe(row.unitGroup);
+      expect(defaults.valueRange, row.expression).toEqual("valueRange" in row ? row.valueRange : undefined);
+      expect(chartSeriesLabel({ ...spec, label: "   " })).toBeTruthy();
+      expect(buildCustomChartPreset(row.expression).series.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -310,6 +378,24 @@ describe("universal series catalog suggestions", () => {
     expect(benches.some((entry) => entry.label.includes("OpenAI"))).toBe(true);
   });
 
+  test("suggests OWID series from human names, topics, and slugs", () => {
+    const byName = buildSeriesCatalogSuggestions("life expectancy", AAPL);
+    expect(byName[0]?.expression).toMatchObject({
+      kind: "owid",
+      slug: "life-expectancy",
+      entity: "OWID_WRL",
+    });
+    expect(formatParsedSeriesExpression(byName[0]!.expression)).toBe("OWID:life-expectancy:OWID_WRL");
+
+    const byTopic = buildSeriesCatalogSuggestions("co2 emissions", AAPL);
+    expect(byTopic.some((entry) => (
+      entry.expression.kind === "owid" && entry.expression.slug.includes("co2")
+    ))).toBe(true);
+
+    const bySlug = buildSeriesCatalogSuggestions("life-expectancy", AAPL);
+    expect(bySlug[0]?.expression).toMatchObject({ kind: "owid", slug: "life-expectancy" });
+  });
+
   test("suggests Adjacent indices from natural language", () => {
     const suggestions = buildSeriesCatalogSuggestions("adjacent red index", AAPL);
     expect(suggestions[0]?.expression).toMatchObject({
@@ -353,6 +439,9 @@ describe("universal series catalog suggestions", () => {
     expect(buildSeriesCatalogSuggestions("KALSHI:KXPRESPERSON", AAPL)[0]).toMatchObject({
       expression: { kind: "prediction-market", venue: "kalshi", marketId: "KXPRESPERSON" },
     });
+    expect(buildSeriesCatalogSuggestions("OWID:life-expectancy:USA", AAPL)[0]).toMatchObject({
+      expression: { kind: "owid", slug: "life-expectancy", entity: "USA" },
+    });
   });
 
   test("assist context mentions all universal prefixes", () => {
@@ -381,6 +470,8 @@ describe("universal series catalog data integrity", () => {
     for (const entry of TREASURY_CATALOG) {
       expect(findTreasuryCatalogEntry(entry.maturity)?.seriesId).toBe(entry.seriesId);
     }
+    expect(findTreasuryCatalogEntry("TNX")?.maturity).toBe("10Y");
+    expect(findVolCatalogEntry("VIX")?.seriesId).toBe("VIXCLS");
   });
 
   test("every benchmark metric resolves via findBenchmarkMetric", () => {

@@ -25,6 +25,7 @@ export function useRootProviderSearch(options: {
     brokerInstanceId?: string | null,
   ) => TickerSearchCandidate[] | null;
   rootPlainTickerSearchArg: string | null;
+  rootQuery?: string;
   rootResultItems: ResultItem[];
   rootTickerSearchArg: string | null;
   tickers: AppState["tickers"];
@@ -49,6 +50,7 @@ export function useRootProviderSearch(options: {
     portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg,
+    rootQuery,
     rootResultItems,
     rootTickerSearchArg,
     tickers,
@@ -180,7 +182,7 @@ export function useRootProviderSearch(options: {
   ]);
   const rootSectionOrder: CommandBarSectionOrder = rootPlainTickerSearchArg
     ? "app-first"
-    : rootTickerSearchArg
+    : rootTickerSearchArg || rootQuery?.trim()
       ? "ranked"
       : "default";
   const orderedRootResults = useMemo(

@@ -11,6 +11,7 @@ type TickerResearchTabSummary = { id: string; name: string; order: number };
 export interface TickerResearchPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
+  defaultTabId: string;
 }
 
 export interface QuoteMonitorPaneSettings {
@@ -24,11 +25,16 @@ const DEFAULT_QUOTE_MONITOR_CHART_PERIOD: PriceSparklinePeriod = "1M";
 export function getTickerResearchPaneSettings(
   settings: Record<string, unknown> | undefined,
 ): TickerResearchPaneSettings {
+  const tabId = settings?.lockedTabId === "fundamental-graphs"
+    ? "chart"
+    : typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview";
+  const defaultTabId = typeof settings?.defaultTabId === "string" && settings.defaultTabId.trim()
+    ? settings.defaultTabId
+    : "overview";
   return {
     hideTabs: settings?.hideTabs === true,
-    lockedTabId: settings?.lockedTabId === "fundamental-graphs"
-      ? "chart"
-      : typeof settings?.lockedTabId === "string" ? settings.lockedTabId : "overview",
+    lockedTabId: tabId,
+    defaultTabId,
   };
 }
 
@@ -58,7 +64,21 @@ export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSetti
 
   return {
     title: "Ticker Research Settings",
+    values: {
+      hideTabs: settings.hideTabs,
+      lockedTabId: settings.lockedTabId,
+      defaultTabId: settings.defaultTabId,
+    },
     fields: [
+      ...(settings.hideTabs
+        ? []
+        : [{
+          key: "defaultTabId",
+          label: "Default tab",
+          description: "Tab shown when this pane opens.",
+          type: "select" as const,
+          options: tabs.map((tab) => ({ value: tab.id, label: tab.name })),
+        }]),
       {
         key: "hideTabs",
         label: "Hide Tabs",

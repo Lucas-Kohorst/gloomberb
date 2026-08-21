@@ -1,21 +1,29 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerConnectionSource } from "../connections/register";
 import { PluginMarketPane } from "./pane";
-import { PLUGIN_MARKET_PANE_ID, PLUGIN_MARKET_PLUGIN_ID, PLUGIN_MARKET_TEMPLATE_ID } from "./types";
+import {
+  GITHUB_PLUGIN_SEARCH_CONNECTION_ID,
+  PLUGIN_MARKET_PANE_ID,
+  PLUGIN_MARKET_PLUGIN_ID,
+  PLUGIN_MARKET_PLUG_TEMPLATE_ID,
+  PLUGIN_MARKET_TEMPLATE_ID,
+} from "./types";
+
+let disposeGithubConnection: (() => void) | null = null;
+
+const MARKETPLACE_DESCRIPTION =
+  "Search installed and GitHub plugins, then install, toggle, update, or remove them.";
 
 /**
- * Plugin Marketplace — the full plugin management pane (`PLUGINS` prefix).
- *
- * This is distinct from the `PL` command-bar screen ("Manage Plugins"), which is a
- * lightweight inline toggle that only flips plugins on/off without opening a pane.
- * This pane adds browse, search, install, update, and remove for external plugins,
- * plus version/source/status columns and error reporting. Keep both: the inline `PL`
- * toggle is the fast keyboard workflow; this pane is the complete management surface.
+ * Plugin Marketplace is the one in-app plugin surface: discovery (local + GitHub)
+ * plus install/toggle/update/remove. `PLUGINS` / `PLUG` open this pane. `PL` stays
+ * a command-bar toggle of the same installed plugins and can jump here.
  */
 export const pluginMarketPlugin: GloomPlugin = {
   id: PLUGIN_MARKET_PLUGIN_ID,
   name: "Plugin Marketplace",
   version: "1.0.0",
-  description: "Browse, enable, disable, install, update, and remove plugins",
+  description: MARKETPLACE_DESCRIPTION,
   toggleable: false,
 
   panes: [
@@ -35,9 +43,39 @@ export const pluginMarketPlugin: GloomPlugin = {
       id: PLUGIN_MARKET_TEMPLATE_ID,
       paneId: PLUGIN_MARKET_PANE_ID,
       label: "Plugin Marketplace",
-      description: "Browse, search, enable, disable, install, update, and remove plugins from within the app.",
-      keywords: ["plugin", "plugins", "marketplace", "market", "install", "manage", "toggle", "enable", "disable", "extensions"],
+      description: MARKETPLACE_DESCRIPTION,
+      keywords: [
+        "plugin",
+        "plugins",
+        "marketplace",
+        "market",
+        "discovery",
+        "discover",
+        "github",
+        "community",
+        "search",
+        "install",
+        "manage",
+        "toggle",
+        "enable",
+        "disable",
+        "extensions",
+      ],
       shortcut: { prefix: "PLUGINS" },
+      singleton: true,
+      createInstance: () => ({
+        placement: "floating",
+        title: "Plugin Marketplace",
+      }),
+    },
+    {
+      id: PLUGIN_MARKET_PLUG_TEMPLATE_ID,
+      paneId: PLUGIN_MARKET_PANE_ID,
+      label: "Plugin Marketplace",
+      description: MARKETPLACE_DESCRIPTION,
+      keywords: ["plugin", "plugins", "discover", "github", "install"],
+      shortcut: { prefix: "PLUG" },
+      singleton: true,
       createInstance: () => ({
         placement: "floating",
         title: "Plugin Marketplace",
@@ -46,8 +84,18 @@ export const pluginMarketPlugin: GloomPlugin = {
   ],
 
   setup() {
-    // No connection sources or capabilities — this is a management pane.
+    disposeGithubConnection = registerConnectionSource({
+      id: GITHUB_PLUGIN_SEARCH_CONNECTION_ID,
+      name: "GitHub Plugins",
+      kind: "api",
+      pluginId: PLUGIN_MARKET_PLUGIN_ID,
+      authRequired: false,
+      priority: 360,
+    });
+  },
+
+  dispose() {
+    disposeGithubConnection?.();
+    disposeGithubConnection = null;
   },
 };
-
-

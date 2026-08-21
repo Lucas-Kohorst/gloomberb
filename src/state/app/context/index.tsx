@@ -14,6 +14,7 @@ import {
 } from "react";
 import type { AppSessionStorePort } from "../../../core/app-service-ports";
 import { ThemeProvider } from "../../../theme/theme-context";
+import { syncFontFamily } from "../../../theme/font-family";
 import { syncFontScale } from "../../../theme/font-scale";
 import { getBrowserWindow } from "../../../utils/browser-location";
 import {
@@ -511,6 +512,10 @@ export function AppProvider({
       getBrowserWindow()?.dispatchEvent(new Event("resize"));
     }
   }, [state.config.fontSize]);
+
+  useLayoutEffect(() => {
+    syncFontFamily(state.config.fontFamily);
+  }, [state.config.fontFamily]);
 
   useLayoutEffect(() => {
     stateRef.current = state;

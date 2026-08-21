@@ -38,6 +38,7 @@ interface SourceFetchResult {
 interface NewsQueryEntry {
   query: NewsQuery;
   state: NewsQueryState;
+  sourceArticles: Map<string, NewsArticle[]>;
   inFlight: Promise<NewsQueryState> | null;
   refs: number;
   lastAccessedAt: number;
@@ -88,7 +89,12 @@ export class NewsService {
   register(source: NewsCapability): () => void {
     this.sources.set(source.id, source);
     this.seedCachedSource(source);
-    if (this.polling) {
+    // A slower all-source refresh (RSS throttle) would otherwise swallow this
+    // source until it finished. Merge it into in-flight queries immediately.
+    const blocked = [...this.queries.values()].filter((entry) => entry.inFlight);
+    if (blocked.length > 0) {
+      void this.ingestSource(source, blocked);
+    } else if (this.polling) {
       void this.pollActiveQueries();
     }
     return () => {
@@ -100,6 +106,16 @@ export class NewsService {
 
   unregister(sourceId: string): void {
     this.sources.delete(sourceId);
+    let changed = false;
+    for (const entry of this.queries.values()) {
+      if (!entry.sourceArticles.delete(sourceId)) continue;
+      this.rebuildQueryState(entry, { notify: false });
+      changed = true;
+    }
+    if (changed) {
+      this.rebuildArticlePool();
+      this.notify();
+    }
   }
 
   start(): void {
@@ -234,11 +250,10 @@ export class NewsService {
 
     const promise = (async () => {
       try {
-        const result = await this.fetchFromSources(query);
-        const articles = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query);
+        const result = await this.fetchFromSources(query, entry);
         const state: NewsQueryState = {
           phase: "ready",
-          articles,
+          articles: filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query),
           error: null,
           updatedAt: this.now(),
           sourceIds: result.sourceIds,
@@ -280,11 +295,13 @@ export class NewsService {
     const entry: NewsQueryEntry = {
       query,
       state: createIdleNewsQueryState(),
+      sourceArticles: new Map(),
       inFlight: null,
       refs: 0,
       lastAccessedAt: now,
     };
     this.queries.set(key, entry);
+    this.seedCachedSourcesForQuery(entry);
     this.pruneInactiveQueries(now);
     return entry;
   }
@@ -315,21 +332,26 @@ export class NewsService {
       .sort((a, b) => newsCapabilityPriority(a) - newsCapabilityPriority(b));
   }
 
-  private async fetchFromSources(query: NewsQuery): Promise<SourceFetchResult> {
+  private async fetchFromSources(query: NewsQuery, entry: NewsQueryEntry): Promise<SourceFetchResult> {
     const sources = this.enabledSources(query);
     if (normalizeNewsFeed(query) === "ticker") {
-      return this.fetchTickerNews(query, sources);
+      return this.fetchTickerNews(query, sources, entry);
     }
-    return this.fetchMergedNews(query, sources);
+    return this.fetchMergedNews(query, sources, entry);
   }
 
-  private async fetchTickerNews(query: NewsQuery, sources: NewsCapability[]): Promise<SourceFetchResult> {
+  private async fetchTickerNews(
+    query: NewsQuery,
+    sources: NewsCapability[],
+    entry: NewsQueryEntry,
+  ): Promise<SourceFetchResult> {
     let firstEmpty: SourceFetchResult | null = null;
     for (const source of sources) {
       try {
         const articles = (await source.provider.fetchNews(query))
           .map((article) => attributeArticle(source, article));
         const result = { articles, sourceIds: [newsCapabilitySourceId(source)] };
+        this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
         if (articles.length > 0) return result;
         firstEmpty ??= result;
       } catch {
@@ -339,43 +361,100 @@ export class NewsService {
     return firstEmpty ?? { articles: [], sourceIds: [] };
   }
 
-  private async fetchMergedNews(query: NewsQuery, sources: NewsCapability[]): Promise<SourceFetchResult> {
-    const settled = await Promise.allSettled(
-      sources.map(async (source) => ({
-        source,
-        articles: (await source.provider.fetchNews(query))
-          .map((article) => attributeArticle(source, article)),
-      })),
-    );
+  private async fetchMergedNews(
+    query: NewsQuery,
+    sources: NewsCapability[],
+    entry: NewsQueryEntry,
+  ): Promise<SourceFetchResult> {
+    await Promise.allSettled(sources.map(async (source) => {
+      const articles = (await source.provider.fetchNews(query))
+        .map((article) => attributeArticle(source, article));
+      this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
+    }));
+    return this.sourceFetchSnapshot(entry);
+  }
+
+  private sourceFetchSnapshot(entry: NewsQueryEntry): SourceFetchResult {
     const articles: NewsArticle[] = [];
     const sourceIds: string[] = [];
-    for (const result of settled) {
-      if (result.status !== "fulfilled") continue;
-      articles.push(...result.value.articles);
-      sourceIds.push(newsCapabilitySourceId(result.value.source));
+    for (const [sourceId, items] of entry.sourceArticles) {
+      sourceIds.push(sourceId);
+      articles.push(...items);
     }
     return { articles, sourceIds };
   }
 
-  private seedCachedSource(source: NewsCapability): void {
-    const news = source.provider;
-    const queries = [...this.queries.values()].map((entry) => entry.query);
-    if (queries.length === 0) queries.push(DEFAULT_GLOBAL_QUERY);
+  private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): void {
+    const snapshot = this.sourceFetchSnapshot(entry);
+    const articles = filterNewsArticlesForQuery(dedupeNewsArticles(snapshot.articles), entry.query);
+    const phase = articles.length > 0
+      ? "ready"
+      : entry.state.phase;
+    entry.state = {
+      phase,
+      articles,
+      error: null,
+      updatedAt: this.now(),
+      sourceIds: snapshot.sourceIds,
+    };
+    entry.lastAccessedAt = this.now();
+    if (options.notify === false) return;
+    this.rebuildArticlePool();
+    this.notify();
+  }
 
+  private applySourceArticles(entry: NewsQueryEntry, sourceId: string, articles: NewsArticle[]): void {
+    entry.sourceArticles.set(sourceId, articles);
+    this.rebuildQueryState(entry);
+  }
+
+  private queryAcceptsSource(entry: NewsQueryEntry, source: NewsCapability): boolean {
+    return source.isEnabled?.() !== false && (source.provider.supports?.(entry.query) ?? true);
+  }
+
+  private async ingestSource(source: NewsCapability, entries: NewsQueryEntry[]): Promise<void> {
+    const accepted = entries.filter((entry) => this.queryAcceptsSource(entry, source));
+    if (accepted.length === 0) return;
+    await Promise.allSettled(accepted.map(async (entry) => {
+      try {
+        const articles = (await source.provider.fetchNews(entry.query))
+          .map((article) => attributeArticle(source, article));
+        this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
+      } catch {
+        // Keep existing articles from this source.
+      }
+    }));
+  }
+
+  private seedCachedSourcesForQuery(entry: NewsQueryEntry): void {
     let changed = false;
-    for (const query of queries) {
-      if (source.isEnabled?.() === false || news.supports?.(query) === false) continue;
-      const cached = (news.getCachedNews?.(query) ?? [])
+    for (const source of this.sources.values()) {
+      if (!this.queryAcceptsSource(entry, source)) continue;
+      const cached = (source.provider.getCachedNews?.(entry.query) ?? [])
         .map((article) => attributeArticle(source, article));
       if (cached.length === 0) continue;
-      const entry = this.getOrCreateQueryEntry(query);
-      entry.state = {
-        phase: "ready",
-        articles: filterNewsArticlesForQuery(dedupeNewsArticles([...entry.state.articles, ...cached]), query),
-        error: null,
-        updatedAt: this.now(),
-        sourceIds: [...new Set([...entry.state.sourceIds, newsCapabilitySourceId(source)])],
-      };
+      entry.sourceArticles.set(newsCapabilitySourceId(source), cached);
+      changed = true;
+    }
+    if (!changed) return;
+    this.rebuildQueryState(entry);
+  }
+
+  private seedCachedSource(source: NewsCapability): void {
+    if (this.queries.size === 0) {
+      this.getOrCreateQueryEntry(DEFAULT_GLOBAL_QUERY);
+      return;
+    }
+
+    const news = source.provider;
+    let changed = false;
+    for (const entry of this.queries.values()) {
+      if (!this.queryAcceptsSource(entry, source)) continue;
+      const cached = (news.getCachedNews?.(entry.query) ?? [])
+        .map((article) => attributeArticle(source, article));
+      if (cached.length === 0) continue;
+      entry.sourceArticles.set(newsCapabilitySourceId(source), cached);
+      this.rebuildQueryState(entry, { notify: false });
       changed = true;
     }
     if (changed) {

@@ -1,4 +1,5 @@
-import { apiClient, type CloudFredSeriesPayload } from "../../../api-client";
+import type { CloudFredSeriesPayload } from "../../../api-client";
+import { loadFredSeriesPayload } from "../../../data/fred-load";
 import {
   getCachedFredSeries,
   loadCachedFredSeries,
@@ -86,7 +87,7 @@ export async function loadCreditConditions(
   loader: CreditSeriesLoader = (seriesId, options) => withConnectionRequest(
     CREDIT_CONDITIONS_CONNECTION_ID,
     `FRED ${seriesId}`,
-    () => apiClient.getCloudFredSeries(seriesId, options),
+    () => loadFredSeriesPayload(seriesId, options),
   ),
 ): Promise<CreditConditionsLoadResult> {
   const settled = await Promise.allSettled(

@@ -35,5 +35,6 @@ describe("OWID pane rows", () => {
       { title: "GDP per capita", slug: "gdp-per-capita-worldbank", subtitle: null, url: "", availableEntities: [] },
     ];
     expect(filterChartHits(hits, "gdp").map((hit) => hit.slug)).toEqual(["gdp-per-capita-worldbank"]);
+    expect(filterChartHits(hits, "longevity").map((hit) => hit.slug)).toEqual(["life-expectancy"]);
   });
 });

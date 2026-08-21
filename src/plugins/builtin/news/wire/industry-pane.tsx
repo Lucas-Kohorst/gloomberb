@@ -4,7 +4,9 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import type { NewsQueryPhase } from "../../../../news/types";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../runtime";
+import { usePaneSettingValue } from "../../../../state/app/context";
+import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { Spinner, Tabs } from "../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
@@ -19,6 +21,9 @@ import {
   type SectorNewsSelection,
   sectorNewsLabel,
 } from "./news/query-presets";
+import { getIndustryDefaultTab, getNewsPaneSettings } from "./settings";
+
+const INDUSTRY_COLUMNS = ["time", "source", "title", "tickers", "categories"] as const;
 
 const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 
@@ -40,10 +45,21 @@ function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNew
 }
 
 export function IndustryPane({ focused, width, height }: PaneProps) {
-  const [category, setCategory] = usePluginPaneState<SectorNewsSelection>("industry:category", "all");
+  const [category, setCategory] = usePaneSettingValue<SectorNewsSelection>("defaultTab", "all");
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("industry:selectedArticleId", null);
-  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("industry:sort", DEFAULT_SORT);
-  const { articles, allArticles, phase } = useIndustryArticles(category);
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", INDUSTRY_COLUMNS);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_SORT));
+  const paneSettings = getNewsPaneSettings(
+    { columnIds, sort: sortValue, defaultTab: category },
+    { columns: INDUSTRY_COLUMNS, sort: DEFAULT_SORT },
+  );
+  const visibleColumns = paneSettings.columnIds.filter((columnId) => INDUSTRY_COLUMNS.includes(columnId as typeof INDUSTRY_COLUMNS[number]));
+  const effectiveColumns = visibleColumns.length > 0 ? visibleColumns : [...INDUSTRY_COLUMNS];
+  const sortPreference = effectiveColumns.includes(paneSettings.sort.columnId)
+    ? paneSettings.sort
+    : DEFAULT_SORT;
+  const resolvedCategory = getIndustryDefaultTab({ defaultTab: category });
+  const { articles, allArticles, phase } = useIndustryArticles(resolvedCategory);
   const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
@@ -85,7 +101,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     loading,
     onPopOut: () => popOutArticle(readableArticle),
     onRefresh: () => {
-      const query = category === "all" ? NEWS_QUERY_PRESETS.sectorAll : NEWS_QUERY_PRESETS.sector(category);
+      const query = resolvedCategory === "all" ? NEWS_QUERY_PRESETS.sectorAll : NEWS_QUERY_PRESETS.sector(resolvedCategory);
       void getSharedNewsService()?.load(query);
     },
     onShare: shareArticle,
@@ -95,7 +111,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     <Box height={1} flexShrink={0} overflow="hidden">
       <Tabs
         tabs={tabs}
-        activeValue={category}
+        activeValue={resolvedCategory}
         onSelect={(value) => setCategory(value as SectorNewsSelection)}
         compact
         variant="bare"
@@ -125,7 +141,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
-      setSortPreference={setSortPreference}
+      setSortPreference={(preference) => setSortValue(encodeSortPreference(preference))}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
@@ -133,7 +149,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       rootBefore={rootBefore}
-      columns={["time", "source", "title", "tickers", "categories"]}
+      columns={effectiveColumns}
       emptyContent={loading && articles.length === 0 ? (
         <Box width="100%" paddingX={1} paddingY={1}>
           <Spinner label="Loading sector news..." />

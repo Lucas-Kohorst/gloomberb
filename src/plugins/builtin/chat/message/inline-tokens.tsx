@@ -19,6 +19,7 @@ export function ResponsiveTickerBadgeText({
   userByUsername,
   onUserHover,
   onUserHoverEnd,
+  onUserActivate,
 }: {
   text?: string;
   tokens?: readonly InlineContentToken[];
@@ -29,6 +30,7 @@ export function ResponsiveTickerBadgeText({
   userByUsername?: Map<string, ChatUserSummary>;
   onUserHover?: (user: ChatUserSummary) => void;
   onUserHoverEnd?: () => void;
+  onUserActivate?: (user: ChatUserSummary) => void;
 }) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const tokens = useMemo(
@@ -64,23 +66,33 @@ export function ResponsiveTickerBadgeText({
     );
   };
   const renderUsernameToken = (username: string, value: string, tokenIndex: number) => {
-    const user = userByUsername?.get(username.toLowerCase()) ?? null;
+    const user = userByUsername?.get(username.toLowerCase()) ?? {
+      id: username.toLowerCase(),
+      username,
+      displayName: username,
+    };
     return (
       <Box
         key={`mention:${tokenIndex}:${username}`}
-        height={1}
-        flexDirection="row"
-        backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
-        onMouseOver={() => {
-          if (user) onUserHover?.(user);
-        }}
-        onMouseOut={() => {
-          if (user) onUserHoverEnd?.();
-        }}
+        paddingRight={1}
+        flexShrink={0}
       >
-        <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
-          {value}
-        </Text>
+        <Box
+          paddingX={1}
+          backgroundColor={blendHex(colors.panel, colors.positive, 0.24)}
+          onMouseOver={() => onUserHover?.(user)}
+          onMouseOut={() => onUserHoverEnd?.()}
+          onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            onUserActivate?.(user);
+          }}
+          style={{ cursor: "pointer" }}
+        >
+          <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
+            {value}
+          </Text>
+        </Box>
       </Box>
     );
   };

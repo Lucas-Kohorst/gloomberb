@@ -34,6 +34,7 @@ describe("createRssNewsCapability", () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.importance).toBeGreaterThanOrEqual(FEED.authority);
     expect(items[0]!.isBreaking).toBe(true);
+    expect(items[0]!.tickers).toContain("NVDA");
     expect(source.provider.getCachedNews?.({ scope: "global" })).toHaveLength(1);
   });
 

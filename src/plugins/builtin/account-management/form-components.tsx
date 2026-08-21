@@ -71,6 +71,67 @@ export function accountFieldLabelWidth(width: number) {
   return Math.max(8, Math.min(preferred, width - 9));
 }
 
+export function SelectRow({
+  label,
+  value,
+  options,
+  active,
+  width,
+  selectRef,
+  onFocus,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ label: string; value: string; description?: string }>;
+  active: boolean;
+  width: number;
+  selectRef?: (element: NativeSelectElement | null) => void;
+  onFocus: () => void;
+  onChange: (value: string) => void;
+}) {
+  const isDesktop = useUiHost().kind === "desktop-web";
+  const labelText = `${active ? "> " : "  "}${label}`;
+  const labelWidth = accountFieldLabelWidth(width);
+  const controlWidth = Math.max(8, width - labelWidth - 1);
+  const selected = options.find((option) => option.value === value);
+  return (
+    <Box
+      height={1}
+      width={width}
+      flexDirection="row"
+      alignItems="center"
+      gap={1}
+      onMouseDown={onFocus}
+    >
+      <Text
+        width={labelWidth}
+        fg={active ? colors.textBright : colors.textDim}
+        attributes={active ? TextAttributes.BOLD : 0}
+      >
+        {truncate(labelText, labelWidth)}
+      </Text>
+      {isDesktop ? (
+        <NativeSelect
+          value={value}
+          options={options}
+          width={Math.max(120, controlWidth * 8)}
+          selectRef={selectRef}
+          onFocus={onFocus}
+          onChange={onChange}
+        />
+      ) : (
+        <Button
+          label={truncate(selected?.label ?? value, Math.max(4, controlWidth - 4))}
+          active={active}
+          width={controlWidth}
+          onPress={onFocus}
+        />
+      )}
+    </Box>
+  );
+}
+
 export function FieldRow({
   twoColumns,
   children,

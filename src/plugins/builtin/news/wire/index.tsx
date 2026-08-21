@@ -36,6 +36,12 @@ import {
 } from "./article-search";
 import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { registerConnectionSource } from "../../connections/register";
+import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
+import {
+  buildArticleTickerUniverse,
+  setSharedArticleTickerUniverse,
+} from "../../../../news/article-tickers";
+import { ensureUsListingsUniverse } from "../../../../sources/us-listings/client";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -79,9 +85,55 @@ let disposeJinaConnection: (() => void) | null = null;
 
 export const newsWireModule: PluginModule = {
   panes: [
-    { id: "news-top", name: "Top News", icon: "T", component: TopPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
-    { id: "news-feed", name: "News Feed", icon: "N", component: FeedPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },
-    { id: "news-industry", name: "Sector News", icon: "S", component: IndustryPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 100, height: 35 } },    { id: "news-rss", name: "RSS Feeds", icon: "R", component: RssPane, defaultPosition: "right", defaultMode: "floating", defaultFloatingSize: { width: 90, height: 30 } },
+    {
+      id: "news-top",
+      name: "Top News",
+      icon: "T",
+      component: TopPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 90, height: 30 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "title", "tickers", "importance"],
+        sort: { columnId: "importance", direction: "desc" },
+      }, { title: "Top News Settings" }),
+    },
+    {
+      id: "news-feed",
+      name: "News Feed",
+      icon: "N",
+      component: FeedPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 35 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "source", "title", "tickers", "categories"],
+        sort: { columnId: "time", direction: "desc" },
+      }, { title: "News Feed Settings" }),
+    },
+    {
+      id: "news-industry",
+      name: "Sector News",
+      icon: "S",
+      component: IndustryPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 35 },
+      settings: (context) => buildNewsPaneSettingsDef(context.settings, {
+        columns: ["time", "source", "title", "tickers", "categories"],
+        sort: { columnId: "time", direction: "desc" },
+      }, { title: "Sector News Settings", includeDefaultTab: true }),
+    },
+    {
+      id: "news-rss",
+      name: "RSS Feeds",
+      icon: "R",
+      component: RssPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 90, height: 30 },
+      settings: (context) => buildRssPaneSettingsDef(context.settings),
+    },
     { id: "news-breaking",
       name: "Breaking News",
       icon: "!",
@@ -157,13 +209,42 @@ export const newsWireModule: PluginModule = {
       () => getEnabledNewsFeeds(loadNewsFeedSettings(ctx.configState)),
       {
         persistence: ctx.persistence,
-        knownTickers: async () => {
-          const tickers = await ctx.tickerRepository.loadAllTickers();
-          return new Set(tickers.map((ticker) => ticker.metadata.ticker.toUpperCase()));
+        tickerUniverse: async () => {
+          const [tickers, listings] = await Promise.all([
+            ctx.tickerRepository.loadAllTickers(),
+            ensureUsListingsUniverse(),
+          ]);
+          const universe = buildArticleTickerUniverse({
+            book: tickers.map((ticker) => ({
+              symbol: ticker.metadata.ticker,
+              name: ticker.metadata.name,
+            })),
+            catalog: listings?.securities.map((security) => ({
+              symbol: security.symbol,
+              name: security.name,
+            })) ?? [],
+          });
+          setSharedArticleTickerUniverse(universe);
+          return universe;
         },
       },
     );
     ctx.registerCapability(source);
+    void ensureUsListingsUniverse().then((listings) => {
+      if (!listings) return;
+      void ctx.tickerRepository.loadAllTickers().then((tickers) => {
+        setSharedArticleTickerUniverse(buildArticleTickerUniverse({
+          book: tickers.map((ticker) => ({
+            symbol: ticker.metadata.ticker,
+            name: ticker.metadata.name,
+          })),
+          catalog: listings.securities.map((security) => ({
+            symbol: security.symbol,
+            name: security.name,
+          })),
+        }));
+      });
+    });
     disposeRssConnection = registerConnectionSource({
       id: "rss",
       name: "RSS Feeds",
@@ -198,7 +279,7 @@ export const newsWireModule: PluginModule = {
         "hormuz",
         "strait",
       ],
-      category: "navigation",
+      category: "data",
       shortcut: "ART",
       shortcutArg: {
         placeholder: "headline or topic",

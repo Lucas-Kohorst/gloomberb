@@ -62,6 +62,7 @@ export class ProviderRouterPrimaryRoutes {
 
     for (const provider of this.options.providersInPriorityOrder()) {
       try {
+        if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) continue;
         const rawValue = await provider.getTickerFinancials(ticker, exchange, context);
         const resolvedValue = resolveTickerFinancialsQuoteState(normalizeTickerFinancialsPriceHistory(rawValue));
         const value = resolvedValue ? dropUnusableProviderQuote(resolvedValue, exchange) : null;
@@ -156,6 +157,7 @@ export class ProviderRouterPrimaryRoutes {
     const variantKey = this.options.getTickerVariantCandidates(exchange)[0] ?? "";
     for (const provider of this.options.providersInPriorityOrder()) {
       try {
+        if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) continue;
         const quote = await provider.getQuote(ticker, exchange, context);
         if (!isProviderQuoteUsableForCurrentSession(quote, exchange)) continue;
         const sourceKey = this.options.providerSourceKey(provider);

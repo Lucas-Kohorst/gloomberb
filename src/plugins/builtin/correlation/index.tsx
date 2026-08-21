@@ -100,13 +100,12 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
 
   usePaneFooter("correlation", () => ({
     info: [
-      { id: "tickers", parts: [{ text: `${symbols.length} tickers`, tone: symbols.length >= 2 ? "value" : "warning", bold: symbols.length >= 2 }] },
       { id: "range", parts: [{ text: settings.rangePreset, tone: "muted" }] },
       ...(settings.symbolsError
         ? [{ id: "error", parts: [{ text: settings.symbolsError, tone: "warning" as const }] }]
         : [{ id: "status", parts: [{ text: statusSummary, tone: "muted" as const }] }]),
     ],
-  }), [settings.rangePreset, settings.symbolsError, statusSummary, symbols.length]);
+  }), [settings.rangePreset, settings.symbolsError, statusSummary]);
 
   const openSymbol = useCallback((symbol: string) => {
     if (tickers.has(symbol)) {

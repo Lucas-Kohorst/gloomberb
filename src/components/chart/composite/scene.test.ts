@@ -33,6 +33,8 @@ function series(overrides: Partial<ResolvedSeries> & Pick<ResolvedSeries, "id" |
     timeBasis: overrides.timeBasis,
     points: overrides.points,
     warning: overrides.warning,
+    error: overrides.error,
+    valueRange: overrides.valueRange,
   };
 }
 
@@ -196,6 +198,43 @@ describe("composite chart scene", () => {
     expect(scene?.endTime).toBe(new Date("2025-12-31T23:59:59.999Z").getTime());
     expect(scene?.panels[0]?.series[0]?.points[0]?.xRatio).toBeGreaterThan(0);
     expect(scene?.panels[0]?.series[0]?.points.at(-1)?.xRatio).toBeLessThan(1);
+  });
+
+  test("pins poll and probability series to a 0-100 axis without padding", () => {
+    const poll = series({
+      id: "poll",
+      unit: "%",
+      unitGroup: "percent",
+      valueRange: { min: 0, max: 100 },
+      points: [point("2025-01-01", 48), point("2025-01-03", 52)],
+    });
+    const scene = buildCompositeChartScene(
+      [poll],
+      [{ id: "main" }],
+      { width: 40, height: 8 },
+    );
+
+    expect(scene?.panels[0]?.axes.left?.min).toBe(0);
+    expect(scene?.panels[0]?.axes.left?.max).toBe(100);
+  });
+
+  test("auto-fits percent overlays instead of pinning 0-100", () => {
+    const overlay = series({
+      id: "btc",
+      unit: "%",
+      unitGroup: "percent",
+      transform: "percent",
+      points: [point("2025-01-01", 0), point("2025-01-03", 8)],
+    });
+    const scene = buildCompositeChartScene(
+      [overlay],
+      [{ id: "main" }],
+      { width: 40, height: 8 },
+    );
+
+    expect(scene?.panels[0]?.axes.left?.min).toBe(0);
+    expect(scene?.panels[0]?.axes.left?.max).toBeLessThan(20);
+    expect(scene?.panels[0]?.axes.left?.max).not.toBe(100);
   });
 
   test("keeps positive column axes anchored at zero without negative padding", () => {

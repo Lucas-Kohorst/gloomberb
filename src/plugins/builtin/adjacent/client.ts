@@ -216,10 +216,15 @@ export class AdjacentClient {
     );
   }
 
-  async searchMarkets(query: string, limit = 30): Promise<AdjacentMarketsResponse> {
+  async searchMarkets(
+    query: string,
+    limit = 30,
+    platform?: string,
+  ): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(this.marketsPath(), {
       q: query,
       limit,
+      platform,
     });
     // Don't cache search results persistently
     return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey);
@@ -423,12 +428,17 @@ export class AdjacentClient {
     return { news: unwrapAdjacentNewsArticles(raw) };
   }
 
-  async searchMarketsByText(query: string, limit = 5): Promise<string[]> {
+  async searchMarketsByText(
+    query: string,
+    limit = 5,
+    platform?: string,
+  ): Promise<string[]> {
     const url = buildUrl(this.marketsPath(), {
       search: query,
       scope: this.isPublic ? "all" : undefined,
       per_page: limit,
       limit,
+      platform,
     });
     const raw = await adjacentFetchJson<unknown>(url, this.apiKey);
     return unwrapAdjacentMarketIds(raw).slice(0, limit);

@@ -100,6 +100,13 @@ describe("formatMarketPriceWithCurrency", () => {
   test("preserves chart-style compact notation for large values", () => {
     expect(formatCompactMarketPriceWithCurrency(21_970, "JPY")).toBe("¥22.0K");
     expect(formatCompactMarketPriceWithCurrency(12_340, "HKD")).toBe("HK$12.3K");
+    expect(formatCompactMarketPriceWithCurrency(79_432.18, "USD", { assetCategory: "CRYPTO" })).toBe("$79.4K");
+  });
+
+  test("keeps full price precision for legend-style values", () => {
+    expect(formatMarketPriceWithCurrency(79_432.18, "USD", { assetCategory: "CRYPTO" })).toBe("$79,432.18");
+    expect(formatMarketPriceWithCurrency(79_432.18, "USD", { assetCategory: "STK" })).toBe("$79,432.18");
+    expect(formatMarketPriceWithCurrency(1.084567, "USD", { isCashBalance: true })).toBe("$1.084567");
   });
 
   test("formats position cost values with tighter equity precision", () => {

@@ -335,7 +335,9 @@ export async function initializeAppState({
   // Hosted tickers come from local persist + Gloom Cloud sync. Seeding the
   // default watchlist here would push dummy names into `/sync/snapshot`.
   const shouldSeedDefaultWatchlist = tickers.length === 0 && !hosted;
-  const shouldSeedAdjacentWatchlist = !!adjacentWatchlistId && !adjacentHasMembers;
+  // Hosted empty load is a persist miss, not a first-run. Seeding Adjacent
+  // names here would write dummy symbols over a book that has not hydrated yet.
+  const shouldSeedAdjacentWatchlist = !!adjacentWatchlistId && !adjacentHasMembers && !(hosted && tickers.length === 0);
 
   if (shouldSeedDefaultWatchlist || shouldSeedAdjacentWatchlist) {
     const defaultWatchlistId = config.watchlists.find((watchlist) => watchlist.id !== ADJACENT_WATCHLIST_ID)?.id

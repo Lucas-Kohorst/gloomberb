@@ -38,6 +38,7 @@ describe("catalog OWID discovery", () => {
           entities: [{ code: "OWID_WRL", name: "World" }],
         }],
       ]),
+      new Set(["secret-chart"]),
     );
     expect(rows.map((row) => row.slug ?? row.owidSlug)).toEqual(["life-expectancy"]);
     expect(rows[0]?.expression).toBe("OWID:life-expectancy:OWID_WRL");

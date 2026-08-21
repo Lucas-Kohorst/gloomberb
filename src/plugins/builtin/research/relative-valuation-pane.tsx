@@ -155,12 +155,9 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   }, [reload]);
 
   usePaneFooter("relative-valuation", () => ({
-    info: [
-      { id: "tickers", parts: [{ text: `${symbols.length} tickers`, tone: symbols.length > 0 ? "value" as const : "muted" as const }] },
-      ...loadingErrorFooterInfo(loading, error),
-    ],
+    info: loadingErrorFooterInfo(loading, error),
     hints: [refreshFooterHint(() => reload(true))],
-  }), [error, loading, reload, symbols.length]);
+  }), [error, loading, reload]);
 
   return (
     <DataTableView<RelativeRow, RelativeColumn>

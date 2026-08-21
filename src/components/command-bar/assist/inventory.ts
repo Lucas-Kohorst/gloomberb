@@ -33,11 +33,17 @@ function describe(
   name: string,
   description: string | undefined,
   arg: AssistCommandDescriptor["arg"],
+  keywords: readonly string[] = [],
 ): AssistCommandDescriptor | null {
   const normalizedPrefix = prefix.trim().toUpperCase();
   const normalizedName = name.trim();
   if (!normalizedPrefix || !normalizedName) return null;
-  const normalizedDescription = description?.trim();
+  const haystack = `${normalizedName} ${description ?? ""}`.toLowerCase();
+  const extraKeywords = [...new Set(keywords.map((keyword) => keyword.trim()).filter(Boolean))]
+    .filter((keyword) => !haystack.includes(keyword.toLowerCase()))
+    .slice(0, 6);
+  const keywordHint = extraKeywords.length > 0 ? ` Also: ${extraKeywords.join(", ")}.` : "";
+  const normalizedDescription = `${description?.trim() ?? ""}${keywordHint}`.trim();
   return {
     prefix: normalizedPrefix,
     name: normalizedName,
@@ -71,12 +77,14 @@ export function buildAssistCommandInventory({
       command.label,
       command.description,
       describeArg(getPluginCommandShortcutArgKind(command), command.shortcutArg?.placeholder),
+      command.keywords,
     )),
     ...paneTemplates.map((template) => describe(
       template.shortcut?.prefix ?? "",
       getPaneTemplateDisplayLabel(template),
       template.description,
       describeArg(getPaneShortcutArgKind(template), template.shortcut?.argPlaceholder),
+      template.keywords,
     )),
   ];
 
@@ -116,7 +124,7 @@ export function applyNewsFeedContextToAssistInventory(
   });
 }
 
-const CHART_SERIES_PREFIXES = new Set(["G"]);
+const CHART_SERIES_PREFIXES = new Set(["G", "CAT"]);
 
 /**
  * Appends the chart series vocabulary and expression syntax onto the `G`

@@ -28,8 +28,8 @@ export const positionSizerModule: PluginModule = {
       id: "kelly-sizer-pane",
       paneId: KELLY_PANE_ID,
       label: "Position Sizer",
-      description: "Open Kelly-based position sizing for a ticker.",
-      keywords: ["kelly", "position", "sizing", "risk", "bet", "portfolio"],
+      description: "Kelly-size a tradable quote (equity, crypto, FX, futures, options). Odds mode is for 0–1 yes/no contracts only — not FRED, polls, or OWID.",
+      keywords: ["kelly", "position", "sizing", "risk", "bet", "portfolio", "crypto", "fx", "futures", "prediction"],
       shortcut: { prefix: "KELLY", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
       canCreate: (context, options) => !!resolveTemplateSymbol(context, options),
       createInstance: (context, options) => {

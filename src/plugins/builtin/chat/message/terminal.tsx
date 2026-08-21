@@ -5,6 +5,7 @@ import { ChatActionChip } from "./action-chip";
 import { ResponsiveTickerBadgeText } from "./inline-tokens";
 import { getChatMessageRenderState } from "./render-state";
 import type { ChatMessageBaseProps } from "./types";
+import { ChatUserHitTarget } from "./user-chip";
 
 interface TerminalChatMessageProps extends ChatMessageBaseProps {
   contentWidth: number;
@@ -26,6 +27,8 @@ export function TerminalChatMessage({
   openTicker,
   onUserHover,
   onUserHoverEnd,
+  onUserActivate,
+  authorOnline,
   beginReplyTo,
   beginEditMessage,
   jumpToMessage,
@@ -78,22 +81,23 @@ export function TerminalChatMessage({
           flexDirection="row"
           height={1}
           paddingLeft={1}
+          onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            onUserActivate(msg.user);
+          }}
+          style={{ cursor: "pointer" }}
         >
-          <Box
-            width={authorLabel.length}
-            height={1}
-            onMouseOver={() => onUserHover(msg.user)}
-            onMouseMove={() => onUserHover(msg.user)}
-            onMouseOut={onUserHoverEnd}
-            style={{ cursor: "pointer" }}
-          >
-            <Text
-              fg={state.authorColor}
-              attributes={state.authorAttributes}
-            >
-              {authorLabel}
-            </Text>
-          </Box>
+          <ChatUserHitTarget
+            user={msg.user}
+            label={authorLabel}
+            color={state.authorColor}
+            attributes={state.authorAttributes}
+            online={authorOnline}
+            onHover={onUserHover}
+            onHoverEnd={onUserHoverEnd}
+            onActivate={onUserActivate}
+          />
           <Text fg={state.headerStatusColor}> {state.headerStatus}</Text>
           {(showInlineReplyAction || showInlineEditAction) && (
             <>
@@ -141,6 +145,7 @@ export function TerminalChatMessage({
               userByUsername={userByUsername}
               onUserHover={onUserHover}
               onUserHoverEnd={onUserHoverEnd}
+              onUserActivate={onUserActivate}
             />
           </Box>
           {lineIndex === 0 && (showGroupedReplyAction || showGroupedEditAction) && (

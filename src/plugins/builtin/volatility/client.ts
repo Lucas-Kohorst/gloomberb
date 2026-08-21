@@ -1,4 +1,4 @@
-import { apiClient } from "../../../api-client";
+import { loadFredSeriesPayload } from "../../../data/fred-load";
 import {
   getCachedFredSeries,
   loadCachedFredSeries,
@@ -47,7 +47,7 @@ async function fetchSeries(seriesId: string, force: boolean) {
     () =>
       loadCachedFredSeries(
         request,
-        () => apiClient.getCloudFredSeries(request.seriesId, {
+        () => loadFredSeriesPayload(request.seriesId, {
           startDate: request.startDate,
           sortOrder: request.sortOrder,
         }),

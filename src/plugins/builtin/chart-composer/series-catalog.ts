@@ -26,11 +26,19 @@ import {
 import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
 import {
+  OWID_CATALOG,
+  matchOwidCatalogEntries,
+  owidSeriesLabel,
+  type OwidCatalogEntry,
+} from "../owid/catalog";
+import {
   formatPredictionSeriesExpression,
+  looksLikePredictionMarketQuery,
   normalizePredictionMarketId,
   resolvePredictionSeriesQuery,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
+import { listKnownFredSeries } from "../econ/fred-series-map";
 
 export interface SeriesCatalogInstrument {
   symbol: string;
@@ -307,7 +315,7 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
     case "owid":
       return {
         id: `owid:${expression.slug}:${expression.entity}`,
-        label: `OWID · ${expression.slug} ${expression.entity}`,
+        label: expression.label ?? `OWID · ${expression.slug} ${expression.entity}`,
         description: "Our World in Data grapher series (CC BY 4.0)",
         detail: "OWID",
         expression,
@@ -392,8 +400,31 @@ export function buildChartSeriesAssistContext(): string {
     + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
     + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
     + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
-    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA). "
-    + "Natural language such as 'adjacent red index', 'trump kalshi', or 'will fed cut polymarket' maps onto those expressions.";
+    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL), "
+    + "BTC-USD:price for crypto. "
+    + "Use G <expression> to chart or CAT <query> to browse the Data Catalog. "
+    + "Natural language such as 'life expectancy', 'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' maps onto those expressions.";
+}
+
+const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID):/i;
+const CATALOG_SERIES_INTENT_RE = /\b(fred|cpi|gdp|unemployment|pce|nfp|treasury|ust|owid|weather|climate|nws|votehub|polls?|bitcoin|ethereum|crypto|llm-stats|aibench|benchmarks?|futures?)\b/i;
+
+/** True when the command bar should autocomplete CAT/G series without a prefix. */
+export function looksLikeCatalogSeriesQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (CATALOG_SERIES_PREFIX_RE.test(trimmed)) return true;
+  if (looksLikePredictionMarketQuery(trimmed)) return true;
+  if (looksLikeOwidSeriesQuery(trimmed)) return true;
+  return CATALOG_SERIES_INTENT_RE.test(trimmed);
+}
+
+/** Live OWID search is expensive; only run it when the query names that source. */
+export function looksLikeOwidSeriesQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (/^owid:/i.test(trimmed)) return true;
+  return /\b(owid|our world in data)\b/i.test(trimmed);
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -402,6 +433,7 @@ export function buildSeriesCatalogSuggestions(
   searchedInstruments: readonly SeriesCatalogInstrument[] = [],
   limit = 8,
   searchedMarkets: readonly PredictionMarketSearchHit[] = [],
+  extraSuggestions: readonly SeriesCatalogSuggestion[] = [],
 ): SeriesCatalogSuggestion[] {
   const exact = exactExpressionSuggestion(query.trim());
   const nl = resolvePredictionSeriesQuery(query, searchedMarkets);
@@ -424,6 +456,13 @@ export function buildSeriesCatalogSuggestions(
     const nlSuggestion = predictionExpressionSuggestion(nl);
     if (!suggestions.some((entry) => entry.id === nlSuggestion.id)) {
       suggestions.unshift(nlSuggestion);
+    }
+  }
+  if (!query.includes(":") && !analysis.metricQuery) {
+    for (const suggestion of [...owidCatalogSuggestions(query)].reverse()) {
+      if (!suggestions.some((entry) => entry.id === suggestion.id)) {
+        suggestions.unshift(suggestion);
+      }
     }
   }
   const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
@@ -452,9 +491,13 @@ export function buildSeriesCatalogSuggestions(
   }
 
   // Append universal-series suggestions (futures, treasuries, benchmarks, polls,
-  // Adjacent indices) and live prediction-market hits, filling remaining slots.
+  // Adjacent indices, FRED, crypto) and live prediction/OWID hits.
   appendUniversalSuggestions(suggestions, query, limit);
   appendPredictionMarketHits(suggestions, searchedMarkets, limit);
+  for (const extra of extraSuggestions) {
+    if (suggestions.length >= limit) break;
+    if (!suggestions.some((entry) => entry.id === extra.id)) suggestions.push(extra);
+  }
 
   return suggestions.slice(0, Math.max(1, limit));
 }
@@ -483,6 +526,28 @@ function appendUniversalSuggestions(
     if (score >= 0) {
       scored.push({ suggestion: futuresSuggestion(entry), score });
     }
+  }
+
+  for (const entry of listKnownFredSeries()) {
+    const score = universalScore(q, qCompact, [
+      entry.seriesId,
+      entry.label,
+      "fred",
+      "economic",
+      "macro",
+    ]);
+    if (score >= 0) scored.push({ suggestion: fredSuggestion(entry.seriesId, entry.label), score });
+  }
+
+  for (const entry of CRYPTO_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.symbol,
+      entry.name,
+      "crypto",
+      "coin",
+      "token",
+    ]);
+    if (score >= 0) scored.push({ suggestion: cryptoSuggestion(entry.symbol, entry.name), score });
   }
 
   // Treasuries
@@ -549,6 +614,18 @@ function appendUniversalSuggestions(
     if (score >= 0) {
       scored.push({ suggestion: adjacentIndexSuggestion(entry.indexId, entry.name), score });
     }
+  }
+
+  for (const entry of matchOwidCatalogEntries(query)) {
+    const score = universalScore(q, qCompact, [
+      entry.title,
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
+      "owid",
+      "our world in data",
+    ]);
+    if (score >= 0) scored.push({ suggestion: owidCatalogSuggestion(entry), score });
   }
 
   for (const station of WEATHER_STATIONS) {
@@ -622,6 +699,70 @@ function universalScore(query: string, queryCompact: string, keywords: string[])
     }
   }
   return -1;
+}
+
+function owidCatalogSuggestion(entry: OwidCatalogEntry): SeriesCatalogSuggestion {
+  return {
+    id: `owid:${entry.slug}:${entry.defaultEntity}`,
+    label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    description: "Our World in Data grapher series (CC BY 4.0)",
+    detail: "OWID",
+    expression: {
+      kind: "owid",
+      slug: entry.slug,
+      entity: entry.defaultEntity,
+      label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    },
+  };
+}
+
+function owidCatalogSuggestions(query: string): SeriesCatalogSuggestion[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const q = trimmed.toLowerCase();
+  const qCompact = compact(q);
+  const browse = /^(owid|our world in data)$/i.test(trimmed);
+  const scored = OWID_CATALOG.map((entry) => ({
+    entry,
+    score: universalScore(q, qCompact, [
+      entry.title,
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
+      "owid",
+      "our world in data",
+    ]),
+  })).filter((row) => browse || row.score >= 1_000);
+  scored.sort((left, right) => right.score - left.score);
+  return scored.slice(0, 6).map((row) => owidCatalogSuggestion(row.entry));
+}
+
+const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
+  { symbol: "BTC-USD", name: "Bitcoin" },
+  { symbol: "ETH-USD", name: "Ethereum" },
+  { symbol: "SOL-USD", name: "Solana" },
+  { symbol: "XRP-USD", name: "XRP" },
+  { symbol: "DOGE-USD", name: "Dogecoin" },
+];
+
+function fredSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
+  return {
+    id: `fred:${seriesId}`,
+    label: `FRED · ${label}`,
+    description: "Economic series from FRED",
+    detail: "FRED",
+    expression: { kind: "economic", provider: "fred", seriesId },
+  };
+}
+
+function cryptoSuggestion(symbol: string, name: string): SeriesCatalogSuggestion {
+  return {
+    id: `crypto:${symbol}`,
+    label: `${symbol} · ${name}`,
+    description: "Crypto pair (CoinGecko)",
+    detail: "Crypto",
+    expression: { kind: "security", symbol, fieldId: "market.ohlcv" },
+  };
 }
 
 function futuresSuggestion(entry: FuturesCatalogEntry): SeriesCatalogSuggestion {

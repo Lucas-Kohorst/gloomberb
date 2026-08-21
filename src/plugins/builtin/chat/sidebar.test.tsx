@@ -534,6 +534,40 @@ describe("ChatContent channel sidebar", () => {
     expect(frame).toContain("@cara");
   });
 
+  test("shows a green online dot next to a group with an online member", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "grp:vista",
+        name: "VistaDex trading",
+        kind: "group",
+        created_at: "2026-07-03T09:31:00.000Z",
+        members: [
+          { id: "u2", username: "bob", displayName: "Bob" },
+          { id: "u3", username: "cara", displayName: "Cara" },
+        ],
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 1,
+      userIds: ["u2"],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(createHarness(controller, { width: 90, height: 14 }), {
+        width: 90,
+        height: 14,
+      });
+    });
+
+    await flushFrame();
+
+    expect(setup().captureCharFrame()).toContain("●VistaDex");
+  });
+
   test("uses arrows to move between channel sidebar and chat content", async () => {
     const controller = createController({ sessionToken: "token-123" });
     installServerChannels(controller);

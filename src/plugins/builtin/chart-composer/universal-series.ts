@@ -4,6 +4,9 @@
  * kind that {@link parseSeriesExpression} recognises and
  * {@link buildSeriesCatalogSuggestions} surfaces in the command bar.
  *
+ * Default measures: assets/futures → price, FRED/UST/OWID/WX → level,
+ * prediction markets → probability (0–100), polls → percent (0–100).
+ *
  * Prefixes:
  * - `ADJ:indexId`       — Adjacent prediction-market index (50–150 scale)
  * - `KALSHI:ticker`     — Kalshi market yes-price
@@ -93,12 +96,101 @@ export const TREASURY_CATALOG: readonly TreasuryCatalogEntry[] =
     label: `${entry.maturity} Treasury Yield`,
   }));
 
+/** Yahoo / street aliases that should chart as FRED constant-maturity yields, not as a stock. */
+const TREASURY_ALIASES: Readonly<Record<string, string>> = {
+  TNX: "10Y",
+  "^TNX": "10Y",
+  US10Y: "10Y",
+  DGS10: "10Y",
+  TYX: "30Y",
+  "^TYX": "30Y",
+  US30Y: "30Y",
+  DGS30: "30Y",
+  FVX: "5Y",
+  "^FVX": "5Y",
+  US5Y: "5Y",
+  DGS5: "5Y",
+  IRX: "3M",
+  "^IRX": "3M",
+  US13W: "3M",
+  DGS3MO: "3M",
+  US2Y: "2Y",
+  DGS2: "2Y",
+  US7Y: "7Y",
+  DGS7: "7Y",
+  US20Y: "20Y",
+  DGS20: "20Y",
+  US1Y: "1Y",
+  DGS1: "1Y",
+  US6M: "6M",
+  DGS6MO: "6M",
+  US1M: "1M",
+  DGS1MO: "1M",
+};
+
 export function findTreasuryCatalogEntry(
   token: string,
 ): TreasuryCatalogEntry | undefined {
   const upper = token.trim().toUpperCase();
-  return TREASURY_CATALOG.find((entry) => entry.maturity.toUpperCase() === upper);
+  const aliased = TREASURY_ALIASES[upper] ?? upper;
+  return TREASURY_CATALOG.find((entry) => (
+    entry.maturity.toUpperCase() === aliased
+    || entry.seriesId.toUpperCase() === upper
+  ));
 }
+
+export interface VolCatalogEntry {
+  token: string;
+  seriesId: string;
+  label: string;
+}
+
+export const VOL_CATALOG: readonly VolCatalogEntry[] = [
+  { token: "VIX", seriesId: "VIXCLS", label: "VIX" },
+  { token: "VXV", seriesId: "VXVCLS", label: "VXV (3M VIX)" },
+];
+
+const VOL_ALIASES: Readonly<Record<string, string>> = {
+  VIX: "VIX",
+  "^VIX": "VIX",
+  VIXCLS: "VIX",
+  VXV: "VXV",
+  "^VIX3M": "VXV",
+  VIX3M: "VXV",
+  VXVCLS: "VXV",
+};
+
+export function findVolCatalogEntry(token: string): VolCatalogEntry | undefined {
+  const upper = token.trim().toUpperCase();
+  const aliased = VOL_ALIASES[upper];
+  if (!aliased) return undefined;
+  return VOL_CATALOG.find((entry) => entry.token === aliased);
+}
+
+export interface CorporateYieldCatalogEntry {
+  seriesId: string;
+  label: string;
+}
+
+export const CORPORATE_YIELD_CATALOG: readonly CorporateYieldCatalogEntry[] = [
+  { seriesId: "BAMLC0A0CMEY", label: "IG Corporate Yield" },
+  { seriesId: "BAMLC0A1CAAAEY", label: "AAA Corporate Yield" },
+  { seriesId: "BAMLC0A2CAAEY", label: "AA Corporate Yield" },
+  { seriesId: "BAMLC0A3CAEY", label: "A Corporate Yield" },
+  { seriesId: "BAMLC0A4CBBBEY", label: "BBB Corporate Yield" },
+  { seriesId: "BAMLH0A0HYM2EY", label: "High Yield Corporate" },
+  { seriesId: "BAMLC1A0C13YEY", label: "IG 1-3Y Corporate Yield" },
+  { seriesId: "BAMLC4A0C710YEY", label: "IG 7-10Y Corporate Yield" },
+];
+
+export const CREDIT_SPREAD_CATALOG: readonly CorporateYieldCatalogEntry[] = [
+  { seriesId: "BAMLC0A0CM", label: "US IG OAS" },
+  { seriesId: "BAMLC0A1CAAA", label: "AAA OAS" },
+  { seriesId: "BAMLC0A2CAA", label: "AA OAS" },
+  { seriesId: "BAMLC0A3CA", label: "A OAS" },
+  { seriesId: "BAMLC0A4CBBB", label: "BBB OAS" },
+  { seriesId: "BAMLH0A0HYM2", label: "US HY OAS" },
+];
 
 // ---------------------------------------------------------------------------
 // AI benchmark metrics — maps a short metric code to a display label + unit.

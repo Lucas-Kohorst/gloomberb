@@ -5,6 +5,10 @@ import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
 import { withConnectionRequest, reportConnectionRequest } from "../../../connections/register";
+import {
+  buildArticleTickerUniverse,
+  type ArticleTickerUniverse,
+} from "../../../../../news/article-tickers";
 
 const RSS_CACHE_KIND = "rss-feed";
 export const RSS_FEED_CACHE_POLICY = {
@@ -33,6 +37,7 @@ const rssClient = createThrottledFetch({
 export interface RssNewsCapabilityOptions {
   /** Resolved at fetch time so newly added tickers are matched without a restart. */
   knownTickers?: () => Promise<Set<string>>;
+  tickerUniverse?: () => Promise<ArticleTickerUniverse>;
   persistence?: PluginPersistence;
   fetchText?: (url: string) => Promise<{ ok: boolean; text(): Promise<string> }>;
 }
@@ -144,7 +149,11 @@ export function createRssNewsCapability(
         const resp = await fetchText(feed.url);
         if (!resp.ok) throw new Error("RSS request failed");
         const xml = await resp.text();
-        const knownTickers = options.knownTickers ? await options.knownTickers() : undefined;
+        const knownTickers = options.tickerUniverse
+          ? await options.tickerUniverse()
+          : options.knownTickers
+            ? buildArticleTickerUniverse({ book: [...await options.knownTickers()] })
+            : undefined;
         const parsed = parseRssFeed(xml, feed)
           .map((item) => enrichNewsItem(item, feed.authority, knownTickers));
         writeFeedCache(options.persistence, feed, parsed);

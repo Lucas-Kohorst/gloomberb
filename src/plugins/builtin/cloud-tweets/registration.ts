@@ -3,7 +3,9 @@ import { apiClient } from "../../../api-client";
 import { getSharedNewsService } from "../../../news/hooks";
 import { registerConnectionSource } from "../connections/register";
 import { isXLivePollingEnabled, X_LIVE_POLLING_CONFIG_KEY } from "../shared/feed-poll-interval";
+import { buildTwitterFeedPaneSettingsDef } from "./settings";
 import { createXMarketsNewsCapability } from "./news-capability";
+import { scheduleLatestNewsWarm } from "../news/wire/article-search";
 import {
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
@@ -16,6 +18,13 @@ import {
   TwitterFeedPane,
   TwitterTickerTab,
 } from "./pane";
+import { TweetReaderPane } from "./tweet-reader";
+import {
+  ARTICLE_READER_FLOATING_SIZE,
+  TWEET_READER_PANE_ID,
+  TWEET_READER_TEMPLATE_ID,
+  articleReaderInstanceId,
+} from "../shared/article-pop-out";
 
 let disposeXFeedConnection: (() => void) | null = null;
 let disposeXFeedAuthWatch: (() => void) | null = null;
@@ -37,16 +46,7 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 120, height: 36 },
-    settings: {
-      title: "X Feed Settings",
-      fields: [{
-        key: X_LIVE_POLLING_CONFIG_KEY,
-        label: "Live polling",
-        description: "Refresh X timelines and searches on an interval. Off by default. Opening the pane or a manual refresh still loads once.",
-        type: "toggle",
-        storage: "plugin",
-      }],
-    },
+    settings: (context) => buildTwitterFeedPaneSettingsDef(context.settings),
   });
 
   ctx.registerPaneTemplate({
@@ -68,12 +68,47 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
   });
 
+  ctx.registerPane({
+    id: TWEET_READER_PANE_ID,
+    name: "Tweet",
+    icon: "X",
+    component: TweetReaderPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: ARTICLE_READER_FLOATING_SIZE,
+  });
+
+  ctx.registerPaneTemplate({
+    id: TWEET_READER_TEMPLATE_ID,
+    paneId: TWEET_READER_PANE_ID,
+    label: "Tweet",
+    description: "Read a popped-out tweet.",
+    keywords: ["twitter", "x", "tweet", "reader"],
+    canCreate: (_context, options) => !!options?.arg?.trim(),
+    createInstance: (_context, options) => {
+      const tweetId = options?.arg?.trim() ?? "";
+      if (!tweetId) return null;
+      return {
+        instanceId: articleReaderInstanceId(TWEET_READER_PANE_ID, tweetId),
+        title: options?.values?.title?.trim() || "Tweet",
+        placement: "floating",
+        settings: {
+          tweetId,
+          title: options?.values?.title ?? "",
+          url: options?.values?.url ?? "",
+          source: options?.values?.source ?? "",
+          payload: options?.values?.payload ?? "",
+        },
+      };
+    },
+  });
+
   ctx.registerCommand({
     id: "twitter-feed-open",
     label: "X Feed",
     description: "Open an X advanced-search feed.",
     keywords: ["twitter", "x", "tweet", "tweets", "feed", "social", "twit"],
-    category: "navigation",
+    category: "data",
     shortcut: "TWIT",
     shortcutArg: {
       placeholder: "query",
@@ -85,10 +120,10 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
   });
 
-  ctx.registerCapability({
-    ...createXMarketsNewsCapability(),
-    isEnabled: () => isXLivePollingEnabled(ctx.configState.get(X_LIVE_POLLING_CONFIG_KEY)),
-  });
+  ctx.registerCapability(createXMarketsNewsCapability());
+  // Firehose should fetch Markets tweets at startup even when TWIT live polling
+  // is off. Live polling only controls the X pane interval, not this source.
+  scheduleLatestNewsWarm();
   // Logging in/out flips this source between empty and populated; re-run the
   // watched news queries so the firehose merges Markets tweets without a reload.
   disposeXFeedAuthWatch = apiClient.subscribeCurrentUser(() => {

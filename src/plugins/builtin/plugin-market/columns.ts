@@ -8,7 +8,7 @@ const NAME: ColumnSpec = { id: "name", label: "NAME", min: 10, flex: 2 };
 const DESC: ColumnSpec = { id: "description", label: "DESCRIPTION", min: 16, flex: 4 };
 const VERSION: ColumnSpec = { id: "version", label: "VERSION", min: 8, flex: 0 };
 const SOURCE: ColumnSpec = { id: "source", label: "SOURCE", min: 9, flex: 0 };
-const STATUS: ColumnSpec = { id: "status", label: "STATUS", min: 8, flex: 0 };
+const STATUS: ColumnSpec = { id: "status", label: "STATUS", min: 9, flex: 0 };
 
 interface ColumnSpec {
   id: PluginColumnId;

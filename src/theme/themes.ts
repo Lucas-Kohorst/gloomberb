@@ -144,6 +144,31 @@ const rawThemes: Record<string, Theme> = {
     commandBorder: "#ff8800",
   },
 
+  adjacent: {
+    name: "Adjacent",
+    description: "Dark forest and cream with RED/BLUE index accents",
+    // adjacent.markets: ink #16140f, forest #0E2A1F, cream #ECE9E2/#F4EFD9.
+    // RED/BLUE are index language, used as the two semantic accents — not purple.
+    bg: "#16140f",
+    panel: "#0e2a1f",
+    border: "#2c4a3c",
+    borderFocused: "#f4efd9",
+    text: "#ece9e2",
+    textDim: "#c5c0b0",
+    textBright: "#f4efd9",
+    textMuted: "#8f978c",
+    positive: "#6aa3e6",
+    negative: "#e06256",
+    neutral: "#9aa39a",
+    warning: "#e3c27a",
+    header: "#0e2a1f",
+    headerText: "#f4efd9",
+    selected: "#1a3d55",
+    selectedText: "#f4efd9",
+    commandBg: "#12100c",
+    commandBorder: "#6aa3e6",
+  },
+
   green: {
     name: "Green Phosphor",
     description: "Retro green CRT monitor",

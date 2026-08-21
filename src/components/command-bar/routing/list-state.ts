@@ -96,7 +96,7 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
         return {
           kind: "mode",
           title: "Manage Plugins",
-          subtitle: "Toggle optional plugins without leaving the command bar.",
+          subtitle: "Toggle plugins here, or open Plugin Marketplace to search GitHub and install.",
           query: currentRoute.query,
           selectedIdx: currentRoute.selectedIdx,
           hoveredIdx: currentRoute.hoveredIdx,

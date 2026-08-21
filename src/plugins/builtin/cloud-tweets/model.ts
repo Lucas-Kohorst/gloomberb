@@ -9,7 +9,12 @@ import { normalizeTweetText } from "../../../utils/tweet-text";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import { toTimestampMillis } from "../../../utils/timestamp";
 import { collectUniqueTickerSymbols } from "../../../tickers/tokenizer";
+import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import { normalizedHttpUrl } from "../../../utils/url";
+import {
+  resolveVisibleColumns,
+  type ColumnVisibilityColumn,
+} from "../../../components/data-table/column-settings";
 
 export const DEFAULT_TWEET_HOURS = 6;
 export const DEFAULT_TWEET_LIMIT = 50;
@@ -27,10 +32,28 @@ export const TWEET_ROW_MAX_LINES = 8;
 
 const TWITTER_USERNAME_RE = /^[A-Za-z0-9_]{1,15}$/;
 
-type TweetColumnId = "time" | "author" | "text" | "tickers" | "likes" | "views";
+export type TweetColumnId = "time" | "author" | "text" | "tickers" | "likes" | "views";
 export type TweetColumn = DataTableColumn & { id: TweetColumnId };
 export type TweetSortColumnId = "time" | "likes" | "views";
 export type TweetSortDirection = "asc" | "desc";
+export type TweetDensity = "comfortable" | "compact";
+export const TWEET_SORT_COLUMN_IDS: readonly TweetSortColumnId[] = ["time", "likes", "views"];
+export const TWEET_COLUMN_DEFS: readonly ColumnVisibilityColumn[] = [
+  { id: "time", label: "TIME", description: "When the post was published." },
+  { id: "author", label: "AUTHOR", description: "Account that posted." },
+  { id: "text", label: "TWEET", description: "Post text. Always kept visible." },
+  { id: "tickers", label: "TICKERS", description: "Mentioned symbols." },
+  { id: "likes", label: "LIKES", description: "Like count." },
+  { id: "views", label: "VIEWS", description: "View count." },
+];
+const TWEET_COLUMN_LAYOUT: Record<TweetColumnId, { width: number; align: "left" | "right"; wrap?: boolean; flex?: boolean }> = {
+  time: { width: 7, align: "left" },
+  author: { width: 16, align: "left" },
+  text: { width: 32, align: "left", wrap: true, flex: true },
+  tickers: { width: 12, align: "left" },
+  likes: { width: 7, align: "right" },
+  views: { width: 8, align: "right" },
+};
 
 export const DEFAULT_TWEET_SORT: { columnId: TweetSortColumnId; direction: TweetSortDirection } = {
   columnId: "time",
@@ -212,7 +235,8 @@ export function formatTweetCellText(value: string): string {
     : normalized.slice(0, TWEET_CELL_MAX_CHARS);
 }
 
-export function tweetTextRowHeight(textWidth: number): number {
+export function tweetTextRowHeight(textWidth: number, density: TweetDensity = "comfortable"): number {
+  if (density === "compact") return 1;
   const width = Math.max(1, Math.floor(textWidth));
   return Math.min(
     TWEET_ROW_MAX_LINES,
@@ -220,8 +244,57 @@ export function tweetTextRowHeight(textWidth: number): number {
   );
 }
 
+function nestedTweetText(value: unknown): string | null {
+  if (typeof value === "string") {
+    const text = normalizeTweetDisplayText(value).trim();
+    return text || null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const text = record.text ?? record.fullText ?? record.full_text ?? record.noteTweet;
+  if (typeof text === "string") {
+    const normalized = normalizeTweetDisplayText(text).trim();
+    return normalized || null;
+  }
+  if (text && typeof text === "object") {
+    const nested = (text as Record<string, unknown>).text;
+    if (typeof nested === "string") {
+      const normalized = normalizeTweetDisplayText(nested).trim();
+      return normalized || null;
+    }
+  }
+  return null;
+}
+
+/** Tweet body plus any quoted/retweeted text the payload still carries. */
+export function tweetTickerTexts(tweet: CloudTweetPayload): string[] {
+  const record = tweet as unknown as Record<string, unknown>;
+  const texts: string[] = [];
+  const seen = new Set<string>();
+  const push = (value: string | null) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    texts.push(value);
+  };
+
+  push(normalizeTweetDisplayText(tweet.text).trim() || null);
+  for (const key of [
+    "quotedTweet",
+    "quoted_tweet",
+    "quoted_status",
+    "retweetedTweet",
+    "retweeted_tweet",
+    "retweetedStatus",
+    "retweeted_status",
+    "legacyQuotedTweet",
+  ]) {
+    push(nestedTweetText(record[key]));
+  }
+  return texts;
+}
+
 export function tweetTickers(tweet: CloudTweetPayload): string[] {
-  return collectUniqueTickerSymbols([normalizeTweetDisplayText(tweet.text)]);
+  return extractArticleTickersFromParts(tweetTickerTexts(tweet));
 }
 
 function tweetCreatedAtMs(tweet: CloudTweetPayload): number {
@@ -320,29 +393,32 @@ export function tweetImageUrls(tweet: CloudTweetPayload): string[] {
   return [...urls];
 }
 
-export function buildTweetColumns(width: number): TweetColumn[] {
-  const timeWidth = 7;
-  const authorWidth = 16;
-  const tickersWidth = 12;
-  const likesWidth = 7;
-  const viewsWidth = 8;
-  const textWidth = Math.max(
-    32,
-    width - timeWidth - authorWidth - tickersWidth - likesWidth - viewsWidth - 9,
+export function buildTweetColumns(width: number, columnIds?: unknown): TweetColumn[] {
+  const visible = resolveVisibleColumns(
+    TWEET_COLUMN_DEFS,
+    columnIds,
+    TWEET_COLUMN_DEFS.map((column) => column.id),
   );
-  return [
-    { id: "time", label: "TIME", width: timeWidth, align: "left" },
-    { id: "author", label: "AUTHOR", width: authorWidth, align: "left" },
-    {
-      id: "text",
-      label: "TWEET",
-      width: textWidth,
-      align: "left",
-      flexGrow: 1,
-      wrap: true,
-    },
-    { id: "tickers", label: "TICKERS", width: tickersWidth, align: "left" },
-    { id: "likes", label: "LIKES", width: likesWidth, align: "right" },
-    { id: "views", label: "VIEWS", width: viewsWidth, align: "right" },
-  ];
+  const ids = visible.map((column) => column.id as TweetColumnId);
+  const resolvedIds = ids.includes("text") ? ids : [...ids, "text" as const];
+  const flexId = resolvedIds.includes("text") ? "text" : resolvedIds[0];
+  const fixedWidth = resolvedIds
+    .filter((id) => id !== flexId)
+    .reduce((sum, id) => sum + TWEET_COLUMN_LAYOUT[id]!.width, 0);
+  const flexWidth = Math.max(
+    TWEET_COLUMN_LAYOUT[flexId ?? "text"]?.width ?? 32,
+    width - fixedWidth - resolvedIds.length - 3,
+  );
+  return resolvedIds.map((id) => {
+    const layout = TWEET_COLUMN_LAYOUT[id]!;
+    const def = TWEET_COLUMN_DEFS.find((column) => column.id === id);
+    return {
+      id,
+      label: def?.label ?? id.toUpperCase(),
+      width: id === flexId ? flexWidth : layout.width,
+      align: layout.align,
+      flexGrow: id === flexId ? 1 : undefined,
+      wrap: layout.wrap,
+    };
+  });
 }

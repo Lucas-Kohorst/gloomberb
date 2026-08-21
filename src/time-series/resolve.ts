@@ -38,12 +38,12 @@ import {
   maxStudyWarmupPoints,
   resolveStudies,
 } from "./studies";
-import { isOhlcSeriesStyle } from "./spec";
+import { defaultChartSeriesPresentation, isOhlcSeriesStyle } from "./spec";
 import { applyResolvedSeriesTransform } from "./transforms";
 import { clipSeriesToWindow } from "./alignment";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
 import { resolutionForExplicitMarketPeriods } from "./market-resolution";
-import { sourceFallbackLabel } from "./series-label";
+import { seriesSpecLabel } from "./series-label";
 import {
   canonicalExchange,
   publicTickerKey,
@@ -166,27 +166,50 @@ function instrumentLabel(spec: Extract<ChartSeriesSpec["source"], { kind: "secur
   return publicTickerKey(spec.instrument.symbol, spec.instrument.exchange);
 }
 
+function seriesPresentation(spec: ChartSeriesSpec) {
+  const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
+  const defaults = defaultChartSeriesPresentation(spec.source);
+  return {
+    label: seriesSpecLabel(spec),
+    unit: field?.unit ?? defaults.unit,
+    unitGroup: field?.unitGroup ?? defaults.unitGroup,
+    nativeFrequency: field?.nativeFrequency ?? "daily",
+    dataShape: field?.dataShape ?? "scalar" as const,
+    valueRange: spec.transform === "raw" ? defaults.valueRange : undefined,
+  };
+}
+
 // A series that fails to load keeps its place with no observations. Dropping it
 // made a series the user had added disappear from the legend while it still sat
 // in the series editor, with nothing on screen to explain the difference.
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
-  const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
-  const label = sourceFallbackLabel(spec.source);
+  const presentation = seriesPresentation(spec);
   return {
     id: spec.id,
-    label: spec.label?.trim() || label,
+    label: presentation.label,
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
-    unit: field?.unit ?? "",
-    unitGroup: field?.unitGroup ?? "unknown",
-    nativeFrequency: field?.nativeFrequency ?? "daily",
-    dataShape: field?.dataShape ?? "scalar",
+    unit: presentation.unit,
+    unitGroup: presentation.unitGroup,
+    nativeFrequency: presentation.nativeFrequency,
+    dataShape: presentation.dataShape,
     style: spec.style,
     transform: spec.transform,
     axis: spec.axis === "right" ? "right" : "left",
     panelId: spec.panelId,
     interpolation: spec.interpolation,
     warning,
+    error: warning,
+    ...(presentation.valueRange ? { valueRange: presentation.valueRange } : {}),
     points: [],
+  };
+}
+
+function hiddenSeriesPlaceholder(spec: ChartSeriesSpec, index: number): ResolvedSeries {
+  return {
+    ...unloadableSeries(spec, index, ""),
+    warning: undefined,
+    error: undefined,
+    hidden: true,
   };
 }
 
@@ -586,7 +609,7 @@ function baseSecuritySeries(
     : undefined;
   return {
     id: spec.id,
-    label: spec.label?.trim() || `${symbol} ${field.shortLabel}`,
+    label: seriesSpecLabel(spec, `${symbol} ${field.shortLabel}`),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
     unit,
     unitGroup: currencyUnitGroup,
@@ -635,7 +658,7 @@ function baseDividendSeries(
     : field.unitGroup;
   return {
     id: spec.id,
-    label: spec.label?.trim() || `${symbol} ${field.shortLabel}`,
+    label: seriesSpecLabel(spec, `${symbol} ${field.shortLabel}`),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
     unit,
     unitGroup: currencyUnitGroup,
@@ -664,7 +687,7 @@ function baseEconomicSeries(
   const isPercent = units.toLowerCase().includes("percent");
   return {
     id: spec.id,
-    label: spec.label?.trim() || data.info?.title?.trim() || spec.source.seriesId,
+    label: seriesSpecLabel(spec, data.info?.title, spec.source.seriesId),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
     unit: isPercent ? "%" : units,
     unitGroup: isPercent ? "percent" : `economic:${units.toLowerCase()}`,
@@ -701,13 +724,13 @@ function baseUniversalSeries(
   ) {
     return null;
   }
-  const fallbackLabel = sourceFallbackLabel(spec.source);
-  const unitGroup = loaded.unitGroup ?? `universal:${spec.source.kind}`;
+  const defaults = defaultChartSeriesPresentation(spec.source);
+  const unitGroup = loaded.unitGroup ?? defaults.unitGroup;
   return {
     id: spec.id,
-    label: spec.label?.trim() || loaded.label?.trim() || fallbackLabel,
+    label: seriesSpecLabel(spec, loaded.label),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
-    unit: loaded.unit ?? "",
+    unit: loaded.unit || defaults.unit,
     unitGroup,
     nativeFrequency: "auto",
     dataShape: "scalar",
@@ -717,6 +740,7 @@ function baseUniversalSeries(
     panelId: spec.panelId,
     interpolation: spec.interpolation,
     points: loaded.points,
+    ...(spec.transform === "raw" && defaults.valueRange ? { valueRange: defaults.valueRange } : {}),
     ...(loaded.warning ? { warning: loaded.warning } : {}),
   };
 }
@@ -725,7 +749,7 @@ function baseConstantSeries(spec: ChartSeriesSpec, index: number): ResolvedSerie
   if (spec.source.kind !== "constant") return null;
   return {
     id: spec.id,
-    label: spec.label?.trim() || String(spec.source.value),
+    label: seriesSpecLabel(spec),
     color: spec.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
     unit: "",
     unitGroup: "constant",
@@ -869,12 +893,6 @@ export async function resolveChartSpecData(
     entry.source.kind === "security" && isMarketFieldId(entry.source.fieldId)
   ));
   if (primaryMarketSeries) calculationSeriesIds.add(primaryMarketSeries.id);
-  if (!sources.dataProvider && spec.series.some((entry) => (
-    calculationSeriesIds.has(entry.id) && entry.source.kind === "security"
-  ))) {
-    return { series: [], loading: false, errors: ["Market data is unavailable."], warnings };
-  }
-
   const referenceNow = sources.now ?? new Date();
   const initialVisibleBounds = requestedBounds(spec, referenceNow);
 
@@ -943,13 +961,15 @@ export async function resolveChartSpecData(
     ? runtimeAutoBounds(options)
     : null;
   const requestBounds = runtimeRequestBounds(options) ?? adaptiveBounds;
-  const activeMarketSources = [...new Map(spec.series.flatMap((entry) => (
-    calculationSeriesIds.has(entry.id)
-      && entry.source.kind === "security"
-      && isMarketFieldId(entry.source.fieldId)
-      ? [[instrumentKey(entry.source), entry.source] as const]
-      : []
-  ))).values()];
+  const activeMarketSources = sources.dataProvider
+    ? [...new Map(spec.series.flatMap((entry) => (
+      calculationSeriesIds.has(entry.id)
+        && entry.source.kind === "security"
+        && isMarketFieldId(entry.source.fieldId)
+        ? [[instrumentKey(entry.source), entry.source] as const]
+        : []
+    ))).values()]
+    : [];
   const resolutionSupportSources = await Promise.all(activeMarketSources.map(async (source) => (
     source.instrument.exchange?.trim()
       ? source
@@ -1063,8 +1083,13 @@ export async function resolveChartSpecData(
   };
 
   const loaded = await Promise.all(spec.series.map(async (seriesSpec, index) => {
-    if (!calculationSeriesIds.has(seriesSpec.id)) return null;
+    if (!calculationSeriesIds.has(seriesSpec.id)) {
+      return hiddenSeriesPlaceholder(seriesSpec, index);
+    }
     try {
+      if (seriesSpec.source.kind === "security" && !sources.dataProvider) {
+        throw new Error("Market data is unavailable.");
+      }
       if (seriesSpec.source.kind === "constant") {
         return baseConstantSeries(seriesSpec, index);
       }
@@ -1214,7 +1239,7 @@ export async function resolveChartSpecData(
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${seriesSpec.label ?? seriesSpec.id}: ${message}`);
+      errors.push(`${seriesSpecLabel(seriesSpec)}: ${message}`);
       return unloadableSeries(seriesSpec, index, message);
     }
   }));
@@ -1320,7 +1345,9 @@ export async function resolveChartSpecData(
   ];
   for (const entry of resolved) {
     if (entry.warning) warnings.push(`${entry.label}: ${entry.warning}`);
-    if (entry.points.length === 0) warnings.push(`${entry.label}: no observations in the selected date range.`);
+    if (entry.points.length === 0 && !entry.hidden && !entry.error) {
+      warnings.push(`${entry.label}: no observations in the selected date range.`);
+    }
   }
   for (const panel of spec.panels) {
     if (panel.scale !== "log") continue;

@@ -14,6 +14,7 @@ import { CompositeChart } from "../../../components/chart/composite";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
 import type { ChartSpec, ResolvedSeries, SeriesStyle } from "../../../time-series/types";
+import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 import { getSupportedChartResolutionsForViewport } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
 import { useShortcut } from "../../../react/input";
@@ -204,22 +205,26 @@ function ChartComposerSurface({
     const bySpecOrder = new Map(spec.series.map((entry, index) => [entry.id, index] as const));
     return [
       ...resolved,
-      ...missing.map((entry): ResolvedSeries => ({
-        id: entry.id,
-        label: chartSeriesLabel(entry),
-        color: entry.color ?? colors.textDim,
-        unit: "",
-        unitGroup: "unknown",
-        nativeFrequency: "daily",
-        dataShape: "scalar",
-        style: entry.style,
-        transform: entry.transform,
-        axis: entry.axis === "right" ? "right" : "left",
-        panelId: entry.panelId,
-        interpolation: entry.interpolation,
-        hidden: true,
-        points: [],
-      })),
+      ...missing.map((entry): ResolvedSeries => {
+        const defaults = defaultChartSeriesPresentation(entry.source);
+        return {
+          id: entry.id,
+          label: chartSeriesLabel(entry),
+          color: entry.color ?? colors.textDim,
+          unit: defaults.unit,
+          unitGroup: defaults.unitGroup,
+          nativeFrequency: "daily",
+          dataShape: "scalar",
+          style: entry.style,
+          transform: entry.transform,
+          axis: entry.axis === "right" ? "right" : "left",
+          panelId: entry.panelId,
+          interpolation: entry.interpolation,
+          hidden: true,
+          ...(entry.transform === "raw" && defaults.valueRange ? { valueRange: defaults.valueRange } : {}),
+          points: [],
+        };
+      }),
     ].sort((a, b) => (bySpecOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (bySpecOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER));
   }, [resolution.legendSeries, spec.series]);
   const plottedSeries = useMemo(

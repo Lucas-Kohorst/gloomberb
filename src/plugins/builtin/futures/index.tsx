@@ -23,6 +23,7 @@ import {
   useQuoteBoard,
 } from "../shared/use-quote-board";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
@@ -140,12 +141,23 @@ function FuturesPane({ focused, width, height }: PaneProps) {
     refresh();
   }, { enabled: focused && !searchFocused });
 
+  const popOutChart = useGraphChartPopOut();
+  const graphSelected = useCallback(() => {
+    if (!selectedRow || selectedRow.type !== "row") return;
+    popOutChart(`FUT:${selectedRow.contract.code}`);
+  }, [popOutChart, selectedRow]);
+
   useShortcut((event) => {
     if (!focused || searchFocused) return;
     if (event.name === "s" || event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
+    }
+    if (event.name === "g") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
     }
   }, { enabled: focused && !searchFocused });
 
@@ -164,8 +176,14 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
+    if (event.name === "g") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return true;
+    }
     return false;
-  }, [focusSearch]);
+  }, [focusSearch, graphSelected]);
 
   const loadingCount = countLoadingQuotes(quotes);
   const latestTs = latestQuoteTimestamp(quotes);
@@ -188,11 +206,12 @@ function FuturesPane({ focused, width, height }: PaneProps) {
     return {
       info,
       hints: [
+        { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(selectedRow && selectedRow.type === "row") },
         { id: "search", key: "s", label: "earch", onPress: focusSearch },
         { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ],
     };
-  }, [latestTs, loadingCount, refresh, searchQuery, focusSearch]);
+  }, [focusSearch, graphSelected, latestTs, loadingCount, refresh, searchQuery, selectedRow]);
 
   return (
     <DataTableView<FuturesTableRow, FuturesColumn>

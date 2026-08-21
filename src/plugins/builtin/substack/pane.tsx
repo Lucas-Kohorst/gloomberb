@@ -10,6 +10,9 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import { isPlainKey } from "../../../utils/keyboard";
 import { useDebouncedPluginPaneState, usePluginAppActions, usePluginPaneState } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { encodeSortPreference } from "../../../components/data-table/sort-settings";
+import { getSubstackPaneSettings } from "./settings";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import {
@@ -48,8 +51,6 @@ import {
   type SubstackArticleDetail,
   type SubstackArticleSummary,
   type SubstackPublication,
-  type SubstackSortColumnId,
-  type SubstackSortDirection,
 } from "./types";
 import {
   activeFeedStateFromSources,
@@ -78,13 +79,20 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const [home, setHome] = useState<LoadState<SubstackHomeData>>(homeLoadStateFromCache);
   const [publicationFeeds, setPublicationFeeds] = useState<Record<string, PublicationFeedState>>({});
   const [details, setDetails] = useState<Record<string, DetailState>>({});
-  const [activeTab, setActiveTab] = usePluginPaneState<string>("activeTab", SUBSTACK_FEED_TAB_ID);
+  const [activeTab, setActiveTab] = usePaneSettingValue<string>("defaultTab", SUBSTACK_FEED_TAB_ID);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("selectedArticleId", null);
   const [detailOpen, setDetailOpen] = usePluginPaneState<boolean>("detailOpen", false);
-  const [sort, setSort] = useState<{ columnId: SubstackSortColumnId; direction: SubstackSortDirection }>({
-    columnId: "published",
-    direction: "desc",
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", undefined);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>(
+    "sort",
+    encodeSortPreference({ columnId: "published", direction: "desc" }),
+  );
+  const paneSettings = getSubstackPaneSettings({
+    defaultTab: activeTab,
+    columnIds,
+    sort: sortValue,
   });
+  const sort = paneSettings.sort;
   const { readArticleIds, markArticleRead } = useSubstackReadState();
   const homeFetchGenRef = useRef(0);
   const publicationFetchGenRef = useRef<Record<string, number>>({});
@@ -394,8 +402,8 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
 
   const handleHeaderClick = useCallback((columnId: string) => {
     if (!isSubstackSortColumnId(columnId)) return;
-    setSort((current) => nextSubstackSort(current, columnId));
-  }, []);
+    setSortValue(encodeSortPreference(nextSubstackSort(sort, columnId)));
+  }, [setSortValue, sort]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -473,14 +481,16 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   }, [archiveAction, loadSelectedDetail, openSelectedArticle, popOutSelectedArticle, scrollDetailBy, selectedArticle, shareSelectedArticle]);
 
   const includePublication = !activePublication;
-  const columns = useMemo(() => buildSubstackColumns(width, includePublication), [includePublication, width]);
+  const columns = useMemo(
+    () => buildSubstackColumns(width, includePublication, paneSettings.columnIds),
+    [includePublication, paneSettings.columnIds, width],
+  );
   const activeDetail = selectedArticle ? details[selectedArticle.id] ?? emptyLoadState<SubstackArticleDetail>() : emptyLoadState<SubstackArticleDetail>();
   const updatedAgo = useUpdatedAgo(activeFeedState.fetchedAt ?? null);
   const poll = useFeedPollInterval();
   useAutoRefresh(auth ? activeFeedState.fetchedAt ?? null : null, refreshActive, poll.intervalMinutes);
   usePaneFooter("substack", () => ({
     info: [
-      poll.segment,
       ...(!auth ? [{ id: "auth", parts: [{ text: "login required", tone: "warning" as const }] }] : []),
       ...(updatedAgo && auth ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(activeFeedState.loading || activeFeedState.loadingMore
@@ -490,6 +500,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
       ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },

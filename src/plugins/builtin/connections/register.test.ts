@@ -1,4 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createDefaultConfig } from "../../../types/config";
+import { adjacentPlugin } from "../adjacent";
+import { aiPlugin } from "../ai";
+import { AI_PROVIDER_IDS } from "../ai/providers";
+import {
+  ADJACENT_CLOUD_CONNECTION_ID,
+  ADJACENT_CLOUD_PROVIDER_IDS,
+} from "./adjacent-cloud";
 import {
   clearPendingConnectionReports,
   listConnectionSources,
@@ -82,6 +90,113 @@ describe("connection source registry", () => {
 
     const source = listConnectionSources().find((s) => s.id === "test-public");
     expect(source?.authRequired).toBe(false);
+  });
+
+  test("does not list Adjacent Cloud children as their own sources", () => {
+    const cloud = registerConnectionSource({
+      id: ADJACENT_CLOUD_CONNECTION_ID,
+      name: "Adjacent Cloud",
+      kind: "data",
+      pluginId: "adjacent",
+      authRequired: false,
+    });
+    disposers.push(cloud);
+    for (const id of ADJACENT_CLOUD_PROVIDER_IDS) {
+      disposers.push(registerConnectionSource({
+        id,
+        name: id,
+        kind: "data",
+        pluginId: "adjacent",
+      }));
+    }
+
+    const ids = listConnectionSources().map((source) => source.id);
+    expect(ids).toContain(ADJACENT_CLOUD_CONNECTION_ID);
+    expect(ids.filter((id) => id === ADJACENT_CLOUD_CONNECTION_ID)).toHaveLength(1);
+    for (const id of ADJACENT_CLOUD_PROVIDER_IDS) {
+      expect(ids).not.toContain(id);
+    }
+  });
+
+  test("reports VoteHub / OWID / llm-stats traffic on Adjacent Cloud", () => {
+    disposers.push(registerConnectionSource({
+      id: ADJACENT_CLOUD_CONNECTION_ID,
+      name: "Adjacent Cloud",
+      kind: "data",
+      pluginId: "adjacent",
+    }));
+
+    const reports: Array<{ id: string; operation?: string }> = [];
+    setConnectionRequestReporter((id, report) => {
+      reports.push({ id, operation: report.operation });
+    });
+    reportConnectionRequest("votehub", { success: true, durationMs: 11, operation: "polls" });
+    reportConnectionRequest("owid", { success: true, durationMs: 22, operation: "chart" });
+    reportConnectionRequest("llm-stats", { success: true, durationMs: 8, operation: "stats" });
+    reportConnectionRequest("twc-kalshi", { success: true, durationMs: 9, operation: "climate-primary" });
+    reportConnectionRequest("yahoo", { success: true, durationMs: 5, operation: "fetch" });
+
+    expect(reports).toEqual([
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "polls" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "chart" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "stats" },
+      { id: ADJACENT_CLOUD_CONNECTION_ID, operation: "climate-primary" },
+      { id: "yahoo", operation: "fetch" },
+    ]);
+  });
+
+  test("Adjacent Cloud plugin lists one source, not VoteHub/OWID/weather children", async () => {
+    await adjacentPlugin.setup?.({
+      persistence: { getResource: () => null, setResource() {} },
+      configState: { get: () => null, set: async () => {}, delete: async () => {}, keys: () => [] },
+      registerCapability() {},
+      registerCommand() {},
+      notify() {},
+      resume: { setPaneState() {} },
+      focusPane() {},
+    } as never);
+    disposers.push(() => adjacentPlugin.dispose?.());
+
+    const ids = listConnectionSources().map((source) => source.id);
+    expect(ids).toEqual([ADJACENT_CLOUD_CONNECTION_ID]);
+    for (const id of ADJACENT_CLOUD_PROVIDER_IDS) {
+      expect(ids).not.toContain(id);
+    }
+  });
+
+  test("does not register AI providers as Connections sources", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-ai-connections");
+    await aiPlugin.setup?.({
+      getConfig: () => config,
+      configState: {
+        get: (key: string) => config.pluginConfig.ai?.[key] ?? null,
+        set: async (key: string, value: unknown) => {
+          config.pluginConfig.ai = { ...(config.pluginConfig.ai ?? {}), [key]: value };
+        },
+        delete: async () => {},
+        keys: () => Object.keys(config.pluginConfig.ai ?? {}),
+      },
+      resume: {
+        getState: () => null,
+        setState() {},
+        deleteState() {},
+        getPaneState: () => null,
+        setPaneState() {},
+        deletePaneState() {},
+      },
+      registerPane() {},
+      registerPaneTemplate() {},
+      registerTickerResearchTab() {},
+      registerCommand() {},
+      on: () => () => {},
+      log: { warn() {}, info() {} },
+    } as never);
+    disposers.push(() => aiPlugin.dispose?.());
+
+    const ids = listConnectionSources().map((source) => source.id);
+    for (const providerId of AI_PROVIDER_IDS) {
+      expect(ids).not.toContain(`ai-${providerId}`);
+    }
   });
 
   test("createInitialConnectionState propagates authRequired", () => {

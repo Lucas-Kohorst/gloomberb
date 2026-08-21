@@ -1,4 +1,8 @@
 import type { MarketNewsItem } from "../../../../types/news-source";
+import {
+  extractArticleTickers,
+  type ArticleTickerUniverse,
+} from "../../../../news/article-tickers";
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   tech: ["ai", "chip", "semiconductor", "software", "cloud", "cyber", "apple", "google", "microsoft", "meta", "nvidia", "amazon", "saas", "startup"],
@@ -10,13 +14,6 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
   crypto: ["bitcoin", "ethereum", "crypto", "blockchain", "token", "defi", "mining"],
   geopolitical: ["war", "sanctions", "nato", "military", "conflict", "diplomacy"],
 };
-
-const KNOWN_TICKERS = new Set([
-  "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "JNJ", "UNH",
-  "PG", "XOM", "CVX", "HD", "BAC", "V", "MA", "PFE", "KO", "PEP", "ABBV", "MRK",
-  "LLY", "COST", "AVGO", "CRM", "NFLX", "AMD", "INTC", "QCOM", "IBM", "GS", "MS",
-  "WFC", "C", "DIS", "PYPL", "SQ", "COIN", "PLTR", "SNOW", "CRWD",
-]);
 
 function classifyArticle(item: MarketNewsItem): string[] {
   const text = `${item.title} ${item.summary ?? ""}`.toLowerCase();
@@ -34,20 +31,18 @@ function classifyArticle(item: MarketNewsItem): string[] {
   return matched;
 }
 
-function extractTickers(text: string, knownTickers?: Set<string>): string[] {
-  const combined = new Set([...KNOWN_TICKERS, ...(knownTickers ?? [])]);
-  const matches = text.match(/\b[A-Z]{1,5}\b/g) ?? [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const m of matches) {
-    if (combined.has(m) && !seen.has(m)) {
-      seen.add(m);
-      result.push(m);
-    }
+function extractTickers(
+  text: string,
+  universe?: ArticleTickerUniverse | Set<string>,
+): string[] {
+  if (universe instanceof Set) {
+    return extractArticleTickers(text, {
+      bookSymbols: universe,
+      catalogSymbols: universe,
+      names: [],
+    });
   }
-
-  return result;
+  return extractArticleTickers(text, universe);
 }
 
 const BREAKING_PATTERNS = [
@@ -81,13 +76,17 @@ function scoreImportance(authority: number, publishedAt: Date, isBreaking: boole
   return Math.min(100, score);
 }
 
-export function enrichNewsItem(item: MarketNewsItem, authority = 50, knownTickers?: Set<string>): MarketNewsItem {
+export function enrichNewsItem(
+  item: MarketNewsItem,
+  authority = 50,
+  knownTickers?: ArticleTickerUniverse | Set<string>,
+): MarketNewsItem {
   const categories = item.categories.length > 0
     ? [...new Set([...item.categories, ...classifyArticle(item)])]
     : classifyArticle(item);
 
-  const text = `${item.title} ${item.summary ?? ""}`;
-  const tickers = extractTickers(text, knownTickers);
+  const text = `${item.title} ${item.summary ?? ""} ${item.body ?? ""}`;
+  const tickers = [...new Set([...item.tickers, ...extractTickers(text, knownTickers)])];
   const isBreaking = detectBreaking(item.title, item.publishedAt, authority);
   const importance = scoreImportance(authority, item.publishedAt, isBreaking);
   const topic = categories[0] ?? item.topic ?? "general";

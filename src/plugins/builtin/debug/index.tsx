@@ -339,6 +339,7 @@ export const debugPlugin: GloomPlugin = {
       description: "Open the debug log viewer",
       keywords: ["debug", "log", "logs", "console", "errors"],
       category: "navigation",
+      shortcut: "DEBUG",
       execute: () => {
         ctx.showPane("debug");
       },

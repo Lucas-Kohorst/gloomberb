@@ -13,7 +13,7 @@ import { formatCompact, formatNumber } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerFlowEvent } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
 import { ScannerDeniedState } from "./denied";
 import { useFlowFeed, useScannerStatusFooter } from "./feed";
 import {
@@ -121,6 +121,7 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const feed = useFlowFeed();
   const { selectTicker } = usePluginPaneActions();
   const { pinTicker } = usePluginTickerActions();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [minPremium, setMinPremium] = usePaneSettingValue<FlowMinPremium>("minPremium", DEFAULT_FLOW_FILTERS.minPremium);
@@ -145,7 +146,15 @@ function FlowPane({ focused, width, height }: PaneProps) {
     [feed.payload?.events, filters, watchlist],
   );
 
-  useScannerStatusFooter("flow", feed, focused);
+  const selectedEvent = events.find((event) => event.id === selectedId) ?? events[0] ?? null;
+  const chartSelected = useCallback(() => {
+    if (!selectedEvent) return;
+    createPaneFromTemplate("chart-composer-pane", { arg: selectedEvent.underlying });
+  }, [createPaneFromTemplate, selectedEvent]);
+
+  useScannerStatusFooter("flow", feed, focused, [
+    { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedEvent },
+  ]);
 
   const columns = useMemo(() => buildColumns(width), [width]);
 
@@ -184,6 +193,13 @@ function FlowPane({ focused, width, height }: PaneProps) {
         sortDirection="desc"
         onHeaderClick={() => {}}
         getItemKey={(event) => event.id}
+        onRootKeyDown={(event) => {
+          if (event.name !== "g") return false;
+          event.preventDefault?.();
+          event.stopPropagation?.();
+          chartSelected();
+          return true;
+        }}
         onActivate={(event) => pinTicker(event.underlying, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
         renderCell={(event, column, _index, rowState) => renderCell(event, column, rowState)}
         emptyContent={feed.payload ? undefined : <ScannerWaitingState />}

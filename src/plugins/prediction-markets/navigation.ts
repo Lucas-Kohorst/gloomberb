@@ -32,6 +32,7 @@ export const DETAIL_TABS: ReadonlyArray<{
   { label: "Book", value: "book" },
   { label: "Trades", value: "trades" },
   { label: "Rules", value: "rules" },
+  { label: "Data", value: "data" },
   { label: "Similar", value: "similar" },
   { label: "News", value: "news" },
 ];
@@ -43,7 +44,7 @@ const LIVE_DETAIL_TABS = new Set<PredictionDetailTab>([
   "trades",
 ]);
 
-/** Rules, similar, and news are static, so they should not drive venue polling. */
+/** Rules, data, similar, and news are static, so they should not drive venue polling. */
 export function isLivePredictionDetailTab(tab: PredictionDetailTab): boolean {
   return LIVE_DETAIL_TABS.has(tab);
 }

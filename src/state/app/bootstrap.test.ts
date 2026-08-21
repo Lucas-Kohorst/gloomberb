@@ -534,4 +534,41 @@ describe("initializeAppState", () => {
 
     persistence.close();
   });
+
+  test("does not seed dummy tickers into an empty hosted book", async () => {
+    const hostedFlag = globalThis as { __GLOOM_CLOUD_HOSTED?: boolean };
+    const previous = hostedFlag.__GLOOM_CLOUD_HOSTED;
+    hostedFlag.__GLOOM_CLOUD_HOSTED = true;
+    const created: string[] = [];
+    const actions: AppAction[] = [];
+    try {
+      await initializeAppState({
+        config: createDefaultConfig("/tmp/hosted-empty-tickers"),
+        tickerRepository: {
+          loadAllTickers: async () => [],
+          loadTicker: async () => null,
+          saveTicker: async () => {},
+          createTicker: async (metadata) => {
+            created.push(metadata.ticker);
+            return { metadata };
+          },
+          deleteTicker: async () => {},
+        },
+        dataProvider: {} as any,
+        sessionSnapshot: null,
+        dispatch: (action) => { actions.push(action); },
+        refreshTicker: () => {},
+        refreshQuote: () => {},
+        autoImportBrokerPositions: async () => {},
+      });
+    } finally {
+      hostedFlag.__GLOOM_CLOUD_HOSTED = previous;
+    }
+
+    expect(created).toEqual([]);
+    const setTickers = actions.find((action) => action.type === "SET_TICKERS");
+    expect(setTickers?.type).toBe("SET_TICKERS");
+    if (setTickers?.type !== "SET_TICKERS") return;
+    expect(setTickers.tickers.size).toBe(0);
+  });
 });

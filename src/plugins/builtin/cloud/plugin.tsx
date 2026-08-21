@@ -12,7 +12,9 @@ import {
   openDmTargetFromCommand,
   parseConversationCreateArg,
 } from "../chat/channels";
+import { buildWhoCommandResults } from "../chat/profile-search";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
+import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
 import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
@@ -77,6 +79,7 @@ function createChatModule(
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+      settings: (context) => buildChatPaneSettingsDef(context.settings),
     }, {
       id: UNREAD_INBOX_PANE_ID,
       name: "Unread",
@@ -149,6 +152,32 @@ function createChatModule(
           await openDmTargetFromCommand(ctx, created?.usernames ?? [], created?.name);
         },
       });
+      ctx.registerCommand({
+        id: "who-profile",
+        label: "WHO",
+        description: "Open a chat user's public profile",
+        keywords: ["who", "profile", "user", "username", "people", "chat"],
+        category: "navigation",
+        shortcut: "WHO",
+        shortcutArg: {
+          placeholder: "@username",
+          kind: "text",
+          parse: (arg) => ({ username: arg.trim() }),
+        },
+        buildResults: (arg) => buildWhoCommandResults(ctx, arg),
+        execute: async (values) => {
+          const results = buildWhoCommandResults(ctx, values?.username ?? values?.shortcut ?? "");
+          const match = results.find((result) => !result.disabled);
+          if (!match) {
+            ctx.notify({
+              body: "No chat user matched that search.",
+              type: "error",
+            });
+            return;
+          }
+          await match.execute();
+        },
+      });
     },
     dispose() {
       chatController.dispose();
@@ -170,8 +199,8 @@ const accountModule: PluginModule = {
     id: "account-management-pane",
     paneId: "account-management",
     label: "Account Management",
-    description: "Manage your Gloom Cloud profile, AI providers, password, and public portfolio sharing settings",
-    keywords: ["account", "profile", "cloud", "acm", "password", "settings", "ai", "provider", "ollama", "openrouter", "anthropic", "openai"],
+    description: "Manage Gloom Cloud profile, display (theme, font, size), AI providers, password, and public portfolio sharing",
+    keywords: ["account", "profile", "cloud", "acm", "password", "settings", "ai", "provider", "ollama", "openrouter", "anthropic", "openai", "theme", "font", "display"],
     shortcut: { prefix: "ACM" },
     createInstance: () => ({ placement: "floating" }),
   }],

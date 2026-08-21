@@ -19,6 +19,7 @@ import { SubstackArticleReaderPane } from "./article-reader";
 import { SubstackPane } from "./pane";
 import { createSubstackNewsCapability } from "./news-capability";
 import { registerConnectionSource } from "../connections/register";
+import { buildSubstackPaneSettingsDef } from "./settings";
 
 let disposeSubstackConnection: (() => void) | null = null;
 let disposeSubstackAuthWatch: (() => void) | null = null;
@@ -65,6 +66,7 @@ export const substackPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 32 },
+      settings: (context) => buildSubstackPaneSettingsDef(context.settings),
     },
     {
       id: SUBSTACK_ARTICLE_READER_PANE_ID,

@@ -235,6 +235,7 @@ function getModeOutcomes(
 
   if (mode === "prediction-market") {
     const market = draft as PredictionMarketKellyAssumptions;
+    // Payoff is (1 − p)/p on a $1 yes/no ticket, not a % move in an equity last.
     const price = sanitizeFraction(market.side === "yes" ? market.marketPrice : 1 - market.marketPrice, 0, 0.0001, 0.9999);
     const winProbability = market.side === "yes"
       ? normalizeProbability(market.estimatedProbability)
@@ -297,12 +298,15 @@ export function calculateKellySizing({
   bankroll,
   currentValue = 0,
   price = null,
+  contractMultiplier = 1,
 }: {
   mode: KellySizingMode;
   draft: KellySizerDraft;
   bankroll: number;
   currentValue?: number;
   price?: number | null;
+  /** Futures/options multiplier from the position when present. Never invented. */
+  contractMultiplier?: number;
 }): KellySizingResult {
   const warnings: string[] = [];
   if (!finite(bankroll) || bankroll <= 0) {
@@ -365,9 +369,11 @@ export function calculateKellySizing({
 
   const safeCurrentValue = finite(currentValue) ? Math.max(0, currentValue) : 0;
   const safePrice = price != null && finite(price) && price > 0 ? price : null;
+  const safeMultiplier = finite(contractMultiplier) && contractMultiplier > 0 ? contractMultiplier : 1;
+  const unitNotional = safePrice != null ? safePrice * safeMultiplier : null;
   const targetValue = clippedFraction * bankroll;
   const addTrimValue = targetValue - safeCurrentValue;
-  const estimatedUnits = safePrice ? addTrimValue / safePrice : null;
+  const estimatedUnits = unitNotional && unitNotional > 0 ? addTrimValue / unitNotional : null;
   const riskFraction = clippedFraction * downsideLossFraction;
   const riskValue = riskFraction * bankroll;
 

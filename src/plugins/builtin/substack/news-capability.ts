@@ -2,6 +2,7 @@ import { newsProvider, type NewsCapability } from "../../../capabilities";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { SubstackArticleSummary } from "./types";
 import { extractArticleContent } from "./content";
+import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import { loadSubstackHome } from "./api/loaders";
 import { readResource } from "./api/store";
 import { SubstackAuthError } from "./api/types";
@@ -48,7 +49,12 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
     topics: [],
     sectors: [],
     categories: ["newsletter"],
-    tickers: [],
+    tickers: extractArticleTickersFromParts([
+      article.title,
+      article.subtitle,
+      article.previewText,
+      body,
+    ]),
     scores: {
       importance: 50,
       urgency: 0,

@@ -40,4 +40,15 @@ describe("normalizeCreditSeries", () => {
     expect(() => normalizeCreditSeries(CREDIT_SERIES[0], payload({ units: "Index" }))).toThrow("unexpected FRED metadata");
     expect(() => normalizeCreditSeries(CREDIT_SERIES[0], payload({ title: "Corporate Effective Yield" }))).toThrow("unexpected FRED metadata");
   });
+
+  test("accepts the public FRED CSV stub that only knows the series id", () => {
+    const row = normalizeCreditSeries(CREDIT_SERIES[0], payload({
+      id: "BAMLC0A0CM",
+      title: "BAMLC0A0CM",
+      units: "Percent",
+      frequency: "Daily",
+    }));
+    expect(row.oasBp).toBe(81);
+    expect(row.title.toLowerCase()).toContain("option-adjusted spread");
+  });
 });

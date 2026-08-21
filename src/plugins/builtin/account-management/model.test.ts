@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Portfolio, TickerRecord } from "../../../types/ticker";
+import type { AccountProfile } from "../../../api-client";
 import {
+  parseAccountDraft,
+  profileToDraft,
+  resolveAccountDraft,
   buildPublishedProfileAnalyticsPreview,
   buildPortfolioChoices,
   buildProfileAnalyticsPreview,
@@ -33,6 +37,23 @@ function makeTicker(symbol: string, portfolios: string[], positionedPortfolios: 
 }
 
 describe("account management model", () => {
+  test("keeps unsaved ACM profile drafts instead of a later server profile", () => {
+    const profile = {
+      username: "saved",
+      name: "Saved Name",
+      profilePublic: false,
+    } as AccountProfile;
+    const stored = {
+      ...profileToDraft(profile),
+      name: "Unsaved edit",
+      bio: "draft bio",
+    };
+    expect(resolveAccountDraft(stored, profile).name).toBe("Unsaved edit");
+    expect(resolveAccountDraft(stored, profile).bio).toBe("draft bio");
+    expect(resolveAccountDraft(profileToDraft(profile), profile).name).toBe("Saved Name");
+    expect(parseAccountDraft({ username: "x" })).toBeNull();
+  });
+
   test("counts portfolio holdings from app ticker state", () => {
     const tickers = new Map([
       ["AAPL", makeTicker("AAPL", ["main"])],

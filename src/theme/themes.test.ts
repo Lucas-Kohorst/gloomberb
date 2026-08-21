@@ -35,6 +35,16 @@ afterEach(() => {
 });
 
 describe("theme contrast", () => {
+  test("ships an Adjacent theme from the forest/cream brand with RED/BLUE accents", () => {
+    const theme = themes.adjacent;
+    if (!theme) throw new Error("missing adjacent theme");
+    if (theme.name !== "Adjacent") throw new Error(`unexpected Adjacent name ${theme.name}`);
+    if (theme.bg.toLowerCase() !== "#16140f") throw new Error(`unexpected Adjacent bg ${theme.bg}`);
+    if (theme.panel.toLowerCase() !== "#0e2a1f") throw new Error(`unexpected Adjacent panel ${theme.panel}`);
+    if (theme.textBright.toLowerCase() !== "#f4efd9") throw new Error(`unexpected Adjacent cream ${theme.textBright}`);
+    if (theme.positive === theme.negative) throw new Error("Adjacent RED/BLUE accents collapsed");
+  });
+
   test("keeps shared text roles readable on body surfaces", () => {
     for (const [id, theme] of Object.entries(themes)) {
       for (const [surfaceLabel, surface] of [["bg", theme.bg], ["panel", theme.panel]] as const) {

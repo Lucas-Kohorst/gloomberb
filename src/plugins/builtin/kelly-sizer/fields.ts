@@ -96,6 +96,7 @@ export function buildModeFields({
   }
 
   if (mode === "prediction-market") {
+    // Yes/no contract fields. Price is a 0–1 last (or typed odds), not an equity return.
     const market = draft as KellySizerModeDrafts["prediction-market"];
     return [
       {

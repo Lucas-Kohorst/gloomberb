@@ -1,5 +1,10 @@
 import { httpFetch } from "../../../utils/http-transport";
-import type { GitHubRepo, PluginSearchResult } from "./types";
+import { withConnectionRequest } from "../connections/register";
+import {
+  GITHUB_PLUGIN_SEARCH_CONNECTION_ID,
+  type GitHubRepo,
+  type PluginSearchResult,
+} from "./types";
 
 const GITHUB_API = "https://api.github.com/search/repositories";
 
@@ -37,13 +42,15 @@ async function fetchRepos(query: string, qualifier: string): Promise<PluginSearc
   return data.items.map(toSearchResult);
 }
 
-export async function searchPlugins(query: string): Promise<PluginSearchResult[]> {
+export async function searchCommunityPlugins(query: string): Promise<PluginSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  let results = await fetchRepos(trimmed, "topic:gloomberb-plugin");
-  if (results.length === 0) {
-    results = await fetchRepos(trimmed, "gloomberb in:name,description");
-  }
-  return results;
+  return withConnectionRequest(GITHUB_PLUGIN_SEARCH_CONNECTION_ID, trimmed, async () => {
+    let results = await fetchRepos(trimmed, "topic:gloomberb-plugin");
+    if (results.length === 0) {
+      results = await fetchRepos(trimmed, "gloomberb in:name,description");
+    }
+    return results;
+  });
 }

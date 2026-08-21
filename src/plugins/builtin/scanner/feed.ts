@@ -5,7 +5,7 @@ import type {
   ScannerHiloPayload,
   ScannerPayload,
 } from "../../../api-client";
-import type { PaneFooterSegment } from "../../../components";
+import type { PaneFooterSegment, PaneHint } from "../../../components";
 import { tf } from "../../../i18n";
 import { useCloudAccessFooter } from "../shared/cloud-upgrade";
 import { usePaneStatusFooter } from "../shared/pane-footer";
@@ -53,6 +53,7 @@ export function useScannerStatusFooter(
   registrationId: string,
   state: ScannerFeedState<ScannerPayload>,
   focused: boolean,
+  hints?: PaneHint[],
 ): void {
   const { segment } = useCloudAccessFooter({
     delayLabel: tf("{count}m", { count: state.payload?.delayMinutes || CLOUD_QUOTE_DELAY_MINUTES }),
@@ -90,5 +91,5 @@ export function useScannerStatusFooter(
     [segment, status],
   );
 
-  usePaneStatusFooter({ registrationId, info });
+  usePaneStatusFooter({ registrationId, info, hints });
 }

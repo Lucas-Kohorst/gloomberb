@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { completeExpression, splitCurrentLeg } from "./series-suggestions";
-import { buildChartSeriesAssistContext, formatParsedSeriesExpression } from "../../../../plugins/builtin/chart-composer/series-catalog";
+import {
+  buildChartSeriesAssistContext,
+  buildSeriesCatalogSuggestions,
+  formatParsedSeriesExpression,
+  looksLikeCatalogSeriesQuery,
+} from "../../../../plugins/builtin/chart-composer/series-catalog";
 
 describe("chart series command-bar autocomplete", () => {
   test("treats the whole input as the current leg with no separator", () => {
@@ -44,6 +49,19 @@ describe("chart series command-bar autocomplete", () => {
     expect(ctx).toContain("eps");
     expect(ctx).toContain("FRED:seriesId");
     expect(ctx).toContain("KALSHI:ticker");
+    expect(ctx).toContain("BTC-USD:price");
+    expect(ctx).toContain("CAT <query>");
     expect(ctx).toContain("A / B");
+  });
+
+  test("suggests a FRED series from a non-security catalog query", () => {
+    const aapl = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
+    const suggestions = buildSeriesCatalogSuggestions("cpi", aapl, [], 12);
+    expect(suggestions.some((entry) => (
+      entry.expression.kind === "economic"
+      && entry.expression.seriesId === "CPIAUCSL"
+    ))).toBe(true);
+    expect(looksLikeCatalogSeriesQuery("cpi fred")).toBe(true);
+    expect(looksLikeCatalogSeriesQuery("AAPL revenue")).toBe(false);
   });
 });

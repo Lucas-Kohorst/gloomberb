@@ -181,7 +181,7 @@ function DesktopSettingsRow({
     <DesktopSwitch checked={currentValue === true} onChange={(checked) => onApply(field, checked)} />
   ) : field.type === "select" ? (
     <NativeSelect
-      value={typeof currentValue === "string" ? currentValue : ""}
+      value={currentValue == null || currentValue === "" ? "" : String(currentValue)}
       options={field.options}
       includeUnsetOption
       selectRef={(element) => onSelectRef(field.key, element)}

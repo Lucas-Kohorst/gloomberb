@@ -1,5 +1,5 @@
 export interface CorporateYieldEntry {
-  seriesId: string; // "BAMLC0A0CM", "BAMLH0A0HYM", ...
+  seriesId: string; // "BAMLC0A0CMEY", "BAMLH0A0HYM2EY", ...
   label: string; // "IG All-Rated", "High Yield", "BBB", "AAA"
   rating: string; // "AAA", "BBB", "HY", "IG"
   maturityRange: string; // "1-3Y", "5-10Y", "All"

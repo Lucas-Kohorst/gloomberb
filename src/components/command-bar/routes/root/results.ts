@@ -168,7 +168,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       ? paneShortcutItems({
         filterQuery: rootQuery,
         includePromptableTickerTemplates: true,
-      })
+      }).map((item) => ({ ...item, category: "Panes" }))
       : [];
     const seenItemIds = new Set<string>();
     for (const item of [...templateItems, ...relatedTemplateItems]) {

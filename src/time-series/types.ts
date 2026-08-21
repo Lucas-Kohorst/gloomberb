@@ -187,6 +187,13 @@ export interface ResolvedSeries {
   latestChangePercent?: number;
   points: TimeSeriesPoint[];
   warning?: string;
+  /** Load failure shown in the legend; the series stays listed even with no points. */
+  error?: string;
+  /**
+   * Inclusive native y-range for bounded measures (polls, probabilities).
+   * Percent-change overlays omit this so the axis still auto-fits.
+   */
+  valueRange?: { min: number; max: number };
   /** Listed in the legend so it can be restored, but not drawn. */
   hidden?: boolean;
 }

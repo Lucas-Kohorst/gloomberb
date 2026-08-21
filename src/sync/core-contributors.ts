@@ -28,6 +28,7 @@ import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byo
 import { peekHostedUserConfigStamp } from "../data/config/hosted-user-persist";
 import { shouldKeepNewerHostedLocalConfig } from "../data/config/hosted-config-snapshot";
 import { parseIncomingTickerRecords } from "../data/config/hosted-ticker-persist";
+import { isLanguagePreference } from "../i18n/languages";
 
 const SENSITIVE_KEY_PATTERN = /(token|secret|password|credential|private|api[_-]?key|access[_-]?key|refresh[_-]?key|session|cookie|dataDir|path|directory|localPath)/i;
 
@@ -184,6 +185,8 @@ function collectCoreConfigPayload(config: AppConfig) {
     chartPreferences: config.chartPreferences,
     valueFlashingEnabled: config.valueFlashingEnabled,
     autoRefreshInterval: config.autoRefreshInterval,
+    fontSize: config.fontSize,
+    language: config.language,
     recentTickers: config.recentTickers,
     // Completion is monotonic in synced state. A device only advertises the
     // completed state, while resumable progress and incomplete state stay local.
@@ -391,7 +394,11 @@ function mergeConfigPayload(
   assign("chartPreferences");
   assign("valueFlashingEnabled");
   assign("autoRefreshInterval");
+  assign("fontSize");
   assign("recentTickers");
+  if (canApply("language") && isLanguagePreference(payload.language)) {
+    next.language = payload.language;
+  }
   // Sync can complete onboarding on another device, but never reopen it.
   // Resumable progress remains local until this installation completes it.
   if (

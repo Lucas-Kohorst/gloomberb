@@ -74,9 +74,14 @@ export function useCloudSyncRuntime({
       if (!initialized) return;
       if (userId !== lastUserId) {
         // Switching Gloom Cloud accounts must not keep the previous book.
-        // Account 2 with no snapshot stays empty.
+        // Account 2 with no snapshot stays empty. A first sign-in with an
+        // empty local book must not wipe tickers already in memory (boot
+        // hydrate / repository) — that race is how watchlists vanish on refresh.
         const localTickers = readHostedTickers(userId);
-        dispatch({ type: "SET_TICKERS", tickers: tickerMap(localTickers) });
+        const switchingAccounts = !!lastUserId && lastUserId !== userId;
+        if (localTickers.length > 0 || switchingAccounts) {
+          dispatch({ type: "SET_TICKERS", tickers: tickerMap(localTickers) });
+        }
       }
       if (userId && userId !== lastUserId) {
         // User signed in (possibly after sign-out). Reset the sync pull state

@@ -9,6 +9,8 @@ import { padTo } from "../../../utils/format";
 import { DETAIL_TABS } from "../navigation";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import { PredictionSimilarTab, PredictionNewsTab } from "./adjacent-tabs";
+import { PredictionMarketDataTab } from "./data-tab";
+import type { AdjacentMarketLookup } from "./adjacent-match";
 import {
   formatPredictionEndsAt,
   formatPredictionMetric,
@@ -110,6 +112,20 @@ export function PredictionMarketDetailPane({
   scrollRef: RefObject<ScrollBoxRenderable | null>;
 }) {
   const adjacentClient = useMemo(() => getSharedAdjacentClient(), []);
+  const adjacentLookup = useMemo<AdjacentMarketLookup>(() => {
+    const summary = detail?.summary ?? selectedSummary;
+    if (!summary) return {};
+    return {
+      venue: summary.venue,
+      marketId: summary.marketId,
+      eventId: summary.eventId,
+      eventTicker: summary.eventTicker,
+      seriesTicker: summary.seriesTicker,
+      conditionId: summary.conditionId,
+      title: summary.title,
+      url: summary.url,
+    };
+  }, [detail?.summary, selectedSummary]);
   if (!selectedSummary) {
     return (
       <Box flexGrow={1} justifyContent="center">
@@ -339,10 +355,18 @@ export function PredictionMarketDetailPane({
         />
       )}
 
+      {detailTab === "data" && (
+        <PredictionMarketDataTab
+          focused={focused}
+          summary={summaryMetrics}
+          width={detailWidth}
+        />
+      )}
+
       {detailTab === "similar" && (
         <PredictionSimilarTab
           client={adjacentClient}
-          marketTitle={summaryMetrics.title}
+          lookup={adjacentLookup}
           onSelectAdjacentMarket={(market) => {
             if (market.url) openUrl(market.url);
           }}
@@ -352,7 +376,7 @@ export function PredictionMarketDetailPane({
       {detailTab === "news" && (
         <PredictionNewsTab
           client={adjacentClient}
-          marketTitle={summaryMetrics.title}
+          lookup={adjacentLookup}
         />
       )}
     </>

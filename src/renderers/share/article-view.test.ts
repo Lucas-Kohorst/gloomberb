@@ -28,6 +28,19 @@ describe("preferredArticleBody", () => {
 });
 
 describe("articleShareBodySource", () => {
+  test("does not render a raw HTML document dump as the article", () => {
+    const dump = "<!DOCTYPE html><html><head><title>x</title></head><body><p>Visible paragraph.</p></body></html>";
+    expect(articleShareBodySource({
+      type: "news",
+      id: "n",
+      title: "t",
+      url: "https://example.com/a",
+      source: "Example",
+      bodyHtml: dump,
+      summary: "Visible paragraph.",
+    })).toEqual({ kind: "markdown", text: "Visible paragraph." });
+  });
+
   test("renders plaintext bodyHtml with autolinks as markdown, not HTML", () => {
     const bodyHtml = [
       "Kalshi is opening the door to institutions.",

@@ -13,6 +13,7 @@ import {
   type DataTableKeyEvent,
   type StackSortPreference,
 } from "../../../components";
+import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { useShortcut } from "../../../react/input";
@@ -30,25 +31,13 @@ import {
   scanExternalPlugins,
   updatePluginAsync,
 } from "./operations";
-import type { ExternalPluginEntry, PluginRow } from "./types";
-
-function comparePluginRows(a: PluginRow, b: PluginRow, columnId: PluginColumnId): number {
-  switch (columnId) {
-    case "name":
-      return a.name.localeCompare(b.name);
-    case "description":
-      return a.description.localeCompare(b.description);
-    case "version":
-      return a.version.localeCompare(b.version);
-    case "source":
-      return a.source.localeCompare(b.source);
-    case "status": {
-      const aRank = a.hasError ? 2 : a.enabled ? 0 : 1;
-      const bRank = b.hasError ? 2 : b.enabled ? 0 : 1;
-      return aRank - bRank;
-    }
-  }
-}
+import {
+  applyPluginToggle,
+  comparePluginRows,
+  mergeMarketplaceRows,
+} from "./rows";
+import { searchCommunityPlugins } from "./search";
+import type { ExternalPluginEntry, PluginRow, PluginSearchResult } from "./types";
 
 function renderPluginCell(row: PluginRow, column: PluginColumn, selected: boolean): DataTableCell {
   const sel = selected ? colors.selectedText : undefined;
@@ -61,10 +50,11 @@ function renderPluginCell(row: PluginRow, column: PluginColumn, selected: boolea
       return { text: row.version, color: sel ?? colors.textDim };
     case "source":
       return {
-        text: row.source === "external" ? "external" : "built-in",
-        color: sel ?? (row.source === "external" ? colors.borderFocused : colors.textDim),
+        text: row.source === "github" ? "github" : row.source === "external" ? "external" : "built-in",
+        color: sel ?? (row.source === "built-in" ? colors.textDim : colors.borderFocused),
       };
     case "status":
+      if (row.source === "github") return { text: "available", color: sel ?? colors.borderFocused };
       if (row.hasError) return { text: "error", color: sel ?? colors.negative };
       if (!row.toggleable) return { text: "on", color: sel ?? colors.textDim };
       return {
@@ -105,10 +95,39 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
 
   const [externalEntries, setExternalEntries] = useState<ExternalPluginEntry[]>([]);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const [communityResults, setCommunityResults] = useState<PluginSearchResult[]>([]);
+  const [discoveryStatus, setDiscoveryStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
   useEffect(() => {
     setExternalEntries(scanExternalPlugins());
   }, [refreshCounter]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setCommunityResults([]);
+      setDiscoveryStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setDiscoveryStatus("loading");
+    void searchCommunityPlugins(query)
+      .then((found) => {
+        if (cancelled) return;
+        setCommunityResults(found);
+        setDiscoveryStatus("loaded");
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setCommunityResults([]);
+        setDiscoveryStatus("error");
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuery, refreshCounter]);
 
   const rows = useMemo(() => {
     if (!registry) return [];
@@ -151,18 +170,12 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   }, [registry, disabledPlugins, externalEntries]);
 
   const visibleRows = useMemo(() => {
-    const filtered = searchQuery
-      ? rows.filter((row) => {
-          const q = searchQuery.toLowerCase();
-          return (
-            row.name.toLowerCase().includes(q)
-            || row.id.toLowerCase().includes(q)
-            || row.description.toLowerCase().includes(q)
-          );
-        })
-      : rows;
-    return sortStackItems(filtered, sortPreference, comparePluginRows);
-  }, [rows, searchQuery, sortPreference]);
+    return sortStackItems(
+      mergeMarketplaceRows(rows, communityResults, searchQuery),
+      sortPreference,
+      comparePluginRows,
+    );
+  }, [rows, communityResults, searchQuery, sortPreference]);
 
   useEffect(() => {
     if (visibleRows.length === 0) {
@@ -188,30 +201,27 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   }, []);
 
   const togglePlugin = useCallback((row: PluginRow) => {
-    if (!row.toggleable) return;
-    const isEnabled = row.enabled;
+    const nextDisabled = applyPluginToggle(row, disabledPlugins);
+    if (!nextDisabled) return;
     dispatch({ type: "TOGGLE_PLUGIN", pluginId: row.id });
     const currentConfig = stateRef.current.config;
-    const nextDisabled = isEnabled
-      ? [...currentConfig.disabledPlugins, row.id]
-      : currentConfig.disabledPlugins.filter((id) => id !== row.id);
-    if (isEnabled && registry) {
+    if (row.enabled && registry) {
       for (const pId of registry.getPluginPaneIds(row.id)) {
         registry.hidePane(pId);
       }
     }
     scheduleConfigSave({ ...currentConfig, disabledPlugins: nextDisabled });
-    notify({ body: `${row.name} ${isEnabled ? "disabled" : "enabled"}`, type: "info" });
-  }, [dispatch, notify, registry, stateRef]);
+    notify({ body: `${row.name} ${row.enabled ? "disabled" : "enabled"}`, type: "info" });
+  }, [disabledPlugins, dispatch, notify, registry, stateRef]);
 
-  const handleInstall = useCallback(async () => {
-    const ref = installRef.trim();
-    if (!ref) return;
+  const handleInstallRef = useCallback(async (ref: string) => {
+    const trimmed = ref.trim();
+    if (!trimmed) return;
     setBusy(true);
     setBusyMessage("Installing...");
     setError(null);
     try {
-      const result = await installPluginAsync(ref);
+      const result = await installPluginAsync(trimmed);
       notify({ body: result.message, type: result.success ? "success" : "error" });
       if (result.success) {
         setInstallMode(false);
@@ -226,10 +236,14 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       setBusy(false);
       setBusyMessage(null);
     }
-  }, [installRef, notify]);
+  }, [notify]);
+
+  const handleInstallForm = useCallback(async () => {
+    await handleInstallRef(installRef);
+  }, [handleInstallRef, installRef]);
 
   const handleUpdate = useCallback(async (row: PluginRow) => {
-    if (!row.dirName) return;
+    if (row.source !== "external" || !row.dirName) return;
     setBusy(true);
     setBusyMessage(`Updating ${row.dirName}...`);
     setError(null);
@@ -248,7 +262,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   }, [notify]);
 
   const handleRemove = useCallback(async (row: PluginRow) => {
-    if (!row.dirName) return;
+    if (row.source !== "external" || !row.dirName) return;
     setBusy(true);
     setBusyMessage(`Removing ${row.dirName}...`);
     setError(null);
@@ -297,6 +311,18 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     if (selectedRow) void handleRemove(selectedRow);
   }, [handleRemove, selectedRow]);
 
+  const openSelected = useCallback(() => {
+    if (selectedRow?.url) openUrl(selectedRow.url);
+  }, [selectedRow]);
+
+  const installSelectedOrPrompt = useCallback(() => {
+    if (selectedRow?.source === "github" && selectedRow.fullName) {
+      void handleInstallRef(selectedRow.fullName);
+      return;
+    }
+    enterInstallMode();
+  }, [enterInstallMode, handleInstallRef, selectedRow]);
+
   useShortcut((event) => {
     if (!focused || !installMode) return;
     if (event.name === "escape") {
@@ -307,7 +333,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     if (event.name === "enter" || event.name === "return") {
       event.stopPropagation();
       event.preventDefault?.();
-      void handleInstall();
+      void handleInstallForm();
     }
   }, { enabled: focused && installMode, allowEditable: true });
 
@@ -331,7 +357,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     if (isPlainKey(event, "i")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      enterInstallMode();
+      installSelectedOrPrompt();
       return true;
     }
     if (isPlainKey(event, "u")) {
@@ -344,6 +370,12 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       event.preventDefault?.();
       event.stopPropagation?.();
       removeSelected();
+      return true;
+    }
+    if (isPlainKey(event, "o")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSelected();
       return true;
     }
     if (isPlainKey(event, "r")) {
@@ -359,20 +391,35 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       return true;
     }
     return false;
-  }, [installMode, searchFocused, toggleSelected, enterInstallMode, updateSelected, removeSelected, refresh, focusSearch]);
+  }, [
+    installMode,
+    searchFocused,
+    toggleSelected,
+    installSelectedOrPrompt,
+    updateSelected,
+    removeSelected,
+    openSelected,
+    refresh,
+    focusSearch,
+  ]);
 
   const canToggle = selectedRow?.toggleable === true;
   const canUpdate = selectedRow?.source === "external" && !!selectedRow?.dirName && managementAvailable;
   const canRemove = selectedRow?.source === "external" && !!selectedRow?.dirName && managementAvailable;
+  const canInstallSelected = selectedRow?.source === "github" && !!selectedRow.fullName && managementAvailable;
+  const canOpen = !!selectedRow?.url;
 
   usePaneFooter(paneId, () => ({
     info: [
       ...(busy && busyMessage ? [{ id: "busy", parts: [{ text: busyMessage, tone: "muted" as const }] }] : []),
+      ...(discoveryStatus === "loading" && !busy
+        ? [{ id: "searching", parts: [{ text: "Searching GitHub…", tone: "muted" as const }] }]
+        : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: installMode
       ? [
-          { id: "install-submit", key: "Enter", label: " install", onPress: handleInstall, disabled: busy || !installRef.trim() },
+          { id: "install-submit", key: "Enter", label: " install", onPress: handleInstallForm, disabled: busy || !installRef.trim() },
           { id: "install-cancel", key: "Esc", label: " cancel", onPress: cancelInstall },
         ]
       : [
@@ -380,7 +427,16 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
           { id: "search", key: "s", label: "earch", onPress: focusSearch, disabled: installMode },
           { id: "toggle", key: "t", label: "oggle", onPress: toggleSelected, disabled: !canToggle || busy },
           ...(managementAvailable
-            ? [{ id: "install", key: "i", label: "nstall", onPress: enterInstallMode, disabled: busy }]
+            ? [{
+              id: "install",
+              key: "i",
+              label: "nstall",
+              onPress: installSelectedOrPrompt,
+              disabled: busy || (canInstallSelected === false && selectedRow?.source === "github"),
+            }]
+            : []),
+          ...(canOpen
+            ? [{ id: "open", key: "o", label: "pen", onPress: openSelected }]
             : []),
           ...(canUpdate
             ? [{ id: "update", key: "u", label: "pdate", onPress: updateSelected, disabled: busy }]
@@ -392,17 +448,22 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   }), [
     busy,
     busyMessage,
+    discoveryStatus,
     error,
     installMode,
-    handleInstall,
+    handleInstallForm,
     cancelInstall,
     refresh,
     focusSearch,
     toggleSelected,
-    enterInstallMode,
+    installSelectedOrPrompt,
+    openSelected,
     canToggle,
     canUpdate,
     canRemove,
+    canOpen,
+    canInstallSelected,
+    selectedRow,
     updateSelected,
     removeSelected,
     installRef,
@@ -424,11 +485,11 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
             width={fieldWidth}
             placeholder="user/repo or https://github.com/user/repo"
             onChange={setInstallRef}
-            onSubmit={handleInstall}
+            onSubmit={handleInstallForm}
           />
           <Box height={1} />
           <Box flexDirection="row" gap={2}>
-            <Button label="Install" variant="primary" onPress={handleInstall} shortcut="Enter" disabled={busy || !installRef.trim()} />
+            <Button label="Install" variant="primary" onPress={handleInstallForm} shortcut="Enter" disabled={busy || !installRef.trim()} />
             <Button label="Cancel" variant="secondary" onPress={cancelInstall} shortcut="Esc" />
           </Box>
           <Box height={1} />
@@ -458,21 +519,12 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     );
   }
 
-  if (rows.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box padding={1} flexDirection="column" gap={1}>
-          <EmptyState
-            title="No plugins installed."
-            message="Install a plugin from GitHub to extend Gloomberb."
-          />
-          {managementAvailable && (
-            <Button label="Install plugin" variant="primary" onPress={enterInstallMode} shortcut="i" />
-          )}
-        </Box>
-      </Box>
-    );
-  }
+  const emptyTitle = searchQuery.trim()
+    ? (discoveryStatus === "loading" ? "Searching GitHub…" : "No plugins match your search.")
+    : "Search installed plugins or GitHub.";
+  const emptyHint = searchQuery.trim()
+    ? "Try another keyword, or press [i] to install user/repo."
+    : "Press [s] to search or [i] to install from GitHub.";
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -497,6 +549,10 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         getItemKey={(row) => row.id}
         renderCell={(row, column, _index, rowState) => renderPluginCell(row, column, rowState.selected)}
         onActivate={(row) => {
+          if (row.source === "github") {
+            if (row.fullName) void handleInstallRef(row.fullName);
+            return;
+          }
           if (row.toggleable) togglePlugin(row);
         }}
         onRootKeyDown={handleRootKeyDown}
@@ -508,7 +564,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
             width={width}
             focusToken={searchFocusToken}
             inputRef={searchInputRef}
-            placeholder="name or description"
+            placeholder="installed plugin or GitHub keyword"
             debounceMs={80}
             onFocus={focusSearch}
             onBlur={blurSearch}
@@ -516,8 +572,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
             onQueryChange={setSearchQuery}
           />
         )}
-        emptyStateTitle="No plugins match your search."
-        emptyStateHint="Press [s] to change your search or [i] to install a new plugin."
+        emptyStateTitle={emptyTitle}
+        emptyStateHint={emptyHint}
         showHorizontalScrollbar={false}
       />
     </Box>

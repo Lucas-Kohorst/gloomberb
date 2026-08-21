@@ -114,6 +114,7 @@ export function warmDataCatalogSources(): Promise<void> {
     loadCatalogBenchRows(),
     loadCatalogPollRows(),
     loadCatalogAdjacentIndices(),
+    import("./catalog-owid").then((mod) => mod.loadCatalogOwidRows("")),
   ]).then(() => undefined);
 }
 

@@ -16,6 +16,7 @@ import {
   resolveTwitterFeedQuery,
   sortedTweets,
   tweetTextRowHeight,
+  tweetTickers,
 } from "./model";
 
 function feed(id: string, query: string) {
@@ -138,6 +139,22 @@ describe("tweet table sort", () => {
     const mid = makeTweet({ id: "mid", createdAt: "2026-08-20T11:00:00.000Z", metrics: { views: 500, likes: 20, retweets: 0, replies: 0, quotes: 0, bookmarks: 0 } });
     const rows = sortedTweets([older, newer, mid], DEFAULT_TWEET_SORT.columnId, DEFAULT_TWEET_SORT.direction);
     expect(rows.map((tweet) => tweet.id)).toEqual(["new", "mid", "old"]);
+  });
+});
+
+describe("tweetTickers", () => {
+  test("reads cashtags from the tweet and any quoted or retweeted text", () => {
+    const tweet = makeTweet({
+      text: "Agree",
+      quoted_tweet: { text: "Long $NVDA into earnings" },
+    } as never);
+    expect(tweetTickers(tweet)).toEqual(["NVDA"]);
+
+    const retweet = makeTweet({
+      text: "Interesting $BTC take",
+      retweeted_status: { text: "Also watching $ETH" },
+    } as never);
+    expect(tweetTickers(retweet)).toEqual(["BTC", "ETH"]);
   });
 });
 

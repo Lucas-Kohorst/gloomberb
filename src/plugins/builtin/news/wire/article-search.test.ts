@@ -6,6 +6,7 @@ import {
   ARTICLE_SEARCH_QUERY,
   cancelRssNewsWarm,
   looksLikeArticleQuery,
+  scheduleLatestNewsWarm,
   scheduleRssNewsWarm,
   searchNewsArticles,
   tokenizeArticleQuery,
@@ -112,6 +113,18 @@ describe("scheduleRssNewsWarm", () => {
     expect(polls).toEqual([]);
 
     scheduleRssNewsWarm();
+    await Bun.sleep(20);
+    expect(polls).toEqual([ARTICLE_SEARCH_QUERY]);
+  });
+
+  test("scheduleLatestNewsWarm polls without a pane mount", async () => {
+    const polls: unknown[] = [];
+    setSharedNewsService({
+      poll: async (query: unknown) => {
+        polls.push(query);
+      },
+    } as never);
+    scheduleLatestNewsWarm();
     await Bun.sleep(20);
     expect(polls).toEqual([ARTICLE_SEARCH_QUERY]);
   });

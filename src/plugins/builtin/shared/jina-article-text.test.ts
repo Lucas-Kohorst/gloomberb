@@ -4,8 +4,12 @@ import {
   classifyReaderHttpFailure,
   classifyReaderThrow,
   htmlMarkupPresent,
+  htmlToPlainText,
   isBoilerplateArticleBody,
+  isPaywallStub,
+  looksLikeHtmlDocument,
   preferredArticleBody,
+  readableArticleText,
   readerFallbackNotice,
   shouldSkipJinaForKnownBody,
   stripJinaPreamble,
@@ -103,6 +107,24 @@ describe("htmlMarkupPresent", () => {
   });
 });
 
+describe("readableArticleText", () => {
+  test("strips an HTML document dump down to visible copy", () => {
+    const dump = [
+      "<!DOCTYPE html><html><head><style>nav{display:block}</style></head>",
+      "<body><nav>Markets</nav><p>The S&amp;P 500 closed higher.</p></body></html>",
+    ].join("");
+    expect(looksLikeHtmlDocument(dump)).toBe(true);
+    expect(htmlToPlainText(dump)).toContain("The S&amp;P 500 closed higher.");
+    expect(htmlToPlainText(dump)).not.toContain("<style>");
+    expect(readableArticleText(dump)).not.toContain("<nav>");
+  });
+
+  test("leaves markdown autolinks alone", () => {
+    const body = "See <https://kalshi.com/markets> for the contracts.";
+    expect(readableArticleText(body)).toBe(body);
+  });
+});
+
 describe("stripJinaPreamble", () => {
   test("removes the reader metadata header", () => {
     const raw = [
@@ -182,6 +204,20 @@ describe("cleanJinaArticle", () => {
     expect(isBoilerplateArticleBody(cleaned)).toBe(true);
   });
 
+  test("drops a Substack paywall stub instead of publishing it as the article", () => {
+    const raw = [
+      "Title: Could Prediction Markets Start Having A Republican Problem",
+      "",
+      "Markdown Content:",
+      "",
+      "This post is for paying subscribers.",
+      "",
+      "Subscribe to continue reading.",
+    ].join("\n");
+    expect(isPaywallStub("This post is for paying subscribers.")).toBe(true);
+    expect(cleanJinaArticle(raw)).toBe("");
+  });
+
   test("returns empty when Jina only got a captcha or access-denied wall", () => {
     const raw = [
       "Title: Access to this page has been denied",
@@ -224,6 +260,13 @@ describe("preferredArticleBody", () => {
     expect(preferredArticleBody("summary", null)).toBe("summary");
     expect(preferredArticleBody("", "extracted")).toBe("extracted");
     expect(preferredArticleBody("", "")).toBe("");
+  });
+
+  test("keeps the summary when extraction is a paywall stub", () => {
+    expect(preferredArticleBody(
+      "Kalshi is opening the door to institutions.",
+      "This post is for paying subscribers. Subscribe to continue reading.",
+    )).toBe("Kalshi is opening the door to institutions.");
   });
 });
 
@@ -273,6 +316,12 @@ describe("shouldSkipJinaForKnownBody", () => {
   test("skips extraction only when RSS already returned a long article body", () => {
     expect(shouldSkipJinaForKnownBody("short teaser")).toBe(false);
     expect(shouldSkipJinaForKnownBody("x".repeat(500))).toBe(true);
+  });
+
+  test("does not skip Jina for a long HTML chrome dump or paywall stub", () => {
+    const dump = `<!DOCTYPE html><html><body>${"<nav>Markets</nav>".repeat(40)}</body></html>`;
+    expect(shouldSkipJinaForKnownBody(dump)).toBe(false);
+    expect(shouldSkipJinaForKnownBody("This post is for paying subscribers. ".repeat(20))).toBe(false);
   });
 });
 

@@ -17,9 +17,11 @@ import {
 } from "../../../plugins/builtin/news/wire/article-search";
 import { buildArticleSearchResultItems, useAdjacentArticleSearch } from "../routes/root/article-results";
 import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
-import { buildChartSeriesAssistContext } from "../../../plugins/builtin/chart-composer/series-catalog";
+import {
+  buildChartSeriesAssistContext,
+  looksLikeCatalogSeriesQuery,
+} from "../../../plugins/builtin/chart-composer/series-catalog";
 import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
-import { looksLikePredictionMarketQuery } from "../../../plugins/builtin/chart-composer/prediction-series";
 import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
@@ -234,9 +236,9 @@ export function CommandBar({
     pluginRegistry,
     rootQuery,
   ]);
-  const predictionChartQuery = !currentRoute
+  const catalogChartQuery = !currentRoute
     && rootShortcutIntent.kind === "none"
-    && looksLikePredictionMarketQuery(rootQuery);
+    && looksLikeCatalogSeriesQuery(rootQuery);
   const chartSeriesIntent = rootShortcutIntent.kind !== "none"
     && rootShortcutIntent.source === "pane-template"
     && rootShortcutIntent.argKind === "text"
@@ -255,9 +257,9 @@ export function CommandBar({
     [activeTickerData, activeTickerSymbol],
   );
   const chartSeriesItems = useChartSeriesSuggestions({
-    argText: chartSeriesIntent?.argText ?? (predictionChartQuery ? rootQuery : ""),
+    argText: chartSeriesIntent?.argText ?? (catalogChartQuery ? rootQuery : ""),
     defaultInstrument: chartSeriesDefaultInstrument,
-    enabled: !currentRoute && (!!chartSeriesIntent || predictionChartQuery),
+    enabled: !currentRoute && (!!chartSeriesIntent || catalogChartQuery),
     onRun: (expression) => {
       const templateId = chartSeriesTemplateId ?? "chart-composer-pane";
       pluginRegistry.createPaneFromTemplate(templateId, { arg: expression });

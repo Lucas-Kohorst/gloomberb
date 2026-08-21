@@ -1,11 +1,7 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
 import { parseOwidShortcutArg } from "../../../sources/owid/parse";
-import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
 import { OwidPane } from "./pane";
-import { OWID_CONNECTION_ID, OWID_PANE_ID } from "./types";
-
-let disposeConnection: (() => void) | null = null;
+import { OWID_PANE_ID } from "./types";
 
 export const owidModule: PluginModule = {
   panes: [
@@ -62,20 +58,4 @@ export const owidModule: PluginModule = {
       },
     },
   ],
-
-  setup() {
-    disposeConnection = registerConnectionSource({
-      id: OWID_CONNECTION_ID,
-      name: "Our World in Data",
-      kind: "data",
-      pluginId: ADJACENT_PLUGIN_ID,
-      priority: 270,
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeConnection?.();
-    disposeConnection = null;
-  },
 };

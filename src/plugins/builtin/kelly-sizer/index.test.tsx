@@ -126,6 +126,28 @@ describe("KellySizerPane", () => {
     expect(frame).not.toMatch(/Current\s+10000\s+USD/);
   });
 
+  test("crypto quote stays on return modes instead of PM odds", async () => {
+    const ticker = createTicker({
+      symbol: "BTC-USD",
+      exchange: "CCC",
+      assetCategory: "CRYPTO",
+    });
+    await renderPane({
+      config: createSizerConfig("BTC-USD"),
+      ticker,
+      financials: createFinancials({ symbol: "BTC-USD", price: 60_000 }),
+      paneState: { mode: "prediction-market" },
+    });
+    await flushFrame();
+    await flushFrame();
+
+    const frame = testSetup!.captureCharFrame();
+    expect(frame).toContain("BTC-USD · crypto");
+    expect(frame).toContain("Binary");
+    expect(frame).toMatch(/Win p/);
+    expect(frame).not.toMatch(/Est p/);
+  });
+
   test("toggles sensitivity with s", async () => {
     await renderPane();
     await flushFrame();

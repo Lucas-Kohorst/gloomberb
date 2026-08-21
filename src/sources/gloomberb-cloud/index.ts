@@ -29,6 +29,7 @@ import { resolvePriceHistoryCurrencyUnit } from "../../utils/currency-units";
 import { canonicalTickerKey } from "../../utils/exchanges";
 import { normalizePriceHistory } from "../../utils/price-history";
 import { createProviderMiss } from "../provider-errors";
+import { isCryptoMarketInstrument } from "../coingecko/ids";
 import { hasMalformedIntradayHistory } from "../../time-series/history-quality";
 import {
   cloudNewsParams,
@@ -154,11 +155,19 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     return CLOUD_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
   }
 
-  async canProvide(): Promise<boolean> {
+  async canProvide(ticker?: string, exchange?: string): Promise<boolean> {
+    if (ticker && isCryptoMarketInstrument(ticker, exchange)) return false;
     return !!(await apiClient.ensureVerifiedSession());
   }
 
+  private rejectCrypto(ticker: string, exchange: string, kind: string): void {
+    if (isCryptoMarketInstrument(ticker, exchange)) {
+      throw createProviderMiss(`${kind} for crypto ${ticker} is served by CoinGecko`);
+    }
+  }
+
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
+    this.rejectCrypto(ticker, exchange, "Financials");
     await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancials(ticker, exchange);
@@ -176,37 +185,48 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: CachedFinancialsTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<TickerFinancialsBatchResult[]> {
+    const equityIndexes: number[] = [];
+    const equityTargets: CachedFinancialsTarget[] = [];
+    for (const [index, target] of targets.entries()) {
+      if (isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
+      equityIndexes.push(index);
+      equityTargets.push(target);
+    }
+    const results: TickerFinancialsBatchResult[] = targets.map((target) => ({ target, financials: null }));
+    if (equityTargets.length === 0) return results;
     await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancialsBatch(
-        targets.map((target) => ({
+        equityTargets.map((target) => ({
           symbol: target.symbol,
           exchange: target.exchange,
         })),
         options.forceRefresh ? "refresh" : "cache-first",
       );
       const payload = unwrapRequiredCloudResponse(response, "Cloud financials are unavailable");
-      return payload.items.map((item, index) => {
-        const target = targets[index] ?? {
+      payload.items.forEach((item, itemIndex) => {
+        const targetIndex = equityIndexes[itemIndex];
+        const target = equityTargets[itemIndex] ?? {
           symbol: item.symbol,
           exchange: item.exchange,
         };
+        if (targetIndex == null) return;
         if ((item.status === "success" || item.status === "partial") && item.data) {
-          return {
-            target,
-            financials: mapCloudFinancials(item.data),
-          };
+          results[targetIndex] = { target, financials: mapCloudFinancials(item.data) };
+          return;
         }
-        return {
+        results[targetIndex] = {
           target,
           financials: null,
           error: mapBatchError(item, `Cloud financials are unavailable for ${target.symbol}`),
         };
       });
+      return results;
     }, "Cloud financials are unavailable");
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
+    this.rejectCrypto(ticker, exchange, "Quotes");
     await requireVerifiedSession();
     return withCloudFallback(
       async () => {
@@ -227,33 +247,43 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<QuoteBatchResult[]> {
+    const equityIndexes: number[] = [];
+    const equityTargets: QuoteSubscriptionTarget[] = [];
+    for (const [index, target] of targets.entries()) {
+      if (isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
+      equityIndexes.push(index);
+      equityTargets.push(target);
+    }
+    const results: QuoteBatchResult[] = targets.map((target) => ({ target, quote: null }));
+    if (equityTargets.length === 0) return results;
     await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudQuotesBatch(
-        targets.map((target) => ({
+        equityTargets.map((target) => ({
           symbol: target.symbol,
           exchange: target.exchange,
         })),
         options.forceRefresh ? "refresh" : "cache-first",
       );
       const payload = unwrapRequiredCloudResponse(response, "Cloud quotes are unavailable");
-      return payload.items.map((item, index) => {
-        const target = targets[index] ?? {
+      payload.items.forEach((item, itemIndex) => {
+        const targetIndex = equityIndexes[itemIndex];
+        const target = equityTargets[itemIndex] ?? targets[targetIndex ?? 0] ?? {
           symbol: item.symbol,
           exchange: item.exchange,
         };
+        if (targetIndex == null) return;
         if ((item.status === "success" || item.status === "partial") && item.data) {
-          return {
-            target,
-            quote: mapQuote(item.data),
-          };
+          results[targetIndex] = { target, quote: mapQuote(item.data) };
+          return;
         }
-        return {
+        results[targetIndex] = {
           target,
           quote: null,
           error: mapBatchError(item, `Cloud quotes are unavailable for ${target.symbol}`),
         };
       });
+      return results;
     }, "Cloud quotes are unavailable");
   }
 
@@ -300,6 +330,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
+    this.rejectCrypto(ticker, exchange, "History");
     await requireVerifiedSession();
     const request = toHistoryRequest(range);
     const response = await withCloudFallback(
@@ -316,6 +347,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
+    this.rejectCrypto(ticker, exchange, "History");
     await requireVerifiedSession();
     const interval = toCloudInterval(resolution);
     const endDate = new Date();
@@ -340,6 +372,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     barSize: string,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
+    this.rejectCrypto(ticker, exchange, "History");
     await requireVerifiedSession();
     const interval = toCloudInterval(barSize);
     const includeTime = /(min|h)$/i.test(interval);
@@ -374,7 +407,9 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       void apiClient.ensureVerifiedSession().catch(() => {});
     }
     const targetMap = new Map<string, QuoteSubscriptionTarget[]>();
-    for (const target of targets) {
+    const streamTargets = targets.filter((target) => !isCryptoMarketInstrument(target.symbol, target.exchange));
+    if (streamTargets.length === 0) return () => {};
+    for (const target of streamTargets) {
       const key = quoteTargetKey(target.symbol, target.exchange);
       const matches = targetMap.get(key) ?? [];
       matches.push(target);
@@ -382,7 +417,7 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     }
 
     return apiClient.subscribeQuotes(
-      targets.map((target) => ({
+      streamTargets.map((target) => ({
         symbol: target.symbol,
         exchange: target.exchange,
         surface: target.surface,

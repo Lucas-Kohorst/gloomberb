@@ -1,6 +1,6 @@
 import type { AppConfig } from "../../../types/config";
 import { tryLocalStorage } from "../../../utils/browser-storage";
-import { getHostedConfigUserId, readLastHostedUserId } from "../../../data/config/hosted-user-persist";
+import { readLastHostedUserId, resolveHostedPersistUserId } from "../../../data/config/hosted-user-persist";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "./types";
 
 export const HOSTED_BYOK_STORAGE_KEY = "gloomberb:hosted-byok-keys";
@@ -26,7 +26,7 @@ function parseStored(raw: string | null): ByokStoredConfig | null {
 }
 
 /** Reads BYOK keys persisted locally on the hosted client. */
-export function readHostedByokKeys(userId = getHostedConfigUserId()): ByokStoredConfig | null {
+export function readHostedByokKeys(userId = resolveHostedPersistUserId()): ByokStoredConfig | null {
   const storage = tryLocalStorage();
   if (!storage || !userId) return null;
   const stored = parseStored(storage.getItem(storageKey(userId)));
@@ -44,7 +44,7 @@ export function readHostedByokKeys(userId = getHostedConfigUserId()): ByokStored
 }
 
 /** Writes BYOK keys from an AppConfig to hosted localStorage. */
-export function writeHostedByokKeys(config: AppConfig, userId = getHostedConfigUserId()): void {
+export function writeHostedByokKeys(config: AppConfig, userId = resolveHostedPersistUserId()): void {
   const storage = tryLocalStorage();
   if (!storage || !userId) return;
   const stored = config.pluginConfig[BYOK_PLUGIN_ID]?.[BYOK_API_KEYS_CONFIG_KEY];

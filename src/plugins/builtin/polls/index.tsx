@@ -1,10 +1,7 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
 import { PollsPane } from "./pane";
 import { POLLS_PANE_ID } from "./types";
-import { ADJACENT_PLUGIN_ID } from "../adjacent/types";
-
-let disposeVoteHubConnection: (() => void) | null = null;
+import { buildPollsPaneSettingsDef } from "./settings";
 
 export const pollsModule: PluginModule = {
   panes: [
@@ -16,6 +13,7 @@ export const pollsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
+      settings: (context) => buildPollsPaneSettingsDef(context.settings),
     },
   ],
 
@@ -31,20 +29,4 @@ export const pollsModule: PluginModule = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
-
-  setup() {
-    disposeVoteHubConnection = registerConnectionSource({
-      id: "votehub",
-      name: "VoteHub",
-      kind: "data",
-      pluginId: ADJACENT_PLUGIN_ID,
-      priority: 300,
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeVoteHubConnection?.();
-    disposeVoteHubConnection = null;
-  },
 };

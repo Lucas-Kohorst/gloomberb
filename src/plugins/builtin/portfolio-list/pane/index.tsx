@@ -56,9 +56,8 @@ import {
 import { usePortfolioPaneStreaming } from "./streaming";
 import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
+import { CHART_COMPOSER_TEMPLATE_ID } from "../../shared/graph-pop-out";
 import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
-
-const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();

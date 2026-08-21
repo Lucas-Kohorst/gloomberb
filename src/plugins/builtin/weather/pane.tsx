@@ -26,6 +26,7 @@ import { usePluginState } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import {
   EMPTY_WEATHER_ARCHIVE,
   WEATHER_ARCHIVE_SCHEMA_VERSION,
@@ -618,6 +619,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const openSelected = useCallback(() => {
     openUrl(TWC_KALSHI_URL);
   }, []);
+  const popOutChart = useGraphChartPopOut();
+  const graphSelected = useCallback(() => {
+    if (!selected) return;
+    popOutChart(`WX:${selected.stationId}:high`);
+  }, [popOutChart, selected]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -640,6 +646,12 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       load(scope);
       return true;
     }
+    if (isPlainKey(event, "g") && selected) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return true;
+    }
     if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -653,7 +665,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [focusSearch, load, openSelected, scope, tab]);
+  }, [focusSearch, graphSelected, load, openSelected, scope, selected, tab]);
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
@@ -676,6 +688,12 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       load(scope);
       return true;
     }
+    if (isPlainKey(event, "g") && selected) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      graphSelected();
+      return true;
+    }
     if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -683,7 +701,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [load, openSelected, scope]);
+  }, [graphSelected, load, openSelected, scope, selected]);
 
   const columns = useMemo(() => createColumns(width), [width]);
   const reportColumns = useMemo(() => createReportColumns(width), [width]);
@@ -718,7 +736,6 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     loading: status === "loading",
     error,
     info: [
-      poll.segment,
       ...(tab === "report" && report.samples > 0
         ? [{ id: "hit", parts: [{ text: `${formatHitRate(report.hitRate)} on ${reportKind === "implied" ? "Kalshi" : "TWC"} fcst`, tone: "muted" as const }] }]
         : []),
@@ -729,7 +746,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
       ...(backfillPending ? [{ id: "backfill", parts: [{ text: "backfilling Y.FC", tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: [
+      ...(tab !== "report" && selected
+        ? [{ id: "graph", key: "g", label: "raph", onPress: graphSelected }]
+        : []),
       ...(tab === "report"
         ? [{ id: "kind", key: "k", label: reportKind === "twc" ? "alshi implied" : " TWC forecast", onPress: () => setReportKind((current) => current === "twc" ? "implied" : "twc") }]
         : (!detailOpen ? [{ id: "search", key: "s", label: "earch", onPress: focusSearch }] : [])),

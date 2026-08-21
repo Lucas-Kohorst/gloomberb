@@ -157,6 +157,8 @@ export interface AppConfig {
   valueFlashingEnabled: boolean;
   autoRefreshInterval: number;
   fontSize: number;
+  /** Web/desktop UI face. Ignored by the terminal renderer. */
+  fontFamily: string;
   recentTickers: string[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;
@@ -176,6 +178,7 @@ export function normalizePaneId(paneId: string): string {
   if (paneId === "comparison-chart" || paneId === "ticker-chart" || paneId === "fundamental-graph") {
     return CHART_COMPOSER_PANE_ID;
   }
+  if (paneId === "plugin-discovery") return "plugin-market";
   return paneId;
 }
 
@@ -722,6 +725,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     valueFlashingEnabled: true,
     autoRefreshInterval: 0,
     fontSize: 12,
+    fontFamily: "ibm-plex-sans",
     recentTickers: [],
   };
 }

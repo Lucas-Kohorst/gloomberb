@@ -44,4 +44,12 @@ describe("normalizeSubstackArticle", () => {
     const article = normalizeSubstackArticle(makeSummary());
     expect(article?.categories).toContain("newsletter");
   });
+
+  test("extracts tickers from title and body with the shared matcher", () => {
+    const article = normalizeSubstackArticle(makeSummary({
+      title: "Semis and $NVDA",
+      bodyHtml: "<p>NASDAQ:MSFT and (AAPL) in the same tape.</p>",
+    }));
+    expect(article?.tickers).toEqual(["NVDA", "MSFT", "AAPL"]);
+  });
 });

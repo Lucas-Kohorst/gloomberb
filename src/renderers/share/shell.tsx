@@ -66,7 +66,8 @@ export function ShareShell({
       if (isTypingTarget(event.target)) return;
       if ((event.key === "o" || event.key === "O") && openInTerminalHref) {
         event.preventDefault();
-        window.location.assign(openInTerminalHref);
+        const opened = window.open(openInTerminalHref, "_blank", "noopener,noreferrer");
+        if (!opened) window.location.assign(openInTerminalHref);
         return;
       }
       if ((event.key === "a" || event.key === "A") && onArchive && archiveEnabled) {
@@ -106,6 +107,8 @@ export function ShareShell({
             <a
               className="share-pane-hint"
               href={openInTerminalHref}
+              target="_blank"
+              rel="noopener noreferrer"
               aria-label={openAria}
             >
               <span className="share-pane-hint-key">[o]</span>{openLabel}

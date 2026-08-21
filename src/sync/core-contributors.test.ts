@@ -81,6 +81,24 @@ describe("core sync contributors", () => {
     expect(payload.pluginConfig?.application).toEqual({ theme: "dark" });
   });
 
+  test("syncs font size and language in core.config", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-sync-test");
+    config.fontSize = 18;
+    config.language = "es";
+    const payload = await coreConfigSyncContributor.collect({
+      state: createInitialState(config),
+    }) as { fontSize?: number; language?: string };
+    expect(payload.fontSize).toBe(18);
+    expect(payload.language).toBe("es");
+
+    const merged = __syncContributorInternalsForTests.mergeConfigPayload(
+      createDefaultConfig("/tmp/gloomberb-sync-test"),
+      payload,
+    );
+    expect(merged?.fontSize).toBe(18);
+    expect(merged?.language).toBe("es");
+  });
+
   test("keeps a newer hosted local config instead of applying a stale pull", async () => {
     const values = new Map<string, string>();
     Object.defineProperty(globalThis, "localStorage", {

@@ -4,6 +4,7 @@ import type { InlineTickerCatalogEntry } from "../../../../state/hooks/inline-ti
 import { colors } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
 import type { ChatMessage, ChatUserSummary } from "../../../../api-client";
+import { isChatUserOnline, type ChatPresenceLookup } from "../peer-online";
 import { DesktopChatMessage } from "../message/desktop";
 import { UserProfilePopover } from "../message/profile-popover";
 import { TerminalChatMessage } from "../message/terminal";
@@ -39,6 +40,9 @@ interface ChatTranscriptProps {
   selectedIdx: number;
   setHoveredIdx: Dispatch<SetStateAction<number | null>>;
   showProfilePopover: (user: ChatUserSummary) => void;
+  openProfile: (user: ChatUserSummary) => void;
+  presence: ChatPresenceLookup;
+  profileOnline?: boolean;
   onSetUpProfile: () => void;
   stickyTranscript: boolean;
   user: { id: string; username: string; emailVerified: boolean } | null;
@@ -72,6 +76,9 @@ export function ChatTranscript({
   selectedIdx,
   setHoveredIdx,
   showProfilePopover,
+  openProfile,
+  presence,
+  profileOnline,
   stickyTranscript,
   user,
   userByUsername,
@@ -121,6 +128,8 @@ export function ChatTranscript({
               openTicker={openTicker}
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
+              onUserActivate={openProfile}
+              authorOnline={isChatUserOnline(msg.user, presence)}
               beginReplyTo={beginReplyTo}
               beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}
@@ -143,6 +152,8 @@ export function ChatTranscript({
               openTicker={openTicker}
               onUserHover={showProfilePopover}
               onUserHoverEnd={scheduleProfilePopoverClose}
+              onUserActivate={openProfile}
+              authorOnline={isChatUserOnline(msg.user, presence)}
               beginReplyTo={beginReplyTo}
               beginEditMessage={beginEditMessage}
               jumpToMessage={jumpToMessage}
@@ -160,6 +171,7 @@ export function ChatTranscript({
           onClose={scheduleProfilePopoverClose}
           onKeepOpen={cancelProfilePopoverClose}
           isOwnProfile={profilePopoverUser.id === user?.id}
+          online={profileOnline ?? isChatUserOnline(profilePopoverUser, presence)}
           onSetUpProfile={onSetUpProfile}
         />
       )}

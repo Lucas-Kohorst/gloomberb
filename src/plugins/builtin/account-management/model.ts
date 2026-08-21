@@ -24,7 +24,10 @@ export type AccountFieldKey =
   | "aiProvidersAction"
   | "upgradeAction"
   | "passwordAction"
-  | "deleteAccountAction";
+  | "deleteAccountAction"
+  | "themeAction"
+  | "fontFamilyAction"
+  | "fontSizeAction";
 
 export interface AccountDraft {
   username: string;
@@ -59,6 +62,7 @@ export interface ProfileAnalyticsPreview {
 }
 
 export const NO_PORTFOLIO_VALUE = "__none__";
+export const PROFILE_DRAFT_CONFIG_KEY = "profileDraft";
 
 export function profileToDraft(profile: AccountProfile | null): AccountDraft {
   return {
@@ -76,6 +80,61 @@ export function profileToDraft(profile: AccountProfile | null): AccountDraft {
     positionAlertsEnabled: profile?.positionAlertsEnabled === false ? false : true,
     chatEmailNotificationsEnabled: profile?.chatEmailNotificationsEnabled === false ? false : true,
   };
+}
+
+function isAccountDraft(value: unknown): value is AccountDraft {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.username === "string"
+    && typeof record.name === "string"
+    && typeof record.company === "string"
+    && typeof record.title === "string"
+    && typeof record.bio === "string"
+    && typeof record.profilePublic === "boolean"
+    && typeof record.publicEmail === "string"
+    && typeof record.xAccount === "string"
+    && typeof record.sharedPortfolioId === "string"
+    && typeof record.acceptUnknownDms === "boolean"
+    && typeof record.weeklyRoundupEnabled === "boolean"
+    && typeof record.positionAlertsEnabled === "boolean"
+    && typeof record.chatEmailNotificationsEnabled === "boolean";
+}
+
+export function parseAccountDraft(value: unknown): AccountDraft | null {
+  return isAccountDraft(value) ? value : null;
+}
+
+export function accountDraftsEqual(left: AccountDraft, right: AccountDraft): boolean {
+  return left.username === right.username
+    && left.name === right.name
+    && left.company === right.company
+    && left.title === right.title
+    && left.bio === right.bio
+    && left.profilePublic === right.profilePublic
+    && left.publicEmail === right.publicEmail
+    && left.xAccount === right.xAccount
+    && left.sharedPortfolioId === right.sharedPortfolioId
+    && left.acceptUnknownDms === right.acceptUnknownDms
+    && left.weeklyRoundupEnabled === right.weeklyRoundupEnabled
+    && left.positionAlertsEnabled === right.positionAlertsEnabled
+    && left.chatEmailNotificationsEnabled === right.chatEmailNotificationsEnabled;
+}
+
+/**
+ * Keep unsaved ACM edits across reloads. A stored draft that still matches the
+ * published profile is replaced so a later visit picks up server changes.
+ */
+export function resolveAccountDraft(
+  stored: AccountDraft | null,
+  profile: AccountProfile | null,
+): AccountDraft {
+  const fromProfile = profileToDraft(profile);
+  if (!stored) return fromProfile;
+  const empty = profileToDraft(null);
+  if (accountDraftsEqual(stored, fromProfile) || accountDraftsEqual(stored, empty)) {
+    return fromProfile;
+  }
+  return stored;
 }
 
 export function emptyToNull(value: string): string | null {

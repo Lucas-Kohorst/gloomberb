@@ -15,6 +15,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
+import { usePluginAppActions } from "../../runtime";
 import { CREDIT_CONDITIONS_CONNECTION_ID, getCachedCreditConditions, loadCreditConditions } from "./client";
 import {
   CREDIT_SERIES,
@@ -88,6 +89,7 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(initial?.errors[0] ?? null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const generation = useRef(0);
+  const { createPaneFromTemplate } = usePluginAppActions();
 
   const load = useCallback(async (force = false) => {
     const current = ++generation.current;
@@ -117,6 +119,10 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
 
   const sorted = useMemo(() => sortRows(rows, sort.id, sort.descending), [rows, sort]);
   const selectedRow = rows.find((row) => row.seriesId === selectedId) ?? rows[0] ?? null;
+  const chartSelected = useCallback(() => {
+    if (!selectedRow) return;
+    createPaneFromTemplate("chart-composer-pane", { arg: `FRED:${selectedRow.seriesId}` });
+  }, [createPaneFromTemplate, selectedRow]);
   const columns = useMemo<Column[]>(() => {
     const labelWidth = Math.max(12, width - 23);
     return COLUMNS.map((column) => column.id === "label" ? { ...column, width: labelWidth } : { ...column });
@@ -135,6 +141,8 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
     if (event.name === "r") {
       if (loading) return;
       reload();
+    } else if (event.name === "g") {
+      chartSelected();
     } else if (["up", "k", "down", "j"].includes(event.name ?? "")) {
       const offset = event.name === "up" || event.name === "k" ? -1 : 1;
       setSelectedId(moveCreditSelection(sorted, selectedId, offset));
@@ -154,7 +162,13 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
   ], [asOf, error, loading, partial, rows.length, stale]);
-  usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
+  usePaneFooter(paneId, () => ({
+    info: footerInfo,
+    hints: [
+      { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedRow },
+      { id: "refresh", key: "r", label: "efresh", onPress: reload, disabled: loading },
+    ],
+  }), [chartSelected, footerInfo, loading, paneId, reload, selectedRow]);
 
   if (rows.length === 0 && loading) {
     return (

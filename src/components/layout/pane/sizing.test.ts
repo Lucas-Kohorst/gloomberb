@@ -1,19 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
+import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
 
 describe("pane sizing", () => {
   test("lets native pane chrome lay out footer bars in normal flex flow", () => {
     expect(shouldReservePaneFooter(true, true)).toBe(false);
 
+    const headerRows = resolveNativePaneHeaderRows(18);
     const bodyFrame = resolvePaneBodyFrame({
       width: 80,
       height: 30,
       nativePaneChrome: true,
       footerVisible: true,
       reserveFooter: false,
+      headerRows,
     });
 
-    expect(bodyFrame.height).toBe(28);
+    expect(headerRows).toBeCloseTo(28 / 18);
+    expect(bodyFrame.height).toBeCloseTo(30 - headerRows - 1);
     expect(bodyFrame.layoutProps).toEqual({
       flexGrow: 1,
       flexShrink: 1,

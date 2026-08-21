@@ -9,6 +9,7 @@ import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { EmptyState, ErrorState, FeedDataTableStackView, LoadingState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
+import { shouldSkipJinaForKnownBody } from "../shared/jina-article-text";
 import { useJinaArticle } from "../shared/jina-reader";
 import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
@@ -39,14 +40,16 @@ function getFeedItems(
       detailTitle: item.title,
       detailMeta: [
         item.source,
-        `Published ${item.publishedAt.toLocaleString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        })}`,
-      ],
+        item.publishedAt
+          ? `Published ${item.publishedAt.toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}`
+          : "",
+      ].filter(Boolean),
       detailBody: isSelected
         ? selectedJinaContent ?? fallbackBody
         : preview ?? "",
@@ -103,7 +106,8 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   );
   const selectedSummary = useResolvedEntryValue(articleSummaryEntry);
   const loadingSummary = articleSummaryEntry?.phase === "loading" || articleSummaryEntry?.phase === "refreshing";
-  const jina = useJinaArticle(selected?.url ?? "", !!selected?.url);
+  const skipJina = shouldSkipJinaForKnownBody(selected?.body);
+  const jina = useJinaArticle(selected?.url ?? "", !!selected?.url && !skipJina);
 
   useEffect(() => {
     if (!selected?.summary) return;

@@ -13,9 +13,13 @@ import type { PredictionMarketSummary } from "../../prediction-markets/types";
 import {
   analyzeSeriesSearchQuery,
   buildSeriesCatalogSuggestions,
+  looksLikeOwidSeriesQuery,
   type SeriesCatalogInstrument,
   type SeriesCatalogSuggestion,
 } from "./series-catalog";
+import { parseSeriesExpression } from "./presets";
+import { loadCatalogOwidRows } from "./catalog-owid";
+import type { CatalogSeriesRow } from "./catalog-inventory";
 import {
   looksLikePredictionMarketQuery,
   venueChartHitFromAdjacentMarket,
@@ -304,6 +308,11 @@ export function useSeriesCatalogSuggestions({
     markets: PredictionMarketSearchHit[];
     loading: boolean;
   }>({ query: "", markets: [], loading: false });
+  const [owidSearch, setOwidSearch] = useState<{
+    query: string;
+    suggestions: SeriesCatalogSuggestion[];
+    loading: boolean;
+  }>({ query: "", suggestions: [], loading: false });
 
   useEffect(() => {
     const instrumentQuery = analysis.instrumentQuery.trim();
@@ -408,19 +417,63 @@ export function useSeriesCatalogSuggestions({
     };
   }, [enabled, query]);
 
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!enabled || !looksLikeOwidSeriesQuery(trimmed)) {
+      setOwidSearch({ query: "", suggestions: [], loading: false });
+      return;
+    }
+
+    let cancelled = false;
+    setOwidSearch({ query: trimmed, suggestions: [], loading: true });
+    const timer = setTimeout(() => {
+      void loadCatalogOwidRows(trimmed).then((rows) => {
+        if (cancelled) return;
+        setOwidSearch({
+          query: trimmed,
+          suggestions: suggestionsFromOwidRows(rows),
+          loading: false,
+        });
+      }).catch(() => {
+        if (!cancelled) setOwidSearch({ query: trimmed, suggestions: [], loading: false });
+      });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, query]);
+
   const instruments = search.query === analysis.instrumentQuery
     ? search.instruments
     : [];
   const markets = marketSearch.query === query.trim() ? marketSearch.markets : [];
+  const owidSuggestions = owidSearch.query === query.trim() ? owidSearch.suggestions : [];
   const suggestions = useMemo(
-    () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments, 8, markets),
-    [defaultInstrument, instruments, markets, query],
+    () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments, 8, markets, owidSuggestions),
+    [defaultInstrument, instruments, markets, owidSuggestions, query],
   );
 
   return {
     suggestions,
     instruments,
     loading: (search.loading && search.query === analysis.instrumentQuery)
-      || (marketSearch.loading && marketSearch.query === query.trim()),
+      || (marketSearch.loading && marketSearch.query === query.trim())
+      || (owidSearch.loading && owidSearch.query === query.trim()),
   };
+}
+
+function suggestionsFromOwidRows(rows: readonly CatalogSeriesRow[]): SeriesCatalogSuggestion[] {
+  return rows.flatMap((row) => {
+    const expression = parseSeriesExpression(row.expression);
+    if (!expression) return [];
+    return [{
+      id: row.id,
+      label: row.label,
+      description: row.source,
+      detail: "OWID",
+      expression,
+    }];
+  });
 }

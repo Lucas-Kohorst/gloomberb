@@ -104,6 +104,17 @@ function totalHintsWidth(hints: PaneHint[]): number {
   return hints.reduce((total, hint, index) => total + hintTextLength(hint, index), 0);
 }
 
+function segmentTextLength(segment: PaneFooterSegment): number {
+  return segment.parts.reduce((total, part, index) => total + (index > 0 ? 1 : 0) + part.text.length, 0);
+}
+
+function totalTrailingInfoWidth(segments: PaneFooterSegment[]): number {
+  if (segments.length === 0) return 0;
+  return segments.reduce((total, segment, index) => {
+    return total + (index > 0 ? 1 : 0) + segmentTextLength(segment);
+  }, 0);
+}
+
 function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean }) {
   useRemoteUiNode({
     role: "pane-hint",
@@ -142,19 +153,29 @@ function FooterContent({
   showBackground?: boolean;
 }) {
   const hasInfo = footer.info.length > 0;
+  const trailingInfo = footer.trailingInfo ?? [];
+  const hasTrailingInfo = trailingInfo.length > 0;
   const visibleHints = focused ? footer.hints.filter((hint) => !hint.disabled) : [];
   const hasHints = visibleHints.length > 0;
   const dividerColor = focused ? colors.borderFocused : colors.border;
   const backgroundColor = showBackground ? blendHex(colors.bg, dividerColor, focused ? 0.12 : 0.06) : undefined;
   const availableWidth = width && width > 0 ? Math.floor(width) : null;
-  const hintsWidth = hasHints
-    ? Math.min(availableWidth ?? totalHintsWidth(visibleHints), totalHintsWidth(visibleHints))
+  const trailingGap = hasHints && hasTrailingInfo ? 1 : 0;
+  const trailingWidth = hasTrailingInfo
+    ? Math.min(availableWidth ?? totalTrailingInfoWidth(trailingInfo), totalTrailingInfoWidth(trailingInfo))
     : 0;
+  const hintsWidth = hasHints
+    ? Math.min(
+      availableWidth ?? totalHintsWidth(visibleHints),
+      totalHintsWidth(visibleHints),
+    )
+    : 0;
+  const rightWidth = hintsWidth + trailingWidth + trailingGap;
   const infoWidth = availableWidth !== null && hasInfo
-    ? Math.max(0, availableWidth - hintsWidth)
+    ? Math.max(0, availableWidth - rightWidth)
     : undefined;
 
-  if (!hasInfo && !hasHints) {
+  if (!hasInfo && !hasHints && !hasTrailingInfo) {
     return <Box flexGrow={1} height={1} />;
   }
 
@@ -181,22 +202,40 @@ function FooterContent({
           ))}
         </Box>
       )}
-      {hasHints && (
+      {(hasHints || hasTrailingInfo) && (
         <>
           <Box flexGrow={1} />
-          <Box
-            flexDirection="row"
-            justifyContent="flex-end"
-            flexShrink={0}
-            overflow="hidden"
-            {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: 1 })}
-          >
-            {visibleHints.map((hint, index) => (
-              <Box key={hint.id} flexDirection="row">
-                <HintView hint={hint} prefixSpace={index > 0} />
-              </Box>
-            ))}
-          </Box>
+          {hasHints && (
+            <Box
+              flexDirection="row"
+              justifyContent="flex-end"
+              flexShrink={0}
+              overflow="hidden"
+              {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: hasTrailingInfo ? 0 : 1 })}
+            >
+              {visibleHints.map((hint, index) => (
+                <Box key={hint.id} flexDirection="row">
+                  <HintView hint={hint} prefixSpace={index > 0} />
+                </Box>
+              ))}
+            </Box>
+          )}
+          {hasTrailingInfo && (
+            <Box
+              flexDirection="row"
+              justifyContent="flex-end"
+              flexShrink={0}
+              overflow="hidden"
+              marginLeft={hasHints ? 1 : 0}
+              {...(availableWidth !== null ? { width: trailingWidth } : {})}
+            >
+              {trailingInfo.map((segment, index) => (
+                <Box key={segment.id} flexDirection="row" marginRight={index === trailingInfo.length - 1 ? 0 : 1}>
+                  <SegmentView segment={segment} />
+                </Box>
+              ))}
+            </Box>
+          )}
         </>
       )}
     </Box>

@@ -14,7 +14,9 @@ import {
 } from "../../../../components";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PluginConfigState } from "../../../../types/plugin";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../runtime";
+import { usePaneSettingValue } from "../../../../state/app/context";
+import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { usePluginRenderContext } from "../../../runtime/context";
 import { useShortcut } from "../../../../react/input";
 import { colors } from "../../../../theme/colors";
@@ -22,7 +24,8 @@ import { isPlainKey } from "../../../../utils/keyboard";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { usePopOutNewsArticle } from "./news/pop-out";
-import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
+import { NewsArticleStackView } from "./news/table";
+import { getNewsPaneSettings, getRssViewMode, type RssViewMode } from "./settings";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
 import { useFeedPollInterval } from "../../shared/feed-poll-interval";
@@ -66,8 +69,6 @@ function compareFeedRows(left: FeedRow, right: FeedRow, columnId: FeedColumnId):
       return Number(left.enabled) - Number(right.enabled);
   }
 }
-
-type RssViewMode = "articles" | "feeds";
 
 function usePluginConfigStateAdapter(): PluginConfigState {
   const { pluginId, runtime } = usePluginRenderContext();
@@ -389,7 +390,8 @@ function FeedsManager({ focused, width, height, onBack }: {
   );
 }
 
-const RSS_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
+const RSS_COLUMNS = ["time", "source", "title", "categories"] as const;
+const RSS_SORT = { columnId: "time" as const, direction: "desc" as const };
 
 function RssArticlesView({ focused, width, height, onManageFeeds }: {
   focused: boolean;
@@ -401,7 +403,17 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
   const newsState = useNewsArticles({ feed: "latest", limit: 200 });
   const articles = usePersistedNewsArticles("rss:articles", newsState.articles);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("rss:selectedArticleId", null);
-  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("rss:sort", RSS_SORT);
+  const [columnIds] = usePaneSettingValue<unknown>("columnIds", RSS_COLUMNS);
+  const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(RSS_SORT));
+  const paneSettings = getNewsPaneSettings(
+    { columnIds, sort: sortValue },
+    { columns: RSS_COLUMNS, sort: RSS_SORT },
+  );
+  const visibleColumns = paneSettings.columnIds.filter((columnId) => RSS_COLUMNS.includes(columnId as typeof RSS_COLUMNS[number]));
+  const effectiveColumns = visibleColumns.length > 0 ? visibleColumns : [...RSS_COLUMNS];
+  const sortPreference = effectiveColumns.includes(paneSettings.sort.columnId)
+    ? paneSettings.sort
+    : RSS_SORT;
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
@@ -490,9 +502,9 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   usePaneFooter("rss-articles", () => ({
     info: [
-      poll.segment,
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
+    trailingInfo: [poll.segment],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
@@ -528,7 +540,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
-      setSortPreference={setSortPreference}
+      setSortPreference={(preference) => setSortValue(encodeSortPreference(preference))}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
@@ -538,7 +550,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       onRootKeyDown={handleKeyDown}
       onPopOut={popOutSelectedArticle}
       onShare={readableArticle ? shareSelectedArticle : undefined}
-      columns={["time", "source", "title", "categories"]}
+      columns={effectiveColumns}
       emptyStateTitle="No RSS articles."
       emptyStateHint="Press m to manage feeds and ensure feeds are enabled."
     />
@@ -546,9 +558,10 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 }
 
 export function RssPane({ focused, width, height }: PaneProps) {
-  const [viewMode, setViewMode] = usePluginPaneState<RssViewMode>("rss:viewMode", "articles");
+  const [viewMode, setViewMode] = usePaneSettingValue<RssViewMode>("defaultTab", "articles");
+  const resolvedViewMode = getRssViewMode({ defaultTab: viewMode });
 
-  if (viewMode === "feeds") {
+  if (resolvedViewMode === "feeds") {
     return (
       <FeedsManager
         focused={focused}

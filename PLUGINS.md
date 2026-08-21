@@ -4,6 +4,8 @@ Gloomberb is built on a plugin architecture — top-level product areas such as 
 
 ## Installing plugins
 
+The in-app Plugin Marketplace (`PLUGINS` / `PLUG`) is the single plugin surface: search installed plugins and GitHub/community results, then install, toggle, update, or remove. `PL` is the same installed list as a fast command-bar toggle and can jump into that marketplace.
+
 Install plugins from GitHub:
 
 ```bash

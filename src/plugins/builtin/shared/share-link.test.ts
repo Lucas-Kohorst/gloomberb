@@ -23,6 +23,12 @@ describe("isPublicShareLocation", () => {
     expect(isPublicShareLocation()).toBe(true);
   });
 
+  test("still treats /s/{id} as public when the visitor already has a session query", () => {
+    setLocation("/s/cqT4HwQPu8J2", "?utm=signed-in");
+    expect(isPublicShareLocation()).toBe(true);
+    expect(isShareTerminalHandoff()).toBe(false);
+  });
+
   test("does not bypass onboarding for the share page's open-in-terminal hand-off", () => {
     setLocation("/", "?gloomberb=gloomberb%3A%2F%2Fshare%3Fs%3Dabcdef1234567890");
     expect(isPublicShareLocation()).toBe(false);

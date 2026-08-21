@@ -183,6 +183,40 @@ describe("article-share encode/decode", () => {
     expect(url).toContain("terminal.kohor.st/article?a=");
   });
 
+  test("news share payload prefers the RSS body over a truncated summary", () => {
+    const body = "Kalshi is opening the door to institutional trading. ".repeat(12);
+    const news = newsArticleSharePayload(makeNewsArticle({
+      id: "rss-1",
+      title: "Encoded",
+      summary: "Short teaser.",
+      body,
+    }));
+    expect(news.summary).toBe(body.trim());
+    const reconstructed = payloadToNewsArticle(news);
+    expect(reconstructed.body).toBe(body.trim());
+  });
+
+  test("payload builders survive missing optional article fields", () => {
+    const news = newsArticleSharePayload(makeNewsArticle({
+      id: "sparse",
+      title: "Sparse",
+      topics: undefined as unknown as string[],
+      categories: undefined as unknown as string[],
+      tickers: undefined as unknown as string[],
+      items: [{
+        id: "i",
+        sourceKey: "r",
+        sourceName: undefined as unknown as string,
+        title: "related",
+        url: "https://reuters.com/y",
+        publishedAt: undefined as unknown as Date,
+      }],
+    }));
+    expect(news.topics).toEqual([]);
+    expect(news.items?.[0]?.sourceName).toBe("r");
+    expect(news.items?.[0]?.publishedAt).toBe("1970-01-01T00:00:00.000Z");
+  });
+
   test("payload builders feed the short-id share path without embedding in the URL", () => {
     const news = newsArticleSharePayload(makeNewsArticle({ id: "abc", title: "Test" }));
     const changelog = changelogReleaseSharePayload({

@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button, ChoiceDialog, ConfirmDialog, Tabs } from "../../../components";
-import { useAppSelector } from "../../../state/app/context";
+import { useAppDispatch, useAppSelector, useAppStateRef } from "../../../state/app/context";
+import { scheduleConfigSave } from "../../../state/config-save-scheduler";
+import { syncConfigActiveLayoutState } from "../../../core/state/app/state";
+import { sanitizeFontFamily } from "../../../theme/font-family";
+import { clampFontSize } from "../../../theme/font-scale";
+import { getThemeIds } from "../../../theme/themes";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { blendHex, colors } from "../../../theme/colors";
@@ -20,6 +25,10 @@ import {
 } from "./form-components";
 import {
   NO_PORTFOLIO_VALUE,
+  PROFILE_DRAFT_CONFIG_KEY,
+  parseAccountDraft,
+  profileToDraft,
+  resolveAccountDraft,
   buildPublishedProfileAnalyticsPreview,
   buildProfileAnalyticsPreview,
   buildPortfolioChoices,
@@ -32,7 +41,6 @@ import {
   formatTrialOffer,
   getPortfolioPositionTickers,
   portfolioOptionIds,
-  profileToDraft,
   selectedPortfolioLabel,
   type AccountDraft,
   type AccountFieldKey,
@@ -40,6 +48,7 @@ import {
 } from "./model";
 import { PasswordChangeDialog } from "./password-dialog";
 import { AiProvidersTab } from "./ai-providers-tab";
+import { DisplayTab, cycleDisplayFieldValue } from "./display-tab";
 import { useAccountManagementFooter } from "./footer";
 import { useAccountManagementKeyboard } from "./keyboard";
 import { buildTrackedCurrencies } from "../analytics/sector-model";
@@ -49,6 +58,7 @@ import {
   buildPortfolioReturnSeries,
 } from "../analytics/pane-model";
 import { computeDatedBeta } from "../analytics/metrics";
+import { usePluginConfigState } from "../../runtime";
 import { useCloudSyncStatus } from "../../../sync/react";
 import { cloudSyncController } from "../../../sync/controller";
 import { setSyncedProfileAnalytics } from "../../../sync/profile-analytics";
@@ -65,6 +75,7 @@ import { resolvePlanAccess } from "../shared/plan-access";
 type AccountBusy = "profile" | "password" | "alerts" | "billing" | "delete" | null;
 const ACCOUNT_TAB_DEFS: Array<{ label: string; value: AccountManagementTab }> = [
   { label: "Profile", value: "profile" },
+  { label: "Display", value: "display" },
   { label: "Emails", value: "emails" },
   { label: "AI", value: "ai" },
   { label: "Pro", value: "pro" },
@@ -84,6 +95,7 @@ const ACCOUNT_TAB_FIELD_ORDER: Record<AccountManagementTab, AccountFieldKey[]> =
     "bio",
     "sharedPortfolioId",
   ],
+  display: ["themeAction", "fontFamilyAction", "fontSizeAction"],
   emails: [
     "chatEmailNotificationsEnabled",
     "weeklyRoundupEnabled",
@@ -353,7 +365,26 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const dialog = useDialog();
   const renderer = useRendererHost();
   const isDesktop = useUiHost().kind === "desktop-web";
+  const dispatch = useAppDispatch();
+  const stateRef = useAppStateRef();
   const config = useAppSelector((state) => state.config);
+  const persistDisplayConfig = useCallback((patch: { theme?: string; fontFamily?: string; fontSize?: number }) => {
+    const current = stateRef.current;
+    const nextTheme = patch.theme && getThemeIds().includes(patch.theme) ? patch.theme : current.config.theme;
+    const nextConfig = syncConfigActiveLayoutState(
+      {
+        ...current.config,
+        theme: nextTheme,
+        fontFamily: patch.fontFamily != null ? sanitizeFontFamily(patch.fontFamily) : current.config.fontFamily,
+        fontSize: patch.fontSize != null ? clampFontSize(patch.fontSize) : current.config.fontSize,
+      },
+      current.paneState,
+      current.focusedPaneId,
+      current.activePanel,
+    );
+    dispatch({ type: "SET_CONFIG", config: nextConfig });
+    scheduleConfigSave(nextConfig);
+  }, [dispatch, stateRef]);
   const portfolios = config.portfolios;
   const baseCurrency = config.baseCurrency;
   const tickers = useAppSelector((state) => state.tickers);
@@ -363,7 +394,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const [hasSession, setHasSession] = useState(() => !!apiClient.getSessionToken());
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [pricing, setPricing] = useState<CloudPricing | null>(null);
-  const [draft, setDraft] = useState<AccountDraft>(() => profileToDraft(null));
+  const [storedDraft, setStoredDraft] = usePluginConfigState<AccountDraft | null>(
+    PROFILE_DRAFT_CONFIG_KEY,
+    null,
+  );
+  const [draft, setDraft] = useState<AccountDraft>(() => (
+    parseAccountDraft(storedDraft) ?? profileToDraft(null)
+  ));
   const [initialTab] = useState<AccountManagementTab>(
     () => consumeRequestedAccountManagementTab() ?? "profile",
   );
@@ -384,6 +421,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const refreshedSyncRevisionRef = useRef<number | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const storedDraftRef = useRef(storedDraft);
+  storedDraftRef.current = storedDraft;
 
   const formWidth = Math.max(24, Math.min(70, width - 2));
   const contentWidth = activeTab === "pro" && isDesktop ? Math.max(formWidth, width - 2) : formWidth;
@@ -559,6 +598,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     if (!apiClient.getSessionToken()) {
       setProfile(null);
       setDraft(profileToDraft(null));
+      setStoredDraft(null);
       return;
     }
 
@@ -566,7 +606,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     try {
       const nextProfile = await apiClient.getAccountProfile();
       setProfile(nextProfile);
-      setDraft(profileToDraft(nextProfile));
+      const nextDraft = resolveAccountDraft(parseAccountDraft(storedDraftRef.current), nextProfile);
+      setDraft(nextDraft);
+      setStoredDraft(nextDraft);
       setMessage(null);
     } catch (error) {
       setMessage({
@@ -574,7 +616,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         text: error instanceof Error ? error.message : t("Failed to load account profile."),
       });
     }
-  }, []);
+  }, [setStoredDraft]);
 
   useEffect(() => {
     void loadProfile();
@@ -617,8 +659,12 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }, [activeField, fieldOrder]);
 
   const setDraftValue = useCallback(<K extends keyof AccountDraft>(key: K, value: AccountDraft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-  }, []);
+    setDraft((current) => {
+      const next = { ...current, [key]: value };
+      setStoredDraft(next);
+      return next;
+    });
+  }, [setStoredDraft]);
 
   const selectTab = useCallback((tab: string) => {
     const nextTab = tab as AccountManagementTab;
@@ -690,6 +736,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     });
   }, [fieldOrder]);
 
+  const cycleDisplayValue = useCallback((delta: number) => {
+    const patch = cycleDisplayFieldValue(activeField, delta, {
+      theme: config.theme,
+      fontFamily: config.fontFamily,
+      fontSize: config.fontSize,
+    });
+    if (patch) persistDisplayConfig(patch);
+  }, [activeField, config.fontFamily, config.fontSize, config.theme, persistDisplayConfig]);
+
   const cyclePortfolio = useCallback((delta: number) => {
     const optionIds = portfolioOptionIds(portfolios);
     const currentValue = draftRef.current.sharedPortfolioId || NO_PORTFOLIO_VALUE;
@@ -726,7 +781,9 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         positionAlertsEnabled: current.positionAlertsEnabled,
       });
       setProfile(nextProfile);
-      setDraft(profileToDraft(nextProfile));
+      const nextDraft = profileToDraft(nextProfile);
+      setDraft(nextDraft);
+      setStoredDraft(nextDraft);
       await chatController.refreshSession().catch(() => {});
       setMessage({ tone: "success", text: t("Account profile saved.") });
     } catch (error) {
@@ -737,7 +794,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [setStoredDraft]);
 
   const turnOffEmailAlerts = useCallback(async () => {
     setActiveField("emailAlertsOffAction");
@@ -749,12 +806,16 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         weeklyRoundupEnabled: false,
         positionAlertsEnabled: false,
       });
-      setDraft((current) => ({
-        ...current,
-        chatEmailNotificationsEnabled: nextProfile.chatEmailNotificationsEnabled,
-        weeklyRoundupEnabled: nextProfile.weeklyRoundupEnabled,
-        positionAlertsEnabled: nextProfile.positionAlertsEnabled,
-      }));
+      setDraft((current) => {
+        const next = {
+          ...current,
+          chatEmailNotificationsEnabled: nextProfile.chatEmailNotificationsEnabled,
+          weeklyRoundupEnabled: nextProfile.weeklyRoundupEnabled,
+          positionAlertsEnabled: nextProfile.positionAlertsEnabled,
+        };
+        setStoredDraft(next);
+        return next;
+      });
       setProfile(nextProfile);
       setMessage({ tone: "success", text: t("Email alerts are off.") });
     } catch (error) {
@@ -765,7 +826,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     } finally {
       setBusy(null);
     }
-  }, []);
+  }, [setStoredDraft]);
 
   const openUpgrade = useCallback(() => {
     setActiveField("upgradeAction");
@@ -832,6 +893,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   useAccountManagementKeyboard({
     activeField,
+    cycleDisplayValue,
     cycleField,
     cyclePortfolio,
     deleteAccount,
@@ -845,9 +907,18 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     turnOffEmailAlerts,
   });
 
-  if (!hasSession && !apiClient.getSessionToken() && activeTab !== "ai") {
+  if (!hasSession && !apiClient.getSessionToken() && activeTab !== "ai" && activeTab !== "display") {
     return (
-      <Box padding={1}>
+      <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
+        <Tabs
+          tabs={accountTabs}
+          activeValue={activeTab}
+          onSelect={selectTab}
+          focused={focused}
+          variant="pill"
+          compact
+          keyboardNavigation={false}
+        />
         <CloudAuthNotice message={t("Log in to manage your Gloom Cloud account.")} />
       </Box>
     );
@@ -1032,6 +1103,22 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
                 <Button label={busy === "profile" ? t("Saving...") : t("Save Profile")} variant="primary" onPress={() => { void saveProfile(); }} disabled={!!busy} />
               </Box>
             </>
+          ) : null}
+
+          {activeTab === "display" ? (
+            <DisplayTab
+              activeField={activeField}
+              focused={focused}
+              fontFamily={config.fontFamily}
+              fontSize={config.fontSize}
+              isDesktop={isDesktop}
+              setActiveField={setActiveField}
+              setFontFamily={(id) => persistDisplayConfig({ fontFamily: id })}
+              setFontSize={(size) => persistDisplayConfig({ fontSize: size })}
+              setTheme={(id) => persistDisplayConfig({ theme: id })}
+              theme={config.theme}
+              width={formWidth}
+            />
           ) : null}
 
           {activeTab === "emails" ? (

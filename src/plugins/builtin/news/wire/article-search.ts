@@ -62,13 +62,18 @@ export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
 
 let rssWarmTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
-export function scheduleRssNewsWarm(): void {
+/** Prefetch latest news (RSS, X, Substack, wire) without waiting for a pane to mount. */
+export function scheduleLatestNewsWarm(): void {
   cancelRssNewsWarm();
   rssWarmTimer = setTimeout(() => {
     rssWarmTimer = null;
     void getSharedNewsService()?.poll(ARTICLE_SEARCH_QUERY);
   }, 0);
+}
+
+/** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
+export function scheduleRssNewsWarm(): void {
+  scheduleLatestNewsWarm();
 }
 
 export function cancelRssNewsWarm(): void {
@@ -99,15 +104,16 @@ export function looksLikeArticleQuery(query: string): boolean {
 
 export function scoreArticleMatch(article: NewsArticle, tokens: readonly string[]): number {
   if (tokens.length === 0) return 0;
-  const title = article.title.toLowerCase();
-  const source = article.source.toLowerCase();
+  const title = (article.title ?? "").toLowerCase();
+  const source = (article.source ?? "").toLowerCase();
   const haystack = [
     title,
     source,
     article.summary ?? "",
-    ...article.topics,
-    ...article.categories,
-    ...article.tickers,
+    article.body ?? "",
+    ...(article.topics ?? []),
+    ...(article.categories ?? []),
+    ...(article.tickers ?? []),
   ].join(" ").toLowerCase();
 
   let score = 0;

@@ -10,6 +10,7 @@ import type {
   AdjacentRateRow,
 } from "./types";
 import type { NewsArticle } from "../../../types/news-source";
+import { extractArticleTickersFromParts } from "../../../news/article-tickers";
 import type { PricePoint } from "../../../types/financials";
 import type { PredictionHistoryPoint } from "../../prediction-markets/types";
 
@@ -226,7 +227,10 @@ export function normalizeAdjacentNewsArticle(
     topics: categories,
     sectors: [],
     categories,
-    tickers: article.tickers ?? [],
+    tickers: [...new Set([
+      ...(article.tickers ?? []),
+      ...extractArticleTickersFromParts([article.title, article.summary]),
+    ])],
     sentiment: article.sentiment,
     scores: {
       importance,

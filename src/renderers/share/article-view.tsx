@@ -15,7 +15,9 @@ import {
   classifyReaderHttpFailure,
   classifyReaderThrow,
   htmlMarkupPresent,
+  looksLikeHtmlDocument,
   preferredArticleBody,
+  readableArticleText,
   readerFallbackNotice,
   type ReaderFailureKind,
   JINA_READER_ENDPOINT,
@@ -43,13 +45,19 @@ export function articleShareBodySource(
 ): ArticleShareBodySource {
   const embedded = payload.bodyHtml?.trim() || "";
   const summary = payload.summary?.trim() || payload.previewText?.trim() || "";
-  if (embedded && htmlMarkupPresent(embedded)) return { kind: "html", html: embedded };
-  const text = preferredArticleBody(summary, embedded || extractedText);
+  if (embedded && htmlMarkupPresent(embedded) && !looksLikeHtmlDocument(embedded)) {
+    return { kind: "html", html: embedded };
+  }
+  const text = preferredArticleBody(
+    readableArticleText(summary) || summary,
+    readableArticleText(embedded) || embedded || extractedText,
+  );
   return text ? { kind: "markdown", text } : { kind: "empty" };
 }
 
 export function articleShareNeedsReader(payload: ArticleSharePayload): boolean {
-  if (payload.bodyHtml?.trim() && htmlMarkupPresent(payload.bodyHtml)) return false;
+  const embedded = payload.bodyHtml?.trim() || "";
+  if (embedded && htmlMarkupPresent(embedded) && !looksLikeHtmlDocument(embedded)) return false;
   const snapshot = articleShareBodySource(payload);
   // A full extracted post in the snapshot should not be replaced by a later
   // Jina fetch that often returns the Substack teaser for logged-in visitors.
@@ -127,7 +135,7 @@ export function ArticleShareView({
   // article when the payload has no body; clustered wire stories stay as
   // summaries because they are not one page to extract.
   const needsFullText = articleShareNeedsReader(payload);
-  const full = useFullArticleText(payload.url, needsFullText);
+  const full = useFullArticleText(payload.url ?? "", needsFullText);
   const source = articleShareBodySource(payload, full.text);
   const fallbackNotice = readerFallbackNotice(full.failureKind, source.kind !== "empty");
   const archive = useShareArticleArchive(payload.url);
@@ -183,10 +191,10 @@ export function ArticleShareView({
         <>
           <p className="share-items-heading">Related coverage</p>
           <ul className="share-items">
-            {payload.items.map((item) => (
-              <li className="share-item" key={item.id}>
+            {payload.items.map((item, index) => (
+              <li className="share-item" key={item.id || item.url || index}>
                 <a className="share-item-title" href={item.url} target="_blank" rel="noreferrer noopener">
-                  {item.title}
+                  {item.title || item.url || "Related coverage"}
                 </a>
                 <span className="share-item-meta">
                   {[item.sourceName, formatShareTimestamp(item.publishedAt)]

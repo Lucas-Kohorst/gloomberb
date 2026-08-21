@@ -128,7 +128,10 @@ export class ProviderRouterHistoryRoutes {
           context?.instrument ?? null,
         )
         : null,
-      fetchProvider: (provider) => provider.getPriceHistory(ticker, exchange, range, context),
+      fetchProvider: async (provider) => {
+        if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) return null;
+        return provider.getPriceHistory(ticker, exchange, range, context);
+      },
     });
   }
 
@@ -169,9 +172,12 @@ export class ProviderRouterHistoryRoutes {
           context?.instrument ?? null,
         )
         : null,
-      fetchProvider: async (provider) => provider.getPriceHistoryForResolution
-        ? provider.getPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context)
-        : null,
+      fetchProvider: async (provider) => {
+        if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) return null;
+        return provider.getPriceHistoryForResolution
+          ? provider.getPriceHistoryForResolution(ticker, exchange, bufferRange, resolution, context)
+          : null;
+      },
     });
   }
 
@@ -273,9 +279,12 @@ export class ProviderRouterHistoryRoutes {
           context?.instrument ?? null,
         )
         : null,
-      fetchProvider: async (provider) => provider.getDetailedPriceHistory
-        ? provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context)
-        : null,
+      fetchProvider: async (provider) => {
+        if (provider.canProvide && !await provider.canProvide(ticker, exchange, context)) return null;
+        return provider.getDetailedPriceHistory
+          ? provider.getDetailedPriceHistory(ticker, exchange, startDate, endDate, barSize, context)
+          : null;
+      },
     });
   }
 

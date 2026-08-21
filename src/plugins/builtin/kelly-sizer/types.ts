@@ -1,3 +1,6 @@
+export type KellyModePayoff = "return" | "contract";
+
+/** Kelly modes. `return` is % payoff vs last; `contract` is yes/no odds. Not for FRED/OWID/polls. */
 export type KellySizingMode =
   | "binary"
   | "scenario"
@@ -35,6 +38,7 @@ export interface RiskBudgetKellyAssumptions extends KellyCommonAssumptions {
   upsideReturn: number;
 }
 
+/** Binary yes/no contract: user (or 0–1 last) probability vs contract price. Not stock returns. */
 export interface PredictionMarketKellyAssumptions extends KellyCommonAssumptions {
   estimatedProbability: number;
   marketPrice: number;
@@ -105,12 +109,12 @@ export interface SensitivityGrid {
   cells: SensitivityGridCell[][];
 }
 
-export const KELLY_MODES: Array<{ id: KellySizingMode; label: string }> = [
-  { id: "binary", label: "Binary" },
-  { id: "scenario", label: "Scenario" },
-  { id: "risk-budget", label: "Risk" },
-  { id: "prediction-market", label: "Market" },
-  { id: "asymmetric", label: "Asym" },
+export const KELLY_MODES: Array<{ id: KellySizingMode; label: string; payoff: KellyModePayoff }> = [
+  { id: "binary", label: "Binary", payoff: "return" },
+  { id: "scenario", label: "Scenario", payoff: "return" },
+  { id: "risk-budget", label: "Risk", payoff: "return" },
+  { id: "prediction-market", label: "Odds", payoff: "contract" },
+  { id: "asymmetric", label: "Asym", payoff: "return" },
 ];
 
 export const DEFAULT_KELLY_COMMON_ASSUMPTIONS: KellyCommonAssumptions = {

@@ -1,3 +1,7 @@
+import {
+  isAdjacentCloudChildSourceId,
+  resolveConnectionSourceId,
+} from "./adjacent-cloud";
 import type { ConnectionKind } from "./types";
 
 export interface ConnectionSourceDef {
@@ -28,6 +32,11 @@ const pendingReports: Array<{ id: string; report: ConnectionRequestReport }> = [
 const MAX_PENDING_REPORTS = 200;
 
 export function registerConnectionSource(source: ConnectionSourceDef): () => void {
+  // Adjacent Cloud children share one inventory row. Callers may still report
+  // traffic with the upstream id; `reportConnectionRequest` remaps it.
+  if (isAdjacentCloudChildSourceId(source.id)) {
+    return () => {};
+  }
   sources.set(source.id, source);
   emit();
   return () => {
@@ -52,11 +61,12 @@ export function setConnectionRequestReporter(next: ConnectionRequestReporter | n
 }
 
 export function reportConnectionRequest(id: string, report: ConnectionRequestReport): void {
+  const sourceId = resolveConnectionSourceId(id);
   if (reporter) {
-    reporter(id, report);
+    reporter(sourceId, report);
     return;
   }
-  pendingReports.push({ id, report });
+  pendingReports.push({ id: sourceId, report });
   if (pendingReports.length > MAX_PENDING_REPORTS) {
     pendingReports.splice(0, pendingReports.length - MAX_PENDING_REPORTS);
   }

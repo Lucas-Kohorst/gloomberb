@@ -1,4 +1,4 @@
-import { isDividendFieldId, isMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { isDividendFieldId, isMarketFieldId, isPriceOnlyMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 import { LLM_STATS_SITE_BASE, type LlmStatsRow } from "../llm-stats/types";
@@ -15,9 +15,12 @@ import {
   ADJACENT_INDEX_CATALOG,
   BENCHMARK_METRICS,
   BENCHMARK_ORGS,
+  CORPORATE_YIELD_CATALOG,
+  CREDIT_SPREAD_CATALOG,
   FUTURES_CATALOG,
   POLL_SUBJECTS,
   TREASURY_CATALOG,
+  VOL_CATALOG,
   type PollSubjectEntry,
 } from "./universal-series";
 import { TWC_KALSHI_URL, type WeatherMetric } from "../weather/types";
@@ -25,6 +28,15 @@ import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
 import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
 import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
+import {
+  OWID_CATALOG,
+  findOwidCatalogEntryBySlug,
+  owidCatalogExpression,
+  owidCatalogSearchText,
+  owidGrapherUrl,
+  owidSeriesLabel,
+  type OwidCatalogEntry,
+} from "../owid/catalog";
 
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
@@ -33,6 +45,7 @@ export type CatalogSourceId =
   | "security"
   | "option"
   | "crypto"
+  | "fx"
   | "fred"
   | "adjacent"
   | "kalshi"
@@ -46,14 +59,8 @@ export type CatalogSourceId =
 
 export type CatalogFilterId =
   | "all"
-  | "securities"
-  | "options"
-  | "crypto"
-  | "fred"
-  | "prediction"
-  | "futures"
-  | "ai"
-  | "other";
+  | "assets"
+  | "data";
 
 export interface CatalogSeriesRow {
   id: string;
@@ -72,27 +79,47 @@ export interface CatalogSeriesRow {
 
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
   { id: "all", label: "All" },
-  { id: "securities", label: "Securities" },
-  { id: "options", label: "Options" },
-  { id: "crypto", label: "Crypto" },
-  { id: "fred", label: "FRED" },
-  { id: "prediction", label: "Prediction" },
-  { id: "futures", label: "Futures" },
-  { id: "ai", label: "AI" },
-  { id: "other", label: "Other" },
+  { id: "assets", label: "Assets" },
+  { id: "data", label: "Data" },
 ];
+
+/** Securities, crypto, FX, futures, options, and venue contracts. */
+export const CATALOG_ASSET_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
+  "security",
+  "option",
+  "crypto",
+  "fx",
+  "futures",
+  "kalshi",
+  "polymarket",
+]);
+
+/** FRED, treasuries, Adjacent indices/rates, polls, AI benchmarks, weather, OWID. */
+export const CATALOG_DATA_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
+  "fred",
+  "treasury",
+  "adjacent",
+  "poll",
+  "benchmark",
+  "weather",
+  "owid",
+]);
 
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
   all: null,
-  securities: new Set(["security"]),
-  options: new Set(["option"]),
-  crypto: new Set(["crypto"]),
-  fred: new Set(["fred", "treasury"]),
-  prediction: new Set(["kalshi", "polymarket"]),
-  futures: new Set(["futures"]),
-  ai: new Set(["benchmark"]),
-  other: new Set(["adjacent", "poll", "weather", "owid"]),
+  assets: CATALOG_ASSET_SOURCES,
+  data: CATALOG_DATA_SOURCES,
 };
+
+const FX_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
+  { symbol: "EURUSD=X", name: "Euro / US Dollar" },
+  { symbol: "GBPUSD=X", name: "Pound / US Dollar" },
+  { symbol: "USDJPY=X", name: "US Dollar / Yen" },
+  { symbol: "USDCHF=X", name: "US Dollar / Swiss Franc" },
+  { symbol: "USDCAD=X", name: "US Dollar / Canadian Dollar" },
+  { symbol: "AUDUSD=X", name: "Aussie / US Dollar" },
+  { symbol: "NZDUSD=X", name: "Kiwi / US Dollar" },
+];
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "BTC-USD", name: "Bitcoin" },
@@ -132,6 +159,29 @@ function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
   return category === "OPT" || parseOptionSymbol(instrument.symbol) != null;
 }
 
+const MARKET_ONLY_CATEGORIES = new Set([
+  "INDEX",
+  "IND",
+  "ETF",
+  "FUT",
+  "FUTURE",
+  "BOND",
+  "CMDTY",
+  "COMMODITY",
+  "CURRENCY",
+  "CASH",
+  "CCY",
+  "FOREX",
+  "MUTUALFUND",
+]);
+
+function isMarketOnlyInstrument(instrument: SeriesCatalogInstrument): boolean {
+  const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
+  if (MARKET_ONLY_CATEGORIES.has(category)) return true;
+  const symbol = instrument.symbol.trim();
+  return symbol.startsWith("^") || /=F$/i.test(symbol);
+}
+
 function fieldKind(fieldId: string, option = false): string {
   if (option) return "Options";
   if (isDividendFieldId(fieldId)) return "Dividends";
@@ -169,12 +219,24 @@ function row(entry: {
 }
 
 export function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
-  if (isOptionInstrument(instrument)) return false;
+  if (isOptionInstrument(instrument) || isCatalogFxInstrument(instrument)) return false;
   const exchange = instrument.exchange?.trim().toUpperCase();
   if (exchange === "CCC") return true;
   const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
   if (category.includes("CRYPTO") || category === "COIN" || category === "TOKEN") return true;
   return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
+}
+
+const FX_CATEGORIES = new Set(["FX", "FOREX", "CCY", "CURRENCY", "CURRENCYPAIR"]);
+
+export function isCatalogFxInstrument(instrument: SeriesCatalogInstrument): boolean {
+  if (isOptionInstrument(instrument)) return false;
+  const exchange = instrument.exchange?.trim().toUpperCase();
+  if (exchange === "CCC") return false;
+  if (exchange === "CCY") return true;
+  const category = instrument.assetCategory?.trim().toUpperCase().replace(/[\s_-]+/g, "") ?? "";
+  if (FX_CATEGORIES.has(category)) return true;
+  return /=X$/i.test(instrument.symbol.trim());
 }
 
 const COMPACT_OCC_RE = /^([A-Z]{1,6})(\d{6}[CP]\d{8})$/;
@@ -197,7 +259,7 @@ export function catalogTickerFromInput(value: string): string | null {
   const option = compactOccSymbol(value);
   if (option) return option;
   const symbol = value.trim().toUpperCase();
-  return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
+  return /^[A-Z0-9^][A-Z0-9.^_/=-]{0,31}$/.test(symbol) ? symbol : null;
 }
 
 function isCatalogFieldNameQuery(query: string): boolean {
@@ -216,7 +278,7 @@ export function looksLikeCatalogTickerQuery(query: string): boolean {
   if (!trimmed || /\s/.test(trimmed) || trimmed.includes(":")) return false;
   const symbol = catalogTickerFromInput(trimmed);
   if (!symbol) return false;
-  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^/_]/.test(symbol)) return true;
+  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^_/=]/.test(symbol)) return true;
   if (isCatalogFieldNameQuery(trimmed)) return false;
   return symbol.length <= 6;
 }
@@ -238,6 +300,9 @@ export function catalogRowsForResolvedInstruments(
     if (isCatalogCryptoInstrument(instrument)) {
       return [cryptoPairRow(catalogSecuritySymbol(instrument), instrument.name)];
     }
+    if (isCatalogFxInstrument(instrument)) {
+      return [fxPairRow(catalogSecuritySymbol(instrument), instrument.name)];
+    }
     if (isOptionInstrument(instrument)) {
       const symbol = compactOccSymbol(instrument.symbol)
         ?? catalogTickerFromInput(instrument.symbol);
@@ -258,9 +323,11 @@ export function catalogRowsForResolvedInstruments(
     }
     const symbol = catalogTickerFromInput(instrument.symbol);
     if (!symbol) return [];
-    return listTimeSeriesFields().map((field) => {
+    const marketOnly = isMarketOnlyInstrument(instrument);
+    return listTimeSeriesFields().flatMap((field) => {
+      if (marketOnly && !isPriceOnlyMarketFieldId(field.id)) return [];
       const token = shortChartFieldToken(field.id);
-      return row({
+      return [row({
         id: `ticker:${symbol}:${field.id}`,
         label: `${symbol} · ${field.label}`,
         source: "Yahoo",
@@ -268,7 +335,7 @@ export function catalogRowsForResolvedInstruments(
         kind: fieldKind(field.id),
         expression: `${symbol}:${token}`,
         searchExtra: [instrument.name, field.shortLabel].filter(Boolean).join(" "),
-      });
+      })];
     });
   });
 }
@@ -396,38 +463,81 @@ export function catalogOwidDiscoveryQuery(query: string): string | null {
   return trimmed;
 }
 
+function owidCatalogRow(entry: {
+  slug: string;
+  title: string;
+  expression: string;
+  url?: string;
+  needsEntity: boolean;
+  searchExtra?: string;
+}): CatalogSeriesRow {
+  return row({
+    id: `owid:${entry.slug}`,
+    label: entry.title,
+    source: "Our World in Data",
+    sourceId: "owid",
+    kind: "OWID",
+    expression: entry.expression,
+    url: entry.url || owidGrapherUrl(entry.slug),
+    searchExtra: [
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      "owid",
+      "our world in data",
+      "cc by",
+      "cc by 4.0",
+      entry.searchExtra,
+    ].filter(Boolean).join(" "),
+    needsEntity: entry.needsEntity,
+    owidSlug: entry.slug,
+  });
+}
+
+export function catalogRowsFromOwidCatalog(
+  entries: readonly OwidCatalogEntry[] = OWID_CATALOG,
+): CatalogSeriesRow[] {
+  return entries.map((entry) => owidCatalogRow({
+    slug: entry.slug,
+    title: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    expression: owidCatalogExpression(entry),
+    searchExtra: owidCatalogSearchText(entry),
+    needsEntity: false,
+  }));
+}
+
 export function catalogRowsFromOwidHits(
   hits: readonly OwidChartSearchHit[],
   metadataBySlug: ReadonlyMap<string, OwidChartMetadataPrint>,
+  blockedSlugs: ReadonlySet<string> = new Set(),
 ): CatalogSeriesRow[] {
   return hits.flatMap((hit) => {
+    if (blockedSlugs.has(hit.slug)) return [];
     const metadata = metadataBySlug.get(hit.slug);
-    if (!metadata) return [];
-    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata.entities);
+    const catalog = findOwidCatalogEntryBySlug(hit.slug);
+    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata?.entities ?? [])
+      ?? catalog?.defaultEntity
+      ?? null;
     const needsEntity = !entity;
+    const title = metadata?.title || hit.title || catalog?.title || hit.slug;
+    const entityName = entity
+      ? metadata?.entities.find((row) => row.code === entity)?.name
+        ?? catalog?.defaultEntityName
+      : undefined;
     const expression = entity ? `OWID:${hit.slug}:${entity}` : `OWID:${hit.slug}`;
-    return [row({
-      id: `owid:${hit.slug}`,
-      label: metadata.title || hit.title,
-      source: "Our World in Data",
-      sourceId: "owid",
-      kind: "OWID",
+    return [owidCatalogRow({
+      slug: hit.slug,
+      title: entity ? owidSeriesLabel(title, entity, entityName) : title,
       expression,
-      url: hit.url || metadata.url,
-      searchExtra: [
-        hit.slug,
-        hit.subtitle,
-        metadata.citation,
-        metadata.unit,
-        "owid",
-        "our world in data",
-        "cc by",
-        "cc by 4.0",
-        ...hit.availableEntities.slice(0, 12),
-        ...metadata.entities.slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
-      ].filter(Boolean).join(" "),
+      url: hit.url || metadata?.url,
       needsEntity,
-      owidSlug: hit.slug,
+      searchExtra: [
+        hit.subtitle,
+        metadata?.citation,
+        metadata?.unit,
+        catalog ? owidCatalogSearchText(catalog) : null,
+        ...hit.availableEntities.slice(0, 12),
+        ...(metadata?.entities ?? []).slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
+      ].filter(Boolean).join(" "),
     })];
   });
 }
@@ -471,11 +581,23 @@ function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
   return row({
     id: `crypto:${symbol.toUpperCase()}`,
     label: name ? `${symbol} · ${name}` : symbol,
-    source: "Yahoo",
+    source: "CoinGecko",
     sourceId: "crypto",
     kind: "Crypto",
     expression: `${symbol}:price`,
     searchExtra: name,
+  });
+}
+
+function fxPairRow(symbol: string, name?: string): CatalogSeriesRow {
+  return row({
+    id: `fx:${symbol.toUpperCase()}`,
+    label: name ? `${symbol} · ${name}` : symbol,
+    source: "Yahoo",
+    sourceId: "fx",
+    kind: "FX",
+    expression: `${symbol}:price`,
+    searchExtra: [name, "fx", "forex", "currency"].filter(Boolean).join(" "),
   });
 }
 
@@ -493,6 +615,23 @@ function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSer
     add(catalogSecuritySymbol(instrument), instrument.name);
   }
   for (const entry of CRYPTO_CATALOG) add(entry.symbol, entry.name);
+  return rows;
+}
+
+function fxRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
+  const seen = new Set<string>();
+  const rows: CatalogSeriesRow[] = [];
+  const add = (symbol: string, name?: string) => {
+    const key = symbol.trim().toUpperCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rows.push(fxPairRow(key, name));
+  };
+  for (const instrument of instruments) {
+    if (!isCatalogFxInstrument(instrument)) continue;
+    add(catalogSecuritySymbol(instrument), instrument.name);
+  }
+  for (const entry of FX_CATALOG) add(entry.symbol, entry.name);
   return rows;
 }
 
@@ -575,6 +714,7 @@ export function listStaticCatalogInventory(
   const securities = securityFieldRows();
   const optionFields = optionFieldRows();
   const crypto = cryptoRows(instruments);
+  const fx = fxRows(instruments);
 
   const fred = listKnownFredSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
@@ -594,6 +734,40 @@ export function listStaticCatalogInventory(
     kind: "Treasury",
     expression: `UST:${entry.maturity}`,
     url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds ust yield treasury tnx",
+  }));
+
+  const corporates = CORPORATE_YIELD_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Bond",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds corporate credit yield ice bofa",
+  }));
+
+  const creditSpreads = CREDIT_SPREAD_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Credit",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds credit oas spread ice bofa",
+  }));
+
+  const volatility = VOL_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Volatility",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "vix volatility vxv sentiment",
   }));
 
   const futures = FUTURES_CATALOG.map((entry) => row({
@@ -634,6 +808,8 @@ export function listStaticCatalogInventory(
     }))
   ));
 
+  const owid = catalogRowsFromOwidCatalog();
+
   const nwsMetrics: WeatherMetric[] = ["high", "low"];
   const nws = WEATHER_STATIONS.filter((station) => station.scope === "domestic").flatMap((station) => (
     nwsMetrics.map((metric) => row({
@@ -665,14 +841,19 @@ export function listStaticCatalogInventory(
     ...securities,
     ...optionFields,
     ...crypto,
+    ...fx,
     ...fred,
     ...treasuries,
+    ...corporates,
+    ...creditSpreads,
+    ...volatility,
     ...futures,
     ...adjacent,
     ...polls,
     ...weather,
     ...nws,
     ...benchmarks,
+    ...owid,
   ];
 }
 

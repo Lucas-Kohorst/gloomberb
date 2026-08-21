@@ -96,7 +96,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
       label: "Open Prediction Markets",
       description: "Focus the prediction markets browser pane.",
       keywords: ["prediction", "markets", "polymarket", "kalshi", "open"],
-      category: "navigation",
+      category: "data",
       execute: async () => {
         ctx.focusPane(PANE_ID);
       },
@@ -107,7 +107,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
       label: "Search Prediction Markets",
       description: "Open the prediction markets pane and seed a search query.",
       keywords: ["prediction", "markets", "search", "polymarket", "kalshi"],
-      category: "navigation",
+      category: "data",
       wizard: [
         {
           key: "query",

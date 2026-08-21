@@ -18,6 +18,7 @@ import {
   buildPaneSettingResultItems,
 } from "../pane-settings";
 import type { OpenInlineConfirm } from "./confirm";
+import { buildPluginToggleItems } from "./plugin-items";
 import type {
   CommandBarRoute,
   CommandBarWorkflowRoute,
@@ -241,75 +242,4 @@ export function useCommandBarRouteActions({
     openPaneSettingsRoute,
     tickerActionItems,
   };
-}
-
-function buildPluginToggleItems({
-  disabledPlugins,
-  dispatch,
-  getConfig,
-  persistConfig,
-  pluginRegistry,
-  query,
-}: {
-  disabledPlugins: readonly string[];
-  dispatch: Dispatch<AppAction>;
-  getConfig: () => AppState["config"];
-  persistConfig: (nextConfig: AppState["config"]) => void;
-  pluginRegistry: PluginRegistry;
-  query: string;
-}): ResultItem[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  const pluginQuery = normalizedQuery === "plugin" || normalizedQuery === "plugins"
-    ? ""
-    : normalizedQuery;
-  const toggleable = [...pluginRegistry.allPlugins.values()].filter((plugin) => plugin.toggleable);
-  const filtered = pluginQuery
-    ? toggleable.filter((plugin) => (
-      [
-        plugin.name,
-        plugin.id,
-        plugin.description,
-        ...pluginRegistry.getPluginPaneIds(plugin.id).flatMap((paneId) => [
-          paneId,
-          pluginRegistry.panes.get(paneId)?.name,
-        ]),
-        ...pluginRegistry.getPluginPaneTemplateIds(plugin.id).flatMap((templateId) => {
-          const template = pluginRegistry.paneTemplates.get(templateId);
-          return [
-            templateId,
-            template?.label,
-            template?.description,
-            ...(template?.keywords ?? []),
-          ];
-        }),
-      ].some((term) => typeof term === "string" && term.toLowerCase().includes(pluginQuery))
-    ))
-    : toggleable;
-
-  return filtered.map((plugin): ResultItem => {
-    const enabled = !disabledPlugins.includes(plugin.id);
-    const toggleAction = () => {
-      dispatch({ type: "TOGGLE_PLUGIN", pluginId: plugin.id });
-      const currentConfig = getConfig();
-      const nextDisabled = enabled
-        ? [...disabledPlugins, plugin.id]
-        : disabledPlugins.filter((entry) => entry !== plugin.id);
-      if (enabled) {
-        for (const paneId of pluginRegistry.getPluginPaneIds(plugin.id)) {
-          pluginRegistry.hidePane(paneId);
-        }
-      }
-      persistConfig({ ...currentConfig, disabledPlugins: nextDisabled });
-    };
-    return {
-      id: `plugin:${plugin.id}`,
-      label: plugin.name,
-      detail: plugin.description || "",
-      category: "Plugins",
-      kind: "plugin",
-      checked: enabled,
-      pluginToggle: toggleAction,
-      action: toggleAction,
-    };
-  });
 }

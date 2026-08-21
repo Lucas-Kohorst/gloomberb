@@ -25,6 +25,7 @@ import {
   chartSeriesLabel,
 } from "./presets";
 import { buildChartComposerPaneSettingsDef } from "./settings";
+import { buildDataCatalogPaneSettingsDef } from "./catalog-settings";
 import { getStashedChartSpec } from "./chart-stash";
 import type { PluginModule } from "../plugin-module";
 import {
@@ -169,11 +170,12 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Search, filter, and chart every series the composer knows — securities, crypto, FRED, Adjacent, Kalshi, Polymarket, futures, treasuries, polls, llm-stats benchmarks, weather, and Our World in Data.",
+    description: "Browse Assets (securities, crypto, FX, futures, prediction contracts) vs Data (FRED, treasuries, Adjacent, polls, AI benchmarks, weather, OWID).",
     keywords: [
       "catalog",
       "series",
       "data",
+      "assets",
       "chart",
       "fred",
       "kalshi",
@@ -181,6 +183,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "adjacent",
       "prediction",
       "futures",
+      "fx",
+      "forex",
       "treasury",
       "polls",
       "dividends",
@@ -327,6 +331,7 @@ export const chartComposerModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 110, height: 32 },
+    settings: (context) => buildDataCatalogPaneSettingsDef(context.settings),
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {

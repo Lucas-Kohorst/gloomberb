@@ -28,6 +28,8 @@ export function detachedSnapshotKey(snapshot: DesktopSharedStateSnapshot, paneId
   const paneStateIds = collectPaneStateIds(snapshot, paneId);
   return JSON.stringify({
     theme: snapshot.config.theme,
+    fontSize: snapshot.config.fontSize,
+    fontFamily: snapshot.config.fontFamily,
     baseCurrency: snapshot.config.baseCurrency,
     portfolios: snapshot.config.portfolios,
     watchlists: snapshot.config.watchlists,
