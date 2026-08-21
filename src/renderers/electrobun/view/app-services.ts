@@ -86,6 +86,17 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
             ? remoteDataProvider.getNews(query)
             : Promise.resolve([])
       ),
+      fetchNewsPage: async (query) => {
+        if (cloudNewsCapability?.kind === "news" && cloudNewsCapability.provider.fetchNewsPage) {
+          return cloudNewsCapability.provider.fetchNewsPage(query);
+        }
+        const articles = cloudNewsCapability?.kind === "news"
+          ? await cloudNewsCapability.provider.fetchNews(query)
+          : remoteDataProvider
+            ? await remoteDataProvider.getNews(query)
+            : [];
+        return { articles, nextCursor: null };
+      },
     },
   }));
 

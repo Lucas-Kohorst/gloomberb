@@ -33,6 +33,8 @@ const DEFAULT_MAX_INACTIVE_QUERIES = 50;
 interface SourceFetchResult {
   articles: NewsArticle[];
   sourceIds: string[];
+  failedSourceIds: string[];
+  nextCursor: string | null;
 }
 
 interface NewsQueryEntry {
@@ -40,6 +42,7 @@ interface NewsQueryEntry {
   state: NewsQueryState;
   sourceArticles: Map<string, NewsArticle[]>;
   inFlight: Promise<NewsQueryState> | null;
+  loadMoreInFlight: Promise<void> | null;
   refs: number;
   lastAccessedAt: number;
 }
@@ -191,6 +194,46 @@ export class NewsService {
     return this.refreshQuery(normalizeNewsQuery(query), true);
   }
 
+  async loadMore(query: NewsQuery): Promise<void> {
+    const normalized = normalizeNewsQuery(query);
+    const entry = this.queries.get(buildNewsQueryKey(normalized));
+    if (!entry || entry.loadMoreInFlight || !entry.state.nextCursor || entry.state.loadingMore) return;
+    if (entry.state.articles.length >= 500) {
+      entry.state = { ...entry.state, nextCursor: null };
+      this.notify();
+      return;
+    }
+
+    const request = (async () => {
+      entry.state = { ...entry.state, loadingMore: true };
+      this.notify();
+      try {
+        const result = await this.fetchFromSources({
+          ...normalized,
+          cursor: entry.state.nextCursor ?? undefined,
+        }, entry);
+        entry.state = {
+          ...entry.state,
+          loadingMore: false,
+          articles: filterNewsArticlesForQuery(
+            dedupeNewsArticles([...entry.state.articles, ...result.articles]),
+            normalized,
+          ),
+          nextCursor: result.nextCursor,
+        };
+        this.rebuildArticlePool();
+        this.notify();
+      } catch {
+        entry.state = { ...entry.state, loadingMore: false };
+        this.notify();
+      } finally {
+        entry.loadMoreInFlight = null;
+      }
+    })();
+    entry.loadMoreInFlight = request;
+    await request;
+  }
+
   async loadStory(storyId: string): Promise<NewsArticle | null> {
     const sources = this.enabledSources({ feed: "latest" })
       .filter((source) => !!source.provider.fetchNewsStory);
@@ -251,12 +294,27 @@ export class NewsService {
     const promise = (async () => {
       try {
         const result = await this.fetchFromSources(query, entry);
+        if (result.sourceIds.length === 0 && result.failedSourceIds.length > 0) {
+          throw new Error("News sources unavailable.");
+        }
+        if (entry.loadMoreInFlight) return entry.state;
+        const incoming = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query);
+        const existing = entry.state.articles;
+        const incomingIds = new Set(incoming.map((article) => article.id));
+        const hasOlderPages = existing.some((article) => !incomingIds.has(article.id));
+        const articles = existing.length > 0
+          ? filterNewsArticlesForQuery(dedupeNewsArticles([...incoming, ...existing]), query)
+          : incoming;
         const state: NewsQueryState = {
           phase: "ready",
-          articles: filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query),
-          error: null,
+          articles,
+          error: result.failedSourceIds.length > 0
+            ? `${result.failedSourceIds.length} of ${result.failedSourceIds.length + result.sourceIds.length} news sources unavailable.`
+            : null,
           updatedAt: this.now(),
           sourceIds: result.sourceIds,
+          nextCursor: hasOlderPages ? entry.state.nextCursor : result.nextCursor,
+          loadingMore: entry.state.loadingMore,
         };
         entry.state = state;
         entry.lastAccessedAt = this.now();
@@ -297,6 +355,7 @@ export class NewsService {
       state: createIdleNewsQueryState(),
       sourceArticles: new Map(),
       inFlight: null,
+      loadMoreInFlight: null,
       refs: 0,
       lastAccessedAt: now,
     };
@@ -334,10 +393,39 @@ export class NewsService {
 
   private async fetchFromSources(query: NewsQuery, entry: NewsQueryEntry): Promise<SourceFetchResult> {
     const sources = this.enabledSources(query);
+    const pageSources = query.cursor
+      ? sources.filter((source) => !!source.provider.fetchNewsPage)
+      : sources;
     if (normalizeNewsFeed(query) === "ticker") {
-      return this.fetchTickerNews(query, sources, entry);
+      return this.fetchTickerNews(query, pageSources, entry);
     }
-    return this.fetchMergedNews(query, sources, entry);
+    return this.fetchMergedNews(query, pageSources, entry);
+  }
+
+  private async readSourcePage(
+    source: NewsCapability,
+    query: NewsQuery,
+    entry: NewsQueryEntry | null,
+  ): Promise<{ articles: NewsArticle[]; nextCursor: string | null }> {
+    if (source.provider.fetchNewsPage) {
+      const page = await source.provider.fetchNewsPage(query);
+      return {
+        articles: page.articles.map((article) => attributeArticle(source, article)),
+        nextCursor: page.nextCursor ?? null,
+      };
+    }
+    const articles = (await source.provider.fetchNews(query, {
+      onPartial: entry && !query.cursor
+        ? (partial) => {
+          this.applySourceArticles(
+            entry,
+            newsCapabilitySourceId(source),
+            partial.map((article) => attributeArticle(source, article)),
+          );
+        }
+        : undefined,
+    })).map((article) => attributeArticle(source, article));
+    return { articles, nextCursor: null };
   }
 
   private async fetchTickerNews(
@@ -346,19 +434,26 @@ export class NewsService {
     entry: NewsQueryEntry,
   ): Promise<SourceFetchResult> {
     let firstEmpty: SourceFetchResult | null = null;
+    const failedSourceIds: string[] = [];
     for (const source of sources) {
       try {
-        const articles = (await source.provider.fetchNews(query))
-          .map((article) => attributeArticle(source, article));
-        const result = { articles, sourceIds: [newsCapabilitySourceId(source)] };
-        this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
-        if (articles.length > 0) return result;
+        const page = await this.readSourcePage(source, query, query.cursor ? null : entry);
+        const result = {
+          articles: page.articles,
+          sourceIds: [newsCapabilitySourceId(source)],
+          failedSourceIds,
+          nextCursor: page.nextCursor,
+        };
+        if (!query.cursor) {
+          this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles);
+        }
+        if (page.articles.length > 0) return result;
         firstEmpty ??= result;
       } catch {
-        // Continue to lower-priority sources.
+        failedSourceIds.push(newsCapabilitySourceId(source));
       }
     }
-    return firstEmpty ?? { articles: [], sourceIds: [] };
+    return firstEmpty ?? { articles: [], sourceIds: [], failedSourceIds, nextCursor: null };
   }
 
   private async fetchMergedNews(
@@ -366,20 +461,29 @@ export class NewsService {
     sources: NewsCapability[],
     entry: NewsQueryEntry,
   ): Promise<SourceFetchResult> {
+    const failedSourceIds: string[] = [];
+    let nextCursor: string | null = null;
+    const pagedArticles: NewsArticle[] = [];
+    const pagedSourceIds: string[] = [];
     await Promise.allSettled(sources.map(async (source) => {
-      const articles = (await source.provider.fetchNews(query, {
-        onPartial: (partial) => {
-          this.applySourceArticles(
-            entry,
-            newsCapabilitySourceId(source),
-            partial.map((article) => attributeArticle(source, article)),
-          );
-        },
-      }))
-        .map((article) => attributeArticle(source, article));
-      this.applySourceArticles(entry, newsCapabilitySourceId(source), articles);
+      try {
+        const page = await this.readSourcePage(source, query, query.cursor ? null : entry);
+        nextCursor ??= page.nextCursor;
+        if (query.cursor) {
+          pagedArticles.push(...page.articles);
+          pagedSourceIds.push(newsCapabilitySourceId(source));
+          return;
+        }
+        this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles);
+      } catch {
+        failedSourceIds.push(newsCapabilitySourceId(source));
+      }
     }));
-    return this.sourceFetchSnapshot(entry);
+    if (query.cursor) {
+      return { articles: pagedArticles, sourceIds: pagedSourceIds, failedSourceIds, nextCursor };
+    }
+    const snapshot = this.sourceFetchSnapshot(entry);
+    return { ...snapshot, failedSourceIds, nextCursor };
   }
 
   private sourceFetchSnapshot(entry: NewsQueryEntry): SourceFetchResult {
@@ -389,7 +493,7 @@ export class NewsService {
       sourceIds.push(sourceId);
       articles.push(...items);
     }
-    return { articles, sourceIds };
+    return { articles, sourceIds, failedSourceIds: [], nextCursor: entry.state.nextCursor };
   }
 
   private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): void {
@@ -404,6 +508,8 @@ export class NewsService {
       error: null,
       updatedAt: this.now(),
       sourceIds: snapshot.sourceIds,
+      nextCursor: entry.state.nextCursor,
+      loadingMore: entry.state.loadingMore,
     };
     entry.lastAccessedAt = this.now();
     if (options.notify === false) return;

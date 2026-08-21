@@ -1,6 +1,6 @@
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
-import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
 import { useDebouncedPluginPaneState } from "../../../../runtime";
 import { usePaneSettingValue } from "../../../../../state/app/context";
@@ -41,6 +41,7 @@ export function NewsPresetPane({
 }) {
   const newsState = useNewsArticles(query);
   const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(query, newsState);
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
@@ -116,6 +117,8 @@ export function NewsPresetPane({
       emptyStateHint={emptyStateHint}
       onPopOut={() => popOutArticle(readableArticle)}
       onShare={shareArticle}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }

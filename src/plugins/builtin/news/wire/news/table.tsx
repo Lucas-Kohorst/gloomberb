@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, type ReactNode } from "react";
-import { TextAttributes } from "../../../../../ui";
+import { useCallback, useEffect, useMemo, type ReactNode, type RefObject } from "react";
+import { TextAttributes, type ScrollBoxRenderable } from "../../../../../ui";
 import {
   DataTableStackView,
   TickerBadgeList,
@@ -38,6 +38,8 @@ interface NewsArticleStackBaseProps {
   emptyStateTitle: string;
   emptyStateHint?: string;
   titleForArticle?: (article: MarketNewsItem) => string;
+  scrollRef?: RefObject<ScrollBoxRenderable | null>;
+  onBodyScrollActivity?: () => void;
 }
 
 function compareText(a: string, b: string): number {
@@ -159,6 +161,8 @@ export function NewsArticleStackView({
   onArticleRead,
   detailOpen,
   onBack,
+  scrollRef,
+  onBodyScrollActivity,
   detailContent,
   detailTitle,
   rootBefore,
@@ -308,6 +312,8 @@ export function NewsArticleStackView({
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }

@@ -639,4 +639,34 @@ describe("NewsService", () => {
     expect(fetches).toBe(1);
     expect(agg.getQueryState({ feed: "latest", limit: 200 }).articles).toHaveLength(1);
   });
+
+  it("appends paged news instead of replacing the first page", async () => {
+    const first = makeItem({ url: "https://example.com/a", title: "First" });
+    const second = makeItem({ url: "https://example.com/b", title: "Second" });
+    const fetchNewsPage = mock(async (query: { cursor?: string }) => (
+      query.cursor === "page-2"
+        ? { articles: [second], nextCursor: null }
+        : { articles: [first], nextCursor: "page-2" }
+    ));
+    agg.register(newsProvider({
+      id: "cloud",
+      name: "cloud",
+      provider: {
+        fetchNews: async (query) => (await fetchNewsPage(query)).articles,
+        fetchNewsPage,
+      },
+    }));
+
+    const initial = await agg.load({ feed: "latest", limit: 50 });
+    expect(initial.articles.map((article) => article.url)).toEqual(["https://example.com/a"]);
+    expect(initial.nextCursor).toBe("page-2");
+
+    await agg.loadMore({ feed: "latest", limit: 50 });
+    const state = agg.getQueryState({ feed: "latest", limit: 50 });
+    expect(state.articles.map((article) => article.url)).toEqual([
+      "https://example.com/a",
+      "https://example.com/b",
+    ]);
+    expect(state.nextCursor).toBeNull();
+  });
 });

@@ -11,7 +11,7 @@ import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import { EmptyState, ErrorState, FeedDataTableStackView, LoadingState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
 import { shouldSkipJinaForKnownBody } from "../shared/jina-article-text";
 import { useJinaArticle } from "../shared/jina-reader";
-import { getSharedNewsService, useNewsArticles } from "../../../news/hooks";
+import { getSharedNewsService, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
 import { firehoseModule } from "./wire/firehose";
 import { useNewsArticleFooter } from "./wire/news/footer";
@@ -65,13 +65,14 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
   const summaryFetchRef = useRef(0);
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
-  const newsState = useNewsArticles(instrument ? {
-    feed: "ticker",
+  const newsQuery = instrument ? {
+    feed: "ticker" as const,
     ticker: instrument.symbol,
     exchange: instrument.exchange,
-    tickerTier: "primary",
+    tickerTier: "primary" as const,
     limit: NEWS_ITEM_LIMIT,
-  } : null);
+  } : null;
+  const newsState = useNewsArticles(newsQuery);
   const liveNews = newsState.articles;
   const news = usePersistedNewsArticles(
     `articles:${instrument?.symbol ?? "none"}:${instrument?.exchange ?? ""}`,
@@ -84,6 +85,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const updatedAgo = useUpdatedAgo(lastUpdated);
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(newsQuery, newsState);
 
   useEffect(() => {
     if (newsState.phase === "ready" || newsState.phase === "refreshing") {
@@ -161,6 +163,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   return (
     <FeedDataTableStackView
       width={width}
+      width={width}
       height={height}
       focused={focused}
       items={items}
@@ -175,6 +178,8 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       titleLabel="Headline"
       emptyStateTitle="No news."
       markdown
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }
