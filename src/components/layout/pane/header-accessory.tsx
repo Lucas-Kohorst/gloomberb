@@ -40,8 +40,9 @@ function combinePaneHeaderAccessories(
   registrations: Map<string, PaneHeaderAccessory>,
 ): PaneHeaderAccessory | null {
   const entries = [...registrations.entries()];
-  if (entries.length === 0) return null;
-  if (entries.length === 1) return entries[0][1];
+  const only = entries[0];
+  if (!only) return null;
+  if (entries.length === 1) return only[1];
   return {
     width: entries.reduce((total, [, accessory]) => total + Math.max(0, accessory.width), 0),
     node: (

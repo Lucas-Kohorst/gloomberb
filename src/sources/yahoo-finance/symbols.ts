@@ -8,6 +8,8 @@ const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   KRX: ".KS", KSE: ".KS", KOSDAQ: ".KQ",
   SGX: ".SI", SES: ".SI",
   IDX: ".JK",
+  JKT: ".JK",
+  JAKARTA: ".JK",
   NSE: ".NS", BSE: ".BO",
   ASX: ".AX", NZE: ".NZ",
   SET: ".BK", BKK: ".BK", KLSE: ".KL", MYX: ".KL", PSE: ".PS", HOSE: ".VN", HNX: ".VN",
@@ -83,6 +85,9 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
   if (!exchange) {
+    // Hosted Yahoo 429s the unsuffixed US listing, then this walk used to
+    // accept the first foreign hit — COIN → COIN.JK (PT Indokripto).
+    if (isBareUsEquityYahooSymbol(normalized)) return [normalized];
     const symbols = new Set<string>();
     const candidates = [normalized];
     if (dotVariant) candidates.unshift(dotVariant);
@@ -135,6 +140,10 @@ function normalizeYahooTicker(ticker: string, exchange: string): string {
     }
   }
   return normalized;
+}
+
+function isBareUsEquityYahooSymbol(symbol: string): boolean {
+  return /^[A-Z]{1,5}(?:\.[A-Z])?$/.test(symbol);
 }
 
 function isHongKongExchange(exchange: string): boolean {

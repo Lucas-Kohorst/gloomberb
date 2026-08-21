@@ -1,4 +1,5 @@
 import { searchUsListedUniverse } from "../../sources/us-listings/client";
+import { parseCryptoPair } from "../../sources/coingecko/ids";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
@@ -196,7 +197,7 @@ export async function resolveTickerSearch({
     await searchProviderResults(dataProvider, symbol, searchContext),
     tickers,
   );
-  const exactMatch = findExactTickerSearchMatch(providerItems, symbol);
+  const exactMatch = findExactTickerSearchMatch(rankTickerSearchItems(providerItems, symbol), symbol);
   if (!exactMatch?.result) return null;
 
   return {
@@ -412,5 +413,7 @@ function buildSearchResultAliases(result: InstrumentSearchResult): string[] {
   if (result.brokerContract?.symbol) {
     for (const alias of buildSymbolAliases(result.brokerContract.symbol)) aliases.add(alias);
   }
+  const pair = parseCryptoPair(resolvedSymbol);
+  if (pair) aliases.add(pair.base);
   return [...aliases];
 }

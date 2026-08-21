@@ -156,7 +156,7 @@ export function buildArticleTickerUniverse(options: {
   ingest(options.catalog, false);
 
   for (const ticker of MEGA_CAP_TICKERS) addSymbols(catalogSymbols, ticker);
-  for (const [symbol] of bookSymbols) addSymbols(catalogSymbols, symbol);
+  for (const symbol of bookSymbols) addSymbols(catalogSymbols, symbol);
 
   for (const entry of MEGA_CAP_NAMES) {
     if (!nameMap.has(entry.name)) nameMap.set(entry.name, entry.symbol);

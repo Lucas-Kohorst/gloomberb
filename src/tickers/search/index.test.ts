@@ -91,6 +91,26 @@ describe("ticker-search utilities", () => {
     });
   });
 
+  test("resolves COIN to Coinbase, not a CoinGecko name hit or IDX listing", async () => {
+    const resolved = await resolveTickerSearch({
+      query: "COIN",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("BTC-USD", "Bitcoin", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("COIN", "PT Indokripto Koin Semesta Tbk", { exchange: "Jakarta", type: "EQUITY" }),
+        makeSearchResult("COIN", "Coinbase Global, Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
+      ]),
+    });
+
+    expect(resolved).toMatchObject({
+      kind: "provider",
+      symbol: "COIN",
+    });
+    expect(resolved?.kind === "provider" ? resolved.result.name : null).toBe("Coinbase Global, Inc.");
+    expect(resolved?.kind === "provider" ? resolved.result.exchange : null).toBe("NASDAQ");
+  });
+
   test("combines local and provider candidates without duplicate saved symbols", async () => {
     const tickers = new Map<string, TickerRecord>([["AAPL", makeTicker("AAPL", "Apple")]]);
     const results = await searchTickerCandidates({

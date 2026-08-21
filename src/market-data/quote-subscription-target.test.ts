@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mergeQuoteSubscriptionTargets } from "./quote-subscription-target";
+import { isLiveQuoteSubscriptionTarget, mergeQuoteSubscriptionTargets } from "./quote-subscription-target";
 
 describe("mergeQuoteSubscriptionTargets", () => {
   test("does not synthesize optional priority fields", () => {
@@ -33,5 +33,20 @@ describe("mergeQuoteSubscriptionTargets", () => {
     expect(mergeQuoteSubscriptionTargets([
       { symbol: "MSFT", visible: false, selected: false, weight: 0 },
     ])).toEqual({ symbol: "MSFT", visible: false, selected: false, weight: 0 });
+  });
+});
+
+describe("isLiveQuoteSubscriptionTarget", () => {
+  test("keeps selected rows live even when the pane marked them hidden", () => {
+    expect(isLiveQuoteSubscriptionTarget({ visible: false, selected: true })).toBe(true);
+  });
+
+  test("drops off-screen watchlist rows that are not selected", () => {
+    expect(isLiveQuoteSubscriptionTarget({ visible: false, selected: false, weight: 10 })).toBe(false);
+  });
+
+  test("treats missing visible as live for charts and legacy callers", () => {
+    expect(isLiveQuoteSubscriptionTarget({})).toBe(true);
+    expect(isLiveQuoteSubscriptionTarget({ visible: true })).toBe(true);
   });
 });
