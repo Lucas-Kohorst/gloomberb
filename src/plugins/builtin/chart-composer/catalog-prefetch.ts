@@ -9,7 +9,6 @@ import {
   catalogRowsFromPollSubjects,
   type CatalogSeriesRow,
 } from "./catalog-inventory";
-import { loadCatalogPredictionHits } from "./use-series-catalog";
 
 export type CatalogAdjacentIndex = {
   indexId: string;
@@ -23,7 +22,6 @@ let catalogPollRowsCache: CatalogSeriesRow[] | null = null;
 let catalogPollRowsInflight: Promise<CatalogSeriesRow[]> | null = null;
 let catalogAdjacentIndicesCache: CatalogAdjacentIndex[] | null = null;
 let catalogAdjacentIndicesInflight: Promise<CatalogAdjacentIndex[]> | null = null;
-let catalogWarmScheduled = false;
 
 export function peekCatalogBenchRows(): CatalogSeriesRow[] | null {
   return catalogBenchRowsCache;
@@ -44,7 +42,6 @@ export function resetCatalogPrefetchCaches(): void {
   catalogPollRowsInflight = null;
   catalogAdjacentIndicesCache = null;
   catalogAdjacentIndicesInflight = null;
-  catalogWarmScheduled = false;
 }
 
 export function loadCatalogBenchRows(): Promise<CatalogSeriesRow[]> {
@@ -106,30 +103,6 @@ export function loadCatalogAdjacentIndices(): Promise<CatalogAdjacentIndex[]> {
       catalogAdjacentIndicesInflight = null;
     });
   return catalogAdjacentIndicesInflight;
-}
-
-export function warmDataCatalogSources(): Promise<void> {
-  return Promise.allSettled([
-    loadCatalogPredictionHits(),
-    loadCatalogBenchRows(),
-    loadCatalogPollRows(),
-    loadCatalogAdjacentIndices(),
-    import("./catalog-owid").then((mod) => mod.loadCatalogOwidRows("")),
-  ]).then(() => undefined);
-}
-
-export function scheduleDataCatalogWarm(): void {
-  if (catalogWarmScheduled) return;
-  catalogWarmScheduled = true;
-  const run = () => {
-    void warmDataCatalogSources();
-  };
-  const idle = (globalThis as { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
-  if (typeof idle === "function") {
-    idle(run, { timeout: 2500 });
-    return;
-  }
-  setTimeout(run, 0);
 }
 
 export function useCatalogBenchRows(refreshNonce = 0): { rows: CatalogSeriesRow[]; loading: boolean } {

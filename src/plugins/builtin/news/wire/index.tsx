@@ -230,21 +230,6 @@ export const newsWireModule: PluginModule = {
       },
     );
     ctx.registerCapability(source);
-    void ensureUsListingsUniverse().then((listings) => {
-      if (!listings) return;
-      void ctx.tickerRepository.loadAllTickers().then((tickers) => {
-        setSharedArticleTickerUniverse(buildArticleTickerUniverse({
-          book: tickers.map((ticker) => ({
-            symbol: ticker.metadata.ticker,
-            name: ticker.metadata.name,
-          })),
-          catalog: listings.securities.map((security) => ({
-            symbol: security.symbol,
-            name: security.name,
-          })),
-        }));
-      });
-    });
     disposeRssConnection = registerConnectionSource({
       id: "rss",
       name: "RSS Feeds",

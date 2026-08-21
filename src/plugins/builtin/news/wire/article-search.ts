@@ -1,6 +1,7 @@
 import type { CommandResultDef, PaneTemplateCreateOptions } from "../../../../types/plugin";
 import type { NewsArticle } from "../../../../news/types";
 import { getSharedNewsService } from "../../../../news/hooks";
+import { scheduleOnIdle } from "../../../../utils/schedule-on-idle";
 import { NEWS_ARTICLE_READER_TEMPLATE_ID } from "../../shared/article-pop-out";
 import { stashNewsArticle } from "./news/article-stash";
 
@@ -60,15 +61,18 @@ const COMMAND_WORDS = new Set([
 
 export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
 
-let rssWarmTimer: ReturnType<typeof setTimeout> | null = null;
+/** Cap so Firehose / ART still fill within seconds, not minutes, after first paint. */
+export const NEWS_WARM_IDLE_TIMEOUT_MS = 5_000;
+
+let cancelNewsWarm: (() => void) | null = null;
 
 /** Prefetch latest news (RSS, X, Substack, wire) without waiting for a pane to mount. */
 export function scheduleLatestNewsWarm(): void {
   cancelRssNewsWarm();
-  rssWarmTimer = setTimeout(() => {
-    rssWarmTimer = null;
+  cancelNewsWarm = scheduleOnIdle(() => {
+    cancelNewsWarm = null;
     void getSharedNewsService()?.poll(ARTICLE_SEARCH_QUERY);
-  }, 0);
+  }, NEWS_WARM_IDLE_TIMEOUT_MS);
 }
 
 /** Prefetch RSS so Connections records traffic and ART has headlines without opening a pane. */
@@ -77,9 +81,8 @@ export function scheduleRssNewsWarm(): void {
 }
 
 export function cancelRssNewsWarm(): void {
-  if (rssWarmTimer == null) return;
-  clearTimeout(rssWarmTimer);
-  rssWarmTimer = null;
+  cancelNewsWarm?.();
+  cancelNewsWarm = null;
 }
 
 export function tokenizeArticleQuery(query: string): string[] {
