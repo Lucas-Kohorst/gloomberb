@@ -1,21 +1,10 @@
-import { canRetargetPaneTicker } from "../../plugins/ticker-follow";
-import type { PaneInstanceConfig } from "../../types/config";
+export const HEADER_COMMAND_BAR_PLACEHOLDER = "Command or plain English…";
 
-export const HEADER_TICKER_PLACEHOLDER = "<ticker>";
-
-export function buildHeaderTickerSearchLaunch(
-  rawQuery: string,
-  focusedPane: PaneInstanceConfig | null | undefined,
-): {
-  kind: "ticker-search";
-  query: string;
-  replacePaneId?: string;
+/** Clicking the header control opens the real command bar, not ticker-only search. */
+export function buildHeaderCommandBarOpenAction(): {
+  type: "SET_COMMAND_BAR";
+  open: true;
+  query: "";
 } {
-  const query = rawQuery.trim();
-  const replacePaneId = focusedPane && canRetargetPaneTicker(focusedPane)
-    ? focusedPane.instanceId
-    : undefined;
-  return replacePaneId
-    ? { kind: "ticker-search", query, replacePaneId }
-    : { kind: "ticker-search", query };
+  return { type: "SET_COMMAND_BAR", open: true, query: "" };
 }
