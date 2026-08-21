@@ -334,7 +334,6 @@ export const ja: Record<string, string> = {
   "Prediction Markets": "予測市場",
   "Economics": "マクロ経済",
   "Collections": "コレクション",
-  "Workspace": "ワークスペース",
   "Account Management": "アカウント管理",
   "Gloom Cloud": "Gloom Cloud",
 

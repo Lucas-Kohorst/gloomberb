@@ -333,7 +333,6 @@ export const es: Record<string, string> = {
   "Prediction Markets": "Mercados de predicción",
   "Economics": "Economía",
   "Collections": "Colecciones",
-  "Workspace": "Espacio de trabajo",
   "Account Management": "Gestión de cuenta",
   "Gloom Cloud": "Gloom Cloud",
 

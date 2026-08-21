@@ -113,7 +113,7 @@ export const ko: Record<string, string> = {
   "Panes": "패널",
   "Assets": "자산",
   "Data": "데이터",
-  "Workspace": "워크스페이스",
+  "Workspace": "작업공간",
   "Plugins": "플러그인",
   "Portfolio": "포트폴리오",
   "Primary Listing": "주 상장",
@@ -332,7 +332,6 @@ export const ko: Record<string, string> = {
   "Prediction Markets": "예측 시장",
   "Economics": "경제",
   "Collections": "컬렉션",
-  "Workspace": "작업공간",
   "Account Management": "계정 관리",
   "Gloom Cloud": "Gloom Cloud",
 
