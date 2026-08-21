@@ -9,6 +9,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import { floatingPaneBg, floatingPaneTitleBg, paneTitleText } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { hasPaneFooterContent, PaneFooterBar, PaneFooterProvider } from "./pane/footer";
+import { PaneHeaderAccessoryProvider } from "./pane/header-accessory";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneContent } from "./pane/content";
 import { NATIVE_PANE_HEADER_HEIGHT_PX, resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
@@ -141,7 +142,9 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
 
   return (
     <PaneFooterProvider>
-      {(footer) => {
+      {(footer) => (
+        <PaneHeaderAccessoryProvider>
+          {(titleAccessory) => {
         const showFooter = hasPaneFooterContent(footer);
         const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
         const renderFooter = reserveFooter || showFooter;
@@ -219,6 +222,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
                     {title}
                   </Text>
                 </Box>
+                {titleAccessory?.node}
                 {quickSettings.map((setting) => (
                   <Box
                     key={setting.key}
@@ -275,7 +279,9 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
             {renderFooter && <PaneFooterBar footer={footer} focused={focused} width={width} />}
           </Box>
         );
-      }}
+          }}
+        </PaneHeaderAccessoryProvider>
+      )}
     </PaneFooterProvider>
   );
 }

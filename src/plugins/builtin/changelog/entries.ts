@@ -23,6 +23,8 @@ const RELEASE_0_13_2: ChangelogRelease = {
 - Share a tweet with \`[y]\` from TWIT or the tweet pop-out — same \`/s/\` reader as articles. The snapshot is the tweet text (x.com is not scraped).
 - Substack \`[y]\` share only from the open article, so the link has the full post instead of the list teaser.
 - Pane footers use \`[r]\`efresh and \`[/]\` search, and those keys bind.
+- Chat presence dots follow the live user list from presence snapshots and websocket payloads, not just the online count. DM and group pane titles show that mark immediately after the username, including while the composer is focused.
+- Empty-composer \`[p]\`rofile opens the DM peer; typing \`p\` in a message still inserts the letter. \`WHO\` only lists public profiles.
 - Web/desktop inputs opt out of iCloud Passwords, 1Password, and browser autofill.
 
 ## Fixes
@@ -70,7 +72,7 @@ const RELEASE_0_13_1: ChangelogRelease = {
 - X/RSS/Substack share one ticker extractor: cashtags (\`$BTC\`, \`$BRK.B\`), exchange prefixes, and company names from the listings catalog. Firehose starts X and RSS at boot so they do not land minutes after Substack/wire.
 - Prediction **News** / **Similar** match on \`platform:raw\` ids, not a title AND search. New **Data** tab maps settlement text onto series we already have (weather highs, CPI, BTC) and \`[g]\` graphs them.
 - \`[p]\` pops a selected tweet into a floating reader. Article \`/s/\` links keep full text, open archive/live in a new tab even when signed in, and chart shares are centered with padding.
-- Click a chat username or \`WHO @user\` for the public profile. Green presence dots on authors, DMs, and group members come from the live presence list.
+- Click a chat username, a member chip, or empty-composer \`p\` in a DM for the public profile. \`WHO\` only lists public profiles. Green presence dots use the live presence user list, including nested websocket payloads. The chat pane title shows that mark after the username.
 
 ## Connections, plugins, assist
 

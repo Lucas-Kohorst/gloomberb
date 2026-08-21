@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import { useShortcut } from "../../../../react/input";
-import type { ScrollBoxRenderable } from "../../../../ui";
+import type { ScrollBoxRenderable, TextareaRenderable } from "../../../../ui";
 import type { ChatMessage } from "../../../../api-client";
 import { isPlainKey } from "../../../../utils/keyboard";
 import { scrollToBottom } from "../layout";
@@ -20,6 +20,7 @@ export function useChatContentShortcuts({
   focused,
   hasOlderMessages,
   inputFocused,
+  inputRef,
   inputValueRef,
   loadingOlderMessages,
   messages,
@@ -67,6 +68,7 @@ export function useChatContentShortcuts({
   focused: boolean;
   hasOlderMessages: boolean;
   inputFocused: boolean;
+  inputRef: MutableRefObject<TextareaRenderable | null>;
   inputValueRef: MutableRefObject<string>;
   loadingOlderMessages: boolean;
   messages: ChatMessage[];
@@ -100,6 +102,10 @@ export function useChatContentShortcuts({
   closeProfile?: () => void;
   openSelectedProfile?: () => boolean;
 }) {
+  const composerIsEmpty = () => (
+    (inputRef.current?.editBuffer.getText() ?? inputValueRef.current).length === 0
+  );
+
   useShortcut((event) => {
     if (!focused || commandBarOpen || !inputFocused || !mentionMenuOpen) return;
     if (
@@ -166,7 +172,7 @@ export function useChatContentShortcuts({
     if (
       isPlainKey(event, "left") &&
       stackedConversationOpen &&
-      (!inputFocused || inputValueRef.current.length === 0)
+      (!inputFocused || composerIsEmpty())
     ) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -177,7 +183,7 @@ export function useChatContentShortcuts({
     if (
       isPlainKey(event, "left") &&
       showChannelSidebar &&
-      (!inputFocused || inputValueRef.current.length === 0) &&
+      (!inputFocused || composerIsEmpty()) &&
       focusChannelSidebar()
     ) {
       event.preventDefault?.();
@@ -207,6 +213,10 @@ export function useChatContentShortcuts({
       if (event.name === "escape") {
         event.preventDefault?.();
         event.stopPropagation?.();
+        if (profileOpen) {
+          closeProfile?.();
+          return;
+        }
         if (editingMessage) {
           cancelEditMessage();
         } else if (replyTo) {
@@ -222,14 +232,14 @@ export function useChatContentShortcuts({
         verticalDirection === "up"
         && canSend
         && isPlainKey(event, "up")
-        && inputValueRef.current.trim().length === 0
+        && composerIsEmpty()
         && beginEditLatestMessage({ deferFocus: true })
       ) {
         event.preventDefault?.();
         event.stopPropagation?.();
         return;
       }
-      if (verticalDirection && isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(verticalDirection)) {
+        if (verticalDirection && isPlainKey(event, "up", "down") && shouldLeaveComposerForSelection(verticalDirection)) {
         const moved = moveMessageSelection(verticalDirection);
         if (moved) {
           event.preventDefault?.();
@@ -237,6 +247,12 @@ export function useChatContentShortcuts({
           blurInput();
           return;
         }
+      }
+
+      if (isPlainKey(event, "p") && composerIsEmpty() && openSelectedProfile?.()) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        return;
       }
 
       return;

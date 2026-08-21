@@ -138,6 +138,7 @@ export class ChatController {
       session: this.session,
       storage: this.storage,
       syncVerificationPolling: () => this.realtime.syncVerificationPolling(),
+      ensureRealtimeSubscriptions: () => this.realtime.ensureRealtimeSubscriptions(),
     });
   }
 

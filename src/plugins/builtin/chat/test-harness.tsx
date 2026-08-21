@@ -1,5 +1,7 @@
 import { act } from "react";
 import { PaneFooterBar, PaneFooterProvider } from "../../../components/layout/pane/footer";
+import { PaneHeader } from "../../../components/layout/pane/header";
+import { PaneHeaderAccessoryProvider } from "../../../components/layout/pane/header-accessory";
 import { testRender } from "../../../renderers/opentui/test-utils";
 import { AppContext, createInitialState } from "../../../state/app/context";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
@@ -125,8 +127,11 @@ export function createHarness(
   options?: {
     width?: number;
     height?: number;
+    channelId?: string;
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
     withFooter?: boolean;
+    withPaneHeader?: boolean;
+    paneTitle?: string;
     runtime?: PluginRuntimeAccess;
     targetMessageId?: string;
     onTargetMessageHandled?: () => void;
@@ -137,31 +142,48 @@ export function createHarness(
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-chat"));
   options?.configureState?.(state);
 
+  const headerRows = options?.withPaneHeader ? 1 : 0;
+  const footerRows = options?.withFooter ? 1 : 0;
+  const chat = (
+    <ChatContent
+      controller={controller}
+      width={width}
+      height={Math.max(1, height - headerRows - footerRows)}
+      focused
+      channelId={options?.channelId}
+      targetMessageId={options?.targetMessageId}
+      onTargetMessageHandled={options?.onTargetMessageHandled}
+    />
+  );
+
+  const headed = options?.withPaneHeader ? (
+    <PaneHeaderAccessoryProvider>
+      {(accessory) => (
+        <Box flexDirection="column" width={width} height={Math.max(1, height - footerRows)}>
+          <PaneHeader
+            title={options.paneTitle ?? "Chat"}
+            width={width}
+            focused
+            titleAccessory={accessory?.node}
+            titleAccessoryWidth={accessory?.width}
+          />
+          {chat}
+        </Box>
+      )}
+    </PaneHeaderAccessoryProvider>
+  ) : chat;
+
   const content = options?.withFooter ? (
     <PaneFooterProvider>
       {(footer) => (
         <Box flexDirection="column" width={width} height={height}>
-          <ChatContent
-            controller={controller}
-            width={width}
-            height={Math.max(1, height - 1)}
-            focused
-            targetMessageId={options?.targetMessageId}
-            onTargetMessageHandled={options?.onTargetMessageHandled}
-          />
+          {headed}
           <PaneFooterBar footer={footer} focused width={width} />
         </Box>
       )}
     </PaneFooterProvider>
   ) : (
-    <ChatContent
-      controller={controller}
-      width={width}
-      height={height}
-      focused
-      targetMessageId={options?.targetMessageId}
-      onTargetMessageHandled={options?.onTargetMessageHandled}
-    />
+    headed
   );
 
   return (

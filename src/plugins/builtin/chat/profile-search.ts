@@ -2,7 +2,6 @@ import type { CommandResultDef, GloomPluginContext } from "../../../types/plugin
 import type { ChatChannel, ChatMessage, ChatUserSummary } from "../../../api-client";
 import { t } from "../../../i18n";
 import { chatController } from "./controller";
-import { parseDmUsernames } from "./channels";
 import { requestOpenChatProfile } from "./profile-request";
 
 function rememberUser(map: Map<string, ChatUserSummary>, user: ChatUserSummary | null | undefined): void {
@@ -68,18 +67,15 @@ export function openChatProfileFromCommand(
   ctx.createPaneFromTemplate("new-chat-pane", dm ? { arg: dm.id } : undefined);
 }
 
-function stubProfileUser(username: string): ChatUserSummary {
-  return {
-    id: username,
-    username,
-    displayName: username,
-  };
+function isListedPublicChatProfile(user: ChatUserSummary): boolean {
+  return user.profilePublic === true;
 }
 
 export function buildWhoCommandResults(ctx: GloomPluginContext, arg: string): CommandResultDef[] {
   const trimmed = arg.trim();
   const query = trimmed.replace(/^@+/, "").toLowerCase();
-  const users = listKnownChatUsersFromController(chatController).filter((user) => matchesProfileQuery(user, query));
+  const users = listKnownChatUsersFromController(chatController)
+    .filter((user) => isListedPublicChatProfile(user) && matchesProfileQuery(user, query));
 
   if (users.length > 0) {
     return users.map((user) => {
@@ -87,7 +83,7 @@ export function buildWhoCommandResults(ctx: GloomPluginContext, arg: string): Co
       const label = username ? `@${username}` : user.displayName;
       const detail = [user.displayName !== label ? user.displayName : null, user.company, user.title]
         .filter(Boolean)
-        .join(" · ") || t("Open public profile");
+        .join(" / ") || t("Open public profile");
       return {
         id: `who:${user.id}`,
         label,
@@ -100,22 +96,10 @@ export function buildWhoCommandResults(ctx: GloomPluginContext, arg: string): Co
     });
   }
 
-  const typedUsername = parseDmUsernames(trimmed)[0] ?? (query || null);
-  if (typedUsername) {
-    return [{
-      id: `who:${typedUsername}`,
-      label: `@${typedUsername}`,
-      detail: t("Open public profile"),
-      category: t("People"),
-      right: "WHO",
-      execute: () => openChatProfileFromCommand(ctx, stubProfileUser(typedUsername)),
-    }];
-  }
-
   return [{
-    id: "who:empty",
-    label: t("No chat users yet"),
-    detail: t("Type WHO @username to open a public profile"),
+    id: query ? `who:none:${query}` : "who:empty",
+    label: query ? t("No public profile matched") : t("No public chat profiles yet"),
+    detail: t("WHO only lists people with a public profile"),
     category: t("People"),
     right: "WHO",
     disabled: true,

@@ -26,6 +26,8 @@ interface PaneWrapperProps {
   onActionMouseDown?: (event: any) => void;
   onFloatToggleMouseDown?: (event: any) => void;
   footer?: CombinedPaneFooter | null;
+  titleAccessory?: ReactNode;
+  titleAccessoryWidth?: number;
   children: ReactNode;
   onTitleMouseDown?: (event: any) => void;
 }
@@ -50,6 +52,8 @@ export function PaneWrapper({
   onActionMouseDown,
   onFloatToggleMouseDown,
   footer,
+  titleAccessory,
+  titleAccessoryWidth,
   children,
   onTitleMouseDown,
 }: PaneWrapperProps) {
@@ -104,6 +108,8 @@ export function PaneWrapper({
           onActionMouseDown={onActionMouseDown}
           onFloatToggleMouseDown={onFloatToggleMouseDown}
           onTitleMouseDown={onTitleMouseDown}
+          titleAccessory={titleAccessory}
+          titleAccessoryWidth={titleAccessoryWidth}
         />
       )}
       <PaneBodyFrame layoutProps={bodyFrame.layoutProps} backgroundColor={bg}>

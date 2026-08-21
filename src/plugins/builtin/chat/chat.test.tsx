@@ -1568,10 +1568,14 @@ describe("chat public profiles and presence", () => {
     installServerChannels(controller);
     controller.refreshChannels = async () => {};
     controller.refreshChannelMessages = async () => {};
-    (controller as any).channelCatalog.applyPresence({
-      onlineCount: 1,
-      userIds: ["u2"],
-    });
+    const { normalizeChatPresence } = await import("../../../api-client");
+    (controller as any).channelCatalog.applyPresence(normalizeChatPresence({
+      type: "chat.presence",
+      data: {
+        onlineCount: 1,
+        userIds: ["u2"],
+      },
+    }));
 
     await act(async () => {
       testSetup = await testRender(createHarness(controller, { width: 72, height: 14 }), {
@@ -1632,6 +1636,48 @@ describe("chat public profiles and presence", () => {
     expect(frame).toContain("@cara");
   });
 
+  test("shows a presence dot after the pane title for an online DM peer while the composer is focused", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "dm:spencer",
+        name: "@spencer",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: {
+          id: "u2",
+          username: "spencer",
+          displayName: "Spencer",
+          profilePublic: true,
+        },
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+    (controller as any).channelCatalog.applyPresence({
+      onlineCount: 1,
+      userIds: ["u2"],
+    });
+
+    await act(async () => {
+      testSetup = await testRender(
+        createHarness(controller, {
+          width: 72,
+          height: 14,
+          channelId: "dm:spencer",
+          withPaneHeader: true,
+          paneTitle: "@spencer",
+        }),
+        { width: 72, height: 14 },
+      );
+    });
+    await flushFrame();
+
+    const headerLine = setup().captureCharFrame().split("\n")[0] ?? "";
+    expect(headerLine).toContain("@spencer ●");
+  });
+
   test("keyboard p on a selected message opens the author's public profile", async () => {
     const controller = createController({
       sessionToken: "token-123",
@@ -1656,5 +1702,77 @@ describe("chat public profiles and presence", () => {
     const frame = setup().captureCharFrame();
     expect(frame).toContain("@bob");
     expect(frame).toContain("Trades energy");
+  });
+
+  test("empty-composer p opens the DM peer profile without stealing typed p", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "dm:bob",
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: {
+          id: "u2",
+          username: "bob",
+          displayName: "Bob",
+          bio: "Trades energy",
+          company: "Gloom",
+          profilePublic: true,
+        },
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    await renderFocusedComposerWithDraft(controller, "", {
+      width: 72,
+      height: 14,
+      channelId: "dm:bob",
+    });
+
+    await emitKeypress({ name: "p" });
+    await flushFrame();
+    expect(setup().captureCharFrame()).toContain("Trades energy");
+  });
+
+  test("typing p in a DM composer still inserts the letter", async () => {
+    const controller = createController({ sessionToken: "token-123" });
+    installServerChannels(controller, [
+      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
+      {
+        id: "dm:bob",
+        name: "@bob",
+        kind: "direct",
+        created_at: "2026-07-03T09:30:00.000Z",
+        dmUser: {
+          id: "u2",
+          username: "bob",
+          displayName: "Bob",
+          bio: "Trades energy",
+          company: "Gloom",
+          profilePublic: true,
+        },
+      },
+    ]);
+    controller.refreshChannels = async () => {};
+    controller.refreshChannelMessages = async () => {};
+
+    await renderFocusedComposerWithDraft(controller, "hi", {
+      width: 72,
+      height: 14,
+      channelId: "dm:bob",
+    });
+
+    await act(async () => {
+      await setup().mockInput.typeText("p");
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+    await flushFrame();
+    const typed = setup().captureCharFrame();
+    expect(typed).toContain("> hip");
+    expect(typed).not.toContain("Trades energy");
   });
 });

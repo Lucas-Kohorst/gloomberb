@@ -48,4 +48,33 @@ describe("normalizeChatPresence", () => {
       hasUserList: true,
     });
   });
+
+  test("reads a websocket envelope that nests the user list under data", () => {
+    expect(normalizeChatPresence({
+      type: "chat.presence",
+      data: {
+        onlineCount: 2,
+        userIds: [2, "u3"],
+        usernames: ["bob"],
+      },
+    })).toEqual({
+      onlineCount: 2,
+      onlineUserIds: ["2", "u3"],
+      onlineUsernames: ["bob"],
+      hasUserList: true,
+    });
+  });
+
+  test("reads snake_case presence lists and numeric ids", () => {
+    expect(normalizeChatPresence({
+      online_count: 1,
+      online_user_ids: [42],
+      online_usernames: ["bob"],
+    })).toEqual({
+      onlineCount: 1,
+      onlineUserIds: ["42"],
+      onlineUsernames: ["bob"],
+      hasUserList: true,
+    });
+  });
 });
