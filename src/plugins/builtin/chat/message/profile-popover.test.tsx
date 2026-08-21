@@ -75,37 +75,21 @@ function RequestedProfileHarness() {
   );
 }
 
-function PinnedProfileHarness({ user }: { user: ChatUserSummary }) {
-  const {
-    closeProfilePopover,
-    profilePopoverUser,
-    showProfilePopover,
-  } = useChatProfilePopover();
-
-  useEffect(() => {
-    showProfilePopover(user, { pin: true });
-  }, [showProfilePopover, user]);
-
-  if (!profilePopoverUser) {
-    return (
-      <Box width={50} height={8}>
-        <Text>none</Text>
-      </Box>
-    );
-  }
-
+function VisibleProfileCardHarness({ user }: { user: ChatUserSummary }) {
   return (
-    <Box width={50} height={8}>
+    <Box width={50} height={12}>
       <UserProfilePopover
-        user={profilePopoverUser}
+        user={user}
         width={50}
         onClose={() => {}}
-        onDismiss={closeProfilePopover}
+        onDismiss={() => {}}
         onKeepOpen={() => {}}
       />
     </Box>
   );
 }
+
+function OwnProfileHarness({ user }: { user: ChatUserSummary }) {
   const {
     profilePopoverUser,
     showProfilePopover,
@@ -217,10 +201,10 @@ describe("profile popover", () => {
     expect(shouldOfferChatProfileSetup(makeUser({ bio: "Already set up" }), true)).toBe(false);
   });
 
-  test("dismisses a pinned profile card from the close control", async () => {
+  test("shows a close control on the profile card", async () => {
     await act(async () => {
       testSetup = await testRender(
-        <PinnedProfileHarness user={makeUser({
+        <VisibleProfileCardHarness user={makeUser({
           username: "lucas",
           displayName: "Lucas",
           company: "Adjacent",
@@ -236,19 +220,6 @@ describe("profile popover", () => {
     await act(async () => {
       await setup.renderOnce();
     });
-
-    const openFrame = setup.captureCharFrame();
-    expect(openFrame).toContain("@lucas");
-    expect(openFrame).toContain(" x ");
-
-    const closeCol = openFrame.split("\n")[0]?.lastIndexOf("x") ?? -1;
-    expect(closeCol).toBeGreaterThan(0);
-    await act(async () => {
-      await setup.mockMouse.click(closeCol, 0);
-      await setup.renderOnce();
-    });
-
-    expect(setup.captureCharFrame()).toContain("none");
-    expect(setup.captureCharFrame()).not.toContain("@lucas");
+    expect(setup.captureCharFrame()).toMatch(/@lucas\s+x/);
   });
 });

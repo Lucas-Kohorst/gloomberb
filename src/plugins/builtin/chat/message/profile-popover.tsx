@@ -195,9 +195,10 @@ export function UserProfilePopover({
         ) : null}
         <Box flexGrow={1} />
         <Box
+          id="profile-popover-close"
           width={closeWidth}
           height={1}
-          backgroundColor={closeHovered ? hoverBg() : undefined}
+          backgroundColor={closeHovered ? hoverBg() : colors.panel}
           onMouseOver={() => setCloseHovered(true)}
           onMouseOut={() => setCloseHovered(false)}
           onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
@@ -205,7 +206,7 @@ export function UserProfilePopover({
             event?.stopPropagation?.();
             onDismiss();
           }}
-          style={{ cursor: "pointer" }}
+          style={{ cursor: "pointer", zIndex: 5 }}
         >
           <Text fg={closeHovered ? colors.text : colors.textMuted}> x </Text>
         </Box>
