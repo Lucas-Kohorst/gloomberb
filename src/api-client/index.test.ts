@@ -894,9 +894,21 @@ describe("apiClient chat timestamps", () => {
       seenNotifications.push(`${notification.id}:${notification.message.createdAt}`);
     });
 
+    const seenPresenceUsers: string[][] = [];
+    const unsubscribePresenceUsers = apiClient.subscribeChatPresence((presence) => {
+      seenPresenceUsers.push(presence.onlineUserIds);
+    });
     await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
       type: "chat.presence",
       onlineCount: 5,
+    }));
+    await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
+      type: "chat.presence",
+      data: {
+        onlineCount: 2,
+        userIds: ["u2"],
+        usernames: ["bob"],
+      },
     }));
     await (apiClient as any).socket.handleSocketMessage(JSON.stringify({
       type: "chat.notification",
@@ -918,9 +930,11 @@ describe("apiClient chat timestamps", () => {
       },
     }));
 
-    expect(seenPresence).toEqual([5]);
+    expect(seenPresence).toEqual([5, 2]);
+    expect(seenPresenceUsers).toEqual([[], ["u2"]]);
     expect(seenNotifications).toEqual(["n1:2026-04-08T07:29:00.000Z"]);
     unsubscribePresence();
+    unsubscribePresenceUsers();
     unsubscribeNotifications();
   });
 });

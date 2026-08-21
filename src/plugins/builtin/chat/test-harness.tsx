@@ -125,6 +125,7 @@ export function createHarness(
   options?: {
     width?: number;
     height?: number;
+    channelId?: string;
     configureState?: (state: ReturnType<typeof createInitialState>) => void;
     withFooter?: boolean;
     runtime?: PluginRuntimeAccess;
@@ -146,6 +147,7 @@ export function createHarness(
             width={width}
             height={Math.max(1, height - 1)}
             focused
+            channelId={options?.channelId}
             targetMessageId={options?.targetMessageId}
             onTargetMessageHandled={options?.onTargetMessageHandled}
           />
@@ -159,6 +161,7 @@ export function createHarness(
       width={width}
       height={height}
       focused
+      channelId={options?.channelId}
       targetMessageId={options?.targetMessageId}
       onTargetMessageHandled={options?.onTargetMessageHandled}
     />

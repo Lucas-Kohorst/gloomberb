@@ -47,6 +47,14 @@ describe("collectKnownChatUsers", () => {
   });
 });
 
+const privateCara: ChatUserSummary = {
+  id: "u3",
+  username: "cara",
+  displayName: "Cara",
+  bio: "Keeps this private",
+  profilePublic: false,
+};
+
 describe("buildWhoCommandResults", () => {
   test("searching a known username opens that public profile", () => {
     (chatController as any).channelCatalog.channels = channels;
@@ -61,6 +69,25 @@ describe("buildWhoCommandResults", () => {
     expect(results[0]?.detail).toContain("Bob");
     results[0]?.execute();
     expect(opened).toEqual(["new-chat-pane:dm:bob"]);
+  });
+
+  test("does not list or open people without a public profile", () => {
+    (chatController as any).channelCatalog.channels = [
+      ...channels,
+      {
+        id: "dm:cara",
+        name: "@cara",
+        kind: "direct",
+        created_at: "2026-07-03T09:32:00.000Z",
+        dmUser: privateCara,
+      },
+    ];
+    const ctx = {
+      createPaneFromTemplate() {},
+    } as any;
+    expect(buildWhoCommandResults(ctx, "cara").every((result) => result.disabled || result.id !== "who:u3")).toBe(true);
+    expect(buildWhoCommandResults(ctx, "cara").some((result) => result.label === "@cara" && !result.disabled)).toBe(false);
+    expect(buildWhoCommandResults(ctx, "bob").map((result) => result.label)).toEqual(["@bob"]);
   });
 });
 

@@ -35,12 +35,14 @@ interface HydrateChatControllerSessionOptions {
   session: ChatControllerSessionState;
   storage: ChatControllerStorage;
   syncVerificationPolling: () => void;
+  ensureRealtimeSubscriptions?: () => void;
 }
 
 export function hydrateChatControllerSession({
   session,
   storage,
   syncVerificationPolling,
+  ensureRealtimeSubscriptions,
 }: HydrateChatControllerSessionOptions): void {
   if (session.hydrated || !storage.hasPersistence()) return;
   session.hydrated = true;
@@ -56,6 +58,9 @@ export function hydrateChatControllerSession({
   session.sessionChecked = true;
   storage.ensureChannelState(DEFAULT_CHAT_CHANNEL_ID);
   syncVerificationPolling();
+  if (session.user?.emailVerified && session.sessionToken) {
+    ensureRealtimeSubscriptions?.();
+  }
 }
 
 interface ApplySignedOutChatControllerSessionOptions {

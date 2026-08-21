@@ -12,6 +12,7 @@ import {
   normalizeChatMessage,
   normalizeChatNotification,
   normalizeChatPresence,
+  isChatPresenceEvent,
 } from "./normalizers";
 import { debugLog } from "../utils/debug-log";
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
@@ -383,8 +384,8 @@ export class CloudApiSocket {
     }
 
     if (parsed?.type === "chat.presence") {
+      if (!isChatPresenceEvent(parsed)) return;
       const presence = normalizeChatPresence(parsed);
-      if (!presence.hasUserList && typeof parsed.onlineCount !== "number") return;
       for (const listener of this.chatPresenceListeners) {
         listener(presence);
       }

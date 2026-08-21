@@ -155,7 +155,7 @@ function createChatModule(
       ctx.registerCommand({
         id: "who-profile",
         label: "WHO",
-        description: "Open a chat user's public profile",
+        description: "Open a public chat profile",
         keywords: ["who", "profile", "user", "username", "people", "chat"],
         category: "navigation",
         shortcut: "WHO",

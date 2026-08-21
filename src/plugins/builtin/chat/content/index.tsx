@@ -285,11 +285,18 @@ export function ChatContent({
   }, [showProfilePopover, user?.id]);
 
   const openSelectedProfile = useCallback(() => {
+    if (inputFocused && inputValueRef.current.length > 0) return false;
     const selected = selectedIdx >= 0 ? visibleMessages[selectedIdx] : null;
-    if (!selected) return false;
-    openUserProfile(selected.user);
-    return true;
-  }, [openUserProfile, selectedIdx, visibleMessages]);
+    if (selected) {
+      openUserProfile(selected.user);
+      return true;
+    }
+    if (activeChannel?.kind === "direct" && activeChannel.dmUser) {
+      openUserProfile(activeChannel.dmUser);
+      return true;
+    }
+    return false;
+  }, [activeChannel, inputFocused, openUserProfile, selectedIdx, visibleMessages]);
 
   const openProfileSetup = useCallback(() => {
     closeProfilePopover();
@@ -573,6 +580,7 @@ export function ChatContent({
     focused: focused && !newDmOpen,
     hasOlderMessages: hasOlderMessages && !searching,
     inputFocused,
+    inputRef,
     inputValueRef,
     loadingOlderMessages,
     messages: visibleMessages,
@@ -626,9 +634,34 @@ export function ChatContent({
       hints: [
         { id: "refresh", key: "r", label: "efresh", onPress: retryMessages },
         { id: "search", key: "/", label: "search", onPress: openSearch },
+        ...(
+          (!inputFocused || composerDraft.length === 0)
+          && (
+            (selectedIdx >= 0 && selectedIdx < visibleMessages.length)
+            || (activeChannel?.kind === "direct" && !!activeChannel.dmUser)
+          )
+            ? [{ id: "profile", key: "p", label: "rofile", onPress: () => { openSelectedProfile(); } }]
+            : []
+        ),
       ],
     };
-  }, [canSend, loadFailed, loading, openSearch, retryMessages, searching, showChannelSidebar, stackedConversationOpen, user, visibleMessages.length]);
+  }, [
+    activeChannel,
+    canSend,
+    composerDraft.length,
+    inputFocused,
+    loadFailed,
+    loading,
+    openSearch,
+    openSelectedProfile,
+    retryMessages,
+    searching,
+    selectedIdx,
+    showChannelSidebar,
+    stackedConversationOpen,
+    user,
+    visibleMessages.length,
+  ]);
 
   const chatContentBg = focused && showChannelSidebar && !sidebarFocused
     ? blendHex(colors.bg, colors.borderFocused, 0.08)
