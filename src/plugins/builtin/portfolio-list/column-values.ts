@@ -274,11 +274,10 @@ export function getColumnValue(
       return { text: formatCompact(toBaseQuote(activeQuote.price * quote.volume)) };
     }
     case "range_52w": {
-      if (!activeQuote || !finiteNumber(quote?.high52w) || !finiteNumber(quote?.low52w)) return { text: "—" };
-      const range = quote.high52w - quote.low52w;
-      if (range <= 0) return { text: "—" };
-      const position = ((activeQuote.price - quote.low52w) / range) * 100;
-      return { text: formatPercentRaw(Math.max(0, Math.min(100, position))) };
+      const return1Y = fundamentals?.return1Y;
+      return finiteNumber(return1Y)
+        ? { text: formatPercentRaw(return1Y * 100), color: priceColor(return1Y * 100) }
+        : { text: "—" };
     }
     case "market_cap":
       if (!quote?.marketCap) return { text: "—" };
@@ -480,11 +479,8 @@ export function getSortValue(
       return activeQuote && finiteNumber(quote?.volume)
         ? toBaseQuote(activeQuote.price * quote.volume)
         : null;
-    case "range_52w": {
-      if (!activeQuote || !finiteNumber(quote?.high52w) || !finiteNumber(quote?.low52w)) return null;
-      const range = quote.high52w - quote.low52w;
-      return range > 0 ? ((activeQuote.price - quote.low52w) / range) * 100 : null;
-    }
+    case "range_52w":
+      return finiteNumber(fundamentals?.return1Y) ? fundamentals.return1Y * 100 : null;
     case "market_cap":
       return quote?.marketCap ? toBaseQuote(quote.marketCap) : null;
     case "pe":
