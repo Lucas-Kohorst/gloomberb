@@ -334,7 +334,6 @@ export const zhCN: Record<string, string> = {
   "Prediction Markets": "预测市场",
   "Economics": "宏观经济",
   "Collections": "集合",
-  "Workspace": "工作区",
   "Account Management": "账户管理",
   "Gloom Cloud": "Gloom 云",
 

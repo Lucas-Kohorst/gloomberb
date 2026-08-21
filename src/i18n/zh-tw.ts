@@ -334,7 +334,6 @@ export const zhTW: Record<string, string> = {
   "Prediction Markets": "預測市場",
   "Economics": "宏觀經濟",
   "Collections": "清單",
-  "Workspace": "工作區",
   "Account Management": "帳戶管理",
   "Gloom Cloud": "Gloom 雲端",
 
