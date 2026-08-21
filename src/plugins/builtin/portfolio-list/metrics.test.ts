@@ -309,6 +309,9 @@ describe("portfolio-metrics", () => {
         low52w: 80,
         volume: 12_500_000,
       },
+      fundamentals: {
+        return1Y: 0.12,
+      },
     });
     const context: ColumnContext = {
       ...defaultColumnContext,
@@ -318,13 +321,29 @@ describe("portfolio-metrics", () => {
 
     expect(getColumnValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context).text).toBe("+50.00%");
     expect(getSortValue({ id: "weight", label: "WEIGHT", width: 8, align: "right" }, ticker, financials, context)).toBe(50);
-    expect(getColumnValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+50.00%");
+    expect(getColumnValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context)).toMatchObject({
+      text: "+12.00%",
+      color: expect.any(String),
+    });
+    expect(getSortValue({ id: "range_52w", label: "52W%", width: 7, align: "right" }, ticker, financials, context)).toBe(12);
     expect(getColumnValue({ id: "dollar_volume", label: "$VOL", width: 9, align: "right" }, ticker, financials, context).text).toBe("1.5B");
     expect(getColumnValue({ id: "spread_pct", label: "SPR%", width: 7, align: "right" }, ticker, financials, context).text).toBe("+0.83%");
     expect(getColumnValue({ id: "bid_ask_size", label: "B/A SZ", width: 9, align: "right" }, ticker, financials, context).text).toBe("100/150");
     expect(getColumnValue({ id: "mark_delta", label: "MARK%", width: 8, align: "right" }, ticker, financials, context).text).toBe("+1.00%");
     expect(getColumnValue({ id: "held", label: "HELD", width: 6, align: "right" }, ticker, financials, context).text).toBe("2.0y");
     expect(getColumnValue({ id: "tags", label: "TAGS", width: 14, align: "left" }, ticker, financials, context).text).toBe("core,mega");
+  });
+
+  test("uses trailing one-year return rather than position within the 52-week range", () => {
+    const ticker = createTicker();
+    const financials = createFinancials({
+      quote: { price: 6_000, high52w: 6_100, low52w: 3_000 },
+      fundamentals: { return1Y: 0.08 },
+    });
+    const column: ColumnConfig = { id: "range_52w", label: "52W%", width: 7, align: "right" };
+
+    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+8.00%");
+    expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(8);
   });
 
   test("formats supplemental analyst and corporate action columns", () => {
