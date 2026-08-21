@@ -35,6 +35,7 @@ import {
   SERIES_PREFIX,
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
+  findVolCatalogEntry,
 } from "./universal-series";
 import {
   canonicalWeatherStationId,
@@ -183,6 +184,19 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
     const entry = findTreasuryCatalogEntry(maturity);
     if (!entry) return null;
     return { kind: "treasury-yield", maturity: entry.maturity, seriesId: entry.seriesId, label: entry.label };
+  }
+
+  // Bare TNX / 10Y / VIX tokens should not go through Yahoo — hosted charts 429
+  // after suffix-guessing, and the FRED series is the actual yield / vol print.
+  if (parts.length === 1) {
+    const treasury = findTreasuryCatalogEntry(trimmed);
+    if (treasury) {
+      return { kind: "treasury-yield", maturity: treasury.maturity, seriesId: treasury.seriesId, label: treasury.label };
+    }
+    const vol = findVolCatalogEntry(trimmed);
+    if (vol) {
+      return { kind: "economic", provider: "fred", seriesId: vol.seriesId, label: vol.label };
+    }
   }
 
   if (prefix === SERIES_PREFIX.benchmark) {

@@ -1,4 +1,4 @@
-import { isDividendFieldId, isMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { isDividendFieldId, isMarketFieldId, isPriceOnlyMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 import { LLM_STATS_SITE_BASE, type LlmStatsRow } from "../llm-stats/types";
@@ -15,9 +15,12 @@ import {
   ADJACENT_INDEX_CATALOG,
   BENCHMARK_METRICS,
   BENCHMARK_ORGS,
+  CORPORATE_YIELD_CATALOG,
+  CREDIT_SPREAD_CATALOG,
   FUTURES_CATALOG,
   POLL_SUBJECTS,
   TREASURY_CATALOG,
+  VOL_CATALOG,
   type PollSubjectEntry,
 } from "./universal-series";
 import { TWC_KALSHI_URL, type WeatherMetric } from "../weather/types";
@@ -142,6 +145,29 @@ type CatalogPollSubject = PollSubjectEntry & { url?: string };
 function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
   const category = instrument.assetCategory?.trim().toUpperCase();
   return category === "OPT" || parseOptionSymbol(instrument.symbol) != null;
+}
+
+const MARKET_ONLY_CATEGORIES = new Set([
+  "INDEX",
+  "IND",
+  "ETF",
+  "FUT",
+  "FUTURE",
+  "BOND",
+  "CMDTY",
+  "COMMODITY",
+  "CURRENCY",
+  "CASH",
+  "CCY",
+  "FOREX",
+  "MUTUALFUND",
+]);
+
+function isMarketOnlyInstrument(instrument: SeriesCatalogInstrument): boolean {
+  const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
+  if (MARKET_ONLY_CATEGORIES.has(category)) return true;
+  const symbol = instrument.symbol.trim();
+  return symbol.startsWith("^") || /=F$/i.test(symbol);
 }
 
 function fieldKind(fieldId: string, option = false): string {
@@ -270,9 +296,11 @@ export function catalogRowsForResolvedInstruments(
     }
     const symbol = catalogTickerFromInput(instrument.symbol);
     if (!symbol) return [];
-    return listTimeSeriesFields().map((field) => {
+    const marketOnly = isMarketOnlyInstrument(instrument);
+    return listTimeSeriesFields().flatMap((field) => {
+      if (marketOnly && !isPriceOnlyMarketFieldId(field.id)) return [];
       const token = shortChartFieldToken(field.id);
-      return row({
+      return [row({
         id: `ticker:${symbol}:${field.id}`,
         label: `${symbol} · ${field.label}`,
         source: "Yahoo",
@@ -280,7 +308,7 @@ export function catalogRowsForResolvedInstruments(
         kind: fieldKind(field.id),
         expression: `${symbol}:${token}`,
         searchExtra: [instrument.name, field.shortLabel].filter(Boolean).join(" "),
-      });
+      })];
     });
   });
 }
@@ -649,6 +677,40 @@ export function listStaticCatalogInventory(
     kind: "Treasury",
     expression: `UST:${entry.maturity}`,
     url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds ust yield treasury tnx",
+  }));
+
+  const corporates = CORPORATE_YIELD_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Bond",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds corporate credit yield ice bofa",
+  }));
+
+  const creditSpreads = CREDIT_SPREAD_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Credit",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "bond bonds credit oas spread ice bofa",
+  }));
+
+  const volatility = VOL_CATALOG.map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Volatility",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+    searchExtra: "vix volatility vxv sentiment",
   }));
 
   const futures = FUTURES_CATALOG.map((entry) => row({
@@ -724,6 +786,9 @@ export function listStaticCatalogInventory(
     ...crypto,
     ...fred,
     ...treasuries,
+    ...corporates,
+    ...creditSpreads,
+    ...volatility,
     ...futures,
     ...adjacent,
     ...polls,

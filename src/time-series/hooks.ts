@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { apiClient } from "../api-client";
+import { loadFredSeriesPayload } from "../data/fred-load";
 import { loadCachedFredSeries } from "../data/fred-series";
 import { instrumentFromTicker } from "../market-data/request-types";
 import { useAssetData } from "../plugins/runtime";
@@ -39,7 +39,7 @@ import {
 async function loadFred(request: FredSeriesRequest) {
   return loadCachedFredSeries(
     request,
-    () => apiClient.getCloudFredSeries(request.seriesId, {
+    () => loadFredSeriesPayload(request.seriesId, {
       startDate: request.startDate,
       sortOrder: request.sortOrder,
     }),

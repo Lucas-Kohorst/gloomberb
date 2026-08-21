@@ -54,6 +54,17 @@ const CRYPTO_BASE_SYMBOLS = new Set([
 const CRYPTO_QUOTE_CURRENCIES = ["USDT", "USDC", "USD", "EUR", "GBP", "JPY", "BTC", "ETH"];
 const INDEX_TICKER_ALIASES: Record<string, string> = {
   SPX: "^GSPC",
+  GSPC: "^GSPC",
+  DJI: "^DJI",
+  IXIC: "^IXIC",
+  RUT: "^RUT",
+  VIX: "^VIX",
+  VIX3M: "^VIX3M",
+  VIX6M: "^VIX6M",
+  TNX: "^TNX",
+  TYX: "^TYX",
+  FVX: "^FVX",
+  IRX: "^IRX",
 };
 
 export function getYahooSymbol(ticker: string, exchange: string): string {
@@ -66,6 +77,9 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
   if (tickerHasYahooSuffix(ticker)) return [ticker];
 
   const normalized = normalizeYahooTicker(ticker, exchange);
+  // Caret indices are already the Yahoo symbol. Suffix-guessing ^VIX.HK etc.
+  // is what 429s hosted Yahoo when CAT/G opens VIX or TNX as a security.
+  if (normalized.startsWith("^")) return [normalized];
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
   if (!exchange) {

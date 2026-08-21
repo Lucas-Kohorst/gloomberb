@@ -10,6 +10,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import { usePluginAppActions } from "../../runtime";
 import { getCachedVolData, loadVolData } from "./client";
 import { classifyTermStructure } from "./model";
 import type { VolData, VolMetric } from "./types";
@@ -157,6 +158,10 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
   const fetchGenRef = useRef(0);
+  const { createPaneFromTemplate } = usePluginAppActions();
+  const chartVix = useCallback(() => {
+    createPaneFromTemplate("chart-composer-pane", { arg: "FRED:VIXCLS, FRED:VXVCLS" });
+  }, [createPaneFromTemplate]);
 
   const load = useCallback(async (force = false) => {
     fetchGenRef.current += 1;
@@ -196,6 +201,10 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
+    } else if (event.name === "g") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      chartVix();
     }
   });
 
@@ -223,7 +232,10 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     loading,
     error,
     info: statusInfo,
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }],
+    hints: [
+      { id: "graph", key: "g", label: "raph", onPress: chartVix },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
+    ],
   });
 
   if (loading && !data) {

@@ -15,6 +15,7 @@ import {
   type YieldPoint,
 } from "./treasury-data";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import { usePluginAppActions } from "../../runtime";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";
@@ -38,6 +39,10 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchGenRef = useRef(0);
+  const { createPaneFromTemplate } = usePluginAppActions();
+  const chartCurve = useCallback(() => {
+    createPaneFromTemplate("chart-composer-pane", { arg: "UST:2Y, UST:10Y, UST:30Y" });
+  }, [createPaneFromTemplate]);
 
   const load = useCallback(async () => {
     fetchGenRef.current += 1;
@@ -65,6 +70,8 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
     if (!focused) return;
     if (ev.name === "r") {
       load();
+    } else if (ev.name === "g") {
+      chartCurve();
     }
   });
 
@@ -77,6 +84,10 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   ], [bp, inverted]);
   usePaneStatusFooter({
     registrationId: "yield-curve",
+    hints: [
+      { id: "graph", key: "g", label: "raph", onPress: chartCurve },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => { void load(); } },
+    ],
     loading,
     error,
     info: yieldStatus,

@@ -20,6 +20,7 @@ import {
   findFuturesCatalogEntry,
   findTreasuryCatalogEntry,
   findBenchmarkMetric,
+  findVolCatalogEntry,
 } from "./universal-series";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
@@ -76,6 +77,27 @@ describe("universal series expression parsing", () => {
 
   test("rejects an unknown treasury maturity", () => {
     expect(parseSeriesExpression("UST:99Y")).toBeNull();
+  });
+
+  test("maps street treasury aliases onto UST yields instead of Yahoo tickers", () => {
+    expect(parseSeriesExpression("TNX")).toEqual({
+      kind: "treasury-yield",
+      maturity: "10Y",
+      seriesId: "DGS10",
+      label: "10Y Treasury Yield",
+    });
+    expect(parseSeriesExpression("^TNX")).toMatchObject({ kind: "treasury-yield", maturity: "10Y" });
+    expect(parseSeriesExpression("10Y")).toMatchObject({ kind: "treasury-yield", maturity: "10Y" });
+  });
+
+  test("maps VIX onto the FRED close series", () => {
+    expect(parseSeriesExpression("VIX")).toEqual({
+      kind: "economic",
+      provider: "fred",
+      seriesId: "VIXCLS",
+      label: "VIX",
+    });
+    expect(parseSeriesExpression("^VIX")).toMatchObject({ seriesId: "VIXCLS" });
   });
 
   test("parses BENCH:selector:metric", () => {
@@ -448,6 +470,8 @@ describe("universal series catalog data integrity", () => {
     for (const entry of TREASURY_CATALOG) {
       expect(findTreasuryCatalogEntry(entry.maturity)?.seriesId).toBe(entry.seriesId);
     }
+    expect(findTreasuryCatalogEntry("TNX")?.maturity).toBe("10Y");
+    expect(findVolCatalogEntry("VIX")?.seriesId).toBe("VIXCLS");
   });
 
   test("every benchmark metric resolves via findBenchmarkMetric", () => {

@@ -55,6 +55,11 @@ describe("data catalog inventory", () => {
     expect(byId.get("field:market.dividends")).toMatchObject({ source: "Yahoo", kind: "Dividends", label: "Dividends", needsTicker: true, expression: "TICKER:dvd" });
     expect(byExpression.get("FRED:CPIAUCSL")).toMatchObject({ source: "FRED", kind: "Economic" });
     expect(byExpression.get("UST:10Y")).toMatchObject({ source: "FRED", kind: "Treasury" });
+    expect(byExpression.get("FRED:BAMLC0A0CMEY")).toMatchObject({ source: "FRED", kind: "Bond" });
+    expect(byExpression.get("FRED:BAMLC0A0CM")).toMatchObject({ source: "FRED", kind: "Credit" });
+    expect(byExpression.get("FRED:VIXCLS")).toMatchObject({ source: "FRED", kind: "Volatility" });
+    expect(filterCatalogRows(rows, "fred", "bond").some((row) => row.expression === "UST:10Y")).toBe(true);
+    expect(filterCatalogRows(rows, "fred", "bond").some((row) => row.expression === "FRED:BAMLC0A0CMEY")).toBe(true);
     expect(byExpression.get("ADJ:red")).toMatchObject({ source: "Adjacent", kind: "Index" });
     expect(byExpression.get("FUT:ES")).toMatchObject({ source: "Yahoo" });
     expect(byExpression.get("OWID:life-expectancy:OWID_WRL")).toMatchObject({
@@ -95,6 +100,18 @@ describe("data catalog inventory", () => {
     expect(catalogExpressionForRow(close!, "AAPL 260618C00200000")).toBe("AAPL260618C00200000:close");
     expect(catalogExpressionForRow(close!, "aapl260618c00200000")).toBe("AAPL260618C00200000:close");
     expect(catalogExpressionForRow(close!, "")).toBeNull();
+  });
+
+  test("index and bond instruments only graph market fields", () => {
+    const rows = catalogRowsForResolvedInstruments([
+      { symbol: "^TNX", assetCategory: "INDEX", name: "10-Year Yield" },
+      { symbol: "TLT", assetCategory: "ETF" },
+    ]);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.kind === "Market")).toBe(true);
+    expect(rows.some((row) => row.expression === "^TNX:price")).toBe(true);
+    expect(rows.some((row) => row.label.includes("PEG"))).toBe(false);
+    expect(rows.some((row) => row.expression === "TLT:price")).toBe(true);
   });
 
   test("crypto tab lists pairs like prediction markets, not equity fields", () => {

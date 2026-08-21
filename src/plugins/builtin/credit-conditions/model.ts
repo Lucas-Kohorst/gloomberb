@@ -33,10 +33,15 @@ export function normalizeCreditSeries(
   stale = false,
 ): CreditConditionRow {
   const info = payload.info;
-  if (!info
-    || info.units.toLowerCase() !== "percent"
+  const publicCsvStub = !!info && info.title === info.id;
+  if (!info) {
+    throw new Error(`${definition.seriesId}: unexpected FRED metadata`);
+  }
+  if (!publicCsvStub && (
+    info.units.toLowerCase() !== "percent"
     || !info.frequency.toLowerCase().startsWith("daily")
-    || !info.title.toLowerCase().includes("option-adjusted spread")) {
+    || !info.title.toLowerCase().includes("option-adjusted spread")
+  )) {
     throw new Error(`${definition.seriesId}: unexpected FRED metadata`);
   }
 
@@ -53,9 +58,9 @@ export function normalizeCreditSeries(
 
   return {
     ...definition,
-    title: info.title,
-    units: info.units,
-    frequency: info.frequency,
+    title: publicCsvStub ? `${definition.label} option-adjusted spread` : info.title,
+    units: publicCsvStub ? "Percent" : info.units,
+    frequency: publicCsvStub ? "Daily, Close" : info.frequency,
     oasBp: roundTenth(latest.value * 100),
     dailyChangeBp: previous ? roundTenth((latest.value - previous.value) * 100) : null,
     date: latest.date,

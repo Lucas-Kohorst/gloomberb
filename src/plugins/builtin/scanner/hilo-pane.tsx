@@ -12,7 +12,7 @@ import { formatCompact, formatNumber } from "../../../utils/format";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerHiloExtreme } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
 import { ScannerDeniedState } from "./denied";
 import { useHiloFeed, useScannerStatusFooter } from "./feed";
 import { HiloBars } from "./hilo-bars";
@@ -75,6 +75,7 @@ function HiloPane({ focused, width, height }: PaneProps) {
   const feed = useHiloFeed();
   const { selectTicker } = usePluginPaneActions();
   const { pinTicker } = usePluginTickerActions();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [minPrice] = usePaneSettingValue<HiloMinPrice>("minPrice", "1");
   const [sort] = usePaneSettingValue<HiloSort>("sort", "recent");
   const [activeSide, setActiveSide] = useState<Side>("lows");
@@ -89,7 +90,21 @@ function HiloPane({ focused, width, height }: PaneProps) {
     [feed.payload?.highs, minPrice, sort],
   );
 
-  useScannerStatusFooter("hilo", feed, focused);
+  const selectedSymbol = useMemo(() => {
+    const rows = activeSide === "lows" ? lows : highs;
+    const key = selected[activeSide];
+    if (!key) return rows[0]?.symbol ?? null;
+    const match = rows.find((row, index) => rowKey(row, index) === key);
+    return match?.symbol ?? rows[0]?.symbol ?? null;
+  }, [activeSide, highs, lows, selected]);
+  const chartSelected = useCallback(() => {
+    if (!selectedSymbol) return;
+    createPaneFromTemplate("chart-composer-pane", { arg: selectedSymbol });
+  }, [createPaneFromTemplate, selectedSymbol]);
+
+  useScannerStatusFooter("hilo", feed, focused, [
+    { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedSymbol },
+  ]);
 
   const split = width >= SPLIT_MIN_WIDTH;
   const showBars = height >= BARS_MIN_HEIGHT;
@@ -105,12 +120,18 @@ function HiloPane({ focused, width, height }: PaneProps) {
   }, [selectTicker]);
 
   const handleSideSwitchKey = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "g") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      chartSelected();
+      return true;
+    }
     if (event.name !== "left" && event.name !== "right") return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     setActiveSide(event.name === "left" ? "lows" : "highs");
     return true;
-  }, []);
+  }, [chartSelected]);
 
   if (feed.denied) {
     return <ScannerDeniedState reason={feed.deniedReason} />;

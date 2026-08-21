@@ -138,6 +138,11 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("SPX", "INDEX")).toEqual(["^GSPC"]);
   });
 
+  test("maps VIX and TNX to a single caret Yahoo symbol", () => {
+    expect(getYahooSymbolsToTry("VIX", "")).toEqual(["^VIX"]);
+    expect(getYahooSymbolsToTry("^TNX", "")).toEqual(["^TNX"]);
+  });
+
   test("maps manual resolution requests to yahoo chart range plus interval", async () => {
     const provider = new YahooFinanceClient() as any;
     let requested = false;
