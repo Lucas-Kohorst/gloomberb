@@ -24,6 +24,9 @@ describe("CoinGeckoProvider", () => {
     const provider = new CoinGeckoProvider(http);
 
     expect(provider.canProvide("BTC-USD", "CCC")).toBe(true);
+    expect(provider.canProvide("SOL/USD")).toBe(true);
+    expect(provider.canProvide("ZEC/USD")).toBe(true);
+    expect(provider.canProvide("BTC", "CCC")).toBe(true);
     expect(provider.canProvide("AAPL", "NASDAQ")).toBe(false);
 
     const quote = await provider.getQuote("BTC-USD", "CCC");

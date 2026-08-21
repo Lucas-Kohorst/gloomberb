@@ -36,6 +36,16 @@ describe("hosted data cache", () => {
     })).toBe(120);
   });
 
+  test("caches public CoinGecko GETs so hosted crypto quotes share one origin pull", () => {
+    expect(hostedPublicGetCacheTtlSeconds({
+      url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+    })).toBe(30);
+    expect(hostedPublicGetCacheTtlSeconds({
+      url: "https://pro-api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+      init: { headers: { "x-cg-pro-api-key": "user-key" } },
+    })).toBeNull();
+  });
+
   test("does not cache Yahoo crumb requests", () => {
     expect(hostedPublicGetCacheTtlSeconds({
       url: "https://query1.finance.yahoo.com/v1/test/getcrumb",

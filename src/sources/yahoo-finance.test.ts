@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { YahooFinanceClient } from "./yahoo-finance";
+import { YahooFinanceClient, mapYahooInstrumentSearchQuote } from "./yahoo-finance";
 import { getYahooSymbolsToTry } from "./yahoo-finance/symbols";
 
 describe("YahooFinanceClient exchange aliases", () => {
@@ -111,12 +111,46 @@ describe("YahooFinanceClient exchange aliases", () => {
     expect(getYahooSymbolsToTry("HY9H", "FWB2")).toEqual(["HY9H.F", "HY9H.DE"]);
   });
 
-  test("does not fetch Yahoo quotes or history for crypto pairs", async () => {
+  test("rewrites Yahoo crypto and FX-style coin pairs onto CCC hyphen tickers", () => {
+    expect(mapYahooInstrumentSearchQuote({
+      symbol: "SOL-USD",
+      shortname: "Solana USD",
+      exchDisp: "CCC",
+      quoteType: "CRYPTOCURRENCY",
+    })).toMatchObject({
+      symbol: "SOL-USD",
+      exchange: "CCC",
+      type: "CRYPTO",
+    });
+    expect(mapYahooInstrumentSearchQuote({
+      symbol: "SOLUSD=X",
+      shortname: "SOL/USD",
+      longname: "Solana US Dollar",
+      exchDisp: "CCY",
+      quoteType: "CURRENCY",
+    })).toMatchObject({
+      symbol: "SOL-USD",
+      exchange: "CCC",
+      type: "CRYPTO",
+    });
+    expect(mapYahooInstrumentSearchQuote({
+      symbol: "EURUSD=X",
+      shortname: "EUR/USD",
+      quoteType: "CURRENCY",
+      exchDisp: "CCY",
+    })).toMatchObject({
+      symbol: "EURUSD=X",
+      type: "CURRENCY",
+    });
+  });
     const provider = new YahooFinanceClient() as any;
     provider.fetchChart = async () => {
       throw new Error("Yahoo should not fetch crypto");
     };
     expect(provider.canProvide("BTC-USD", "CCC")).toBe(false);
+    expect(provider.canProvide("SOL/USD")).toBe(false);
+    expect(provider.canProvide("ZEC/USD", "CCY")).toBe(false);
+    expect(provider.canProvide("BTCUSD=X")).toBe(false);
     expect(provider.canProvide("AAPL", "NASDAQ")).toBe(true);
     await expect(provider.getQuote("BTC-USD", "CCC")).rejects.toThrow(/CoinGecko/);
     await expect(provider.getPriceHistory("ETH-USD", "CCC", "1Y")).rejects.toThrow(/CoinGecko/);

@@ -1,5 +1,6 @@
 import type {
   CachedFinancialsTarget,
+  DataProvider,
   MarketDataRequestContext,
   QuoteBatchResult,
   QuoteSubscriptionTarget,
@@ -74,27 +75,44 @@ export class ProviderRouterBatchRoutes {
       misses.push({ index, target });
     });
 
-    const batchProvider = this.deps.providersInPriorityOrder().find((provider) => provider.getQuotesBatch);
     const providerMisses = misses.filter(({ target }) => !this.deps.hasBrokerContext(target.context));
-    const providerIndexes = new Map<string, Array<{ index: number; target: QuoteSubscriptionTarget }>>();
-    if (batchProvider && providerMisses.length > 0) {
-      for (const entry of providerMisses) {
-        const key = this.quoteBatchKey(entry.target);
-        const bucket = providerIndexes.get(key) ?? [];
-        bucket.push(entry);
-        providerIndexes.set(key, bucket);
-      }
-      const uniqueTargets = [...providerIndexes.values()].map((bucket) => bucket[0]!.target);
-      const batchResults = await batchProvider.getQuotesBatch!(uniqueTargets, options).catch(() => []);
-      for (const item of batchResults) {
-        if (!isProviderQuoteUsableForCurrentSession(item.quote, item.target.exchange)) continue;
-        const key = this.quoteBatchKey(item.target);
-        const sourceKey = this.deps.providerSourceKey(batchProvider);
-        for (const entry of providerIndexes.get(key) ?? []) {
-          const entityKey = this.deps.getEntityKey(entry.target.symbol, entry.target.context?.instrument);
-          const variantKey = this.deps.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
-          this.deps.cacheResource("quote", entityKey, variantKey, sourceKey, item.quote, this.deps.resolveProviderPolicy("quote", batchProvider));
-          results[entry.index] = { target: entry.target, quote: item.quote };
+    if (providerMisses.length > 0) {
+      const remaining = [...providerMisses];
+      for (const provider of this.deps.providersInPriorityOrder()) {
+        if (!provider.getQuotesBatch || remaining.length === 0) continue;
+        const eligible: Array<{ index: number; target: QuoteSubscriptionTarget }> = [];
+        const skipped: Array<{ index: number; target: QuoteSubscriptionTarget }> = [];
+        for (const entry of remaining) {
+          if (results[entry.index]) continue;
+          if (await providerCanServe(provider, entry.target.symbol, entry.target.exchange, entry.target.context)) {
+            eligible.push(entry);
+          } else {
+            skipped.push(entry);
+          }
+        }
+        remaining.length = 0;
+        remaining.push(...skipped);
+        if (eligible.length === 0) continue;
+
+        const providerIndexes = new Map<string, Array<{ index: number; target: QuoteSubscriptionTarget }>>();
+        for (const entry of eligible) {
+          const key = this.quoteBatchKey(entry.target);
+          const bucket = providerIndexes.get(key) ?? [];
+          bucket.push(entry);
+          providerIndexes.set(key, bucket);
+        }
+        const uniqueTargets = [...providerIndexes.values()].map((bucket) => bucket[0]!.target);
+        const batchResults = await provider.getQuotesBatch(uniqueTargets, options).catch(() => []);
+        for (const item of batchResults) {
+          if (!isProviderQuoteUsableForCurrentSession(item.quote, item.target.exchange)) continue;
+          const key = this.quoteBatchKey(item.target);
+          const sourceKey = this.deps.providerSourceKey(provider);
+          for (const entry of providerIndexes.get(key) ?? []) {
+            const entityKey = this.deps.getEntityKey(entry.target.symbol, entry.target.context?.instrument);
+            const variantKey = this.deps.getTickerVariantCandidates(entry.target.exchange)[0] ?? "";
+            this.deps.cacheResource("quote", entityKey, variantKey, sourceKey, item.quote, this.deps.resolveProviderPolicy("quote", provider));
+            results[entry.index] = { target: entry.target, quote: item.quote };
+          }
         }
       }
     }
@@ -188,5 +206,19 @@ export class ProviderRouterBatchRoutes {
 
   private cachedFinancialsBatchKey(target: CachedFinancialsTarget): string {
     return `${target.symbol.trim().toUpperCase()}:${canonicalExchange(target.exchange ?? "")}`;
+  }
+}
+
+async function providerCanServe(
+  provider: DataProvider,
+  ticker: string,
+  exchange?: string,
+  context?: MarketDataRequestContext,
+): Promise<boolean> {
+  if (!provider.canProvide) return true;
+  try {
+    return await provider.canProvide(ticker, exchange, context);
+  } catch {
+    return false;
   }
 }
