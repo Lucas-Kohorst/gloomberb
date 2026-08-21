@@ -12,6 +12,7 @@ export function isPriceAlertCondition(
 export interface AlertRule {
   id: string;
   symbol: string;
+  exchange?: string;
   condition: AlertCondition;
   targetPrice: number;
   createdAt: number;

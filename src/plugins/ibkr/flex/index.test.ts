@@ -27,6 +27,7 @@ describe("parseFlexPositions", () => {
     const positions = parseFlexPositions(xml);
     expect(positions).toHaveLength(1);
     expect(positions[0]?.ticker).toBe("SPY  260619C00500000");
+    expect(positions[0]?.side).toBe("long");
     expect(positions[0]?.brokerContract).toEqual({
       brokerId: "ibkr",
       conId: 123456,
@@ -41,6 +42,24 @@ describe("parseFlexPositions", () => {
       strike: 500,
       multiplier: "100",
       tradingClass: "SPY",
+    });
+  });
+
+  test("treats a negative Flex position without a side attribute as a short", () => {
+    const xml = `
+      <FlexQueryResponse>
+        <OpenPositions>
+          <OpenPosition accountId="DU12345" symbol="TSLA" assetCategory="STK" position="-50" costBasisPrice="200" currency="USD" listingExchange="NASDAQ" />
+        </OpenPositions>
+      </FlexQueryResponse>
+    `;
+
+    const positions = parseFlexPositions(xml);
+    expect(positions).toHaveLength(1);
+    expect(positions[0]).toMatchObject({
+      ticker: "TSLA",
+      shares: 50,
+      side: "short",
     });
   });
 });

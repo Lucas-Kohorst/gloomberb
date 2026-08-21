@@ -316,6 +316,10 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `SB` | Toggle the status bar |
 | `VF` | Toggle quote value flashing |
 | `TH <theme>` | Change color theme |
+| `CONN` | Connection health |
+| `POLL` | Prediction-market polls |
+| `ART` | Loaded article lookup |
+| `UPGRADE` | Account upgrade |
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Toggle plugins from the command bar |

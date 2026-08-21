@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text } from "../../../ui";
-import { usePaneTicker } from "../../../state/app/context";
+import { usePaneTicker, usePaneInstance } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
@@ -39,6 +39,7 @@ import { buildOvmeSeed, serializeOvmeSeed, type OvmeOptionType } from "../option
 
 export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
   const { ticker, financials } = usePaneTicker();
+  const pane = usePaneInstance();
   const liveStreaming = useLiveStreamingSetting();
   const { createPaneFromTemplate } = usePluginAppActions();
   const [expIdx, setExpIdx] = useState(0);
@@ -74,11 +75,15 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   const initialChain = useResolvedEntryValue(initialChainEntry);
   const selectedExpiration = initialChain?.expirationDates[expIdx];
   const viewportKey = `${effectiveTicker}:${selectedExpiration ?? "initial"}`;
+  const chainRefreshMinutes = Number(pane?.settings?.chainRefreshMinutes);
+  const chainRefreshIntervalMs = Number.isFinite(chainRefreshMinutes) && chainRefreshMinutes > 0
+    ? chainRefreshMinutes * 60_000
+    : OPTIONS_CHAIN_REFRESH_INTERVAL_MS;
   const expirationChainEntry = useOptionsQuery(
     baseRequest && selectedExpiration != null
       ? { ...baseRequest, expirationDate: selectedExpiration }
       : null,
-    { refreshIntervalMs: OPTIONS_CHAIN_REFRESH_INTERVAL_MS },
+    { refreshIntervalMs: chainRefreshIntervalMs },
   );
   const expirationChain = useResolvedEntryValue(expirationChainEntry);
   const chain = expirationChain ?? initialChain;

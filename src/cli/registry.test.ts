@@ -132,6 +132,7 @@ describe("CLI registry", () => {
 
     expect(registry.lookup.get("example")).toBeUndefined();
     expect(renderCliHelp(registry, "0.0.0")).not.toContain("Synthetic plugin command");
+    expect(registry.plugins.map((plugin) => plugin.id)).not.toContain("synthetic-cli");
   });
 
   test("ignores broken external plugins while keeping other commands available", () => {

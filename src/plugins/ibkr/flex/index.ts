@@ -162,7 +162,7 @@ export function parseFlexPositions(xml: string): BrokerPosition[] {
       name: description || undefined,
       assetCategory: assetCategory || undefined,
       isin: isin || undefined,
-      side: side === "long" || side === "short" ? side : undefined,
+      side: side === "long" || side === "short" ? side : quantity < 0 ? "short" : "long",
       markPrice: numAttr("markPrice"),
       marketValue: numAttr("positionValue"),
       unrealizedPnl: numAttr("fifoPnlUnrealized") ?? numAttr("unrealizedCapitalGainsPnl"),

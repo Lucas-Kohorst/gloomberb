@@ -5,6 +5,7 @@ import { Tabs } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
+import { convertCurrency } from "../../../utils/format";
 import {
   getFocusedCollectionId,
   useAppSelector,
@@ -208,8 +209,14 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       activePortfolio,
       brokerPerformance: brokerPerformance.performance,
       portfolioStats,
+      convertAccountValue: (value) => convertCurrency(
+        value,
+        accountState?.account.currency || baseCurrency,
+        baseCurrency,
+        effectiveExchangeRates,
+      ),
     }),
-    [accountState, activePortfolio, brokerPerformance.performance, portfolioStats],
+    [accountState, activePortfolio, baseCurrency, brokerPerformance.performance, effectiveExchangeRates, portfolioStats],
   );
 
   const riskRows = useMemo(

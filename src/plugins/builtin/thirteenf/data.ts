@@ -81,8 +81,17 @@ export async function loadBrowserRows(
     const ticker = query.trim().toUpperCase();
     if (!ticker) return { rows: [], quarter };
     const tickers = await lookupThirteenFTickers([ticker], signal, apiOptions);
-    const cusip = tickers[0]?.cusip;
-    if (!cusip) return { rows: [], quarter, warning: `No CUSIP found for ${ticker}` };
+    const exact = tickers.filter((item) => item.ticker === ticker);
+    const candidates = exact.length > 0 ? exact : tickers;
+    const cusips = [...new Set(candidates.map((item) => item.cusip).filter(Boolean))];
+    const cusip = cusips.length === 1 ? cusips[0] : undefined;
+    if (!cusip) {
+      return {
+        rows: [],
+        quarter,
+        warning: cusips.length === 0 ? `No CUSIP found for ${ticker}` : `Ambiguous CUSIP for ${ticker}`,
+      };
+    }
     const periodOfReport = quarterToPeriod(quarter);
     try {
       const holders = await lookupThirteenFHoldersByCusip(cusip, periodOfReport, signal, apiOptions);

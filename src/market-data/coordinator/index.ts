@@ -386,7 +386,7 @@ export class MarketDataCoordinator {
         && typeof quote.lastUpdated === "number"
         && quote.lastUpdated < snapshot.quote.lastUpdated
       ) {
-        return quote;
+        return snapshot.quote;
       }
     }
     const cachedFinancials = snapshot ?? this.readCachedFinancialsForInstrument(instrument);

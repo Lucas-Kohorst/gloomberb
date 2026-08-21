@@ -36,7 +36,10 @@ import {
 } from "./commands/plugins";
 import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
-function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
+function createCoreCliCommands(
+  renderHelp: () => string,
+  allCommands: () => CliCommandDef[],
+): CliCommandDef[] {
   let commands: CliCommandDef[] = [];
   const launchUiRequest: CliLaunchRequest = {
     applyConfig: (config) => ({ config }),
@@ -54,7 +57,7 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
           console.log(renderHelp());
           return;
         }
-        ctx.printResult({ data: commands.map((command) => ({
+        ctx.printResult({ data: allCommands().map((command) => ({
           name: command.name,
           aliases: command.aliases ?? [],
           description: command.description,
@@ -206,7 +209,7 @@ function createCoreCliCommands(renderHelp: () => string): CliCommandDef[] {
     ...marketDataCliCommands,
     ...overviewCliCommands,
     remoteCliCommand,
-    ...createSystemCliCommands(() => commands),
+    ...createSystemCliCommands(allCommands),
     brokerCliCommand,
     ibkrCliCommand,
     aiCliCommand,
@@ -223,7 +226,10 @@ export interface DispatchCliOptions {
 async function createRegistry(options: DispatchCliOptions = {}): Promise<CliCommandRegistry> {
   const config = await loadCliConfigIfAvailable();
   let registry: CliCommandRegistry | null = null;
-  const coreCommands = createCoreCliCommands(() => renderCliHelp(registry!, VERSION));
+  const coreCommands = createCoreCliCommands(
+    () => renderCliHelp(registry!, VERSION),
+    () => registry!.commands.map((entry) => entry.command),
+  );
   registry = buildCliCommandRegistry({
     coreCommands,
     externalPlugins: options.externalPlugins ?? [],

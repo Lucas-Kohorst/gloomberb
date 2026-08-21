@@ -576,6 +576,33 @@ describe("ticker-search utilities", () => {
     expect(saved).toHaveLength(1);
   });
 
+  test("replaces a saved listing when search selects a different exchange", async () => {
+    const existing = makeTicker("AAPL", "Apple Inc.");
+    existing.metadata.exchange = "NASDAQ";
+    existing.metadata.currency = "USD";
+    const saved: TickerRecord[] = [];
+    const repository = {
+      loadTicker: async () => existing,
+      createTicker: async (metadata: TickerRecord["metadata"]) => ({ metadata }),
+      saveTicker: async (ticker: TickerRecord) => {
+        saved.push(ticker);
+      },
+    };
+
+    const { ticker } = await upsertTickerFromSearchResult(repository as any, {
+      providerId: "test",
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      exchange: "BYMA",
+      type: "EQUITY",
+      currency: "ARS",
+    });
+
+    expect(ticker.metadata.exchange).toBe("BYMA");
+    expect(ticker.metadata.currency).toBe("ARS");
+    expect(saved).toHaveLength(1);
+  });
+
   test("exposes local ticker candidates in saved category", () => {
     expect(createLocalTickerSearchCandidates([makeTicker("TSLA", "Tesla")])).toEqual([
       expect.objectContaining({

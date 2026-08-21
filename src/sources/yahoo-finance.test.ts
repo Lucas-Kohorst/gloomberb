@@ -364,7 +364,7 @@ describe("YahooFinanceClient exchange aliases", () => {
       dividends: [{ exDate: "2026-02-03", amount: 0.12 }],
       splits: [{ date: "2026-01-02", description: "2:1 split", ratio: 2, fromFactor: 1, toFactor: 2 }],
       earnings: [
-        { date: "2026-03-16", time: "BMO", epsEstimate: -0.185 },
+        { date: "2026-03-16", time: "", epsEstimate: -0.185 },
         { date: "2026-01-31", epsActual: -0.35, epsEstimate: -0.13, difference: -0.22, surprisePercent: -169.23 },
       ],
     });

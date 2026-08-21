@@ -58,6 +58,22 @@ describe("quote freshness", () => {
     ).toBe(true);
   });
 
+  test("treats same-day crypto quotes older than two hours as stale", () => {
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "BTC-USD",
+          currency: "USD",
+          lastUpdated: Date.parse("2026-05-13T12:00:00Z"),
+          listingExchangeName: "CCC",
+          exchangeName: "CCC",
+          marketState: "REGULAR",
+        }),
+        Date.parse("2026-05-13T21:00:00Z"),
+      ),
+    ).toBe(true);
+  });
+
   test("treats old crypto quotes as stale on the 24/7 venue", () => {
     expect(
       isQuoteStaleForCurrentSession(

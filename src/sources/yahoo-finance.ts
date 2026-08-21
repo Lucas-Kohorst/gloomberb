@@ -183,7 +183,9 @@ export class YahooFinanceClient implements DataProvider {
         const result = await loadYahooTickerFinancials(symbol, {
           fetchAssetProfile: (targetSymbol) => this.fetchAssetProfile(targetSymbol),
           fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
-          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
           fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
             this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
           fetchTimeseries: (targetSymbol, types, period1) => this.fetchTimeseries(targetSymbol, types, period1),
@@ -223,7 +225,9 @@ export class YahooFinanceClient implements DataProvider {
       try {
         return await loadYahooQuote(symbol, {
           fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
-          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
           fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
             this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
           providerId: this.id,

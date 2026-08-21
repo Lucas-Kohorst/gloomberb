@@ -178,7 +178,15 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       getItemKey={(row) => row.key}
       renderSectionHeader={renderEarningsSectionHeader}
       renderCell={renderCell}
-      emptyStateTitle={loading ? "Loading earnings..." : "No upcoming earnings found"}
+      emptyStateTitle={
+        loading
+          ? "Loading earnings..."
+          : error && events.length === 0
+            ? error
+            : tickerSymbols.length === 0
+              ? "No tickers in scope."
+              : "No upcoming earnings found"
+      }
     />
   );
 }

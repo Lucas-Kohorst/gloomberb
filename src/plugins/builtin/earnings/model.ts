@@ -59,18 +59,19 @@ export function scopedSymbolsFromSettings(settings: Record<string, unknown> | un
   }
 }
 
-export function groupEarningsByRelativeDate(events: EarningsEvent[]): EarningsDisplayRow[] {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const dayAfterTomorrow = new Date(today);
-  dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+function startOfUtcDay(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
 
-  const endOfWeek = new Date(today);
-  endOfWeek.setDate(endOfWeek.getDate() + (7 - endOfWeek.getDay()));
-  const endOfNextWeek = new Date(endOfWeek);
-  endOfNextWeek.setDate(endOfNextWeek.getDate() + 7);
+export function groupEarningsByRelativeDate(
+  events: EarningsEvent[],
+  now = new Date(),
+): EarningsDisplayRow[] {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const today = startOfUtcDay(now);
+  const tomorrow = today + dayMs;
+  const endOfWeek = today + (7 - new Date(today).getUTCDay()) * dayMs;
+  const endOfNextWeek = endOfWeek + 7 * dayMs;
 
   const groups: { label: string; events: EarningsEvent[] }[] = [
     { label: "TODAY", events: [] },
@@ -81,12 +82,12 @@ export function groupEarningsByRelativeDate(events: EarningsEvent[]): EarningsDi
   ];
 
   for (const event of events) {
-    const date = event.earningsDate;
-    if (date >= today && date < tomorrow) {
+    const date = startOfUtcDay(event.earningsDate);
+    if (date === today) {
       groups[0]!.events.push(event);
-    } else if (date >= tomorrow && date < dayAfterTomorrow) {
+    } else if (date === tomorrow) {
       groups[1]!.events.push(event);
-    } else if (date >= dayAfterTomorrow && date < endOfWeek) {
+    } else if (date > tomorrow && date < endOfWeek) {
       groups[2]!.events.push(event);
     } else if (date >= endOfWeek && date < endOfNextWeek) {
       groups[3]!.events.push(event);

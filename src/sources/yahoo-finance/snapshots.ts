@@ -154,7 +154,7 @@ export async function loadYahooTickerFinancials(
     low52w: meta.fiftyTwoWeekLow,
     marketCap: latest("trailingMarketCap"),
     name: meta.shortName || meta.longName,
-    lastUpdated: Date.now(),
+    lastUpdated: yahooMarketTimestamp(meta),
     exchangeName: meta.exchangeName,
     fullExchangeName: meta.fullExchangeName,
     listingExchangeName: meta.exchangeName,
@@ -233,7 +233,7 @@ export async function loadYahooQuote(
     high52w: meta.fiftyTwoWeekHigh,
     low52w: meta.fiftyTwoWeekLow,
     name: meta.shortName || meta.longName,
-    lastUpdated: Date.now(),
+    lastUpdated: yahooMarketTimestamp(meta),
     exchangeName: meta.exchangeName,
     fullExchangeName: meta.fullExchangeName,
     listingExchangeName: meta.exchangeName,
@@ -244,4 +244,12 @@ export async function loadYahooQuote(
     ...quoteSupplement,
     ...extHours,
   };
+}
+
+function yahooMarketTimestamp(meta: NonNullable<ChartResult["meta"]>): number {
+  const marketTime = meta.regularMarketTime;
+  if (typeof marketTime === "number" && Number.isFinite(marketTime) && marketTime > 0) {
+    return marketTime < 1e12 ? marketTime * 1000 : marketTime;
+  }
+  return Date.now();
 }
