@@ -753,6 +753,7 @@ export function ChatContent({
         canSend={canSend}
         catalog={catalog}
         cancelProfilePopoverClose={cancelProfilePopoverClose}
+        closeProfilePopover={closeProfilePopover}
         chatWidth={chatWidth}
         contentWidth={contentWidth}
         handleTranscriptScrollActivity={handleTranscriptScrollActivity}

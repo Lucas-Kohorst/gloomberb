@@ -133,9 +133,11 @@ function renderCell(
 }
 
 export function DividendYieldPane({ focused, width, height }: { focused: boolean; width: number; height: number }) {
-  const { ticker } = usePaneTicker();
+  const { ticker, financials } = usePaneTicker();
   const symbol = ticker?.metadata.ticker ?? null;
   const currency = ticker?.metadata.currency ?? "USD";
+  const exchange = ticker?.metadata.exchange ?? "";
+  const quotePrice = financials?.quote?.price ?? null;
 
   const [data, setData] = useState<DividendData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -144,14 +146,16 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   const fetchGenRef = useRef(0);
+  const quotePriceRef = useRef(quotePrice);
+  quotePriceRef.current = quotePrice;
 
-  const load = useCallback(async (sym: string) => {
+  const load = useCallback(async (sym: string, price: number | null, listingExchange = "") => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchDividendData(sym, null);
+      const result = await fetchDividendData(sym, price, listingExchange);
       if (fetchGenRef.current !== gen) return;
       setData(result);
     } catch (err) {
@@ -164,20 +168,20 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   }, []);
 
   useEffect(() => {
-    if (symbol) load(symbol);
-  }, [symbol, load]);
+    if (symbol) void load(symbol, quotePriceRef.current, exchange);
+  }, [exchange, load, symbol]);
 
   useShortcut((ev) => {
     if (!focused || !symbol) return;
     if (ev.name === "r") {
       ev.preventDefault?.();
-      load(symbol);
+      void load(symbol, quotePriceRef.current, exchange);
     }
   });
 
   const refresh = useCallback(() => {
-    if (symbol) load(symbol);
-  }, [load, symbol]);
+    if (symbol) void load(symbol, quotePriceRef.current, exchange);
+  }, [exchange, load, symbol]);
 
   usePaneFooter("dividend-yield", () => ({
     info: [

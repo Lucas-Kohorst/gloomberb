@@ -143,7 +143,7 @@ export function OverviewTab({
               <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
                 {ticker.metadata.ticker}
               </Text>
-              {ticker.metadata.name && ticker.metadata.name !== ticker.metadata.ticker && (
+              {(ticker.metadata.name || quote?.name) && (ticker.metadata.name || quote?.name) !== ticker.metadata.ticker && (
                 <Text fg={colors.textDim}>
                   {" "}- {ticker.metadata.name || quote?.name || ""}
                 </Text>

@@ -24,7 +24,7 @@ function isUsExchange(value?: string): boolean {
 
 function isEquityType(value?: string): boolean {
   const normalized = normalize(value);
-  return normalized.length === 0 || normalized === "STK" || normalized === "EQUITY";
+  return normalized.length === 0 || normalized === "STK" || normalized === "EQUITY" || normalized === "ADR";
 }
 
 export function isUsEquityTicker(ticker: TickerRecord | null | undefined): boolean {

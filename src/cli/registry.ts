@@ -208,7 +208,7 @@ export function buildCliCommandRegistry({
     commands,
     lookup,
     config,
-    plugins: loadablePlugins,
+    plugins: loadablePlugins.filter((plugin) => !disabledPlugins.has(plugin.id)),
     externalPlugins,
     descriptors,
   };

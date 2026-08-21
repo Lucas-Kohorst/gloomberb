@@ -2,6 +2,7 @@ import { withConnectionRequest } from "../connections/register";
 import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, mapYahooDividends } from "../../../sources/yahoo-finance/mappers";
 import { fetchYahooChart } from "../../../sources/yahoo-finance/requests";
+import { getYahooSymbolsToTry } from "../../../sources/yahoo-finance/symbols";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
 import type { DividendMetrics, DividendPayment } from "./types";
 
@@ -82,6 +83,23 @@ export interface DividendData {
 }
 
 export async function fetchDividendData(
+  symbol: string,
+  currentPrice: number | null,
+  exchange = "",
+): Promise<DividendData> {
+  const symbols = exchange ? getYahooSymbolsToTry(symbol, exchange) : [symbol];
+  let lastError: unknown;
+  for (const yahooSymbol of symbols) {
+    try {
+      return await fetchDividendDataForSymbol(yahooSymbol, currentPrice);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error(`No dividend data found for ${symbol}`);
+}
+
+async function fetchDividendDataForSymbol(
   symbol: string,
   currentPrice: number | null,
 ): Promise<DividendData> {

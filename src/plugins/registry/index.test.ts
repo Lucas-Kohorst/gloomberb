@@ -295,19 +295,19 @@ describe("PluginRegistry capabilities", () => {
     expect(registry.getEnabledCapabilities("asset-data").map((entry) => entry.sourceId)).toEqual(["source-b"]);
   });
 
-  test("CoinGecko setup registers asset-data when plugin.capabilities are skipped", async () => {
+  test("CoinGecko setup no longer registers a live quote source", async () => {
     const { coingeckoPlugin } = await import("../builtin/coingecko");
     const registry = createRegistry({ enableCapabilityHandlers: false });
     await registry.register(coingeckoPlugin);
-    expect(registry.getCapability("asset-data.coingecko")?.sourceId).toBe("coingecko");
+    expect(registry.getCapability("asset-data.coingecko")).toBeNull();
     registry.unregister(coingeckoPlugin.id);
   });
 
-  test("CoinGecko setup does not double-register when capabilities already loaded", async () => {
+  test("CoinGecko plugin does not attach asset-data when capabilities are enabled", async () => {
     const { coingeckoPlugin } = await import("../builtin/coingecko");
     const registry = createRegistry();
     await registry.register(coingeckoPlugin);
-    expect(registry.getEnabledCapabilities("asset-data").filter((entry) => entry.sourceId === "coingecko")).toHaveLength(1);
+    expect(registry.getEnabledCapabilities("asset-data").filter((entry) => entry.sourceId === "coingecko")).toHaveLength(0);
     registry.unregister(coingeckoPlugin.id);
   });
 });

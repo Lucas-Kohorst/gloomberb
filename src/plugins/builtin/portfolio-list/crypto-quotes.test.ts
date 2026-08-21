@@ -50,65 +50,40 @@ describe("portfolio table crypto quotes", () => {
     const yahooProvider: DataProvider = {
       ...fallbackProvider,
       id: "yahoo",
-      async canProvide(symbol, exchange) {
-        return !isCryptoMarketInstrument(symbol, exchange);
-      },
       async getQuote(symbol) {
-        if (isCryptoMarketInstrument(symbol)) throw new Error("Yahoo should not price crypto");
         const row = prices[symbol]!;
         return makeQuote({ symbol, providerId: "yahoo", ...row });
+      },
+      async getQuotesBatch(targets) {
+        return targets.map((target) => {
+          const row = prices[target.symbol]!;
+          return { target, quote: makeQuote({ symbol: target.symbol, providerId: "yahoo", ...row }) };
+        });
+      },
+      subscribeQuotes(targets, onQuote) {
+        for (const target of targets) {
+          const row = prices[target.symbol]!;
+          onQuote(target, makeQuote({ symbol: target.symbol, providerId: "yahoo", ...row }));
+        }
+        return () => {};
       },
     };
     const cloudProvider: DataProvider = {
       ...fallbackProvider,
       id: "gloomberb-cloud",
       priority: 100,
-      async canProvide(symbol, exchange) {
-        return !isCryptoMarketInstrument(symbol, exchange);
-      },
       async getQuote() {
-        throw new Error("Cloud should not price crypto");
+        throw new Error("Cloud unavailable");
       },
-      async getQuotesBatch(targets) {
-        return targets.map((target) => {
-          if (isCryptoMarketInstrument(target.symbol, target.exchange)) {
-            return { target, quote: null };
-          }
-          const row = prices[target.symbol]!;
-          return { target, quote: makeQuote({ symbol: target.symbol, providerId: "gloomberb-cloud", ...row }) };
-        });
+      async getQuotesBatch() {
+        throw new Error("Cloud unavailable");
       },
-      subscribeQuotes(targets, onQuote) {
-        for (const target of targets) {
-          if (isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
-          const row = prices[target.symbol]!;
-          onQuote(target, makeQuote({ symbol: target.symbol, providerId: "gloomberb-cloud", ...row }));
-        }
-        return () => {};
-      },
-    };
-    const coinGeckoProvider: DataProvider = {
-      ...fallbackProvider,
-      id: "coingecko",
-      priority: 80,
-      async canProvide(symbol, exchange) {
-        return isCryptoMarketInstrument(symbol, exchange);
-      },
-      async getQuote(symbol) {
-        const row = prices[symbol]!;
-        return makeQuote({ symbol, providerId: "coingecko", ...row, marketCap: 1_000_000_000 });
-      },
-      subscribeQuotes(targets, onQuote) {
-        for (const target of targets) {
-          if (!isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
-          const row = prices[target.symbol]!;
-          onQuote(target, makeQuote({ symbol: target.symbol, providerId: "coingecko", ...row, marketCap: 1_000_000_000 }));
-        }
+      subscribeQuotes() {
         return () => {};
       },
     };
 
-    const router = new AssetDataRouter(yahooProvider, [cloudProvider, coinGeckoProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const coordinator = new MarketDataCoordinator(router);
     setSharedMarketDataCoordinator(coordinator);
 
@@ -135,6 +110,7 @@ describe("portfolio table crypto quotes", () => {
       expect(chg.text).not.toBe("—");
       expect(financials?.quote?.price).toBe(prices[row.metadata.ticker]!.price);
       expect(financials?.quote?.changePercent).toBe(prices[row.metadata.ticker]!.changePercent);
+      expect(financials?.quote?.providerId).toBe("yahoo");
     }
   });
 });

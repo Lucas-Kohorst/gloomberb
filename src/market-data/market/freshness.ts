@@ -5,6 +5,7 @@ const US_EXTENDED_HOURS_EXCHANGES = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "
 const ALWAYS_OPEN_EXCHANGES = new Set(["CCC", "CRYPTO"]);
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const OVERNIGHT_CLOSE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
+const ALWAYS_OPEN_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const REGULAR_OPEN_MINUTES: Record<string, number> = {
   NASDAQ: 9 * 60 + 30,
   NYSE: 9 * 60 + 30,
@@ -174,11 +175,13 @@ function isTimestampStaleForExchangeSessionUnsafe(
   const canonical = canonicalExchange(exchange);
   if (!canonical || !Number.isFinite(timestampMs) || !Number.isFinite(now)) return false;
 
+  if (ALWAYS_OPEN_EXCHANGES.has(canonical)) {
+    return now - timestampMs > ALWAYS_OPEN_MAX_AGE_MS;
+  }
+
   const timestampDate = exchangeLocalDate(canonical, timestampMs);
   const currentDate = exchangeLocalDate(canonical, now);
   if (!timestampDate || !currentDate || timestampDate === currentDate) return false;
-
-  if (ALWAYS_OPEN_EXCHANGES.has(canonical)) return true;
   if (marketState === "REGULAR" && !isBeforeKnownRegularOpen(canonical, now)) return true;
 
   if (isUsExtendedHoursExchange(canonical)) {

@@ -1,3 +1,5 @@
+import { canonicalExchange } from "../../utils/exchanges";
+
 const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   NASDAQ: "", NMS: "", NYSE: "", AMEX: "", ARCA: "", NYSEArca: "", BATS: "", BYX: "", IEX: "", PINK: "", OTC: "",
   TSX: ".TO", VENTURE: ".V", CSE2: ".CN", CNSX: ".CN",
@@ -71,20 +73,22 @@ const INDEX_TICKER_ALIASES: Record<string, string> = {
 
 export function getYahooSymbol(ticker: string, exchange: string): string {
   if (tickerHasYahooSuffix(ticker)) return ticker;
-  const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
-  return `${normalizeYahooTicker(ticker, exchange)}${suffix}`;
+  const canonical = canonicalExchange(exchange) || exchange;
+  const suffix = EXCHANGE_SUFFIX_MAP[canonical] ?? EXCHANGE_SUFFIX_MAP[exchange] ?? "";
+  return `${normalizeYahooTicker(ticker, canonical)}${suffix}`;
 }
 
 export function getYahooSymbolsToTry(ticker: string, exchange: string): string[] {
   if (tickerHasYahooSuffix(ticker)) return [ticker];
 
-  const normalized = normalizeYahooTicker(ticker, exchange);
+  const canonical = canonicalExchange(exchange) || exchange;
+  const normalized = normalizeYahooTicker(ticker, canonical);
   // Caret indices are already the Yahoo symbol. Suffix-guessing ^VIX.HK etc.
   // is what 429s hosted Yahoo when CAT/G opens VIX or TNX as a security.
   if (normalized.startsWith("^")) return [normalized];
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
-  if (!exchange) {
+  if (!canonical) {
     // Hosted Yahoo 429s the unsuffixed US listing, then this walk used to
     // accept the first foreign hit — COIN → COIN.JK (PT Indokripto).
     if (isBareUsEquityYahooSymbol(normalized)) return [normalized];
@@ -100,16 +104,16 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
     return Array.from(symbols);
   }
 
-  const fallbacks = EXCHANGE_FALLBACKS[exchange];
+  const fallbacks = EXCHANGE_FALLBACKS[canonical] ?? EXCHANGE_FALLBACKS[exchange];
   if (fallbacks) {
     const results = fallbacks.map((suffix) => `${normalized}${suffix}`);
     if (dotVariant) results.unshift(...fallbacks.map((suffix) => `${dotVariant}${suffix}`));
     return results;
   }
 
-  const primary = getYahooSymbol(ticker, exchange);
+  const primary = getYahooSymbol(ticker, canonical);
   if (dotVariant) {
-    const suffix = EXCHANGE_SUFFIX_MAP[exchange] ?? "";
+    const suffix = EXCHANGE_SUFFIX_MAP[canonical] ?? EXCHANGE_SUFFIX_MAP[exchange] ?? "";
     return [`${dotVariant}${suffix}`, primary];
   }
   return [primary];
@@ -147,5 +151,6 @@ function isBareUsEquityYahooSymbol(symbol: string): boolean {
 }
 
 function isHongKongExchange(exchange: string): boolean {
-  return exchange === "HKEX" || exchange === "SEHK" || exchange === "HKG";
+  const canonical = canonicalExchange(exchange) || exchange;
+  return canonical === "HKEX" || canonical === "SEHK" || canonical === "HKG";
 }

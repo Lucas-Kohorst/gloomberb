@@ -17,9 +17,12 @@ function percentChange(value: number, previousValue: number): number {
   return previousValue !== 0 ? (value / previousValue) * 100 : 0;
 }
 
-export function resolveBrokerPortfolioMarketValue(account?: BrokerAccount | null): number | null {
+export function resolveBrokerPortfolioMarketValue(
+  account?: BrokerAccount | null,
+  convertAccountValue: (value: number) => number = (value) => value,
+): number | null {
   if (finiteNumber(account?.grossPositionValue)) {
-    return account.grossPositionValue;
+    return convertAccountValue(account.grossPositionValue);
   }
   return null;
 }
@@ -27,24 +30,26 @@ export function resolveBrokerPortfolioMarketValue(account?: BrokerAccount | null
 export function resolvePortfolioMarketValue(
   totals: PortfolioSummaryTotals,
   account?: BrokerAccount | null,
+  convertAccountValue: (value: number) => number = (value) => value,
 ): number {
-  return resolveBrokerPortfolioMarketValue(account) ?? totals.totalMktValue;
+  return resolveBrokerPortfolioMarketValue(account, convertAccountValue) ?? totals.totalMktValue;
 }
 
 export function resolvePortfolioAccountMetrics(
   totals: PortfolioSummaryTotals,
   account?: BrokerAccount | null,
+  convertAccountValue: (value: number) => number = (value) => value,
 ): PortfolioAccountMetrics {
-  const brokerDailyPnl = finiteNumber(account?.dailyPnl) ? account.dailyPnl : null;
+  const brokerDailyPnl = finiteNumber(account?.dailyPnl) ? convertAccountValue(account.dailyPnl) : null;
   const dailyPnl = brokerDailyPnl ?? totals.dailyPnl;
   const previousNetLiquidation = brokerDailyPnl != null && finiteNumber(account?.netLiquidation)
-    ? account.netLiquidation - dailyPnl
+    ? convertAccountValue(account.netLiquidation) - dailyPnl
     : null;
   const dailyPnlPct = previousNetLiquidation != null
     ? percentChange(dailyPnl, previousNetLiquidation)
     : totals.dailyPnlPct;
 
-  const brokerUnrealizedPnl = finiteNumber(account?.unrealizedPnl) ? account.unrealizedPnl : null;
+  const brokerUnrealizedPnl = finiteNumber(account?.unrealizedPnl) ? convertAccountValue(account.unrealizedPnl) : null;
   const unrealizedPnl = brokerUnrealizedPnl ?? totals.unrealizedPnl;
   const unrealizedPnlPct = totals.totalCostBasis !== 0
     ? percentChange(unrealizedPnl, totals.totalCostBasis)

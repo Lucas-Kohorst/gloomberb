@@ -5,10 +5,16 @@ export type { AlertRule };
 
 const KNOWN_CONDITIONS = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div"]);
 
-export function createAlert(symbol: string, condition: AlertCondition, targetPrice: number): AlertRule {
+export function createAlert(
+  symbol: string,
+  condition: AlertCondition,
+  targetPrice: number,
+  exchange?: string,
+): AlertRule {
   return {
     id: `alert-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     symbol: symbol.toUpperCase(),
+    exchange: exchange?.trim() || undefined,
     condition,
     targetPrice,
     createdAt: Date.now(),

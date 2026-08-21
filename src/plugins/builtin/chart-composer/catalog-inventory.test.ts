@@ -186,7 +186,7 @@ describe("data catalog inventory", () => {
     expect(crypto.every((row) => row.kind === "Crypto")).toBe(true);
     expect(crypto.some((row) => row.expression === "ETH-USD:price")).toBe(true);
     expect(crypto.some((row) => row.expression === "BTC-USD:price")).toBe(true);
-    expect(crypto.every((row) => row.source === "CoinGecko")).toBe(true);
+    expect(crypto.every((row) => row.source === "Yahoo")).toBe(true);
     expect(crypto.every((row) => !row.needsTicker)).toBe(true);
     expect(assets.some((row) => row.sourceId === "security")).toBe(true);
     expect(filterCatalogRows(rows, "data", "").some((row) => row.sourceId === "crypto")).toBe(false);

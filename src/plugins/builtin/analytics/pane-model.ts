@@ -123,23 +123,25 @@ export function buildAnalyticsSummaryRows({
   accountState,
   brokerPerformance,
   portfolioStats,
+  convertAccountValue = (value) => value,
 }: {
   accountState: ResolvedPortfolioAccountState | null;
   activePortfolio: Portfolio | null;
   brokerPerformance: BrokerPortfolioPerformance | null;
   portfolioStats: PortfolioSummaryTotals;
+  convertAccountValue?: (value: number) => number;
 }): AnalyticsMetricRow[] {
   const rows: AnalyticsMetricRow[] = [];
   const account = accountState?.account;
-  const accountMetrics = resolvePortfolioAccountMetrics(portfolioStats, account);
+  const accountMetrics = resolvePortfolioAccountMetrics(portfolioStats, account, convertAccountValue);
   const accountFreshness = formatAccountFreshness(account);
-  const totalMarketValue = resolvePortfolioMarketValue(portfolioStats, account);
+  const totalMarketValue = resolvePortfolioMarketValue(portfolioStats, account, convertAccountValue);
 
   if (account?.netLiquidation != null) {
     rows.push({
       id: "net-liquidation",
       label: "Net Liq",
-      value: formatCompact(account.netLiquidation),
+      value: formatCompact(convertAccountValue(account.netLiquidation)),
       color: colors.text,
     });
   }
@@ -165,7 +167,7 @@ export function buildAnalyticsSummaryRows({
     rows.push({
       id: "cash",
       label: "Cash",
-      value: formatCompact(account.totalCashValue),
+      value: formatCompact(convertAccountValue(account.totalCashValue)),
       color: colors.text,
     });
   }

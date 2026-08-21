@@ -132,7 +132,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     let cancelled = false;
     void Promise.all(dueAlerts.map(async (alert) => {
       try {
-        const quote = await resolveAlertQuote(marketData, alert.symbol);
+        const quote = await resolveAlertQuote(marketData, alert.symbol, alert.exchange);
         return { id: alert.id, patch: quoteAlertFields(quote) };
       } catch (error) {
         return {

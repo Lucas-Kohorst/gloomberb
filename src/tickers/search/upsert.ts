@@ -1,4 +1,5 @@
 import { canonicalCryptoInstrument, COINGECKO_EXCHANGE, isCryptoSearchType } from "../../sources/coingecko/ids";
+import { canonicalExchange } from "../../utils/exchanges";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord, TickerMetadata } from "../../types/ticker";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
@@ -85,6 +86,16 @@ function mergeTickerMetadataFromSearchResult(
   }
   if (nextExchange && (!metadata.exchange || (canonical && metadata.exchange !== canonical.exchange))) {
     metadata.exchange = nextExchange;
+    changed = true;
+  } else if (
+    nextExchange
+    && metadata.exchange
+    && !canonical
+    && canonicalExchange(nextExchange) !== canonicalExchange(metadata.exchange)
+  ) {
+    metadata.exchange = nextExchange;
+    if (nextName) metadata.name = nextName;
+    if (nextCurrency) metadata.currency = nextCurrency;
     changed = true;
   }
   if (nextCurrency && !metadata.currency) {

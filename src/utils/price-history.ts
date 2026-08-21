@@ -3,6 +3,7 @@ import { resolveExchangeTimeZone } from "./exchanges";
 import { isTimestampStaleForExchangeSession } from "../market-data/market/freshness";
 
 const MAX_CURRENT_INTRADAY_HISTORY_LAG_MS = 18 * 60 * 60 * 1000;
+const MAX_SAME_SESSION_HISTORY_LAG_MS = 30 * 60 * 1000;
 
 interface PriceHistoryFreshnessOptions {
   exchange?: string;
@@ -78,16 +79,18 @@ export function isPriceHistoryStaleForCurrentWindow(
   if (!latest) return false;
 
   const latestTime = getPricePointTimestamp(latest);
-  if (!Number.isFinite(latestTime) || now - latestTime <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) {
-    return false;
-  }
-
+  if (!Number.isFinite(latestTime)) return false;
+  const age = now - latestTime;
+  if (age <= MAX_SAME_SESSION_HISTORY_LAG_MS) return false;
   if (
     options.exchange
     && resolveExchangeTimeZone(options.exchange)
-    && !isTimestampStaleForExchangeSession(latestTime, options.exchange, now)
+    && isTimestampStaleForExchangeSession(latestTime, options.exchange, now)
   ) {
-    return false;
+    return true;
+  }
+  if (age <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) {
+    return Boolean(options.exchange && resolveExchangeTimeZone(options.exchange));
   }
 
   return true;

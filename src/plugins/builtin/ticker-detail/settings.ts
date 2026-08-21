@@ -12,6 +12,7 @@ export interface TickerResearchPaneSettings {
   hideTabs: boolean;
   lockedTabId: string;
   defaultTabId: string;
+  chainRefreshMinutes: string;
 }
 
 export interface QuoteMonitorPaneSettings {
@@ -31,11 +32,17 @@ export function getTickerResearchPaneSettings(
   const defaultTabId = typeof settings?.defaultTabId === "string" && settings.defaultTabId.trim()
     ? settings.defaultTabId
     : "overview";
+  const chainRefreshMinutes = parseChainRefreshMinutes(settings?.chainRefreshMinutes);
   return {
     hideTabs: settings?.hideTabs === true,
     lockedTabId: tabId,
     defaultTabId,
+    chainRefreshMinutes,
   };
+}
+
+function parseChainRefreshMinutes(value: unknown): string {
+  return value === "1" || value === "5" || value === "10" || value === "30" ? value : "10";
 }
 
 export function resolveLockedTabId(
@@ -68,6 +75,7 @@ export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSetti
       hideTabs: settings.hideTabs,
       lockedTabId: settings.lockedTabId,
       defaultTabId: settings.defaultTabId,
+      chainRefreshMinutes: settings.chainRefreshMinutes,
     },
     fields: [
       ...(settings.hideTabs
@@ -93,6 +101,18 @@ export function buildTickerResearchSettingsDef(settings: TickerResearchPaneSetti
           options: tabs.map((tab) => ({ value: tab.id, label: tab.name })),
         }]
         : []),
+      {
+        key: "chainRefreshMinutes",
+        label: "Options chain refresh",
+        description: "How often the Options tab refetches the whole chain snapshot.",
+        type: "select" as const,
+        options: [
+          { value: "1", label: "Every minute" },
+          { value: "5", label: "Every 5 minutes" },
+          { value: "10", label: "Every 10 minutes" },
+          { value: "30", label: "Every 30 minutes" },
+        ],
+      },
     ],
   };
 }

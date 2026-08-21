@@ -5,6 +5,7 @@ import type { TickerRecord } from "../../../../types/ticker";
 import {
   DEFAULT_LIVE_CHART_REFRESH_INTERVAL_MS,
   useChartQuery,
+  useQuoteEntry,
   useTickerFinancials,
 } from "../../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../../market-data/request-types";
@@ -54,6 +55,7 @@ export function QuoteMonitorCard({
   const { nativePaneChrome } = useUiCapabilities();
   const marketFinancials = useTickerFinancials(symbol, ticker);
   const financials = marketFinancials ?? cachedFinancials;
+  const quoteEntry = useQuoteEntry(symbol, ticker);
   const chartRequest = useMemo(() => {
     const instrument = instrumentFromTicker(ticker, symbol);
     return instrument
@@ -74,7 +76,8 @@ export function QuoteMonitorCard({
   const flashDirection = useQuoteFlashDirection(financials, valueFlashingEnabled);
   const quote = financials?.quote;
   const display = getActiveQuoteDisplay(quote);
-  const changeColor = priceColor(display?.change ?? 0);
+  const quoteFailed = quoteEntry?.phase === "error" && !!display;
+  const changeColor = quoteFailed ? colors.textDim : priceColor(display?.change ?? 0);
   const priceAttributes = flashDirection ? TextAttributes.DIM : TextAttributes.BOLD;
   const changeAttributes = flashDirection ? TextAttributes.DIM : TextAttributes.NONE;
   const currency = quote?.currency ?? ticker?.metadata.currency ?? "USD";
@@ -184,7 +187,12 @@ export function QuoteMonitorCard({
             <Text attributes={TextAttributes.BOLD} fg={colors.textBright} style={desktopSymbolStyle}>
               {symbol}
             </Text>
-            {ticker?.metadata.name && (
+            {quoteFailed && (
+              <Text fg={colors.negative} style={{ fontSize: "12px", lineHeight: "14px" }}>
+                {quoteEntry?.error?.message ?? "Quote failed"}
+              </Text>
+            )}
+            {!quoteFailed && ticker?.metadata.name && (
               <Text
                 fg={colors.textDim}
                 style={{

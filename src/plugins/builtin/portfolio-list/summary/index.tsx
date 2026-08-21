@@ -7,7 +7,7 @@ import type { BrokerConnectionStatus } from "../../../../types/broker";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { Portfolio, TickerRecord } from "../../../../types/ticker";
 import type { BrokerAccount, BrokerCashBalance } from "../../../../types/trading";
-import { displayWidth, formatCompact, formatPercentRaw } from "../../../../utils/format";
+import { convertCurrency, displayWidth, formatCompact, formatPercentRaw } from "../../../../utils/format";
 import { getBrokerInstance } from "../../../../utils/broker-instances";
 import { resolvePortfolioAccountMetrics, resolvePortfolioMarketValue } from "../account-metrics";
 import { calculatePortfolioSummaryTotals, type PortfolioSummaryTotals } from "./totals";
@@ -188,21 +188,23 @@ export function buildPortfolioSummarySegments({
   accountStatusText,
   widthBudget,
   refreshText,
+  convertAccountValue = (value) => value,
 }: {
   totals: PortfolioSummaryTotals;
   accountState: PortfolioSummaryAccountState | null;
   accountStatusText?: string;
   widthBudget: number;
   refreshText?: string;
+  convertAccountValue?: (value: number) => number;
 }): PortfolioSummarySegment[] {
   const candidates: PortfolioSummarySegment[] = [];
-  const accountMetrics = resolvePortfolioAccountMetrics(totals, accountState?.account);
-  const totalMarketValue = resolvePortfolioMarketValue(totals, accountState?.account);
+  const accountMetrics = resolvePortfolioAccountMetrics(totals, accountState?.account, convertAccountValue);
+  const totalMarketValue = resolvePortfolioMarketValue(totals, accountState?.account, convertAccountValue);
 
   if (accountState?.account.netLiquidation != null) {
     candidates.push(createSummarySegment("netliq", [
       { text: "Net Liq", tone: "label" },
-      { text: formatCompact(accountState.account.netLiquidation), tone: "value", bold: true },
+      { text: formatCompact(convertAccountValue(accountState.account.netLiquidation)), tone: "value", bold: true },
     ]));
   }
 
@@ -214,7 +216,7 @@ export function buildPortfolioSummarySegments({
   if (accountState?.account.totalCashValue != null) {
     candidates.push(createSummarySegment("cash", [
       { text: "Cash", tone: "label" },
-      { text: formatCompact(accountState.account.totalCashValue), tone: "value", bold: true },
+      { text: formatCompact(convertAccountValue(accountState.account.totalCashValue)), tone: "value", bold: true },
     ]));
   }
 
@@ -347,12 +349,19 @@ export function buildPortfolioFooterSegments({
   }
 
   if (!totals.hasPositions && !accountState) return [];
+  const convertAccountValue = (value: number) => convertCurrency(
+    value,
+    accountState?.account.currency || baseCurrency,
+    baseCurrency,
+    exchangeRates,
+  );
   return buildPortfolioSummarySegments({
     totals,
     accountState,
     accountStatusText,
     widthBudget: Math.max(16, width - 14),
     refreshText,
+    convertAccountValue,
   }).map((segment) => ({
     id: segment.id,
     parts: segment.parts,

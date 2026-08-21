@@ -19,6 +19,7 @@ interface ChatTranscriptProps {
   canSend: boolean;
   catalog: Record<string, InlineTickerCatalogEntry>;
   cancelProfilePopoverClose: () => void;
+  closeProfilePopover: () => void;
   chatWidth: number;
   contentWidth: number;
   handleTranscriptScrollActivity: (event?: { scroll?: { direction?: "up" | "down" | "left" | "right" } }) => void;
@@ -55,6 +56,7 @@ export function ChatTranscript({
   canSend,
   catalog,
   cancelProfilePopoverClose,
+  closeProfilePopover,
   chatWidth,
   contentWidth,
   handleTranscriptScrollActivity,
@@ -169,6 +171,7 @@ export function ChatTranscript({
           user={profilePopoverUser}
           width={chatWidth}
           onClose={scheduleProfilePopoverClose}
+          onDismiss={closeProfilePopover}
           onKeepOpen={cancelProfilePopoverClose}
           isOwnProfile={profilePopoverUser.id === user?.id}
           online={profileOnline ?? isChatUserOnline(profilePopoverUser, presence)}

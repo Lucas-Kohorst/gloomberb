@@ -1,5 +1,6 @@
 import type { DataProvider } from "../../../types/data-provider";
 import type { Quote } from "../../../types/financials";
+import { getActiveQuoteDisplay } from "../../../market-data/market/status";
 import type { AlertRule } from "./types";
 
 export function normalizeAlertSymbol(value: string | null | undefined): string {
@@ -17,12 +18,19 @@ export function createQuoteErrorMessage(
 export async function resolveAlertQuote(
   marketData: Pick<DataProvider, "getQuote">,
   symbol: string,
+  exchange = "",
 ): Promise<Quote> {
-  const quote = await marketData.getQuote(symbol, "");
-  if (!quote || typeof quote.price !== "number" || !Number.isFinite(quote.price)) {
+  const quote = await marketData.getQuote(symbol, exchange);
+  const display = getActiveQuoteDisplay(quote);
+  if (!quote || !display || !Number.isFinite(display.price)) {
     throw new Error(`No quote found for "${symbol}".`);
   }
-  return quote;
+  return {
+    ...quote,
+    price: display.price,
+    change: display.change,
+    changePercent: display.changePercent,
+  };
 }
 
 export function quoteAlertFields(

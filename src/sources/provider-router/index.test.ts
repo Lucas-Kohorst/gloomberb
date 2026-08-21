@@ -18,7 +18,6 @@ import {
   makeQuote,
   setBrokerInstances,
 } from "./test-support";
-import { isCryptoMarketInstrument } from "../coingecko/ids";
 
 const originalConsoleError = console.error;
 
@@ -81,16 +80,18 @@ describe("AssetDataRouter", () => {
     expect(yahooCalls).toEqual({ quote: 1, history: 1 });
   });
 
-  test("routes hyphen, slash, and CCC crypto quotes to CoinGecko when Cloud and Yahoo refuse them", async () => {
+  test("routes hyphen, slash, and CCC crypto quotes to Yahoo", async () => {
     const yahooProvider: DataProvider = {
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
-      async canProvide(ticker, exchange) {
-        return !isCryptoMarketInstrument(ticker, exchange);
-      },
-      async getQuote() {
-        throw new Error("Yahoo should not price crypto");
+      async getQuote(symbol) {
+        return makeQuote({
+          symbol,
+          providerId: "yahoo",
+          price: 64_000,
+          changePercent: 1.2,
+        });
       },
     };
     const cloudProvider: DataProvider = {
@@ -98,38 +99,16 @@ describe("AssetDataRouter", () => {
       id: "gloomberb-cloud",
       name: "Cloud",
       priority: 100,
-      async canProvide(ticker, exchange) {
-        return !isCryptoMarketInstrument(ticker, exchange);
-      },
       async getQuote() {
-        throw new Error("Cloud should not price crypto");
-      },
-    };
-    const coinGeckoProvider: DataProvider = {
-      ...fallbackProvider,
-      id: "coingecko",
-      name: "CoinGecko",
-      priority: 80,
-      async canProvide(ticker, exchange) {
-        return isCryptoMarketInstrument(ticker, exchange);
-      },
-      async getQuote(symbol) {
-        return makeQuote({
-          symbol,
-          providerId: "coingecko",
-          price: 64_000,
-          changePercent: 1.2,
-          marketCap: 1_200_000_000_000,
-        });
+        throw new Error("Cloud unavailable");
       },
     };
 
-    const router = new AssetDataRouter(yahooProvider, [cloudProvider, coinGeckoProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const quote = await router.getQuote("BTC", "CCC");
 
-    expect(quote.providerId).toBe("coingecko");
+    expect(quote.providerId).toBe("yahoo");
     expect(quote.price).toBe(64_000);
-    expect(quote.marketCap).toBe(1_200_000_000_000);
 
     for (const [symbol, exchange] of [
       ["BTC-USD", "CCC"],
@@ -137,12 +116,12 @@ describe("AssetDataRouter", () => {
       ["ZEC/USD", "CCY"],
     ] as const) {
       const routed = await router.getQuote(symbol, exchange);
-      expect(routed.providerId).toBe("coingecko");
+      expect(routed.providerId).toBe("yahoo");
       expect(routed.price).toBe(64_000);
     }
   });
 
-  test("fills mixed portfolio quote batches from CoinGecko when Cloud and Yahoo skip crypto", async () => {
+  test("fills mixed portfolio quote batches from Yahoo when Cloud is down", async () => {
     const prices: Record<string, number> = {
       HOOD: 98.5,
       "BTC-USD": 111_000,
@@ -153,12 +132,25 @@ describe("AssetDataRouter", () => {
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
-      async canProvide(ticker, exchange) {
-        return !isCryptoMarketInstrument(ticker, exchange);
-      },
       async getQuote(symbol) {
-        if (isCryptoMarketInstrument(symbol)) throw new Error("Yahoo should not price crypto");
         return makeQuote({ symbol, providerId: "yahoo", price: prices[symbol], changePercent: 0.5 });
+      },
+      async getQuotesBatch(targets) {
+        return targets.map((target) => ({
+          target,
+          quote: makeQuote({ symbol: target.symbol, providerId: "yahoo", price: prices[target.symbol], changePercent: 0.5 }),
+        }));
+      },
+      subscribeQuotes(targets, onQuote) {
+        for (const target of targets) {
+          onQuote(target, makeQuote({
+            symbol: target.symbol,
+            providerId: "yahoo",
+            price: prices[target.symbol],
+            changePercent: 0.5,
+          }));
+        }
+        return () => {};
       },
     };
     const cloudProvider: DataProvider = {
@@ -166,65 +158,18 @@ describe("AssetDataRouter", () => {
       id: "gloomberb-cloud",
       name: "Cloud",
       priority: 100,
-      async canProvide(ticker, exchange) {
-        return !isCryptoMarketInstrument(ticker, exchange);
-      },
       async getQuote() {
-        throw new Error("Cloud should not price crypto");
+        throw new Error("Cloud unavailable");
       },
-      async getQuotesBatch(targets) {
-        return targets.map((target) => (
-          isCryptoMarketInstrument(target.symbol, target.exchange)
-            ? { target, quote: null }
-            : { target, quote: makeQuote({ symbol: target.symbol, providerId: "gloomberb-cloud", price: prices[target.symbol], changePercent: 0.4 }) }
-        ));
+      async getQuotesBatch() {
+        throw new Error("Cloud unavailable");
       },
-      subscribeQuotes(targets, onQuote) {
-        for (const target of targets) {
-          if (isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
-          onQuote(target, makeQuote({
-            symbol: target.symbol,
-            providerId: "gloomberb-cloud",
-            price: prices[target.symbol],
-            changePercent: 0.4,
-          }));
-        }
-        return () => {};
-      },
-    };
-    const coinGeckoProvider: DataProvider = {
-      ...fallbackProvider,
-      id: "coingecko",
-      name: "CoinGecko",
-      priority: 80,
-      async canProvide(ticker, exchange) {
-        return isCryptoMarketInstrument(ticker, exchange);
-      },
-      async getQuote(symbol) {
-        return makeQuote({
-          symbol,
-          providerId: "coingecko",
-          price: prices[symbol],
-          changePercent: 1.8,
-          marketCap: 1_000_000_000,
-        });
-      },
-      subscribeQuotes(targets, onQuote) {
-        for (const target of targets) {
-          if (!isCryptoMarketInstrument(target.symbol, target.exchange)) continue;
-          onQuote(target, makeQuote({
-            symbol: target.symbol,
-            providerId: "coingecko",
-            price: prices[target.symbol],
-            changePercent: 1.8,
-            marketCap: 1_000_000_000,
-          }));
-        }
+      subscribeQuotes() {
         return () => {};
       },
     };
 
-    const router = new AssetDataRouter(yahooProvider, [cloudProvider, coinGeckoProvider]);
+    const router = new AssetDataRouter(yahooProvider, [cloudProvider]);
     const batch = await router.getQuotesBatch([
       { symbol: "HOOD", exchange: "NASDAQ" },
       { symbol: "BTC-USD", exchange: "CCC" },
@@ -233,10 +178,10 @@ describe("AssetDataRouter", () => {
     ], { forceRefresh: true });
 
     expect(batch.map((item) => [item.target.symbol, item.quote?.providerId, item.quote?.price, item.quote?.changePercent])).toEqual([
-      ["HOOD", "gloomberb-cloud", 98.5, 0.4],
-      ["BTC-USD", "coingecko", 111_000, 1.8],
-      ["ETH-USD", "coingecko", 4_200, 1.8],
-      ["ZEC-USD", "coingecko", 42.5, 1.8],
+      ["HOOD", "yahoo", 98.5, 0.5],
+      ["BTC-USD", "yahoo", 111_000, 0.5],
+      ["ETH-USD", "yahoo", 4_200, 0.5],
+      ["ZEC-USD", "yahoo", 42.5, 0.5],
     ]);
 
     const streamed: Array<[string, string | undefined, number | undefined]> = [];
@@ -250,10 +195,10 @@ describe("AssetDataRouter", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(streamed).toContainEqual(["HOOD", "gloomberb-cloud", 98.5]);
-    expect(streamed).toContainEqual(["BTC-USD", "coingecko", 111_000]);
-    expect(streamed).toContainEqual(["ETH-USD", "coingecko", 4_200]);
-    expect(streamed).toContainEqual(["ZEC-USD", "coingecko", 42.5]);
+    expect(streamed).toContainEqual(["HOOD", "yahoo", 98.5]);
+    expect(streamed).toContainEqual(["BTC-USD", "yahoo", 111_000]);
+    expect(streamed).toContainEqual(["ETH-USD", "yahoo", 4_200]);
+    expect(streamed).toContainEqual(["ZEC-USD", "yahoo", 42.5]);
   });
 
   test("serves USD exchange rate locally without provider revalidation", async () => {

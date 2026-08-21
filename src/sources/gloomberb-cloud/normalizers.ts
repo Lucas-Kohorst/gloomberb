@@ -190,10 +190,10 @@ export function mapCloudFinancials(
   financials: TickerFinancials,
   providerMeta?: CloudProviderMeta,
 ): TickerFinancials {
-  const quote = financials.quote
-    ? mapQuote(financials.quote as CloudQuotePayload, providerMeta)
-    : undefined;
-  const divisor = quote ? resolveCurrencyUnit(quote.currency).divisor : 1;
+  const rawQuote = financials.quote as CloudQuotePayload | undefined;
+  const quote = rawQuote ? mapQuote(rawQuote, providerMeta) : undefined;
+  const divisor = rawQuote ? resolveCurrencyUnit(rawQuote.currency).divisor : 1;
+  const exchange = rawQuote?.listingExchangeName ?? rawQuote?.exchangeName ?? "";
   return {
     quote,
     quoteContributions: financials.quoteContributions,
@@ -204,7 +204,7 @@ export function mapCloudFinancials(
     priceHistory: (financials.priceHistory ?? []).map((point) =>
       point.date instanceof Date
         ? point
-        : mapPricePoint(point as unknown as CloudPricePointPayload, divisor),
+        : mapPricePoint(point as unknown as CloudPricePointPayload, divisor, exchange),
     ),
   };
 }
