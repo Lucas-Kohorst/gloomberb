@@ -227,6 +227,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     if (nextTop !== currentTop) {
       element.scrollTop = nextTop * rowHeightPx;
     }
+    scheduleBodyScrollActivity();
     scheduleVisibleRangeMeasure();
   }, [
     items.length,
@@ -234,6 +235,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scrollToIndex,
     scrollToIndexAlign,
     scrollToIndexVersion,
+    scheduleBodyScrollActivity,
     scheduleVisibleRangeMeasure,
     rowHeightPx,
     virtualize,
