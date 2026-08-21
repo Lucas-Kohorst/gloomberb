@@ -22,7 +22,10 @@ function headerValue(headers: Record<string, string>, name: string): string | un
 }
 
 function clientSentVendorAuth(headers: Record<string, string>): boolean {
-  return !!headerValue(headers, "authorization") || !!headerValue(headers, "x-api-key");
+  return !!headerValue(headers, "authorization")
+    || !!headerValue(headers, "x-api-key")
+    || !!headerValue(headers, "x-cg-demo-api-key")
+    || !!headerValue(headers, "x-cg-pro-api-key");
 }
 
 function parseUrl(payload: SharedHttpFetchRequest): URL | null {
@@ -115,6 +118,9 @@ export function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest):
   if (hostname === "query1.finance.yahoo.com" || hostname === "query2.finance.yahoo.com") {
     if (pathname.includes("/getcrumb")) return null;
     return 60;
+  }
+  if (hostname === "api.coingecko.com" || hostname === "pro-api.coingecko.com") {
+    return clientAuth ? null : 30;
   }
   if (hostname === "stockanalysis.com" || hostname.endsWith(".stockanalysis.com")) return 120;
   if (hostname === "www.nasdaqtrader.com" || hostname === "nasdaqtrader.com") return 60;

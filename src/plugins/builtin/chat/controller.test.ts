@@ -157,6 +157,18 @@ describe("ChatController", () => {
     );
   });
 
+  test("resolves chat shortcuts by channel name and unique prefix", async () => {
+    const controller = new ChatController();
+    apiClient.getChannels = async () => [
+      { id: "everyone", name: "Lobby", created_at: "2026-03-26T12:10:05.684Z" },
+      { id: "help", name: "Help Desk", created_at: "2026-05-09T00:00:00.000Z" },
+    ];
+
+    await expect(controller.resolveRequiredChannelId("Lobby")).resolves.toBe("everyone");
+    await expect(controller.resolveRequiredChannelId("#Help Desk")).resolves.toBe("help");
+    await expect(controller.resolveRequiredChannelId("hel")).resolves.toBe("help");
+  });
+
   test("hydrates a cached verified user into the api client for offline use", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();

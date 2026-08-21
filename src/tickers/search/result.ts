@@ -1,4 +1,5 @@
 import type { InstrumentSearchResult } from "../../types/instrument";
+import { canonicalCryptoInstrument, COINGECKO_EXCHANGE, isCryptoSearchType } from "../../sources/coingecko/ids";
 import {
   buildSymbolAliases,
   compactSearchText,
@@ -7,7 +8,11 @@ import {
 } from "./ranking";
 
 export function getSearchResultSymbol(result: InstrumentSearchResult): string {
-  return normalizeTickerSymbol(result.brokerContract?.localSymbol || result.symbol);
+  const raw = normalizeTickerSymbol(result.brokerContract?.localSymbol || result.symbol);
+  const exchange = isCryptoSearchType(result.type) || isCryptoSearchType(result.brokerContract?.secType)
+    ? COINGECKO_EXCHANGE
+    : result.exchange;
+  return canonicalCryptoInstrument(raw, exchange)?.symbol ?? raw;
 }
 
 export function shouldReplaceTickerName(currentName: string, symbol: string, nextName: string): boolean {

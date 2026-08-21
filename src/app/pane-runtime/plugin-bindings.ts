@@ -127,6 +127,7 @@ export function bindAppPanePluginRegistry({
     await createPaneTemplateOrThrow(templateId, options, {
       dataProvider,
       tickerRepository,
+      persistLayout,
       pluginRegistry,
       dispatch,
       getState: () => stateRef.current,

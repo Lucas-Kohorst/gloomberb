@@ -505,6 +505,32 @@ describe("ticker-search utilities", () => {
     expect(saved).toHaveLength(0);
   });
 
+  test("canonicalizes slash crypto search results onto BTC-USD / CCC", async () => {
+    const created: TickerRecord[] = [];
+    const repository = {
+      loadTicker: async () => null,
+      createTicker: async (metadata: TickerRecord["metadata"]) => {
+        const ticker = { metadata };
+        created.push(ticker);
+        return ticker;
+      },
+      saveTicker: async () => {},
+    };
+
+    const { ticker } = await upsertTickerFromSearchResult(repository as any, {
+      providerId: "yahoo",
+      symbol: "SOL/USD",
+      name: "Solana US Dollar",
+      exchange: "CCY",
+      type: "CURRENCY",
+    });
+
+    expect(ticker.metadata.ticker).toBe("SOL-USD");
+    expect(ticker.metadata.exchange).toBe("CCC");
+    expect(ticker.metadata.assetCategory).toBe("CRYPTO");
+    expect(created).toHaveLength(1);
+  });
+
   test("refreshes low-quality saved metadata when opening a provider-backed result", async () => {
     const existing = makeTicker("AAPL", "AAPL");
     const saved: TickerRecord[] = [];

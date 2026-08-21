@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { InputRenderable, TextareaRenderable } from "../../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
+import { DISABLE_AUTOFILL_DOM_PROPS } from "./disable-autofill";
 import { NATIVE_CONTEXT_MENU_SUPPORTED, showEditableTextContextMenu } from "./native";
 import { cellHeight, cellWidth, cleanDomProps, commonStyle } from "./style";
 
@@ -210,6 +211,7 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
   const { value, valueRef, setValue } = useEditableValue(props);
   const [cursorOffset, setCursorOffset] = useState(value.length);
   const [domFocused, setDomFocused] = useState(false);
+  const [autofillUnlocked, setAutofillUnlocked] = useState(false);
   const applyCursorOffset = (offset: number) => {
     setCursorOffset(offset);
     queueMicrotask(() => applyDomCursorOffset(elementRef.current, offset));
@@ -267,21 +269,22 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
   return (
     <input
       {...cleanDomProps(props)}
+      {...DISABLE_AUTOFILL_DOM_PROPS}
       ref={elementRef}
       value={value}
-      autoCorrect="off"
-      autoCapitalize="off"
-      autoComplete="off"
-      spellCheck={false}
+      readOnly={!autofillUnlocked}
       placeholder={getStringProp(props, "placeholder")}
       onInput={(event) => handleValueChange(event.currentTarget.value)}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
       onMouseDown={() => focusOnPress(elementRef.current)}
-      onFocus={() => {
+      onFocus={(event) => {
+        event.currentTarget.readOnly = false;
+        setAutofillUnlocked(true);
         setDomFocused(true);
         callTextHandler(propsRef.current.onFocus, elementRef.current?.value ?? valueRef.current);
       }}
       onBlur={() => {
+        setAutofillUnlocked(false);
         setDomFocused(false);
         callTextHandler(propsRef.current.onBlur, syncElementValue());
       }}
@@ -308,6 +311,7 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
   const { value, valueRef, setValue } = useEditableValue(props);
   const [cursorOffset, setCursorOffset] = useState(value.length);
   const [domFocused, setDomFocused] = useState(false);
+  const [autofillUnlocked, setAutofillUnlocked] = useState(false);
   const applyCursorOffset = (offset: number) => {
     setCursorOffset(offset);
     queueMicrotask(() => applyDomCursorOffset(elementRef.current, offset));
@@ -381,20 +385,21 @@ export const WebTextarea = forwardRef<TextareaRenderable, Record<string, unknown
   return (
     <textarea
       {...cleanDomProps(props)}
+      {...DISABLE_AUTOFILL_DOM_PROPS}
       ref={elementRef}
       value={value}
-      autoCorrect="off"
-      autoCapitalize="off"
-      autoComplete="off"
-      spellCheck={false}
+      readOnly={!autofillUnlocked}
       placeholder={getStringProp(props, "placeholder")}
       onInput={(event) => handleValueChange(event.currentTarget.value)}
       onChange={(event) => handleValueChange(event.currentTarget.value)}
-      onFocus={() => {
+      onFocus={(event) => {
+        event.currentTarget.readOnly = false;
+        setAutofillUnlocked(true);
         setDomFocused(true);
         callTextHandler(propsRef.current.onFocus, elementRef.current?.value ?? valueRef.current);
       }}
       onBlur={() => {
+        setAutofillUnlocked(false);
         setDomFocused(false);
         callTextHandler(propsRef.current.onBlur, syncElementValue());
       }}

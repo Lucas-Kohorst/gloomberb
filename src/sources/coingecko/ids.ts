@@ -64,15 +64,27 @@ export function isCryptoExchange(exchange?: string): boolean {
   return CRYPTO_EXCHANGES.has(normalized);
 }
 
+export function isCryptoSearchType(type?: string): boolean {
+  const normalized = type?.trim().toUpperCase() ?? "";
+  return normalized === "CRYPTO"
+    || normalized === "CRYPTOCURRENCY"
+    || normalized === "COIN"
+    || normalized === "TOKEN";
+}
+
 export function isCryptoMarketInstrument(ticker: string, exchange?: string): boolean {
   const symbol = ticker.trim();
   if (!symbol || parseOptionSymbol(symbol)) return false;
-  if (isCryptoExchange(exchange)) return true;
+  if (isCryptoExchange(exchange) || isCryptoSearchType(exchange)) return true;
   return parseCryptoPair(symbol) != null;
 }
 
+function stripYahooFxSuffix(ticker: string): string {
+  return ticker.replace(/=X$/i, "");
+}
+
 export function parseCryptoPair(ticker: string): { base: string; quote: string } | null {
-  const normalized = ticker.trim().toUpperCase().replace(/[/\s]+/g, "-");
+  const normalized = stripYahooFxSuffix(ticker.trim().toUpperCase()).replace(/[/\s]+/g, "-");
   if (!normalized) return null;
 
   if (normalized.includes("-")) {
@@ -92,6 +104,25 @@ export function parseCryptoPair(ticker: string): { base: string; quote: string }
   return null;
 }
 
+/** Watchlist/catalog form: `BTC-USD` on CCC. Lookup still accepts slash/compact/`=X`. */
+export function canonicalCryptoInstrument(
+  ticker: string,
+  exchange?: string,
+): { symbol: string; exchange: string } | null {
+  const trimmed = ticker.trim();
+  if (!trimmed || parseOptionSymbol(trimmed)) return null;
+
+  const parsed = parseCryptoPair(trimmed);
+  if (parsed) {
+    return { symbol: `${parsed.base}-${parsed.quote}`, exchange: COINGECKO_EXCHANGE };
+  }
+
+  if (!isCryptoExchange(exchange) && !isCryptoSearchType(exchange)) return null;
+  const base = stripYahooFxSuffix(trimmed.toUpperCase()).replace(/[/\s-]+/g, "");
+  if (!base) return null;
+  return { symbol: `${base}-USD`, exchange: COINGECKO_EXCHANGE };
+}
+
 export function resolveCoinGeckoPair(ticker: string, exchange?: string): CoinGeckoPair | null {
   const trimmed = ticker.trim();
   if (!trimmed || parseOptionSymbol(trimmed)) return null;
@@ -108,8 +139,8 @@ export function resolveCoinGeckoPair(ticker: string, exchange?: string): CoinGec
     };
   }
 
-  if (!isCryptoExchange(exchange)) return null;
-  const base = trimmed.toUpperCase().replace(/[/\s]+/g, "");
+  if (!isCryptoExchange(exchange) && !isCryptoSearchType(exchange)) return null;
+  const base = stripYahooFxSuffix(trimmed.toUpperCase()).replace(/[/\s-]+/g, "");
   const id = COINGECKO_BASE_IDS[base];
   if (!id) return null;
   return {

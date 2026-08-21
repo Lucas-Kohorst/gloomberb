@@ -32,7 +32,6 @@ import {
 } from "./model";
 import { TweetSearchTable } from "./table";
 import { TwitterFeedSearchBar } from "./search-bar";
-import { useTwitterFeedFooter } from "./footer";
 import { useTwitterFeedKeyboard } from "./keyboard";
 
 export function TwitterTickerTab({ focused, width, height }: TickerResearchTabProps) {
@@ -308,10 +307,6 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
       feed.id === activeFeedIdValue ? { ...feed, lastError: message } : feed
     )));
   }, [activeFeedIdValue, updateFeeds]);
-
-  useTwitterFeedFooter({
-    activeFeed,
-  });
 
   const searchBar = activeFeed ? (
     <TwitterFeedSearchBar

@@ -1,3 +1,4 @@
+import { canonicalCryptoInstrument, COINGECKO_EXCHANGE, isCryptoSearchType } from "../../sources/coingecko/ids";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord, TickerMetadata } from "../../types/ticker";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
@@ -9,21 +10,30 @@ import {
   shouldReplaceTickerName,
 } from "./result";
 
+function cryptoMetadataFromSearchResult(result: InstrumentSearchResult): { symbol: string; exchange: string } | null {
+  const hint = isCryptoSearchType(result.type) || isCryptoSearchType(result.brokerContract?.secType)
+    ? COINGECKO_EXCHANGE
+    : result.exchange;
+  return canonicalCryptoInstrument(result.brokerContract?.localSymbol || result.symbol, hint);
+}
+
 export async function upsertTickerFromSearchResult(
   tickerRepository: AppTickerRepositoryPort,
   result: InstrumentSearchResult,
 ): Promise<{ ticker: TickerRecord; created: boolean }> {
-  const symbol = getSearchResultSymbol(result);
+  const canonical = cryptoMetadataFromSearchResult(result);
+  const symbol = canonical?.symbol ?? getSearchResultSymbol(result);
+  const exchange = canonical?.exchange ?? result.exchange;
   let ticker = await tickerRepository.loadTicker(symbol);
   const created = !ticker;
 
   if (!ticker) {
     const metadata: TickerMetadata = {
       ticker: symbol,
-      exchange: result.exchange,
+      exchange,
       currency: result.currency || result.brokerContract?.currency || "USD",
       name: result.name || symbol,
-      assetCategory: result.brokerContract?.secType || result.type || undefined,
+      assetCategory: canonical ? "CRYPTO" : (result.brokerContract?.secType || result.type || undefined),
       broker_contracts: result.brokerContract ? [result.brokerContract] : [],
       portfolios: [],
       watchlists: [],
@@ -33,7 +43,7 @@ export async function upsertTickerFromSearchResult(
     };
     ticker = await tickerRepository.createTicker(metadata);
   } else {
-    const changed = mergeTickerMetadataFromSearchResult(ticker.metadata, result);
+    const changed = mergeTickerMetadataFromSearchResult(ticker.metadata, result, canonical);
     const existingContracts = ticker.metadata.broker_contracts ?? [];
     if (result.brokerContract) {
       const nextContracts = [...existingContracts];
@@ -56,18 +66,24 @@ export async function upsertTickerFromSearchResult(
   return { ticker, created };
 }
 
-function mergeTickerMetadataFromSearchResult(metadata: TickerMetadata, result: InstrumentSearchResult): boolean {
+function mergeTickerMetadataFromSearchResult(
+  metadata: TickerMetadata,
+  result: InstrumentSearchResult,
+  canonical: { symbol: string; exchange: string } | null,
+): boolean {
   let changed = false;
   const nextName = result.name?.trim();
-  const nextExchange = result.exchange?.trim();
+  const nextExchange = (canonical?.exchange || result.exchange)?.trim();
   const nextCurrency = (result.currency || result.brokerContract?.currency || "").trim();
-  const nextAssetCategory = (result.brokerContract?.secType || result.type || "").trim();
+  const nextAssetCategory = canonical
+    ? "CRYPTO"
+    : (result.brokerContract?.secType || result.type || "").trim();
 
   if (nextName && shouldReplaceTickerName(metadata.name, metadata.ticker, nextName)) {
     metadata.name = nextName;
     changed = true;
   }
-  if (nextExchange && !metadata.exchange) {
+  if (nextExchange && (!metadata.exchange || (canonical && metadata.exchange !== canonical.exchange))) {
     metadata.exchange = nextExchange;
     changed = true;
   }

@@ -33,10 +33,12 @@ export function resolveCoinGeckoAuth(): CoinGeckoAuth {
 }
 
 function defaultHeaders(current: CoinGeckoAuth): Record<string, string> {
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (typeof process !== "undefined" && process.versions?.bun) {
-    headers["User-Agent"] = "gloomberb-coingecko";
-  }
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    // Hosted SPA runs in the browser; the Worker proxies without a UA unless
+    // we stamp one. CoinGecko has 403'd anonymous/empty user agents before.
+    "User-Agent": "gloomberb-coingecko",
+  };
   const key = current.apiKey?.trim();
   if (key) {
     headers[current.pro ? "x-cg-pro-api-key" : "x-cg-demo-api-key"] = key;

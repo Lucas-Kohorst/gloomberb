@@ -18,6 +18,7 @@ import {
   makeQuote,
   setBrokerInstances,
 } from "./test-support";
+import { isCryptoMarketInstrument } from "../coingecko/ids";
 
 const originalConsoleError = console.error;
 
@@ -80,16 +81,16 @@ describe("AssetDataRouter", () => {
     expect(yahooCalls).toEqual({ quote: 1, history: 1 });
   });
 
-  test("routes CCC crypto quotes to a CoinGecko extra source when Cloud and Yahoo refuse them", async () => {
+  test("routes hyphen, slash, and CCC crypto quotes to CoinGecko when Cloud and Yahoo refuse them", async () => {
     const yahooProvider: DataProvider = {
       ...fallbackProvider,
       id: "yahoo",
       name: "Yahoo",
-      async canProvide(_ticker, exchange) {
-        return exchange !== "CCC";
+      async canProvide(ticker, exchange) {
+        return !isCryptoMarketInstrument(ticker, exchange);
       },
       async getQuote() {
-        throw new Error("Yahoo should not price CCC");
+        throw new Error("Yahoo should not price crypto");
       },
     };
     const cloudProvider: DataProvider = {
@@ -97,11 +98,11 @@ describe("AssetDataRouter", () => {
       id: "gloomberb-cloud",
       name: "Cloud",
       priority: 100,
-      async canProvide(_ticker, exchange) {
-        return exchange !== "CCC";
+      async canProvide(ticker, exchange) {
+        return !isCryptoMarketInstrument(ticker, exchange);
       },
       async getQuote() {
-        throw new Error("Cloud should not price CCC");
+        throw new Error("Cloud should not price crypto");
       },
     };
     const coinGeckoProvider: DataProvider = {
@@ -109,8 +110,8 @@ describe("AssetDataRouter", () => {
       id: "coingecko",
       name: "CoinGecko",
       priority: 80,
-      async canProvide(_ticker, exchange) {
-        return exchange === "CCC";
+      async canProvide(ticker, exchange) {
+        return isCryptoMarketInstrument(ticker, exchange);
       },
       async getQuote(symbol) {
         return makeQuote({
@@ -129,6 +130,16 @@ describe("AssetDataRouter", () => {
     expect(quote.providerId).toBe("coingecko");
     expect(quote.price).toBe(64_000);
     expect(quote.marketCap).toBe(1_200_000_000_000);
+
+    for (const [symbol, exchange] of [
+      ["BTC-USD", "CCC"],
+      ["SOL/USD", ""],
+      ["ZEC/USD", "CCY"],
+    ] as const) {
+      const routed = await router.getQuote(symbol, exchange);
+      expect(routed.providerId).toBe("coingecko");
+      expect(routed.price).toBe(64_000);
+    }
   });
 
   test("serves USD exchange rate locally without provider revalidation", async () => {

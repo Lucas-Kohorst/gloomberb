@@ -4,7 +4,7 @@ import type { Quote } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 
 const QUICK_ADD_MAX_QUERY_LENGTH = 32;
-const QUICK_ADD_SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-\s]*$/;
+const QUICK_ADD_SYMBOL_RE = /^[A-Z0-9][A-Z0-9.\-\/\s]*$/;
 
 export type QuickAddCollectionKind = "portfolio" | "watchlist";
 
