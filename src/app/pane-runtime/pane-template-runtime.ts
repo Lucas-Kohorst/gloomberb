@@ -36,6 +36,7 @@ interface UseAppPaneTemplateRuntimeOptions {
   pluginRegistry: PluginRegistry;
   stateRef: { current: AppState };
   tickerRepository: AppTickerRepositoryPort;
+  persistLayout: (layout: LayoutConfig, options?: { pushHistory?: boolean }) => void;
 }
 
 export function useAppPaneTemplateRuntime({
@@ -49,6 +50,7 @@ export function useAppPaneTemplateRuntime({
   pluginRegistry,
   stateRef,
   tickerRepository,
+  persistLayout,
 }: UseAppPaneTemplateRuntimeOptions) {
   const runPaneTemplateWizard = useCallback((steps: WizardStep[]) => (
     runPaneTemplateDialogWizard(dialog, steps)
@@ -84,6 +86,7 @@ export function useAppPaneTemplateRuntime({
       await createPaneTemplateOrThrow(templateId, resolvedOptions, {
         dataProvider,
         tickerRepository,
+        persistLayout,
         pluginRegistry,
         dispatch,
         getState: () => stateRef.current,
@@ -106,6 +109,7 @@ export function useAppPaneTemplateRuntime({
     placePaneInstance,
     pluginRegistry,
     runPaneTemplateWizard,
+    persistLayout,
     stateRef,
     tickerRepository,
   ]);

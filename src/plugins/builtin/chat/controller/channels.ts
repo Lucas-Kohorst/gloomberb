@@ -129,15 +129,12 @@ export class ChatControllerChannels {
   }
 
   async resolveRequiredChannelId(channelId: string): Promise<string> {
-    const normalizedChannelId = normalizeChannelId(channelId);
-    if (this.isKnownChannelId(normalizedChannelId)) {
-      return normalizedChannelId;
-    }
+    const resolved = this.resolveKnownChannelId(normalizeChannelId(channelId));
+    if (resolved) return resolved;
     await this.refreshChannels();
-    if (this.isKnownChannelId(normalizedChannelId)) {
-      return normalizedChannelId;
-    }
-    throw new Error(`Unknown chat channel "#${normalizedChannelId}".`);
+    const refreshed = this.resolveKnownChannelId(normalizeChannelId(channelId));
+    if (refreshed) return refreshed;
+    throw new Error(`Unknown chat channel "#${normalizeChannelId(channelId)}".`);
   }
 
   async resolvePreferredChannelId(channelId: string | null | undefined): Promise<string> {
@@ -166,5 +163,20 @@ export class ChatControllerChannels {
 
   private isKnownChannelId(channelId: string): boolean {
     return this.channels.some((channel) => channel.id === channelId);
+  }
+
+  private resolveKnownChannelId(channelId: string): string | null {
+    const normalized = channelId.trim().replace(/^#+/, "").toLowerCase();
+    if (!normalized) return null;
+    const exactId = this.channels.find((channel) => channel.id.toLowerCase() === normalized);
+    if (exactId) return exactId.id;
+    const exactName = this.channels.find((channel) => channel.name.trim().toLowerCase() === normalized);
+    if (exactName) return exactName.id;
+    const prefixMatches = this.channels.filter((channel) => {
+      const id = channel.id.toLowerCase();
+      const name = channel.name.trim().toLowerCase();
+      return id.startsWith(normalized) || name.startsWith(normalized);
+    });
+    return prefixMatches.length === 1 ? prefixMatches[0]!.id : null;
   }
 }
