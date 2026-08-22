@@ -396,7 +396,7 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     "cache-control",
     shareDocument ? "private, no-store" : "private, max-age=0, must-revalidate",
   );
-  headers.set("referrer-policy", "no-referrer");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
   headers.set("content-security-policy-report-only", APP_CSP);
