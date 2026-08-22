@@ -2,7 +2,7 @@ import { Box } from "../../../../ui";
 import { useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
-import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
 import type { NewsQueryPhase } from "../../../../news/types";
 import { useDebouncedPluginPaneState } from "../../../runtime";
 import { usePaneSettingValue } from "../../../../state/app/context";
@@ -29,7 +29,12 @@ const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 
 const DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
-function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNewsItem[]; allArticles: MarketNewsItem[]; phase: NewsQueryPhase } {
+function useIndustryArticles(sector: SectorNewsSelection): {
+  articles: MarketNewsItem[];
+  allArticles: MarketNewsItem[];
+  phase: NewsQueryPhase;
+  newsState: ReturnType<typeof useNewsArticles>;
+} {
   const allState = useNewsArticles(NEWS_QUERY_PRESETS.sectorAll);
   const sectorState = useNewsArticles(
     sector === "all" ? null : NEWS_QUERY_PRESETS.sector(sector),
@@ -41,6 +46,7 @@ function useIndustryArticles(sector: SectorNewsSelection): { articles: MarketNew
     articles: sector === "all" ? allArticles : sectorArticles,
     allArticles,
     phase,
+    newsState: sector === "all" ? allState : sectorState,
   };
 }
 
@@ -59,8 +65,12 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     ? paneSettings.sort
     : DEFAULT_SORT;
   const resolvedCategory = getIndustryDefaultTab({ defaultTab: category });
-  const { articles, allArticles, phase } = useIndustryArticles(resolvedCategory);
+  const { articles, allArticles, phase, newsState } = useIndustryArticles(resolvedCategory);
   const loading = phase === "loading" || (phase === "refreshing" && articles.length === 0);
+  const industryQuery = resolvedCategory === "all"
+    ? NEWS_QUERY_PRESETS.sectorAll
+    : NEWS_QUERY_PRESETS.sector(resolvedCategory);
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(industryQuery, newsState);
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
@@ -159,6 +169,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       emptyStateHint="Try another category or wait for the next feed refresh."
       onPopOut={() => popOutArticle(readableArticle)}
       onShare={shareArticle}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }

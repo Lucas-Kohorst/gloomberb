@@ -1,6 +1,6 @@
 import { Box, ScrollBox, Text } from "../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { t } from "../../i18n";
 import { useAppLanguage } from "../../i18n/react";
 import { displayWidth, formatTimeAgo } from "../../utils/format";
@@ -69,6 +69,8 @@ interface FeedDataTableStackViewProps {
   openItemId?: string | null;
   onPopOut?: (item: FeedDataTableItem) => void;
   markdown?: boolean;
+  scrollRef?: RefObject<ScrollBoxRenderable | null>;
+  onBodyScrollActivity?: () => void;
 }
 
 function timestampValue(item: FeedDataTableItem): number {
@@ -156,6 +158,8 @@ export function FeedDataTableStackView({
   openItemId: controlledOpenItemId,
   onPopOut,
   markdown = false,
+  scrollRef,
+  onBodyScrollActivity,
 }: FeedDataTableStackViewProps) {
   const language = useAppLanguage();
   const [sortPreference, setSortPreference] = useState<SortPreference>({
@@ -404,6 +408,8 @@ export function FeedDataTableStackView({
       emptyStateTitle={t(emptyStateTitle)}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }

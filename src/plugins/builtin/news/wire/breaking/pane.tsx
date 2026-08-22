@@ -1,6 +1,6 @@
 import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
-import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
@@ -17,6 +17,7 @@ const DEFAULT_SORT: NewsSortPreference = { columnId: "importance", direction: "d
 export function BreakingPane({ focused, width, height }: PaneProps) {
   const breakingState = useNewsArticles(NEWS_QUERY_PRESETS.breaking);
   const articles = usePersistedNewsArticles("breaking:articles", breakingState.articles);
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(NEWS_QUERY_PRESETS.breaking, breakingState);
   const loading = breakingState.phase === "loading" || (breakingState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("breaking:selectedArticleId", null);
   const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>("breaking:sort", DEFAULT_SORT);
@@ -82,6 +83,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."
       onPopOut={() => popOutArticle(readableArticle)}
       onShare={shareArticle}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={onBodyScrollActivity}
     />
   );
 }

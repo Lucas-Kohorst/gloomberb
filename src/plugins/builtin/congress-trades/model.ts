@@ -3,13 +3,15 @@ import { formatCompact } from "../../../utils/format";
 
 export { truncateWithEllipsis as truncate } from "../../../utils/text-wrap";
 import type {
+  CloudCongressHousePayload,
   CloudCongressMemberPayload,
   CloudCongressTradePayload,
 } from "../../../api-client";
+import type { CloudCongressHouseParams } from "../../../api-client/paths";
 
 export const CONGRESS_TRADES_PANE_ID = "congress-trades";
 export const CONGRESS_TRADE_LIMIT = 200;
-export const CONGRESS_FILING_LIMIT = 20;
+export const CONGRESS_FILING_LIMIT = 60;
 export const CONGRESS_MEMBER_TRADE_LIMIT = 2000;
 export const CONGRESS_MEMBER_FILING_LIMIT = 500;
 
@@ -245,4 +247,70 @@ export function sortedMembers(
 export function selectedIndexById<T extends { id: string }>(rows: T[], selectedId: string | null): number {
   const index = rows.findIndex((row) => row.id === selectedId);
   return index >= 0 ? index : rows.length > 0 ? 0 : -1;
+}
+
+function congressFilingOffset(payload: CloudCongressHousePayload): number {
+  return payload.filingOffset ?? 0;
+}
+
+function congressHasMoreFilings(payload: CloudCongressHousePayload): boolean {
+  if (payload.hasMoreFilings === true) return true;
+  if (payload.hasMoreFilings === false) return false;
+  return congressFilingOffset(payload) + payload.filingsScanned < payload.filingCount;
+}
+
+export function canLoadMoreCongress(payload: CloudCongressHousePayload): boolean {
+  return nextCongressPage(payload) != null;
+}
+
+export function nextCongressPage(payload: CloudCongressHousePayload): CloudCongressHouseParams | null {
+  if (payload.hasMore) {
+    return {
+      year: payload.year,
+      offset: payload.nextOffset ?? 0,
+      filingOffset: congressFilingOffset(payload),
+    };
+  }
+  if (congressHasMoreFilings(payload)) {
+    return {
+      year: payload.year,
+      offset: 0,
+      filingOffset: payload.nextFilingOffset ?? congressFilingOffset(payload) + payload.filingsScanned,
+    };
+  }
+  if (payload.year > 2008) {
+    return { year: payload.year - 1, offset: 0, filingOffset: 0 };
+  }
+  return null;
+}
+
+export function congressPageAfterEmpty(payload: CloudCongressHousePayload): CloudCongressHousePayload {
+  return {
+    ...payload,
+    hasMore: false,
+    hasMoreFilings: false,
+    filingCount: payload.filingsScanned,
+    nextFilingOffset: congressFilingOffset(payload) + payload.filingsScanned,
+  };
+}
+
+export function mergeCongressPages(
+  current: CloudCongressHousePayload,
+  next: CloudCongressHousePayload,
+): CloudCongressHousePayload {
+  const trades = [...current.trades];
+  const seenTrades = new Set(current.trades.map((trade) => trade.id));
+  for (const trade of next.trades) {
+    if (seenTrades.has(trade.id)) continue;
+    seenTrades.add(trade.id);
+    trades.push(trade);
+  }
+  const members = [...current.members];
+  const seenMembers = new Set(current.members.map((member) => member.id));
+  for (const member of next.members) {
+    if (seenMembers.has(member.id)) continue;
+    seenMembers.add(member.id);
+    members.push(member);
+  }
+  return { ...next, trades, members };
 }

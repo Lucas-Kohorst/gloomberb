@@ -59,10 +59,13 @@ export function usePredictionMarketsDataState({
 }) {
   const {
     allMarkets,
+    catalogHasMore,
     catalogLoadCount,
+    catalogLoadingMore,
     catalogStatus,
     debouncedSearchQuery,
     refreshCatalog,
+    loadMoreCatalog,
     setCatalogCache,
   } = usePredictionCatalogData({
     browseTab,
@@ -168,13 +171,16 @@ export function usePredictionMarketsDataState({
   });
 
   return {
-    catalogStatus,
+    catalogHasMore,
     catalogLoadCount,
+    catalogLoadingMore,
+    catalogStatus,
     debouncedSearchQuery,
     detail,
     detailError,
     detailLoadCount,
     lastRefreshAt,
+    loadMoreCatalog,
     selectedIndex,
     selectedRow,
     selectedDetailRow,

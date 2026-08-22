@@ -2,7 +2,7 @@ import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
 import type { NewsCapability } from "../capabilities";
 import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 
-const MAX_ARTICLES = 500;
+export const MAX_ARTICLES = 10_000;
 export const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
 
 const FEEDS = new Set<NewsFeed>(["latest", "top", "breaking", "ticker", "sector", "topic"]);
@@ -86,6 +86,8 @@ export function createIdleNewsQueryState(): NewsQueryState {
     error: null,
     updatedAt: null,
     sourceIds: [],
+    nextCursor: null,
+    loadingMore: false,
   };
 }
 
@@ -268,5 +270,6 @@ export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuer
   if (query.breaking != null) {
     filtered = filtered.filter((item) => item.isBreaking === query.breaking);
   }
-  return filtered.slice(0, query.limit ?? MAX_ARTICLES);
+  // Page size is a fetch hint. Accumulated load-more results keep MAX_ARTICLES.
+  return filtered.slice(0, MAX_ARTICLES);
 }

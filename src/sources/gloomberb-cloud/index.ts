@@ -8,6 +8,8 @@ import { assetDataProvider, newsProvider, type PluginCapability } from "../../ca
 import type {
   AssetDataProvider,
   CachedFinancialsTarget,
+  SecFilingDocument,
+  SecFilingItem,
   MarketDataRequestContext,
   QuoteBatchResult,
   QuoteSubscriptionTarget,
@@ -65,6 +67,34 @@ const CLOUD_PROVIDER_MISS_PATTERNS = [
   /figi.*missing or invalid/i,
   /error in the query/i,
 ];
+
+function mapCloudSecFiling(item: {
+  accessionNumber: string;
+  form: string;
+  filingDate: string;
+  acceptedAt?: string;
+  primaryDocument?: string;
+  primaryDocDescription?: string;
+  items?: string;
+  cik: string;
+  companyName?: string;
+  filingUrl: string;
+  primaryDocumentUrl?: string;
+}): SecFilingItem {
+  return {
+    accessionNumber: item.accessionNumber,
+    form: item.form,
+    filingDate: new Date(`${item.filingDate}T00:00:00Z`),
+    acceptedAt: item.acceptedAt ? new Date(item.acceptedAt) : undefined,
+    primaryDocument: item.primaryDocument,
+    primaryDocDescription: item.primaryDocDescription,
+    items: item.items,
+    cik: item.cik,
+    companyName: item.companyName,
+    filingUrl: item.filingUrl,
+    primaryDocumentUrl: item.primaryDocumentUrl,
+  };
+}
 
 function isCloudProviderMiss(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
@@ -279,6 +309,43 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     );
   }
 
+  async getSecFilings(ticker: string, count = 15): Promise<SecFilingItem[]> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudSecFilings({ ticker, limit: count, offset: 0 });
+      return response.filings.map(mapCloudSecFiling);
+    }, `Cloud SEC filings are unavailable for ${ticker}`);
+  }
+
+  async getSecFilingDocuments(filing: SecFilingItem): Promise<SecFilingDocument[]> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudSecFilingDocuments({
+        cik: filing.cik,
+        accession: filing.accessionNumber,
+        form: filing.form,
+        primaryDocument: filing.primaryDocument,
+        filingUrl: filing.filingUrl,
+      });
+      return response.documents;
+    }, "Cloud SEC filing documents are unavailable");
+  }
+
+  async getSecFilingContent(filing: SecFilingItem): Promise<string | null> {
+    await requireVerifiedSession();
+    return withCloudFallback(async () => {
+      const response = await apiClient.getCloudSecFilingContent({
+        cik: filing.cik,
+        accession: filing.accessionNumber,
+        form: filing.form,
+        primaryDocument: filing.primaryDocument,
+        primaryDocumentUrl: filing.primaryDocumentUrl,
+        filingUrl: filing.filingUrl,
+      });
+      return response.content;
+    }, "Cloud SEC filing content is unavailable");
+  }
+
   async getHolders(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<HolderData> {
     await requireVerifiedSession();
     return withCloudFallback(async () => {
@@ -429,6 +496,16 @@ export function createGloomberbCloudCapabilities(provider = createGloomberbCloud
         supports(query: NewsQuery): boolean {
           const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
           return feed === "ticker" ? !!query.ticker : true;
+        },
+        async fetchNewsPage(query: NewsQuery) {
+          const response = await withCloudFallback(
+            () => apiClient.getCloudNews(cloudNewsParams(query)),
+            "Cloud news is unavailable",
+          );
+          return {
+            articles: response.items.map((item) => mapCloudNewsArticle(item, query.ticker)),
+            nextCursor: response.nextCursor ?? null,
+          };
         },
         async fetchNews(query: NewsQuery): Promise<NewsArticle[]> {
           const response = await withCloudFallback(

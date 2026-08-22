@@ -8,6 +8,8 @@ import { CloudApiSocket } from "./socket";
 import type {
   CloudCongressHouseParams,
   CloudFredSeriesParams,
+  CloudSecFilingParams,
+  CloudSecFilingsParams,
   CloudHistoryParams,
   CloudNewsParams,
   CloudTickerTweetsParams,
@@ -44,6 +46,9 @@ import type {
   CloudYieldPointPayload,
   CloudCongressHousePayload,
   CloudNewsPayload,
+  CloudSecContentResponse,
+  CloudSecDocumentsResponse,
+  CloudSecFilingsResponse,
   CloudNewsListResponse,
   CloudTweetSearchResponse,
   CloudMarketResponse,
@@ -74,6 +79,8 @@ const ASSIST_REQUEST_TIMEOUT_MS = 6_000;
 
 class GloomApiClient {
   private currentUser: AuthUser | null = null;
+  private sessionChecked = false;
+  private sessionRequest: Promise<AuthUser | null> | null = null;
   private readonly currentUserListeners = new Set<() => void>();
   private readonly transport = new CloudApiRequestTransport();
   private readonly auth: CloudAuthApi;
@@ -127,6 +134,7 @@ class GloomApiClient {
 
   setSessionToken(token: string | null): void {
     const changed = this.transport.getSessionToken() !== token;
+    this.sessionChecked = false;
     this.transport.setSessionToken(token);
     if (!token) {
       this.currentUser = null;
@@ -214,7 +222,9 @@ class GloomApiClient {
   }
 
   async ensureVerifiedSession(): Promise<AuthUser | null> {
-    return this.auth.ensureVerifiedSession();
+    if (!this.transport.getSessionToken()) return null;
+    if (!this.currentUser && !this.sessionChecked) await this.getSession();
+    return this.currentUser?.emailVerified ? this.currentUser : null;
   }
 
   async signUp(email: string, username: string, name: string, password: string): Promise<AuthUser> {
@@ -238,7 +248,15 @@ class GloomApiClient {
   }
 
   async getSession(): Promise<AuthUser | null> {
-    return this.auth.getSession();
+    if (this.sessionRequest) return this.sessionRequest;
+    this.sessionRequest = this.auth.getSession();
+    try {
+      const user = await this.sessionRequest;
+      this.sessionChecked = true;
+      return user;
+    } finally {
+      this.sessionRequest = null;
+    }
   }
 
   async sendVerification(): Promise<CloudVerificationResponse> {
@@ -534,6 +552,22 @@ class GloomApiClient {
 
   async getCloudCongressHouse(params: CloudCongressHouseParams = {}): Promise<CloudCongressHousePayload> {
     return this.data.getCloudCongressHouse(params);
+  }
+
+  async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {
+    return this.data.getCloudSecFilings(params);
+  }
+
+  async getCloudSecFilingDocuments(params: CloudSecFilingParams): Promise<CloudSecDocumentsResponse> {
+    return this.data.getCloudSecFilingDocuments(params);
+  }
+
+  async getCloudSecFilingContent(params: CloudSecFilingParams): Promise<CloudSecContentResponse> {
+    return this.data.getCloudSecFilingContent(params);
+  }
+
+  async getCloudSec13F(path: string, params: Record<string, string | number | undefined> = {}): Promise<unknown> {
+    return this.data.getCloudSec13F(path, params);
   }
 
   async getCloudNews(params: CloudNewsParams = {}): Promise<CloudNewsListResponse> {

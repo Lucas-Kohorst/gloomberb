@@ -1,5 +1,5 @@
-import { Text } from "../../../ui";
-import { useCallback, useMemo, useState } from "react";
+import { Text, type ScrollBoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
 import type { SecFilingItem } from "../../../types/data-provider";
 import {
@@ -9,7 +9,7 @@ import {
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import { FeedDataTableStackView, Spinner, useExternalLinkFooter, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, Spinner, useExternalLinkFooter, useTableLoadMore, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
@@ -25,7 +25,10 @@ import {
 } from "../sec/filing-display";
 import { useSecFilingContentCache } from "../sec/filing-content";
 
-const FORM4_LIMIT = 20;
+const FORM4_PAGE_SIZE = 20;
+// Recent EDGAR dumps cap at 1,000 mixed forms. Older archives are fetched
+// until this many filings or company history ends.
+const SEC_FILING_SCAN_LIMIT = 20_000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface ParsedFiling {
@@ -109,13 +112,27 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
 
   const filingsEntry = useSecFilingsQuery(
-    instrument && eligibleTicker ? { instrument, count: FORM4_LIMIT } : null,
+    instrument && eligibleTicker ? { instrument, count: SEC_FILING_SCAN_LIMIT } : null,
   );
   const allFilings = useResolvedEntryValue(filingsEntry) ?? [];
   const form4Filings = useMemo(
     () => allFilings.filter((f) => f.form.trim() === "4"),
     [allFilings],
   );
+  const [visibleCount, setVisibleCount] = useState(FORM4_PAGE_SIZE);
+  const visibleForm4Filings = useMemo(
+    () => form4Filings.slice(0, visibleCount),
+    [form4Filings, visibleCount],
+  );
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const loadMore = useTableLoadMore(
+    scrollRef,
+    visibleCount < form4Filings.length,
+    () => setVisibleCount((current) => Math.min(form4Filings.length, current + FORM4_PAGE_SIZE)),
+  );
+  useEffect(() => {
+    setVisibleCount(FORM4_PAGE_SIZE);
+  }, [tickerKey]);
 
   const loading =
     filingsEntry?.phase === "loading" ||
@@ -127,10 +144,10 @@ function InsiderView({ width, height, focused }: { width: number; height: number
 
   const { contentCache: contentMap, pendingCount } = useSecFilingContentCache({
     scopeKey: `${ticker?.metadata.ticker ?? "none"}:${ticker?.metadata.exchange ?? ""}`,
-    targets: form4Filings,
+    targets: visibleForm4Filings,
   });
 
-  const allParsed: ParsedFiling[] = useMemo(() => form4Filings.map((filing) => {
+  const allParsed: ParsedFiling[] = useMemo(() => visibleForm4Filings.map((filing) => {
     const hasContent = contentMap.has(filing.accessionNumber);
     const xml = contentMap.get(filing.accessionNumber) ?? null;
     return {
@@ -138,7 +155,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
       transaction: xml ? parseForm4Xml(xml) : null,
       isLoading: !hasContent,
     };
-  }), [contentMap, form4Filings]);
+  }), [contentMap, visibleForm4Filings]);
 
   // Apply name filter
   const parsed = useMemo(() => (
@@ -225,7 +242,13 @@ function InsiderView({ width, height, focused }: { width: number; height: number
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Insider"
       titleLabel="Transaction"
-      emptyStateTitle={nameFilter ? "No insider transactions for this filter." : "No insider transactions."}
+      emptyStateTitle={nameFilter
+        ? "No insider transactions for this filter."
+        : pendingCount > 0
+          ? "Loading Form 4 transactions..."
+          : "No insider transactions."}
+      scrollRef={scrollRef}
+      onBodyScrollActivity={loadMore}
     />
   );
 }

@@ -7,6 +7,7 @@ import type {
   ThirteenFTopFund,
 } from "./types";
 import type { PluginPersistence } from "../../../types/plugin";
+import { apiClient } from "../../../api-client";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 
@@ -122,18 +123,23 @@ async function fetchForms13F<T>(
     if (cached) return cached;
   }
 
-  const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
-  const response = await withConnectionRequest("forms13f", path, () =>
-    httpFetch(url, {
-      headers: { Accept: "application/json" },
-      signal: options.signal,
-    }));
-  if (!response.ok) {
-    const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
-    if (stale) return stale;
-    throw new Error(`Forms13F ${response.status} for ${path}`);
+  let value: T;
+  try {
+    value = await apiClient.getCloudSec13F(path, params) as T;
+  } catch {
+    const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
+    const response = await withConnectionRequest("forms13f", path, () =>
+      httpFetch(url, {
+        headers: { Accept: "application/json" },
+        signal: options.signal,
+      }));
+    if (!response.ok) {
+      const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
+      if (stale) return stale;
+      throw new Error(`Forms13F ${response.status} for ${path}`);
+    }
+    value = await response.json() as T;
   }
-  const value = await response.json() as T;
   if (value != null && options.cache !== false) {
     writeApiCache(key, value);
   }
@@ -276,6 +282,24 @@ export async function listThirteenFForms(
   return arrayResponse(raw).map(mapForm).filter((form): form is ThirteenFFormSummary => !!form);
 }
 
+export async function listThirteenFFormHoldingsPage(
+  cik: string,
+  accessionNumber: string,
+  signal?: AbortSignal,
+  options: { forceRefresh?: boolean; offset?: number; limit?: number } = {},
+): Promise<{ rows: ThirteenFHoldingRecord[]; hasMore: boolean }> {
+  const offset = Math.max(0, options.offset ?? 0);
+  const limit = Math.max(1, options.limit ?? FORM_PAGE_LIMIT);
+  const raw = await fetchForms13F<unknown>("/form", {
+    cik: normalizeCik(cik),
+    accession_number: accessionNumber,
+    limit,
+    offset,
+  }, { signal, forceRefresh: options.forceRefresh });
+  const rows = arrayResponse(raw).map(mapHolding).filter((holding): holding is ThirteenFHoldingRecord => !!holding);
+  return { rows, hasMore: rows.length >= limit && offset + rows.length < MAX_FORM_ROWS };
+}
+
 export async function listThirteenFFormHoldings(
   cik: string,
   accessionNumber: string,
@@ -284,15 +308,13 @@ export async function listThirteenFFormHoldings(
 ): Promise<ThirteenFHoldingRecord[]> {
   const rows: ThirteenFHoldingRecord[] = [];
   for (let offset = 0; offset < MAX_FORM_ROWS; offset += FORM_PAGE_LIMIT) {
-    const raw = await fetchForms13F<unknown>("/form", {
-      cik: normalizeCik(cik),
-      accession_number: accessionNumber,
-      limit: FORM_PAGE_LIMIT,
+    const page = await listThirteenFFormHoldingsPage(cik, accessionNumber, signal, {
+      ...options,
       offset,
-    }, { signal, forceRefresh: options.forceRefresh });
-    const page = arrayResponse(raw).map(mapHolding).filter((holding): holding is ThirteenFHoldingRecord => !!holding);
-    rows.push(...page);
-    if (page.length < FORM_PAGE_LIMIT) break;
+      limit: FORM_PAGE_LIMIT,
+    });
+    rows.push(...page.rows);
+    if (!page.hasMore) break;
   }
   return rows;
 }

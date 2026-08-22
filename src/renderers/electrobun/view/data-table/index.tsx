@@ -143,6 +143,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   }, [emitVisibleRange, onBodyScrollActivity]);
   const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
   const scheduleVisibleRangeMeasure = useRafCallback(emitVisibleRange);
+  const lastAppliedScrollRequestRef = useRef<string | null>(null);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
@@ -203,12 +204,19 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   }, [items.length, scheduleVisibleRangeMeasure, visibleRangeKey]);
 
   useEffect(() => {
-    if (scrollToIndex == null || items.length === 0) return;
+    if (scrollToIndex == null || items.length === 0) {
+      lastAppliedScrollRequestRef.current = null;
+      return;
+    }
+    const scrollRequestKey = `${scrollToIndex}:${scrollToIndexVersion}:${scrollToIndexAlign}`;
+    if (lastAppliedScrollRequestRef.current === scrollRequestKey) return;
     const targetIndex = Math.max(0, Math.min(scrollToIndex, items.length - 1));
     if (virtualize) {
       rowVirtualizer.scrollToIndex(targetIndex, {
         align: scrollToIndexAlign === "center" ? "center" : "auto",
       });
+      lastAppliedScrollRequestRef.current = scrollRequestKey;
+      scheduleBodyScrollActivity();
       scheduleVisibleRangeMeasure();
       return;
     }
@@ -226,7 +234,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     }
     if (nextTop !== currentTop) {
       element.scrollTop = nextTop * rowHeightPx;
+      scheduleBodyScrollActivity();
     }
+    lastAppliedScrollRequestRef.current = scrollRequestKey;
     scheduleVisibleRangeMeasure();
   }, [
     items.length,
@@ -234,6 +244,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scrollToIndex,
     scrollToIndexAlign,
     scrollToIndexVersion,
+    scheduleBodyScrollActivity,
     scheduleVisibleRangeMeasure,
     rowHeightPx,
     virtualize,
