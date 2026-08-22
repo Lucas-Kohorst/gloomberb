@@ -16,22 +16,36 @@ import {
   type DataTableRootKeyContext,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
-import { isPlainKey } from "../../../utils/keyboard";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
-import { usePluginAppActions, usePluginPaneState } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
+import {
+  useAssetData,
+  usePluginAppActions,
+  usePluginPaneState,
+  usePluginTickerActions,
+} from "../../runtime";
+import { withConnectionRequest } from "../connections/register";
+import { graphFooterHint } from "../shared/graph-pop-out";
 import { loadCorporateYields } from "./fred-yields";
 import {
   BOND_SEARCH_PANE_ID,
+  buildSearchColumns,
   buildYieldColumns,
   formatSpreadBp,
   formatYieldDate,
   formatYieldPercent,
   nextSort,
+  searchKindLabel,
+  sortedSearchHits,
   sortedYields,
+  type SearchColumnId,
+  type SearchColumnDef,
   type SortDirection,
   type YieldColumnDef,
   type YieldColumnId,
 } from "./model";
+import { searchBonds, type BondSearchHit } from "./search";
 import type { BondTab, CorporateYieldEntry, LoadStatus } from "./types";
 
 export { BOND_SEARCH_PANE_ID } from "./model";
@@ -69,8 +83,30 @@ function renderYieldCell(
   }
 }
 
+function renderSearchCell(
+  hit: BondSearchHit,
+  column: SearchColumnDef,
+  _index: number,
+  rowState: { selected: boolean },
+): DataTableCell {
+  const selectedColor = rowState.selected ? colors.selectedText : undefined;
+  switch (column.id) {
+    case "label":
+      return { text: hit.label, color: selectedColor ?? colors.text, attributes: TextAttributes.BOLD };
+    case "kind":
+      return { text: searchKindLabel(hit), color: selectedColor ?? colors.textMuted };
+    case "detail":
+      return { text: hit.detail, color: selectedColor ?? colors.textDim };
+  }
+}
+
 export function BondSearchPane({ focused, width, height }: PaneProps) {
-  const [activeTab, setActiveTab] = usePluginPaneState<BondTab>("activeTab", "yields");
+  const [seedQuery] = usePaneSettingValue("query", "");
+  const [seedTab] = usePaneSettingValue("activeTab", "yields");
+  const [activeTab, setActiveTab] = usePluginPaneState<BondTab>(
+    "activeTab",
+    seedTab === "search" ? "search" : "yields",
+  );
   const [entries, setEntries] = useState<CorporateYieldEntry[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -81,14 +117,21 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const { createPaneFromTemplate } = usePluginAppActions();
+  const { pinTicker } = usePluginTickerActions();
+  const dataProvider = useAssetData();
 
-  // Search bar (Phase 2 — present but not wired to a live bond search backend).
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(String(seedQuery ?? ""));
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [searchHits, setSearchHits] = useState<BondSearchHit[]>([]);
+  const [searchStatus, setSearchStatus] = useState<LoadStatus>("idle");
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchSelectedIdx, setSearchSelectedIdx] = useState(0);
+  const [searchSort, setSearchSort] = useState<{ columnId: SearchColumnId; direction: SortDirection } | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const fetchGenRef = useRef(0);
+  const searchGenRef = useRef(0);
 
   const load = useCallback((refresh = false) => {
     fetchGenRef.current += 1;
@@ -113,15 +156,67 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
     load(false);
   }, [load]);
 
+  const runSearch = useCallback((query: string) => {
+    searchGenRef.current += 1;
+    const gen = searchGenRef.current;
+    setSearchStatus("loading");
+    setSearchError(null);
+    const searchInstruments = dataProvider
+      ? (nextQuery: string) =>
+          withConnectionRequest("yahoo", "bondSearch", () =>
+            dataProvider.search(nextQuery, { preferBroker: false }),
+          )
+      : undefined;
+    searchBonds(query, { searchInstruments })
+      .then((result) => {
+        if (searchGenRef.current !== gen) return;
+        setSearchHits(result.hits);
+        setSearchError(result.instrumentError ?? null);
+        setSearchStatus("loaded");
+        setSearchSelectedIdx(0);
+        setSearchSort(null);
+      })
+      .catch((loadError) => {
+        if (searchGenRef.current !== gen) return;
+        setSearchError(loadError instanceof Error ? loadError.message : String(loadError));
+        setSearchStatus("error");
+      });
+  }, [dataProvider]);
+
+  useEffect(() => {
+    if (activeTab !== "search") return;
+    runSearch(searchQuery);
+  }, [activeTab, runSearch, searchQuery]);
+
   const rows = useMemo(() => sortedYields(entries, sort), [entries, sort]);
   const columns = useMemo<YieldColumnDef[]>(() => buildYieldColumns(width), [width]);
+  const searchColumns = useMemo(() => buildSearchColumns(width), [width]);
+  const visibleSearchHits = useMemo(
+    () => (searchSort ? sortedSearchHits(searchHits, searchSort) : searchHits),
+    [searchHits, searchSort],
+  );
   const selectedEntry = rows[selectedIdx] ?? null;
+  const selectedHit = visibleSearchHits[searchSelectedIdx] ?? null;
+
   const chartSelected = useCallback(() => {
     if (!selectedEntry) return;
     createPaneFromTemplate("chart-composer-pane", { arg: `FRED:${selectedEntry.seriesId}` });
   }, [createPaneFromTemplate, selectedEntry]);
 
-  // Keep selection in range when rows change.
+  const openHit = useCallback((hit: BondSearchHit) => {
+    if (hit.kind === "series") {
+      createPaneFromTemplate(hit.templateId, { arg: hit.arg });
+      return;
+    }
+    if (!hit.symbol) return;
+    pinTicker(hit.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID, forceNewPane: true });
+  }, [createPaneFromTemplate, pinTicker]);
+
+  const openSelectedHit = useCallback(() => {
+    if (!selectedHit) return;
+    openHit(selectedHit);
+  }, [openHit, selectedHit]);
+
   useEffect(() => {
     if (rows.length === 0) {
       if (selectedIdx !== 0) setSelectedIdx(0);
@@ -142,7 +237,6 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
 
   const selectTab = useCallback((value: string) => {
     setActiveTab(value === "search" ? "search" : "yields");
-    setSearchQuery("");
   }, [setActiveTab]);
 
   const handleRootKeyDown = useCallback(
@@ -150,13 +244,18 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       if (event.name === "r") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        load(true);
+        if (activeTab === "search") runSearch(searchQuery);
+        else load(true);
         return true;
       }
-      if (event.name === "g" && selectedEntry) {
+      if (event.name === "g") {
         event.preventDefault?.();
         event.stopPropagation?.();
-        chartSelected();
+        if (activeTab === "search") {
+          if (selectedHit?.kind === "series") openHit(selectedHit);
+        } else {
+          chartSelected();
+        }
         return true;
       }
       if (activeTab === "search") {
@@ -174,7 +273,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       }
       return false;
     },
-    [activeTab, chartSelected, focusSearch, load, selectedEntry],
+    [activeTab, chartSelected, focusSearch, load, openHit, runSearch, searchQuery, selectedHit],
   );
 
   useShortcut((event) => {
@@ -194,6 +293,18 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
     BOND_SEARCH_PANE_ID,
     () => {
       if (!focused) return null;
+      if (activeTab === "search") {
+        const info = [
+          ...(searchStatus === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+          ...(searchError ? [{ id: "error", parts: [{ text: searchError, tone: "warning" as const }] }] : []),
+        ];
+        const hints = [
+          graphFooterHint(openSelectedHit, selectedHit?.kind === "series"),
+          { id: "refresh", key: "r", label: "efresh", onPress: () => runSearch(searchQuery) },
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
+        ];
+        return { info, hints };
+      }
       const info = [
         ...(lastUpdated
           ? [{ id: "asof", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
@@ -202,15 +313,29 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
       ];
       const hints = [
-        { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedEntry },
+        graphFooterHint(chartSelected, !!selectedEntry),
         { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
-        ...(activeTab === "search"
-          ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }]
-          : []),
       ];
       return { info, hints };
     },
-    [activeTab, chartSelected, error, focusSearch, focused, lastUpdated, load, selectedEntry, status, updatedAgo],
+    [
+      activeTab,
+      chartSelected,
+      error,
+      focusSearch,
+      focused,
+      lastUpdated,
+      load,
+      openSelectedHit,
+      runSearch,
+      searchError,
+      searchQuery,
+      searchStatus,
+      selectedEntry,
+      selectedHit,
+      status,
+      updatedAgo,
+    ],
   );
 
   const tabs = (
@@ -237,7 +362,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         width={width}
         focusToken={searchFocusToken}
         inputRef={searchInputRef}
-        placeholder="issuer or CUSIP"
+        placeholder="issuer, CUSIP, or series"
         debounceMs={120}
         onFocus={focusSearch}
         onBlur={blurSearch}
@@ -245,18 +370,44 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         onQueryChange={setSearchQuery}
       />
     );
+    const searchBodyHeight = Math.max(1, height - 2);
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <Box paddingX={1} marginTop={0}>
-          {searchBar}
-        </Box>
-        <Box flexGrow={1} padding={1}>
-          <EmptyState
-            title="Bond search coming soon"
-            hint="Corporate yield indices are available on the Yields tab."
+        {searchBar}
+        {searchStatus === "loading" && visibleSearchHits.length === 0 ? (
+          <Box flexGrow={1} justifyContent="center" alignItems="center">
+            <Spinner label="Searching bonds..." />
+          </Box>
+        ) : (
+          <DataTableView<BondSearchHit, SearchColumnDef>
+            focused={focused && !searchFocused}
+            rootWidth={width}
+            rootHeight={searchBodyHeight}
+            selection={{
+              kind: "index",
+              selectedIndex: searchSelectedIdx,
+              onChange: (index) => setSearchSelectedIdx(index),
+            }}
+            onActivate={(hit) => openHit(hit)}
+            onRootKeyDown={handleRootKeyDown}
+            columns={searchColumns}
+            items={visibleSearchHits}
+            sortColumnId={searchSort?.columnId ?? null}
+            sortDirection={searchSort?.direction ?? "asc"}
+            onHeaderClick={(columnId) =>
+              setSearchSort((current) => {
+                const id = columnId as SearchColumnId;
+                if (!current) return { columnId: id, direction: "asc" };
+                return nextSort(current, id, "asc");
+              })
+            }
+            getItemKey={(hit) => hit.id}
+            renderCell={renderSearchCell}
+            emptyStateTitle={searchQuery.trim() ? "No matching bonds." : "No bond series."}
+            emptyStateHint={searchQuery.trim() ? "Try an issuer, CUSIP, or series id." : "Type to search live instruments."}
           />
-        </Box>
+        )}
       </Box>
     );
   }
@@ -295,6 +446,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
           selectedIndex: selectedIdx,
           onChange: (index) => setSelectedIdx(index),
         }}
+        onActivate={() => chartSelected()}
         onRootKeyDown={handleRootKeyDown}
         columns={columns}
         items={rows}
@@ -314,5 +466,4 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   );
 }
 
-// Re-exported for callers that want the latest update date label.
 export { formatYieldDate };
