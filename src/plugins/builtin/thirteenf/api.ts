@@ -7,6 +7,7 @@ import type {
   ThirteenFTopFund,
 } from "./types";
 import type { PluginPersistence } from "../../../types/plugin";
+import { apiClient } from "../../../api-client";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 
@@ -122,18 +123,23 @@ async function fetchForms13F<T>(
     if (cached) return cached;
   }
 
-  const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
-  const response = await withConnectionRequest("forms13f", path, () =>
-    httpFetch(url, {
-      headers: { Accept: "application/json" },
-      signal: options.signal,
-    }));
-  if (!response.ok) {
-    const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
-    if (stale) return stale;
-    throw new Error(`Forms13F ${response.status} for ${path}`);
+  let value: T;
+  try {
+    value = await apiClient.getCloudSec13F(path, params) as T;
+  } catch {
+    const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
+    const response = await withConnectionRequest("forms13f", path, () =>
+      httpFetch(url, {
+        headers: { Accept: "application/json" },
+        signal: options.signal,
+      }));
+    if (!response.ok) {
+      const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
+      if (stale) return stale;
+      throw new Error(`Forms13F ${response.status} for ${path}`);
+    }
+    value = await response.json() as T;
   }
-  const value = await response.json() as T;
   if (value != null && options.cache !== false) {
     writeApiCache(key, value);
   }
