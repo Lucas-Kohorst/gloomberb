@@ -263,7 +263,7 @@ export const alertsPlugin: GloomPlugin = {
 
         const quoteResults = await Promise.all(priceAlerts.map(async (alert) => {
           try {
-            const quote = await ctx.marketData.getQuote(alert.symbol, "");
+            const quote = await resolveAlertQuote(ctx.marketData, alert.symbol, alert.exchange);
             return { alert, quote };
           } catch (error) {
             return { alert, error };

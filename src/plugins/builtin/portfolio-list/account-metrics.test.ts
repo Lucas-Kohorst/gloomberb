@@ -38,6 +38,26 @@ describe("resolvePortfolioAccountMetrics", () => {
     });
   });
 
+  test("converts broker account money into the app base currency", () => {
+    const account: BrokerAccount = {
+      accountId: "DU12345",
+      name: "DU12345",
+      currency: "EUR",
+      netLiquidation: 10_000,
+      grossPositionValue: 8_000,
+      dailyPnl: 100,
+      unrealizedPnl: 400,
+    };
+    const toUsd = (value: number) => value * 1.1;
+
+    const metrics = resolvePortfolioAccountMetrics(createTotals(), account, toUsd);
+    expect(metrics.dailyPnl).toBeCloseTo(110);
+    expect(metrics.dailyPnlPct).toBeCloseTo(110 / 10_890 * 100);
+    expect(metrics.unrealizedPnl).toBeCloseTo(440);
+    expect(metrics.unrealizedPnlPct).toBeCloseTo(5.5);
+    expect(resolvePortfolioMarketValue(createTotals(), account, toUsd)).toBeCloseTo(8_800);
+  });
+
   test("falls back to reconstructed portfolio totals when broker P&L is missing", () => {
     expect(resolvePortfolioAccountMetrics(createTotals(), null)).toEqual({
       dailyPnl: 50,

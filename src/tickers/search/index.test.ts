@@ -91,6 +91,26 @@ describe("ticker-search utilities", () => {
     });
   });
 
+  test("resolves COIN to Coinbase, not a CoinGecko name hit or IDX listing", async () => {
+    const resolved = await resolveTickerSearch({
+      query: "COIN",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: makeDataProvider([
+        makeSearchResult("BTC-USD", "Bitcoin", { exchange: "CCC", type: "CRYPTO" }),
+        makeSearchResult("COIN", "PT Indokripto Koin Semesta Tbk", { exchange: "Jakarta", type: "EQUITY" }),
+        makeSearchResult("COIN", "Coinbase Global, Inc.", { exchange: "NASDAQ", type: "EQUITY" }),
+      ]),
+    });
+
+    expect(resolved).toMatchObject({
+      kind: "provider",
+      symbol: "COIN",
+    });
+    expect(resolved?.kind === "provider" ? resolved.result.name : null).toBe("Coinbase Global, Inc.");
+    expect(resolved?.kind === "provider" ? resolved.result.exchange : null).toBe("NASDAQ");
+  });
+
   test("combines local and provider candidates without duplicate saved symbols", async () => {
     const tickers = new Map<string, TickerRecord>([["AAPL", makeTicker("AAPL", "Apple")]]);
     const results = await searchTickerCandidates({
@@ -553,6 +573,33 @@ describe("ticker-search utilities", () => {
 
     expect(created).toBe(false);
     expect(ticker.metadata.name).toBe("Apple Inc.");
+    expect(saved).toHaveLength(1);
+  });
+
+  test("replaces a saved listing when search selects a different exchange", async () => {
+    const existing = makeTicker("AAPL", "Apple Inc.");
+    existing.metadata.exchange = "NASDAQ";
+    existing.metadata.currency = "USD";
+    const saved: TickerRecord[] = [];
+    const repository = {
+      loadTicker: async () => existing,
+      createTicker: async (metadata: TickerRecord["metadata"]) => ({ metadata }),
+      saveTicker: async (ticker: TickerRecord) => {
+        saved.push(ticker);
+      },
+    };
+
+    const { ticker } = await upsertTickerFromSearchResult(repository as any, {
+      providerId: "test",
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      exchange: "BYMA",
+      type: "EQUITY",
+      currency: "ARS",
+    });
+
+    expect(ticker.metadata.exchange).toBe("BYMA");
+    expect(ticker.metadata.currency).toBe("ARS");
     expect(saved).toHaveLength(1);
   });
 

@@ -15,7 +15,6 @@ import { createRemoteAssetDataClient } from "./remote/asset-data-client";
 import { RemotePersistence } from "./remote/persistence";
 import { RemoteTickerRepository } from "./remote/ticker-repository";
 import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
-import { CoinGeckoProvider } from "../../../sources/coingecko/provider";
 import { AssetDataRouter } from "../../../sources/provider-router";
 import { YahooFinanceClient } from "../../../sources/yahoo-finance";
 import { createGloomberbCloudSyncTransport } from "../../../plugins/builtin/cloud/plugin";
@@ -46,14 +45,11 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     )
     : null;
   const remoteDataProvider = cloudProvider ? null : createRemoteAssetDataClient();
-  // Hosted skips plugin.capabilities invoke handlers. Cloud and Yahoo both
-  // refuse CCC crypto, so CoinGecko must be on the router extra-source list
-  // (not only registered later in plugin setup) for LAST/CHG%/MCAP.
   const dataProvider = measurePerf("startup.services.data-provider", () => (
     cloudProvider
       ? new AssetDataRouter(
         new YahooFinanceClient(),
-        [cloudProvider, new CoinGeckoProvider()],
+        [cloudProvider],
         persistence.resources,
       )
       : remoteDataProvider!

@@ -31,13 +31,14 @@ import {
   mapCoinGeckoOhlc,
 } from "./history";
 import {
-  COINGECKO_BASE_IDS,
   COINGECKO_EXCHANGE,
   COINGECKO_PROVIDER_ID,
   isCryptoMarketInstrument,
   resolveCoinGeckoPair,
+  shouldSearchCoinGecko,
   type CoinGeckoPair,
 } from "./ids";
+import { CoinGeckoIdentityCache, liveCoinGeckoQuoteTargets, pickCoinGeckoSearchCoins } from "./identity";
 import { mapCoinGeckoCoinQuote, mapCoinGeckoSimpleQuote } from "./quotes";
 
 export const COINGECKO_QUOTE_POLL_INTERVAL_MS = 15_000;
@@ -48,8 +49,11 @@ export class CoinGeckoProvider implements AssetDataProvider {
   readonly id = COINGECKO_PROVIDER_ID;
   readonly name = "CoinGecko";
   readonly priority = 80;
+  private readonly identity: CoinGeckoIdentityCache;
 
-  constructor(private readonly http: CoinGeckoHttp = createCoinGeckoHttp()) {}
+  constructor(private readonly http: CoinGeckoHttp = createCoinGeckoHttp()) {
+    this.identity = new CoinGeckoIdentityCache(http);
+  }
 
   canProvide(ticker: string, exchange?: string, _context?: MarketDataRequestContext): boolean {
     return isCryptoMarketInstrument(ticker, exchange);
@@ -79,12 +83,7 @@ export class CoinGeckoProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     _options?: { forceRefresh?: boolean },
   ): Promise<QuoteBatchResult[]> {
-    const resolved = await Promise.all(targets.map(async (target) => ({
-      target,
-      pair: isCryptoMarketInstrument(target.symbol, target.exchange)
-        ? await this.resolvePair(target.symbol, target.exchange ?? "").catch(() => null)
-        : null,
-    })));
+    const resolved = await this.identity.resolveMany(targets);
     const idsByVs = new Map<string, string[]>();
     for (const entry of resolved) {
       if (!entry.pair) continue;
@@ -116,7 +115,7 @@ export class CoinGeckoProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    const cryptoTargets = targets.filter((target) => isCryptoMarketInstrument(target.symbol, target.exchange));
+    const cryptoTargets = liveCoinGeckoQuoteTargets(targets);
     if (cryptoTargets.length === 0) return () => {};
 
     let cancelled = false;
@@ -205,10 +204,10 @@ export class CoinGeckoProvider implements AssetDataProvider {
 
   async search(query: string, _context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
     const trimmed = query.trim();
-    if (!trimmed) return [];
+    if (!shouldSearchCoinGecko(trimmed)) return [];
     const mapped = resolveCoinGeckoPair(trimmed, COINGECKO_EXCHANGE);
     const response = await fetchCoinGeckoSearch(mapped?.base ?? trimmed, this.http);
-    const coins = response.coins ?? [];
+    const coins = pickCoinGeckoSearchCoins(response.coins ?? [], mapped?.base ?? trimmed);
     return coins.slice(0, 10).map((coin) => {
       const base = coin.symbol.trim().toUpperCase();
       return {
@@ -253,28 +252,8 @@ export class CoinGeckoProvider implements AssetDataProvider {
     return pair;
   }
 
-  private async resolvePair(ticker: string, exchange: string): Promise<CoinGeckoPair | null> {
-    const mapped = resolveCoinGeckoPair(ticker, exchange);
-    if (mapped) return mapped;
-    if (!isCryptoMarketInstrument(ticker, exchange)) return null;
-    const query = ticker.trim().toUpperCase()
-      .replace(/=X$/i, "")
-      .replace(/[/-]USD[T]?$/i, "")
-      .replace(/[/\s]+/g, "");
-    if (!query) return null;
-    const known = COINGECKO_BASE_IDS[query];
-    if (known) {
-      return { id: known, base: query, vsCurrency: "usd", symbol: `${query}-USD` };
-    }
-    const response = await fetchCoinGeckoSearch(query, this.http);
-    const match = (response.coins ?? []).find((coin) => coin.symbol.toUpperCase() === query);
-    if (!match) return null;
-    return {
-      id: match.id,
-      base: query,
-      vsCurrency: "usd",
-      symbol: `${query}-USD`,
-    };
+  private resolvePair(ticker: string, exchange: string): Promise<CoinGeckoPair | null> {
+    return this.identity.resolve(ticker, exchange);
   }
 }
 

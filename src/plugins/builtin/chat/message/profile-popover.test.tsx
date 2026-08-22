@@ -12,6 +12,7 @@ import { requestOpenChatProfile } from "../profile-request";
 import {
   hasPublicChatProfileInfo,
   shouldOfferChatProfileSetup,
+  UserProfilePopover,
 } from "./profile-popover";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -70,6 +71,20 @@ function RequestedProfileHarness() {
   return (
     <Box width={50} height={1}>
       <Text>{profilePopoverUser ? `@${profilePopoverUser.username}` : "none"}</Text>
+    </Box>
+  );
+}
+
+function VisibleProfileCardHarness({ user }: { user: ChatUserSummary }) {
+  return (
+    <Box width={50} height={12}>
+      <UserProfilePopover
+        user={user}
+        width={50}
+        onClose={() => {}}
+        onDismiss={() => {}}
+        onKeepOpen={() => {}}
+      />
     </Box>
   );
 }
@@ -184,5 +199,27 @@ describe("profile popover", () => {
     expect(shouldOfferChatProfileSetup(emptyProfile, true)).toBe(true);
     expect(shouldOfferChatProfileSetup(emptyProfile, false)).toBe(false);
     expect(shouldOfferChatProfileSetup(makeUser({ bio: "Already set up" }), true)).toBe(false);
+  });
+
+  test("shows a close control on the profile card", async () => {
+    await act(async () => {
+      testSetup = await testRender(
+        <VisibleProfileCardHarness user={makeUser({
+          username: "lucas",
+          displayName: "Lucas",
+          company: "Adjacent",
+          bio: "Builds terminals",
+          xAccount: "lucas",
+        })} />,
+        { width: 50, height: 12 },
+      );
+    });
+    const setup = testSetup;
+    expect(setup).toBeDefined();
+    if (!setup) return;
+    await act(async () => {
+      await setup.renderOnce();
+    });
+    expect(setup.captureCharFrame()).toMatch(/@lucas\s+x/);
   });
 });

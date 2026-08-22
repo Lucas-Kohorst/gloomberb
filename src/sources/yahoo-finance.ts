@@ -8,8 +8,7 @@ import {
 import type { InstrumentSearchResult } from "../types/instrument";
 import { parseOptionSymbol } from "../utils/options";
 import { httpFetch } from "../utils/http-transport";
-import { canonicalCryptoInstrument, isCryptoMarketInstrument, isCryptoSearchType } from "./coingecko/ids";
-import { createProviderMiss } from "./provider-errors";
+import { canonicalCryptoInstrument, isCryptoSearchType } from "./coingecko/ids";
 import { SecEdgarClient } from "./sec-edgar";
 import { mergeFinancialStatementRows } from "../utils/financial-statements";
 import { YahooHttpClient } from "./yahoo-finance/http";
@@ -102,16 +101,6 @@ export class YahooFinanceClient implements DataProvider {
 
   constructor(private readonly http = new YahooHttpClient()) {}
 
-  canProvide(ticker: string, exchange?: string): boolean {
-    return !isCryptoMarketInstrument(ticker, exchange);
-  }
-
-  private rejectCrypto(ticker: string, exchange: string, kind: string): void {
-    if (isCryptoMarketInstrument(ticker, exchange)) {
-      throw createProviderMiss(`${kind} for crypto ${ticker} is served by CoinGecko`);
-    }
-  }
-
   private shouldSupplementSecStatements(ticker: string, exchange: string, financials: TickerFinancials): boolean {
     if (!/^[A-Z0-9.-]+$/i.test(ticker.trim())) return false;
     if (ticker.includes(".")) return false;
@@ -174,7 +163,6 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch full financials for a ticker */
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    this.rejectCrypto(ticker, exchange, "Financials");
     const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
     let lastError: any;
 
@@ -183,7 +171,9 @@ export class YahooFinanceClient implements DataProvider {
         const result = await loadYahooTickerFinancials(symbol, {
           fetchAssetProfile: (targetSymbol) => this.fetchAssetProfile(targetSymbol),
           fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
-          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
           fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
             this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
           fetchTimeseries: (targetSymbol, types, period1) => this.fetchTimeseries(targetSymbol, types, period1),
@@ -199,7 +189,6 @@ export class YahooFinanceClient implements DataProvider {
 
   /** Fetch just a quote (lighter weight) */
   async getQuote(ticker: string, exchange = "", context?: MarketDataRequestContext): Promise<Quote> {
-    this.rejectCrypto(ticker, exchange, "Quotes");
     if (parseOptionSymbol(ticker)) {
       return getYahooOptionQuote({
         context,
@@ -223,7 +212,9 @@ export class YahooFinanceClient implements DataProvider {
       try {
         return await loadYahooQuote(symbol, {
           fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
-          fetchExtendedHoursData: (targetSymbol, meta) => this.fetchExtendedHoursData(targetSymbol, meta),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
           fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
             this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
           providerId: this.id,
@@ -371,7 +362,6 @@ export class YahooFinanceClient implements DataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange = "", range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    this.rejectCrypto(ticker, exchange, "History");
     return loadYahooPriceHistory({
       ticker,
       exchange,
@@ -387,7 +377,6 @@ export class YahooFinanceClient implements DataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    this.rejectCrypto(ticker, exchange, "History");
     return loadYahooPriceHistoryForResolution({
       ticker,
       exchange,

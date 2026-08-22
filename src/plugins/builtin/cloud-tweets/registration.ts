@@ -1,4 +1,5 @@
 import type { GloomPluginContext } from "../../../types/plugin";
+import { canonicalExchange } from "../../../utils/exchanges";
 import { apiClient } from "../../../api-client";
 import { getSharedNewsService } from "../../../news/hooks";
 import { registerConnectionSource } from "../connections/register";
@@ -35,7 +36,11 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     name: "Tweets",
     order: 38,
     component: TwitterTickerTab,
-    isVisible: ({ ticker }) => !!ticker,
+    isVisible: ({ ticker }) => {
+      if (!ticker) return false;
+      const exchange = canonicalExchange(ticker.metadata.exchange);
+      return !exchange || ["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS", "OTC", "PINK"].includes(exchange);
+    },
   });
 
   ctx.registerPane({

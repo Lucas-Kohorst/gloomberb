@@ -312,6 +312,20 @@ describe("event rows", () => {
     expect(ttm?.qRevenue).toBeUndefined();
   });
 
+  test("omits a TTM row when a flow metric is missing from one of the last four quarters", () => {
+    const rows = buildEventRows(null, null, {
+      quarterlyStatements: [
+        { date: "2025-06-30", totalRevenue: 80, eps: 1 },
+        { date: "2025-09-30", totalRevenue: 90 },
+        { date: "2025-12-31", totalRevenue: 100, eps: 1.2 },
+        { date: "2026-03-31", totalRevenue: 110, eps: 1.3 },
+      ],
+    }, "USD");
+
+    expect(rows.find((row) => row.status === "TTM")?.annualEps).toBeUndefined();
+    expect(rows.find((row) => row.status === "TTM")?.annualRevenue).toBe(380);
+  });
+
   test("keeps dividends and splits in the event table without metric values", () => {
     const data = {
       symbol: "AAPL",

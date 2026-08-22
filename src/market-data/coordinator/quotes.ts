@@ -2,7 +2,7 @@ import type { DataProvider, QuoteSubscriptionTarget } from "../../types/data-pro
 import type { Quote } from "../../types/financials";
 import type { InstrumentRef } from "../request-types";
 import { QUOTE_STREAM_UPDATE_THROTTLE_MS } from "../quotes/cadence";
-import { mergeQuoteSubscriptionTargets } from "../quote-subscription-target";
+import { isLiveQuoteSubscriptionTarget, mergeQuoteSubscriptionTargets } from "../quote-subscription-target";
 import { QueryStore } from "../query-store";
 import type { QueryEntry } from "../result-types";
 import { buildQuoteKey, toMarketDataContext } from "../selectors";
@@ -280,7 +280,9 @@ export class QuoteSubscriptionManager {
     this.quoteSubscriptionDispose = null;
     this.quoteSubscriptionSignature = nextSignature;
 
-    const targets = activeEntries.map(([, entry]) => entry.target);
+    const targets = activeEntries
+      .map(([, entry]) => entry.target)
+      .filter(isLiveQuoteSubscriptionTarget);
     if (targets.length === 0) return;
 
     this.quoteSubscriptionDispose = this.dataProvider.subscribeQuotes(targets, (target, quote) => {

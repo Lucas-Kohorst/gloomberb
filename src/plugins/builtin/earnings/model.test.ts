@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { TickerRecord } from "../../../types/ticker";
-import { resolveEarningsCollectionId, trackedEarningsSymbols } from "./model";
+import { groupEarningsByRelativeDate, resolveEarningsCollectionId, trackedEarningsSymbols } from "./model";
 
 function ticker(
   symbol: string,
@@ -48,5 +48,26 @@ describe("trackedEarningsSymbols", () => {
     ];
 
     expect(trackedEarningsSymbols(tickers, "main")).toEqual(["AAPL", "NVDA"]);
+  });
+});
+
+describe("groupEarningsByRelativeDate", () => {
+  test("groups date-only UTC midnight earnings on the UTC calendar day", () => {
+    const rows = groupEarningsByRelativeDate([
+      {
+        symbol: "AAPL",
+        name: "Apple",
+        earningsDate: new Date("2026-05-13T00:00:00.000Z"),
+        epsEstimate: null,
+        epsActual: null,
+        revenueEstimate: null,
+        revenueActual: null,
+        surprise: null,
+        timing: "",
+      },
+    ], new Date("2026-05-13T21:00:00.000Z"));
+
+    expect(rows[0]).toMatchObject({ kind: "separator", label: "TODAY (1)" });
+    expect(rows[1]).toMatchObject({ kind: "event", event: expect.objectContaining({ symbol: "AAPL" }) });
   });
 });

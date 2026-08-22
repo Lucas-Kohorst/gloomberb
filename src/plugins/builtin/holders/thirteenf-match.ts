@@ -29,8 +29,7 @@ function bestFundMatch(holderName: string, funds: Array<{ cik: string; name: str
       const normalizedFund = normalizeName(fund.name);
       return normalizedFund.includes(normalizedHolder)
         || normalizedHolder.includes(normalizedFund);
-    })
-    ?? funds[0];
+    });
 }
 
 export async function loadHolder13FMatches(

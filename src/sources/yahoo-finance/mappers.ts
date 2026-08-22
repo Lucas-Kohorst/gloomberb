@@ -81,6 +81,9 @@ export function yahooRawDate(value: unknown): string | undefined {
 }
 
 function inferEarningsTiming(date: Date): EarningsEvent["timing"] {
+  if (date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0) {
+    return "";
+  }
   const hour = date.getUTCHours();
   if (hour >= 20) return "AMC";
   if (hour <= 13) return "BMO";

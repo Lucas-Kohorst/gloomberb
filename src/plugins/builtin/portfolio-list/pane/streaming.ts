@@ -71,7 +71,12 @@ export function usePortfolioPaneStreaming({
   const streamTargets = useMemo(() => (
     sortedTickers
       .map((ticker) => {
-        const target = quoteSubscriptionTargetFromTicker(ticker, ticker.metadata.ticker, "provider", instrumentOptions);
+        const target = quoteSubscriptionTargetFromTicker(
+          ticker,
+          ticker.metadata.ticker,
+          isPortfolioTab && (ticker.metadata.broker_contracts?.length ?? 0) > 0 ? "broker" : "provider",
+          instrumentOptions,
+        );
         if (!target) return null;
         const selected = ticker.metadata.ticker === cursorSymbol;
         const visible = priorityStreamSymbols.has(ticker.metadata.ticker);

@@ -132,6 +132,7 @@ export function UserProfilePopover({
   user,
   width,
   onClose,
+  onDismiss,
   onKeepOpen,
   isOwnProfile = false,
   online = false,
@@ -140,12 +141,14 @@ export function UserProfilePopover({
   user: ChatUserSummary;
   width: number;
   onClose: () => void;
+  onDismiss: () => void;
   onKeepOpen: () => void;
   isOwnProfile?: boolean;
   online?: boolean;
   onSetUpProfile?: () => void;
 }) {
   const [setupHovered, setSetupHovered] = useState(false);
+  const [closeHovered, setCloseHovered] = useState(false);
   const popoverWidth = Math.max(24, Math.min(38, width - 4));
   const publicProfile = user.profilePublic !== false;
   const meta = publicProfile ? [user.title, user.company].filter(Boolean).join(" · ") : "";
@@ -155,11 +158,12 @@ export function UserProfilePopover({
   const analytics = publicProfile ? user.portfolioAnalytics : null;
   const metrics = analytics ? analyticsMetrics(analytics) : [];
   const headerWidth = Math.max(1, popoverWidth - 2);
-  const maxStatsWidth = Math.max(0, headerWidth - 8);
+  const closeWidth = 3;
+  const maxStatsWidth = Math.max(0, headerWidth - 8 - closeWidth - 1);
   const statsWidth = metrics.length > 0 && maxStatsWidth >= 8
     ? Math.min(headerMetricsNaturalWidth(metrics), maxStatsWidth)
     : 0;
-  const usernameWidth = Math.max(1, headerWidth - (statsWidth > 0 ? statsWidth + 1 : 0));
+  const usernameWidth = Math.max(1, headerWidth - closeWidth - (statsWidth > 0 ? statsWidth + 1 : 0) - 1);
   const showSetupAction = shouldOfferChatProfileSetup(user, isOwnProfile) && !!onSetUpProfile;
 
   return (
@@ -190,6 +194,22 @@ export function UserProfilePopover({
           </>
         ) : null}
         <Box flexGrow={1} />
+        <Box
+          id="profile-popover-close"
+          width={closeWidth}
+          height={1}
+          backgroundColor={closeHovered ? hoverBg() : colors.panel}
+          onMouseOver={() => setCloseHovered(true)}
+          onMouseOut={() => setCloseHovered(false)}
+          onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            onDismiss();
+          }}
+          style={{ cursor: "pointer", zIndex: 5 }}
+        >
+          <Text fg={closeHovered ? colors.text : colors.textMuted}> x </Text>
+        </Box>
       </Box>
       {displayName && displayName !== user.username ? (
         <Text fg={colors.text}>{truncateChannelLabel(displayName, popoverWidth - 2)}</Text>

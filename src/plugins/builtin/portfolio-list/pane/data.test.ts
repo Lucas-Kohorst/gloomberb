@@ -54,7 +54,7 @@ describe("portfolio visible quote warmup", () => {
     expect(needsVisibleQuoteWatchdogRefresh(data, now)).toBe(true);
   });
 
-  test("does not snapshot-warmup BTC-USD style rows when the portfolio sorts by market value", () => {
+  test("snapshot-warms BTC-USD and equity rows when the portfolio sorts by market value", () => {
     const sort = { columnId: "mkt_value" as const, direction: "desc" as const };
     const crypto: TickerRecord = {
       metadata: {
@@ -84,7 +84,7 @@ describe("portfolio visible quote warmup", () => {
       },
     };
 
-    expect(warmupQuoteWithSnapshot(crypto, true, sort)).toBe(false);
+    expect(warmupQuoteWithSnapshot(crypto, true, sort)).toBe(true);
     expect(warmupQuoteWithSnapshot(equity, true, sort)).toBe(true);
   });
 });

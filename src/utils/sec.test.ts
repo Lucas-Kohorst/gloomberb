@@ -35,6 +35,12 @@ describe("isUsEquityTicker", () => {
     }))).toBe(true);
   });
 
+  test("accepts US-listed ADRs", () => {
+    expect(isUsEquityTicker(makeTicker({
+      assetCategory: "ADR",
+    }))).toBe(true);
+  });
+
   test("rejects non-equity instruments", () => {
     expect(isUsEquityTicker(makeTicker({
       assetCategory: "OPT",
