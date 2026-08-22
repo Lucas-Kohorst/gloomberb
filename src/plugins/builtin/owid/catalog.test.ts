@@ -49,7 +49,7 @@ describe("OWID catalog snapshot", () => {
       entity: "OWID_WRL",
     });
     expect(spec.series[0]?.axis).toBe("left");
-    expect(spec.series[0]?.style).toBe("step");
+    expect(spec.series[0]?.style).toBe("line");
     expect(spec.series[0]?.label).toBe(owidSeriesLabel("Life expectancy", "OWID_WRL", "World"));
   });
 });

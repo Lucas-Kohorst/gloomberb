@@ -254,7 +254,7 @@ describe("universal series spec building", () => {
     expect(spec.style).toBe("line");
   });
 
-  test("owid defaults to a long window, left axis, step style, and human label", () => {
+  test("owid defaults to a long window, left axis, line style, and human label", () => {
     const spec = buildCustomChartPreset("OWID:life-expectancy:USA");
     expect(spec.viewport.range).toBe("ALL");
     expect(spec.series[0]?.source).toEqual({
@@ -263,7 +263,7 @@ describe("universal series spec building", () => {
       entity: "USA",
     });
     expect(spec.series[0]?.axis).toBe("left");
-    expect(spec.series[0]?.style).toBe("step");
+    expect(spec.series[0]?.style).toBe("line");
     expect(spec.series[0]?.label).toBe("Life expectancy · United States");
   });
 
