@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import { resetKeyedDataCache } from "./data-providers/handle";
 
 /**
@@ -1074,7 +1075,7 @@ describe("hosted Kalshi API proxy", () => {
     }) as typeof globalThis.fetch;
 
     const response = await workerModule.default.fetch?.(
-      makeRequest("GET", "/api/proxy/kalshi/events?limit=1&status=open"),
+      makeRequest("GET", `${KALSHI_PROXY_PATH}/events?limit=1&status=open`, { sessionToken: "tok" }),
       makeEnv(),
     );
 
@@ -1083,14 +1084,33 @@ describe("hosted Kalshi API proxy", () => {
     expect(body.events).toEqual([]);
     expect(fetchedUrl).toBe("https://external-api.kalshi.com/trade-api/v2/events?limit=1&status=open");
     expect(fetchedHeaders?.get("Origin")).toBeNull();
+    expect(fetchedHeaders?.get("Cookie")).toBeNull();
     expect(fetchedHeaders?.get("Accept")).toBe("application/json");
+    expect(fetchedHeaders?.get("User-Agent")).toBe("gloomberb-cloud/1.0");
     expect(response?.headers.get("access-control-allow-origin")).toBe("*");
     expect(response?.headers.get("cache-control")).toBe("public, max-age=60");
   });
 
+  test("does not cache upstream error responses", async () => {
+    globalThis.fetch = (async () => {
+      return new Response(JSON.stringify({ error: "too many requests" }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `${KALSHI_PROXY_PATH}/events?limit=1`),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(429);
+    expect(response?.headers.get("cache-control")).toBe("no-store");
+  });
+
   test("rejects cross-origin Kalshi proxy requests", async () => {
     const response = await workerModule.default.fetch?.(
-      makeRequest("GET", "/api/proxy/kalshi/events?limit=1", { origin: "https://evil.example.com" }),
+      makeRequest("GET", `${KALSHI_PROXY_PATH}/events?limit=1`, { origin: "https://evil.example.com" }),
       makeEnv(),
     );
     expect(response?.status).toBe(403);
@@ -1098,7 +1118,7 @@ describe("hosted Kalshi API proxy", () => {
 
   test("rejects non-GET methods", async () => {
     const response = await workerModule.default.fetch?.(
-      makeRequest("POST", "/api/proxy/kalshi/events"),
+      makeRequest("POST", `${KALSHI_PROXY_PATH}/events`),
       makeEnv(),
     );
     expect(response?.status).toBe(405);

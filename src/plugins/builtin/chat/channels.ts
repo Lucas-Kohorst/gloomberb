@@ -173,31 +173,35 @@ export function buildDmCommandResults(ctx: GloomPluginContext, arg: string): Com
 
   const conversations = chatController.getSnapshot().channels
     .filter((channel) => channel.kind === "direct" || channel.kind === "group");
+  const openChatRow: CommandResultDef = {
+    id: "open-chat",
+    label: t("DM"),
+    detail: t("Start or open direct message"),
+    category: t("Chat"),
+    right: "DM",
+    disabled: false,
+    execute: () => openDefaultChatPane(ctx),
+  };
   if (conversations.length === 0) {
-    return [{
-      id: "empty",
-      label: t("No DMs yet"),
-      detail: t("Type DM @username to start one"),
-      category: t("Chat"),
-      right: "DM",
-      disabled: true,
-      execute: () => {},
-    }];
+    return [openChatRow];
   }
 
-  return conversations.map((channel) => ({
-    id: `channel:${channel.id}`,
-    label: formatChannelLabel(channel, channel.id),
-    detail: conversationDetail(channel),
-    category: t("Conversations"),
-    right: channel.kind === "group" ? t("Group") : t("DM"),
-    keywords: [
-      channel.name,
-      channel.dmUser?.username ?? "",
-      ...(channel.members ?? []).map((member) => member.username ?? member.displayName),
-    ],
-    execute: () => openChatChannelFromCommand(ctx, channel.id),
-  }));
+  return [
+    openChatRow,
+    ...conversations.map((channel) => ({
+      id: `channel:${channel.id}`,
+      label: formatChannelLabel(channel, channel.id),
+      detail: conversationDetail(channel),
+      category: t("Conversations"),
+      right: channel.kind === "group" ? t("Group") : t("DM"),
+      keywords: [
+        channel.name,
+        channel.dmUser?.username ?? "",
+        ...(channel.members ?? []).map((member) => member.username ?? member.displayName),
+      ],
+      execute: () => openChatChannelFromCommand(ctx, channel.id),
+    })),
+  ];
 }
 
 export function channelPrefix(channel: ChatChannel | undefined, active: boolean) {
