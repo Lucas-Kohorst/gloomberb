@@ -137,6 +137,29 @@ describe("apiClient auth cookies", () => {
     ]);
   });
 
+  test("coalesces session checks and remembers the result", async () => {
+    apiClient.setSessionToken("hosted-session");
+    let requests = 0;
+    let finishRequest!: () => void;
+    setCloudApiFetchTransport(async () => {
+      requests += 1;
+      await new Promise<void>((resolve) => { finishRequest = resolve; });
+      return createResponse({ user: null });
+    });
+
+    const checks = [
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+    ];
+    expect(requests).toBe(1);
+    finishRequest();
+
+    await expect(Promise.all(checks)).resolves.toEqual([null, null, null]);
+    await expect(apiClient.ensureVerifiedSession()).resolves.toBeNull();
+    expect(requests).toBe(1);
+  });
+
   test("uses an installed cloud API fetch transport for auth cookie capture", async () => {
     const seenCookies: Array<string | null> = [];
     globalThis.fetch = mockFetch(async () => {
