@@ -215,6 +215,8 @@ describe("prediction markets pane interactions", () => {
     expect(metricsHeader).toContain("OI");
     expect(metricsHeader).toContain("SPREAD");
     expect(metricsHeader).toContain("LAST");
+    expect(frame).toContain("poll 5s");
+    expect(frame).toContain("updated ~0m");
   });
 
   test("focuses the pane when a market row is clicked", async () => {
