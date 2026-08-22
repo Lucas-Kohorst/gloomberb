@@ -56,6 +56,28 @@ function newsCapabilitySourceId(source: NewsCapability): string {
   return source.sourceId ?? source.id;
 }
 
+function articleIds(articles: NewsArticle[]): Set<string> {
+  return new Set(articles.map((article) => article.id));
+}
+
+/** Refresh returns the latest head page; keep already-loaded pages and their cursor. */
+function mergeIncomingNewsPages(
+  incoming: NewsArticle[],
+  existing: NewsArticle[],
+  incomingNextCursor: string | null,
+  existingNextCursor: string | null,
+): { articles: NewsArticle[]; nextCursor: string | null } {
+  if (existing.length === 0) {
+    return { articles: incoming, nextCursor: incomingNextCursor };
+  }
+  const incomingIds = articleIds(incoming);
+  const hasOlderPages = existing.some((article) => !incomingIds.has(article.id));
+  return {
+    articles: dedupeNewsArticles([...incoming, ...existing]),
+    nextCursor: hasOlderPages ? existingNextCursor : incomingNextCursor,
+  };
+}
+
 /**
  * Stamps the producing capability on an article so panes can show where a
  * headline came from (RSS, Substack, Adjacent, cloud) rather than only the
@@ -213,13 +235,18 @@ export class NewsService {
           ...normalized,
           cursor: entry.state.nextCursor ?? undefined,
         }, entry);
+        const articles = filterNewsArticlesForQuery(
+          dedupeNewsArticles([...entry.state.articles, ...result.articles]),
+          normalized,
+        );
+        for (const sourceId of result.sourceIds) {
+          const previous = entry.sourceArticles.get(sourceId) ?? [];
+          entry.sourceArticles.set(sourceId, dedupeNewsArticles([...previous, ...result.articles]));
+        }
         entry.state = {
           ...entry.state,
           loadingMore: false,
-          articles: filterNewsArticlesForQuery(
-            dedupeNewsArticles([...entry.state.articles, ...result.articles]),
-            normalized,
-          ),
+          articles,
           nextCursor: result.nextCursor,
         };
         this.rebuildArticlePool();
@@ -300,12 +327,13 @@ export class NewsService {
         }
         if (entry.loadMoreInFlight) return entry.state;
         const incoming = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query);
-        const existing = entry.state.articles;
-        const incomingIds = new Set(incoming.map((article) => article.id));
-        const hasOlderPages = existing.some((article) => !incomingIds.has(article.id));
-        const articles = existing.length > 0
-          ? filterNewsArticlesForQuery(dedupeNewsArticles([...incoming, ...existing]), query)
-          : incoming;
+        const merged = mergeIncomingNewsPages(
+          incoming,
+          current.articles,
+          result.nextCursor,
+          current.nextCursor,
+        );
+        const articles = filterNewsArticlesForQuery(merged.articles, query);
         const state: NewsQueryState = {
           phase: "ready",
           articles,
@@ -314,7 +342,7 @@ export class NewsService {
             : null,
           updatedAt: this.now(),
           sourceIds: result.sourceIds,
-          nextCursor: hasOlderPages ? entry.state.nextCursor : result.nextCursor,
+          nextCursor: merged.nextCursor,
           loadingMore: entry.state.loadingMore,
         };
         entry.state = state;
@@ -422,6 +450,7 @@ export class NewsService {
             entry,
             newsCapabilitySourceId(source),
             partial.map((article) => attributeArticle(source, article)),
+            { retainExisting: true },
           );
         }
         : undefined,
@@ -446,7 +475,9 @@ export class NewsService {
           nextCursor: page.nextCursor,
         };
         if (!query.cursor) {
-          this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles);
+          this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles, {
+            retainExisting: true,
+          });
         }
         if (page.articles.length > 0) return result;
         firstEmpty ??= result;
@@ -466,6 +497,9 @@ export class NewsService {
     let nextCursor: string | null = null;
     const pagedArticles: NewsArticle[] = [];
     const pagedSourceIds: string[] = [];
+    const existingArticles = entry.state.articles;
+    const existingNextCursor = entry.state.nextCursor;
+    const headIds = new Set<string>();
     await Promise.allSettled(sources.map(async (source) => {
       try {
         const page = await this.readSourcePage(source, query, query.cursor ? null : entry);
@@ -475,7 +509,10 @@ export class NewsService {
           pagedSourceIds.push(newsCapabilitySourceId(source));
           return;
         }
-        this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles);
+        for (const article of page.articles) headIds.add(article.id);
+        this.applySourceArticles(entry, newsCapabilitySourceId(source), page.articles, {
+          retainExisting: true,
+        });
       } catch {
         failedSourceIds.push(newsCapabilitySourceId(source));
       }
@@ -484,7 +521,12 @@ export class NewsService {
       return { articles: pagedArticles, sourceIds: pagedSourceIds, failedSourceIds, nextCursor };
     }
     const snapshot = this.sourceFetchSnapshot(entry);
-    return { ...snapshot, failedSourceIds, nextCursor };
+    const hasOlderPages = existingArticles.some((article) => !headIds.has(article.id));
+    return {
+      ...snapshot,
+      failedSourceIds,
+      nextCursor: hasOlderPages ? existingNextCursor : nextCursor,
+    };
   }
 
   private sourceFetchSnapshot(entry: NewsQueryEntry): SourceFetchResult {
@@ -518,8 +560,17 @@ export class NewsService {
     this.notify();
   }
 
-  private applySourceArticles(entry: NewsQueryEntry, sourceId: string, articles: NewsArticle[]): void {
-    entry.sourceArticles.set(sourceId, articles);
+  private applySourceArticles(
+    entry: NewsQueryEntry,
+    sourceId: string,
+    articles: NewsArticle[],
+    options: { retainExisting?: boolean } = {},
+  ): void {
+    const previous = options.retainExisting ? (entry.sourceArticles.get(sourceId) ?? []) : [];
+    entry.sourceArticles.set(
+      sourceId,
+      options.retainExisting ? dedupeNewsArticles([...articles, ...previous]) : articles,
+    );
     this.rebuildQueryState(entry);
   }
 
