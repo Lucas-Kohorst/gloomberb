@@ -16,6 +16,7 @@ import {
   type PluginRuntimeAccess,
 } from "../runtime";
 import { PredictionMarketChart } from "./chart";
+import { PredictionMarketDataTab } from "./detail/data-tab";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { PredictionMarketsPane } from "./pane";
 import { buildPredictionListRows } from "./rows";
@@ -24,7 +25,7 @@ import {
   attachPredictionMarketsPersistence,
 } from "./services/fetch";
 import { normalizeKalshiMarket } from "./services/kalshi/adapter";
-import type { PredictionDetailTab } from "./types";
+import type { PredictionBrowseTab, PredictionDetailTab } from "./types";
 
 export const TEST_PANE_ID = "prediction-markets:main";
 const originalFetch = globalThis.fetch;
@@ -381,6 +382,61 @@ export function Harness({
   );
 }
 
+export function WatchlistHarness({
+  initialWatchlist = [],
+  initialBrowseTab = "watchlist",
+}: {
+  initialWatchlist?: string[];
+  initialBrowseTab?: PredictionBrowseTab;
+} = {}) {
+  const runtime = useMemo(() => {
+    const rt = createStatefulTestPluginRuntime();
+    rt.setResumeState("prediction-markets", "watchlist:v1", initialWatchlist);
+    return rt;
+  }, [initialWatchlist]);
+  const [state, dispatch] = useReducer(
+    appReducer,
+    (() => {
+      const initial = createInitialState(createConfig());
+      initial.focusedPaneId = TEST_PANE_ID;
+      initial.paneState[TEST_PANE_ID] = {
+        ...(initial.paneState[TEST_PANE_ID] ?? {}),
+        pluginState: {
+          ...(initial.paneState[TEST_PANE_ID]?.pluginState ?? {}),
+          "prediction-markets": {
+            ...(initial.paneState[TEST_PANE_ID]?.pluginState?.["prediction-markets"] ?? {}),
+            browseTab: initialBrowseTab,
+          },
+        },
+      };
+      return initial;
+    })(),
+  );
+  harnessStateRef.current = state;
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <PaneInstanceProvider paneId={TEST_PANE_ID}>
+        <PluginRenderProvider pluginId="prediction-markets" runtime={runtime}>
+          <PaneFooterProvider>
+            {(footer) => (
+              <Box flexDirection="column" width={120} height={34}>
+                <PredictionMarketsPane
+                  paneId={TEST_PANE_ID}
+                  paneType="prediction-markets"
+                  focused={state.focusedPaneId === TEST_PANE_ID}
+                  width={120}
+                  height={33}
+                />
+                <PaneFooterBar footer={footer} focused={state.focusedPaneId === TEST_PANE_ID} width={120} />
+              </Box>
+            )}
+          </PaneFooterProvider>
+        </PluginRenderProvider>
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
 export function ChartHarness({
   history,
 }: {
@@ -530,6 +586,59 @@ export function GroupedDetailHarness({
           selectedRow={selectedRow!}
           selectedSummary={summary}
         />
+        </PluginRenderProvider>
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
+export function CpiDataTabHarness({ width = 64 }: { width?: number } = {}) {
+  const runtime = useMemo(() => createRuntime(), []);
+  const [state, dispatch] = useReducer(
+    appReducer,
+    (() => {
+      const initial = createInitialState(createConfig());
+      initial.focusedPaneId = TEST_PANE_ID;
+      return initial;
+    })(),
+  );
+  const summary = useMemo(() => {
+    const market = normalizeKalshiMarket(
+      {
+        ticker: "KXCPI-26AUG-T0.3",
+        title: "Will CPI increase by more than 0.3% in August 2026?",
+        yes_sub_title: "Above 0.3%",
+        event_ticker: "KXCPI-26AUG",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.48",
+        volume_24h_fp: "15000",
+        volume_fp: "90000",
+        open_interest_fp: "45000",
+        liquidity_dollars: "250000",
+        rules_primary:
+          "Resolves according to the Bureau of Labor Statistics Consumer Price Index for All Urban Consumers (CPI-U), FRED series CPIAUCSL.",
+        rules_secondary: "",
+      } as any,
+      {
+        title: "CPI August 2026",
+        sub_title: "Monthly change",
+        category: "Economics",
+        series_ticker: "KXCPI",
+      },
+    )!;
+    return market;
+  }, []);
+
+  return (
+    <AppContext value={{ state, dispatch }}>
+      <PaneInstanceProvider paneId={TEST_PANE_ID}>
+        <PluginRenderProvider pluginId="prediction-markets" runtime={runtime}>
+          <PredictionMarketDataTab
+            focused
+            summary={summary}
+            width={width}
+          />
         </PluginRenderProvider>
       </PaneInstanceProvider>
     </AppContext>
