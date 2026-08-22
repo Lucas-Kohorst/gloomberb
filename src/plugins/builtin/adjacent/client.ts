@@ -283,7 +283,9 @@ export class AdjacentClient {
   }
 
   async getSimilarMarkets(id: string): Promise<AdjacentSimilarResponse> {
-    const url = buildUrl(`${this.marketsPath()}/${id}/similar`);
+    // The similar-markets endpoint is authenticated-only and expects a
+    // prefixed market id such as "polymarket:0x..." or "kalshi:KXPRES-...".
+    const url = buildUrl(`/markets/${id}/similar`);
     return loadCached(
       "adjacent-similar",
       id,

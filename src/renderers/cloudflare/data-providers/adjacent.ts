@@ -1,7 +1,7 @@
 import type { KeyedDataProvider, ProviderPlan } from "./types";
 
 const ADJACENT_ORIGIN = "https://api.adjacent.markets";
-const PATH_RE = /^[A-Za-z0-9][A-Za-z0-9/_-]*$/;
+const PATH_RE = /^[A-Za-z0-9][A-Za-z0-9/_:.-]*$/;
 
 export const adjacentProvider: KeyedDataProvider = {
   id: "adjacent",

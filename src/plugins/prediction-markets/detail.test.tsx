@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
   ChartHarness,
+  CpiDataTabHarness,
   GroupedDetailHarness,
   cleanupPredictionTest,
   flushFrames,
@@ -89,6 +90,34 @@ describe("prediction markets detail views", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Loading chart...");
     expect(frame).not.toContain("No chart history.");
+  });
+
+  test("shows no matching settlement series when a market has no known source", async () => {
+    testSetup = await testRender(
+      <GroupedDetailHarness detailTab="data" />,
+      { width: 64, height: 24 },
+    );
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("No matching settlement series.");
+  });
+
+  test("shows settlement source and suggested data feeds on the data tab", async () => {
+    testSetup = await testRender(<CpiDataTabHarness width={64} />, {
+      width: 64,
+      height: 24,
+    });
+    await flushFrames(testSetup);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Settles to:");
+    expect(frame).toContain("Suggested data feeds");
+    expect(frame).toContain("FRED");
+    expect(frame).toContain("CPIAUCSL");
+    expect(frame).toContain("SRC");
+    expect(frame).toContain("SERIES");
+    expect(frame).toContain("G");
   });
 
 });

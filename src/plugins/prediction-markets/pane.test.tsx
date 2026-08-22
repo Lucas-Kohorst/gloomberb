@@ -6,6 +6,7 @@ import {
   MemoryPersistence,
   PREDICTION_CACHE_POLICIES,
   TEST_PANE_ID,
+  WatchlistHarness,
   cleanupPredictionTest,
   emitKeypress,
   flushFrames,
@@ -215,6 +216,8 @@ describe("prediction markets pane interactions", () => {
     expect(metricsHeader).toContain("OI");
     expect(metricsHeader).toContain("SPREAD");
     expect(metricsHeader).toContain("LAST");
+    expect(frame).toContain("poll 5s");
+    expect(frame).toContain("updated ~0m");
   });
 
   test("focuses the pane when a market row is clicked", async () => {
@@ -501,6 +504,124 @@ describe("prediction markets pane interactions", () => {
         "prediction-markets"
       ]?.selectedDetailMarketKey,
     ).toBe("kalshi:KXFED-27APR-T4.50");
+  });
+
+  test("expands a grouped event from the watchlist with Enter", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      if (url.includes("gamma-api.polymarket.com/events?")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.includes("/trade-api/v2/events?")) {
+        return new Response(
+          JSON.stringify({
+            events: [
+              {
+                title: "Federal funds target rate after April 2026 FOMC",
+                sub_title: "Upper bound",
+                category: "Economics",
+                event_ticker: "FED-1",
+                series_ticker: "FED",
+                markets: [
+                  {
+                    ticker: "KXFED-27APR-T4.25",
+                    title:
+                      "Will the upper bound of the federal funds target rate be above 4.25%?",
+                    yes_sub_title: "Above 4.25%",
+                    event_ticker: "FED-1",
+                    status: "open",
+                    market_type: "binary",
+                    last_price_dollars: "0.48",
+                    volume_24h_fp: "15000",
+                    volume_fp: "90000",
+                    open_interest_fp: "45000",
+                    liquidity_dollars: "250000",
+                  },
+                  {
+                    ticker: "KXFED-27APR-T4.50",
+                    title:
+                      "Will the upper bound of the federal funds target rate be above 4.50%?",
+                    yes_sub_title: "Above 4.50%",
+                    event_ticker: "FED-1",
+                    status: "open",
+                    market_type: "binary",
+                    last_price_dollars: "0.31",
+                    volume_24h_fp: "12000",
+                    volume_fp: "70000",
+                    open_interest_fp: "35000",
+                    liquidity_dollars: "190000",
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/trade-api/v2/events/FED-1")) {
+        return new Response(
+          JSON.stringify({
+            event: {
+              title: "Federal funds target rate after April 2026 FOMC",
+              sub_title: "Upper bound",
+              category: "Economics",
+              event_ticker: "FED-1",
+              series_ticker: "FED",
+            },
+            markets: [
+              {
+                ticker: "KXFED-27APR-T4.25",
+                title:
+                  "Will the upper bound of the federal funds target rate be above 4.25%?",
+                yes_sub_title: "Above 4.25%",
+                event_ticker: "FED-1",
+                status: "open",
+                market_type: "binary",
+                last_price_dollars: "0.48",
+                volume_24h_fp: "15000",
+              },
+              {
+                ticker: "KXFED-27APR-T4.50",
+                title:
+                  "Will the upper bound of the federal funds target rate be above 4.50%?",
+                yes_sub_title: "Above 4.50%",
+                event_ticker: "FED-1",
+                status: "open",
+                market_type: "binary",
+                last_price_dollars: "0.31",
+                volume_24h_fp: "12000",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    testSetup = await testRender(
+      <WatchlistHarness
+        initialBrowseTab="watchlist"
+        initialWatchlist={["kalshi:KXFED-27APR-T4.25"]}
+      />,
+      { width: 120, height: 34 },
+    );
+    await flushFrames(testSetup);
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Watchlist");
+    expect(frame).toContain("Federal funds target rate after");
+    expect(frame).toContain("▸");
+
+    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("▾");
+    expect(frame).toContain("KXFED-27APR-T4.25");
+    expect(frame).toContain("KXFED-27APR-T4.50");
   });
 
 });
