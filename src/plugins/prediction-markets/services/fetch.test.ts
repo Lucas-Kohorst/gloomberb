@@ -52,17 +52,17 @@ describe("prediction-markets fetch connection attribution", () => {
     expect(reports[0]!.id).toBe("polymarket");
   });
 
-  test("attributes Adjacent URLs to the adjacent connection, not the venue", async () => {
+  test("attributes Adjacent URLs to the adjacent-cloud connection, not the venue", async () => {
     const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
     setConnectionRequestReporter((id, report) => reports.push({ id, report }));
     mockTransport({ "adjacent.markets": { body: '{"data":[]}' } });
 
     // Adjacent catalog calls include platform=kalshi in the query string,
-    // but the host is adjacent.markets so it must attribute to "adjacent".
+    // but the host is adjacent.markets so it must attribute to "adjacent-cloud".
     await fetchJson("https://api.adjacent.markets/api/v1/public/markets?platform=kalshi&limit=1");
 
     expect(reports).toHaveLength(1);
-    expect(reports[0]!.id).toBe("adjacent");
+    expect(reports[0]!.id).toBe("adjacent-cloud");
   });
 
   test("does not report traffic for unknown URLs", async () => {
