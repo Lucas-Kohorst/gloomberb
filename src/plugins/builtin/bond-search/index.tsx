@@ -1,8 +1,13 @@
+import type { PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { BondSearchPane } from "./pane";
 import { BOND_SEARCH_PANE_ID } from "./model";
 import { FRED_CORPORATE_YIELDS_CONNECTION_ID } from "./fred-yields";
+
+function queryFromOptions(options?: PaneTemplateCreateOptions): string {
+  return (options?.arg ?? options?.values?.query ?? "").trim();
+}
 
 export const BOND_SEARCH_PLUGIN_ID = "bond-search";
 
@@ -42,8 +47,19 @@ export const bondSearchModule: PluginModule = {
         "IG",
         "HY",
       ],
-      shortcut: { prefix: "BOND" },
-      createInstance: () => ({ placement: "floating" }),
+      shortcut: {
+        prefix: "BOND",
+        argPlaceholder: "issuer, CUSIP, or series",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        const query = queryFromOptions(options);
+        return {
+          placement: "floating" as const,
+          settings: query ? { query, activeTab: "search" } : undefined,
+        };
+      },
     },
   ],
 

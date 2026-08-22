@@ -1,5 +1,6 @@
 import type { DataTableColumn } from "../../../components";
 import type { CorporateYieldEntry, YieldColumn } from "./types";
+import type { BondSearchHit } from "./search";
 
 export const BOND_SEARCH_PANE_ID = "bond-search";
 
@@ -8,6 +9,10 @@ export type SortDirection = "asc" | "desc";
 export type YieldColumnId = YieldColumn["id"];
 
 export type YieldColumnDef = DataTableColumn & { id: YieldColumnId };
+
+export type SearchColumnId = "label" | "kind" | "detail";
+
+export type SearchColumnDef = DataTableColumn & { id: SearchColumnId };
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, "en-US", { sensitivity: "base" });
@@ -32,15 +37,23 @@ function compareYield(
   }
 }
 
+export function nextColumnSort<T extends string>(
+  current: { columnId: T; direction: SortDirection },
+  columnId: T,
+  defaultDirection: SortDirection,
+): { columnId: T; direction: SortDirection } {
+  if (current.columnId !== columnId) {
+    return { columnId, direction: defaultDirection };
+  }
+  return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
 export function nextSort(
   current: { columnId: YieldColumnId; direction: SortDirection },
   columnId: YieldColumnId,
   defaultDirection: SortDirection,
 ): { columnId: YieldColumnId; direction: SortDirection } {
-  if (current.columnId !== columnId) {
-    return { columnId, direction: defaultDirection };
-  }
-  return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+  return nextColumnSort(current, columnId, defaultDirection);
 }
 
 export function sortedYields(
@@ -88,5 +101,36 @@ export function formatYieldDate(value: Date | null): string {
     month: "short",
     day: "numeric",
     timeZone: "UTC",
+  });
+}
+
+export function buildSearchColumns(width: number): SearchColumnDef[] {
+  const kindWidth = 10;
+  const detailWidth = Math.min(28, Math.max(16, Math.floor(width * 0.35)));
+  const labelWidth = Math.max(16, width - kindWidth - detailWidth - 6);
+  return [
+    { id: "label", label: "NAME", width: labelWidth, align: "left" },
+    { id: "kind", label: "KIND", width: kindWidth, align: "left" },
+    { id: "detail", label: "ID", width: detailWidth, align: "left" },
+  ];
+}
+
+export function searchKindLabel(hit: BondSearchHit): string {
+  return hit.kind === "series" ? hit.right : hit.right || "BOND";
+}
+
+export function sortedSearchHits(
+  hits: BondSearchHit[],
+  sort: { columnId: SearchColumnId; direction: SortDirection },
+): BondSearchHit[] {
+  return [...hits].sort((left, right) => {
+    let comparison = 0;
+    if (sort.columnId === "label") comparison = left.label.localeCompare(right.label, "en-US", { sensitivity: "base" });
+    else if (sort.columnId === "kind") {
+      comparison = searchKindLabel(left).localeCompare(searchKindLabel(right), "en-US", { sensitivity: "base" });
+    } else {
+      comparison = left.detail.localeCompare(right.detail, "en-US", { sensitivity: "base" });
+    }
+    return sort.direction === "asc" ? comparison : -comparison;
   });
 }
