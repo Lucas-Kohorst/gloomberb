@@ -462,6 +462,33 @@ describe("prediction markets plugin registration and services", () => {
     ).toBe(true);
   });
 
+  test("routes Kalshi catalog through the same-origin worker proxy in hosted mode", async () => {
+    (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+
+    const fetchUrls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.includes("/events")) {
+        return new Response(JSON.stringify({ events: [] }), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      await loadKalshiCatalog("", "all", "top", { force: true });
+      expect(
+        fetchUrls.some((url) => url.includes("/api/proxy/kalshi/")),
+      ).toBe(true);
+      expect(
+        fetchUrls.some((url) => url.includes("external-api.kalshi.com")),
+      ).toBe(false);
+    } finally {
+      delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+    }
+  });
+
   test("falls back to thin Polymarket search results when event hydration fails", async () => {
     let eventFetchCount = 0;
 

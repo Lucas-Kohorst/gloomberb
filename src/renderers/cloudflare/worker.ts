@@ -36,6 +36,7 @@ export default {
     if (url.pathname === "/api/config") return handleConfigSnapshotRequest(request, env);
     if (url.pathname === "/api/byok/keys") return await handleByokKeysRequest(request, env);
     if (url.pathname === "/api/byok/proxy") return handleByokProxyRequest(request, env, url);
+    if (url.pathname.startsWith(KALSHI_PROXY_PATH)) return handleKalshiProxyRequest(request, env, url);
     if (
       url.pathname === KEYED_DATA_PATH
       || url.pathname.startsWith(`${KEYED_DATA_PATH}/`)
@@ -63,6 +64,10 @@ export default {
 const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_SHARE_BODY_BYTES = 512_000;
 const SHARE_ID_MAX_ATTEMPTS = 5;
+
+const KALSHI_PROXY_PATH = "/api/proxy/kalshi";
+const KALSHI_API_ORIGIN = "https://external-api.kalshi.com/trade-api/v2";
+const KALSHI_PROXY_TIMEOUT_MS = 12_000;
 
 async function allocateShareId(env: Env): Promise<string | null> {
   for (let attempt = 0; attempt < SHARE_ID_MAX_ATTEMPTS; attempt += 1) {
@@ -649,5 +654,62 @@ async function handleByokProxyRequest(request: Request, env: Env, url: URL): Pro
       errorType = "ssl";
     }
     return Response.json({ ok: false, error: message, errorType });
+  }
+}
+
+/**
+ * Server-side proxy for Kalshi read-only API requests.
+ *
+ * Kalshi's API rejects CORS preflight/origin headers from hosted origins,
+ * so the browser cannot fetch it directly. This endpoint forwards GET/HEAD
+ * requests to external-api.kalshi.com, strips the Origin header that causes
+ * the 403, and adds CORS headers so the hosted client can read the response.
+ *
+ * Gated to trusted hosted origins to avoid turning the worker into an open
+ * proxy; Kalshi API calls are read-only and carry no user secrets.
+ */
+async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return Response.json({ error: "Method not allowed." }, { status: 405 });
+  }
+  if (!hasTrustedHostedOrigin(request, url)) {
+    return invalidOriginResponse(request);
+  }
+
+  const upstreamPath = url.pathname.slice(KALSHI_PROXY_PATH.length).replace(/^\//, "");
+  let target: URL;
+  try {
+    target = new URL(`${KALSHI_API_ORIGIN}/${upstreamPath}`);
+  } catch {
+    return Response.json({ error: "Invalid proxy path." }, { status: 400 });
+  }
+  if (target.protocol !== "https:" || isPrivateHostname(target.hostname)) {
+    return Response.json({ error: "Blocked target." }, { status: 403 });
+  }
+  target.search = url.search;
+
+  const upstreamHeaders = new Headers(request.headers);
+  upstreamHeaders.delete("Origin");
+  upstreamHeaders.delete("Referer");
+  upstreamHeaders.set("Accept", "application/json");
+
+  try {
+    const upstream = await fetch(target.toString(), {
+      method: request.method,
+      headers: upstreamHeaders,
+      signal: AbortSignal.timeout(KALSHI_PROXY_TIMEOUT_MS),
+    });
+    const responseHeaders = new Headers({
+      "content-type": upstream.headers.get("content-type") ?? "application/json",
+      "access-control-allow-origin": "*",
+      "cache-control": "public, max-age=60",
+    });
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return Response.json({ error: message }, { status: 502 });
   }
 }
