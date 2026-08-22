@@ -60,6 +60,8 @@ export async function createShare(
     body: JSON.stringify(request),
   });
   if (!response.ok) {
+    if (response.status === 401) throw new Error("Sign in to Gloom Cloud to share.");
+    if (response.status === 403) throw new Error("Verify your Gloom Cloud email to share.");
     const text = await response.text().catch(() => "");
     throw new Error(text || `Failed to create share (${response.status})`);
   }
