@@ -1,202 +1,189 @@
 import type { DataTableColumn } from "../../../components";
+import type { SortDirection } from "../../../utils/sort-values";
+import { AUCTION_HISTORY_DAYS } from "./client";
 import type { TreasuryAuction } from "./types";
 
-export type SortDirection = "asc" | "desc";
-export type AuctionColumnId =
-  | "date"
-  | "type"
-  | "term"
-  | "rate"
-  | "btc"
-  | "indirect";
+/** Windows the Fiscal Data query supports without paging past MAX_PAGES. */
+export const AUCTION_HISTORY_WINDOWS = [30, 90, 120, 365] as const;
+
+/** Pane settings arrive as unvalidated strings, so anything unknown falls back. */
+export function auctionHistoryDays(settings: Record<string, unknown> | undefined): number {
+  const value = Number(settings?.historyDays);
+  return (AUCTION_HISTORY_WINDOWS as readonly number[]).includes(value) ? value : AUCTION_HISTORY_DAYS;
+}
+
+export type AuctionColumnId = "date" | "type" | "term" | "rate" | "btc" | "indirect" | "size";
 
 export interface AuctionColumn extends DataTableColumn {
   id: AuctionColumnId;
 }
 
-export type AuctionSortPreference = {
+export interface AuctionSortPreference {
   columnId: AuctionColumnId;
   direction: SortDirection;
-};
+}
 
 export const DEFAULT_AUCTION_SORT: AuctionSortPreference = {
   columnId: "date",
   direction: "desc",
 };
 
+export const AUCTION_SORT_COLUMN_IDS: readonly AuctionColumnId[] = [
+  "date",
+  "type",
+  "term",
+  "rate",
+  "btc",
+  "indirect",
+  "size",
+];
+
 export type AuctionFilter = "all" | "bill" | "note" | "bond";
 
-export const AUCTION_FILTERS: ReadonlyArray<{
-  value: AuctionFilter;
-  label: string;
-}> = [
+export const AUCTION_FILTERS: ReadonlyArray<{ value: AuctionFilter; label: string }> = [
   { value: "all", label: "All" },
   { value: "bill", label: "Bills" },
   { value: "note", label: "Notes" },
   { value: "bond", label: "Bonds" },
 ];
 
-const BILL_TYPES = new Set(["Bill", "CMB"]);
-const NOTE_TYPES = new Set(["Note", "FRN"]);
-const BOND_TYPES = new Set(["Bond", "TIPS"]);
+// CMBs are cash management bills; FRNs are issued off the 2-year note; TIPS
+// are auctioned as notes and bonds but group with the long end here.
+const FILTER_TYPES: Record<Exclude<AuctionFilter, "all">, ReadonlySet<string>> = {
+  bill: new Set(["Bill", "CMB"]),
+  note: new Set(["Note", "FRN"]),
+  bond: new Set(["Bond", "TIPS"]),
+};
 
-export function matchesFilter(
-  auction: TreasuryAuction,
-  filter: AuctionFilter,
-): boolean {
-  switch (filter) {
-    case "all":
-      return true;
-    case "bill":
-      return BILL_TYPES.has(auction.secType);
-    case "note":
-      return NOTE_TYPES.has(auction.secType);
-    case "bond":
-      return BOND_TYPES.has(auction.secType);
-  }
+export function matchesFilter(auction: TreasuryAuction, filter: AuctionFilter): boolean {
+  return filter === "all" || FILTER_TYPES[filter].has(auction.secType);
 }
 
 export function nextFilter(current: AuctionFilter): AuctionFilter {
-  const idx = AUCTION_FILTERS.findIndex((f) => f.value === current);
-  const next = (idx + 1) % AUCTION_FILTERS.length;
-  return AUCTION_FILTERS[next]!.value;
+  const index = AUCTION_FILTERS.findIndex((entry) => entry.value === current);
+  return AUCTION_FILTERS[(index + 1) % AUCTION_FILTERS.length]!.value;
 }
 
-export function filterAuctions(
-  auctions: TreasuryAuction[],
-  filter: AuctionFilter,
-): TreasuryAuction[] {
-  if (filter === "all") return auctions;
-  return auctions.filter((a) => matchesFilter(a, filter));
-}
-
-export function filterAuctionsByQuery(
-  auctions: TreasuryAuction[],
-  query: string,
-): TreasuryAuction[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return auctions;
-  return auctions.filter(
-    (a) =>
-      a.secType.toLowerCase().includes(q) ||
-      a.securityTerm.toLowerCase().includes(q) ||
-      a.auctionDate.includes(q),
+function matchesAuctionQuery(auction: TreasuryAuction, query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    auction.secType.toLowerCase().includes(normalized)
+    || auction.securityTerm.toLowerCase().includes(normalized)
+    || auction.auctionDate.includes(normalized)
+    || (auction.cusip?.toLowerCase().includes(normalized) ?? false)
   );
 }
 
-function dateValue(value: string): number {
-  const ts = Date.parse(`${value}T00:00:00Z`);
-  return Number.isFinite(ts) ? ts : 0;
+function auctionDateValue(value: string): number {
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-/** Convert a term label like "4-Week" / "10-Year" / "39-Day" to a day count. */
-function termLengthDays(term: string): number {
-  const m = term.match(/^(\d+)\s*-(Day|Week|Month|Year)/i);
-  if (!m) return Number.MAX_SAFE_INTEGER;
-  const n = Number(m[1]);
-  switch (m[2]!.toLowerCase()) {
-    case "day":
-      return n;
-    case "week":
-      return n * 7;
-    case "month":
-      return n * 30;
-    case "year":
-      return n * 365;
-    default:
-      return Number.MAX_SAFE_INTEGER;
+/**
+ * Term length in days so "4-Week" sorts before "10-Year" instead of
+ * alphabetically. "29-Year 6-Month" only needs its leading unit to order
+ * correctly against the rest of the curve.
+ */
+export function termLengthDays(term: string): number {
+  const match = term.match(/^(\d+)\s*-\s*(Day|Week|Month|Year)/i);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  const count = Number(match[1]);
+  switch (match[2]!.toLowerCase()) {
+    case "day": return count;
+    case "week": return count * 7;
+    case "month": return count * 30;
+    default: return count * 365;
   }
 }
 
+/**
+ * Zero indirect bidding is a real, and notable, auction outcome, so only a
+ * missing leg or an unusable total is unknown.
+ */
 export function indirectPct(auction: TreasuryAuction): number | null {
-  if (
-    auction.indirectAccepted == null ||
-    auction.totalAccepted == null ||
-    auction.totalAccepted === 0
-  ) {
-    return null;
-  }
+  if (auction.indirectAccepted == null || !auction.totalAccepted) return null;
   return (auction.indirectAccepted / auction.totalAccepted) * 100;
 }
 
 /**
- * The headline rate for an auction: Bills and FRNs report a high investment
- * rate, while Notes and Bonds report a high yield. Prefer the investment rate
- * when present and fall back to yield.
+ * The headline rate: Bills and FRNs report a high investment rate, Notes,
+ * Bonds, and TIPS report a high yield.
  */
 export function rateValue(auction: TreasuryAuction): number | null {
   return auction.highInvestmentRate ?? auction.highYield;
 }
 
-function compareAuctions(
-  a: TreasuryAuction,
-  b: TreasuryAuction,
-  columnId: AuctionColumnId,
-): number {
+/** Announced auctions appear in the feed days before any results are published. */
+export function isPendingAuction(auction: TreasuryAuction): boolean {
+  return rateValue(auction) == null && auction.bidToCoverRatio == null;
+}
+
+export function auctionSize(auction: TreasuryAuction): number | null {
+  return auction.totalAccepted ?? auction.offeringAmount;
+}
+
+function sortValue(auction: TreasuryAuction, columnId: AuctionColumnId): number | string {
   switch (columnId) {
-    case "date":
-      return dateValue(a.auctionDate) - dateValue(b.auctionDate);
-    case "type":
-      return a.secType.localeCompare(b.secType, "en-US", {
-        sensitivity: "base",
-      });
-    case "term": {
-      const la = termLengthDays(a.securityTerm);
-      const lb = termLengthDays(b.securityTerm);
-      if (la !== lb) return la - lb;
-      return a.securityTerm.localeCompare(b.securityTerm, "en-US");
-    }
-    case "rate":
-      return (
-        (rateValue(a) ?? -Infinity) -
-        (rateValue(b) ?? -Infinity)
-      );
-    case "btc":
-      return (
-        (a.bidToCoverRatio ?? -Infinity) -
-        (b.bidToCoverRatio ?? -Infinity)
-      );
-    case "indirect":
-      return (
-        (indirectPct(a) ?? -Infinity) -
-        (indirectPct(b) ?? -Infinity)
-      );
+    case "date": return auctionDateValue(auction.auctionDate);
+    case "type": return auction.secType;
+    case "term": return termLengthDays(auction.securityTerm);
+    case "rate": return rateValue(auction) ?? Number.NEGATIVE_INFINITY;
+    case "btc": return auction.bidToCoverRatio ?? Number.NEGATIVE_INFINITY;
+    case "indirect": return indirectPct(auction) ?? Number.NEGATIVE_INFINITY;
+    case "size": return auctionSize(auction) ?? Number.NEGATIVE_INFINITY;
   }
 }
 
-export function sortedAuctions(
-  auctions: TreasuryAuction[],
-  sort: AuctionSortPreference,
+export function visibleAuctions(
+  auctions: readonly TreasuryAuction[],
+  options: { filter: AuctionFilter; query: string; sort: AuctionSortPreference },
 ): TreasuryAuction[] {
-  const direction = sort.direction === "asc" ? 1 : -1;
-  return [...auctions].sort((a, b) => {
-    const cmp = compareAuctions(a, b, sort.columnId) * direction;
-    if (cmp !== 0) return cmp;
-    return dateValue(b.auctionDate) - dateValue(a.auctionDate);
-  });
+  const direction = options.sort.direction === "asc" ? 1 : -1;
+  return auctions
+    .filter((auction) => matchesFilter(auction, options.filter) && matchesAuctionQuery(auction, options.query))
+    .sort((left, right) => {
+      const leftValue = sortValue(left, options.sort.columnId);
+      const rightValue = sortValue(right, options.sort.columnId);
+      const comparison = typeof leftValue === "string" && typeof rightValue === "string"
+        ? leftValue.localeCompare(rightValue, "en-US", { sensitivity: "base" })
+        : Number(leftValue) - Number(rightValue);
+      if (comparison !== 0) return comparison * direction;
+      // Ties keep the newest auction on top regardless of sort direction.
+      return auctionDateValue(right.auctionDate) - auctionDateValue(left.auctionDate);
+    });
+}
+
+export function nextAuctionSort(
+  current: AuctionSortPreference,
+  columnId: AuctionColumnId,
+): AuctionSortPreference {
+  if (current.columnId === columnId) {
+    const direction: SortDirection = current.direction === "asc" ? "desc" : "asc";
+    return { columnId, direction };
+  }
+  // Text columns read best ascending; every metric reads best highest-first.
+  return { columnId, direction: columnId === "type" || columnId === "term" ? "asc" : "desc" };
 }
 
 export function buildAuctionColumns(width: number): AuctionColumn[] {
   const dateWidth = 8;
   const typeWidth = 6;
   const rateWidth = 8;
-  const btcWidth = 7;
-  const indirectWidth = 10;
+  const btcWidth = 6;
+  const indirectWidth = 9;
+  const sizeWidth = 8;
   const termWidth = Math.max(
     10,
-    width - dateWidth - typeWidth - rateWidth - btcWidth - indirectWidth - 6,
+    width - dateWidth - typeWidth - rateWidth - btcWidth - indirectWidth - sizeWidth - 8,
   );
   return [
     { id: "date", label: "DATE", width: dateWidth, align: "left" },
     { id: "type", label: "TYPE", width: typeWidth, align: "left" },
     { id: "term", label: "TERM", width: termWidth, align: "left" },
     { id: "rate", label: "RATE", width: rateWidth, align: "right" },
-    { id: "btc", label: "BTC", width: btcWidth, align: "right" },
-    {
-      id: "indirect",
-      label: "INDIRECT%",
-      width: indirectWidth,
-      align: "right",
-    },
+    { id: "btc", label: "B/C", width: btcWidth, align: "right" },
+    { id: "indirect", label: "INDIRECT", width: indirectWidth, align: "right" },
+    { id: "size", label: "SIZE", width: sizeWidth, align: "right" },
   ];
 }
