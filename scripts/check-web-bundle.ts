@@ -13,11 +13,19 @@
  * condition, so the failure lands in CI instead of production.
  */
 import { dirname, join } from "path";
+import { pathToFileURL } from "url";
 import { readdir } from "fs/promises";
 import { Window } from "happy-dom";
 import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
 const bundlePath = process.argv[2] ?? join("dist", "web-client", "web-main.js");
+const INITIAL_GRAPH_FORBIDDEN = [
+  "node_modules/youtubei.js/",
+  "node_modules/hls.js/",
+  "node_modules/lightweight-charts/",
+  "node_modules/jimp/",
+  "node_modules/@opentui/",
+] as const;
 
 const bundle = Bun.file(bundlePath);
 if (!await bundle.exists()) {
@@ -55,9 +63,7 @@ for (const [name, value] of Object.entries(globals)) {
 }
 
 try {
-  // Shadowing `process` and `global` as parameters makes any bare reference
-  // inside the bundle resolve to undefined, exactly as it does in a browser.
-  new Function("process", "global", source)(undefined, undefined);
+  await evaluateHostedEntry(bundlePath, source);
 } catch (error) {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   console.error(`Hosted bundle failed to evaluate in a browser-like environment.\n${detail}`);
@@ -90,21 +96,31 @@ for (const document of ["index.html", "share.html"]) {
   }
 }
 
-// A share link that costs a terminal-sized download is the thing this page
-// exists to avoid, so the size gap is worth failing on rather than trusting.
-const shareFiles = (await readdir(outdir)).filter((name) => /^share-main(\.[A-Za-z0-9_-]+)?\.js$/.test(name));
+const names = await readdir(outdir);
+const shareFiles = names.filter((name) => /^share-main(\.[A-Za-z0-9_-]+)?\.js$/.test(name));
 if (shareFiles.length === 0) {
   console.error(`No share bundle at ${join(outdir, "share-main*.js")}. Run \`bun run cloud:build\` first.`);
   process.exit(1);
 }
 const shareBundle = Bun.file(join(outdir, shareFiles[0]!));
 const shareBytes = shareBundle.size;
-const terminalBytes = bundle.size;
-if (shareBytes > terminalBytes / 4) {
+const terminalGraphBytes = await reachableBundleBytes(bundlePath);
+if (shareBytes > terminalGraphBytes / 4) {
   console.error(
-    `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB against a ${(terminalBytes / 1024).toFixed(0)} KB terminal bundle.`
+    `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB against a ${(terminalGraphBytes / 1024).toFixed(0)} KB terminal graph.`
     + "\n\nThe share page has pulled in part of the terminal graph. Check for an import that"
     + "\nreaches plugins, the pane registry, or the renderer host.",
+  );
+  process.exit(1);
+}
+
+const entrySources = await readSourceMapSources(bundlePath);
+const leaked = entrySources.filter((entry) => INITIAL_GRAPH_FORBIDDEN.some((marker) => entry.includes(marker)));
+if (leaked.length > 0) {
+  const sample = leaked.slice(0, 8).join("\n  ");
+  console.error(
+    `Hosted entry ${bundlePath} still contains deferred media/chart modules:\n  ${sample}`
+    + "\n\nThose packages must load only when a TV/HLS/chart pane opens (dynamic import + bundle splitting).",
   );
   process.exit(1);
 }
@@ -113,6 +129,69 @@ console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath})
 console.log("Hosted pages reference only root-absolute asset URLs (index.html, share.html).");
 console.log(
   `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB`
-  + ` (${((shareBytes / terminalBytes) * 100).toFixed(1)}% of the terminal bundle).`,
+  + ` (${((shareBytes / terminalGraphBytes) * 100).toFixed(1)}% of the terminal graph).`,
+);
+console.log(
+  `Terminal entry is ${(Bun.file(bundlePath).size / 1024).toFixed(0)} KB;`
+  + ` reachable graph is ${(terminalGraphBytes / 1024).toFixed(0)} KB.`,
 );
 process.exit(0);
+
+function hasStaticEsmImports(source: string): boolean {
+  return /(?:^|[;\n])\s*import\s*(?!\s*\()(?:[\w*{]|["'])/.test(source);
+}
+
+async function evaluateHostedEntry(path: string, source: string): Promise<void> {
+  if (!hasStaticEsmImports(source)) {
+    // Shadowing `process` and `global` as parameters makes any bare reference
+    // inside the bundle resolve to undefined, exactly as it does in a browser.
+    new Function("process", "global", source)(undefined, undefined);
+    return;
+  }
+
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "process");
+  const previousGlobal = Object.getOwnPropertyDescriptor(globalThis, "global");
+  Object.defineProperty(globalThis, "process", { configurable: true, value: undefined, writable: true });
+  Object.defineProperty(globalThis, "global", { configurable: true, value: undefined, writable: true });
+  try {
+    await import(`${pathToFileURL(path).href}?bundle-check=${Date.now()}`);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "process", previous);
+    else delete (globalThis as { process?: unknown }).process;
+    if (previousGlobal) Object.defineProperty(globalThis, "global", previousGlobal);
+    else delete (globalThis as { global?: unknown }).global;
+  }
+}
+
+function referencedRelativeModules(source: string): string[] {
+  const matches = source.matchAll(/["'](\.\/(?:chunk|web-main|share-main)[^"']+\.js)["']/g);
+  return [...matches].flatMap((match) => match[1] ? [match[1]] : []);
+}
+
+async function reachableBundleBytes(entryPath: string): Promise<number> {
+  const directory = dirname(entryPath);
+  const pending = [entryPath];
+  const seen = new Set<string>();
+  let total = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+    const file = Bun.file(current);
+    if (!await file.exists()) continue;
+    total += file.size;
+    const nextSource = await file.text();
+    for (const specifier of referencedRelativeModules(nextSource)) {
+      pending.push(join(directory, specifier.slice(2)));
+    }
+  }
+  return total;
+}
+
+async function readSourceMapSources(jsPath: string): Promise<string[]> {
+  const mapFile = Bun.file(`${jsPath}.map`);
+  if (!await mapFile.exists()) return [];
+  const map = JSON.parse(await mapFile.text()) as { sources?: unknown };
+  if (!Array.isArray(map.sources)) return [];
+  return map.sources.filter((entry): entry is string => typeof entry === "string");
+}
