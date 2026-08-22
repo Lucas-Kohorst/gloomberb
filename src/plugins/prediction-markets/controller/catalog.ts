@@ -46,7 +46,6 @@ export function usePredictionCatalogData({
     Record<string, string | null>
   >({});
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
   const [polymarketNextOffset, setPolymarketNextOffset] = useState<number | null>(null);
   const [kalshiNextCursor, setKalshiNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);

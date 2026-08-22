@@ -182,7 +182,7 @@ export async function loadMorePolymarketCatalog(
   }
   const tagSlugs = categoryId === "all" ? [undefined] : getPolymarketCategoryTagSlugs(categoryId);
   const pages = await Promise.all(
-    tagSlugs.map((tagSlug) => loadPolymarketCatalogPages([offset], tagSlug, POLYMARKET_PAGE_SIZE, signal).catch(() => [])),
+    tagSlugs.map((tagSlug) => loadPolymarketCatalogPages([offset], tagSlug).catch(() => [])),
   );
   const raw = pages.flat();
   return {

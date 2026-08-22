@@ -233,12 +233,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
       nextTop = targetIndex - viewportRows + 1;
     }
     if (nextTop !== currentTop) {
-<<<<<<< HEAD
       element.scrollTop = nextTop * rowHeightPx;
-=======
-      element.scrollTop = nextTop * WEB_CELL_HEIGHT;
       scheduleBodyScrollActivity();
->>>>>>> d7a01d25 (fix: keep table scroll and news pages at the end)
     }
     lastAppliedScrollRequestRef.current = scrollRequestKey;
     scheduleVisibleRangeMeasure();

@@ -45,7 +45,6 @@ function useIndustryArticles(sector: SectorNewsSelection): {
   return {
     articles: sector === "all" ? allArticles : sectorArticles,
     allArticles,
-    allArticles,
     phase,
     newsState: sector === "all" ? allState : sectorState,
   };

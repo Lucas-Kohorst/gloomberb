@@ -46,13 +46,13 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
           props.onHeaderClick(columnId);
         }
       },
-      scrollTo: (input) => {
+      scrollTo: (input: unknown) => {
         const box = props.scrollRef.current;
         if (!box) return;
         box.scrollTo(Math.max(0, Math.round(remoteNumberValue(input, ["top", "index"]))));
         props.onBodyScrollActivity();
       },
-      scrollBy: (input) => {
+      scrollBy: (input: unknown) => {
         const box = props.scrollRef.current;
         if (!box) return;
         const direction = input && typeof input === "object"

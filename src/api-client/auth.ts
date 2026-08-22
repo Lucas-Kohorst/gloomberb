@@ -56,8 +56,6 @@ export class CloudAuthApi {
     });
   }
 
-  }
-
   async signUp(email: string, username: string, name: string, password: string): Promise<AuthUser> {
     const result = await this.options.request<{ user: AuthUser }>("/auth/sign-up/email", {
       method: "POST",

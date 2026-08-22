@@ -163,7 +163,6 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   return (
     <FeedDataTableStackView
       width={width}
-      width={width}
       height={height}
       focused={focused}
       items={items}
