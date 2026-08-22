@@ -107,12 +107,21 @@ export function PredictionMarketDataTab({
     <Box flexGrow={1} flexDirection="column">
       {match.sourceLabel && (
         <Box paddingX={1} paddingBottom={1}>
-          <Text fg={colors.textDim} width={sourceWidth} wrapMode="ellipsis">
-            {match.sourceLabel}
-            {selected ? ` · ${selected.reason}` : ""}
+          <Text fg={colors.textBright} width={sourceWidth} wrapMode="ellipsis">
+            Settles to: {match.sourceLabel}
           </Text>
+          {selected ? (
+            <Text fg={colors.textDim} width={sourceWidth} wrapMode="ellipsis">
+              {selected.reason}
+            </Text>
+          ) : null}
         </Box>
       )}
+      <Box paddingX={1} paddingBottom={1}>
+        <Text fg={colors.textDim} width={sourceWidth} wrapMode="ellipsis">
+          Suggested data feeds
+        </Text>
+      </Box>
       <DataTableView<SettlementSeriesMatch, DataColumn>
         focused={focused}
         keyboardNavigation={focused}
