@@ -95,7 +95,7 @@ function createChatModule(
       label: "New Chat Pane",
       description: "Open the floating chat window",
       keywords: ["new", "chat", "pane", "message"],
-      shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text" },
+      shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
       singleton: true,
       createInstance: async (context, options) => {
         const channelId = options?.arg

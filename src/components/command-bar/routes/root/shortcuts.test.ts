@@ -54,6 +54,13 @@ const paneTemplates: PaneTemplateDef[] = [
     description: "Browse recent SEC filings",
     shortcut: { prefix: "SEC", argPlaceholder: "ticker or company", argKind: "text", argOptional: true },
   },
+  {
+    id: "new-chat-pane",
+    paneId: "chat",
+    label: "Chat",
+    description: "Open the floating chat window",
+    shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
+  },
 ];
 
 const pluginCommands: CommandDef[] = [{
@@ -152,6 +159,28 @@ describe("ticker data root shortcuts", () => {
     if (intent.source === "pane-template") {
       expect(intent.template.id).toBe("sec-pane");
       expect(intent.argText).toBe("");
+    }
+  });
+
+  test("CHAT without a channel opens the pane instead of staying partial", () => {
+    const intent = parse("CHAT");
+    expect(intent.kind).toBe("complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.source).toBe("pane-template");
+    if (intent.source === "pane-template") {
+      expect(intent.template.id).toBe("new-chat-pane");
+      expect(intent.argText).toBe("");
+    }
+  });
+
+  test("CHAT with a channel keeps the retarget arg", () => {
+    const intent = parse("CHAT #general");
+    expect(intent.kind).toBe("complete");
+    if (intent.kind === "none") throw new Error("Expected shortcut intent");
+    expect(intent.source).toBe("pane-template");
+    if (intent.source === "pane-template") {
+      expect(intent.template.id).toBe("new-chat-pane");
+      expect(intent.argText).toBe("#general");
     }
   });
 
