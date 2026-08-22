@@ -40,7 +40,29 @@ import type {
 
 export { normalizeKalshiMarket } from "./normalize";
 
-const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
+function isHostedWebClient(): boolean {
+  try {
+    return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+  } catch {
+    return false;
+  }
+}
+
+function kalshiApiBase(): string {
+  return isHostedWebClient()
+    ? "/api/proxy/kalshi"
+    : "https://external-api.kalshi.com/trade-api/v2";
+}
+
+function kalshiUrl(path: string): string {
+  const base = kalshiApiBase();
+  if (base.startsWith("http")) return `${base}${path}`;
+  const origin =
+    typeof location !== "undefined" && location.origin
+      ? location.origin
+      : "https://terminal.kohor.st";
+  return new URL(`${base}${path}`, origin).toString();
+}
 const KALSHI_EVENT_PAGE_LIMIT = 200;
 const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
@@ -66,7 +88,7 @@ export function kalshiCatalogCursor(searchQuery: string, categoryId: PredictionC
 }
 
 function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
-  const url = new URL(`${KALSHI_API_BASE}/events`);
+  const url = new URL(kalshiUrl("/events"));
   url.searchParams.set("limit", String(KALSHI_EVENT_PAGE_LIMIT));
   url.searchParams.set("status", "open");
   url.searchParams.set("with_nested_markets", "true");
@@ -76,7 +98,7 @@ function buildKalshiCatalogUrl(cursor?: string, category?: string): string {
 }
 
 function buildKalshiMarketsUrl(cursor?: string): string {
-  const url = new URL(`${KALSHI_API_BASE}/markets`);
+  const url = new URL(kalshiUrl("/markets"));
   url.searchParams.set("limit", String(KALSHI_MARKET_PAGE_LIMIT));
   url.searchParams.set("status", "open");
   url.searchParams.set("mve_filter", "exclude");
@@ -244,7 +266,7 @@ async function loadKalshiEvent(
       `kalshi:event:${eventTicker}`,
       async () =>
         await fetchJson<KalshiEventResponse>(
-          `${KALSHI_API_BASE}/events/${eventTicker}`,
+          kalshiUrl(`/events/${eventTicker}`),
         ),
       PREDICTION_CACHE_POLICIES.rules,
     );
@@ -258,7 +280,7 @@ async function fetchKalshiMarketByTicker(
 ): Promise<KalshiMarketRecord | null> {
   try {
     const response = await fetchJson<{ market?: KalshiMarketRecord }>(
-      `${KALSHI_API_BASE}/markets/${encodeURIComponent(ticker)}`,
+      kalshiUrl(`/markets/${encodeURIComponent(ticker)}`),
     );
     return response.market ?? null;
   } catch {
@@ -269,7 +291,7 @@ async function fetchKalshiMarketByTicker(
 async function fetchKalshiEventsForSeries(
   seriesTicker: string,
 ): Promise<KalshiEventRecord[]> {
-  const url = new URL(`${KALSHI_API_BASE}/events`);
+  const url = new URL(kalshiUrl("/events"));
   url.searchParams.set("series_ticker", seriesTicker);
   url.searchParams.set("with_nested_markets", "true");
   url.searchParams.set("limit", String(KALSHI_SERIES_EVENT_LIMIT));
@@ -367,7 +389,7 @@ async function loadKalshiTrades(
     summary.key,
     async () => {
       const response = await fetchJson<KalshiTradesResponse>(
-        `${KALSHI_API_BASE}/markets/trades?ticker=${summary.marketId}&limit=30`,
+        kalshiUrl(`/markets/trades?ticker=${summary.marketId}&limit=30`),
       );
       return (response.trades ?? []).map((trade) => ({
         id: trade.trade_id,
@@ -390,7 +412,7 @@ async function loadKalshiBook(
     summary.key,
     async () => {
       const response = await fetchJson<KalshiOrderbookResponse>(
-        `${KALSHI_API_BASE}/markets/${summary.marketId}/orderbook`,
+        kalshiUrl(`/markets/${summary.marketId}/orderbook`),
       );
       const yesBids = (response.orderbook_fp?.yes_dollars ?? [])
         .map(normalizeKalshiBookLevel)
@@ -441,7 +463,7 @@ export async function loadKalshiHistory(
       `${summary.key}:${range}`,
       async () => {
         const response = await fetchJson<KalshiCandlestickResponse>(
-          `${KALSHI_API_BASE}/series/${event.event.series_ticker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`,
+          kalshiUrl(`/series/${event.event.series_ticker}/markets/${summary.marketId}/candlesticks?start_ts=${start}&end_ts=${now}&period_interval=${periodInterval}`),
         );
         return (response.candlesticks ?? [])
           .map((candle) => ({

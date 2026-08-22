@@ -997,6 +997,60 @@ describe("share document serving", () => {
   });
 });
 
+describe("hosted Kalshi API proxy", () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
+  test("proxies GET requests to external-api.kalshi.com and strips Origin", async () => {
+    let fetchedUrl: string | null = null;
+    let fetchedHeaders: Headers | null = null;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      fetchedUrl = url;
+      fetchedHeaders = new Headers(init?.headers);
+      return new Response(JSON.stringify({ events: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/proxy/kalshi/events?limit=1&status=open"),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { events: unknown[] };
+    expect(body.events).toEqual([]);
+    expect(fetchedUrl).toBe("https://external-api.kalshi.com/trade-api/v2/events?limit=1&status=open");
+    expect(fetchedHeaders?.get("Origin")).toBeNull();
+    expect(fetchedHeaders?.get("Accept")).toBe("application/json");
+    expect(response?.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=60");
+  });
+
+  test("rejects cross-origin Kalshi proxy requests", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/proxy/kalshi/events?limit=1", { origin: "https://evil.example.com" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(403);
+  });
+
+  test("rejects non-GET methods", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/proxy/kalshi/events"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(405);
+  });
+});
+
 describe("hosted Gloom Cloud WebSocket proxy", () => {
   afterEach(() => {
     restoreFetch();
