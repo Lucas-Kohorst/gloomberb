@@ -4,57 +4,59 @@ export const TREASURY_AUCTIONS_PANE_ID = "treasury-auctions";
 export const TREASURY_CONNECTION_ID = "treasury-fiscal-data";
 
 /**
- * Normalized Treasury auction record. The Fiscal Data API returns every field
- * as a string (including the literal `"null"`); numeric fields are parsed here
- * so the rest of the pane can work with real numbers.
+ * Normalized Treasury auction record. Fiscal Data returns every field as a
+ * string, including the literal `"null"` for metrics an auction does not
+ * report, so numbers are parsed once here.
  */
 export interface TreasuryAuction {
-  /** security_type | auction_date | security_term */
+  /** cusip | auction_date, or security_type | auction_date | security_term when the feed omits a CUSIP. */
   id: string;
-  /** "Bill", "Note", "Bond", "CMB", "FRN", "TIPS", ... */
+  /** Security identifier; a reopening repeats the original issue's CUSIP. */
+  cusip: string | null;
+  /** "Bill", "Note", "Bond", "CMB", "FRN", "TIPS". */
   secType: string;
-  /** "4-Week", "2-Year", "10-Year", "29-Year 6-Month", ... */
+  /** "4-Week", "2-Year", "29-Year 6-Month". */
   securityTerm: string;
-  /** ISO date string "YYYY-MM-DD" */
+  /** ISO "YYYY-MM-DD". */
   auctionDate: string;
-  /** High investment rate — set for Bills and FRNs. */
+  /** High investment rate, reported by Bills and FRNs. */
   highInvestmentRate: number | null;
-  /** High yield — set for Notes and Bonds. */
+  /** High yield, reported by Notes, Bonds, and TIPS. */
   highYield: number | null;
+  avgMedYield: number | null;
   highPrice: number | null;
   lowPrice: number | null;
-  /** Average/Median price. */
   avgMedPrice: number | null;
   bidToCoverRatio: number | null;
   /** Competitive accepted dollar amount. */
   competitiveAccepted: number | null;
-  /** Indirect bidder accepted dollar amount (foreign central banks etc.). */
+  /** Indirect bidder accepted dollars (foreign central banks and similar). */
   indirectAccepted: number | null;
+  /** Primary dealer accepted dollars. */
+  primaryDealerAccepted: number | null;
   totalAccepted: number | null;
+  /** Offering amount announced before the auction. */
+  offeringAmount: number | null;
 }
 
-/** Raw shape returned by the Treasury Fiscal Data auctions_query endpoint. */
+/** Raw shape returned by the Fiscal Data auctions_query endpoint. */
 export interface TreasuryAuctionRaw {
-  security_type: string;
-  security_term: string;
-  auction_date: string;
+  cusip?: string;
+  security_type?: string;
+  security_term?: string;
+  auction_date?: string;
   high_investment_rate?: string;
   high_yield?: string;
+  avg_med_yield?: string;
   high_price?: string;
   low_price?: string;
   avg_med_price?: string;
   bid_to_cover_ratio?: string;
   comp_accepted?: string;
   indirect_bidder_accepted?: string;
+  primary_dealer_accepted?: string;
   total_accepted?: string;
-}
-
-export interface TreasuryAuctionsResponse {
-  data: TreasuryAuctionRaw[];
-  meta?: {
-    count?: number;
-    "total-count"?: number;
-  };
+  offering_amt?: string;
 }
 
 export type LoadStatus = "idle" | "loading" | "loaded" | "error";

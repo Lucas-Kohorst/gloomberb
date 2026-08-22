@@ -8,29 +8,32 @@ import {
   InputSearchBar,
   Spinner,
   Tabs,
-  nextStackSortPreference,
   usePaneFooter,
-  useUpdatedAgo,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
+  type PaneFooterSegment,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
+import { formatRelativeAge } from "../../../utils/relative-time";
 import type { PaneProps } from "../../../types/plugin";
+import { usePaneInstance } from "../../../state/app/context";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { fetchTreasuryAuctions } from "./client";
+import { loadTreasuryAuctions } from "./cache";
 import {
   AUCTION_FILTERS,
+  auctionHistoryDays,
   DEFAULT_AUCTION_SORT,
   buildAuctionColumns,
-  filterAuctions,
-  filterAuctionsByQuery,
   indirectPct,
+  isPendingAuction,
+  auctionSize,
+  nextAuctionSort,
   nextFilter,
   rateValue,
-  sortedAuctions,
+  visibleAuctions,
   type AuctionColumn,
   type AuctionColumnId,
   type AuctionFilter,
@@ -42,50 +45,64 @@ import {
   type TreasuryAuction,
 } from "./types";
 
-function formatShortDate(value: string): string {
-  const ts = Date.parse(`${value}T00:00:00Z`);
-  if (!Number.isFinite(ts)) return "--";
-  return new Date(ts).toLocaleDateString("en-US", {
+function formatAuctionDate(value: string, withYear = false): string {
+  const timestamp = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(timestamp)) return "—";
+  return new Date(timestamp).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    year: withYear ? "numeric" : undefined,
     timeZone: "UTC",
   });
 }
 
 function formatRate(value: number | null): string {
-  if (value == null) return "--";
-  return `${value.toFixed(3)}%`;
+  return value == null ? "—" : `${value.toFixed(3)}%`;
 }
 
-function formatBtc(value: number | null): string {
-  if (value == null) return "--";
-  return value.toFixed(2);
+function formatRatio(value: number | null): string {
+  return value == null ? "—" : value.toFixed(2);
 }
 
 function formatPct(value: number | null): string {
-  if (value == null) return "--";
-  return `${value.toFixed(1)}%`;
+  return value == null ? "—" : `${value.toFixed(1)}%`;
+}
+
+function formatMoney(value: number | null): string {
+  return value == null ? "—" : `$${formatCompact(value)}`;
 }
 
 function secTypeColor(secType: string, selected: boolean): string {
   if (selected) return colors.selectedText;
-  const lower = secType.toLowerCase();
-  if (lower === "bill" || lower === "cmb") return colors.positive;
-  if (lower === "note" || lower === "frn") return colors.textBright;
-  if (lower === "bond" || lower === "tips") return colors.warning;
-  return colors.text;
+  switch (secType.toLowerCase()) {
+    case "bill":
+    case "cmb":
+      return colors.positive;
+    case "note":
+    case "frn":
+      return colors.textBright;
+    case "bond":
+    case "tips":
+      return colors.warning;
+    default:
+      return colors.text;
+  }
 }
 
 function renderAuctionCell(
   auction: TreasuryAuction,
   column: AuctionColumn,
-  _index: number,
   rowState: { selected: boolean },
 ): DataTableCell {
-  const sel = rowState.selected ? colors.selectedText : undefined;
+  const selected = rowState.selected ? colors.selectedText : undefined;
+  const dimmed = selected ?? colors.textDim;
+
   switch (column.id) {
     case "date":
-      return { text: formatShortDate(auction.auctionDate), color: sel ?? colors.textDim };
+      return {
+        text: formatAuctionDate(auction.auctionDate),
+        color: rowState.selected ? colors.selectedText : isPendingAuction(auction) ? colors.warning : colors.textDim,
+      };
     case "type":
       return {
         text: auction.secType,
@@ -93,77 +110,78 @@ function renderAuctionCell(
         attributes: TextAttributes.BOLD,
       };
     case "term":
-      return { text: auction.securityTerm, color: sel ?? colors.text };
+      return { text: auction.securityTerm, color: selected ?? colors.text };
     case "rate":
-      return { text: formatRate(rateValue(auction)), color: sel ?? colors.textBright };
+      return { text: formatRate(rateValue(auction)), color: selected ?? colors.textBright };
     case "btc":
-      return { text: formatBtc(auction.bidToCoverRatio), color: sel ?? colors.text };
+      return { text: formatRatio(auction.bidToCoverRatio), color: selected ?? colors.text };
     case "indirect":
-      return { text: formatPct(indirectPct(auction)), color: sel ?? colors.text };
+      return { text: formatPct(indirectPct(auction)), color: selected ?? colors.text };
+    case "size":
+      return { text: formatMoney(auctionSize(auction)), color: dimmed };
   }
 }
 
-function DetailRow({ label, value, color }: { label: string; value: string; color?: string }) {
-  const labelWidth = 18;
+function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <Box flexDirection="row" height={1} gap={2}>
-      <Box width={labelWidth}>
+      <Box width={20}>
         <Text fg={colors.textDim}>{label}</Text>
       </Box>
       <Box flexGrow={1}>
-        <Text fg={color ?? colors.textBright} wrapMode="ellipsis">{value}</Text>
+        <Text fg={colors.textBright} wrapMode="ellipsis">{value}</Text>
       </Box>
     </Box>
   );
 }
 
 function TreasuryAuctionDetail({ auction, width }: { auction: TreasuryAuction; width: number }) {
-  const pct = indirectPct(auction);
+  const total = auction.totalAccepted;
+  const share = (value: number | null): string => (
+    value == null || !total ? formatMoney(value) : `${formatMoney(value)} (${((value / total) * 100).toFixed(1)}%)`
+  );
+
   return (
     <ScrollBox flexGrow={1} scrollY>
-      <Box flexDirection="column" paddingX={1} gap={1} width={width}>
+      <Box flexDirection="column" paddingX={1} width={width}>
         <Box flexDirection="row" height={1} gap={2}>
-          <Text fg={secTypeColor(auction.secType, false)} attributes={TextAttributes.BOLD}>
-            {auction.secType}
-          </Text>
-          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-            {auction.securityTerm}
-          </Text>
-          <Text fg={colors.textDim}>{formatShortDate(auction.auctionDate)}</Text>
+          <Text fg={colors.textDim}>{formatAuctionDate(auction.auctionDate, true)}</Text>
+          {isPendingAuction(auction) && <Text fg={colors.warning}>results pending</Text>}
         </Box>
+        {auction.cusip && (
+          <>
+            <Box height={1} />
+            <DetailRow label="CUSIP" value={auction.cusip} />
+          </>
+        )}
         <Box height={1} />
         <DetailRow label="High rate" value={formatRate(rateValue(auction))} />
-        {auction.highYield != null && (
-          <DetailRow label="High yield" value={formatRate(auction.highYield)} />
+        {auction.avgMedYield != null && (
+          <DetailRow label="Median yield" value={formatRate(auction.avgMedYield)} />
         )}
-        <DetailRow label="Bid-to-cover" value={formatBtc(auction.bidToCoverRatio)} />
-        <DetailRow label="Indirect %" value={formatPct(pct)} />
+        <DetailRow label="Bid-to-cover" value={formatRatio(auction.bidToCoverRatio)} />
         <Box height={1} />
-        <DetailRow label="High price" value={auction.highPrice != null ? auction.highPrice.toFixed(3) : "--"} />
-        <DetailRow label="Avg/med price" value={auction.avgMedPrice != null ? auction.avgMedPrice.toFixed(3) : "--"} />
-        <DetailRow label="Low price" value={auction.lowPrice != null ? auction.lowPrice.toFixed(3) : "--"} />
+        <DetailRow label="High price" value={auction.highPrice?.toFixed(4) ?? "—"} />
+        <DetailRow label="Avg/median price" value={auction.avgMedPrice?.toFixed(4) ?? "—"} />
+        <DetailRow label="Low price" value={auction.lowPrice?.toFixed(4) ?? "—"} />
         <Box height={1} />
-        <DetailRow
-          label="Competitive accepted"
-          value={auction.competitiveAccepted != null ? formatCompact(auction.competitiveAccepted) : "--"}
-        />
-        <DetailRow
-          label="Indirect accepted"
-          value={auction.indirectAccepted != null ? formatCompact(auction.indirectAccepted) : "--"}
-        />
-        <DetailRow
-          label="Total accepted"
-          value={auction.totalAccepted != null ? formatCompact(auction.totalAccepted) : "--"}
-        />
+        <DetailRow label="Offering" value={formatMoney(auction.offeringAmount)} />
+        <DetailRow label="Total accepted" value={formatMoney(auction.totalAccepted)} />
+        <DetailRow label="Competitive" value={share(auction.competitiveAccepted)} />
+        <DetailRow label="Indirect" value={share(auction.indirectAccepted)} />
+        <DetailRow label="Primary dealer" value={share(auction.primaryDealerAccepted)} />
       </Box>
     </ScrollBox>
   );
 }
 
 export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
+  const historyDays = auctionHistoryDays(usePaneInstance()?.settings);
   const [auctions, setAuctions] = useState<TreasuryAuction[]>([]);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   const [filter, setFilter] = useState<AuctionFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -171,111 +189,96 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const fetchGenRef = useRef(0);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
-    setSearchFocusToken((c) => c + 1);
+    setSearchFocusToken((current) => current + 1);
   }, []);
   const blurSearch = useCallback(() => setSearchFocused(false), []);
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     fetchGenRef.current += 1;
-    const gen = fetchGenRef.current;
+    const generation = fetchGenRef.current;
     setStatus((current) => (current === "loaded" ? "loaded" : "loading"));
     setError(null);
-    fetchTreasuryAuctions()
-      .then((next) => {
-        if (fetchGenRef.current !== gen) return;
-        setAuctions(next);
+    loadTreasuryAuctions(force, undefined, historyDays)
+      .then((result) => {
+        if (fetchGenRef.current !== generation) return;
+        setAuctions(result.auctions);
+        setFetchedAt(result.fetchedAt);
+        setStale(result.stale);
         setStatus("loaded");
-        setLastUpdated(Date.now());
       })
-      .catch((loadError) => {
-        if (fetchGenRef.current !== gen) return;
+      .catch((loadError: unknown) => {
+        if (fetchGenRef.current !== generation) return;
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setStatus("error");
       });
-  }, []);
+  }, [historyDays]);
+
+  useEffect(() => { load(false); }, [load]);
+  const refresh = useCallback(() => load(false), [load]);
+  const reload = useCallback(() => load(true), [load]);
+  useAutoRefresh(stale ? null : fetchedAt, refresh);
+
+  const rows = useMemo(
+    () => visibleAuctions(auctions, { filter, query: searchQuery, sort: sortPreference }),
+    [auctions, filter, searchQuery, sortPreference],
+  );
+  const selected = rows.find((auction) => auction.id === selectedId) ?? null;
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  const filtered = useMemo(() => {
-    const byFilter = filterAuctions(auctions, filter);
-    const byQuery = filterAuctionsByQuery(byFilter, searchQuery);
-    return sortedAuctions(byQuery, sortPreference);
-  }, [auctions, filter, searchQuery, sortPreference]);
-
-  const selected = filtered.find((a) => a.id === selectedId) ?? null;
-
-  useEffect(() => {
-    if (filtered.length === 0) {
+    if (rows.length === 0) {
       if (selectedId !== null) setSelectedId(null);
       setDetailOpen(false);
       return;
     }
-    if (!selectedId || !filtered.some((a) => a.id === selectedId)) {
-      setSelectedId(filtered[0]!.id);
+    if (!selectedId || !rows.some((auction) => auction.id === selectedId)) {
+      setSelectedId(rows[0]!.id);
     }
-  }, [filtered, selectedId]);
+  }, [rows, selectedId]);
 
+  const selectFilter = useCallback((next: AuctionFilter) => {
+    setFilter(next);
+    setDetailOpen(false);
+  }, []);
   const cycleFilter = useCallback(() => {
     setFilter((current) => nextFilter(current));
     setDetailOpen(false);
   }, []);
 
-  const handleRootKeyDown = useCallback(
-    (event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
-      if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
-        stopSearchFocusNavigation(event);
-        focusSearch();
-        return true;
-      }
-      if (event.name === "s" || event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-        return true;
-      }
-      if (isPlainKey(event, "r")) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        load();
-        return true;
-      }
-      if (isPlainKey(event, "f")) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        cycleFilter();
-        return true;
-      }
-      return false;
-    },
-    [cycleFilter, focusSearch, load],
-  );
+  const handlePaneKey = useCallback((event: DataTableKeyEvent): boolean => {
+    if (isPlainKey(event, "r")) {
+      stopSearchFocusNavigation(event);
+      reload();
+      return true;
+    }
+    if (isPlainKey(event, "f")) {
+      stopSearchFocusNavigation(event);
+      cycleFilter();
+      return true;
+    }
+    return false;
+  }, [cycleFilter, reload]);
 
-  const handleDetailKeyDown = useCallback(
-    (event: DataTableKeyEvent) => {
-      if (isPlainKey(event, "r")) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        load();
-        return true;
-      }
-      if (isPlainKey(event, "f")) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        cycleFilter();
-        return true;
-      }
-      return false;
-    },
-    [cycleFilter, load],
-  );
+  const handleRootKeyDown = useCallback((
+    event: DataTableKeyEvent,
+    context: DataTableRootKeyContext,
+  ) => {
+    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+      stopSearchFocusNavigation(event);
+      focusSearch();
+      return true;
+    }
+    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+      stopSearchFocusNavigation(event);
+      focusSearch();
+      return true;
+    }
+    return handlePaneKey(event);
+  }, [focusSearch, handlePaneKey]);
 
   useShortcut(
     (event) => {
@@ -290,96 +293,55 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
   );
 
   const columns = useMemo(() => buildAuctionColumns(width), [width]);
-  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, load);
-  const renderCell = useCallback(
-    (
-      auction: TreasuryAuction,
-      column: AuctionColumn,
-      index: number,
-      rowState: { selected: boolean },
-    ) => renderAuctionCell(auction, column, index, rowState),
-    [],
-  );
+  const activeFilterLabel = AUCTION_FILTERS.find((entry) => entry.value === filter)?.label ?? "All";
 
-  const activeFilterLabel = AUCTION_FILTERS.find((f) => f.value === filter)?.label ?? "All";
-
-  usePaneFooter(
-    TREASURY_AUCTIONS_PANE_ID,
-    () => ({
-      info: [
-        ...(status === "loading"
-          ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
+  usePaneFooter(TREASURY_AUCTIONS_PANE_ID, () => {
+    const info: PaneFooterSegment[] = [];
+    if (status === "loading") info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    if (error) info.push({ id: "error", parts: [{ text: "error", tone: "warning" }] });
+    if (stale) info.push({ id: "stale", parts: [{ text: "stale", tone: "warning" }] });
+    if (filter !== "all") info.push({ id: "filter", parts: [{ text: activeFilterLabel, tone: "value" }] });
+    if (searchQuery.trim()) {
+      info.push({ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" }] });
+    }
+    if (fetchedAt) {
+      info.push({ id: "updated", parts: [{ text: formatRelativeAge(fetchedAt), tone: "muted" }] });
+    }
+    return {
+      info,
+      hints: [
+        ...(!detailOpen
+          ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }]
           : []),
-        ...(error
-          ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }]
-          : []),
-        ...(filter !== "all"
-          ? [{ id: "filter", parts: [{ text: activeFilterLabel, tone: "value" as const }] }]
-          : []),
-        ...(searchQuery.trim()
-          ? [{ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" as const }] }]
-          : []),
-        ...(updatedAgo
-          ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
-          : []),
+        { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+        { id: "refresh", key: "r", label: "efresh", onPress: reload },
       ],
-      hints: detailOpen
-        ? [
-            { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-            { id: "refresh", key: "r", label: "efresh", onPress: load },
-          ]
-        : [
-            { id: "search", key: "/", label: "search", onPress: focusSearch },
-            { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-            { id: "refresh", key: "r", label: "efresh", onPress: load },
-          ],
-    }),
-    [
-      activeFilterLabel,
-      cycleFilter,
-      detailOpen,
-      error,
-      filter,
-      focusSearch,
-      load,
-      searchQuery,
-      status,
-      updatedAgo,
-    ],
-  );
+    };
+  }, [
+    activeFilterLabel,
+    cycleFilter,
+    detailOpen,
+    error,
+    fetchedAt,
+    filter,
+    focusSearch,
+    reload,
+    searchQuery,
+    stale,
+    status,
+  ]);
 
   const tabs = (
     <Box height={1} flexShrink={0} overflow="hidden">
       <Tabs
-        tabs={AUCTION_FILTERS.map((f) => ({ label: f.label, value: f.value }))}
+        tabs={AUCTION_FILTERS.map((entry) => ({ label: entry.label, value: entry.value }))}
         activeValue={filter}
-        onSelect={(value) => {
-          setFilter(value as AuctionFilter);
-          setDetailOpen(false);
-        }}
+        onSelect={(value) => selectFilter(value as AuctionFilter)}
         compact
         variant="bare"
         focused={focused && !detailOpen && !searchFocused}
       />
     </Box>
-  );
-
-  const searchBar = (
-    <InputSearchBar
-      value={searchQuery}
-      focused={focused && !detailOpen}
-      active={searchFocused}
-      width={width}
-      focusToken={searchFocusToken}
-      inputRef={searchInputRef}
-      placeholder="type or term"
-      debounceMs={80}
-      onFocus={focusSearch}
-      onBlur={blurSearch}
-      onNavigateDown={blurSearch}
-      onQueryChange={setSearchQuery}
-    />
   );
 
   if (status === "loading" && auctions.length === 0) {
@@ -411,15 +373,26 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         focused={focused && !searchFocused}
         detailOpen={detailOpen && !!selected}
         onBack={() => setDetailOpen(false)}
-        detailContent={
-          selected ? (
-            <TreasuryAuctionDetail auction={selected} width={width} />
-          ) : null
-        }
+        detailContent={selected ? <TreasuryAuctionDetail auction={selected} width={width} /> : null}
         detailTitle={selected ? `${selected.secType} ${selected.securityTerm}` : undefined}
-        rootBefore={searchBar}
+        rootBefore={(
+          <InputSearchBar
+            value={searchQuery}
+            focused={focused && !detailOpen}
+            active={searchFocused}
+            width={width}
+            focusToken={searchFocusToken}
+            inputRef={searchInputRef}
+            placeholder="type, term, CUSIP, or date"
+            debounceMs={80}
+            onFocus={focusSearch}
+            onBlur={blurSearch}
+            onNavigateDown={blurSearch}
+            onQueryChange={setSearchQuery}
+          />
+        )}
         onRootKeyDown={handleRootKeyDown}
-        onDetailKeyDown={handleDetailKeyDown}
+        onDetailKeyDown={handlePaneKey}
         selection={{
           kind: "id",
           selectedId,
@@ -433,27 +406,16 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         rootWidth={width}
         rootHeight={Math.max(1, height - 1)}
         columns={columns}
-        items={filtered}
+        items={rows}
         sortColumnId={sortPreference.columnId}
         sortDirection={sortPreference.direction}
-        onHeaderClick={(columnId) => {
-          const next = columnId as AuctionColumnId;
-          setSortPreference((current) =>
-            nextStackSortPreference(
-              current,
-              next,
-              next === "type" || next === "term" ? "asc" : "desc",
-            ),
-          );
-        }}
+        onHeaderClick={(columnId) => setSortPreference((current) => (
+          nextAuctionSort(current, columnId as AuctionColumnId)
+        ))}
         getItemKey={(auction) => auction.id}
-        renderCell={renderCell}
-        emptyStateTitle={
-          searchQuery.trim() ? "No matching auctions." : "No recent auctions."
-        }
-        emptyStateHint={
-          searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."
-        }
+        renderCell={(auction, column, _index, rowState) => renderAuctionCell(auction, column, rowState)}
+        emptyStateTitle={searchQuery.trim() ? "No matching auctions." : "No recent auctions."}
+        emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
       />
     </Box>
   );
