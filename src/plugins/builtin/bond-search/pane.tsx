@@ -35,6 +35,7 @@ import {
   formatSpreadBp,
   formatYieldDate,
   formatYieldPercent,
+  nextColumnSort,
   nextSort,
   searchKindLabel,
   sortedSearchHits,
@@ -398,8 +399,8 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
             onHeaderClick={(columnId) =>
               setSearchSort((current) => {
                 const id = columnId as SearchColumnId;
-                if (!current) return { columnId: id, direction: "asc" };
-                return nextSort(current, id, "asc");
+                if (!current) return { columnId: id, direction: "asc" as const };
+                return nextColumnSort(current, id, "asc");
               })
             }
             getItemKey={(hit) => hit.id}

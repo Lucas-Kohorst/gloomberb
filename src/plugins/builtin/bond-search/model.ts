@@ -37,15 +37,23 @@ function compareYield(
   }
 }
 
+export function nextColumnSort<T extends string>(
+  current: { columnId: T; direction: SortDirection },
+  columnId: T,
+  defaultDirection: SortDirection,
+): { columnId: T; direction: SortDirection } {
+  if (current.columnId !== columnId) {
+    return { columnId, direction: defaultDirection };
+  }
+  return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
 export function nextSort(
   current: { columnId: YieldColumnId; direction: SortDirection },
   columnId: YieldColumnId,
   defaultDirection: SortDirection,
 ): { columnId: YieldColumnId; direction: SortDirection } {
-  if (current.columnId !== columnId) {
-    return { columnId, direction: defaultDirection };
-  }
-  return { columnId, direction: current.direction === "asc" ? "desc" : "asc" };
+  return nextColumnSort(current, columnId, defaultDirection);
 }
 
 export function sortedYields(
