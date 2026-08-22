@@ -387,9 +387,10 @@ const APP_CSP = [
 
 async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
   const shareDocument = assetPath === "/share.html" || (assetPath != null && isShareScriptPath(assetPath));
-  let response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+  const effectivePath = assetPath ?? new URL(request.url).pathname;
+  let response = await fetchCompressedAsset(request, env, effectivePath, shareDocument);
   if (shareDocument && response.status === 304) {
-    response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+    response = await fetchCompressedAsset(request, env, effectivePath, shareDocument);
   }
   const headers = new Headers(response.headers);
   headers.set(
@@ -411,6 +412,50 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     return new Response(response.body, { status, headers });
   }
   return new Response(response.body, { status: response.status, headers });
+}
+
+/**
+ * Serves a pre-compressed Brotli/gzip asset when the browser accepts it.
+ * HTML documents are skipped to avoid complicating 304/ETag handling.
+ */
+async function fetchCompressedAsset(
+  request: Request,
+  env: Env,
+  assetPath: string,
+  shareDocument: boolean,
+): Promise<Response> {
+  const compressible = !shareDocument && (assetPath.endsWith(".js") || assetPath.endsWith(".css"));
+  if (!compressible) {
+    return env.ASSETS.fetch(assetsRequest(request, assetPath));
+  }
+  const encodings = (request.headers.get("Accept-Encoding") ?? "").split(",").map((e) => e.trim().toLowerCase());
+  const wantsBrotli = encodings.some((e) => e === "br" || e.startsWith("br;"));
+  const wantsGzip = encodings.some((e) => e === "gzip" || e === "deflate" || e.startsWith("gzip;") || e.startsWith("deflate;"));
+  if (wantsBrotli) {
+    const compressed = await env.ASSETS.fetch(assetsRequest(request, `${assetPath}.br`));
+    if (compressed.status === 200) {
+      const headers = new Headers(compressed.headers);
+      headers.set("Content-Encoding", "br");
+      headers.set("Vary", "Accept-Encoding");
+      return new Response(compressed.body, { status: compressed.status, headers });
+    }
+  }
+  if (wantsGzip) {
+    const compressed = await env.ASSETS.fetch(assetsRequest(request, `${assetPath}.gz`));
+    if (compressed.status === 200) {
+      const headers = new Headers(compressed.headers);
+      headers.set("Content-Encoding", "gzip");
+      headers.set("Vary", "Accept-Encoding");
+      return new Response(compressed.body, { status: compressed.status, headers });
+    }
+  }
+  const response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
+  if (response.status === 200) {
+    const headers = new Headers(response.headers);
+    headers.set("Vary", "Accept-Encoding");
+    return new Response(response.body, { status: response.status, headers });
+  }
+  return response;
 }
 
 /**
