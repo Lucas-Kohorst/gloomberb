@@ -18,6 +18,7 @@ import {
   sessionCookieHeader,
   upstreamSessionCookieHeader,
 } from "./gloom-cloud";
+import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import {
   hasTrustedHostedOrigin,
   hostedCorsHeaders,
@@ -65,7 +66,6 @@ const SHARE_TTL_SECONDS = 60 * 60 * 24 * 30;
 const MAX_SHARE_BODY_BYTES = 512_000;
 const SHARE_ID_MAX_ATTEMPTS = 5;
 
-const KALSHI_PROXY_PATH = "/api/proxy/kalshi";
 const KALSHI_API_ORIGIN = "https://external-api.kalshi.com/trade-api/v2";
 const KALSHI_PROXY_TIMEOUT_MS = 12_000;
 
@@ -688,10 +688,14 @@ async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): P
   }
   target.search = url.search;
 
-  const upstreamHeaders = new Headers(request.headers);
-  upstreamHeaders.delete("Origin");
-  upstreamHeaders.delete("Referer");
-  upstreamHeaders.set("Accept", "application/json");
+  const upstreamHeaders = new Headers({
+    Accept: request.headers.get("Accept") ?? "application/json",
+    "User-Agent": request.headers.get("User-Agent") ?? "gloomberb-cloud/1.0",
+  });
+  const acceptEncoding = request.headers.get("Accept-Encoding");
+  if (acceptEncoding) upstreamHeaders.set("Accept-Encoding", acceptEncoding);
+  const acceptLanguage = request.headers.get("Accept-Language");
+  if (acceptLanguage) upstreamHeaders.set("Accept-Language", acceptLanguage);
 
   try {
     const upstream = await fetch(target.toString(), {
@@ -702,14 +706,27 @@ async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): P
     const responseHeaders = new Headers({
       "content-type": upstream.headers.get("content-type") ?? "application/json",
       "access-control-allow-origin": "*",
-      "cache-control": "public, max-age=60",
     });
+    if (upstream.ok) {
+      responseHeaders.set("cache-control", "public, max-age=60");
+    } else {
+      responseHeaders.set("cache-control", "no-store");
+    }
     return new Response(upstream.body, {
       status: upstream.status,
       headers: responseHeaders,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return Response.json({ error: message }, { status: 502 });
+    return Response.json(
+      { error: message },
+      {
+        status: 502,
+        headers: {
+          "access-control-allow-origin": "*",
+          "cache-control": "no-store",
+        },
+      },
+    );
   }
 }

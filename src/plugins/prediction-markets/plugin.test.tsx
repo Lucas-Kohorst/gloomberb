@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import {
   cleanupPredictionTest,
   installPredictionMarketMocks,
@@ -479,7 +480,7 @@ describe("prediction markets plugin registration and services", () => {
     try {
       await loadKalshiCatalog("", "all", "top", { force: true });
       expect(
-        fetchUrls.some((url) => url.includes("/api/proxy/kalshi/")),
+        fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/`)),
       ).toBe(true);
       expect(
         fetchUrls.some((url) => url.includes("external-api.kalshi.com")),

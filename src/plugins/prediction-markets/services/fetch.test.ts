@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { KALSHI_PROXY_PATH } from "../../../shared/hosted-api";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import {
   clearPendingConnectionReports,
@@ -41,6 +42,18 @@ describe("prediction-markets fetch connection attribution", () => {
     expect(reports[0]!.report.success).toBe(true);
   });
 
+  test("attributes hosted Kalshi proxy URLs to the kalshi connection", async () => {
+    const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
+    setConnectionRequestReporter((id, report) => reports.push({ id, report }));
+    mockTransport({ [KALSHI_PROXY_PATH]: { body: '{"markets":[]}' } });
+
+    await fetchJson(`https://terminal.kohor.st${KALSHI_PROXY_PATH}/events/MX1-5D6D7D6D7/markets`);
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.id).toBe("kalshi");
+    expect(reports[0]!.report.success).toBe(true);
+  });
+
   test("attributes Polymarket URLs to the polymarket connection", async () => {
     const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
     setConnectionRequestReporter((id, report) => reports.push({ id, report }));
@@ -52,17 +65,17 @@ describe("prediction-markets fetch connection attribution", () => {
     expect(reports[0]!.id).toBe("polymarket");
   });
 
-  test("attributes Adjacent URLs to the adjacent connection, not the venue", async () => {
+  test("attributes Adjacent URLs to the adjacent-cloud connection, not the venue", async () => {
     const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
     setConnectionRequestReporter((id, report) => reports.push({ id, report }));
     mockTransport({ "adjacent.markets": { body: '{"data":[]}' } });
 
     // Adjacent catalog calls include platform=kalshi in the query string,
-    // but the host is adjacent.markets so it must attribute to "adjacent".
+    // but the host is adjacent.markets so it must attribute to "adjacent-cloud".
     await fetchJson("https://api.adjacent.markets/api/v1/public/markets?platform=kalshi&limit=1");
 
     expect(reports).toHaveLength(1);
-    expect(reports[0]!.id).toBe("adjacent");
+    expect(reports[0]!.id).toBe("adjacent-cloud");
   });
 
   test("does not report traffic for unknown URLs", async () => {
