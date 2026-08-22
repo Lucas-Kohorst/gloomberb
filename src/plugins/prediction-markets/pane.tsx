@@ -6,6 +6,7 @@ import {
   Tabs,
   usePaneFooter,
   useTableLoadMore,
+  useUpdatedAgo,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
 } from "../../components";
@@ -103,6 +104,14 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const graphSelected = useCallback(() => {
     popOutChart(graphExpression);
   }, [graphExpression, popOutChart]);
+  const updatedAgo = useUpdatedAgo(controller.lastRefreshAt);
+  const pollLabel = useMemo(() => {
+    if (!controller.detailOpen) return null;
+    const venue = controller.selectedSummary?.venue;
+    if (venue === "kalshi") return "poll 5s";
+    if (venue === "polymarket") return "live";
+    return null;
+  }, [controller.detailOpen, controller.selectedSummary?.venue]);
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "g" && graphExpression) {
@@ -118,16 +127,16 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   }, { enabled: focused && (!!marketUrl || !!graphExpression) });
   usePaneFooter("prediction-markets", () => {
     return {
-      info: controller.detailOpen
-        ? []
-        : [
-            ...(controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
-            ...(controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
-            ...(controller.catalogStatus ? [{
-              id: "catalog",
-              parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
-            }] : []),
-          ],
+      info: [
+        ...(controller.detailOpen ? [] : controller.searchQuery.trim() ? [{ id: "search", parts: [{ text: `search: ${controller.searchQuery.trim()}`, tone: "value" as const }] }] : []),
+        ...(controller.detailOpen ? [] : controller.searchLoading ? [{ id: "search-loading", parts: [{ text: "searching", tone: "muted" as const }] }] : []),
+        ...(controller.detailOpen ? [] : controller.catalogStatus ? [{
+          id: "catalog",
+          parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
+        }] : []),
+        ...(pollLabel ? [{ id: "poll", parts: [{ text: pollLabel, tone: "value" as const }] }] : []),
+        ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+      ],
       hints: [
         { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !graphExpression },
         ...(!controller.detailOpen ? [
@@ -153,13 +162,17 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
     controller.detailOpen,
+    controller.lastRefreshAt,
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
+    controller.selectedSummary?.venue,
     graphExpression,
     graphSelected,
     marketUrl,
     openMarket,
+    pollLabel,
+    updatedAgo,
   ]);
 
   const browseControls = (
