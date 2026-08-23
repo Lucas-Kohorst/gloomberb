@@ -8,7 +8,6 @@ import {
   type MouseEvent,
   type ReactNode,
   type Ref,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 import {
   type CellMouseEvent,
@@ -96,6 +95,20 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
       document.body.classList.remove("gloom-dragging");
     }, []);
 
+    // React's onWheel is a passive listener, so preventDefault() inside the
+    // handler is ignored and a chart zoom also scrolls the page. Bind wheel
+    // natively with passive: false so the handler can actually cancel it.
+    const handlesWheel = typeof props.onMouseScroll === "function";
+    useEffect(() => {
+      const element = elementRef.current;
+      if (!element || !handlesWheel) return;
+      const handleWheel = (event: WheelEvent) => {
+        callMouseHandler(propsRef.current.onMouseScroll, event, "scroll");
+      };
+      element.addEventListener("wheel", handleWheel, { passive: false });
+      return () => element.removeEventListener("wheel", handleWheel);
+    }, [handlesWheel]);
+
     const stopDocumentDrag = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
@@ -136,10 +149,6 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
       callMouseHandler(propsRef.current.onMouseDownCapture, event, "down");
     };
 
-    const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-      callMouseHandler(propsRef.current.onMouseScroll, event, "scroll");
-    };
-
     const handleMouseOver = (event: MouseEvent) => {
       callMouseHandler(propsRef.current.onMouseOver, event, "over");
     };
@@ -160,7 +169,6 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
         onMouseMove={(event) => scheduleFrameMouseHandler(event, "move")}
         onMouseUp={(event) => callMouseHandler(propsRef.current.onMouseUp, event, "up")}
         onMouseOut={handleMouseOut}
-        onWheel={typeof props.onMouseScroll === "function" ? handleWheel : undefined}
         style={{
           ...commonStyle(props),
           "--gloom-box-hover-bg": hoverBackgroundColor,
