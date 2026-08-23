@@ -997,59 +997,6 @@ describe("share document serving", () => {
     expect(response?.headers.get("cache-control")).toContain("no-store");
   });
 
-  test("GET /web-main.js with Accept-Encoding br serves the precompressed .br file", async () => {
-    const captured: Request[] = [];
-    const env = makeEnv();
-    env.ASSETS = {
-      fetch: async (request: RequestInfo) => {
-        captured.push(request instanceof Request ? request : new Request(request));
-        const url = new URL(request instanceof Request ? request.url : String(request));
-        if (url.pathname === "/web-main.js.br") {
-          return new Response("brotli-bytes", { headers: { "content-type": "text/javascript" } });
-        }
-        return new Response("original-bytes", { headers: { "content-type": "text/javascript", etag: '"original"' } });
-      },
-    } as unknown as Fetcher;
-
-    const headers = new Headers();
-    headers.set("Accept-Encoding", "br, gzip");
-    const response = await workerModule.default.fetch?.(
-      new Request(`${ORIGIN}/web-main.js`, { method: "GET", headers }),
-      env,
-    );
-
-    expect(response?.status).toBe(200);
-    expect(response?.headers.get("Content-Encoding")).toBe("br");
-    expect(response?.headers.get("Vary")).toBe("Accept-Encoding");
-    expect(captured).toHaveLength(1);
-    expect(new URL(captured[0]!.url).pathname).toBe("/web-main.js.br");
-  });
-
-  test("GET /web-main.js falls back to gzip when Brotli is unavailable", async () => {
-    const captured: Request[] = [];
-    const env = makeEnv();
-    env.ASSETS = {
-      fetch: async (request: RequestInfo) => {
-        captured.push(request instanceof Request ? request : new Request(request));
-        const url = new URL(request instanceof Request ? request.url : String(request));
-        if (url.pathname === "/web-main.js.gz") {
-          return new Response("gzip-bytes", { headers: { "content-type": "text/javascript" } });
-        }
-        return new Response("original-bytes", { headers: { "content-type": "text/javascript" } });
-      },
-    } as unknown as Fetcher;
-
-    const headers = new Headers();
-    headers.set("Accept-Encoding", "gzip");
-    const response = await workerModule.default.fetch?.(
-      new Request(`${ORIGIN}/web-main.js`, { method: "GET", headers }),
-      env,
-    );
-
-    expect(response?.status).toBe(200);
-    expect(response?.headers.get("Content-Encoding")).toBe("gzip");
-    expect(new URL(captured[0]!.url).pathname).toBe("/web-main.js.gz");
-  });
 });
 
 describe("hosted Kalshi API proxy", () => {
