@@ -177,6 +177,23 @@ export type QuoteSummaryResponse = {
           pctChange?: { raw?: number } | number | null;
         }>;
       };
+      esgScores?: {
+        totalEsg?: { raw?: number } | number | null;
+        environmentScore?: { raw?: number } | number | null;
+        socialScore?: { raw?: number } | number | null;
+        governanceScore?: { raw?: number } | number | null;
+        esgPerformance?: string;
+        peerCount?: number;
+        peerGroup?: string;
+        peerEsgScore?: { raw?: number } | number | null;
+        peerEnvironmentScore?: { raw?: number } | number | null;
+        peerSocialScore?: { raw?: number } | number | null;
+        peerGovernanceScore?: { raw?: number } | number | null;
+        controversyLevel?: string;
+        controversyScore?: { raw?: number } | number | null;
+        ratingMonth?: number;
+        ratingYear?: number;
+      };
     }>;
     error?: { description?: string } | null;
   };
