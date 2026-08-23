@@ -26,6 +26,7 @@ import {
   type WeightedReturnSeries,
 } from "./metrics";
 import { getPortfolioPositionValue } from "./sector-model";
+import { type ContributorInput, type FactorReturnSeries } from "./risk";
 import type { AnalyticsMetricRow } from "./view";
 
 export interface PortfolioChartTarget {
@@ -331,4 +332,98 @@ export function formatHistoryAxisValue(
   return performance?.points.some((point) => point.value != null)
     ? formatCompact(value)
     : `${(value * 100).toFixed(1)}%`;
+}
+
+/** Factor proxy ETFs used to decompose portfolio risk. */
+export interface FactorProxy {
+  factor: string;
+  symbol: string;
+}
+
+export const FACTOR_PROXIES: readonly FactorProxy[] = [
+  { factor: "market", symbol: "SPY" },
+  { factor: "size", symbol: "IJR" },
+  { factor: "value", symbol: "VTV" },
+  { factor: "momentum", symbol: "MTUM" },
+] as const;
+
+/** Chart requests for the factor proxy ETFs (1Y range). */
+export function buildFactorProxyRequests(): ChartRequest[] {
+  return FACTOR_PROXIES.map(({ symbol }) => ({
+    instrument: { symbol, exchange: "" },
+    bufferRange: "1Y" as const,
+    granularity: "range" as const,
+  }));
+}
+
+/** Build aligned dated-return series for each factor proxy from chart entries. */
+export function buildFactorReturnSeries(
+  requests: readonly ChartRequest[],
+  chartEntries: ChartEntryLookup,
+): FactorReturnSeries[] {
+  return requests.flatMap((request) => {
+    const symbol = request.instrument.symbol;
+    const factor = FACTOR_PROXIES.find((proxy) => proxy.symbol === symbol)?.factor;
+    if (!factor) return [];
+    const entry = chartEntries.get(buildChartKey(request));
+    const history = entry?.data ?? entry?.lastGoodData ?? null;
+    if (!history || history.length < 11) return [];
+    const returns = computeDatedReturns(history);
+    if (returns.length < 10) return [];
+    return [{ factor, returns }];
+  });
+}
+
+/**
+ * Per-position contributor inputs: market value (from portfolio columns) plus the
+ * position's total return over the lookback window, computed from its price
+ * history. Positions without chart history still contribute by size only.
+ */
+export function buildPositionContributorInputs(
+  chartTargets: readonly PortfolioChartTarget[],
+  chartEntries: ChartEntryLookup,
+  financials: Map<string, TickerFinancials>,
+  columnContext: ColumnContext,
+): ContributorInput[] {
+  const inputs: ContributorInput[] = [];
+  for (const { ticker, request } of chartTargets) {
+    const symbol = ticker.metadata.ticker;
+    const financialsEntry = financials.get(symbol);
+    const marketValue = getPortfolioPositionValue(ticker, financialsEntry, columnContext);
+    if (marketValue == null) continue;
+
+    const entry = chartEntries.get(buildChartKey(request));
+    const history = entry?.data ?? entry?.lastGoodData ?? null;
+    let returnPct: number | null = null;
+    if (history && history.length >= 2) {
+      const sorted = [...history]
+        .filter((point) => Number.isFinite(point.close) && point.close > 0)
+        .sort((left, right) => {
+          const lt = left.date instanceof Date ? left.date.getTime() : new Date(left.date).getTime();
+          const rt = right.date instanceof Date ? right.date.getTime() : new Date(right.date).getTime();
+          return lt - rt;
+        });
+      if (sorted.length >= 2) {
+        const first = sorted[0]!.close;
+        const last = sorted.at(-1)!.close;
+        if (first > 0) {
+          returnPct = (last - first) / first;
+        }
+      }
+    }
+
+    inputs.push({
+      symbol,
+      name: ticker.metadata.name || symbol,
+      sector: ticker.metadata.sector || financialsEntry?.profile?.sector || "Unknown",
+      marketValue,
+      returnPct,
+    });
+  }
+  return inputs;
+}
+
+/** Format a 1-day VaR dollar loss compactly. */
+export function formatVaR(value: number | null): string {
+  return value == null ? "—" : formatCompact(value);
 }
