@@ -404,8 +404,14 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
+  headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  headers.set("cross-origin-opener-policy", "same-origin");
+  headers.set("cross-origin-resource-policy", "same-origin");
+  headers.set("permissions-policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()");
   headers.set("content-security-policy-report-only", APP_CSP);
   if (shareDocument) {
+    // Shares are unlisted links rather than public pages, so keep crawlers out.
+    headers.set("x-robots-tag", "noindex, nofollow, noarchive");
     // A 304 here would reuse the browser's cached body for `/s/{id}`. Logged-in
     // profiles still hold index.html from when this path was the SPA, so a
     // share.html ETag match (or a leftover index ETag) boots the workspace
