@@ -1,4 +1,5 @@
 import type { Dispatch } from "react";
+import { isHostedWebClient } from "../../shared/hosted-api";
 import type { AppTickerRepositoryPort } from "../../core/app-service-ports";
 import { findPaneInstance, isTickerPaneId, ADJACENT_WATCHLIST_ID, type AppConfig } from "../../types/config";
 import type { CachedFinancialsTarget, DataProvider } from "../../types/data-provider";
@@ -328,7 +329,7 @@ export async function initializeAppState({
   let tickers = await measurePerfAsync("startup.load-tickers", () => tickerRepository.loadAllTickers());
   startupLog.info("tickers loaded", { count: tickers.length });
 
-  const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+  const hosted = isHostedWebClient();
   const adjacentWatchlistId = resolveAdjacentWatchlistId(config);
   const adjacentHasMembers = !!adjacentWatchlistId
     && tickers.some((ticker) => ticker.metadata.watchlists.includes(adjacentWatchlistId));

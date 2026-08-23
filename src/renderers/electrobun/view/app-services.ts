@@ -1,3 +1,4 @@
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { createRemoteBrokerAdapter } from "../../../brokers/remote-broker-adapter";
 import { NewsService } from "../../../news/aggregator";
@@ -36,7 +37,7 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
   });
   const persistence = measurePerf("startup.services.persistence", () => new RemotePersistence());
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new RemoteTickerRepository());
-  const hosted = window.__GLOOM_CLOUD_HOSTED === true
+  const hosted = isHostedWebClient()
     || getElectrobunBackendInitSnapshot()?.desktopPlatform === "cloud";
   const cloudProvider = hosted ? createGloomberbCloudProvider() : null;
   const cloudNewsCapability = cloudProvider
