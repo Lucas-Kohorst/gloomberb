@@ -101,6 +101,9 @@ export type ChartStudyKind =
   | "rsi"
   | "macd"
   | "vwap"
+  | "atr"
+  | "stochastic"
+  | "adx"
   | "ratio"
   | "spread"
   | "correlation";
