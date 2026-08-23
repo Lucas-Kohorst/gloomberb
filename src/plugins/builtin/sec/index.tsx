@@ -41,6 +41,9 @@ import {
   useSecFilingContentCache,
 } from "./filing-content";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { attachSecSummaryPersistence, resetSecSummaryPersistence } from "./summary-cache";
+import { renderFilingSummary, type FilingSummary } from "./summary-contract";
+import { useFilingSummary } from "./use-filing-summary";
 
 const SEC_FILING_FETCH_LIMIT = 20_000;
 const SEC_FILING_PAGE_SIZE = 50;
@@ -211,6 +214,8 @@ function toFeedItems(
   selectedDocuments: SecFilingDocument[],
   loadingDocuments: boolean,
   showEntity = false,
+  summaries: ReadonlyMap<string, FilingSummary> = new Map(),
+  summarizingAccession: string | null = null,
 ): FeedDataTableItem[] {
   return filings.map((filing) => {
     const displayTitle = getFilingDisplayTitle(filing);
@@ -233,14 +238,21 @@ function toFeedItems(
     const primaryDetailBody = loadingContent && selected
       ? "Loading filing content..."
       : form4Detail ?? fetchedContent ?? fallbackBody;
+    const summary = summaries.get(filing.accessionNumber);
+    const isSummarizing = summarizingAccession === filing.accessionNumber;
+    const summaryBlock = summary
+      ? `\n\n${renderFilingSummary(summary)}`
+      : isSummarizing && selected
+        ? "\n\nAI Summary\n\nSummarizing filing with AI..."
+        : "";
     const detailBody = selected
-      ? buildDetailBodyWithDocuments({
+      ? `${buildDetailBodyWithDocuments({
           filing,
           documents: selectedDocuments,
           documentsLoading: loadingDocuments,
           contentCache,
           primaryContent: primaryDetailBody,
-        })
+        })}${summaryBlock}`
       : form4Detail ?? fallbackBody;
 
     const entityLabel = showEntity ? filingEntityLabel(filing) : undefined;
@@ -317,6 +329,19 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
   });
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
 
+  const summary = useFilingSummary({
+    filings: visibleFilings,
+    contentCache,
+  });
+  const summarizeTarget = openFiling ?? selectedFiling ?? null;
+  const handleSummarize = useCallback(() => {
+    if (!summarizeTarget) return;
+    const content = contentCache.get(summarizeTarget.accessionNumber);
+    if (!content) return;
+    void summary.summarize(summarizeTarget, content);
+  }, [contentCache, summarizeTarget, summary]);
+  const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+
   useEffect(() => {
     if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
       setSelectedIdx(Math.max(0, visibleFilings.length - 1));
@@ -329,9 +354,12 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     url: error ? null : openFiling?.filingUrl,
     source: openFiling?.form,
     label: "filing",
-    loading,
-    error,
+    loading: loading || !!summary.summarizingAccession,
+    error: error ?? summary.summaryError,
     showOpenHint: !error && !!openFiling?.filingUrl,
+    hints: canSummarize
+      ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
+      : undefined,
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
@@ -352,6 +380,9 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
         loadingContent,
         openDocuments,
         loadingDocuments,
+        false,
+        summary.summaries,
+        summary.summarizingAccession,
       )}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
@@ -445,6 +476,20 @@ function SecPane({ width, height, focused }: PaneProps) {
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
 
+  const summary = useFilingSummary({
+    filings,
+    contentCache,
+  });
+  const selectedFiling = filings[selectedIdx] ?? null;
+  const summarizeTarget = openFiling ?? selectedFiling ?? null;
+  const handleSummarize = useCallback(() => {
+    if (!summarizeTarget) return;
+    const content = contentCache.get(summarizeTarget.accessionNumber);
+    if (!content) return;
+    void summary.summarize(summarizeTarget, content);
+  }, [contentCache, summarizeTarget, summary]);
+  const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
       setSelectedIdx(Math.max(0, filings.length - 1));
@@ -494,8 +539,8 @@ function SecPane({ width, height, focused }: PaneProps) {
     url: error ? null : openFiling?.filingUrl,
     source: openFiling?.form,
     label: "filing",
-    loading,
-    error,
+    loading: loading || !!summary.summarizingAccession,
+    error: error ?? summary.summaryError,
     info: updatedAgo
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : undefined,
@@ -503,6 +548,9 @@ function SecPane({ width, height, focused }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
+      ...(canSummarize
+        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
+        : []),
     ],
   });
 
@@ -579,6 +627,8 @@ function SecPane({ width, height, focused }: PaneProps) {
         openDocuments,
         loadingDocuments,
         true,
+        summary.summaries,
+        summary.summarizingAccession,
       )}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
@@ -635,6 +685,7 @@ export const secModule: PluginModule = {
   ],
 
   setup(ctx) {
+    attachSecSummaryPersistence(ctx.persistence);
     disposeSecConnection = registerConnectionSource({
       id: "sec-edgar",
       name: "SEC EDGAR",
@@ -654,5 +705,6 @@ export const secModule: PluginModule = {
   dispose() {
     disposeSecConnection?.();
     disposeSecConnection = null;
+    resetSecSummaryPersistence();
   },
 };
