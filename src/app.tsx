@@ -12,7 +12,6 @@ import {
 import { bindAppActivity, useAppActive } from "./state/app/activity";
 import { Header } from "./components/layout/header";
 import { StatusBar } from "./components/layout/status-bar";
-import { FocusedPaneFooterHost } from "./components/layout/pane/footer";
 import { Shell } from "./components/layout/shell";
 import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
@@ -410,17 +409,15 @@ function AppInner({
       >
         <ThemedAppRoot>
           <Header onOpenHelp={() => pluginRegistry.showPane("help")} />
-          <FocusedPaneFooterHost>
-            <TransientLayoutProvider>
-              <Shell
-                pluginRegistry={pluginRegistry}
-                desktopWindowBridge={desktopWindowBridge}
-                desktopDockPreview={desktopDockPreview}
-                commandBarNativeOccluder={commandBarNativeOccluder}
-              />
-              <StatusBar />
-            </TransientLayoutProvider>
-          </FocusedPaneFooterHost>
+          <TransientLayoutProvider>
+            <Shell
+              pluginRegistry={pluginRegistry}
+              desktopWindowBridge={desktopWindowBridge}
+              desktopDockPreview={desktopDockPreview}
+              commandBarNativeOccluder={commandBarNativeOccluder}
+            />
+            <StatusBar />
+          </TransientLayoutProvider>
           {onboardingActive && onOnboardingComplete ? (
             <OnboardingWizard
               pluginRegistry={pluginRegistry}

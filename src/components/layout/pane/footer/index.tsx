@@ -28,11 +28,6 @@ export {
   usePaneFooter,
   usePaneHints,
 } from "./registration";
-export {
-  FocusedPaneFooterHost,
-  useFocusedPaneFooter,
-  usePaneFooterPlacement,
-} from "./focused";
 
 function footerToneColor(part: PaneFooterPart): string {
   if (part.color) return part.color;
@@ -148,7 +143,7 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
   );
 }
 
-export function FooterContent({
+function FooterContent({
   footer,
   focused,
   width,
