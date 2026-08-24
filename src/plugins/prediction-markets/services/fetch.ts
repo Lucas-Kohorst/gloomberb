@@ -17,7 +17,10 @@ const PREDICTION_FETCH = createThrottledFetch({
   requestsPerMinute: 120,
   maxRetries: 2,
   timeoutMs: 10_000,
-  backoffBaseMs: 250,
+  // An upstream 522 comes back fast, so a 250ms base retried both attempts
+  // inside 750ms and surfaced an error banner for a blip that was already over
+  // a second later. 750ms spreads the three attempts across ~2.2s instead.
+  backoffBaseMs: 750,
   dedupeGetRequests: false,
   defaultHeaders: {
     Accept: "application/json",
