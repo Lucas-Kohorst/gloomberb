@@ -34,11 +34,11 @@ describe("AI screener helpers", () => {
 
     expect(prompt).toContain("Today is 2026-04-01.");
     expect(prompt).toContain("Use the available Gloomberb data tools");
-    expect(prompt).toContain("Submit the final structured screener result");
+    expect(prompt).toContain("Reply with ONLY a JSON object");
+    expect(prompt).toContain('"tickers"');
     expect(prompt).not.toContain("already found");
     expect(prompt).not.toContain("Prefer new names");
     expect(prompt).not.toContain("CLI");
-    expect(prompt).not.toContain("raw JSON");
   });
 
   test("parses fenced JSON responses and normalizes ticker fields", () => {
@@ -65,6 +65,24 @@ describe("AI screener helpers", () => {
         },
       ],
     });
+  });
+
+  test("parses a top-level JSON ticker array from small models", () => {
+    const parsed = parseScreenerResponse(`
+Here are some names:
+[{"ticker":"tsla","reason":"Optimus humanoid robots"},{"symbol":"NVDA","exchange":"NASDAQ","reason":"AI chips in humanoid stacks"}]
+`);
+    expect(parsed.tickers.map((ticker) => ticker.symbol)).toEqual(["TSLA", "NVDA"]);
+    expect(parsed.tickers[0]?.reason).toContain("Optimus");
+  });
+
+  test("parses a bullet list when the model ignores JSON", () => {
+    const parsed = parseScreenerResponse(`
+TSLA (NASDAQ): Builds Optimus humanoid robots
+NVDA - supplies AI compute for humanoid platforms
+`);
+    expect(parsed.tickers.map((ticker) => ticker.symbol)).toEqual(["TSLA", "NVDA"]);
+    expect(parsed.tickers[0]?.exchange).toBe("NASDAQ");
   });
 
 });

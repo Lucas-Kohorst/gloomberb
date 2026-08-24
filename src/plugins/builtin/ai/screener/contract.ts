@@ -34,6 +34,12 @@ function tryParseJson(raw: string): unknown | null {
     candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
   }
 
+  const firstBracket = trimmed.indexOf("[");
+  const lastBracket = trimmed.lastIndexOf("]");
+  if (firstBracket >= 0 && lastBracket > firstBracket) {
+    candidates.push(trimmed.slice(firstBracket, lastBracket + 1));
+  }
+
   for (const candidate of candidates) {
     try {
       return JSON.parse(candidate);
@@ -88,7 +94,8 @@ export function buildScreenerPrompt({
   ];
 
   lines.push(
-    "Submit the final structured screener result with an optional short title, an optional one-line summary, and the validated tickers.",
+    "Reply with ONLY a JSON object. No markdown fences. No prose before or after.",
+    '{"title":"short title","summary":"one line","tickers":[{"symbol":"TSLA","exchange":"NASDAQ","reason":"why it matches"}]}',
     "Rules:",
     "- Return at most 25 unique ticker candidates.",
     "- Use uppercase symbols.",
@@ -99,38 +106,76 @@ export function buildScreenerPrompt({
   return lines.join("\n");
 }
 
+function coerceTickerEntry(entry: unknown): ScreenerCandidate | null {
+  if (typeof entry === "string") {
+    const symbol = entry.trim().toUpperCase();
+    if (!/^[A-Z]{1,5}$/.test(symbol)) return null;
+    return { symbol, exchange: "", reason: "No reason provided." };
+  }
+  if (!entry || typeof entry !== "object") return null;
+  const candidate = entry as Record<string, unknown>;
+  const symbol = normalizeString(candidate.symbol || candidate.ticker).toUpperCase();
+  const exchange = normalizeString(candidate.exchange).toUpperCase();
+  const reason = normalizeString(candidate.reason);
+  if (!symbol) return null;
+  return {
+    symbol,
+    exchange,
+    reason: reason || "No reason provided.",
+  };
+}
+
+function parseTickersFromProse(raw: string): ScreenerCandidate[] {
+  const tickers: ScreenerCandidate[] = [];
+  const seen = new Set<string>();
+  const linePattern = /(?:^|\n)\s*(?:[-*]|\d+[.)])?\s*\**([A-Z]{1,5})\**(?:\s*\(([^)]+)\))?\s*[-–—:]\s*(.+)/g;
+  for (const match of raw.matchAll(linePattern)) {
+    const symbol = match[1] ?? "";
+    if (!symbol || seen.has(symbol)) continue;
+    seen.add(symbol);
+    tickers.push({
+      symbol,
+      exchange: (match[2] ?? "").trim().toUpperCase(),
+      reason: (match[3] ?? "").trim() || "No reason provided.",
+    });
+  }
+  return tickers.slice(0, 25);
+}
+
 export function parseScreenerResponse(raw: string): ParsedScreenerResponse {
   const parsed = tryParseJson(raw);
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error("AI screener returned invalid JSON.");
+
+  if (Array.isArray(parsed)) {
+    const tickers = parsed
+      .map(coerceTickerEntry)
+      .filter((entry): entry is ScreenerCandidate => entry != null)
+      .slice(0, 25);
+    if (tickers.length === 0) {
+      throw new Error("AI screener returned invalid JSON.");
+    }
+    return { title: null, summary: null, tickers };
   }
 
-  const payload = parsed as Record<string, unknown>;
-  const tickersRaw = Array.isArray(payload.tickers) ? payload.tickers : null;
-  if (!tickersRaw) {
-    throw new Error("AI screener JSON did not include a `tickers` array.");
-  }
-
-  const tickers = tickersRaw
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const candidate = entry as Record<string, unknown>;
-      const symbol = normalizeString(candidate.symbol).toUpperCase();
-      const exchange = normalizeString(candidate.exchange).toUpperCase();
-      const reason = normalizeString(candidate.reason);
-      if (!symbol) return null;
+  if (parsed && typeof parsed === "object") {
+    const payload = parsed as Record<string, unknown>;
+    const tickersRaw = Array.isArray(payload.tickers) ? payload.tickers : null;
+    if (tickersRaw) {
+      const tickers = tickersRaw
+        .map(coerceTickerEntry)
+        .filter((entry): entry is ScreenerCandidate => entry != null)
+        .slice(0, 25);
       return {
-        symbol,
-        exchange,
-        reason: reason || "No reason provided.",
-      } satisfies ScreenerCandidate;
-    })
-    .filter((entry): entry is ScreenerCandidate => entry != null)
-    .slice(0, 25);
+        title: normalizeString(payload.title) || null,
+        summary: normalizeString(payload.summary) || null,
+        tickers,
+      };
+    }
+  }
 
-  return {
-    title: normalizeString(payload.title) || null,
-    summary: normalizeString(payload.summary) || null,
-    tickers,
-  };
+  const proseTickers = parseTickersFromProse(raw);
+  if (proseTickers.length > 0) {
+    return { title: null, summary: null, tickers: proseTickers };
+  }
+
+  throw new Error("AI screener returned invalid JSON.");
 }
