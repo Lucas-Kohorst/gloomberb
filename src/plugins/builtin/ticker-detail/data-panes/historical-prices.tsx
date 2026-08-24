@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../../ui";
 import {
   DataTableView,
@@ -12,6 +12,12 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
+import {
+  applySortPreference,
+  CLEARED_SORT,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../../utils/sort-values";
 import {
   useAssetData,
   useDebouncedPluginPaneState,
@@ -111,11 +117,32 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   }, [dataProvider, range]);
   const { data, loading, error, reload } = useTickerRequest<PricePoint[]>(loader, symbol, exchange);
   const rows = useMemo(() => buildHistoricalPriceRows(data ?? []), [data]);
+  const [sort, setSort] = useState<SortPreference<HistoryColumnId>>({
+    columnId: null,
+    direction: "desc",
+  });
+  // A third click clears back to the chronological order buildHistoricalPriceRows
+  // produces, which is the only order that makes the change columns meaningful.
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sort, (row, columnId) => {
+      switch (columnId) {
+        case "date": return pricePointDate(row.point)?.getTime() ?? null;
+        case "open": return row.point.open ?? null;
+        case "high": return row.point.high ?? null;
+        case "low": return row.point.low ?? null;
+        case "close": return row.point.close ?? null;
+        case "change": return row.change;
+        case "changePercent": return row.changePercent;
+        case "volume": return row.point.volume ?? null;
+      }
+    }),
+    [rows, sort],
+  );
   const columns = useMemo(() => buildHistoryColumns(width), [width]);
-  const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
+  const boundedSelectedIdx = sortedRows.length > 0 ? Math.min(selectedIdx, sortedRows.length - 1) : -1;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
 
-  useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
+  useClampSelectedIndex(sortedRows.length, selectedIdx, setSelectedIdx);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "r") {
@@ -181,10 +208,14 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      items={sortedRows}
+      sortColumnId={sort.columnId}
+      sortDirection={sort.direction}
+      onHeaderClick={(columnId) => setSort((current) => nextSortPreference(
+        current,
+        columnId as HistoryColumnId,
+        { resetTo: CLEARED_SORT },
+      ))}
       getItemKey={(row) => row.key}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading historical prices..." : "No historical prices"}
