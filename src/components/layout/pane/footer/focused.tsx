@@ -15,18 +15,16 @@ import {
   type CombinedPaneFooter,
 } from "./model";
 
-interface FocusedPaneFooterContextValue {
-  footer: CombinedPaneFooter | null;
-  setFooter(paneId: string, footer: CombinedPaneFooter | null): void;
-}
+type SetFocusedPaneFooter = (paneId: string, footer: CombinedPaneFooter | null) => void;
 
-const FocusedPaneFooterContext = createContext<FocusedPaneFooterContextValue | null>(null);
+const FocusedPaneFooterDispatchContext = createContext<SetFocusedPaneFooter | null>(null);
+const FocusedPaneFooterStateContext = createContext<CombinedPaneFooter | null>(null);
 
 /** Hosted/desktop window status bar reads the focused pane's footer from here. */
 export function FocusedPaneFooterHost({ children }: { children: ReactNode }) {
   const [entry, setEntry] = useState<{ paneId: string; footer: CombinedPaneFooter } | null>(null);
 
-  const setFooter = useCallback((paneId: string, footer: CombinedPaneFooter | null) => {
+  const setFooter = useCallback<SetFocusedPaneFooter>((paneId, footer) => {
     setEntry((current) => {
       if (!footer || !hasPaneFooterContent(footer)) {
         return current?.paneId === paneId ? null : current;
@@ -38,26 +36,23 @@ export function FocusedPaneFooterHost({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const value = useMemo<FocusedPaneFooterContextValue>(
-    () => ({ footer: entry?.footer ?? null, setFooter }),
-    [entry, setFooter],
-  );
-
   return (
-    <FocusedPaneFooterContext.Provider value={value}>
-      {children}
-    </FocusedPaneFooterContext.Provider>
+    <FocusedPaneFooterDispatchContext.Provider value={setFooter}>
+      <FocusedPaneFooterStateContext.Provider value={entry?.footer ?? null}>
+        {children}
+      </FocusedPaneFooterStateContext.Provider>
+    </FocusedPaneFooterDispatchContext.Provider>
   );
 }
 
 export function useFocusedPaneFooter(): CombinedPaneFooter | null {
-  return useContext(FocusedPaneFooterContext)?.footer ?? null;
+  return useContext(FocusedPaneFooterStateContext);
 }
 
 function usePromotePaneFooterToStatusBar(): boolean {
-  const host = useContext(FocusedPaneFooterContext);
+  const setFooter = useContext(FocusedPaneFooterDispatchContext);
   const { nativePaneChrome } = useUiCapabilities();
-  return !!nativePaneChrome && host != null;
+  return !!nativePaneChrome && setFooter != null;
 }
 
 /** Publish the focused pane footer to the window status bar; hide the in-pane copy on web/desktop. */
@@ -66,17 +61,17 @@ export function usePaneFooterPlacement(
   focused: boolean,
   footer: CombinedPaneFooter | null | undefined,
 ): { hideInPane: boolean } {
-  const host = useContext(FocusedPaneFooterContext);
+  const setFooter = useContext(FocusedPaneFooterDispatchContext);
   const hideInPane = usePromotePaneFooterToStatusBar();
   const resolved = footer && hasPaneFooterContent(footer) ? footer : EMPTY_FOOTER;
 
   useLayoutEffect(() => {
-    if (!host || !paneId || !hideInPane) return;
-    if (focused) host.setFooter(paneId, resolved);
+    if (!setFooter || !paneId || !hideInPane) return;
+    if (focused) setFooter(paneId, resolved);
     return () => {
-      host.setFooter(paneId, null);
+      setFooter(paneId, null);
     };
-  }, [focused, hideInPane, host, paneId, resolved]);
+  }, [focused, hideInPane, paneId, resolved, setFooter]);
 
   return { hideInPane };
 }

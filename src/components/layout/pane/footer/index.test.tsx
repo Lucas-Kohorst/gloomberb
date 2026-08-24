@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
-import { Box } from "../../../../ui";
+import { act, useMemo, type ReactNode } from "react";
+import { Box, Text, UiHostProvider, useUiHost } from "../../../../ui";
 import { testRender } from "../../../../renderers/opentui/test-utils";
 import {
   clipPaneFooterInfo,
+  FocusedPaneFooterHost,
   PaneFooterBar,
   PaneFooterProvider,
+  useFocusedPaneFooter,
   usePaneFooter,
+  usePaneFooterPlacement,
+  type CombinedPaneFooter,
 } from "./index";
 import { useExternalLinkFooter } from "../../../use-external-link-footer";
 import { setLanguage, t } from "../../../../i18n";
@@ -292,5 +296,62 @@ describe("PaneFooterBar", () => {
       await testSetup!.renderOnce();
     });
     expect(refreshCount).toBe(1);
+  });
+});
+
+function NativeChrome({ children }: { children: ReactNode }) {
+  const ui = useUiHost();
+  const native = useMemo(() => ({
+    ...ui,
+    capabilities: { ...ui.capabilities, nativePaneChrome: true },
+  }), [ui]);
+  return <UiHostProvider ui={native}>{children}</UiHostProvider>;
+}
+
+function PublishLiveFooter() {
+  usePaneFooter("crash", () => ({
+    info: [{ id: "status", parts: [{ text: "live", tone: "muted" }] }],
+    hints: [{ id: "refresh", key: "r", label: "efresh" }],
+  }), []);
+  return null;
+}
+
+function PromoteFooter({ footer }: { footer: CombinedPaneFooter }) {
+  usePaneFooterPlacement("pane-1", true, footer);
+  return null;
+}
+
+function PromotedFooterText() {
+  const footer = useFocusedPaneFooter();
+  return <Text>{footer?.info[0]?.parts[0]?.text ?? "none"}</Text>;
+}
+
+function StatusBarFooterLoopHarness() {
+  return (
+    <NativeChrome>
+      <FocusedPaneFooterHost>
+        <PaneFooterProvider>
+          {(footer) => (
+            <Box width={24} height={1}>
+              <PublishLiveFooter />
+              <PromoteFooter footer={footer} />
+              <PromotedFooterText />
+            </Box>
+          )}
+        </PaneFooterProvider>
+      </FocusedPaneFooterHost>
+    </NativeChrome>
+  );
+}
+
+describe("FocusedPaneFooterHost", () => {
+  test("does not loop when the focused pane publishes into the status bar", async () => {
+    testSetup = await testRender(<StatusBarFooterLoopHarness />, { width: 24, height: 1 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    expect(testSetup.captureCharFrame()).toContain("live");
   });
 });
