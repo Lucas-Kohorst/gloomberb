@@ -28,6 +28,14 @@ describe("Chrome built-in AI detection", () => {
     });
   }
 
+  test("detects Chrome's LanguageModel constructor function", async () => {
+    function LanguageModel() {}
+    LanguageModel.availability = async () => "available" as const;
+    LanguageModel.create = async () => ({});
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = LanguageModel;
+    expect((await getBrowserAiState()).availability).toBe("available");
+  });
+
   test("treats an absent or throwing global as unavailable", async () => {
     (globalThis as { LanguageModel?: unknown }).LanguageModel = undefined;
     expect((await getBrowserAiState()).availability).toBe("unavailable");

@@ -97,7 +97,10 @@ interface LanguageModelApi {
 function languageModel(): LanguageModelApi | null {
   if (typeof globalThis === "undefined") return null;
   const candidate = (globalThis as { LanguageModel?: unknown }).LanguageModel;
-  if (!candidate || typeof candidate !== "object") return null;
+  // Chrome exposes LanguageModel as a constructor function, not a plain object.
+  if (candidate == null || (typeof candidate !== "object" && typeof candidate !== "function")) {
+    return null;
+  }
   const api = candidate as Partial<LanguageModelApi>;
   return typeof api.availability === "function" && typeof api.create === "function"
     ? api as LanguageModelApi
