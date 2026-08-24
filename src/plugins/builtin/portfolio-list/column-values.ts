@@ -40,6 +40,15 @@ export interface ColumnContext {
   earningsEvents?: Map<string, EarningsEvent | null>;
 }
 
+/**
+ * Only these two columns read `ColumnContext.now`. Every other column's value is
+ * independent of the clock, so callers freeze `now` for the rest: a tick must not
+ * invalidate a cached cell or re-run the sort.
+ */
+export function isTimeSensitiveColumnId(columnId: string | null | undefined): boolean {
+  return columnId === "latency" || columnId === "held";
+}
+
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
 function finiteNumber(value: unknown): value is number {

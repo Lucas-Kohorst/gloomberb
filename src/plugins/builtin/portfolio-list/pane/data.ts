@@ -7,7 +7,7 @@ import type { CollectionSortPreference } from "../../../../state/app/context";
 import { isQuoteStaleForCurrentSession } from "../../../../market-data/quotes/freshness";
 import { resolveQuoteAgeTimestamp } from "../../../../market-data/quotes/time";
 import { compareSortValues } from "../../../../utils/sort-values";
-import { getSortValue, type ColumnContext } from "../metrics";
+import { getSortValue, isTimeSensitiveColumnId, type ColumnContext } from "../metrics";
 import type { ResolvedPortfolioAccountState } from "../summary";
 
 export const VISIBLE_QUOTE_REFRESH_COOLDOWN_MS = 15_000;
@@ -220,8 +220,7 @@ export function sortTickers(
     columnContext.portfolioTotalMarketValue ?? 0,
     columnContext.supplementalVersion ?? 0,
     exchangeRatesVersion,
-    sortColumn.id === "latency" ? columnContext.now : 0,
-    sortColumn.id === "held" ? columnContext.now : 0,
+    isTimeSensitiveColumnId(sortColumn.id) ? columnContext.now : 0,
   ].join("|");
   const sortValues = new Map<string, ReturnType<typeof getSortValue>>();
   for (const ticker of tickers) {

@@ -9,7 +9,7 @@ import { createRowValueCache } from "../../../components/ui/row-value-cache";
 import type { ColumnConfig } from "../../../types/config";
 import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
-import { getColumnValue, type ColumnContext } from "./metrics";
+import { getColumnValue, isTimeSensitiveColumnId, type ColumnContext } from "./metrics";
 
 export type { QuoteFlashDirection };
 
@@ -32,7 +32,7 @@ function buildCellVersion(
   financials: TickerFinancials | undefined,
   context: ColumnContext,
 ): string {
-  const timeSensitiveNow = column.id === "latency" || column.id === "held" ? context.now : 0;
+  const timeSensitiveNow = isTimeSensitiveColumnId(column.id) ? context.now : 0;
   return [
     column.id,
     objectVersion(ticker),
