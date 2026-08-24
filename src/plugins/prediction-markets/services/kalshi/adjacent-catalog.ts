@@ -214,7 +214,8 @@ function adjacentSortParams(
 ): { sort?: string; sortDir?: string } {
   if (searchQuery) return {};
   if (browseTab === "ending") return { sort: "expiration", sortDir: "asc" };
-  if (browseTab === "new") return { sort: "created", sortDir: "desc" };
+  // Adjacent rejects sort=created (400). New is sorted locally by createdAt.
+  if (browseTab === "new") return {};
   return { sort: "volume", sortDir: "desc" };
 }
 

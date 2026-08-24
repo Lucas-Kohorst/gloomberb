@@ -15,6 +15,7 @@ export type PredictionKeyboardCommand =
   | "browse-top"
   | "browse-ending"
   | "browse-new"
+  | "filter-all"
   | "filter-watchlist";
 
 export interface PredictionKeyboardEventLike {
@@ -63,9 +64,9 @@ export function resolvePredictionKeyboardCommand(
   if (matchesPredictionKey(event, ["r"], ["r"])) return "refresh";
   if (matchesPredictionKey(event, ["["], ["["])) return "previous-browse-tab";
   if (matchesPredictionKey(event, ["]"], ["]"])) return "next-browse-tab";
-  if (matchesPredictionKey(event, ["1"], ["1"])) return "browse-top";
-  if (matchesPredictionKey(event, ["2"], ["2"])) return "browse-ending";
-  if (matchesPredictionKey(event, ["3"], ["3"])) return "browse-new";
-  if (matchesPredictionKey(event, ["4"], ["4"])) return "filter-watchlist";
+  if (matchesPredictionKey(event, ["1"], ["1"])) return "filter-all";
+  if (matchesPredictionKey(event, ["2"], ["2"])) return "filter-watchlist";
+  if (matchesPredictionKey(event, ["3"], ["3"])) return "browse-ending";
+  if (matchesPredictionKey(event, ["4"], ["4"])) return "browse-new";
   return null;
 }

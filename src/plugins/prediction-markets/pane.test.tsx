@@ -171,8 +171,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
-    expect(frame).toContain("[1-3]browse");
-    expect(frame).toContain("[4]watchlist");
+    expect(frame).toContain("[1-4]filter");
 
     const lines = frame.split("\n");
     const kalshiRow = lines.findIndex((line) =>
@@ -208,8 +207,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame.match(/Will the Fed cut rates\?/g) ?? []).toHaveLength(1);
     expect(frame).not.toContain("[/]search");
     expect(frame).not.toContain("[w]atch");
-    expect(frame).not.toContain("[1-4]browse");
-    expect(frame).not.toContain("[4]watchlist");
+    expect(frame).not.toContain("[1-4]filter");
 
     const metricsHeader = frame
       .split("\n")
@@ -294,7 +292,7 @@ describe("prediction markets pane interactions", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
   });
 
-  test("selects browse tabs with 1-3, the watchlist with 4, and cycles browse tabs with [ and ]", async () => {
+  test("selects All, Watchlist, Ending, and New with 1-4", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -307,28 +305,32 @@ describe("prediction markets pane interactions", () => {
 
     expect(pluginState()?.selectedRowKey).not.toBeNull();
 
-    // The watchlist is a category filter, so 4 must not disturb the sort mode.
-    await emitKeypress(testSetup, { name: "4", sequence: "4" });
-    await flushFrames(testSetup);
-    expect(pluginState()?.categoryId).toBe("watchlist");
-    expect(pluginState()?.browseTab).not.toBe("watchlist");
-
     await emitKeypress(testSetup, { name: "2", sequence: "2" });
     await flushFrames(testSetup);
+    expect(pluginState()?.categoryId).toBe("watchlist");
+
+    await emitKeypress(testSetup, { name: "3", sequence: "3" });
+    await flushFrames(testSetup);
     expect(pluginState()?.browseTab).toBe("ending");
+    expect(pluginState()?.categoryId).toBe("all");
+
+    await emitKeypress(testSetup, { name: "4", sequence: "4" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("new");
 
     await emitKeypress(testSetup, { name: "1", sequence: "1" });
     await flushFrames(testSetup);
     expect(pluginState()?.browseTab).toBe("top");
+    expect(pluginState()?.categoryId).toBe("all");
     expect(pluginState()?.selectedRowKey).not.toBeNull();
 
     await emitKeypress(testSetup, { name: "]", sequence: "]" });
     await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("ending");
+    expect(pluginState()?.categoryId).toBe("watchlist");
 
     await emitKeypress(testSetup, { name: "[", sequence: "[" });
     await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("top");
+    expect(pluginState()?.categoryId).toBe("all");
   });
 
   test("filters the loaded catalog immediately while remote search is still pending", async () => {

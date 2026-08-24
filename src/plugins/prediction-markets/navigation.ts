@@ -1,3 +1,7 @@
+import {
+  PREDICTION_CATEGORY_OPTIONS,
+  type PredictionCategoryId,
+} from "./categories";
 import type {
   PredictionBrowseTab,
   PredictionDetailTab,
@@ -21,6 +25,74 @@ export const BROWSE_TABS: ReadonlyArray<{
   { label: "Ending", value: "ending" },
   { label: "New", value: "new" },
 ];
+
+/** One chip row: All, Watchlist, Ending, New, then topic categories. */
+export type PredictionFilterId = PredictionCategoryId | "ending" | "new";
+
+export interface PredictionFilterTab {
+  id: PredictionFilterId;
+  label: string;
+  categoryId: PredictionCategoryId;
+  browseTab: PredictionBrowseTab;
+}
+
+const TOPIC_CATEGORY_OPTIONS = PREDICTION_CATEGORY_OPTIONS.filter(
+  (option) => option.id !== "all" && option.id !== "watchlist",
+);
+
+export const PREDICTION_FILTER_TABS: readonly PredictionFilterTab[] = [
+  { id: "all", label: "All", categoryId: "all", browseTab: "top" },
+  { id: "watchlist", label: "Watchlist", categoryId: "watchlist", browseTab: "top" },
+  { id: "ending", label: "Ending", categoryId: "all", browseTab: "ending" },
+  { id: "new", label: "New", categoryId: "all", browseTab: "new" },
+  ...TOPIC_CATEGORY_OPTIONS.map((option) => ({
+    id: option.id,
+    label: option.label,
+    categoryId: option.id,
+    browseTab: "top" as const,
+  })),
+];
+
+export function resolvePredictionFilterId(
+  categoryId: PredictionCategoryId,
+  browseTab: PredictionBrowseTab,
+): PredictionFilterId {
+  if (categoryId === "all" && browseTab === "ending") return "ending";
+  if (categoryId === "all" && browseTab === "new") return "new";
+  return categoryId;
+}
+
+export function predictionFilterTab(
+  filterId: PredictionFilterId,
+): PredictionFilterTab {
+  return PREDICTION_FILTER_TABS.find((tab) => tab.id === filterId)
+    ?? PREDICTION_FILTER_TABS[0]!;
+}
+
+export function getAdjacentPredictionFilterId(
+  current: PredictionFilterId,
+  direction: "previous" | "next",
+  options?: { wrap?: boolean },
+): PredictionFilterId {
+  const currentIndex = PREDICTION_FILTER_TABS.findIndex((tab) => tab.id === current);
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const lastIndex = PREDICTION_FILTER_TABS.length - 1;
+  const nextIndex = options?.wrap
+    ? direction === "previous"
+      ? (safeIndex - 1 + PREDICTION_FILTER_TABS.length) % PREDICTION_FILTER_TABS.length
+      : (safeIndex + 1) % PREDICTION_FILTER_TABS.length
+    : direction === "previous"
+      ? Math.max(safeIndex - 1, 0)
+      : Math.min(safeIndex + 1, lastIndex);
+  return PREDICTION_FILTER_TABS[nextIndex]!.id;
+}
+
+export function cyclePredictionFilterId(
+  current: PredictionFilterId,
+  direction: "previous" | "next",
+): PredictionFilterId {
+  return getAdjacentPredictionFilterId(current, direction, { wrap: true });
+}
 
 export const DETAIL_TABS: ReadonlyArray<{
   label: string;

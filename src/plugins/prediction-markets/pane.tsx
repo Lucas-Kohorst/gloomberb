@@ -16,7 +16,6 @@ import { useGraphChartPopOut } from "../builtin/shared/graph-pop-out";
 import { createRowValueCache } from "../../components/ui/row-value-cache";
 import type { PaneProps } from "../../types/plugin";
 import { colors } from "../../theme/colors";
-import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
@@ -26,11 +25,9 @@ import {
   KALSHI_CATALOG_POLL_MS,
   POLYMARKET_CATALOG_POLL_MS,
 } from "./controller/catalog";
-import { BROWSE_TABS, VENUE_TABS } from "./navigation";
+import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import type {
-  PredictionBrowseTab,
-  PredictionCategoryId,
   PredictionColumnDef,
   PredictionListRow,
 } from "./types";
@@ -171,19 +168,19 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           { id: "refresh", key: "r", label: "efresh", onPress: controller.actions.refreshCatalog },
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
           {
-            id: "browse",
-            key: "1-3",
-            label: "browse",
+            id: "filter",
+            key: "1-4",
+            label: "filter",
             onPress: () => {
-              const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
-              controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
+              const current = resolvePredictionFilterId(
+                controller.categoryId,
+                controller.browseTab,
+              );
+              const order = ["all", "watchlist", "ending", "new"] as const;
+              const index = order.findIndex((id) => id === current);
+              const next = order[(index + 1) % order.length]!;
+              controller.actions.selectFilter(next);
             },
-          },
-          {
-            id: "watchlist",
-            key: "4",
-            label: "watchlist",
-            onPress: () => controller.actions.selectCategory("watchlist"),
           },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
@@ -191,8 +188,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     };
   }, [
     catalogStatusColor,
-    controller.actions.selectCategory,
+    controller.actions.selectFilter,
     controller.browseTab,
+    controller.categoryId,
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
     controller.catalogLastRefreshAt,
@@ -225,10 +223,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     />
   ) : null;
 
-  // Search box, browse tabs and category tabs share one row so the pane
-  // doesn't burn three rows of vertical space (the third was getting clipped).
-  // Both tab strips use variant="bare" + scrollable={false} so they size to
-  // their labels instead of each claiming width:100% and clipping Watchlist.
+  // Search and one filter strip share a row. Ending/New sit with All/Watchlist
+  // and the topic chips so hosted does not render two competing tab bars.
   const searchBrowseAndCategories = (
     <Box flexDirection="row" height={1} paddingX={1} gap={2}>
       <Box
@@ -269,33 +265,21 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         )}
       </Box>
       <Tabs
-        tabs={BROWSE_TABS.map((tab) => ({
+        tabs={PREDICTION_FILTER_TABS.map((tab) => ({
           label: tab.label,
-          value: tab.value,
+          value: tab.id,
         }))}
-        activeValue={controller.browseTab}
+        activeValue={resolvePredictionFilterId(
+          controller.categoryId,
+          controller.browseTab,
+        )}
         onSelect={(value) =>
-          controller.actions.selectBrowseTab(value as PredictionBrowseTab)
+          controller.actions.selectFilter(value as (typeof PREDICTION_FILTER_TABS)[number]["id"])
         }
         compact
         variant="bare"
         scrollable={false}
       />
-      {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
-        <Tabs
-          tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
-            label: category.label,
-            value: category.id,
-          }))}
-          activeValue={controller.categoryId}
-          onSelect={(value) =>
-            controller.actions.selectCategory(value as PredictionCategoryId)
-          }
-          compact
-          variant="bare"
-          scrollable={false}
-        />
-      ) : null}
     </Box>
   );
 

@@ -14,6 +14,10 @@ import { usePredictionControllerEffects } from "./effects";
 import { usePredictionControllerKeyboard } from "./keyboard";
 import { getDefaultPredictionSort, getNextPredictionSort } from "../metrics";
 import {
+  predictionFilterTab,
+  type PredictionFilterId,
+} from "../navigation";
+import {
   resolvePredictionListActivation,
   togglePredictionGroupExpanded,
 } from "../rows";
@@ -302,20 +306,32 @@ export function usePredictionMarketsController({
     [setLastVenueScope, setVenueScope],
   );
 
+  const selectFilter = useCallback(
+    (filterId: PredictionFilterId) => {
+      const tab = predictionFilterTab(filterId);
+      setSearchFocused(false);
+      setCategoryId(tab.categoryId);
+      setBrowseTab(tab.browseTab);
+    },
+    [setBrowseTab, setCategoryId],
+  );
+
   const selectBrowseTab = useCallback(
     (nextBrowseTab: PredictionBrowseTab) => {
-      setSearchFocused(false);
-      setBrowseTab(nextBrowseTab);
+      if (nextBrowseTab === "ending" || nextBrowseTab === "new") {
+        selectFilter(nextBrowseTab);
+        return;
+      }
+      selectFilter(categoryId);
     },
-    [setBrowseTab],
+    [categoryId, selectFilter],
   );
 
   const selectCategory = useCallback(
     (nextCategoryId: PredictionCategoryId) => {
-      setSearchFocused(false);
-      setCategoryId(nextCategoryId);
+      selectFilter(nextCategoryId);
     },
-    [setCategoryId],
+    [selectFilter],
   );
 
   const handleSortHeaderClick = useCallback(
@@ -348,8 +364,7 @@ export function usePredictionMarketsController({
     sortedOutcomeMarkets: data.sortedOutcomeMarkets,
     blurSearch,
     focusSearch,
-    selectBrowseTab,
-    selectCategory,
+    selectFilter,
     selectMarket,
     setVenue,
     toggleWatchlist,
@@ -404,6 +419,7 @@ export function usePredictionMarketsController({
       refreshCatalog: data.actions.refreshCatalog,
       selectBrowseTab,
       selectCategory,
+      selectFilter,
       selectMarket,
       setDetailTab,
       setBrowseSelection,
