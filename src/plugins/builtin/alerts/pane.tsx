@@ -6,14 +6,18 @@ import {
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../components";
+import { TextFieldDialog } from "../../../components/pane-settings-dialog/field-dialogs";
 import { colors } from "../../../theme/colors";
 import { TextAttributes } from "../../../ui";
+import { useDialog, type AlertContext } from "../../../ui/dialog";
 import type { PaneProps } from "../../../types/plugin";
 import { useMarketData, usePluginAppActions, usePluginConfigState } from "../../runtime";
 import {
   deserializeAlerts,
+  editAlert,
   serializeAlerts,
 } from "./alert-engine";
+import { parseAlertCommandValues } from "./command";
 import { ALERTS_KEY, PANE_QUOTE_REFRESH_MS } from "./constants";
 import {
   conditionLabel,
@@ -66,6 +70,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
   const marketData = useMarketData();
   const { openPluginCommandWorkflow } = usePluginAppActions();
+  const dialog = useDialog();
   const [selectedIdx, setSelectedIdx] = useState(0);
   const marketDataId = marketData?.id ?? null;
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
@@ -119,6 +124,36 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     const selected = rows[selectedIdx];
     if (selected) deleteAlert(selected.id);
   }, [deleteAlert, rows, selectedIdx]);
+
+  const editSelectedAlert = useCallback(() => {
+    const selected = rows[selectedIdx];
+    if (!selected) return;
+    void dialog.alert({
+      closeOnClickOutside: true,
+      content: (context: AlertContext) => (
+        <TextFieldDialog
+          {...context}
+          field={{
+            type: "text",
+            key: "alert",
+            label: "Edit alert",
+            description: "SYMBOL above|below|crosses PRICE",
+            placeholder: "AAPL above 200",
+          }}
+          currentValue={`${selected.symbol} ${selected.condition} ${selected.targetPrice}`}
+          onApply={async (value) => {
+            const parsed = parseAlertCommandValues({ shortcut: value });
+            if (!parsed) throw new Error("Use SYMBOL above|below|crosses PRICE.");
+            savePaneAlerts((current) => current.map((alert) => (
+              alert.id === selected.id
+                ? editAlert(alert, parsed.symbol, parsed.condition, parsed.price)
+                : alert
+            )));
+          }}
+        />
+      ),
+    });
+  }, [dialog, rows, savePaneAlerts, selectedIdx]);
 
   useEffect(() => {
     if (!marketData || rows.length === 0) return;
@@ -174,6 +209,13 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     hints: [
       { id: "add", key: "a", label: "dd alert", onPress: startAddAlert },
       {
+        id: "edit",
+        key: "e",
+        label: "dit",
+        onPress: editSelectedAlert,
+        disabled: rows.length === 0,
+      },
+      {
         id: "delete",
         key: "d",
         label: "elete",
@@ -184,6 +226,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   }), [
     activeCount,
     deleteSelectedAlert,
+    editSelectedAlert,
     rows.length,
     startAddAlert,
     triggeredCount,
@@ -204,13 +247,18 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       startAddAlert();
       return true;
     }
+    if (event.name === "e") {
+      event.preventDefault?.();
+      editSelectedAlert();
+      return true;
+    }
     if (event.name === "escape") {
       event.preventDefault?.();
       close?.();
       return true;
     }
     return false;
-  }, [close, deleteSelectedAlert, startAddAlert]);
+  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert]);
 
   const renderCell = useCallback((
     alert: AlertRule,

@@ -22,6 +22,32 @@ export function createAlert(
   };
 }
 
+/**
+ * Rebuilt from a whitelist rather than spread so every trigger and quote
+ * lifecycle field is dropped. A re-armed `crosses` alert has to compare against
+ * a fresh baseline instead of the reading that fired it, and a retargeted alert
+ * must not keep the stale price, source, or error from its previous symbol.
+ */
+export function editAlert(
+  alert: AlertRule,
+  symbol: string,
+  condition: AlertCondition,
+  targetPrice: number,
+): AlertRule {
+  const nextSymbol = symbol.trim().toUpperCase();
+  return {
+    id: alert.id,
+    symbol: nextSymbol,
+    // A different listing invalidates whichever exchange was resolved before.
+    exchange: nextSymbol === alert.symbol.trim().toUpperCase() ? alert.exchange : undefined,
+    condition,
+    targetPrice,
+    createdAt: alert.createdAt,
+    status: "active",
+    message: alert.message,
+  };
+}
+
 export function evaluateAlert(alert: AlertRule, currentPrice: number): boolean {
   if (alert.status !== "active" || !isPriceAlertCondition(alert.condition)) return false;
 
