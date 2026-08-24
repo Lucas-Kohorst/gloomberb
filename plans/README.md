@@ -37,8 +37,23 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 027  | Add market halts pane (Godel HALT parity) | P2 | M | — | DONE |
 | 028  | Add IPO calendar pane (Godel IPO parity) | P2 | M | — | DONE |
 | 029  | Add Black-Scholes options calculator pane (Godel OVME parity) | P3 | S | — | DONE |
-| 045  | Run Chrome Prompt API as the hosted AI host | P1 | M | — | DONE |
-| 054  | Rank settlement series plus suggested CAT feeds | P2 | M | — | DONE |
+| 041  | Aug 24 terminal fixes batch (index) | P1 | L | — | DONE |
+| 042  | Adjacent auth routes for similar + news | P1 | M | — | DONE |
+| 043  | Hosted Kalshi catalog via Adjacent | P1 | M | 042 | DONE |
+| 044  | Hash web-main.js and 404 missing chunks | P1 | M | — | DONE |
+| 045  | Chrome Prompt API as hosted AI host | P1 | M | — | DONE |
+| 046  | PM density, event ticker, catalog footer | P1 | M | — | DONE |
+| 047  | Instant fuzzy PM search | P1 | M | — | DONE |
+| 048  | TOP = WIRE×10; PM news table; category case | P1 | M | 042 | DONE |
+| 049  | Case-insensitive search; command-bar tickers | P1 | M | — | DONE |
+| 050  | NA/dash sort last; remaining table sorts | P2 | M | — | DONE |
+| 051  | Default theme Adjacent | P2 | S | — | DONE |
+| 052  | ESG empty Yahoo + hide carbon | P2 | S | — | DONE |
+| 053  | Watchlists in PORT; ETF flows spike | P2 | L | — | DONE (watchlists landed; ETF flows blocked — no source) |
+| 054  | Settlement series matcher | P2 | M | — | DONE |
+| 055  | Command bar + analytics chrome | P2 | M | 049 | DONE |
+
+Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 
 ## Dependency notes
 
@@ -58,6 +73,23 @@ fully before starting, honor its STOP conditions, and update your row when done.
   due to FINRA/EMMA API uncertainty.
 - **025–029** shipped on the v0.11.1 line (PRs #57–#60) and were restored onto
   v0.12.0 after the cut dropped them. They are live panes, not remaining plans.
+- **042–055 (Aug 24 notes)**: Wave 1 is 042 ∥ 044 ∥ 045. 043 and 048 need 042.
+  046 then 047 if one executor owns PM. 055 needs 049. ETF flows in 053 may
+  STOP after the vendor spike. Extra PM venues are explicitly not planned.
+
+## Findings considered and rejected (Aug 24 batch)
+
+- **Third PM venue (e.g. Opinion/PredictIt)**: Adjacent and PM types are
+  `kalshi | polymarket` only. L-track with a new adapter +
+  `registerConnectionSource`. Not in 042–055.
+- **Gloom Cloud LLM for filings**: does not exist. Hosted must use Chrome
+  Prompt API (045), not a Worker model.
+- **Re-enable `capability.invoke` on hosted**: AGENTS.md — hosted disables
+  plugin capability invoke. 045 composes a browser host instead.
+- **ETF flows via Holders / 13F / scanner FLOW**: those are issuer holders,
+  13F books, and options unusual activity. Not create/redeem.
+- **PM watchlist Enter expand**: already tested on `9016c08e`. Residual is
+  auto-select first row (046).
 
 ## Findings considered and rejected
 
