@@ -1,5 +1,9 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerConnectionSource } from "../connections/register";
+import { BUILDOUT_CONNECTION_ID } from "./connection";
 import { BuildoutPane } from "./pane";
+
+let disposeConnection: (() => void) | null = null;
 
 export const BUILDOUT_PLUGIN_ID = "buildout";
 export const BUILDOUT_PANE_ID = "buildout";
@@ -30,4 +34,18 @@ export const buildoutPlugin: GloomPlugin = {
     shortcut: { prefix: "TBO" },
     createInstance: () => ({ placement: "floating" }),
   }],
+
+  setup() {
+    disposeConnection = registerConnectionSource({
+      id: BUILDOUT_CONNECTION_ID,
+      name: "TheBuildout",
+      kind: "api",
+      pluginId: BUILDOUT_PLUGIN_ID,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
 };
