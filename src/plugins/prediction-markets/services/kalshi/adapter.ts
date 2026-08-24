@@ -23,6 +23,10 @@ import {
 } from "../fetch";
 import { revivePredictionHistoryPoints } from "../history";
 import {
+  fetchHostedAdjacentKalshiCatalogPage,
+  parseHostedAdjacentKalshiPageCursor,
+} from "./adjacent-catalog";
+import {
   isOpenKalshiStatus,
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
@@ -44,9 +48,6 @@ export { normalizeKalshiMarket } from "./normalize";
 function kalshiApiBase(): string {
   return isHostedWebClient()
     ? KALSHI_PROXY_PATH
-    : "https://external-api.kalshi.com/trade-api/v2";
-  return isHostedWebClient()
-    ? "/api/proxy/kalshi"
     : "https://external-api.kalshi.com/trade-api/v2";
 }
 
@@ -225,10 +226,19 @@ export async function loadKalshiCatalog(
   return await loadCachedPredictionResource(
     "catalog",
     buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
-    // Browse/search hits Kalshi directly. Adjacent is reserved for indices and
-    // detail enrichments — routing the PM catalog through it added a multi-page
-    // hop before the venue call, which is what made the pane feel stuck.
-    async () => await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab),
+    async () => {
+      if (isHostedWebClient()) {
+        const page = await fetchHostedAdjacentKalshiCatalogPage({
+          searchQuery: normalizedQuery,
+          categoryId,
+          browseTab,
+          page: 1,
+        });
+        rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+        return page.markets;
+      }
+      return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
+    },
     PREDICTION_CACHE_POLICIES.catalog,
     options,
   );
@@ -241,6 +251,19 @@ export async function loadMoreKalshiCatalog(
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (isHostedWebClient()) {
+    const page = await fetchHostedAdjacentKalshiCatalogPage({
+      searchQuery: normalizedQuery,
+      categoryId,
+      page: parseHostedAdjacentKalshiPageCursor(cursor),
+    });
+    rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    return {
+      markets: page.markets,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
   const page = categoryId === "all"
     ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
     : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);
