@@ -657,7 +657,7 @@ export const themes: Record<string, Theme> = Object.fromEntries(
   Object.entries(rawThemes).map(([id, theme]) => [id, normalizeTheme(theme)]),
 ) as Record<string, Theme>;
 
-export const DEFAULT_THEME = "amber";
+export const DEFAULT_THEME = "adjacent";
 
 export function getThemeIds(): string[] {
   return Object.keys(themes);

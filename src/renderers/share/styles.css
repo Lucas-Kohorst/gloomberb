@@ -4,32 +4,32 @@
  * the terminal stylesheet. That sheet locks scrolling and sizes everything
  * to a character grid, both wrong for a document a stranger reads on a phone.
  *
- * Tokens are the normalized Amber defaults the web host applies at boot.
+ * Tokens are the normalized Adjacent defaults the web host applies at boot.
  * Cell-character / box-drawing borders stay in the OpenTUI renderer; here
  * chrome is real CSS (1px borders, radius, hover fills).
  */
 
 :root {
-  --gloom-bg: #000000;
-  --gloom-panel: #0a0a14;
-  --gloom-border: #1a3a5c;
-  --gloom-border-focused: #ff8800;
-  --gloom-text: #ff8800;
-  --gloom-text-dim: #92763c;
-  --gloom-text-bright: #ffaa00;
-  /* 4.5:1 on the #000 background. The terminal app gets this from
+  --gloom-bg: #16140f;
+  --gloom-panel: #0e2a1f;
+  --gloom-border: #2c4a3c;
+  --gloom-border-focused: #f4efd9;
+  --gloom-text: #ece9e2;
+  --gloom-text-dim: #c5c0b0;
+  --gloom-text-bright: #f4efd9;
+  /* 4.5:1 on the Adjacent ink background. The terminal app gets this from
      normalizeTheme(); the share page hardcodes tokens and so must not drift. */
-  --gloom-text-muted: #8a8c8e;
-  --gloom-positive: #00cc66;
-  --gloom-negative: #ff3333;
-  --gloom-neutral: #888888;
-  --gloom-warning: #ffaa00;
-  --gloom-selected: #254464;
-  --gloom-selected-text: #ffaa00;
-  --gloom-hover-bg: #132232;
-  --gloom-pane-title-bg: #381e00;
-  --gloom-pane-body-bg: #0f0800;
-  --gloom-pane-footer-bg: #0f0800;
+  --gloom-text-muted: #8f978c;
+  --gloom-positive: #6aa3e6;
+  --gloom-negative: #e06256;
+  --gloom-neutral: #9aa39a;
+  --gloom-warning: #e3c27a;
+  --gloom-selected: #36556a;
+  --gloom-selected-text: #f4efd9;
+  --gloom-hover-bg: #26353d;
+  --gloom-pane-title-bg: #47443b;
+  --gloom-pane-body-bg: #23211b;
+  --gloom-pane-footer-bg: #23211b;
   --cell-w: 8px;
   --cell-h: 18px;
   color-scheme: dark;
@@ -116,7 +116,7 @@ textarea::-webkit-strong-password-auto-fill-button {
   font-size: 12px;
   font-weight: 700;
   line-height: var(--cell-h);
-  color: #ffffff;
+  color: var(--gloom-text-bright);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

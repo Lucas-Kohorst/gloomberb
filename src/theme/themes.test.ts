@@ -35,6 +35,12 @@ afterEach(() => {
 });
 
 describe("theme contrast", () => {
+  test("defaults to Adjacent and still ships Amber", () => {
+    if (DEFAULT_THEME !== "adjacent") throw new Error(`unexpected default theme ${DEFAULT_THEME}`);
+    if (!themes.adjacent) throw new Error("missing adjacent theme");
+    if (!themes.amber) throw new Error("missing amber theme");
+  });
+
   test("ships an Adjacent theme from the forest/cream brand with RED/BLUE accents", () => {
     const theme = themes.adjacent;
     if (!theme) throw new Error("missing adjacent theme");

@@ -24,11 +24,11 @@ import type { ChartSharePanel, ChartSharePayload, ChartShareSeries } from "../..
 import { ShareShell, formatShareTimestamp } from "./shell";
 
 const CHART_PALETTE = {
-  background: "#000000",
-  text: "#92763c",
-  grid: "rgba(26, 58, 92, 0.35)",
-  border: "#1a3a5c",
-  negative: "#ff3333",
+  background: "#16140f",
+  text: "#c5c0b0",
+  grid: "rgba(44, 74, 60, 0.35)",
+  border: "#2c4a3c",
+  negative: "#e06256",
 };
 
 const MAIN_PANEL_HEIGHT_PX = 420;
