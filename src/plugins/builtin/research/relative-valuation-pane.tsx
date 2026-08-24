@@ -12,6 +12,11 @@ import type { PaneProps } from "../../../types/plugin";
 import { usePaneInstance } from "../../../state/app/context";
 import { blendHex, colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../shared/table-pane";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
@@ -77,7 +82,30 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [sortPreference, setSortPreference] = useState<SortPreference<RelativeColumnId>>({
+    columnId: null,
+    direction: "desc",
+  });
   const columns = useMemo(() => buildRelativeColumns(width), [width]);
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sortPreference, (row, columnId) => {
+      const quote = row.financials?.quote;
+      const fundamentals = row.financials?.fundamentals;
+      switch (columnId) {
+        case "symbol": return row.symbol;
+        case "price": return quote?.price ?? null;
+        case "change": return quote?.changePercent ?? null;
+        case "marketCap": return quote?.marketCap ?? null;
+        case "pe": return fundamentals?.trailingPE ?? null;
+        case "forwardPe": return fundamentals?.forwardPE ?? null;
+        case "evSales": return evSales(row.financials) ?? null;
+        case "fcfYield": return fcfYield(row.financials) ?? null;
+        case "revenueGrowth": return fundamentals?.revenueGrowth ?? fundamentals?.lastQuarterGrowth ?? null;
+        case "margin": return fundamentals?.operatingMargin ?? null;
+      }
+    }),
+    [rows, sortPreference],
+  );
   const fetchGenRef = useRef(0);
 
   const reload = useCallback((forceRefresh = false) => {
@@ -164,7 +192,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       focused={focused}
       selection={{
         kind: "index",
-        selectedIndex: rows.length > 0 ? selectedIdx : -1,
+        selectedIndex: sortedRows.length > 0 ? selectedIdx : -1,
         onChange: (index) => setSelectedIdx(index),
       }}
       onActivate={(row) => navigateTicker(row.symbol)}
@@ -172,10 +200,14 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as RelativeColumnId,
+        { defaultDirection: columnId === "symbol" ? "asc" : "desc" },
+      ))}
       getItemKey={(row) => row.symbol}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading peers..." : error ?? "No peers"}

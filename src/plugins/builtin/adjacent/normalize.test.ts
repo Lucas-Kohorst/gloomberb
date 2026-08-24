@@ -82,6 +82,26 @@ describe("adjacent normalize", () => {
     expect(compareAdjacentIndexRows(red, blue, "value")).toBeGreaterThan(0);
   });
 
+  test("null 1d change stays last in both directions", () => {
+    const filled = normalizeAdjacentIndex({
+      index_id: "red",
+      name: "Republican",
+      ticker: "RED",
+      latest_price: 98,
+      change_1d: 0.2,
+    });
+    const empty = normalizeAdjacentIndex({
+      index_id: "gap",
+      name: "Unpriced",
+      ticker: "GAP",
+      latest_price: 50,
+      change_1d: null,
+    });
+    expect(compareAdjacentIndexRows(empty, filled, "chg1d", "asc")).toBeGreaterThan(0);
+    expect(compareAdjacentIndexRows(empty, filled, "chg1d", "desc")).toBeGreaterThan(0);
+    expect(compareAdjacentIndexRows(filled, empty, "chg1d", "desc")).toBeLessThan(0);
+  });
+
   test("unwraps public news and market list payloads", () => {
     const articles = unwrapAdjacentNewsArticles({
       data: [{

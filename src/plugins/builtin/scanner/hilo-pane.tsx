@@ -9,6 +9,11 @@ import {
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerHiloExtreme } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -80,14 +85,25 @@ function HiloPane({ focused, width, height }: PaneProps) {
   const [sort] = usePaneSettingValue<HiloSort>("sort", "recent");
   const [activeSide, setActiveSide] = useState<Side>("lows");
   const [selected, setSelected] = useState<Record<Side, string | null>>({ lows: null, highs: null });
+  const [sortPreference, setSortPreference] = useState<SortPreference<"symbol" | "price" | "count">>({
+    columnId: null,
+    direction: "desc",
+  });
 
+  const hiloSortValue = useCallback((row: ScannerHiloExtreme, columnId: "symbol" | "price" | "count") => {
+    switch (columnId) {
+      case "symbol": return row.symbol;
+      case "price": return row.price;
+      case "count": return row.count;
+    }
+  }, []);
   const lows = useMemo(
-    () => filterHiloRows(feed.payload?.lows, minPrice, sort),
-    [feed.payload?.lows, minPrice, sort],
+    () => applySortPreference(filterHiloRows(feed.payload?.lows, minPrice, sort), sortPreference, hiloSortValue),
+    [feed.payload?.lows, hiloSortValue, minPrice, sort, sortPreference],
   );
   const highs = useMemo(
-    () => filterHiloRows(feed.payload?.highs, minPrice, sort),
-    [feed.payload?.highs, minPrice, sort],
+    () => applySortPreference(filterHiloRows(feed.payload?.highs, minPrice, sort), sortPreference, hiloSortValue),
+    [feed.payload?.highs, hiloSortValue, minPrice, sort, sortPreference],
   );
 
   const selectedSymbol = useMemo(() => {
@@ -153,9 +169,13 @@ function HiloPane({ focused, width, height }: PaneProps) {
       rootHeight={tableHeight}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as "symbol" | "price" | "count",
+        { defaultDirection: columnId === "symbol" ? "asc" : "desc" },
+      ))}
       getItemKey={rowKey}
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={(row, column, _index, rowState) => renderCell(side, row, column, rowState)}

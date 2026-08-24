@@ -18,14 +18,20 @@ import {
 import { useShortcut } from "../../../react/input";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
+import {
   OPTION_COLUMNS,
   buildStrikeList,
   findNearestStrikeIndex,
   optionColumnColor,
+  optionSortValue,
   renderOptionCell,
   resolveDefaultStrikeTarget,
 } from "./table";
-import type { OptionColumn, OptionTableRow, OptionsViewProps } from "./types";
+import type { OptionColumn, OptionColumnId, OptionTableRow, OptionsViewProps } from "./types";
 import {
   buildOptionQuoteTargets,
   OPTIONS_CHAIN_REFRESH_INTERVAL_MS,
@@ -52,6 +58,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     range: DataTableVisibleRange;
   } | null>(null);
   const [interactive, setInteractive] = useState(false);
+  const [sortPreference, setSortPreference] = useState<SortPreference<OptionColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
   const userSelectedStrikeRef = useRef(false);
   const onCaptureRef = useRef(onCapture);
   const target = resolveOptionsTarget(ticker);
@@ -126,6 +136,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     onCaptureRef.current(false);
     setExpIdx(0);
     setStrikeIdx(0);
+    setSortPreference({ columnId: null, direction: "asc" });
   }, [effectiveTicker]);
 
   useEffect(() => {
@@ -150,12 +161,15 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     () => new Map(chain?.puts.map((p) => [p.strike, p]) ?? []),
     [chain],
   );
-  const snapshotRows = useMemo<OptionTableRow[]>(() => strikes.map((strike) => ({
-    strike,
-    call: callsByStrike.get(strike),
-    put: putsByStrike.get(strike),
-    isPositionStrike: !!parsed && Math.abs(strike - parsed.strike) < 0.01,
-  })), [callsByStrike, parsed, putsByStrike, strikes]);
+  const snapshotRows = useMemo<OptionTableRow[]>(() => {
+    const unordered = strikes.map((strike) => ({
+      strike,
+      call: callsByStrike.get(strike),
+      put: putsByStrike.get(strike),
+      isPositionStrike: !!parsed && Math.abs(strike - parsed.strike) < 0.01,
+    }));
+    return applySortPreference(unordered, sortPreference, optionSortValue);
+  }, [callsByStrike, parsed, putsByStrike, sortPreference, strikes]);
   const visibleStrikeRange = visibleStrikeViewport?.key === viewportKey
     ? visibleStrikeViewport.range
     : null;
@@ -263,19 +277,19 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
 
   useEffect(() => {
     setStrikeIdx((index) => {
-      if (strikes.length === 0) return 0;
-      return Math.min(index, strikes.length - 1);
+      if (snapshotRows.length === 0) return 0;
+      return Math.min(index, snapshotRows.length - 1);
     });
-  }, [strikes.length]);
+  }, [snapshotRows.length]);
 
   useEffect(() => {
-    if (strikes.length === 0 || userSelectedStrikeRef.current) return;
+    if (snapshotRows.length === 0 || userSelectedStrikeRef.current) return;
     const targetStrike = resolveDefaultStrikeTarget(parsed?.strike, financials?.quote?.price);
     if (targetStrike == null) return;
     setScrollToIndexAlign("center");
-    setStrikeIdx(findNearestStrikeIndex(strikes, targetStrike));
+    setStrikeIdx(findNearestStrikeIndex(snapshotRows.map((row) => row.strike), targetStrike));
     setAutoScrollVersion((version) => version + 1);
-  }, [expIdx, financials?.quote?.price, parsed?.strike, strikes]);
+  }, [expIdx, financials?.quote?.price, parsed?.strike, snapshotRows]);
 
   useShortcut((event) => {
     if (event.defaultPrevented || event.propagationStopped || event.targetEditable) return;
@@ -343,16 +357,16 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     }
 
     if (isPlainKey(event, "j", "down")) {
-      if (strikes.length === 0) return true;
+      if (rows.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();
       userSelectedStrikeRef.current = true;
       setScrollToIndexAlign("nearest");
-      setStrikeIdx((i) => Math.min(i + 1, strikes.length - 1));
+      setStrikeIdx((i) => Math.min(i + 1, rows.length - 1));
       return true;
     }
     if (isPlainKey(event, "k", "up")) {
-      if (strikes.length === 0) return true;
+      if (rows.length === 0) return true;
       event.preventDefault?.();
       event.stopPropagation?.();
       userSelectedStrikeRef.current = true;
@@ -368,7 +382,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     }
 
     return false;
-  }, [enterInteractive, exitInteractive, interactive, openCalc, selectAdjacentExpiration, strikes.length]);
+  }, [enterInteractive, exitInteractive, interactive, openCalc, rows.length, selectAdjacentExpiration]);
 
   if (!ticker) return <EmptyState title="Select a ticker to view options." />;
   if (loading && !chain) return <LoadingState title="Loading options..." />;
@@ -436,9 +450,13 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         bodyScrollId="options-table-body-scroll"
         columns={optionColumns}
         items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+          current,
+          columnId as OptionColumnId,
+          { defaultDirection: "desc" },
+        ))}
         onTableMouseDown={enterInteractive}
         visibleRangeKey={viewportKey}
         onVisibleRangeChange={handleVisibleStrikeRangeChange}

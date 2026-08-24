@@ -386,6 +386,7 @@ export function ResolvedFinancialsTab({
         }}
         sortColumnId={null}
         sortDirection="desc"
+        // STOP: statement line items keep GAAP grouping; sorting would flatten sections.
         onHeaderClick={() => {}}
         getItemKey={(row) => row.id}
         onActivate={(row) => {

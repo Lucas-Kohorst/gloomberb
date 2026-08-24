@@ -4,6 +4,7 @@ import { colors } from "../../../theme/colors";
 import { truncateToDisplayWidth } from "../../../utils/format";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import { t } from "../../../i18n";
+import { compareSortValues } from "../../../utils/sort-values";
 import type { ConnectionState, ConnectionStatus } from "./types";
 
 type ConnectionColumnId = "service" | "type" | "status" | "lastPoll" | "latency";
@@ -99,9 +100,9 @@ export function compareConnections(
       return left.priority - right.priority;
     }
     case "lastPoll":
-      return (left.lastPolledAt ?? 0) - (right.lastPolledAt ?? 0);
+      return compareSortValues(left.lastPolledAt, right.lastPolledAt, "asc");
     case "latency":
-      return (left.lastLatencyMs ?? Number.POSITIVE_INFINITY) - (right.lastLatencyMs ?? Number.POSITIVE_INFINITY);
+      return compareSortValues(left.lastLatencyMs, right.lastLatencyMs, "asc");
   }
 }
 
@@ -109,11 +110,13 @@ export function sortConnections(
   connections: ConnectionState[],
   preference: ConnectionSortPreference,
 ): ConnectionState[] {
-  const sign = preference.direction === "asc" ? 1 : -1;
   return [...connections].sort((left, right) => {
-    const primary = compareConnections(left, right, preference.columnId);
-    if (primary !== 0) return sign * primary;
-    return left.name.localeCompare(right.name);
+    const primary = preference.columnId === "lastPoll"
+      ? compareSortValues(left.lastPolledAt, right.lastPolledAt, preference.direction)
+      : preference.columnId === "latency"
+        ? compareSortValues(left.lastLatencyMs, right.lastLatencyMs, preference.direction)
+        : (preference.direction === "asc" ? 1 : -1) * compareConnections(left, right, preference.columnId);
+    return primary !== 0 ? primary : left.name.localeCompare(right.name);
   });
 }
 

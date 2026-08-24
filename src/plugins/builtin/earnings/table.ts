@@ -4,9 +4,10 @@ import { type ColumnVisibilityColumn } from "../../../components/data-table/colu
 import type { EarningsEvent } from "../../../types/data-provider";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../utils/format";
-import type { EarningsDisplayRow } from "./model";
+import { applySortPreference, type SortComparableValue, type SortPreference } from "../../../utils/sort-values";
+import type { EarningsDisplayRow, EarningsEventDisplayRow } from "./model";
 
-type EarningsColumnId =
+export type EarningsColumnId =
   | "date"
   | "when"
   | "status"
@@ -225,4 +226,69 @@ export function renderEarningsCell(
         color: selectedColor ?? colors.textDim,
       };
   }
+}
+
+export function earningsEventSortValue(
+  row: EarningsEventDisplayRow,
+  columnId: EarningsColumnId,
+): SortComparableValue {
+  const event = row.event;
+  switch (columnId) {
+    case "date":
+      return event.earningsDate.getTime();
+    case "when":
+      return event.timing || event.earningsCallDate?.getTime() || null;
+    case "status":
+      return event.isDateEstimate == null ? null : event.isDateEstimate ? 1 : 0;
+    case "symbol":
+      return event.symbol;
+    case "name":
+      return event.name;
+    case "epsEstimate":
+      return event.epsEstimate;
+    case "epsRange":
+      return event.epsHigh ?? event.epsLow ?? null;
+    case "epsGrowth":
+      return event.epsGrowth ?? null;
+    case "epsTrend":
+      return event.epsTrend30dAgo ?? event.epsTrend7dAgo ?? null;
+    case "epsRevisions": {
+      const up = event.epsRevisionUp30d ?? event.epsRevisionUp7d;
+      const down = event.epsRevisionDown30d ?? event.epsRevisionDown7d;
+      if (up == null && down == null) return null;
+      return (up ?? 0) - (down ?? 0);
+    }
+    case "revenueEstimate":
+      return event.revenueEstimate;
+    case "revenueRange":
+      return event.revenueHigh ?? event.revenueLow ?? null;
+    case "revenueGrowth":
+      return event.revenueGrowth ?? null;
+    case "analysts":
+      return event.epsAnalysts ?? event.revenueAnalysts ?? null;
+  }
+}
+
+export function sortEarningsDisplayRows(
+  rows: EarningsDisplayRow[],
+  sort: SortPreference<EarningsColumnId>,
+): EarningsDisplayRow[] {
+  if (!sort.columnId) return rows;
+  const next: EarningsDisplayRow[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    const row = rows[index]!;
+    if (row.kind === "separator") {
+      next.push(row);
+      index += 1;
+      const start = index;
+      while (index < rows.length && rows[index]!.kind === "event") index += 1;
+      const events = rows.slice(start, index) as EarningsEventDisplayRow[];
+      next.push(...applySortPreference(events, sort, earningsEventSortValue));
+      continue;
+    }
+    next.push(row);
+    index += 1;
+  }
+  return next;
 }
