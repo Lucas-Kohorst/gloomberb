@@ -7,6 +7,7 @@ import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
+import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { alertsPlugin } from "./builtin/alerts";
 import {
@@ -30,6 +31,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   tickerResearchPlugin,
   brokerPlugin,
   ibkrPlugin,
+  robinhoodPlugin,
   applicationPlugin,
   newsPlugin,
   // Adjacent Cloud owns Polls, AI Benchmarks, and Weather. Other alt-data

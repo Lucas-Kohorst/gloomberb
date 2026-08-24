@@ -33,17 +33,38 @@ export interface HostedConfigSnapshotResponse {
  */
 export function stripByokKeysForSnapshot(config: AppConfig): AppConfig {
   const pluginConfig = config.pluginConfig[BYOK_PLUGIN_ID];
-  if (!pluginConfig || !(BYOK_API_KEYS_CONFIG_KEY in pluginConfig)) return config;
+  const strippedBrokers = stripBrokerOAuthForSnapshot(config.brokerInstances);
+  const brokersChanged = strippedBrokers !== config.brokerInstances;
+  if ((!pluginConfig || !(BYOK_API_KEYS_CONFIG_KEY in pluginConfig)) && !brokersChanged) {
+    return config;
+  }
   return {
     ...config,
-    pluginConfig: {
-      ...config.pluginConfig,
-      [BYOK_PLUGIN_ID]: {
-        ...pluginConfig,
-        [BYOK_API_KEYS_CONFIG_KEY]: { keys: [] },
-      },
-    },
+    ...(brokersChanged ? { brokerInstances: strippedBrokers } : {}),
+    pluginConfig: pluginConfig && BYOK_API_KEYS_CONFIG_KEY in pluginConfig
+      ? {
+        ...config.pluginConfig,
+        [BYOK_PLUGIN_ID]: {
+          ...pluginConfig,
+          [BYOK_API_KEYS_CONFIG_KEY]: { keys: [] },
+        },
+      }
+      : config.pluginConfig,
   };
+}
+
+/** Drops Robinhood OAuth tokens from hosted snapshots. Tokens stay on-device. */
+function stripBrokerOAuthForSnapshot(
+  instances: AppConfig["brokerInstances"],
+): AppConfig["brokerInstances"] {
+  let changed = false;
+  const next = instances.map((instance) => {
+    if (!instance.config || !("oauth" in instance.config)) return instance;
+    changed = true;
+    const { oauth: _oauth, ...rest } = instance.config;
+    return { ...instance, config: rest };
+  });
+  return changed ? next : instances;
 }
 
 function canonicalize(value: unknown): unknown {

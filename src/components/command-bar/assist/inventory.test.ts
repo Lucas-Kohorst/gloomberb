@@ -185,6 +185,8 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("AIBENCH")).toBe(true);
     expect(prefixes.has("CAT")).toBe(true);
     expect(prefixes.has("PM")).toBe(true);
+    expect(prefixes.has("RH")).toBe(true);
+    expect(prefixes.has("BR")).toBe(true);
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {

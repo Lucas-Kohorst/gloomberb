@@ -21,6 +21,7 @@ import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-p
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
+import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
 
 const desktopBackendPlugins: GloomPlugin[] = [
@@ -31,6 +32,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   tickerResearchBackendPlugin,
   brokerPlugin,
   ibkrPlugin,
+  robinhoodPlugin,
   applicationPlugin,
   newsPlugin,
   adjacentPlugin,

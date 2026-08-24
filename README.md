@@ -139,6 +139,15 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 - Follow markets with top stories, breaking news, sector feeds, Substack subscriptions, global indices, FX, macro events, yield curves, market movers, and fear/greed.
 - Track portfolios and watchlists, connect brokers, set alerts, keep notes, run AI screens, browse prediction markets, and use Gloom Cloud chat.
 
+### Broker position sync
+
+Use **New Portfolio** or **Add Broker Account** (`BR` / `RH`) to connect a broker. Gloomberb can import positions from Interactive Brokers and Robinhood.
+
+- Robinhood opens a browser sign-in page. Gloomberb uses only the read-only account and equity-position tools from the Robinhood Trading MCP server. Sign-in needs the desktop or terminal app (local OAuth callback). Hosted/web shows the broker in Connections but cannot complete that callback.
+- Interactive Brokers syncs via Flex Query or a local Gateway / TWS session.
+
+Gloomberb saves the connection data on the local device. It does not include broker credentials or Robinhood OAuth tokens in Gloom Cloud or hosted snapshots. A later position sync updates the managed portfolios and removes positions that the broker no longer reports.
+
 ## CLI
 
 Running `gloomberb` with no arguments launches the terminal UI. Normal commands run through a headless CLI path; use `gloomberb launch-ui` when a script should explicitly open the UI.

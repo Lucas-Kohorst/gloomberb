@@ -59,6 +59,34 @@ describe("hosted config snapshot", () => {
     expect(JSON.stringify(stripped)).not.toContain("sk-live-secret-123");
   });
 
+  test("strips Robinhood OAuth tokens from the snapshot", () => {
+    const config = createDefaultConfig("cloud://users/user-1");
+    config.brokerInstances = [{
+      id: "rh-1",
+      brokerType: "robinhood",
+      label: "Robinhood",
+      connectionMode: "oauth",
+      enabled: true,
+      config: {
+        connectionMode: "oauth",
+        oauth: {
+          tokens: { access_token: "rh-live-access-token", refresh_token: "rh-live-refresh" },
+          codeVerifier: "pkce-verifier",
+        },
+      },
+    }];
+
+    const stripped = stripByokKeysForSnapshot(config);
+
+    expect(stripped.brokerInstances[0]?.config).toEqual({ connectionMode: "oauth" });
+    expect(JSON.stringify(stripped)).not.toContain("rh-live-access-token");
+    expect(JSON.stringify(stripped)).not.toContain("rh-live-refresh");
+    expect(config.brokerInstances[0]?.config.oauth).toEqual({
+      tokens: { access_token: "rh-live-access-token", refresh_token: "rh-live-refresh" },
+      codeVerifier: "pkce-verifier",
+    });
+  });
+
   test("a customized Home layout is not a placeholder and beats a newer default snapshot", () => {
     setHostedConfigUserId("user-1");
     const local = createDefaultConfig("cloud://users/user-1");
