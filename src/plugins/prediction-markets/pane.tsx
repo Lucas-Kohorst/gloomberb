@@ -1,4 +1,4 @@
-import { Box, Input, Text, useUiCapabilities } from "../../ui";
+import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import {
   DataTableStackView,
@@ -66,7 +66,6 @@ function predictionCellVersion(
 }
 
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
-  const { nativePaneChrome } = useUiCapabilities();
   const controller = usePredictionMarketsController({ focused });
   const cellCacheRef = useRef(
     createRowValueCache<string, ReturnType<typeof getPredictionColumnValue>>(
@@ -91,8 +90,13 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     () => createPredictionColumns(width, controller.paneSettings.columnIds),
     [controller.paneSettings.columnIds, width],
   );
+  // An empty watchlist yields zero rows no matter what the catalog returns, so
+  // a spinner here would never resolve.
+  const emptyWatchlist =
+    controller.categoryId === "watchlist" && controller.watchlistSet.size === 0;
   const rowsLoading =
     controller.visibleRows.length === 0 &&
+    !emptyWatchlist &&
     (controller.catalogLoadCount > 0 || controller.searchLoading);
   const detailTitle = resolvePredictionDetailTitle({
     detail: controller.detail,
@@ -169,7 +173,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
           {
             id: "browse",
-            key: "1-4",
+            key: "1-3",
             label: "browse",
             onPress: () => {
               const index = BROWSE_TABS.findIndex((tab) => tab.value === controller.browseTab);
@@ -287,15 +291,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     </Box>
   ) : null;
 
-  const browseControls = nativePaneChrome ? (
-    <>
-      <Box flexDirection="row" height={1} paddingX={1} gap={1} alignItems="center">
-        {venueTabs}
-        {searchAndBrowse}
-      </Box>
-      {categoryTabs}
-    </>
-  ) : (
+  const browseControls = (
     <>
       {venueTabs}
       {searchAndBrowse}
@@ -432,8 +428,14 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           </Box>
         ) : undefined
       }
-      emptyStateTitle="No markets matched."
-      emptyStateHint="Change the venue, browse tab, or search query."
+      emptyStateTitle={
+        emptyWatchlist ? "Nothing in your watchlist." : "No markets matched."
+      }
+      emptyStateHint={
+        emptyWatchlist
+          ? "Press w on any market to add it."
+          : "Change the venue, browse tab, or search query."
+      }
     />
   );
 }

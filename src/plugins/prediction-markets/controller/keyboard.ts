@@ -254,10 +254,10 @@ export function usePredictionControllerKeyboard({
         selectBrowseTab("new");
         return;
       }
-      if (command === "browse-watchlist") {
+      if (command === "filter-watchlist") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab("watchlist");
+        selectCategory("watchlist");
       }
     },
     [

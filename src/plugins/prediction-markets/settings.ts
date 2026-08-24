@@ -37,11 +37,6 @@ const BROWSE_TAB_OPTIONS: PaneSettingOption[] = [
     description: "Sort by soonest expiration.",
   },
   { value: "new", label: "New", description: "Sort by newest markets." },
-  {
-    value: "watchlist",
-    label: "Watchlist",
-    description: "Show only starred prediction markets.",
-  },
 ];
 
 function isVenueScope(value: unknown): value is PredictionVenueScope {
@@ -49,12 +44,7 @@ function isVenueScope(value: unknown): value is PredictionVenueScope {
 }
 
 function isBrowseTab(value: unknown): value is PredictionBrowseTab {
-  return (
-    value === "top" ||
-    value === "ending" ||
-    value === "new" ||
-    value === "watchlist"
-  );
+  return value === "top" || value === "ending" || value === "new";
 }
 
 export function getPredictionMarketsPaneSettings(

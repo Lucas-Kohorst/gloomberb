@@ -296,12 +296,12 @@ describe("prediction markets plugin registration and services", () => {
     ]);
 
     expect(
-      filterPredictionMarkets(rows, "top", "all", "all", "fed rates", new Set()).map(
+      filterPredictionMarkets(rows, "all", "all", "fed rates", new Set()).map(
         (row) => row.marketId,
       ),
     ).toEqual(["KAL-FED"]);
     expect(
-      filterPredictionMarkets(rows, "top", "all", "all", "BITCON", new Set()).map(
+      filterPredictionMarkets(rows, "all", "all", "BITCON", new Set()).map(
         (row) => row.marketId,
       ),
     ).toEqual(["KAL-BTC"]);
@@ -433,7 +433,7 @@ describe("prediction markets plugin registration and services", () => {
       "browse-top",
     );
     expect(resolvePredictionKeyboardCommand({ name: "4", sequence: "4" })).toBe(
-      "browse-watchlist",
+      "filter-watchlist",
     );
     expect(resolvePredictionKeyboardCommand({ name: "[", sequence: "[" })).toBe(
       "previous-browse-tab",
