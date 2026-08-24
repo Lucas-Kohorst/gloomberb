@@ -73,6 +73,19 @@ export function formatCompactCurrency(value: number | undefined, currency = "USD
   return `${formatCompact(value)} ${currency}`;
 }
 
+/**
+ * Compact currency amount, e.g. -$1.5M or 42.3M EUR.
+ *
+ * The sign leads the symbol ("-$1.5M", not "$-1.5M"), and non-USD falls back to
+ * a trailing code since not every currency has a well-known prefix glyph.
+ */
+export function formatMoneyCompact(value: number | null | undefined, currency = "USD"): string {
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
+  if (currency.toUpperCase() !== "USD") return `${formatCompact(value)} ${currency}`;
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${formatCompact(Math.abs(value))}`;
+}
+
 /** Format a plain number with commas */
 export function formatNumber(value: number | undefined, decimals = 2): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return "—";

@@ -1,14 +1,14 @@
 import type { HolderRecord } from "../../../types/financials";
-import { formatCompact, formatPercent, formatPercentRaw } from "../../../utils/format";
+import {
+  formatCompact,
+  formatMoneyCompact as sharedFormatMoneyCompact,
+  formatPercent,
+  formatPercentRaw,
+} from "../../../utils/format";
 import type { HolderRow } from "./types";
 
 export function formatMoneyCompact(value: number | undefined, currency = "USD"): string {
-  if (value == null) return "-";
-  if (currency === "USD") {
-    const sign = value < 0 ? "-" : "";
-    return `${sign}$${formatCompact(Math.abs(value))}`;
-  }
-  return `${formatCompact(value)} ${currency}`;
+  return sharedFormatMoneyCompact(value, currency);
 }
 
 export function formatMaybePercent(value: number | undefined): string {

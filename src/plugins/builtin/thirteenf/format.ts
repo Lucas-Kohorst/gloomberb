@@ -1,9 +1,12 @@
-import { formatCompact, formatPercentRaw } from "../../../utils/format";
+import {
+  formatCompact,
+  formatMoneyCompact as sharedFormatMoneyCompact,
+  formatPercentRaw,
+} from "../../../utils/format";
 import type { HoldingAction } from "./types";
 
 export function formatMoneyCompact(value: number | null | undefined): string {
-  if (value == null) return "--";
-  return `$${formatCompact(value)}`;
+  return sharedFormatMoneyCompact(value);
 }
 
 export function formatShares(value: number | null | undefined): string {

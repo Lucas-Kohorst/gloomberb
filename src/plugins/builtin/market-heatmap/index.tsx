@@ -15,7 +15,12 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { priceColor } from "../../../theme/colors";
-import { formatCompact, formatCurrency, formatPercentRaw } from "../../../utils/format";
+import {
+  formatCompact,
+  formatCurrency,
+  formatMoneyCompact,
+  formatPercentRaw,
+} from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
@@ -36,12 +41,6 @@ import {
   overlayScreenerQuoteEntries,
   resolveScreenerQuoteFeedStatus,
 } from "../shared/screener-live-quotes";
-
-function formatMoneyCompact(value: number | null | undefined, currency: string): string {
-  if (value == null) return "—";
-  if (currency.toUpperCase() === "USD") return `$${formatCompact(value)}`;
-  return `${formatCompact(value)} ${currency}`;
-}
 
 function sizeLabel(asset: MarketHeatmapAsset): string {
   const label = asset.sizeKind === "net-assets" ? "Assets" : "Mkt";

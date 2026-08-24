@@ -1,4 +1,5 @@
 import type { ScannerFlowEvent } from "../../../api-client";
+import { formatMoneyCompact } from "../../../utils/format";
 
 export type FlowMinPremium = "50000" | "250000" | "1000000";
 export type FlowSide = "calls" | "puts" | "both";
@@ -102,10 +103,7 @@ export function filterFlowEvents(
 }
 
 export function formatFlowPremium(premium: number): string {
-  if (premium >= 1e9) return `$${(premium / 1e9).toFixed(1)}B`;
-  if (premium >= 1e6) return `$${(premium / 1e6).toFixed(1)}M`;
-  if (premium >= 1e3) return `$${Math.round(premium / 1e3)}K`;
-  return `$${Math.round(premium)}`;
+  return formatMoneyCompact(premium);
 }
 
 export function formatFlowType(event: ScannerFlowEvent): string {
