@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.13.3 — Research panes, chart indicators, and web accessibility
+
+Six new research surfaces, a technical-indicator library for charts, editable price alerts, and an accessibility and motion pass over the web renderer.
+
+### New panes
+
+- **Earnings Transcripts** (`TRANS <symbol>`) — earnings call transcripts per ticker, searchable from the command bar and opening in the shared article reader.
+- **Fundamental Screener** (`SCR`) — screen the listed universe on valuation, growth, margin, and size fundamentals, with clickable header sort and `[s]`earch.
+- **Volatility Surface** (`VSURF <symbol>`) — implied-vol heatmap across strikes and expirations, back-solved from the options chain with the existing `impliedVolatility()` solver.
+- **ESG & Climate Risk** (`ESG <symbol>`) — Yahoo ESG scores and controversy level. Carbon emissions are typed but not yet populated upstream.
+- **Portfolio Risk** (`RISK`) — VaR, factor exposure, and per-position risk contributors, with `[v]` cycling views so the portfolio tabs keep the arrow keys.
+- **AI filing summaries** — SEC filings gain an on-demand AI summary with red-flag detection, diffed against the most recent prior filing whose form matches exactly.
+
+### Charts
+
+- Technical indicator library and catalog: SMA, EMA, RSI, MACD, Bollinger Bands, VWAP, ATR, Stochastic, and ADX. This lands the library and catalog only. Wiring `IND:` expressions through `buildSeriesSpec` is deliberately not included, because indicators resolve to *studies* rather than series sources and need a routing change in the chart command path.
+
+### Alerts
+
+- Edit an existing price alert with `[e]` instead of deleting and recreating it. The rule is rebuilt from a field whitelist, so stale trigger state cannot survive an edit and re-fire immediately.
+
+### Web renderer
+
+- Chart gestures stay inside the chart: wheel zoom no longer scrolls the page behind it, and touch pans no longer rubber-band the window.
+- `prefers-reduced-motion: reduce` is honored. The row roll-in degrades to opacity only, and the spinner no longer animates `filter`.
+- Shared reader pages are keyboard and screen-reader usable: header sort is a real focusable button, loading states announce through `aria-live`, and muted text now clears contrast (3.98:1 → 6.22:1).
+- Tab close is reachable from the keyboard via `Delete`, and dialogs confine Tab focus.
+
+### Hosted
+
+- The Worker now sets the security headers upstream sets. CSP stays report-only for now.
+- Fixed the hosted client hanging on "Loading Gloomberb...": Cloudflare Static Assets re-compresses `.br` payloads, so build-time pre-compression was applied twice and the bundle arrived undecodable. The Worker serves assets directly again, and the dead pre-compression step has been removed from the build.
+
+### Internal
+
+- `isHostedWebClient()` is shared from `src/shared/hosted-api.ts` rather than redefined across nine call sites.
+- `plans/039` and `plans/040` record the web-renderer sweep findings and the upstream port status, including which upstream PRs were rejected and why.
+
 ## v0.13.0 — Feature parity: Adjacent Cloud + hosted 0.12.1/0.12.2
 
 Unifies `integration/v0.12.0` (Adjacent Cloud, Data Catalog, Godel panes) with `main` through `release/v0.12.2` (news roll-in, hosted chat realtime, first-class alt-data panes, Polls All tab, Adjacent default layout).
