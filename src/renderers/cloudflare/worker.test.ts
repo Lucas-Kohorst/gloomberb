@@ -469,6 +469,44 @@ PRECIPITATION (IN)
     expect(badAdjacent?.status).toBe(400);
   });
 
+  test("Adjacent auth list paths fall back to public when the Worker has no key", async () => {
+    let fetchedUrl = "";
+    let authorization: string | null = null;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("Authorization");
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/indices"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/public/indices");
+    expect(authorization).toBeNull();
+  });
+
+  test("Adjacent auth list paths keep the paid URL when the Worker has a key", async () => {
+    let fetchedUrl = "";
+    let authorization: string | null = null;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("Authorization");
+      return new Response("ok", { status: 200, headers: { "content-type": "text/plain" } });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/adjacent/indices"),
+      { ...makeEnv(), ADJACENT_API_KEY: "adj-secret" } as Env,
+    );
+    expect(response?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.adjacent.markets/api/v1/indices");
+    expect(authorization).toBe("Bearer adj-secret");
+  });
+
   test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
     let upstreamHits = 0;
     globalThis.fetch = (async (input: URL | RequestInfo) => {
