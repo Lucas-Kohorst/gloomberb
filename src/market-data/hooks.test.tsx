@@ -4,7 +4,12 @@ import { testRender } from "../renderers/opentui/test-utils";
 import type { PricePoint, TickerFinancials } from "../types/financials";
 import type { TickerRecord } from "../types/ticker";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "./coordinator";
-import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "./hooks";
+import {
+  mergeTickerFinancials,
+  useChartQueries,
+  useFxRatesMap,
+  useTickerFinancialsMap,
+} from "./hooks";
 import type { ChartRequest } from "./request-types";
 import { createIdleEntry } from "./result-types";
 
@@ -259,5 +264,40 @@ describe("market-data hooks", () => {
 
     expect(calls[0]).toEqual({ range: "1D", forceRefresh: false });
     expect(calls.some((call) => call.forceRefresh)).toBe(true);
+  });
+});
+
+describe("mergeTickerFinancials", () => {
+  const record = (symbol: string) => ({ metadata: { ticker: symbol } } as TickerRecord);
+  const data = (price: number) => ({
+    annualStatements: [],
+    quarterlyStatements: [],
+    priceHistory: [],
+    quote: { symbol: "X", price, currency: "USD", change: 0, changePercent: 0, lastUpdated: 1 },
+  } as TickerFinancials);
+
+  test("live market data wins over the cached store", () => {
+    const merged = mergeTickerFinancials(
+      [record("AAPL")],
+      new Map([["AAPL", data(200)]]),
+      new Map([["AAPL", data(100)]]),
+    );
+    expect(merged.get("AAPL")?.quote?.price).toBe(200);
+  });
+
+  test("falls back to the cache for tickers with no live data yet", () => {
+    const merged = mergeTickerFinancials([record("MSFT")], new Map(), new Map([["MSFT", data(50)]]));
+    expect(merged.get("MSFT")?.quote?.price).toBe(50);
+  });
+
+  // The whole point of the change: consumers that iterate the result must not
+  // walk symbols the caller never asked about.
+  test("excludes cached symbols outside the requested tickers", () => {
+    const merged = mergeTickerFinancials(
+      [record("AAPL")],
+      new Map(),
+      new Map([["AAPL", data(1)], ["UNRELATED", data(2)]]),
+    );
+    expect([...merged.keys()]).toEqual(["AAPL"]);
   });
 });

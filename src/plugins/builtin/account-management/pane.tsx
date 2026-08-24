@@ -6,7 +6,12 @@ import { syncConfigActiveLayoutState } from "../../../core/state/app/state";
 import { sanitizeFontFamily } from "../../../theme/font-family";
 import { clampFontSize } from "../../../theme/font-scale";
 import { getThemeIds } from "../../../theme/themes";
-import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
+import {
+  mergeTickerFinancials,
+  useChartQueries,
+  useFxRatesMap,
+  useTickerFinancialsMap,
+} from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { blendHex, colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
@@ -455,13 +460,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     [draft.sharedPortfolioId, tickers],
   );
   const marketFinancials = useTickerFinancialsMap(portfolioTickers);
-  const financials = useMemo(() => {
-    const merged = new Map(cachedFinancials);
-    for (const [symbol, data] of marketFinancials) {
-      merged.set(symbol, data);
-    }
-    return merged;
-  }, [cachedFinancials, marketFinancials]);
+  const financials = useMemo(
+    () => mergeTickerFinancials(portfolioTickers, marketFinancials, cachedFinancials),
+    [cachedFinancials, marketFinancials, portfolioTickers],
+  );
   const trackedCurrencies = useMemo(
     () => buildTrackedCurrencies(portfolioTickers, financials, baseCurrency),
     [baseCurrency, financials, portfolioTickers],
