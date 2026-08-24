@@ -3,11 +3,13 @@ import type {
   AdjacentIndexRow,
   AdjacentIndexPricePoint,
   AdjacentNewsArticle,
+  AdjacentPlatform,
   AdjacentPriceHistoryPoint,
   AdjacentPricePoint,
   AdjacentPriceSample,
   AdjacentRate,
   AdjacentRateRow,
+  AdjacentSimilarMarket,
 } from "./types";
 import type { NewsArticle } from "../../../types/news-source";
 import { extractArticleTickersFromParts } from "../../../news/article-tickers";
@@ -188,6 +190,52 @@ export function unwrapAdjacentNewsArticles(raw: unknown): AdjacentNewsArticle[] 
   return rows
     .map(parseAdjacentNewsArticle)
     .filter((article): article is AdjacentNewsArticle => article !== null);
+}
+
+function numberField(record: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function platformFromId(id: string): AdjacentPlatform {
+  return id.toLowerCase().startsWith("kalshi:") ? "kalshi" : "polymarket";
+}
+
+export function parseAdjacentSimilarMarket(value: unknown): AdjacentSimilarMarket | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const id = stringField(record, "id", "market_id");
+  if (!id) return null;
+  const platformRaw = stringField(record, "platform");
+  const platform: AdjacentPlatform = platformRaw === "kalshi" || platformRaw === "polymarket"
+    ? platformRaw
+    : platformFromId(id);
+  return {
+    id,
+    platform,
+    title: stringField(record, "title", "question") ?? id,
+    yes_price: numberField(record, "yes_price", "latest_price", "probability"),
+    volume_24h: numberField(record, "volume_24h") ?? undefined,
+    similarity: numberField(record, "similarity") ?? undefined,
+    url: stringField(record, "url", "link"),
+    category: stringField(record, "category"),
+  };
+}
+
+export function unwrapAdjacentSimilarMarkets(raw: unknown): AdjacentSimilarMarket[] {
+  if (!raw || typeof raw !== "object") return [];
+  const record = raw as Record<string, unknown>;
+  const rows = Array.isArray(record.markets)
+    ? record.markets
+    : Array.isArray(record.data)
+      ? record.data
+      : [];
+  return rows
+    .map(parseAdjacentSimilarMarket)
+    .filter((market): market is AdjacentSimilarMarket => market !== null);
 }
 
 export function unwrapAdjacentMarketIds(raw: unknown): string[] {

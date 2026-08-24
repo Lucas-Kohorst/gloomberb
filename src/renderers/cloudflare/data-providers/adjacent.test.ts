@@ -16,14 +16,15 @@ describe("adjacent provider", () => {
   });
 
   test("allows prefixed market IDs in similar and news paths", async () => {
+    const marketId = "polymarket:0x80b3af88cb9919808da1ce86b9794a0957f96ec98c29319dd7ba65e9744d82b1";
     const similar = await adjacentProvider.resolve({
-      keyPath: "public/markets/polymarket:0x80b3af88cb9919808dalce86b9794a0957f96ec98c29319dd7ba65e9744d82b/similar",
+      keyPath: `markets/${marketId}/similar`,
       search: new URLSearchParams(),
     });
     expect(similar.kind).toBe("proxy");
     if (similar.kind !== "proxy") throw new Error("expected proxy plan");
     expect(similar.url).toBe(
-      "https://api.adjacent.markets/api/v1/public/markets/polymarket:0x80b3af88cb9919808dalce86b9794a0957f96ec98c29319dd7ba65e9744d82b/similar",
+      `https://api.adjacent.markets/api/v1/markets/${marketId}/similar`,
     );
 
     const news = await adjacentProvider.resolve({
