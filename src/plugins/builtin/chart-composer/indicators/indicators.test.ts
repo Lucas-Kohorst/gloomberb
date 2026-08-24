@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   INDICATORS,
   INDICATOR_REGISTRY,
-  buildIndicatorSeriesExpression,
   getIndicator,
   emaArray,
   smaArray,
@@ -237,15 +236,4 @@ describe("indicator registry and expression builder", () => {
     }
   });
 
-  test("buildIndicatorSeriesExpression serializes params and source", () => {
-    expect(buildIndicatorSeriesExpression("sma", { period: 20 }, "AAPL:price"))
-      .toBe("IND:sma:period:20:AAPL:price");
-    expect(buildIndicatorSeriesExpression("rsi", {}, "AAPL"))
-      .toBe("IND:rsi:AAPL");
-    // params are sorted for a stable form.
-    expect(buildIndicatorSeriesExpression("macd", { fast: 12, slow: 26, signal: 9 }, "AAPL:price"))
-      .toBe("IND:macd:fast:12:signal:9:slow:26:AAPL:price");
-    expect(buildIndicatorSeriesExpression("vwap", {}, ""))
-      .toBe("IND:vwap");
-  });
 });

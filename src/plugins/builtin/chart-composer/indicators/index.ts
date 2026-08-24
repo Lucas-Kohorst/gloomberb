@@ -241,31 +241,6 @@ export function getIndicator(id: string): IndicatorDefinition | undefined {
 // Expression helper
 // ---------------------------------------------------------------------------
 
-/**
- * Build a chart series expression for an indicator overlay, e.g.
- * `IND:SMA:14:AAPL:price`. The `sourceExpression` is any expression
- * `parseSeriesExpression` already understands (a security, FRED, OWID, …),
- * so the indicator can attach to any chartable base series.
- *
- * Parameters are serialized in a stable, insertion-ordered, `param:value`
- * form so the expression round-trips through `parseIndicatorExpression`.
- */
-export function buildIndicatorSeriesExpression(
-  indicatorId: string,
-  params: IndicatorParams = {},
-  sourceExpression = "",
-): string {
-  const id = indicatorId.toLowerCase();
-  const paramTokens = Object.keys(params)
-    .sort()
-    .map((key) => `${key}:${params[key]}`)
-    .filter(Boolean);
-  const head = paramTokens.length > 0
-    ? `IND:${id}:${paramTokens.join(":")}`
-    : `IND:${id}`;
-  return sourceExpression.trim() ? `${head}:${sourceExpression.trim()}` : head;
-}
-
 export * from "./sma";
 export * from "./ema";
 export * from "./rsi";
