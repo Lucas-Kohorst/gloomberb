@@ -3,7 +3,6 @@
 import { type CSSProperties } from "react";
 import { Box } from "../../ui";
 import { blendHex, colors } from "../../theme/colors";
-import { desktopChevronDataUri } from "./desktop-glyphs";
 
 export type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
 
@@ -57,19 +56,14 @@ export function NativeSelect({
     backgroundColor: blendHex(colors.panel, colors.textBright, 0.06),
     border: `1px solid ${colors.border}`,
     borderRadius: 6,
-    padding: "0 28px 0 8px",
+    padding: "0 8px",
     boxShadow: `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
     cursor: "pointer",
     font: "inherit",
     letterSpacing: 0,
     outline: "none",
-    appearance: "none",
-    WebkitAppearance: "none",
-    MozAppearance: "none",
-    backgroundImage: desktopChevronDataUri("down", colors.textDim),
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "right 8px center",
-    backgroundSize: "12px 12px",
+    appearance: "auto",
+    WebkitAppearance: "menulist",
   };
 
   return (

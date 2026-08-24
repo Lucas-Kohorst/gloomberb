@@ -18,7 +18,6 @@ import { CommandBarWorkflowBody } from "../workflow/body";
 import type { CommandBarConfirmRoute, CommandBarRoute } from "../workflow/types";
 import { truncateText } from "../view-model";
 import { t } from "../../../i18n";
-import { desktopChevronBoxStyle } from "../../ui/desktop-glyphs";
 
 type CommandBarPanelBodyProps = Omit<
   CommandBarPanelProps,
@@ -115,22 +114,17 @@ export function CommandBarPanelBody({
 
       <Box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={panelBg}>
         {nativePaneChrome && currentRoute && (
-          <Box
-            height={1}
-            paddingX={contentPadding}
-            flexDirection="row"
-            alignItems="center"
-            gap={1}
-            onMouseDown={(event: any) => {
-              event.stopPropagation?.();
-              event.preventDefault?.();
-              onBack();
-            }}
-            data-gloom-interactive="true"
-          >
-            <Box style={desktopChevronBoxStyle("left", paletteSubtleText, 12)} />
-            <Text fg={paletteSubtleText}>
-              {t("Back")}
+          <Box height={1} paddingX={contentPadding}>
+            <Text
+              fg={paletteSubtleText}
+              onMouseDown={(event: any) => {
+                event.stopPropagation?.();
+                event.preventDefault?.();
+                onBack();
+              }}
+              data-gloom-interactive="true"
+            >
+              {`← ${t("Back")}`}
             </Text>
           </Box>
         )}

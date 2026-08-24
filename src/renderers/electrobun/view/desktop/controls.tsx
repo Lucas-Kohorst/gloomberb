@@ -14,7 +14,6 @@ import type { DialogFrameProps } from "../../../../components/ui/frame";
 import type { MessageComposerProps } from "../../../../components/ui/message-composer";
 import type { PageStackViewProps } from "../../../../components/ui/page-stack-view";
 import type { SegmentedControlProps } from "../../../../components/ui/toggle";
-import { desktopChevronBoxStyle } from "../../../../components/ui/desktop-glyphs";
 import {
   CONTROL_RADIUS,
   buttonPalette,
@@ -522,13 +521,11 @@ export function WebPageStackView({
             border: `1px solid ${panelBorder(colors)}`,
             borderRadius: CONTROL_RADIUS,
             paddingInline: 8,
-            gap: 6,
             cursor: "pointer",
           }}
         >
-          <Box style={desktopChevronBoxStyle("left", colors.textBright, 12)} />
           <Text fg={colors.textBright} style={{ fontWeight: 600 }}>
-            {backLabel}
+            {`← ${backLabel}`}
           </Text>
         </Box>
         {detailTitle ? (
