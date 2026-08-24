@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { displayWidth, formatTimeAgo, padTo, truncateToDisplayWidth } from "./format";
+import {
+  displayWidth,
+  formatCompact,
+  formatCurrency,
+  formatGrowthShort,
+  formatNumber,
+  formatPercent,
+  formatPercentRaw,
+  formatTimeAgo,
+  formatWithDivisor,
+  padTo,
+  truncateToDisplayWidth,
+} from "./format";
 import { normalizeTimestamp } from "./timestamp";
 
 describe("formatTimeAgo", () => {
@@ -37,5 +49,27 @@ describe("truncateToDisplayWidth", () => {
     expect(displayWidth("👨‍👩‍👧‍👦")).toBe(2);
     expect(truncateToDisplayWidth("投资组合分析面板", 9)).toBe("投资组...");
     expect(displayWidth(truncateToDisplayWidth("👨‍👩‍👧‍👦 family", 7))).toBeLessThanOrEqual(7);
+  });
+});
+
+describe("non-finite values", () => {
+  // A provider returning 0/0 for a ratio used to surface as "NaN%" in the UI,
+  // indistinguishable from a real reading.
+  test("numeric formatters render an em dash instead of NaN or Infinity", () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(formatPercent(bad)).toBe("—");
+      expect(formatPercentRaw(bad)).toBe("—");
+      expect(formatCompact(bad)).toBe("—");
+      expect(formatNumber(bad)).toBe("—");
+      expect(formatCurrency(bad)).toBe("—");
+      expect(formatGrowthShort(bad)).toBe("—");
+      expect(formatWithDivisor(bad, 1000)).toBe("—");
+    }
+  });
+
+  test("zero and negative values still format normally", () => {
+    expect(formatPercent(0)).toBe("0.00%");
+    expect(formatNumber(0)).toBe("0.00");
+    expect(formatPercent(-0.05)).toBe("-5.00%");
   });
 });
