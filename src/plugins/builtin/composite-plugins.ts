@@ -29,6 +29,7 @@ import { tvModule } from "./tv";
 import { composeBuiltinPlugin, type PluginModule } from "./plugin-module";
 import { portfolioListModule } from "./portfolio-list";
 import { scannerModule } from "./scanner";
+import { screenerModule } from "./screener";
 import { sectorsModule } from "./sectors";
 import { treasuryAuctionsModule } from "./treasury-auctions";
 import { volatilityModule } from "./volatility";
@@ -95,6 +96,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
     marketMoversModule,
     marketHaltsModule,
     scannerModule,
+    screenerModule,
     fearGreedModule,
     sectorsModule,
     fxMatrixModule,

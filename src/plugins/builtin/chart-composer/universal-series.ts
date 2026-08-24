@@ -32,9 +32,12 @@ export const SERIES_PREFIX = {
   weather: "WX",
   nwsCli: "NWS",
   owid: "OWID",
+  indicator: "IND",
 } as const;
 
 export type PredictionMarketVenue = "kalshi" | "polymarket";
+
+import type { ChartStudyKind } from "../../../time-series/types";
 
 // ---------------------------------------------------------------------------
 // Futures — static catalogue of Yahoo front-month contracts.
@@ -293,4 +296,191 @@ export function findAdjacentIndexCatalogEntry(
     if (entry.ticker.toLowerCase().replace(/[^a-z0-9]+/g, "") === compact) return true;
     return entry.aliases.some((alias) => alias.replace(/[^a-z0-9]+/g, "") === compact);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Technical indicators — `IND:<id>:<param values...>:<source expression>`.
+// The indicator math lives in `./indicators/`; this catalog maps each indicator
+// onto a chart study kind, panel placement, and the canonical parameter order
+// used to (de)serialize the `IND:` expression.
+// ---------------------------------------------------------------------------
+
+export interface IndicatorCatalogEntry {
+  /** Stable lowercase id used in `IND:` expressions. */
+  id: string;
+  label: string;
+  /** Chart study kind the indicator resolves as. */
+  studyKind: ChartStudyKind;
+  /** Panel the indicator draws on (`main` for overlays, a sub-panel otherwise). */
+  panelId: string;
+  pane: "overlay" | "sub";
+  /** Canonical parameter order for positional `IND:` serialization. */
+  paramOrder: readonly string[];
+  defaultParams: Readonly<Record<string, number>>;
+  /** Output names, in display order. */
+  outputs: readonly string[];
+}
+
+export const INDICATOR_CATALOG: readonly IndicatorCatalogEntry[] = [
+  {
+    id: "sma",
+    label: "Simple Moving Average",
+    studyKind: "sma",
+    panelId: "main",
+    pane: "overlay",
+    paramOrder: ["period"],
+    defaultParams: { period: 20 },
+    outputs: ["sma"],
+  },
+  {
+    id: "ema",
+    label: "Exponential Moving Average",
+    studyKind: "ema",
+    panelId: "main",
+    pane: "overlay",
+    paramOrder: ["period"],
+    defaultParams: { period: 20 },
+    outputs: ["ema"],
+  },
+  {
+    id: "rsi",
+    label: "Relative Strength Index",
+    studyKind: "rsi",
+    panelId: "rsi",
+    pane: "sub",
+    paramOrder: ["period"],
+    defaultParams: { period: 14 },
+    outputs: ["rsi"],
+  },
+  {
+    id: "macd",
+    label: "MACD",
+    studyKind: "macd",
+    panelId: "macd",
+    pane: "sub",
+    paramOrder: ["fast", "slow", "signal"],
+    defaultParams: { fast: 12, slow: 26, signal: 9 },
+    outputs: ["macd", "signal", "histogram"],
+  },
+  {
+    id: "bollinger",
+    label: "Bollinger Bands",
+    studyKind: "bollinger",
+    panelId: "main",
+    pane: "overlay",
+    paramOrder: ["period", "stdDev"],
+    defaultParams: { period: 20, stdDev: 2 },
+    outputs: ["upper", "middle", "lower"],
+  },
+  {
+    id: "vwap",
+    label: "VWAP",
+    studyKind: "vwap",
+    panelId: "main",
+    pane: "overlay",
+    paramOrder: [],
+    defaultParams: {},
+    outputs: ["vwap"],
+  },
+  {
+    id: "atr",
+    label: "Average True Range",
+    studyKind: "atr",
+    panelId: "atr",
+    pane: "sub",
+    paramOrder: ["period"],
+    defaultParams: { period: 14 },
+    outputs: ["atr"],
+  },
+  {
+    id: "stochastic",
+    label: "Stochastic Oscillator",
+    studyKind: "stochastic",
+    panelId: "stochastic",
+    pane: "sub",
+    paramOrder: ["period", "smooth"],
+    defaultParams: { period: 14, smooth: 3 },
+    outputs: ["k", "d"],
+  },
+  {
+    id: "adx",
+    label: "Average Directional Index",
+    studyKind: "adx",
+    panelId: "adx",
+    pane: "sub",
+    paramOrder: ["period"],
+    defaultParams: { period: 14 },
+    outputs: ["adx", "plusDI", "minusDI"],
+  },
+];
+
+export function findIndicatorCatalogEntry(
+  id: string,
+): IndicatorCatalogEntry | undefined {
+  const normalized = id.trim().toLowerCase();
+  return INDICATOR_CATALOG.find((entry) => entry.id === normalized);
+}
+
+export interface ParsedIndicatorExpression {
+  indicatorId: string;
+  params: Record<string, number>;
+  /** Unparsed source expression; empty when the indicator has no source. */
+  sourceExpression: string;
+}
+
+/**
+ * Parse an `IND:<id>:<param values...>:<source expression>` string into its
+ * indicator id, positional parameters (mapped via the catalog's canonical
+ * `paramOrder`), and the remaining source expression. The source is returned
+ * unparsed so {@link parseSeriesExpression} can resolve it with the full
+ * series-expression grammar (security, FRED, OWID, …) without a circular
+ * import. Returns `null` for an unknown indicator id.
+ */
+export function parseIndicatorExpression(
+  value: string,
+): ParsedIndicatorExpression | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":");
+  if (parts[0]?.trim().toUpperCase() !== SERIES_PREFIX.indicator) return null;
+  const id = parts[1]?.trim().toLowerCase() ?? "";
+  const entry = findIndicatorCatalogEntry(id);
+  if (!entry) return null;
+  const tail = parts.slice(2);
+  const paramCount = entry.paramOrder.length;
+  const paramTokens = tail.slice(0, paramCount);
+  const sourceTokens = tail.slice(paramCount);
+  const params: Record<string, number> = {};
+  for (let index = 0; index < paramCount; index += 1) {
+    const token = paramTokens[index];
+    const name = entry.paramOrder[index]!;
+    const parsed = token === undefined ? Number.NaN : Number(token);
+    params[name] = Number.isFinite(parsed) && parsed > 0 ? parsed : entry.defaultParams[name]!;
+  }
+  return {
+    indicatorId: entry.id,
+    params,
+    sourceExpression: sourceTokens.join(":").trim(),
+  };
+}
+
+/**
+ * Serialize an indicator expression: `IND:<id>:<param values in canonical
+ * order>:<source>`. Parameter values fall back to the catalog defaults when
+ * absent so the form is stable. Re-exported from the indicator library.
+ */
+export function buildIndicatorCatalogExpression(
+  id: string,
+  params: Readonly<Record<string, number>> = {},
+  sourceExpression = "",
+): string {
+  const entry = findIndicatorCatalogEntry(id);
+  if (!entry) return `IND:${id.toLowerCase()}`;
+  const values = entry.paramOrder.map((name) => {
+    const value = params[name];
+    return Number.isFinite(value) && value! > 0 ? value : entry.defaultParams[name]!;
+  });
+  const head = `IND:${entry.id}${values.length > 0 ? `:${values.join(":")}` : ""}`;
+  const source = sourceExpression.trim();
+  return source ? `${head}:${source}` : head;
 }
