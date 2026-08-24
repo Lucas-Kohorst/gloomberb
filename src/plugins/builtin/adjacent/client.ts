@@ -128,7 +128,10 @@ async function adjacentFetchJson<T>(
     const headers = isHostedWebClient() ? {} : authHeaders(apiKey);
     const response = await ADJACENT_FETCH.fetch(url, { headers });
     if (!response.ok) {
-      throw new Error(`Adjacent request failed (${response.status}) for ${url}`);
+      if (response.status === 401) {
+        throw new Error("Adjacent request unauthorized.");
+      }
+      throw new Error(`Adjacent request failed (${response.status}).`);
     }
     const body = await response.text();
     return JSON.parse(body) as T;
