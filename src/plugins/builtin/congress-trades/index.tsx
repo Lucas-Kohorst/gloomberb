@@ -1,5 +1,9 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import { registerConnectionSource } from "../connections/register";
+import { CONGRESS_CONNECTION_ID } from "./connection";
 import { CongressTradesPane, CONGRESS_TRADES_PANE_ID } from "./pane";
+
+let disposeConnection: (() => void) | null = null;
 
 export const CONGRESS_TRADES_PLUGIN_ID = "congress-trades";
 
@@ -29,4 +33,18 @@ export const congressTradesPlugin: GloomPlugin = {
     shortcut: { prefix: "CG" },
     createInstance: () => ({ placement: "floating" }),
   }],
+
+  setup() {
+    disposeConnection = registerConnectionSource({
+      id: CONGRESS_CONNECTION_ID,
+      name: "Congress Trades (House PTR)",
+      kind: "api",
+      pluginId: CONGRESS_TRADES_PLUGIN_ID,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
 };
