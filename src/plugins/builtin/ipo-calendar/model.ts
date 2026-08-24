@@ -2,6 +2,7 @@ import type { DataTableColumn } from "../../../components";
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { colors } from "../../../theme/colors";
 import type { IPORecord, IPOStatus } from "./types";
+import { formatMoneyCompact } from "../../../utils/format";
 
 type IPOColumnId =
   | "ticker"
@@ -56,12 +57,7 @@ export function formatDate(date: Date): string {
 }
 
 export function formatOfferSize(value: number | null): string {
-  if (value == null) return "—";
-  const abs = Math.abs(value);
-  if (abs >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
-  if (abs >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
-  if (abs >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
+  return formatMoneyCompact(value);
 }
 
 export function formatShares(value: number | null): string {

@@ -4,6 +4,7 @@ import {
   formatCompact,
   formatCurrency,
   formatGrowthShort,
+  formatMoneyCompact,
   formatNumber,
   formatPercent,
   formatPercentRaw,
@@ -71,5 +72,25 @@ describe("non-finite values", () => {
     expect(formatPercent(0)).toBe("0.00%");
     expect(formatNumber(0)).toBe("0.00");
     expect(formatPercent(-0.05)).toBe("-5.00%");
+  });
+});
+
+describe("formatMoneyCompact", () => {
+  test("puts the sign ahead of the symbol and reuses the shared tiers", () => {
+    expect(formatMoneyCompact(1_500_000)).toBe("$1.5M");
+    expect(formatMoneyCompact(-1_500_000)).toBe("-$1.5M");
+    // The hand-rolled copies in scanner and ipo-calendar had no T tier, so a
+    // trillion-dollar figure rendered as "$1500.0B".
+    expect(formatMoneyCompact(1.5e12)).toBe("$1.5T");
+  });
+
+  test("non-USD falls back to a trailing currency code", () => {
+    expect(formatMoneyCompact(42_300_000, "EUR")).toBe("42.3M EUR");
+  });
+
+  test("missing and non-finite values render an em dash", () => {
+    expect(formatMoneyCompact(null)).toBe("—");
+    expect(formatMoneyCompact(undefined)).toBe("—");
+    expect(formatMoneyCompact(Number.NaN)).toBe("—");
   });
 });

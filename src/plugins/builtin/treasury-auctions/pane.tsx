@@ -15,7 +15,7 @@ import {
   type PaneFooterSegment,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
-import { formatCompact } from "../../../utils/format";
+import { formatMoneyCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import type { PaneProps } from "../../../types/plugin";
@@ -69,7 +69,7 @@ function formatPct(value: number | null): string {
 }
 
 function formatMoney(value: number | null): string {
-  return value == null ? "—" : `$${formatCompact(value)}`;
+  return formatMoneyCompact(value);
 }
 
 function secTypeColor(secType: string, selected: boolean): string {
