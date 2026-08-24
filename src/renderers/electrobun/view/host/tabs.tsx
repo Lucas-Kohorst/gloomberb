@@ -153,8 +153,19 @@ export function WebTabs({
             style={tabStyle}
             onMouseEnter={() => setHoveredValue(tab.value)}
             onMouseLeave={() => setHoveredValue((current) => (current === tab.value ? null : current))}
+            aria-keyshortcuts={closeVisible ? "Delete" : undefined}
             onClick={() => {
               if (!disabled) onSelect(tab.value);
+            }}
+            onKeyDown={(event) => {
+              // The close affordance is a span inside this button, so it cannot
+              // be focusable itself without nesting interactive elements. Close
+              // from the focused tab instead.
+              if (!closeVisible || disabled) return;
+              if (event.key !== "Delete" && event.key !== "Backspace") return;
+              event.preventDefault();
+              event.stopPropagation();
+              tab.onClose?.(tab.value);
             }}
             onDoubleClick={() => {
               if (!disabled) tab.onDoubleClick?.(tab.value);
@@ -204,8 +215,9 @@ export function WebTabs({
             {closeVisible && (
               <span
                 data-gloom-role="tab-close"
-                aria-label={`Close ${tab.label}`}
-                role="button"
+                // Not focusable, so it must not claim to be a button. Keyboard
+                // and AT users close the tab with Delete on the tab itself.
+                aria-hidden="true"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",

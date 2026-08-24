@@ -151,3 +151,45 @@ test("desktop tabs reorder through native drag and drop", async () => {
   expect(reordered).toEqual([["home", "news"]]);
   await act(async () => root.unmount());
 });
+
+test("a closable tab can be closed from the keyboard", async () => {
+  const { WebTabs } = await import("./tabs");
+  const closed: string[] = [];
+  const container = testWindow.document.createElement("div");
+  testWindow.document.body.appendChild(container);
+  const root = createRoot(container as unknown as HTMLElement);
+  await act(async () => {
+    root.render(
+      <WebTabs
+        tabs={[
+          { label: "Home", value: "home" },
+          { label: "Research", value: "research", onClose: (value: string) => closed.push(value) },
+        ]}
+        activeValue="research"
+        onSelect={() => {}}
+        palette={{} as never}
+      />,
+    );
+  });
+
+  const buttons = [...container.querySelectorAll('[data-gloom-role="tab-button"]')] as unknown as HTMLElement[];
+  const closable = buttons[1]!;
+  expect(closable.getAttribute("aria-keyshortcuts")).toBe("Delete");
+  // The x affordance is not focusable, so it must not advertise itself as one.
+  const affordance = closable.querySelector('[data-gloom-role="tab-close"]') as unknown as HTMLElement;
+  expect(affordance?.getAttribute("aria-hidden")).toBe("true");
+  expect(affordance?.getAttribute("role")).toBeNull();
+
+  await act(async () => {
+    closable.dispatchEvent(new testWindow.KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }) as never);
+  });
+  expect(closed).toEqual(["research"]);
+
+  // A tab with no onClose must not swallow Delete.
+  await act(async () => {
+    buttons[0]!.dispatchEvent(new testWindow.KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }) as never);
+  });
+  expect(closed).toEqual(["research"]);
+
+  await act(async () => root.unmount());
+});
