@@ -81,7 +81,6 @@ export function TableShareView({
                 <th
                   key={column.id}
                   data-align={column.align ?? "left"}
-                  onClick={() => toggleSort(columnIndex)}
                   style={column.width != null
                     ? { minWidth: `calc(${column.width} * var(--cell-w))` }
                     : undefined}
@@ -89,8 +88,11 @@ export function TableShareView({
                     ? (sort.direction === "asc" ? "ascending" : "descending")
                     : "none"}
                 >
-                  {column.label}
-                  {sort?.columnIndex === columnIndex ? (sort.direction === "asc" ? " ▲" : " ▼") : ""}
+                  {/* A th is not focusable, so the sort control has to be a real button. */}
+                  <button type="button" className="share-th-sort" onClick={() => toggleSort(columnIndex)}>
+                    {column.label}
+                    {sort?.columnIndex === columnIndex ? (sort.direction === "asc" ? " ▲" : " ▼") : ""}
+                  </button>
                 </th>
               ))}
             </tr>
