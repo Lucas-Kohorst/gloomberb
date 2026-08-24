@@ -84,13 +84,16 @@ export function buildPortfolioReturnSeries({
   chartEntries,
   financials,
   columnContext,
+  equalWeight = false,
 }: {
   chartTargets: PortfolioChartTarget[];
   chartEntries: ChartEntryLookup;
   financials: Map<string, TickerFinancials>;
   columnContext: ColumnContext;
+  equalWeight?: boolean;
 }): DatedReturn[] | null {
   const weightedSeries: WeightedReturnSeries[] = [];
+  const equalShare = chartTargets.length > 0 ? 1 / chartTargets.length : 0;
   for (const { ticker, request } of chartTargets) {
     const key = buildChartKey(request);
     const entry = chartEntries.get(key);
@@ -100,7 +103,9 @@ export function buildPortfolioReturnSeries({
     const returns = computeDatedReturns(history);
     if (returns.length < 10) continue;
 
-    const value = getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
+    const value = equalWeight
+      ? equalShare
+      : getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
     if (value == null) continue;
     weightedSeries.push({ weight: value, returns });
   }
@@ -262,24 +267,27 @@ export function buildAnalyticsSummaryRows({
 export function buildAnalyticsRiskRows({
   sharpe,
   beta,
+  indicative = false,
 }: {
   sharpe: number | null;
   beta: number | null;
+  indicative?: boolean;
 }): AnalyticsMetricRow[] {
+  const indicativeDetail = indicative ? "indicative" : null;
   return [
     sharpe !== null
       ? {
         id: "sharpe",
         label: "Sharpe Ratio",
         value: formatNumber(sharpe, 2),
-        detail: sharpeLabel(sharpe),
+        detail: [sharpeLabel(sharpe), indicativeDetail].filter(Boolean).join(" · "),
         color: sharpeColor(sharpe),
       }
       : {
         id: "sharpe",
         label: "Sharpe Ratio",
         value: "—",
-        detail: "insufficient data",
+        detail: indicativeDetail ?? "insufficient data",
         color: colors.textMuted,
       },
     beta !== null
@@ -287,14 +295,14 @@ export function buildAnalyticsRiskRows({
         id: "beta",
         label: "Beta (SPY)",
         value: formatNumber(beta, 2),
-        detail: betaLabel(beta),
+        detail: [betaLabel(beta), indicativeDetail].filter(Boolean).join(" · "),
         color: betaColor(beta),
       }
       : {
         id: "beta",
         label: "Beta (SPY)",
         value: "—",
-        detail: "insufficient data",
+        detail: indicativeDetail ?? "insufficient data",
         color: colors.textMuted,
       },
   ];
@@ -384,12 +392,16 @@ export function buildPositionContributorInputs(
   chartEntries: ChartEntryLookup,
   financials: Map<string, TickerFinancials>,
   columnContext: ColumnContext,
+  options?: { equalWeight?: boolean },
 ): ContributorInput[] {
   const inputs: ContributorInput[] = [];
+  const equalShare = chartTargets.length > 0 ? 1 / chartTargets.length : 0;
   for (const { ticker, request } of chartTargets) {
     const symbol = ticker.metadata.ticker;
     const financialsEntry = financials.get(symbol);
-    const marketValue = getPortfolioPositionValue(ticker, financialsEntry, columnContext);
+    const marketValue = options?.equalWeight
+      ? equalShare
+      : getPortfolioPositionValue(ticker, financialsEntry, columnContext);
     if (marketValue == null) continue;
 
     const entry = chartEntries.get(buildChartKey(request));

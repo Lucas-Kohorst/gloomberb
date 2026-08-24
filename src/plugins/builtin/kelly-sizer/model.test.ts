@@ -14,7 +14,9 @@ import {
   type PredictionMarketKellyAssumptions,
   type ScenarioKellyAssumptions,
 } from "./model";
+import { createDefaultConfig } from "../../../types/config";
 import type { TickerRecord } from "../../../types/ticker";
+import { resolveActivePortfolioId } from "./portfolio";
 
 function ticker(symbol: string, extras: Partial<TickerRecord["metadata"]> = {}): TickerRecord {
   return {
@@ -205,5 +207,18 @@ describe("kelly sizing model", () => {
     const points = buildKellyCurvePoints("binary", draft);
     expect(points.length).toBeGreaterThan(10);
     expect(points[0]?.close).toBe(0);
+  });
+});
+
+describe("resolveActivePortfolioId", () => {
+  test("accepts a watchlist collection id", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-kelly-watchlist");
+    expect(resolveActivePortfolioId({
+      requestedPortfolioId: "watchlist",
+      activeCollectionId: null,
+      symbol: "KALSHI:KXPRESPERSON",
+      ticker: ticker("KALSHI:KXPRESPERSON", { watchlists: ["watchlist"] }),
+      config,
+    })).toBe("watchlist");
   });
 });
