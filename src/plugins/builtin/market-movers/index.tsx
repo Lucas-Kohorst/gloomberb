@@ -6,6 +6,7 @@ import {
   resolveVisibleColumns,
 } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -70,6 +71,8 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   const [sortPreference, setSortPreference] = useState<MarketMoverSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [summaryQuotes, setSummaryQuotes] = useState<MarketSummaryQuote[]>([]);
   const [moversStale, setMoversStale] = useState(false);
+  const [summaryFetchedAt, setSummaryFetchedAt] = useState<number | null>(null);
+  const [tabFetchedAt, setTabFetchedAt] = useState<number | null>(null);
 
   const fetchGenRef = useRef(0);
 
@@ -120,43 +123,48 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
   }, [rows, selectedIdx, selectedSymbol]);
 
   // Fetch market summary via the asset-data client.
-  useEffect(() => {
+  const loadSummary = useCallback(async () => {
     if (!dataProvider) return;
-    const loadSummary = async () => {
-      if (dataProvider.getQuotesBatch) {
-        const batchResults = await dataProvider.getQuotesBatch(
-          MARKET_SUMMARY_SYMBOLS.map((symbol) => ({ symbol, exchange: "" })),
-        ).catch(() => []);
-        const bySymbol = new Map(batchResults.map((result) => [result.target.symbol, result]));
-        setSummaryQuotes(
-          MARKET_SUMMARY_SYMBOLS
-            .map((symbol) => {
-              const result = bySymbol.get(symbol);
-              return result?.quote ? summaryQuoteFromQuote(symbol, result.quote) : null;
-            })
-            .filter((quote): quote is MarketSummaryQuote => !!quote),
-        );
-        return;
-      }
-
-      const results = await Promise.all(MARKET_SUMMARY_SYMBOLS.map(async (symbol) => {
-        try {
-          const quote = await dataProvider.getQuote(symbol, "");
-          return quote ? summaryQuoteFromQuote(symbol, quote) : null;
-        } catch {
-          return null;
-        }
-      }));
+    if (dataProvider.getQuotesBatch) {
+      const batchResults = await dataProvider.getQuotesBatch(
+        MARKET_SUMMARY_SYMBOLS.map((symbol) => ({ symbol, exchange: "" })),
+      ).catch(() => []);
+      const bySymbol = new Map(batchResults.map((result) => [result.target.symbol, result]));
       setSummaryQuotes(
         MARKET_SUMMARY_SYMBOLS
-          .map((s) => results.find((r) => r?.symbol === s))
-          .filter((r): r is MarketSummaryQuote => !!r),
+          .map((symbol) => {
+            const result = bySymbol.get(symbol);
+            return result?.quote ? summaryQuoteFromQuote(symbol, result.quote) : null;
+          })
+          .filter((quote): quote is MarketSummaryQuote => !!quote),
       );
-    };
-    loadSummary();
-    const interval = setInterval(loadSummary, 60_000);
-    return () => clearInterval(interval);
+      setSummaryFetchedAt(Date.now());
+      return;
+    }
+
+    const results = await Promise.all(MARKET_SUMMARY_SYMBOLS.map(async (symbol) => {
+      try {
+        const quote = await dataProvider.getQuote(symbol, "");
+        return quote ? summaryQuoteFromQuote(symbol, quote) : null;
+      } catch {
+        return null;
+      }
+    }));
+    setSummaryQuotes(
+      MARKET_SUMMARY_SYMBOLS
+        .map((s) => results.find((r) => r?.symbol === s))
+        .filter((r): r is MarketSummaryQuote => !!r),
+    );
+    setSummaryFetchedAt(Date.now());
   }, [dataProvider]);
+
+  useEffect(() => {
+    void loadSummary();
+  }, [loadSummary]);
+
+  useAutoRefresh(summaryFetchedAt, () => {
+    void loadSummary();
+  });
 
   const loadTab = useCallback(async (
     tab: TabId,
@@ -220,6 +228,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       setQuotes(data);
       if (!options?.background) setSelectedSymbol(null);
       setLoadError(null);
+      setTabFetchedAt(Date.now());
     } catch {
       if (fetchGenRef.current === gen && !options?.background) {
         setLoadError("Market movers temporarily unavailable");
@@ -232,11 +241,11 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     void loadTab(activeTab);
-    const interval = setInterval(() => {
-      void loadTab(activeTab, { background: true });
-    }, 60_000);
-    return () => clearInterval(interval);
   }, [activeTab, loadTab]);
+
+  useAutoRefresh(tabFetchedAt, () => {
+    void loadTab(activeTab, { background: true });
+  });
 
   const openSymbol = useCallback((symbol: string) => {
     pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
