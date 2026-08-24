@@ -200,8 +200,6 @@ export function optionSortValue(row: OptionTableRow, columnId: OptionColumnId): 
     case "callIv":
     case "putIv":
       return contract.impliedVolatility ?? null;
-    case "strike":
-      return row.strike;
   }
 }
 
