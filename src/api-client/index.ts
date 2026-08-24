@@ -42,6 +42,8 @@ import type {
   CloudCorporateActionsPayload,
   CloudPricePointPayload,
   CloudEconEventPayload,
+  CloudEquityDiagnosticMode,
+  CloudEquityDiagnosticResult,
   CloudFredSeriesPayload,
   CloudYieldPointPayload,
   CloudCongressHousePayload,
@@ -533,6 +535,14 @@ class GloomApiClient {
 
   async getCloudExchangeRate(fromCurrency: string): Promise<CloudMarketResponse<{ rate: number }>> {
     return this.data.getCloudExchangeRate(fromCurrency);
+  }
+
+  async getCloudEquityDiagnostic(
+    symbol: string,
+    exchange?: string,
+    mode: CloudEquityDiagnosticMode = "cache-first",
+  ): Promise<CloudEquityDiagnosticResult> {
+    return this.data.getCloudEquityDiagnostic(symbol, exchange, mode);
   }
 
   async getCloudEconomicCalendar(): Promise<CloudEconEventPayload[]> {

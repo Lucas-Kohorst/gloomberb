@@ -3,6 +3,7 @@ import { parseTickerListInput, formatTickerListInput } from "../../../tickers/li
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
 import { CorporateActionsView } from "./corporate-actions-pane";
+import { EquityDiagnosticView } from "./equity-diagnostic-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
 
 function EarningsEstimatesAliasPane(props: { focused: boolean; width: number; height: number }) {
@@ -16,6 +17,13 @@ export const researchModule: PluginModule = {
       name: "Analyst",
       order: 32,
       component: AnalystResearchView,
+      isVisible: ({ ticker }) => !!ticker,
+    });
+    ctx.registerTickerResearchTab({
+      id: "equity-diagnostic",
+      name: "Diagnostic",
+      order: 33,
+      component: EquityDiagnosticView,
       isVisible: ({ ticker }) => !!ticker,
     });
     ctx.registerTickerResearchTab({
@@ -36,6 +44,15 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 28 },
+    },
+    {
+      id: "equity-diagnostic",
+      name: "Equity Diagnostic",
+      icon: "D",
+      component: EquityDiagnosticView,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 96, height: 30 },
     },
     {
       id: "corporate-actions",
@@ -74,6 +91,14 @@ export const researchModule: PluginModule = {
       description: "Price targets, recommendations, and recent analyst actions.",
       keywords: ["analyst", "research", "ratings", "target", "anr"],
       shortcut: "ANR",
+    }),
+    createTickerSurfacePaneTemplate({
+      id: "equity-diagnostic-pane",
+      paneId: "equity-diagnostic",
+      label: "Equity Diagnostic",
+      description: "Red flags, anomalies, green flags, and watch items for one company, with cited evidence.",
+      keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
+      shortcut: "DIAG",
     }),
     createTickerSurfacePaneTemplate({
       id: "corporate-actions-pane",

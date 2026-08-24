@@ -20,4 +20,18 @@ describe("gloomCloudProxyUpstreamPath", () => {
       "/cloud/econ/series/DGS10?limit=5",
     );
   });
+
+  test("keeps /cloud/logos/ticker/AAPL as the Gloom Cloud logo route", () => {
+    expect(gloomCloudProxyUpstreamPath("/cloud/logos/ticker/AAPL")).toBe("/cloud/logos/ticker/AAPL");
+  });
+
+  test("strips the extra hosted /cloud prefix from /cloud/cloud/logos/crypto/BTC", () => {
+    expect(gloomCloudProxyUpstreamPath("/cloud/cloud/logos/crypto/BTC")).toBe("/cloud/logos/crypto/BTC");
+  });
+
+  test("strips once for research paths that are not under /cloud on the API", () => {
+    expect(gloomCloudProxyUpstreamPath("/cloud/research/equity-diagnostic")).toBe(
+      "/research/equity-diagnostic",
+    );
+  });
 });

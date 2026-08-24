@@ -16,7 +16,7 @@ export function setCloudApiFetchTransport(transport: CloudApiFetchTransport | nu
   cloudApiFetchTransport = transport ?? httpFetch;
 }
 
-function getCloudApiBaseUrl(): string {
+export function getCloudApiBaseUrl(): string {
   if (typeof process === "undefined") {
     return DEFAULT_API_URL;
   }

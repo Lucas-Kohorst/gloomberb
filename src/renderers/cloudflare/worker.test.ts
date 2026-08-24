@@ -859,6 +859,80 @@ describe("Gloom Cloud /cloud origin gate", () => {
     expect(await response?.json()).toEqual({ error: "Authentication required." });
   });
 
+  test("GET /cloud/logos/ticker/AAPL with a session proxies to api.gloom.sh/cloud/logos/ticker/AAPL", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/logos/ticker/AAPL") {
+        return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/logos/ticker/AAPL", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("content-type")).toBe("image/png");
+    expect(upstream).toContain("https://api.gloom.sh/cloud/logos/ticker/AAPL");
+    expect(upstream.some((url) => url === "https://api.gloom.sh/logos/ticker/AAPL")).toBe(false);
+  });
+
+  test("GET /cloud/logos/ticker/AAPL without Origin still proxies when a session cookie is present", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url === "https://api.gloom.sh/cloud/logos/ticker/AAPL") {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/logos/ticker/AAPL", { sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/logos/ticker/AAPL");
+  });
+
+  test("POST /cloud/research/equity-diagnostic with a session proxies to the Cloud research route", async () => {
+    const upstream: Array<{ url: string; method?: string; body?: string }> = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push({
+        url,
+        method: init?.method,
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      if (url === "https://api.gloom.sh/research/equity-diagnostic") {
+        return Response.json({ status: "generating", retryAfterMs: 250 });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/cloud/research/equity-diagnostic", {
+        origin: ORIGIN,
+        sessionToken: "tok",
+        body: JSON.stringify({ symbol: "AAPL", mode: "cache-first" }),
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream.some((entry) => entry.url === "https://api.gloom.sh/research/equity-diagnostic")).toBe(true);
+    expect(await response?.json()).toEqual({ status: "generating", retryAfterMs: 250 });
+  });
+
   test("allows a same-origin GET that omits the Origin header", async () => {
     // Browsers do not send an Origin header on same-origin GETs; the chat
     // message/channel/state loads are exactly this shape, so they must proxy.
