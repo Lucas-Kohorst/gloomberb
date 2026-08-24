@@ -914,6 +914,36 @@ describe("Gloom Cloud /cloud origin gate", () => {
   });
 });
 
+describe("app security headers", () => {
+  const serveAsset = async (path: string) => {
+    const env = makeEnv();
+    env.ASSETS = {
+      fetch: async () => new Response("<html>app</html>", { headers: { "content-type": "text/html" } }),
+    } as unknown as Fetcher;
+    return await workerModule.default.fetch?.(
+      new Request(`${ORIGIN}${path}`, { method: "GET", headers: { Accept: "text/html" } }),
+      env,
+    );
+  };
+
+  test("every app document carries the transport and isolation headers", async () => {
+    const response = await serveAsset("/");
+    expect(response?.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+    expect(response?.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(response?.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(response?.headers.get("permissions-policy")).toContain("camera=()");
+    expect(response?.headers.get("x-frame-options")).toBe("DENY");
+    expect(response?.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  test("only share documents ask crawlers to stay out", async () => {
+    expect((await serveAsset("/"))?.headers.get("x-robots-tag")).toBeNull();
+    expect((await serveAsset("/s/SdIc3WRwjojR"))?.headers.get("x-robots-tag")).toBe(
+      "noindex, nofollow, noarchive",
+    );
+  });
+});
+
 describe("share document serving", () => {
   test("GET /s/{id} fetches /share.html without Cookie or If-None-Match", async () => {
     const captured: Request[] = [];
