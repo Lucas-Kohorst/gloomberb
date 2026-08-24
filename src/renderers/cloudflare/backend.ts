@@ -213,17 +213,16 @@ async function dispatch(
     case "ticker.save":
     case "ticker.delete":
     case "config.save":
+    case "config.resetAllData":
+    case "config.export":
+    case "config.import":
     case "session.set":
     case "session.delete":
     case "pluginState.set":
     case "pluginState.setMany":
     case "pluginState.delete":
-      // Persistence is owned by Gloom Cloud sync on the renderer side.
+      // Persistence is owned by the hosted renderer (localStorage + /api/config).
       return null;
-    case "config.resetAllData":
-    case "config.export":
-    case "config.import":
-      throw new Error(`Config file management is ${NOT_AVAILABLE.toLowerCase()}`);
     case "capability.invoke":
       // Hosted/web disables plugin.capabilities invoke. Asset data, tickers,
       // chat, and sync must use renderer-side Gloom Cloud (`/cloud` proxy),

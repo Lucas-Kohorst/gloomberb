@@ -6,6 +6,8 @@ import {
   t,
 } from "../../../../i18n";
 import { exportConfig, importConfig, resetAllData } from "../../../../data/config/store";
+import { HostedConfigImportCancelledError } from "../../../../data/config/hosted-file-ops";
+import { isHostedWebClient } from "../../../../shared/hosted-api";
 import type { PluginRegistry } from "../../../../plugins/registry";
 import {
   applyTheme,
@@ -176,15 +178,24 @@ export function runDirectCommandAction(options: {
       openInlineConfirm({
         confirmId: "reset-all-data",
         title: "Reset All Data",
-        body: [
-          "This will permanently delete all portfolios, tickers, notes, broker credentials, and settings.",
-          "Gloomberb will quit and show the setup wizard on next launch.",
-        ],
+        body: isHostedWebClient()
+          ? [
+            "This will permanently delete layouts, watchlists, notes, and settings stored in this browser.",
+            "Gloomberb will reload with a fresh workspace.",
+          ]
+          : [
+            "This will permanently delete all portfolios, tickers, notes, broker credentials, and settings.",
+            "Gloomberb will quit and show the setup wizard on next launch.",
+          ],
         confirmLabel: "Reset Everything",
         cancelLabel: "Back",
         tone: "danger",
         onConfirm: async () => {
           await resetAllData(getState().config.dataDir);
+          if (isHostedWebClient()) {
+            globalThis.location?.reload();
+            return;
+          }
           quitApp();
         },
       });
@@ -193,7 +204,12 @@ export function runDirectCommandAction(options: {
       const exportPath = getDefaultConfigBackupPath();
       void exportConfig(state.config, exportPath)
         .then(() => {
-          notify(`Config exported to ${exportPath}`, { type: "success" });
+          notify(
+            isHostedWebClient()
+              ? "Config downloaded as gloomberb-config-backup.json"
+              : `Config exported to ${exportPath}`,
+            { type: "success" },
+          );
           closeAll({ revertThemePreview: false });
         })
         .catch((error) => {
@@ -210,10 +226,14 @@ export function runDirectCommandAction(options: {
           dispatch({ type: "SET_CONFIG", config: imported });
           applyTheme(imported.theme);
           dispatch({ type: "SET_THEME", theme: imported.theme });
-          notify(`Imported config from ${importPath}.`, { type: "success" });
+          notify(
+            isHostedWebClient() ? "Imported config." : `Imported config from ${importPath}.`,
+            { type: "success" },
+          );
           closeAll({ revertThemePreview: false });
         })
         .catch((error) => {
+          if (error instanceof HostedConfigImportCancelledError) return;
           notify(error instanceof Error ? error.message : "Import failed.", { type: "error" });
         });
       return;

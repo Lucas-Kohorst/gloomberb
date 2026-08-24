@@ -127,6 +127,7 @@ export function createHostedConfigSnapshotPusher(): {
   schedule: (config: AppConfig) => void;
   scheduleFromLast: () => void;
   flush: () => Promise<void>;
+  flushForced: (config: AppConfig) => Promise<void>;
   cancel: () => void;
 } {
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -134,8 +135,8 @@ export function createHostedConfigSnapshotPusher(): {
   let lastConfig: AppConfig | null = null;
   let inFlight: Promise<void> = Promise.resolve();
 
-  async function push(config: AppConfig): Promise<void> {
-    if (!shouldPushHostedSnapshot(config)) return;
+  async function push(config: AppConfig, force = false): Promise<void> {
+    if (!force && !shouldPushHostedSnapshot(config)) return;
     const stripped = stripByokKeysForSnapshot(config);
     const persisted = normalizeConfigForSave(stripped);
     const updatedAt = new Date().toISOString();
@@ -184,6 +185,13 @@ export function createHostedConfigSnapshotPusher(): {
     },
     flush(): Promise<void> {
       return drain();
+    },
+    flushForced(config: AppConfig): Promise<void> {
+      lastConfig = config;
+      if (timer) { clearTimeout(timer); timer = null; }
+      pendingConfig = null;
+      inFlight = inFlight.then(() => push(config, true).catch(() => {}));
+      return inFlight;
     },
     cancel(): void {
       if (timer) { clearTimeout(timer); timer = null; }
