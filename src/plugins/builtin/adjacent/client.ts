@@ -21,7 +21,11 @@ import type {
   AdjacentSimilarResponse,
   AdjacentTradesResponse,
 } from "./types";
-import { unwrapAdjacentMarketIds, unwrapAdjacentNewsArticles } from "./normalize";
+import {
+  unwrapAdjacentMarketIds,
+  unwrapAdjacentNewsArticles,
+  unwrapAdjacentSimilarMarkets,
+} from "./normalize";
 import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
 
@@ -102,8 +106,18 @@ function authHeaders(apiKey: string | null | undefined): Record<string, string> 
   return { Authorization: `Bearer ${apiKey}` };
 }
 
+/** Hosted injects ADJACENT_API_KEY on the worker; the browser has no BYOK key. */
+function usesWorkerAdjacentKey(): boolean {
+  return isHostedWebClient();
+}
+
 function isPublicMode(apiKey: string | null | undefined): boolean {
+  if (usesWorkerAdjacentKey()) return false;
   return !apiKey;
+}
+
+function adjacentPriceInterval(interval: string): string {
+  return interval === "1h" ? "1hour" : interval;
 }
 
 async function adjacentFetchJson<T>(
@@ -190,8 +204,12 @@ export class AdjacentClient {
     return this.isPublic ? "/public/rates" : "/rates";
   }
 
+  private eventsPath(): string {
+    return this.isPublic ? "/public/events" : "/events";
+  }
+
   private newsPath(): string {
-    return this.isPublic ? "/public/news" : "/news";
+    return "/news";
   }
 
   async getMarkets(params?: {
@@ -199,14 +217,15 @@ export class AdjacentClient {
     category?: string;
     sort?: string;
     limit?: number;
-    cursor?: string;
+    page?: number;
   }): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(this.marketsPath(), {
       platform: params?.platform,
       category: params?.category,
       sort: params?.sort,
-      limit: params?.limit,
-      cursor: params?.cursor,
+      per_page: params?.limit,
+      page: params?.page,
+      scope: this.isPublic ? "all" : undefined,
     });
     return loadCached(
       "adjacent-markets",
@@ -222,9 +241,11 @@ export class AdjacentClient {
     platform?: string,
   ): Promise<AdjacentMarketsResponse> {
     const url = buildUrl(this.marketsPath(), {
-      q: query,
-      limit,
+      search: query,
+      per_page: limit,
+      page: 1,
       platform,
+      scope: this.isPublic ? "all" : undefined,
     });
     // Don't cache search results persistently
     return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey);
@@ -241,7 +262,9 @@ export class AdjacentClient {
   }
 
   async getMarketPrices(id: string, interval = "1h"): Promise<AdjacentPricesResponse> {
-    const url = buildUrl(`${this.marketsPath()}/${id}/prices`, { interval });
+    const url = buildUrl(`${this.marketsPath()}/${id}/prices`, {
+      interval: adjacentPriceInterval(interval),
+    });
     const cacheKey = `${id}:${interval}`;
     return loadCached(
       "adjacent-prices",
@@ -283,28 +306,27 @@ export class AdjacentClient {
   }
 
   async getSimilarMarkets(id: string): Promise<AdjacentSimilarResponse> {
-    // The similar-markets endpoint is authenticated-only and expects a
-    // prefixed market id such as "polymarket:0x..." or "kalshi:KXPRES-...".
     const url = buildUrl(`/markets/${id}/similar`);
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-similar",
       id,
-      () => adjacentFetchJson<AdjacentSimilarResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.similar,
     );
+    return { markets: unwrapAdjacentSimilarMarkets(raw) };
   }
 
   async getEvents(params?: {
     platform?: string;
     category?: string;
     limit?: number;
-    cursor?: string;
+    page?: number;
   }): Promise<AdjacentEventsResponse> {
-    const url = buildUrl("/events", {
+    const url = buildUrl(this.eventsPath(), {
       platform: params?.platform,
       category: params?.category,
-      limit: params?.limit,
-      cursor: params?.cursor,
+      per_page: params?.limit,
+      page: params?.page,
     });
     return loadCached(
       "adjacent-events",
@@ -384,10 +406,10 @@ export class AdjacentClient {
     );
   }
 
-  async getNews(params?: { limit?: number; cursor?: string }): Promise<AdjacentNewsResponse> {
+  async getNews(params?: { limit?: number; offset?: number }): Promise<AdjacentNewsResponse> {
     const url = buildUrl(this.newsPath(), {
       limit: params?.limit,
-      cursor: params?.cursor,
+      offset: params?.offset,
     });
     const raw = await loadCached(
       "adjacent-news",
@@ -399,7 +421,7 @@ export class AdjacentClient {
   }
 
   async getLatestNews(limit = 20): Promise<AdjacentNewsLatestResponse> {
-    const url = buildUrl(`${this.newsPath()}/latest`, { limit });
+    const url = buildUrl(`${this.newsPath()}/latest`, { per_page: limit });
     const raw = await loadCached(
       "adjacent-news-latest",
       url,
@@ -439,7 +461,6 @@ export class AdjacentClient {
       search: query,
       scope: this.isPublic ? "all" : undefined,
       per_page: limit,
-      limit,
       platform,
     });
     const raw = await adjacentFetchJson<unknown>(url, this.apiKey);

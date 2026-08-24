@@ -60,6 +60,10 @@ function alreadyPrefixed(value: string): boolean {
   return /^(kalshi|polymarket):/i.test(value.trim());
 }
 
+function isGammaNumericId(value: string): boolean {
+  return /^\d+$/.test(stripPlatformPrefix(value));
+}
+
 function pushUnique(target: string[], value: string | null | undefined): void {
   const next = compactId(value);
   if (!next) return;
@@ -68,36 +72,44 @@ function pushUnique(target: string[], value: string | null | undefined): void {
 
 export function adjacentMarketCandidateIds(lookup: AdjacentMarketLookup): string[] {
   const venue = lookup.venue;
-  const ids: string[] = [];
+  const canonical: string[] = [];
+  const numeric: string[] = [];
   const rawMarketId = compactId(lookup.marketId);
   const rawEventTicker = compactId(lookup.eventTicker);
   const rawEventId = compactId(lookup.eventId);
   const rawConditionId = compactId(lookup.conditionId);
   const slug = lookup.url ? extractPolymarketSlug(lookup.url) : null;
 
-  if (rawMarketId && alreadyPrefixed(rawMarketId)) {
-    pushUnique(ids, rawMarketId);
-  } else if (venue && rawMarketId) {
-    pushUnique(ids, `${venue}:${rawMarketId}`);
+  const pushCandidate = (value: string | null | undefined) => {
+    const next = compactId(value);
+    if (!next) return;
+    pushUnique(isGammaNumericId(next) ? numeric : canonical, next);
+  };
+
+  if (venue === "polymarket" && slug) pushCandidate(`polymarket:${slug}`);
+  if (venue === "polymarket" && rawConditionId) {
+    pushCandidate(`polymarket:${rawConditionId}`);
   }
 
-  if (venue && rawEventTicker) pushUnique(ids, `${venue}:${rawEventTicker}`);
-  if (venue && rawEventId) pushUnique(ids, `${venue}:${rawEventId}`);
-  if (venue === "polymarket" && rawConditionId) {
-    pushUnique(ids, `polymarket:${rawConditionId}`);
+  if (rawMarketId && alreadyPrefixed(rawMarketId)) {
+    pushCandidate(rawMarketId);
+  } else if (venue && rawMarketId) {
+    pushCandidate(`${venue}:${rawMarketId}`);
   }
-  if (venue === "polymarket" && slug) pushUnique(ids, `polymarket:${slug}`);
+
+  if (venue && rawEventTicker) pushCandidate(`${venue}:${rawEventTicker}`);
+  if (venue && rawEventId) pushCandidate(`${venue}:${rawEventId}`);
 
   if (venue === "kalshi") {
     const ticker = stripPlatformPrefix(rawMarketId || rawEventTicker).toUpperCase();
     if (ticker) {
       for (const parent of kalshiParentTickers(ticker)) {
-        pushUnique(ids, `kalshi:${parent}`);
+        pushCandidate(`kalshi:${parent}`);
       }
     }
   }
 
-  return ids;
+  return [...canonical, ...numeric];
 }
 
 export function adjacentMarketSearchQueries(lookup: AdjacentMarketLookup): string[] {

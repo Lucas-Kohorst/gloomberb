@@ -7,6 +7,7 @@ import {
   normalizeAdjacentRate,
   unwrapAdjacentMarketIds,
   unwrapAdjacentNewsArticles,
+  unwrapAdjacentSimilarMarkets,
 } from "./normalize";
 import { createIndexColumns } from "./indices";
 import { createRateColumns } from "./rates";
@@ -98,5 +99,25 @@ describe("adjacent normalize", () => {
     expect(unwrapAdjacentMarketIds({
       data: [{ market_id: "polymarket:abc" }, { id: "kalshi:def" }],
     })).toEqual(["polymarket:abc", "kalshi:def"]);
+  });
+
+  test("unwraps similar markets from data payloads onto UI fields", () => {
+    const markets = unwrapAdjacentSimilarMarkets({
+      data: [{
+        market_id: "kalshi:KXNBA-26-NYK",
+        question: "Will the New York win the 2026 Pro Basketball Finals?",
+        latest_price: 37,
+        similarity: 0.91,
+        platform: "kalshi",
+      }],
+    });
+    expect(markets).toHaveLength(1);
+    expect(markets[0]).toMatchObject({
+      id: "kalshi:KXNBA-26-NYK",
+      title: "Will the New York win the 2026 Pro Basketball Finals?",
+      yes_price: 37,
+      similarity: 0.91,
+      platform: "kalshi",
+    });
   });
 });

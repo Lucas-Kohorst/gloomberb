@@ -79,10 +79,10 @@ describe("adjacent market id matching", () => {
         title: "Will Bitcoin be above $100,000?",
       }),
     ).toEqual([
+      "polymarket:btc-100k",
+      "polymarket:0xabc",
       "polymarket:12345",
       "polymarket:67890",
-      "polymarket:0xabc",
-      "polymarket:btc-100k",
     ]);
   });
 
@@ -147,5 +147,23 @@ describe("adjacent market id matching", () => {
     expect(client.calls[0]).toBe("get:polymarket:0xdead");
     expect(client.calls).toContain("find:0xdead");
     expect(client.calls.some((call) => call.startsWith("search:") && call.includes("Will Bitcoin"))).toBe(false);
+  });
+
+  test("resolves Polymarket slug before Gamma numeric ids", async () => {
+    const slugId = "polymarket:btc-100k";
+    const client = fakeClient({
+      get: { [slugId]: market(slugId) },
+    });
+    const resolved = await resolveAdjacentMarketId(client, {
+      venue: "polymarket",
+      marketId: "12345",
+      eventId: "67890",
+      conditionId: "0xabc",
+      url: "https://polymarket.com/event/btc-100k",
+      title: "Will Bitcoin be above $100,000?",
+    });
+    expect(resolved).toBe(slugId);
+    expect(client.calls[0]).toBe(`get:${slugId}`);
+    expect(client.calls).not.toContain("get:polymarket:12345");
   });
 });
