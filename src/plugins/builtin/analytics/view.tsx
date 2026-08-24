@@ -1,4 +1,4 @@
-import { Box, Text, TextAttributes } from "../../../ui";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   StaticChartSurface,
@@ -13,6 +13,98 @@ import type {
   SectorTableColumn,
   SectorTableRow,
 } from "./sector-model";
+
+const ANALYTICS_VIEW_OPTIONS = [
+  { label: "Overview", value: "overview" },
+  { label: "Risk", value: "risk" },
+] as const;
+
+export type AnalyticsView = (typeof ANALYTICS_VIEW_OPTIONS)[number]["value"];
+
+export function AnalyticsViewSwitch({
+  view,
+  onChange,
+}: {
+  view: AnalyticsView;
+  onChange: (view: AnalyticsView) => void;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+
+  if (nativePaneChrome) {
+    return (
+      <Box
+        flexDirection="row"
+        alignItems="center"
+        flexShrink={0}
+        style={{
+          gap: 12,
+          paddingInline: 8,
+          paddingBlock: 4,
+        }}
+      >
+        {ANALYTICS_VIEW_OPTIONS.map((option) => {
+          const active = option.value === view;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onMouseDown={(event) => {
+                event.stopPropagation();
+                event.preventDefault();
+                if (!active) onChange(option.value);
+              }}
+              data-gloom-role="analytics-view-switch"
+              data-gloom-interactive="true"
+              aria-pressed={active}
+              style={{
+                appearance: "none",
+                border: 0,
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                font: "inherit",
+                color: active ? colors.textBright : colors.textDim,
+                fontWeight: active ? 600 : 400,
+                textDecoration: active ? "underline" : "none",
+                textUnderlineOffset: 3,
+              }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="row" height={1} paddingX={1} flexShrink={0}>
+      {ANALYTICS_VIEW_OPTIONS.map((option, index) => {
+        const active = option.value === view;
+        return (
+          <Box
+            key={option.value}
+            flexDirection="row"
+            onMouseDown={() => {
+              if (!active) onChange(option.value);
+            }}
+            cursor="pointer"
+            data-gloom-role="analytics-view-switch"
+            data-gloom-interactive="true"
+          >
+            {index > 0 ? <Text fg={colors.textMuted}>  </Text> : null}
+            <Text
+              fg={active ? colors.textBright : colors.textDim}
+              attributes={active ? TextAttributes.BOLD : 0}
+            >
+              {option.label}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
 
 export interface AnalyticsMetricRow {
   id: string;
@@ -33,21 +125,10 @@ export function AnalyticsMetricsPanel({
 }) {
   return (
     <Box flexDirection="column" height={height} paddingX={1} paddingTop={1}>
-      <Box height={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-          Summary
-        </Text>
-      </Box>
       {summaryRows.map((row) => (
         <MetricLine key={row.id} row={row} />
       ))}
-
-      <Box height={1} />
-      <Box height={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-          Risk / Return
-        </Text>
-      </Box>
+      {riskRows.length > 0 ? <Box height={1} /> : null}
       {riskRows.map((row) => (
         <MetricLine key={row.id} row={row} />
       ))}

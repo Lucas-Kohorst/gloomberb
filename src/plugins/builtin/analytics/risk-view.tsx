@@ -232,9 +232,6 @@ export function PortfolioRiskView({
         />
       </Box>
 
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>Factor Exposure</Text>
-      </Box>
       <Box paddingX={1}>
         <DataTableView<FactorRow, FactorColumn>
           focused={focused}
@@ -294,9 +291,6 @@ export function PortfolioRiskView({
         </>
       )}
 
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>Sector Concentration</Text>
-      </Box>
       <Box paddingX={1} height={Math.min(6, Math.max(3, sectorRows.length + 2))}>
         <DataTableView<SectorTableRow, SectorTableColumn>
           focused={focused}

@@ -238,14 +238,83 @@ describe("PortfolioAnalyticsPane", () => {
     expect(frame).toContain("Flex DU12345");
     expect(frame).toContain("Val           1.3k");
     expect(frame).toContain("P&L           +250  (+25.00%)");
-    expect(frame).toContain("Risk / Return");
+    expect(frame).not.toContain("Risk / Return");
+    expect(frame).not.toContain("Sector Allocation");
     expect(frame).toContain("Sharpe Ratio");
     expect(frame).toContain("Beta (SPY)");
     expect(frame).toContain("SECTOR");
-    expectBlankLineBetween(frame, "Beta (SPY)", "Sector Allocation");
+    expectBlankLineBetween(frame, "Beta (SPY)", "SECTOR");
     expect(frame).toContain("Technology");
     expect(frame).toContain("100.0%");
     expect(frame).not.toContain("2.5k");
+  });
+
+  test("keeps collection tabs off the Overview/Risk view switch", async () => {
+    await act(async () => {
+      testSetup = await testRender(
+        <AnalyticsHarness config={createAnalyticsConfig("main")} />,
+        { width: 100, height: 24 },
+      );
+      await Promise.resolve();
+      await testSetup.renderOnce();
+    });
+    await flushFrame();
+
+    const lines = testSetup!.captureCharFrame().split("\n");
+    const tabLine = lines.find((line) => line.includes("Main Portfolio"));
+    expect(tabLine).toBeDefined();
+    expect(tabLine).toContain("Flex DU12345");
+    expect(tabLine).not.toContain("Overview");
+    expect(tabLine).not.toContain("Risk");
+
+    const viewLineIndex = lines.findIndex((line) => line.includes("Overview") && line.includes("Risk"));
+    expect(viewLineIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[viewLineIndex]).not.toContain("Main Portfolio");
+
+    const metricLineIndex = lines.findIndex((line) => line.includes("Val"));
+    expect(metricLineIndex).toBeGreaterThan(viewLineIndex);
+  });
+
+  test("toggles Overview/Risk with [v] and mouse without moving collection tabs", async () => {
+    await act(async () => {
+      testSetup = await testRender(
+        <AnalyticsHarness config={createAnalyticsConfig("main")} />,
+        { width: 100, height: 24 },
+      );
+      await Promise.resolve();
+      await testSetup.renderOnce();
+    });
+    await flushFrame();
+
+    expect(testSetup!.captureCharFrame()).toContain("Sharpe Ratio");
+    expect(testSetup!.captureCharFrame()).not.toContain("Value at Risk");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("v");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    const riskFrame = testSetup!.captureCharFrame();
+    expect(riskFrame).toContain("Value at Risk");
+    const riskTabLine = riskFrame.split("\n").find((line) => line.includes("Main Portfolio"));
+    expect(riskTabLine).toBeDefined();
+    expect(riskTabLine).not.toContain("Overview");
+    expect(riskTabLine).not.toContain("Risk");
+
+    const overviewLine = riskFrame.split("\n").findIndex((line) => line.includes("Overview"));
+    const overviewCol = riskFrame.split("\n")[overviewLine]?.indexOf("Overview") ?? -1;
+    expect(overviewLine).toBeGreaterThanOrEqual(0);
+    expect(overviewCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(overviewCol + 1, overviewLine);
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    expect(testSetup!.captureCharFrame()).toContain("Sharpe Ratio");
+    expect(testSetup!.captureCharFrame()).not.toContain("Value at Risk");
   });
 
   test("switches portfolio tabs with the same arrow-key interaction as the portfolio pane", async () => {
