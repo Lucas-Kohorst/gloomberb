@@ -2,6 +2,7 @@ import { type LayoutConfig, type PaneBinding, type PaneInstanceConfig } from "..
 import type { PaneSettingField, PaneTemplateContext, PaneTemplateCreateOptions, PaneTemplateInstanceConfig, PaneTemplateDef } from "../../../types/plugin";
 import { getFocusedCollectionId, getFocusedTickerSymbol } from "../../../state/app/context";
 import type { PluginRegistry } from "../../../plugins/registry";
+import { isPaneInLayout } from "../../../plugins/pane-manager";
 import { formatTickerListInput } from "../../../tickers/list";
 import { updatePaneInstance, setPaneSettings } from "../../../pane-settings";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -162,16 +163,22 @@ function persistRetargetedLayout(layout: LayoutConfig, deps: CreatePaneTemplateD
  * of opening a duplicate from the command bar.
  */
 function findMatchingPaneInstance(
-  instances: PaneInstanceConfig[],
+  layout: LayoutConfig,
   paneId: string,
   spec: { binding?: PaneBinding; params?: Record<string, string>; settings?: Record<string, unknown> },
   options?: { singleton?: boolean },
 ): string | null {
+  const instances = layout.instances;
+  // Only a pane holding a slot in the layout can be focused. An instance can
+  // outlive its dock leaf, floating entry, and detached window while staying in
+  // `instances`; focusing that renders nothing, so an unplaced match would
+  // silently absorb every request to open this pane on this layout.
+  const isPlaced = (instanceId: string) => isPaneInLayout(layout, instanceId);
   // Singleton panes (e.g. Chat) represent a single shared surface. Reuse any
   // existing instance of the same pane id; the caller retargets settings.
   if (options?.singleton) {
     for (const instance of instances) {
-      if (instance.paneId === paneId) return instance.instanceId;
+      if (instance.paneId === paneId && isPlaced(instance.instanceId)) return instance.instanceId;
     }
     return null;
   }
@@ -180,6 +187,7 @@ function findMatchingPaneInstance(
   const settingsKey = JSON.stringify(spec.settings ?? {});
   for (const instance of instances) {
     if (instance.paneId !== paneId) continue;
+    if (!isPlaced(instance.instanceId)) continue;
     if (JSON.stringify(instance.binding ?? { kind: "none" }) !== bindingKey) continue;
     if (JSON.stringify(instance.params ?? {}) !== paramsKey) continue;
     if (JSON.stringify(instance.settings ?? {}) !== settingsKey) continue;
@@ -222,7 +230,7 @@ export async function createPaneTemplateOrThrow(
   // the new spec so `CHAT help` / `DM alice` switch the conversation instead of
   // only focusing a stale channel.
   const existing = findMatchingPaneInstance(
-    state.config.layout.instances,
+    state.config.layout,
     template.paneId,
     spec,
     { singleton: template.singleton },

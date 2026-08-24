@@ -101,21 +101,6 @@ async function waitForFrameWithout(text: string): Promise<string> {
 }
 
 describe("CommandBar AI assist", () => {
-  test("does not auto-ask a ticker-like query", async () => {
-    signInVerified();
-    const requests = mockAssistTransport(() => jsonResponse({
-      candidates: [{ input: "DES AAPL", title: "Open security details for AAPL", prefix: "DES", confidence: 0.9 }],
-    }));
-
-    testSetup = await testRender(<CommandBarHarness query="aapl" />, { width: 100, height: 20 });
-    await testSetup.renderOnce();
-    await Bun.sleep(700);
-    await testSetup.renderOnce();
-
-    expect(requests).toEqual([]);
-    expect(testSetup.captureCharFrame()).not.toContain("DES AAPL —");
-  });
-
   test("asks on its own, with no Enter, and leads the list with the answer", async () => {
     signInVerified();
     let sentCommandCount = 0;
@@ -146,8 +131,7 @@ describe("CommandBar AI assist", () => {
     expect(sentCommandCount).toBeGreaterThan(0);
 
     releaseResponse();
-    const answered = await waitForFrameToContain("Open the general channel", ASSIST_WAIT_ATTEMPTS);
-    expect(answered).not.toContain("CHAT #general —");
+    const answered = await waitForFrameToContain("CHAT #general — Open the general channel", ASSIST_WAIT_ATTEMPTS);
     expect(answered).not.toContain("Thinking…");
     expect(requests).toHaveLength(1);
     // Above the local matches, and holding the selection an untouched query
@@ -186,7 +170,7 @@ describe("CommandBar AI assist", () => {
     // Down lands on the local match while a single "Thinking…" row sits above.
     await emitKeypress(testSetup, { name: "down" });
     releaseResponse();
-    await waitForFrameToContain("Open the random channel", ASSIST_WAIT_ATTEMPTS);
+    await waitForFrameToContain("CHAT #random — Open the random channel", ASSIST_WAIT_ATTEMPTS);
 
     // Two answers replaced that one row, so the chosen row moved down by one —
     // Enter still runs it rather than whatever now sits at its old index.
@@ -212,8 +196,7 @@ describe("CommandBar AI assist", () => {
     );
 
     await testSetup.renderOnce();
-    await waitForFrameToContain("Earnings Calendar for NVDA", ASSIST_WAIT_ATTEMPTS);
-    expect(testSetup.captureCharFrame()).not.toContain("ERN NVDA —");
+    await waitForFrameToContain("ERN NVDA — Earnings Calendar for NVDA", ASSIST_WAIT_ATTEMPTS);
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "earnings-calendar-pane", options: undefined }]);

@@ -18,6 +18,20 @@ function makeTickerRepository() {
   };
 }
 
+/** Removes the leaf with `instanceId` from a dock tree, collapsing the parent split. */
+function stripInstanceFromDock(node: any, instanceId: string): any {
+  if (!node) return null;
+  if (node.kind === "pane") return node.instanceId === instanceId ? null : node;
+  if (node.kind === "split") {
+    const first = stripInstanceFromDock(node.first, instanceId);
+    const second = stripInstanceFromDock(node.second, instanceId);
+    if (!first) return second;
+    if (!second) return first;
+    return { ...node, first, second };
+  }
+  return node;
+}
+
 describe("createPaneTemplateOrThrow", () => {
   test("treats createInstance null as cancellation and does not create a pane", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
@@ -178,6 +192,53 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(focused).toEqual(["sec:AAPL"]);
     expect(placed).toEqual([]);
+  });
+
+  test("singleton template places a fresh pane when the only match lost its slot in the layout", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-orphan");
+    const layout = cloneLayout(config.layout);
+    // Reproduces a real saved layout: the chat instance survived in `instances`
+    // with no dock leaf, floating entry, or detached window. Focusing it renders
+    // nothing, so CHAT was a silent no-op on that layout and nowhere else.
+    layout.dockRoot = stripInstanceFromDock(layout.dockRoot, "chat:main");
+    layout.floating = layout.floating.filter((entry) => entry.instanceId !== "chat:main");
+    layout.detached = (layout.detached ?? []).filter((entry) => entry.instanceId !== "chat:main");
+    expect(findPaneInstance(layout, "chat:main")).toBeTruthy();
+
+    const state = createInitialState({ ...config, layout });
+    const focused: string[] = [];
+    const placed: unknown[] = [];
+
+    await createPaneTemplateOrThrow("new-chat-pane", undefined, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      persistLayout: () => {},
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["new-chat-pane", {
+            id: "new-chat-pane",
+            paneId: "chat",
+            label: "New Chat Pane",
+            description: "Chat",
+            singleton: true,
+            createInstance: () => ({ placement: "floating", title: "Chat #general" }),
+          }],
+        ]),
+        panes: new Map([
+          ["chat", { id: "chat", name: "Chat", component: () => null, defaultPosition: "right" }],
+        ]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => ({ instanceId: "chat:new", paneId: "chat" }) as any,
+      placePaneInstance: (instance) => { placed.push(instance.instanceId); },
+      focusPaneInstance: (id) => { focused.push(id); },
+    });
+
+    expect(placed).toEqual(["chat:new"]);
+    expect(focused).toEqual([]);
   });
 
   test("singleton template retargets an existing instance instead of spawning a duplicate", async () => {
