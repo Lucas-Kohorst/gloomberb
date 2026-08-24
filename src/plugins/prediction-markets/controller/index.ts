@@ -152,7 +152,6 @@ export function usePredictionMarketsController({
     appViewportHeight: appViewport.height,
     browseTab,
     categoryId,
-    debouncedSearchQuery: data.debouncedSearchQuery,
     detailOpen,
     effectiveVenueScope,
     headerScrollRef,
@@ -169,6 +168,7 @@ export function usePredictionMarketsController({
     selectedIndex: data.selectedIndex,
     selectedRow: data.selectedRow,
     selectedRowKey,
+    firstVisibleRowKey: data.visibleRows[0]?.key ?? null,
     setDetailOpen,
     setInitialParamsApplied,
     setLastVenueScope,
@@ -323,6 +323,7 @@ export function usePredictionMarketsController({
   );
 
   usePredictionControllerKeyboard({
+    browseTab,
     categoryId,
     detailOpen,
     detailScrollRef,
@@ -353,6 +354,7 @@ export function usePredictionMarketsController({
     browseTab,
     categoryId,
     catalogHasMore: data.catalogHasMore,
+    catalogLastRefreshAt: data.catalogLastRefreshAt,
     catalogLoadCount: data.catalogLoadCount,
     catalogLoadingMore: data.catalogLoadingMore,
     catalogStatus: data.catalogStatus,

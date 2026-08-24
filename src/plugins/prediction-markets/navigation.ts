@@ -91,3 +91,16 @@ export function getAdjacentPredictionVenueScope(
       : Math.min(safeIndex + 1, VENUE_TABS.length - 1);
   return VENUE_TABS[nextIndex]!.value;
 }
+
+export function getAdjacentPredictionBrowseTab(
+  current: PredictionBrowseTab,
+  direction: "previous" | "next",
+): PredictionBrowseTab {
+  const currentIndex = BROWSE_TABS.findIndex((tab) => tab.value === current);
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const nextIndex =
+    direction === "previous"
+      ? (safeIndex - 1 + BROWSE_TABS.length) % BROWSE_TABS.length
+      : (safeIndex + 1) % BROWSE_TABS.length;
+  return BROWSE_TABS[nextIndex]!.value;
+}

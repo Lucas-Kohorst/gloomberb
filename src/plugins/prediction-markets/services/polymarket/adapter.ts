@@ -15,9 +15,6 @@ import {
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
 import {
-  loadPolymarketEvent,
-} from "./detail";
-import {
   normalizePolymarketCatalog,
   reconcilePolymarketSearchEvents,
 } from "./normalize";
@@ -123,18 +120,8 @@ export async function loadPolymarketCatalog(
           buildPolymarketSearchUrl(normalizedQuery),
         );
         const searchEvents = response.events ?? [];
-        const hydratedEvents = (
-          await Promise.all(
-            [...new Set(searchEvents.map((event) => event.id).filter(Boolean))]
-              .map((eventId) => loadPolymarketEvent(eventId)),
-          )
-        ).filter((event): event is PolymarketEventRecord => event != null);
-        const resolvedEvents = reconcilePolymarketSearchEvents(
-          searchEvents,
-          hydratedEvents,
-        );
         return normalizePolymarketCatalog(
-          resolvedEvents,
+          reconcilePolymarketSearchEvents(searchEvents, []),
           normalizedQuery,
           categoryId,
         );

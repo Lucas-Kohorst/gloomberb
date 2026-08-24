@@ -17,6 +17,7 @@ import type {
 } from "../../types";
 import {
   fetchJson,
+  getCachedPredictionResource,
   loadCachedPredictionResource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
@@ -70,6 +71,25 @@ const kalshiCursors = new Map<string, string | null>();
 
 function kalshiCursorKey(searchQuery: string, categoryId: PredictionCategoryId): string {
   return `${categoryId}:${searchQuery.trim().toLowerCase()}`;
+}
+
+function sortKalshiCatalogMarkets(
+  markets: PredictionMarketSummary[],
+  browseTab: PredictionBrowseTab,
+): PredictionMarketSummary[] {
+  return [...markets].sort((left, right) => {
+    if (browseTab === "ending") {
+      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
+      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
+      return leftEnds - rightEnds;
+    }
+    if (browseTab === "new") {
+      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightCreated - leftCreated;
+    }
+    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  });
 }
 
 function rememberKalshiCursor(
@@ -176,8 +196,16 @@ async function loadKalshiVenueCatalog(
   categoryId: PredictionCategoryId,
   browseTab: PredictionBrowseTab,
 ): Promise<PredictionMarketSummary[]> {
+  const localBrowse = searchQuery
+    ? getCachedPredictionResource<PredictionMarketSummary[]>(
+        "catalog",
+        buildPredictionCatalogResourceKey("kalshi", categoryId, "", browseTab),
+      ) ?? []
+    : [];
   const maxPages = searchQuery
-    ? SEARCH_KALSHI_EVENT_MAX_PAGES
+    ? localBrowse.length > 0
+      ? 1
+      : SEARCH_KALSHI_EVENT_MAX_PAGES
     : DEFAULT_KALSHI_EVENT_MAX_PAGES;
   const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
@@ -190,30 +218,25 @@ async function loadKalshiVenueCatalog(
   rememberKalshiCursor(searchQuery, categoryId, eventPage.nextCursor);
   const events = eventPage.events;
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
-  if (openMarkets.length === 0) return fromEvents;
-  const fromMarkets = normalizeKalshiCatalog(
-    [{ title: "", markets: openMarkets }],
-    searchQuery,
-    categoryId,
-    browseTab,
-  );
   const merged = new Map<string, PredictionMarketSummary>();
-  for (const market of [...fromMarkets, ...fromEvents]) {
+  for (const market of localBrowse) {
     merged.set(market.key, market);
   }
-  return [...merged.values()].sort((left, right) => {
-    if (browseTab === "ending") {
-      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
-      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
-      return leftEnds - rightEnds;
+  for (const market of fromEvents) {
+    merged.set(market.key, market);
+  }
+  if (openMarkets.length > 0) {
+    const fromMarkets = normalizeKalshiCatalog(
+      [{ title: "", markets: openMarkets }],
+      searchQuery,
+      categoryId,
+      browseTab,
+    );
+    for (const market of fromMarkets) {
+      merged.set(market.key, market);
     }
-    if (browseTab === "new") {
-      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
-      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
-      return rightCreated - leftCreated;
-    }
-    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
-  });
+  }
+  return sortKalshiCatalogMarkets([...merged.values()], browseTab);
 }
 
 export async function loadKalshiCatalog(
