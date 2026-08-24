@@ -349,7 +349,13 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       onActivate={openDisplayRow}
       renderSectionHeader={renderSectionHeader}
       renderCell={renderCell}
-      emptyStateTitle={loading ? "Loading economic events..." : "No events"}
+      emptyStateTitle={
+        loading
+          ? "Loading economic events..."
+          : error && events.length === 0
+            ? error
+            : "No events"
+      }
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
     />

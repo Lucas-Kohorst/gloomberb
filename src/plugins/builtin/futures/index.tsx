@@ -18,6 +18,7 @@ import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search
 import { usePluginTickerActions } from "../../runtime";
 import type { PluginModule } from "../plugin-module";
 import {
+  countFailedQuotes,
   countLoadingQuotes,
   latestQuoteTimestamp,
   useQuoteBoard,
@@ -186,11 +187,15 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   }, [focusSearch, graphSelected]);
 
   const loadingCount = countLoadingQuotes(quotes);
+  const failedCount = countFailedQuotes(quotes);
   const latestTs = latestQuoteTimestamp(quotes);
   useAutoRefresh(latestTs || null, refresh);
   usePaneFooter("futures", () => {
     const info: PaneFooterSegment[] = [];
     if (loadingCount > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    if (failedCount > 0) {
+      info.push({ id: "error", parts: [{ text: `${failedCount} failed`, tone: "warning" }] });
+    }
     if (latestTs > 0) {
       info.push({
         id: "fresh",
