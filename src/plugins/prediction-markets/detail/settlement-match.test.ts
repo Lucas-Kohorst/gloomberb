@@ -65,6 +65,7 @@ describe("prediction market settlement series matching", () => {
     }));
     expect(result.series.some((row) => row.expression === "FRED:CPIAUCSL")).toBe(true);
     expect(result.sourceLabel).toMatch(/CPI/i);
+    expect(result.series.find((row) => row.expression === "FRED:CPIAUCSL")?.reason).toBe("rules");
   });
 
   test("maps a Bitcoin price market onto BTC-USD:price", () => {
@@ -78,5 +79,47 @@ describe("prediction market settlement series matching", () => {
     }));
     expect(result.series.some((row) => row.expression === "BTC-USD:price")).toBe(true);
     expect(result.sourceLabel).toMatch(/Bitcoin/i);
+    expect(result.series.find((row) => row.expression === "BTC-USD:price")?.reason).toBe("rules");
+  });
+
+  test("maps BLS CPI-U prose onto FRED CPIAUCSL without the series id", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "kalshi",
+      marketId: "KXCPI-26AUG-T0.3",
+      seriesTicker: "KXCPI",
+      title: "Will CPI increase by more than 0.3% in August 2026?",
+      rulesPrimary: "Resolves to BLS CPI-U.",
+    }));
+    const cpi = result.series.find((row) => row.expression === "FRED:CPIAUCSL");
+    expect(cpi).toBeDefined();
+    expect(cpi?.reason).toBe("map");
+    expect(result.sourceSnippet).toMatch(/BLS CPI-U/i);
+  });
+
+  test("does not map an election market onto FRED GDP", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "pres-2024",
+      title: "Will Donald Trump win the 2024 presidential election?",
+      category: "Politics",
+      rulesPrimary:
+        "This market resolves according to the certified Electoral College result and Associated Press projections.",
+    }));
+    expect(result.series.some((row) => row.expression === "FRED:GDP")).toBe(false);
+    expect(result.series.some((row) => row.expression.startsWith("FRED:"))).toBe(false);
+    expect(result.sourceSnippet).toMatch(/Electoral College/i);
+    expect(result.sourceLabel).toBeTruthy();
+  });
+
+  test("keeps a settles-to snippet when no series match", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "kalshi",
+      marketId: "KXSPORT-1",
+      title: "Will the Dodgers win the World Series?",
+      rulesPrimary: "Resolves to the MLB commissioner certified champion.",
+    }));
+    expect(result.series).toEqual([]);
+    expect(result.sourceSnippet).toMatch(/MLB commissioner/i);
+    expect(result.sourceLabel).toMatch(/MLB commissioner/i);
   });
 });

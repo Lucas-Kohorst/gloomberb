@@ -38,6 +38,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 028  | Add IPO calendar pane (Godel IPO parity) | P2 | M | — | DONE |
 | 029  | Add Black-Scholes options calculator pane (Godel OVME parity) | P3 | S | — | DONE |
 | 045  | Run Chrome Prompt API as the hosted AI host | P1 | M | — | DONE |
+| 054  | Rank settlement series plus suggested CAT feeds | P2 | M | — | DONE |
 
 ## Dependency notes
 
