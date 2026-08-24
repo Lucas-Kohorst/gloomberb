@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  editAlert,
   evaluateAlert,
   evaluateExDivAlert,
   evaluateHaltedAlert,
@@ -47,6 +48,43 @@ describe("evaluateAlert", () => {
     const alert = createAlert("AAPL", "above", 200);
     alert.status = "triggered";
     expect(evaluateAlert(alert, 999)).toBe(false);
+  });
+});
+
+describe("editAlert", () => {
+  test("keeps identity, re-arms, and clears trigger/quote lifecycle state", () => {
+    const alert = {
+      ...createAlert("aapl", "above", 200, "NASDAQ"),
+      message: "watch this",
+      status: "triggered" as const,
+      triggeredAt: 123,
+      lastCheckedPrice: 205,
+      lastCheckedAt: 124,
+      lastCheckError: "boom",
+      lastQuoteUpdatedAt: 125,
+      lastQuoteSource: "live" as const,
+      lastQuoteProviderId: "yahoo",
+    };
+
+    const edited = editAlert(alert, "aapl", "crosses", 180);
+
+    expect(edited).toEqual({
+      id: alert.id,
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      condition: "crosses",
+      targetPrice: 180,
+      createdAt: alert.createdAt,
+      status: "active",
+      message: "watch this",
+    });
+    // A stale lastCheckedPrice would let `crosses` fire off the old baseline.
+    expect(evaluateAlert(edited, 185)).toBe(false);
+  });
+
+  test("drops the exchange when the symbol changes", () => {
+    const alert = createAlert("AAPL", "above", 200, "NASDAQ");
+    expect(editAlert(alert, "tsla", "above", 200).exchange).toBeUndefined();
   });
 });
 
