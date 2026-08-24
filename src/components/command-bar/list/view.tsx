@@ -228,7 +228,7 @@ const CommandBarListItemRow = memo(function CommandBarListItemRow({
       {...(!nativePaneChrome ? { onMouseScroll: onListScroll } : {})}
       onMouseDown={(event: any) => onRowMouseDown(event, item, globalIdx)}
       data-command-bar-row-selected={nativePaneChrome && isSelected ? "true" : undefined}
-      style={nativePaneChrome ? { borderRadius: 6 } : undefined}
+      style={nativePaneChrome ? { borderRadius: 0 } : undefined}
     >
       <Box width={labelWidth}>
         <Text fg={isSelected ? paletteSelectedText : presentation.primaryMuted ? paletteSubtleText : paletteText}>
