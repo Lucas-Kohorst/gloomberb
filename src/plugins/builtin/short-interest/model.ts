@@ -1,6 +1,7 @@
 import type { DataTableColumn } from "../../../components";
 import { formatCompact, formatNumber } from "../../../utils/format";
 import type { ShortInterestRecord } from "./types";
+import { nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 
 export type ShortInterestColumnId =
   | "settlementDate"
@@ -101,13 +102,7 @@ export function nextSortPreference(
   current: SortPreference,
   columnId: string,
 ): SortPreference {
-  if (current.columnId === columnId) {
-    return {
-      columnId: columnId as ShortInterestColumnId,
-      direction: current.direction === "asc" ? "desc" : "asc",
-    };
-  }
-  return { columnId: columnId as ShortInterestColumnId, direction: "desc" };
+  return nextSharedSortPreference(current, columnId as ShortInterestColumnId) as SortPreference;
 }
 
 export function buildColumns(width: number): ShortInterestColumn[] {

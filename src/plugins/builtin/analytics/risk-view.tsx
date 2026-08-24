@@ -25,6 +25,12 @@ import { formatVaR } from "./pane-model";
 import type { DatedReturn } from "./metrics";
 import { type SectorTableColumn, type SectorTableRow, buildSectorColumns } from "./sector-model";
 import { formatWeight, formatSignedCompact } from "./display";
+import {
+  applySortPreference,
+  CLEARED_SORT,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 
 interface RiskViewProps {
   focused: boolean;
@@ -101,41 +107,6 @@ function toContributorRows(
   }));
 }
 
-interface TableSort<Id extends string> {
-  columnId: Id | null;
-  direction: "asc" | "desc";
-}
-
-/** Header click cycle shared by the risk tables: desc, asc, then unsorted. */
-function nextTableSort<Id extends string>(current: TableSort<Id>, columnId: string): TableSort<Id> {
-  const next = columnId as Id;
-  if (current.columnId !== next) return { columnId: next, direction: "desc" };
-  if (current.direction === "desc") return { columnId: next, direction: "asc" };
-  return { columnId: null, direction: "desc" };
-}
-
-function applyTableSort<T, Id extends string>(
-  rows: readonly T[],
-  sort: TableSort<Id>,
-  value: (row: T, columnId: Id) => number | string | null,
-): T[] {
-  const columnId = sort.columnId;
-  if (!columnId) return [...rows];
-  const sign = sort.direction === "asc" ? 1 : -1;
-  return [...rows].sort((a, b) => {
-    const left = value(a, columnId);
-    const right = value(b, columnId);
-    // Positions missing history sort last either way, so a descending click
-    // does not bury the populated rows under a block of dashes.
-    if (left == null) return right == null ? 0 : 1;
-    if (right == null) return -1;
-    if (typeof left === "string" || typeof right === "string") {
-      return sign * String(left).localeCompare(String(right));
-    }
-    return sign * (left - right);
-  });
-}
-
 function RiskMetricLine({ label, value, detail, color }: {
   label: string;
   value: string;
@@ -187,13 +158,13 @@ export function PortfolioRiskView({
     exposure: entry.exposure,
   }));
   const factorColumns = buildFactorColumns(width);
-  const [factorSort, setFactorSort] = useState<TableSort<FactorColumn["id"]>>({
+  const [factorSort, setFactorSort] = useState<SortPreference<FactorColumn["id"]>>({
     columnId: null,
     direction: "desc",
   });
   const [selectedFactorId, setSelectedFactorId] = useState<string | null>(null);
   const sortedFactorRows = useMemo(
-    () => applyTableSort(factorRows, factorSort, (row, columnId) => (
+    () => applySortPreference(factorRows, factorSort, (row, columnId) => (
       columnId === "factor" ? row.factor : columnId === "beta" ? row.beta : row.exposure
     )),
     [factorRows, factorSort],
@@ -277,7 +248,7 @@ export function PortfolioRiskView({
           }}
           sortColumnId={factorSort.columnId}
           sortDirection={factorSort.direction}
-          onHeaderClick={(columnId) => setFactorSort((current) => nextTableSort(current, columnId))}
+          onHeaderClick={(columnId) => setFactorSort((current) => nextSortPreference(current, columnId as FactorColumn["id"], { resetTo: CLEARED_SORT }))}
           resetScrollKey={resetScrollKey}
           getItemKey={(row) => row.id}
           emptyStateTitle="No factor data"
@@ -422,13 +393,13 @@ function ContributorTable({
   rows: ContributorRow[];
   resetScrollKey: string;
 }) {
-  const [sort, setSort] = useState<TableSort<ContributorColumn["id"]>>({
+  const [sort, setSort] = useState<SortPreference<ContributorColumn["id"]>>({
     columnId: null,
     direction: "desc",
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const sortedRows = useMemo(
-    () => applyTableSort(rows, sort, (row, columnId) => {
+    () => applySortPreference(rows, sort, (row, columnId) => {
       switch (columnId) {
         case "symbol": return row.symbol;
         case "weight": return row.weight;
@@ -453,7 +424,7 @@ function ContributorTable({
       }}
       sortColumnId={sort.columnId}
       sortDirection={sort.direction}
-      onHeaderClick={(columnId) => setSort((current) => nextTableSort(current, columnId))}
+      onHeaderClick={(columnId) => setSort((current) => nextSortPreference(current, columnId as ContributorColumn["id"], { resetTo: CLEARED_SORT }))}
       resetScrollKey={resetScrollKey}
       getItemKey={(row) => row.id}
       emptyStateTitle="No contributors"

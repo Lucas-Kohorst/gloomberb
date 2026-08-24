@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { DividendPayment } from "./types";
 
 export type DividendColumnId = "exDate" | "paymentDate" | "amount" | "type" | "currency";
@@ -179,14 +179,9 @@ export function nextSortPreference(
   current: DividendSortPreference,
   columnId: string,
 ): DividendSortPreference {
-  const typedColumnId = columnId as DividendColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  if (current.direction === "desc") {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as DividendColumnId, {
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as DividendSortPreference;
 }
 
 export function toDividendRows(payments: DividendPayment[]): DividendRow[] {

@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { HaltFilter, HaltStatus, MarketHalt } from "./types";
 
 export const HALT_CODE_MAP: Record<string, string> = {
@@ -101,14 +101,10 @@ export function nextSortPreference(
   current: HaltSortPreference,
   columnId: string,
 ): HaltSortPreference {
-  const typedColumnId = columnId as HaltColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as HaltColumnId, {
+    defaultDirection: "asc",
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as HaltSortPreference;
 }
 
 export function buildHaltColumns(width: number): HaltColumn[] {
