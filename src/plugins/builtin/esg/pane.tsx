@@ -5,7 +5,7 @@ import { colors } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
-import { fetchEsgData, hasEsgData } from "./client";
+import { esgUnavailableMessage, fetchEsgData, hasEsgData, isYahooEsgUnavailable } from "./client";
 import type { EsgData, EsgScores, LoadStatus } from "./types";
 
 const SCORE_COLOR_HIGH = colors.textDim;
@@ -159,7 +159,13 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
       ...(symbol ? [{ id: "symbol", parts: [{ text: symbol, tone: "label" as const }] }] : []),
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(status === "error" && error
-        ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }]
+        ? [{
+            id: "error",
+            parts: [{
+              text: isYahooEsgUnavailable(error) ? "no data" : "unavailable",
+              tone: "warning" as const,
+            }],
+          }]
         : []),
     ],
     hints: [
@@ -187,9 +193,14 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
   }
 
   if (status === "error" && !data) {
+    const missing = error != null && isYahooEsgUnavailable(error);
     return (
       <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <EmptyState title="ESG data unavailable" message={error ?? undefined} hint="Press [r] to retry" />
+        <EmptyState
+          title={missing ? "No ESG data" : "ESG data unavailable"}
+          message={missing ? esgUnavailableMessage(symbol) : "Yahoo ESG request failed."}
+          hint="Press [r] to retry"
+        />
       </Box>
     );
   }
