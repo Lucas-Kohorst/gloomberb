@@ -9,6 +9,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { Quote } from "../../../types/financials";
 import { usePaneInstance } from "../../../state/app/context";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
@@ -24,7 +25,6 @@ import {
   INITIAL_ROWS_BY_COLLECTION,
   ONE_MONTH_DAYS,
   ONE_YEAR_DAYS,
-  REFRESH_INTERVAL_MS,
   buildBar,
   buildSectorColumns,
   computeTrailingReturn,
@@ -175,9 +175,9 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useAutoRefresh(lastRefreshMs ?? null, fetchAll);
 
   useEffect(() => {
     if (activeCollectionId === activeCollection.id) return;
