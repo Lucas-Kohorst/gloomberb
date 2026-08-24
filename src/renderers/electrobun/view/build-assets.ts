@@ -58,11 +58,17 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     ],
   });
   await copyFile(electrobunViewPath("favicon.svg"), join(options.outdir, "favicon.svg"));
+  const hashedEntryPath = await hashJsEntrypoint(
+    join(options.outdir, entrySrc.replace(/^\.\//, "")),
+    "web-main",
+  );
   const htmlPath = join(options.outdir, "index.html");
   // Nested routes (`/s/{id}`) serve this same document; relative `./web-main.js`
   // would resolve under `/s/` and the SPA fallback would return HTML instead of
   // the module. Desktop keeps relative URLs (file/custom scheme, no origin root).
-  const absoluteEntrySrc = toRootAbsoluteAssetUrl(entrySrc);
+  const absoluteEntrySrc = toRootAbsoluteAssetUrl(
+    `./${relative(options.outdir, hashedEntryPath).replaceAll("\\", "/")}`,
+  );
   await writeFile(htmlPath, renderElectrobunViewHtml({
     ...options,
     pluginName: "gloomberb-web-client-renderer",
@@ -104,7 +110,7 @@ export async function writeSharePage(options: {
   }
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
   if (!entry) throw new Error("Share page build did not produce a JavaScript entrypoint");
-  const hashedEntryPath = await hashShareEntrypoint(entry.path);
+  const hashedEntryPath = await hashJsEntrypoint(entry.path, "share-main");
 
   const htmlPath = join(options.outdir, "share.html");
   await writeFile(htmlPath, renderSharePageHtml({
@@ -120,15 +126,17 @@ export async function writeSharePage(options: {
 }
 
 /**
- * `/share-main.js` is a stable URL. Browsers that once received `immutable`
- * keep that file for a year without revalidating, so a logged-in profile can
- * keep rendering autolinks as HTML while incognito gets the current bundle.
- * Hash the filename; share.html is already no-store, so it picks up the new URL.
+ * `/web-main.js` and `/share-main.js` are stable URLs. Browsers that once
+ * received `immutable` keep that file for a year without revalidating, so a
+ * logged-in profile can keep an old bundle while incognito gets the current
+ * one. Hash the filename; HTML is already must-revalidate/no-store, so it
+ * picks up the new URL. After a deploy the unhashed name 404s instead of
+ * serving SPA HTML for a missing module.
  */
-async function hashShareEntrypoint(entryPath: string): Promise<string> {
+async function hashJsEntrypoint(entryPath: string, basename: string): Promise<string> {
   const bytes = await Bun.file(entryPath).arrayBuffer();
   const hash = Bun.hash(new Uint8Array(bytes)).toString(16).padStart(16, "0").slice(0, 10);
-  const hashedPath = join(dirname(entryPath), `share-main.${hash}.js`);
+  const hashedPath = join(dirname(entryPath), `${basename}.${hash}.js`);
   if (hashedPath === entryPath) return entryPath;
   await rename(entryPath, hashedPath);
   return hashedPath;

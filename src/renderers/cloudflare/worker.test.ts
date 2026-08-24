@@ -997,7 +997,7 @@ describe("share document serving", () => {
     );
 
     expect(response?.status).toBe(200);
-    expect(response?.headers.get("cache-control")).toContain("no-store");
+    expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(captured).toHaveLength(1);
     const asset = captured[0]!;
     expect(new URL(asset.url).pathname).toBe("/share-main.a1b2c3d4e5.js");
@@ -1027,6 +1027,59 @@ describe("share document serving", () => {
     expect(response?.headers.get("cache-control")).toContain("no-store");
   });
 
+});
+
+describe("hosted static modules", () => {
+  const spaHtmlAssets = {
+    fetch: async () => new Response("<html>app</html>", {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8", etag: '"index-html"' },
+    }),
+  } as unknown as Fetcher;
+
+  test("missing .js/.css/.map 404 instead of SPA HTML", async () => {
+    for (const path of ["/chunk-j5zatwwh.js", "/web-main.js", "/missing.css", "/web-main.js.map"]) {
+      const env = makeEnv();
+      env.ASSETS = spaHtmlAssets;
+      const response = await workerModule.default.fetch?.(
+        new Request(`${ORIGIN}${path}`, { method: "GET", headers: { Accept: "*/*" } }),
+        env,
+      );
+      expect(response?.status).toBe(404);
+      expect(await response?.text()).toBe("Not found");
+      expect(response?.headers.get("content-type")).toContain("text/plain");
+      expect(response?.headers.get("cache-control")).toContain("no-store");
+    }
+  });
+
+  test("hashed JS is immutable and HTML stays must-revalidate", async () => {
+    const env = makeEnv();
+    env.ASSETS = {
+      fetch: async (request: RequestInfo) => {
+        const url = request instanceof Request ? request.url : String(request);
+        if (url.endsWith(".js")) {
+          return new Response("export {}", { headers: { "content-type": "text/javascript" } });
+        }
+        return new Response("<html>app</html>", { headers: { "content-type": "text/html" } });
+      },
+    } as unknown as Fetcher;
+
+    for (const path of ["/web-main.abc123defg.js", "/chunk-j5zatwwh.js", "/share-main.a1b2c3d4e5.js"]) {
+      const response = await workerModule.default.fetch?.(
+        new Request(`${ORIGIN}${path}`, { method: "GET" }),
+        env,
+      );
+      expect(response?.status).toBe(200);
+      expect(response?.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    }
+
+    const html = await workerModule.default.fetch?.(
+      new Request(`${ORIGIN}/`, { method: "GET", headers: { Accept: "text/html" } }),
+      env,
+    );
+    expect(html?.status).toBe(200);
+    expect(html?.headers.get("cache-control")).toBe("private, max-age=0, must-revalidate");
+  });
 });
 
 describe("hosted Kalshi API proxy", () => {
