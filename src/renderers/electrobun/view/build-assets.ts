@@ -1,6 +1,5 @@
-import { copyFile, readdir, readFile, rename, writeFile } from "fs/promises";
+import { copyFile, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join, relative } from "path";
-import { brotliCompressSync, gzipSync } from "zlib";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 import { toRootAbsoluteAssetUrl } from "./asset-urls";
 
@@ -33,21 +32,6 @@ const COMMON_ALIAS_RULES: AliasRule[] = [
 
 export function electrobunViewPath(...parts: string[]): string {
   return join(ELECTROBUN_VIEW_DIR, ...parts);
-}
-
-/**
- * Pre-compresses all static assets in the build output so the worker can serve
- * Brotli or gzip without runtime compression. Only JS and CSS files are
- * compressed; images and source maps are skipped.
- */
-async function compressAssets(outdir: string): Promise<void> {
-  const files = (await readdir(outdir)).filter((name) => name.endsWith(".js") || name.endsWith(".css"));
-  for (const file of files) {
-    const path = join(outdir, file);
-    const bytes = await readFile(path);
-    await writeFile(`${path}.br`, brotliCompressSync(bytes));
-    await writeFile(`${path}.gz`, gzipSync(bytes));
-  }
 }
 
 export async function writeElectrobunViewPage(options: PageOptions): Promise<string> {
@@ -118,7 +102,6 @@ export async function writeSharePage(options: {
     const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
     throw new Error(details ? `Failed to build share page\n${details}` : "Failed to build share page");
   }
-  await compressAssets(options.outdir);
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
   if (!entry) throw new Error("Share page build did not produce a JavaScript entrypoint");
   const hashedEntryPath = await hashShareEntrypoint(entry.path);
@@ -217,8 +200,6 @@ async function buildElectrobunViewBundle({
     const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
     throw new Error(details ? `${failureMessage}\n${details}` : failureMessage);
   }
-
-  await compressAssets(outdir);
 
   const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
   if (!entry) throw new Error(missingEntryMessage);
