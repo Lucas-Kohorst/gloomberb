@@ -16,6 +16,8 @@ import type {
   CloudCongressTradePayload,
 } from "../../../api-client";
 import { apiClient } from "../../../api-client";
+import { withConnectionRequest } from "../connections/register";
+import { CONGRESS_CONNECTION_ID } from "./connection";
 import {
   CONGRESS_MEMBER_FILING_LIMIT,
   CONGRESS_MEMBER_TRADE_LIMIT,
@@ -133,12 +135,13 @@ export function MemberTradesDetail({
     const gen = fetchGenRef.current;
     setStatus("loading");
     setError(null);
-    apiClient.getCloudCongressHouse({
-      member: member.memberName,
-      limit: CONGRESS_MEMBER_TRADE_LIMIT,
-      filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
-      refresh,
-    })
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "member-trades", () =>
+      apiClient.getCloudCongressHouse({
+        member: member.memberName,
+        limit: CONGRESS_MEMBER_TRADE_LIMIT,
+        filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
+        refresh,
+      }))
       .then((payload) => {
         if (fetchGenRef.current !== gen) return;
         const exactMemberTrades = payload.trades.filter((trade) => (
@@ -162,12 +165,13 @@ export function MemberTradesDetail({
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    apiClient.getCloudCongressHouse({
-      ...nextRequest,
-      member: member.memberName,
-      limit: CONGRESS_MEMBER_TRADE_LIMIT,
-      filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
-    })
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "member-trades-page", () =>
+      apiClient.getCloudCongressHouse({
+        ...nextRequest,
+        member: member.memberName,
+        limit: CONGRESS_MEMBER_TRADE_LIMIT,
+        filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
+      }))
       .then((payload) => {
         if (fetchGenRef.current !== gen) return;
         const merged = detailPayload ? mergeCongressPages(detailPayload, payload) : payload;

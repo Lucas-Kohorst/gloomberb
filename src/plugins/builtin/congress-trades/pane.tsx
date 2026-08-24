@@ -15,6 +15,8 @@ import {
   type CloudCongressMemberPayload,
   type CloudCongressTradePayload,
 } from "../../../api-client";
+import { withConnectionRequest } from "../connections/register";
+import { CONGRESS_CONNECTION_ID } from "./connection";
 import type { PaneProps } from "../../../types/plugin";
 import {
   CONGRESS_FILING_LIMIT,
@@ -77,11 +79,12 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     setStatus((current) => (current === "loaded" && !refresh ? "loaded" : "loading"));
     setError(null);
     setLoadingMore(false);
-    apiClient.getCloudCongressHouse({
-      limit: CONGRESS_TRADE_LIMIT,
-      filingLimit: CONGRESS_FILING_LIMIT,
-      refresh,
-    })
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "house-trades", () =>
+      apiClient.getCloudCongressHouse({
+        limit: CONGRESS_TRADE_LIMIT,
+        filingLimit: CONGRESS_FILING_LIMIT,
+        refresh,
+      }))
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => (
@@ -103,11 +106,12 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    apiClient.getCloudCongressHouse({
-      ...nextRequest,
-      limit: CONGRESS_TRADE_LIMIT,
-      filingLimit: CONGRESS_FILING_LIMIT,
-    })
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "house-trades-page", () =>
+      apiClient.getCloudCongressHouse({
+        ...nextRequest,
+        limit: CONGRESS_TRADE_LIMIT,
+        filingLimit: CONGRESS_FILING_LIMIT,
+      }))
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => {
