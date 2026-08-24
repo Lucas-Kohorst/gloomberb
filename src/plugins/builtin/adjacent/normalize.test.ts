@@ -8,6 +8,7 @@ import {
   unwrapAdjacentMarketIds,
   unwrapAdjacentNewsArticles,
   unwrapAdjacentSimilarMarkets,
+  formatYesOddsPercent,
 } from "./normalize";
 import { createIndexColumns } from "./indices";
 import { createRateColumns } from "./rates";
@@ -139,5 +140,7 @@ describe("adjacent normalize", () => {
       similarity: 0.91,
       platform: "kalshi",
     });
+    expect(formatYesOddsPercent(markets[0]!.yes_price)).toBe("37%");
+    expect(formatYesOddsPercent(null)).toBeNull();
   });
 });

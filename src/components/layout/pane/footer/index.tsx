@@ -14,7 +14,9 @@ import {
 } from "./model";
 
 export {
+  clipPaneFooterInfo,
   hasPaneFooterContent,
+  PANE_FOOTER_INFO_MAX_CHARS,
   type CombinedPaneFooter,
   type PaneFooterPressEvent,
   type PaneFooterSegment,
@@ -26,6 +28,11 @@ export {
   usePaneFooter,
   usePaneHints,
 } from "./registration";
+export {
+  FocusedPaneFooterHost,
+  useFocusedPaneFooter,
+  usePaneFooterPlacement,
+} from "./focused";
 
 function footerToneColor(part: PaneFooterPart): string {
   if (part.color) return part.color;
@@ -141,7 +148,7 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
   );
 }
 
-function FooterContent({
+export function FooterContent({
   footer,
   focused,
   width,

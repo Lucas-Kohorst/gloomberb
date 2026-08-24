@@ -156,7 +156,6 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
 
   usePaneFooter("esg", () => ({
     info: [
-      ...(symbol ? [{ id: "symbol", parts: [{ text: symbol, tone: "label" as const }] }] : []),
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(status === "error" && error
         ? [{
@@ -174,7 +173,7 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
         ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }]
         : []),
     ],
-  }), [data?.sourceUrl, error, handleOpen, refresh, status, symbol]);
+  }), [data?.sourceUrl, error, handleOpen, refresh, status]);
 
   if (!symbol) {
     return (

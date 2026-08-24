@@ -5,7 +5,7 @@ import { colors, priceColor } from "../../../theme/colors";
 import type { ChartMouseEvent } from "../../../components/chart/core/pointer";
 import type { AdjacentClient } from "./client";
 import type { AdjacentSimilarMarket } from "./types";
-import { centsToProbability } from "./normalize";
+import { centsToProbability, formatYesOddsPercent } from "./normalize";
 
 export function SimilarMarketsView({
   client,
@@ -56,6 +56,7 @@ export function SimilarMarketsView({
     <Box flexDirection="column" paddingX={1} gap={0}>
       {markets.map((market) => {
         const prob = centsToProbability(market.yes_price);
+        const odds = formatYesOddsPercent(market.yes_price);
         return (
           <Box
             key={market.id}
@@ -74,7 +75,7 @@ export function SimilarMarketsView({
             </Box>
             <Box width={6}>
               <Text fg={prob != null ? priceColor(prob) : colors.textDim}>
-                {prob != null ? `${prob.toFixed(0)}%` : "—"}
+                {odds ?? "—"}
               </Text>
             </Box>
             <Box flexGrow={1}>
