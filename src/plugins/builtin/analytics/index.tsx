@@ -1,7 +1,6 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TextAttributes } from "../../../ui";
-import { SegmentedControl, Tabs } from "../../../components";
+import { Tabs, usePaneFooter } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -54,8 +53,10 @@ import {
 import { resolvePortfolioId, resolveTemplatePortfolioId } from "./portfolio-selection";
 import {
   AnalyticsMetricsPanel,
+  AnalyticsViewSwitch,
   PortfolioHistorySection,
   SectorAllocationTable,
+  type AnalyticsView,
 } from "./view";
 
 function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
@@ -80,15 +81,21 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
 
   const [currentPortfolioId, setCurrentPortfolioId] = usePaneStateValue<string>("portfolioId", fallbackPortfolioId);
-  const [view, setView] = useState<"overview" | "risk">(requestedView);
+  const [view, setView] = useState<AnalyticsView>(requestedView);
+  const toggleView = useCallback(() => {
+    setView((current) => (current === "risk" ? "overview" : "risk"));
+  }, []);
   // Left/right belong to the portfolio tabs, so the view switch takes its own
-  // key rather than a focused SegmentedControl that would swallow the arrows.
+  // key rather than a focused control that would swallow the arrows.
   useShortcut((event) => {
     if (!focused || !isPlainKey(event, "v")) return;
     event.preventDefault?.();
     event.stopPropagation?.();
-    setView((current) => (current === "risk" ? "overview" : "risk"));
+    toggleView();
   }, { enabled: focused });
+  usePaneFooter("analytics", () => ({
+    hints: [{ id: "view", key: "v", label: "iew", onPress: toggleView }],
+  }), [toggleView]);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [sectorSort, setSectorSort] = useState<SectorSortPreference>(DEFAULT_SECTOR_SORT);
 
@@ -256,8 +263,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     () => buildAnalyticsRiskRows({ sharpe, beta }),
     [beta, sharpe],
   );
-  const metricsHeight = summaryRows.length + riskRows.length + 5;
-  const availableHistoryChartHeight = height - metricsHeight - 7;
+  const metricsHeight = summaryRows.length + riskRows.length + 3;
+  const chromeRows = 2;
+  const availableHistoryChartHeight = height - chromeRows - metricsHeight - 6;
   const historyChartHeight = performanceChartPoints.length >= 2 && availableHistoryChartHeight >= 5
     ? Math.min(8, availableHistoryChartHeight)
     : 0;
@@ -293,27 +301,16 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
         </Box>
       ) : (
         <>
-          <Box flexDirection="row" height={1}>
-            <Box flexShrink={1} overflow="hidden">
-              <Tabs
-                tabs={portfolioTabs}
-                activeValue={activePortfolioId}
-                onSelect={handlePortfolioSelect}
-                compact
-                focused={focused}
-              />
-            </Box>
-            <Box flexShrink={0} paddingLeft={1}>
-              <SegmentedControl
-                options={[
-                  { label: "Overview", value: "overview" },
-                  { label: "Risk", value: "risk" },
-                ]}
-                value={view}
-                onChange={(value) => setView(value as "overview" | "risk")}
-              />
-            </Box>
+          <Box height={1} flexShrink={0} overflow="hidden">
+            <Tabs
+              tabs={portfolioTabs}
+              activeValue={activePortfolioId}
+              onSelect={handlePortfolioSelect}
+              compact
+              focused={focused}
+            />
           </Box>
+          <AnalyticsViewSwitch view={view} onChange={setView} />
 
           {!hasPositions ? (
             <Box paddingX={1} paddingY={1}>
@@ -325,7 +322,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
             <PortfolioRiskView
               focused={focused}
               width={width}
-              height={height - 1}
+              height={height - chromeRows}
               portfolioReturns={portfolioReturns}
               portfolioReturnSeries={portfolioReturnSeries}
               factors={factorReturnSeries}
@@ -360,12 +357,6 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 stale={brokerPerformance.performance?.stale}
                 formatAxisValue={formatHistoryAxis}
               />
-
-              <Box height={1} paddingX={1}>
-                <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
-                  Sector Allocation
-                </Text>
-              </Box>
 
               <SectorAllocationTable
                 focused={focused}
