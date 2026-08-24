@@ -107,6 +107,7 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Exact Match");
     expect(frame).toContain("AAPL  Apple Inc");
+    expect(frame).toContain("NASDAQ");
     expect(frame).toContain("DES QQ G");
     expect(frame).not.toContain("DES AAPL —");
     expect(searchQueries.some((query) => query.toLowerCase() === "aapl")).toBe(true);

@@ -52,7 +52,7 @@ test("plain root ticker results lead with the security and DES/QQ/G chips", () =
   };
 
   const merged = mergePlainRootTickerResults("aapl", [exact, other], [assist]);
-  expect(merged[0]?.label).toBe("AAPL  Apple Inc.");
+  expect(merged[0]?.label).toBe("AAPL  Apple Inc.  NASDAQ");
   expect(merged[0]?.right).toBe(ROOT_SECURITY_ACTION_CHIPS);
   expect(merged.map((item) => item.id)).toEqual([
     "ranked:AAPL",

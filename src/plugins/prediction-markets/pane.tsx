@@ -1,7 +1,8 @@
-import { Box, Input, Text } from "../../ui";
+import { Box, Input, Text, useUiCapabilities } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import {
   DataTableStackView,
+  SegmentedControl,
   Spinner,
   Tabs,
   usePaneFooter,
@@ -65,6 +66,7 @@ function predictionCellVersion(
 }
 
 export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
+  const { nativePaneChrome } = useUiCapabilities();
   const controller = usePredictionMarketsController({ focused });
   const cellCacheRef = useRef(
     createRowValueCache<string, ReturnType<typeof getPredictionColumnValue>>(
@@ -201,91 +203,103 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     updatedAgo,
   ]);
 
-  const browseControls = (
-    <>
-      {!controller.paneSettings.hideTabs ? (
-        <Tabs
-          tabs={VENUE_TABS.map((tab) => ({
+  const venueTabs = !controller.paneSettings.hideTabs ? (
+    <Tabs
+      tabs={VENUE_TABS.map((tab) => ({
+        label: tab.label,
+        value: tab.value,
+      }))}
+      activeValue={controller.effectiveVenueScope}
+      onSelect={controller.actions.setVenue}
+      compact
+    />
+  ) : null;
+
+  const searchAndBrowse = (
+    <Box flexDirection="row" height={1} paddingX={1} gap={2}>
+      <Box
+        flexDirection="row"
+        onMouseDown={controller.actions.focusSearch}
+        width={Math.max(18, Math.floor(width * 0.32))}
+      >
+        <Text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</Text>
+        <Box width={1} />
+        {controller.searchFocused ? (
+          <Input
+            ref={controller.searchInputRef}
+            value={controller.searchQuery}
+            focused={focused}
+            placeholder="search markets"
+            placeholderColor={colors.textDim}
+            textColor={colors.text}
+            backgroundColor={colors.panel}
+            flexGrow={1}
+            onInput={controller.actions.setSearchQuery}
+            onChange={controller.actions.setSearchQuery}
+            onSubmit={controller.actions.blurSearch}
+          />
+        ) : (
+          <Box flexGrow={1}>
+            <Text
+              fg={
+                controller.searchQuery.trim().length > 0
+                  ? colors.text
+                  : colors.textDim
+              }
+            >
+              {controller.searchQuery.trim().length > 0
+                ? controller.searchQuery
+                : "search markets"}
+            </Text>
+          </Box>
+        )}
+      </Box>
+      <Box flexGrow={1}>
+        <SegmentedControl
+          options={BROWSE_TABS.map((tab) => ({
             label: tab.label,
             value: tab.value,
           }))}
-          activeValue={controller.effectiveVenueScope}
-          onSelect={controller.actions.setVenue}
-          compact
+          value={controller.browseTab}
+          onChange={(value) =>
+            controller.actions.selectBrowseTab(value as PredictionBrowseTab)
+          }
+          focused={focused}
         />
-      ) : null}
-
-      <Box flexDirection="row" height={1} paddingX={1} gap={2}>
-        <Box
-          flexDirection="row"
-          onMouseDown={controller.actions.focusSearch}
-          width={Math.max(18, Math.floor(width * 0.32))}
-        >
-          <Text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</Text>
-          <Box width={1} />
-          {controller.searchFocused ? (
-            <Input
-              ref={controller.searchInputRef}
-              value={controller.searchQuery}
-              focused={focused}
-              placeholder="search markets"
-              placeholderColor={colors.textDim}
-              textColor={colors.text}
-              backgroundColor={colors.panel}
-              flexGrow={1}
-              onInput={controller.actions.setSearchQuery}
-              onChange={controller.actions.setSearchQuery}
-              onSubmit={controller.actions.blurSearch}
-            />
-          ) : (
-            <Box flexGrow={1}>
-              <Text
-                fg={
-                  controller.searchQuery.trim().length > 0
-                    ? colors.text
-                    : colors.textDim
-                }
-              >
-                {controller.searchQuery.trim().length > 0
-                  ? controller.searchQuery
-                  : "search markets"}
-              </Text>
-            </Box>
-          )}
-        </Box>
-
-        <Box flexGrow={1}>
-          <Tabs
-            tabs={BROWSE_TABS.map((tab) => ({
-              label: tab.label,
-              value: tab.value,
-            }))}
-            activeValue={controller.browseTab}
-            onSelect={(value) =>
-              controller.actions.selectBrowseTab(value as PredictionBrowseTab)
-            }
-            compact
-          />
-        </Box>
       </Box>
+    </Box>
+  );
 
-      {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
-        <Box height={1} paddingX={1}>
-          <Tabs
-            tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
-              label: category.label,
-              value: category.id,
-            }))}
-            activeValue={controller.categoryId}
-            onSelect={(value) =>
-              controller.actions.selectCategory(value as PredictionCategoryId)
-            }
-            compact
-            variant="bare"
-          />
-        </Box>
-      ) : null}
+  const categoryTabs = focused && PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
+    <Box height={1} paddingX={1}>
+      <Tabs
+        tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
+          label: category.label,
+          value: category.id,
+        }))}
+        activeValue={controller.categoryId}
+        onSelect={(value) =>
+          controller.actions.selectCategory(value as PredictionCategoryId)
+        }
+        compact
+        variant="bare"
+      />
+    </Box>
+  ) : null;
 
+  const browseControls = nativePaneChrome ? (
+    <>
+      <Box flexDirection="row" height={1} paddingX={1} gap={1} alignItems="center">
+        {venueTabs}
+        {searchAndBrowse}
+      </Box>
+      {categoryTabs}
+    </>
+  ) : (
+    <>
+      {venueTabs}
+      {searchAndBrowse}
+      {categoryTabs}
     </>
   );
 

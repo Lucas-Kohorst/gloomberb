@@ -401,7 +401,7 @@ export function WebSegmentedControl({
             flexDirection="row"
             alignItems="center"
             justifyContent="center"
-            backgroundColor={active ? colors.selected : "transparent"}
+            backgroundColor="transparent"
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}
@@ -409,11 +409,12 @@ export function WebSegmentedControl({
             style={{
               borderRadius: CONTROL_RADIUS - 2,
               paddingInline: 10,
+              minHeight: 24,
               cursor: option.disabled ? "default" : "pointer",
             }}
           >
             <Text
-              fg={option.disabled ? colors.textMuted : active ? colors.selectedText : colors.textDim}
+              fg={option.disabled ? colors.textMuted : active ? colors.text : colors.textDim}
               attributes={active ? TextAttributes.BOLD : 0}
             >
               {option.label}

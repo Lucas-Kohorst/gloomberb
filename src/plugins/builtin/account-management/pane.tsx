@@ -914,7 +914,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
           activeValue={activeTab}
           onSelect={selectTab}
           focused={focused}
-          variant="pill"
+          variant="underline"
           compact
           keyboardNavigation={false}
         />
@@ -930,7 +930,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         activeValue={activeTab}
         onSelect={selectTab}
         focused={focused}
-        variant="pill"
+        variant="underline"
         compact
         keyboardNavigation={false}
       />

@@ -17,8 +17,7 @@
   --gloom-text: #ece9e2;
   --gloom-text-dim: #c5c0b0;
   --gloom-text-bright: #f4efd9;
-  /* 4.5:1 on the Adjacent ink background. The terminal app gets this from
-     normalizeTheme(); the share page hardcodes tokens and so must not drift. */
+  /* Header/chip mute only (~3.6:1). Body copy uses --gloom-text / --gloom-text-dim. */
   --gloom-text-muted: #8f978c;
   --gloom-positive: #6aa3e6;
   --gloom-negative: #e06256;
@@ -27,7 +26,7 @@
   --gloom-selected: #36556a;
   --gloom-selected-text: #f4efd9;
   --gloom-hover-bg: #26353d;
-  --gloom-pane-title-bg: #47443b;
+  --gloom-pane-title-bg: #0e2a1f;
   --gloom-pane-body-bg: #23211b;
   --gloom-pane-footer-bg: #23211b;
   --cell-w: 8px;
@@ -98,8 +97,7 @@ textarea::-webkit-strong-password-auto-fill-button {
   max-height: var(--cell-h);
   padding-inline: 7px;
   background: var(--gloom-pane-title-bg);
-  border-bottom: 1px solid var(--gloom-border-focused);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--gloom-border-focused) 18%, var(--gloom-pane-title-bg));
+  border-bottom: 1px solid var(--gloom-border);
   user-select: none;
 }
 
@@ -263,8 +261,9 @@ textarea::-webkit-strong-password-auto-fill-button {
 /* --- Article body ------------------------------------------------------ */
 
 .share-body {
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.45;
+  max-width: 66ch;
   color: var(--gloom-text);
 }
 .share-body > :first-child { margin-top: 0; }
@@ -272,9 +271,9 @@ textarea::-webkit-strong-password-auto-fill-button {
 .share-body h1, .share-body h2, .share-body h3,
 .share-body h4, .share-body h5, .share-body h6 {
   margin: 20px 0 8px;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: var(--cell-h);
+  line-height: 1.3;
   color: var(--gloom-text-bright);
 }
 .share-body ul, .share-body ol { margin: 0 0 14px; padding-left: 22px; }

@@ -76,6 +76,16 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
   background-color: var(--gloom-hover-bg) !important;
 }
+[data-gloom-role="data-table-row"][data-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--gloom-border-focused);
+}
+[data-command-bar-row-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--gloom-border-focused);
+}
+[data-gloom-role="data-table-row"][data-selected="true"],
+[data-gloom-role="data-table-row"][data-selected="true"] > [data-gloom-role="data-table-cell"] {
+  background-color: color-mix(in srgb, var(--gloom-selected) 40%, var(--gloom-panel)) !important;
+}
 [data-gloom-role="data-table-row"][data-roll-in="true"]:not([data-selected="true"]) {
   animation: gloom-row-roll-in 700ms ease-out;
 }

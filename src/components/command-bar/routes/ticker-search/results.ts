@@ -60,13 +60,24 @@ function tickerCompanyName(item: ResultItem): string {
   return item.detail.split("|")[0]?.trim() ?? "";
 }
 
+function tickerExchange(item: ResultItem): string {
+  const raw = item.right?.trim() ?? "";
+  if (!raw || raw === ROOT_SECURITY_ACTION_CHIPS) return "";
+  const token = raw.split(/\s+/).at(-1) ?? "";
+  if (!token || /^(DES|QQ|G)$/i.test(token)) return "";
+  return token;
+}
+
 function formatRootSecurityLabel(item: ResultItem): string {
   const name = tickerCompanyName(item);
-  if (!name) return item.label;
   const symbol = item.label.trim();
-  if (name.toUpperCase() === symbol.toUpperCase()) return symbol;
-  if (symbol.toUpperCase().includes(name.toUpperCase())) return symbol;
-  return `${symbol}  ${name}`;
+  const exchange = tickerExchange(item);
+  const parts = [symbol];
+  if (name && name.toUpperCase() !== symbol.toUpperCase() && !symbol.toUpperCase().includes(name.toUpperCase())) {
+    parts.push(name);
+  }
+  if (exchange && exchange.toUpperCase() !== symbol.toUpperCase()) parts.push(exchange);
+  return parts.join("  ");
 }
 
 function decorateRootSecurityItem(item: ResultItem): ResultItem {
