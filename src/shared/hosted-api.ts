@@ -6,6 +6,13 @@
  */
 export const KALSHI_PROXY_PATH = "/api/proxy/kalshi";
 
+/** Keyed-data route, plus a twin that ad/tracker filter lists do not match. */
+export const KEYED_DATA_PATH = "/api/data";
+export const KEYED_DATA_ALIAS_PATH = "/api/feed";
+
+/** Blocker-safe slug for the `adjacent` provider id under the alias route. */
+export const ADJACENT_DATA_ALIAS_ID = "mkt";
+
 /**
  * True when the app is running on the hosted Cloudflare web client.
  *

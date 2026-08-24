@@ -1,5 +1,10 @@
 import type { PluginPersistence } from "../../../types/plugin";
-import { KALSHI_PROXY_PATH } from "../../../shared/hosted-api";
+import {
+  ADJACENT_DATA_ALIAS_ID,
+  KALSHI_PROXY_PATH,
+  KEYED_DATA_ALIAS_PATH,
+  KEYED_DATA_PATH,
+} from "../../../shared/hosted-api";
 import { httpFetch } from "../../../utils/http-transport";
 import { measurePerf } from "../../../utils/perf-marks";
 import {
@@ -45,16 +50,61 @@ export function resetPredictionMarketsPersistence(): void {
 function connectionIdForPredictionUrl(url: string): string | null {
   if (url.includes("kalshi.com") || url.includes(KALSHI_PROXY_PATH)) return "kalshi";
   if (url.includes("polymarket.com")) return "polymarket";
-  if (url.includes("adjacent.markets") || url.includes("/api/data/adjacent")) {
+  if (
+    url.includes("adjacent.markets")
+    || url.includes(`${KEYED_DATA_PATH}/adjacent`)
+    || url.includes(`${KEYED_DATA_ALIAS_PATH}/${ADJACENT_DATA_ALIAS_ID}`)
+  ) {
     return "adjacent";
   }
   return null;
 }
 
+const BLOCKED_REQUEST_MARKER = "ERR_BLOCKED_BY_CLIENT";
+
+/** True when a content blocker, not our server, refused the request. */
+export function isBlockedRequestError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(BLOCKED_REQUEST_MARKER);
+}
+
+/** Browser transport failures. Chrome/Firefox/Safari each word theirs differently. */
+const BROWSER_TRANSPORT_FAILURE = /failed to fetch|load failed|networkerror when attempting to fetch|network request failed/i;
+
+function isSameOriginUrl(url: string): boolean {
+  try {
+    if (typeof location === "undefined" || !location.origin) return false;
+    return new URL(url, location.origin).origin === location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Chrome reports content-blocker kills as `net::ERR_BLOCKED_BY_CLIENT` in the
+ * console but hands JavaScript a bare `TypeError: Failed to fetch`, and the
+ * request never reaches the network panel. A same-origin request that fails at
+ * the transport layer while the browser believes it is online has not been
+ * refused by our server, so an extension or filter list ate it. Naming that
+ * matters because, unlike a network blip, it never retries its way to success.
+ */
+function describeBlockedRequest(url: string, error: unknown): Error | null {
+  if (!(error instanceof Error)) return null;
+  if (!BROWSER_TRANSPORT_FAILURE.test(error.message)) return null;
+  if (!isSameOriginUrl(url)) return null;
+  const online = (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine;
+  if (online === false) return null;
+  return new Error(`Request blocked by the browser (${BLOCKED_REQUEST_MARKER}) for ${url}`);
+}
+
 export async function fetchJson<T>(url: string): Promise<T> {
   const connectionId = connectionIdForPredictionUrl(url);
   const run = async (): Promise<T> => {
-    const response = await PREDICTION_FETCH.fetch(url);
+    let response: Response;
+    try {
+      response = await PREDICTION_FETCH.fetch(url);
+    } catch (error) {
+      throw describeBlockedRequest(url, error) ?? error;
+    }
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${url}`);
     }

@@ -37,8 +37,28 @@
  * until a first-party API exists.
  */
 
-export const KEYED_DATA_PATH = "/api/data";
+/**
+ * `KEYED_DATA_ALIAS_PATH` is a blocker-safe twin of `KEYED_DATA_PATH`.
+ *
+ * Ad/tracker filter lists match on substrings, and `/api/data/adjacent/markets`
+ * trips them: Chrome kills the request with `net::ERR_BLOCKED_BY_CLIENT` before
+ * it leaves the browser, hands JavaScript a bare "Failed to fetch", and never
+ * shows it in the network panel. Enterprise-installed blockers do this in
+ * Incognito too, so the client needs a second route with no matchable token.
+ */
+import { ADJACENT_DATA_ALIAS_ID } from "../../../shared/hosted-api";
+
+export {
+  ADJACENT_DATA_ALIAS_ID,
+  KEYED_DATA_ALIAS_PATH,
+  KEYED_DATA_PATH,
+} from "../../../shared/hosted-api";
 export const TWC_KALSHI_ALIAS_PATH = "/api/weather/twc";
+
+/** Neutral slug -> provider id, for provider names filter lists match. */
+export const KEYED_DATA_PROVIDER_ALIASES: Record<string, string> = {
+  [ADJACENT_DATA_ALIAS_ID]: "adjacent",
+};
 
 export { NWS_CLI_USER_AGENT } from "../../../sources/nws-cli/types";
 export const TWC_KALSHI_USER_AGENT = "gloomberb-weather";

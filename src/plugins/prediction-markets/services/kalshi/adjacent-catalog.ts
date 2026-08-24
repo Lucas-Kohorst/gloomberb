@@ -1,11 +1,14 @@
-import { adjacentCloudDataUrl } from "../../../builtin/connections/adjacent-cloud";
+import {
+  adjacentCloudDataAliasUrl,
+  adjacentCloudDataUrl,
+} from "../../../builtin/connections/adjacent-cloud";
 import { getKalshiCategoryNames, matchesPredictionCategory } from "../../categories";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../../types";
-import { fetchJson, parseFloatSafe } from "../fetch";
+import { fetchJson, isBlockedRequestError, parseFloatSafe } from "../fetch";
 
 const ADJACENT_MARKETS_PER_PAGE = 50;
 
@@ -43,6 +46,8 @@ export interface AdjacentKalshiCatalogRow {
   no_bid?: number | null;
   no_ask?: number | null;
   last_trade_price?: number | null;
+  rules_primary?: string | null;
+  rules_secondary?: string | null;
 }
 
 export interface AdjacentKalshiCatalogPage {
@@ -55,6 +60,55 @@ function hostedOrigin(): string {
   return typeof location !== "undefined" && location.origin
     ? location.origin
     : "https://terminal.kohor.st";
+}
+
+/**
+ * Sticky once a content blocker has been observed. Retrying the canonical path
+ * can never succeed for that browser, and every attempt costs a full timeout.
+ */
+let useBlockerSafeAdjacentPath = false;
+
+/** Absolute same-origin URL for an Adjacent keyed-data path on the hosted Worker. */
+export function hostedAdjacentUrl(
+  keyPath: string,
+  search?: Record<string, string | number | undefined>,
+): string {
+  const path = useBlockerSafeAdjacentPath
+    ? adjacentCloudDataAliasUrl(keyPath)
+    : adjacentCloudDataUrl("adjacent", keyPath);
+  const url = new URL(path, hostedOrigin());
+  for (const [key, value] of Object.entries(search ?? {})) {
+    if (value == null || value === "") continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+/**
+ * Fetches an Adjacent keyed-data path, switching to the blocker-safe route for
+ * the rest of the session the first time a request is blocked client-side.
+ */
+export async function fetchHostedAdjacentJson<T>(
+  keyPath: string,
+  search?: Record<string, string | number | undefined>,
+): Promise<T> {
+  try {
+    return await fetchJson<T>(hostedAdjacentUrl(keyPath, search));
+  } catch (error) {
+    if (useBlockerSafeAdjacentPath || !isBlockedRequestError(error)) throw error;
+    useBlockerSafeAdjacentPath = true;
+    return await fetchJson<T>(hostedAdjacentUrl(keyPath, search));
+  }
+}
+
+/** Test helper: forget an observed content blocker. */
+export function resetHostedAdjacentPathFallback(): void {
+  useBlockerSafeAdjacentPath = false;
+}
+
+/** Adjacent addresses venue markets and events as `{platform}:{ticker}`. */
+export function adjacentKalshiId(ticker: string): string {
+  return /^kalshi:/i.test(ticker) ? ticker : `kalshi:${ticker}`;
 }
 
 function centsToYesPrice(value: unknown): number | null {
@@ -103,31 +157,37 @@ function adjacentSortParams(
   return { sort: "volume", sortDir: "desc" };
 }
 
-export function buildHostedAdjacentKalshiMarketsUrl(options: {
+interface AdjacentKalshiMarketsQuery {
   searchQuery?: string;
   category?: string;
   browseTab?: PredictionBrowseTab;
   page?: number;
-}): string {
-  const url = new URL(
-    adjacentCloudDataUrl("adjacent", "markets"),
-    hostedOrigin(),
-  );
-  const page = options.page ?? 1;
+}
+
+function adjacentKalshiMarketsSearch(
+  options: AdjacentKalshiMarketsQuery,
+): Record<string, string | number | undefined> {
   const searchQuery = options.searchQuery?.trim() ?? "";
   const { sort, sortDir } = adjacentSortParams(
     searchQuery,
     options.browseTab ?? "top",
   );
-  url.searchParams.set("platform", "kalshi");
-  url.searchParams.set("scope", "all");
-  url.searchParams.set("per_page", String(ADJACENT_MARKETS_PER_PAGE));
-  url.searchParams.set("page", String(page));
-  if (searchQuery) url.searchParams.set("search", searchQuery);
-  if (options.category) url.searchParams.set("category", options.category);
-  if (sort) url.searchParams.set("sort", sort);
-  if (sortDir) url.searchParams.set("sort_dir", sortDir);
-  return url.toString();
+  return {
+    platform: "kalshi",
+    scope: "all",
+    per_page: ADJACENT_MARKETS_PER_PAGE,
+    page: options.page ?? 1,
+    search: searchQuery,
+    category: options.category,
+    sort,
+    sort_dir: sortDir,
+  };
+}
+
+export function buildHostedAdjacentKalshiMarketsUrl(
+  options: AdjacentKalshiMarketsQuery,
+): string {
+  return hostedAdjacentUrl("markets", adjacentKalshiMarketsSearch(options));
 }
 
 export function hostedAdjacentKalshiPageCursor(page: number): string {
@@ -228,6 +288,8 @@ export function mapAdjacentKalshiMarket(
       || row.url?.trim()
       || `https://kalshi.com/markets/${ticker}`,
     description: row.description?.trim() ?? "",
+    rulesPrimary: row.rules_primary?.trim() || undefined,
+    rulesSecondary: row.rules_secondary?.trim() || undefined,
     endsAt: row.end_date ?? row.ends_at ?? null,
     updatedAt: row.updated_at ?? null,
     createdAt: row.created_at ?? null,
@@ -294,13 +356,10 @@ export async function fetchHostedAdjacentKalshiCatalogPage(options: {
   const browseTab = options.browseTab ?? "top";
   const page = options.page ?? 1;
   const category = getKalshiCategoryNames(categoryId)[0];
-  const url = buildHostedAdjacentKalshiMarketsUrl({
-    searchQuery,
-    category,
-    browseTab,
-    page,
-  });
-  const raw = await fetchJson<unknown>(url);
+  const raw = await fetchHostedAdjacentJson<unknown>(
+    "markets",
+    adjacentKalshiMarketsSearch({ searchQuery, category, browseTab, page }),
+  );
   const markets = mapAdjacentKalshiCatalog(
     unwrapAdjacentCatalogRows(raw),
     categoryId,
