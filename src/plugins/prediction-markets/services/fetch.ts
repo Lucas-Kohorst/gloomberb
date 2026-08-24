@@ -45,7 +45,9 @@ export function resetPredictionMarketsPersistence(): void {
 function connectionIdForPredictionUrl(url: string): string | null {
   if (url.includes("kalshi.com") || url.includes(KALSHI_PROXY_PATH)) return "kalshi";
   if (url.includes("polymarket.com")) return "polymarket";
-  if (url.includes("adjacent.markets")) return "adjacent";
+  if (url.includes("adjacent.markets") || url.includes("/api/data/adjacent")) {
+    return "adjacent";
+  }
   return null;
 }
 
