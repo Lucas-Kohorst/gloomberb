@@ -1,5 +1,39 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_4: ChangelogRelease = {
+  id: "hosted-v0-13-4",
+  tagName: "v0.13.4",
+  version: "0.13.4",
+  title: "Prediction markets, Chrome on-device AI, paid Adjacent",
+  publishedAt: "2026-08-24T18:00:00.000Z",
+  url: "",
+  body: `Kalshi and Polymarket catalogs, similar markets, and news go through paid Adjacent. Hosted Chrome can summarize filings with the on-device Prompt API. The PM pane is denser, keyboardable, and searches as you type.
+
+## Prediction markets
+
+- Browse tabs Top / Ending / New / Watchlist move with \`1\`–\`4\` and \`[\` / \`]\`. Categories keep \`h\`/\`l\`; venues keep Shift+\`h\`/\`l\`.
+- Narrow panes drop TICKER / VENUE / STATUS / ENDS so TOP ODDS and SPR stay visible. Event rows show \`-\` in TICKER.
+- Footer shows the real catalog poll and \`updated\` on the list, not only in detail.
+- Search filters the loaded catalog immediately. Hosted Kalshi catalogs load from Adjacent; books still use the Kalshi proxy.
+- Related news is the same article table as WIRE. Similar markets use authenticated Adjacent.
+
+## AI
+
+- Hosted default is Chrome's on-device Prompt API. Account Management → AI → Browser (on-device) → Download model. No provider key. Desktop Electrobun still uses Pi.
+
+## News, search, hosted
+
+- TOP is the first 10 stories from WIRE. Category labels are Title Case at display.
+- Command bar \`aapl\` lists the security first. Ask AI does not auto-fire on ticker-shaped tokens.
+- \`web-main.js\` is hashed. Missing JS chunks 404 instead of returning HTML, so stale tabs stop dying after a deploy.
+
+## Tables and chrome
+
+- Empty cells sort last either direction. New installs default to the Adjacent theme.
+- ESG empty Yahoo scores are a no-data state. Watchlists appear in PORT / RISK. Analytics collection tabs are book names only; Overview / Risk is \`[v]\`.
+`,
+};
+
 const RELEASE_0_13_3: ChangelogRelease = {
   id: "hosted-v0-13-3",
   tagName: "v0.13.3",
@@ -292,6 +326,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_4,
   RELEASE_0_13_3,
   RELEASE_0_13_2,
   RELEASE_0_13_1,

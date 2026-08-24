@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.13.4 — Prediction markets, Chrome on-device AI, paid Adjacent
+
+Kalshi and Polymarket catalogs, similar markets, and news now go through paid Adjacent instead of the public API. Hosted Chrome can summarize filings with the on-device Prompt API (no provider key). The PM pane is denser, fully keyboardable, and searches as you type.
+
+### Prediction markets
+
+- Browse tabs **Top / Ending / New / Watchlist** move with `1`–`4` and `[` / `]`. Categories keep `h`/`l`; venues keep Shift+`h`/`l`.
+- Narrow panes drop TICKER / VENUE / STATUS / ENDS so **TOP ODDS** and **SPR** stay on screen. Event rows show `-` in TICKER; child contracts keep theirs.
+- Footer shows the real catalog poll (`poll 20s` / `30s`) and `updated`, including when detail is closed. Detail still shows Kalshi `poll 5s` / Polymarket `live`.
+- Search filters the loaded catalog immediately (fuzzy, token-AND). Remote search is debounced; Polymarket paints `public-search` hits before hydrating every event.
+- Hosted Kalshi **catalogs** load from Adjacent (`platform=kalshi`). Order books, trades, and candles still use `/api/proxy/kalshi`.
+- Related news uses the same article table as WIRE (`[o]`pen, `[p]`op out, `[a]`rchive). Similar markets and news lists use authenticated Adjacent routes.
+- Settlement **Data** tab ranks what a market settles to plus suggested CAT feeds (rules id > resolution map > ticker > alias). Election markets no longer map FRED GDP.
+
+### Adjacent
+
+- Hosted always uses auth `/markets`, `/news`, `/indices`, `/rates` with the Worker key. `/public/...` is gone on hosted. Similar is auth-only; news lists are auth-only; market news is the full ranked list, not the public max-3 slice.
+- Search uses `search` / `per_page`. Price history interval `1h` is sent as `1hour`.
+
+### AI
+
+- Hosted default provider is Chrome's on-device Prompt API (`LanguageModel` / Gemini Nano). No Pi key. Filings, Ask AI, the AI screener, and assist fallback all use it once the model is downloaded.
+- Account Management → AI → **Browser (on-device) ★** → **Download model** (needs a click; Chrome desktop only). Desktop Electrobun still uses Pi.
+
+### News & command bar
+
+- **TOP** is the first 10 stories from WIRE (`latest`, newest first), not a separate importance feed.
+- Category labels are Title Case at display (`tech` → `Tech`).
+- Typing `aapl` in the command bar lists the security first (DES / QQ / G as trailing chips). Ask AI no longer auto-fires on ticker-shaped tokens and sorts below Exact Match.
+- Screener, article lookup, and new-DM search are case-insensitive (shared fuzzy matcher).
+
+### Hosted
+
+- `web-main.js` is content-hashed like `share-main`. Missing `.js` / `.css` / `.map` return 404 instead of SPA HTML, so a stale tab no longer dies on `chunk-*.js` after a deploy.
+
+### Tables, theme, portfolio
+
+- Empty cells (`—`, `-`, blank, null) sort to the bottom in both directions. Most remaining header no-ops now cycle sort. Financial statement tables stay in GAAP order on purpose.
+- New installs and share pages default to the **Adjacent** theme. Saved `amber` configs are left alone.
+- ESG shows an honest empty state when Yahoo returns no scores (common on ETFs). The carbon section is hidden until it is populated.
+- Watchlists appear in PORT / RISK / Kelly as equal-weight books (risk labeled indicative). Starring a PM market also adds `KALSHI:` / `POLY:` to the default PF watchlist.
+- Portfolio Analytics collection tabs are book names only. Overview / Risk is a secondary `[v]` switch, not a third tab on the same strip.
+
 ## v0.13.3 — Research panes, chart indicators, and web accessibility
 
 Six new research surfaces, a technical-indicator library for charts, editable price alerts, and an accessibility and motion pass over the web renderer.
