@@ -14,6 +14,7 @@ import {
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { EmptyState } from "../../../components";
+import { CompanyLogo } from "../../../components/company-logo";
 import {
   CompositeChart,
   pricePointsToResolvedSeries,
@@ -48,7 +49,7 @@ export function OverviewTab({
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useViewport();
-  const { fractionalViewport = false } = useUiCapabilities();
+  const { fractionalViewport = false, nativePaneChrome } = useUiCapabilities();
 
   if (!ticker) return <EmptyState title={t("No ticker selected.")} />;
 
@@ -136,9 +137,15 @@ export function OverviewTab({
 
   return (
     <ScrollBox flexGrow={1} flexBasis={0} scrollY focusable={false}>
-      <Box flexDirection="column" paddingX={1} paddingBottom={1} gap={1}>
+      <Box flexDirection="column" paddingX={1} paddingTop={nativePaneChrome ? 1 : 0} paddingBottom={1} gap={1}>
         <Box flexDirection={quoteBookInline ? "row" : "column"} gap={quoteBookInline ? 2 : 0} width={contentWidth}>
-          <Box flexDirection="column" width={quoteSummaryWidth}>
+          <Box flexDirection="row" width={quoteSummaryWidth}>
+            <CompanyLogo
+              symbol={ticker.metadata.ticker}
+              assetCategory={ticker.metadata.assetCategory}
+              name={ticker.metadata.name || quote?.name}
+            />
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
             <Box flexDirection="row">
               <Text attributes={TextAttributes.BOLD} fg={colors.textBright}>
                 {ticker.metadata.ticker}
@@ -193,6 +200,7 @@ export function OverviewTab({
             {metadataParts.length > 0 && (
               <Text fg={colors.textDim}>{metadataParts.join(" | ")}</Text>
             )}
+            </Box>
           </Box>
 
           {quote && hasBidAsk && (

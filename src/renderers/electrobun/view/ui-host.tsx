@@ -147,6 +147,7 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
         >
           {imageSrc && !failed ? (
             <img
+              key={imageSrc}
               src={imageSrc}
               alt={alt}
               draggable={false}
