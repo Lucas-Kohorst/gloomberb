@@ -171,6 +171,8 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
+    expect(frame).toContain("[1-3]browse");
+    expect(frame).toContain("[4]watchlist");
 
     const lines = frame.split("\n");
     const kalshiRow = lines.findIndex((line) =>
@@ -207,6 +209,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("[/]search");
     expect(frame).not.toContain("[w]atch");
     expect(frame).not.toContain("[1-4]browse");
+    expect(frame).not.toContain("[4]watchlist");
 
     const metricsHeader = frame
       .split("\n")
@@ -537,8 +540,7 @@ describe("prediction markets pane interactions", () => {
 
     let frame = testSetup.captureCharFrame();
     expect(frame).toContain("▾");
-    expect(frame).toContain("KXFED-27APR-T4.25");
-    expect(frame).toContain("KXFED-27APR-T4.50");
+    expect(frame).toContain("Will the upper bound of the federal funds target rate be");
     expect(frame).not.toContain("\u2190 Back");
 
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
@@ -546,7 +548,7 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("▸");
-    expect(frame).not.toContain("KXFED-27APR-T4.25");
+    expect(frame).not.toContain("Will the upper bound of the federal funds target rate be");
     expect(frame).not.toContain("\u2190 Back");
 
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
@@ -691,8 +693,7 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("▾");
-    expect(frame).toContain("KXFED-27APR-T4.25");
-    expect(frame).toContain("KXFED-27APR-T4.50");
+    expect(frame).toContain("Will the upper bound of the federal funds target rate be");
   });
 
 });

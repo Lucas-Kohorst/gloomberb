@@ -147,11 +147,13 @@ const PREDICTION_COLUMN_MIN_WIDTH: Record<string, number> = {
   yes: 0,
   spread: 0,
   vol_24h: 88,
-  market_id: 100,
-  venue: 108,
   open_interest: 116,
   ends: 124,
   status: 132,
+  // Ticker/venue steal MARKET's flex space on hosted tables (fixed max-width
+  // tracks). Hide them until odds + spread + volume already fit.
+  market_id: 140,
+  venue: 148,
 };
 
 const DEFAULT_OPTIONAL_COLUMN_MIN_WIDTH = 140;

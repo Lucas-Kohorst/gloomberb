@@ -23,6 +23,7 @@ export function WebTabs({
   onAdd,
   onReorder,
   focused = false,
+  scrollable = true,
   palette,
 }: HostTabsProps) {
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
@@ -81,10 +82,11 @@ export function WebTabs({
         flexDirection: "row",
         alignItems: "stretch",
         gap: dense ? 2 : 4,
-        width: "100%",
+        ...(scrollable
+          ? { width: "100%", flexShrink: 0 }
+          : { width: "fit-content", flex: "0 1 auto" }),
         height: listHeight,
         minInlineSize: 0,
-        flexShrink: 0,
         overflowX: "auto",
         overflowY: "hidden",
         paddingInline: variant === "underline" || dense ? 0 : 4,
