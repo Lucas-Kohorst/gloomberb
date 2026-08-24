@@ -170,6 +170,7 @@ export function Tabs({
         onAdd={onAdd}
         onReorder={onReorder}
         focused={focused}
+        scrollable={scrollable}
         palette={palette}
       />
     );

@@ -324,6 +324,11 @@ export interface HostTabsProps {
   onAdd?: () => void;
   onReorder?: (fromValue: string, toValue: string) => void;
   focused?: boolean;
+  /**
+   * OpenTUI sizes non-scrollable tabs to their labels. Native/Web must do the
+   * same: `false` means fit-content and allow shrink, not `width: 100%`.
+   */
+  scrollable?: boolean;
   palette: HostTabsPalette;
 }
 

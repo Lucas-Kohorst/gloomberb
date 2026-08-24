@@ -179,12 +179,19 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
               controller.actions.selectBrowseTab(BROWSE_TABS[(index + 1) % BROWSE_TABS.length]!.value as PredictionBrowseTab);
             },
           },
+          {
+            id: "watchlist",
+            key: "4",
+            label: "watchlist",
+            onPress: () => controller.actions.selectCategory("watchlist"),
+          },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
       ],
     };
   }, [
     catalogStatusColor,
+    controller.actions.selectCategory,
     controller.browseTab,
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
@@ -220,8 +227,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
 
   // Search box, browse tabs and category tabs share one row so the pane
   // doesn't burn three rows of vertical space (the third was getting clipped).
-  // Both tab strips use variant="bare" + scrollable={false} — no outlined box,
-  // no width:100% ScrollBox — so they sit inline to the right of the search.
+  // Both tab strips use variant="bare" + scrollable={false} so they size to
+  // their labels instead of each claiming width:100% and clipping Watchlist.
   const searchBrowseAndCategories = (
     <Box flexDirection="row" height={1} paddingX={1} gap={2}>
       <Box

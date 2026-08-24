@@ -138,6 +138,49 @@ test("a tab bar occupies exactly the one row panes reserve for it", async () => 
   await act(async () => root.unmount());
 });
 
+test("inline tabs size to content instead of claiming the full row", async () => {
+  const { WebTabs } = await import("./tabs");
+  const container = testWindow.document.createElement("div");
+  testWindow.document.body.appendChild(container);
+  const root = createRoot(container as unknown as HTMLElement);
+  const tabs = [
+    { label: "Top", value: "top" },
+    { label: "Watchlist", value: "watchlist" },
+  ];
+  await act(async () => {
+    root.render(
+      <WebTabs
+        tabs={tabs}
+        activeValue="top"
+        onSelect={() => {}}
+        scrollable={false}
+        palette={{} as never}
+      />,
+    );
+  });
+  await settle();
+  const inline = container.querySelector('[data-gloom-role="tab-list"]') as unknown as HTMLElement;
+  expect(inline.style.width).toBe("fit-content");
+  expect(inline.style.flex).toBe("0 1 auto");
+  expect(inline.style.overflowX).toBe("auto");
+
+  await act(async () => {
+    root.render(
+      <WebTabs
+        tabs={tabs}
+        activeValue="top"
+        onSelect={() => {}}
+        palette={{} as never}
+      />,
+    );
+  });
+  await settle();
+  const full = container.querySelector('[data-gloom-role="tab-list"]') as unknown as HTMLElement;
+  expect(full.style.width).toBe("100%");
+  expect(full.style.flexShrink).toBe("0");
+  await act(async () => root.unmount());
+});
+
 test("desktop tabs reorder through native drag and drop", async () => {
   const { WebTabs } = await import("./tabs");
   const reordered: Array<[string, string]> = [];

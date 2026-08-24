@@ -254,12 +254,21 @@ describe("prediction markets plugin registration and services", () => {
     expect(createPredictionColumns(100).map((column) => column.id)).toEqual([
       "watch",
       "market",
-      "market_id",
       "yes",
       "spread",
       "vol_24h",
     ]);
     expect(createPredictionColumns(132).map((column) => column.id)).toEqual([
+      "watch",
+      "market",
+      "yes",
+      "spread",
+      "vol_24h",
+      "open_interest",
+      "ends",
+      "status",
+    ]);
+    expect(createPredictionColumns(160).map((column) => column.id)).toEqual([
       "watch",
       "market",
       "market_id",
