@@ -25,7 +25,12 @@ import type { PaneProps } from "../../../../types/plugin";
 import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import { tf } from "../../../../i18n";
 import { getSharedRegistry } from "../../../registry";
-import { calculatePortfolioSummaryTotals, resolveCollectionSortPreference, type ColumnContext } from "../metrics";
+import {
+  calculatePortfolioSummaryTotals,
+  isTimeSensitiveColumnId,
+  resolveCollectionSortPreference,
+  type ColumnContext,
+} from "../metrics";
 import {
   PortfolioCashMarginDrawer,
   shouldToggleCashMarginDrawer,
@@ -159,11 +164,10 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     activeCollectionId,
   ), [activeCollectionId, config.baseCurrency, effectiveExchangeRates, financialsMap, isPortfolioTab, tickers]);
 
-  const columnContext: ColumnContext = useMemo(() => ({
+  const columnContextBase = useMemo(() => ({
     activeTab: isPortfolioTab ? activeCollectionId : undefined,
     baseCurrency: config.baseCurrency,
     exchangeRates: effectiveExchangeRates,
-    now,
     portfolioTotalMarketValue: portfolioSummaryTotals.totalMktValue,
     supplementalVersion: supplementalData.version,
     analystResearch: supplementalData.analystResearch,
@@ -174,15 +178,24 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     config.baseCurrency,
     effectiveExchangeRates,
     isPortfolioTab,
-    now,
     portfolioSummaryTotals.totalMktValue,
     supplementalData,
   ]);
 
+  const columnContext: ColumnContext = useMemo(
+    () => ({ ...columnContextBase, now }),
+    [columnContextBase, now],
+  );
+
   const activeSort = resolveCollectionSortPreference(activeCollectionId, isPortfolioTab, collectionSorts);
+  const sortNow = isTimeSensitiveColumnId(activeSort.columnId) ? now : 0;
+  const sortColumnContext: ColumnContext = useMemo(
+    () => ({ ...columnContextBase, now: sortNow }),
+    [columnContextBase, sortNow],
+  );
   const candidateSortedTickers = useMemo(
-    () => sortTickers(tickers, financialsMap, activeSort, columnContext, columns),
-    [tickers, financialsMap, activeSort, columnContext, columns],
+    () => sortTickers(tickers, financialsMap, activeSort, sortColumnContext, columns),
+    [tickers, financialsMap, activeSort, sortColumnContext, columns],
   );
   const candidateSymbols = useMemo(
     () => candidateSortedTickers.map((ticker) => ticker.metadata.ticker),
@@ -406,11 +419,17 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     }
   }, [activeCollectionId, cancelPendingCursorSymbol, currentCollectionId, setCurrentCollectionId]);
 
+  const clockNeeded = useMemo(
+    () => isTimeSensitiveColumnId(activeSort.columnId)
+      || columns.some((column) => isTimeSensitiveColumnId(column.id)),
+    [activeSort.columnId, columns],
+  );
+
   useEffect(() => {
-    if (!appActive) return;
+    if (!appActive || !clockNeeded) return;
     const timerId = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timerId);
-  }, [appActive]);
+  }, [appActive, clockNeeded]);
 
   useEffect(() => {
     if (sortedTickers.length === 0) {
