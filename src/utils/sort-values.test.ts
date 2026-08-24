@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CLEARED_SORT,
+  applySortPreference,
   compareSortValues,
   nextSortPreference,
   type SortPreference,
@@ -13,6 +14,33 @@ describe("compareSortValues", () => {
     expect(compareSortValues(5, undefined, "asc")).toBe(-1);
     expect(compareSortValues(5, undefined, "desc")).toBe(-1);
     expect(compareSortValues(null, undefined, "asc")).toBe(0);
+  });
+
+  test("treats blank and dash glyphs as empty, after numbers and tickers", () => {
+    for (const empty of ["", "-", "—"] as const) {
+      expect(compareSortValues(empty, 12, "asc")).toBe(1);
+      expect(compareSortValues(empty, 12, "desc")).toBe(1);
+      expect(compareSortValues(12, empty, "asc")).toBe(-1);
+      expect(compareSortValues(12, empty, "desc")).toBe(-1);
+      expect(compareSortValues(empty, "AAPL", "asc")).toBe(1);
+      expect(compareSortValues(empty, "AAPL", "desc")).toBe(1);
+      expect(compareSortValues("AAPL", empty, "asc")).toBe(-1);
+      expect(compareSortValues("AAPL", empty, "desc")).toBe(-1);
+    }
+  });
+});
+
+describe("applySortPreference", () => {
+  test("keeps NA rows at the bottom when reversing a numeric column", () => {
+    const rows = [
+      { id: "filled", volume: 100 },
+      { id: "dash", volume: "—" as const },
+      { id: "zero", volume: 0 },
+    ];
+    const desc = applySortPreference(rows, { columnId: "volume", direction: "desc" }, (row) => row.volume);
+    expect(desc.map((row) => row.id)).toEqual(["filled", "zero", "dash"]);
+    const asc = applySortPreference(rows, { columnId: "volume", direction: "asc" }, (row) => row.volume);
+    expect(asc.map((row) => row.id)).toEqual(["zero", "filled", "dash"]);
   });
 });
 

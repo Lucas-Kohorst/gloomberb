@@ -72,7 +72,7 @@ function Harness() {
           items={rows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => {}}
+          onHeaderClick={() => undefined}
           getItemKey={(row) => row.id}
           renderSectionHeader={(row) => row.type === "section"
             ? { text: row.title }
@@ -115,7 +115,7 @@ function LargeSelectionHarness({
           items={largeRows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => {}}
+          onHeaderClick={() => undefined}
           getItemKey={(row) => row.id}
           renderCell={(row, _column, index): DataTableCell => {
             onIsSelected();

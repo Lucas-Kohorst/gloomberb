@@ -12,6 +12,11 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import type { InstrumentSearchResult } from "../../../../types/instrument";
 import { usePaneInstance } from "../../../../state/app/context";
 import { colors } from "../../../../theme/colors";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../../utils/sort-values";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
 import type { LoadState } from "../../shared/ticker-request";
@@ -78,7 +83,21 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
     load(false);
   }, [load]);
 
-  const rows = state.data ?? [];
+  const [sortPreference, setSortPreference] = useState<SortPreference<"symbol" | "name" | "exchange" | "type">>({
+    columnId: null,
+    direction: "asc",
+  });
+  const rows = useMemo(
+    () => applySortPreference(state.data ?? [], sortPreference, (row, columnId) => {
+      switch (columnId) {
+        case "symbol": return resultSymbol(row);
+        case "name": return row.name || null;
+        case "exchange": return row.exchange || row.primaryExchange || null;
+        case "type": return row.type || null;
+      }
+    }),
+    [sortPreference, state.data],
+  );
   const columns = useMemo(() => buildSearchColumns(width), [width]);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const openResult = useCallback((row: InstrumentSearchResult) => {
@@ -132,9 +151,13 @@ export function ProviderSearchPane({ focused, width, height }: PaneProps) {
       rootHeight={height}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as "symbol" | "name" | "exchange" | "type",
+        { defaultDirection: "asc" },
+      ))}
       getItemKey={(row, index) => `${row.providerId}:${row.symbol}:${row.exchange}:${row.type}:${index}`}
       renderCell={renderCell}
       emptyStateTitle={state.loading ? "Searching..." : query ? "No search results" : "No search query"}

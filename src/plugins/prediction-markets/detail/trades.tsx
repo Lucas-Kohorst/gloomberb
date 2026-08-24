@@ -1,6 +1,12 @@
+import { useMemo, useState } from "react";
 import { DataTableView, type DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { formatNumber } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { formatPredictionProbability } from "../metrics";
 import type { PredictionTrade } from "../types";
 
@@ -24,6 +30,22 @@ export function PredictionMarketTradesView({
   trades: PredictionTrade[];
   width: number;
 }) {
+  const [sortPreference, setSortPreference] = useState<SortPreference<TradeColumnId>>({
+    columnId: null,
+    direction: "desc",
+  });
+  const rows = useMemo(
+    () => applySortPreference(trades.slice(0, 30), sortPreference, (trade, columnId) => {
+      switch (columnId) {
+        case "time": return trade.timestamp;
+        case "side": return trade.side;
+        case "outcome": return trade.outcome;
+        case "price": return trade.price;
+        case "size": return trade.size;
+      }
+    }),
+    [sortPreference, trades],
+  );
   return (
     <DataTableView<PredictionTrade, TradeColumn>
       focused={focused}
@@ -32,10 +54,14 @@ export function PredictionMarketTradesView({
       rootBackgroundColor={colors.panel}
       selection={{ kind: "none" }}
       columns={TRADE_COLUMNS}
-      items={trades.slice(0, 30)}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={rows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as TradeColumnId,
+        { defaultDirection: columnId === "side" || columnId === "outcome" ? "asc" : "desc" },
+      ))}
       getItemKey={(trade) => trade.id}
       renderCell={(trade, column) => {
         const tradeColor = trade.side === "buy" ? colors.positive : colors.negative;

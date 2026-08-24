@@ -19,6 +19,11 @@ import {
   type DataTableKeyEvent,
 } from "../../../components";
 import { isPlainKey } from "../../../utils/keyboard";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import type { OptionsChain } from "../../../types/financials";
@@ -149,13 +154,22 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
     return cols;
   }, [surface.expirations]);
 
+  const [sortPreference, setSortPreference] = useState<SortPreference>({
+    columnId: null,
+    direction: "asc",
+  });
   const rows = useMemo<VolSurfaceRow[]>(() => {
     const expirations = surface.expirations;
-    return surface.strikes.map((strike, strikeIndex) => ({
+    const unordered = surface.strikes.map((strike, strikeIndex) => ({
       strike,
       cells: expirations.map((_expiration, expIndex) => surface.cells[strikeIndex]?.[expIndex] ?? null),
     }));
-  }, [surface]);
+    return applySortPreference(unordered, sortPreference, (row, columnId) => {
+      if (columnId === "strike") return row.strike;
+      const expIndex = expirations.indexOf(Number(columnId));
+      return row.cells[expIndex]?.impliedVolatility ?? null;
+    });
+  }, [sortPreference, surface]);
 
   const [selectedStrike, setSelectedStrike] = useState(0);
   useEffect(() => {
@@ -252,9 +266,9 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
           bodyScrollId="volsurf-table-body-scroll"
           columns={columns}
           items={rows}
-          sortColumnId={null}
-          sortDirection="asc"
-          onHeaderClick={() => {}}
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
+          onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId))}
           getItemKey={(row) => String(row.strike)}
           renderCell={renderCell}
           emptyStateTitle="No surface data."

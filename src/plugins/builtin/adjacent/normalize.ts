@@ -1,3 +1,4 @@
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import type {
   AdjacentIndex,
   AdjacentIndexRow,
@@ -40,16 +41,13 @@ export function compareAdjacentIndexRows(
   left: AdjacentIndexRow,
   right: AdjacentIndexRow,
   columnId: AdjacentIndexSortColumnId,
+  direction: SortDirection = "asc",
 ): number {
-  const leftValue = adjacentIndexSortValue(left, columnId);
-  const rightValue = adjacentIndexSortValue(right, columnId);
-  if (typeof leftValue === "string" || typeof rightValue === "string") {
-    return String(leftValue ?? "").localeCompare(String(rightValue ?? ""));
-  }
-  if (leftValue == null && rightValue == null) return 0;
-  if (leftValue == null) return 1;
-  if (rightValue == null) return -1;
-  return leftValue - rightValue;
+  return compareSortValues(
+    adjacentIndexSortValue(left, columnId),
+    adjacentIndexSortValue(right, columnId),
+    direction,
+  );
 }
 
 export function normalizeAdjacentIndex(index: AdjacentIndex): AdjacentIndexRow {

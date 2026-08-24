@@ -62,7 +62,7 @@ export function getPortfolioPositionValue(
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): string | number {
+function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): string | number | null {
   switch (columnId) {
     case "sector":
       return row.sector;
@@ -71,7 +71,7 @@ function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): stri
     case "pnl":
       return row.pnl;
     case "return":
-      return row.returnPct ?? Number.NEGATIVE_INFINITY;
+      return row.returnPct;
     case "bar":
     case "weight":
       return row.weight;

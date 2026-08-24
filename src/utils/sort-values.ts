@@ -69,14 +69,21 @@ export function applySortPreference<T, Id extends string>(
   ));
 }
 
+/** Missing cells, including the dash glyphs tables render for them. Always last. */
+function isEmptySortValue(value: SortComparableValue): boolean {
+  return value == null || value === "" || value === "-" || value === "—";
+}
+
 export function compareSortValues(
   left: SortComparableValue,
   right: SortComparableValue,
   direction: SortDirection,
 ): number {
-  if (left == null && right == null) return 0;
-  if (left == null) return 1;
-  if (right == null) return -1;
+  const leftEmpty = isEmptySortValue(left);
+  const rightEmpty = isEmptySortValue(right);
+  if (leftEmpty && rightEmpty) return 0;
+  if (leftEmpty) return 1;
+  if (rightEmpty) return -1;
 
   const comparison = typeof left === "string" && typeof right === "string"
     ? left.localeCompare(right)
