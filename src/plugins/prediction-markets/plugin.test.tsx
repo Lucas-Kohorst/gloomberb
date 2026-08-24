@@ -460,14 +460,6 @@ describe("prediction markets plugin registration and services", () => {
     expect(resolvePredictionKeyboardCommand({ name: "]", sequence: "]" })).toBe(
       "next-browse-tab",
     );
-    expect(PREDICTION_FILTER_TABS.slice(0, 4).map((tab) => tab.id)).toEqual([
-      "all",
-      "watchlist",
-      "ending",
-      "new",
-    ]);
-    expect(resolvePredictionFilterId("all", "new")).toBe("new");
-    expect(resolvePredictionFilterId("watchlist", "ending")).toBe("watchlist");
   });
 
   test("keeps All, Watchlist, Ending, and New as one filter list", () => {

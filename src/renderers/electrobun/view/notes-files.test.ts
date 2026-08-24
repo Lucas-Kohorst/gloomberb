@@ -1,21 +1,24 @@
 import { expect, mock, test } from "bun:test";
 
 mock.module("./backend-rpc", () => ({
-  backendRequest: async () => ({
-    quickNotesIndex: [],
-    quickNotes: { "1": "hello" },
-    tickerNotes: {},
-  }),
+  backendRequest: async () => {
+    throw new Error("hosted collectAllForSync must not invoke RPC");
+  },
 }));
 
 const { NotesFiles } = await import("./notes-files");
 
-test("view NotesFiles collectAllForSync exists and returns a snapshot", async () => {
-  const notes = new NotesFiles("/tmp/notes");
-  expect(typeof notes.collectAllForSync).toBe("function");
-  await expect(notes.collectAllForSync()).resolves.toEqual({
-    quickNotesIndex: [],
-    quickNotes: { "1": "hello" },
-    tickerNotes: {},
-  });
+test("hosted stub collectAllForSync is a function and does not throw", async () => {
+  (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
+  try {
+    const notes = new NotesFiles("/tmp/gloomberb-notes-sync-missing");
+    expect(typeof notes.collectAllForSync).toBe("function");
+    await expect(notes.collectAllForSync()).resolves.toEqual({
+      quickNotesIndex: [],
+      quickNotes: {},
+      tickerNotes: {},
+    });
+  } finally {
+    delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+  }
 });
