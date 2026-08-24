@@ -274,7 +274,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         variant="bare"
         scrollable={false}
       />
-      {focused && PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
+      {PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
         <Tabs
           tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
             label: category.label,
