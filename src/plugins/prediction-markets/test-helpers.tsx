@@ -25,7 +25,8 @@ import {
   attachPredictionMarketsPersistence,
 } from "./services/fetch";
 import { normalizeKalshiMarket } from "./services/kalshi/adapter";
-import type { PredictionBrowseTab, PredictionDetailTab } from "./types";
+import type { PredictionCategoryId } from "./categories";
+import type { PredictionDetailTab } from "./types";
 
 export const TEST_PANE_ID = "prediction-markets:main";
 const originalFetch = globalThis.fetch;
@@ -384,10 +385,10 @@ export function Harness({
 
 export function WatchlistHarness({
   initialWatchlist = [],
-  initialBrowseTab = "watchlist",
+  initialCategoryId = "watchlist",
 }: {
   initialWatchlist?: string[];
-  initialBrowseTab?: PredictionBrowseTab;
+  initialCategoryId?: PredictionCategoryId;
 } = {}) {
   const runtime = useMemo(() => {
     const rt = createStatefulTestPluginRuntime();
@@ -405,7 +406,7 @@ export function WatchlistHarness({
           ...(initial.paneState[TEST_PANE_ID]?.pluginState ?? {}),
           "prediction-markets": {
             ...(initial.paneState[TEST_PANE_ID]?.pluginState?.["prediction-markets"] ?? {}),
-            browseTab: initialBrowseTab,
+            categoryId: initialCategoryId,
           },
         },
       };

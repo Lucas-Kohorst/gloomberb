@@ -20,7 +20,6 @@ export const BROWSE_TABS: ReadonlyArray<{
   { label: "Top", value: "top" },
   { label: "Ending", value: "ending" },
   { label: "New", value: "new" },
-  { label: "Watchlist", value: "watchlist" },
 ];
 
 export const DETAIL_TABS: ReadonlyArray<{

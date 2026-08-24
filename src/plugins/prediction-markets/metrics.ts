@@ -222,7 +222,6 @@ function matchesPredictionSearchQuery(
 
 export function filterPredictionMarkets(
   markets: PredictionListRow[],
-  browseTab: PredictionBrowseTab,
   venueScope: PredictionVenueScope,
   categoryId: PredictionCategoryId,
   searchQuery: string,
@@ -232,7 +231,7 @@ export function filterPredictionMarkets(
     if (venueScope !== "all" && market.venue !== venueScope) return false;
     if (!matchesPredictionCategory(market, categoryId)) return false;
     if (
-      browseTab === "watchlist" &&
+      categoryId === "watchlist" &&
       !market.watchMarketKeys.some((marketKey) => watchlist.has(marketKey))
     ) {
       return false;

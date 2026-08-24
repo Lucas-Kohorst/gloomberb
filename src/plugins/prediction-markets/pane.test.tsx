@@ -291,7 +291,7 @@ describe("prediction markets pane interactions", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
   });
 
-  test("selects browse tabs with 1-4 and cycles them with [ and ]", async () => {
+  test("selects browse tabs with 1-3, the watchlist with 4, and cycles browse tabs with [ and ]", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -304,9 +304,15 @@ describe("prediction markets pane interactions", () => {
 
     expect(pluginState()?.selectedRowKey).not.toBeNull();
 
+    // The watchlist is a category filter, so 4 must not disturb the sort mode.
     await emitKeypress(testSetup, { name: "4", sequence: "4" });
     await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("watchlist");
+    expect(pluginState()?.categoryId).toBe("watchlist");
+    expect(pluginState()?.browseTab).not.toBe("watchlist");
+
+    await emitKeypress(testSetup, { name: "2", sequence: "2" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("ending");
 
     await emitKeypress(testSetup, { name: "1", sequence: "1" });
     await flushFrames(testSetup);
@@ -668,7 +674,7 @@ describe("prediction markets pane interactions", () => {
 
     testSetup = await testRender(
       <WatchlistHarness
-        initialBrowseTab="watchlist"
+        initialCategoryId="watchlist"
         initialWatchlist={["kalshi:KXFED-27APR-T4.25"]}
       />,
       { width: 120, height: 34 },

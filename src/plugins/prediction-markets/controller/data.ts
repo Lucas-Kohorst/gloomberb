@@ -88,7 +88,6 @@ export function usePredictionMarketsDataState({
     return measurePerf("prediction.rows.filter-sort", () => {
       const filtered = filterPredictionMarkets(
         allRows,
-        browseTab,
         effectiveVenueScope,
         categoryId,
         searchQuery,

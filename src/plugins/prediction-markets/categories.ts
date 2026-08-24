@@ -7,6 +7,7 @@ type PredictionCategoryTarget = Pick<
 
 export type PredictionCategoryId =
   | "all"
+  | "watchlist"
   | "politics"
   | "world"
   | "macro"
@@ -29,6 +30,7 @@ interface PredictionVenueCategoryMap {
 
 export const PREDICTION_CATEGORY_OPTIONS: PredictionCategoryOption[] = [
   { id: "all", label: "All" },
+  { id: "watchlist", label: "Watchlist" },
   { id: "politics", label: "Politics" },
   { id: "world", label: "World" },
   { id: "macro", label: "Macro" },
@@ -40,10 +42,20 @@ export const PREDICTION_CATEGORY_OPTIONS: PredictionCategoryOption[] = [
   { id: "social", label: "Social" },
 ] as const;
 
-const CATEGORY_KEYWORDS: Record<
-  Exclude<PredictionCategoryId, "all">,
-  string[]
-> = {
+// "all" and "watchlist" filter by membership rather than by topic, so they have
+// no keywords and no venue-side category to request.
+type PredictionTopicCategoryId = Exclude<
+  PredictionCategoryId,
+  "all" | "watchlist"
+>;
+
+function isTopicCategory(
+  categoryId: PredictionCategoryId,
+): categoryId is PredictionTopicCategoryId {
+  return categoryId !== "all" && categoryId !== "watchlist";
+}
+
+const CATEGORY_KEYWORDS: Record<PredictionTopicCategoryId, string[]> = {
   politics: ["politics", "elections"],
   world: [
     "world",
@@ -84,7 +96,7 @@ const CATEGORY_KEYWORDS: Record<
 };
 
 const VENUE_CATEGORY_MAP: Record<
-  Exclude<PredictionCategoryId, "all">,
+  PredictionTopicCategoryId,
   PredictionVenueCategoryMap
 > = {
   politics: {
@@ -170,7 +182,7 @@ export function matchesPredictionCategory(
   market: PredictionCategoryTarget,
   categoryId: PredictionCategoryId,
 ): boolean {
-  if (categoryId === "all") return true;
+  if (!isTopicCategory(categoryId)) return true;
   const keywords = CATEGORY_KEYWORDS[categoryId];
   const haystack = [
     market.category ?? "",
@@ -186,14 +198,14 @@ export function matchesPredictionCategory(
 export function getPolymarketCategoryTagSlugs(
   categoryId: PredictionCategoryId,
 ): string[] {
-  if (categoryId === "all") return [];
+  if (!isTopicCategory(categoryId)) return [];
   return VENUE_CATEGORY_MAP[categoryId].polymarketTagSlugs;
 }
 
 export function getKalshiCategoryNames(
   categoryId: PredictionCategoryId,
 ): string[] {
-  if (categoryId === "all") return [];
+  if (!isTopicCategory(categoryId)) return [];
   return VENUE_CATEGORY_MAP[categoryId].kalshiCategories;
 }
 

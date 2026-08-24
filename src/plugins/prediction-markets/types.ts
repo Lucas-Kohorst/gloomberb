@@ -3,7 +3,7 @@ import type { PredictionCategoryId } from "./categories";
 
 export type PredictionVenue = "polymarket" | "kalshi";
 export type PredictionVenueScope = "all" | PredictionVenue;
-export type PredictionBrowseTab = "top" | "ending" | "new" | "watchlist";
+export type PredictionBrowseTab = "top" | "ending" | "new";
 export type PredictionDetailTab =
   | "overview"
   | "chart"
