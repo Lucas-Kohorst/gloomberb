@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
-import { hasEsgData, normalizeEsgScores } from "./client";
+import { buildEsgData, hasEsgData, normalizeEsgScores } from "./client";
 import type { EsgScores } from "./types";
 
 function quoteSummaryWithEsg(esg: Record<string, unknown> | null): QuoteSummaryResponse {
@@ -61,6 +61,17 @@ describe("normalizeEsgScores", () => {
     expect(scores.peerGroup).toBeNull();
   });
 
+  test("treats maxAge-only Yahoo payloads as empty scores", () => {
+    const data = quoteSummaryWithEsg({ maxAge: 86400 });
+    const result = data.quoteSummary!.result![0]!;
+    const scores = normalizeEsgScores(result);
+    expect(hasEsgData(scores)).toBe(false);
+    expect(scores.totalEsg).toBeNull();
+    expect(scores.environmentScore).toBeNull();
+    expect(scores.socialScore).toBeNull();
+    expect(scores.governanceScore).toBeNull();
+  });
+
   test("handles bare numeric values without { raw } wrappers", () => {
     const data = quoteSummaryWithEsg({
       totalEsg: 30,
@@ -111,6 +122,21 @@ describe("hasEsgData", () => {
 
   test("false when all fields are null", () => {
     expect(hasEsgData(emptyScores())).toBe(false);
+  });
+
+  test("true when only peer or controversy fields are present", () => {
+    expect(hasEsgData({ ...emptyScores(), peerGroup: "Software" })).toBe(true);
+    expect(hasEsgData({ ...emptyScores(), controversyLevel: "LOW" })).toBe(true);
+  });
+});
+
+describe("buildEsgData", () => {
+  test("empty Yahoo scores are a no-data payload, not an error", () => {
+    const data = buildEsgData("IBIT", { esgScores: { maxAge: 86400 } as never });
+    expect(hasEsgData(data.scores)).toBe(false);
+    expect(data.carbon).toBeNull();
+    expect(data.symbol).toBe("IBIT");
+    expect(data.sourceUrl).toContain("IBIT");
   });
 });
 
