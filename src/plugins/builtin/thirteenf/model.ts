@@ -1,4 +1,4 @@
-import { compareSortValues } from "../../../utils/sort-values";
+import { compareSortValues, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type {
   FilingPositionColumn,
   FilingPositionColumnId,
@@ -517,11 +517,7 @@ export function nextSortPreference<TColumn extends string>(
   columnId: TColumn,
   defaultDirection: SortDirection,
 ): FundSortPreference<TColumn> {
-  if (current.columnId !== columnId) return { columnId, direction: defaultDirection };
-  return {
-    columnId,
-    direction: current.direction === "asc" ? "desc" : "asc",
-  };
+  return nextSharedSortPreference(current, columnId, { defaultDirection }) as FundSortPreference<TColumn>;
 }
 
 export function buildBrowserColumns(width: number): FundBrowserColumn[] {

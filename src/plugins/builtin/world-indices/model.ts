@@ -1,5 +1,5 @@
 import type { MarketState } from "../../../types/financials";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { BoardQuoteMap } from "../shared/use-quote-board";
 import { REGION_ORDER, type IndexEntry } from "./indices";
 
@@ -85,13 +85,9 @@ export function nextSortPreference(
   current: WorldIndexSortPreference,
   columnId: string,
 ): WorldIndexSortPreference {
-  const typedColumnId = columnId as WorldIndexColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as WorldIndexColumnId, {
+    defaultDirection: "asc",
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as WorldIndexSortPreference;
 }
 

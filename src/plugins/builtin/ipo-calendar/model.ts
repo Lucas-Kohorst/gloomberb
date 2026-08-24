@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import { colors } from "../../../theme/colors";
 import type { IPORecord, IPOStatus } from "./types";
 import { formatMoneyCompact } from "../../../utils/format";
@@ -123,10 +123,10 @@ export function sortRows(rows: IPORecord[], sort: IPOSortPreference): IPORecord[
 }
 
 export function nextSortPreference(current: IPOSortPreference, columnId: string): IPOSortPreference {
-  const typed = columnId as IPOColumnId;
-  if (current.columnId !== typed) return { columnId: typed, direction: "asc" };
-  if (current.direction === "asc") return { columnId: typed, direction: "desc" };
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as IPOColumnId, {
+    defaultDirection: "asc",
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as IPOSortPreference;
 }
 
 export function matchesSearch(record: IPORecord, query: string): boolean {

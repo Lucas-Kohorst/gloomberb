@@ -3,7 +3,7 @@
  */
 
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { ScreenerResult } from "./types";
 
 export type ScreenerColumnId =
@@ -106,12 +106,7 @@ export function nextSortPreference(
   current: ScreenerSortPreference,
   columnId: string,
 ): ScreenerSortPreference {
-  const typedColumnId = columnId as ScreenerColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  if (current.direction === "desc") {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as ScreenerColumnId, {
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as ScreenerSortPreference;
 }

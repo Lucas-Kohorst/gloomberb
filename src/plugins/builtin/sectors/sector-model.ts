@@ -1,7 +1,7 @@
 import type { DataTableColumn } from "../../../components";
 import { type ColumnVisibilityColumn } from "../../../components/data-table/column-settings";
 import type { PricePoint } from "../../../types/financials";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import { getPricePointTimestamp } from "../../../utils/price-history";
 import {
   getSectorCollection,
@@ -210,21 +210,16 @@ export function sortRows(rows: SectorRow[], sortPreference: SectorSortPreference
   ));
 }
 
+const SECTOR_DESC_FIRST_COLUMNS = new Set<SectorColumnId>([
+  "changePercent",
+  "return1M",
+  "return1Y",
+  "bar",
+]);
+
 export function nextSortPreference(current: SectorSortPreference, columnId: string): SectorSortPreference {
-  const typedColumnId = columnId as SectorColumnId;
-  if (current.columnId !== typedColumnId) {
-    return {
-      columnId: typedColumnId,
-      direction: typedColumnId === "changePercent"
-        || typedColumnId === "return1M"
-        || typedColumnId === "return1Y"
-        || typedColumnId === "bar"
-        ? "desc"
-        : "asc",
-    };
-  }
-  if (current.direction === "desc") {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as SectorColumnId, {
+    defaultDirection: (id: SectorColumnId) => (SECTOR_DESC_FIRST_COLUMNS.has(id) ? "desc" : "asc"),
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as SectorSortPreference;
 }

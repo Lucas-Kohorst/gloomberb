@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { MarketSummaryQuote, ScreenerCategory, ScreenerQuote } from "./screener";
 
 export type TabId = "gainers" | "losers" | "actives" | "trending";
@@ -95,14 +95,10 @@ export function nextSortPreference(
   current: MarketMoverSortPreference,
   columnId: string,
 ): MarketMoverSortPreference {
-  const typedColumnId = columnId as MarketMoverColumnId;
-  if (current.columnId !== typedColumnId) {
-    return { columnId: typedColumnId, direction: "asc" };
-  }
-  if (current.direction === "asc") {
-    return { columnId: typedColumnId, direction: "desc" };
-  }
-  return DEFAULT_SORT_PREFERENCE;
+  return nextSharedSortPreference(current, columnId as MarketMoverColumnId, {
+    defaultDirection: "asc",
+    resetTo: DEFAULT_SORT_PREFERENCE,
+  }) as MarketMoverSortPreference;
 }
 
 export function createRows(quotes: ScreenerQuote[]): MarketMoverRow[] {
