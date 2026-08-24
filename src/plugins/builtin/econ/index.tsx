@@ -37,6 +37,7 @@ import {
   ECON_CALENDAR_CONNECTION_NAME,
 } from "./calendar-source";
 import { usePaneStatusFooter } from "../shared/pane-footer";
+import { useAppActive } from "../../../state/app/activity";
 
 let disposeEconCalendarConnection: (() => void) | null = null;
 
@@ -49,6 +50,7 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [impactFilter, setImpactFilter] = useState<ImpactFilter>("all");
   const [countryFilter, setCountryFilter] = useState<CountryFilter>("all");
   const [now, setNow] = useState(Date.now());
+  const appActive = useAppActive();
   const [detailEvent, setDetailEvent] = useState<EconEvent | null>(null);
 
   const fetchGenRef = useRef(0);
@@ -85,60 +87,65 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
 
   // Tick every 30s to update staleness + countdown
   useEffect(() => {
+    if (!appActive) return;
     const interval = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [appActive]);
 
   const filtered = useMemo(() => events
     .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
     .sort((a, b) => b.date.getTime() - a.date.getTime()),
   [countryFilter, events, impactFilter]);
 
-  // Build display rows with separator headers and NOW marker
-  const today = new Date(now);
-  const rows: DisplayRow[] = [];
-  let lastDateKey = "";
-  let nowInserted = false;
-  const hasPastEvents = filtered.some((ev) => ev.date.getTime() <= now);
-  const hasFutureEvents = filtered.some((ev) => ev.date.getTime() > now);
+  const { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx } = useMemo(() => {
+    // Build display rows with separator headers and NOW marker
+    const today = new Date(now);
+    const rows: DisplayRow[] = [];
+    let lastDateKey = "";
+    let nowInserted = false;
+    const hasPastEvents = filtered.some((ev) => ev.date.getTime() <= now);
+    const hasFutureEvents = filtered.some((ev) => ev.date.getTime() > now);
 
-  for (let i = 0; i < filtered.length; i++) {
-    const ev = filtered[i]!;
-    const dk = dateKey(ev.date);
+    for (let i = 0; i < filtered.length; i++) {
+      const ev = filtered[i]!;
+      const dk = dateKey(ev.date);
 
-    // Insert date separator if new day
-    if (dk !== lastDateKey) {
-      lastDateKey = dk;
-      rows.push({ kind: "separator", key: `separator-${dk}`, label: dayLabel(ev.date, today) });
-    }
-
-    // Reverse chronological order puts upcoming events above the present marker.
-    if (hasPastEvents && hasFutureEvents && !nowInserted && ev.date.getTime() <= now) {
-      nowInserted = true;
-      rows.push({ kind: "now", key: "now" });
-    }
-
-    rows.push({ kind: "event", key: `event-${ev.id}-${i}`, event: ev, eventIdx: i });
-  }
-
-  // Map from eventIdx to flat row index (for scroll tracking)
-  const eventIdxToRowIdx = new Map<number, number>();
-  let nowRowIdx = -1;
-  let nextUpcomingEventIdx = -1;
-  let nextUpcomingTime = Number.POSITIVE_INFINITY;
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r]!;
-    if (row.kind === "event") {
-      eventIdxToRowIdx.set(row.eventIdx, r);
-      const eventTime = row.event.date.getTime();
-      if (eventTime > now && eventTime < nextUpcomingTime) {
-        nextUpcomingEventIdx = row.eventIdx;
-        nextUpcomingTime = eventTime;
+      // Insert date separator if new day
+      if (dk !== lastDateKey) {
+        lastDateKey = dk;
+        rows.push({ kind: "separator", key: `separator-${dk}`, label: dayLabel(ev.date, today) });
       }
-    } else if (row.kind === "now") {
-      nowRowIdx = r;
+
+      // Reverse chronological order puts upcoming events above the present marker.
+      if (hasPastEvents && hasFutureEvents && !nowInserted && ev.date.getTime() <= now) {
+        nowInserted = true;
+        rows.push({ kind: "now", key: "now" });
+      }
+
+      rows.push({ kind: "event", key: `event-${ev.id}-${i}`, event: ev, eventIdx: i });
     }
-  }
+
+    // Map from eventIdx to flat row index (for scroll tracking)
+    const eventIdxToRowIdx = new Map<number, number>();
+    let nowRowIdx = -1;
+    let nextUpcomingEventIdx = -1;
+    let nextUpcomingTime = Number.POSITIVE_INFINITY;
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r]!;
+      if (row.kind === "event") {
+        eventIdxToRowIdx.set(row.eventIdx, r);
+        const eventTime = row.event.date.getTime();
+        if (eventTime > now && eventTime < nextUpcomingTime) {
+          nextUpcomingEventIdx = row.eventIdx;
+          nextUpcomingTime = eventTime;
+        }
+      } else if (row.kind === "now") {
+        nowRowIdx = r;
+      }
+    }
+
+    return { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx };
+  }, [filtered, now]);
 
   // On initial load, scroll to NOW and select the first upcoming event
   const initialScrollDone = useRef(false);

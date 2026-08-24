@@ -72,16 +72,18 @@ export function formatAxisValue(format: FearGreedValueFormat): (value: number) =
   return (value) => formatIndicatorValue(value, format);
 }
 
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+});
+
 export function formatUpdatedAt(date: Date | null): string {
   if (!date) return "Last updated --";
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).formatToParts(date);
+  const parts = UPDATED_AT_FORMATTER.formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
   return `Last updated ${part("month")} ${part("day")} at ${part("hour")}:${part("minute")} ${part("dayPeriod")} ET`;
 }
