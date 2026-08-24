@@ -1,5 +1,6 @@
 import { usePaneFooter, type PaneFooterSegment } from "../../../components";
 import {
+  countFailedQuotes,
   countLoadingQuotes,
   latestQuoteTimestamp,
   type BoardQuoteMap,
@@ -7,12 +8,19 @@ import {
 
 export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void) {
   const loadingCount = countLoadingQuotes(quotes);
+  const failedCount = countFailedQuotes(quotes);
   const latestQuoteTs = latestQuoteTimestamp(quotes);
 
   usePaneFooter("world-indices", () => {
     const info: PaneFooterSegment[] = [];
     if (loadingCount > 0) {
       info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
+    }
+    if (failedCount > 0) {
+      info.push({
+        id: "error",
+        parts: [{ text: `${failedCount} failed`, tone: "warning" }],
+      });
     }
     if (latestQuoteTs > 0) {
       info.push({
@@ -27,5 +35,5 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
       info,
       hints: [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }],
     };
-  }, [latestQuoteTs, loadingCount, onRefresh]);
+  }, [failedCount, latestQuoteTs, loadingCount, onRefresh]);
 }

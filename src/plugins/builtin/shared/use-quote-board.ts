@@ -105,6 +105,10 @@ export function countLoadingQuotes(quotes: BoardQuoteMap): number {
   return Array.from(quotes.values()).filter((state) => state.loading).length;
 }
 
+export function countFailedQuotes(quotes: BoardQuoteMap): number {
+  return Array.from(quotes.values()).filter((state) => state.error !== null).length;
+}
+
 export function latestQuoteTimestamp(quotes: BoardQuoteMap): number {
   return Math.max(0, ...Array.from(quotes.values()).map((state) => state.quote?.lastUpdated ?? 0));
 }
