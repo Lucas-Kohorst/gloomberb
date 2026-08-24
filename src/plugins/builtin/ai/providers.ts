@@ -61,7 +61,7 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
   {
     id: "browser-builtin",
     name: "Browser (on-device)",
-    outputModes: ["plain"],
+    outputModes: ["plain", "screener"],
     preferredModelIds: ["gemini-nano"],
     fastModelIds: ["gemini-nano"],
   },
@@ -189,7 +189,10 @@ export function aiProviderFromRuntime(provider: AiRuntimeProvider): AiProvider {
  * catalog. It contains only Pi providers and never performs CLI discovery.
  */
 export function detectProviders(): AiProvider[] {
-  if (detectedProviders) return detectedProviders;
+  // An empty array is truthy, so treating it as a successful catalog would
+  // freeze every surface on "No AI provider is available" after a failed
+  // hosted capability.invoke. Empty means "not yet detected".
+  if (detectedProviders != null && detectedProviders.length > 0) return detectedProviders;
   // Chrome's Prompt API only exists in the hosted web client. Listing the
   // on-device provider anywhere else offers a "sign in" action for a model
   // that cannot be signed into and is not present on the platform.
@@ -213,10 +216,10 @@ export function resolveDefaultAiProviderId(
 ): AiProviderId {
   if (isHostedWebClient()) {
     const browser = providers.find((provider) => provider.id === "browser-builtin");
-    // "ready" includes downloadable: selecting it lets the settings action
-    // perform the download under a user gesture. Never select a dead browser
-    // provider when Chrome reports it as unavailable.
-    if (browser?.status === "ready") return browser.id;
+    // Prefer Chrome on hosted even before availability settles so we do not
+    // persist a cloud provider as the default. "ready" includes downloadable.
+    // Never select a dead browser provider when Chrome reports it unavailable.
+    if (browser && browser.status !== "check_failed") return browser.id;
   }
   return providers.find((provider) => provider.status === "ready")?.id
     ?? providers[0]?.id
@@ -232,10 +235,14 @@ export function getAiProviderUnavailableLabel(provider: AiProvider): string {
 }
 
 export function setDetectedProviders(providers: AiProvider[] | null): void {
-  detectedProviders = providers?.map((provider) => ({
+  if (!providers || providers.length === 0) {
+    detectedProviders = null;
+    return;
+  }
+  detectedProviders = providers.map((provider) => ({
     ...provider,
     outputModes: [...provider.outputModes],
-  })) ?? null;
+  }));
 }
 
 export { isHostedWebClient } from "../../../shared/hosted-api";

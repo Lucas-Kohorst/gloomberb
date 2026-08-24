@@ -1,4 +1,5 @@
 import type { SecFilingItem } from "../../../types/data-provider";
+import { refreshBrowserAiState } from "../ai/browser";
 import { getAiProvider, getAiProviderUnavailableReason, resolveDefaultAiProviderId, type AiProvider } from "../ai/providers";
 import {
   checkAiProviderStatus,
@@ -63,11 +64,17 @@ const defaultRun: SummaryAiRunner = (options) => runAiPrompt({
   onChunk: options.onChunk,
 });
 
+export const NO_AI_PROVIDER_MESSAGE =
+  "No AI provider is available. Connect an AI provider in AI settings to summarize filings.";
+
+export const BROWSER_MODEL_DOWNLOAD_MESSAGE =
+  "Chrome's on-device model is not downloaded yet. Open Account Management → AI and click Download model, then summarize again.";
+
 function resolveProvider(providers: readonly AiProvider[]): AiProvider {
   const providerId = resolveDefaultAiProviderId(providers);
   const provider = getAiProvider(providerId, providers);
   if (!provider) {
-    throw new Error("No AI provider is available. Connect an AI provider in AI settings to summarize filings.");
+    throw new Error(NO_AI_PROVIDER_MESSAGE);
   }
   return provider;
 }
@@ -101,7 +108,15 @@ export async function summarizeFiling({
 
   const resolvedProviders = providers ?? [];
   const provider = resolveProvider(resolvedProviders);
-  if (!provider.available) {
+  if (provider.id === "browser-builtin") {
+    const state = await refreshBrowserAiState();
+    if (state.availability === "downloadable" || state.availability === "downloading") {
+      throw new Error(BROWSER_MODEL_DOWNLOAD_MESSAGE);
+    }
+    if (state.availability !== "available") {
+      throw new Error(getAiProviderUnavailableReason(provider));
+    }
+  } else if (!provider.available) {
     throw new Error(getAiProviderUnavailableReason(provider));
   }
 

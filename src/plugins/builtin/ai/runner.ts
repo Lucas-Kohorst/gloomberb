@@ -8,6 +8,7 @@ import {
   type AiProviderStatus,
 } from "./providers";
 import type { AiAgentHistoryMessage } from "./agent-history";
+import { browserAiProviderStatus, refreshBrowserAiState } from "./browser";
 import { withDeadline } from "../../../utils/async-deadline";
 import { withConnectionRequest } from "../connections/register";
 
@@ -190,8 +191,13 @@ export async function installAiRunHost(
     }
     return emptyCatalog;
   });
-  setAiRuntimeCatalog(catalog);
-  return getAiRuntimeCatalog();
+  // Hosted capability.invoke fails closed with []. Publishing that would wipe
+  // the Chrome on-device provider that detectProviders already listed.
+  if (catalog.providers.length > 0) {
+    setAiRuntimeCatalog(catalog);
+    return getAiRuntimeCatalog();
+  }
+  return emptyCatalog;
 }
 
 export function setAiRuntimeCatalog(catalog: AiRuntimeCatalog): void {
@@ -249,6 +255,24 @@ export async function checkAiProviderStatus(
   provider: AiProvider | AiProviderId,
 ): Promise<AiProviderStatusResult> {
   const providerId = canonicalProviderId(typeof provider === "string" ? provider : provider.id);
+  if (providerId === "browser-builtin") {
+    try {
+      const state = await refreshBrowserAiState();
+      const status = browserAiProviderStatus(state);
+      return {
+        available: status.available,
+        authenticated: status.available,
+        message: status.available ? null : (status.unavailableReason ?? state.reason),
+      };
+    } catch (error) {
+      return {
+        available: false,
+        authenticated: false,
+        inconclusive: true,
+        message: error instanceof Error ? error.message : "Browser AI status check failed.",
+      };
+    }
+  }
   if (configuredHost?.checkStatus) {
     // Every provider must reach a terminal state — available / not
     // authenticated / error — even when the underlying auth check hangs.

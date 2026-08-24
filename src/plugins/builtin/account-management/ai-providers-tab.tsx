@@ -24,7 +24,7 @@ import {
   checkAiProviderStatus,
   connectAiRuntimeProvider,
 } from "../ai/runner";
-import { getBrowserAiStateSnapshot, refreshBrowserAiState } from "../ai/browser";
+import { downloadBrowserAiModel, getBrowserAiStateSnapshot, refreshBrowserAiState } from "../ai/browser";
 import { isHostedWebClient } from "../ai/providers";
 import {
   aiInventoryFixAction,
@@ -337,33 +337,28 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     }
   }, [selectedRow]);
 
-  const handleFix = useCallback(() => {
-    if (!selectedRow) return;
-    const action = aiInventoryFixAction(selectedRow);
-    if (!action) return;
-    switch (action.kind) {
-      case "add-key":
-      case "download-model":
-        if (action.kind === "download-model") {
-          void handleRefresh();
-        } else {
-          handleAddKey();
-        }
-        break;
-      case "start-ollama":
-        handleAddKey();
-        break;
-      case "sign-in":
-        void handleSignIn();
-        break;
-      case "none":
-        break;
+  const handleDownloadModel = useCallback(async () => {
+    setBusyProvider("browser-builtin");
+    try {
+      setBrowserAiState(await downloadBrowserAiModel());
+      setActiveProvider("browser-builtin");
+    } catch {
+      if (isHostedWebClient()) {
+        setBrowserAiState(await refreshBrowserAiState());
+      }
+    } finally {
+      setBusyProvider(null);
     }
-  }, [selectedRow, handleAddKey, handleRefresh, handleSignIn]);
+  }, [setActiveProvider]);
 
   const columns = useMemo(() => buildAiColumns(width), [width]);
   const editing = keyFormMode !== "idle";
-  const canActivate = selectedRow != null && canSelectAiProvider(selectedRow) && !selectedRow.isActive;
+  const canDownloadModel = selectedRow?.id === "browser-builtin"
+    && selectedRow.status === "needs-key";
+  const canActivate = selectedRow != null
+    && canSelectAiProvider(selectedRow)
+    && !selectedRow.isActive
+    && !canDownloadModel;
   const canAddKey = selectedRow != null && selectedRow.byokServiceId != null;
   const canDeleteKey = selectedRow != null && selectedRow.byokServiceId != null && selectedRow.hasKey;
   const canSignIn = selectedRow != null && selectedRow.canOAuth && !selectedRow.hasKey && selectedRow.status !== "available";
@@ -380,13 +375,14 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
           { id: "cancel-key", key: "Esc", label: " cancel", onPress: handleCancelKey },
         ]
       : [
+          ...(canDownloadModel ? [{ id: "download-model", key: "m", label: "odel", onPress: () => { void handleDownloadModel(); } }] : []),
           ...(canActivate ? [{ id: "activate", key: "Enter", label: "activate", onPress: handleActivate }] : []),
           ...(canAddKey ? [{ id: "add-key", key: "k", label: "ey", onPress: handleAddKey }] : []),
           ...(canSignIn ? [{ id: "sign-in", key: "s", label: "ign in", onPress: () => { void handleSignIn(); } }] : []),
           ...(canRefresh ? [{ id: "refresh", key: "r", label: "efresh", onPress: () => { void handleRefresh(); } }] : []),
           ...(canDeleteKey ? [{ id: "delete-key", key: "d", label: "elete key", onPress: handleDeleteKey }] : []),
         ],
-  }), [busyProvider, editing, canActivate, canAddKey, canSignIn, canRefresh, canDeleteKey, handleActivate, handleAddKey, handleSignIn, handleRefresh, handleDeleteKey, handleSaveKey, handleCancelKey, selectedRow]);
+  }), [busyProvider, editing, canActivate, canAddKey, canSignIn, canRefresh, canDeleteKey, canDownloadModel, handleActivate, handleAddKey, handleSignIn, handleRefresh, handleDeleteKey, handleSaveKey, handleCancelKey, handleDownloadModel, selectedRow]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -404,10 +400,20 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
       return;
     }
     if (event.name === "enter" || event.name === "return") {
+      if (canDownloadModel) {
+        event.stopPropagation();
+        void handleDownloadModel();
+        return;
+      }
       if (canActivate) {
         event.stopPropagation();
         handleActivate();
       }
+      return;
+    }
+    if ((event.name === "m" || event.name === "M") && canDownloadModel) {
+      event.stopPropagation();
+      void handleDownloadModel();
       return;
     }
     if (event.name === "k" && canAddKey) {
@@ -481,6 +487,10 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
             getItemKey={(row) => row.id}
             renderCell={renderAiCell}
             onActivate={(row) => {
+              if (row.id === "browser-builtin" && row.status === "needs-key") {
+                void handleDownloadModel();
+                return;
+              }
               if (canSelectAiProvider(row) && !row.isActive) setActiveProvider(row.id);
             }}
             emptyStateTitle="No AI providers available."
