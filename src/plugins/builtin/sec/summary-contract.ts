@@ -222,8 +222,11 @@ export function renderFilingSummary(summary: FilingSummary): string {
 }
 
 /**
- * Finds the most recent prior filing of the same form (excluding amendments)
- * to use as a comparison baseline. Returns null when none is available.
+ * Finds the most recent prior filing whose form string matches `current`
+ * exactly, to use as a comparison baseline. Returns null when none is
+ * available. Matching the exact string means a 10-K is compared against the
+ * previous 10-K rather than an intervening 10-K/A, and an amendment is
+ * compared against the previous amendment.
  */
 export function findPriorComparableFiling(
   filings: readonly SecFilingItem[],
