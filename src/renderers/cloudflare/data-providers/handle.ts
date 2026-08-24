@@ -171,10 +171,11 @@ async function executeProxy(
           headers,
           signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
         });
-        if (
-          upstream.ok
-          || (upstream.status < 500 && !isOriginTimeoutStatus(upstream.status))
-        ) {
+        const retryOtherOrigin =
+          isOriginTimeoutStatus(upstream.status)
+          || upstream.status >= 500
+          || (upstream.status === 401 && urlIndex === 0 && urls.length > 1);
+        if (upstream.ok || !retryOtherOrigin) {
           return new Response(upstream.body, {
             status: upstream.status,
             headers: {

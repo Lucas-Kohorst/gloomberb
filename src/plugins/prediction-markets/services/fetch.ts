@@ -79,7 +79,7 @@ export function isHostedOriginFailureError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (isBlockedRequestError(error)) return true;
   const message = error.message;
-  if (/Request failed \((522|524|530|502|503|504)\)/.test(message)) return true;
+  if (/Request failed \((401|403|522|524|530|502|503|504)\)/.test(message)) return true;
   return /timed out|timeout|TimeoutError|The operation was aborted/i.test(message);
 }
 
