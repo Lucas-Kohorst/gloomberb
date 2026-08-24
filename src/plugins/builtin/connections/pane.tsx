@@ -16,6 +16,7 @@ import {
 import { ConnectionDetailContent } from "./detail";
 import { useConnectionsFooter } from "./footer";
 import { useConnectionsKeyboard } from "./keyboard";
+import { useAppActive } from "../../../state/app/activity";
 
 let sharedTracker: ConnectionTracker | null = null;
 
@@ -28,6 +29,7 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const appActive = useAppActive();
   const [sortPreference, setSortPreference] = useState<ConnectionSortPreference>({
     columnId: "status",
     direction: "asc",
@@ -44,9 +46,10 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
+    if (!appActive) return;
     const interval = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [appActive]);
 
   const sortedConnections = useMemo(
     () => sortConnections(connections, sortPreference),
