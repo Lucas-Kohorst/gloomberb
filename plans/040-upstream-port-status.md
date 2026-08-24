@@ -174,12 +174,95 @@ Not applicable. Upstream-specific: `term.gloom.sh/s/*` with team
 
 ---
 
+## Second pass: #622, #623, #624
+
+Upstream landed three more commits after the review above.
+
+### #622 — edit price alerts → PR #195
+Ported. Self-contained feature: alerts could only be created and deleted.
+
+The valuable part is that `editAlert()` rebuilds the rule from a whitelist
+instead of spreading it, dropping all trigger and quote lifecycle state. That
+matters more here than upstream, because this fork's `AlertRule` carries six such
+fields where upstream's carries one, and a re-armed `crosses` alert holding a
+stale `lastCheckedPrice` evaluates against the reading that fired it.
+
+> **Follow-up spotted while porting:** the fork's existing `rearmAlert`
+> (`alerts/pane.tsx:101-113`) clears only `triggeredAt` and `lastCheckError` via
+> spread and keeps `lastCheckedPrice`. That is the exact hazard `editAlert`
+> avoids, so re-arming a `crosses` alert may re-fire it immediately. Looks like a
+> real bug, filed here rather than fixed inside the port.
+
+### #623 and #624 — browser cookie sessions
+**Do not port. The fork already solved this, differently.**
+
+Both commits fix the same root cause. Upstream's description of #623:
+
+> the HttpOnly cookie leaves `getSessionToken()` null, which kept Log In/Sign Up
+> visible and hid Logout, Upgrade, account management, and own-profile refresh
+> for signed-in web users
+
+That is a real bug — but upstream's, not this fork's. The two codebases fixed it
+independently:
+
+| | Mechanism |
+|---|---|
+| **Upstream** | `cookieSessionMode` flag on the transport, plus `hasSessionCredential()`, plus a new `isSignedIn()` (`!!token \|\| !!currentUser`). Token stays `null` in the browser and every gate is rewritten to ask the new predicates. |
+| **This fork** | A sentinel token. `request.ts:166-167` sets `sessionToken = "hosted-session"` on any response carrying `x-gloom-hosted-session: 1`, and `web-main.tsx:96` sets it at boot. `getSessionToken()` is therefore **truthy** for signed-in hosted users. |
+
+Because the sentinel is truthy, all 35 of the fork's `getSessionToken()`
+truthiness gates already behave correctly on the hosted client, and `isVerified()`
+(`api-client/index.ts:178`) works without needing `hasSessionCredential()`.
+
+Porting upstream's version would mean swapping a working mechanism for a
+different working one across ~20 call sites, and *mixing* them would be worse
+than either: with the sentinel in place, `isSignedIn()` would be redundant, while
+removing the sentinel to adopt `cookieSessionMode` touches the socket handshake
+path (`socket.ts:454-456` explicitly relies on the opaque `hosted-session`
+token).
+
+#623 also carries an auth-dialog rewrite, five i18n dictionaries, and direct
+Stripe checkout/portal calls. The Stripe half is upstream's billing backend and
+does not apply here at all.
+
+**One thing worth verifying, though.** The sentinel approach has a hazard
+upstream's does not: anything that calls `apiClient.setSessionToken()` from
+persisted state can overwrite the sentinel with `null`. `chat/controller/session-runtime.ts:51-52`
+does exactly that:
+
+```ts
+session.sessionToken = storedSession?.sessionToken ?? null;
+apiClient.setSessionToken(session.sessionToken);
+```
+
+On a hosted browser, chat's persisted session state has no token, so this clears
+the sentinel and every `sessionToken` gate in the chat controller
+(`realtime.ts:29,69`, plus `canConnect`, `canSyncReadState`, and the send guard)
+goes false. Upstream's #624 deleted this code path entirely, which is consistent
+with them having hit it.
+
+It should self-heal, since `extractSessionCookie` re-sets the sentinel on the
+next response carrying the hosted header, so the expected symptom is chat being
+intermittently dead after load rather than permanently broken. That makes it a
+race, and it needs runtime confirmation in a hosted browser before anyone
+"fixes" it. Not shipped speculatively.
+
+If it does reproduce, the fix is local and small: do not clear a hosted sentinel
+from persisted chat state, i.e. only call `setSessionToken` when
+`storedSession?.sessionToken` is non-null, or adopt upstream's
+`restoredUser = apiClient.getCurrentUser() ?? storedSession?.user` ordering.
+
+---
+
 ## Suggested order for the remainder
 
-1. **#621 baseline half** — real bug, real data-loss risk, needs care
-2. **#617 posture** — decide first, then implement; it is a one-line-ish change
+1. **Verify the chat sentinel race** above in a hosted browser — cheap to check,
+   and it is the difference between chat working and chat silently not
+2. **#621 baseline half** — real bug, real data-loss risk, needs care
+3. **#617 posture** — decide first, then implement; it is a one-line-ish change
    once decided
-3. `AGENTS.md` corrections — the `origin`/`gloomsh` swap and the stale
+4. `rearmAlert` stale-baseline bug noted under #622
+5. `AGENTS.md` corrections — the `origin`/`gloomsh` swap and the stale
    "Cloudflare stack is fork-only" claim
-4. Optional: upstream's `options-calculator` plugin, and the P3 Kalshi proxy
+6. Optional: upstream's `options-calculator` plugin, and the P3 Kalshi proxy
    OPTIONS/preflight gap
