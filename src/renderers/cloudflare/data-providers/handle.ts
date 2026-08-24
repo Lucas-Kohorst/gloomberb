@@ -9,6 +9,10 @@ import {
 } from "./types";
 
 const PROXY_TIMEOUT_MS = 12_000;
+const PROXY_ORIGIN_RETRIES = 2;
+const CLOUDFLARE_ORIGIN_TIMEOUT_STATUSES = new Set([522, 524, 530]);
+const ADJACENT_ORIGIN_HOST = "api.adjacent.markets";
+const ADJACENT_PUBLIC_PREFIXES = new Set(["markets", "indices", "rates", "events"]);
 const MAX_PRINT_CACHE = 256;
 
 interface MemoryCacheEntry {
@@ -50,6 +54,28 @@ function attachSecret(headers: Headers, provider: KeyedDataProvider, env: Env): 
 
 function cacheControlFor(ttlSeconds: number): string {
   return `public, max-age=${ttlSeconds}`;
+}
+
+/** Auth Adjacent URLs 522 when Cloudflare cannot reach Adjacent origin; public is cached. */
+export function adjacentPublicFallbackUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.hostname !== ADJACENT_ORIGIN_HOST) return null;
+  if (!parsed.pathname.startsWith("/api/v1/")) return null;
+  const rest = parsed.pathname.slice("/api/v1/".length);
+  if (!rest || rest.startsWith("public/")) return null;
+  const head = rest.split("/")[0] ?? "";
+  if (!ADJACENT_PUBLIC_PREFIXES.has(head)) return null;
+  parsed.pathname = `/api/v1/public/${rest}`;
+  return parsed.toString();
+}
+
+function isOriginTimeoutStatus(status: number): boolean {
+  return CLOUDFLARE_ORIGIN_TIMEOUT_STATUSES.has(status);
 }
 
 function cachedResponse(entry: MemoryCacheEntry): Response {
@@ -125,25 +151,46 @@ async function executeProxy(
   if (target.protocol !== "https:") return jsonError("Unsupported protocol", 400);
   if (isPrivateHostname(target.hostname)) return jsonError("Blocked target", 403);
 
-  const headers = new Headers({
-    Accept: "application/json",
-    "User-Agent": provider.userAgent,
-    ...plan.extraHeaders,
-  });
-  attachSecret(headers, provider, env);
+  const urls = [target.toString()];
+  const publicFallback = adjacentPublicFallbackUrl(target.toString());
+  if (publicFallback) urls.push(publicFallback);
 
-  const upstream = await fetch(target.toString(), {
-    method: "GET",
-    headers,
-    signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
-  });
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "content-type": upstream.headers.get("content-type") ?? "application/json",
-      "cache-control": cacheControlFor(provider.ttlSeconds),
-    },
-  });
+  let lastStatus = 502;
+  for (const [urlIndex, url] of urls.entries()) {
+    const useSecret = urlIndex === 0;
+    for (let attempt = 0; attempt < PROXY_ORIGIN_RETRIES; attempt += 1) {
+      const headers = new Headers({
+        Accept: "application/json",
+        "User-Agent": provider.userAgent,
+        ...plan.extraHeaders,
+      });
+      if (useSecret) attachSecret(headers, provider, env);
+      try {
+        const upstream = await fetch(url, {
+          method: "GET",
+          headers,
+          signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+        });
+        const retryOtherOrigin =
+          isOriginTimeoutStatus(upstream.status)
+          || upstream.status >= 500
+          || (upstream.status === 401 && urlIndex === 0 && urls.length > 1);
+        if (upstream.ok || !retryOtherOrigin) {
+          return new Response(upstream.body, {
+            status: upstream.status,
+            headers: {
+              "content-type": upstream.headers.get("content-type") ?? "application/json",
+              "cache-control": cacheControlFor(provider.ttlSeconds),
+            },
+          });
+        }
+        lastStatus = upstream.status;
+      } catch {
+        lastStatus = 502;
+      }
+    }
+  }
+  return jsonError("Upstream origin timeout", isOriginTimeoutStatus(lastStatus) ? 502 : lastStatus);
 }
 
 async function executePrint(

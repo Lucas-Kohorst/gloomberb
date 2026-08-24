@@ -118,7 +118,7 @@ describe("hosted Adjacent Kalshi catalog URL", () => {
       page: 1,
     });
 
-    expect(url).toContain("/api/data/adjacent/markets");
+    expect(url).toContain("/api/feed/mkt/markets");
     expect(url).toContain("platform=kalshi");
     expect(url).toContain("scope=all");
     expect(url).toContain("per_page=50");
@@ -128,16 +128,15 @@ describe("hosted Adjacent Kalshi catalog URL", () => {
     expect(url.includes("limit=")).toBe(false);
   });
 
-  // A content blocker kills `/api/data/adjacent/*` before it leaves Chrome, so
-  // retrying the same path can only ever fail again.
-  test("switches to the blocker-safe route for the session once blocked", async () => {
+  // `/api/data/adjacent` is matched by filter lists; `/api/feed/mkt` is the
+  // default. A 522 means the Worker could not reach Adjacent origin, so the
+  // browser has to go to Adjacent itself (CORS *).
+  test("falls back to Adjacent public origin after a Worker 522", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
     resetHostedAdjacentPathFallback();
     const requested: string[] = [];
     const realFetch = globalThis.fetch;
     const realLocation = globalThis.location;
-    // Blocked-request detection is same-origin only, so the hosted origin has
-    // to be present for this to exercise anything.
     Object.defineProperty(globalThis, "location", {
       value: { origin: "https://terminal.kohor.st" },
       configurable: true,
@@ -146,18 +145,24 @@ describe("hosted Adjacent Kalshi catalog URL", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       requested.push(url);
-      if (url.includes("/api/data/adjacent")) throw new TypeError("Failed to fetch");
-      return new Response(JSON.stringify({ data: [NBA_SPURS] }), { status: 200 });
+      if (url.includes("/api/feed/mkt")) {
+        return new Response("error code: 522", { status: 522 });
+      }
+      if (url.includes("api.adjacent.markets/api/v1/public/markets")) {
+        return new Response(JSON.stringify({ data: [NBA_SPURS] }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
     }) as unknown as typeof fetch;
 
     try {
       const first = await fetchHostedAdjacentKalshiCatalogPage({ page: 1 });
       expect(first.markets[0]?.marketId).toBe("KXNBA-26-SAS");
-      expect(requested.at(-1)).toContain("/api/feed/mkt/markets");
+      expect(requested[0]).toContain("/api/feed/mkt/markets");
+      expect(requested.at(-1)).toContain("api.adjacent.markets/api/v1/public/markets");
 
       requested.length = 0;
       await fetchHostedAdjacentKalshiCatalogPage({ page: 2 });
-      expect(requested.every((url) => url.includes("/api/feed/mkt/"))).toBe(true);
+      expect(requested.every((url) => url.includes("api.adjacent.markets/api/v1/public/"))).toBe(true);
     } finally {
       globalThis.fetch = realFetch;
       Object.defineProperty(globalThis, "location", {

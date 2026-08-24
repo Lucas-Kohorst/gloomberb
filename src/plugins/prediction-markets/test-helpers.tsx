@@ -25,6 +25,7 @@ import {
   attachPredictionMarketsPersistence,
 } from "./services/fetch";
 import { normalizeKalshiMarket } from "./services/kalshi/adapter";
+import { resetHostedAdjacentPathFallback } from "./services/kalshi/adjacent-catalog";
 import type { PredictionCategoryId } from "./categories";
 import type { PredictionDetailTab } from "./types";
 
@@ -691,6 +692,7 @@ export async function cleanupPredictionTest(
   globalThis.fetch = originalFetch;
   globalThis.WebSocket = originalWebSocket;
   attachPredictionMarketsPersistence(new MemoryPluginPersistence());
+  resetHostedAdjacentPathFallback();
 }
 
 export { PREDICTION_CACHE_POLICIES };

@@ -578,7 +578,7 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes("/api/data/adjacent/markets")) {
+      if (url.includes("/api/feed/mkt/markets")) {
         return new Response(
           JSON.stringify({
             data: [
@@ -611,7 +611,7 @@ describe("prediction markets plugin registration and services", () => {
       expect(markets[0]?.yesPrice).toBe(0.65);
       expect(
         fetchUrls.some((url) =>
-          url.includes("/api/data/adjacent/markets") &&
+          url.includes("/api/feed/mkt/markets") &&
           url.includes("platform=kalshi") &&
           url.includes("per_page="),
         ),
@@ -652,7 +652,7 @@ describe("prediction markets plugin registration and services", () => {
           { status: 429 },
         );
       }
-      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS/prices")) {
+      if (url.includes("markets/kalshi:KXNBA-26-SAS/prices")) {
         return new Response(
           JSON.stringify({
             data: [
@@ -666,7 +666,7 @@ describe("prediction markets plugin registration and services", () => {
           { status: 200 },
         );
       }
-      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS/trades")) {
+      if (url.includes("markets/kalshi:KXNBA-26-SAS/trades")) {
         return new Response(
           JSON.stringify({
             data: [
@@ -682,7 +682,7 @@ describe("prediction markets plugin registration and services", () => {
           { status: 200 },
         );
       }
-      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS")) {
+      if (url.includes("markets/kalshi:KXNBA-26-SAS")) {
         return new Response(
           JSON.stringify({
             market_id: "kalshi:KXNBA-26-SAS",
@@ -696,7 +696,7 @@ describe("prediction markets plugin registration and services", () => {
           { status: 200 },
         );
       }
-      if (url.includes("/adjacent/events/kalshi:KXNBA-26")) {
+      if (url.includes("events/kalshi:KXNBA-26")) {
         return new Response(
           JSON.stringify({
             event_id: "kalshi:KXNBA-26",
