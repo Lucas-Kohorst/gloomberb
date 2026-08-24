@@ -167,13 +167,12 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
         id: "filters",
         parts: [{ text: `${filterCount} filter${filterCount > 1 ? "s" : ""}`, tone: "muted" as const }],
       }] : []),
-      { id: "count", parts: [{ text: `${rows.length} rows`, tone: "muted" as const }] },
     ],
     hints: [
       { id: "search", key: "s", label: "earch", onPress: activateSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
-  }), [activateSearch, filterCount, loadError, loading, refresh, rows.length]);
+  }), [activateSearch, filterCount, loadError, loading, refresh]);
 
   if (loading && allResults.length === 0) {
     return (
