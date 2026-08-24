@@ -10,6 +10,7 @@ import {
 } from "../../../../../components";
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { blendHex, colors } from "../../../../../theme/colors";
+import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { newsOriginLabel } from "../../../../../news/origins";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
@@ -254,7 +255,10 @@ export function NewsArticleStackView({
         };
       }
       case "categories":
-        return { text: item.categories[0] ?? "—", color: selectedColor ?? colors.textDim };
+        return {
+          text: item.categories[0] ? formatNewsCategoryLabel(item.categories[0]) : "—",
+          color: selectedColor ?? colors.textDim,
+        };
       case "importance":
         return {
           text: String(item.importance),

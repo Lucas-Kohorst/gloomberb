@@ -18,6 +18,17 @@ export function normalizeNewsCategory(category: string): string {
   return category.trim().toLowerCase();
 }
 
+export function formatNewsCategoryLabel(category: string): string {
+  return category
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export function normalizeNewsFeed(query: NewsQuery): NewsFeed {
   if (query.feed && FEEDS.has(query.feed)) return query.feed;
   return query.scope === "ticker" ? "ticker" : "latest";
