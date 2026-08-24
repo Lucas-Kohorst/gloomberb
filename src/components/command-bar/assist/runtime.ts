@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   apiClient,
   type AssistCommandCandidate,
-  type AssistCommandDescriptor,
 } from "../../../api-client";
 import { ApiRequestError } from "../../../api-client/errors";
+import { runBrowserAssistCommand } from "../../../plugins/builtin/ai/assist-local";
 import type { AssistErrorKind, AssistRequestSource, AssistRequestState } from "./model";
 
 /** Quiet period after the last keystroke before the query is sent. */
@@ -106,9 +106,20 @@ export function useCommandBarAssist({
 
     void (async () => {
       try {
-        const response = await apiClient.assistCommand(trimmed, getInventoryRef.current(), {
-          signal: controller.signal,
-        });
+        const inventory = getInventoryRef.current();
+        let response: { candidates?: AssistCommandCandidate[] } | null = null;
+        try {
+          response = await apiClient.assistCommand(trimmed, inventory, {
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          const local = await runBrowserAssistCommand(trimmed, inventory, {
+            signal: controller.signal,
+          });
+          if (!local) throw error;
+          response = local;
+        }
         if (controller.signal.aborted) return;
         const candidates = response?.candidates ?? [];
         answersRef.current.set(trimmed, candidates);

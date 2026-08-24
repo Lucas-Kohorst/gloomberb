@@ -233,7 +233,7 @@ export const aiPlugin: GloomPlugin = {
             ...(browserStatus.unavailableReason
               ? { unavailableReason: browserStatus.unavailableReason }
               : {}),
-            outputModes: ["plain"],
+            outputModes: ["plain", "screener"],
             defaultModelId: "gemini-nano",
           },
         ]);

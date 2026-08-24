@@ -204,20 +204,74 @@ export const browserAiRuntimeProvider: AiRuntimeProvider = {
   providerId: "browser-builtin",
   label: "Browser (on-device)",
   status: "ready",
-  outputModes: ["plain"],
+  outputModes: ["plain", "screener"],
   defaultModelId: "gemini-nano",
 };
 
-/** Host adapter used by the web renderer; the native Pi host remains untouched. */
+export function buildBrowserAiRuntimeCatalog(state: BrowserAiState): AiRuntimeCatalog {
+  const status = browserAiProviderStatus(state);
+  return {
+    providers: [{
+      ...browserAiRuntimeProvider,
+      status: status.status,
+      ...(status.unavailableReason ? { unavailableReason: status.unavailableReason } : {}),
+    }],
+    accounts: [{
+      providerId: "browser-builtin",
+      providerLabel: "Browser (on-device)",
+      connectionState: status.available ? "connected" : "not_connected",
+      connectionLabel: state.reason,
+      authMethods: [],
+      canLogin: false,
+      canDisconnect: false,
+    }],
+    models: [{
+      id: "gemini-nano",
+      providerId: "browser-builtin",
+      label: "Gemini Nano",
+      available: status.available,
+    }],
+  };
+}
+
+const HOSTED_PROVIDER_UNAVAILABLE = "is not available in the hosted client.";
+
+/** Host adapter used by the hosted web renderer; the native Pi host remains untouched. */
 export function createBrowserAiRunHost(
-  catalog: AiRuntimeCatalog,
+  catalog?: AiRuntimeCatalog,
 ): AiRunHost {
   return {
-    getCatalog: async () => catalog,
-    run: ({ prompt, messages, onChunk }) => createBrowserAiRunController({
-      prompt,
-      messages,
-      onChunk,
-    }),
+    async getCatalog() {
+      return catalog ?? buildBrowserAiRuntimeCatalog(await refreshBrowserAiState());
+    },
+    async checkStatus(providerId) {
+      if (providerId !== "browser-builtin") {
+        return {
+          available: false,
+          authenticated: false,
+          message: `${providerId} ${HOSTED_PROVIDER_UNAVAILABLE}`,
+        };
+      }
+      const state = await refreshBrowserAiState();
+      const status = browserAiProviderStatus(state);
+      return {
+        available: status.available,
+        authenticated: status.available,
+        message: status.available ? null : (status.unavailableReason ?? state.reason),
+      };
+    },
+    run({ providerId, prompt, messages, onChunk }) {
+      if (providerId !== "browser-builtin") {
+        return {
+          done: Promise.reject(new Error(`${providerId} ${HOSTED_PROVIDER_UNAVAILABLE}`)),
+          cancel: () => {},
+        };
+      }
+      return createBrowserAiRunController({
+        prompt,
+        messages,
+        onChunk,
+      });
+    },
   };
 }
