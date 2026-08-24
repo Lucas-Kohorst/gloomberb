@@ -16,7 +16,7 @@ export const SECTOR_NEWS_SECTORS = [
 export type SectorNewsSelection = "all" | typeof SECTOR_NEWS_SECTORS[number];
 
 export const NEWS_QUERY_PRESETS = {
-  top: { feed: "top", limit: 50 } satisfies NewsQuery,
+  top: { feed: "latest", limit: 10 } satisfies NewsQuery,
   feed: { feed: "latest", limit: 200 } satisfies NewsQuery,
   breaking: { feed: "breaking", breaking: true, limit: 50 } satisfies NewsQuery,
   sectorAll: { feed: "sector", limit: 100 } satisfies NewsQuery,

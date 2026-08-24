@@ -377,6 +377,9 @@ export function PredictionMarketDetailPane({
         <PredictionNewsTab
           client={adjacentClient}
           lookup={adjacentLookup}
+          focused={focused}
+          width={detailWidth}
+          height={detailBodyHeight}
         />
       )}
     </>

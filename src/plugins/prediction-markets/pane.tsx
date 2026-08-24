@@ -112,6 +112,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     if (venue === "polymarket") return "live";
     return null;
   }, [controller.detailOpen, controller.selectedSummary?.venue]);
+  const newsTabOpen = controller.detailOpen && controller.detailTab === "news";
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "g" && graphExpression) {
@@ -120,11 +121,11 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       graphSelected();
       return;
     }
-    if (event.name !== "o" || !marketUrl) return;
+    if (newsTabOpen || event.name !== "o" || !marketUrl) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     openMarket();
-  }, { enabled: focused && (!!marketUrl || !!graphExpression) });
+  }, { enabled: focused && ((!newsTabOpen && !!marketUrl) || !!graphExpression) });
   usePaneFooter("prediction-markets", () => {
     return {
       info: [
@@ -153,7 +154,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
             },
           },
         ] : []),
-        ...(marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
+        ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
       ],
     };
   }, [
@@ -162,6 +163,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
     controller.detailOpen,
+    controller.detailTab,
     controller.lastRefreshAt,
     controller.searchLoading,
     controller.searchQuery,
@@ -170,6 +172,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     graphExpression,
     graphSelected,
     marketUrl,
+    newsTabOpen,
     openMarket,
     pollLabel,
     updatedAgo,
