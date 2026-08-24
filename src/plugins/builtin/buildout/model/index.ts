@@ -1,5 +1,7 @@
 import { apiClient } from "../../../../api-client";
 import { httpFetch } from "../../../../utils/http-transport";
+import { withConnectionRequest } from "../../connections/register";
+import { BUILDOUT_CONNECTION_ID } from "../connection";
 import type {
   BuildoutAccess,
   BuildoutCompaniesPayload,
@@ -51,14 +53,19 @@ function buildPath(path: string, params: Record<string, string | number | boolea
 }
 
 export async function buildoutApi<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const response = await httpFetch(`${BUILDOUT_API_URL}${path}`, { ...init, headers });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(body || `${BUILDOUT_NAME} request failed (${response.status})`);
-  }
-  return response.json() as Promise<T>;
+  // Every buildout endpoint funnels through here, so the query string is dropped
+  // to keep one Connections row per endpoint rather than one per page offset.
+  const operation = path.split("?")[0]?.replace(/^\//, "") || "request";
+  return withConnectionRequest(BUILDOUT_CONNECTION_ID, operation, async () => {
+    const headers = new Headers(init.headers);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await httpFetch(`${BUILDOUT_API_URL}${path}`, { ...init, headers });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(body || `${BUILDOUT_NAME} request failed (${response.status})`);
+    }
+    return response.json() as Promise<T>;
+  });
 }
 
 async function fetchLists(token: string | null) {
