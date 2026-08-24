@@ -4,7 +4,10 @@ import { useShortcut } from "../../../react/input";
 import { isPlainArrowDown, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { getAdjacentPredictionCategoryId } from "../categories";
 import { resolvePredictionKeyboardCommand } from "../keyboard";
-import { getAdjacentPredictionVenueScope } from "../navigation";
+import {
+  getAdjacentPredictionBrowseTab,
+  getAdjacentPredictionVenueScope,
+} from "../navigation";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -30,6 +33,7 @@ interface PredictionKeyboardEvent {
 }
 
 interface UsePredictionControllerKeyboardParams {
+  browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   detailOpen: boolean;
   detailScrollRef: RefObject<ScrollBoxRenderable | null>;
@@ -52,6 +56,7 @@ interface UsePredictionControllerKeyboardParams {
 }
 
 export function usePredictionControllerKeyboard({
+  browseTab,
   categoryId,
   detailOpen,
   detailScrollRef,
@@ -214,24 +219,47 @@ export function usePredictionControllerKeyboard({
         return;
       }
 
+      if (command === "previous-browse-tab") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        selectBrowseTab(getAdjacentPredictionBrowseTab(browseTab, "previous"));
+        return;
+      }
+
+      if (command === "next-browse-tab") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        selectBrowseTab(getAdjacentPredictionBrowseTab(browseTab, "next"));
+        return;
+      }
+
       if (command === "browse-top") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
         selectBrowseTab("top");
         return;
       }
       if (command === "browse-ending") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
         selectBrowseTab("ending");
         return;
       }
       if (command === "browse-new") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
         selectBrowseTab("new");
         return;
       }
       if (command === "browse-watchlist") {
+        event.stopPropagation?.();
+        event.preventDefault?.();
         selectBrowseTab("watchlist");
       }
     },
     [
       blurSearch,
+      browseTab,
       categoryId,
       cycleDetailOutcome,
       detailOpen,

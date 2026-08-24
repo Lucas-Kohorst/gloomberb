@@ -20,7 +20,12 @@ import { PREDICTION_CATEGORY_OPTIONS } from "./categories";
 import { usePredictionMarketsController } from "./controller";
 import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
+import { createPredictionColumns } from "./columns";
 import { getPredictionColumnValue } from "./metrics";
+import {
+  KALSHI_CATALOG_POLL_MS,
+  POLYMARKET_CATALOG_POLL_MS,
+} from "./controller/catalog";
 import { BROWSE_TABS, VENUE_TABS } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import type {
@@ -80,6 +85,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.catalogStatus?.tone === "danger"
       ? colors.negative
       : colors.borderFocused;
+  const visibleColumns = useMemo(
+    () => createPredictionColumns(width, controller.paneSettings.columnIds),
+    [controller.paneSettings.columnIds, width],
+  );
   const rowsLoading =
     controller.visibleRows.length === 0 &&
     (controller.catalogLoadCount > 0 || controller.searchLoading);
@@ -104,14 +113,26 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const graphSelected = useCallback(() => {
     popOutChart(graphExpression);
   }, [graphExpression, popOutChart]);
-  const updatedAgo = useUpdatedAgo(controller.lastRefreshAt);
+  const catalogUpdatedAgo = useUpdatedAgo(controller.catalogLastRefreshAt);
+  const detailUpdatedAgo = useUpdatedAgo(controller.lastRefreshAt);
+  const updatedAgo = controller.detailOpen ? detailUpdatedAgo : catalogUpdatedAgo;
   const pollLabel = useMemo(() => {
-    if (!controller.detailOpen) return null;
-    const venue = controller.selectedSummary?.venue;
-    if (venue === "kalshi") return "poll 5s";
-    if (venue === "polymarket") return "live";
+    if (controller.detailOpen) {
+      const venue = controller.selectedSummary?.venue;
+      if (venue === "kalshi") return "poll 5s";
+      if (venue === "polymarket") return "live";
+      return null;
+    }
+    const includeKalshi =
+      controller.effectiveVenueScope === "all" ||
+      controller.effectiveVenueScope === "kalshi";
+    const includePolymarket =
+      controller.effectiveVenueScope === "all" ||
+      controller.effectiveVenueScope === "polymarket";
+    if (includeKalshi) return `poll ${KALSHI_CATALOG_POLL_MS / 1000}s`;
+    if (includePolymarket) return `poll ${POLYMARKET_CATALOG_POLL_MS / 1000}s`;
     return null;
-  }, [controller.detailOpen, controller.selectedSummary?.venue]);
+  }, [controller.detailOpen, controller.effectiveVenueScope, controller.selectedSummary?.venue]);
   useShortcut((event) => {
     if (!focused) return;
     if (event.name === "g" && graphExpression) {
@@ -161,7 +182,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.browseTab,
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
+    controller.catalogLastRefreshAt,
     controller.detailOpen,
+    controller.effectiveVenueScope,
     controller.lastRefreshAt,
     controller.searchLoading,
     controller.searchQuery,
@@ -368,7 +391,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       onActivate={(row) =>
         controller.actions.openSelectedRow(row.key)}
       onRootKeyDown={handleRootKeyDown}
-      columns={controller.visibleColumns}
+      columns={visibleColumns}
       items={controller.visibleRows}
       sortColumnId={controller.sortPreference.columnId}
       sortDirection={controller.sortPreference.direction}
