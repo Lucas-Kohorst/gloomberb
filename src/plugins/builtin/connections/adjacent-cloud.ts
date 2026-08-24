@@ -1,4 +1,9 @@
-import { isHostedWebClient } from "../../../shared/hosted-api";
+import {
+  ADJACENT_DATA_ALIAS_ID,
+  isHostedWebClient,
+  KEYED_DATA_ALIAS_PATH,
+  KEYED_DATA_PATH,
+} from "../../../shared/hosted-api";
 
 /** Single Connections-pane row for every Adjacent Cloud keyed-data provider. */
 export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
@@ -39,5 +44,23 @@ export function adjacentCloudDataUrl(providerId: string, keyPath = "", search = 
     : search.startsWith("?")
       ? search
       : `?${search}`;
-  return `/api/data/${path}${qs}`;
+  return `${KEYED_DATA_PATH}/${path}${qs}`;
+}
+
+/**
+ * Blocker-safe twin of {@link adjacentCloudDataUrl}: `/api/feed/mkt/{keyPath}`.
+ *
+ * Filter lists match `/api/data/adjacent`, and a blocked request never reaches
+ * the network, so retrying the same path can never succeed.
+ */
+export function adjacentCloudDataAliasUrl(keyPath = "", search = ""): string {
+  const path = keyPath
+    ? `${ADJACENT_DATA_ALIAS_ID}/${keyPath.replace(/^\//, "")}`
+    : ADJACENT_DATA_ALIAS_ID;
+  const qs = !search
+    ? ""
+    : search.startsWith("?")
+      ? search
+      : `?${search}`;
+  return `${KEYED_DATA_ALIAS_PATH}/${path}${qs}`;
 }

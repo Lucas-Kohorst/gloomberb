@@ -28,6 +28,11 @@ import {
   parseHostedAdjacentKalshiPageCursor,
 } from "./adjacent-catalog";
 import {
+  fetchHostedAdjacentKalshiMarket,
+  loadHostedAdjacentKalshiDetail,
+  loadHostedAdjacentKalshiHistory,
+} from "./adjacent-detail";
+import {
   isOpenKalshiStatus,
   normalizeKalshiBookLevel,
   normalizeKalshiCatalog,
@@ -45,6 +50,18 @@ import type {
 } from "./types";
 
 export { normalizeKalshiMarket } from "./normalize";
+
+function emptyKalshiBook(
+  summary: PredictionMarketSummary,
+): PredictionBookSnapshot {
+  return {
+    yesBids: [],
+    yesAsks: [],
+    noBids: [],
+    noAsks: [],
+    lastTradePrice: summary.lastTradePrice,
+  };
+}
 
 function kalshiApiBase(): string {
   return isHostedWebClient()
@@ -392,6 +409,14 @@ export async function resolveKalshiMarketByTicker(
   const normalized = ticker.trim().toUpperCase();
   if (!normalized) return null;
 
+  if (isHostedWebClient()) {
+    try {
+      return await fetchHostedAdjacentKalshiMarket(normalized);
+    } catch {
+      return null;
+    }
+  }
+
   const record = await fetchKalshiMarketByTicker(normalized);
   if (record) {
     const event = await loadKalshiEvent(record.event_ticker);
@@ -484,6 +509,16 @@ export async function loadKalshiHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionHistoryPoint[]> {
+  if (isHostedWebClient()) {
+    try {
+      return revivePredictionHistoryPoints(
+        await loadHostedAdjacentKalshiHistory(summary, range),
+      );
+    } catch {
+      return [];
+    }
+  }
+
   const event = await loadKalshiEvent(summary.eventTicker);
   if (!event?.event?.series_ticker) return [];
 
@@ -533,15 +568,26 @@ export async function loadKalshiDetail(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionMarketDetail> {
+  if (isHostedWebClient()) {
+    return await loadCachedPredictionResource(
+      "detail",
+      buildPredictionDetailResourceKey(summary.key, range),
+      async () => await loadHostedAdjacentKalshiDetail(summary, range),
+      PREDICTION_CACHE_POLICIES.detail,
+    );
+  }
+
   return await loadCachedPredictionResource(
     "detail",
     buildPredictionDetailResourceKey(summary.key, range),
     async () => {
+      // A dead sub-resource must not blank the market: Kalshi answers 429 on
+      // individual endpoints while the rest of the detail is still fetchable.
       const [event, history, book, trades] = await Promise.all([
         loadKalshiEvent(summary.eventTicker),
         loadKalshiHistory(summary, range),
-        loadKalshiBook(summary),
-        loadKalshiTrades(summary),
+        loadKalshiBook(summary).catch(() => emptyKalshiBook(summary)),
+        loadKalshiTrades(summary).catch(() => []),
       ]);
       const eventMeta = event?.event;
       const siblings: PredictionSiblingMarket[] = (event?.markets ?? [])

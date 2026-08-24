@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   apiClient,
   type AssistCommandCandidate,
+  type AssistCommandDescriptor,
 } from "../../../api-client";
 import { ApiRequestError } from "../../../api-client/errors";
 import { runBrowserAssistCommand } from "../../../plugins/builtin/ai/assist-local";

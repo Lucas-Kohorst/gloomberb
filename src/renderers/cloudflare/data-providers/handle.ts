@@ -1,6 +1,8 @@
 import { getKeyedDataProvider, listKeyedDataProviders } from "./registry";
 import {
+  KEYED_DATA_ALIAS_PATH,
   KEYED_DATA_PATH,
+  KEYED_DATA_PROVIDER_ALIASES,
   TWC_KALSHI_ALIAS_PATH,
   type KeyedDataProvider,
   type ProviderPlan,
@@ -90,11 +92,23 @@ function parseDataPath(url: URL): { providerId: string; keyPath: string } | null
   if (url.pathname === KEYED_DATA_PATH || url.pathname === `${KEYED_DATA_PATH}/`) {
     return { providerId: "", keyPath: "" };
   }
-  if (!url.pathname.startsWith(`${KEYED_DATA_PATH}/`)) return null;
-  const rest = url.pathname.slice(`${KEYED_DATA_PATH}/`.length);
+  const base = url.pathname.startsWith(`${KEYED_DATA_ALIAS_PATH}/`)
+    ? KEYED_DATA_ALIAS_PATH
+    : url.pathname.startsWith(`${KEYED_DATA_PATH}/`)
+      ? KEYED_DATA_PATH
+      : null;
+  if (!base) return null;
+  const rest = url.pathname.slice(`${base}/`.length);
   const slash = rest.indexOf("/");
-  if (slash < 0) return { providerId: rest, keyPath: "" };
-  return { providerId: rest.slice(0, slash), keyPath: rest.slice(slash + 1) };
+  const rawId = slash < 0 ? rest : rest.slice(0, slash);
+  return {
+    // Own-property only: a bare lookup resolves "constructor" off the
+    // prototype chain and hands a function to the registry.
+    providerId: Object.hasOwn(KEYED_DATA_PROVIDER_ALIASES, rawId)
+      ? KEYED_DATA_PROVIDER_ALIASES[rawId]!
+      : rawId,
+    keyPath: slash < 0 ? "" : rest.slice(slash + 1),
+  };
 }
 
 async function executeProxy(

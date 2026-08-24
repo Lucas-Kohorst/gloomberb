@@ -3,7 +3,11 @@ import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
 import { generateShareId, isShareId } from "../../shares/short-id";
 import { handleKeyedDataRequest } from "./data-providers/handle";
-import { KEYED_DATA_PATH, TWC_KALSHI_ALIAS_PATH } from "./data-providers/types";
+import {
+  KEYED_DATA_ALIAS_PATH,
+  KEYED_DATA_PATH,
+  TWC_KALSHI_ALIAS_PATH,
+} from "./data-providers/types";
 import {
   clearSessionCookieHeader,
   extractSessionToken,
@@ -41,6 +45,7 @@ export default {
     if (
       url.pathname === KEYED_DATA_PATH
       || url.pathname.startsWith(`${KEYED_DATA_PATH}/`)
+      || url.pathname.startsWith(`${KEYED_DATA_ALIAS_PATH}/`)
       || url.pathname.startsWith(TWC_KALSHI_ALIAS_PATH)
     ) {
       return handleKeyedDataRequest(request, env, url);

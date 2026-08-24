@@ -626,7 +626,10 @@ describe("prediction markets plugin registration and services", () => {
     }
   });
 
-  test("keeps hosted Kalshi books on the venue CORS proxy", async () => {
+  // Kalshi rate-limits Cloudflare egress, so `/api/proxy/kalshi/*` answers 429
+  // for effectively every hosted detail request. Detail has to come from
+  // Adjacent instead, and regressing to the proxy silently blanks the market.
+  test("serves hosted Kalshi detail from Adjacent, never the venue proxy", async () => {
     (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
@@ -634,36 +637,66 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes("/markets/KXNBA-26-SAS/orderbook")) {
+      if (url.includes(KALSHI_PROXY_PATH)) {
+        return new Response(
+          JSON.stringify({ error: { code: "too_many_requests" } }),
+          { status: 429 },
+        );
+      }
+      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS/prices")) {
         return new Response(
           JSON.stringify({
-            orderbook_fp: {
-              yes_dollars: [["0.64", "120"]],
-              no_dollars: [["0.36", "95"]],
-            },
+            data: [
+              {
+                timestamp: "2026-06-03T07:00:00Z",
+                price: 65,
+                ohlc: { open: 64, high: 66, low: 63, close: 65 },
+              },
+            ],
           }),
           { status: 200 },
         );
       }
-      if (url.includes("/events/KXNBA-26")) {
+      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS/trades")) {
         return new Response(
           JSON.stringify({
-            event: {
-              title: "NBA Finals",
-              category: "Sports",
-              event_ticker: "KXNBA-26",
-              series_ticker: "KXNBA",
-            },
+            data: [
+              {
+                trade_id: "t1",
+                timestamp: "2026-06-03T07:53:18Z",
+                price: 65,
+                count: 8,
+                side: "yes",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/adjacent/markets/kalshi:KXNBA-26-SAS")) {
+        return new Response(
+          JSON.stringify({
+            market_id: "kalshi:KXNBA-26-SAS",
+            platform: "kalshi",
+            question: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+            probability: 65,
+            event_ticker: "KXNBA-26",
+            rules_primary: "Resolves Yes if San Antonio win.",
+            status: "active",
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/adjacent/events/kalshi:KXNBA-26")) {
+        return new Response(
+          JSON.stringify({
+            event_id: "kalshi:KXNBA-26",
+            name: "NBA Finals",
+            category: "Sports",
             markets: [],
           }),
           { status: 200 },
         );
-      }
-      if (url.includes("/markets/trades")) {
-        return new Response(JSON.stringify({ trades: [] }), { status: 200 });
-      }
-      if (url.includes("/candlesticks")) {
-        return new Response(JSON.stringify({ candlesticks: [] }), { status: 200 });
       }
       return new Response("{}", { status: 200 });
     }) as unknown as typeof fetch;
@@ -683,15 +716,12 @@ describe("prediction markets plugin registration and services", () => {
 
     try {
       const detail = await loadKalshiDetail(summary, "1D");
-      expect(detail.book.yesBids[0]?.price).toBe(0.64);
-      expect(
-        fetchUrls.some((url) =>
-          url.includes(`${KALSHI_PROXY_PATH}/markets/KXNBA-26-SAS/orderbook`),
-        ),
-      ).toBe(true);
-      expect(
-        fetchUrls.some((url) => url.includes("/api/data/adjacent")),
-      ).toBe(false);
+      expect(fetchUrls.some((url) => url.includes(KALSHI_PROXY_PATH))).toBe(false);
+      expect(detail.history.at(-1)?.close).toBe(0.65);
+      expect(detail.trades[0]?.price).toBe(0.65);
+      expect(detail.rules).toContain("Resolves Yes if San Antonio win.");
+      // No venue or Adjacent order-book source exists on hosted.
+      expect(detail.book.yesBids).toEqual([]);
     } finally {
       delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
     }

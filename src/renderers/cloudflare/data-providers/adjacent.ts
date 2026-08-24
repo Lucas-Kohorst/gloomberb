@@ -12,7 +12,7 @@ function adjacentSecret(env: ProviderResolveContext["env"] | undefined): string 
 /** Auth list/detail paths have a delayed public twin; news and similar do not. */
 function publicAdjacentPath(keyPath: string, env: ProviderResolveContext["env"] | undefined): string {
   if (adjacentSecret(env) || keyPath.startsWith("public/")) return keyPath;
-  const head = keyPath.split("/")[0];
+  const head = keyPath.split("/")[0] ?? "";
   if ((PUBLIC_PREFIXES as readonly string[]).includes(head)) return `public/${keyPath}`;
   return keyPath;
 }
@@ -28,7 +28,14 @@ export const adjacentProvider: KeyedDataProvider = {
     headerValue: (secret) => `Bearer ${secret}`,
   },
   resolve({ keyPath, search, env }): ProviderPlan {
-    if (!keyPath || keyPath.includes("..") || !PATH_RE.test(keyPath)) {
+    // `PATH_RE` has to allow ":" for venue ids like `markets/kalshi:KXNBA-26`,
+    // which also admits `http://evil.example`. Empty segments are never valid.
+    if (
+      !keyPath
+      || keyPath.includes("..")
+      || keyPath.includes("//")
+      || !PATH_RE.test(keyPath)
+    ) {
       return { kind: "error", status: 400, error: "Invalid Adjacent path" };
     }
     const upstreamPath = publicAdjacentPath(keyPath, env);
