@@ -209,7 +209,7 @@ export function ArticleShareView({
       ) : null}
 
       {full.loading ? (
-        <div className="share-loading-body">Loading full article&hellip;</div>
+        <div className="share-loading-body" role="status" aria-live="polite">Loading full article&hellip;</div>
       ) : null}
 
       {payload.items?.length ? (

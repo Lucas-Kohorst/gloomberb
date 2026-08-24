@@ -17,7 +17,9 @@
   --gloom-text: #ff8800;
   --gloom-text-dim: #92763c;
   --gloom-text-bright: #ffaa00;
-  --gloom-text-muted: #6a6c6e;
+  /* 4.5:1 on the #000 background. The terminal app gets this from
+     normalizeTheme(); the share page hardcodes tokens and so must not drift. */
+  --gloom-text-muted: #8a8c8e;
   --gloom-positive: #00cc66;
   --gloom-negative: #ff3333;
   --gloom-neutral: #888888;
@@ -431,8 +433,23 @@ textarea::-webkit-strong-password-auto-fill-button {
   color: var(--gloom-text-dim);
   white-space: nowrap;
   text-align: left;
-  cursor: pointer;
   user-select: none;
+}
+
+.share-th-sort {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.share-th-sort:focus-visible {
+  outline: 2px solid var(--gloom-text-bright);
+  outline-offset: -2px;
 }
 
 .share-table th[aria-sort="ascending"],

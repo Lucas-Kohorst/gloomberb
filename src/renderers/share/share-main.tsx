@@ -64,7 +64,7 @@ function SharePayloadView({
     return (
       <Suspense fallback={(
         <ShareShell layout="wide" title="Chart" openInTerminalHref={openInTerminalHref}>
-          <div className="share-loading-body">Drawing chart&hellip;</div>
+          <div className="share-loading-body" role="status" aria-live="polite">Drawing chart&hellip;</div>
         </ShareShell>
       )}
       >
@@ -120,7 +120,7 @@ function StoredShareView({ shortId }: { shortId: string }) {
   if (state.status === "loading") {
     return (
       <ShareShell title="Share">
-        <div className="share-loading-body">Loading shared view&hellip;</div>
+        <div className="share-loading-body" role="status" aria-live="polite">Loading shared view&hellip;</div>
       </ShareShell>
     );
   }
