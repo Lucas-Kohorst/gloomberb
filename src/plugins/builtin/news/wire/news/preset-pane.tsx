@@ -41,7 +41,12 @@ export function NewsPresetPane({
 }) {
   const newsState = useNewsArticles(query);
   const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
-  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(query, newsState);
+  const visibleArticles = query.limit != null ? articles.slice(0, query.limit) : articles;
+  const atLimit = query.limit != null && visibleArticles.length >= query.limit;
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(
+    atLimit ? null : query,
+    newsState,
+  );
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
@@ -56,11 +61,11 @@ export function NewsPresetPane({
     ? paneSettings.sort
     : defaultSort;
   const loadNewsStory = useLoadNewsStory();
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(visibleArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
-  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const selectedArticle = visibleArticles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareArticle = readableArticle
@@ -91,13 +96,13 @@ export function NewsPresetPane({
     <Box flexGrow={1} />
   );
 
-  if (loading && articles.length === 0) {
+  if (loading && visibleArticles.length === 0) {
     return <Spinner label={`Loading ${title.toLowerCase()}...`} />;
   }
 
   return (
     <NewsArticleStackView
-      articles={articles}
+      articles={visibleArticles}
       focused={focused}
       width={width}
       rootHeight={height}

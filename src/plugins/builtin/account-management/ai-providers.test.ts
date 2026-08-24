@@ -333,6 +333,11 @@ describe("BYOK keys config selector", () => {
     const config: AppConfig = { pluginConfig: {} } as unknown as AppConfig;
     expect(byokKeysConfigSelector({ config })).toEqual([]);
   });
+
+  test("returns the same empty array instance when no keys are stored", () => {
+    const config: AppConfig = { pluginConfig: {} } as unknown as AppConfig;
+    expect(byokKeysConfigSelector({ config })).toBe(byokKeysConfigSelector({ config }));
+  });
 });
 
 describe("Ollama availability check", () => {
