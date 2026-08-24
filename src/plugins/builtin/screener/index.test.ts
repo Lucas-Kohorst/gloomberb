@@ -9,6 +9,7 @@ import type { ScreenerResult } from "./types";
 import type { TickerFinancials } from "../../../types/financials";
 import {
   buildScreenerColumns,
+  filterScreenerRows,
   nextSortPreference,
   sortRows,
   DEFAULT_SORT_PREFERENCE,
@@ -81,7 +82,7 @@ function makeFinancials(overrides: Partial<TickerFinancials> = {}): TickerFinanc
 }
 
 const SAMPLE_RESULTS: ScreenerResult[] = [
-  makeResult({ symbol: "AAPL", sector: "Technology", marketCap: 2.9e12, peRatio: 28.5, dividendYield: 0.005 }),
+  makeResult({ symbol: "AAPL", name: "Apple Inc.", sector: "Technology", marketCap: 2.9e12, peRatio: 28.5, dividendYield: 0.005 }),
   makeResult({ symbol: "MSFT", sector: "Technology", marketCap: 3.1e12, peRatio: 35, dividendYield: 0.007 }),
   makeResult({ symbol: "XOM", name: "Exxon Mobil", sector: "Energy", marketCap: 4.5e11, peRatio: 12, pbRatio: 1.8, debtToEquity: 0.2, dividendYield: 0.035 }),
   makeResult({ symbol: "TSLA", name: "Tesla", sector: "Consumer Cyclical", marketCap: 8e11, peRatio: 60, pbRatio: 10, debtToEquity: 0.15, dividendYield: null, revenueGrowth: 0.25 }),
@@ -214,6 +215,17 @@ describe("applyFilters", () => {
     // AAPL has pbRatio=2.5, XOM has 1.8, MSFT has 2.5 (default), TSLA has 10
     expect(filtered).toHaveLength(3);
     expect(filtered.map((r) => r.symbol)).not.toContain("TSLA");
+  });
+});
+
+describe("filterScreenerRows", () => {
+  test("matches symbols and names case-insensitively", () => {
+    expect(filterScreenerRows(SAMPLE_RESULTS, "aapl").map((row) => row.symbol)).toEqual(["AAPL"]);
+    expect(filterScreenerRows(SAMPLE_RESULTS, "APPLE").map((row) => row.symbol)).toEqual(["AAPL"]);
+  });
+
+  test("fuzzy-matches a subsequence against the company name", () => {
+    expect(filterScreenerRows(SAMPLE_RESULTS, "aple").map((row) => row.symbol)).toEqual(["AAPL"]);
   });
 });
 

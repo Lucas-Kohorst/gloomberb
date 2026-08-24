@@ -27,6 +27,7 @@ import type { ScreenerFilters, ScreenerResult } from "./types";
 import {
   buildScreenerColumns,
   DEFAULT_SORT_PREFERENCE,
+  filterScreenerRows,
   nextSortPreference,
   sortRows,
   type ScreenerColumn,
@@ -90,13 +91,7 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
   const filteredRows = useMemo(() => {
     const filtered = applyFilters(allResults, filters);
     if (!searchQuery.trim()) return filtered;
-    const q = searchQuery.toLowerCase();
-    return filtered.filter(
-      (r) =>
-        r.symbol.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        (r.sector?.toLowerCase().includes(q) ?? false),
-    );
+    return filterScreenerRows(filtered, searchQuery);
   }, [allResults, filters, searchQuery]);
 
   const rows = useMemo(

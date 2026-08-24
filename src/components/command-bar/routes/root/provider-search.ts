@@ -91,7 +91,7 @@ export function useRootProviderSearch(options: {
     }
 
     rootLastSearchedQueryRef.current = searchQuery;
-    setRootSearching(true);
+    if (!rootPlainTickerSearchArg) setRootSearching(true);
     const activeSearchPortfolio = portfolios.find((portfolio) => portfolio.id === activeCollectionId);
     const cachedCandidates = readTickerSearchCache(
       searchQuery,
@@ -99,10 +99,13 @@ export function useRootProviderSearch(options: {
       activeSearchPortfolio?.brokerInstanceId,
     );
     const localItems = localTickerSearchResultItems(searchQuery, { limit: 6 });
-    setRootProviderResults(cachedCandidates
+    const cachedItems = cachedCandidates
       ? mergeTickerSearchResultItems(searchQuery, buildTickerSearchResultItems(cachedCandidates, searchQuery), localItems)
-      : null);
-    setRootProviderResultsQuery(cachedCandidates ? searchQuery : null);
+      : localItems.length > 0
+        ? mergeTickerSearchResultItems(searchQuery, [], localItems)
+        : null;
+    setRootProviderResults(cachedItems);
+    setRootProviderResultsQuery(cachedItems ? searchQuery : null);
 
     const requestId = ++rootSearchRequestIdRef.current;
     rootSearchTimerRef.current = setTimeout(async () => {
@@ -150,7 +153,11 @@ export function useRootProviderSearch(options: {
     }, 200);
 
     return () => {
-      if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
+      if (rootSearchTimerRef.current) {
+        clearTimeout(rootSearchTimerRef.current);
+        rootSearchTimerRef.current = null;
+        rootLastSearchedQueryRef.current = null;
+      }
     };
   }, [
     activeCollectionId,
@@ -160,16 +167,22 @@ export function useRootProviderSearch(options: {
     localTickerSearchResultItems,
     portfolios,
     readTickerSearchCache,
+    rootPlainTickerSearchArg,
     rootTickerSearchArg,
     tickers,
     writeTickerSearchCache,
   ]);
 
   const rootResults = useMemo(() => {
+    if (rootPlainTickerSearchArg) {
+      const providerItems = rootTickerSearchArg
+        && rootProviderResultsQuery === rootTickerSearchArg
+        && rootProviderResults
+        ? rootProviderResults
+        : [];
+      return mergePlainRootTickerResults(rootPlainTickerSearchArg, providerItems, rootResultItems);
+    }
     if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
-      if (rootPlainTickerSearchArg) {
-        return mergePlainRootTickerResults(rootPlainTickerSearchArg, rootProviderResults, rootResultItems);
-      }
       return rootProviderResults;
     }
     return rootResultItems;

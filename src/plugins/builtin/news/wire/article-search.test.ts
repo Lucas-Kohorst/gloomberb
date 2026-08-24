@@ -67,6 +67,16 @@ describe("searchNewsArticles", () => {
     expect(matches.map((item) => item.id)).toEqual(["hormuz", "fed"]);
   });
 
+  test("keeps unicode letters in tokens", () => {
+    const café = article({
+      id: "cafe",
+      title: "Café prices jump after frost",
+      source: "Reuters",
+    });
+    expect(tokenizeArticleQuery("café frost")).toEqual(["café", "frost"]);
+    expect(searchNewsArticles([café, other], "café").map((item) => item.id)).toEqual(["cafe"]);
+  });
+
   test("strips the ART command prefix so local headlines match immediately", () => {
     const trump = article({
       id: "trump",

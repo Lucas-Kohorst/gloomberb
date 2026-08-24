@@ -53,6 +53,31 @@ export function mergeTickerSearchResultItems(
       : item);
 }
 
+/** Trailing chips on a resolved security: Details, Quote, Chart. */
+export const ROOT_SECURITY_ACTION_CHIPS = "DES QQ G";
+
+function tickerCompanyName(item: ResultItem): string {
+  return item.detail.split("|")[0]?.trim() ?? "";
+}
+
+function formatRootSecurityLabel(item: ResultItem): string {
+  const name = tickerCompanyName(item);
+  if (!name) return item.label;
+  const symbol = item.label.trim();
+  if (name.toUpperCase() === symbol.toUpperCase()) return symbol;
+  if (symbol.toUpperCase().includes(name.toUpperCase())) return symbol;
+  return `${symbol}  ${name}`;
+}
+
+function decorateRootSecurityItem(item: ResultItem): ResultItem {
+  return {
+    ...item,
+    category: "Exact Match",
+    label: formatRootSecurityLabel(item),
+    right: ROOT_SECURITY_ACTION_CHIPS,
+  };
+}
+
 export function mergePlainRootTickerResults(
   query: string,
   providerItems: ResultItem[],
@@ -60,20 +85,23 @@ export function mergePlainRootTickerResults(
 ): ResultItem[] {
   const merged: ResultItem[] = [];
   const seen = new Set<string>();
-  const addItem = (item: ResultItem, options?: { skipInfo?: boolean }) => {
+  const addItem = (item: ResultItem, options?: { skipInfo?: boolean; security?: boolean }) => {
     if (options?.skipInfo && item.kind === "info") return;
-    const key = (item.kind === "ticker" || item.kind === "search")
-      ? `${item.kind}:${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`
-      : `${item.kind}:${item.id}`;
+    const decorated = options?.security ? decorateRootSecurityItem(item) : item;
+    const key = (decorated.kind === "ticker" || decorated.kind === "search")
+      ? `${decorated.kind}:${decorated.label.trim().toUpperCase()}:${(decorated.right || "").trim().toUpperCase()}`
+      : `${decorated.kind}:${decorated.id}`;
     if (seen.has(key)) return;
     seen.add(key);
-    merged.push(item);
+    merged.push(decorated);
   };
 
   providerItems
     .filter((item) => item.category === "Exact Match" || isExactTickerResultMatch(item, query))
-    .forEach((item) => addItem(item, { skipInfo: true }));
-  rootItems.forEach((item) => addItem(item));
+    .forEach((item) => addItem(item, { skipInfo: true, security: true }));
+  rootItems.forEach((item) => addItem(item, {
+    security: item.category === "Exact Match" || isExactTickerResultMatch(item, query),
+  }));
   providerItems
     .filter((item) => item.category !== "Exact Match" && !isExactTickerResultMatch(item, query))
     .forEach((item) => addItem(item, { skipInfo: true }));
