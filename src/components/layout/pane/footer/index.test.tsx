@@ -3,6 +3,7 @@ import { act } from "react";
 import { Box } from "../../../../ui";
 import { testRender } from "../../../../renderers/opentui/test-utils";
 import {
+  clipPaneFooterInfo,
   PaneFooterBar,
   PaneFooterProvider,
   usePaneFooter,
@@ -137,6 +138,21 @@ function ExternalLinkFooterHarness() {
     </PaneFooterProvider>
   );
 }
+
+describe("clipPaneFooterInfo", () => {
+  test("caps info copy so chrome never dumps a JSON blob", () => {
+    const clipped = clipPaneFooterInfo({
+      info: [{
+        id: "error",
+        parts: [{ text: '{"finance":{"result":null,"error":{"code":"Not Found"}}}', tone: "warning" }],
+      }],
+      trailingInfo: [],
+      hints: [],
+    });
+    expect(clipped.info[0]?.parts[0]?.text).toBe('{"finance":{"result":nul');
+    expect(clipped.info[0]?.parts[0]?.text.length).toBe(24);
+  });
+});
 
 describe("PaneFooterBar", () => {
   test("rebuilds translated registrations when the app language changes", async () => {

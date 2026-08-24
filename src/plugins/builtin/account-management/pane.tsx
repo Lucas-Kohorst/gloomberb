@@ -885,10 +885,8 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   useAccountManagementFooter({
     busy,
-    draft,
     hasSession,
     message,
-    profile,
     saveProfile,
   });
 

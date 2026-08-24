@@ -296,6 +296,13 @@ export function centsToProbability(cents: number | null | undefined): number | n
   return cents / 100;
 }
 
+/** Adjacent list prices are 0–100. Display after converting through 0–1. */
+export function formatYesOddsPercent(cents: number | null | undefined): string | null {
+  const probability = centsToProbability(cents);
+  if (probability == null) return null;
+  return `${Math.round(probability * 100)}%`;
+}
+
 export function indexValueToProbability(value: number | null | undefined): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   return value - 50;

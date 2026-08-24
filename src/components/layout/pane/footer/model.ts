@@ -43,6 +43,23 @@ export interface CombinedPaneFooter {
 
 export const EMPTY_FOOTER: CombinedPaneFooter = { info: [], trailingInfo: [], hints: [] };
 
+/** Empty-state / error copy in the 18px chrome band; never dump JSON. */
+export const PANE_FOOTER_INFO_MAX_CHARS = 24;
+
+export function clipPaneFooterInfo(footer: CombinedPaneFooter): CombinedPaneFooter {
+  return {
+    ...footer,
+    info: footer.info.map((segment) => ({
+      ...segment,
+      parts: segment.parts.map((part) => (
+        part.text.length <= PANE_FOOTER_INFO_MAX_CHARS
+          ? part
+          : { ...part, text: part.text.slice(0, PANE_FOOTER_INFO_MAX_CHARS) }
+      )),
+    })),
+  };
+}
+
 export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolean {
   if (!footer) return false;
   return footer.info.length > 0

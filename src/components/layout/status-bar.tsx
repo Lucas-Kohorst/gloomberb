@@ -15,6 +15,12 @@ import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import { LayoutSwitcherControl, useLayoutSwitcher } from "./layout-switcher";
+import {
+  clipPaneFooterInfo,
+  FooterContent,
+  hasPaneFooterContent,
+  useFocusedPaneFooter,
+} from "./pane/footer";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -129,6 +135,7 @@ export function StatusBar() {
           />
         )
       )}
+      <FocusedPaneStatus />
       <StatusBarWidgets />
     </Box>
   );
@@ -270,11 +277,32 @@ function StatusBarVersion({ nativePaneChrome }: { nativePaneChrome: boolean }) {
   );
 }
 
+function FocusedPaneStatus() {
+  const { nativePaneChrome } = useUiCapabilities();
+  const footer = useFocusedPaneFooter();
+  if (!nativePaneChrome || !footer || !hasPaneFooterContent(footer)) return null;
+  return (
+    <Box
+      flexGrow={1}
+      flexShrink={1}
+      minWidth={0}
+      height={1}
+      overflow="hidden"
+      paddingLeft={2}
+      data-gloom-role="status-pane-footer"
+    >
+      <FooterContent footer={clipPaneFooterInfo(footer)} focused showBackground={false} />
+    </Box>
+  );
+}
+
 function StatusBarWidgets() {
   const { nativePaneChrome } = useUiCapabilities();
+  const focusedFooter = useFocusedPaneFooter();
+  const paneOwnsCenter = nativePaneChrome && !!focusedFooter && hasPaneFooterContent(focusedFooter);
   return (
     <>
-      <Box flexGrow={1} />
+      {paneOwnsCenter ? null : <Box flexGrow={1} />}
       {nativePaneChrome ? (
         <Box
           flexDirection="row"

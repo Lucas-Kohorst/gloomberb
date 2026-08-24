@@ -130,7 +130,7 @@ export function ShellPaneLayers({
                       width: rect.width,
                       height: rect.height,
                       nativePaneChrome,
-                      footerVisible: renderFooter,
+                      footerVisible: nativePaneChrome ? false : renderFooter,
                       reserveFooter,
                       headerRows,
                     });
@@ -197,7 +197,7 @@ export function ShellPaneLayers({
                     width: preview.width,
                     height: preview.height,
                     nativePaneChrome,
-                    footerVisible: renderFooter,
+                    footerVisible: nativePaneChrome ? false : renderFooter,
                     reserveFooter,
                     headerRows,
                   });
