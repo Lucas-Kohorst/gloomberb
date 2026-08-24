@@ -167,11 +167,15 @@ export function createWebUiHost(desktopPlatform?: string): UiHost {
       <span
         {...cleanDomProps(props)}
         aria-hidden="true"
+        // The animation lives in a class, not inline, so the reduced-motion
+        // media query in styles.css can override it.
+        className={["gloom-spinner-mark", (props as { className?: string }).className]
+          .filter(Boolean)
+          .join(" ")}
         style={{
           color,
           display: "inline-block",
           width: "1ch",
-          animation: "gloom-spin 0.9s steps(8) infinite",
           ...(props.style as CSSProperties | undefined),
         }}
       >

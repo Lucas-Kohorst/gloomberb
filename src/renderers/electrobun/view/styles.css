@@ -1,14 +1,13 @@
 @keyframes gloom-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes gloom-row-roll-in {
-  from {
-    opacity: 0.42;
-    filter: brightness(1.22);
-  }
-  to {
-    opacity: 1;
-    filter: brightness(1);
-  }
+  from { opacity: 0.42; }
+  to { opacity: 1; }
 }
+@keyframes gloom-spin-pulse {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+.gloom-spinner-mark { animation: gloom-spin 0.9s steps(8) infinite; }
 html, body, #root { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: var(--gloom-bg, #272a34); }
 #root:focus { outline: none; }
 body {
@@ -735,4 +734,18 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
   box-shadow:
     0 14px 34px color-mix(in srgb, var(--gloom-bg) 42%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--gloom-text-bright) 5%, transparent);
+}
+
+/*
+ * Streaming quotes mean row arrivals and spinners animate continuously during
+ * market hours, so honour a reduced-motion preference. Loading state still has
+ * to read as loading, so the spinner pulses instead of stopping outright.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [data-gloom-role="data-table-row"][data-roll-in="true"]:not([data-selected="true"]) {
+    animation: none;
+  }
+  .gloom-spinner-mark {
+    animation: gloom-spin-pulse 1.6s ease-in-out infinite alternate;
+  }
 }
