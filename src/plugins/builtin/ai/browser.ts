@@ -84,9 +84,14 @@ interface LanguageModelSession {
   destroy?: () => void;
 }
 
+const BROWSER_AI_SESSION_OPTIONS = {
+  expectedInputs: [{ type: "text" as const, languages: ["en"] }],
+  expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
+};
+
 interface LanguageModelApi {
-  availability(options?: { languages?: string[] }): Promise<BrowserAiAvailability>;
-  create(): Promise<LanguageModelSession>;
+  availability(options?: typeof BROWSER_AI_SESSION_OPTIONS): Promise<BrowserAiAvailability>;
+  create(options?: typeof BROWSER_AI_SESSION_OPTIONS): Promise<LanguageModelSession>;
 }
 
 function languageModel(): LanguageModelApi | null {
@@ -109,7 +114,7 @@ export async function getBrowserAiState(): Promise<BrowserAiState> {
   }
   try {
     const availability = await withDeadline(
-      api.availability({ languages: ["en"] }),
+      api.availability(BROWSER_AI_SESSION_OPTIONS),
       BROWSER_AI_CHECK_TIMEOUT_MS,
       "Chrome's built-in Prompt API availability check timed out.",
     );
@@ -161,7 +166,7 @@ export async function downloadBrowserAiModel(): Promise<BrowserAiState> {
   if (typeof navigator !== "undefined" && !navigator.userActivation?.isActive) {
     throw new Error("Start the Chrome model download from a user-initiated action.");
   }
-  await api.create();
+  await api.create(BROWSER_AI_SESSION_OPTIONS);
   return getBrowserAiState();
 }
 
@@ -176,7 +181,7 @@ export function createBrowserAiRunController(options: {
     if (!api) throw new Error("Chrome's built-in on-device model is unavailable.");
     const state = await getBrowserAiState();
     if (state.availability !== "available") throw new Error(state.reason);
-    const session = await api.create();
+    const session = await api.create(BROWSER_AI_SESSION_OPTIONS);
     try {
       const prompt = [...(options.messages ?? []), { role: "user", content: options.prompt }]
         .map((message) => `${message.role}: ${message.content}`)
