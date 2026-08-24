@@ -14,6 +14,15 @@ interface DialogState {
 
 let nextDialogId = 1;
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+
 export function isDialogDismissKey(event: Pick<KeyboardEvent, "key" | "isComposing">): boolean {
   return !event.isComposing && (event.key === "Escape" || event.key === "Esc");
 }
@@ -87,6 +96,40 @@ export function WebDialogHostProvider({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", dismissOnEscape, true);
     return () => window.removeEventListener("keydown", dismissOnEscape, true);
   }, [close, dialogState?.id]);
+
+  // aria-modal="true" tells assistive technology focus is confined to the
+  // dialog. Without a trap, Tab walks out to the workspace behind the backdrop,
+  // which is reachable because dialogs render real inputs and buttons.
+  useEffect(() => {
+    if (!dialogState) return;
+    const dialogElement = dialogElementRef.current;
+    if (!dialogElement) return;
+    const confineTab = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const focusable = [...dialogElement.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
+        .filter((element) => element.offsetParent !== null || element === document.activeElement);
+      if (focusable.length === 0) {
+        // Nothing to tab between, so keep focus on the container.
+        event.preventDefault();
+        dialogElement.focus({ preventScroll: true });
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (!event.shiftKey && (active === last || active === dialogElement)) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+        return;
+      }
+      if (event.shiftKey && (active === first || active === dialogElement)) {
+        event.preventDefault();
+        last.focus({ preventScroll: true });
+      }
+    };
+    dialogElement.addEventListener("keydown", confineTab);
+    return () => dialogElement.removeEventListener("keydown", confineTab);
+  }, [dialogState?.id]);
 
   const api = useMemo<DialogApi>(() => ({
     alert: open,
