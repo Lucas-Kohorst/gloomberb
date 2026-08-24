@@ -1,7 +1,7 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import { Tabs } from "../../../components";
+import { SegmentedControl, Tabs } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -12,6 +12,8 @@ import {
   usePaneInstance,
   usePaneStateValue,
 } from "../../../state/app/context";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { usePortfolioAccountState } from "../portfolio-list/header";
@@ -34,7 +36,11 @@ import {
   buildPortfolioReturnSeries,
   formatHistoryAxisValue,
   resolvePerformancePalette,
+  buildFactorProxyRequests,
+  buildFactorReturnSeries,
+  buildPositionContributorInputs,
 } from "./pane-model";
+import { PortfolioRiskView } from "./risk-view";
 import {
   buildSectorColumns,
   buildSectorRowsFromPortfolioColumns,
@@ -63,6 +69,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const config = useAppSelector((state) => state.config);
   const paneInstance = usePaneInstance();
   const requestedPortfolioId = paneInstance?.params?.portfolioId ?? paneInstance?.params?.collectionId;
+  const requestedView = paneInstance?.params?.view === "risk" ? "risk" : "overview";
   const fallbackPortfolioId = useMemo(
     () => (
       resolvePortfolioId(portfolios, requestedPortfolioId)
@@ -73,6 +80,15 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
 
   const [currentPortfolioId, setCurrentPortfolioId] = usePaneStateValue<string>("portfolioId", fallbackPortfolioId);
+  const [view, setView] = useState<"overview" | "risk">(requestedView);
+  // Left/right belong to the portfolio tabs, so the view switch takes its own
+  // key rather than a focused SegmentedControl that would swallow the arrows.
+  useShortcut((event) => {
+    if (!focused || !isPlainKey(event, "v")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    setView((current) => (current === "risk" ? "overview" : "risk"));
+  }, { enabled: focused });
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [sectorSort, setSectorSort] = useState<SectorSortPreference>(DEFAULT_SECTOR_SORT);
 
@@ -118,6 +134,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
   const spyChartRequests = useMemo(() => [spyRequest], [spyRequest]);
   const spyChartEntries = useChartQueries(spyChartRequests);
+
+  const factorProxyRequests = useMemo(() => buildFactorProxyRequests(), []);
+  const factorProxyChartEntries = useChartQueries(factorProxyRequests);
 
   const marketFinancials = useTickerFinancialsMap(portfolioTickers);
   const financials = useMemo(() => {
@@ -188,6 +207,20 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     () => (portfolioReturnSeries && spyReturnSeries ? computeDatedBeta(portfolioReturnSeries, spyReturnSeries) : null),
     [portfolioReturnSeries, spyReturnSeries],
   );
+
+  const factorReturnSeries = useMemo(
+    () => buildFactorReturnSeries(factorProxyRequests, factorProxyChartEntries),
+    [factorProxyChartEntries, factorProxyRequests],
+  );
+  const marketReturnSeries = useMemo(
+    () => factorReturnSeries.find((entry) => entry.factor === "market")?.returns ?? spyReturnSeries,
+    [factorReturnSeries, spyReturnSeries],
+  );
+  const contributorInputs = useMemo(
+    () => buildPositionContributorInputs(chartTargets, chartEntries, financials, columnContext),
+    [chartEntries, chartTargets, columnContext, financials],
+  );
+  const riskPortfolioValue = portfolioStats.totalMktValue;
 
   const sectorRows = useMemo<SectorTableRow[]>(
     () => buildSectorRowsFromPortfolioColumns(portfolioTickers, financials, columnContext),
@@ -270,6 +303,16 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 focused={focused}
               />
             </Box>
+            <Box flexShrink={0} paddingLeft={1}>
+              <SegmentedControl
+                options={[
+                  { label: "Overview", value: "overview" },
+                  { label: "Risk", value: "risk" },
+                ]}
+                value={view}
+                onChange={(value) => setView(value as "overview" | "risk")}
+              />
+            </Box>
           </Box>
 
           {!hasPositions ? (
@@ -278,6 +321,24 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
                 No positions found for {activePortfolio?.name ?? "this portfolio"}
               </Text>
             </Box>
+          ) : view === "risk" ? (
+            <PortfolioRiskView
+              focused={focused}
+              width={width}
+              height={height - 1}
+              portfolioReturns={portfolioReturns}
+              portfolioReturnSeries={portfolioReturnSeries}
+              factors={factorReturnSeries}
+              marketReturns={marketReturnSeries}
+              portfolioValue={riskPortfolioValue}
+              contributors={contributorInputs}
+              sectorRows={sortedSectorRows}
+              sectorSort={sectorSort}
+              onSectorHeaderClick={handleSectorHeaderClick}
+              selectedSectorId={effectiveSelectedSectorId}
+              onSelectSector={setSelectedSectorId}
+              resetScrollKey={activePortfolioId}
+            />
           ) : (
             <>
               <AnalyticsMetricsPanel
@@ -349,6 +410,19 @@ export const portfolioAnalyticsModule: PluginModule = {
       createInstance: (context) => {
         const portfolioId = resolveTemplatePortfolioId(context.config.portfolios, context.activeCollectionId);
         return portfolioId ? { params: { portfolioId } } : null;
+      },
+    },
+    {
+      id: "portfolio-risk-pane",
+      paneId: "analytics",
+      label: "Portfolio Risk",
+      description: "VaR (historical & parametric), factor exposure (market/size/value/momentum), beta-weighted market exposure, sector concentration, and best/worst contributors.",
+      keywords: ["risk", "var", "value-at-risk", "factor", "exposure", "beta", "concentration", "contributors", "portfolio", "analytics"],
+      shortcut: { prefix: "RISK" },
+      canCreate: (context) => context.config.portfolios.length > 0,
+      createInstance: (context) => {
+        const portfolioId = resolveTemplatePortfolioId(context.config.portfolios, context.activeCollectionId);
+        return portfolioId ? { params: { portfolioId, view: "risk" } } : null;
       },
     },
   ],
