@@ -24,7 +24,6 @@ import {
 import {
   computeDatedBeta,
   computeSharpeRatio,
-  hasPortfolioPosition,
 } from "./metrics";
 import {
   buildAnalyticsRiskRows,
@@ -50,7 +49,13 @@ import {
   type SectorSortPreference,
   type SectorTableRow,
 } from "./sector-model";
-import { resolvePortfolioId, resolveTemplatePortfolioId } from "./portfolio-selection";
+import {
+  collectionMembers,
+  collectionUsesEqualWeight,
+  listAnalyticsCollections,
+  resolveAnalyticsCollection,
+  resolveTemplateCollectionId,
+} from "./portfolio-selection";
 import {
   AnalyticsMetricsPanel,
   AnalyticsViewSwitch,
@@ -73,11 +78,11 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const requestedView = paneInstance?.params?.view === "risk" ? "risk" : "overview";
   const fallbackPortfolioId = useMemo(
     () => (
-      resolvePortfolioId(portfolios, requestedPortfolioId)
-      ?? resolveTemplatePortfolioId(portfolios, focusedCollectionId)
+      resolveAnalyticsCollection(config, requestedPortfolioId)?.id
+      ?? resolveTemplateCollectionId(config, focusedCollectionId)
       ?? ""
     ),
-    [focusedCollectionId, portfolios, requestedPortfolioId],
+    [config, focusedCollectionId, requestedPortfolioId],
   );
 
   const [currentPortfolioId, setCurrentPortfolioId] = usePaneStateValue<string>("portfolioId", fallbackPortfolioId);
@@ -99,14 +104,23 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [sectorSort, setSectorSort] = useState<SectorSortPreference>(DEFAULT_SECTOR_SORT);
 
-  const activePortfolioId = resolvePortfolioId(portfolios, currentPortfolioId) ?? fallbackPortfolioId;
-  const activePortfolio = useMemo(
-    () => portfolios.find((portfolio) => portfolio.id === activePortfolioId) ?? null,
-    [activePortfolioId, portfolios],
+  const collections = useMemo(() => listAnalyticsCollections(config), [config]);
+  const activeCollection = useMemo(
+    () => resolveAnalyticsCollection(config, currentPortfolioId)
+      ?? resolveAnalyticsCollection(config, fallbackPortfolioId),
+    [config, currentPortfolioId, fallbackPortfolioId],
   );
+  const activePortfolioId = activeCollection?.id ?? "";
+  const activePortfolio = useMemo(
+    () => activeCollection?.kind === "portfolio"
+      ? portfolios.find((portfolio) => portfolio.id === activeCollection.id) ?? null
+      : null,
+    [activeCollection, portfolios],
+  );
+  const equalWeight = activeCollection ? collectionUsesEqualWeight(activeCollection) : false;
   const portfolioTabs = useMemo(
-    () => portfolios.map((portfolio) => ({ label: portfolio.name, value: portfolio.id })),
-    [portfolios],
+    () => collections.map((collection) => ({ label: collection.name, value: collection.id })),
+    [collections],
   );
 
   const handlePortfolioSelect = useCallback((portfolioId: string) => {
@@ -115,11 +129,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   }, [setCurrentPortfolioId]);
 
   const portfolioTickers = useMemo(() => {
-    if (!activePortfolioId) return [];
-    return [...tickersBySymbol.values()]
-      .filter((ticker) => ticker.metadata.portfolios.includes(activePortfolioId))
-      .filter((ticker) => hasPortfolioPosition(ticker, activePortfolioId));
-  }, [activePortfolioId, tickersBySymbol]);
+    if (!activeCollection) return [];
+    return collectionMembers(activeCollection, tickersBySymbol);
+  }, [activeCollection, tickersBySymbol]);
 
   const chartTargets = useMemo(
     () => buildPortfolioChartTargets(portfolioTickers),
@@ -191,8 +203,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       chartEntries,
       financials,
       columnContext,
+      equalWeight,
     }),
-    [chartEntries, chartTargets, columnContext, financials],
+    [chartEntries, chartTargets, columnContext, equalWeight, financials],
   );
 
   const portfolioReturns = useMemo(
@@ -224,14 +237,14 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     [factorReturnSeries, spyReturnSeries],
   );
   const contributorInputs = useMemo(
-    () => buildPositionContributorInputs(chartTargets, chartEntries, financials, columnContext),
-    [chartEntries, chartTargets, columnContext, financials],
+    () => buildPositionContributorInputs(chartTargets, chartEntries, financials, columnContext, { equalWeight }),
+    [chartEntries, chartTargets, columnContext, equalWeight, financials],
   );
-  const riskPortfolioValue = portfolioStats.totalMktValue;
+  const riskPortfolioValue = equalWeight ? 0 : portfolioStats.totalMktValue;
 
   const sectorRows = useMemo<SectorTableRow[]>(
-    () => buildSectorRowsFromPortfolioColumns(portfolioTickers, financials, columnContext),
-    [columnContext, financials, portfolioTickers],
+    () => buildSectorRowsFromPortfolioColumns(portfolioTickers, financials, columnContext, { equalWeight }),
+    [columnContext, equalWeight, financials, portfolioTickers],
   );
   const sortedSectorRows = useMemo(
     () => sortSectorRows(sectorRows, sectorSort),
@@ -260,8 +273,8 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
 
   const riskRows = useMemo(
-    () => buildAnalyticsRiskRows({ sharpe, beta }),
-    [beta, sharpe],
+    () => buildAnalyticsRiskRows({ sharpe, beta, indicative: equalWeight }),
+    [beta, equalWeight, sharpe],
   );
   const metricsHeight = summaryRows.length + riskRows.length + 3;
   const chromeRows = 2;
@@ -297,7 +310,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     <Box flexDirection="column" width={width} height={height}>
       {portfolioTabs.length === 0 ? (
         <Box paddingX={1} paddingY={1}>
-          <Text fg={colors.textMuted}>No portfolios found</Text>
+          <Text fg={colors.textMuted}>No portfolios or watchlists found</Text>
         </Box>
       ) : (
         <>
@@ -315,7 +328,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
           {!hasPositions ? (
             <Box paddingX={1} paddingY={1}>
               <Text fg={colors.textMuted}>
-                No positions found for {activePortfolio?.name ?? "this portfolio"}
+                {activeCollection?.kind === "watchlist"
+                  ? `No tickers found for ${activeCollection.name}`
+                  : `No positions found for ${activePortfolio?.name ?? "this portfolio"}`}
               </Text>
             </Box>
           ) : view === "risk" ? (
@@ -335,6 +350,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
               selectedSectorId={effectiveSelectedSectorId}
               onSelectSector={setSelectedSectorId}
               resetScrollKey={activePortfolioId}
+              indicative={equalWeight}
             />
           ) : (
             <>
@@ -397,9 +413,9 @@ export const portfolioAnalyticsModule: PluginModule = {
       description: "Sharpe ratio, beta vs S&P 500, and sector allocation for your portfolio.",
       keywords: ["risk", "analytics", "sharpe", "beta", "sector", "allocation", "portfolio"],
       shortcut: { prefix: "PORT" },
-      canCreate: (context) => context.config.portfolios.length > 0,
+      canCreate: (context) => listAnalyticsCollections(context.config).length > 0,
       createInstance: (context) => {
-        const portfolioId = resolveTemplatePortfolioId(context.config.portfolios, context.activeCollectionId);
+        const portfolioId = resolveTemplateCollectionId(context.config, context.activeCollectionId);
         return portfolioId ? { params: { portfolioId } } : null;
       },
     },
@@ -410,9 +426,9 @@ export const portfolioAnalyticsModule: PluginModule = {
       description: "VaR (historical & parametric), factor exposure (market/size/value/momentum), beta-weighted market exposure, sector concentration, and best/worst contributors.",
       keywords: ["risk", "var", "value-at-risk", "factor", "exposure", "beta", "concentration", "contributors", "portfolio", "analytics"],
       shortcut: { prefix: "RISK" },
-      canCreate: (context) => context.config.portfolios.length > 0,
+      canCreate: (context) => listAnalyticsCollections(context.config).length > 0,
       createInstance: (context) => {
-        const portfolioId = resolveTemplatePortfolioId(context.config.portfolios, context.activeCollectionId);
+        const portfolioId = resolveTemplateCollectionId(context.config, context.activeCollectionId);
         return portfolioId ? { params: { portfolioId, view: "risk" } } : null;
       },
     },

@@ -60,6 +60,7 @@ import {
   KellyResultMetrics,
   KellySensitivitySection,
 } from "./sections";
+import { listAnalyticsCollections, resolveAnalyticsCollection } from "../analytics/portfolio-selection";
 import { getPortfolioPositionValue, resolveActivePortfolioId } from "./portfolio";
 import { useKellyCommonAssumptions } from "./state";
 import {
@@ -174,9 +175,15 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
     ticker,
     config,
   });
+  const activeCollection = useMemo(
+    () => resolveAnalyticsCollection(config, activePortfolioId),
+    [activePortfolioId, config],
+  );
   const activePortfolio = useMemo(
-    () => config.portfolios.find((portfolio) => portfolio.id === activePortfolioId) ?? null,
-    [activePortfolioId, config.portfolios],
+    () => activeCollection?.kind === "portfolio"
+      ? config.portfolios.find((portfolio) => portfolio.id === activeCollection.id) ?? null
+      : null,
+    [activeCollection, config.portfolios],
   );
   const portfolioTickers = useMemo(
     () => activePortfolioId ? getCollectionTickersFromConfig(config, tickersBySymbol, activePortfolioId) : [],
@@ -396,8 +403,8 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
   }), [focusTickerSearch, result.clipReasons, result.warnings, showSensitivity, toggleSensitivity]);
 
   const portfolioTabs = useMemo(
-    () => config.portfolios.map((portfolio) => ({ label: portfolio.name, value: portfolio.id })),
-    [config.portfolios],
+    () => listAnalyticsCollections(config).map((collection) => ({ label: collection.name, value: collection.id })),
+    [config],
   );
   const fieldColumns = width >= 92 ? 3 : 2;
   const commonColumns = width >= 78 ? 3 : 2;

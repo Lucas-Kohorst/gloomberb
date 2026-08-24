@@ -151,19 +151,23 @@ function AnalyticsHarness({
   financials,
   runtime = createTestPluginRuntime(),
   ticker = createSharedTicker(),
+  tickers,
 }: {
   config: AppConfig;
   brokerAccounts?: Record<string, BrokerAccount[]>;
   financials?: TickerFinancials;
   runtime?: PluginRuntimeAccess;
   ticker?: TickerRecord;
+  tickers?: TickerRecord[];
 }) {
   const initialState = createInitialState(config);
   initialState.focusedPaneId = TEST_PANE_ID;
   initialState.paneState[TEST_PANE_ID] = {
     portfolioId: config.layout.instances[0]?.params?.portfolioId,
   };
-  initialState.tickers = new Map([["AAPL", ticker]]);
+  initialState.tickers = new Map(
+    (tickers ?? [ticker]).map((entry) => [entry.metadata.ticker, entry]),
+  );
   initialState.brokerAccounts = brokerAccounts ?? {};
   if (financials) {
     initialState.financials = new Map([["AAPL", financials]]);
@@ -513,5 +517,71 @@ describe("PortfolioAnalyticsPane", () => {
     expect(frame).toContain("P&L           +400  (+40.00%)");
     expect(frame).toContain("Technology               100.0%       1.4k       +400  +40.00%");
     expect(frame).not.toContain("1.3k");
+  });
+
+  test("equal-weights a watchlist without positions at 50/50 and labels risk as indicative", async () => {
+    const config = createAnalyticsConfig("watchlist");
+    config.watchlists = [{ id: "watchlist", name: "Watchlist" }];
+
+    await act(async () => {
+      testSetup = await testRender(
+        <AnalyticsHarness
+          config={config}
+          tickers={[
+            {
+              metadata: {
+                ticker: "AAPL",
+                exchange: "NASDAQ",
+                currency: "USD",
+                name: "Apple",
+                sector: "Technology",
+                portfolios: [],
+                watchlists: ["watchlist"],
+                positions: [],
+                custom: {},
+                tags: [],
+              },
+            },
+            {
+              metadata: {
+                ticker: "JNJ",
+                exchange: "NYSE",
+                currency: "USD",
+                name: "Johnson & Johnson",
+                sector: "Healthcare",
+                portfolios: [],
+                watchlists: ["watchlist"],
+                positions: [],
+                custom: {},
+                tags: [],
+              },
+            },
+          ]}
+        />,
+        { width: 100, height: 24 },
+      );
+      await Promise.resolve();
+      await testSetup.renderOnce();
+    });
+
+    await flushFrame();
+
+    const overview = testSetup!.captureCharFrame();
+    expect(overview).toContain("Watchlist");
+    expect(overview).toContain("Technology");
+    expect(overview).toContain("Healthcare");
+    expect(overview).toContain("50.0%");
+    expect(overview).toContain("indicative");
+    expect(overview).not.toContain("No positions found");
+
+    await act(async () => {
+      testSetup!.mockInput.pressKey("v");
+      await testSetup!.renderOnce();
+    });
+    await flushFrame();
+
+    const risk = testSetup!.captureCharFrame();
+    expect(risk).toContain("indicative");
+    expect(risk).toContain("no lots");
   });
 });
