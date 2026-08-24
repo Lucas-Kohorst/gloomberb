@@ -7,9 +7,8 @@ import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
 import { useAssetData } from "../../runtime";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { MAJOR_CURRENCIES, formatRate, type MajorCurrency } from "./pairs";
-
-const REFRESH_INTERVAL_MS = 60_000;
 
 function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -51,9 +50,9 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     fetchRates();
-    const interval = setInterval(fetchRates, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchRates]);
+
+  useAutoRefresh(lastRefreshed, fetchRates);
 
   useShortcut((event) => {
     if (!focused) return;

@@ -9,7 +9,6 @@ import {
   type SectorDef,
 } from "./sector-data";
 
-export const REFRESH_INTERVAL_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const ONE_MONTH_DAYS = 30;
 export const ONE_YEAR_DAYS = 365;
