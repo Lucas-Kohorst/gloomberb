@@ -28,16 +28,16 @@ export function dataErrorMessage(error: string | null | undefined): string {
 export function EmptyState({ title, message, hint }: EmptyStateProps) {
   return (
     <Box flexDirection="column">
-      <Box height={1}>
+      <Box>
         <Text fg={colors.textDim}>{t(title)}</Text>
       </Box>
       {message && (
-        <Box height={1}>
-          <Text fg={colors.textMuted}>{t(message)}</Text>
+        <Box>
+          <Text fg={colors.textDim}>{t(message)}</Text>
         </Box>
       )}
       {hint && (
-        <Box height={1}>
+        <Box>
           <Text fg={colors.textMuted}>{t(hint)}</Text>
         </Box>
       )}

@@ -217,9 +217,8 @@ export function floatingPaneBg(focused: boolean, palette: ThemeColors = colors):
 }
 
 /** Background for pane title bars */
-export function paneTitleBg(focused: boolean, palette: ThemeColors = colors): string {
-  if (focused) return blendHex(palette.bg, palette.borderFocused, 0.22);
-  return blendHex(palette.panel, palette.border, 0.15);
+export function paneTitleBg(_focused: boolean, palette: ThemeColors = colors): string {
+  return palette.panel;
 }
 
 /** Background for floating pane title bars */

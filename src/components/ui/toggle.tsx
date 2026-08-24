@@ -77,14 +77,14 @@ export function SegmentedControl({
         return (
           <Box
             key={option.value}
-            backgroundColor={active ? (focused ? colors.borderFocused : colors.selected) : colors.panel}
+            backgroundColor={colors.panel}
             onMouseDown={() => {
               if (!option.disabled) onChange?.(option.value);
             }}
             cursor={option.disabled ? undefined : "pointer"}
           >
             <Text
-              fg={option.disabled ? colors.textMuted : active ? colors.selectedText : colors.textDim}
+              fg={option.disabled ? colors.textMuted : active ? colors.text : colors.textDim}
               attributes={active ? TextAttributes.BOLD : 0}
             >
               {` ${option.label} `}
