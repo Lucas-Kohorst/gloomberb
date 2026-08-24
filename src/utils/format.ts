@@ -31,27 +31,27 @@ function getNumberFormatter(decimals: number): Intl.NumberFormat {
 
 /** Format a number as currency (e.g., $1,234.56) */
 export function formatCurrency(value: number | undefined, currency = "USD"): string {
-  if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   return getCurrencyFormatter(currency).format(value);
 }
 
 /** Format a number as percentage (e.g., +1.23%) */
 export function formatPercent(value: number | undefined): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${(value * 100).toFixed(2)}%`;
 }
 
 /** Format a percentage that's already in percent form (e.g., 1.23 -> +1.23%) */
 export function formatPercentRaw(value: number | undefined): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(2)}%`;
 }
 
 /** Format large numbers compactly (e.g., 1.5T, 234B, 12.3M, 5k) */
 export function formatCompact(value: number | undefined): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
   const fmt = (n: number, decimals: number, suffix: string) => {
@@ -69,18 +69,19 @@ export function formatCompact(value: number | undefined): string {
 
 /** Format a compact value with an explicit currency code (e.g., 1.5T USD) */
 export function formatCompactCurrency(value: number | undefined, currency = "USD"): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   return `${formatCompact(value)} ${currency}`;
 }
 
 /** Format a plain number with commas */
 export function formatNumber(value: number | undefined, decimals = 2): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   return getNumberFormatter(decimals).format(value);
 }
 
 /** Format a growth rate compactly (e.g., +12%, -5%) */
 export function formatGrowthShort(value: number): string {
+  if (!Number.isFinite(value)) return "—";
   const pct = value * 100;
   const sign = pct > 0 ? "+" : "";
   return Math.abs(pct) >= 10
@@ -102,7 +103,7 @@ export function pickUnit(values: (number | undefined)[]): { suffix: string; divi
 
 /** Format a number using a pre-determined divisor (no unit suffix) */
 export function formatWithDivisor(value: number | undefined, divisor: number): string {
-  if (value === undefined || value === null) return "—";
+  if (value === undefined || value === null || !Number.isFinite(value)) return "—";
   const scaled = value / divisor;
   const abs = Math.abs(scaled);
   const decimals = abs >= 100 ? 1 : 2;
