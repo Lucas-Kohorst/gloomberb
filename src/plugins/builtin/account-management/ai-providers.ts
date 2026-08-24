@@ -151,7 +151,7 @@ function browserProviderStatus(
   if (!state || !isHostedWebClient()) {
     return {
       status: "unavailable",
-      detail: "Chrome's built-in on-device AI requires desktop Chrome in the hosted web client.",
+      detail: "On-device AI only runs in desktop Chrome. This session is the desktop app — add a key below, or open the hosted terminal in Chrome.",
     };
   }
   if (state.availability === "available") {
@@ -165,7 +165,7 @@ function browserProviderStatus(
   }
   return {
     status: "unavailable",
-    detail: state.reason || "Chrome's on-device model is not available on this device.",
+    detail: state.reason || "On-device AI is not available here.",
   };
 }
 
@@ -316,7 +316,7 @@ export function aiInventoryFixAction(row: AiProviderInventoryRow): {
   if (row.status === "available") return null;
   if (row.id === "browser-builtin") {
     if (row.status === "needs-key") return { label: "Download model", kind: "download-model" };
-    return { label: "Unsupported browser", kind: "none" };
+    return null;
   }
   if (row.id === "ollama") {
     return { label: "Start Ollama", kind: "start-ollama" };

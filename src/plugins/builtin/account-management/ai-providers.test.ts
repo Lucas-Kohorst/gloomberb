@@ -306,6 +306,14 @@ describe("AI provider fix actions", () => {
     expect(aiInventoryFixAction(row)?.kind).toBe("download-model");
   });
 
+  test("Chrome unavailable has no fake action", () => {
+    const row: AiProviderInventoryRow = {
+      id: "browser-builtin", name: "Browser", status: "unavailable", detail: "",
+      isActive: false, preferred: true, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: null,
+    };
+    expect(aiInventoryFixAction(row)).toBe(null);
+  });
+
   test("Pi provider without key fix action is add-key", () => {
     const row: AiProviderInventoryRow = {
       id: "openai", name: "OpenAI", status: "needs-key", detail: "",

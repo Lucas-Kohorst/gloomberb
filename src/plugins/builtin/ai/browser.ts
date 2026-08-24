@@ -104,7 +104,7 @@ export async function getBrowserAiState(): Promise<BrowserAiState> {
   if (!api) {
     return {
       availability: "unavailable",
-      reason: "Chrome's built-in Prompt API is not available in this browser or channel.",
+      reason: "On-device AI needs desktop Chrome with Prompt API. This browser or window does not expose it — add a key below, or open the hosted terminal in Chrome.",
     };
   }
   try {
@@ -124,7 +124,7 @@ export async function getBrowserAiState(): Promise<BrowserAiState> {
     }
     return {
       availability: "unavailable",
-      reason: "This device cannot run Chrome's on-device model.",
+      reason: "This machine does not meet Chrome's on-device model requirements (disk, GPU, or RAM).",
     };
   } catch {
     return {
