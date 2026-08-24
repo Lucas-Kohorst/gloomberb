@@ -18,7 +18,8 @@ import { readdir } from "fs/promises";
 import { Window } from "happy-dom";
 import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
-const bundlePath = process.argv[2] ?? join("dist", "web-client", "web-main.js");
+const HASHED_WEB_MAIN_SRC = /src="(\/web-main\.[A-Za-z0-9_-]+\.js)"/;
+const UNHASHED_WEB_MAIN_SRC = /src="\/web-main\.js"/;
 const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/youtubei.js/",
   "node_modules/hls.js/",
@@ -27,12 +28,7 @@ const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/@opentui/",
 ] as const;
 
-const bundle = Bun.file(bundlePath);
-if (!await bundle.exists()) {
-  console.error(`No bundle at ${bundlePath}. Run \`bun run cloud:build\` first.`);
-  process.exit(1);
-}
-const source = await bundle.text();
+const outdir = process.argv[2] ? dirname(process.argv[2]) : join("dist", "web-client");
 
 const testWindow = new Window({ url: "https://terminal.kohor.st/" });
 testWindow.document.body.innerHTML = '<div id="root"></div>';
@@ -62,6 +58,51 @@ for (const [name, value] of Object.entries(globals)) {
   Object.defineProperty(globalThis, name, { configurable: true, enumerable: true, value, writable: true });
 }
 
+// Same failure mode as a module-scope Node global: nested routes serve these
+// documents, relative assets resolve under the route, SPA fallback returns HTML.
+// share.html is served for `/s/{id}`, so it is the one that fails most visibly.
+// After a deploy, unhashed /web-main.js 404s (or worse, SPA-falls-back to HTML)
+// while hashed chunks have already been replaced.
+let hashedWebMainHref: string | null = null;
+for (const document of ["index.html", "share.html"]) {
+  const htmlPath = join(outdir, document);
+  const html = Bun.file(htmlPath);
+  if (!await html.exists()) {
+    console.error(`No hosted page at ${htmlPath}. Run \`bun run cloud:build\` first.`);
+    process.exit(1);
+  }
+  const htmlText = await html.text();
+  const relativeAssets = findRelativeAssetUrls(htmlText);
+  if (relativeAssets.length > 0) {
+    console.error(
+      `${document} references assets with relative URLs: ${relativeAssets.join(", ")}`
+      + "\n\nNested routes are served the same document, so these resolve under the route path"
+      + "\nand the SPA fallback returns HTML instead of the asset. Use root-absolute URLs.",
+    );
+    process.exit(1);
+  }
+  if (document === "index.html") {
+    const hashed = htmlText.match(HASHED_WEB_MAIN_SRC);
+    if (UNHASHED_WEB_MAIN_SRC.test(htmlText) || !hashed?.[1]) {
+      console.error(
+        "index.html must reference hashed root-absolute /web-main.<hash>.js, not /web-main.js."
+        + "\n\nUnhashed /web-main.js is a stable URL. After a deploy the old hashed chunks"
+        + "\nare gone and the SPA fallback serves HTML 200 for missing JS modules.",
+      );
+      process.exit(1);
+    }
+    hashedWebMainHref = hashed[1];
+  }
+}
+
+const bundlePath = process.argv[2] ?? join(outdir, hashedWebMainHref!.slice(1));
+const bundle = Bun.file(bundlePath);
+if (!await bundle.exists()) {
+  console.error(`No bundle at ${bundlePath}. Run \`bun run cloud:build\` first.`);
+  process.exit(1);
+}
+const source = await bundle.text();
+
 try {
   await evaluateHostedEntry(bundlePath, source);
 } catch (error) {
@@ -72,28 +113,6 @@ try {
     + "\nMove the read inside the function that needs it, or keep the module out of the renderer graph.",
   );
   process.exit(1);
-}
-
-// Same failure mode as a module-scope Node global: nested routes serve these
-// documents, relative assets resolve under the route, SPA fallback returns HTML.
-// share.html is served for `/s/{id}`, so it is the one that fails most visibly.
-const outdir = dirname(bundlePath);
-for (const document of ["index.html", "share.html"]) {
-  const htmlPath = join(outdir, document);
-  const html = Bun.file(htmlPath);
-  if (!await html.exists()) {
-    console.error(`No hosted page at ${htmlPath}. Run \`bun run cloud:build\` first.`);
-    process.exit(1);
-  }
-  const relativeAssets = findRelativeAssetUrls(await html.text());
-  if (relativeAssets.length > 0) {
-    console.error(
-      `${document} references assets with relative URLs: ${relativeAssets.join(", ")}`
-      + "\n\nNested routes are served the same document, so these resolve under the route path"
-      + "\nand the SPA fallback returns HTML instead of the asset. Use root-absolute URLs.",
-    );
-    process.exit(1);
-  }
 }
 
 const names = await readdir(outdir);
@@ -127,6 +146,7 @@ if (leaked.length > 0) {
 
 console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
 console.log("Hosted pages reference only root-absolute asset URLs (index.html, share.html).");
+console.log(`index.html references hashed ${hashedWebMainHref}.`);
 console.log(
   `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB`
   + ` (${((shareBytes / terminalGraphBytes) * 100).toFixed(1)}% of the terminal graph).`,
