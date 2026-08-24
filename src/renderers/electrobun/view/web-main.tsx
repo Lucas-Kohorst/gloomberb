@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import { createRoot } from "react-dom/client";
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import { App } from "../../../app";
 import { applyLanguageFromConfig } from "../../../i18n";
 import { UiHostProvider } from "../../../ui/host";
@@ -57,7 +58,7 @@ declare global {
 const root = createRoot(rootElement);
 const bootLog = debugLog.createLogger("web-client-boot");
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
-const isHosted = window.__GLOOM_CLOUD_HOSTED === true;
+const isHosted = isHostedWebClient();
 
 /**
  * A boot still waiting on Gloom Cloud is indistinguishable from a frozen app,

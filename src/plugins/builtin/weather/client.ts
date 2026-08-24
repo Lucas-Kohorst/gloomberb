@@ -1,3 +1,4 @@
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
@@ -51,14 +52,6 @@ interface CacheEntry<T> {
 
 const dailyCache = new Map<string, CacheEntry<WeatherDailySnapshot>>();
 const hourlyCache = new Map<string, CacheEntry<WeatherHourlySnapshot>>();
-
-function isHostedWebClient(): boolean {
-  try {
-    return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
-  } catch {
-    return false;
-  }
-}
 
 /** Public TWC Kalshi JSON, or the hosted Worker proxy that avoids browser CORS. */
 export function weatherRequestUrl(pathAndQuery: string): string {

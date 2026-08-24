@@ -14,6 +14,7 @@ import {
   normalizeChatPresence,
   isChatPresenceEvent,
 } from "./normalizers";
+import { isHostedWebClient } from "../shared/hosted-api";
 import { debugLog } from "../utils/debug-log";
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
 import { mergeQuoteSubscriptionTargets } from "../market-data/quote-subscription-target";
@@ -69,7 +70,7 @@ function marketKey(symbol: string, exchange?: string): string {
 
 function hostedCloudWebSocketUrl(): string | null {
   try {
-    if ((globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED !== true) {
+    if (!isHostedWebClient()) {
       return null;
     }
     const location = (globalThis as { location?: { protocol?: string; host?: string } }).location;

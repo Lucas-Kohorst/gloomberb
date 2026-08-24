@@ -1,3 +1,5 @@
+import { isHostedWebClient } from "../../../shared/hosted-api";
+
 /** Single Connections-pane row for every Adjacent Cloud keyed-data provider. */
 export const ADJACENT_CLOUD_CONNECTION_ID = "adjacent-cloud";
 
@@ -27,13 +29,7 @@ export function resolveConnectionSourceId(id: string): string {
   return id;
 }
 
-export function isHostedWebClient(): boolean {
-  try {
-    return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
-  } catch {
-    return false;
-  }
-}
+export { isHostedWebClient } from "../../../shared/hosted-api";
 
 /** Same-origin Adjacent Cloud keyed-data URL: `/api/data/{providerId}/{keyPath}`. */
 export function adjacentCloudDataUrl(providerId: string, keyPath = "", search = ""): string {

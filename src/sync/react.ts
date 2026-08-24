@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore, type Dispatch } from "react";
+import { isHostedWebClient } from "../shared/hosted-api";
 import { apiClient } from "../api-client";
 import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
 import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
@@ -64,7 +65,7 @@ export function useCloudSyncRuntime({
     let lastUserId: string | null = apiClient.getCurrentUser()?.id ?? null;
     const syncSignedInUser = async () => {
       const userId = apiClient.getCurrentUser()?.id ?? null;
-      const hosted = (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
+      const hosted = isHostedWebClient();
       const hostedAuthenticated = (globalThis as { __GLOOM_CLOUD_AUTHENTICATED?: boolean }).__GLOOM_CLOUD_AUTHENTICATED === true;
       if (userId) {
         setHostedConfigUserId(userId);

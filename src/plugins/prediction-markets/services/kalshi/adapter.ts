@@ -1,3 +1,4 @@
+import { isHostedWebClient, KALSHI_PROXY_PATH } from "../../../../shared/hosted-api";
 import {
   buildPredictionCatalogResourceKey,
   buildPredictionDetailResourceKey,
@@ -40,15 +41,10 @@ import type {
 
 export { normalizeKalshiMarket } from "./normalize";
 
-function isHostedWebClient(): boolean {
-  try {
-    return (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
-  } catch {
-    return false;
-  }
-}
-
 function kalshiApiBase(): string {
+  return isHostedWebClient()
+    ? KALSHI_PROXY_PATH
+    : "https://external-api.kalshi.com/trade-api/v2";
   return isHostedWebClient()
     ? "/api/proxy/kalshi"
     : "https://external-api.kalshi.com/trade-api/v2";

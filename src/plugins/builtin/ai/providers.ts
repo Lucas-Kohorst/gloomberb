@@ -1,3 +1,4 @@
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
 
 export const AI_PROVIDER_IDS = [
@@ -222,12 +223,6 @@ export function resolveDefaultAiProviderId(
     ?? "anthropic";
 }
 
-/** Hosted web is the only renderer where Chrome's Prompt API is available. */
-export function isHostedWebClient(): boolean {
-  return typeof globalThis !== "undefined"
-    && (globalThis as { __GLOOM_CLOUD_HOSTED?: unknown }).__GLOOM_CLOUD_HOSTED === true;
-}
-
 export function getAiProviderUnavailableReason(provider: AiProvider): string {
   return provider.unavailableReason ?? `${provider.name} is not connected.`;
 }
@@ -242,3 +237,5 @@ export function setDetectedProviders(providers: AiProvider[] | null): void {
     outputModes: [...provider.outputModes],
   })) ?? null;
 }
+
+export { isHostedWebClient } from "../../../shared/hosted-api";

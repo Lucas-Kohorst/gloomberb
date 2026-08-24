@@ -1,3 +1,4 @@
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import { httpFetch } from "../../../utils/http-transport";
 import { CUSTOM_SERVICE_OPTION, getByokKnownService } from "./services";
 import { BYOK_CUSTOM_SERVICE_ID, type ByokApiKeyEntry, type ByokAuthType } from "./types";
@@ -64,16 +65,6 @@ export async function fetchByokSpec(entry: ByokApiKeyEntry): Promise<{ body: str
   });
   if (!result.ok) throw new ByokOpenApiError(`The OpenAPI spec URL could not be reached (${result.status}).`, "servers");
   return { body: result.body, url: specUrl };
-}
-
-/** Detects whether the app is running on the hosted Cloudflare web client. */
-function isHostedWebClient(): boolean {
-  try {
-    return typeof globalThis !== "undefined"
-      && (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED === true;
-  } catch {
-    return false;
-  }
 }
 
 /**
