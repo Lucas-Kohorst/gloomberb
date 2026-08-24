@@ -157,7 +157,7 @@ function renderAiCell(row: AiProviderInventoryRow, column: AiColumn): DataTableC
     case "fix": {
       const action = aiInventoryFixAction(row);
       return {
-        text: action?.label ?? (row.status === "available" ? "—" : ""),
+        text: action?.label ?? "—",
         color: action ? colors.borderFocused : colors.textMuted,
       };
     }
@@ -367,7 +367,6 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
   usePaneFooter("ai-providers", () => ({
     info: [
       ...(busyProvider ? [{ id: "busy", parts: [{ text: "checking…", tone: "muted" as const }] }] : []),
-      ...(selectedRow ? [{ id: "active-provider", parts: [{ text: selectedRow.isActive ? `${selectedRow.name} active` : `${selectedRow.name}: ${aiInventoryStatusLabel(selectedRow.status)}`, tone: selectedRow.isActive ? "positive" as const : "muted" as const }] }] : []),
     ],
     hints: editing
       ? [
@@ -500,18 +499,10 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
         )}
       </Box>
       {selectedRow ? (
-        <Box flexDirection="column" flexShrink={0} paddingX={1}>
-          <Box height={1}>
-            <Text fg={colors.textDim}>{selectedRow.preferred ? "★ " : ""}{selectedRow.name}: </Text>
-            <Text fg={statusColor(selectedRow.status)}>{aiInventoryStatusLabel(selectedRow.status)}</Text>
-            {selectedRow.isActive ? <Text fg={colors.positive}> · active</Text> : null}
-            {busyProvider === selectedRow.id ? <Text fg={colors.textMuted}> · checking…</Text> : null}
-          </Box>
-          <Box height={1}>
-            <Text fg={colors.textMuted} wrapMode="word" width={Math.max(12, width - 2)}>
-              {selectedRow.detail}
-            </Text>
-          </Box>
+        <Box height={2} flexShrink={0} paddingX={1}>
+          <Text fg={colors.textMuted} wrapMode="word" width={Math.max(12, width - 2)}>
+            {selectedRow.detail}
+          </Text>
         </Box>
       ) : null}
     </Box>
