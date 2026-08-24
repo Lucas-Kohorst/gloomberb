@@ -161,9 +161,9 @@ function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOr
   if (sectionOrder === "ranked") return 0;
   const priorities: Record<string, number> = {
     // Query-specific results lead the command list.
-    "exact match": -110,
     "ask ai": -100,
     articles: -90,
+    "exact match": -80,
     saved: -70,
     "primary listing": -60,
     "other listings": -50,

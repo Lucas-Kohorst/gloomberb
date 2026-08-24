@@ -53,42 +53,6 @@ export function mergeTickerSearchResultItems(
       : item);
 }
 
-/** Trailing chips on a resolved security: Details, Quote, Chart. */
-export const ROOT_SECURITY_ACTION_CHIPS = "DES QQ G";
-
-function tickerCompanyName(item: ResultItem): string {
-  return item.detail.split("|")[0]?.trim() ?? "";
-}
-
-function tickerExchange(item: ResultItem): string {
-  const raw = item.right?.trim() ?? "";
-  if (!raw || raw === ROOT_SECURITY_ACTION_CHIPS) return "";
-  const token = raw.split(/\s+/).at(-1) ?? "";
-  if (!token || /^(DES|QQ|G)$/i.test(token)) return "";
-  return token;
-}
-
-function formatRootSecurityLabel(item: ResultItem): string {
-  const name = tickerCompanyName(item);
-  const symbol = item.label.trim();
-  const exchange = tickerExchange(item);
-  const parts = [symbol];
-  if (name && name.toUpperCase() !== symbol.toUpperCase() && !symbol.toUpperCase().includes(name.toUpperCase())) {
-    parts.push(name);
-  }
-  if (exchange && exchange.toUpperCase() !== symbol.toUpperCase()) parts.push(exchange);
-  return parts.join("  ");
-}
-
-function decorateRootSecurityItem(item: ResultItem): ResultItem {
-  return {
-    ...item,
-    category: "Exact Match",
-    label: formatRootSecurityLabel(item),
-    right: ROOT_SECURITY_ACTION_CHIPS,
-  };
-}
-
 export function mergePlainRootTickerResults(
   query: string,
   providerItems: ResultItem[],
@@ -96,23 +60,20 @@ export function mergePlainRootTickerResults(
 ): ResultItem[] {
   const merged: ResultItem[] = [];
   const seen = new Set<string>();
-  const addItem = (item: ResultItem, options?: { skipInfo?: boolean; security?: boolean }) => {
+  const addItem = (item: ResultItem, options?: { skipInfo?: boolean }) => {
     if (options?.skipInfo && item.kind === "info") return;
-    const decorated = options?.security ? decorateRootSecurityItem(item) : item;
-    const key = (decorated.kind === "ticker" || decorated.kind === "search")
-      ? `${decorated.kind}:${decorated.label.trim().toUpperCase()}:${(decorated.right || "").trim().toUpperCase()}`
-      : `${decorated.kind}:${decorated.id}`;
+    const key = (item.kind === "ticker" || item.kind === "search")
+      ? `${item.kind}:${item.label.trim().toUpperCase()}:${(item.right || "").trim().toUpperCase()}`
+      : `${item.kind}:${item.id}`;
     if (seen.has(key)) return;
     seen.add(key);
-    merged.push(decorated);
+    merged.push(item);
   };
 
   providerItems
     .filter((item) => item.category === "Exact Match" || isExactTickerResultMatch(item, query))
-    .forEach((item) => addItem(item, { skipInfo: true, security: true }));
-  rootItems.forEach((item) => addItem(item, {
-    security: item.category === "Exact Match" || isExactTickerResultMatch(item, query),
-  }));
+    .forEach((item) => addItem(item, { skipInfo: true }));
+  rootItems.forEach((item) => addItem(item));
   providerItems
     .filter((item) => item.category !== "Exact Match" && !isExactTickerResultMatch(item, query))
     .forEach((item) => addItem(item, { skipInfo: true }));

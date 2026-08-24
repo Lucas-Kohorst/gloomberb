@@ -80,20 +80,6 @@ describe("command bar view model helpers", () => {
     ]);
   });
 
-  test("puts Exact Match above Ask AI so a ticker leads the list", () => {
-    const sections = buildSections([
-      { id: "assist", category: "Ask AI" },
-      { id: "exact", category: "Exact Match" },
-      { id: "pane", category: "Panes" },
-    ]);
-
-    expect(sections.map((section) => section.category)).toEqual([
-      "Exact Match",
-      "Ask AI",
-      "Panes",
-    ]);
-  });
-
   test("orders ticker sections by their best-ranked candidate", () => {
     const sections = buildSections([
       { id: "primary", category: "Primary Listing" },

@@ -81,22 +81,16 @@ function mutablePaneRegistryMap(map: ReadonlyMap<string, unknown>): Map<string, 
 }
 
 describe("CommandBar", () => {
-  test("searches tickers on a plain symbol query and leads with the security", async () => {
+  test("keeps generic command filtering separate from ticker search", async () => {
     const searchQueries: string[] = [];
     testSetup = await testRender(<CommandBarHarness
-      query="aapl"
+      query="MSFT"
       dataProvider={makeDataProvider(async (query) => {
         searchQueries.push(query);
-        return [{
-          providerId: "test",
-          symbol: "AAPL",
-          name: "Apple Inc.",
-          exchange: "NASDAQ",
-          type: "EQUITY",
-        }];
+        return [];
       })}
     />, {
-      width: 100,
+      width: 80,
       height: 24,
     });
 
@@ -105,15 +99,9 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Exact Match");
-    expect(frame).toContain("AAPL  Apple Inc");
-    expect(frame).toContain("NASDAQ");
-    expect(frame).toContain("DES QQ G");
-    expect(frame).not.toContain("DES AAPL —");
-    expect(searchQueries.some((query) => query.toLowerCase() === "aapl")).toBe(true);
-    const securityIdx = frame.indexOf("AAPL  Apple Inc");
-    const askIdx = frame.indexOf("Ask AI");
-    if (askIdx >= 0) expect(securityIdx).toBeLessThan(askIdx);
+    expect(frame).not.toContain("Tickers");
+    expect(frame).not.toContain("Microsoft Corp.");
+    expect(searchQueries).toEqual([]);
   });
 
   test("runs check for updates from the command bar", async () => {

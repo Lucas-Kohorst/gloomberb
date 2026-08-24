@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAssistResultItems,
-  looksLikeTickerQuery,
   shouldAutoAskAssist,
-  shouldPlainRootTickerSearch,
   shouldShowAssistRow,
   type AssistRequestState,
 } from "./model";
@@ -30,16 +28,7 @@ function labels(
 describe("shouldAutoAskAssist", () => {
   test("stays out of the way while the user speaks the command language", () => {
     expect(shouldAutoAskAssist({ query: "chart nvidia vs amd", hasShortcutIntent: false })).toBe(true);
-    expect(looksLikeTickerQuery("nvda")).toBe(true);
-    expect(looksLikeTickerQuery("BRK.B")).toBe(true);
-    expect(looksLikeTickerQuery("chart nvidia")).toBe(false);
-    expect(shouldPlainRootTickerSearch("aapl")).toBe(true);
-    expect(shouldPlainRootTickerSearch("Apple")).toBe(true);
-    expect(shouldPlainRootTickerSearch("profile")).toBe(false);
-    expect(shouldPlainRootTickerSearch("new chat pane")).toBe(false);
-    expect(shouldAutoAskAssist({ query: "nvda", hasShortcutIntent: false })).toBe(false);
-    expect(shouldAutoAskAssist({ query: "aapl", hasShortcutIntent: false })).toBe(false);
-    expect(shouldAutoAskAssist({ query: "BRK.B", hasShortcutIntent: false })).toBe(false);
+    expect(shouldAutoAskAssist({ query: "nvda", hasShortcutIntent: false })).toBe(true);
     // A recognized prefix — with or without an argument — is not a question.
     expect(shouldAutoAskAssist({ query: "T NVDA", hasShortcutIntent: true })).toBe(false);
     expect(shouldAutoAskAssist({ query: "gg", hasShortcutIntent: false })).toBe(false);
@@ -95,7 +84,7 @@ describe("buildAssistResultItems", () => {
       .toEqual(["Rate limited — try again in a minute"]);
   });
 
-  test("shows candidates as a title with the prefix as a trailing chip", () => {
+  test("shows candidates input-first and runs the exact command-bar text", () => {
     const runs: Array<[string, string | undefined]> = [];
     const items = buildAssistResultItems({
       ...handlers,
@@ -111,8 +100,9 @@ describe("buildAssistResultItems", () => {
       },
     });
 
-    expect(items[0]?.label).toBe("Chart NVDA vs AMD");
-    expect(items[0]?.right).toBe("G  ✦");
+    expect(items[0]?.label).toBe("G NVDA AMD — Chart NVDA vs AMD");
+    // The marker rides the trailing column instead of shifting the label.
+    expect(items[0]?.right).toBe("✦");
     expect(items[0]?.accent).toBe(true);
     items[0]?.action();
     expect(runs).toEqual([["G NVDA AMD", "G"]]);

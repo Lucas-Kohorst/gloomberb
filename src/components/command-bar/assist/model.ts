@@ -11,19 +11,6 @@ const ASSIST_CATEGORY = "Ask AI";
 /** Shorter queries are almost always a half-typed prefix, not a question. */
 const ASSIST_AUTO_MIN_QUERY_LENGTH = 3;
 
-/** 1–5 letter symbols, plus share-class forms like BRK.B / BF.A. */
-const TICKER_LIKE_QUERY = /^[A-Za-z]{1,5}(?:[.=][A-Za-z0-9]{1,4})?$/;
-
-/** True when the query is a ticker token, not a question for Ask AI. */
-export function looksLikeTickerQuery(query: string): boolean {
-  return TICKER_LIKE_QUERY.test(query.trim());
-}
-
-/** Plain root queries that should resolve securities on the ticker index. */
-export function shouldPlainRootTickerSearch(query: string): boolean {
-  return looksLikeTickerQuery(query);
-}
-
 export type AssistErrorKind = "unavailable" | "rate-limited" | "failed";
 
 /** Whether the request was started by the debounce or by the user hitting Enter. */
@@ -59,10 +46,7 @@ export function shouldAutoAskAssist({
   hasShortcutIntent: boolean;
 }): boolean {
   if (hasShortcutIntent) return false;
-  const trimmed = query.trim();
-  if (trimmed.length < ASSIST_AUTO_MIN_QUERY_LENGTH) return false;
-  if (looksLikeTickerQuery(trimmed)) return false;
-  return true;
+  return query.trim().length >= ASSIST_AUTO_MIN_QUERY_LENGTH;
 }
 
 /**
@@ -112,8 +96,9 @@ function assistRow(options: {
 }
 
 /**
- * Rows for the assist section. They group under Ask AI, which leads natural-
- * language queries; ticker matches sort above it.
+ * Rows for the assist section. They always land in their own category, which
+ * sorts to the top of the list, so the answer to what the user typed leads the
+ * results and plain Enter runs the AI's best guess.
  */
 export function buildAssistResultItems({
   query,
@@ -178,17 +163,11 @@ export function buildAssistResultItems({
     })];
   }
 
-  // Title in the label, prefix as the trailing chip — never "DES AAPL — …".
-  return active.candidates.map((candidate, index) => {
-    const prefix = candidate.prefix?.trim();
-    return {
-      ...assistRow({
-        id: `assist:candidate:${index}:${candidate.input}`,
-        label: candidate.title,
-        kind: "action",
-        action: () => onRunCandidate(candidate.input, candidate.prefix),
-      }),
-      right: prefix ? `${prefix}  ${ASSIST_GLYPH}` : ASSIST_GLYPH,
-    };
-  });
+  // Input first: the row doubles as a lesson in the prefix language.
+  return active.candidates.map((candidate, index) => assistRow({
+    id: `assist:candidate:${index}:${candidate.input}`,
+    label: `${candidate.input} — ${candidate.title}`,
+    kind: "action",
+    action: () => onRunCandidate(candidate.input, candidate.prefix),
+  }));
 }
