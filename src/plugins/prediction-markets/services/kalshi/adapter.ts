@@ -17,11 +17,16 @@ import type {
 } from "../../types";
 import {
   fetchJson,
+  getCachedPredictionResource,
   loadCachedPredictionResource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
 } from "../fetch";
 import { revivePredictionHistoryPoints } from "../history";
+import {
+  fetchHostedAdjacentKalshiCatalogPage,
+  parseHostedAdjacentKalshiPageCursor,
+} from "./adjacent-catalog";
 import {
   isOpenKalshiStatus,
   normalizeKalshiBookLevel,
@@ -45,9 +50,6 @@ function kalshiApiBase(): string {
   return isHostedWebClient()
     ? KALSHI_PROXY_PATH
     : "https://external-api.kalshi.com/trade-api/v2";
-  return isHostedWebClient()
-    ? "/api/proxy/kalshi"
-    : "https://external-api.kalshi.com/trade-api/v2";
 }
 
 function kalshiUrl(path: string): string {
@@ -69,6 +71,25 @@ const kalshiCursors = new Map<string, string | null>();
 
 function kalshiCursorKey(searchQuery: string, categoryId: PredictionCategoryId): string {
   return `${categoryId}:${searchQuery.trim().toLowerCase()}`;
+}
+
+function sortKalshiCatalogMarkets(
+  markets: PredictionMarketSummary[],
+  browseTab: PredictionBrowseTab,
+): PredictionMarketSummary[] {
+  return [...markets].sort((left, right) => {
+    if (browseTab === "ending") {
+      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
+      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
+      return leftEnds - rightEnds;
+    }
+    if (browseTab === "new") {
+      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
+      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
+      return rightCreated - leftCreated;
+    }
+    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
+  });
 }
 
 function rememberKalshiCursor(
@@ -175,8 +196,16 @@ async function loadKalshiVenueCatalog(
   categoryId: PredictionCategoryId,
   browseTab: PredictionBrowseTab,
 ): Promise<PredictionMarketSummary[]> {
+  const localBrowse = searchQuery
+    ? getCachedPredictionResource<PredictionMarketSummary[]>(
+        "catalog",
+        buildPredictionCatalogResourceKey("kalshi", categoryId, "", browseTab),
+      ) ?? []
+    : [];
   const maxPages = searchQuery
-    ? SEARCH_KALSHI_EVENT_MAX_PAGES
+    ? localBrowse.length > 0
+      ? 1
+      : SEARCH_KALSHI_EVENT_MAX_PAGES
     : DEFAULT_KALSHI_EVENT_MAX_PAGES;
   const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
@@ -189,30 +218,25 @@ async function loadKalshiVenueCatalog(
   rememberKalshiCursor(searchQuery, categoryId, eventPage.nextCursor);
   const events = eventPage.events;
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
-  if (openMarkets.length === 0) return fromEvents;
-  const fromMarkets = normalizeKalshiCatalog(
-    [{ title: "", markets: openMarkets }],
-    searchQuery,
-    categoryId,
-    browseTab,
-  );
   const merged = new Map<string, PredictionMarketSummary>();
-  for (const market of [...fromMarkets, ...fromEvents]) {
+  for (const market of localBrowse) {
     merged.set(market.key, market);
   }
-  return [...merged.values()].sort((left, right) => {
-    if (browseTab === "ending") {
-      const leftEnds = left.endsAt ? new Date(left.endsAt).getTime() : Infinity;
-      const rightEnds = right.endsAt ? new Date(right.endsAt).getTime() : Infinity;
-      return leftEnds - rightEnds;
+  for (const market of fromEvents) {
+    merged.set(market.key, market);
+  }
+  if (openMarkets.length > 0) {
+    const fromMarkets = normalizeKalshiCatalog(
+      [{ title: "", markets: openMarkets }],
+      searchQuery,
+      categoryId,
+      browseTab,
+    );
+    for (const market of fromMarkets) {
+      merged.set(market.key, market);
     }
-    if (browseTab === "new") {
-      const leftCreated = left.createdAt ? new Date(left.createdAt).getTime() : 0;
-      const rightCreated = right.createdAt ? new Date(right.createdAt).getTime() : 0;
-      return rightCreated - leftCreated;
-    }
-    return (right.volume24h ?? 0) - (left.volume24h ?? 0);
-  });
+  }
+  return sortKalshiCatalogMarkets([...merged.values()], browseTab);
 }
 
 export async function loadKalshiCatalog(
@@ -225,10 +249,19 @@ export async function loadKalshiCatalog(
   return await loadCachedPredictionResource(
     "catalog",
     buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
-    // Browse/search hits Kalshi directly. Adjacent is reserved for indices and
-    // detail enrichments — routing the PM catalog through it added a multi-page
-    // hop before the venue call, which is what made the pane feel stuck.
-    async () => await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab),
+    async () => {
+      if (isHostedWebClient()) {
+        const page = await fetchHostedAdjacentKalshiCatalogPage({
+          searchQuery: normalizedQuery,
+          categoryId,
+          browseTab,
+          page: 1,
+        });
+        rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+        return page.markets;
+      }
+      return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
+    },
     PREDICTION_CACHE_POLICIES.catalog,
     options,
   );
@@ -241,6 +274,19 @@ export async function loadMoreKalshiCatalog(
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (isHostedWebClient()) {
+    const page = await fetchHostedAdjacentKalshiCatalogPage({
+      searchQuery: normalizedQuery,
+      categoryId,
+      page: parseHostedAdjacentKalshiPageCursor(cursor),
+    });
+    rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    return {
+      markets: page.markets,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
   const page = categoryId === "all"
     ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
     : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);

@@ -5,6 +5,7 @@ import { blendHex, colors, hoverBg } from "../../../theme/colors";
 import { blendForContrast, contrastRatio } from "../../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../../utils/format";
 import { formatMarketPrice } from "../../../market-data/market/format";
+import type { SortComparableValue } from "../../../utils/sort-values";
 import type { OptionColumn, OptionColumnId, OptionTableRow } from "./types";
 
 type OptionColorRole = "call" | "put" | "price" | "activity" | "iv" | "strike";
@@ -173,6 +174,34 @@ function formatOptionContractCell(contract: OptionContract | undefined, column: 
       return formatIv(contract.impliedVolatility);
     case "strike":
       return formatStrikeLabel(contract.strike);
+  }
+}
+
+export function optionSortValue(row: OptionTableRow, columnId: OptionColumnId): SortComparableValue {
+  if (columnId === "strike") return row.strike;
+  const contract = optionContractForColumn(row, columnId);
+  if (!contract) return null;
+  switch (columnId) {
+    case "callLast":
+    case "putLast":
+      return contract.lastPrice ?? null;
+    case "callBid":
+    case "putBid":
+      return contract.bid ?? null;
+    case "callAsk":
+    case "putAsk":
+      return contract.ask ?? null;
+    case "callVolume":
+    case "putVolume":
+      return contract.volume ?? null;
+    case "callOpenInterest":
+    case "putOpenInterest":
+      return contract.openInterest ?? null;
+    case "callIv":
+    case "putIv":
+      return contract.impliedVolatility ?? null;
+    case "strike":
+      return row.strike;
   }
 }
 

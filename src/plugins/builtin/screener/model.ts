@@ -4,6 +4,7 @@
 
 import type { DataTableColumn } from "../../../components";
 import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
+import { fuzzyFilter } from "../../../utils/fuzzy-search";
 import type { ScreenerResult } from "./types";
 
 export type ScreenerColumnId =
@@ -34,6 +35,10 @@ export const DEFAULT_SORT_PREFERENCE: ScreenerSortPreference = {
   columnId: "marketCap",
   direction: "desc",
 };
+
+export function filterScreenerRows(rows: ScreenerResult[], query: string): ScreenerResult[] {
+  return fuzzyFilter(rows, query, (row) => `${row.symbol} ${row.name} ${row.sector ?? ""}`);
+}
 
 export function buildScreenerColumns(width: number): ScreenerColumn[] {
   const symbolWidth = 7;

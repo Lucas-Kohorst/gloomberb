@@ -1,5 +1,6 @@
 import { colors } from "../../theme/colors";
 import { formatCompact, formatNumber, formatTimeAgo } from "../../utils/format";
+import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { compareSortValues } from "../../utils/sort-values";
 import type {
   PredictionBrowseTab,
@@ -203,6 +204,22 @@ export function getNextPredictionSort(
   return { columnId: null, direction: initialDirection };
 }
 
+function predictionSearchHaystack(market: PredictionListRow): string {
+  return `${market.searchText} ${formatPredictionTicker(market)}`;
+}
+
+function matchesPredictionSearchQuery(
+  market: PredictionListRow,
+  searchQuery: string,
+): boolean {
+  const tokens = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  return tokens.every(
+    (token) =>
+      fuzzyFilter([market], token, predictionSearchHaystack).length > 0,
+  );
+}
+
 export function filterPredictionMarkets(
   markets: PredictionListRow[],
   browseTab: PredictionBrowseTab,
@@ -211,8 +228,6 @@ export function filterPredictionMarkets(
   searchQuery: string,
   watchlist: Set<string>,
 ): PredictionListRow[] {
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-
   return markets.filter((market) => {
     if (venueScope !== "all" && market.venue !== venueScope) return false;
     if (!matchesPredictionCategory(market, categoryId)) return false;
@@ -222,8 +237,7 @@ export function filterPredictionMarkets(
     ) {
       return false;
     }
-    if (!normalizedQuery) return true;
-    return market.searchText.includes(normalizedQuery);
+    return matchesPredictionSearchQuery(market, searchQuery);
   });
 }
 
@@ -334,7 +348,10 @@ export function getPredictionColumnValue(
     case "created":
       return { text: formatPredictionUpdatedAt(market.createdAt) };
     case "market_id":
-      return { text: formatPredictionTicker(market), color: colors.textBright };
+      return {
+        text: market.kind === "group" ? "-" : formatPredictionTicker(market),
+        color: colors.textBright,
+      };
     default:
       return { text: "—" };
   }

@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { DataTableView, type DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { formatNumber } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { formatPredictionProbability } from "../metrics";
 import type {
   PredictionBookLevel,
@@ -94,7 +99,22 @@ export function PredictionMarketBookView({
   onPreviewOrder: (intent: PredictionOrderPreviewIntent) => void;
   width: number;
 }) {
-  const rows = useMemo(() => buildBookRows(detail), [detail]);
+  const [sortPreference, setSortPreference] = useState<SortPreference<BookColumnId>>({
+    columnId: null,
+    direction: "desc",
+  });
+  const naturalRows = useMemo(() => buildBookRows(detail), [detail]);
+  const rows = useMemo(
+    () => applySortPreference(naturalRows, sortPreference, (row, columnId) => {
+      switch (columnId) {
+        case "outcome": return row.outcome;
+        case "side": return row.side;
+        case "price": return row.level.price;
+        case "size": return row.level.size;
+      }
+    }),
+    [naturalRows, sortPreference],
+  );
   const [selectedIndex, setSelectedIndex] = useState<number | null>(() =>
     rows.length > 0 ? 0 : null,
   );
@@ -120,9 +140,13 @@ export function PredictionMarketBookView({
       }}
       columns={BOOK_COLUMNS}
       items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as BookColumnId,
+        { defaultDirection: columnId === "outcome" || columnId === "side" ? "asc" : "desc" },
+      ))}
       getItemKey={(row) => row.id}
       onActivate={(row) => onPreviewOrder(row.intent)}
       onRowMouseDown={(row, index, event) => {

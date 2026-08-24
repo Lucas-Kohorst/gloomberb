@@ -56,8 +56,12 @@ export default {
     // opening a link does not download the whole workspace first.
     if (isShareDocumentPath(url.pathname)) return serveApp(request, env, "/share.html");
     // Same isolation as share.html: a logged-in If-None-Match for an older
-    // share-main.js must not 304 the stale autolink-as-HTML bundle.
-    if (isShareScriptPath(url.pathname)) return serveApp(request, env, url.pathname);
+    // share-main.js must not 304 the stale autolink-as-HTML bundle. Static
+    // modules also skip the document validators so a missing chunk is not a
+    // 304 of cached index.html.
+    if (isShareScriptPath(url.pathname) || isStaticModulePath(url.pathname)) {
+      return serveApp(request, env, url.pathname);
+    }
     return serveApp(request, env);
   },
 } satisfies ExportedHandler<Env>;
@@ -391,16 +395,14 @@ const APP_CSP = [
 ].join("; ");
 
 async function serveApp(request: Request, env: Env, assetPath?: string): Promise<Response> {
-  const shareDocument = assetPath === "/share.html" || (assetPath != null && isShareScriptPath(assetPath));
+  const servedPath = assetPath ?? new URL(request.url).pathname;
+  const shareHtml = servedPath === "/share.html";
+  const staticModule = isStaticModulePath(servedPath);
   let response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
-  if (shareDocument && response.status === 304) {
+  if (shareHtml && response.status === 304) {
     response = await env.ASSETS.fetch(assetsRequest(request, assetPath));
   }
   const headers = new Headers(response.headers);
-  headers.set(
-    "cache-control",
-    shareDocument ? "private, no-store" : "private, max-age=0, must-revalidate",
-  );
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");
@@ -409,8 +411,19 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
   headers.set("cross-origin-resource-policy", "same-origin");
   headers.set("permissions-policy", "camera=(), geolocation=(), microphone=(), payment=(), usb=()");
   headers.set("content-security-policy-report-only", APP_CSP);
-  if (shareDocument) {
+  // SPA `not_found_handling` returns index.html 200 for missing files. A
+  // module script that receives HTML throws "Failed to fetch dynamically
+  // imported module" instead of a recoverable 404 after a deploy.
+  if (staticModule && (response.status === 404 || isHtmlContentType(headers))) {
+    headers.delete("etag");
+    headers.delete("last-modified");
+    headers.set("cache-control", "private, no-store");
+    headers.set("content-type", "text/plain; charset=utf-8");
+    return new Response("Not found", { status: 404, headers });
+  }
+  if (shareHtml) {
     // Shares are unlisted links rather than public pages, so keep crawlers out.
+    headers.set("cache-control", "private, no-store");
     headers.set("x-robots-tag", "noindex, nofollow, noarchive");
     // A 304 here would reuse the browser's cached body for `/s/{id}`. Logged-in
     // profiles still hold index.html from when this path was the SPA, so a
@@ -421,7 +434,27 @@ async function serveApp(request: Request, env: Env, assetPath?: string): Promise
     const status = response.status === 304 ? 200 : response.status;
     return new Response(response.body, { status, headers });
   }
+  headers.set(
+    "cache-control",
+    isContentHashedJsPath(servedPath) && response.ok
+      ? "public, max-age=31536000, immutable"
+      : "private, max-age=0, must-revalidate",
+  );
   return new Response(response.body, { status: response.status, headers });
+}
+
+function isStaticModulePath(pathname: string): boolean {
+  return /\.(?:js|css|map)$/i.test(pathname);
+}
+
+function isContentHashedJsPath(pathname: string): boolean {
+  const file = pathname.split("/").pop() ?? "";
+  return /^chunk-[A-Za-z0-9_-]+\.js$/.test(file)
+    || /^(?:web-main|share-main)\.[A-Za-z0-9_-]+\.js$/.test(file);
+}
+
+function isHtmlContentType(headers: Headers): boolean {
+  return (headers.get("content-type") ?? "").toLowerCase().includes("text/html");
 }
 
 /**

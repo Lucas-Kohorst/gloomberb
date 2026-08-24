@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../../ui";
 import {
   DataTableView,
@@ -12,6 +12,11 @@ import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
 import { formatCompact, formatNumber, formatPercent } from "../../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../../utils/sort-values";
 import {
   useAssetData,
   useDebouncedPluginPaneState,
@@ -110,7 +115,26 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
     );
   }, [dataProvider, range]);
   const { data, loading, error, reload } = useTickerRequest<PricePoint[]>(loader, symbol, exchange);
-  const rows = useMemo(() => buildHistoricalPriceRows(data ?? []), [data]);
+  const [sortPreference, setSortPreference] = useState<SortPreference<HistoryColumnId>>({
+    columnId: "date",
+    direction: "desc",
+  });
+  const rows = useMemo(() => applySortPreference(
+    buildHistoricalPriceRows(data ?? []),
+    sortPreference,
+    (row, columnId) => {
+      switch (columnId) {
+        case "date": return pricePointDate(row.point)?.getTime() ?? null;
+        case "open": return row.point.open ?? null;
+        case "high": return row.point.high ?? null;
+        case "low": return row.point.low ?? null;
+        case "close": return row.point.close;
+        case "change": return row.change;
+        case "changePercent": return row.changePercent;
+        case "volume": return row.point.volume ?? null;
+      }
+    },
+  ), [data, sortPreference]);
   const columns = useMemo(() => buildHistoryColumns(width), [width]);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
@@ -182,9 +206,13 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       rootHeight={height}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as HistoryColumnId,
+        { defaultDirection: "desc" },
+      ))}
       getItemKey={(row) => row.key}
       renderCell={renderCell}
       emptyStateTitle={loading ? "Loading historical prices..." : "No historical prices"}

@@ -10,6 +10,11 @@ import { ScannerWaitingState } from "./waiting";
 import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerFlowEvent } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -141,9 +146,30 @@ function FlowPane({ focused, width, height }: PaneProps) {
     () => ({ minPremium, side, kind, volOi, expiry, universe }),
     [expiry, kind, minPremium, side, universe, volOi],
   );
+  const [sortPreference, setSortPreference] = useState<SortPreference>({
+    columnId: null,
+    direction: "desc",
+  });
   const events = useMemo(
-    () => filterFlowEvents(feed.payload?.events, filters, watchlist),
-    [feed.payload?.events, filters, watchlist],
+    () => applySortPreference(
+      filterFlowEvents(feed.payload?.events, filters, watchlist),
+      sortPreference,
+      (event, columnId) => {
+        switch (columnId) {
+          case "time": return event.at;
+          case "ticker": return event.underlying;
+          case "type": return event.kind;
+          case "strike": return event.strike;
+          case "expiry": return event.expiry;
+          case "side": return event.side;
+          case "size": return event.size;
+          case "premium": return event.premium;
+          case "volOi": return event.volOi ?? null;
+          default: return null;
+        }
+      },
+    ),
+    [feed.payload?.events, filters, sortPreference, watchlist],
   );
 
   const selectedEvent = events.find((event) => event.id === selectedId) ?? events[0] ?? null;
@@ -189,9 +215,11 @@ function FlowPane({ focused, width, height }: PaneProps) {
         rootHeight={Math.max(2, height - 1)}
         columns={columns}
         items={events}
-        sortColumnId={null}
-        sortDirection="desc"
-        onHeaderClick={() => {}}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId, {
+          defaultDirection: columnId === "ticker" || columnId === "type" || columnId === "side" ? "asc" : "desc",
+        }))}
         getItemKey={(event) => event.id}
         onRootKeyDown={(event) => {
           if (event.name !== "g") return false;

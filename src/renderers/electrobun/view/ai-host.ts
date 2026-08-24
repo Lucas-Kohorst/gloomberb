@@ -2,6 +2,7 @@ import {
   AI_RUNNER_CAPABILITY_ID,
   type AiRunnerEvent,
 } from "../../../capabilities";
+import { createBrowserAiRunHost } from "../../../plugins/builtin/ai/browser";
 import {
   AiRunCancelledError,
   installAiRunHost,
@@ -10,6 +11,7 @@ import {
   type AiRuntimeAuthType,
   type AiRuntimeCatalog,
 } from "../../../plugins/builtin/ai/runner";
+import { isHostedWebClient } from "../../../shared/hosted-api";
 import { debugLog } from "../../../utils/debug-log";
 import { backendRequest, onCapabilityEvent } from "./backend-rpc";
 
@@ -65,6 +67,23 @@ function connectProvider(
 }
 
 export function installElectrobunAiHost(): void {
+  if (isHostedWebClient()) {
+    void installAiRunHost(createBrowserAiRunHost(), {
+      catalogTimeoutMs: AI_STARTUP_READINESS_TIMEOUT_MS,
+      timeoutMessage: "In-app AI provider discovery timed out during hosted startup",
+      onCatalogError(error) {
+        aiHostLog.warn("Hosted browser AI discovery could not finish during startup", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
+    }).catch((error) => {
+      aiHostLog.warn("Hosted browser AI could not be initialized", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return;
+  }
+
   const host: AiRunHost = {
     getCatalog() {
       return backendRequest("capability.invoke", {

@@ -12,6 +12,11 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { useShortcut } from "../../../react/input";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { parseByokPayload, type ParsedByokPayload } from "./format";
 import { fetchByokEndpoint } from "./request";
 import { readByokKeysFromConfig } from "./store";
@@ -192,6 +197,14 @@ function ByokTableView({
     }));
   }, [columnIds, width]);
 
+  const [sortPreference, setSortPreference] = useState<SortPreference>({
+    columnId: null,
+    direction: "asc",
+  });
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sortPreference, (row, columnId) => row[columnId] || null),
+    [rows, sortPreference],
+  );
   const renderCell = useCallback((row: Record<string, string>, column: DataTableColumn): DataTableCell => ({
     text: row[column.id] ?? "",
     color: colors.text,
@@ -204,10 +217,12 @@ function ByokTableView({
       rootHeight={height}
       selection={{ kind: "none" }}
       columns={columns}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId, {
+        defaultDirection: "asc",
+      }))}
       getItemKey={(_row, index) => `${index}`}
       renderCell={renderCell}
       emptyStateTitle="No rows."

@@ -62,7 +62,7 @@ export function getPortfolioPositionValue(
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): string | number {
+function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): string | number | null {
   switch (columnId) {
     case "sector":
       return row.sector;
@@ -71,7 +71,7 @@ function getSectorSortValue(row: SectorTableRow, columnId: SectorColumnId): stri
     case "pnl":
       return row.pnl;
     case "return":
-      return row.returnPct ?? Number.NEGATIVE_INFINITY;
+      return row.returnPct;
     case "bar":
     case "weight":
       return row.weight;
@@ -107,44 +107,51 @@ export function buildSectorRowsFromPortfolioColumns(
   tickers: TickerRecord[],
   financialsMap: Map<string, TickerFinancials>,
   columnContext: ColumnContext,
+  options?: { equalWeight?: boolean },
 ): SectorTableRow[] {
+  const equalWeight = options?.equalWeight === true && tickers.length > 0;
   const sectorMap = new Map<string, {
     sector: string;
     value: number;
     pnl: number;
     costBasis: number;
+    weight: number;
   }>();
+  const equalShare = equalWeight ? 1 / tickers.length : 0;
 
   for (const ticker of tickers) {
     const financials = financialsMap.get(ticker.metadata.ticker);
-    const value = getPortfolioPositionValue(ticker, financials, columnContext);
+    const value = equalWeight ? equalShare : getPortfolioPositionValue(ticker, financials, columnContext);
     if (value == null) continue;
 
-    const pnl = getSortValue(PORTFOLIO_PNL_COLUMN, ticker, financials, columnContext);
-    const costBasis = getSortValue(PORTFOLIO_COST_COLUMN, ticker, financials, columnContext);
+    const pnl = equalWeight ? 0 : getSortValue(PORTFOLIO_PNL_COLUMN, ticker, financials, columnContext);
+    const costBasis = equalWeight ? 0 : getSortValue(PORTFOLIO_COST_COLUMN, ticker, financials, columnContext);
     const sector = ticker.metadata.sector || financials?.profile?.sector || "Unknown";
     const current = sectorMap.get(sector) ?? {
       sector,
       value: 0,
       pnl: 0,
       costBasis: 0,
+      weight: 0,
     };
 
     current.value += value;
+    current.weight += equalWeight ? equalShare : 0;
     current.pnl += typeof pnl === "number" && Number.isFinite(pnl) ? pnl : 0;
     current.costBasis += typeof costBasis === "number" && Number.isFinite(costBasis) ? costBasis : 0;
     sectorMap.set(sector, current);
   }
 
   const totalValue = [...sectorMap.values()].reduce((sum, row) => sum + row.value, 0);
-  if (totalValue === 0) return [];
+  if (!equalWeight && totalValue === 0) return [];
+  if (equalWeight && sectorMap.size === 0) return [];
 
   return [...sectorMap.values()]
     .map((row) => ({
       ...row,
       id: row.sector,
-      weight: row.value / totalValue,
-      returnPct: row.costBasis !== 0 ? (row.pnl / row.costBasis) * 100 : null,
+      weight: equalWeight ? row.weight : row.value / totalValue,
+      returnPct: !equalWeight && row.costBasis !== 0 ? (row.pnl / row.costBasis) * 100 : null,
     }))
     .sort((left, right) => right.weight - left.weight || left.sector.localeCompare(right.sector));
 }

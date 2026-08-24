@@ -79,6 +79,23 @@ const browserAvailable: BrowserAiState = { availability: "available", reason: "R
 const browserUnavailable: BrowserAiState = { availability: "unavailable", reason: "Not available." };
 
 describe("AI provider inventory status resolution", () => {
+  test("Chrome built-in AI is available on hosted when the model is ready", () => {
+    Object.defineProperty(globalThis, "__GLOOM_CLOUD_HOSTED", { configurable: true, value: true });
+    const snapshot = resolveAiInventory({
+      catalog: emptyCatalog(),
+      browserAiState: browserAvailable,
+      ollamaState: null,
+      byokKeys: [],
+      activeProviderId: "browser-builtin",
+    });
+    const browser = snapshot.rows[0]!;
+    expect(browser.id).toBe("browser-builtin");
+    expect(browser.status).toBe("available");
+    expect(browser.preferred).toBe(true);
+    expect(canSelectAiProvider(browser)).toBe(true);
+    delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+  });
+
   test("Chrome built-in AI is listed first, preferred, and reflects browser state", () => {
     // isHostedWebClient() is false in the test environment, so Chrome shows
     // unavailable even with a positive browser state. Verify ordering and
@@ -231,6 +248,11 @@ describe("AI provider active-provider selection", () => {
     expect(canSelectAiProvider(withKey)).toBe(true);
     expect(canSelectAiProvider(noKey)).toBe(false);
     expect(canSelectAiProvider(unavailable)).toBe(false);
+    const browserDownloadable: AiProviderInventoryRow = {
+      id: "browser-builtin", name: "Browser", status: "needs-key", detail: "",
+      isActive: false, preferred: true, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: null,
+    };
+    expect(canSelectAiProvider(browserDownloadable)).toBe(true);
   });
 
   test("only one provider is active at a time", () => {

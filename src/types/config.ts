@@ -718,7 +718,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     disabledPlugins: [],
     disabledSources: [],
     pluginConfig: {},
-    theme: "amber",
+    theme: "adjacent",
     chartPreferences: {
       renderer: "auto",
     },

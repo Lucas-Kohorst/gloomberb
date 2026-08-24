@@ -7,7 +7,12 @@ import {
   resetSecSummaryPersistence,
 } from "./summary-cache";
 import { SEC_REDFLAG_KEYWORDS } from "./summary-contract";
-import { isAiRunCancelled, summarizeFiling, type SummaryAiRunner } from "./summary-runner";
+import {
+  BROWSER_MODEL_DOWNLOAD_MESSAGE,
+  isAiRunCancelled,
+  summarizeFiling,
+  type SummaryAiRunner,
+} from "./summary-runner";
 
 function filing(accessionNumber: string, form = "10-K", date = "2026-01-01"): SecFilingItem {
   return {
@@ -100,10 +105,25 @@ const SUMMARY_JSON = JSON.stringify({
   notableChanges: "Changed X.",
 });
 
+const originalLanguageModel = (globalThis as { LanguageModel?: unknown }).LanguageModel;
+
 afterEach(() => {
   resetSecSummaryPersistence();
   setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+  (globalThis as { LanguageModel?: unknown }).LanguageModel = originalLanguageModel;
+  delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
 });
+
+function readyBrowserProviders() {
+  return [{
+    id: "browser-builtin" as const,
+    name: "Browser (on-device)",
+    available: true,
+    status: "ready" as const,
+    outputModes: ["plain", "screener"] as const,
+    defaultModelId: "gemini-nano",
+  }];
+}
 
 describe("summarizeFiling", () => {
   test("generates a summary, detects red flags, and writes the cache", async () => {
@@ -252,6 +272,47 @@ describe("summarizeFiling", () => {
       providers: [],
       run: fakeRun(SUMMARY_JSON),
     })).rejects.toThrow(/No AI provider is available/);
+  });
+
+  test("summarizes with a ready browser provider without a catalog account", async () => {
+    Object.defineProperty(globalThis, "__GLOOM_CLOUD_HOSTED", { configurable: true, value: true });
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "available",
+      create: async () => ({}),
+    };
+    const { persistence } = fakePersistence();
+    attachSecSummaryPersistence(persistence);
+
+    const result = await summarizeFiling({
+      filing: filing("A1"),
+      content: "Filing body.",
+      providers: readyBrowserProviders(),
+      run: fakeRun(SUMMARY_JSON),
+    });
+    expect(result.providerId).toBe("browser-builtin");
+    expect(result.summary.executiveSummary).toBe("Sentence one. Sentence two. Sentence three.");
+  });
+
+  test("tells the user to download the Chrome model when it is downloadable", async () => {
+    Object.defineProperty(globalThis, "__GLOOM_CLOUD_HOSTED", { configurable: true, value: true });
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "downloadable",
+      create: async () => ({}),
+    };
+    const { persistence } = fakePersistence();
+    attachSecSummaryPersistence(persistence);
+    let called = 0;
+
+    await expect(summarizeFiling({
+      filing: filing("A1"),
+      content: "body",
+      providers: readyBrowserProviders(),
+      run: () => {
+        called += 1;
+        return fakeRun(SUMMARY_JSON)({ providerId: "browser-builtin", prompt: "" });
+      },
+    })).rejects.toThrow(BROWSER_MODEL_DOWNLOAD_MESSAGE);
+    expect(called).toBe(0);
   });
 
   test("throws when the provider is not ready", async () => {

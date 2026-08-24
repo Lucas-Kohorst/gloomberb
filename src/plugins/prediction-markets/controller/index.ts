@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useAppInputCapture } from "../../../state/app/input-capture";
-import { usePaneInstance } from "../../../state/app/context";
+import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../state/app/context";
+import { persistPredictionStarsToDefaultWatchlist } from "../collection-watchlist";
 import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
@@ -40,6 +41,9 @@ export function usePredictionMarketsController({
   focused: boolean;
 }) {
   const paneInstance = usePaneInstance();
+  const dispatch = useAppDispatch();
+  const config = useAppSelector((state) => state.config);
+  const tickersBySymbol = useAppSelector((state) => state.tickers);
   const paneSettings = useMemo(
     () => getPredictionMarketsPaneSettings(paneInstance?.settings),
     [paneInstance?.settings],
@@ -152,7 +156,6 @@ export function usePredictionMarketsController({
     appViewportHeight: appViewport.height,
     browseTab,
     categoryId,
-    debouncedSearchQuery: data.debouncedSearchQuery,
     detailOpen,
     effectiveVenueScope,
     headerScrollRef,
@@ -169,6 +172,7 @@ export function usePredictionMarketsController({
     selectedIndex: data.selectedIndex,
     selectedRow: data.selectedRow,
     selectedRowKey,
+    firstVisibleRowKey: data.visibleRows[0]?.key ?? null,
     setDetailOpen,
     setInitialParamsApplied,
     setLastVenueScope,
@@ -199,17 +203,24 @@ export function usePredictionMarketsController({
   const toggleWatchlist = useCallback(
     (row: PredictionListRow) => {
       const rowMarketKeys = [...new Set(row.watchMarketKeys)];
+      const allWatched = rowMarketKeys.every((marketKey) =>
+        watchlist.includes(marketKey),
+      );
       setWatchlist((current) => {
-        const allWatched = rowMarketKeys.every((marketKey) =>
-          current.includes(marketKey),
-        );
         if (allWatched) {
           return current.filter((entry) => !rowMarketKeys.includes(entry));
         }
         return [...new Set([...current, ...rowMarketKeys])];
       });
+      void persistPredictionStarsToDefaultWatchlist({
+        summaries: row.markets.length > 0 ? row.markets : [row.representative],
+        starred: !allWatched,
+        config,
+        tickers: tickersBySymbol,
+        dispatch,
+      });
     },
-    [setWatchlist],
+    [config, dispatch, setWatchlist, tickersBySymbol, watchlist],
   );
 
   const setBrowseSelection = useCallback(
@@ -323,6 +334,7 @@ export function usePredictionMarketsController({
   );
 
   usePredictionControllerKeyboard({
+    browseTab,
     categoryId,
     detailOpen,
     detailScrollRef,
@@ -353,6 +365,7 @@ export function usePredictionMarketsController({
     browseTab,
     categoryId,
     catalogHasMore: data.catalogHasMore,
+    catalogLastRefreshAt: data.catalogLastRefreshAt,
     catalogLoadCount: data.catalogLoadCount,
     catalogLoadingMore: data.catalogLoadingMore,
     catalogStatus: data.catalogStatus,

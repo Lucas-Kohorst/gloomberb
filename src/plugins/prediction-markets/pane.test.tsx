@@ -81,6 +81,9 @@ describe("prediction markets pane interactions", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Will the Fed cut rates?");
+    expect(frame).toContain("updated");
+    expect(frame).toContain("poll 20s");
+    expect(frame).not.toContain("poll 1m");
   });
 
   test("keeps fallback venue markets visible when one catalog fails", async () => {
@@ -286,6 +289,68 @@ describe("prediction markets pane interactions", () => {
     expect(tradeFetches).toHaveLength(1);
     expect(historyFetches).toHaveLength(1);
     expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
+  });
+
+  test("selects browse tabs with 1-4 and cycles them with [ and ]", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    const pluginState = () =>
+      harnessStateRef.current?.paneState[TEST_PANE_ID]?.pluginState?.[
+        "prediction-markets"
+      ];
+
+    expect(pluginState()?.selectedRowKey).not.toBeNull();
+
+    await emitKeypress(testSetup, { name: "4", sequence: "4" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("watchlist");
+
+    await emitKeypress(testSetup, { name: "1", sequence: "1" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("top");
+    expect(pluginState()?.selectedRowKey).not.toBeNull();
+
+    await emitKeypress(testSetup, { name: "]", sequence: "]" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("ending");
+
+    await emitKeypress(testSetup, { name: "[", sequence: "[" });
+    await flushFrames(testSetup);
+    expect(pluginState()?.browseTab).toBe("top");
+  });
+
+  test("filters the loaded catalog immediately while remote search is still pending", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    await emitKeypress(testSetup, { name: "/", sequence: "/" });
+    await flushFrames(testSetup, 1);
+    await emitKeypress(testSetup, {
+      name: "f",
+      sequence: "f",
+      targetEditable: true,
+    });
+    await emitKeypress(testSetup, {
+      name: "e",
+      sequence: "e",
+      targetEditable: true,
+    });
+    await emitKeypress(testSetup, {
+      name: "d",
+      sequence: "d",
+      targetEditable: true,
+    });
+    await flushFrames(testSetup, 1);
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Will the Fed cut rates?");
+    expect(frame).not.toContain("Will inflation fall?");
+    expect(frame).not.toContain("Searching markets...");
   });
 
   test("moves selection through the list with keyboard navigation without opening detail", async () => {
@@ -612,7 +677,7 @@ describe("prediction markets pane interactions", () => {
 
     let frame = testSetup.captureCharFrame();
     expect(frame).toContain("Watchlist");
-    expect(frame).toContain("Federal funds target rate after");
+    expect(frame).toContain("Federal funds target rate");
     expect(frame).toContain("▸");
 
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });

@@ -329,6 +329,9 @@ export function aiInventoryFixAction(row: AiProviderInventoryRow): {
  * Available providers and providers with a configured key are selectable.
  */
 export function canSelectAiProvider(row: AiProviderInventoryRow): boolean {
+  if (row.id === "browser-builtin") {
+    return row.status === "available" || row.status === "needs-key";
+  }
   return row.status === "available" || row.hasKey;
 }
 

@@ -19,6 +19,7 @@ import {
   type StackSortPreference,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
+import { applySortPreference, type SortComparableValue } from "../../../utils/sort-values";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
@@ -157,26 +158,26 @@ function renderWeatherCell(row: WeatherRow, column: WeatherColumn, selected: boo
   }
 }
 
-function compareWeatherRows(left: WeatherRow, right: WeatherRow, columnId: WeatherSortColumnId): number {
+function weatherSortValue(row: WeatherRow, columnId: WeatherSortColumnId): SortComparableValue {
   switch (columnId) {
     case "city":
-      return left.city.localeCompare(right.city);
+      return row.city;
     case "station":
-      return left.stationId.localeCompare(right.stationId);
+      return row.stationId;
     case "high":
-      return (left.high ?? -Infinity) - (right.high ?? -Infinity);
+      return row.high;
     case "implied":
-      return (left.implied ?? -Infinity) - (right.implied ?? -Infinity);
+      return row.implied;
     case "yForecast":
-      return (left.yForecast ?? -Infinity) - (right.yForecast ?? -Infinity);
+      return row.yForecast;
     case "ySettlement":
-      return (left.ySettlement ?? -Infinity) - (right.ySettlement ?? -Infinity);
+      return row.ySettlement;
     case "low":
-      return (left.low ?? -Infinity) - (right.low ?? -Infinity);
+      return row.low;
     case "now":
-      return (left.now ?? -Infinity) - (right.now ?? -Infinity);
+      return row.now;
     case "status":
-      return statusLabel(left.status).localeCompare(statusLabel(right.status));
+      return statusLabel(row.status);
   }
 }
 
@@ -391,7 +392,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [allRows, searchQuery],
   );
   const rows = useMemo(
-    () => sortStackItems(filteredRows, sortPreference, compareWeatherRows),
+    () => applySortPreference(filteredRows, sortPreference, weatherSortValue),
     [filteredRows, sortPreference],
   );
   const selected = rows.find((row) => row.id === selectedId) ?? null;

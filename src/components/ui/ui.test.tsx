@@ -62,7 +62,7 @@ function DataTableActivationHarness() {
       items={[{ id: "alpha", name: "Alpha" }]}
       sortColumnId={null}
       sortDirection="asc"
-      onHeaderClick={() => {}}
+      onHeaderClick={() => undefined}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}
@@ -101,7 +101,7 @@ function DataTableSectionHarness() {
       items={rows}
       sortColumnId={null}
       sortDirection="asc"
-      onHeaderClick={() => {}}
+      onHeaderClick={() => undefined}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}
@@ -161,7 +161,7 @@ function DataTableHorizontalScrollHarness({
       items={items}
       sortColumnId={null}
       sortDirection="asc"
-      onHeaderClick={() => {}}
+      onHeaderClick={() => undefined}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       getItemKey={(row) => row.id}
@@ -200,7 +200,7 @@ function DataTableVirtualizationHarness() {
       items={rows}
       sortColumnId={null}
       sortDirection="asc"
-      onHeaderClick={() => {}}
+      onHeaderClick={() => undefined}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}
       syncHeaderScroll={() => {}}

@@ -77,7 +77,7 @@ function Harness() {
           items={rows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => {}}
+          onHeaderClick={() => undefined}
           getItemKey={(row) => row.id}
           renderCell={(row): DataTableCell => ({ text: row.title })}
           emptyStateTitle="No rows"
@@ -123,7 +123,7 @@ function GroupedHarness() {
           items={groupedRows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => {}}
+          onHeaderClick={() => undefined}
           getItemKey={(row) => row.id}
           renderSectionHeader={(row) => row.type === "section"
             ? { text: row.title }

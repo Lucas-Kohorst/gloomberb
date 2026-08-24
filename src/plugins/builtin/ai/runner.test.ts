@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { detectProviders, setDetectedProviders, type AiProvider } from "./providers";
 import {
   checkAiProviderStatus,
   connectAiRuntimeProvider,
@@ -47,9 +48,14 @@ function catalog(connectionState: "connected" | "not_connected"): AiRuntimeCatal
   };
 }
 
+const originalLanguageModel = (globalThis as { LanguageModel?: unknown }).LanguageModel;
+
 afterEach(() => {
   setAiRunHost(null);
   setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+  setDetectedProviders(null);
+  (globalThis as { LanguageModel?: unknown }).LanguageModel = originalLanguageModel;
+  delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
 });
 
 describe("AI runtime catalog", () => {
@@ -136,6 +142,27 @@ describe("AI runner", () => {
     await expect(installation).resolves.toEqual({ providers: [], accounts: [], models: [] });
     expect(catalogErrors).toHaveLength(1);
     expect(catalogErrors[0]).toMatchObject({ message: "AI discovery timed out" });
+  });
+
+  test("does not publish an empty catalog after discovery failure", async () => {
+    const ready: AiProvider = {
+      id: "anthropic",
+      name: "Claude",
+      available: true,
+      status: "ready",
+      outputModes: ["plain", "structured", "screener"],
+    };
+    setAiRuntimeCatalog(catalog("connected"));
+    setDetectedProviders([ready]);
+    await installAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+      getCatalog: async () => ({ providers: [], accounts: [], models: [] }),
+    }, {
+      catalogTimeoutMs: 50,
+      timeoutMessage: "AI discovery timed out",
+    });
+    expect(getAiRuntimeCatalog().providers[0]?.providerId).toBe("openai-codex");
+    expect(detectProviders().some((provider) => provider.id === "anthropic")).toBe(true);
   });
 
   test("delegates canonical provider id, model, and structured history to the native host", async () => {
@@ -232,5 +259,20 @@ describe("checkAiProviderStatus timeout", () => {
     const result = await checkAiProviderStatus("openai-codex");
     expect(result.available).toBe(true);
     expect(result.authenticated).toBe(true);
+  });
+
+  test("checks browser-builtin via the Prompt API instead of host RPC", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "available",
+      create: async () => ({}),
+    };
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
+      checkStatus: () => new Promise(() => {}),
+    });
+    const result = await checkAiProviderStatus("browser-builtin");
+    expect(result.available).toBe(true);
+    expect(result.authenticated).toBe(true);
+    expect(result.message).toBeNull();
   });
 });

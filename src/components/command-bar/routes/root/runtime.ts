@@ -5,7 +5,7 @@ import type { DataProvider } from "../../../../types/data-provider";
 import type { CommandDef, PaneTemplateCreateOptions, PaneTemplateDef } from "../../../../types/plugin";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { TickerSearchCandidate } from "../../../../tickers/search";
-import type { AssistRowHandlers } from "../../assist/model";
+import { shouldPlainRootTickerSearch, type AssistRowHandlers } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
 import type { CommandBarRoute } from "../../workflow/types";
@@ -233,7 +233,10 @@ export function useCommandBarRootRuntime({
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
-  const rootTickerSearchArg = rootSecurityDescriptionArg;
+  const rootPlainTickerSearchArg = rootShortcutIntent.kind === "none" && shouldPlainRootTickerSearch(rootQuery)
+    ? rootQuery.trim()
+    : null;
+  const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
 
   const {
     activeRootProviderResultsKey,
@@ -248,7 +251,7 @@ export function useCommandBarRootRuntime({
     localTickerSearchResultItems,
     portfolios: state.config.portfolios,
     readTickerSearchCache,
-    rootPlainTickerSearchArg: null,
+    rootPlainTickerSearchArg,
     rootQuery,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
@@ -303,10 +306,18 @@ export function useCommandBarRootRuntime({
 
   useEffect(() => {
     if (!activeRootProviderResultsKey) return;
+    // Plain ticker merge keeps local command rows; jumping to 0 would steal Enter.
+    if (rootPlainTickerSearchArg) return;
     setRootSelectedIdx(0);
     setRootHoveredIdx(null);
     nativeListScrollRef.current?.scrollTo(0);
-  }, [activeRootProviderResultsKey, nativeListScrollRef, setRootHoveredIdx, setRootSelectedIdx]);
+  }, [
+    activeRootProviderResultsKey,
+    nativeListScrollRef,
+    rootPlainTickerSearchArg,
+    setRootHoveredIdx,
+    setRootSelectedIdx,
+  ]);
 
   const rootGhostCompletion = !currentRoute && rootShortcutIntent.kind === "inferred-complete"
     ? rootShortcutIntent.completionQuery

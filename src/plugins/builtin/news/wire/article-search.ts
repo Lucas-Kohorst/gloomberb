@@ -85,12 +85,14 @@ export function cancelRssNewsWarm(): void {
   cancelNewsWarm = null;
 }
 
+const ARTICLE_TOKEN_SPLIT = /[^\p{L}\p{N}]+/u;
+
 export function tokenizeArticleQuery(query: string): string[] {
   // `ART trump` is the command prefix plus a topic — "art" is not a search term.
   const withoutArtPrefix = query.replace(/^\s*art\b/i, " ");
   return withoutArtPrefix
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(ARTICLE_TOKEN_SPLIT)
     .filter((token) => (
       token.length >= 2
       && !STOPWORDS.has(token)
@@ -100,7 +102,7 @@ export function tokenizeArticleQuery(query: string): string[] {
 }
 
 export function looksLikeArticleQuery(query: string): boolean {
-  const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const tokens = query.toLowerCase().split(ARTICLE_TOKEN_SPLIT).filter(Boolean);
   if (tokens.some((token) => INTENT_WORDS.has(token))) return true;
   return /^\s*art\b/i.test(query);
 }

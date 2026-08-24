@@ -8,6 +8,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { EarningsEvent } from "../../../types/data-provider";
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
+import { nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
@@ -31,7 +32,9 @@ import {
   EARNINGS_COLUMN_DEFS,
   renderEarningsCell,
   renderEarningsSectionHeader,
+  sortEarningsDisplayRows,
   type EarningsColumn,
+  type EarningsColumnId,
 } from "./table";
 
 function EarningsCalendarPane({ focused, width, height }: PaneProps) {
@@ -43,6 +46,10 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
+  const [sortPreference, setSortPreference] = useState<SortPreference<EarningsColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
   const requestIdRef = useRef(0);
 
   const tickers = useAppSelector((state) => state.tickers);
@@ -63,7 +70,11 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     [fallbackTickerSymbols, scopedSymbols],
   );
 
-  const rows = useMemo(() => groupEarningsByRelativeDate(events), [events]);
+  const groupedRows = useMemo(() => groupEarningsByRelativeDate(events), [events]);
+  const rows = useMemo(
+    () => sortEarningsDisplayRows(groupedRows, sortPreference),
+    [groupedRows, sortPreference],
+  );
   const eventRows = useMemo(
     () => rows.filter((row): row is EarningsEventDisplayRow => row.kind === "event"),
     [rows],
@@ -172,9 +183,17 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       rootHeight={height}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as EarningsColumnId,
+        {
+          defaultDirection: columnId === "symbol" || columnId === "name" || columnId === "when" || columnId === "status"
+            ? "asc"
+            : "desc",
+        },
+      ))}
       getItemKey={(row) => row.key}
       renderSectionHeader={renderEarningsSectionHeader}
       renderCell={renderCell}

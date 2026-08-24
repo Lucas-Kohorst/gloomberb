@@ -18,7 +18,7 @@ import {
 import { type DataTableKeyEvent } from "../../../../components";
 import { colors } from "../../../../theme/colors";
 import { t } from "../../../../i18n";
-import { getAiProvider, resolveDefaultAiProviderId } from "../providers";
+import { getAiProvider, isHostedWebClient, resolveDefaultAiProviderId } from "../providers";
 import { useAiRuntimeProviders } from "../use-runtime-providers";
 import {
   getSelectableAiRunners,
@@ -365,7 +365,9 @@ export function AiScreenerPane({ focused, width, height }: PaneProps) {
 
       {readyProviders.length === 0 && (
         <Box flexDirection="column" paddingX={1} paddingTop={1}>
-          <Text fg={colors.textDim}>{t("No AI providers are ready. Connect an account in pane settings.")}</Text>
+          <Text fg={colors.textDim}>{t(isHostedWebClient()
+            ? "No AI providers are ready. In Chrome, open Account Management → AI and click Download model, or connect a cloud provider in pane settings."
+            : "No AI providers are ready. Connect an account in pane settings.")}</Text>
         </Box>
       )}
 

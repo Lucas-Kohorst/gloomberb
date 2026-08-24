@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import type { SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { AUCTION_HISTORY_DAYS } from "./client";
 import type { TreasuryAuction } from "./types";
 
@@ -123,15 +123,15 @@ export function auctionSize(auction: TreasuryAuction): number | null {
   return auction.totalAccepted ?? auction.offeringAmount;
 }
 
-function sortValue(auction: TreasuryAuction, columnId: AuctionColumnId): number | string {
+function sortValue(auction: TreasuryAuction, columnId: AuctionColumnId): string | number | null {
   switch (columnId) {
     case "date": return auctionDateValue(auction.auctionDate);
     case "type": return auction.secType;
     case "term": return termLengthDays(auction.securityTerm);
-    case "rate": return rateValue(auction) ?? Number.NEGATIVE_INFINITY;
-    case "btc": return auction.bidToCoverRatio ?? Number.NEGATIVE_INFINITY;
-    case "indirect": return indirectPct(auction) ?? Number.NEGATIVE_INFINITY;
-    case "size": return auctionSize(auction) ?? Number.NEGATIVE_INFINITY;
+    case "rate": return rateValue(auction);
+    case "btc": return auction.bidToCoverRatio ?? null;
+    case "indirect": return indirectPct(auction);
+    case "size": return auctionSize(auction);
   }
 }
 
@@ -139,16 +139,15 @@ export function visibleAuctions(
   auctions: readonly TreasuryAuction[],
   options: { filter: AuctionFilter; query: string; sort: AuctionSortPreference },
 ): TreasuryAuction[] {
-  const direction = options.sort.direction === "asc" ? 1 : -1;
   return auctions
     .filter((auction) => matchesFilter(auction, options.filter) && matchesAuctionQuery(auction, options.query))
     .sort((left, right) => {
-      const leftValue = sortValue(left, options.sort.columnId);
-      const rightValue = sortValue(right, options.sort.columnId);
-      const comparison = typeof leftValue === "string" && typeof rightValue === "string"
-        ? leftValue.localeCompare(rightValue, "en-US", { sensitivity: "base" })
-        : Number(leftValue) - Number(rightValue);
-      if (comparison !== 0) return comparison * direction;
+      const comparison = compareSortValues(
+        sortValue(left, options.sort.columnId),
+        sortValue(right, options.sort.columnId),
+        options.sort.direction,
+      );
+      if (comparison !== 0) return comparison;
       // Ties keep the newest auction on top regardless of sort direction.
       return auctionDateValue(right.auctionDate) - auctionDateValue(left.auctionDate);
     });

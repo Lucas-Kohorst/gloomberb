@@ -72,7 +72,18 @@ describe("prediction-markets fetch connection attribution", () => {
 
     // Adjacent catalog calls include platform=kalshi in the query string,
     // but the host is adjacent.markets so it must attribute to "adjacent-cloud".
-    await fetchJson("https://api.adjacent.markets/api/v1/public/markets?platform=kalshi&limit=1");
+    await fetchJson("https://api.adjacent.markets/api/v1/markets?platform=kalshi&per_page=1");
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.id).toBe("adjacent-cloud");
+  });
+
+  test("attributes hosted Adjacent catalog URLs to the adjacent-cloud connection", async () => {
+    const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
+    setConnectionRequestReporter((id, report) => reports.push({ id, report }));
+    mockTransport({ "/api/data/adjacent": { body: '{"data":[]}' } });
+
+    await fetchJson("https://terminal.kohor.st/api/data/adjacent/markets?platform=kalshi&per_page=50");
 
     expect(reports).toHaveLength(1);
     expect(reports[0]!.id).toBe("adjacent-cloud");

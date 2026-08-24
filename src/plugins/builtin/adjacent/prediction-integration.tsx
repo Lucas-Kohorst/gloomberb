@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Box, Text } from "../../../ui";
-import { TextAttributes } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import type { ChartMouseEvent } from "../../../components/chart/core/pointer";
 import type { AdjacentClient } from "./client";
-import type { AdjacentSimilarMarket, AdjacentNewsArticle } from "./types";
+import type { AdjacentSimilarMarket } from "./types";
 import { centsToProbability } from "./normalize";
 
 export function SimilarMarketsView({
@@ -84,82 +83,6 @@ export function SimilarMarketsView({
           </Box>
         );
       })}
-    </Box>
-  );
-}
-
-export function AdjacentMarketNewsView({
-  client,
-  marketId,
-  onSelectArticle,
-}: {
-  client: AdjacentClient;
-  marketId: string;
-  onSelectArticle?: (article: AdjacentNewsArticle) => void;
-}) {
-  const [articles, setArticles] = useState<AdjacentNewsArticle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    setArticles([]);
-
-    client.getMarketNews(marketId)
-      .then((response) => {
-        setArticles(response.news ?? []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      });
-  }, [client, marketId]);
-
-  if (loading) {
-    return <Spinner label="Loading news..." />;
-  }
-
-  if (error) {
-    return (
-      <Box paddingX={1}>
-        <Text fg={colors.textDim}>News unavailable: {error}</Text>
-      </Box>
-    );
-  }
-
-  if (articles.length === 0) {
-    return <EmptyState title="No related news." hint="Adjacent did not return news for this market." />;
-  }
-
-  return (
-    <Box flexDirection="column" paddingX={1} gap={1}>
-      {articles.map((article) => (
-        <Box
-          key={article.id}
-          flexDirection="column"
-          height={2}
-          {...(onSelectArticle && article.url
-            ? {
-                cursor: "pointer" as const,
-                "data-gloom-interactive": "true",
-                onMouseDown: (event: ChartMouseEvent) => {
-                  event.preventDefault?.();
-                  onSelectArticle(article);
-                },
-              }
-            : {})}
-        >
-          <Text fg={colors.text} wrapMode="ellipsis" attributes={TextAttributes.BOLD}>
-            {article.title}
-          </Text>
-          <Text fg={colors.textDim}>
-            {article.source} · {new Date(article.published_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-            {article.summary ? ` · ${article.summary.slice(0, 60)}` : ""}
-          </Text>
-        </Box>
-      ))}
     </Box>
   );
 }

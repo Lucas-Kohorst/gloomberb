@@ -14,6 +14,7 @@ import { colors } from "../../../theme/colors";
 import { t } from "../../../i18n";
 import { buildTickerAiContext } from "./ticker-context";
 import {
+  isHostedWebClient,
   migrateLegacyAiProviderId,
   resolveDefaultAiProviderId,
 } from "./providers";
@@ -363,7 +364,9 @@ export function AskAiResearchTab({ width, height, focused, onCapture }: TickerRe
         <Text fg={colors.textDim}>{t("No AI providers are ready.")}</Text>
         <Box height={1} />
         <Text fg={colors.text}>
-          {t("Open any AI pane's settings to connect an account.")}
+          {t(isHostedWebClient()
+            ? "In Chrome, open Account Management → AI and click Download model."
+            : "Open any AI pane's settings to connect an account.")}
         </Text>
       </Box>
     );

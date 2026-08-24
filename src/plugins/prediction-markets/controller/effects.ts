@@ -20,7 +20,6 @@ interface UsePredictionControllerEffectsOptions {
   appViewportHeight: number;
   browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
-  debouncedSearchQuery: string;
   detailOpen: boolean;
   effectiveVenueScope: PredictionVenueScope;
   headerScrollRef: RefObject<ScrollBoxRenderable | null>;
@@ -37,6 +36,7 @@ interface UsePredictionControllerEffectsOptions {
   selectedIndex: number;
   selectedRow: PredictionListRow | null;
   selectedRowKey: string | null;
+  firstVisibleRowKey: string | null;
   setDetailOpen: Dispatch<SetStateAction<boolean>>;
   setInitialParamsApplied: Dispatch<SetStateAction<boolean>>;
   setLastVenueScope: Dispatch<SetStateAction<PredictionVenueScope>>;
@@ -51,7 +51,6 @@ export function usePredictionControllerEffects({
   appViewportHeight,
   browseTab,
   categoryId,
-  debouncedSearchQuery,
   detailOpen,
   effectiveVenueScope,
   headerScrollRef,
@@ -68,6 +67,7 @@ export function usePredictionControllerEffects({
   selectedIndex,
   selectedRow,
   selectedRowKey,
+  firstVisibleRowKey,
   setDetailOpen,
   setInitialParamsApplied,
   setLastVenueScope,
@@ -123,7 +123,6 @@ export function usePredictionControllerEffects({
     const nextFilterResetKey = [
       browseTab,
       categoryId,
-      debouncedSearchQuery,
       effectiveVenueScope,
     ].join("|");
     if (previousFilterResetKeyRef.current === nextFilterResetKey) {
@@ -149,7 +148,6 @@ export function usePredictionControllerEffects({
   }, [
     browseTab,
     categoryId,
-    debouncedSearchQuery,
     effectiveVenueScope,
     headerScrollRef,
     previousFilterResetKeyRef,
@@ -245,6 +243,11 @@ export function usePredictionControllerEffects({
       );
     }
   }, [appViewportHeight, scrollRef, selectedIndex]);
+
+  useEffect(() => {
+    if (selectedRowKey != null || !firstVisibleRowKey) return;
+    setSelectedRowKey(firstVisibleRowKey, { immediate: true });
+  }, [firstVisibleRowKey, selectedRowKey, setSelectedRowKey]);
 
   useEffect(() => {
     if (!searchFocused) return;

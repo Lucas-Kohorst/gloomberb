@@ -6,6 +6,7 @@ import { t } from "../../../../i18n";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../../ui";
 import type { ChatUserSummary } from "../../../../api-client";
 import { isPlainKey } from "../../../../utils/keyboard";
+import { fuzzyFilter } from "../../../../utils/fuzzy-search";
 import {
   hasOnlyDmUsernameArgs,
   parseDmUsernames,
@@ -18,7 +19,7 @@ const MAX_DIALOG_WIDTH = 52;
 const DIALOG_HEIGHT = 10;
 const GROUP_DIALOG_HEIGHT = 12;
 
-interface DmUserCandidate {
+export interface DmUserCandidate {
   username: string;
   displayName: string;
 }
@@ -30,6 +31,10 @@ function normalizeUsername(value: string | null | undefined): string {
 function currentTokenQuery(value: string): string {
   const token = value.split(/[\s,]+/).at(-1) ?? "";
   return normalizeUsername(token);
+}
+
+export function filterDmCandidates(candidates: DmUserCandidate[], query: string): DmUserCandidate[] {
+  return fuzzyFilter(candidates, query, (candidate) => `${candidate.username} ${candidate.displayName}`);
 }
 
 function candidateUsers(
@@ -98,7 +103,7 @@ export function NewDmDialog({
   const query = currentTokenQuery(value);
   const visibleCandidates = useMemo(() => {
     const filtered = query
-      ? allCandidates.filter((candidate) => candidate.username.includes(query))
+      ? filterDmCandidates(allCandidates, query)
       : allCandidates;
     return filtered.slice(0, MAX_RECENT_USERS);
   }, [allCandidates, query]);

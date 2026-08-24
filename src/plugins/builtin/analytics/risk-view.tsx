@@ -48,6 +48,7 @@ interface RiskViewProps {
   selectedSectorId: string | null;
   onSelectSector: (sectorId: string) => void;
   resetScrollKey: string;
+  indicative?: boolean;
 }
 
 interface FactorRow {
@@ -140,6 +141,7 @@ export function PortfolioRiskView({
   selectedSectorId,
   onSelectSector,
   resetScrollKey,
+  indicative = false,
 }: RiskViewProps) {
   const returns = portfolioReturns ?? [];
   const var95 = computeVaR(returns, 0.95, portfolioValue);
@@ -197,8 +199,15 @@ export function PortfolioRiskView({
     <Box flexDirection="column" width={width} height={height} overflow="hidden">
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
         <Box height={1}>
-          <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>Value at Risk (1-day)</Text>
+          <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>
+            {indicative ? "Value at Risk (1-day, indicative)" : "Value at Risk (1-day)"}
+          </Text>
         </Box>
+        {indicative && (
+          <Box height={1}>
+            <Text fg={colors.textMuted}>Equal-weight 1/n — no lots or cost basis</Text>
+          </Box>
+        )}
         <RiskMetricLine
           label="VaR 95% (hist)"
           value={formatVaR(var95.historical)}
@@ -232,9 +241,6 @@ export function PortfolioRiskView({
         />
       </Box>
 
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>Factor Exposure</Text>
-      </Box>
       <Box paddingX={1}>
         <DataTableView<FactorRow, FactorColumn>
           focused={focused}
@@ -294,9 +300,6 @@ export function PortfolioRiskView({
         </>
       )}
 
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim} attributes={TextAttributes.BOLD}>Sector Concentration</Text>
-      </Box>
       <Box paddingX={1} height={Math.min(6, Math.max(3, sectorRows.length + 2))}>
         <DataTableView<SectorTableRow, SectorTableColumn>
           focused={focused}

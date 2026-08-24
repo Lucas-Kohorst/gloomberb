@@ -15,6 +15,7 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
+import { applySortPreference } from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
@@ -208,19 +209,11 @@ export function AdjacentRatesPane({
   }, [rates, selectedId]);
 
   const columns = useMemo(() => createRateColumns(width), [width]);
-  const sortedRates = useMemo(() => {
-    if (!sortColumnId) return rates;
-    const sign = sortDirection === "asc" ? 1 : -1;
-    return [...rates].sort((left, right) => {
-      if (sortColumnId === "name") return sign * left.name.localeCompare(right.name);
-      const leftValue = left[sortColumnId];
-      const rightValue = right[sortColumnId];
-      if (leftValue == null && rightValue == null) return 0;
-      if (leftValue == null) return 1;
-      if (rightValue == null) return -1;
-      return sign * (Number(leftValue) - Number(rightValue));
-    });
-  }, [rates, sortColumnId, sortDirection]);
+  const sortedRates = useMemo(() => applySortPreference(
+    rates,
+    { columnId: sortColumnId, direction: sortDirection },
+    (row, columnId) => (columnId === "name" ? row.name : row[columnId]),
+  ), [rates, sortColumnId, sortDirection]);
   const selectedRate = sortedRates.find((r) => r.id === selectedId) ?? null;
 
   const renderCell = useCallback(

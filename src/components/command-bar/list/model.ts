@@ -58,20 +58,41 @@ export function orderListResults(
   return buildSections(results, options).flatMap((section) => section.items);
 }
 
+function sectionHasTickerMatch(
+  sections: Array<{ category: string; items: ResultItem[] }>,
+): boolean {
+  return sections.some((section) => {
+    if (section.category.trim().toLowerCase() === "exact match") return true;
+    return section.items.some((item) => item.kind === "ticker" || item.kind === "search");
+  });
+}
+
+/** Skip the Ask AI heading when a ticker already answered a one-row assist section. */
+export function shouldOmitAskAiHeading(
+  section: { category: string; items: ResultItem[] },
+  sections: Array<{ category: string; items: ResultItem[] }>,
+): boolean {
+  if (section.category.trim().toLowerCase() !== "ask ai") return false;
+  return section.items.length <= 1 && sectionHasTickerMatch(sections);
+}
+
 export function buildListRows(listState: ListScreenState): CommandBarListRow[] {
   const rows: CommandBarListRow[] = [];
   const sections = buildSections(listState.results, { sectionOrder: listState.sectionOrder });
   let globalIdx = 0;
   sections.forEach((section, sectionIndex) => {
+    const omitHeading = shouldOmitAskAiHeading(section, sections);
     if (sectionIndex > 0) {
       rows.push({ kind: "spacer", id: `spacer:${sectionIndex}:${section.category}` });
     }
-    rows.push({
-      kind: "heading",
-      id: `heading:${sectionIndex}:${section.category}`,
-      label: section.category,
-      accent: section.items.some((item) => item.accent),
-    });
+    if (!omitHeading) {
+      rows.push({
+        kind: "heading",
+        id: `heading:${sectionIndex}:${section.category}`,
+        label: section.category,
+        accent: section.items.some((item) => item.accent),
+      });
+    }
     for (const item of section.items) {
       rows.push({ kind: "item", item, globalIdx });
       globalIdx += 1;

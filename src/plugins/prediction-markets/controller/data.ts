@@ -60,6 +60,7 @@ export function usePredictionMarketsDataState({
   const {
     allMarkets,
     catalogHasMore,
+    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore,
     catalogStatus,
@@ -90,7 +91,7 @@ export function usePredictionMarketsDataState({
         browseTab,
         effectiveVenueScope,
         categoryId,
-        debouncedSearchQuery,
+        searchQuery,
         watchlistSet,
       );
       const sorted = sortPredictionMarkets(
@@ -104,7 +105,7 @@ export function usePredictionMarketsDataState({
       browseTab,
       categoryId,
       rowCount: allRows.length,
-      search: debouncedSearchQuery.trim(),
+      search: searchQuery.trim(),
       sortColumnId: sortPreference.columnId,
       sortDirection: sortPreference.direction,
       venueScope: effectiveVenueScope,
@@ -113,8 +114,8 @@ export function usePredictionMarketsDataState({
     allRows,
     browseTab,
     categoryId,
-    debouncedSearchQuery,
     effectiveVenueScope,
+    searchQuery,
     expandedGroupKeys,
     sortPreference,
     watchlistSet,
@@ -172,6 +173,7 @@ export function usePredictionMarketsDataState({
 
   return {
     catalogHasMore,
+    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore,
     catalogStatus,

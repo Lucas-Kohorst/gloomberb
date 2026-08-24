@@ -9,6 +9,7 @@ import {
   createInitialState,
 } from "../../../../../state/app/context";
 import { createDefaultConfig } from "../../../../../types/config";
+import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import type { MarketNewsItem } from "../../../../../types/news-source";
 import { NewsArticleStackView, type NewsSortPreference } from "./table";
 
@@ -153,5 +154,53 @@ describe("NewsArticleStackView", () => {
     expect(frame).toContain("PARA");
     expect(frame).not.toContain("NFLX:XNAS");
     expect(frame).not.toContain("PARA:XNAS");
+  });
+
+  test("title-cases stored categories at display without changing ingest values", async () => {
+    expect(formatNewsCategoryLabel("tech")).toBe("Tech");
+    expect(formatNewsCategoryLabel("information_technology")).toBe("Information Technology");
+
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-category-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-feed:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({
+                id: "chips",
+                title: "Chip stocks rally",
+                categories: ["tech"],
+              }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            selectedArticleId="chips"
+            setSelectedArticleId={() => {}}
+            sortPreference={sortPreference}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "title", "categories"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Tech");
+    expect(frame).not.toMatch(/\btech\b/);
   });
 });

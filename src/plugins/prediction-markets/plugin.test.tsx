@@ -6,6 +6,7 @@ import {
   MemoryPersistence,
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
+import { createPredictionColumns } from "./columns";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import {
   buildPredictionListRows,
@@ -13,7 +14,10 @@ import {
   resolvePredictionListActivation,
   togglePredictionGroupExpanded,
 } from "./rows";
-import { getPredictionColumnValue } from "./metrics";
+import {
+  filterPredictionMarkets,
+  getPredictionColumnValue,
+} from "./metrics";
 import {
   attachPredictionMarketsPersistence,
   loadCachedPredictionResource,
@@ -21,6 +25,7 @@ import {
 } from "./services/fetch";
 import {
   loadKalshiCatalog,
+  loadKalshiDetail,
   loadKalshiHistory,
   normalizeKalshiMarket,
 } from "./services/kalshi/adapter";
@@ -219,6 +224,87 @@ describe("prediction markets plugin registration and services", () => {
 
     const collapsedAgain = togglePredictionGroupExpanded(expandedKeys, rows[0]!.key);
     expect(collapsedAgain.has(rows[0]!.key)).toBe(false);
+
+    const tickerColumn = {
+      id: "market_id",
+      label: "TICKER",
+      width: 20,
+      align: "left" as const,
+      description: "",
+    };
+    expect(getPredictionColumnValue(tickerColumn, collapsed[0]!, false).text).toBe("-");
+    expect(getPredictionColumnValue(tickerColumn, expanded[1]!, false).text).toBe(
+      "KXFED-27APR-T4.25",
+    );
+  });
+
+  test("hides overflow prediction columns as the pane narrows", () => {
+    expect(createPredictionColumns(64).map((column) => column.id)).toEqual([
+      "watch",
+      "market",
+      "yes",
+      "spread",
+    ]);
+    expect(createPredictionColumns(80).map((column) => column.id)).toEqual([
+      "watch",
+      "market",
+      "yes",
+      "spread",
+    ]);
+    expect(createPredictionColumns(100).map((column) => column.id)).toEqual([
+      "watch",
+      "market",
+      "market_id",
+      "yes",
+      "spread",
+      "vol_24h",
+    ]);
+    expect(createPredictionColumns(132).map((column) => column.id)).toEqual([
+      "watch",
+      "market",
+      "market_id",
+      "venue",
+      "yes",
+      "spread",
+      "vol_24h",
+      "open_interest",
+      "ends",
+      "status",
+    ]);
+  });
+
+  test("filters markets with token-AND fuzzy search on the live query", () => {
+    const rows = buildPredictionListRows([
+      normalizeKalshiMarket({
+        ticker: "KAL-FED",
+        title: "Will the Fed cut rates?",
+        yes_sub_title: "Yes",
+        event_ticker: "FED-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.48",
+      } as any)!,
+      normalizeKalshiMarket({
+        ticker: "KAL-BTC",
+        title: "Will bitcoin hit 100k?",
+        yes_sub_title: "Yes",
+        event_ticker: "BTC-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.61",
+      } as any)!,
+    ]);
+
+    expect(
+      filterPredictionMarkets(rows, "top", "all", "all", "fed rates", new Set()).map(
+        (row) => row.marketId,
+      ),
+    ).toEqual(["KAL-FED"]);
+    expect(
+      filterPredictionMarkets(rows, "top", "all", "all", "BITCON", new Set()).map(
+        (row) => row.marketId,
+      ),
+    ).toEqual(["KAL-BTC"]);
   });
 
   test("styles YES consistently and uses the lead contract quote on grouped rows", () => {
@@ -343,6 +429,18 @@ describe("prediction markets plugin registration and services", () => {
         shift: true,
       }),
     ).toBe("next-venue-tab");
+    expect(resolvePredictionKeyboardCommand({ name: "1", sequence: "1" })).toBe(
+      "browse-top",
+    );
+    expect(resolvePredictionKeyboardCommand({ name: "4", sequence: "4" })).toBe(
+      "browse-watchlist",
+    );
+    expect(resolvePredictionKeyboardCommand({ name: "[", sequence: "[" })).toBe(
+      "previous-browse-tab",
+    );
+    expect(resolvePredictionKeyboardCommand({ name: "]", sequence: "]" })).toBe(
+      "next-browse-tab",
+    );
   });
 
   test("filters closed Polymarket child markets from the catalog", async () => {
@@ -463,7 +561,7 @@ describe("prediction markets plugin registration and services", () => {
     ).toBe(true);
   });
 
-  test("routes Kalshi catalog through the same-origin worker proxy in hosted mode", async () => {
+  test("loads hosted Kalshi catalogs from Adjacent auth markets, not the CORS proxy", async () => {
     (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
@@ -471,19 +569,128 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes("/events")) {
-        return new Response(JSON.stringify({ events: [] }), { status: 200 });
+      if (url.includes("/api/data/adjacent/markets")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                category: "Sports",
+                display_ticker: "KXNBA-26-SAS",
+                end_date: "2028-06-29T14:00:00Z",
+                market_id: "kalshi:KXNBA-26-SAS",
+                open_interest: 21126222,
+                platform: "kalshi",
+                probability: 65,
+                question: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+                status: "active",
+                ticker: "KXNBA-26-SAS",
+                volume_24h: 1092341.9,
+              },
+            ],
+            meta: { has_next: false, page: 1, per_page: 50 },
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected hosted catalog URL: ${url}`);
+    }) as unknown as typeof fetch;
+
+    try {
+      const markets = await loadKalshiCatalog("", "all", "top", { force: true });
+      expect(markets).toHaveLength(1);
+      expect(markets[0]?.marketId).toBe("KXNBA-26-SAS");
+      expect(markets[0]?.yesPrice).toBe(0.65);
+      expect(
+        fetchUrls.some((url) =>
+          url.includes("/api/data/adjacent/markets") &&
+          url.includes("platform=kalshi") &&
+          url.includes("per_page="),
+        ),
+      ).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("/public"))).toBe(false);
+      expect(
+        fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/`)),
+      ).toBe(false);
+      expect(
+        fetchUrls.some((url) => url.includes("external-api.kalshi.com")),
+      ).toBe(false);
+      expect(fetchUrls.some((url) => url.includes("/events"))).toBe(false);
+
+      fetchUrls.length = 0;
+      await loadKalshiCatalog("nba", "all", "top", { force: true });
+      expect(
+        fetchUrls.some((url) => url.includes("search=nba") && !url.includes("q=nba")),
+      ).toBe(true);
+    } finally {
+      delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+    }
+  });
+
+  test("keeps hosted Kalshi books on the venue CORS proxy", async () => {
+    (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+
+    const fetchUrls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.includes("/markets/KXNBA-26-SAS/orderbook")) {
+        return new Response(
+          JSON.stringify({
+            orderbook_fp: {
+              yes_dollars: [["0.64", "120"]],
+              no_dollars: [["0.36", "95"]],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/events/KXNBA-26")) {
+        return new Response(
+          JSON.stringify({
+            event: {
+              title: "NBA Finals",
+              category: "Sports",
+              event_ticker: "KXNBA-26",
+              series_ticker: "KXNBA",
+            },
+            markets: [],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/markets/trades")) {
+        return new Response(JSON.stringify({ trades: [] }), { status: 200 });
+      }
+      if (url.includes("/candlesticks")) {
+        return new Response(JSON.stringify({ candlesticks: [] }), { status: 200 });
       }
       return new Response("{}", { status: 200 });
     }) as unknown as typeof fetch;
 
+    const summary = normalizeKalshiMarket(
+      {
+        ticker: "KXNBA-26-SAS",
+        title: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+        yes_sub_title: "SAS",
+        event_ticker: "KXNBA-26",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.65",
+      } as any,
+      { title: "NBA Finals", series_ticker: "KXNBA" },
+    )!;
+
     try {
-      await loadKalshiCatalog("", "all", "top", { force: true });
+      const detail = await loadKalshiDetail(summary, "1D");
+      expect(detail.book.yesBids[0]?.price).toBe(0.64);
       expect(
-        fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/`)),
+        fetchUrls.some((url) =>
+          url.includes(`${KALSHI_PROXY_PATH}/markets/KXNBA-26-SAS/orderbook`),
+        ),
       ).toBe(true);
       expect(
-        fetchUrls.some((url) => url.includes("external-api.kalshi.com")),
+        fetchUrls.some((url) => url.includes("/api/data/adjacent")),
       ).toBe(false);
     } finally {
       delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
@@ -491,8 +698,6 @@ describe("prediction markets plugin registration and services", () => {
   });
 
   test("falls back to thin Polymarket search results when event hydration fails", async () => {
-    let eventFetchCount = 0;
-
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       if (url.includes("gamma-api.polymarket.com/public-search")) {
@@ -526,10 +731,6 @@ describe("prediction markets plugin registration and services", () => {
         );
       }
       if (url.includes("gamma-api.polymarket.com/events/event-1")) {
-        eventFetchCount += 1;
-        if (eventFetchCount <= 3) {
-          return new Response("{}", { status: 500 });
-        }
         return new Response(
           JSON.stringify({
             id: "event-1",
@@ -613,6 +814,90 @@ describe("prediction markets plugin registration and services", () => {
 
     expect(searchResults[0]?.conditionId).toBeUndefined();
     expect(detail.summary.conditionId).toBe("cond-1");
+  });
+
+  test("renders Polymarket public-search hits without hydrating every event", async () => {
+    const fetchUrls: string[] = [];
+    let hydrateStarted = false;
+
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.includes("gamma-api.polymarket.com/public-search")) {
+        return new Response(
+          JSON.stringify({
+            events: [
+              {
+                id: "event-1",
+                title: "Fed decision in April?",
+                markets: [
+                  {
+                    question: "Will the Fed cut rates?",
+                    slug: "will-the-fed-cut-rates",
+                    outcomes: ["Yes", "No"],
+                    outcomePrices: ["0.22", "0.78"],
+                    active: true,
+                    closed: false,
+                  },
+                ],
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("gamma-api.polymarket.com/events/event-1")) {
+        hydrateStarted = true;
+        await new Promise(() => {});
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const searchResults = await loadPolymarketCatalog("fed", "all");
+    expect(searchResults.length).toBeGreaterThan(0);
+    expect(searchResults[0]?.title).toContain("Fed");
+    expect(hydrateStarted).toBe(false);
+    expect(fetchUrls.some((url) => url.includes("/events/event-1"))).toBe(false);
+  });
+
+  test("does not page Kalshi search four times when a local catalog exists", async () => {
+    const persistence = new MemoryPersistence();
+    attachPredictionMarketsPersistence(persistence);
+    persistence.setResource(
+      "catalog",
+      "kalshi:all:all",
+      [
+        normalizeKalshiMarket({
+          ticker: "KAL-FED",
+          title: "Will the Fed cut rates?",
+          yes_sub_title: "Yes",
+          event_ticker: "FED-1",
+          status: "open",
+          market_type: "binary",
+          last_price_dollars: "0.48",
+        } as any),
+      ].filter(Boolean),
+      { cachePolicy: PREDICTION_CACHE_POLICIES.catalog, sourceKey: "remote" },
+    );
+
+    let eventPages = 0;
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      if (url.includes("/trade-api/v2/events?")) {
+        eventPages += 1;
+        return new Response(
+          JSON.stringify({
+            events: [],
+            cursor: `page-${eventPages}`,
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await loadKalshiCatalog("fed", "all", "top", { force: true });
+    expect(eventPages).toBe(1);
   });
 
   test("filters Kalshi markets locally when venue category responses bleed across buckets", async () => {

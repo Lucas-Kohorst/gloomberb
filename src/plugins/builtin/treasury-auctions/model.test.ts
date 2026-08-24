@@ -141,6 +141,12 @@ describe("visibleAuctions", () => {
       sort: { columnId: "rate", direction: "desc" },
     });
     expect(byRate.at(-1)?.securityTerm).toBe("20-Year");
+    const byRateAsc = visibleAuctions(withPending, {
+      filter: "all",
+      query: "",
+      sort: { columnId: "rate", direction: "asc" },
+    });
+    expect(byRateAsc.at(-1)?.securityTerm).toBe("20-Year");
   });
 });
 

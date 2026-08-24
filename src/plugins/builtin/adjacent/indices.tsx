@@ -12,7 +12,6 @@ import {
   Spinner,
   Tabs,
   nextStackSortPreference,
-  sortStackItems,
   usePaneFooter,
   useUpdatedAgo,
   type DataTableColumn,
@@ -21,6 +20,7 @@ import {
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
+import { applySortPreference } from "../../../utils/sort-values";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
@@ -35,7 +35,7 @@ import type {
   AdjacentNewsArticle,
 } from "./types";
 import {
-  compareAdjacentIndexRows,
+  adjacentIndexSortValue,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
   adjacentIndexPricesToPricePoints,
@@ -406,7 +406,7 @@ export function AdjacentIndicesPane({
 
   const columns = useMemo(() => createIndexColumns(width), [width]);
   const visibleIndices = useMemo(() => {
-    return sortStackItems(indices, sortPreference, compareAdjacentIndexRows);
+    return applySortPreference(indices, sortPreference, adjacentIndexSortValue);
   }, [indices, sortPreference]);
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;

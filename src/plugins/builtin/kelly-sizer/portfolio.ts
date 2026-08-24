@@ -3,7 +3,7 @@ import type { TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { getActiveQuoteDisplay } from "../../../market-data/market/status";
 import { convertCurrency } from "../../../utils/format";
-import { getCollectionTypeFromConfig } from "../portfolio-list/pane/data";
+import { resolveAnalyticsCollection } from "../analytics/portfolio-selection";
 import { getPortfolioPositionMetrics, resolveBrokerFallbackMarketValue } from "../portfolio-list/position-metrics";
 
 export function getPortfolioPositionValue({
@@ -56,16 +56,19 @@ export function resolveActivePortfolioId({
   ticker: TickerRecord | null;
   config: AppConfig;
 }): string | null {
-  if (requestedPortfolioId && config.portfolios.some((portfolio) => portfolio.id === requestedPortfolioId)) {
+  if (requestedPortfolioId && resolveAnalyticsCollection(config, requestedPortfolioId)) {
     return requestedPortfolioId;
   }
-  if (activeCollectionId && getCollectionTypeFromConfig(config, activeCollectionId) === "portfolio") {
+  if (activeCollectionId && resolveAnalyticsCollection(config, activeCollectionId)) {
     return activeCollectionId;
   }
   if (ticker) {
     const positionPortfolio = ticker.metadata.positions.find((position) => position.portfolio)?.portfolio;
     if (positionPortfolio) return positionPortfolio;
     if (ticker.metadata.portfolios[0]) return ticker.metadata.portfolios[0];
+    if (ticker.metadata.watchlists[0]) return ticker.metadata.watchlists[0];
   }
-  return symbol ? config.portfolios[0]?.id ?? null : null;
+  return symbol
+    ? config.portfolios[0]?.id ?? config.watchlists[0]?.id ?? null
+    : null;
 }

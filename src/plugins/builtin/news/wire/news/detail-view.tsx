@@ -7,6 +7,7 @@ import { colors } from "../../../../../theme/colors";
 import { TickerBadge } from "../../../../../components/ticker/badge";
 import { ExternalLink, ExternalLinkText } from "../../../../../components/ui";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
+import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import { newsOriginLabel } from "../../../../../news/origins";
 import { MarkdownText } from "../../../../../components/markdown-text";
 import { useInlineTickers } from "../../../../../state/hooks/inline-tickers";
@@ -200,6 +201,10 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
     .filter((part) => part && part !== "—")
     .join(" · ");
+  const categoryLabels = (item.categories ?? [])
+    .map(formatNewsCategoryLabel)
+    .filter(Boolean)
+    .join(" · ");
 
   const scrollBy = useCallback((delta: number) => {
     const scrollBox = scrollRef.current;
@@ -282,13 +287,13 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               })}
             </Box>
           )}
-          {(item.categories?.length ?? 0) > 0 && (
+          {categoryLabels.length > 0 && (
             nativePaneChrome ? (
-              <TextLines text={(item.categories ?? []).join(" · ")} width={innerW} color={colors.textMuted} nativePaneChrome />
+              <TextLines text={categoryLabels} width={innerW} color={colors.textMuted} nativePaneChrome />
             ) : (
               <Box height={1} flexDirection="row">
                 <Text fg={colors.textMuted}>
-                  {(item.categories ?? []).join(" · ")}
+                  {categoryLabels}
                 </Text>
               </Box>
             )

@@ -11,6 +11,11 @@ import {
 } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { t, tf } from "../../../i18n";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { useAppLanguage } from "../../../i18n/react";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { PaneProps } from "../../../types/plugin";
@@ -42,6 +47,10 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const [activeEditKey, setActiveEditKey] = useState<BrokerEditKey>("label");
   const [statusVersion, setStatusVersion] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [sortPreference, setSortPreference] = useState<SortPreference<BrokerColumn["id"]>>({
+    columnId: null,
+    direction: "asc",
+  });
 
   const adapters = useMemo(() => {
     const next = new Map<string, BrokerAdapter | null>();
@@ -63,8 +72,21 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   }, [config.brokerInstances, getBrokerAdapter]);
 
   const rows = useMemo(
-    () => buildBrokerProfileRows(config, adapters, brokerAccounts),
-    [adapters, brokerAccounts, config, language, statusVersion],
+    () => applySortPreference(
+      buildBrokerProfileRows(config, adapters, brokerAccounts),
+      sortPreference,
+      (row, columnId) => {
+        switch (columnId) {
+          case "profile": return row.label;
+          case "status": return row.stateLabel;
+          case "broker": return row.brokerName;
+          case "mode": return row.mode;
+          case "accounts": return row.accountCount;
+          case "updated": return row.lastSyncedAt || row.updatedAt || null;
+        }
+      },
+    ),
+    [adapters, brokerAccounts, config, language, sortPreference, statusVersion],
   );
   const selectedRow = rows[Math.min(selectedIndex, rows.length - 1)] ?? null;
   const selectedAccounts = selectedRow ? brokerAccounts[selectedRow.id] ?? [] : [];
@@ -288,9 +310,13 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
           onActivate={(row, index) => openSelectedDetail(index, row)}
           columns={columns}
           items={rows}
-          sortColumnId={null}
-          sortDirection="asc"
-          onHeaderClick={() => {}}
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
+          onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+            current,
+            columnId as BrokerColumn["id"],
+            { defaultDirection: columnId === "updated" || columnId === "accounts" ? "desc" : "asc" },
+          ))}
           getItemKey={(row) => row.id}
           renderCell={renderBrokerCell}
           emptyStateTitle={t("No broker profiles.")}

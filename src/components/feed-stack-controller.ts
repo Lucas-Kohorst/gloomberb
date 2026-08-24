@@ -16,6 +16,9 @@ export function sortStackItems<T, C extends string>(
 ): T[] {
   const direction = preference.direction === "asc" ? 1 : -1;
   return [...items].sort((a, b) => {
+    // `compare` must be undirected and must not bake in empty-last: multiplying
+    // that result by direction would send NA rows to the top on desc. Use
+    // compareSortValues / applySortPreference when empties need to stay last.
     const primary = compare(a, b, preference.columnId) * direction;
     return primary !== 0 ? primary : tieBreak(a, b);
   });

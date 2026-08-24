@@ -20,6 +20,11 @@ import type {
 } from "../../../types/financials";
 import { blendHex, colors } from "../../../theme/colors";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { isPlainKey } from "../../../utils/keyboard";
 import { wrapTextLines } from "../../../utils/text-wrap";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
@@ -519,6 +524,26 @@ export function CorporateActionsView({
   ), [actionsData, analystData, displayCurrency, financialsData]);
   const columns = useMemo(() => buildEventColumns(), []);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [sortPreference, setSortPreference] = useState<SortPreference<EventColumnId>>({
+    columnId: "date",
+    direction: "desc",
+  });
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sortPreference, (row, columnId) => {
+      switch (columnId) {
+        case "date": return row.date;
+        case "status": return row.status;
+        case "period": return row.period;
+        case "qEps": return row.qEps ?? null;
+        case "qRevenue": return row.qRevenue ?? null;
+        case "annualEps": return row.annualEps ?? null;
+        case "annualRevenue": return row.annualRevenue ?? null;
+        case "value": return row.value === "-" ? null : row.value;
+        case "detail": return row.detail;
+      }
+    }),
+    [rows, sortPreference],
+  );
   const [openRowId, setOpenRowId] = useState<string | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const todayKey = todayDateKey();
@@ -721,10 +746,14 @@ export function CorporateActionsView({
       rootHeight={height}
       onRootKeyDown={handleKeyDown}
       columns={columns}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as EventColumnId,
+        { defaultDirection: columnId === "status" || columnId === "period" || columnId === "detail" ? "asc" : "desc" },
+      ))}
       getItemKey={(row) => row.id}
       renderCell={renderCell}
       getRowBackgroundColor={(row) => (

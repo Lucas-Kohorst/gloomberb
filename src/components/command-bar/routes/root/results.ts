@@ -253,6 +253,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     ];
     const matchedItems = fuzzyFilter(allItems, rootQuery, (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`);
     items.push(...matchedItems);
+    items.push(...localTickerSearchResultItems(rootQuery, { limit: 6 }));
   }
 
   if (rootShortcutIntent.kind === "none" || isArticleLookupShortcut(rootShortcutIntent)) {
@@ -262,9 +263,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     items.push(...chartSeriesItems);
   }
 
-  // Built from the local matches, then moved above them: the AI answers the
-  // question the user typed, so it leads the list. Rows landing here renumber
-  // everything below, which the root selection effect absorbs by identity.
+  // Assist rows group under Ask AI. Ticker exact matches sort above them.
   const assistItems = assist && isAssistSectionVisible(assist, rootQuery, items.length)
     ? buildAssistResultItems({ ...assist, query: rootQuery, hasLocalResults: items.length > 0 })
     : [];

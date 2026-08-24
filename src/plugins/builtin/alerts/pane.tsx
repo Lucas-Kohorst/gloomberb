@@ -35,6 +35,11 @@ import {
 } from "./quotes";
 import type { AlertRule } from "./types";
 import { isPriceAlertCondition } from "./types";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 
 type AlertColumnId =
   | "status"
@@ -72,6 +77,10 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const { openPluginCommandWorkflow } = usePluginAppActions();
   const dialog = useDialog();
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [sortPreference, setSortPreference] = useState<SortPreference<AlertColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
   const marketDataId = marketData?.id ?? null;
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
 
@@ -89,6 +98,29 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       triggeredCount: triggeredAlerts.length,
     };
   }, [alertsJson]);
+
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sortPreference, (alert, columnId) => {
+      switch (columnId) {
+        case "status": return alert.status;
+        case "symbol": return alert.symbol;
+        case "current": return alert.lastCheckedPrice ?? null;
+        case "target": return isPriceAlertCondition(alert.condition) ? alert.targetPrice : null;
+        case "away": {
+          if (!isPriceAlertCondition(alert.condition) || alert.lastCheckError) return null;
+          const currentPrice = alert.lastCheckedPrice;
+          if (currentPrice == null || currentPrice === 0) return null;
+          const percent = ((alert.targetPrice - currentPrice) / currentPrice) * 100;
+          return Number.isFinite(percent) ? percent : null;
+        }
+        case "condition": return conditionLabel(alert.condition);
+        case "quote": return alert.lastQuoteUpdatedAt ?? alert.lastCheckedAt ?? null;
+        case "triggered": return alert.triggeredAt ?? null;
+        case "rearm": return alert.status === "triggered" ? 1 : 0;
+      }
+    }),
+    [rows, sortPreference],
+  );
 
   const savePaneAlerts = useCallback((next: AlertRule[] | ((current: AlertRule[]) => AlertRule[])) => {
     setAlertsJson((currentJson) => {
@@ -331,7 +363,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       focused={focused}
       selection={{
         kind: "index",
-        selectedIndex: selectedIdx,
+        selectedIndex: sortedRows.length > 0 ? Math.min(selectedIdx, sortedRows.length - 1) : -1,
         onChange: (index) => setSelectedIdx(index),
       }}
       onRootKeyDown={handleTableKeyDown}
@@ -339,10 +371,18 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       rootHeight={height}
       rootBackgroundColor={colors.bg}
       columns={ALERT_COLUMNS}
-      items={rows}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+        current,
+        columnId as AlertColumnId,
+        {
+          defaultDirection: columnId === "symbol" || columnId === "status" || columnId === "condition"
+            ? "asc"
+            : "desc",
+        },
+      ))}
       getItemKey={(alert) => alert.id}
       onActivate={(alert) => {
         if (alert.status === "triggered") rearmAlert(alert.id);

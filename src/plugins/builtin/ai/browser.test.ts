@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   browserAiProviderStatus,
+  createBrowserAiRunHost,
   getBrowserAiState,
   type BrowserAiAvailability,
 } from "./browser";
+import { parseAssistCommandOutput } from "./assist-local";
 
 const originalLanguageModel = (globalThis as { LanguageModel?: unknown }).LanguageModel;
 
@@ -34,5 +36,51 @@ describe("Chrome built-in AI detection", () => {
       create: async () => ({}),
     };
     expect((await getBrowserAiState()).availability).toBe("unavailable");
+  });
+});
+
+describe("createBrowserAiRunHost", () => {
+  test("runs the Prompt API controller and streams deltas", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "available",
+      create: async () => ({
+        promptStreaming: async function* () {
+          yield "Hel";
+          yield "Hello";
+        },
+        destroy() {},
+      }),
+    };
+    const host = createBrowserAiRunHost();
+    const catalog = await host.getCatalog?.();
+    expect(catalog?.providers[0]?.providerId).toBe("browser-builtin");
+    const chunks: string[] = [];
+    const output = await host.run({
+      providerId: "browser-builtin",
+      prompt: "hi",
+      onChunk: (chunk) => chunks.push(chunk),
+    }).done;
+    expect(output).toBe("Hello");
+    expect(chunks.join("")).toBe("Hello");
+  });
+
+  test("rejects cloud provider ids on the hosted host", async () => {
+    const host = createBrowserAiRunHost();
+    await expect(host.run({
+      providerId: "anthropic",
+      prompt: "hi",
+    }).done).rejects.toThrow(/not available in the hosted client/);
+  });
+});
+
+describe("browser assist JSON", () => {
+  test("parses candidates and drops unknown prefixes", () => {
+    const parsed = parseAssistCommandOutput(
+      '```json\n{"candidates":[{"input":"SEC NVDA","title":"Filings","prefix":"SEC","confidence":0.9},{"input":"ZZZ","title":"Nope","prefix":"ZZZ","confidence":0.1}]}\n```',
+      [{ prefix: "SEC", name: "Filings" }],
+    );
+    expect(parsed.candidates).toEqual([
+      { input: "SEC NVDA", title: "Filings", prefix: "SEC", confidence: 0.9 },
+    ]);
   });
 });
