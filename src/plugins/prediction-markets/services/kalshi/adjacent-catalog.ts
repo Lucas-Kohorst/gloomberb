@@ -1,16 +1,19 @@
-import {
-  adjacentCloudDataAliasUrl,
-  adjacentCloudDataUrl,
-} from "../../../builtin/connections/adjacent-cloud";
+import { adjacentCloudDataAliasUrl } from "../../../builtin/connections/adjacent-cloud";
 import { getKalshiCategoryNames, matchesPredictionCategory } from "../../categories";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../../types";
-import { fetchJson, isBlockedRequestError, parseFloatSafe } from "../fetch";
+import {
+  fetchJson,
+  isHostedOriginFailureError,
+  parseFloatSafe,
+} from "../fetch";
 
 const ADJACENT_MARKETS_PER_PAGE = 50;
+const ADJACENT_PUBLIC_ORIGIN = "https://api.adjacent.markets/api/v1";
+const ADJACENT_PUBLIC_PREFIXES = new Set(["markets", "indices", "rates", "events"]);
 
 export interface AdjacentKalshiCatalogRow {
   market_id?: string;
@@ -63,47 +66,105 @@ function hostedOrigin(): string {
 }
 
 /**
- * Sticky once a content blocker has been observed. Retrying the canonical path
- * can never succeed for that browser, and every attempt costs a full timeout.
+ * Sticky once the Worker path has failed for this session.
+ *
+ * `/api/data/adjacent` is matched by filter lists and some zone WAF rules.
+ * `/api/feed/mkt` is the same Adjacent provider without those tokens. A 522
+ * on either is Cloudflare failing to reach Adjacent from the Worker; the
+ * browser can still fetch Adjacent's CORS-open public origin directly.
  */
-let useBlockerSafeAdjacentPath = false;
+type HostedAdjacentPathMode = "feed" | "public-origin";
+let hostedAdjacentPathMode: HostedAdjacentPathMode = "feed";
+
+function applySearch(
+  url: URL,
+  search?: Record<string, string | number | undefined>,
+): URL {
+  for (const [key, value] of Object.entries(search ?? {})) {
+    if (value == null || value === "") continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+
+function publicAdjacentOriginPath(keyPath: string): string {
+  const trimmed = keyPath.replace(/^\//, "");
+  const head = trimmed.split("/")[0] ?? "";
+  if (trimmed.startsWith("public/") || !ADJACENT_PUBLIC_PREFIXES.has(head)) {
+    return trimmed;
+  }
+  return `public/${trimmed}`;
+}
+
+/** Browser-direct Adjacent public URL. Bypasses the Worker 522/429 path. */
+export function hostedAdjacentPublicOriginUrl(
+  keyPath: string,
+  search?: Record<string, string | number | undefined>,
+): string {
+  return applySearch(
+    new URL(`${ADJACENT_PUBLIC_ORIGIN}/${publicAdjacentOriginPath(keyPath)}`),
+    search,
+  ).toString();
+}
 
 /** Absolute same-origin URL for an Adjacent keyed-data path on the hosted Worker. */
 export function hostedAdjacentUrl(
   keyPath: string,
   search?: Record<string, string | number | undefined>,
 ): string {
-  const path = useBlockerSafeAdjacentPath
-    ? adjacentCloudDataAliasUrl(keyPath)
-    : adjacentCloudDataUrl("adjacent", keyPath);
-  const url = new URL(path, hostedOrigin());
-  for (const [key, value] of Object.entries(search ?? {})) {
-    if (value == null || value === "") continue;
-    url.searchParams.set(key, String(value));
+  const path = hostedAdjacentPathMode === "public-origin"
+    ? hostedAdjacentPublicOriginUrl(keyPath, search)
+    : adjacentCloudDataAliasUrl(keyPath);
+  if (path.startsWith("http")) {
+    return applySearch(new URL(path), search).toString();
   }
-  return url.toString();
+  return applySearch(new URL(path, hostedOrigin()), search).toString();
+}
+
+function hostedAdjacentCandidateUrls(
+  keyPath: string,
+  search?: Record<string, string | number | undefined>,
+): string[] {
+  const feed = applySearch(
+    new URL(adjacentCloudDataAliasUrl(keyPath), hostedOrigin()),
+    search,
+  ).toString();
+  const publicOrigin = hostedAdjacentPublicOriginUrl(keyPath, search);
+  if (hostedAdjacentPathMode === "public-origin") return [publicOrigin, feed];
+  return [feed, publicOrigin];
 }
 
 /**
- * Fetches an Adjacent keyed-data path, switching to the blocker-safe route for
- * the rest of the session the first time a request is blocked client-side.
+ * Fetches an Adjacent keyed-data path. Defaults to the blocker-safe Worker
+ * route (`/api/feed/mkt`). On 522 / 5xx / timeout / content-block, falls
+ * through to Adjacent's public origin for the rest of the session.
  */
 export async function fetchHostedAdjacentJson<T>(
   keyPath: string,
   search?: Record<string, string | number | undefined>,
 ): Promise<T> {
-  try {
-    return await fetchJson<T>(hostedAdjacentUrl(keyPath, search));
-  } catch (error) {
-    if (useBlockerSafeAdjacentPath || !isBlockedRequestError(error)) throw error;
-    useBlockerSafeAdjacentPath = true;
-    return await fetchJson<T>(hostedAdjacentUrl(keyPath, search));
+  const urls = hostedAdjacentCandidateUrls(keyPath, search);
+  let lastError: unknown;
+  for (const [index, url] of urls.entries()) {
+    try {
+      const result = await fetchJson<T>(url);
+      hostedAdjacentPathMode = url.includes(ADJACENT_PUBLIC_ORIGIN)
+        ? "public-origin"
+        : "feed";
+      return result;
+    } catch (error) {
+      lastError = error;
+      const canFallback = index < urls.length - 1
+        && isHostedOriginFailureError(error);
+      if (!canFallback) throw error;
+    }
   }
+  throw lastError;
 }
 
-/** Test helper: forget an observed content blocker. */
+/** Test helper: forget an observed Worker-path failure. */
 export function resetHostedAdjacentPathFallback(): void {
-  useBlockerSafeAdjacentPath = false;
+  hostedAdjacentPathMode = "feed";
 }
 
 /** Adjacent addresses venue markets and events as `{platform}:{ticker}`. */

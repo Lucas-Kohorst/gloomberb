@@ -24,6 +24,10 @@ import {
 } from "./gloom-cloud";
 import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import {
+  fetchKalshiListFromAdjacent,
+  KALSHI_ORIGIN_FAILURE_STATUSES,
+} from "./kalshi-adjacent-fallback";
+import {
   hasTrustedHostedOrigin,
   hostedCorsHeaders,
   isTrustedHostedOrigin,
@@ -747,6 +751,13 @@ async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): P
       headers: upstreamHeaders,
       signal: AbortSignal.timeout(KALSHI_PROXY_TIMEOUT_MS),
     });
+    if (
+      !upstream.ok
+      && KALSHI_ORIGIN_FAILURE_STATUSES.has(upstream.status)
+    ) {
+      const fallback = await fetchKalshiListFromAdjacent(upstreamPath, url.searchParams);
+      if (fallback) return fallback;
+    }
     const responseHeaders = new Headers({
       "content-type": upstream.headers.get("content-type") ?? "application/json",
       "access-control-allow-origin": "*",
@@ -756,11 +767,16 @@ async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): P
     } else {
       responseHeaders.set("cache-control", "no-store");
     }
+    const status = KALSHI_ORIGIN_FAILURE_STATUSES.has(upstream.status) && upstream.status === 522
+      ? 502
+      : upstream.status;
     return new Response(upstream.body, {
-      status: upstream.status,
+      status,
       headers: responseHeaders,
     });
   } catch (error) {
+    const fallback = await fetchKalshiListFromAdjacent(upstreamPath, url.searchParams);
+    if (fallback) return fallback;
     const message = error instanceof Error ? error.message : String(error);
     return Response.json(
       { error: message },

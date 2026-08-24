@@ -89,6 +89,17 @@ describe("prediction-markets fetch connection attribution", () => {
     expect(reports[0]!.id).toBe("adjacent-cloud");
   });
 
+  test("attributes the blocker-safe Adjacent feed alias to adjacent-cloud", async () => {
+    const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
+    setConnectionRequestReporter((id, report) => reports.push({ id, report }));
+    mockTransport({ "/api/feed/mkt": { body: '{"data":[]}' } });
+
+    await fetchJson("https://terminal.kohor.st/api/feed/mkt/markets?platform=kalshi&per_page=50");
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]!.id).toBe("adjacent-cloud");
+  });
+
   test("does not report traffic for unknown URLs", async () => {
     const reports: Array<{ id: string; report: ConnectionRequestReport }> = [];
     setConnectionRequestReporter((id, report) => reports.push({ id, report }));

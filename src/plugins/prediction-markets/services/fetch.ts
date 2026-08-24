@@ -70,6 +70,19 @@ export function isBlockedRequestError(error: unknown): boolean {
   return error instanceof Error && error.message.includes(BLOCKED_REQUEST_MARKER);
 }
 
+/**
+ * True when the hosted Worker/proxy answered with a Cloudflare origin timeout
+ * or another 5xx, or the request aborted. Retrying the same Worker path cannot
+ * reach Kalshi; the client must switch to Adjacent's public origin instead.
+ */
+export function isHostedOriginFailureError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (isBlockedRequestError(error)) return true;
+  const message = error.message;
+  if (/Request failed \((522|524|530|502|503|504)\)/.test(message)) return true;
+  return /timed out|timeout|TimeoutError|The operation was aborted/i.test(message);
+}
+
 /** Browser transport failures. Chrome/Firefox/Safari each word theirs differently. */
 const BROWSER_TRANSPORT_FAILURE = /failed to fetch|load failed|networkerror when attempting to fetch|network request failed/i;
 

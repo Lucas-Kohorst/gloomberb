@@ -507,6 +507,29 @@ PRECIPITATION (IN)
     expect(authorization).toBe("Bearer adj-secret");
   });
 
+  test("Adjacent 522 on the auth URL retries the public twin", async () => {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      fetched.push(url);
+      if (url.includes("/api/v1/markets") && !url.includes("/public/")) {
+        return new Response("error code: 522", { status: 522 });
+      }
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/feed/mkt/markets?platform=kalshi&scope=all&per_page=2"),
+      { ...makeEnv(), ADJACENT_API_KEY: "adj-secret" } as Env,
+    );
+    expect(response?.status).toBe(200);
+    expect(fetched.some((url) => url.includes("/api/v1/markets") && !url.includes("/public/"))).toBe(true);
+    expect(fetched.some((url) => url.includes("/api/v1/public/markets"))).toBe(true);
+  });
+
   test("VoteHub polls are cached on the Worker for 15 minutes", async () => {
     let upstreamHits = 0;
     globalThis.fetch = (async (input: URL | RequestInfo) => {
@@ -1174,6 +1197,43 @@ describe("hosted Kalshi API proxy", () => {
 
     expect(response?.status).toBe(429);
     expect(response?.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("serves Adjacent Kalshi markets when the venue origin 522s", async () => {
+    const fetched: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      fetched.push(url);
+      if (url.includes("external-api.kalshi.com")) {
+        return new Response("error code: 522", { status: 522 });
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{
+            market_id: "kalshi:KXNBA-26-SAS",
+            ticker: "KXNBA-26-SAS",
+            platform: "kalshi",
+            question: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+            probability: 65,
+            status: "active",
+            event_id: "kalshi:KXNBA-26",
+          }],
+          meta: { has_next: false, page: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", `${KALSHI_PROXY_PATH}/events?limit=1&status=open`, { sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    const body = await response?.json() as { events: Array<{ event_ticker: string; markets: Array<{ ticker: string; last_price_dollars: string }> }> };
+    expect(body.events[0]?.event_ticker).toBe("KXNBA-26");
+    expect(body.events[0]?.markets[0]?.ticker).toBe("KXNBA-26-SAS");
+    expect(body.events[0]?.markets[0]?.last_price_dollars).toBe("0.65");
+    expect(fetched.some((url) => url.includes("api.adjacent.markets/api/v1/public/markets"))).toBe(true);
   });
 
   test("rejects cross-origin Kalshi proxy requests", async () => {
