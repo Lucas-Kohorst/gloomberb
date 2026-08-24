@@ -82,10 +82,23 @@ export function buildEsgData(symbol: string, result: YahooQuoteSummaryResult): E
   };
 }
 
+const YAHOO_ESG_UNAVAILABLE = /\[404\]|Not Found|No fundamentals data|No quote summary/i;
+
+/** True when Yahoo has no ESG/fundamentals module (404 JSON), not a transport failure. */
+export function isYahooEsgUnavailable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return YAHOO_ESG_UNAVAILABLE.test(message);
+}
+
+export function esgUnavailableMessage(symbol: string): string {
+  return `Yahoo has no ESG scores for ${symbol}.`;
+}
+
 /**
  * Fetch ESG data for a ticker from Yahoo Finance's quoteSummary `esgScores` module.
- * Empty / maxAge-only modules (common on ETFs) resolve to scores with no data
- * instead of throwing. YahooHttpClient already reports the `yahoo` connection.
+ * Empty / maxAge-only modules and Yahoo 404 "No fundamentals data" resolve to
+ * scores with no data instead of throwing raw JSON. YahooHttpClient already
+ * reports the `yahoo` connection.
  */
 export async function fetchEsgData(symbol: string, exchange = ""): Promise<EsgData> {
   const symbols = exchange ? getYahooSymbolsToTry(symbol, exchange) : [symbol];
@@ -99,6 +112,9 @@ export async function fetchEsgData(symbol: string, exchange = ""): Promise<EsgDa
       firstEmpty ??= data;
     } catch (error) {
       lastError = error;
+      if (isYahooEsgUnavailable(error)) {
+        firstEmpty ??= buildEsgData(yahooSymbol, {});
+      }
     }
   }
 
@@ -113,7 +129,13 @@ async function fetchEsgDataForSymbol(symbol: string): Promise<EsgData> {
   const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
 
   const result = data.quoteSummary?.result?.[0];
-  if (!result) throw new Error(`No quote summary for ${symbol}`);
+  if (!result) {
+    const description = data.quoteSummary?.error?.description;
+    if (description && YAHOO_ESG_UNAVAILABLE.test(description)) {
+      return buildEsgData(symbol, {});
+    }
+    throw new Error(description ?? `No quote summary for ${symbol}`);
+  }
 
   return buildEsgData(symbol, result);
 }

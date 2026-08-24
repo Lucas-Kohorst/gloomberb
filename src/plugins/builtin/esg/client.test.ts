@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
-import { buildEsgData, hasEsgData, normalizeEsgScores } from "./client";
+import { buildEsgData, esgUnavailableMessage, hasEsgData, isYahooEsgUnavailable, normalizeEsgScores } from "./client";
 import type { EsgScores } from "./types";
 
 function quoteSummaryWithEsg(esg: Record<string, unknown> | null): QuoteSummaryResponse {
@@ -137,6 +137,16 @@ describe("buildEsgData", () => {
     expect(data.carbon).toBeNull();
     expect(data.symbol).toBe("IBIT");
     expect(data.sourceUrl).toContain("IBIT");
+  });
+});
+
+describe("isYahooEsgUnavailable", () => {
+  test("treats Yahoo 404 fundamentals JSON as no data, not a crash dump", () => {
+    const raw = '[404] {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"No fundamentals data for AAPL"}}}';
+    expect(isYahooEsgUnavailable(new Error(raw))).toBe(true);
+    expect(isYahooEsgUnavailable(new Error("No quote summary for AAPL"))).toBe(true);
+    expect(isYahooEsgUnavailable(new Error("[429] Too Many Requests"))).toBe(false);
+    expect(esgUnavailableMessage("AAPL")).toBe("Yahoo has no ESG scores for AAPL.");
   });
 });
 
