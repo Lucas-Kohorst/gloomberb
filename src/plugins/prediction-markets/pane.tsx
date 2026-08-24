@@ -2,7 +2,6 @@ import { Box, Input, Text } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
 import {
   DataTableStackView,
-  SegmentedControl,
   Spinner,
   Tabs,
   usePaneFooter,
@@ -219,12 +218,16 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     />
   ) : null;
 
-  const searchAndBrowse = (
+  // Search box, browse tabs and category tabs share one row so the pane
+  // doesn't burn three rows of vertical space (the third was getting clipped).
+  // Both tab strips use variant="bare" + scrollable={false} — no outlined box,
+  // no width:100% ScrollBox — so they sit inline to the right of the search.
+  const searchBrowseAndCategories = (
     <Box flexDirection="row" height={1} paddingX={1} gap={2}>
       <Box
         flexDirection="row"
         onMouseDown={controller.actions.focusSearch}
-        width={Math.max(18, Math.floor(width * 0.32))}
+        width={Math.max(14, Math.floor(width * 0.22))}
       >
         <Text fg={colors.textDim}>{controller.searchFocused ? "?" : "/"}</Text>
         <Box width={1} />
@@ -258,44 +261,41 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           </Box>
         )}
       </Box>
-      <Box flexGrow={1}>
-        <SegmentedControl
-          options={BROWSE_TABS.map((tab) => ({
-            label: tab.label,
-            value: tab.value,
-          }))}
-          value={controller.browseTab}
-          onChange={(value) =>
-            controller.actions.selectBrowseTab(value as PredictionBrowseTab)
-          }
-          focused={focused}
-        />
-      </Box>
-    </Box>
-  );
-
-  const categoryTabs = focused && PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
-    <Box height={1} paddingX={1}>
       <Tabs
-        tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
-          label: category.label,
-          value: category.id,
+        tabs={BROWSE_TABS.map((tab) => ({
+          label: tab.label,
+          value: tab.value,
         }))}
-        activeValue={controller.categoryId}
+        activeValue={controller.browseTab}
         onSelect={(value) =>
-          controller.actions.selectCategory(value as PredictionCategoryId)
+          controller.actions.selectBrowseTab(value as PredictionBrowseTab)
         }
         compact
         variant="bare"
+        scrollable={false}
       />
+      {focused && PREDICTION_CATEGORY_OPTIONS.length > 1 ? (
+        <Tabs
+          tabs={PREDICTION_CATEGORY_OPTIONS.map((category) => ({
+            label: category.label,
+            value: category.id,
+          }))}
+          activeValue={controller.categoryId}
+          onSelect={(value) =>
+            controller.actions.selectCategory(value as PredictionCategoryId)
+          }
+          compact
+          variant="bare"
+          scrollable={false}
+        />
+      ) : null}
     </Box>
-  ) : null;
+  );
 
   const browseControls = (
     <>
       {venueTabs}
-      {searchAndBrowse}
-      {categoryTabs}
+      {searchBrowseAndCategories}
     </>
   );
 
