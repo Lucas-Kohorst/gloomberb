@@ -140,6 +140,27 @@ function buildTickerFinancialsKeys(tickers: TickerRecord[], options: TickerInstr
   return keys;
 }
 
+/**
+ * Live market data overlaid on the cached store, restricted to `tickers`.
+ *
+ * Callers used to seed a new Map from the entire `state.financials` store and
+ * then overlay, which cost O(every cached symbol) on every quote batch and made
+ * consumers that iterate the result walk symbols no row can display.
+ */
+export function mergeTickerFinancials(
+  tickers: TickerRecord[],
+  live: Map<string, TickerFinancials>,
+  cached: Map<string, TickerFinancials>,
+): Map<string, TickerFinancials> {
+  const merged = new Map<string, TickerFinancials>();
+  for (const ticker of tickers) {
+    const symbol = ticker.metadata.ticker;
+    const financials = live.get(symbol) ?? cached.get(symbol);
+    if (financials) merged.set(symbol, financials);
+  }
+  return merged;
+}
+
 export function useTickerFinancialsMap(
   tickers: TickerRecord[],
   options: TickerInstrumentOptions = {},

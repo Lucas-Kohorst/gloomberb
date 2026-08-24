@@ -14,7 +14,12 @@ import {
 } from "../../../state/app/context";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
-import { useChartQueries, useFxRatesMap, useTickerFinancialsMap } from "../../../market-data/hooks";
+import {
+  mergeTickerFinancials,
+  useChartQueries,
+  useFxRatesMap,
+  useTickerFinancialsMap,
+} from "../../../market-data/hooks";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
 import { usePortfolioAccountState } from "../portfolio-list/header";
 import { calculatePortfolioSummaryTotals, type ColumnContext } from "../portfolio-list/metrics";
@@ -139,13 +144,10 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const factorProxyChartEntries = useChartQueries(factorProxyRequests);
 
   const marketFinancials = useTickerFinancialsMap(portfolioTickers);
-  const financials = useMemo(() => {
-    const merged = new Map(cachedFinancials);
-    for (const [symbol, data] of marketFinancials) {
-      merged.set(symbol, data);
-    }
-    return merged;
-  }, [cachedFinancials, marketFinancials]);
+  const financials = useMemo(
+    () => mergeTickerFinancials(portfolioTickers, marketFinancials, cachedFinancials),
+    [cachedFinancials, marketFinancials, portfolioTickers],
+  );
   const brokerPerformance = useBrokerPortfolioPerformance(activePortfolio, config);
   const performanceChartPoints = useMemo(
     () => buildPerformanceChartPoints(brokerPerformance.performance),
