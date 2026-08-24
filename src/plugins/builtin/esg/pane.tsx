@@ -5,7 +5,7 @@ import { colors } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
-import { fetchEsgData } from "./client";
+import { fetchEsgData, hasEsgData } from "./client";
 import type { EsgData, EsgScores, LoadStatus } from "./types";
 
 const SCORE_COLOR_HIGH = colors.textDim;
@@ -84,7 +84,7 @@ function buildPeerRows(scores: EsgScores): MetricRow[] {
 
 function buildCarbonRows(data: EsgData): MetricRow[] {
   const c = data.carbon;
-  if (!c) return [{ label: "Carbon Data", value: "Not available" }];
+  if (!c) return [];
   return [
     { label: "Scope 1 (tCO2e)", value: c.scope1 != null ? c.scope1.toLocaleString() : "—" },
     { label: "Scope 2 (tCO2e)", value: c.scope2 != null ? c.scope2.toLocaleString() : "—" },
@@ -194,17 +194,20 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
     );
   }
 
-  if (!data) {
+  if (!data || !hasEsgData(data.scores)) {
     return (
       <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Text fg={colors.textDim}>No ESG data for {symbol}.</Text>
+        <EmptyState
+          title="No ESG data"
+          message={symbol ? `${symbol} has no Yahoo ESG scores.` : undefined}
+        />
       </Box>
     );
   }
 
   const scoreRows = buildScoreRows(data.scores);
   const peerRows = buildPeerRows(data.scores);
-  const carbonRows = buildCarbonRows(data);
+  const carbonRows = data.carbon ? buildCarbonRows(data) : [];
   const labelWidth = Math.max(16, Math.floor((width - 2) / 2));
 
   function renderSection(title: string, rows: MetricRow[]) {
@@ -235,7 +238,7 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
         <Box flexDirection="column">
           {renderSection("ESG SCORES", scoreRows)}
           {renderSection("PEER COMPARISON", peerRows)}
-          {renderSection("CARBON & CLIMATE", carbonRows)}
+          {carbonRows.length > 0 ? renderSection("CARBON & CLIMATE", carbonRows) : null}
         </Box>
       </ScrollBox>
     </Box>

@@ -1,11 +1,9 @@
-import { withConnectionRequest } from "../connections/register";
 import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber } from "../../../sources/yahoo-finance/mappers";
 import type { QuoteSummaryResponse, YahooQuoteSummaryResult } from "../../../sources/yahoo-finance/types";
 import { getYahooSymbolsToTry } from "../../../sources/yahoo-finance/symbols";
-import type { CarbonEmissions, EsgData, EsgScores } from "./types";
+import type { EsgData, EsgScores } from "./types";
 
-const CONNECTION_ID = "yahoo-esg";
 const yahoo = new YahooHttpClient();
 
 const EMPTY_SCORES: EsgScores = {
@@ -61,14 +59,10 @@ export function normalizeEsgScores(result: YahooQuoteSummaryResult): EsgScores {
 
 /**
  * Returns true when the normalized scores contain any real ESG data.
- * Yahoo may return an empty or all-null module for unsupported symbols.
+ * Yahoo often returns an empty or maxAge-only `esgScores` module (ETFs, etc.).
  */
 export function hasEsgData(scores: EsgScores): boolean {
-  return scores.totalEsg != null
-    || scores.environmentScore != null
-    || scores.socialScore != null
-    || scores.governanceScore != null
-    || scores.esgPerformance != null;
+  return Object.values(scores).some((value) => value != null);
 }
 
 /**
@@ -78,27 +72,37 @@ function buildSourceUrl(symbol: string): string {
   return `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/sustainability`;
 }
 
+export function buildEsgData(symbol: string, result: YahooQuoteSummaryResult): EsgData {
+  return {
+    symbol,
+    scores: normalizeEsgScores(result),
+    // Yahoo quoteSummary does not expose Scope 1/2/3 emissions.
+    carbon: null,
+    sourceUrl: buildSourceUrl(symbol),
+  };
+}
+
 /**
  * Fetch ESG data for a ticker from Yahoo Finance's quoteSummary `esgScores` module.
- *
- * TODO: Yahoo Finance does not expose Scope 1/2/3 carbon emissions through the
- * quoteSummary API. To populate `CarbonEmissions`, wire in a dedicated carbon
- * data source (e.g. CDP, SBTi, or a commercial ESG API). The `carbon` field
- * remains null until a source is integrated. An API key, if required by the
- * chosen provider, should be stored via `ctx.configState` and never hardcoded.
+ * Empty / maxAge-only modules (common on ETFs) resolve to scores with no data
+ * instead of throwing. YahooHttpClient already reports the `yahoo` connection.
  */
 export async function fetchEsgData(symbol: string, exchange = ""): Promise<EsgData> {
   const symbols = exchange ? getYahooSymbolsToTry(symbol, exchange) : [symbol];
+  let firstEmpty: EsgData | null = null;
   let lastError: unknown;
 
   for (const yahooSymbol of symbols) {
     try {
-      return await fetchEsgDataForSymbol(yahooSymbol);
+      const data = await fetchEsgDataForSymbol(yahooSymbol);
+      if (hasEsgData(data.scores)) return data;
+      firstEmpty ??= data;
     } catch (error) {
       lastError = error;
     }
   }
 
+  if (firstEmpty) return firstEmpty;
   throw lastError ?? new Error(`No ESG data found for ${symbol}`);
 }
 
@@ -106,25 +110,10 @@ async function fetchEsgDataForSymbol(symbol: string): Promise<EsgData> {
   const params = new URLSearchParams({ modules: "esgScores" });
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
 
-  const data = await withConnectionRequest(CONNECTION_ID, "esg-scores", () =>
-    yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(url),
-  );
+  const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(url);
 
   const result = data.quoteSummary?.result?.[0];
-  if (!result) throw new Error(`No ESG data for ${symbol}`);
+  if (!result) throw new Error(`No quote summary for ${symbol}`);
 
-  const scores = normalizeEsgScores(result);
-  if (!hasEsgData(scores)) {
-    throw new Error(`No ESG data for ${symbol}`);
-  }
-
-  // TODO: integrate a carbon emissions data source to populate `carbon`.
-  const carbon: CarbonEmissions | null = null;
-
-  return {
-    symbol,
-    scores,
-    carbon,
-    sourceUrl: buildSourceUrl(symbol),
-  };
+  return buildEsgData(symbol, result);
 }
