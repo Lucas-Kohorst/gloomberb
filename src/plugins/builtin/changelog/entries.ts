@@ -1,5 +1,36 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_3: ChangelogRelease = {
+  id: "hosted-v0-13-3",
+  tagName: "v0.13.3",
+  version: "0.13.3",
+  title: "Research panes, chart indicators, web accessibility",
+  publishedAt: "2026-08-24T12:00:00.000Z",
+  url: "",
+  body: `Six new research surfaces, a technical-indicator library for charts, editable price alerts, and an accessibility pass over the web terminal.
+
+## Features
+
+- **TRANS** \`<symbol>\` opens earnings call transcripts for a ticker, searchable from the command bar and readable in the shared article reader.
+- **SCR** screens the listed universe on valuation, growth, margin, and size fundamentals. Header sort and \`[s]\`earch.
+- **VSURF** \`<symbol>\` draws an implied-vol heatmap across strikes and expirations, back-solved from the options chain.
+- **ESG** \`<symbol>\` shows Yahoo ESG scores and controversy level. Carbon emissions are not published upstream yet.
+- **RISK** shows VaR, factor exposure, beta-weighted market exposure, sector concentration, and best/worst contributors. \`[v]\` cycles views so the portfolio tabs keep the arrow keys.
+- SEC filings gain an on-demand AI summary with red-flag detection, diffed against the previous filing of the same form.
+- Chart indicators: SMA, EMA, RSI, MACD, Bollinger Bands, VWAP, ATR, Stochastic, ADX. The library and catalog land first; \`IND:\` chart expressions are not wired yet.
+- Price alerts are editable with \`[e]\` instead of delete-and-recreate.
+
+## Fixes
+
+- The hosted terminal no longer hangs on "Loading Gloomberb...". Cloudflare re-compresses \`.br\` assets, so build-time pre-compression was applied twice and the bundle arrived undecodable.
+- Chart gestures stay in the chart: wheel zoom does not scroll the page, and touch pans do not rubber-band the window.
+- \`prefers-reduced-motion\` is honored. Row roll-in degrades to opacity, and the spinner stops animating \`filter\`.
+- Shared reader pages are keyboard and screen-reader usable: header sort is a real button, loading states announce, and muted text clears contrast.
+- Tab close works from the keyboard with \`Delete\`, and dialogs keep Tab focus inside.
+- The Worker sets the same security headers as upstream. CSP stays report-only.
+`,
+};
+
 const RELEASE_0_13_2: ChangelogRelease = {
   id: "hosted-v0-13-2",
   tagName: "v0.13.2",
@@ -261,6 +292,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_3,
   RELEASE_0_13_2,
   RELEASE_0_13_1,
   RELEASE_0_13_0,
