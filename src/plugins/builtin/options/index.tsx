@@ -10,9 +10,7 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
-import { registerConnectionSource } from "../connections/register";
 
-let disposeOptionsConnection: (() => void) | null = null;
 
 export const optionsModule: PluginModule = {
   panes: [
@@ -75,19 +73,5 @@ export const optionsModule: PluginModule = {
       component: OptionsView,
       isVisible: ({ hasOptionsChain }) => hasOptionsChain,
     });
-
-    // Options chains are delivered by the underlying asset-data feed but are a
-    // distinct data source worth surfacing in the Connections inventory.
-    disposeOptionsConnection = registerConnectionSource({
-      id: "options",
-      name: "Options Chain",
-      kind: "asset-data",
-      pluginId: "ticker-research",
-    });
-  },
-
-  dispose() {
-    disposeOptionsConnection?.();
-    disposeOptionsConnection = null;
   },
 };
