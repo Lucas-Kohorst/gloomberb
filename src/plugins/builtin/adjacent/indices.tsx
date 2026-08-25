@@ -1,4 +1,5 @@
 import { runAfterStartupBackground } from "../../../utils/startup-interaction";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   ScrollBox,
