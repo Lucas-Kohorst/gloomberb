@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataProvider } from "../../../types/data-provider";
 import type { AppTickerRepositoryPort } from "../../../core/app-service-ports";
 import type { PluginRegistry } from "../../../plugins/registry";
@@ -7,7 +7,7 @@ import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
 import { applyNewsFeedContextToAssistInventory, applyChartSeriesContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
-import { useNewsArticles } from "../../../news/hooks";
+import { getSharedNewsService, useNewsCacheVersion } from "../../../news/hooks";
 import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
 import {
   ARTICLE_SEARCH_QUERY,
@@ -198,25 +198,45 @@ export function CommandBar({
 
   const planAccess = usePlanAccess();
   const watchArticles = looksLikeArticleQuery(rootQuery);
-  const newsState = useNewsArticles(watchArticles ? ARTICLE_SEARCH_QUERY : null);
+  const newsCacheVersion = useNewsCacheVersion(watchArticles);
+  const [warmingNewsCache, setWarmingNewsCache] = useState(false);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
+  useEffect(() => {
+    if (!watchArticles) {
+      setWarmingNewsCache(false);
+      return;
+    }
+    if (cachedNewsArticles().length > 0) {
+      setWarmingNewsCache(false);
+      return;
+    }
+    const service = getSharedNewsService();
+    if (!service) {
+      setWarmingNewsCache(false);
+      return;
+    }
+    let cancelled = false;
+    setWarmingNewsCache(true);
+    void service.poll(ARTICLE_SEARCH_QUERY).finally(() => {
+      if (!cancelled) setWarmingNewsCache(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [watchArticles]);
   const articleResultItems = useMemo(() => {
     const cached = cachedNewsArticles();
     const seen = new Set<string>();
     const articles = [];
-    for (const article of [...cached, ...newsState.articles, ...adjacentNews.articles]) {
+    for (const article of [...cached, ...adjacentNews.articles]) {
       if (seen.has(article.id)) continue;
       seen.add(article.id);
       articles.push(article);
     }
-    // Search the already-loaded firehose/RSS pool immediately. Only wait on
-    // Adjacent (or a cold news service) when that pool has nothing to match.
-    const localReady = cached.length > 0
-      || newsState.phase === "ready"
-      || newsState.phase === "refreshing"
-      || newsState.phase === "error";
+    // Local firehose/RSS matches appear immediately. Wait only on Adjacent,
+    // or a cold empty cache that is still warming from idle prefetch / one poll.
     const stillLoading = adjacentNews.phase === "loading"
-      || (!localReady && (newsState.phase === "idle" || newsState.phase === "loading"));
+      || (cached.length === 0 && warmingNewsCache);
     return buildArticleSearchResultItems({
       articles,
       query: rootQuery,
@@ -232,10 +252,10 @@ export function CommandBar({
     adjacentNews.articles,
     adjacentNews.phase,
     closeAll,
-    newsState.articles,
-    newsState.phase,
+    newsCacheVersion,
     pluginRegistry,
     rootQuery,
+    warmingNewsCache,
   ]);
   const catalogChartQuery = !currentRoute
     && rootShortcutIntent.kind === "none"

@@ -3,9 +3,9 @@ import type { NewsArticle, NewsQueryPhase } from "../../../../news/types";
 import { t } from "../../../../i18n";
 import { searchAdjacentRelatedArticles } from "../../../../plugins/builtin/adjacent/news";
 import {
+  adjacentArticleSearchText,
   looksLikeArticleQuery,
   searchNewsArticles,
-  tokenizeArticleQuery,
 } from "../../../../plugins/builtin/news/wire/article-search";
 import type { ResultItem } from "../../list/model";
 
@@ -17,7 +17,8 @@ export function useAdjacentArticleSearch(query: string): {
   const [phase, setPhase] = useState<NewsQueryPhase>("idle");
 
   useEffect(() => {
-    if (!looksLikeArticleQuery(query) || tokenizeArticleQuery(query).length === 0) {
+    const searchText = looksLikeArticleQuery(query) ? adjacentArticleSearchText(query) : null;
+    if (!searchText) {
       setArticles([]);
       setPhase("idle");
       return;
@@ -26,7 +27,7 @@ export function useAdjacentArticleSearch(query: string): {
     let cancelled = false;
     setPhase("loading");
     const timer = setTimeout(() => {
-      void searchAdjacentRelatedArticles(tokenizeArticleQuery(query).join(" ")).then((found) => {
+      void searchAdjacentRelatedArticles(searchText).then((found) => {
         if (cancelled) return;
         setArticles(found);
         setPhase("ready");
@@ -74,7 +75,7 @@ export function buildArticleSearchResultItems(options: {
   }));
 
   if (items.length > 0) return items;
-  if (options.phase === "loading" || options.phase === "idle" || options.phase === "refreshing") {
+  if (options.phase === "loading" || options.phase === "refreshing") {
     return [{
       id: "article:loading",
       label: t("Looking up articles…"),

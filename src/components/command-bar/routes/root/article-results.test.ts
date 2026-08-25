@@ -63,6 +63,16 @@ describe("buildArticleSearchResultItems", () => {
     });
     expect(items.map((item) => item.label)).toEqual(["Trump administration pauses talks"]);
   });
+
+  test("does not show a lookup row when Adjacent is idle and local search already ran", () => {
+    const items = buildArticleSearchResultItems({
+      articles: [article("Fed holds rates", "CNBC Top News")],
+      query: "ART tr",
+      phase: "idle",
+      onOpen: () => {},
+    });
+    expect(items).toEqual([]);
+  });
 });
 
 describe("isArticleLookupShortcut", () => {

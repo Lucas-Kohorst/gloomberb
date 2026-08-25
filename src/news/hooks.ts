@@ -39,6 +39,21 @@ export function useNewsArticles(query: NewsQuery | null | undefined): NewsQueryS
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/** Cheap cache bump for ART — subscribe/getVersion, never watchQuery (which polls). */
+export function useNewsCacheVersion(enabled: boolean): number {
+  const service = sharedService;
+  const subscribe = useCallback((listener: () => void) => {
+    if (!enabled || !service) return () => {};
+    return service.subscribe(() => listener());
+  }, [enabled, service]);
+  const getSnapshot = useCallback(
+    () => enabled && service ? service.getVersion() : 0,
+    [enabled, service],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export function useLoadNewsStory(): (storyId: string) => Promise<NewsArticle | null> {
   return useCallback(async (storyId: string) => sharedService?.loadStory(storyId) ?? null, []);
 }
