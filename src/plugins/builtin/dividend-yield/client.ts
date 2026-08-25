@@ -1,12 +1,12 @@
 import { withConnectionRequest } from "../connections/register";
-import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
+import { YAHOO_CONNECTION_ID, YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, mapYahooDividends } from "../../../sources/yahoo-finance/mappers";
 import { fetchYahooChart } from "../../../sources/yahoo-finance/requests";
 import { getYahooSymbolsToTry } from "../../../sources/yahoo-finance/symbols";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
 import type { DividendMetrics, DividendPayment } from "./types";
 
-const CONNECTION_ID = "yahoo-dividends";
+const CONNECTION_ID = YAHOO_CONNECTION_ID;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const yahoo = new YahooHttpClient();
 
@@ -108,10 +108,10 @@ async function fetchDividendDataForSymbol(
     + "?modules=summaryDetail,financialData,defaultKeyStatistics";
 
   const [chartResult, quoteResult] = await Promise.allSettled([
-    withConnectionRequest(CONNECTION_ID, "dividend-history", () =>
+    withConnectionRequest(CONNECTION_ID, "dividends", () =>
       fetchYahooChart(yahoo, symbol, "10y", "1d"),
     ),
-    withConnectionRequest(CONNECTION_ID, "quote-summary", () =>
+    withConnectionRequest(CONNECTION_ID, "dividends", () =>
       yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl),
     ),
   ]);
@@ -156,7 +156,7 @@ export async function fetchExDividendDate(symbol: string): Promise<Date | null> 
   const quoteUrl =
     `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
     + "?modules=summaryDetail";
-  return withConnectionRequest(CONNECTION_ID, "ex-dividend-date", async () => {
+  return withConnectionRequest(CONNECTION_ID, "dividends", async () => {
     const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl);
     const raw = extractDividendFields(data).exDividendDate;
     return raw != null ? new Date(raw * 1000) : null;

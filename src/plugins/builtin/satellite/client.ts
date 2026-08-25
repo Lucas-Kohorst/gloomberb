@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { FIRMS_CSV_PATH, gibsHostedPath, gibsHostedSearch, gibsWmsUrl } from "./layers";
 import { parseFirmsCsv } from "./parse";
 import { FIRMS_CONNECTION_ID, GIBS_CONNECTION_ID, type FireHotspot } from "./types";
@@ -24,7 +24,7 @@ const CLIENT = createThrottledFetch({
 export async function loadFirmsHotspots(): Promise<FireHotspot[]> {
   return withConnectionRequest(FIRMS_CONNECTION_ID, "hotspots", async () => {
     const url = isHostedWebClient()
-      ? adjacentCloudDataUrl("nasa-firms", FIRMS_CSV_PATH)
+      ? keyedDataUrl("nasa-firms", FIRMS_CSV_PATH)
       : `https://firms.modaps.eosdis.nasa.gov/${FIRMS_CSV_PATH}`;
     const response = await CLIENT.fetch(url);
     if (!response.ok) throw new Error(`FIRMS request failed (${response.status})`);
@@ -34,7 +34,7 @@ export async function loadFirmsHotspots(): Promise<FireHotspot[]> {
 
 export function imageryUrl(layer: string, date: string, bbox?: string): string {
   if (isHostedWebClient()) {
-    return adjacentCloudDataUrl("nasa-gibs", gibsHostedPath(layer), gibsHostedSearch(layer, date, bbox));
+    return keyedDataUrl("nasa-gibs", gibsHostedPath(layer), gibsHostedSearch(layer, date, bbox));
   }
   return gibsWmsUrl(layer, date, bbox);
 }

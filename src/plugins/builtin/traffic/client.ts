@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { findBbox } from "./bbox";
 import { parseDigitTrafficPayload, parseOpenSkyPayload } from "./parse";
 import {
@@ -56,7 +56,7 @@ export async function loadAircraft(bboxId: string): Promise<TrafficVehicle[]> {
   const target = openskyUrl(bbox);
   return withConnectionRequest(OPENSKY_CONNECTION_ID, "states", async () => {
     const url = isHostedWebClient()
-      ? adjacentCloudDataUrl("opensky", target.keyPath, target.search)
+      ? keyedDataUrl("opensky", target.keyPath, target.search)
       : target.desktop;
     return parseOpenSkyPayload(await readJson(url));
   });
@@ -65,7 +65,7 @@ export async function loadAircraft(bboxId: string): Promise<TrafficVehicle[]> {
 export async function loadShips(): Promise<TrafficVehicle[]> {
   return withConnectionRequest(DIGITRAFFIC_CONNECTION_ID, "ais", async () => {
     const url = isHostedWebClient()
-      ? adjacentCloudDataUrl("digitraffic-ais", "api/ais/v1/locations")
+      ? keyedDataUrl("digitraffic-ais", "api/ais/v1/locations")
       : "https://meri.digitraffic.fi/api/ais/v1/locations";
     return parseDigitTrafficPayload(await readJson(url));
   });

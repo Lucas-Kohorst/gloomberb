@@ -1,5 +1,5 @@
 /**
- * Adjacent Cloud keyed-data providers.
+ * Hosted keyed-data providers (`GET /api/data/{providerId}/…`).
  *
  * Official prints are series keyed by station / ticker / series id — not
  * prediction-market tickers. Adding a source is a new

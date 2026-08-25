@@ -1,21 +1,10 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { ShortInterestView } from "./pane";
 
-let disposeShortInterestConnection: (() => void) | null = null;
-
 export const shortInterestModule: PluginModule = {
   setup(ctx) {
-    disposeShortInterestConnection = registerConnectionSource({
-      id: "yahoo-short-interest",
-      name: "Yahoo Finance Short Interest",
-      kind: "api",
-      pluginId: "short-interest",
-      authRequired: false,
-    });
-
     ctx.registerTickerResearchTab({
       id: "short-interest",
       name: "Short Interest",
@@ -23,11 +12,6 @@ export const shortInterestModule: PluginModule = {
       component: ShortInterestView,
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
     });
-  },
-
-  dispose() {
-    disposeShortInterestConnection?.();
-    disposeShortInterestConnection = null;
   },
 
   panes: [

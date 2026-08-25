@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import {
   LLM_STATS_API_BASE,
   LLM_STATS_CONNECTION_ID,
@@ -103,10 +103,10 @@ function joinRows(
 export async function fetchLlmStatsData(): Promise<LlmStatsData> {
   return withConnectionRequest(LLM_STATS_CONNECTION_ID, "stats", async () => {
     const modelsUrl = isHostedWebClient()
-      ? adjacentCloudDataUrl("llm-stats", "v1/models")
+      ? keyedDataUrl("llm-stats", "v1/models")
       : `${LLM_STATS_API_BASE}/v1/models`;
     const metricsUrl = isHostedWebClient()
-      ? adjacentCloudDataUrl("llm-stats", "v1/models/metrics")
+      ? keyedDataUrl("llm-stats", "v1/models/metrics")
       : `${LLM_STATS_API_BASE}/v1/models/metrics`;
     const [modelsRes, metricsRes] = await Promise.all([
       CLIENT.fetch(modelsUrl),

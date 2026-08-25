@@ -1,10 +1,10 @@
 import { withConnectionRequest } from "../connections/register";
-import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
+import { YAHOO_CONNECTION_ID, YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, yahooRawDate } from "../../../sources/yahoo-finance/mappers";
 import type { QuoteSummaryResponse, YahooQuoteSummaryResult } from "../../../sources/yahoo-finance/types";
 import type { ShortInterestRecord } from "./types";
 
-const CONNECTION_ID = "yahoo-short-interest";
+const CONNECTION_ID = YAHOO_CONNECTION_ID;
 const yahoo = new YahooHttpClient();
 
 function rawDate(value: unknown): Date | null {
@@ -60,7 +60,7 @@ function normalizeRecords(result: YahooQuoteSummaryResult): ShortInterestRecord[
 }
 
 export async function fetchShortInterest(symbol: string): Promise<ShortInterestRecord[]> {
-  return withConnectionRequest(CONNECTION_ID, "fetch-short-interest", async () => {
+  return withConnectionRequest(CONNECTION_ID, "short-interest", async () => {
     const params = new URLSearchParams({ modules: "defaultKeyStatistics" });
     const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`;
     const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(url);

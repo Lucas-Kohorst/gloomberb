@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { COUNTRY_ECON_INDICATORS } from "./indicators";
 import { parseWorldBankPayload } from "./normalize";
 import { WORLD_BANK_CONNECTION_ID, type CountryEconRow } from "./types";
@@ -41,7 +41,7 @@ export async function loadCountryEcon(indicatorId: string): Promise<CountryEconR
   const target = indicatorUrl(indicator.wbCode);
   return withConnectionRequest(WORLD_BANK_CONNECTION_ID, indicator.id, async () => {
     const url = isHostedWebClient()
-      ? adjacentCloudDataUrl("world-bank", target.keyPath, target.search)
+      ? keyedDataUrl("world-bank", target.keyPath, target.search)
       : target.desktop;
     const response = await CLIENT.fetch(url);
     if (!response.ok) {

@@ -5,7 +5,7 @@ const ALLOWED_PATHS = new Set(["", "polls"]);
 const ALLOWED_QUERY = new Set(["poll_type", "subject"]);
 
 /**
- * Adjacent Cloud polls print. Hosted clients call
+ * VoteHub polls print. Hosted clients call
  * `GET /api/data/votehub/polls?poll_type=&subject=`; desktop hits VoteHub
  * directly. The Worker caches the upstream JSON as-is.
  *
