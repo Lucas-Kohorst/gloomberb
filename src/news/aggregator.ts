@@ -1,5 +1,5 @@
 import type { NewsCapability } from "../capabilities";
-import { isStartupNetworkDeferred, whenStartupBackground } from "../utils/startup-interaction";
+import { whenStartupBackground } from "../utils/startup-interaction";
 import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../utils/ui-yield";
 import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
@@ -186,14 +186,10 @@ export class NewsService {
     const unsubscribe = this.subscribe(emit);
     emit();
     let disposed = false;
-    if (isStartupNetworkDeferred()) {
-      void whenStartupBackground().then(() => {
-        if (disposed) return;
-        void this.refreshQuery(normalized, false);
-      });
-    } else {
+    void whenStartupBackground().then(() => {
+      if (disposed) return;
       void this.refreshQuery(normalized, false);
-    }
+    });
     return () => {
       if (disposed) return;
       disposed = true;
@@ -324,6 +320,7 @@ export class NewsService {
   }
 
   private async pollActiveQueries(): Promise<void> {
+    await whenStartupBackground();
     this.pruneInactiveQueries();
     const queries = [...this.queries.values()]
       .filter((entry) => entry.refs > 0)
