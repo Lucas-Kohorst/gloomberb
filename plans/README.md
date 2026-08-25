@@ -53,6 +53,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 054  | Settlement series matcher | P2 | M | — | DONE |
 | 055  | Command bar + analytics chrome | P2 | M | 049 | DONE |
 | 056  | DuckDB vs SQLite (research; keep SQLite KV) | — | — | — | RESEARCH |
+| 057  | Agent surface parity (registry tools + hosted handle) | P1 | L | remote + AGENT pane | READY |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 
