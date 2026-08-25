@@ -13,7 +13,7 @@ describe("composed market and macro pane shortcuts", () => {
       ...templatePrefixes(macroPlugin),
       ...templatePrefixes(marketOverviewPlugin),
     ];
-    expect(prefixes).toEqual(expect.arrayContaining(["AUCT", "CRD", "BOND", "VIX", "HILO", "FLOW"]));
+    expect(prefixes).toEqual(expect.arrayContaining(["AUCT", "CRD", "BOND", "VIX", "HILO", "FLOW", "FUT", "COMM"]));
     expect(prefixes).not.toContain("WX");
     expect(prefixes).not.toContain("POLL");
   });
