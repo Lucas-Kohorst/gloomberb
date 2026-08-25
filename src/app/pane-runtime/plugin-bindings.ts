@@ -163,13 +163,14 @@ export function bindAppPanePluginRegistry({
       }
       return;
     }
-    const instanceId = resolvePaneTarget(paneId);
-    if (!instanceId || !isPaneInLayout(state.config.layout, instanceId)) {
+    const currentLayout = stateRef.current.config.layout;
+    const instanceId = resolvePaneTarget(paneId, currentLayout);
+    if (!instanceId || !isPaneInLayout(currentLayout, instanceId)) {
       showPane(paneId);
       return;
     }
 
-    focusVisiblePane(instanceId);
+    focusVisiblePane(instanceId, currentLayout);
   };
   pluginRegistry.pinTickerFn = (symbol, options) => {
     if (isDetachedWindow) return;

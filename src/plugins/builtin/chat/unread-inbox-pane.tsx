@@ -33,7 +33,7 @@ export function UnreadInboxPane({
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
   const inboxInstanceId = useOptionalPaneInstanceId();
-  const { createPaneFromTemplate, focusPane } = usePluginAppActions();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const [items, setItems] = useState<UnreadInboxItem[]>(() => controller.listUnreadInbox());
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -60,14 +60,16 @@ export function UnreadInboxPane({
     dispatch({ type: "SET_CONFIG", config: syncedConfig });
     scheduleConfigSave(syncedConfig);
     if (chatInstanceId) {
-      focusPane(chatInstanceId);
+      // FOCUS_PANE reads the layout SET_CONFIG just wrote. Plugin focusPane
+      // persistLayout can replay the pre-click layout and reopen Unread.
+      dispatch({ type: "FOCUS_PANE", paneId: chatInstanceId });
       return;
     }
     createPaneFromTemplate("new-chat-pane", {
       arg: item.channelId,
       ...(item.messageId ? { values: { messageId: item.messageId } } : {}),
     });
-  }, [createPaneFromTemplate, dispatch, focusPane, inboxInstanceId, stateRef]);
+  }, [createPaneFromTemplate, dispatch, inboxInstanceId, stateRef]);
 
   const listItems = useMemo<ListViewItem[]>(() => items.map((item) => ({
     id: item.id,

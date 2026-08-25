@@ -15,6 +15,7 @@ import {
   cleanupChatTest,
   createChatTestControls,
   createController,
+  installServerChannels,
   type ChatTestSetup,
 } from "./test-harness";
 import { UnreadInboxPane } from "./unread-inbox-pane";
@@ -35,7 +36,7 @@ const CHANNEL_MENTION: ChatMessage = {
   user: { id: "u2", username: "bob", displayName: "Bob" },
 };
 
-async function renderUnreadInbox() {
+async function renderUnreadInbox(seed: "mention" | "help-uncached" = "mention") {
   const controller = createController({
     sessionToken: "token-123",
     user: { id: "u1", username: "vince", emailVerified: true },
@@ -54,6 +55,12 @@ async function renderUnreadInbox() {
   });
 
   await act(async () => {
+    if (seed === "help-uncached") {
+      installServerChannels(controller);
+      const help = (controller as any).storage.ensureChannelState("help");
+      help.unreadCount = 1;
+      return;
+    }
     (controller as any).mergeMessages([CHANNEL_MENTION]);
   });
 
@@ -81,15 +88,22 @@ async function renderUnreadInbox() {
   return { created, dispatched, focused };
 }
 
-function expectJumpedToChannelMention(dispatched: AppAction[], focused: string[], created: unknown[]) {
+function expectOpenedExistingChat(
+  dispatched: AppAction[],
+  focused: string[],
+  created: unknown[],
+  expected: { channelId: string; targetMessageId?: string },
+) {
   expect(created).toEqual([]);
-  expect(focused).toEqual(["chat:main"]);
+  // Plugin focusPane persistLayout can replay the pre-click layout and reopen Unread.
+  expect(focused).toEqual([]);
+  expect(dispatched.some((action) => action.type === "FOCUS_PANE" && action.paneId === "chat:main")).toBe(true);
   const configAction = dispatched.find((action) => action.type === "SET_CONFIG");
   expect(configAction?.type).toBe("SET_CONFIG");
   if (configAction?.type !== "SET_CONFIG") throw new Error("expected SET_CONFIG");
   const chat = configAction.config.layout.instances.find((instance) => instance.paneId === "chat");
-  expect(chat?.settings?.channelId).toBe("everyone");
-  expect(chat?.settings?.targetMessageId).toBe("m1");
+  expect(chat?.settings?.channelId).toBe(expected.channelId);
+  expect(chat?.settings?.targetMessageId).toBe(expected.targetMessageId);
 }
 
 describe("unread inbox pane", () => {
@@ -115,7 +129,10 @@ describe("unread inbox pane", () => {
       await setup().renderOnce();
     });
 
-    expectJumpedToChannelMention(dispatched, focused, created);
+    expectOpenedExistingChat(dispatched, focused, created, {
+      channelId: "everyone",
+      targetMessageId: "m1",
+    });
   });
 
   test("enter opens the selected channel mention", async () => {
@@ -131,6 +148,29 @@ describe("unread inbox pane", () => {
       await setup().renderOnce();
     });
 
-    expectJumpedToChannelMention(dispatched, focused, created);
+    expectOpenedExistingChat(dispatched, focused, created, {
+      channelId: "everyone",
+      targetMessageId: "m1",
+    });
+  });
+
+  test("clicking a channel-only unread row opens that channel", async () => {
+    // `#help unread` is the uncached row (no message id). Click used plugin
+    // focusPane, which replayed a stale layout and left Unread open.
+    const { created, dispatched, focused } = await renderUnreadInbox("help-uncached");
+
+    const frame = setup().captureCharFrame();
+    expect(frame).toContain("#help");
+    expect(frame).toContain("unread");
+    const line = frame.split("\n").find((entry) => entry.includes("#help")) ?? "";
+    const clickCol = Math.max(0, line.indexOf("#help"));
+
+    await act(async () => {
+      await setup().mockMouse.click(clickCol + 1, 0);
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+
+    expectOpenedExistingChat(dispatched, focused, created, { channelId: "help" });
   });
 });

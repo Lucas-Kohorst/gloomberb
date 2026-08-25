@@ -147,16 +147,17 @@ export function useAppPaneRuntime({
     });
   }, [buildPaneBinding, state]);
 
-  const focusVisiblePane = useCallback((paneId: string, layout: LayoutConfig = state.config.layout) => {
-    const nextLayout = layout.floating.some((entry) => entry.instanceId === paneId)
-      ? bringToFront(layout, paneId)
-      : layout;
+  const focusVisiblePane = useCallback((paneId: string, layout?: LayoutConfig) => {
+    const currentLayout = layout ?? stateRef.current.config.layout;
+    const nextLayout = currentLayout.floating.some((entry) => entry.instanceId === paneId)
+      ? bringToFront(currentLayout, paneId)
+      : currentLayout;
 
-    if (nextLayout !== state.config.layout) {
+    if (nextLayout !== currentLayout) {
       persistLayout(nextLayout, { pushHistory: false });
     }
     activatePane(paneId, nextLayout);
-  }, [activatePane, persistLayout, state.config.layout]);
+  }, [activatePane, persistLayout, stateRef]);
 
   const placePaneInstance = useCallback((
     instance: PaneInstanceConfig,
