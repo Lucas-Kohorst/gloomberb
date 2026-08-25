@@ -18,7 +18,7 @@ import {
   truncateChannelLabel,
 } from "./channels";
 import { isSidebarChannelOnline } from "./peer-online";
-import { OnlinePresenceDot } from "./presence-dot";
+import { OnlinePresenceDot, PresenceSlot } from "./presence-dot";
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
@@ -105,6 +105,8 @@ export function ChannelSidebar({
   onlineCount,
   onlineUserIds,
   onlineUsernames,
+  selfUserId,
+  selfUsername,
   width,
   height,
   focused,
@@ -125,6 +127,8 @@ export function ChannelSidebar({
   onlineCount: number;
   onlineUserIds?: readonly string[];
   onlineUsernames?: readonly string[];
+  selfUserId?: string | null;
+  selfUsername?: string | null;
   width: number;
   height: number;
   focused: boolean;
@@ -207,7 +211,13 @@ export function ChannelSidebar({
               const channelState = channelStateById.get(channel.id);
               const notificationsEnabled = channelState?.notificationsEnabled === true;
               const unread = (channelState?.unreadCount ?? 0) > 0;
-              const peerOnline = isSidebarChannelOnline(channel, { onlineUserIds, onlineUsernames });
+              const conversation = channel.kind === "direct" || channel.kind === "group";
+              const peerOnline = conversation && isSidebarChannelOnline(channel, {
+                onlineUserIds,
+                onlineUsernames,
+                selfUserId,
+                selfUsername,
+              });
               const label = formatChannelLabel(channel, channel.id);
               const selectChannel = () => {
                 onFocusRequest?.();
@@ -226,8 +236,8 @@ export function ChannelSidebar({
                   {({ foregroundColor, onMouseDown }) => (
                     <>
                       <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}> </Text>
-                      {peerOnline ? (
-                        <OnlinePresenceDot onMouseDown={onMouseDown} />
+                      {conversation ? (
+                        <PresenceSlot online={peerOnline} onMouseDown={onMouseDown} />
                       ) : (
                         <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
                       )}
@@ -256,8 +266,8 @@ export function ChannelSidebar({
                 <Text fg={colors.textDim}>{` ${t("syncing")}`}</Text>
               </Box>
             )}
-            <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX}>
-              <Text fg={colors.positive}>●</Text>
+            <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX} alignItems="center">
+              <OnlinePresenceDot />
               <Text fg={colors.textDim}>
                 {` ${truncateChannelLabel(tf("{count} online", { count: onlineCount }), Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}
               </Text>

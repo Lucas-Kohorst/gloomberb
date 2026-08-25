@@ -271,7 +271,12 @@ export function ChatContent({
     showProfilePopover,
   } = useChatProfilePopover(user?.id);
 
-  const presence = useMemo(() => ({ onlineUserIds, onlineUsernames }), [onlineUserIds, onlineUsernames]);
+  const presence = useMemo(() => ({
+    onlineUserIds,
+    onlineUsernames,
+    selfUserId: user?.id,
+    selfUsername: user?.username,
+  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
   const channelOnline = isSidebarChannelOnline(activeChannel, presence);
   const channelMembers = useMemo(
     () => listChannelMembers(activeChannel),
@@ -687,6 +692,8 @@ export function ChatContent({
       onlineCount={onlineCount}
       onlineUserIds={onlineUserIds}
       onlineUsernames={onlineUsernames}
+      selfUserId={user?.id}
+      selfUsername={user?.username}
       width={stackedNav ? width : channelSidebarWidth}
       height={height}
       focused={focused}

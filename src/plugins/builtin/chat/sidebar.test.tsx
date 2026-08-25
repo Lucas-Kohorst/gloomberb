@@ -492,7 +492,7 @@ describe("ChatContent channel sidebar", () => {
     expect(setup().captureCharFrame()).toContain("● 6 online");
   });
 
-  test("shows a green online dot next to a direct message whose peer is online", async () => {
+  test("shows a leading presence mark on an online DM peer and keeps offline names aligned", async () => {
     const controller = createController({ sessionToken: "token-123" });
     installServerChannels(controller, [
       { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
@@ -529,9 +529,15 @@ describe("ChatContent channel sidebar", () => {
     await flushFrame();
 
     const frame = setup().captureCharFrame();
-    expect(frame).toContain("●@bob");
-    expect(frame).not.toContain("●@cara");
-    expect(frame).toContain("@cara");
+    const bobLine = frame.split("\n").find((line) => line.includes("@bob"));
+    const caraLine = frame.split("\n").find((line) => line.includes("@cara"));
+    expect(bobLine).toBeDefined();
+    expect(caraLine).toBeDefined();
+    expect(bobLine).toMatch(/●@bob/);
+    expect(caraLine).not.toMatch(/●/);
+    expect(caraLine).toContain("@cara");
+    expect(bobLine!.indexOf("@bob")).toBe(caraLine!.indexOf("@cara"));
+    expect(frame).not.toMatch(/●#/);
   });
 
   test("shows a green online dot next to a group with an online member", async () => {

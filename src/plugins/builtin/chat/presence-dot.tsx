@@ -1,6 +1,16 @@
 import { Box, Span, Text, useUiCapabilities } from "../../../ui";
 import { colors } from "../../../theme/colors";
 
+const PRESENCE_SLOT_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "1ch",
+  minWidth: 8,
+  height: "1em",
+  flexShrink: 0,
+} as const;
+
 export function OnlinePresenceDot({
   onMouseDown,
 }: {
@@ -18,24 +28,45 @@ export function OnlinePresenceDot({
       fg={colors.positive}
       onMouseDown={onMouseDown}
       aria-label="Online"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 8,
-        height: 16,
-        flexShrink: 0,
-      }}
+      data-gloom-role="chat-presence-dot"
+      style={PRESENCE_SLOT_STYLE}
     >
       <Box
         style={{
-          width: 6,
-          height: 6,
+          width: "0.5em",
+          height: "0.5em",
+          minWidth: 6,
+          minHeight: 6,
           borderRadius: 999,
           backgroundColor: colors.positive,
         }}
       />
     </Span>
+  );
+}
+
+export function PresenceSlot({
+  online,
+  onMouseDown,
+}: {
+  online: boolean;
+  onMouseDown?: (event: any) => void;
+}) {
+  const { nativePaneChrome } = useUiCapabilities();
+  if (online) return <OnlinePresenceDot onMouseDown={onMouseDown} />;
+  if (!nativePaneChrome) {
+    return (
+      <Text selectable={false} onMouseDown={onMouseDown}> </Text>
+    );
+  }
+
+  return (
+    <Span
+      aria-hidden
+      onMouseDown={onMouseDown}
+      data-gloom-role="chat-presence-slot"
+      style={PRESENCE_SLOT_STYLE}
+    />
   );
 }
 
