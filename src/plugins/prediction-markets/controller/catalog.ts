@@ -13,7 +13,7 @@ import {
   getPredictionCatalogStatus,
 } from "./status";
 import { getCachedPredictionResource } from "../services/fetch";
-import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog } from "../services/kalshi/adapter";
+import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog, getKalshiCatalogFeed } from "../services/kalshi/adapter";
 import { loadMorePolymarketCatalog, loadPolymarketCatalog, nextPolymarketCatalogOffset } from "../services/polymarket/adapter";
 import type {
   PredictionBrowseTab,
@@ -68,6 +68,7 @@ export function usePredictionCatalogData({
   const [polymarketNextOffset, setPolymarketNextOffset] = useState<number | null>(null);
   const [kalshiNextCursor, setKalshiNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [kalshiFeed, setKalshiFeed] = useState<"live" | "delayed">("live");
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
 
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
@@ -322,6 +323,7 @@ export function usePredictionCatalogData({
       }
       try {
         const next = await loadKalshiCatalog(search, category, browseTab, options);
+        setKalshiFeed(getKalshiCatalogFeed());
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           if (samePredictionCatalogSummaries(previous, next)) {
@@ -502,6 +504,7 @@ export function usePredictionCatalogData({
           ),
         }));
         setKalshiNextCursor(page.nextCursor);
+        setKalshiFeed(getKalshiCatalogFeed());
         setCatalogLastRefreshAt(Date.now());
       }
     } finally {
@@ -525,6 +528,7 @@ export function usePredictionCatalogData({
     catalogLoadCount,
     catalogLoadingMore: loadingMore,
     catalogStatus,
+    kalshiFeed,
     debouncedSearchQuery,
     refreshCatalog,
     loadMoreCatalog,

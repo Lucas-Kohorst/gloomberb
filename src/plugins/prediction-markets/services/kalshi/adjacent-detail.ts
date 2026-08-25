@@ -1,11 +1,9 @@
 /**
- * Hosted Kalshi market detail, sourced from Adjacent.
+ * Last-resort Kalshi market detail when the venue CORS proxy cannot answer.
  *
- * The hosted client cannot reach Kalshi's own API: `/api/proxy/kalshi/*` runs
- * from Cloudflare egress IPs that Kalshi rate-limits, so every detail endpoint
- * (market, orderbook, trades, candlesticks, event) answers 429 more or less
- * permanently. Adjacent covers all of it except the order book, which has no
- * equivalent endpoint at any depth — hosted therefore shows an empty book.
+ * Hosted catalogs and detail try `/api/proxy/kalshi/*` first. Adjacent is only
+ * used after that path 401s/429s/522s — and the pane footer must then say
+ * delayed, never live. Adjacent covers history and trades; it has no order book.
  */
 import type {
   PredictionHistoryPoint,

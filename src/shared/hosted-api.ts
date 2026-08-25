@@ -6,6 +6,10 @@
  */
 export const KALSHI_PROXY_PATH = "/api/proxy/kalshi";
 
+/** Set by `/api/proxy/kalshi` so the client can tell live Kalshi from Adjacent fallback. */
+export const KALSHI_SOURCE_HEADER = "x-gloom-kalshi-source";
+export type KalshiSourceKind = "kalshi" | "adjacent";
+
 /** Keyed-data route, plus a twin that ad/tracker filter lists do not match. */
 export const KEYED_DATA_PATH = "/api/data";
 export const KEYED_DATA_ALIAS_PATH = "/api/feed";

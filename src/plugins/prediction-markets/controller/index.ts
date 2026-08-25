@@ -395,6 +395,7 @@ export function usePredictionMarketsController({
     catalogLoadCount: data.catalogLoadCount,
     catalogLoadingMore: data.catalogLoadingMore,
     catalogStatus: data.catalogStatus,
+    kalshiFeed: data.kalshiFeed,
     detail: data.detail,
     detailError: data.detailError,
     detailLoadCount: data.detailLoadCount,

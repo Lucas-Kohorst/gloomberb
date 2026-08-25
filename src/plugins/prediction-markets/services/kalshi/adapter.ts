@@ -16,11 +16,15 @@ import type {
   PredictionTrade,
 } from "../../types";
 import {
+  consumeKalshiProxyAdjacent,
   fetchJson,
   getCachedPredictionResource,
+  isHostedOriginFailureError,
   loadCachedPredictionResource,
+  markKalshiProxySource,
   parseFloatSafe,
   PREDICTION_CACHE_POLICIES,
+  resetKalshiProxySource,
 } from "../fetch";
 import { revivePredictionHistoryPoints } from "../history";
 import {
@@ -81,10 +85,32 @@ function kalshiUrl(path: string): string {
 const KALSHI_EVENT_PAGE_LIMIT = 200;
 const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
+const HOSTED_KALSHI_EVENT_MAX_PAGES = 1;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
 const KALSHI_MARKET_MAX_PAGES = 5;
 const KALSHI_SERIES_EVENT_LIMIT = 20;
 const kalshiCursors = new Map<string, string | null>();
+
+export type KalshiCatalogFeed = "live" | "delayed";
+type KalshiCatalogBackend = "kalshi" | "adjacent";
+
+let kalshiCatalogFeed: KalshiCatalogFeed = "live";
+let kalshiCatalogBackend: KalshiCatalogBackend = "kalshi";
+
+export function getKalshiCatalogFeed(): KalshiCatalogFeed {
+  return kalshiCatalogFeed;
+}
+
+export function resetKalshiCatalogFeed(): void {
+  kalshiCatalogFeed = "live";
+  kalshiCatalogBackend = "kalshi";
+  resetKalshiProxySource();
+}
+
+function rememberKalshiCatalogSource(backend: KalshiCatalogBackend, feed: KalshiCatalogFeed): void {
+  kalshiCatalogBackend = backend;
+  kalshiCatalogFeed = feed;
+}
 
 function kalshiCursorKey(searchQuery: string, categoryId: PredictionCategoryId): string {
   return `${categoryId}:${searchQuery.trim().toLowerCase()}`;
@@ -219,16 +245,21 @@ async function loadKalshiVenueCatalog(
         buildPredictionCatalogResourceKey("kalshi", categoryId, "", browseTab),
       ) ?? []
     : [];
+  const hosted = isHostedWebClient();
   const maxPages = searchQuery
     ? localBrowse.length > 0
       ? 1
-      : SEARCH_KALSHI_EVENT_MAX_PAGES
-    : DEFAULT_KALSHI_EVENT_MAX_PAGES;
+      : hosted
+        ? HOSTED_KALSHI_EVENT_MAX_PAGES
+        : SEARCH_KALSHI_EVENT_MAX_PAGES
+    : hosted
+      ? HOSTED_KALSHI_EVENT_MAX_PAGES
+      : DEFAULT_KALSHI_EVENT_MAX_PAGES;
   const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
       ? fetchKalshiCatalogEvents(maxPages)
       : fetchKalshiCatalogEventsForCategory(categoryId, maxPages),
-    categoryId === "all" && !searchQuery
+    !hosted && categoryId === "all" && !searchQuery
       ? fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
       : Promise.resolve([] as KalshiMarketRecord[]),
   ]);
@@ -256,6 +287,32 @@ async function loadKalshiVenueCatalog(
   return sortKalshiCatalogMarkets([...merged.values()], browseTab);
 }
 
+async function loadHostedKalshiCatalog(
+  normalizedQuery: string,
+  categoryId: PredictionCategoryId,
+  browseTab: PredictionBrowseTab,
+): Promise<PredictionMarketSummary[]> {
+  resetKalshiProxySource();
+  try {
+    const markets = await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
+    const delayed = consumeKalshiProxyAdjacent();
+    rememberKalshiCatalogSource("kalshi", delayed ? "delayed" : "live");
+    return markets;
+  } catch (error) {
+    if (!isHostedOriginFailureError(error)) throw error;
+    markKalshiProxySource("adjacent");
+    rememberKalshiCatalogSource("adjacent", "delayed");
+    const page = await fetchHostedAdjacentKalshiCatalogPage({
+      searchQuery: normalizedQuery,
+      categoryId,
+      browseTab,
+      page: 1,
+    });
+    rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    return page.markets;
+  }
+}
+
 export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
@@ -268,15 +325,9 @@ export async function loadKalshiCatalog(
     buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
     async () => {
       if (isHostedWebClient()) {
-        const page = await fetchHostedAdjacentKalshiCatalogPage({
-          searchQuery: normalizedQuery,
-          categoryId,
-          browseTab,
-          page: 1,
-        });
-        rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
-        return page.markets;
+        return await loadHostedKalshiCatalog(normalizedQuery, categoryId, browseTab);
       }
+      rememberKalshiCatalogSource("kalshi", "live");
       return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
     },
     PREDICTION_CACHE_POLICIES.catalog,
@@ -291,13 +342,14 @@ export async function loadMoreKalshiCatalog(
   signal?: AbortSignal,
 ): Promise<{ markets: PredictionMarketSummary[]; nextCursor: string | null; hasMore: boolean }> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
-  if (isHostedWebClient()) {
+  if (isHostedWebClient() && kalshiCatalogBackend === "adjacent") {
     const page = await fetchHostedAdjacentKalshiCatalogPage({
       searchQuery: normalizedQuery,
       categoryId,
       page: parseHostedAdjacentKalshiPageCursor(cursor),
     });
     rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    rememberKalshiCatalogSource("adjacent", "delayed");
     return {
       markets: page.markets,
       nextCursor: page.nextCursor,
@@ -308,6 +360,9 @@ export async function loadMoreKalshiCatalog(
     ? await fetchKalshiCatalogEvents(1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor)
     : await fetchKalshiCatalogEventsForCategory(categoryId, 1, KALSHI_EVENT_PAGE_LIMIT, signal, cursor);
   rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+  if (isHostedWebClient() && consumeKalshiProxyAdjacent()) {
+    rememberKalshiCatalogSource("kalshi", "delayed");
+  }
   return {
     markets: normalizeKalshiCatalog(page.events, normalizedQuery, categoryId),
     nextCursor: page.nextCursor,
@@ -410,6 +465,8 @@ export async function resolveKalshiMarketByTicker(
   if (!normalized) return null;
 
   if (isHostedWebClient()) {
+    const venue = await resolveKalshiVenueMarketByTicker(normalized);
+    if (venue) return venue;
     try {
       return await fetchHostedAdjacentKalshiMarket(normalized);
     } catch {
@@ -417,6 +474,12 @@ export async function resolveKalshiMarketByTicker(
     }
   }
 
+  return await resolveKalshiVenueMarketByTicker(normalized);
+}
+
+async function resolveKalshiVenueMarketByTicker(
+  normalized: string,
+): Promise<PredictionMarketSummary | null> {
   const record = await fetchKalshiMarketByTicker(normalized);
   if (record) {
     const event = await loadKalshiEvent(record.event_ticker);
@@ -509,16 +572,21 @@ export async function loadKalshiHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionHistoryPoint[]> {
-  if (isHostedWebClient()) {
-    try {
-      return revivePredictionHistoryPoints(
-        await loadHostedAdjacentKalshiHistory(summary, range),
-      );
-    } catch {
-      return [];
-    }
+  const venueHistory = await loadKalshiVenueHistory(summary, range);
+  if (venueHistory.length > 0 || !isHostedWebClient()) return venueHistory;
+  try {
+    return revivePredictionHistoryPoints(
+      await loadHostedAdjacentKalshiHistory(summary, range),
+    );
+  } catch {
+    return venueHistory;
   }
+}
 
+async function loadKalshiVenueHistory(
+  summary: PredictionMarketSummary,
+  range: "1D" | "1W" | "1M" | "ALL",
+): Promise<PredictionHistoryPoint[]> {
   const event = await loadKalshiEvent(summary.eventTicker);
   if (!event?.event?.series_ticker) return [];
 
@@ -569,14 +637,24 @@ export async function loadKalshiDetail(
   range: "1D" | "1W" | "1M" | "ALL",
 ): Promise<PredictionMarketDetail> {
   if (isHostedWebClient()) {
-    return await loadCachedPredictionResource(
-      "detail",
-      buildPredictionDetailResourceKey(summary.key, range),
-      async () => await loadHostedAdjacentKalshiDetail(summary, range),
-      PREDICTION_CACHE_POLICIES.detail,
-    );
+    const record = await fetchKalshiMarketByTicker(summary.marketId);
+    if (!record) {
+      return await loadCachedPredictionResource(
+        "detail",
+        buildPredictionDetailResourceKey(summary.key, range),
+        async () => await loadHostedAdjacentKalshiDetail(summary, range),
+        PREDICTION_CACHE_POLICIES.detail,
+      );
+    }
   }
 
+  return await loadKalshiVenueDetail(summary, range);
+}
+
+async function loadKalshiVenueDetail(
+  summary: PredictionMarketSummary,
+  range: "1D" | "1W" | "1M" | "ALL",
+): Promise<PredictionMarketDetail> {
   return await loadCachedPredictionResource(
     "detail",
     buildPredictionDetailResourceKey(summary.key, range),
