@@ -31,7 +31,19 @@ import type { PredictionCategoryId } from "./categories";
 import type { PredictionDetailTab } from "./types";
 
 export const TEST_PANE_ID = "prediction-markets:main";
-const originalFetch = globalThis.fetch;
+const realFetch = globalThis.fetch;
+const originalFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === "string"
+    ? input
+    : input instanceof URL
+      ? input.toString()
+      : input.url;
+  if (/api\.adjacent\.markets/i.test(url) || url.includes("/api/data/adjacent/")) {
+    return new Response("{}", { status: 404 });
+  }
+  return realFetch(input as RequestInfo, init);
+}) as typeof fetch;
+globalThis.fetch = originalFetch;
 const originalWebSocket = globalThis.WebSocket;
 
 export const harnessStateRef: {

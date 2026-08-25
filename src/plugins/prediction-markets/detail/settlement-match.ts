@@ -88,7 +88,22 @@ const FRED_ALIASES: ReadonlyArray<{
   {
     seriesId: "FEDFUNDS",
     label: "Federal funds rate (FEDFUNDS)",
-    map: ["fedfunds", "federal funds rate", "fed funds rate", "fed funds"],
+    map: [
+      "fedfunds",
+      "federal funds rate",
+      "fed funds rate",
+      "fed funds",
+      "fomc",
+      "federal open market committee",
+      "fed rate",
+      "fed cut",
+      "fed hike",
+    ],
+  },
+  {
+    seriesId: "DFEDTARU",
+    label: "Fed funds target upper (DFEDTARU)",
+    map: ["dfedtaru", "federal funds target", "fed funds target"],
   },
   {
     seriesId: "GDP",
@@ -281,6 +296,19 @@ function matchResolutionMap(text: string, rows: SettlementSeriesMatch[]): void {
   }
 }
 
+const FOMC_RE =
+  /\b(fomc|federal open market committee|fed funds|federal funds|fed rate|fed cut|fed hike)\b/i;
+
+function matchFomcCompanions(text: string, rows: SettlementSeriesMatch[]): void {
+  if (!FOMC_RE.test(text)) return;
+  pushFred(rows, "FEDFUNDS", "Federal funds rate (FEDFUNDS)", "map");
+  pushFred(rows, "DFEDTARU", "Fed funds target upper (DFEDTARU)", "map");
+  const treasury = findTreasuryCatalogEntry("10Y");
+  if (treasury) {
+    pushFred(rows, treasury.seriesId, treasury.label, "alias");
+  }
+}
+
 function matchWeakAliases(rulesText: string, rows: SettlementSeriesMatch[]): void {
   if (!SETTLEMENT_CONTEXT_RE.test(rulesText)) return;
   const lower = haystack(rulesText);
@@ -469,7 +497,8 @@ export function matchSettlementSeries(summary: SummaryFields): SettlementMatchRe
 
   const weatherLabel = matchWeather(summary, series);
   matchExplicitExpressions(rulesText, series);
-  matchResolutionMap(rulesText, series);
+  matchResolutionMap(joinFields(rulesText, titleText), series);
+  matchFomcCompanions(joinFields(rulesText, titleText, summary.description), series);
   matchCryptoPhrases(rulesText, "map", series);
   matchTreasuryPhrases(rulesText, "map", series);
   matchTitleTickers(titleText, series);

@@ -92,7 +92,7 @@ describe("prediction markets detail views", () => {
     expect(frame).not.toContain("No chart history.");
   });
 
-  test("shows no matching settlement series when a market has no known source", async () => {
+  test("suggests Fed funds series on an FOMC target-rate data tab", async () => {
     testSetup = await testRender(
       <GroupedDetailHarness detailTab="data" />,
       { width: 64, height: 24 },
@@ -100,7 +100,11 @@ describe("prediction markets detail views", () => {
     await flushFrames(testSetup);
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("No matching settlement series.");
+    expect(frame).toContain("Suggested data feeds");
+    expect(frame).toContain("FEDFUNDS");
+    expect(frame).toContain("DFEDTARU");
+    expect(frame).toContain("UST:10Y");
+    expect(frame).not.toContain("No matching settlement series.");
   });
 
   test("shows settlement source and suggested data feeds on the data tab", async () => {

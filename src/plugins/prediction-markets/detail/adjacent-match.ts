@@ -349,3 +349,22 @@ export function useAdjacentMarketMatch(
 
   return match;
 }
+
+/** Resolve the Adjacent market and warm similar + news caches as soon as detail opens. */
+export function preloadAdjacentMarketExtras(
+  client: AdjacentClient | null,
+  lookup: AdjacentMarketLookup,
+): Promise<void> {
+  if (!client || lookupIsEmpty(lookup)) return Promise.resolve();
+  return resolveAdjacentMarketId(client, lookup)
+    .then((marketId) => {
+      if (!marketId) return;
+      return Promise.all([
+        client.getSimilarMarkets(marketId),
+        client.getMarketNews(marketId, { limit: 20 }),
+      ]).then(() => undefined);
+    })
+    .catch(() => {
+      // Tab views still fetch on demand and surface the error.
+    });
+}

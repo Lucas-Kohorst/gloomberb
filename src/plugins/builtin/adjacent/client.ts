@@ -162,6 +162,8 @@ function setCached<T>(
   });
 }
 
+const inflightCached = new Map<string, Promise<unknown>>();
+
 async function loadCached<T>(
   kind: string,
   key: string,
@@ -174,14 +176,23 @@ async function loadCached<T>(
   if (cached && cached.stale !== true && cached.staleAt > Date.now()) {
     return cached.value;
   }
-  try {
-    const next = await fetcher();
-    setCached(kind, key, next, cachePolicy);
-    return next;
-  } catch (error) {
-    if (cached) return cached.value;
-    throw error;
-  }
+  const inflightKey = `${kind}:${key}`;
+  const pending = inflightCached.get(inflightKey) as Promise<T> | undefined;
+  if (pending) return pending;
+  const work = (async () => {
+    try {
+      const next = await fetcher();
+      setCached(kind, key, next, cachePolicy);
+      return next;
+    } catch (error) {
+      if (cached) return cached.value;
+      throw error;
+    } finally {
+      inflightCached.delete(inflightKey);
+    }
+  })();
+  inflightCached.set(inflightKey, work);
+  return work;
 }
 
 export class AdjacentClient {
@@ -444,15 +455,19 @@ export class AdjacentClient {
     return adjacentFetchJson<AdjacentMarketsResponse>(url, this.apiKey);
   }
 
-  async getMarketNews(marketId: string): Promise<AdjacentNewsResponse> {
-    const url = buildUrl(`${this.marketsPath()}/${marketId}/news`);
+  async getMarketNews(
+    marketId: string,
+    params?: { limit?: number },
+  ): Promise<AdjacentNewsResponse> {
+    const limit = Math.max(10, params?.limit ?? 20);
+    const url = buildUrl(`${this.marketsPath()}/${marketId}/news`, { per_page: limit });
     const raw = await loadCached(
       "adjacent-market-news",
-      marketId,
+      `${marketId}:${limit}`,
       () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.news,
     );
-    return { news: unwrapAdjacentNewsArticles(raw) };
+    return { news: unwrapAdjacentNewsArticles(raw).slice(0, limit) };
   }
 
   async searchMarketsByText(

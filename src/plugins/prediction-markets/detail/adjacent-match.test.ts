@@ -4,6 +4,7 @@ import type { AdjacentMarket } from "../../builtin/adjacent/types";
 import {
   adjacentMarketCandidateIds,
   adjacentMarketSearchQueries,
+  preloadAdjacentMarketExtras,
   resetAdjacentMarketMatchCache,
   resolveAdjacentMarketId,
   simplifiedTitleQuery,
@@ -165,5 +166,36 @@ describe("adjacent market id matching", () => {
     expect(resolved).toBe(slugId);
     expect(client.calls[0]).toBe(`get:${slugId}`);
     expect(client.calls).not.toContain("get:polymarket:12345");
+  });
+
+  test("preloads similar markets and at least 10 news articles after resolving the id", async () => {
+    const matched = market("kalshi:KXTEST-1");
+    const similar: string[] = [];
+    const news: string[] = [];
+    const client = fakeClient({
+      get: { [matched.id]: matched },
+    });
+    (client as unknown as {
+      getSimilarMarkets: (id: string) => Promise<{ markets: [] }>;
+      getMarketNews: (id: string, params?: { limit?: number }) => Promise<{ news: [] }>;
+    }).getSimilarMarkets = async (id: string) => {
+      similar.push(id);
+      return { markets: [] };
+    };
+    (client as unknown as {
+      getMarketNews: (id: string, params?: { limit?: number }) => Promise<{ news: [] }>;
+    }).getMarketNews = async (id: string, params?: { limit?: number }) => {
+      news.push(`${id}:${params?.limit ?? 0}`);
+      return { news: [] };
+    };
+
+    await preloadAdjacentMarketExtras(client, {
+      venue: "kalshi",
+      marketId: "KXTEST-1",
+      title: "Will the Fed cut rates?",
+    });
+
+    expect(similar).toEqual(["kalshi:KXTEST-1"]);
+    expect(news).toEqual(["kalshi:KXTEST-1:20"]);
   });
 });

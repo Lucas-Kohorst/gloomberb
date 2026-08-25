@@ -1,6 +1,6 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes, type ScrollBoxRenderable } from "../../../ui";
-import { useMemo, type RefObject } from "react";
+import { useEffect, useMemo, type RefObject } from "react";
 import { Tabs } from "../../../components";
 import { EmptyState } from "../../../components/ui/status";
 import { openUrl } from "../../../components/ui/external-link";
@@ -10,7 +10,7 @@ import { DETAIL_TABS } from "../navigation";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import { PredictionSimilarTab, PredictionNewsTab } from "./adjacent-tabs";
 import { PredictionMarketDataTab } from "./data-tab";
-import type { AdjacentMarketLookup } from "./adjacent-match";
+import { preloadAdjacentMarketExtras, adjacentMarketLookupKey, type AdjacentMarketLookup } from "./adjacent-match";
 import {
   formatPredictionEndsAt,
   formatPredictionMetric,
@@ -126,6 +126,10 @@ export function PredictionMarketDetailPane({
       url: summary.url,
     };
   }, [detail?.summary, selectedSummary]);
+  const adjacentLookupKey = adjacentMarketLookupKey(adjacentLookup);
+  useEffect(() => {
+    preloadAdjacentMarketExtras(adjacentClient, adjacentLookup);
+  }, [adjacentClient, adjacentLookup, adjacentLookupKey]);
   if (!selectedSummary) {
     return (
       <Box flexGrow={1} justifyContent="center">
