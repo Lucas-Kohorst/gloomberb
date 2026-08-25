@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.13.9 — Kalshi proxy, research panes, article chrome
+
+Hosted Kalshi loads from the venue CORS proxy. Firehose RSS collapses by guid. Robinhood hosted OAuth uses a stable callback URI. Disconnect no longer stalls the tab. Article headers are fully draggable and readers drop the poll chip. New research panes: commodities, World Bank, 10-K/Q, AIS traffic, satellite.
+
+### Prediction markets
+
+- Hosted Kalshi venue rows come from the Kalshi CORS proxy, not Adjacent. Delayed Adjacent is fallback only.
+
+### RSS
+
+- Firehose items collapse by RSS/Atom guid, so a later poll with a new permalink does not duplicate the story.
+
+### Brokers
+
+- Hosted Robinhood OAuth always sends `https://terminal.kohor.st/api/oauth/robinhood/callback`. Robinhood must still allowlist that URI.
+- Disconnect no longer stalls the tab. Connect no longer throws `Y0 is not defined` from a split robinhood-browser bundle.
+
+### Articles
+
+- Drag article panes from the full header bar.
+- Article readers omit the poll 30m chip. Chart pop-outs still refresh.
+
+### Research
+
+- `COMM` — delayed Yahoo commodities board.
+- `WB` — World Bank country and regional series.
+- `10K` / `10Q` — annual and quarterly SEC reports, searchable from ART, open in the article reader.
+- `AIS` — delayed OpenSky aircraft and public Digitraffic AIS ships.
+- `SAT` — NASA FIRMS/GIBS satellite imagery.
+
+### What to test
+
+- PM Kalshi on hosted: list fills from the proxy; Adjacent delay only if the proxy fails.
+- Firehose: the same guid after a slug change stays one row.
+- Hosted Robinhood Connect uses the kohor.st callback (allowlist required). Disconnect returns immediately.
+- Drag an article pane from the title bar. Article footer has no poll chip; a chart pop-out still shows poll/refresh.
+- `COMM`, `WB`, `10K AAPL`, `AIS`, `SAT` open panes.
+
 ## v0.13.8 — Status bar and pane chrome clip
 
 Desktop/hosted chrome no longer shears footer hints or the version pill against parent overflow and the 6px radius.

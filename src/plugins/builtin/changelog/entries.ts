@@ -1,5 +1,50 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_9: ChangelogRelease = {
+  id: "hosted-v0-13-9",
+  tagName: "v0.13.9",
+  version: "0.13.9",
+  title: "Kalshi proxy, research panes, article chrome",
+  publishedAt: "2026-08-25T17:20:00.000Z",
+  url: "",
+  body: `Hosted Kalshi loads from the venue CORS proxy. Firehose RSS collapses by guid. Robinhood hosted OAuth uses a stable callback URI. Disconnect no longer stalls the tab. Article headers are fully draggable and readers drop the poll chip. New research panes: commodities, World Bank, 10-K/Q, AIS traffic, satellite.
+
+## Prediction markets
+
+- Hosted Kalshi venue rows come from the Kalshi CORS proxy, not Adjacent. Delayed Adjacent is fallback only.
+
+## RSS
+
+- Firehose items collapse by RSS/Atom guid, so a later poll with a new permalink does not duplicate the story.
+
+## Brokers
+
+- Hosted Robinhood OAuth always sends \`https://terminal.kohor.st/api/oauth/robinhood/callback\`. Robinhood must still allowlist that URI.
+- Disconnect no longer stalls the tab. Connect no longer throws \`Y0 is not defined\` from a split robinhood-browser bundle.
+
+## Articles
+
+- Drag article panes from the full header bar.
+- Article readers omit the poll 30m chip. Chart pop-outs still refresh.
+
+## Research
+
+- \`COMM\` — delayed Yahoo commodities board.
+- \`WB\` — World Bank country and regional series.
+- \`10K\` / \`10Q\` — annual and quarterly SEC reports, searchable from ART, open in the article reader.
+- \`AIS\` — delayed OpenSky aircraft and public Digitraffic AIS ships.
+- \`SAT\` — NASA FIRMS/GIBS satellite imagery.
+
+## What to test
+
+- PM Kalshi on hosted: list fills from the proxy; Adjacent delay only if the proxy fails.
+- Firehose: the same guid after a slug change stays one row.
+- Hosted Robinhood Connect uses the kohor.st callback (allowlist required). Disconnect returns immediately.
+- Drag an article pane from the title bar. Article footer has no poll chip; a chart pop-out still shows poll/refresh.
+- \`COMM\`, \`WB\`, \`10K AAPL\`, \`AIS\`, \`SAT\` open panes.
+`,
+};
+
 const RELEASE_0_13_8: ChangelogRelease = {
   id: "hosted-v0-13-8",
   tagName: "v0.13.8",
@@ -485,6 +530,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_9,
   RELEASE_0_13_8,
   RELEASE_0_13_7,
   RELEASE_0_13_6,
