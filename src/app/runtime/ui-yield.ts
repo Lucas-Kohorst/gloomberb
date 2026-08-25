@@ -33,6 +33,10 @@ export function useUiYieldRuntime({
     const onPointerUp = () => {
       setUiYieldReason("pointer", false);
     };
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.buttons === 0) return;
+      noteUiInteraction();
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       if ((event.metaKey || event.ctrlKey) && key === "k") {
@@ -41,12 +45,14 @@ export function useUiYieldRuntime({
     };
 
     window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("pointermove", onPointerMove, true);
     window.addEventListener("pointerup", onPointerUp, true);
     window.addEventListener("pointercancel", onPointerUp, true);
     window.addEventListener("lostpointercapture", onPointerUp, true);
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointermove", onPointerMove, true);
       window.removeEventListener("pointerup", onPointerUp, true);
       window.removeEventListener("pointercancel", onPointerUp, true);
       window.removeEventListener("lostpointercapture", onPointerUp, true);
