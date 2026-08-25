@@ -56,3 +56,7 @@ paseo.json
 # Agent / Factory session dumps (do not commit)
 session-ses_*.md
 /ses_*.md
+
+# Compound engineering local scratch (experiment logs, worktrees)
+.context/
+.worktrees/
