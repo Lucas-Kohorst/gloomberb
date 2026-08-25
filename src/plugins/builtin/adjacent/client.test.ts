@@ -68,7 +68,7 @@ describe("AdjacentClient paths", () => {
       `/api/data/adjacent/markets/${HEX_MARKET_ID}/similar`,
       "/api/data/adjacent/news/latest?per_page=20",
       "/api/data/adjacent/news?limit=50&offset=10",
-      `/api/data/adjacent/markets/${HEX_MARKET_ID}/news`,
+      `/api/data/adjacent/markets/${HEX_MARKET_ID}/news?per_page=20`,
       "/api/data/adjacent/markets?search=bitcoin&per_page=8&page=1&platform=polymarket",
       `/api/data/adjacent/markets/${HEX_MARKET_ID}/prices?interval=1hour`,
     ]);
@@ -89,7 +89,7 @@ describe("AdjacentClient paths", () => {
     expect(requested.map((entry) => entry.url)).toEqual([
       "https://api.adjacent.markets/api/v1/markets/kalshi:KXPRESPARTY-2028-D/similar",
       "https://api.adjacent.markets/api/v1/markets?search=senate&per_page=5&page=1",
-      "https://api.adjacent.markets/api/v1/markets/kalshi:KXPRESPARTY-2028-D/news",
+      "https://api.adjacent.markets/api/v1/markets/kalshi:KXPRESPARTY-2028-D/news?per_page=20",
       "https://api.adjacent.markets/api/v1/news?limit=25",
     ]);
     expect(requested.every((entry) => entry.authorization === "Bearer ak_test")).toBe(true);
@@ -114,10 +114,40 @@ describe("AdjacentClient paths", () => {
     );
     expect(requested[2]?.url).toBe("https://api.adjacent.markets/api/v1/news/latest?per_page=15");
     expect(requested[3]?.url).toBe(
-      `https://api.adjacent.markets/api/v1/public/markets/${HEX_MARKET_ID}/news`,
+      `https://api.adjacent.markets/api/v1/public/markets/${HEX_MARKET_ID}/news?per_page=20`,
     );
     expect(requested.some((entry) => /q=/.test(entry.url))).toBe(false);
     expect(requested.some((entry) => entry.url.includes("public/markets/") && entry.url.endsWith("/similar"))).toBe(false);
+  });
+
+  test("concurrent getMarketNews shares one in-flight request", async () => {
+    setHosted(false);
+    requested = [];
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+      requested.push({
+        url,
+        authorization: headerValue(init?.headers, "Authorization"),
+      });
+      await Bun.sleep(15);
+      return new Response(JSON.stringify({ news: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const client = new AdjacentClient({ apiKey: "ak_test" });
+    await Promise.all([
+      client.getMarketNews("kalshi:KXTEST-1"),
+      client.getMarketNews("kalshi:KXTEST-1", { limit: 20 }),
+    ]);
+    expect(requested).toHaveLength(1);
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/markets/kalshi:KXTEST-1/news?per_page=20",
+    );
   });
 
   test("unwraps similar { data } payloads for the UI", async () => {

@@ -111,6 +111,23 @@ describe("prediction market settlement series matching", () => {
     expect(result.sourceLabel).toBeTruthy();
   });
 
+  test("maps an FOMC decision onto Fed funds and 10Y yield series", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "kalshi",
+      marketId: "KXFED-26SEP-T4.25",
+      seriesTicker: "KXFED",
+      title: "Will the Fed cut rates at the September FOMC meeting?",
+      resolutionSource: "The FOMC's statement after its meeting scheduled for September 16, 2026.",
+      rulesPrimary:
+        "The resolution source for this market is the FOMC's statement after its meeting scheduled for September 16-17, 2026.",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("FRED:FEDFUNDS");
+    expect(expressions).toContain("FRED:DFEDTARU");
+    expect(expressions).toContain("UST:10Y");
+    expect(result.sourceSnippet).toMatch(/FOMC/i);
+  });
+
   test("keeps a settles-to snippet when no series match", () => {
     const result = matchSettlementSeries(summary({
       venue: "kalshi",

@@ -129,7 +129,7 @@ function AdjacentMarketNewsStack({
   const loadNews = useCallback(() => {
     setLoading(true);
     setError(null);
-    return client.getMarketNews(marketId)
+    return client.getMarketNews(marketId, { limit: 20 })
       .then((response) => {
         setArticles((response.news ?? []).map(normalizeAdjacentNewsArticle));
         setLoading(false);
