@@ -3,6 +3,7 @@ import {
   getPaneSidebarWidth,
   PaneSidebar,
   PaneSidebarAction,
+  PaneSidebarList,
   PaneSidebarRow,
   shouldShowPaneSidebar,
 } from "../../../components";
@@ -167,6 +168,7 @@ export function ChannelSidebar({
         const labelWidth = Math.max(listWidth - 3 - notificationWidth, 1);
         return (
           <>
+            <PaneSidebarList>
             {sidebarRows.map((row) => {
               if (row.kind === "direct-header") {
                 return (
@@ -260,13 +262,13 @@ export function ChannelSidebar({
                 </PaneSidebarRow>
               );
             })}
-            <Box flexGrow={1} />
+            </PaneSidebarList>
             {loading && focused && (
-              <Box height={1} width={listWidth} flexDirection="row">
+              <Box height={1} width={listWidth} flexShrink={0} flexDirection="row">
                 <Text fg={colors.textDim}>{` ${t("syncing")}`}</Text>
               </Box>
             )}
-            <Box height={1} width={listWidth} flexDirection="row" paddingX={onlineCountPaddingX} alignItems="center">
+            <Box height={1} width={listWidth} flexShrink={0} flexDirection="row" paddingX={onlineCountPaddingX} alignItems="center">
               <OnlinePresenceDot />
               <Text fg={colors.textDim}>
                 {` ${truncateChannelLabel(tf("{count} online", { count: onlineCount }), Math.max(listWidth - 2 - onlineCountPaddingX * 2, 1))}`}

@@ -31,6 +31,7 @@ export {
   getPaneSidebarWidth,
   PaneSidebar,
   PaneSidebarAction,
+  PaneSidebarList,
   PaneSidebarRow,
   shouldShowPaneSidebar,
 } from "./layout/pane/sidebar";

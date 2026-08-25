@@ -196,6 +196,13 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
   );
 }
 
+function nativeRowClip(nativePaneChrome: boolean) {
+  if (nativePaneChrome) {
+    return { style: { overflowX: "hidden" as const, overflowY: "visible" as const } };
+  }
+  return { overflow: "hidden" as const };
+}
+
 function InfoSegments({
   segments,
   width,
@@ -203,12 +210,13 @@ function InfoSegments({
   segments: PaneFooterSegment[];
   width?: number;
 }) {
+  const { nativePaneChrome = false } = useUiCapabilities();
   if (segments.length === 0) return null;
   return (
     <Box
       flexDirection="row"
-      overflow="hidden"
       flexShrink={1}
+      {...nativeRowClip(nativePaneChrome)}
       {...(width != null ? { width } : {})}
     >
       {segments.map((segment, index) => (
@@ -229,14 +237,15 @@ function TrailingSegments({
   width?: number;
   marginLeft?: number;
 }) {
+  const { nativePaneChrome = false } = useUiCapabilities();
   if (segments.length === 0) return null;
   return (
     <Box
       flexDirection="row"
       justifyContent="flex-end"
       flexShrink={0}
-      overflow="hidden"
       marginLeft={marginLeft}
+      {...nativeRowClip(nativePaneChrome)}
       {...(width != null ? { width } : {})}
     >
       {segments.map((segment, index) => (
@@ -327,7 +336,7 @@ function FooterContent({
       flexDirection="column"
       overflow={nativePaneChrome ? undefined : "hidden"}
       {...(nativePaneChrome ? {
-        style: { minHeight: 0 },
+        style: { minHeight: 0, overflow: "visible" },
       } : {})}
     >
       <Box
