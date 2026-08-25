@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.13.6 — Unread click-through, PM search, OPT layout tabs, CORR markets
+## v0.13.6 — Unread click-through, CDS, CSV, share charts, PM search
 
-Clicking an Unread row opens that chat channel. Prediction Markets search filters grouped Polymarket and Kalshi lists, including multi-word queries. Desktop layout tabs use Option so they no longer steal the browser tab switcher. Empty panes use ESG’s centered two-line no-data copy. CORR mixes equity tickers with `POLY:`, `KALSHI:`, and `ADJ:` series.
+Clicking an Unread row opens that chat channel. `CDS` shows DTCC activity. `CSV` copies the focused table. Shared charts fill the page with last / change / range. Prediction Markets search filters grouped lists, and FOMC rows match Fed funds / 10Y feeds. Status bar drops the Layouts chrome and the delayed-data label. Empty panes use ESG’s two-line copy. CORR mixes tickers with `POLY:`, `KALSHI:`, and `ADJ:` series.
 
 ### Chat
 
@@ -11,11 +11,29 @@ Clicking an Unread row opens that chat channel. Prediction Markets search filter
 ### Prediction markets
 
 - Search filters grouped Polymarket and Kalshi rows as you type. Multi-word queries like `anthropic ipo` keep only matching events.
+- FOMC / Fed titles map onto `FRED:FEDFUNDS`, `FRED:DFEDTARU`, and `UST:10Y`. Opening a market preloads Adjacent similar markets and news.
+
+### Credit
+
+- `CDS` is market-wide DTCC activity. `CDS ORCL` expands the ticker, then lists issuer activity. Enter drills into an issuer. Spread is only what the report carried.
+
+### Tables and sources
+
+- Command-bar `CSV` copies the focused pane’s current table (clipboard + download, cap 5,000 rows).
+- Default RSS adds Prophet Notes, Sentinel, Metaculus, and Don’t Worry About the Vase. `POLX` is an X feed of polling accounts.
+- RSS cache stays fresh for 15 minutes instead of 2.
+
+### Share
+
+- Shared charts fill the viewport. The strip is last, window change, high–low, and date range. Probability series report change in percentage points. Hover swaps the strip to that observation.
 
 ### Chrome
 
-- Home / Monitor / Adjacent layout tabs are **OPT 1/2/3** on desktop and hosted (Option/Alt). Terminal still uses Ctrl+number / `^N`.
+- Status bar no longer shows a **Layouts** button or numbered layout tabs. Switch layouts with `LAY`, the status-bar context menu, or **OPT 1/2/3** on desktop and hosted (Option/Alt). Terminal still uses Ctrl+number / `^N`.
+- Delayed-data CTA is just lowercase `upgrade` — no `delayed data` chip.
 - Desktop tabs no longer draw a hover underline on inactive labels like Chart.
+- Footer action hints use even spacing and wrap a second row instead of packing together.
+- Command-bar `ART` stays snappy while typing: local headlines first, Adjacent only after a 3-character token.
 
 ### Empty states
 
@@ -25,13 +43,20 @@ Clicking an Unread row opens that chat channel. Prediction Markets search filter
 
 - `CORR` accepts prediction-market series (`POLY:`, `KALSHI:`, `ADJ:`) alongside tickers. Yes-prices and index levels collapse to daily closes, then the usual Pearson matrix runs. Example: `CORR AAPL, POLY:fed-cut-september`.
 
+### Research
+
+- Equity diagnostic free preview is one cited finding plus an upgrade row. Uncached generation shows Gloom Cloud / SEC / FINRA / news / review steps.
+
 ### What to test
 
 - Unread: click `#help unread` (or any row) — chat opens that channel.
-- PM: type `anthropic ipo` — the list shrinks to matching markets.
-- Desktop: Option+1/2/3 switches Home/Monitor/Adjacent; Command+1/2/3 does not. No underline on tab hover.
-- ESG / holders / news empty: centered two-line copy, not a footer “no data” chip.
-- CORR: `CORR AAPL, POLY:fed-cut-september` (or a `KALSHI:` / `ADJ:` id) fills a mixed matrix.
+- PM: type `anthropic ipo` — the list shrinks. Open an FOMC market — similar + news preload.
+- `CDS` and `CDS ORCL` list activity; Enter opens an issuer.
+- Focus a table pane, run `CSV` — clipboard / download. `ART tr` is local; `ART trum` may hit Adjacent without freezing the bar.
+- Share a chart link — full-pane chart, last / change / range, no repeated title.
+- Status bar: no Layouts button or numbered tabs; `upgrade` only. Option+1/2/3 still switches layouts on desktop.
+- ESG / holders / news empty: centered two-line copy.
+- CORR: `CORR AAPL, POLY:fed-cut-september` fills a mixed matrix.
 
 ## v0.13.5 — First-paint snappiness, PM Enter, layout chrome, upgrade label
 
