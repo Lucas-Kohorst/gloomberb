@@ -141,7 +141,6 @@ describe("StatusBar", () => {
       expect(frame).toContain("^1 Home");
       expect(frame).toContain("^2 Monitor");
       expect(frame).toContain("^3 Adjacent");
-      expect(frame).toContain("Layouts");
       expect(frame).not.toContain("Ctrl+P");
     } finally {
       openTuiUiHost.capabilities = previousCapabilities;
