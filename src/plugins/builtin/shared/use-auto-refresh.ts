@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAppSelector } from "../../../state/app/context";
+import { shouldYieldToUi, whenUiQuiet } from "../../../utils/ui-yield";
 
 /**
  * Re-pull a pane once its data is older than the global refresh interval
@@ -27,11 +28,21 @@ export function useAutoRefresh(
   useEffect(() => {
     if (!(resolvedMinutes > 0)) return;
     const intervalMs = resolvedMinutes * 60_000;
-    const timer = setInterval(() => {
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
       const previous = lastUpdatedRef.current;
       if (previous && Date.now() - previous < intervalMs) return;
+      if (shouldYieldToUi()) {
+        void whenUiQuiet().then(tick);
+        return;
+      }
       refreshRef.current();
-    }, intervalMs);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(tick, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [resolvedMinutes]);
 }
