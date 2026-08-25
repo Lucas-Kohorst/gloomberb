@@ -654,7 +654,7 @@ export const zhTW: Record<string, string> = {
   "Pro trial — ends {date}": "Pro 試用 — {date} 結束",
   "delayed data · upgrade": "資料延遲  升級",
   "delayed data": "資料延遲",
-  "Upgrade": "升級",
+  "upgrade": "升級",
   "real-time news": "即時新聞",
   "AI command bar": "AI 命令列",
   "{amount}/mo": "{amount}/月",

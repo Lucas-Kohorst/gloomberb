@@ -59,7 +59,7 @@ export function CloudUpgradeStatusWidget({ controller = chatController }: CloudU
         <>
           <Text fg={tone}>{t("delayed data")}</Text>
           <Text fg={hovered ? colors.textBright : tone}>
-            {nativePaneChrome ? t("Upgrade") : ` ${t("Upgrade")}`}
+            {nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`}
           </Text>
         </>
       )}
