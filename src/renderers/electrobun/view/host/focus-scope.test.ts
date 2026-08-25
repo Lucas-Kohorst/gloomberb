@@ -24,6 +24,15 @@ describe("focus scope release", () => {
     expect(shouldReleaseFocus(null, {})).toBe(false);
   });
 
+  test("releases a pane tab button that kept focus after a row press", () => {
+    const tab = {
+      tagName: "BUTTON",
+      closest: () => null,
+      contains: () => false,
+    };
+    expect(shouldReleaseFocus(tab, { tagName: "DIV" })).toBe(true);
+  });
+
   test("leaves a press inside a dialog alone, which owns the pointer itself", () => {
     const inDialog = { tagName: "INPUT", closest: (selector: string) => selector === ".gloom-dialog" ? {} : null };
     expect(shouldReleaseFocus(field(), inDialog)).toBe(false);

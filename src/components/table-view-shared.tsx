@@ -85,6 +85,21 @@ export function isTableActivationKey(name: string | undefined): boolean {
   return name === "enter" || name === "return";
 }
 
+export interface NativeTableActivationTarget {
+  getAttribute?: (name: string) => string | null;
+  closest?: (selector: string) => unknown;
+}
+
+/** Hosted pane tabs are real buttons; Enter on them must still activate the table. */
+export function shouldInterceptNativeTableActivation(
+  event: { name?: string },
+  activeElement?: NativeTableActivationTarget | null,
+): boolean {
+  if (!isTableActivationKey(event.name) || !activeElement) return false;
+  if (activeElement.getAttribute?.("data-gloom-role") === "tab-button") return true;
+  return activeElement.closest?.('[data-gloom-role="tab-button"]') != null;
+}
+
 function getTableKeyName(event: TableViewKeyEvent | string | undefined): string | undefined {
   return typeof event === "string" ? event : event?.name;
 }

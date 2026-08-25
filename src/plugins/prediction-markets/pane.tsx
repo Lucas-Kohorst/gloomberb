@@ -167,30 +167,12 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           { id: "search", key: "/", label: "search", onPress: controller.actions.focusSearch },
           { id: "refresh", key: "r", label: "efresh", onPress: controller.actions.refreshCatalog },
           { id: "watch", key: "w", label: "atch", onPress: controller.selectedRow ? () => controller.actions.toggleWatchlist(controller.selectedRow!) : undefined, disabled: !controller.selectedRow },
-          {
-            id: "filter",
-            key: "1-4",
-            label: "filter",
-            onPress: () => {
-              const current = resolvePredictionFilterId(
-                controller.categoryId,
-                controller.browseTab,
-              );
-              const order = ["all", "watchlist", "ending", "new"] as const;
-              const index = order.findIndex((id) => id === current);
-              const next = order[(index + 1) % order.length]!;
-              controller.actions.selectFilter(next);
-            },
-          },
         ] : []),
         ...(!newsTabOpen && marketUrl ? [{ id: "open", key: "o", label: "pen", onPress: openMarket }] : []),
       ],
     };
   }, [
     catalogStatusColor,
-    controller.actions.selectFilter,
-    controller.browseTab,
-    controller.categoryId,
     controller.catalogStatus?.message,
     controller.catalogStatus?.tone,
     controller.catalogLastRefreshAt,

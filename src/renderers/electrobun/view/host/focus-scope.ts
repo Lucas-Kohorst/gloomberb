@@ -1,7 +1,8 @@
 /**
  * The browser gives up a field's focus when you press somewhere else. Panes,
  * charts and rows all consume their own mousedown, which is exactly what
- * suppresses that, so a field can hold the keyboard long after it looks done.
+ * suppresses that, so a field or tab button can hold the keyboard long after
+ * it looks done.
  *
  * One rule restores the default: a press outside the widget that owns the focus
  * releases it. Widgets whose own chrome must not take focus from their field,
@@ -35,8 +36,17 @@ export function isEditableTarget(node: unknown): boolean {
   return tag === "INPUT" || tag === "TEXTAREA";
 }
 
+function isNativeFocusControl(node: unknown): boolean {
+  if (isEditableTarget(node)) return true;
+  const element = asFocusable(node);
+  if (!element) return false;
+  const tag = element.tagName?.toUpperCase();
+  return tag === "BUTTON" || tag === "SUMMARY";
+}
+
 export function shouldReleaseFocus(active: unknown, target: unknown): boolean {
-  if (!isEditableTarget(active) || !target || active === target) return false;
+  if (!isNativeFocusControl(active) || !target || active === target) return false;
+  if (asFocusable(active)?.closest?.(DIALOG_CLASS_SELECTOR)) return false;
   if (asFocusable(target)?.closest?.(DIALOG_CLASS_SELECTOR)) return false;
   const element = asFocusable(active)!;
   const scope = element.closest?.(`[${FOCUS_SCOPE_ATTRIBUTE}]`) ?? element;

@@ -8,7 +8,6 @@ import {
   getAdjacentPredictionFilterId,
   getAdjacentPredictionVenueScope,
   resolvePredictionFilterId,
-  type PredictionFilterId,
 } from "../navigation";
 import type {
   PredictionBrowseTab,
@@ -245,31 +244,6 @@ export function usePredictionControllerKeyboard({
           resolvePredictionFilterId(categoryId, browseTab),
           "next",
         ));
-        return;
-      }
-
-      if (command === "filter-all" || command === "browse-top") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectFilter("all");
-        return;
-      }
-      if (command === "browse-ending") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectFilter("ending");
-        return;
-      }
-      if (command === "browse-new") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectFilter("new");
-        return;
-      }
-      if (command === "filter-watchlist") {
-        event.stopPropagation?.();
-        event.preventDefault?.();
-        selectFilter("watchlist");
       }
     },
     [

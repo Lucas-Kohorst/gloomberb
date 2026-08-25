@@ -443,16 +443,16 @@ describe("prediction markets plugin registration and services", () => {
       }),
     ).toBe("next-venue-tab");
     expect(resolvePredictionKeyboardCommand({ name: "1", sequence: "1" })).toBe(
-      "filter-all",
+      null,
     );
     expect(resolvePredictionKeyboardCommand({ name: "2", sequence: "2" })).toBe(
-      "filter-watchlist",
+      null,
     );
     expect(resolvePredictionKeyboardCommand({ name: "3", sequence: "3" })).toBe(
-      "browse-ending",
+      null,
     );
     expect(resolvePredictionKeyboardCommand({ name: "4", sequence: "4" })).toBe(
-      "browse-new",
+      null,
     );
     expect(resolvePredictionKeyboardCommand({ name: "[", sequence: "[" })).toBe(
       "previous-browse-tab",
