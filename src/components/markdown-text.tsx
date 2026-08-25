@@ -32,11 +32,13 @@ export interface ParsedLine {
   indent?: number;
 }
 
-// Order matters: images must be tried before links, and `**` before `*`.
+// Order matters: images before links, `**` before `*`, and autolinks before the
+// HTML branch so `<https://x>` is not mistaken for a tag.
 const INLINE_RE = new RegExp([
   /!\[(?<imageAlt>[^\]]*)\]\((?<imageHref>[^)]*)\)/.source,
   /\[(?<linkText>[^\]]*)\]\((?<linkHref>[^)]*)\)/.source,
   /<(?<autolink>(?:https?:\/\/|mailto:)[^>\s]+)>/.source,
+  /<\/?(?<htmlTag>[A-Za-z][A-Za-z0-9-]*)(?:\s[^>]*)?>/.source,
   /\*\*(?<bold>[^*]+)\*\*/.source,
   /(?<!\*)\*(?!\*)(?<italic>[^*]+)\*(?!\*)/.source,
   /`(?<code>[^`]+)`/.source,
@@ -72,6 +74,9 @@ function parseInlineMarkdown(text: string): StyledSegment[] {
       segments.push(linkSegment(groups.linkText, groups.linkHref ?? ""));
     } else if (groups.autolink != null) {
       segments.push(linkSegment(groups.autolink, groups.autolink));
+    } else if (groups.htmlTag != null) {
+      // Filings and scraped pages carry stray tags such as `<u>` around
+      // headings. Drop the tag and keep the text it wraps.
     } else if (groups.bold != null) {
       segments.push({ text: groups.bold, bold: true });
     } else if (groups.italic != null) {
@@ -97,9 +102,15 @@ export function parseMarkdownLine(line: string): ParsedLine {
 
   const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
   if (headingMatch) {
+    // Heading text still needs inline parsing; filings wrap headings in `<u>`
+    // and scraped pages put links and emphasis inside them.
     return {
       heading: true,
-      segments: [{ text: headingMatch[2]!, bold: true, color: colors.borderFocused }],
+      segments: parseInlineMarkdown(headingMatch[2]!).map((segment) => ({
+        ...segment,
+        bold: true,
+        color: segment.color ?? colors.borderFocused,
+      })),
     };
   }
 
@@ -126,6 +137,100 @@ export function parseMarkdownLine(line: string): ParsedLine {
   }
 
   return { segments: parseInlineMarkdown(line) };
+}
+
+const TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
+const TABLE_DIVIDER_CELL_RE = /^:?-+:?$/;
+/** Keeps one wide cell from pushing every later column off screen. */
+const MAX_TABLE_COLUMN_WIDTH = 32;
+const TABLE_COLUMN_GAP = 2;
+
+function tableCells(line: string): string[] | null {
+  const match = line.match(TABLE_ROW_RE);
+  if (!match) return null;
+  return match[1]!.split("|").map((cell) => cell.trim());
+}
+
+function isTableDivider(cells: string[]): boolean {
+  return cells.every((cell) => TABLE_DIVIDER_CELL_RE.test(cell));
+}
+
+function segmentsWidth(segments: StyledSegment[]): number {
+  return segments.reduce((total, segment) => total + segment.text.length, 0);
+}
+
+/**
+ * Renders a pipe table as space-aligned columns. Terminal output has no table
+ * primitive here, and showing the raw `|---|` scaffolding is worse than
+ * dropping it, which is how thematic breaks are already handled.
+ */
+function parseTableBlock(rawRows: string[][]): ParsedLine[] {
+  let headerIndex: number | null = null;
+  const rows: string[][] = [];
+  for (const cells of rawRows) {
+    if (isTableDivider(cells)) {
+      // A divider marks the row above it as the header.
+      if (headerIndex === null && rows.length > 0) headerIndex = rows.length - 1;
+      continue;
+    }
+    rows.push(cells);
+  }
+  if (rows.length === 0) return [];
+
+  const parsedRows = rows.map((cells) => cells.map((cell) => parseInlineMarkdown(cell)));
+  const widths: number[] = [];
+  for (const row of parsedRows) {
+    row.forEach((cell, column) => {
+      const width = Math.min(segmentsWidth(cell), MAX_TABLE_COLUMN_WIDTH);
+      widths[column] = Math.max(widths[column] ?? 0, width);
+    });
+  }
+
+  return parsedRows.map((row, rowIndex) => {
+    const isHeader = rowIndex === headerIndex;
+    const segments: StyledSegment[] = [];
+    row.forEach((cell, column) => {
+      if (column > 0) segments.push({ text: " ".repeat(TABLE_COLUMN_GAP) });
+      segments.push(
+        ...(isHeader ? cell.map((segment) => ({ ...segment, bold: true })) : cell),
+      );
+      // The last column needs no padding; nothing follows it.
+      if (column < row.length - 1) {
+        const padding = (widths[column] ?? 0) - segmentsWidth(cell);
+        if (padding > 0) segments.push({ text: " ".repeat(padding) });
+      }
+    });
+    return { segments };
+  });
+}
+
+/**
+ * Parses a whole document. Tables have to be grouped before rendering because
+ * column widths depend on every row in the block.
+ */
+export function parseMarkdownDocument(text: string): ParsedLine[] {
+  const lines = text.split("\n");
+  const parsed: ParsedLine[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const cells = tableCells(lines[index]!);
+    if (cells) {
+      const rawRows: string[][] = [];
+      while (index < lines.length) {
+        const next = tableCells(lines[index]!);
+        if (!next) break;
+        rawRows.push(next);
+        index += 1;
+      }
+      parsed.push(...parseTableBlock(rawRows));
+      continue;
+    }
+    parsed.push(parseMarkdownLine(lines[index]!));
+    index += 1;
+  }
+
+  return parsed;
 }
 
 function wrappedTextStyle() {
@@ -292,15 +397,11 @@ export function MarkdownText({
   openTicker = () => {},
 }: MarkdownTextProps) {
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
-  const lines = text.split("\n");
+  const lines = parseMarkdownDocument(text);
 
   return (
     <Box flexDirection="column" {...(lineWidth != null ? { width: lineWidth } : {})}>
-      {lines.map((line, index) => {
-        if (line.trim() === "") {
-          return <Text key={index}>{" "}</Text>;
-        }
-        const parsed = parseMarkdownLine(line);
+      {lines.map((parsed, index) => {
         if (parsed.segments.length === 0) {
           return <Text key={index}>{" "}</Text>;
         }

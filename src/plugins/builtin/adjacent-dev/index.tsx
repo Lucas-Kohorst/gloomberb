@@ -349,6 +349,7 @@ function CftcPane({ width, height, focused }: PaneProps) {
       onSelect={setSelectedIdx}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
+      markdown
       sourceLabel="Org"
       titleLabel="Filing"
       emptyStateTitle={
