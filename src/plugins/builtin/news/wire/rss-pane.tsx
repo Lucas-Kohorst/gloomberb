@@ -28,7 +28,7 @@ import { NewsArticleStackView } from "./news/table";
 import { getNewsPaneSettings, getRssViewMode, type RssViewMode } from "./settings";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
 import { useNewsReadState } from "./read-state";
-import { useFeedPollInterval } from "../../shared/feed-poll-interval";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useArticleArchiveAction } from "../../shared/article-archive";
 import { DEFAULT_FEEDS } from "./default-feeds";
@@ -504,7 +504,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     info: [
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
-    trailingInfo: [poll.segment],
+    trailingInfo: [...pollFooterTrailingInfo(!detailArticle, poll.segment)],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
@@ -513,7 +513,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }), [archiveAction.archive, archiveAction.enabled, detailArticle, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;

@@ -3,6 +3,7 @@ import {
   formatPollIntervalFooterLabel,
   isXLivePollingEnabled,
   nextPollIntervalMinutes,
+  pollFooterTrailingInfo,
   pollIntervalMenuOptions,
   resolveFeedPollIntervalMinutes,
   twitterLivePollIntervalMinutes,
@@ -41,6 +42,15 @@ describe("feed poll interval", () => {
     expect(resolveFeedPollIntervalMinutes(30, null, 1)).toBe(1);
     expect(resolveFeedPollIntervalMinutes(30, 15, 1)).toBe(15);
     expect(resolveFeedPollIntervalMinutes(30, "5", 1)).toBe(5);
+  });
+
+  test("omits the poll chip when article chrome should not poll", () => {
+    const segment = {
+      id: "poll-interval",
+      parts: [{ text: "poll 30m", tone: "muted" as const }],
+    };
+    expect(pollFooterTrailingInfo(true, segment)).toEqual([segment]);
+    expect(pollFooterTrailingInfo(false, segment)).toEqual([]);
   });
 
   test("X live polling interval is 0 until xLivePollingEnabled is true", () => {

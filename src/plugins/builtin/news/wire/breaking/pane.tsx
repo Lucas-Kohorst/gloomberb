@@ -44,6 +44,7 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.breaking);
     },
     onShare: shareArticle,
+    showPoll: !detailArticle,
   });
 
   const detailContent = detailArticle ? (

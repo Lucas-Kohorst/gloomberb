@@ -6,7 +6,7 @@ import { useAppLanguage } from "../../../../../i18n/react";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../shared/plan-access";
 import { usePaneStatusLinkFooter } from "../../../shared/pane-footer";
-import { useFeedPollInterval } from "../../../shared/feed-poll-interval";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../../../shared/feed-poll-interval";
 import { useArticleArchiveAction } from "../../../shared/article-archive";
 
 interface NewsFooterArticle {
@@ -24,6 +24,8 @@ interface UseNewsArticleFooterOptions {
   onPopOut?: () => void;
   onRefresh?: () => void;
   onShare?: () => void;
+  /** Feed lists poll. Article readers / open article details do not. */
+  showPoll?: boolean;
 }
 
 export function useNewsArticleFooter({
@@ -36,6 +38,7 @@ export function useNewsArticleFooter({
   onPopOut,
   onRefresh,
   onShare,
+  showPoll = true,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
   const archiveAction = useArticleArchiveAction(article?.url);
@@ -58,8 +61,8 @@ export function useNewsArticleFooter({
     [accessInfo, info],
   );
   const trailingInfo = useMemo(
-    () => [poll.segment],
-    [poll.segment],
+    () => pollFooterTrailingInfo(showPoll, poll.segment),
+    [poll.segment, showPoll],
   );
   const hints = useMemo<PaneHint[]>(() => (
     onRefresh

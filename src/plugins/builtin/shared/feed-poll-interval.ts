@@ -104,6 +104,16 @@ function pollSegment(minutes: number, setMinutes: (minutes: number) => void): Pa
   };
 }
 
+const EMPTY_POLL_TRAILING: PaneFooterSegment[] = [];
+
+/** Article readers have no refetch timer — omit the poll chip so the footer hint stays bound. */
+export function pollFooterTrailingInfo(
+  showPoll: boolean,
+  segment: PaneFooterSegment,
+): readonly PaneFooterSegment[] {
+  return showPoll ? [segment] : EMPTY_POLL_TRAILING;
+}
+
 export function useFeedPollInterval(options?: {
   overrideConfigKey?: string;
   defaultMinutes?: number;
