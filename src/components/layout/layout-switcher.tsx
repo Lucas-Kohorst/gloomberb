@@ -219,11 +219,7 @@ export function useLayoutSwitcher() {
   };
 }
 
-export function LayoutSwitcherControl({
-  placement,
-}: {
-  placement: "header" | "status-bar";
-}) {
+export function LayoutSwitcherControl() {
   const { nativePaneChrome = false } = useUiCapabilities();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
   const {
@@ -235,21 +231,15 @@ export function LayoutSwitcherControl({
     layoutTabsWidth,
     openLayouts,
   } = useLayoutSwitcher();
-  const inHeader = placement === "header";
 
   return (
     <Box
-      flexShrink={inHeader ? 1 : 0}
+      flexShrink={0}
       flexDirection="row"
       alignItems="center"
       minWidth={0}
       data-gloom-role="layout-switcher"
-      className={inHeader ? "electrobun-webkit-app-region-no-drag" : undefined}
-      onMouseDown={inHeader ? stopChromeMouse : undefined}
-      {...(nativePaneChrome ? {
-        gap: 1,
-        style: inHeader ? { maxWidth: 420 } : undefined,
-      } : {})}
+      {...(nativePaneChrome ? { gap: 1 } : {})}
     >
       {hasMultipleLayouts ? (
         <Box
@@ -264,7 +254,6 @@ export function LayoutSwitcherControl({
             onSelect={handleLayoutSelect}
             onReorder={handleLayoutReorder}
             compact
-            dense={inHeader}
             variant="pill"
           />
         </Box>
@@ -272,7 +261,6 @@ export function LayoutSwitcherControl({
       <LayoutsButton
         hovered={hoveredControl === "layouts"}
         nativePaneChrome={nativePaneChrome}
-        placement={placement}
         openLayouts={openLayouts}
         onHover={(hovered) => setHoveredControl(hovered ? "layouts" : null)}
       />
@@ -283,17 +271,19 @@ export function LayoutSwitcherControl({
 function LayoutsButton({
   hovered,
   nativePaneChrome,
-  placement,
   openLayouts,
   onHover,
 }: {
   hovered: boolean;
   nativePaneChrome: boolean;
-  placement: "header" | "status-bar";
   openLayouts: (event?: StatusBarEvent) => void;
   onHover: (hovered: boolean) => void;
 }) {
-  const inHeader = placement === "header";
+  const handleKeyDown = (event: { key?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    openLayouts(event);
+  };
+
   return (
     <Box
       height={1}
@@ -302,35 +292,26 @@ function LayoutsButton({
       onMouseOver={() => onHover(true)}
       onMouseOut={() => onHover(false)}
       onMouseDown={openLayouts}
+      onKeyDown={nativePaneChrome ? handleKeyDown : undefined}
       data-gloom-role="layout-presets-button"
       data-gloom-interactive="true"
       aria-label="Open layout presets"
       title="Layouts and presets"
+      role={nativePaneChrome ? "button" : undefined}
+      tabIndex={nativePaneChrome ? 0 : undefined}
       {...(nativePaneChrome ? {
         style: {
           cursor: "pointer",
-          border: inHeader
-            ? `1px solid ${blendHex(colors.border, colors.headerText, 0.28)}`
-            : "0",
           borderRadius: 6,
           paddingInline: 6,
-          backgroundColor: hovered
-            ? (inHeader ? blendHex(colors.header, colors.headerText, 0.15) : hoverBg())
-            : (inHeader
-              ? blendHex(colors.header, colors.headerText, 0.08)
-              : blendHex(colors.panel, colors.header, 0.18)),
+          backgroundColor: hovered ? hoverBg() : blendHex(colors.panel, colors.header, 0.18),
         },
       } : {
         marginLeft: 1,
         backgroundColor: hovered ? hoverBg() : colors.header,
       })}
     >
-      <Text
-        fg={nativePaneChrome
-          ? (inHeader ? colors.headerText : (hovered ? colors.textBright : colors.text))
-          : colors.headerText}
-        {...(nativePaneChrome && inHeader ? { style: { fontSize: 11, fontWeight: 700 } } : {})}
-      >
+      <Text fg={nativePaneChrome ? (hovered ? colors.textBright : colors.text) : colors.headerText}>
         {nativePaneChrome ? "Layouts" : " Layouts "}
       </Text>
     </Box>

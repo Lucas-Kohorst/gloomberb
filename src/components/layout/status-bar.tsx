@@ -92,26 +92,23 @@ export function StatusBar() {
         },
       } : {})}
     >
-      {nativePaneChrome ? (
-        <CommandBarHint
-          hoveredControl={hoveredControl}
-          nativePaneChrome
-          openCommandBar={openCommandBar}
-          setHoveredControl={setHoveredControl}
-        />
-      ) : (
-        <Box paddingLeft={1} flexDirection="row" alignItems="center">
-          {!hasMultipleLayouts && (
-            <CommandBarHint
-              hoveredControl={hoveredControl}
-              nativePaneChrome={false}
-              openCommandBar={openCommandBar}
-              setHoveredControl={setHoveredControl}
-            />
-          )}
-          <LayoutSwitcherControl placement="status-bar" />
-        </Box>
-      )}
+      <Box
+        paddingLeft={nativePaneChrome ? 0 : 1}
+        flexShrink={0}
+        flexDirection="row"
+        alignItems="center"
+        {...(nativePaneChrome ? { gap: 1 } : {})}
+      >
+        {hasMultipleLayouts ? null : (
+          <CommandBarHint
+            hoveredControl={hoveredControl}
+            nativePaneChrome={!!nativePaneChrome}
+            openCommandBar={openCommandBar}
+            setHoveredControl={setHoveredControl}
+          />
+        )}
+        <LayoutSwitcherControl />
+      </Box>
       {showGridlockTip && (
         nativePaneChrome ? (
           <NativeGridlockTip
