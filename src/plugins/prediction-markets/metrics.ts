@@ -1,7 +1,7 @@
 import { colors } from "../../theme/colors";
 import { formatCompact, formatNumber, formatTimeAgo } from "../../utils/format";
-import { fuzzyFilter } from "../../utils/fuzzy-search";
 import { compareSortValues } from "../../utils/sort-values";
+import { matchesPredictionSearchHaystack } from "./search";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
@@ -212,11 +212,9 @@ function matchesPredictionSearchQuery(
   market: PredictionListRow,
   searchQuery: string,
 ): boolean {
-  const tokens = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return true;
-  return tokens.every(
-    (token) =>
-      fuzzyFilter([market], token, predictionSearchHaystack).length > 0,
+  return matchesPredictionSearchHaystack(
+    predictionSearchHaystack(market),
+    searchQuery,
   );
 }
 

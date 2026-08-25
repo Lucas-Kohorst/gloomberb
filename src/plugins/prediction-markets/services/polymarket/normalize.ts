@@ -4,6 +4,7 @@ import {
   matchesPredictionCategory,
   resolvePredictionDisplayCategory,
 } from "../../categories";
+import { matchesPredictionSearchHaystack } from "../../search";
 import type {
   PredictionBookLevel,
   PredictionCategoryId,
@@ -192,7 +193,7 @@ function flattenPolymarketEvents(
         ]
           .join(" ")
           .toLowerCase();
-        if (!searchText.includes(normalizedQuery)) continue;
+        if (!matchesPredictionSearchHaystack(searchText, normalizedQuery)) continue;
       }
       deduped.set(normalized.key, normalized);
     }

@@ -1,5 +1,6 @@
 import { measurePerf } from "../../../../utils/perf-marks";
 import { matchesPredictionCategory } from "../../categories";
+import { matchesPredictionSearchHaystack } from "../../search";
 import type {
   PredictionBookLevel,
   PredictionBrowseTab,
@@ -214,7 +215,7 @@ function flattenKalshiEvents(
         ]
           .join(" ")
           .toLowerCase();
-        if (!searchText.includes(normalizedQuery)) continue;
+        if (!matchesPredictionSearchHaystack(searchText, normalizedQuery)) continue;
       }
       deduped.set(normalized.key, normalized);
     }

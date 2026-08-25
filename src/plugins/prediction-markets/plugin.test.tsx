@@ -38,6 +38,7 @@ import {
   loadPolymarketDetail,
   normalizePolymarketMarket,
 } from "./services/polymarket/adapter";
+import { normalizePolymarketCatalog } from "./services/polymarket/normalize";
 
 afterEach(async () => {
   await cleanupPredictionTest();
@@ -346,6 +347,87 @@ describe("prediction markets plugin registration and services", () => {
         (row) => row.marketId,
       ),
     ).toEqual(["KAL-BTC"]);
+  });
+
+  test("does not keep unrelated grouped events for a multi-word search", () => {
+    const polymarketMarket = (
+      id: string,
+      question: string,
+      eventId: string,
+      eventTitle: string,
+    ) =>
+      normalizePolymarketMarket({
+        id,
+        question,
+        outcomes: ["Yes", "No"],
+        outcomePrices: ["0.5", "0.5"],
+        events: [{ id: eventId, title: eventTitle }],
+      })!;
+
+    const rows = buildPredictionListRows([
+      ...[
+        "T1",
+        "Gen.G",
+        "BLG",
+        "Hanwha Life",
+        "FlyQuest",
+        "G2",
+        "Top Esports",
+        "Weibo Gaming",
+        "LNG",
+        "Dplus KIA",
+        "KT Rolster",
+        "Fnatic",
+        "MAD Lions",
+        "Team Liquid",
+        "Cloud9",
+        "NRG",
+      ].map((team, index) =>
+        polymarketMarket(
+          `lol-${index}`,
+          `Will ${team} win the League of Legends World Championship?`,
+          "lol-worlds",
+          "LoL Worlds 2026 Winner",
+        ),
+      ),
+      polymarketMarket(
+        "anth-1",
+        "Will Anthropic complete an IPO in 2026?",
+        "anth",
+        "AI lab listing",
+      ),
+    ]);
+
+    expect(
+      filterPredictionMarkets(rows, "polymarket", "all", "anthropic ipo", new Set()).map(
+        (row) => row.title,
+      ),
+    ).toEqual(["Will Anthropic complete an IPO in 2026?"]);
+  });
+
+  test("keeps venue search hits when query tokens are not a contiguous phrase", () => {
+    expect(
+      normalizePolymarketCatalog(
+        [
+          {
+            id: "anth",
+            title: "AI lab listing",
+            markets: [
+              {
+                id: "anth-1",
+                question: "Will Anthropic complete an IPO in 2026?",
+                outcomes: ["Yes", "No"],
+                outcomePrices: ["0.22", "0.78"],
+                active: true,
+                closed: false,
+              },
+            ],
+          },
+        ],
+        "anthropic ipo",
+        "all",
+      ).map((market) => market.title),
+    ).toEqual(["Will Anthropic complete an IPO in 2026?"]);
   });
 
   test("styles YES consistently and uses the lead contract quote on grouped rows", () => {
