@@ -1,6 +1,11 @@
 import type { AppConfig } from "../../types/config";
 import type { PaneSettingOption, PaneSettingsDef } from "../../types/plugin";
 import {
+  buildPollIntervalSettingField,
+  DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES,
+  PREDICTION_POLL_INTERVAL_CONFIG_KEY,
+} from "../builtin/shared/feed-poll-interval";
+import {
   DEFAULT_PREDICTION_COLUMN_IDS,
   PREDICTION_COLUMN_DEFS,
   PREDICTION_COLUMNS_BY_ID,
@@ -141,12 +146,14 @@ export function buildPredictionMarketsPaneSettingsDef(
     type: "select",
     options: BROWSE_TAB_OPTIONS,
   });
+  fields.push(buildPollIntervalSettingField(PREDICTION_POLL_INTERVAL_CONFIG_KEY));
 
   return {
     title: "Prediction Markets Settings",
     values: {
       ...settings,
       columnIds: [...settings.columnIds],
+      [PREDICTION_POLL_INTERVAL_CONFIG_KEY]: String(DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES),
     },
     fields,
   };

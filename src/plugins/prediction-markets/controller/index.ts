@@ -9,6 +9,11 @@ import {
   usePluginPaneState,
   usePluginState,
 } from "../../runtime";
+import {
+  DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES,
+  PREDICTION_POLL_INTERVAL_CONFIG_KEY,
+  useFeedPollInterval,
+} from "../../builtin/shared/feed-poll-interval";
 import { usePredictionMarketsDataState } from "./data";
 import { usePredictionControllerEffects } from "./effects";
 import { usePredictionControllerKeyboard } from "./keyboard";
@@ -137,6 +142,10 @@ export function usePredictionMarketsController({
     () => resolvePredictionColumns(paneSettings.columnIds),
     [paneSettings.columnIds],
   );
+  const poll = useFeedPollInterval({
+    overrideConfigKey: PREDICTION_POLL_INTERVAL_CONFIG_KEY,
+    defaultMinutes: DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES,
+  });
 
   const data = usePredictionMarketsDataState({
     browseTab,
@@ -148,6 +157,7 @@ export function usePredictionMarketsController({
     historyRange,
     includeKalshi,
     includePolymarket,
+    pollIntervalMs: poll.intervalMs,
     searchQuery,
     selectedDetailMarketKey,
     selectedRowKey,
@@ -377,6 +387,7 @@ export function usePredictionMarketsController({
 
   return {
     paneSettings,
+    poll,
     browseTab,
     categoryId,
     catalogHasMore: data.catalogHasMore,

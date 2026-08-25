@@ -6,11 +6,24 @@ export interface PaneFooterRegistration {
   hints?: PaneHint[];
 }
 
+export interface PaneFooterSelectOption {
+  value: string;
+  label: string;
+}
+
+export interface PaneFooterSelectMenu {
+  value: string;
+  options: readonly PaneFooterSelectOption[];
+  onSelect: (value: string) => void;
+}
+
 export interface PaneFooterSegment {
   id: string;
   parts: PaneFooterPart[];
   onPress?: () => void;
   disabled?: boolean;
+  /** Click/Enter opens this list instead of only firing onPress. */
+  menu?: PaneFooterSelectMenu;
 }
 
 export interface PaneFooterPressEvent {

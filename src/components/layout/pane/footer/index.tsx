@@ -1,8 +1,9 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
 import { getShortcutHintWidth, ShortcutHint } from "../../../ui/shortcut-hint";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
+import { useOptionalDialog } from "../../../../ui/dialog";
 import {
   EMPTY_FOOTER,
   hasPaneFooterContent,
@@ -12,6 +13,7 @@ import {
   type PaneFooterSegment,
   type PaneHint,
 } from "./model";
+import { FooterSelectMenuPopover, openFooterSelectMenu } from "./select-menu";
 
 export {
   clipPaneFooterInfo,
@@ -19,6 +21,8 @@ export {
   PANE_FOOTER_INFO_MAX_CHARS,
   type CombinedPaneFooter,
   type PaneFooterPressEvent,
+  type PaneFooterSelectMenu,
+  type PaneFooterSelectOption,
   type PaneFooterSegment,
   type PaneHint,
 } from "./model";
@@ -53,16 +57,37 @@ function stopMouseEvent(event?: { stopPropagation?: () => void; preventDefault?:
   event?.preventDefault?.();
 }
 
+function isOpenMenuKey(event: { key?: string; name?: string }): boolean {
+  const key = (event.key ?? event.name ?? "").toLowerCase();
+  return key === "enter" || key === "return" || key === " " || key === "space";
+}
+
 function SegmentView({ segment }: { segment: PaneFooterSegment }) {
-  const interactive = !!segment.onPress && !segment.disabled;
+  const { nativePaneChrome } = useUiCapabilities();
+  const dialog = useOptionalDialog();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = segment.menu;
+  const interactive = (!!segment.onPress || !!menu) && !segment.disabled;
+  const handlePress = useCallback(() => {
+    if (segment.disabled) return;
+    if (menu) {
+      if (nativePaneChrome) {
+        setMenuOpen((open) => !open);
+        return;
+      }
+      void openFooterSelectMenu(dialog, menu);
+      return;
+    }
+    segment.onPress?.();
+  }, [dialog, menu, nativePaneChrome, segment]);
   useRemoteUiNode(interactive ? {
     role: "pane-footer-segment",
     label: segment.parts.map((part) => part.text).join(" "),
     disabled: segment.disabled,
     actions: {
-      press: () => segment.onPress?.(),
+      press: handlePress,
     },
-    metadata: { id: segment.id },
+    metadata: { id: segment.id, hasMenu: !!menu },
   } : null);
   const attributes = segment.parts.some((part) => part.bold) || interactive ? TextAttributes.BOLD : 0;
   const triggerMouseDownRef = useRef(false);
@@ -73,17 +98,33 @@ function SegmentView({ segment }: { segment: PaneFooterSegment }) {
   const finishSegmentPress = (event?: { stopPropagation?: () => void; preventDefault?: () => void }) => {
     const startedOnTrigger = triggerMouseDownRef.current;
     triggerMouseDownRef.current = false;
-    if (startedOnTrigger) segment.onPress?.();
+    if (startedOnTrigger) handlePress();
     else stopMouseEvent(event);
   };
+  const handleKeyDown = (event: { key?: string; name?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+    if (!interactive || !isOpenMenuKey(event)) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    handlePress();
+  };
 
-  return (
+  const chip = (
     <Text
       fg={segment.disabled ? colors.textMuted : colors.textDim}
       attributes={attributes}
       onMouseDown={interactive ? startSegmentPress : undefined}
       onMouseUp={interactive ? finishSegmentPress : undefined}
+      onKeyDown={interactive && nativePaneChrome ? handleKeyDown : undefined}
+      role={interactive && nativePaneChrome ? "button" : undefined}
+      tabIndex={interactive && nativePaneChrome ? 0 : undefined}
+      aria-haspopup={menu && nativePaneChrome ? "listbox" : undefined}
+      aria-expanded={menu && nativePaneChrome ? (menuOpen ? "true" : "false") : undefined}
+      aria-label={menu && nativePaneChrome ? "Refresh interval" : undefined}
       {...(interactive ? { "data-gloom-interactive": "true" } : {})}
+      {...(menu ? { "data-gloom-role": "pane-footer-select" } : {})}
+      {...(nativePaneChrome && interactive ? {
+        style: { cursor: "pointer" },
+      } : {})}
     >
       {segment.parts.map((part, index) => (
         <Span
@@ -96,6 +137,19 @@ function SegmentView({ segment }: { segment: PaneFooterSegment }) {
       ))}
     </Text>
   );
+
+  if (menu && nativePaneChrome) {
+    return (
+      <FooterSelectMenuPopover
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        menu={menu}
+        trigger={chip}
+      />
+    );
+  }
+
+  return chip;
 }
 
 function hintTextLength(hint: PaneHint, index: number): number {

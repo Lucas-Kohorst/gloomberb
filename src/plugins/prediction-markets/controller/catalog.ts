@@ -25,14 +25,12 @@ import type {
 type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
 
-export const POLYMARKET_CATALOG_POLL_MS = 30_000;
-export const KALSHI_CATALOG_POLL_MS = 20_000;
-
 interface UsePredictionCatalogDataOptions {
   browseTab: PredictionBrowseTab;
   categoryId: PredictionCategoryId;
   includeKalshi: boolean;
   includePolymarket: boolean;
+  pollIntervalMs: number;
   searchQuery: string;
 }
 
@@ -53,6 +51,7 @@ export function usePredictionCatalogData({
   categoryId,
   includeKalshi,
   includePolymarket,
+  pollIntervalMs,
   searchQuery,
 }: UsePredictionCatalogDataOptions) {
   const [catalogCache, setCatalogCache] = useState<PredictionCatalogCache>({});
@@ -383,12 +382,12 @@ export function usePredictionCatalogData({
     });
     const intervalId = setInterval(() => {
       void loadPolymarket(polymarketBrowseKey, "", categoryId);
-    }, POLYMARKET_CATALOG_POLL_MS);
+    }, pollIntervalMs);
     return () => {
       cancelStartup();
       clearInterval(intervalId);
     };
-  }, [categoryId, includePolymarket, loadPolymarket, polymarketBrowseKey]);
+  }, [categoryId, includePolymarket, loadPolymarket, pollIntervalMs, polymarketBrowseKey]);
 
   useEffect(() => {
     if (!includeKalshi) return;
@@ -397,12 +396,12 @@ export function usePredictionCatalogData({
     });
     const intervalId = setInterval(() => {
       void loadKalshi(kalshiBrowseKey, "", categoryId);
-    }, KALSHI_CATALOG_POLL_MS);
+    }, pollIntervalMs);
     return () => {
       cancelStartup();
       clearInterval(intervalId);
     };
-  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi]);
+  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
 
   useEffect(() => {
     if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {

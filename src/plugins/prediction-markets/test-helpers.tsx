@@ -6,9 +6,10 @@ import {
   appReducer,
   createInitialState,
   PaneInstanceProvider,
+  type AppAction,
 } from "../../state/app/context";
 import { MemoryPluginPersistence } from "../../test-support/plugin-persistence";
-import { createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
+import { createConfigBackedTestPluginRuntime, createStatefulTestPluginRuntime } from "../../test-support/plugin-runtime";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { Box } from "../../ui";
 import {
@@ -75,8 +76,14 @@ function createConfig(options?: {
   };
 }
 
-function createRuntime(): PluginRuntimeAccess {
-  return createStatefulTestPluginRuntime();
+function createRuntime(dispatch?: (action: AppAction) => void): PluginRuntimeAccess {
+  if (!dispatch) return createStatefulTestPluginRuntime();
+  return createConfigBackedTestPluginRuntime({
+    getConfig: () => harnessStateRef.current?.config,
+    setConfig: (config) => {
+      dispatch({ type: "SET_CONFIG", config });
+    },
+  });
 }
 
 export function installPredictionMarketMocks() {
@@ -350,7 +357,6 @@ export function Harness({
 }: {
   initialFocusedPaneId?: string;
 } = {}) {
-  const runtime = useMemo(() => createRuntime(), []);
   const [state, dispatch] = useReducer(
     appReducer,
     (() => {
@@ -360,6 +366,7 @@ export function Harness({
     })(),
   );
   harnessStateRef.current = state;
+  const runtime = useMemo(() => createRuntime(dispatch), [dispatch]);
   return (
     <AppContext value={{ state, dispatch }}>
       <PaneInstanceProvider paneId={TEST_PANE_ID}>

@@ -82,7 +82,50 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Will the Fed cut rates?");
     expect(frame).toContain("updated");
-    expect(frame).toContain("poll 20s");
+    expect(frame).toContain("poll 1m");
+    expect(frame).not.toContain("poll 20s");
+  });
+
+  test("catalog poll chip opens interval options and applying one updates the footer", async () => {
+    installPredictionMarketMocks();
+
+    testSetup = await testRender(<Harness />, { width: 120, height: 34 });
+    await flushFrames(testSetup);
+
+    let frame = testSetup.captureCharFrame();
+    expect(frame).toContain("poll 1m");
+
+    const lines = frame.split("\n");
+    const footerRow = lines.findIndex((line) => line.includes("poll 1m"));
+    const pollCol = lines[footerRow]?.indexOf("poll 1m") ?? -1;
+    expect(footerRow).toBeGreaterThanOrEqual(0);
+    expect(pollCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(pollCol + 1, footerRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("1 minute");
+    expect(frame).toContain("5 minutes");
+    expect(frame).toContain("15 minutes");
+    expect(frame).toContain("30 minutes");
+
+    const optionLines = frame.split("\n");
+    const fiveRow = optionLines.findIndex((line) => line.includes("5 minutes"));
+    expect(fiveRow).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(4, fiveRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup);
+
+    frame = testSetup.captureCharFrame();
+    expect(frame).toContain("poll 5m");
     expect(frame).not.toContain("poll 1m");
   });
 
@@ -224,8 +267,8 @@ describe("prediction markets pane interactions", () => {
     expect(metricsHeader).toContain("OI");
     expect(metricsHeader).toContain("SPREAD");
     expect(metricsHeader).toContain("LAST");
-    expect(frame).toContain("poll 5s");
     expect(frame).toContain("updated ~0m");
+    expect(frame).not.toContain("poll 5s");
   });
 
   test("focuses the pane when a market row is clicked", async () => {
