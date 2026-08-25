@@ -79,4 +79,15 @@ describe("HostedTickerRepository", () => {
     const loaded = await repo.loadAllTickers();
     expect(loaded.map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT", "NVDA"]);
   });
+
+  test("replaceAll writes the remaining book once", async () => {
+    installMemoryStorage();
+    setHostedConfigUserId("user-1");
+    const repo = new HostedTickerRepository([record("AAPL"), record("HOOD"), record("MSFT")]);
+    repo.replaceAll([record("AAPL"), record("MSFT")]);
+    const loaded = await repo.loadAllTickers();
+    expect(loaded.map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
+    const next = new HostedTickerRepository();
+    expect((await next.loadAllTickers()).map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "MSFT"]);
+  });
 });

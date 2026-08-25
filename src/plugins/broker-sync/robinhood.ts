@@ -72,13 +72,12 @@ export const robinhoodBroker: BrokerAdapter = {
   },
 
   async disconnect(instance) {
-    try {
-      const module = await loadRobinhoodNativeModule();
-      await module.robinhoodBroker.disconnect?.(instance);
-    } catch {
-      // Native sync is unavailable in some renderers; still mark disconnected.
-    }
     setStatus(instance.id, "disconnected");
+    // Don't await the native/browser module: hosted loads it as a separate
+    // chunk, and a missing or slow import would freeze Disconnect.
+    void loadRobinhoodNativeModule()
+      .then((module) => module.robinhoodBroker.disconnect?.(instance))
+      .catch(() => {});
   },
 
   getStatus(instance) {

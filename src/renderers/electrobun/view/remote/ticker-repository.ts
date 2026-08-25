@@ -49,4 +49,11 @@ export class RemoteTickerRepository {
     }
     await backendRequest("ticker.delete", { symbol });
   }
+
+  /** Returns false on desktop so callers fall back to per-ticker RPCs. */
+  replaceAll(tickers: Iterable<TickerRecord>): boolean {
+    if (!this.hosted) return false;
+    this.hosted.replaceAll(tickers);
+    return true;
+  }
 }

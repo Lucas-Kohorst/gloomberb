@@ -33,6 +33,9 @@ const electrobunConfigStoreHost: ConfigStoreHost = {
       writeHostedUserConfig(config);
       writeHostedByokKeys(config);
       getHostedConfigSnapshotPusher().schedule(config);
+      // Worker config.save is a no-op. Posting the whole workspace still
+      // encodeRpcValue's it on the main thread and can stall Disconnect.
+      return;
     }
     await backendRequest("config.save", { config });
   },
