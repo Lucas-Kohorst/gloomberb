@@ -28,7 +28,7 @@ import {
   type CatalogSortPreference,
 } from "./catalog-settings";
 import { usePluginAppActions } from "../../runtime";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
 import { type PromptContext, useDialog } from "../../../ui/dialog";
 import {
@@ -344,8 +344,8 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
     error: predictionError,
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: () => chartSelected(selectedRow), disabled: !selectedRow },
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refreshCatalog, disabled: liveLoading },
+      paneSearchHint(focusSearch),
+      paneRefreshHint(refreshCatalog, { disabled: liveLoading }),
     ],
     showOpenHint: !!selectedUrl,
   });

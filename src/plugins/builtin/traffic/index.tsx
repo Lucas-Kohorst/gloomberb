@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  dataErrorMessage,
   EmptyState,
   InputSearchBar,
   Spinner,
   Tabs,
+  unavailableTitle,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -19,6 +21,7 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
+  paneDelayedStatus,
   paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
@@ -182,14 +185,13 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
     return false;
   }, [cycleBbox, focusSearch, kind]);
 
-  const delayedLabel = kind === "aircraft" ? "delayed" : "delayed";
   const bbox = findBbox(bboxId);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(kind === "aircraft" ? [{ id: "bbox", parts: [{ text: bbox.label, tone: "muted" as const }] }] : [
       { id: "scope", parts: [{ text: "Baltic AIS", tone: "muted" as const }] },
     ]),
-    ...(vehicles.length > 0 ? [{ id: "delayed", parts: [{ text: delayedLabel, tone: "muted" as const }] }] : []),
-  ], [bbox.label, delayedLabel, kind, vehicles.length]);
+    ...(vehicles.length > 0 ? [paneDelayedStatus()] : []),
+  ], [bbox.label, kind, vehicles.length]);
 
   usePaneStatusLinkFooter({
     registrationId: paneId,
@@ -254,7 +256,10 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height} padding={1}>
         {tabs}
-        <EmptyState title={kind === "aircraft" ? "OpenSky unavailable." : "AIS unavailable."} />
+        <EmptyState
+          title={unavailableTitle(kind === "aircraft" ? "OpenSky" : "AIS")}
+          message={dataErrorMessage(error)}
+        />
       </Box>
     );
   }

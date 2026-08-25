@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, TextAttributes, type InputRenderable } from "../../../ui";
 import {
   DataTableView,
+  dataErrorMessage,
   EmptyState,
   InputSearchBar,
   Spinner,
   Tabs,
+  unavailableTitle,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -22,6 +24,7 @@ import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
+  paneDelayedStatus,
   paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
@@ -167,7 +170,7 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(kind !== "all" ? [{ id: "kind", parts: [{ text: kind, tone: "muted" as const }] }] : []),
-    ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
+    ...(rows.length > 0 ? [paneDelayedStatus()] : []),
   ], [kind, rows.length]);
 
   usePaneStatusLinkFooter({
@@ -230,7 +233,7 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height} padding={1}>
         {tabs}
-        <EmptyState title="World Bank unavailable." />
+        <EmptyState title={unavailableTitle("World Bank")} message={dataErrorMessage(error)} />
       </Box>
     );
   }

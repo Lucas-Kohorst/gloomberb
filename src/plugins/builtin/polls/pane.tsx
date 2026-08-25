@@ -22,6 +22,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { encodeSortPreference } from "../../../components/data-table/sort-settings";
@@ -685,12 +686,12 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const baseHints = useMemo(() => {
     return detailOpen
       ? [
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          paneRefreshHint(() => load(resolvedTab)),
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ]
       : [
-          { id: "search", key: "/", label: "search", onPress: focusSearch },
-          { id: "refresh", key: "r", label: "efresh", onPress: () => load(resolvedTab) },
+          paneSearchHint(focusSearch),
+          paneRefreshHint(() => load(resolvedTab)),
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ];
   }, [detailOpen, load, openSelected, focusSearch, selected?.url, resolvedTab]);

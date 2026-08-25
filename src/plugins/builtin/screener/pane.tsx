@@ -35,6 +35,7 @@ import {
   type ScreenerSortPreference,
 } from "./model";
 import { renderScreenerCell } from "./table";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 
 export function ScreenerPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
@@ -164,8 +165,8 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
       }] : []),
     ],
     hints: [
-      { id: "search", key: "s", label: "earch", onPress: activateSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      paneSearchHint(activateSearch),
+      paneRefreshHint(refresh),
     ],
   }), [activateSearch, filterCount, loadError, loading, refresh]);
 
