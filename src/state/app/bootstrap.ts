@@ -11,6 +11,7 @@ import type { AppSessionSnapshot } from "../../core/state/session-persistence";
 import { getDockedPaneIds } from "../../plugins/pane-manager";
 import { debugLog } from "../../utils/debug-log";
 import { measurePerf, measurePerfAsync } from "../../utils/perf-marks";
+import { isStartupNetworkDeferred, whenStartupBackground } from "../../utils/startup-interaction";
 
 const DEFAULT_WATCHLIST_TICKERS: Array<Pick<TickerMetadata, "ticker" | "exchange" | "currency" | "name">> = [
   { ticker: "AAPL", exchange: "NASDAQ", currency: "USD", name: "Apple Inc." },
@@ -449,9 +450,9 @@ export async function initializeAppState({
     dispatch({ type: "SET_INITIALIZED" });
   });
 
-  measurePerf("startup.enqueue-refresh-plan", () => {
-    const financialEntries = refreshPlan.filter((entry) => entry.mode === "financials");
-    const quoteEntries = refreshPlan.filter((entry) => entry.mode === "quote");
+  const enqueueRefreshPlan = (plan: RefreshPlanEntry[]) => {
+    const financialEntries = plan.filter((entry) => entry.mode === "financials");
+    const quoteEntries = plan.filter((entry) => entry.mode === "quote");
     if (refreshTickersBatch) {
       refreshTickersBatch(financialEntries.map((entry) => ({ ticker: entry.ticker, priority: entry.priority })));
     } else {
@@ -466,6 +467,19 @@ export async function initializeAppState({
         refreshQuote(entry.ticker.metadata.ticker, entry.ticker.metadata.exchange, entry.ticker, entry.priority);
       }
     }
+  };
+
+  measurePerf("startup.enqueue-refresh-plan", () => {
+    if (!isStartupNetworkDeferred()) {
+      enqueueRefreshPlan(refreshPlan);
+      return;
+    }
+    enqueueRefreshPlan(refreshPlan.filter((entry) => entry.priority === 0));
+    const backgroundPlan = refreshPlan.filter((entry) => entry.priority > 0);
+    if (backgroundPlan.length === 0) return;
+    void whenStartupBackground().then(() => {
+      enqueueRefreshPlan(backgroundPlan);
+    });
   }, { count: refreshPlan.length });
 
   void measurePerfAsync("startup.auto-import-broker-positions", () => autoImportBrokerPositions(tickerMap), {

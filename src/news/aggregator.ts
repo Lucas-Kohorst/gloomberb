@@ -1,4 +1,5 @@
 import type { NewsCapability } from "../capabilities";
+import { isStartupNetworkDeferred, whenStartupBackground } from "../utils/startup-interaction";
 import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 import {
@@ -182,9 +183,15 @@ export class NewsService {
     const emit = () => listener(this.queries.get(key)?.state ?? createIdleNewsQueryState());
     const unsubscribe = this.subscribe(emit);
     emit();
-    void this.refreshQuery(normalized, false);
-
     let disposed = false;
+    if (isStartupNetworkDeferred()) {
+      void whenStartupBackground().then(() => {
+        if (disposed) return;
+        void this.refreshQuery(normalized, false);
+      });
+    } else {
+      void this.refreshQuery(normalized, false);
+    }
     return () => {
       if (disposed) return;
       disposed = true;

@@ -1,3 +1,4 @@
+import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   buildPredictionCatalogCacheKey,
@@ -377,20 +378,30 @@ export function usePredictionCatalogData({
 
   useEffect(() => {
     if (!includePolymarket) return;
-    void loadPolymarket(polymarketBrowseKey, "", categoryId);
+    const cancelStartup = runAfterStartupBackground(() => {
+      void loadPolymarket(polymarketBrowseKey, "", categoryId);
+    });
     const intervalId = setInterval(() => {
       void loadPolymarket(polymarketBrowseKey, "", categoryId);
     }, POLYMARKET_CATALOG_POLL_MS);
-    return () => clearInterval(intervalId);
+    return () => {
+      cancelStartup();
+      clearInterval(intervalId);
+    };
   }, [categoryId, includePolymarket, loadPolymarket, polymarketBrowseKey]);
 
   useEffect(() => {
     if (!includeKalshi) return;
-    void loadKalshi(kalshiBrowseKey, "", categoryId);
+    const cancelStartup = runAfterStartupBackground(() => {
+      void loadKalshi(kalshiBrowseKey, "", categoryId);
+    });
     const intervalId = setInterval(() => {
       void loadKalshi(kalshiBrowseKey, "", categoryId);
     }, KALSHI_CATALOG_POLL_MS);
-    return () => clearInterval(intervalId);
+    return () => {
+      cancelStartup();
+      clearInterval(intervalId);
+    };
   }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi]);
 
   useEffect(() => {

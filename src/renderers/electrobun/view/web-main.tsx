@@ -40,8 +40,12 @@ import {
   resolveHostedInit,
   resolveHostedSession,
 } from "./hosted-boot";
-import { hydrateHostedWorkspaceFromCloud, restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
+import { restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
 import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
+import {
+  armStartupInteractiveAfterFirstPaint,
+  enableStartupNetworkDeferral,
+} from "../../../utils/startup-interaction";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -142,23 +146,13 @@ async function boot(): Promise<void> {
       hydrateHostedUserConfig(init.config);
       restoreHostedLocalWorkspaceExtras();
       getHostedConfigSnapshotPusher().schedule(init.config);
-      // Overlay per-user localStorage, Worker `/api/config`, and Gloom Cloud
-      // `/sync/snapshot` before the first render so Main Portfolio and the saved
-      // default layout are already in the boot config. Worker ticker RPCs stay
-      // no-ops; the book lives in hosted ticker persist + sync.
-      if (hostedSession?.user) {
-        try {
-          await hydrateHostedWorkspaceFromCloud(init.config, {
-            pullSync: () => apiClient.getSyncSnapshot(),
-          });
-          getHostedConfigSnapshotPusher().schedule(init.config);
-        } catch {
-          // Network or parse failure — proceed with whatever local hydration gave us.
-        }
-      }
+      // Local persist is enough for first paint (move/resize/chat/command bar).
+      // Worker `/api/config` and Gloom Cloud `/sync/snapshot` overlay after the
+      // first frames so a dense Home layout is interactive while they load.
     }
   }
   window.__GLOOM_CLOUD_DEGRADED = degraded;
+  enableStartupNetworkDeferral();
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
   const desktopWindowBridge = createWebWindowBridge(windowKind, paneId);
@@ -184,6 +178,7 @@ async function boot(): Promise<void> {
       </UiHostProvider>
     </ElectrobunErrorBoundary>,
   );
+  armStartupInteractiveAfterFirstPaint();
   bootLog.info("web client started");
 }
 
