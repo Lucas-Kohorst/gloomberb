@@ -18,6 +18,7 @@ import {
   buildNativeWindowState,
   resolvePaneManagementShortcut,
   resolveAppHeaderHeightCells,
+  resolveAppStatusBarHeightCells,
   Shell,
 } from "./index";
 import { buildNativeTransientOccluders } from "./native/window-state";
@@ -195,6 +196,13 @@ describe("Shell", () => {
   test("uses the desktop titlebar overlay height for shell chrome math", () => {
     expect(resolveAppHeaderHeightCells({ titleBarOverlay: true, cellHeightPx: 18 })).toBe(28 / 18);
     expect(resolveAppHeaderHeightCells({ titleBarOverlay: false, cellHeightPx: 18 })).toBe(1);
+  });
+
+  test("reserves the native status-bar extra pixels so panes stop above the sticky footer", () => {
+    expect(resolveAppStatusBarHeightCells({ visible: false, nativePaneChrome: true, cellHeightPx: 18 })).toBe(0);
+    expect(resolveAppStatusBarHeightCells({ visible: true })).toBe(1);
+    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: false, cellHeightPx: 18 })).toBe(1);
+    expect(resolveAppStatusBarHeightCells({ visible: true, nativePaneChrome: true, cellHeightPx: 18 })).toBe(33 / 18);
   });
 
   test("keeps command bar native occlusion scoped to the panel", () => {

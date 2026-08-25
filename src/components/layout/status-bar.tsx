@@ -15,6 +15,7 @@ import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import { useLayoutSwitcher } from "./layout-switcher";
+import { resolveAppStatusBarHeightCells } from "./shell/chrome";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -24,7 +25,7 @@ type SetHoveredControl = (updater: (current: HoveredControl) => HoveredControl) 
 
 export function StatusBar() {
   useThemeColors();
-  const { nativePaneChrome } = useUiCapabilities();
+  const { nativePaneChrome, cellHeightPx } = useUiCapabilities();
   const registry = getSharedRegistry();
   const dispatch = useAppDispatch();
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
@@ -70,7 +71,12 @@ export function StatusBar() {
   return (
     <Box
       flexDirection="row"
-      height={1}
+      height={resolveAppStatusBarHeightCells({
+        visible: true,
+        nativePaneChrome,
+        cellHeightPx,
+      })}
+      flexShrink={0}
       alignItems="center"
       backgroundColor={colors.panel}
       data-gloom-role="status-bar"

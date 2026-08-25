@@ -274,13 +274,16 @@ body.gloom-dragging {
 [data-gloom-role="status-bar"] {
   /* 4px top + 10px bottom (4 + 6px window/radius clearance) + 1px border-top.
      Border-box without that extra 1px left a 17px content box that sheared
-     18px line boxes; flush 4px bottom sat the version pill on the curve. */
+     18px line boxes; flush 4px bottom sat the version pill on the curve.
+     Keep this extra in NATIVE_STATUS_BAR_EXTRA_PX so the pane grid stops here. */
   flex: 0 0 calc(var(--cell-h) + 15px) !important;
   height: calc(var(--cell-h) + 15px) !important;
   min-height: calc(var(--cell-h) + 15px) !important;
   max-height: calc(var(--cell-h) + 15px) !important;
   align-items: center;
   overflow: visible;
+  position: relative;
+  z-index: 20;
   padding-inline: 8px;
   padding-top: 4px;
   padding-bottom: 10px;

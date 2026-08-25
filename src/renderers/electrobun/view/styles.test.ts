@@ -44,6 +44,7 @@ describe("desktop chrome clip", () => {
     expect(statusBar).toContain("line-height: 1.15 !important");
     expect(statusBar).toContain("overflow: visible");
     expect(statusBar).toContain("border-top: 1px solid");
+    expect(statusBar).toContain("z-index: 20");
 
     const composer = cssRule(css, '[data-gloom-role="desktop-message-composer"]');
     expect(composer).toContain("flex-shrink: 0 !important");
