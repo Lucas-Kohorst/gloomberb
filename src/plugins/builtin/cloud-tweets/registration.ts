@@ -8,6 +8,7 @@ import { buildTwitterFeedPaneSettingsDef } from "./settings";
 import { createXMarketsNewsCapability } from "./news-capability";
 import { scheduleLatestNewsWarm } from "../news/wire/article-search";
 import {
+  POLLING_X_FEED_QUERY,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
@@ -122,6 +123,18 @@ export function registerTwitterFeedFeature(ctx: GloomPluginContext): void {
     },
     execute: (values) => {
       openTwitterFeed(ctx, typeof values?.query === "string" ? values.query : "");
+    },
+  });
+
+  ctx.registerCommand({
+    id: "twitter-polling-feed-open",
+    label: "Polling X",
+    description: "Open an X feed of poll aggregators and handicappers (VoteHub, RCP, Cook, 538 alumni).",
+    keywords: ["polling", "polls", "votehub", "rcp", "cook", "nate", "x", "twitter"],
+    category: "data",
+    shortcut: "POLX",
+    execute: () => {
+      openTwitterFeed(ctx, POLLING_X_FEED_QUERY);
     },
   });
 

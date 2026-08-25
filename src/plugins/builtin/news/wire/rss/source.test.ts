@@ -178,4 +178,8 @@ describe("createRssNewsCapability", () => {
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThan(feeds.length);
   });
+
+  test("treats RSS as fresh for 15 minutes so default wires are not refetched constantly", () => {
+    expect(RSS_FEED_CACHE_POLICY.staleMs).toBe(15 * 60 * 1000);
+  });
 });

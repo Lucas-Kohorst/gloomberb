@@ -26,6 +26,25 @@ export const TWITTER_FEED_LAUNCH_STATE_KEY = "twitter-feed-launch";
 export const TWITTER_FEED_LAUNCH_SCHEMA_VERSION = 1;
 export const DEFAULT_TWITTER_FEED_QUERY = "list:2090433878028685747";
 export const DEFAULT_TWITTER_FEED_TITLE = "Markets";
+/** Poll aggregators and handicappers from the polling-sources list. */
+export const POLLING_X_FEED_ACCOUNTS = [
+  "VoteHub",
+  "RCPolitics",
+  "270toWin",
+  "CookPolitical",
+  "gelliottmorris",
+  "Nate_Cohn",
+  "DecisionDeskHQ",
+  "50plus1news",
+  "downballotnews",
+  "SplitTicket_",
+  "atlas_intel",
+  "ElectionTime_",
+] as const;
+export const POLLING_X_FEED_QUERY = POLLING_X_FEED_ACCOUNTS
+  .map((handle) => `from:${handle}`)
+  .join(" OR ");
+export const POLLING_X_FEED_TITLE = "Polling";
 export const X_FEED_CONNECTION_ID = "x-feed";
 export const TWEET_CELL_MAX_CHARS = 240;
 export const TWEET_ROW_MAX_LINES = 8;
@@ -109,9 +128,10 @@ export function resolveTwitterFeedQuery(query: string | null | undefined): strin
 }
 
 export function namedTwitterFeedTitle(query: string): string | null {
-  return normalizeFeedQuery(query) === normalizeFeedQuery(DEFAULT_TWITTER_FEED_QUERY)
-    ? DEFAULT_TWITTER_FEED_TITLE
-    : null;
+  const normalized = normalizeFeedQuery(query);
+  if (normalized === normalizeFeedQuery(DEFAULT_TWITTER_FEED_QUERY)) return DEFAULT_TWITTER_FEED_TITLE;
+  if (normalized === normalizeFeedQuery(POLLING_X_FEED_QUERY)) return POLLING_X_FEED_TITLE;
+  return null;
 }
 
 export function deriveFeedTitle(query: string): string {

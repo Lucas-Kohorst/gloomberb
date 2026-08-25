@@ -33,4 +33,13 @@ describe("default RSS feeds", () => {
     expect(adjacent?.url).toBe("https://adjacent.markets/press/rss");
     expect(adjacent?.enabled).toBe(true);
   });
+
+  test("includes Prophet Notes and Sentinel forecasting sources", () => {
+    const prophet = DEFAULT_FEEDS.find((feed) => feed.id === "prophet-notes");
+    const sentinel = DEFAULT_FEEDS.find((feed) => feed.id === "sentinel-team");
+    expect(prophet?.url).toBe("https://www.prophetnotes.com/feed");
+    expect(prophet?.enabled).toBe(true);
+    expect(sentinel?.url).toBe("https://blog.sentinel-team.org/feed");
+    expect(sentinel?.enabled).toBe(true);
+  });
 });
