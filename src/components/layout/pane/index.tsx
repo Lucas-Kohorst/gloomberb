@@ -84,7 +84,7 @@ export function PaneWrapper({
       height={height}
       flexGrow={flexGrow}
       backgroundColor={bg}
-      overflow="hidden"
+      overflow={nativePaneChrome ? undefined : "hidden"}
       {...getPaneWindowAttributes({
         enabled: nativePaneChrome,
         role: "pane-window",

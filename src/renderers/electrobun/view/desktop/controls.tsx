@@ -341,10 +341,11 @@ export function WebMessageComposer({
       height={height}
       backgroundColor={panelFill(colors)}
       onMouseDown={requestFocus}
+      flexShrink={0}
       data-gloom-role="desktop-message-composer"
       style={{
         borderTop: `1px solid ${borderColor}`,
-        overflow: "hidden",
+        overflow: "visible",
       }}
     >
       <Textarea
