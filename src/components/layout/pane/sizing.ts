@@ -27,19 +27,22 @@ function resolvePaneBodyHeight({
   footerVisible,
   reserveFooter = true,
   headerRows = PANE_HEADER_ROWS,
+  footerRows = PANE_FOOTER_ROWS,
 }: {
   height: number;
   nativePaneChrome?: boolean;
   footerVisible?: boolean;
   reserveFooter?: boolean;
   headerRows?: number;
+  footerRows?: number;
 }): number {
   const finiteHeight = Number.isFinite(height) ? height : 1;
   const normalizedHeight = nativePaneChrome ? finiteHeight : Math.max(1, Math.floor(finiteHeight));
-  const footerRows = nativePaneChrome
+  const resolvedFooterRows = Math.max(1, footerRows);
+  const usedFooterRows = nativePaneChrome
     ? footerVisible ? PANE_FOOTER_ROWS : 0
-    : reserveFooter ? PANE_FOOTER_ROWS : 0;
-  return Math.max(1, normalizedHeight - headerRows - footerRows);
+    : reserveFooter ? resolvedFooterRows : 0;
+  return Math.max(1, normalizedHeight - headerRows - usedFooterRows);
 }
 
 function getPaneBodyLayoutProps(nativePaneChrome: boolean | undefined, bodyHeight: number | undefined) {
@@ -58,6 +61,7 @@ export function resolvePaneBodyFrame({
   footerVisible,
   reserveFooter = true,
   headerRows = PANE_HEADER_ROWS,
+  footerRows = PANE_FOOTER_ROWS,
 }: {
   width?: number;
   height?: number;
@@ -65,9 +69,17 @@ export function resolvePaneBodyFrame({
   footerVisible?: boolean;
   reserveFooter?: boolean;
   headerRows?: number;
+  footerRows?: number;
 }) {
   const bodyHeight = typeof height === "number"
-    ? resolvePaneBodyHeight({ height, nativePaneChrome, footerVisible, reserveFooter, headerRows })
+    ? resolvePaneBodyHeight({
+      height,
+      nativePaneChrome,
+      footerVisible,
+      reserveFooter,
+      headerRows,
+      footerRows,
+    })
     : undefined;
   return {
     width: typeof width === "number" ? resolvePaneBodyWidth(width, nativePaneChrome) : undefined,

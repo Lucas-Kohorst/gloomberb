@@ -43,4 +43,21 @@ describe("pane sizing", () => {
       flexBasis: undefined,
     });
   });
+
+  test("subtracts wrapped terminal footer rows from the body without growing on focus", () => {
+    const bodyFrame = resolvePaneBodyFrame({
+      width: 80,
+      height: 30,
+      nativePaneChrome: false,
+      reserveFooter: true,
+      footerRows: 2,
+    });
+
+    expect(bodyFrame.height).toBe(27);
+    expect(bodyFrame.layoutProps).toEqual({
+      height: 27,
+      flexGrow: 0,
+      flexBasis: undefined,
+    });
+  });
 });

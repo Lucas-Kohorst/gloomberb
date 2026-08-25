@@ -56,7 +56,7 @@ export function useSubstackPaneFooter({
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
       ...(detailOpen && selectedArticle
-        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
+        ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedArticle }]
         : []),
       ...(detailOpen && selectedArticle?.url && archiveSelectedArticle
         ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveSelectedArticle }]

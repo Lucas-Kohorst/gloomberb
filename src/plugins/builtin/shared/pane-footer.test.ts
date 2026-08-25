@@ -10,6 +10,7 @@ describe("pane footer action keys", () => {
     expect(PANE_FOOTER_ACTION_KEYS.search).toBe("/");
     expect(PANE_FOOTER_ACTION_KEYS.refresh).toBe("r");
     expect(PANE_FOOTER_ACTION_KEYS.open).toBe("o");
+    expect(PANE_FOOTER_ACTION_KEYS.share).toBe("y");
   });
 
   test("search and refresh hint builders match the bound keys", () => {

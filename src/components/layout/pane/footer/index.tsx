@@ -1,7 +1,13 @@
 import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../../../ui";
 import { useCallback, useRef, useState } from "react";
 import { colors, blendHex } from "../../../../theme/colors";
-import { getShortcutHintWidth, ShortcutHint } from "../../../ui/shortcut-hint";
+import { ShortcutHint } from "../../../ui/shortcut-hint";
+import {
+  packFooterHintRows,
+  PANE_FOOTER_HINT_GAP,
+  totalHintsWidth,
+  measurePaneFooterHintRows,
+} from "./hint-layout";
 import { useRemoteUiNode } from "../../../../remote/semantic-tree";
 import { useOptionalDialog } from "../../../../ui/dialog";
 import {
@@ -26,6 +32,7 @@ export {
   type PaneFooterSegment,
   type PaneHint,
 } from "./model";
+export { measurePaneFooterHintRows } from "./hint-layout";
 export {
   PaneFooterProvider,
   PaneFooterScope,
@@ -152,14 +159,6 @@ function SegmentView({ segment }: { segment: PaneFooterSegment }) {
   return chip;
 }
 
-function hintTextLength(hint: PaneHint, index: number): number {
-  return getShortcutHintWidth(hint.key, hint.label, index > 0 ? " " : "");
-}
-
-function totalHintsWidth(hints: PaneHint[]): number {
-  return hints.reduce((total, hint, index) => total + hintTextLength(hint, index), 0);
-}
-
 function segmentTextLength(segment: PaneFooterSegment): number {
   return segment.parts.reduce((total, part, index) => total + (index > 0 ? 1 : 0) + part.text.length, 0);
 }
@@ -189,11 +188,93 @@ function HintView({ hint, prefixSpace }: { hint: PaneHint; prefixSpace: boolean 
     <ShortcutHint
       hotkey={hint.key}
       label={hint.label}
-      prefix={prefixSpace ? " " : ""}
+      prefix={prefixSpace ? " ".repeat(PANE_FOOTER_HINT_GAP) : ""}
       disabled={hint.disabled}
       dataGloomRole="pane-hint"
       onPress={hint.onPress}
     />
+  );
+}
+
+function InfoSegments({
+  segments,
+  width,
+}: {
+  segments: PaneFooterSegment[];
+  width?: number;
+}) {
+  if (segments.length === 0) return null;
+  return (
+    <Box
+      flexDirection="row"
+      overflow="hidden"
+      flexShrink={1}
+      {...(width != null ? { width } : {})}
+    >
+      {segments.map((segment, index) => (
+        <Box key={segment.id} flexDirection="row" marginRight={index === segments.length - 1 ? 0 : 1}>
+          <SegmentView segment={segment} />
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function TrailingSegments({
+  segments,
+  width,
+  marginLeft = 0,
+}: {
+  segments: PaneFooterSegment[];
+  width?: number;
+  marginLeft?: number;
+}) {
+  if (segments.length === 0) return null;
+  return (
+    <Box
+      flexDirection="row"
+      justifyContent="flex-end"
+      flexShrink={0}
+      overflow="hidden"
+      marginLeft={marginLeft}
+      {...(width != null ? { width } : {})}
+    >
+      {segments.map((segment, index) => (
+        <Box key={segment.id} flexDirection="row" marginRight={index === segments.length - 1 ? 0 : 1}>
+          <SegmentView segment={segment} />
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function HintRow({
+  hints,
+  nativePaneChrome,
+  width,
+}: {
+  hints: PaneHint[];
+  nativePaneChrome: boolean;
+  width?: number;
+}) {
+  if (hints.length === 0) return null;
+  return (
+    <Box
+      flexDirection="row"
+      justifyContent="flex-end"
+      alignItems="center"
+      flexWrap={nativePaneChrome ? "wrap" : undefined}
+      flexShrink={nativePaneChrome ? 1 : 0}
+      overflow={nativePaneChrome ? undefined : "hidden"}
+      data-gloom-role="pane-footer-hints"
+      {...(!nativePaneChrome && width != null ? { width } : {})}
+    >
+      {hints.map((hint, index) => (
+        <Box key={hint.id} flexDirection="row" flexShrink={0}>
+          <HintView hint={hint} prefixSpace={!nativePaneChrome && index > 0} />
+        </Box>
+      ))}
+    </Box>
   );
 }
 
@@ -208,6 +289,7 @@ function FooterContent({
   width?: number;
   showBackground?: boolean;
 }) {
+  const { nativePaneChrome = false } = useUiCapabilities();
   const hasInfo = footer.info.length > 0;
   const trailingInfo = footer.trailingInfo ?? [];
   const hasTrailingInfo = trailingInfo.length > 0;
@@ -220,16 +302,19 @@ function FooterContent({
   const trailingWidth = hasTrailingInfo
     ? Math.min(availableWidth ?? totalTrailingInfoWidth(trailingInfo), totalTrailingInfoWidth(trailingInfo))
     : 0;
-  const hintsWidth = hasHints
-    ? Math.min(
-      availableWidth ?? totalHintsWidth(visibleHints),
-      totalHintsWidth(visibleHints),
-    )
+  const hintRows = nativePaneChrome || availableWidth == null
+    ? (hasHints ? [visibleHints] : [])
+    : packFooterHintRows(visibleHints, Math.max(1, availableWidth - trailingWidth - trailingGap));
+  const primaryHints = hintRows[0] ?? [];
+  const overflowHints = hintRows.slice(1).flat();
+  const primaryHintsWidth = primaryHints.length > 0
+    ? Math.min(availableWidth ?? totalHintsWidth(primaryHints), totalHintsWidth(primaryHints))
     : 0;
-  const rightWidth = hintsWidth + trailingWidth + trailingGap;
+  const rightWidth = primaryHintsWidth + trailingWidth + trailingGap;
   const infoWidth = availableWidth !== null && hasInfo
     ? Math.max(0, availableWidth - rightWidth)
     : undefined;
+  const rowCount = nativePaneChrome ? 1 : Math.max(1, hintRows.length);
 
   if (!hasInfo && !hasHints && !hasTrailingInfo) {
     return <Box flexGrow={1} height={1} />;
@@ -237,62 +322,44 @@ function FooterContent({
 
   return (
     <Box
-      height={1}
+      height={nativePaneChrome ? undefined : rowCount}
       flexGrow={1}
-      flexDirection="row"
-      justifyContent="space-between"
-      overflow="hidden"
-      backgroundColor={backgroundColor}
+      flexDirection="column"
+      overflow={nativePaneChrome ? undefined : "hidden"}
+      {...(nativePaneChrome ? {
+        style: { minHeight: 0 },
+      } : {})}
     >
-      {hasInfo && (
-        <Box
-          flexDirection="row"
-          overflow="hidden"
-          flexShrink={1}
-          {...(infoWidth != null ? { width: infoWidth } : {})}
-        >
-          {footer.info.map((segment, index) => (
-            <Box key={segment.id} flexDirection="row" marginRight={index === footer.info.length - 1 ? 0 : 1}>
-              <SegmentView segment={segment} />
-            </Box>
-          ))}
-        </Box>
-      )}
-      {(hasHints || hasTrailingInfo) && (
-        <>
-          <Box flexGrow={1} />
-          {hasHints && (
-            <Box
-              flexDirection="row"
-              justifyContent="flex-end"
-              flexShrink={0}
-              overflow="hidden"
-              {...(availableWidth !== null ? { width: hintsWidth } : { flexGrow: hasTrailingInfo ? 0 : 1 })}
-            >
-              {visibleHints.map((hint, index) => (
-                <Box key={hint.id} flexDirection="row">
-                  <HintView hint={hint} prefixSpace={index > 0} />
-                </Box>
-              ))}
-            </Box>
-          )}
-          {hasTrailingInfo && (
-            <Box
-              flexDirection="row"
-              justifyContent="flex-end"
-              flexShrink={0}
-              overflow="hidden"
+      <Box
+        height={nativePaneChrome ? undefined : 1}
+        flexGrow={nativePaneChrome ? 1 : 0}
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        overflow={nativePaneChrome ? undefined : "hidden"}
+      >
+        <InfoSegments segments={footer.info} width={infoWidth} />
+        {(hasHints || hasTrailingInfo) && (
+          <>
+            <Box flexGrow={1} />
+            <HintRow
+              hints={nativePaneChrome ? visibleHints : primaryHints}
+              nativePaneChrome={nativePaneChrome}
+              width={!nativePaneChrome && availableWidth !== null ? primaryHintsWidth : undefined}
+            />
+            <TrailingSegments
+              segments={trailingInfo}
+              width={availableWidth !== null ? trailingWidth : undefined}
               marginLeft={hasHints ? 1 : 0}
-              {...(availableWidth !== null ? { width: trailingWidth } : {})}
-            >
-              {trailingInfo.map((segment, index) => (
-                <Box key={segment.id} flexDirection="row" marginRight={index === trailingInfo.length - 1 ? 0 : 1}>
-                  <SegmentView segment={segment} />
-                </Box>
-              ))}
-            </Box>
-          )}
-        </>
+            />
+          </>
+        )}
+      </Box>
+      {!nativePaneChrome && overflowHints.length > 0 && (
+        <Box height={1} flexDirection="row" justifyContent="flex-end" overflow="hidden">
+          <Box flexGrow={1} />
+          <HintRow hints={overflowHints} nativePaneChrome={false} />
+        </Box>
       )}
     </Box>
   );
@@ -323,11 +390,16 @@ export function PaneFooterBar({
       : blendHex(colors.panel, colors.border, 0.12);
   const reservedRight = Math.max(0, reserveRight);
   const rightPadding = reservedRight > 0 ? reservedRight : 1;
+  const contentWidth = nativePaneChrome
+    ? (width > 0 ? Math.max(0, Math.floor(width) - rightPadding - 1) : 0)
+    : Math.max(0, Math.floor(width) - 1 - reservedRight - (reservedRight > 0 ? 0 : 1));
+  const footerRows = nativePaneChrome
+    ? 1
+    : measurePaneFooterHintRows(resolvedFooter, contentWidth, { focused, nativePaneChrome: false });
 
   if (nativePaneChrome) {
     return (
       <Box
-        height={1}
         flexDirection="row"
         paddingLeft={1}
         paddingRight={rightPadding}
@@ -345,7 +417,7 @@ export function PaneFooterBar({
         <FooterContent
           footer={resolvedFooter}
           focused={focused}
-          width={width > 0 ? Math.max(0, Math.floor(width) - rightPadding - 1) : undefined}
+          width={contentWidth || undefined}
           showBackground={false}
         />
       </Box>
@@ -353,25 +425,37 @@ export function PaneFooterBar({
   }
 
   if (focused || showBorder) {
-    const contentWidth = Math.max(0, Math.floor(width) - 1 - reservedRight - (reservedRight > 0 ? 0 : 1));
+    const terminalContentWidth = Math.max(0, Math.floor(width) - 1 - reservedRight - (reservedRight > 0 ? 0 : 1));
     return (
-      <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused={focused ? "true" : "false"} data-empty={empty ? "true" : "false"}>
-        <Text fg={borderColor} selectable={false}>└</Text>
-        <Box width={contentWidth} height={1} overflow="hidden">
-          {empty
-            ? <Text fg={borderColor} selectable={false}>{"─".repeat(contentWidth)}</Text>
-            : <FooterContent footer={resolvedFooter} focused={focused} width={contentWidth} />}
+      <Box height={footerRows} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused={focused ? "true" : "false"} data-empty={empty ? "true" : "false"}>
+        <Box width={1} height={footerRows} flexDirection="column">
+          {Array.from({ length: Math.max(0, footerRows - 1) }, (_, index) => (
+            <Text key={`l:${index}`} fg={borderColor} selectable={false}>│</Text>
+          ))}
+          <Text fg={borderColor} selectable={false}>└</Text>
         </Box>
-        {reservedRight === 0 && <Text fg={borderColor} selectable={false}>┘</Text>}
+        <Box width={terminalContentWidth} height={footerRows} overflow="hidden">
+          {empty
+            ? <Text fg={borderColor} selectable={false}>{"─".repeat(terminalContentWidth)}</Text>
+            : <FooterContent footer={resolvedFooter} focused={focused} width={terminalContentWidth} />}
+        </Box>
+        {reservedRight === 0 && (
+          <Box width={1} height={footerRows} flexDirection="column">
+            {Array.from({ length: Math.max(0, footerRows - 1) }, (_, index) => (
+              <Text key={`r:${index}`} fg={borderColor} selectable={false}>│</Text>
+            ))}
+            <Text fg={borderColor} selectable={false}>┘</Text>
+          </Box>
+        )}
       </Box>
     );
   }
 
-  const contentWidth = Math.max(0, Math.floor(width) - reservedRight);
+  const unfocusedWidth = Math.max(0, Math.floor(width) - reservedRight);
   return (
-    <Box height={1} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="false" data-empty={empty ? "true" : "false"}>
-      <Box width={contentWidth} height={1} overflow="hidden">
-        <FooterContent footer={resolvedFooter} focused={false} width={contentWidth} />
+    <Box height={footerRows} width={width} flexDirection="row" data-gloom-role="pane-footer" data-focused="false" data-empty={empty ? "true" : "false"}>
+      <Box width={unfocusedWidth} height={footerRows} overflow="hidden">
+        <FooterContent footer={resolvedFooter} focused={false} width={unfocusedWidth} />
       </Box>
     </Box>
   );

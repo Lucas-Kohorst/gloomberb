@@ -34,7 +34,7 @@ export function TweetReaderPane({ focused, width, height }: PaneProps) {
     ? () => copyShareLink(tweetSharePayload(tweet))
     : undefined;
   const shareHint: PaneHint[] = shareTweet
-    ? [{ id: "share", key: "y", label: " share", onPress: shareTweet }]
+    ? [{ id: "share", key: "y", label: "share", onPress: shareTweet }]
     : [];
 
   usePaneStatusLinkFooter({

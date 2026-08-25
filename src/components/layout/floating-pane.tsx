@@ -4,7 +4,7 @@ import { colors, floatingPaneBg } from "../../theme/colors";
 import type { FloatingResizeCorner } from "../../plugins/pane-manager";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./pane/frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./pane/header";
-import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./pane/footer";
+import { hasPaneFooterContent, measurePaneFooterHintRows, PaneFooterBar, type CombinedPaneFooter } from "./pane/footer";
 import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./pane/sizing";
 
 interface FloatingPaneWrapperProps {
@@ -163,12 +163,17 @@ export function FloatingPaneWrapper({
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = shouldReservePaneFooter(nativePaneChrome, showFooter);
   const renderFooter = reserveFooter || showFooter;
+  const footerRows = measurePaneFooterHintRows(footer, Math.max(1, width - 2 - 2), {
+    focused,
+    nativePaneChrome,
+  });
   const bodyFrame = resolvePaneBodyFrame({
     height,
     nativePaneChrome,
     footerVisible: renderFooter,
     reserveFooter,
     headerRows: nativePaneChrome ? resolveNativePaneHeaderRows(cellHeightPx) : 1,
+    footerRows,
   });
 
   return (

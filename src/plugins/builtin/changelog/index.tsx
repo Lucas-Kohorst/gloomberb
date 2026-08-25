@@ -314,7 +314,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       },
     }];
     if (linkRelease) {
-      hints.push({ id: "share", key: "y", label: " share", onPress: shareRelease });
+      hints.push({ id: "share", key: "y", label: "share", onPress: shareRelease });
     }
     return hints;
   }, [linkRelease, loadReleases, shareRelease]);

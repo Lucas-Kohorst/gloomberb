@@ -548,7 +548,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
       ...(detailOpen && selectedArticle
-        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedArticle }]
+        ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedArticle }]
         : []),
       ...(detailOpen && archiveAction.enabled
         ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]

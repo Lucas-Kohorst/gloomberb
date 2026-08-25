@@ -419,8 +419,8 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
     ],
     hints: editing
       ? [
-          { id: "save", key: "Enter", label: " save", onPress: handleSave },
-          { id: "cancel", key: "Esc", label: " cancel", onPress: handleCancel },
+          { id: "save", key: "Enter", label: "save", onPress: handleSave },
+          { id: "cancel", key: "Esc", label: "cancel", onPress: handleCancel },
         ]
       : [
           { id: "add", key: "a", label: "dd", onPress: handleAdd },
