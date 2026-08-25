@@ -89,34 +89,6 @@ describe("StatusBar", () => {
     expect(created).toEqual(["changelog-pane"]);
   });
 
-  test("opens the command bar from the shortcut hint", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-test");
-    config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];
-    const state = {
-      ...createInitialState(config),
-      statusBarVisible: true,
-    };
-    const actions: Array<{ type: string; open?: boolean; query?: string }> = [];
-
-    testSetup = await testRender(
-      <AppContext value={{ state, dispatch: (action) => actions.push(action as { type: string; open?: boolean; query?: string }) }}>
-        <StatusBar />
-      </AppContext>,
-      { width: 120, height: 1 },
-    );
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    const hintX = frame.split("\n")[0]?.indexOf("Ctrl+P") ?? -1;
-    expect(hintX).toBeGreaterThanOrEqual(0);
-
-    await testSetup.mockMouse.click(hintX + 1, 0);
-    await testSetup.renderOnce();
-
-    expect(actions).toContainEqual({ type: "SET_COMMAND_BAR", open: true, query: "" });
-  });
-
   test("opens the discoverable layout preset menu", async () => {
     const config = createDefaultConfig("/tmp/gloomberb-layout-menu-test");
     config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];

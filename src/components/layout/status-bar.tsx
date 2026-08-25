@@ -1,4 +1,4 @@
-import { Box, Span, Text, TextAttributes, useUiCapabilities } from "../../ui";
+import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { useEffect, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { t } from "../../i18n";
@@ -30,7 +30,7 @@ export function StatusBar() {
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
   const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
-  const { activeLayoutIdx, hasMultipleLayouts, openLayoutContextMenu } = useLayoutSwitcher();
+  const { activeLayoutIdx, openLayoutContextMenu } = useLayoutSwitcher();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
 
   const showGridlockTip = gridlockTipVisible && !!registry;
@@ -65,12 +65,6 @@ export function StatusBar() {
     dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
-  const openCommandBar = (event?: StatusBarEvent) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
-  };
-
   if (!statusBarVisible) return null;
 
   return (
@@ -92,23 +86,8 @@ export function StatusBar() {
         },
       } : {})}
     >
-      {nativePaneChrome ? (
-        <CommandBarHint
-          hoveredControl={hoveredControl}
-          nativePaneChrome
-          openCommandBar={openCommandBar}
-          setHoveredControl={setHoveredControl}
-        />
-      ) : (
+      {!nativePaneChrome && (
         <Box paddingLeft={1} flexDirection="row" alignItems="center">
-          {!hasMultipleLayouts && (
-            <CommandBarHint
-              hoveredControl={hoveredControl}
-              nativePaneChrome={false}
-              openCommandBar={openCommandBar}
-              setHoveredControl={setHoveredControl}
-            />
-          )}
           <LayoutSwitcherControl placement="status-bar" />
         </Box>
       )}
@@ -131,31 +110,6 @@ export function StatusBar() {
       )}
       <StatusBarWidgets />
     </Box>
-  );
-}
-
-function CommandBarHint({
-  hoveredControl,
-  nativePaneChrome,
-  openCommandBar,
-  setHoveredControl,
-}: {
-  hoveredControl: HoveredControl;
-  nativePaneChrome: boolean;
-  openCommandBar: (event?: StatusBarEvent) => void;
-  setHoveredControl: SetHoveredControl;
-}) {
-  const hovered = hoveredControl === "command-bar";
-  return (
-    <Text
-      fg={hovered ? colors.text : colors.textDim}
-      {...(!nativePaneChrome ? { bg: hovered ? hoverBg() : undefined } : {})}
-      onMouseOver={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
-      onMouseDown={openCommandBar}
-      {...(nativePaneChrome ? { "data-gloom-interactive": "true" } : {})}
-    >
-      <Span fg={colors.text}>Ctrl+P</Span> {t("command bar")}
-    </Text>
   );
 }
 
