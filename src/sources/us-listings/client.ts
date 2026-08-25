@@ -3,7 +3,7 @@ import type { InstrumentSearchResult } from "../../types/instrument";
 import { createThrottledFetch } from "../../utils/throttled-fetch";
 import { httpFetch } from "../../utils/http-transport";
 import {
-  adjacentCloudDataUrl,
+  keyedDataUrl,
   isHostedWebClient,
 } from "../../plugins/builtin/connections/adjacent-cloud";
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
@@ -42,7 +42,7 @@ function bunTestRuntime(): boolean {
 }
 
 export function usListingsUniverseUrl(): string {
-  const path = adjacentCloudDataUrl(US_LISTINGS_PROVIDER_ID, "universe");
+  const path = keyedDataUrl(US_LISTINGS_PROVIDER_ID, "universe");
   if (isHostedWebClient()) return path;
   return `${SHARE_HOSTED_ORIGIN}${path}`;
 }

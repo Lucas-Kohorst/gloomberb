@@ -1,8 +1,8 @@
 /**
  * US listed-universe security master.
  *
- * Official listings files (Nasdaq Trader symbol directory) are cached on
- * Adjacent Cloud: GET `/api/data/us-listings/universe`. Clients hydrate from
+ * Official listings files (Nasdaq Trader symbol directory) are cached as
+ * keyed-data: GET `/api/data/us-listings/universe`. Clients hydrate from
  * that print and search locally. This is not Yahoo typeahead and not the
  * user's saved `ticker.loadAll` set (hosted RPC returns []).
  *

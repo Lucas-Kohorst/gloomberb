@@ -4,7 +4,7 @@ import { httpFetch } from "../../utils/http-transport";
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1500;
 const FETCH_TIMEOUT_MS = 20_000;
-const YAHOO_CONNECTION_ID = "yahoo";
+export const YAHOO_CONNECTION_ID = "yahoo";
 const RETRYABLE_ERROR = /429|403|401|Too Many Requests|Forbidden|Unauthorized|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed|Failed to get crumb|socket hang up|503|502|504/i;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

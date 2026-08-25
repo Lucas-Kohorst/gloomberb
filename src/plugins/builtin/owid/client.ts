@@ -1,7 +1,7 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { loadOwidChartMetadata, loadOwidChartPrint, loadOwidChartSearch } from "../../../sources/owid/load";
 import type { OwidChartMetadataPrint, OwidChartPrint, OwidChartSearchPrint } from "../../../sources/owid/types";
 import { OWID_CONNECTION_ID } from "./types";
@@ -27,7 +27,7 @@ function hostedFetchImpl(input: RequestInfo | URL, init?: RequestInit): Promise<
 }
 
 async function readHostedJson<T>(keyPath: string, search = ""): Promise<T> {
-  const response = await CLIENT.fetch(adjacentCloudDataUrl("owid", keyPath, search));
+  const response = await CLIENT.fetch(keyedDataUrl("owid", keyPath, search));
   if (!response.ok) {
     let detail = `OWID request failed (${response.status})`;
     try {

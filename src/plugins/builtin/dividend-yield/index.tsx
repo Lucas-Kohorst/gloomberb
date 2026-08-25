@@ -1,9 +1,6 @@
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import { registerConnectionSource } from "../connections/register";
 import { DividendYieldPane } from "./pane";
-
-let disposeDividendConnection: (() => void) | null = null;
 
 export const dividendYieldModule: PluginModule = {
   setup(ctx) {
@@ -14,19 +11,6 @@ export const dividendYieldModule: PluginModule = {
       component: DividendYieldPane,
       isVisible: ({ ticker }) => !!ticker,
     });
-
-    disposeDividendConnection = registerConnectionSource({
-      id: "yahoo-dividends",
-      name: "Yahoo Finance (Dividends)",
-      kind: "api",
-      pluginId: "dividend-yield",
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeDividendConnection?.();
-    disposeDividendConnection = null;
   },
 
   panes: [
