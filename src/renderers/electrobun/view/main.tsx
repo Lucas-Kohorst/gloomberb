@@ -30,6 +30,7 @@ import { createDesktopDeepLinkBridge } from "./desktop-deeplink-bridge";
 import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
+import { enableUiYield } from "../../../utils/ui-yield";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -102,6 +103,7 @@ async function boot() {
   const remoteControlAdapter = init.windowKind === "main"
     ? { registerHandler: setElectrobunRemoteRequestHandler }
     : undefined;
+  enableUiYield();
   measurePerfAsync("startup.electrobun.root-render", async () => {
     root.render(
       <ElectrobunErrorBoundary>

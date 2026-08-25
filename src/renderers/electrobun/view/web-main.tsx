@@ -46,6 +46,7 @@ import {
   armStartupInteractiveAfterFirstPaint,
   enableStartupNetworkDeferral,
 } from "../../../utils/startup-interaction";
+import { enableUiYield } from "../../../utils/ui-yield";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing root element");
@@ -153,6 +154,7 @@ async function boot(): Promise<void> {
   }
   window.__GLOOM_CLOUD_DEGRADED = degraded;
   enableStartupNetworkDeferral();
+  enableUiYield();
   installElectrobunAiHost();
   applyLanguageFromConfig(init.config);
   const desktopWindowBridge = createWebWindowBridge(windowKind, paneId);

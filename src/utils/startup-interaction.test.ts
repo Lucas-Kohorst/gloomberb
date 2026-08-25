@@ -9,9 +9,11 @@ import {
   STARTUP_BACKGROUND_IDLE_TIMEOUT_MS,
   whenStartupBackground,
 } from "./startup-interaction";
+import { resetUiYieldForTests, setUiYieldReason } from "./ui-yield";
 
 afterEach(() => {
   resetStartupInteractionForTests();
+  resetUiYieldForTests();
 });
 
 describe("startup interaction gate", () => {
@@ -106,5 +108,22 @@ describe("startup interaction gate", () => {
       if (previousRaf) globalThis.requestAnimationFrame = previousRaf;
       else delete (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame;
     }
+  });
+
+  test("holds background work after first paint while the user is interacting", async () => {
+    enableStartupNetworkDeferral();
+    setUiYieldReason("input", true);
+    markStartupInteractive();
+
+    let released = false;
+    const pending = whenStartupBackground().then(() => {
+      released = true;
+    });
+    await Bun.sleep(20);
+    expect(released).toBe(false);
+
+    setUiYieldReason("input", false);
+    await pending;
+    expect(released).toBe(true);
   });
 });

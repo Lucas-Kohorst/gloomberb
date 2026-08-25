@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { NewsService } from "./aggregator";
 import { newsProvider, type NewsCapability } from "../capabilities";
 import type { MarketNewsItem } from "../types/news-source";
+import { resetUiYieldForTests, setUiYieldReason, UI_YIELD_QUIET_MS } from "../utils/ui-yield";
 
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
   return {
@@ -727,5 +728,28 @@ describe("NewsService", () => {
       "https://example.com/b",
     ]);
     expect(state.nextCursor).toBe("page-3");
+  });
+
+  it("defers listener notify while the UI is yielding", async () => {
+    const item = makeItem({ url: "https://example.com/yield" });
+    agg.register(makeSource("rss", [item]));
+
+    const seen: number[] = [];
+    const dispose = agg.subscribe(() => {
+      seen.push(agg.getVersion());
+    });
+    setUiYieldReason("input", true);
+    const loading = agg.load({ feed: "latest", limit: 20 });
+    await Bun.sleep(20);
+    expect(seen).toEqual([]);
+    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url))
+      .toEqual([item.url]);
+
+    setUiYieldReason("input", false);
+    await loading;
+    await Bun.sleep(UI_YIELD_QUIET_MS + 20);
+    expect(seen.length).toBeGreaterThan(0);
+    dispose();
+    resetUiYieldForTests();
   });
 });
