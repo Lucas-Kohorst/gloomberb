@@ -167,12 +167,6 @@ export function usePredictionCatalogData({
     ...(kalshiSearchKey ? { [kalshiSearchKey]: kalshiSearch } : {}),
   };
 
-  const browseHasRows =
-    (includePolymarket && polymarketBrowse.length > 0) ||
-    (includeKalshi && kalshiBrowse.length > 0);
-  const browseHasRowsRef = useRef(browseHasRows);
-  browseHasRowsRef.current = browseHasRows;
-
   const activeCatalogKeys = useMemo(
     () =>
       [
@@ -407,9 +401,7 @@ export function usePredictionCatalogData({
     if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {
       return;
     }
-    void loadPolymarket(polymarketSearchKey, debouncedSearchQuery, categoryId, {
-      showPending: !browseHasRowsRef.current,
-    });
+    void loadPolymarket(polymarketSearchKey, debouncedSearchQuery, categoryId);
   }, [
     categoryId,
     debouncedSearchQuery,
@@ -423,9 +415,7 @@ export function usePredictionCatalogData({
     if (!includeKalshi || !kalshiSearchKey || !normalizedSearchQuery) {
       return;
     }
-    void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
-      showPending: !browseHasRowsRef.current,
-    });
+    void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId);
   }, [
     categoryId,
     debouncedSearchQuery,
@@ -446,7 +436,7 @@ export function usePredictionCatalogData({
           polymarketSearchKey,
           debouncedSearchQuery,
           categoryId,
-          { showPending: !browseHasRows, force: true },
+          { force: true },
         );
       }
     }
@@ -457,13 +447,11 @@ export function usePredictionCatalogData({
       });
       if (kalshiSearchKey && normalizedSearchQuery) {
         void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
-          showPending: !browseHasRows,
           force: true,
         });
       }
     }
   }, [
-    browseHasRows,
     categoryId,
     debouncedSearchQuery,
     includeKalshi,
