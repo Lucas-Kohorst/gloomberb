@@ -60,4 +60,18 @@ describe("webDataTableRowPropsAreEqual", () => {
     const next = { ...prev, renderCell: () => ({ text: "2" }) };
     expect(webDataTableRowPropsAreEqual(prev, next)).toBe(false);
   });
+
+  test("re-renders when arriving or background identity changes even if revision matches", () => {
+    const prev = baseProps();
+    const arriving = { ...prev, isRowArriving: () => true };
+    const background = { ...prev, getRowBackgroundColor: () => "#111" };
+    expect(webDataTableRowPropsAreEqual(prev, arriving)).toBe(false);
+    expect(webDataTableRowPropsAreEqual(prev, background)).toBe(false);
+  });
+
+  test("re-renders when the item identity changes even if revision matches", () => {
+    const prev = baseProps();
+    const next = { ...prev, item: { id: "AAPL" } };
+    expect(webDataTableRowPropsAreEqual(prev, next)).toBe(false);
+  });
 });

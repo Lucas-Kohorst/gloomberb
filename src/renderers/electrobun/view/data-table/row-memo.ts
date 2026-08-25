@@ -45,15 +45,15 @@ export function webDataTableRowPropsAreEqual(
   next: WebDataTableRowMemoProps,
 ): boolean {
   if (!layoutPropsEqual(prev, next)) return false;
+  if (prev.item !== next.item) return false;
+  if (prev.getRowBackgroundColor !== next.getRowBackgroundColor) return false;
+  if (prev.isRowArriving !== next.isRowArriving) return false;
+  if (prev.renderSectionHeader !== next.renderSectionHeader) return false;
   if (prev.rowRevision !== undefined && prev.rowRevision === next.rowRevision) {
     return true;
   }
-  return prev.item === next.item
-    && prev.rowRevision === next.rowRevision
+  return prev.rowRevision === next.rowRevision
     && prev.renderCell === next.renderCell
-    && prev.renderSectionHeader === next.renderSectionHeader
-    && prev.getRowBackgroundColor === next.getRowBackgroundColor
-    && prev.isRowArriving === next.isRowArriving
     && prev.focusPane === next.focusPane
     && prev.onTableMouseDown === next.onTableMouseDown
     && prev.onActivateRow === next.onActivateRow

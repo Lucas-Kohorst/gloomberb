@@ -50,6 +50,12 @@ export function AiScreenerResultsView({
 }) {
   const detailTextWidth = Math.max(12, width - 2);
   const warningColor = colors.borderFocused;
+  const revisionScope = useMemo(() => {
+    const reasons = [...resultMap.entries()]
+      .map(([symbol, result]) => `${symbol}=${result.reason}`)
+      .join("|");
+    return `${activeTab?.id ?? ""}:${reasons}`;
+  }, [activeTab?.id, resultMap]);
   const summaryLines = useMemo(() => (
     activeTab?.summary
       ? wrapTextLines(activeTab.summary, detailTextWidth, 2)
@@ -123,6 +129,7 @@ export function AiScreenerResultsView({
             onHeaderClick={onHeaderClick}
             onRootKeyDown={onRootKeyDown}
             resetScrollKey={activeTab.id}
+            revisionScope={revisionScope}
             onRowActivate={onRowActivate}
             emptyTitle="No matches yet."
             emptyHint={promptDirty && !isRunningActiveTab

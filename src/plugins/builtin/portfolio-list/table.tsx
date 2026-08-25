@@ -114,6 +114,13 @@ export function PortfolioTickerTable({
       resetScrollKey={resetScrollKey}
       onRowActivate={onRowActivate}
       rootHeight={rootHeight}
+      revisionScope={[
+        columnContext.portfolioTotalMarketValue ?? 0,
+        columnContext.baseCurrency,
+        columnContext.supplementalVersion ?? 0,
+        columnContext.activeTab ?? "",
+        objectVersion(columnContext.exchangeRates),
+      ].join("|")}
     />
   );
 }
