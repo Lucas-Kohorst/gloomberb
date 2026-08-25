@@ -1,4 +1,5 @@
 import { runAfterStartupBackground } from "../../../utils/startup-interaction";
+import { shouldYieldToUi } from "../../../utils/ui-yield";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   buildPredictionCatalogCacheKey,
@@ -377,6 +378,7 @@ export function usePredictionCatalogData({
       void loadPolymarket(polymarketBrowseKey, "", categoryId);
     });
     const intervalId = setInterval(() => {
+      if (shouldYieldToUi()) return;
       void loadPolymarket(polymarketBrowseKey, "", categoryId);
     }, pollIntervalMs);
     return () => {
@@ -391,6 +393,7 @@ export function usePredictionCatalogData({
       void loadKalshi(kalshiBrowseKey, "", categoryId);
     });
     const intervalId = setInterval(() => {
+      if (shouldYieldToUi()) return;
       void loadKalshi(kalshiBrowseKey, "", categoryId);
     }, pollIntervalMs);
     return () => {

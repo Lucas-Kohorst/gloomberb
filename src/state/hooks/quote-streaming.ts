@@ -4,6 +4,8 @@ import type { QuoteSubscriptionTarget } from "../../types/data-provider";
 import type { Quote } from "../../types/financials";
 import { debugLog } from "../../utils/debug-log";
 import { normalizeSymbol } from "../../utils/exchanges";
+import { isStartupNetworkDeferred, whenStartupBackground } from "../../utils/startup-interaction";
+import { shouldYieldToUi, whenUiQuiet } from "../../utils/ui-yield";
 import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
 import { useQuoteEntries } from "../../market-data/hooks";
 import type { InstrumentRef } from "../../market-data/request-types";
@@ -160,6 +162,12 @@ export function useQuoteUpdates(
     let inFlight = false;
     const refresh = async () => {
       if (cancelled || inFlight) return;
+      if (shouldYieldToUi()) {
+        void whenUiQuiet().then(() => {
+          void refresh();
+        });
+        return;
+      }
       inFlight = true;
       try {
         await coordinator.loadQuotesBatch(instruments, { forceRefresh: true });
@@ -169,7 +177,14 @@ export function useQuoteUpdates(
         inFlight = false;
       }
     };
-    void refresh();
+    if (isStartupNetworkDeferred() || shouldYieldToUi()) {
+      void whenStartupBackground().then(() => {
+        if (cancelled) return;
+        void refresh();
+      });
+    } else {
+      void refresh();
+    }
     const intervalId = setInterval(() => void refresh(), pollIntervalMs);
     return () => {
       cancelled = true;
