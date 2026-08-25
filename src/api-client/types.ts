@@ -711,6 +711,7 @@ export interface CloudEquityDiagnosticPending {
 
 export interface CloudEquityDiagnosticResponse {
   schemaVersion: 1;
+  access: "preview" | "full";
   symbol: string;
   exchange: string;
   companyName?: string;

@@ -29,6 +29,13 @@ const REFRESH_SCOPE = "equity-diagnostic:refresh";
 const LABEL_WIDTH = 10;
 const STACK_BELOW_WIDTH = 44;
 const COVERAGE_LABEL_WIDTH = 16;
+const LOADING_STEPS = [
+  "Gloom Cloud market data",
+  "SEC EDGAR filings",
+  "FINRA short interest",
+  "Gloom News",
+  "Reviewing evidence",
+] as const;
 
 interface DiagnosticFailure {
   status?: number;
@@ -56,8 +63,9 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
   const [state, setState] = useState<{
     report: CloudEquityDiagnosticResponse | null;
     loading: boolean;
+    loadingStep: number;
     failure: DiagnosticFailure | null;
-  }>({ report: null, loading: false, failure: null });
+  }>({ report: null, loading: false, loadingStep: 0, failure: null });
   const generationRef = useRef(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,7 +79,7 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
     clearPoll();
     generationRef.current += 1;
     const generation = generationRef.current;
-    setState((current) => ({ ...current, loading: true, failure: null }));
+    setState((current) => ({ ...current, loading: true, loadingStep: 1, failure: null }));
 
     const request = (nextMode: CloudEquityDiagnosticMode) => {
       withConnectionRequest("gloom-cloud", "equity-diagnostic", () =>
@@ -80,17 +88,26 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
         .then((result) => {
           if (generationRef.current !== generation) return;
           if (result.status === "generating") {
+            setState((current) => ({
+              ...current,
+              loadingStep: Math.min(LOADING_STEPS.length, current.loadingStep + 1),
+            }));
             const retryAfterMs = Math.max(10, Math.min(5_000, result.retryAfterMs));
             pollTimerRef.current = setTimeout(() => request("cache-first"), retryAfterMs);
             return;
           }
           clearPoll();
-          setState({ report: result, loading: false, failure: null });
+          setState({ report: result, loading: false, loadingStep: 0, failure: null });
         })
         .catch((error: unknown) => {
           if (generationRef.current !== generation) return;
           clearPoll();
-          setState((current) => ({ report: current.report, loading: false, failure: toFailure(error) }));
+          setState((current) => ({
+            report: current.report,
+            loading: false,
+            loadingStep: 0,
+            failure: toFailure(error),
+          }));
         });
     };
 
@@ -101,7 +118,7 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
     // A report belongs to one company, so drop it rather than show it under the next.
     generationRef.current += 1;
     clearPoll();
-    setState({ report: null, loading: false, failure: null });
+    setState({ report: null, loading: false, loadingStep: 0, failure: null });
     load("cache-first");
     return clearPoll;
   }, [clearPoll, load]);
@@ -169,6 +186,13 @@ function datasetLabel(dataset: string): string {
   return dataset.replaceAll("_", " ");
 }
 
+function providerLabel(provider?: string): string | undefined {
+  if (!provider) return undefined;
+  if (provider === "Gloomberb News") return "Gloom News";
+  if (provider.includes("Twelve Data") || provider === "Market data providers") return "Gloom Cloud";
+  return provider;
+}
+
 function sortFindings(findings: readonly CloudEquityDiagnosticFinding[]): CloudEquityDiagnosticFinding[] {
   return [...findings].sort((left, right) => (
     right.severity - left.severity || right.confidence - left.confidence
@@ -198,6 +222,18 @@ function SectionHeading({ label }: { label: string }) {
   return (
     <Box height={1}>
       <Text fg={colors.textMuted} attributes={TextAttributes.BOLD}>{t(label)}</Text>
+    </Box>
+  );
+}
+
+function DiagnosticLoading({ step }: { step: number }) {
+  const visible = LOADING_STEPS.slice(0, Math.max(1, step));
+  return (
+    <Box flexDirection="column" gap={1}>
+      {visible.slice(0, -1).map((label) => (
+        <Text key={label} fg={colors.textDim}>{t(label)}</Text>
+      ))}
+      <Spinner label={`${t(visible.at(-1) ?? LOADING_STEPS[0])}...`} />
     </Box>
   );
 }
@@ -295,7 +331,12 @@ function CoverageSection({ coverage, width }: {
     <Box flexDirection="column" width={width}>
       <SectionHeading label="COVERAGE" />
       {coverage.map((entry) => {
-        const detail = [coverageLabel(entry.status), entry.asOf?.slice(0, 10), entry.provider, entry.note]
+        const detail = [
+          coverageLabel(entry.status),
+          entry.asOf?.slice(0, 10),
+          providerLabel(entry.provider),
+          entry.note,
+        ]
           .filter(Boolean)
           .join(" · ");
         return (
@@ -378,6 +419,46 @@ function ReportView({ report, width, failure, onRetry }: {
   );
 }
 
+function PreviewReportView({ report, width, onUpgrade, onPlan }: {
+  report: CloudEquityDiagnosticResponse;
+  width: number;
+  onUpgrade: () => void;
+  onPlan: () => void;
+}) {
+  const evidenceById = useMemo(
+    () => new Map(report.evidence.map((evidence) => [evidence.id, evidence])),
+    [report.evidence],
+  );
+  const finding = report.findings[0];
+  const meta = [
+    report.companyName,
+    t("Free preview"),
+    tf("generated {age}", { age: formatTimeAgo(report.generatedAt) }),
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <Box flexDirection="column" width={width} gap={1}>
+      <Paragraph text={meta} width={width} color={colors.textMuted} />
+      {finding
+        ? <FindingView finding={finding} evidenceById={evidenceById} width={width} />
+        : <EmptyState title="No preview finding is available for this company yet." />}
+      <Box flexDirection="column" width={width}>
+        <SectionHeading label="UNLOCK THE FULL DIAGNOSTIC" />
+        <Paragraph
+          text={t("See the overall verdict, every red flag, anomaly, green flag, and watch item.")}
+          width={width}
+          color={colors.text}
+        />
+        <Box flexDirection="row" marginTop={1} gap={1}>
+          <Button label={t("Upgrade to Pro")} onPress={onUpgrade} />
+          <Button label={t("Manage account")} variant="secondary" onPress={onPlan} />
+        </Box>
+      </Box>
+      <CoverageSection coverage={report.coverage} width={width} />
+    </Box>
+  );
+}
+
 export function EquityDiagnosticView({ focused, width }: {
   focused: boolean;
   width: number;
@@ -389,13 +470,17 @@ export function EquityDiagnosticView({ focused, width }: {
   const openPlan = useCloudPlanAction();
   const { nativePaneChrome } = useUiCapabilities();
 
-  const entitled = access.emailVerified && access.hasProAccess;
-  const { report, loading, failure, load } = useEquityDiagnostic(symbol, exchange, entitled);
+  const requestEnabled = access.emailVerified;
+  const { report, loading, loadingStep, failure, load } = useEquityDiagnostic(
+    symbol,
+    exchange,
+    requestEnabled,
+  );
 
   const signInRequired = !access.signedIn || failure?.status === 401;
   const verificationRequired = !signInRequired && (!access.emailVerified || failure?.status === 403);
-  const proRequired = !signInRequired && !verificationRequired && (!access.hasProAccess || failure?.status === 402);
-  const canRefresh = !!symbol && !signInRequired && !verificationRequired && !proRequired;
+  const proRequired = !signInRequired && !verificationRequired && failure?.status === 402;
+  const canRefresh = !!symbol && access.hasProAccess && !signInRequired && !verificationRequired && !proRequired;
 
   const refresh = useCallback(() => load("refresh"), [load]);
   const retry = useCallback(() => load("cache-first"), [load]);
@@ -411,7 +496,9 @@ export function EquityDiagnosticView({ focused, width }: {
     info: [
       ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(failure ? [{ id: "error", parts: [{ text: failureText(failure), tone: "warning" as const }] }] : []),
-      ...(report?.status === "partial" ? [{ id: "partial", parts: [{ text: t("partial"), tone: "warning" as const }] }] : []),
+      ...(report?.access === "full" && report.status === "partial"
+        ? [{ id: "partial", parts: [{ text: t("partial"), tone: "warning" as const }] }]
+        : []),
       ...(report?.stale ? [{ id: "stale", parts: [{ text: t("stale"), tone: "warning" as const }] }] : []),
       ...(report?.cached && !report.stale ? [{ id: "cached", parts: [{ text: t("cached"), tone: "muted" as const }] }] : []),
     ],
@@ -452,7 +539,7 @@ export function EquityDiagnosticView({ focused, width }: {
       );
     }
     if (loading && !report) {
-      return <Spinner label="Scanning financials, filings, ownership and news..." />;
+      return <DiagnosticLoading step={loadingStep} />;
     }
     if (!report) {
       return (
@@ -464,6 +551,16 @@ export function EquityDiagnosticView({ focused, width }: {
             <Button label="Retry" variant="secondary" onPress={retry} />
           </Box>
         </Box>
+      );
+    }
+    if (report.access === "preview") {
+      return (
+        <PreviewReportView
+          report={report}
+          width={contentWidth}
+          onUpgrade={openUpgrade}
+          onPlan={openPlan}
+        />
       );
     }
     return <ReportView report={report} width={contentWidth} failure={failure} onRetry={retry} />;
