@@ -8,6 +8,7 @@ import { setSharedRegistryForTests } from "../../plugins/registry";
 import { VERSION } from "../../version";
 import { act, useEffect, useState } from "react";
 import { TransientLayoutProvider, useTransientLayout } from "./transient-layout";
+import { openTuiUiHost } from "../../renderers/opentui/ui-host";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -110,6 +111,41 @@ describe("StatusBar", () => {
     await testSetup.renderOnce();
 
     expect(actions).toContainEqual({ type: "SET_COMMAND_BAR", open: true, query: "LAY " });
+  });
+
+  test("shows saved layout tabs on the native window status bar", async () => {
+    const previousCapabilities = openTuiUiHost.capabilities;
+    openTuiUiHost.capabilities = {
+      ...previousCapabilities,
+      nativePaneChrome: true,
+    };
+
+    try {
+      const config = createDefaultConfig("/tmp/gloomberb-native-status-layout-tabs");
+      config.layouts = [
+        { name: "Home", layout: cloneLayout(config.layout) },
+        { name: "Monitor", layout: cloneLayout(config.layout) },
+        { name: "Adjacent", layout: cloneLayout(config.layout) },
+      ];
+      const state = { ...createInitialState(config), statusBarVisible: true };
+
+      testSetup = await testRender(
+        <AppContext value={{ state, dispatch: () => {} }}>
+          <StatusBar />
+        </AppContext>,
+        { width: 120, height: 1 },
+      );
+      await testSetup.renderOnce();
+
+      const frame = testSetup.captureCharFrame();
+      expect(frame).toContain("^1 Home");
+      expect(frame).toContain("^2 Monitor");
+      expect(frame).toContain("^3 Adjacent");
+      expect(frame).toContain("Layouts");
+      expect(frame).not.toContain("Ctrl+P");
+    } finally {
+      openTuiUiHost.capabilities = previousCapabilities;
+    }
   });
 
   test("shows a transient focus layout tab without replacing saved layouts", async () => {

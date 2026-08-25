@@ -86,11 +86,15 @@ export function StatusBar() {
         },
       } : {})}
     >
-      {!nativePaneChrome && (
-        <Box paddingLeft={1} flexDirection="row" alignItems="center">
-          <LayoutSwitcherControl placement="status-bar" />
-        </Box>
-      )}
+      <Box
+        paddingLeft={nativePaneChrome ? 0 : 1}
+        flexShrink={0}
+        flexDirection="row"
+        alignItems="center"
+        {...(nativePaneChrome ? { gap: 1 } : {})}
+      >
+        <LayoutSwitcherControl />
+      </Box>
       {showGridlockTip && (
         nativePaneChrome ? (
           <NativeGridlockTip
