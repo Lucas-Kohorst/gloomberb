@@ -146,4 +146,77 @@ describe("parseRssFeed", () => {
     const xml = `<rss version="2.0"><channel>${itemsXml}</channel></rss>`;
     expect(parseRssFeed(xml, DEFAULT_CONFIG)).toHaveLength(RSS_FEED_ITEM_LIMIT);
   });
+
+  test("keeps one row when the same guid is listed twice with a bumped pubDate", () => {
+    const xml = `<?xml version="1.0"?>
+      <rss version="2.0"><channel>
+        <item>
+          <title>Lego has launched 330 new products</title>
+          <link>https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</link>
+          <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</guid>
+          <pubDate>2026-08-25T13:04:00</pubDate>
+        </item>
+        <item>
+          <title>Lego has launched 330 new products</title>
+          <link>https://www.fastcompany.com/91595567/lego-has-released-330-new-products-so-far-this-year</link>
+          <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</guid>
+          <pubDate>2026-08-25T16:12:54</pubDate>
+        </item>
+      </channel></rss>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.guid).toBe("https://www.fastcompany.com/91595567/lego-has-launched-330-new-products");
+    expect(items[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
+  });
+
+  test("identity ignores poll timestamp so a republished guid keeps the same id", () => {
+    const first = parseRssFeed(`<rss version="2.0"><channel><item>
+      <title>Lego has launched 330 new products</title>
+      <link>https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</link>
+      <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</guid>
+      <pubDate>2026-08-25T13:04:00</pubDate>
+    </item></channel></rss>`, DEFAULT_CONFIG);
+    const again = parseRssFeed(`<rss version="2.0"><channel><item>
+      <title>Lego has launched 330 new products so far this year</title>
+      <link>https://www.fastcompany.com/91595567/lego-has-released-330-new-products-so-far-this-year</link>
+      <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</guid>
+      <pubDate>2026-08-25T16:12:54</pubDate>
+    </item></channel></rss>`, DEFAULT_CONFIG);
+
+    expect(first).toHaveLength(1);
+    expect(again).toHaveLength(1);
+    expect(again[0]!.id).toBe(first[0]!.id);
+  });
+
+  test("treats timezone-less RSS pubDate as UTC so Fast Company items are not all <1m", () => {
+    const xml = `<rss version="2.0"><channel><item>
+      <title>Lego has launched 330 new products</title>
+      <link>https://www.fastcompany.com/91595567/lego</link>
+      <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego</guid>
+      <pubDate>2026-08-25T13:04:00</pubDate>
+    </item></channel></rss>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+    expect(items[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
+  });
+
+  test("uses Atom id as the stable identity", () => {
+    const xml = `<?xml version="1.0"?>
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>tag:example.com,2026:lego</id>
+          <title>Lego has launched 330 new products</title>
+          <link href="https://example.com/lego-launched"/>
+          <published>2026-08-25T13:04:00Z</published>
+        </entry>
+        <entry>
+          <id>tag:example.com,2026:lego</id>
+          <title>Lego has launched 330 new products</title>
+          <link href="https://example.com/lego-released"/>
+          <updated>2026-08-25T16:12:54Z</updated>
+        </entry>
+      </feed>`;
+    const items = parseRssFeed(xml, DEFAULT_CONFIG);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.guid).toBe("tag:example.com,2026:lego");
+  });
 });

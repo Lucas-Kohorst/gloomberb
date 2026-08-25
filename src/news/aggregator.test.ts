@@ -698,6 +698,44 @@ describe("NewsService", () => {
     expect(state.nextCursor).toBe("page-3");
   });
 
+  it("does not re-serve the same RSS guid when a later poll changes the permalink", async () => {
+    const original = makeItem({
+      id: "rss-lego",
+      guid: "https://www.fastcompany.com/91595567/lego",
+      url: "https://www.fastcompany.com/91595567/lego-has-launched-330-new-products",
+      title: "Lego has launched 330 new products",
+      source: "Fast Company",
+      publishedAt: new Date("2026-08-25T13:04:00.000Z"),
+    });
+    const republished = makeItem({
+      id: "rss-lego-2",
+      guid: "https://www.fastcompany.com/91595567/lego",
+      url: "https://www.fastcompany.com/91595567/lego-has-released-330-new-products",
+      title: "Lego has launched 330 new products so far this year",
+      source: "Fast Company",
+      publishedAt: new Date("2026-08-25T16:12:54.000Z"),
+    });
+    let poll = 0;
+    agg.register(newsProvider({
+      id: "rss",
+      name: "rss",
+      provider: {
+        fetchNews: async () => {
+          poll += 1;
+          return poll === 1 ? [original] : [republished];
+        },
+      },
+    }));
+
+    await agg.poll();
+    await agg.poll();
+    const stories = agg.getFirehose(undefined, 10);
+    expect(stories).toHaveLength(1);
+    expect(stories[0]!.id).toBe(original.id);
+    expect(stories[0]!.guid).toBe(original.guid);
+    expect(stories[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
+  });
+
   it("refresh keeps already paged news", async () => {
     const first = makeItem({ url: "https://example.com/a", title: "First", publishedAt: new Date("2026-01-02") });
     const second = makeItem({ url: "https://example.com/b", title: "Second", publishedAt: new Date("2026-01-01") });

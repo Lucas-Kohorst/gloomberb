@@ -138,7 +138,17 @@ describe("createRssNewsCapability", () => {
     const source = createRssNewsCapability([slow, fast], {
       fetchText: async (url) => {
         if (url.includes("slow")) await slowGate;
-        return { ok: true, text: async () => RSS_FIXTURE };
+        const headline = url.includes("slow") ? "Slow feed NVIDIA rallies" : "Fast feed NVIDIA rallies";
+        const link = url.includes("slow") ? "https://example.com/nvda-slow" : "https://example.com/nvda-fast";
+        return {
+          ok: true,
+          text: async () => `<rss version="2.0"><channel><item>
+  <title>${headline}</title>
+  <link>${link}</link>
+  <guid isPermaLink="true">${link}</guid>
+  <pubDate>${new Date().toUTCString()}</pubDate>
+</item></channel></rss>`,
+        };
       },
     });
 
@@ -181,5 +191,30 @@ describe("createRssNewsCapability", () => {
 
   test("treats RSS as fresh for 15 minutes so default wires are not refetched constantly", () => {
     expect(RSS_FEED_CACHE_POLICY.staleMs).toBe(15 * 60 * 1000);
+  });
+
+  test("does not ingest the same guid twice in one fetch", async () => {
+    const xml = `<rss version="2.0"><channel>
+      <item>
+        <title>Lego has launched 330 new products</title>
+        <link>https://www.fastcompany.com/91595567/lego-has-launched-330-new-products</link>
+        <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego</guid>
+        <pubDate>2026-08-25T13:04:00</pubDate>
+      </item>
+      <item>
+        <title>Lego has launched 330 new products so far this year</title>
+        <link>https://www.fastcompany.com/91595567/lego-has-released-330-new-products</link>
+        <guid isPermaLink="false">https://www.fastcompany.com/91595567/lego</guid>
+        <pubDate>2026-08-25T16:12:54</pubDate>
+      </item>
+    </channel></rss>`;
+    const source = createRssNewsCapability([FEED], {
+      fetchText: async () => ({ ok: true, text: async () => xml }),
+    });
+
+    const items = await source.provider.fetchNews({ scope: "global" });
+    expect(items).toHaveLength(1);
+    expect(items[0]!.guid).toBe("https://www.fastcompany.com/91595567/lego");
+    expect(items[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
   });
 });

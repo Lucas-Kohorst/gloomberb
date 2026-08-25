@@ -26,6 +26,8 @@ export interface NewsArticle {
   title: string;
   url: string;
   source: string;
+  /** RSS/Atom guid or Atom id when the source supplied one. Used for identity. */
+  guid?: string;
   publishedAt: Date;
   summary?: string;
   imageUrl?: string;

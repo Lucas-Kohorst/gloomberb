@@ -5,6 +5,7 @@ import type { PluginPersistence } from "../../../../../types/plugin";
 import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
 import { withConnectionRequest, reportConnectionRequest } from "../../../connections/register";
+import { dedupeNewsArticles } from "../../../../../news/news-model";
 import {
   buildArticleTickerUniverse,
   type ArticleTickerUniverse,
@@ -89,6 +90,7 @@ function deserializeItem(item: unknown): MarketNewsItem | null {
     id: record.id,
     title: record.title,
     url: record.url,
+    guid: typeof record.guid === "string" && record.guid.trim() ? record.guid : undefined,
     source: record.source,
     publishedAt,
     summary: typeof record.summary === "string" ? record.summary : undefined,
@@ -198,7 +200,7 @@ export function createRssNewsCapability(
       getCachedNews(query: NewsQuery): MarketNewsItem[] {
         if (!supportsQuery(query)) return [];
         const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
-        return enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []);
+        return dedupeNewsArticles(enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []));
       },
       async fetchNews(query: NewsQuery, fetchOptions?: { onPartial?: (articles: MarketNewsItem[]) => void }): Promise<MarketNewsItem[]> {
         if (!supportsQuery(query)) return [];
@@ -229,7 +231,7 @@ export function createRssNewsCapability(
           partialQueued = true;
           queueMicrotask(() => {
             partialQueued = false;
-            fetchOptions.onPartial?.(collected.slice());
+            fetchOptions.onPartial?.(dedupeNewsArticles(collected.slice()));
           });
         };
 
@@ -264,7 +266,7 @@ export function createRssNewsCapability(
           });
         }
 
-        return collected;
+        return dedupeNewsArticles(collected);
       },
     },
   });
