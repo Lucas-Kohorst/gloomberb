@@ -1,7 +1,8 @@
 import {
-  ROBINHOOD_HOSTED_CALLBACK_PATH,
+  isRobinhoodOAuthMessageOrigin,
   ROBINHOOD_OAUTH_CHANNEL,
   ROBINHOOD_OAUTH_MESSAGE_SOURCE,
+  robinhoodBrowserRedirectUrl,
 } from "../../shared/robinhood-oauth";
 import type { OAuthCallback } from "./oauth-callback";
 
@@ -41,7 +42,7 @@ export async function startBrowserOAuthCallback(expectedState: string): Promise<
     finish(() => resolveCode(payload.code!));
   };
   const onMessage = (event: MessageEvent) => {
-    if (event.origin !== window.location.origin) return;
+    if (!isRobinhoodOAuthMessageOrigin(event.origin, window.location.origin)) return;
     if (!isRobinhoodOAuthMessage(event.data)) return;
     accept(event.data);
   };
@@ -60,7 +61,7 @@ export async function startBrowserOAuthCallback(expectedState: string): Promise<
     finish(() => rejectCode(new Error("Robinhood sign-in timed out.")));
   }, 5 * 60_000);
   return {
-    redirectUrl: `${window.location.origin}${ROBINHOOD_HOSTED_CALLBACK_PATH}`,
+    redirectUrl: robinhoodBrowserRedirectUrl(window.location.origin),
     code,
     close: async () => {
       clearTimeout(timeout);

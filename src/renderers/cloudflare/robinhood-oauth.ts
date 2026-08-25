@@ -33,7 +33,7 @@ export function renderRobinhoodOAuthCallbackPage(requestUrl: URL): string {
     (function () {
       var payload = ${payload};
       try {
-        if (window.opener) window.opener.postMessage(payload, location.origin);
+        if (window.opener) window.opener.postMessage(payload, "*");
       } catch (error) {}
       try {
         var channel = new BroadcastChannel(${JSON.stringify(ROBINHOOD_OAUTH_CHANNEL)});
