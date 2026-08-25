@@ -204,6 +204,25 @@ export function TickerListTableView({
     };
   }, [financialsMap, resolveCell, safeFlashSymbols]);
 
+  const getRowRevision = useCallback((ticker: TickerRecord) => {
+    const symbol = ticker.metadata.ticker;
+    const financials = financialsMap.get(symbol);
+    const quote = financials?.quote;
+    const lastBar = financials?.priceHistory.at(-1);
+    const flash = safeFlashSymbols.get(symbol) ?? "";
+    return [
+      quote?.lastUpdated ?? "",
+      quote?.price ?? "",
+      quote?.change ?? "",
+      quote?.changePercent ?? "",
+      quote?.bid ?? "",
+      quote?.ask ?? "",
+      financials?.priceHistory.length ?? 0,
+      lastBar?.close ?? "",
+      flash,
+    ].join(":");
+  }, [financialsMap, safeFlashSymbols]);
+
   const showTickerContextMenu = useCallback((
     ticker: TickerRecord,
     event: TableMouseEvent,
@@ -263,6 +282,7 @@ export function TickerListTableView({
       onRowContextMenu={handleRowContextMenu}
       rowContextMenuSurface
       renderCell={renderCell}
+      getRowRevision={getRowRevision}
       emptyStateTitle={emptyTitle}
       emptyStateHint={emptyHint}
       virtualize={virtualize}

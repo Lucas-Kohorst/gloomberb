@@ -85,6 +85,12 @@ export interface DataTableProps<
   ) => string | undefined;
   /** True while a row should show a brief roll-in reveal (web CSS + terminal tint). */
   isRowArriving?: (item: T, index: number) => boolean;
+  /**
+   * Stable visual fingerprint for a row. When set, the web table ignores
+   * `renderCell` identity and only re-renders the row when this value changes
+   * (or selection / geometry). Quote ticks should bump only the rows that moved.
+   */
+  getRowRevision?: (item: T, index: number) => string | number;
   emptyContent?: ReactNode;
   bodyAfter?: ReactNode;
   emptyStateTitle: string;

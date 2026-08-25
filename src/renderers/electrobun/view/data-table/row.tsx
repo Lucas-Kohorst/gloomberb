@@ -21,6 +21,7 @@ import {
   clippedCellTextStyle,
   eventWithCellCoordinates,
 } from "./dom";
+import { webDataTableRowPropsAreEqual } from "./row-memo";
 
 function renderHeaderLabel<C extends DataTableColumn>(
   column: C,
@@ -135,6 +136,31 @@ export function WebDataTableHeader<C extends DataTableColumn>({
   );
 }
 
+export type WebDataTableRowProps<T, C extends DataTableColumn> = {
+  columns: C[];
+  columnGap: number;
+  horizontalPadding: number;
+  focusPane: () => void;
+  onTableMouseDown?: (event: any) => void;
+  onActivateRow?: (item: T, index: number) => void;
+  onRowContextMenu?: DataTableProps<T, C>["onRowContextMenu"];
+  onRowMouseDown?: DataTableProps<T, C>["onRowMouseDown"];
+  onSelectRow: (item: T, index: number) => void;
+  index: number;
+  item: T;
+  itemKey: string;
+  gridTemplateColumns: string;
+  getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
+  isRowArriving?: DataTableProps<T, C>["isRowArriving"];
+  renderCell: DataTableProps<T, C>["renderCell"];
+  renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
+  rowRevision?: string | number;
+  rowSize: number;
+  rowStart: number;
+  rowContextMenuSurface: boolean;
+  selected: boolean;
+};
+
 function WebDataTableRowInner<
   T,
   C extends DataTableColumn,
@@ -156,33 +182,12 @@ function WebDataTableRowInner<
   isRowArriving,
   renderCell,
   renderSectionHeader,
+  rowRevision,
   rowSize,
   rowStart,
   rowContextMenuSurface,
   selected,
-}: {
-  columns: C[];
-  columnGap: number;
-  horizontalPadding: number;
-  focusPane: () => void;
-  onTableMouseDown?: (event: any) => void;
-  onActivateRow?: (item: T, index: number) => void;
-  onRowContextMenu?: DataTableProps<T, C>["onRowContextMenu"];
-  onRowMouseDown?: DataTableProps<T, C>["onRowMouseDown"];
-  onSelectRow: (item: T, index: number) => void;
-  index: number;
-  item: T;
-  itemKey: string;
-  gridTemplateColumns: string;
-  getRowBackgroundColor?: DataTableProps<T, C>["getRowBackgroundColor"];
-  isRowArriving?: DataTableProps<T, C>["isRowArriving"];
-  renderCell: DataTableProps<T, C>["renderCell"];
-  renderSectionHeader?: DataTableProps<T, C>["renderSectionHeader"];
-  rowSize: number;
-  rowStart: number;
-  rowContextMenuSurface: boolean;
-  selected: boolean;
-}) {
+}: WebDataTableRowProps<T, C>) {
   const sectionHeader: DataTableSectionHeader | null =
     renderSectionHeader?.(item, index) ?? null;
   const baseRowStyle: CSSProperties = {
@@ -348,4 +353,10 @@ function WebDataTableRowInner<
   );
 }
 
-export const WebDataTableRow = memo(WebDataTableRowInner) as typeof WebDataTableRowInner;
+export const WebDataTableRow = memo(
+  WebDataTableRowInner,
+  webDataTableRowPropsAreEqual as (
+    prev: WebDataTableRowProps<any, any>,
+    next: WebDataTableRowProps<any, any>,
+  ) => boolean,
+) as typeof WebDataTableRowInner;
