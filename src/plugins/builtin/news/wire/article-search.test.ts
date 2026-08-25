@@ -3,7 +3,10 @@ import type { NewsArticle } from "../../../../news/types";
 import { setSharedNewsService } from "../../../../news/hooks";
 import { normalizeAdjacentNewsArticle, parseAdjacentNewsArticle } from "../../adjacent/normalize";
 import {
+  adjacentArticleSearchText,
+  ARTICLE_SEARCH_POOL_LIMIT,
   ARTICLE_SEARCH_QUERY,
+  cachedNewsArticles,
   cancelRssNewsWarm,
   looksLikeArticleQuery,
   NEWS_WARM_IDLE_TIMEOUT_MS,
@@ -43,6 +46,13 @@ const other = article({
   title: "Fed holds rates as inflation cools",
   source: "CNBC Top News",
   publishedAt: new Date("2026-08-13T12:00:00Z"),
+});
+
+describe("adjacentArticleSearchText", () => {
+  test("keeps Adjacent offline until a 3-character search token exists", () => {
+    expect(adjacentArticleSearchText("ART tr")).toBeNull();
+    expect(adjacentArticleSearchText("ART trum")).toBe("trum");
+  });
 });
 
 describe("looksLikeArticleQuery", () => {
@@ -87,6 +97,26 @@ describe("searchNewsArticles", () => {
     expect(searchNewsArticles([trump, other], "ART trum").map((item) => item.id)).toEqual(["trump"]);
   });
 
+  test("does not scan article body on the command-bar hot path", () => {
+    const buried = article({
+      id: "buried",
+      title: "Fed holds rates as inflation cools",
+      source: "CNBC Top News",
+      body: "Uniquebodytoken appears only in the full HTML dump of this firehose item.",
+    });
+    expect(searchNewsArticles([buried, hormuz], "uniquebodytoken").map((item) => item.id)).toEqual([]);
+  });
+
+  test("matches a Trump headline from title tokens even when a body is present", () => {
+    const trump = article({
+      id: "trump",
+      title: "Trump administration pauses contentious trade talks",
+      source: "AP",
+      body: "<p>".repeat(50_000),
+    });
+    expect(searchNewsArticles([trump, other], "ART trum").map((item) => item.id)).toEqual(["trump"]);
+  });
+
   test("matches Adjacent related-news articles tagged from the public wire", () => {
     const parsed = parseAdjacentNewsArticle({
       article_id: "ap-hormuz",
@@ -101,6 +131,26 @@ describe("searchNewsArticles", () => {
       "adjacent article on the strait",
     );
     expect(matches.map((item) => item.id)).toEqual(["adjacent:ap-hormuz"]);
+  });
+});
+
+describe("cachedNewsArticles", () => {
+  afterEach(() => {
+    setSharedNewsService(null);
+  });
+
+  test("caps the firehose pool at ARTICLE_SEARCH_QUERY.limit", () => {
+    const counts: number[] = [];
+    setSharedNewsService({
+      getFirehose: (_since: unknown, count: number) => {
+        counts.push(count);
+        return [];
+      },
+      getQueryState: () => ({ articles: [] }),
+    } as never);
+    cachedNewsArticles();
+    expect(ARTICLE_SEARCH_POOL_LIMIT).toBe(ARTICLE_SEARCH_QUERY.limit);
+    expect(counts).toEqual([ARTICLE_SEARCH_POOL_LIMIT]);
   });
 });
 

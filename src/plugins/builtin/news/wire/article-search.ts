@@ -59,7 +59,11 @@ const COMMAND_WORDS = new Set([
   "up",
 ]);
 
-export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: 200 };
+/** Headlines scored on the ART hot path — keep this well below a full firehose page. */
+export const ARTICLE_SEARCH_POOL_LIMIT = 200;
+export const ARTICLE_SEARCH_QUERY = { feed: "latest" as const, limit: ARTICLE_SEARCH_POOL_LIMIT };
+/** Summary slice for ART scoring. Full body stays in the reader, not the command bar. */
+export const ARTICLE_SEARCH_SUMMARY_LIMIT = 480;
 
 /** Cap so Firehose / ART still fill within seconds, not minutes, after first paint. */
 export const NEWS_WARM_IDLE_TIMEOUT_MS = 5_000;
@@ -107,15 +111,22 @@ export function looksLikeArticleQuery(query: string): boolean {
   return /^\s*art\b/i.test(query);
 }
 
+/** Adjacent network lookup needs a 3+ char token. `ART tr` stays local; `ART trum` can go out. */
+export function adjacentArticleSearchText(query: string): string | null {
+  const tokens = tokenizeArticleQuery(query);
+  if (!tokens.some((token) => token.length >= 3)) return null;
+  return tokens.join(" ");
+}
+
 export function scoreArticleMatch(article: NewsArticle, tokens: readonly string[]): number {
   if (tokens.length === 0) return 0;
   const title = (article.title ?? "").toLowerCase();
   const source = (article.source ?? "").toLowerCase();
+  const summary = (article.summary ?? "").slice(0, ARTICLE_SEARCH_SUMMARY_LIMIT).toLowerCase();
   const haystack = [
     title,
     source,
-    article.summary ?? "",
-    article.body ?? "",
+    summary,
     ...(article.topics ?? []),
     ...(article.categories ?? []),
     ...(article.tickers ?? []),
@@ -199,7 +210,7 @@ export function buildOpenArticleCommandResults(
 export function cachedNewsArticles(): NewsArticle[] {
   const service = getSharedNewsService();
   if (!service) return [];
-  const pooled = service.getFirehose(undefined, 500);
+  const pooled = service.getFirehose(undefined, ARTICLE_SEARCH_POOL_LIMIT);
   if (pooled.length > 0) return pooled;
   return service.getQueryState(ARTICLE_SEARCH_QUERY).articles;
 }
