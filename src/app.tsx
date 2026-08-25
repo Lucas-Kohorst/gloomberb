@@ -412,13 +412,24 @@ function AppInner({
         <ThemedAppRoot>
           <Header onOpenHelp={() => pluginRegistry.showPane("help")} />
           <TransientLayoutProvider>
-            <Shell
-              pluginRegistry={pluginRegistry}
-              desktopWindowBridge={desktopWindowBridge}
-              desktopDockPreview={desktopDockPreview}
-              commandBarNativeOccluder={commandBarNativeOccluder}
-            />
-            <StatusBar />
+            <Box
+              flexDirection="column"
+              flexGrow={1}
+              flexShrink={1}
+              flexBasis={0}
+              minWidth={0}
+              minHeight={0}
+              overflow="hidden"
+              data-gloom-role="app-workspace"
+            >
+              <Shell
+                pluginRegistry={pluginRegistry}
+                desktopWindowBridge={desktopWindowBridge}
+                desktopDockPreview={desktopDockPreview}
+                commandBarNativeOccluder={commandBarNativeOccluder}
+              />
+              <StatusBar />
+            </Box>
           </TransientLayoutProvider>
           {onboardingActive && onOnboardingComplete ? (
             <OnboardingWizard
