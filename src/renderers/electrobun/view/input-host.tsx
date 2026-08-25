@@ -15,7 +15,7 @@ import {
 import {
   hasWebCtrlModifier,
   isEditableKeyboardTarget,
-  normalizeWebKeyName,
+  resolveWebShortcutKeyName,
   shouldConsumeWebAppKeyDown,
   shouldDispatchWebAppKeyDown,
   webKeySequence,
@@ -27,7 +27,7 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../../theme/font-scale";
 export { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../../../theme/font-scale";
 
 function toKeyEventLike(event: KeyboardEvent): KeyEventLike {
-  const key = normalizeWebKeyName(event.key);
+  const key = resolveWebShortcutKeyName(event);
   let propagationStopped = false;
   return {
     key,

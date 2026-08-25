@@ -193,7 +193,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
                 description="Move focus between panes and floating windows."
               />
               <ShortcutRow
-                badges={["Ctrl+1-9"]}
+                badges={isDesktopWeb ? ["OPT 1-9"] : ["Ctrl+1-9"]}
                 description="Switch saved layouts by number."
               />
               <ShortcutRow

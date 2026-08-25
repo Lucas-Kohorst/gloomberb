@@ -138,9 +138,10 @@ describe("StatusBar", () => {
       await testSetup.renderOnce();
 
       const frame = testSetup.captureCharFrame();
-      expect(frame).toContain("^1 Home");
-      expect(frame).toContain("^2 Monitor");
-      expect(frame).toContain("^3 Adjacent");
+      expect(frame).toContain("OPT 1 Home");
+      expect(frame).toContain("OPT 2 Monitor");
+      expect(frame).toContain("OPT 3 Adjacent");
+      expect(frame).not.toContain("^1 Home");
       expect(frame).not.toContain("Ctrl+P");
     } finally {
       openTuiUiHost.capabilities = previousCapabilities;
