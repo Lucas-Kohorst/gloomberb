@@ -374,6 +374,21 @@ describe("study resolution", () => {
     expect(result.errors[0]).toContain("requires 2 valid input series");
   });
 
+  test("returns actionable errors for unimplemented study kinds instead of throwing", () => {
+    const result = resolveStudies([resolved("a")], [
+      study("atr", "atr", ["a"]),
+      study("stochastic", "stochastic", ["a"]),
+      study("adx", "adx", ["a"]),
+    ]);
+
+    expect(result.series).toEqual([]);
+    expect(result.errors).toEqual([
+      "atr: atr study is not yet implemented.",
+      "stochastic: stochastic study is not yet implemented.",
+      "adx: adx study is not yet implemented.",
+    ]);
+  });
+
   test("preserves the derived unit when a raw ratio mixes dimensions in one currency", () => {
     const price = { ...resolved("price"), unit: "USD/share", unitGroup: "price:USD" };
     const revenue = { ...resolved("revenue", 2), unit: "USD", unitGroup: "currency-total:USD" };

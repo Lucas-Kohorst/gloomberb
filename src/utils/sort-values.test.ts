@@ -29,6 +29,13 @@ describe("compareSortValues", () => {
       expect(compareSortValues("AAPL", empty, "desc")).toBe(-1);
     }
   });
+
+  test("sorts mixed numeric and non-numeric values without returning NaN", () => {
+    expect(compareSortValues("BMO", 1234567890, "asc")).toBe(1);
+    expect(compareSortValues(1234567890, "BMO", "desc")).toBe(1);
+    expect(compareSortValues("123", 456, "asc")).toBe(-333);
+    expect(compareSortValues("AMC", "BMO", "asc")).toBeLessThan(0);
+  });
 });
 
 describe("applySortPreference", () => {

@@ -320,7 +320,7 @@ export class AdjacentClient {
   }
 
   async getSimilarMarkets(id: string): Promise<AdjacentSimilarResponse> {
-    const url = buildUrl(`/markets/${id}/similar`);
+    const url = buildUrl(`${this.marketsPath()}/${id}/similar`);
     const raw = await loadCached(
       "adjacent-similar",
       id,

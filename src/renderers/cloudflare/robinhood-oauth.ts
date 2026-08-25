@@ -16,7 +16,10 @@ export function renderRobinhoodOAuthCallbackPage(requestUrl: URL): string {
     code: code || null,
     state: state || null,
     error: error || null,
-  });
+  })
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
   const heading = error ? "Robinhood sign-in failed." : "Robinhood is connected.";
   const body = error
     ? "Return to Gloomberb and try again."
@@ -51,16 +54,24 @@ export async function proxyRobinhoodTokenRequest(
   request: Request,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
-  const upstream = await fetchImpl(ROBINHOOD_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "content-type": request.headers.get("content-type") || "application/x-www-form-urlencoded",
-      accept: request.headers.get("accept") || "application/json",
-    },
-    body: await request.text(),
-    redirect: "manual",
-    signal: AbortSignal.timeout(15_000),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetchImpl(ROBINHOOD_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "content-type": request.headers.get("content-type") || "application/x-www-form-urlencoded",
+        accept: request.headers.get("accept") || "application/json",
+      },
+      body: await request.text(),
+      redirect: "manual",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    return Response.json(
+      { error: "Robinhood token service is unavailable. Try again." },
+      { status: 502 },
+    );
+  }
   const headers = new Headers();
   const contentType = upstream.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);

@@ -582,6 +582,10 @@ export function resolveStudies(
     else if (spec.kind === "macd") outputs = resolveMacd(spec, input, color);
     else if (spec.kind === "volume") outputs = resolveVolume(spec, input, color);
     else if (spec.kind === "vwap") outputs = resolveVwap(spec, input, color);
+    else if (spec.kind === "atr" || spec.kind === "stochastic" || spec.kind === "adx") {
+      errors.push(`${spec.id}: ${spec.kind} study is not yet implemented.`);
+      return;
+    }
     else {
       const pairedInput = inputs[1]!;
       const inputUnit = seriesUnit(input);

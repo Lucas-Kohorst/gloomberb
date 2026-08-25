@@ -712,7 +712,7 @@ export class NewsService {
   }
 
   getBreaking(count = 20): NewsArticle[] {
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    const oneHourAgo = this.now() - 60 * 60 * 1000;
     return this.articles
       .filter(
         (item) =>

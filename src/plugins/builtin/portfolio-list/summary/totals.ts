@@ -27,6 +27,8 @@ export function calculatePortfolioSummaryTotals(
   let totalMktValue = 0;
   let totalPrevValue = 0;
   let totalCostBasis = 0;
+  let dailyPnl = 0;
+  let unrealizedPnl = 0;
   let hasPositions = false;
   let watchlistChangeSum = 0;
   let watchlistCount = 0;
@@ -53,22 +55,29 @@ export function calculatePortfolioSummaryTotals(
 
     if (quote && activeQuote && totalPriceUnits !== 0) {
       hasPositions = true;
+      const direction = totalPriceUnits >= 0 ? 1 : -1;
       const marketValue = Math.abs(totalPriceUnits) * activeQuote.price;
-      totalMktValue += toBaseQuote(marketValue);
+      const baseMarketValue = toBaseQuote(marketValue);
+      totalMktValue += baseMarketValue;
       const previousClose = quote.previousClose || (activeQuote.price - activeQuote.change);
-      totalPrevValue += toBaseQuote(Math.abs(totalPriceUnits) * previousClose);
-      totalCostBasis += toBasePosition(totalCost);
+      const basePrevValue = toBaseQuote(Math.abs(totalPriceUnits) * previousClose);
+      totalPrevValue += basePrevValue;
+      const baseCostBasis = toBasePosition(totalCost);
+      totalCostBasis += baseCostBasis;
+      dailyPnl += direction * (baseMarketValue - basePrevValue);
+      unrealizedPnl += direction * (baseMarketValue - baseCostBasis);
     } else if (brokerFallbackMktValue != null) {
       hasPositions = true;
-      totalMktValue += toBasePosition(brokerFallbackMktValue);
-      totalCostBasis += toBasePosition(totalCost);
-      totalPrevValue += toBasePosition(brokerFallbackMktValue);
+      const baseBrokerMktValue = toBasePosition(brokerFallbackMktValue);
+      const baseCostBasis = toBasePosition(totalCost);
+      totalMktValue += baseBrokerMktValue;
+      totalCostBasis += baseCostBasis;
+      totalPrevValue += baseBrokerMktValue;
+      unrealizedPnl += baseBrokerMktValue - baseCostBasis;
     }
   }
 
-  const dailyPnl = totalMktValue - totalPrevValue;
   const dailyPnlPct = totalPrevValue !== 0 ? (dailyPnl / totalPrevValue) * 100 : 0;
-  const unrealizedPnl = totalMktValue - totalCostBasis;
   const unrealizedPnlPct = totalCostBasis !== 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
   const avgWatchlistChange = watchlistCount > 0 ? watchlistChangeSum / watchlistCount : 0;
 
