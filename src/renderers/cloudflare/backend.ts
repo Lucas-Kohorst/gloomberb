@@ -162,6 +162,7 @@ async function dispatch(
       const url = typeof request.payload?.url === "string" ? request.payload.url : "";
       const payload = applyHostedSharedVendorKeys(request.payload, {
         ADJACENT_API_KEY: (env as Env & { ADJACENT_API_KEY?: string }).ADJACENT_API_KEY,
+        ADJACENT_DEV_API_KEY: (env as Env & { ADJACENT_DEV_API_KEY?: string }).ADJACENT_DEV_API_KEY,
         ARTIFICIAL_ANALYSIS_API_KEY: (env as Env & { ARTIFICIAL_ANALYSIS_API_KEY?: string }).ARTIFICIAL_ANALYSIS_API_KEY,
       });
       if (url.startsWith("https://api.gloom.sh/")) {

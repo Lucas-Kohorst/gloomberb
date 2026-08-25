@@ -18,6 +18,7 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
+import { adjacentDevPlugin } from "./builtin/adjacent-dev";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
@@ -39,6 +40,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   // Adjacent Cloud owns Polls, AI Benchmarks, and Weather. Other alt-data
   // panes stay independently toggleable product areas.
   adjacentPlugin,
+  adjacentDevPlugin,
   predictionMarketsPlugin,
   congressTradesPlugin,
   buildoutPlugin,
