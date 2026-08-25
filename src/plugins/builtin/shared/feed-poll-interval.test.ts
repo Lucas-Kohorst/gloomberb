@@ -3,6 +3,7 @@ import {
   formatPollIntervalFooterLabel,
   isXLivePollingEnabled,
   nextPollIntervalMinutes,
+  pollIntervalMenuOptions,
   resolveFeedPollIntervalMinutes,
   twitterLivePollIntervalMinutes,
   X_LIVE_POLLING_CONFIG_KEY,
@@ -12,6 +13,15 @@ describe("feed poll interval", () => {
   test("formats the footer label from minutes", () => {
     expect(formatPollIntervalFooterLabel(1)).toBe("poll 1m");
     expect(formatPollIntervalFooterLabel(30)).toBe("poll 30m");
+  });
+
+  test("exposes the shared 1/5/15/30 minute option list", () => {
+    expect(pollIntervalMenuOptions()).toEqual([
+      { value: "1", label: "1 minute" },
+      { value: "5", label: "5 minutes" },
+      { value: "15", label: "15 minutes" },
+      { value: "30", label: "30 minutes" },
+    ]);
   });
 
   test("cycles 1 → 5 → 15 → 30 → 1", () => {

@@ -21,10 +21,6 @@ import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
 import { createPredictionColumns } from "./columns";
 import { getPredictionColumnValue } from "./metrics";
-import {
-  KALSHI_CATALOG_POLL_MS,
-  POLYMARKET_CATALOG_POLL_MS,
-} from "./controller/catalog";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import type {
@@ -118,23 +114,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const catalogUpdatedAgo = useUpdatedAgo(controller.catalogLastRefreshAt);
   const detailUpdatedAgo = useUpdatedAgo(controller.lastRefreshAt);
   const updatedAgo = controller.detailOpen ? detailUpdatedAgo : catalogUpdatedAgo;
-  const pollLabel = useMemo(() => {
-    if (controller.detailOpen) {
-      const venue = controller.selectedSummary?.venue;
-      if (venue === "kalshi") return "poll 5s";
-      if (venue === "polymarket") return "live";
-      return null;
-    }
-    const includeKalshi =
-      controller.effectiveVenueScope === "all" ||
-      controller.effectiveVenueScope === "kalshi";
-    const includePolymarket =
-      controller.effectiveVenueScope === "all" ||
-      controller.effectiveVenueScope === "polymarket";
-    if (includeKalshi) return `poll ${KALSHI_CATALOG_POLL_MS / 1000}s`;
-    if (includePolymarket) return `poll ${POLYMARKET_CATALOG_POLL_MS / 1000}s`;
-    return null;
-  }, [controller.detailOpen, controller.effectiveVenueScope, controller.selectedSummary?.venue]);
+  const liveBook = controller.detailOpen && controller.selectedSummary?.venue === "polymarket";
   const newsTabOpen = controller.detailOpen && controller.detailTab === "news";
   useShortcut((event) => {
     if (!focused) return;
@@ -158,9 +138,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           id: "catalog",
           parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
         }] : []),
-        ...(pollLabel ? [{ id: "poll", parts: [{ text: pollLabel, tone: "value" as const }] }] : []),
+        ...(liveBook ? [{ id: "live", parts: [{ text: "live", tone: "value" as const }] }] : []),
         ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ],
+      trailingInfo: !controller.detailOpen ? [controller.poll.segment] : [],
       hints: [
         { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !graphExpression },
         ...(!controller.detailOpen ? [
@@ -180,16 +161,17 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.detailTab,
     controller.effectiveVenueScope,
     controller.lastRefreshAt,
+    controller.poll.segment,
     controller.searchLoading,
     controller.searchQuery,
     controller.selectedRow,
     controller.selectedSummary?.venue,
     graphExpression,
     graphSelected,
+    liveBook,
     marketUrl,
     newsTabOpen,
     openMarket,
-    pollLabel,
     updatedAgo,
   ]);
 

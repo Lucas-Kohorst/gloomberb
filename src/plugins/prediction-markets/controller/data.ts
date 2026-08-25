@@ -34,6 +34,7 @@ export function usePredictionMarketsDataState({
   historyRange,
   includeKalshi,
   includePolymarket,
+  pollIntervalMs,
   searchQuery,
   selectedDetailMarketKey,
   selectedRowKey,
@@ -51,6 +52,7 @@ export function usePredictionMarketsDataState({
   historyRange: PredictionHistoryRange;
   includeKalshi: boolean;
   includePolymarket: boolean;
+  pollIntervalMs: number;
   searchQuery: string;
   selectedDetailMarketKey: string | null;
   selectedRowKey: string | null;
@@ -73,6 +75,7 @@ export function usePredictionMarketsDataState({
     categoryId,
     includeKalshi,
     includePolymarket,
+    pollIntervalMs,
     searchQuery,
   });
 

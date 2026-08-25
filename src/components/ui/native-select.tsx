@@ -91,12 +91,17 @@ export function NativeSelect({
           event.stopPropagation();
         }}
         onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.stopPropagation();
+            event.preventDefault();
+            openNativeSelect(event.currentTarget);
+            return;
+          }
           if (
             event.key === "ArrowUp"
             || event.key === "ArrowDown"
             || event.key === "ArrowLeft"
             || event.key === "ArrowRight"
-            || event.key === "Enter"
             || event.key === " "
             || event.key === "Home"
             || event.key === "End"

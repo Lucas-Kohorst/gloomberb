@@ -50,6 +50,10 @@ export function useDialog(): DialogApi {
   return context.dialog;
 }
 
+export function useOptionalDialog(): DialogApi | null {
+  return useContext(DialogContext)?.dialog ?? null;
+}
+
 export function useDialogState<T>(selector: (state: { isOpen: boolean }) => T): T {
   const context = useContext(DialogContext);
   if (!context) throw new Error("useDialogState must be used inside DialogHostProvider");

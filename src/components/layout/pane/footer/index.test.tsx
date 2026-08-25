@@ -126,6 +126,44 @@ function PollTrailingFooterHarness({
   );
 }
 
+function PollMenuRegistration({
+  onSelect,
+}: {
+  onSelect: (value: string) => void;
+}) {
+  usePaneFooter("poll-menu", () => ({
+    trailingInfo: [{
+      id: "poll-interval",
+      parts: [{ text: "poll 1m", tone: "muted" as const }],
+      menu: {
+        value: "1",
+        options: [
+          { value: "1", label: "1 minute" },
+          { value: "5", label: "5 minutes" },
+          { value: "15", label: "15 minutes" },
+          { value: "30", label: "30 minutes" },
+        ],
+        onSelect,
+      },
+    }],
+  }), [onSelect]);
+  return null;
+}
+
+function PollMenuFooterHarness({ onSelect }: { onSelect: (value: string) => void }) {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box width={64} height={16} flexDirection="column">
+          <Box flexGrow={1} />
+          <PollMenuRegistration onSelect={onSelect} />
+          <PaneFooterBar footer={footer} focused width={64} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  );
+}
+
 function ExternalLinkFooterHarness() {
   return (
     <PaneFooterProvider>
@@ -292,5 +330,49 @@ describe("PaneFooterBar", () => {
       await testSetup!.renderOnce();
     });
     expect(refreshCount).toBe(1);
+  });
+
+  test("opens a poll interval list and applies the chosen option", async () => {
+    const selected: string[] = [];
+    testSetup = await testRender(
+      <PollMenuFooterHarness onSelect={(value) => selected.push(value)} />,
+      { width: 64, height: 16 },
+    );
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    const footerRow = lines.findIndex((line) => line.includes("poll 1m"));
+    const pollCol = lines[footerRow]?.indexOf("poll 1m") ?? -1;
+    expect(footerRow).toBeGreaterThanOrEqual(0);
+    expect(pollCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(pollCol + 1, footerRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const openFrame = testSetup.captureCharFrame();
+    expect(openFrame).toContain("1 minute");
+    expect(openFrame).toContain("5 minutes");
+    expect(openFrame).toContain("15 minutes");
+    expect(openFrame).toContain("30 minutes");
+
+    const openLines = openFrame.split("\n");
+    const fiveRow = openLines.findIndex((line) => line.includes("5 minutes"));
+    expect(fiveRow).toBeGreaterThanOrEqual(0);
+
+    const fiveCol = openLines[fiveRow]?.indexOf("5 minutes") ?? -1;
+    expect(fiveCol).toBeGreaterThanOrEqual(0);
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(fiveCol + 1, fiveRow);
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+    expect(selected).toEqual(["5"]);
   });
 });

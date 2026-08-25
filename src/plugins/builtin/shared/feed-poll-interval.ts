@@ -19,6 +19,8 @@ export function coercePollIntervalMinutes(value: unknown): number | null {
 }
 export const DEFAULT_TWITTER_POLL_INTERVAL_MINUTES = 1;
 export const TWITTER_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
+export const DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES = 1;
+export const PREDICTION_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
 /** gloomberb-cloud pluginConfig. Off unless the stored value is exactly true. */
 export const X_LIVE_POLLING_CONFIG_KEY = "xLivePollingEnabled";
 
@@ -36,6 +38,17 @@ export function twitterLivePollIntervalMinutes(
 
 export function formatPollIntervalFooterLabel(minutes: number): string {
   return `poll ${Math.max(1, Math.floor(minutes))}m`;
+}
+
+export function pollIntervalOptionLabel(minutes: number): string {
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
+export function pollIntervalMenuOptions(): Array<{ value: string; label: string }> {
+  return FEED_POLL_INTERVAL_MINUTES.map((minutes) => ({
+    value: String(minutes),
+    label: pollIntervalOptionLabel(minutes),
+  }));
 }
 
 export function nextPollIntervalMinutes(current: number): number {
@@ -71,16 +84,23 @@ export function buildPollIntervalSettingField(key: string): PaneSettingField {
     storage: "plugin",
     options: FEED_POLL_INTERVAL_MINUTES.map((minutes) => ({
       value: String(minutes),
-      label: minutes === 1 ? "1 minute" : `${minutes} minutes`,
+      label: pollIntervalOptionLabel(minutes),
     })),
   };
 }
 
-function pollSegment(minutes: number, cycle: () => void): PaneFooterSegment {
+function pollSegment(minutes: number, setMinutes: (minutes: number) => void): PaneFooterSegment {
   return {
     id: "poll-interval",
     parts: [{ text: formatPollIntervalFooterLabel(minutes), tone: "muted" }],
-    onPress: cycle,
+    menu: {
+      value: String(minutes),
+      options: pollIntervalMenuOptions(),
+      onSelect: (value) => {
+        const next = coercePollIntervalMinutes(value);
+        if (next != null) setMinutes(next);
+      },
+    },
   };
 }
 
@@ -91,7 +111,7 @@ export function useFeedPollInterval(options?: {
   intervalMinutes: number;
   intervalMs: number;
   label: string;
-  cycle: () => void;
+  setMinutes: (minutes: number) => void;
   segment: PaneFooterSegment;
 } {
   const dispatch = useAppDispatch();
@@ -107,33 +127,34 @@ export function useFeedPollInterval(options?: {
     usingOverride ? overrideMinutes : null,
     usingOverride ? options?.defaultMinutes : undefined,
   );
-  const cycleRef = useRef<() => void>(() => {});
+  const setMinutesRef = useRef<(minutes: number) => void>(() => {});
 
-  const cycle = useCallback(() => {
-    const next = nextPollIntervalMinutes(intervalMinutes);
+  const setMinutes = useCallback((minutes: number) => {
+    const next = Math.max(1, Math.floor(minutes));
     if (usingOverride) {
       setOverrideMinutes(next);
       return;
     }
     const currentState = stateRef.current;
+    if (currentState.config.refreshIntervalMinutes === next) return;
     const nextConfig = {
       ...currentState.config,
       refreshIntervalMinutes: next,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     scheduleConfigSave(nextConfig);
-  }, [dispatch, intervalMinutes, setOverrideMinutes, stateRef, usingOverride]);
-  cycleRef.current = cycle;
+  }, [dispatch, setOverrideMinutes, stateRef, usingOverride]);
+  setMinutesRef.current = setMinutes;
 
-  const stableCycle = useCallback(() => {
-    cycleRef.current();
+  const stableSetMinutes = useCallback((minutes: number) => {
+    setMinutesRef.current(minutes);
   }, []);
 
   return useMemo(() => ({
     intervalMinutes,
     intervalMs: intervalMinutes * 60_000,
     label: formatPollIntervalFooterLabel(intervalMinutes),
-    cycle: stableCycle,
-    segment: pollSegment(intervalMinutes, stableCycle),
-  }), [intervalMinutes, stableCycle]);
+    setMinutes: stableSetMinutes,
+    segment: pollSegment(intervalMinutes, stableSetMinutes),
+  }), [intervalMinutes, stableSetMinutes]);
 }
