@@ -241,7 +241,7 @@ export function WebTabs({
                 {"x"}
               </span>
             )}
-            {showUnderline && (
+            {showUnderline && active && (
               <span
                 data-gloom-role="tab-underline"
                 aria-hidden="true"
@@ -253,7 +253,6 @@ export function WebTabs({
                   height: 2,
                   borderRadius: 999,
                   background: "var(--tab-underline)",
-                  opacity: active ? 1 : hovered ? 0.7 : 0,
                 }}
               />
             )}
