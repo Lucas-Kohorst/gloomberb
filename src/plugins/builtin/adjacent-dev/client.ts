@@ -2,15 +2,23 @@ import { httpFetch } from "../../../utils/http-transport";
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { withConnectionRequest } from "../connections/register";
 import {
+  ADJACENT_DEV_AUTH_PREFIX,
   ADJACENT_DEV_BASE_URL,
   ADJACENT_DEV_CONNECTION_ID,
+  ADJACENT_DEV_PUBLIC_PREFIX,
+  type CftcFeed,
   type CftcFiling,
+  type CftcFilingDetail,
   type CftcFilingDocument,
-  type CftcFilingsResponse,
-  type CftcFilingDocumentsResponse,
+  type CftcFilingFilters,
+  type CftcFilingsPage,
+  type CftcFilingsQuery,
+  type CftcPageMeta,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_PER_PAGE = 100;
+const MAX_PER_PAGE = 500;
 
 const devFetch = createThrottledFetch({
   requestsPerMinute: 60,
@@ -25,65 +33,73 @@ const devFetch = createThrottledFetch({
   transport: (url: string, init?: RequestInit) => httpFetch(url, init),
 });
 
-function buildUrl(path: string, search?: string): string {
-  const trimmed = path.replace(/^\//, "");
-  const qs = search ? (search.startsWith("?") ? search : `?${search}`) : "";
-  return `${ADJACENT_DEV_BASE_URL}/${trimmed}${qs}`;
+const FEEDS: readonly CftcFeed[] = ["ptc_dcm_rules", "dcm_products", "dco", "dco_rules"];
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
-function authHeaders(apiKey: string | undefined): Record<string, string> {
-  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+function asDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function asFeed(value: unknown): CftcFeed {
+  return FEEDS.includes(value as CftcFeed) ? value as CftcFeed : "dcm_products";
 }
 
 function parseFiling(raw: unknown): CftcFiling | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
-  const accessionNumber = String(record.accessionNumber ?? record.accession_number ?? "").trim();
-  if (!accessionNumber) return null;
-  const form = String(record.form ?? record.form_type ?? "").trim();
-  const filingDateRaw = record.filingDate ?? record.filing_date;
-  const filingDate = filingDateRaw instanceof Date
-    ? filingDateRaw
-    : typeof filingDateRaw === "string" || typeof filingDateRaw === "number"
-      ? new Date(filingDateRaw)
-      : new Date();
+  const id = typeof record.id === "number" ? record.id : Number(record.id);
+  if (!Number.isFinite(id)) return null;
+  const title = asString(record.title);
+  if (!title) return null;
   return {
-    accessionNumber,
-    form,
-    filingDate,
-    acceptedAt: record.acceptedAt ?? record.accepted_at
-      ? new Date((record.acceptedAt ?? record.accepted_at) as string)
-      : undefined,
-    primaryDocument: record.primaryDocument ?? record.primary_document
-      ? String(record.primaryDocument ?? record.primary_document)
-      : undefined,
-    primaryDocDescription: record.primaryDocDescription ?? record.primary_doc_description
-      ? String(record.primaryDocDescription ?? record.primary_doc_description)
-      : undefined,
-    items: record.items ? String(record.items) : undefined,
-    companyName: record.companyName ?? record.company_name
-      ? String(record.companyName ?? record.company_name)
-      : undefined,
-    ticker: record.ticker ? String(record.ticker) : undefined,
-    filingUrl: String(record.filingUrl ?? record.filing_url ?? ""),
-    primaryDocumentUrl: record.primaryDocumentUrl ?? record.primary_document_url
-      ? String(record.primaryDocumentUrl ?? record.primary_document_url)
-      : undefined,
+    id,
+    title,
+    feed: asFeed(record.feed),
+    orgCode: asString(record.org_code) ?? "",
+    status: asString(record.status) ?? "",
+    statusDate: asDate(record.status_date) ?? new Date(0),
+    docCount: typeof record.doc_count === "number" ? record.doc_count : 0,
+    description: asString(record.description),
+    productName: asString(record.product_name),
+    productType: asString(record.product_type),
+    category: asString(record.category),
+    subcategory: asString(record.subcategory),
+    productsAffected: asString(record.products_affected),
+    remarks: asString(record.remarks),
+    receiptDate: asDate(record.receipt_date),
+    predictedEffectiveDate: asDate(record.predicted_effective_date),
+    firstSeenAt: asDate(record.first_seen_at),
+    lastSeenAt: asDate(record.last_seen_at),
   };
 }
 
-function parseFilingDocument(raw: unknown): CftcFilingDocument | null {
+function parseDocument(raw: unknown): CftcFilingDocument | null {
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
-  const type = String(record.type ?? "").trim();
-  const document = String(record.document ?? record.url ?? "").trim();
-  if (!type || !document) return null;
+  const url = asString(record.url);
+  if (!url) return null;
+  return { url, title: asString(record.title) ?? url };
+}
+
+function parseMeta(raw: unknown): CftcPageMeta {
+  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
   return {
-    sequence: record.sequence ? String(record.sequence) : undefined,
-    type,
-    description: record.description ? String(record.description) : undefined,
-    document,
-    url: String(record.url ?? document),
+    total: num(record.total),
+    page: num(record.page) ?? 1,
+    perPage: num(record.per_page) ?? DEFAULT_PER_PAGE,
+    totalPages: num(record.total_pages),
+    hasNext: record.has_next === true,
+    hasPrev: record.has_prev === true,
+    totalCapped: record.total_capped === true ? true : undefined,
   };
 }
 
@@ -98,70 +114,125 @@ export class AdjacentDevClient {
     this.apiKey = options.apiKey?.trim() || undefined;
   }
 
+  /** True when requests can reach the full catalog rather than the 90-day window. */
+  get authenticated(): boolean {
+    return this.apiKey !== undefined;
+  }
+
+  private get prefix(): string {
+    return this.apiKey ? ADJACENT_DEV_AUTH_PREFIX : ADJACENT_DEV_PUBLIC_PREFIX;
+  }
+
   private get headers(): Record<string, string> {
-    return authHeaders(this.apiKey);
+    return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {};
+  }
+
+  private buildUrl(path: string, search?: URLSearchParams): string {
+    const trimmed = path.replace(/^\//, "");
+    const qs = search && [...search.keys()].length > 0 ? `?${search.toString()}` : "";
+    return `${ADJACENT_DEV_BASE_URL}/${this.prefix}/${trimmed}${qs}`;
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
     const response = await devFetch.fetch(url, { headers: this.headers });
     if (!response.ok) {
-      throw new Error(`Adjacent Dev request failed: ${response.status} ${response.statusText}`);
+      const detail = response.status === 401 || response.status === 403
+        ? " (add an Adjacent Dev API key to reach the full catalog)"
+        : "";
+      throw new Error(
+        `Adjacent Dev request failed: ${response.status} ${response.statusText}${detail}`,
+      );
     }
     return response.json() as Promise<T>;
   }
 
-  async getRecentFilings(count = 50): Promise<CftcFiling[]> {
+  async listFilings(query: CftcFilingsQuery = {}): Promise<CftcFilingsPage> {
     return withConnectionRequest(ADJACENT_DEV_CONNECTION_ID, "fetch", async () => {
-      const url = buildUrl("filings", `count=${count}`);
-      const data = await this.fetchJson<CftcFilingsResponse>(url);
-      return (data.filings ?? [])
-        .map(parseFiling)
-        .filter((f): f is CftcFiling => f !== null);
+      const search = new URLSearchParams();
+      if (query.feed) search.set("feed", query.feed);
+      if (query.org) search.set("org", query.org);
+      if (query.status) search.set("status", query.status);
+      if (query.q?.trim()) search.set("q", query.q.trim());
+      if (query.page && query.page > 1) search.set("page", String(query.page));
+      search.set(
+        "per_page",
+        String(Math.min(query.perPage ?? DEFAULT_PER_PAGE, MAX_PER_PAGE)),
+      );
+      const payload = await this.fetchJson<{ data?: unknown[]; meta?: unknown }>(
+        this.buildUrl("filings", search),
+      );
+      return {
+        filings: (payload.data ?? [])
+          .map(parseFiling)
+          .filter((filing): filing is CftcFiling => filing !== null),
+        meta: parseMeta(payload.meta),
+      };
     });
   }
 
-  async searchFilings(query: string, count = 50): Promise<CftcFiling[]> {
+  /**
+   * Filing plus converted attachment text. The list rows carry no external
+   * link, so this is also where `sourceUrl` for the open/pop-out hints
+   * comes from.
+   */
+  async getFilingDetail(id: number): Promise<CftcFilingDetail | null> {
     return withConnectionRequest(ADJACENT_DEV_CONNECTION_ID, "fetch", async () => {
-      const url = buildUrl("filings", `q=${encodeURIComponent(query)}&count=${count}`);
-      const data = await this.fetchJson<CftcFilingsResponse>(url);
-      return (data.filings ?? [])
-        .map(parseFiling)
-        .filter((f): f is CftcFiling => f !== null);
-    });
-  }
-
-  async getFilingDocuments(accessionNumber: string): Promise<CftcFilingDocument[]> {
-    return withConnectionRequest(ADJACENT_DEV_CONNECTION_ID, "fetch", async () => {
-      const url = buildUrl(`filings/${encodeURIComponent(accessionNumber)}/documents`);
-      const data = await this.fetchJson<CftcFilingDocumentsResponse>(url);
-      return (data.documents ?? [])
-        .map(parseFilingDocument)
-        .filter((d): d is CftcFilingDocument => d !== null);
-    });
-  }
-
-  async getFilingContent(accessionNumber: string): Promise<string | null> {
-    return withConnectionRequest(ADJACENT_DEV_CONNECTION_ID, "fetch", async () => {
-      const url = buildUrl(`filings/${encodeURIComponent(accessionNumber)}/content`);
-      const response = await devFetch.fetch(url, { headers: this.headers });
-      if (!response.ok) return null;
-      const contentType = response.headers.get("content-type") ?? "";
-      if (contentType.includes("application/json")) {
-        const data = await response.json() as { content?: string };
-        return data.content ?? null;
+      const response = await devFetch.fetch(
+        this.buildUrl(`filings/${encodeURIComponent(String(id))}/markdown`),
+        { headers: this.headers },
+      );
+      if (response.status === 404) return null;
+      if (!response.ok) {
+        throw new Error(
+          `Adjacent Dev request failed: ${response.status} ${response.statusText}`,
+        );
       }
-      return response.text();
+      const payload = await response.json() as {
+        filing?: unknown;
+        markdown?: unknown;
+        documents?: unknown[];
+        source_url?: unknown;
+      };
+      const filing = parseFiling(payload.filing);
+      if (!filing) return null;
+      return {
+        filing,
+        markdown: asString(payload.markdown) ?? "",
+        documents: (payload.documents ?? [])
+          .map(parseDocument)
+          .filter((doc): doc is CftcFilingDocument => doc !== null),
+        sourceUrl: asString(payload.source_url) ?? "",
+      };
+    });
+  }
+
+  async getFilters(): Promise<CftcFilingFilters> {
+    return withConnectionRequest(ADJACENT_DEV_CONNECTION_ID, "fetch", async () => {
+      const payload = await this.fetchJson<{
+        feeds?: unknown[];
+        orgs?: unknown[];
+        statuses?: unknown[];
+      }>(this.buildUrl("filings/filters"));
+      const strings = (values: unknown[] | undefined): string[] =>
+        (values ?? []).map(asString).filter((value): value is string => value !== undefined);
+      return {
+        feeds: strings(payload.feeds),
+        orgs: strings(payload.orgs),
+        statuses: strings(payload.statuses),
+      };
     });
   }
 }
 
-// Standalone browser loader (used by the pane, like loadSecBrowserFilings)
-export async function loadCftcBrowserFilings(
+/**
+ * Loads the pane's list. `q` is a lexical filter the public tier also honours,
+ * so search works without a key.
+ */
+export async function loadCftcFilings(
   client: AdjacentDevClient,
   query: string,
-): Promise<CftcFiling[]> {
+  perPage = DEFAULT_PER_PAGE,
+): Promise<CftcFilingsPage> {
   const normalized = query.trim();
-  return normalized
-    ? client.searchFilings(normalized)
-    : client.getRecentFilings();
+  return client.listFilings(normalized ? { q: normalized, perPage } : { perPage });
 }

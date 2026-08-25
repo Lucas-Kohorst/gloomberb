@@ -1,4 +1,4 @@
-import { Box, Text, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { Box, Text, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GloomPlugin,
@@ -24,153 +24,64 @@ import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
-import { AdjacentDevClient, loadCftcBrowserFilings } from "./client";
+import { AdjacentDevClient, loadCftcFilings } from "./client";
+import { buildDetailBody, buildDetailMeta, feedLabel } from "./format";
 import {
   ADJACENT_DEV_API_KEY_CONFIG,
   ADJACENT_DEV_CONNECTION_ID,
   ADJACENT_DEV_PLUGIN_ID,
   type CftcFiling,
-  type CftcFilingDocument,
+  type CftcFilingDetail,
 } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 250;
-const CFTC_PAGE_SIZE = 50;
+const CFTC_PAGE_SIZE = 100;
 
 const trimSearchValue = (value: string) => value.trim();
 
-function formatFilingDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function getDisplayFormLabel(form: string): string {
-  const trimmed = form.trim();
-  return trimmed || "FILING";
-}
-
-function getFormDescription(form: string): string {
-  const f = form.trim().toUpperCase();
-  switch (f) {
-    case "COT": return "Commitments of Traders";
-    case "COT/A": return "Commitments of Traders (Amended)";
-    case "COT-COMM": return "COT Commercial";
-    case "COT-NONCOMM": return "COT Non-Commercial";
-    case "FORM 1": return "Annual Report";
-    case "FORM 1-A": return "Annual Report (Amended)";
-    default: return "";
-  }
-}
-
-function filingEntityLabel(filing: CftcFiling): string | undefined {
-  if (filing.ticker && filing.companyName) return `${filing.companyName} (${filing.ticker})`;
-  return filing.companyName || filing.ticker || undefined;
-}
-
-function getFilingDisplayTitle(filing: CftcFiling): string {
-  const formLabel = getDisplayFormLabel(filing.form);
-  const description = filing.primaryDocDescription?.trim();
-  return description ? `${formLabel} | ${description}` : formLabel;
-}
-
-function buildDetailBody(filing: CftcFiling): string {
-  const sections = [
-    filing.primaryDocDescription?.trim(),
-    filing.items ? `Items: ${filing.items}` : undefined,
-    filing.primaryDocument ? `Primary document: ${filing.primaryDocument}` : undefined,
-  ].filter((value): value is string => !!value && value.trim().length > 0);
-
-  return sections.length > 0
-    ? sections.join("\n\n")
-    : "No additional CFTC filing description is available for this entry.";
-}
-
-function buildDetailBodyWithDocuments({
-  filing,
-  documents,
-  documentsLoading,
-  primaryContent,
-}: {
-  filing: CftcFiling;
-  documents: CftcFilingDocument[];
-  documentsLoading: boolean;
-  primaryContent: string;
-}): string {
-  const lines: string[] = [];
-  lines.push("Documents");
-  if (documentsLoading && documents.length === 0) {
-    lines.push("Loading filing documents...");
-  } else if (documents.length === 0) {
-    lines.push("No filing documents were listed for this filing.");
-  } else {
-    for (const doc of documents) {
-      const label = doc.description?.trim() || doc.type;
-      lines.push(`• ${label}${doc.document ? ` — ${doc.document}` : ""}`);
-    }
-  }
-  lines.push("", "Primary Filing Content", primaryContent);
-  return lines.join("\n");
-}
-
-function cftcFilingToArticle(filing: CftcFiling, body?: string | null): NewsArticle {
-  const form = filing.form.trim();
-  const company = filing.companyName || filing.ticker || filing.accessionNumber;
+function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null): NewsArticle {
+  const label = feedLabel(filing);
   return {
-    id: `cftc:${filing.accessionNumber}`,
-    title: `${form} ${company}`.trim(),
-    url: filing.filingUrl,
+    id: `cftc:${filing.id}`,
+    title: filing.title,
+    url: detail?.sourceUrl ?? "",
     source: "CFTC",
-    publishedAt: filing.filingDate,
-    summary: filing.primaryDocDescription || `${form} filed ${formatFilingDate(filing.filingDate)}`,
+    publishedAt: filing.statusDate,
+    summary: [filing.orgCode, filing.status, label].filter(Boolean).join(" · "),
     topic: "filing",
-    topics: ["filing", form, "cftc"],
+    topics: ["filing", "cftc", filing.feed],
     sectors: [],
-    categories: ["CFTC", form],
-    tickers: filing.ticker ? [filing.ticker] : [],
+    categories: ["CFTC", label],
+    tickers: [],
     scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
     isBreaking: false,
     isDeveloping: false,
     importance: 0,
     origin: "cftc",
-    body: body ?? undefined,
+    body: detail?.markdown || undefined,
   };
 }
 
 function toFeedItems(
   filings: CftcFiling[],
-  selectedAccessionNumber: string | undefined,
-  primaryContent: string,
-  loadingContent: boolean,
-  documents: CftcFilingDocument[],
-  loadingDocuments: boolean,
-  showEntity = false,
+  openFilingId: number | undefined,
+  detail: CftcFilingDetail | null,
+  detailLoading: boolean,
 ): FeedDataTableItem[] {
   return filings.map((filing) => {
-    const displayTitle = getFilingDisplayTitle(filing);
-    const formDesc = getFormDescription(filing.form);
-    const selected = filing.accessionNumber === selectedAccessionNumber;
-    const fallbackBody = buildDetailBody(filing);
-    const detailBody = selected
-      ? buildDetailBodyWithDocuments({
-          filing,
-          documents,
-          documentsLoading: loadingDocuments,
-          primaryContent: loadingContent ? "Loading filing content..." : primaryContent || fallbackBody,
-        })
-      : fallbackBody;
-    const entityLabel = showEntity ? filingEntityLabel(filing) : undefined;
-    const enrichedTitle = [entityLabel, displayTitle, formDesc].filter(Boolean).join(" | ");
-
+    const selected = filing.id === openFilingId;
     return {
-      id: filing.accessionNumber,
-      eyebrow: filing.ticker || filing.form,
-      title: enrichedTitle,
-      timestamp: filing.filingDate,
-      detailTitle: enrichedTitle,
-      detailMeta: [
-        `Filed ${formatFilingDate(filing.filingDate)}`,
-        `Accession ${filing.accessionNumber}`,
-        ...(filing.items ? [`Items ${filing.items}`] : []),
-      ],
-      detailBody,
+      id: String(filing.id),
+      eyebrow: filing.orgCode || feedLabel(filing),
+      title: filing.title,
+      timestamp: filing.statusDate,
+      detailTitle: filing.title,
+      detailMeta: buildDetailMeta(filing),
+      detailBody: buildDetailBody(
+        filing,
+        selected ? detail : null,
+        selected && detailLoading,
+      ),
     };
   });
 }
@@ -211,10 +122,8 @@ function CftcPane({ width, height, focused }: PaneProps) {
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [documents, setDocuments] = useState<CftcFilingDocument[]>([]);
-  const [loadingDocuments, setLoadingDocuments] = useState(false);
-  const [filingContent, setFilingContent] = useState<string>("");
-  const [loadingContent, setLoadingContent] = useState(false);
+  const [detail, setDetail] = useState<CftcFilingDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback((nextQuery: string) => {
@@ -223,10 +132,10 @@ function CftcPane({ width, height, focused }: PaneProps) {
     abortRef.current = controller;
     setStatus("loading");
     setError(null);
-    void loadCftcBrowserFilings(client, nextQuery)
-      .then((nextFilings) => {
+    void loadCftcFilings(client, nextQuery, CFTC_PAGE_SIZE)
+      .then((page) => {
         if (abortRef.current !== controller) return;
-        setFilings(nextFilings);
+        setFilings(page.filings);
         setStatus("loaded");
         setLastUpdated(Date.now());
       })
@@ -251,44 +160,31 @@ function CftcPane({ width, height, focused }: PaneProps) {
   }, []);
 
   const openFiling = openItemId
-    ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
+    ? filings.find((filing) => String(filing.id) === openItemId) ?? null
     : null;
 
-  // Load documents and content for the open filing
   useEffect(() => {
     if (!openFiling) {
-      setDocuments([]);
-      setFilingContent("");
+      setDetail(null);
+      setDetailLoading(false);
       return;
     }
     let cancelled = false;
-    setLoadingDocuments(true);
-    setLoadingContent(true);
-    setDocuments([]);
-    setFilingContent("");
-    void client.getFilingDocuments(openFiling.accessionNumber)
-      .then((docs) => {
+    setDetail(null);
+    setDetailLoading(true);
+    void client.getFilingDetail(openFiling.id)
+      .then((next) => {
         if (cancelled) return;
-        setDocuments(docs);
-        setLoadingDocuments(false);
+        setDetail(next);
+        setDetailLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setLoadingDocuments(false);
-      });
-    void client.getFilingContent(openFiling.accessionNumber)
-      .then((content) => {
-        if (cancelled) return;
-        setFilingContent(content ?? "");
-        setLoadingContent(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setFilingContent("");
-        setLoadingContent(false);
+        setDetail(null);
+        setDetailLoading(false);
       });
     return () => { cancelled = true; };
-  }, [client, openFiling?.accessionNumber]);
+  }, [client, openFiling?.id]);
 
   const loading = status === "loading" && filings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -297,8 +193,8 @@ function CftcPane({ width, height, focused }: PaneProps) {
   const popOutArticle = usePopOutNewsArticle();
   const popOutSelected = useCallback(() => {
     if (!openFiling) return;
-    popOutArticle(cftcFilingToArticle(openFiling, filingContent || null));
-  }, [filingContent, openFiling, popOutArticle]);
+    popOutArticle(cftcFilingToArticle(openFiling, detail));
+  }, [detail, openFiling, popOutArticle]);
 
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
@@ -352,15 +248,20 @@ function CftcPane({ width, height, focused }: PaneProps) {
   usePaneStatusLinkFooter({
     registrationId: ADJACENT_DEV_PLUGIN_ID,
     focused,
-    url: error ? null : openFiling?.filingUrl,
-    source: openFiling?.form,
+    url: error ? null : detail?.sourceUrl || null,
+    source: openFiling ? feedLabel(openFiling) : undefined,
     label: "filing",
     loading,
     error,
-    info: updatedAgo
-      ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
-      : undefined,
-    showOpenHint: !error && !!openFiling?.filingUrl,
+    info: [
+      ...(client.authenticated
+        ? []
+        : [{ id: "tier", parts: [{ text: "public · last 90d", tone: "muted" as const }] }]),
+      ...(updatedAgo
+        ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
+        : []),
+    ],
+    showOpenHint: !error && !!detail?.sourceUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
@@ -405,7 +306,7 @@ function CftcPane({ width, height, focused }: PaneProps) {
       width={width}
       focusToken={searchFocusToken}
       inputRef={searchInputRef}
-      placeholder="ticker, company, or form"
+      placeholder="organization, product, or description"
       debounceMs={SEARCH_DEBOUNCE_MS}
       normalizeValue={trimSearchValue}
       onFocus={focusSearch}
@@ -420,7 +321,7 @@ function CftcPane({ width, height, focused }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label={query.trim() ? `Searching CFTC for ${query.trim()}...` : "Loading latest CFTC filings..."} />
+          <Spinner label={query.trim() ? `Searching CFTC filings for ${query.trim()}...` : "Loading CFTC filings..."} />
         </Box>
       </Box>
     );
@@ -443,24 +344,16 @@ function CftcPane({ width, height, focused }: PaneProps) {
       height={height}
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
-      items={toFeedItems(
-        filings,
-        openFiling?.accessionNumber,
-        filingContent,
-        loadingContent,
-        documents,
-        loadingDocuments,
-        true,
-      )}
+      items={toFeedItems(filings, openFiling?.id, detail, detailLoading)}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
-      sourceLabel="Form"
+      sourceLabel="Org"
       titleLabel="Filing"
       emptyStateTitle={
         query.trim()
-          ? `No CFTC filings for ${query.trim()}.`
+          ? `No CFTC filings match ${query.trim()}.`
           : "No recent CFTC filings."
       }
     />
@@ -473,7 +366,8 @@ export const adjacentDevPlugin: GloomPlugin = {
   id: ADJACENT_DEV_PLUGIN_ID,
   name: "Adjacent Dev",
   version: "1.0.0",
-  description: "CFTC filings via the Adjacent Dev API. Search by ticker, company, or form type.",
+  description:
+    "CFTC industry filings via the Adjacent Dev API. Search by organization, product, or description.",
   toggleable: true,
 
   panes: [
@@ -493,12 +387,23 @@ export const adjacentDevPlugin: GloomPlugin = {
       id: "cftc-filings-pane",
       paneId: "cftc-filings",
       label: "CFTC Filings",
-      description: "Latest CFTC filings. Search a ticker or company, or open CFTC AAPL to jump there.",
-      keywords: ["cftc", "filings", "cot", "commitments", "traders", "adjacent", "dev"],
+      description:
+        "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or open CFTC CME to jump there.",
+      keywords: [
+        "cftc",
+        "filings",
+        "dcm",
+        "dco",
+        "products",
+        "rules",
+        "certification",
+        "adjacent",
+        "dev",
+      ],
       category: "Data",
       shortcut: {
         prefix: "CFTC",
-        argPlaceholder: "ticker or company",
+        argPlaceholder: "organization or product",
         argKind: "text",
         argOptional: true,
       },
@@ -515,7 +420,9 @@ export const adjacentDevPlugin: GloomPlugin = {
       kind: "api",
       pluginId: ADJACENT_DEV_PLUGIN_ID,
       priority: 650,
-      authRequired: true,
+      // The public tier serves the last 90 days without a key; a key only
+      // widens the window.
+      authRequired: false,
     });
   },
 
