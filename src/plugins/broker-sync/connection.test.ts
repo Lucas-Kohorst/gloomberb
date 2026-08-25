@@ -45,8 +45,10 @@ describe("Robinhood connection mode", () => {
     const field = robinhoodConfigSchema()[0];
     expect(field?.options?.[0]?.label).toContain("trade Agentic");
     expect(field?.options?.[0]?.description).toContain("Agentic");
-    const metadata = robinhoodClientMetadata("https://terminal.example/api/oauth/robinhood/callback");
+    const metadata = robinhoodClientMetadata("https://terminal.kohor.st/api/oauth/robinhood/callback");
     expect(metadata.token_endpoint_auth_method).toBe("none");
+    expect(metadata.scope).toBe("internal");
+    expect(metadata.redirect_uris).toEqual(["https://terminal.kohor.st/api/oauth/robinhood/callback"]);
     expect(metadata).not.toHaveProperty("client_secret");
   });
 });

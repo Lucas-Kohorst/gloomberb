@@ -19,6 +19,7 @@ describe("hosted Robinhood OAuth", () => {
     expect(html).toContain("abc");
     expect(html).toContain("xyz");
     expect(html).toContain("postMessage");
+    expect(html).toContain('postMessage(payload, "*")');
     expect(html).toContain("BroadcastChannel");
   });
 
