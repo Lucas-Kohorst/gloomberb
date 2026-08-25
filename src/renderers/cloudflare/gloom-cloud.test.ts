@@ -34,4 +34,15 @@ describe("gloomCloudProxyUpstreamPath", () => {
       "/research/equity-diagnostic",
     );
   });
+
+  test("keeps /cloud/credit/cds as the Gloom Cloud CDS route", () => {
+    expect(gloomCloudProxyUpstreamPath("/cloud/credit/cds")).toBe("/cloud/credit/cds");
+    expect(gloomCloudProxyUpstreamPath("/cloud/credit/cds", "?issuer=Oracle")).toBe(
+      "/cloud/credit/cds?issuer=Oracle",
+    );
+  });
+
+  test("strips the extra hosted /cloud prefix from /cloud/cloud/credit/cds", () => {
+    expect(gloomCloudProxyUpstreamPath("/cloud/cloud/credit/cds")).toBe("/cloud/credit/cds");
+  });
 });

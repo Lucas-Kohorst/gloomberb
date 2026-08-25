@@ -31,7 +31,7 @@ export function gloomApiBaseUrl(env: Env): string {
  * hosted GET of those paths must keep the prefix; stripping would send
  * `/econ/calendar` or `/logos/ticker/AAPL` upstream.
  */
-const CLOUD_NATIVE_PREFIXES = ["/cloud/econ", "/cloud/logos"] as const;
+const CLOUD_NATIVE_PREFIXES = ["/cloud/econ", "/cloud/logos", "/cloud/credit"] as const;
 
 function isCloudNativeApiPath(pathname: string): boolean {
   return CLOUD_NATIVE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -43,8 +43,9 @@ function isCloudNativeApiPath(pathname: string): boolean {
  * The hosted client prefixes `/cloud` onto the API client path. Most routes
  * (`/auth`, `/sync`, `/market`) therefore arrive as `/cloud/auth/...` and we
  * strip one `/cloud`. Economic calendar and company logos already live at
- * `/cloud/econ/...` and `/cloud/logos/...` on api.gloom.sh, so a same-origin
- * GET `/cloud/econ/calendar` or `/cloud/logos/ticker/AAPL` must stay as-is
+ * `/cloud/econ/...`, `/cloud/logos/...`, and `/cloud/credit/...` on
+ * api.gloom.sh, so a same-origin GET `/cloud/econ/calendar`,
+ * `/cloud/logos/ticker/AAPL`, or `/cloud/credit/cds` must stay as-is
  * upstream. The doubled hosted path `/cloud/cloud/econ/calendar` still strips
  * once to `/cloud/econ/calendar`.
  */

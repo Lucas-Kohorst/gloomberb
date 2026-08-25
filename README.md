@@ -289,6 +289,7 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `GC` | Yield curve |
 | `AUCT` | Treasury auction results |
 | `CRD` | ICE BofA US corporate option-adjusted spreads |
+| `CDS [ticker]` | Single-name corporate CDS activity: most-active issuers, or one issuer's trades |
 | `BOND` | Corporate bond yields and spreads |
 | `VIX` | Volatility and term-structure dashboard |
 | `HILO` | Session new highs and lows |
