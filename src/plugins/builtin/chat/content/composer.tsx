@@ -155,10 +155,16 @@ export function ChatComposerArea({
   }
 
   return (
-    <>
+    <Box
+      flexDirection="column"
+      flexShrink={0}
+      width={composerWidth}
+      style={nativePaneChrome ? { overflow: "visible" } : undefined}
+    >
       {nativePaneChrome && (
         <Box
           width={composerWidth}
+          flexShrink={0}
           style={{
             flex: `0 0 ${DESKTOP_CHAT_INPUT_TOP_MARGIN_PX}px`,
             height: DESKTOP_CHAT_INPUT_TOP_MARGIN_PX,
@@ -229,7 +235,7 @@ export function ChatComposerArea({
         }}
         wrapText
       />
-    </>
+    </Box>
   );
 }
 

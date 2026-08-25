@@ -5,6 +5,7 @@ import { UiHostProvider } from "../../ui";
 import type { RendererHost, UiHost } from "../../ui/host";
 import { shouldDispatchWebAppKeyDown } from "../../renderers/electrobun/view/key-event";
 import { FloatingPaneWrapper } from "./floating-pane";
+import { PaneWrapper } from "./pane";
 import { DesktopPaneButton } from "./pane/header";
 
 const rendererHost: RendererHost = {
@@ -110,6 +111,55 @@ describe("FloatingPaneWrapper", () => {
     expect(css).toContain("opacity: 0;");
     expect(css).toContain('[data-gloom-role="resize-handle"]:hover::after');
     expect(css).not.toContain('[data-gloom-role="pane-window"]:hover [data-gloom-role="resize-handle"]::after');
+  });
+
+  test("native pane windows do not set inline overflow hidden that would shear footers", () => {
+    const windows: Array<Record<string, unknown>> = [];
+    const Box = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
+      if (props["data-gloom-role"] === "pane-window") windows.push(props);
+      return <div>{children}</div>;
+    };
+    const Inline = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+    const ui = {
+      capabilities: { nativePaneChrome: true },
+      Box,
+      Text: Inline,
+      Span: Inline,
+      Strong: Inline,
+      Underline: Inline,
+      ScrollBox: Box,
+      Input: Box,
+      Textarea: Box,
+      ChartSurface: Box,
+      ImageSurface: Box,
+      SpinnerMark: Inline,
+      AsciiText: Inline,
+    } as unknown as UiHost;
+
+    renderToStaticMarkup(
+      <UiHostProvider ui={ui} renderer={rendererHost}>
+        <FloatingPaneWrapper
+          paneId="floating:main"
+          title="Floating"
+          x={8}
+          y={2}
+          width={32}
+          height={10}
+          zIndex={75}
+          focused
+        >
+          <span>body</span>
+        </FloatingPaneWrapper>
+        <PaneWrapper title="Tiled" focused width={32} height={10}>
+          <span>body</span>
+        </PaneWrapper>
+      </UiHostProvider>,
+    );
+
+    expect(windows).toHaveLength(2);
+    expect(windows.every((pane) => pane.overflow !== "hidden")).toBe(true);
+    expect(windows.find((pane) => pane["data-floating"] === "true")?.overflow).toBeUndefined();
+    expect(windows.find((pane) => pane["data-floating"] === "false")?.overflow).toBeUndefined();
   });
 
   test("lets native pane-header buttons focus and activate without pane shortcuts or dragging", () => {

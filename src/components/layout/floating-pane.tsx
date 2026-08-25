@@ -187,7 +187,7 @@ export function FloatingPaneWrapper({
       zIndex={zIndex}
       backgroundColor={bg}
       flexDirection="column"
-      overflow="hidden"
+      overflow={nativePaneChrome ? undefined : "hidden"}
       {...getPaneWindowAttributes({
         enabled: nativePaneChrome,
         role: "pane-window",

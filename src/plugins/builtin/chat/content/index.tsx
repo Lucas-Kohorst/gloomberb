@@ -721,6 +721,7 @@ export function ChatContent({
       backgroundColor={chatContentBg}
       position="relative"
       onMouseDown={() => focusChatContent()}
+      overflow={nativePaneChrome ? "hidden" : undefined}
       style={nativeFillStyle}
     >
       {!nativePaneChrome && (
@@ -875,6 +876,7 @@ export function ChatContent({
       height={chatLayoutHeight}
       flexGrow={nativePaneChrome ? 1 : undefined}
       position="relative"
+      overflow={nativePaneChrome ? "hidden" : undefined}
       style={nativeFillStyle}
     >
       {channelSidebar}

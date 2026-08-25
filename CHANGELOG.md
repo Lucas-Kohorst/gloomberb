@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.13.8 — Status bar and pane chrome clip
+
+Desktop/hosted chrome no longer shears footer hints or the version pill against parent overflow and the 6px radius.
+
+### Chrome
+
+- Native pane windows no longer clip footer glyphs. Pane body still clips content.
+- Floating pane footers sit above the 6px curve instead of losing the bottom of `[r]efresh`.
+- Status bar includes the top border in its height, uses line-height 1.15 on the bar itself, and pads the version pill off the window edge.
+- Chat composer stays a full row under `pane-content` 100% height. Channel lists still use the shared sidebar scroller.
+
+### What to test
+
+- Hard-reload hosted. Chat footer `[r]efresh` / `[/] search` is a full row, not flush on the rounded edge.
+- Status pill `v0.13.8` is not sheared and not flush against the window bottom.
+
 ## v0.13.7 — Pane chrome, Robinhood connect
 
 Desktop pane footers keep the top of `[g]raph`. Chat sidebars scroll instead of slicing the last name. Hosted Robinhood sign-in completes OAuth: read every account, trade only Agentic.

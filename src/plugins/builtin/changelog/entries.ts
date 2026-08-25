@@ -1,5 +1,28 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_8: ChangelogRelease = {
+  id: "hosted-v0-13-8",
+  tagName: "v0.13.8",
+  version: "0.13.8",
+  title: "Status bar and pane chrome clip",
+  publishedAt: "2026-08-25T16:10:00.000Z",
+  url: "",
+  body: `Desktop/hosted chrome no longer shears footer hints or the version pill against parent overflow and the 6px radius.
+
+## Chrome
+
+- Native pane windows no longer clip footer glyphs. Pane body still clips content.
+- Floating pane footers sit above the 6px curve instead of losing the bottom of \`[r]efresh\`.
+- Status bar includes the top border in its height, uses line-height 1.15 on the bar itself, and pads the version pill off the window edge.
+- Chat composer stays a full row under pane-content 100% height. Channel lists still use the shared sidebar scroller.
+
+## What to test
+
+- Hard-reload hosted. Chat footer \`[r]efresh\` / \`[/] search\` is a full row, not flush on the rounded edge.
+- Status pill \`v0.13.8\` is not sheared and not flush against the window bottom.
+`,
+};
+
 const RELEASE_0_13_7: ChangelogRelease = {
   id: "hosted-v0-13-7",
   tagName: "v0.13.7",
@@ -462,6 +485,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_8,
   RELEASE_0_13_7,
   RELEASE_0_13_6,
   RELEASE_0_13_5,

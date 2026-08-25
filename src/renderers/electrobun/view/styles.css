@@ -154,8 +154,14 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-window"][data-floating="true"] {
   border: 0;
   border-radius: 6px;
+  /* Clip the body/header to the radius; the footer gets extra bottom padding
+     so hint glyphs sit above the 6px curve instead of being sheared. */
   overflow: hidden;
   box-shadow: 0 18px 38px color-mix(in srgb, var(--gloom-bg) 46%, transparent);
+}
+[data-gloom-role="pane-window"][data-floating="true"] [data-gloom-role="pane-footer"] {
+  padding-bottom: 10px;
+  min-height: calc(var(--cell-h) + 15px) !important;
 }
 [data-gloom-role="pane-window"][data-floating="true"]::after {
   content: "";
@@ -182,6 +188,7 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="pane-window"][data-floating="false"] {
   border: 0;
   border-radius: 0;
+  overflow: visible;
 }
 [data-gloom-role="pane-window"][data-floating="false"][data-focused="true"] {
   box-shadow: inset 0 0 0 1px var(--pane-border-color, var(--gloom-border-focused));
@@ -260,17 +267,22 @@ body.gloom-dragging {
   pointer-events: auto;
 }
 [data-gloom-role="status-bar"] {
-  flex: 0 0 calc(var(--cell-h) + 8px) !important;
-  height: calc(var(--cell-h) + 8px) !important;
-  min-height: calc(var(--cell-h) + 8px) !important;
-  max-height: calc(var(--cell-h) + 8px) !important;
+  /* 4px top + 10px bottom (4 + 6px window/radius clearance) + 1px border-top.
+     Border-box without that extra 1px left a 17px content box that sheared
+     18px line boxes; flush 4px bottom sat the version pill on the curve. */
+  flex: 0 0 calc(var(--cell-h) + 15px) !important;
+  height: calc(var(--cell-h) + 15px) !important;
+  min-height: calc(var(--cell-h) + 15px) !important;
+  max-height: calc(var(--cell-h) + 15px) !important;
   align-items: center;
   overflow: visible;
   padding-inline: 8px;
-  padding-block: 4px;
+  padding-top: 4px;
+  padding-bottom: 10px;
   box-sizing: border-box;
   border-top: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
   font-size: 11.5px;
+  line-height: 1.15 !important;
 }
 [data-gloom-role="status-bar"] span {
   /* textStyle sets line-height: var(--cell-h) inline; that fills the 18px bar
@@ -319,6 +331,10 @@ body.gloom-dragging {
   min-width: 0 !important;
   min-height: 0 !important;
   flex: 1 1 0 !important;
+}
+[data-gloom-role="desktop-message-composer"] {
+  flex-shrink: 0 !important;
+  overflow: visible;
 }
 [data-gloom-role="pane-content"] [data-gloom-role="table-view-frame"],
 [data-gloom-role="pane-content"] [data-gloom-role="data-table"],
