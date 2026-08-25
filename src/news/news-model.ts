@@ -164,11 +164,22 @@ export function titleSourceKey(title: string, source: string): string {
   return normalisedTitle ? `t:${normalisedSource}:${normalisedTitle}` : "";
 }
 
-function articleKey(item: NewsArticle): string {
+function articleIdentityKeys(item: NewsArticle): string[] {
+  const keys: string[] = [];
+  const guid = item.guid?.trim().toLowerCase();
+  if (guid) {
+    keys.push(`g:${guid}`);
+    const guidUrl = canonicalArticleUrl(guid);
+    if (guidUrl) keys.push(`u:${guidUrl}`);
+  }
   const url = canonicalArticleUrl(item.url);
-  if (url) return url;
-  const titleKey = titleSourceKey(item.title, item.source);
-  return titleKey || `id:${item.id}`;
+  if (url) keys.push(`u:${url}`);
+  if (keys.length === 0) {
+    const titleKey = titleSourceKey(item.title, item.source);
+    if (titleKey) keys.push(titleKey);
+    else keys.push(`id:${item.id}`);
+  }
+  return keys;
 }
 
 function sortByPublishedAt(items: NewsArticle[]): NewsArticle[] {
@@ -177,6 +188,15 @@ function sortByPublishedAt(items: NewsArticle[]): NewsArticle[] {
 
 function hasStoryItems(item: NewsArticle | null | undefined): boolean {
   return (item?.items?.length ?? 0) > 0;
+}
+
+function preferEarlierPublishedAt(left: Date, right: Date): Date {
+  const leftMs = left.getTime();
+  const rightMs = right.getTime();
+  const leftOk = Number.isFinite(leftMs) && leftMs > 0;
+  const rightOk = Number.isFinite(rightMs) && rightMs > 0;
+  if (leftOk && rightOk) return leftMs <= rightMs ? left : right;
+  return leftOk ? left : right;
 }
 
 export function markDetailCapableArticle(source: NewsCapability, item: NewsArticle): NewsArticle {
@@ -217,27 +237,69 @@ function mergeDuplicateArticle(existing: NewsArticle, item: NewsArticle): NewsAr
   const winner = shouldReplaceDuplicate(existing, item)
     ? { ...existing, ...item }
     : existing;
-  const detailArticle = selectDetailArticle(existing, item, winner);
-  if (!detailArticle || detailArticle.id === winner.id) return winner;
-  return {
+  const publishedAt = preferEarlierPublishedAt(existing.publishedAt, item.publishedAt);
+  const original = publishedAt === existing.publishedAt ? existing : item;
+  const guid = existing.guid?.trim() || item.guid?.trim() || winner.guid;
+  let merged: NewsArticle = {
     ...winner,
-    id: detailArticle.id,
-    items: hasStoryItems(detailArticle) ? detailArticle.items : winner.items,
+    id: original.id,
+    guid,
+    publishedAt,
   };
+  const detailArticle = selectDetailArticle(existing, item, merged);
+  if (detailArticle && detailArticle.id !== merged.id) {
+    merged = {
+      ...merged,
+      id: detailArticle.id,
+      items: hasStoryItems(detailArticle) ? detailArticle.items : merged.items,
+    };
+  }
+  return merged;
+}
+
+interface ArticleCluster {
+  article: NewsArticle;
+  keys: Set<string>;
 }
 
 export function dedupeNewsArticles(items: NewsArticle[]): NewsArticle[] {
-  const byKey = new Map<string, NewsArticle>();
+  const clusters: ArticleCluster[] = [];
+  const keyToCluster = new Map<string, ArticleCluster>();
+
   for (const item of items) {
-    const key = articleKey(item);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, item);
+    const keys = articleIdentityKeys(item);
+    const matched = new Set<ArticleCluster>();
+    for (const key of keys) {
+      const cluster = keyToCluster.get(key);
+      if (cluster) matched.add(cluster);
+    }
+
+    if (matched.size === 0) {
+      const cluster: ArticleCluster = { article: item, keys: new Set(keys) };
+      clusters.push(cluster);
+      for (const key of keys) keyToCluster.set(key, cluster);
       continue;
     }
-    byKey.set(key, mergeDuplicateArticle(existing, item));
+
+    const [primary, ...rest] = [...matched];
+    if (!primary) continue;
+    primary.article = mergeDuplicateArticle(primary.article, item);
+    for (const key of keys) {
+      primary.keys.add(key);
+      keyToCluster.set(key, primary);
+    }
+    for (const other of rest) {
+      primary.article = mergeDuplicateArticle(primary.article, other.article);
+      for (const key of other.keys) {
+        primary.keys.add(key);
+        keyToCluster.set(key, primary);
+      }
+      const index = clusters.indexOf(other);
+      if (index >= 0) clusters.splice(index, 1);
+    }
   }
-  return sortByPublishedAt([...byKey.values()]).slice(0, MAX_ARTICLES);
+
+  return sortByPublishedAt(clusters.map((cluster) => cluster.article)).slice(0, MAX_ARTICLES);
 }
 
 export function mergeNewsArticle(base: NewsArticle, detail: NewsArticle): NewsArticle {

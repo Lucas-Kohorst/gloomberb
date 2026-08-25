@@ -62,9 +62,42 @@ export function rssFullTextFromItemXml(block: string): string {
 }
 
 function parseDate(s: string): Date {
-  if (!s) return new Date(0);
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? new Date(0) : d;
+  const trimmed = s.trim();
+  if (!trimmed) return new Date(0);
+  // Fast Company and other WordPress feeds emit ISO-8601 without a timezone.
+  // `new Date("2026-08-25T13:04:00")` is local time, so US sessions show every
+  // item as `<1m`. Treat timezone-less ISO as UTC.
+  const isoWithoutTz = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmed);
+  const parsed = new Date(isoWithoutTz ? `${trimmed}Z` : trimmed);
+  return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+}
+
+function rssGuid(block: string): string {
+  return extractText(getTagContent(block, "guid") || getTagContent(block, "id"));
+}
+
+function rssItemIdentity(guid: string, url: string, title: string): string {
+  return guid.trim() || url.trim() || title.trim();
+}
+
+function rssItemId(guid: string, url: string, title: string): string {
+  return hashString(rssItemIdentity(guid, url, title).toLowerCase());
+}
+
+function rssDedupeKeys(guid: string, url: string): string[] {
+  const keys: string[] = [];
+  const normalizedGuid = guid.trim().toLowerCase();
+  if (normalizedGuid) keys.push(`g:${normalizedGuid}`);
+  const normalizedUrl = url.trim().toLowerCase().replace(/\/$/, "");
+  if (normalizedUrl) keys.push(`u:${normalizedUrl}`);
+  return keys;
+}
+
+function rememberItemKeys(seen: Set<string>, guid: string, url: string): boolean {
+  const keys = rssDedupeKeys(guid, url);
+  const duplicate = keys.some((key) => seen.has(key));
+  for (const key of keys) seen.add(key);
+  return duplicate;
 }
 
 function extractAttr(tag: string, attr: string): string {
@@ -99,6 +132,7 @@ function extractImageUrl(block: string): string | undefined {
 function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
   const itemRe = /<item>([\s\S]*?)<\/item>/gi;
   const items: MarketNewsItem[] = [];
+  const seen = new Set<string>();
   let match: RegExpExecArray | null;
 
   while ((match = itemRe.exec(xml)) !== null) {
@@ -107,6 +141,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
 
     const title = extractText(getTagContent(block, "title"));
     const url = extractText(getTagContent(block, "link"));
+    const guid = rssGuid(block);
     const pubDateRaw = extractText(getTagContent(block, "pubDate"));
     const descRaw = getTagContent(block, "description");
     const desc = descRaw ? extractText(descRaw) : "";
@@ -114,14 +149,15 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
     const categoryRaw = getTagContent(block, "category");
     const category = categoryRaw ? extractText(categoryRaw) : undefined;
 
-    if (!title && !url) continue;
+    if (!title && !url && !guid) continue;
+    if (rememberItemKeys(seen, guid, url || guid)) continue;
 
     const summary = desc
       ? desc.slice(0, 300) + (desc.length > 300 ? "…" : "")
       : undefined;
     const body = rssInlineBody(encoded, desc);
 
-    const id = hashString(`${url}|${title}`);
+    const id = rssItemId(guid, url, title);
     const publishedAt = parseDate(pubDateRaw);
     const categories = category ? [category] : config.category ? [config.category] : [];
     const imageUrl = extractImageUrl(block);
@@ -129,7 +165,8 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
     items.push({
       id,
       title,
-      url,
+      url: url || guid,
+      guid: guid || undefined,
       source: config.name,
       publishedAt,
       summary,
@@ -159,6 +196,7 @@ function parseRss2Items(xml: string, config: RssFeedConfig): MarketNewsItem[] {
 function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] {
   const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
   const items: MarketNewsItem[] = [];
+  const seen = new Set<string>();
   let match: RegExpExecArray | null;
 
   while ((match = entryRe.exec(xml)) !== null) {
@@ -192,9 +230,11 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
       : undefined;
     const body = rssInlineBody(contentFull, summaryFull);
 
-    if (!title && !url) continue;
+    const guid = rssGuid(block);
+    if (!title && !url && !guid) continue;
+    if (rememberItemKeys(seen, guid, url || guid)) continue;
 
-    const id = hashString(`${url}|${title}`);
+    const id = rssItemId(guid, url, title);
     const publishedAt = parseDate(publishedRaw);
     const categories = config.category ? [config.category] : [];
     const imageUrl = extractImageUrl(block);
@@ -202,7 +242,8 @@ function parseAtomEntries(xml: string, config: RssFeedConfig): MarketNewsItem[] 
     items.push({
       id,
       title,
-      url,
+      url: url || guid,
+      guid: guid || undefined,
       source: config.name,
       publishedAt,
       summary,
