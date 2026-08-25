@@ -51,7 +51,8 @@ export function overlayScreenerQuoteEntries<T extends ScreenerQuoteRow>(
   rows: readonly T[],
   entries: ReadonlyMap<string, QueryEntry<Quote>>,
 ): T[] {
-  return rows.map((row) => {
+  let changed = false;
+  const next = rows.map((row) => {
     const quote = resolveEntryData(entries.get(quoteKey(row)));
     if (!quote || !finite(quote.price)) return row;
     if (
@@ -62,19 +63,38 @@ export function overlayScreenerQuoteEntries<T extends ScreenerQuoteRow>(
       return row;
     }
 
+    const name = quote.name?.trim() || row.name;
+    const change = finite(quote.change) ? quote.change : row.change;
+    const changePercent = finite(quote.changePercent)
+      ? quote.changePercent
+      : row.changePercent;
+    const volume = finite(quote.volume) ? quote.volume : row.volume;
+    const currency = quote.currency || row.currency;
+    if (
+      row.name === name
+      && row.price === quote.price
+      && row.change === change
+      && row.changePercent === changePercent
+      && row.volume === volume
+      && row.currency === currency
+      && row.lastUpdated === quote.lastUpdated
+    ) {
+      return row;
+    }
+
+    changed = true;
     return {
       ...row,
-      name: quote.name?.trim() || row.name,
+      name,
       price: quote.price,
-      change: finite(quote.change) ? quote.change : row.change,
-      changePercent: finite(quote.changePercent)
-        ? quote.changePercent
-        : row.changePercent,
-      volume: finite(quote.volume) ? quote.volume : row.volume,
-      currency: quote.currency || row.currency,
+      change,
+      changePercent,
+      volume,
+      currency,
       lastUpdated: quote.lastUpdated,
     };
   });
+  return changed ? next : rows as T[];
 }
 
 function freshQuote(

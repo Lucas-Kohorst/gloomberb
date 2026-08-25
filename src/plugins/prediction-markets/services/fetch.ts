@@ -39,15 +39,22 @@ export const PREDICTION_CACHE_POLICIES = {
 } as const;
 
 let predictionMarketsPersistence: PluginPersistence | null = null;
+const predictionResourceInflight = new Map<string, Promise<unknown>>();
+
+function predictionResourceInflightKey(kind: string, key: string, sourceKey: string): string {
+  return `${kind}:${key}:${sourceKey}`;
+}
 
 export function attachPredictionMarketsPersistence(
   persistence: PluginPersistence,
 ): void {
   predictionMarketsPersistence = persistence;
+  predictionResourceInflight.clear();
 }
 
 export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
+  predictionResourceInflight.clear();
 }
 
 function connectionIdForPredictionUrl(url: string): string | null {
@@ -172,8 +179,9 @@ export async function loadCachedPredictionResource<T>(
   cachePolicy: { staleMs: number; expireMs: number },
   options?: { force?: boolean },
 ): Promise<T> {
+  const sourceKey = DEFAULT_SOURCE_KEY;
   const cached = predictionMarketsPersistence?.getResource<T>(kind, key, {
-    sourceKey: DEFAULT_SOURCE_KEY,
+    sourceKey,
   });
   if (
     !options?.force
@@ -183,14 +191,25 @@ export async function loadCachedPredictionResource<T>(
   ) {
     return cached.value;
   }
-  try {
-    const nextValue = await fetcher();
-    setCachedPredictionResource(kind, key, nextValue, cachePolicy);
-    return nextValue;
-  } catch (error) {
-    if (cached) return cached.value;
-    throw error;
-  }
+
+  const inflightKey = predictionResourceInflightKey(kind, key, sourceKey);
+  const pending = predictionResourceInflight.get(inflightKey);
+  if (pending) return pending as Promise<T>;
+
+  const work = (async () => {
+    try {
+      const nextValue = await fetcher();
+      setCachedPredictionResource(kind, key, nextValue, cachePolicy, sourceKey);
+      return nextValue;
+    } catch (error) {
+      if (cached) return cached.value;
+      throw error;
+    }
+  })().finally(() => {
+    predictionResourceInflight.delete(inflightKey);
+  });
+  predictionResourceInflight.set(inflightKey, work);
+  return work;
 }
 
 function summarizePredictionFetchUrl(url: string): string {

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, useUiCapabilities } from "../../../ui";
 import {
-  buildMetricTreemapNavigationTiles,
   findMetricTreemapNeighbor,
   MetricTreemapSurface,
   Tabs,
+  useMetricTreemapLayout,
   usePaneFooter,
   useUpdatedAgo,
   type MetricTreemapDirection,
@@ -99,9 +99,12 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     [freshnessNow, liveQuoteEntries, quoteTargets, subscriptionStartedAt],
   );
   const items = useMemo(() => buildItems(resolvedAssets), [resolvedAssets]);
-  const navigationTiles = useMemo(
-    () => buildMetricTreemapNavigationTiles(items, chartWidth, chartHeight, cellAspect, nativePaneChrome ? "float" : "integer"),
-    [cellAspect, chartHeight, chartWidth, items, nativePaneChrome],
+  const navigationTiles = useMetricTreemapLayout(
+    items,
+    chartWidth,
+    chartHeight,
+    cellAspect,
+    nativePaneChrome ? "float" : "integer",
   );
   const selectedIdx = selectedSymbol
     ? resolvedAssets.findIndex((asset) => asset.symbol === selectedSymbol)

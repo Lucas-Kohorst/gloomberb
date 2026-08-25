@@ -52,6 +52,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 053  | Watchlists in PORT; ETF flows spike | P2 | L | — | DONE (watchlists landed; ETF flows blocked — no source) |
 | 054  | Settlement series matcher | P2 | M | — | DONE |
 | 055  | Command bar + analytics chrome | P2 | M | 049 | DONE |
+| 056  | DuckDB vs SQLite (research; keep SQLite KV) | — | — | — | RESEARCH |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 

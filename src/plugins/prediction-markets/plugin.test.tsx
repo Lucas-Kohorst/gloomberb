@@ -75,6 +75,34 @@ describe("prediction markets plugin registration and services", () => {
     expect(fetchCount).toBe(0);
   });
 
+  test("shares an in-flight prediction resource fetch for the same key", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    let fetchCount = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const load = () => loadCachedPredictionResource(
+      "catalog",
+      "stampede",
+      async () => {
+        fetchCount += 1;
+        await gate;
+        return [{ id: "shared" }];
+      },
+      PREDICTION_CACHE_POLICIES.catalog,
+    );
+
+    const first = load();
+    const second = load();
+    release();
+    const [left, right] = await Promise.all([first, second]);
+
+    expect(fetchCount).toBe(1);
+    expect(left).toBe(right);
+  });
+
   test("normalizes venue payloads", () => {
     expect(
       normalizePolymarketMarket({

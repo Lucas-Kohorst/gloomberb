@@ -58,6 +58,38 @@ describe("screener live quotes", () => {
     });
   });
 
+  test("keeps row and list identity when the overlay would not change values", () => {
+    const rows = [{
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      price: 192,
+      change: 3,
+      changePercent: 1.59,
+      volume: 20,
+      currency: "USD",
+      exchange: "NASDAQ",
+      lastUpdated: 200,
+    }];
+    const quote: Quote = {
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      price: 192,
+      change: 3,
+      changePercent: 1.59,
+      volume: 20,
+      currency: "USD",
+      lastUpdated: 200,
+      dataSource: "live",
+    };
+    const entries = new Map([
+      [buildQuoteKey({ symbol: "AAPL", exchange: "NASDAQ" }), readyEntry(quote)],
+    ]);
+
+    const overlaid = overlayScreenerQuoteEntries(rows, entries);
+    expect(overlaid).toBe(rows);
+    expect(overlaid[0]).toBe(rows[0]);
+  });
+
   test("marks complete fresh Cloud stream coverage as live", () => {
     const now = 1_000;
     const rows = [

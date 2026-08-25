@@ -474,3 +474,30 @@ export function buildMetricTreemapNavigationTiles<T>(
     ? buildMetricTreemapRects(items, width, height, cellAspect)
     : buildMetricTreemap(items, width, height, cellAspect);
 }
+
+/** Layout depends on identity, weight, and pane size — not tint or labels. */
+export function metricTreemapGeometryKey(
+  items: readonly Pick<MetricTreemapItem, "id" | "weight">[],
+  width: number,
+  height: number,
+  cellAspect: number,
+  mode: MetricTreemapLayoutMode,
+): string {
+  return `${mode}|${width}|${height}|${cellAspect}|${items.map((item) => `${item.id}:${Math.max(item.weight ?? 0, 0)}`).join(",")}`;
+}
+
+export function overlayMetricTreemapItems<T, Tile extends { item: MetricTreemapItem<T> }>(
+  tiles: Tile[],
+  items: readonly MetricTreemapItem<T>[],
+): Tile[] {
+  if (tiles.length === 0) return tiles;
+  const byId = new Map(items.map((item) => [item.id, item]));
+  let changed = false;
+  const next = tiles.map((tile) => {
+    const item = byId.get(tile.item.id);
+    if (!item || item === tile.item) return tile;
+    changed = true;
+    return { ...tile, item };
+  });
+  return changed ? next : tiles;
+}

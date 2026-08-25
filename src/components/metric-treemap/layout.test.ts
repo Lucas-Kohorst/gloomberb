@@ -3,6 +3,8 @@ import {
   buildMetricTreemap,
   buildMetricTreemapRects,
   findMetricTreemapNeighbor,
+  metricTreemapGeometryKey,
+  overlayMetricTreemapItems,
   type MetricTreemapItem,
   type MetricTreemapTile,
 } from "./layout";
@@ -73,5 +75,25 @@ describe("metric treemap layout", () => {
 
     expect(findMetricTreemapNeighbor(tiles, "current", "right")?.item.id).toBe("right");
     expect(findMetricTreemapNeighbor(tiles, "current", "down")?.item.id).toBe("lower");
+  });
+
+  test("reuses tile geometry when only tint and labels change", () => {
+    const layoutItems: Array<MetricTreemapItem<string>> = [
+      { id: "a", label: "A", weight: 4, colorValue: 1, primaryText: "+1%", data: "A" },
+      { id: "b", label: "B", weight: 2, colorValue: -1, primaryText: "-1%", data: "B" },
+    ];
+    const tintedItems: Array<MetricTreemapItem<string>> = [
+      { id: "a", label: "A", weight: 4, colorValue: 2.4, primaryText: "+2.4%", data: "A" },
+      { id: "b", label: "B", weight: 2, colorValue: -0.3, primaryText: "-0.3%", data: "B" },
+    ];
+    const tiles = buildMetricTreemapRects(layoutItems, 80, 40);
+    const overlaid = overlayMetricTreemapItems(tiles, tintedItems);
+
+    expect(overlaid.map((tile) => ({ id: tile.item.id, x: tile.x, y: tile.y, width: tile.width, height: tile.height })))
+      .toEqual(tiles.map((tile) => ({ id: tile.item.id, x: tile.x, y: tile.y, width: tile.width, height: tile.height })));
+    expect(overlaid[0]?.item.colorValue).toBe(2.4);
+    expect(overlaid[0]?.item.primaryText).toBe("+2.4%");
+    expect(metricTreemapGeometryKey(layoutItems, 80, 40, 1, "float"))
+      .toBe(metricTreemapGeometryKey(tintedItems, 80, 40, 1, "float"));
   });
 });
