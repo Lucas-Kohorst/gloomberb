@@ -55,6 +55,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     splitting: true,
     extraAliasRules: [
       ["./backend-rpc", "web-backend-rpc.ts"],
+      ["./native-loader", "plugins/broker-sync/robinhood.ts", "native-stubs/broker-sync-native-loader-hosted.ts"],
       ...(options.extraAliasRules ?? []),
     ],
   });
@@ -63,6 +64,7 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     join(options.outdir, entrySrc.replace(/^\.\//, "")),
     "web-main",
   );
+  const robinhoodBrowserSrc = await writeRobinhoodBrowserBundle(options.outdir);
   const htmlPath = join(options.outdir, "index.html");
   // Nested routes (`/s/{id}`) serve this same document; relative `./web-main.js`
   // would resolve under `/s/` and the SPA fallback would return HTML instead of
@@ -76,9 +78,36 @@ export async function writeWebClientPage(options: Omit<PageOptions, "pluginName"
     stylesheet,
     entrySrc: absoluteEntrySrc,
     faviconHref: toRootAbsoluteAssetUrl("favicon.svg"),
-    bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\n${options.bootstrapScript}`,
+    bootstrapScript: `window.__GLOOM_WEB_SESSION = ${JSON.stringify(options.sessionToken)};\nwindow.__GLOOM_ROBINHOOD_BROWSER_SRC = ${JSON.stringify(robinhoodBrowserSrc)};\n${options.bootstrapScript}`,
   }));
   return htmlPath;
+}
+
+/**
+ * Unsplit MCP/Zod graph. Hosted `splitting: true` drops Zod `util` bindings
+ * from the lazy Robinhood chunk (`Y0 is not defined` on Connect Broker).
+ */
+async function writeRobinhoodBrowserBundle(outdir: string): Promise<string> {
+  const result = await Bun.build({
+    entrypoints: [join(process.cwd(), "src", "plugins", "broker-sync", "robinhood-browser.ts")],
+    outdir,
+    target: "browser",
+    format: "esm",
+    splitting: false,
+    sourcemap: "external",
+    minify: true,
+    define: {
+      "process.env.NODE_ENV": "\"production\"",
+    },
+  });
+  if (!result.success) {
+    const details = result.logs.map((log) => log.message).filter(Boolean).join("\n");
+    throw new Error(details ? `Failed to build Robinhood browser bundle\n${details}` : "Failed to build Robinhood browser bundle");
+  }
+  const entry = result.outputs.find((output) => output.kind === "entry-point" && output.path.endsWith(".js"));
+  if (!entry) throw new Error("Robinhood browser build did not produce a JavaScript entrypoint");
+  const hashedPath = await hashJsEntrypoint(entry.path, "robinhood-browser");
+  return toRootAbsoluteAssetUrl(`./${relative(outdir, hashedPath).replaceAll("\\", "/")}`);
 }
 
 /**

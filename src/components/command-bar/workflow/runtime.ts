@@ -37,6 +37,17 @@ import {
   type CommandBarWorkflowInputRefs,
 } from "./route-actions";
 
+function summarizeWorkflowActionError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Could not complete that action.";
+  if (
+    error instanceof ReferenceError
+    || /Failed to fetch dynamically imported module/i.test(message)
+  ) {
+    return "This page is out of date. Reload and connect again.";
+  }
+  return message;
+}
+
 interface CloseCommandBarOptions {
   revertThemePreview?: boolean;
 }
@@ -165,7 +176,7 @@ export function useCommandBarWorkflowRuntime({
         ? {
           ...current,
           pending: false,
-          error: error instanceof Error ? error.message : "Could not complete that action.",
+          error: summarizeWorkflowActionError(error),
         }
         : current);
       return;
