@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.13.6 — Unread click-through, PM search, OPT layout tabs
+## v0.13.6 — Unread click-through, PM search, OPT layout tabs, CORR markets
 
-Clicking an Unread row opens that chat channel. Prediction Markets search filters grouped Polymarket and Kalshi lists, including multi-word queries. Desktop layout tabs use Option so they no longer steal the browser tab switcher. Empty panes use ESG’s centered two-line no-data copy.
+Clicking an Unread row opens that chat channel. Prediction Markets search filters grouped Polymarket and Kalshi lists, including multi-word queries. Desktop layout tabs use Option so they no longer steal the browser tab switcher. Empty panes use ESG’s centered two-line no-data copy. CORR mixes equity tickers with `POLY:`, `KALSHI:`, and `ADJ:` series.
 
 ### Chat
 
@@ -21,16 +21,17 @@ Clicking an Unread row opens that chat channel. Prediction Markets search filter
 
 - No-data panes center two lines: `No X data` / `{symbol} has no Y.` Footers keep loading and unavailable chips only.
 
+### Correlation
+
+- `CORR` accepts prediction-market series (`POLY:`, `KALSHI:`, `ADJ:`) alongside tickers. Yes-prices and index levels collapse to daily closes, then the usual Pearson matrix runs. Example: `CORR AAPL, POLY:fed-cut-september`.
+
 ### What to test
 
 - Unread: click `#help unread` (or any row) — chat opens that channel.
 - PM: type `anthropic ipo` — the list shrinks to matching markets.
 - Desktop: Option+1/2/3 switches Home/Monitor/Adjacent; Command+1/2/3 does not. No underline on tab hover.
 - ESG / holders / news empty: centered two-line copy, not a footer “no data” chip.
-
-### Not in this build
-
-- Correlation matrix prediction-market series.
+- CORR: `CORR AAPL, POLY:fed-cut-september` (or a `KALSHI:` / `ADJ:` id) fills a mixed matrix.
 
 ## v0.13.5 — First-paint snappiness, PM Enter, layout chrome, upgrade label
 
