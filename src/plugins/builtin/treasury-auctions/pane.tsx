@@ -21,6 +21,7 @@ import { formatRelativeAge } from "../../../utils/relative-time";
 import type { PaneProps } from "../../../types/plugin";
 import { usePaneInstance } from "../../../state/app/context";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { loadTreasuryAuctions } from "./cache";
 import {
   AUCTION_FILTERS,
@@ -311,10 +312,10 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       info,
       hints: [
         ...(!detailOpen
-          ? [{ id: "search", key: "/", label: "search", onPress: focusSearch }]
+          ? [paneSearchHint(focusSearch)]
           : []),
         { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-        { id: "refresh", key: "r", label: "efresh", onPress: reload },
+        paneRefreshHint(reload),
       ],
     };
   }, [

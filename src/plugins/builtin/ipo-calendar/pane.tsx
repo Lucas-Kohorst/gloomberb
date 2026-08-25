@@ -6,7 +6,7 @@ import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePluginTickerActions } from "../../runtime";
 import { colors, priceColor } from "../../../theme/colors";
 import { openUrl } from "../../../components/ui/external-link";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -172,8 +172,8 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       ...(searchQuery ? [{ id: "search", parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      paneSearchHint(focusSearch),
+      paneRefreshHint(refresh),
     ],
     showOpenHint: !error && !!selectedRecord?.secUrl,
   });

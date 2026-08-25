@@ -23,6 +23,7 @@ import { scheduleConfigSave } from "../../../state/config-save-scheduler";
 import { getSharedRegistry } from "../../registry";
 import { usePluginAppActions } from "../../runtime";
 import { isNonToggleableBuiltinPluginId } from "../../ownership";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { buildPluginColumns, type PluginColumn, type PluginColumnId } from "./columns";
 import {
   installPluginAsync,
@@ -423,8 +424,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
           { id: "install-cancel", key: "Esc", label: "cancel", onPress: cancelInstall },
         ]
       : [
-          { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: busy },
-          { id: "search", key: "/", label: "search", onPress: focusSearch, disabled: installMode },
+          paneRefreshHint(refresh, { disabled: busy }),
+          paneSearchHint(focusSearch, { disabled: installMode }),
           { id: "toggle", key: "t", label: "oggle", onPress: toggleSelected, disabled: !canToggle || busy },
           ...(managementAvailable
             ? [{

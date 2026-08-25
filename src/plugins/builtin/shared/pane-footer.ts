@@ -38,6 +38,14 @@ export function paneShareHint(
   return { id: "share", key: PANE_FOOTER_ACTION_KEYS.share, label: "share", onPress, ...extra };
 }
 
+export function paneDelayedStatus(): PaneFooterSegment {
+  return { id: "delayed", parts: [{ text: "delayed", tone: "muted" }] };
+}
+
+export function paneLiveStatus(): PaneFooterSegment {
+  return { id: "live", parts: [{ text: "live", tone: "value" }] };
+}
+
 const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
 const EMPTY_TRAILING_INFO: PaneFooterSegment[] = [];
 const EMPTY_HINTS: PaneHint[] = [];

@@ -25,6 +25,7 @@ import {
   usePluginPaneState,
   usePluginTickerActions,
 } from "../../runtime";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { withConnectionRequest } from "../connections/register";
 import { graphFooterHint } from "../shared/graph-pop-out";
 import { loadCorporateYields } from "./fred-yields";
@@ -301,8 +302,8 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         ];
         const hints = [
           graphFooterHint(openSelectedHit, selectedHit?.kind === "series"),
-          { id: "refresh", key: "r", label: "efresh", onPress: () => runSearch(searchQuery) },
-          { id: "search", key: "/", label: "search", onPress: focusSearch },
+          paneRefreshHint(() => runSearch(searchQuery)),
+          paneSearchHint(focusSearch),
         ];
         return { info, hints };
       }
@@ -315,7 +316,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       ];
       const hints = [
         graphFooterHint(chartSelected, !!selectedEntry),
-        { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
+        paneRefreshHint(() => load(true)),
       ];
       return { info, hints };
     },

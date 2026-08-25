@@ -23,6 +23,7 @@ import { createPredictionColumns } from "./columns";
 import { getPredictionColumnValue } from "./metrics";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
+import { paneDelayedStatus, paneLiveStatus } from "../builtin/shared/pane-footer";
 import type {
   PredictionColumnDef,
   PredictionListRow,
@@ -142,8 +143,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           id: "catalog",
           parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
         }] : []),
-        ...(liveBook || (!controller.detailOpen && kalshiLive) ? [{ id: "live", parts: [{ text: "live", tone: "value" as const }] }] : []),
-        ...(!liveBook && kalshiDelayed ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
+        ...(liveBook || (!controller.detailOpen && kalshiLive) ? [paneLiveStatus()] : []),
+        ...(!liveBook && kalshiDelayed ? [paneDelayedStatus()] : []),
         ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ],
       trailingInfo: !controller.detailOpen ? [controller.poll.segment] : [],
