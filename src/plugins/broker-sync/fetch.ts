@@ -9,7 +9,7 @@ type FetchLike = typeof fetch;
 /** Browser token exchange is blocked by Robinhood CORS; hosted proxies that POST. */
 export function createRobinhoodFetch(base: FetchLike = fetch): FetchLike {
   if (!isHostedWebClient()) return base;
-  return async (input, init) => {
+  const wrapped: FetchLike = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string"
       ? input
       : input instanceof URL
@@ -23,5 +23,6 @@ export function createRobinhoodFetch(base: FetchLike = fetch): FetchLike {
       credentials: "include",
       signal: init?.signal,
     });
-  };
+  }, base);
+  return wrapped;
 }
