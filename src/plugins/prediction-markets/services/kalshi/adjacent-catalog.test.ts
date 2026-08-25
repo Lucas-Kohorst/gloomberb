@@ -128,6 +128,15 @@ describe("hosted Adjacent Kalshi catalog URL", () => {
     expect(url.includes("limit=")).toBe(false);
   });
 
+  test("does not send Adjacent sort=created for New browse", () => {
+    const url = buildHostedAdjacentKalshiMarketsUrl({
+      browseTab: "new",
+      page: 1,
+    });
+    expect(url).not.toContain("sort=created");
+    expect(url).toContain("platform=kalshi");
+  });
+
   // `/api/data/adjacent` is matched by filter lists; `/api/feed/mkt` is the
   // default. A 522 means the Worker could not reach Adjacent origin, so the
   // browser has to go to Adjacent itself (CORS *).

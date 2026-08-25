@@ -7,6 +7,10 @@ import {
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
 import { createPredictionColumns } from "./columns";
+import {
+  PREDICTION_FILTER_TABS,
+  resolvePredictionFilterId,
+} from "./navigation";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import {
   buildPredictionListRows,
@@ -439,10 +443,16 @@ describe("prediction markets plugin registration and services", () => {
       }),
     ).toBe("next-venue-tab");
     expect(resolvePredictionKeyboardCommand({ name: "1", sequence: "1" })).toBe(
-      "browse-top",
+      "filter-all",
+    );
+    expect(resolvePredictionKeyboardCommand({ name: "2", sequence: "2" })).toBe(
+      "filter-watchlist",
+    );
+    expect(resolvePredictionKeyboardCommand({ name: "3", sequence: "3" })).toBe(
+      "browse-ending",
     );
     expect(resolvePredictionKeyboardCommand({ name: "4", sequence: "4" })).toBe(
-      "filter-watchlist",
+      "browse-new",
     );
     expect(resolvePredictionKeyboardCommand({ name: "[", sequence: "[" })).toBe(
       "previous-browse-tab",
@@ -450,6 +460,17 @@ describe("prediction markets plugin registration and services", () => {
     expect(resolvePredictionKeyboardCommand({ name: "]", sequence: "]" })).toBe(
       "next-browse-tab",
     );
+  });
+
+  test("keeps All, Watchlist, Ending, and New as one filter list", () => {
+    expect(PREDICTION_FILTER_TABS.slice(0, 4).map((tab) => tab.id)).toEqual([
+      "all",
+      "watchlist",
+      "ending",
+      "new",
+    ]);
+    expect(resolvePredictionFilterId("all", "new")).toBe("new");
+    expect(resolvePredictionFilterId("politics", "new")).toBe("politics");
   });
 
   test("filters closed Polymarket child markets from the catalog", async () => {

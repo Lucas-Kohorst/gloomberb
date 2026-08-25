@@ -2,11 +2,13 @@ import { useCallback, type RefObject } from "react";
 import { type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { isPlainArrowDown, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { getAdjacentPredictionCategoryId } from "../categories";
 import { resolvePredictionKeyboardCommand } from "../keyboard";
 import {
-  getAdjacentPredictionBrowseTab,
+  cyclePredictionFilterId,
+  getAdjacentPredictionFilterId,
   getAdjacentPredictionVenueScope,
+  resolvePredictionFilterId,
+  type PredictionFilterId,
 } from "../navigation";
 import type {
   PredictionBrowseTab,
@@ -47,8 +49,7 @@ interface UsePredictionControllerKeyboardParams {
   sortedOutcomeMarkets: PredictionMarketSummary[];
   blurSearch: () => void;
   focusSearch: () => void;
-  selectBrowseTab: (tab: PredictionBrowseTab) => void;
-  selectCategory: (categoryId: PredictionCategoryId) => void;
+  selectFilter: (filterId: PredictionFilterId) => void;
   selectMarket: (marketKey: string) => void;
   setVenue: (venueScope: PredictionVenueScope) => void;
   toggleWatchlist: (row: PredictionListRow) => void;
@@ -70,8 +71,7 @@ export function usePredictionControllerKeyboard({
   sortedOutcomeMarkets,
   blurSearch,
   focusSearch,
-  selectBrowseTab,
-  selectCategory,
+  selectFilter,
   selectMarket,
   setVenue,
   toggleWatchlist,
@@ -204,14 +204,20 @@ export function usePredictionControllerKeyboard({
       if (command === "previous-category") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectCategory(getAdjacentPredictionCategoryId(categoryId, "previous"));
+        selectFilter(getAdjacentPredictionFilterId(
+          resolvePredictionFilterId(categoryId, browseTab),
+          "previous",
+        ));
         return;
       }
 
       if (command === "next-category") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectCategory(getAdjacentPredictionCategoryId(categoryId, "next"));
+        selectFilter(getAdjacentPredictionFilterId(
+          resolvePredictionFilterId(categoryId, browseTab),
+          "next",
+        ));
         return;
       }
 
@@ -225,39 +231,45 @@ export function usePredictionControllerKeyboard({
       if (command === "previous-browse-tab") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab(getAdjacentPredictionBrowseTab(browseTab, "previous"));
+        selectFilter(cyclePredictionFilterId(
+          resolvePredictionFilterId(categoryId, browseTab),
+          "previous",
+        ));
         return;
       }
 
       if (command === "next-browse-tab") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab(getAdjacentPredictionBrowseTab(browseTab, "next"));
+        selectFilter(cyclePredictionFilterId(
+          resolvePredictionFilterId(categoryId, browseTab),
+          "next",
+        ));
         return;
       }
 
-      if (command === "browse-top") {
+      if (command === "filter-all" || command === "browse-top") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab("top");
+        selectFilter("all");
         return;
       }
       if (command === "browse-ending") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab("ending");
+        selectFilter("ending");
         return;
       }
       if (command === "browse-new") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectBrowseTab("new");
+        selectFilter("new");
         return;
       }
       if (command === "filter-watchlist") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        selectCategory("watchlist");
+        selectFilter("watchlist");
       }
     },
     [
@@ -274,8 +286,7 @@ export function usePredictionControllerKeyboard({
       refreshCatalog,
       scrollDetailBy,
       searchFocused,
-      selectBrowseTab,
-      selectCategory,
+      selectFilter,
       selectedRow,
       setVenue,
       sortedOutcomeMarkets.length,

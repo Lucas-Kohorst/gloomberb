@@ -24,6 +24,7 @@ import {
 } from "../../../plugins/builtin/ai/agent-history";
 import type { BrokerAdapter } from "../../../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
+import { NotesFiles } from "../../../plugins/builtin/notes/files";
 
 const DESKTOP_CORE_PLUGIN_ID = "desktop-core";
 const NOTES_INDEX_FILE = "__quick-notes-index__.json";
@@ -271,6 +272,13 @@ function createNotesFilesCapability(): PluginCapability {
           notesIndexPath(requireString(input.dataDir, "Notes dataDir")),
           JSON.stringify(input.entries ?? []),
         );
+        return null;
+      }, "action"),
+      collectAllForSync: op((input: any) => (
+        new NotesFiles(requireString(input.dataDir, "Notes dataDir")).collectAllForSync()
+      )),
+      applySyncData: op(async (input: any) => {
+        await new NotesFiles(requireString(input.dataDir, "Notes dataDir")).applySyncData(input.data);
         return null;
       }, "action"),
     },
