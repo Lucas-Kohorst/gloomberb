@@ -18,6 +18,8 @@ import { notesPlugin } from "./builtin/notes";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
+import { trafficPlugin } from "./builtin/traffic";
+import { satellitePlugin } from "./builtin/satellite";
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
@@ -39,6 +41,8 @@ const desktopBackendPlugins: GloomPlugin[] = [
   predictionMarketsBackendPlugin,
   congressTradesPlugin,
   buildoutPlugin,
+  trafficPlugin,
+  satellitePlugin,
   substackPlugin,
   notesPlugin,
   aiPlugin,

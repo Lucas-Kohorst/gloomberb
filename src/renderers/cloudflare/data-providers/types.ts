@@ -17,6 +17,11 @@
  * - `adjacent` — Adjacent indices, rates, markets
  * - `us-listings` — Nasdaq Trader listed files + SEC OTC, 12h cache
  * - `owid` — Our World in Data grapher CSV + metadata (slug + entity code)
+ * - `world-bank` — World Bank indicator prints (country + regional)
+ * - `opensky` — OpenSky Network state vectors (delayed public)
+ * - `digitraffic-ais` — Finnish Digitraffic public AIS
+ * - `nasa-firms` — FIRMS VIIRS 24h hotspot CSV
+ * - `nasa-gibs` — NASA GIBS / HLS WMS imagery
  *
  * Worker secrets (CoS sets these; do not commit values):
  *   wrangler secret put ADJACENT_API_KEY

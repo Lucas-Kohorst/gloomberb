@@ -73,6 +73,30 @@ describe("buildArticleSearchResultItems", () => {
     });
     expect(items).toEqual([]);
   });
+
+  test("offers 10-K / 10-Q filings for filing lookups", () => {
+    const opened: string[] = [];
+    const filing: NewsArticle = {
+      ...article("10-K Apple Inc.", "SEC EDGAR"),
+      id: "sec:0001",
+      origin: "sec-edgar",
+      topics: ["filing", "10-K", "10k"],
+      tickers: ["AAPL"],
+    };
+    const items = buildArticleSearchResultItems({
+      articles: [filing],
+      query: "ART 10-K AAPL",
+      phase: "ready",
+      onOpen: (item) => {
+        opened.push(item.id);
+      },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.right).toBe("10K");
+    expect(items[0]?.category).toBe("Filings");
+    items[0]?.action();
+    expect(opened).toEqual(["sec:0001"]);
+  });
 });
 
 describe("isArticleLookupShortcut", () => {

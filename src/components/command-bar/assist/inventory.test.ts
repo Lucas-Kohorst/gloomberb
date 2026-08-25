@@ -187,6 +187,11 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("PM")).toBe(true);
     expect(prefixes.has("RH")).toBe(true);
     expect(prefixes.has("BR")).toBe(true);
+    expect(prefixes.has("COMM")).toBe(true);
+    expect(prefixes.has("WB")).toBe(true);
+    expect(prefixes.has("10K")).toBe(true);
+    expect(prefixes.has("AIS")).toBe(true);
+    expect(prefixes.has("SAT")).toBe(true);
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {
