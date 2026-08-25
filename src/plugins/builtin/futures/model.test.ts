@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getContractsBySector } from "./contracts";
+import { FUTURES_CONTRACTS, getContractsBySector } from "./contracts";
 import { buildFuturesRows, DEFAULT_FUTURES_SORT } from "./model";
 
 const contractsBySector = getContractsBySector();
@@ -33,6 +33,7 @@ describe("buildFuturesRows", () => {
       "CL=F",
       "BZ=F",
       "NG=F",
+      "HO=F",
       "RB=F",
     ]);
   });
@@ -56,8 +57,33 @@ describe("buildFuturesRows", () => {
       "CL=F",
       "BZ=F",
       "NG=F",
+      "HO=F",
       "RB=F",
       "header:metals",
     ]);
+  });
+});
+
+describe("FUTURES_CONTRACTS", () => {
+  test("includes energy, metals, and ag extras folded from COMM", () => {
+    const byCode = new Map(FUTURES_CONTRACTS.map((contract) => [contract.code, contract]));
+    expect(byCode.get("CL")?.sector).toBe("energy");
+    expect(byCode.get("HO")).toEqual({
+      symbol: "HO=F",
+      code: "HO",
+      name: "NY Harbor ULSD",
+      sector: "energy",
+    });
+    expect(byCode.get("PA")).toEqual({
+      symbol: "PA=F",
+      code: "PA",
+      name: "Palladium",
+      sector: "metals",
+    });
+    expect(byCode.get("ZL")?.sector).toBe("agriculture");
+    expect(byCode.get("CT")?.sector).toBe("agriculture");
+    expect(byCode.get("CC")?.sector).toBe("agriculture");
+    expect(new Set(FUTURES_CONTRACTS.map((contract) => contract.symbol)).size)
+      .toBe(FUTURES_CONTRACTS.length);
   });
 });

@@ -187,7 +187,10 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("PM")).toBe(true);
     expect(prefixes.has("RH")).toBe(true);
     expect(prefixes.has("BR")).toBe(true);
+    expect(prefixes.has("FUT")).toBe(true);
     expect(prefixes.has("COMM")).toBe(true);
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "COMM")?.paneId).toBe("futures");
+    expect(paneTemplates.find((template) => template.shortcut?.prefix === "FUT")?.paneId).toBe("futures");
     expect(prefixes.has("WB")).toBe(true);
     expect(prefixes.has("10K")).toBe(true);
     expect(prefixes.has("AIS")).toBe(true);

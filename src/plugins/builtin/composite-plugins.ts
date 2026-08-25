@@ -18,7 +18,6 @@ import { countryEconModule } from "./country-econ";
 import { earningsModule } from "./earnings";
 import { fearGreedModule } from "./fear-greed";
 import { futuresModule } from "./futures";
-import { commoditiesModule } from "./commodities";
 import { fxMatrixModule } from "./fx-matrix";
 import { helpModule } from "./help";
 import { ipoCalendarModule } from "./ipo-calendar";
@@ -90,13 +89,12 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
   id: "market-overview",
   name: "Market Overview",
   version: "1.0.0",
-  description: "Global indices, futures, commodities, movers, scanners, sectors, FX, sentiment, and correlations.",
+  description: "Global indices, futures (incl. commodities), movers, scanners, sectors, FX, sentiment, and correlations.",
   toggleable: true,
   modules: [
     correlationModule,
     worldIndicesModule,
     futuresModule,
-    commoditiesModule,
     marketHeatmapModule,
     marketMoversModule,
     marketHaltsModule,

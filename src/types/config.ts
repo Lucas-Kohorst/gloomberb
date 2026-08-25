@@ -179,6 +179,7 @@ export function normalizePaneId(paneId: string): string {
     return CHART_COMPOSER_PANE_ID;
   }
   if (paneId === "plugin-discovery") return "plugin-market";
+  if (paneId === "commodities") return "futures";
   return paneId;
 }
 

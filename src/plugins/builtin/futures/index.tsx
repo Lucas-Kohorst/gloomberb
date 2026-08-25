@@ -25,9 +25,11 @@ import {
 } from "../shared/use-quote-board";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
+  FUTURES_SECTOR_ORDER,
   type FuturesContract,
   type FuturesSector,
   getContractsBySector,
@@ -49,6 +51,18 @@ import {
 
 const REFRESH_INTERVAL_MS = 60_000;
 const FUTURES_SYMBOLS = FUTURES_CONTRACTS.map((contract) => contract.symbol);
+const COMM_COLLAPSE_SECTORS: FuturesSector[] = ["equity-index", "rates", "currencies"];
+
+function parseCollapsedSectors(raw: string | undefined): Set<FuturesSector> {
+  if (!raw?.trim()) return new Set();
+  const allowed = new Set<string>(FUTURES_SECTOR_ORDER);
+  const next = new Set<FuturesSector>();
+  for (const token of raw.split(",")) {
+    const sector = token.trim();
+    if (allowed.has(sector)) next.add(sector as FuturesSector);
+  }
+  return next;
+}
 
 function matchesFuturesSearch(contract: FuturesContract, query: string): boolean {
   const normalized = query.trim().toLowerCase();
@@ -69,7 +83,9 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [collapsedSectors, setCollapsedSectors] = useState<Set<FuturesSector>>(new Set());
+  const [collapsedSectors, setCollapsedSectors] = useState<Set<FuturesSector>>(
+    () => parseCollapsedSectors(paneInstance?.params?.collapse),
+  );
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const contractsBySector = useMemo(() => getContractsBySector(), []);
@@ -197,6 +213,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       info.push({ id: "error", parts: [{ text: `${failedCount} failed`, tone: "warning" }] });
     }
     if (latestTs > 0) {
+      info.push({ id: "delayed", parts: [{ text: "delayed", tone: "muted" }] });
       info.push({
         id: "fresh",
         parts: [{
@@ -212,11 +229,11 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       info,
       hints: [
         { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(selectedRow && selectedRow.type === "row") },
-        { id: "search", key: "/", label: "search", onPress: focusSearch },
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+        paneSearchHint(focusSearch),
+        paneRefreshHint(refresh),
       ],
     };
-  }, [focusSearch, graphSelected, latestTs, loadingCount, refresh, searchQuery, selectedRow]);
+  }, [failedCount, focusSearch, graphSelected, latestTs, loadingCount, refresh, searchQuery, selectedRow]);
 
   return (
     <DataTableView<FuturesTableRow, FuturesColumn>
@@ -305,13 +322,49 @@ export const futuresModule: PluginModule = {
         "gold",
         "silver",
         "copper",
+        "palladium",
         "corn",
         "wheat",
+        "cotton",
+        "cocoa",
         "treasuries",
         "contracts",
         "cme",
       ],
       shortcut: { prefix: "FUT" },
+    },
+    {
+      id: "commodities-pane",
+      paneId: "futures",
+      label: "Commodities",
+      description:
+        "Delayed Yahoo commodities board: energy, metals, and agriculture front-month prices (oil, gas, gold, copper, grains, and softs). Same FUT quotes; equity-index, rates, and FX start collapsed.",
+      keywords: [
+        "commodities",
+        "oil",
+        "crude",
+        "brent",
+        "wti",
+        "gold",
+        "silver",
+        "copper",
+        "palladium",
+        "wheat",
+        "corn",
+        "soy",
+        "cotton",
+        "cocoa",
+        "natgas",
+        "metals",
+        "agriculture",
+        "delayed",
+      ],
+      category: "Data",
+      shortcut: { prefix: "COMM" },
+      createInstance: () => ({
+        placement: "floating",
+        params: { collapse: COMM_COLLAPSE_SECTORS.join(",") },
+      }),
     },
   ],
 };

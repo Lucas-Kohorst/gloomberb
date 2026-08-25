@@ -34,18 +34,23 @@ export const FUTURES_CONTRACTS: FuturesContract[] = [
   { symbol: "CL=F", code: "CL", name: "WTI Crude Oil", sector: "energy" },
   { symbol: "BZ=F", code: "BZ", name: "Brent Crude Oil", sector: "energy" },
   { symbol: "NG=F", code: "NG", name: "Natural Gas", sector: "energy" },
+  { symbol: "HO=F", code: "HO", name: "NY Harbor ULSD", sector: "energy" },
   { symbol: "RB=F", code: "RB", name: "RBOB Gasoline", sector: "energy" },
 
   { symbol: "GC=F", code: "GC", name: "Gold", sector: "metals" },
   { symbol: "SI=F", code: "SI", name: "Silver", sector: "metals" },
   { symbol: "HG=F", code: "HG", name: "Copper", sector: "metals" },
   { symbol: "PL=F", code: "PL", name: "Platinum", sector: "metals" },
+  { symbol: "PA=F", code: "PA", name: "Palladium", sector: "metals" },
 
   { symbol: "ZC=F", code: "ZC", name: "Corn", sector: "agriculture" },
   { symbol: "ZS=F", code: "ZS", name: "Soybeans", sector: "agriculture" },
   { symbol: "ZW=F", code: "ZW", name: "Chicago SRW Wheat", sector: "agriculture" },
+  { symbol: "ZL=F", code: "ZL", name: "Soybean Oil", sector: "agriculture" },
   { symbol: "KC=F", code: "KC", name: "Coffee", sector: "agriculture" },
   { symbol: "SB=F", code: "SB", name: "Sugar #11", sector: "agriculture" },
+  { symbol: "CT=F", code: "CT", name: "Cotton", sector: "agriculture" },
+  { symbol: "CC=F", code: "CC", name: "Cocoa", sector: "agriculture" },
 
   { symbol: "6E=F", code: "6E", name: "Euro FX", sector: "currencies" },
   { symbol: "6J=F", code: "6J", name: "Japanese Yen", sector: "currencies" },
