@@ -140,7 +140,13 @@ async function fetchDividendDataForSymbol(
   const metrics = buildMetrics(payments, quoteFields, resolvedPrice);
 
   if (payments.length === 0 && !quoteFields?.trailingAnnualDividendRate) {
-    throw new Error(`No dividend data found for ${symbol}`);
+    const chartFailed = chartResult.status === "rejected";
+    const quoteFailed = quoteResult.status === "rejected";
+    if (chartFailed && quoteFailed) {
+      const reason = chartResult.reason ?? quoteResult.reason;
+      throw reason instanceof Error ? reason : new Error(`Dividend data unavailable for ${symbol}`);
+    }
+    return { payments: [], metrics };
   }
 
   return { payments, metrics };

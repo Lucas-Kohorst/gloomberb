@@ -456,6 +456,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
           ? (
             <Box padding={1} flexDirection="column" gap={1}>
               <EmptyState
+                fill={false}
                 title="No API keys configured."
                 message="Add a key for Adjacent, Hyperliquid, SEC EDGAR, or a custom API."
               />

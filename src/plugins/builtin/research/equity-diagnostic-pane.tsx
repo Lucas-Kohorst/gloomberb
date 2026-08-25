@@ -352,7 +352,7 @@ function ReportView({ report, width, failure, onRetry }: {
       )}
 
       {report.status === "insufficient_data"
-        ? <EmptyState title="Not enough coverage to review this company yet." message={report.summary} />
+        ? <EmptyState fill={false} title="Not enough coverage to review this company yet." message={report.summary} />
         : <Paragraph text={report.summary} width={width} color={colors.text} />}
 
       <FindingSection heading="RED FLAGS" findings={byKind("red_flag")} evidenceById={evidenceById} width={width} />
@@ -441,6 +441,7 @@ export function EquityDiagnosticView({ focused, width }: {
       return (
         <Box flexDirection="column">
           <EmptyState
+            fill={false}
             title="The Equity Diagnostic is part of Gloom Cloud Pro."
             message="An on-demand review of one company's filings, financials, ownership, and news, with red flags, anomalies, and green flags cited back to their source."
           />
@@ -458,6 +459,7 @@ export function EquityDiagnosticView({ focused, width }: {
       return (
         <Box flexDirection="column">
           <EmptyState
+            fill={false}
             title={failure ? failureText(failure) : t("No diagnostic available yet.")}
           />
           <Box flexDirection="row" marginTop={1}>

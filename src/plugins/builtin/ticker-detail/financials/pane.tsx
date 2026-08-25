@@ -4,23 +4,25 @@ import { usePaneTicker } from "../../../../state/app/context";
 import { ResolvedFinancialsTab } from "./tab";
 
 export function FinancialsResearchTab({ focused }: TickerResearchTabProps) {
-  const { financials } = usePaneTicker();
+  const { financials, ticker } = usePaneTicker();
   return (
     <ResolvedFinancialsTab
       focused={focused}
       financials={financials}
+      symbol={ticker?.metadata.ticker ?? null}
       allowArrowSubTabNavigation={false}
     />
   );
 }
 
 export function FinancialAnalysisPane({ focused }: PaneProps) {
-  const { financials } = usePaneTicker();
+  const { financials, ticker } = usePaneTicker();
   return (
     <PaneFooterScope active>
       <ResolvedFinancialsTab
         focused={focused}
         financials={financials}
+        symbol={ticker?.metadata.ticker ?? null}
       />
     </PaneFooterScope>
   );

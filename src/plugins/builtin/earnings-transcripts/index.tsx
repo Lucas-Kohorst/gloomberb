@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import type { PluginModule } from "../plugin-module";
 import type { PaneProps, PaneTemplateContext, PaneTemplateCreateOptions } from "../../../types/plugin";
 import { usePaneTicker, usePaneSettingValue } from "../../../state/app/context";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { colors } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
@@ -12,6 +11,7 @@ import {
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
+  TickerEmptyState,
   type FeedDataTableItem,
 } from "../../../components";
 import { registerConnectionSource } from "../connections/register";
@@ -240,13 +240,18 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     );
   }
 
+  const trimmedQuery = query.trim();
+
   if (error && transcripts.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <Text fg={colors.warning} wrapText width={width - 4}>{`Error: ${error}`}</Text>
-        </Box>
+        <TickerEmptyState
+          kind="transcripts"
+          symbol={trimmedQuery || null}
+          detail="earnings transcripts"
+          error={error}
+        />
       </Box>
     );
   }
@@ -264,7 +269,8 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Form"
       titleLabel="Transcript"
-      emptyStateTitle={query.trim() ? `No earnings transcripts for ${query.trim()}.` : "Enter a ticker to load transcripts."}
+      emptyStateTitle={trimmedQuery ? "No transcripts data" : "Enter a ticker to load transcripts."}
+      emptyStateMessage={trimmedQuery ? `${trimmedQuery} has no earnings transcripts.` : undefined}
     />
   );
 }
@@ -317,10 +323,18 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
     showOpenHint: !error && !!openUrl,
   });
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view earnings transcripts.</Text>;
+  if (!ticker) return <TickerEmptyState kind="transcripts" symbol={null} detail="earnings transcripts" />;
   if (loading && transcripts.length === 0) return <Spinner label="Loading transcripts..." />;
-  if (error && transcripts.length === 0) return <Text fg={colors.warning} wrapText width={width}>{`Error: ${error}`}</Text>;
-  if (transcripts.length === 0) return <Text fg={colors.textDim}>No earnings transcripts for {symbol}.</Text>;
+  if (transcripts.length === 0) {
+    return (
+      <TickerEmptyState
+        kind="transcripts"
+        symbol={symbol}
+        detail="earnings transcripts"
+        error={error}
+      />
+    );
+  }
 
   return (
     <FeedDataTableStackView
@@ -333,7 +347,8 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
       onOpenItemIdChange={setOpenItemId}
       sourceLabel="Form"
       titleLabel="Transcript"
-      emptyStateTitle={`No earnings transcripts for ${symbol}.`}
+      emptyStateTitle="No transcripts data"
+      emptyStateMessage={symbol ? `${symbol} has no earnings transcripts.` : undefined}
     />
   );
 }

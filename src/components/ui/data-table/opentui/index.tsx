@@ -63,6 +63,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   emptyContent,
   bodyAfter,
   emptyStateTitle,
+  emptyStateMessage,
   emptyStateHint,
   virtualize = true,
   overscan = 3,
@@ -379,8 +380,13 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
       >
         {items.length === 0 ? (
           emptyContent ?? (
-            <Box width="100%" paddingX={1} paddingY={1}>
-              <EmptyState title={emptyStateTitle} hint={emptyStateHint} />
+            <Box width="100%" height="100%" flexGrow={1} justifyContent="center" alignItems="center">
+              <EmptyState
+                fill={false}
+                title={emptyStateTitle}
+                message={emptyStateMessage}
+                hint={emptyStateHint}
+              />
             </Box>
           )
         ) : (

@@ -3,6 +3,7 @@ import { Box, type InputRenderable } from "../../../ui";
 import {
   EmptyState,
   Tabs,
+  TickerEmptyState,
 } from "../../../components";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneInstance, usePaneInstanceId, usePaneTicker } from "../../../state/app/context";
@@ -47,7 +48,7 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
   }, [symbol]);
 
   if (!symbol) {
-    return <EmptyState title="No ticker selected." />;
+    return <TickerEmptyState kind="tweet" symbol={null} detail="tweets" />;
   }
 
   return (
@@ -58,6 +59,8 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
       requestKey={`ticker:${symbol}`}
       footerId="ticker-tweets"
       load={load}
+      emptyStateTitle="No tweet data"
+      emptyStateMessage={`${symbol} has no tweets.`}
     />
   );
 }
@@ -362,7 +365,7 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
           onResult={markFeedResult}
           onError={markFeedError}
           onFocusSearch={focusSearch}
-          emptyStateTitle={searchEnabled ? "No tweets" : "Enter a search query"}
+          emptyStateTitle={searchEnabled ? "No tweet data" : "Enter a search query"}
           emptyStateHint={searchEnabled ? activeFeedQuery : undefined}
         />
       )}

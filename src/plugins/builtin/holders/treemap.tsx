@@ -43,7 +43,7 @@ export function HoldersTreemap({ rows, width, height, selectedId, onSelect, onAc
       selectedId={selectedId}
       onSelect={(item) => onSelect(item.data)}
       onActivate={onActivate ? (item) => onActivate(item.data) : undefined}
-      emptyStateTitle="No holders available."
+      emptyStateTitle="No holders data"
     />
   );
 }

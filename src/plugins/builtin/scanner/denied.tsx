@@ -19,6 +19,7 @@ export function ScannerDeniedState({ reason }: { reason: string | null }) {
   return (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
       <EmptyState
+        fill={false}
         title="Options flow is part of Gloom Cloud Pro."
         message="Live sweeps, blocks, and large premium prints from the full OPRA feed."
       />

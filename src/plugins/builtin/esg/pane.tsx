@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
-import { EmptyState, Spinner, usePaneFooter, usePaneTicker } from "../../../components";
+import { footerErrorChip, Spinner, TickerEmptyState, usePaneFooter, usePaneTicker } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { openUrl } from "../../../components/ui/external-link";
-import { esgUnavailableMessage, fetchEsgData, hasEsgData, isYahooEsgUnavailable } from "./client";
+import { fetchEsgData, hasEsgData, isYahooEsgUnavailable } from "./client";
 import type { EsgData, EsgScores, LoadStatus } from "./types";
 
 const SCORE_COLOR_HIGH = colors.textDim;
@@ -154,33 +154,26 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
     }
   });
 
-  usePaneFooter("esg", () => ({
-    info: [
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(status === "error" && error
-        ? [{
-            id: "error",
-            parts: [{
-              text: isYahooEsgUnavailable(error) ? "no data" : "unavailable",
-              tone: "warning" as const,
-            }],
-          }]
-        : []),
-    ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-      ...(data?.sourceUrl
-        ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }]
-        : []),
-    ],
-  }), [data?.sourceUrl, error, handleOpen, refresh, status]);
+  usePaneFooter("esg", () => {
+    const errorChip = status === "error" && error && !isYahooEsgUnavailable(error)
+      ? footerErrorChip(error)
+      : null;
+    return {
+      info: [
+        ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+        ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+      ],
+      hints: [
+        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+        ...(data?.sourceUrl
+          ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }]
+          : []),
+      ],
+    };
+  }, [data?.sourceUrl, error, handleOpen, refresh, status]);
 
   if (!symbol) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Text fg={colors.textDim}>Select a ticker to view ESG data.</Text>
-      </Box>
-    );
+    return <TickerEmptyState kind="ESG" symbol={null} detail="Yahoo ESG scores" />;
   }
 
   if (status === "loading" && !data) {
@@ -192,27 +185,18 @@ export function EsgPane({ focused, width, height }: { focused: boolean; width: n
   }
 
   if (status === "error" && !data) {
-    const missing = error != null && isYahooEsgUnavailable(error);
     return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <EmptyState
-          title={missing ? "No ESG data" : "ESG data unavailable"}
-          message={missing ? esgUnavailableMessage(symbol) : "Yahoo ESG request failed."}
-          hint="Press [r] to retry"
-        />
-      </Box>
+      <TickerEmptyState
+        kind="ESG"
+        symbol={symbol}
+        detail="Yahoo ESG scores"
+        error={error != null && isYahooEsgUnavailable(error) ? undefined : error}
+      />
     );
   }
 
   if (!data || !hasEsgData(data.scores)) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <EmptyState
-          title="No ESG data"
-          message={symbol ? `${symbol} has no Yahoo ESG scores.` : undefined}
-        />
-      </Box>
-    );
+    return <TickerEmptyState kind="ESG" symbol={symbol} detail="Yahoo ESG scores" />;
   }
 
   const scoreRows = buildScoreRows(data.scores);

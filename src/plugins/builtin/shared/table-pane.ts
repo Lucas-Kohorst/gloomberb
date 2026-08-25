@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { dataErrorMessage, type DataTableKeyEvent, type PaneFooterSegment, type PaneHint } from "../../../components";
+import { footerErrorChip, type DataTableKeyEvent, type PaneFooterSegment, type PaneHint } from "../../../components";
 
 export function loadingErrorFooterInfo(loading: boolean, error: string | null | undefined): PaneFooterSegment[] {
+  const errorChip = footerErrorChip(error);
   return [
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(error ? [{ id: "error", parts: [{ text: dataErrorMessage(error), tone: "warning" as const }] }] : []),
+    ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
   ];
 }
 

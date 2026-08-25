@@ -11,8 +11,8 @@ import type { OptionsRequest } from "../../../market-data/request-types";
 import {
   DataTableView,
   EmptyState,
-  ErrorState,
   LoadingState,
+  TickerEmptyState,
   Spinner,
   type DataTableCell,
   type DataTableColumn,
@@ -228,11 +228,26 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
       : [],
   });
 
-  if (!ticker) return <EmptyState title="Select a ticker to view the volatility surface." />;
+  if (!ticker) return <TickerEmptyState kind="options" symbol={null} detail="listed options" />;
   if (loadingBase && !baseChain) return <LoadingState title="Loading options chain..." />;
-  if (errorBase && !baseChain) return <ErrorState error={errorBase} />;
+  if (errorBase && !baseChain) {
+    return (
+      <TickerEmptyState
+        kind="options"
+        symbol={effectiveTicker || ticker.metadata.ticker}
+        detail="listed options"
+        error={errorBase}
+      />
+    );
+  }
   if (!baseChain || baseChain.expirationDates.length === 0) {
-    return <EmptyState title="No options available." />;
+    return (
+      <TickerEmptyState
+        kind="options"
+        symbol={effectiveTicker || ticker.metadata.ticker}
+        detail="listed options"
+      />
+    );
   }
 
   const tableWidth = 9 + surface.expirations.length * 7;
@@ -252,7 +267,7 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
           <Text fg={colors.textDim}>Widen the pane to view the surface.</Text>
         </Box>
       ) : surface.strikes.length === 0 ? (
-        <EmptyState title="No marketable option prices to solve." />
+        <EmptyState fill={false} title="No marketable option prices to solve." />
       ) : (
         <DataTableView<VolSurfaceRow, DataTableColumn>
           focused={focused}
@@ -271,7 +286,8 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
           onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId))}
           getItemKey={(row) => String(row.strike)}
           renderCell={renderCell}
-          emptyStateTitle="No surface data."
+          emptyStateTitle="No options data"
+          emptyStateMessage="No strikes for this expiration."
           columnGap={0}
           horizontalPadding={0}
           fillAvailableWidth={false}

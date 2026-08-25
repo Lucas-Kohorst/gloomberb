@@ -62,6 +62,7 @@ interface FeedDataTableStackViewProps {
   sourceLabel?: string;
   titleLabel?: string;
   emptyStateTitle?: string;
+  emptyStateMessage?: string;
   emptyStateHint?: string;
   isItemRead?: (item: FeedDataTableItem) => boolean;
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
@@ -151,6 +152,7 @@ export function FeedDataTableStackView({
   sourceLabel = "Source",
   titleLabel = "Headline",
   emptyStateTitle = "No items.",
+  emptyStateMessage,
   emptyStateHint,
   isItemRead,
   onOpenItem,
@@ -406,6 +408,7 @@ export function FeedDataTableStackView({
       isRowArriving={isRowArriving}
       renderCell={renderCell}
       emptyStateTitle={t(emptyStateTitle)}
+      emptyStateMessage={emptyStateMessage ? t(emptyStateMessage) : undefined}
       emptyStateHint={emptyStateHint}
       showHorizontalScrollbar={false}
       scrollRef={scrollRef}

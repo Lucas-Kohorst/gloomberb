@@ -2,7 +2,7 @@ import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { blendForContrast, higherContrast } from "../../theme/color-utils";
-import { t } from "../../i18n";
+import { EmptyState } from "../ui/status";
 import { padTo } from "../../utils/format";
 import {
   buildMetricTreemapNavigationTiles,
@@ -240,8 +240,8 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
 
   if (tiles.length === 0) {
     return (
-      <Box width={width} height={height} paddingX={1} paddingY={1}>
-        <Text fg={colors.textDim}>{t(emptyStateTitle ?? "No chart data")}</Text>
+      <Box width={width} height={height} justifyContent="center" alignItems="center">
+        <EmptyState fill={false} title={emptyStateTitle ?? "No chart data"} />
       </Box>
     );
   }
@@ -301,8 +301,8 @@ function TerminalMetricTreemapSurface<T>({
 
   if (tiles.length === 0) {
     return (
-      <Box width={width} height={height} paddingX={1} paddingY={1}>
-        <Text fg={colors.textDim}>{t(emptyStateTitle ?? "No chart data")}</Text>
+      <Box width={width} height={height} justifyContent="center" alignItems="center">
+        <EmptyState fill={false} title={emptyStateTitle ?? "No chart data"} />
       </Box>
     );
   }

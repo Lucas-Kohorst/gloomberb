@@ -146,7 +146,7 @@ describe("isYahooEsgUnavailable", () => {
     expect(isYahooEsgUnavailable(new Error(raw))).toBe(true);
     expect(isYahooEsgUnavailable(new Error("No quote summary for AAPL"))).toBe(true);
     expect(isYahooEsgUnavailable(new Error("[429] Too Many Requests"))).toBe(false);
-    expect(esgUnavailableMessage("AAPL")).toBe("Yahoo has no ESG scores for AAPL.");
+    expect(esgUnavailableMessage("AAPL")).toBe("AAPL has no Yahoo ESG scores.");
   });
 });
 

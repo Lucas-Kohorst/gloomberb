@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
 import {
   DataTableView,
-  EmptyState,
   Spinner,
   StaticChartSurface,
+  TickerEmptyState,
+  footerErrorChip,
   usePaneFooter,
   type DataTableCell,
   type DataTableKeyEvent,
@@ -183,13 +184,16 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
     if (symbol) void load(symbol, quotePriceRef.current, exchange);
   }, [exchange, load, symbol]);
 
-  usePaneFooter("dividend-yield", () => ({
-    info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-    ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  }), [error, loading, refresh]);
+  usePaneFooter("dividend-yield", () => {
+    const errorChip = footerErrorChip(error);
+    return {
+      info: [
+        ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+        ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+      ],
+      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
+    };
+  }, [error, loading, refresh]);
 
   const payments = data?.payments ?? [];
   const metrics = data?.metrics;
@@ -213,11 +217,7 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   }, [refresh]);
 
   if (!symbol) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Text fg={colors.textDim}>Select a ticker to view dividend data.</Text>
-      </Box>
-    );
+    return <TickerEmptyState kind="dividend" symbol={null} detail="dividend history" />;
   }
 
   if (loading && !data) {
@@ -229,19 +229,11 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   }
 
   if (error && !data) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Text fg={colors.negative}>{error}</Text>
-      </Box>
-    );
+    return <TickerEmptyState kind="dividend" symbol={symbol} detail="dividend history" error={error} />;
   }
 
   if (payments.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <EmptyState title="No dividend history" message={`${symbol} does not appear to pay dividends.`} />
-      </Box>
-    );
+    return <TickerEmptyState kind="dividend" symbol={symbol} detail="dividend history" />;
   }
 
   const chartWidth = Math.max(10, width - 2);
@@ -305,7 +297,8 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
               onHeaderClick={handleHeaderClick}
               getItemKey={(row) => row.key}
               renderCell={renderCell}
-              emptyStateTitle="No dividend payments"
+              emptyStateTitle="No dividend data"
+              emptyStateMessage={`${symbol} has no dividend history.`}
             />
           </Box>
         </Box>

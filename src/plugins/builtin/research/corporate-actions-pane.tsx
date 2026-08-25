@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
-  EmptyState,
-  ErrorState,
   LoadingState,
+  TickerEmptyState,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -725,8 +724,9 @@ export function CorporateActionsView({
   }), [error, footerPaneId, loading, reload]);
 
   if (loading && rows.length === 0) return <LoadingState title="Loading events..." />;
-  if (error && rows.length === 0) return <ErrorState error={error} />;
-  if (rows.length === 0) return <EmptyState title="No events." />;
+  if (rows.length === 0) {
+    return <TickerEmptyState kind="events" symbol={symbol} detail="events" error={error} />;
+  }
 
   return (
     <DataTableStackView<EventRow, EventColumn>
@@ -759,7 +759,8 @@ export function CorporateActionsView({
       getRowBackgroundColor={(row) => (
         row.date > todayKey ? futureRowBackground : undefined
       )}
-      emptyStateTitle="No events."
+      emptyStateTitle="No events data"
+      emptyStateMessage={symbol ? `${symbol} has no events.` : undefined}
     />
   );
 }

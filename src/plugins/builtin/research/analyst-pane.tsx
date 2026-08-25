@@ -2,9 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import {
   DataTableView,
-  EmptyState,
-  ErrorState,
   LoadingState,
+  TickerEmptyState,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -365,8 +364,9 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   }), [data, error, loading, reload]);
 
   if (loading) return <LoadingState title="Loading analyst data..." />;
-  if (error) return <ErrorState error={error} />;
-  if (rows.length === 0) return <EmptyState title="No analyst data." />;
+  if (error || rows.length === 0) {
+    return <TickerEmptyState kind="analyst" symbol={symbol} detail="analyst ratings" error={error} />;
+  }
 
   return (
     <DataTableView<AnalystResearchData["ratings"][number], RatingColumn>
@@ -383,7 +383,8 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
       onHeaderClick={handleHeaderClick}
       getItemKey={(row, index) => `${row.date}:${row.firm}:${index}`}
       renderCell={renderCell}
-      emptyStateTitle="No analyst data."
+      emptyStateTitle="No analyst data"
+      emptyStateMessage={symbol ? `${symbol} has no analyst ratings.` : undefined}
     />
   );
 }

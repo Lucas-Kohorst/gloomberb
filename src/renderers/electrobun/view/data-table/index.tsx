@@ -27,7 +27,6 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import { useScrollbarActivity } from "../scrollbar-activity";
 import {
   CSS_BG,
-  CSS_TEXT_BRIGHT,
   CSS_TEXT_DIM,
   cellTextStyle,
   toCellX,
@@ -70,6 +69,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   emptyContent,
   bodyAfter,
   emptyStateTitle,
+  emptyStateMessage,
   emptyStateHint,
   virtualize = true,
   overscan = 3,
@@ -342,17 +342,28 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
             emptyContent ?? (
               <div
                 style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
                   width: "100%",
-                  padding: `${WEB_CELL_HEIGHT}px ${WEB_CELL_WIDTH}px`,
+                  height: "100%",
                   color: CSS_TEXT_DIM,
+                  textAlign: "center",
                   lineHeight: "var(--cell-h)",
+                  fontFamily: "inherit",
                 }}
               >
-                <div style={cellTextStyle(CSS_TEXT_BRIGHT, TextAttributes.BOLD)}>
+                <div style={cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE)}>
                   {emptyStateTitle}
                 </div>
-                {emptyStateHint ? (
+                {emptyStateMessage ? (
                   <div style={cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE)}>
+                    {emptyStateMessage}
+                  </div>
+                ) : null}
+                {emptyStateHint ? (
+                  <div style={{ ...cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE), color: "var(--gloom-text-muted)" }}>
                     {emptyStateHint}
                   </div>
                 ) : null}
