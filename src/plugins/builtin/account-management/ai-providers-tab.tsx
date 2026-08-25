@@ -370,8 +370,8 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     ],
     hints: editing
       ? [
-          { id: "save-key", key: "Enter", label: " save", onPress: handleSaveKey },
-          { id: "cancel-key", key: "Esc", label: " cancel", onPress: handleCancelKey },
+          { id: "save-key", key: "Enter", label: "save", onPress: handleSaveKey },
+          { id: "cancel-key", key: "Esc", label: "cancel", onPress: handleCancelKey },
         ]
       : [
           ...(canDownloadModel ? [{ id: "download-model", key: "m", label: "odel", onPress: () => { void handleDownloadModel(); } }] : []),

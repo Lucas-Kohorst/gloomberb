@@ -1,6 +1,16 @@
-import { StyledText, Text, TextAttributes } from "../../ui";
+import { StyledText, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { colors } from "../../theme/colors";
 import { useRef } from "react";
+import {
+  getShortcutHintWidth,
+  normalizeShortcutHint,
+} from "./shortcut-hint-format";
+
+export {
+  getShortcutHintWidth,
+  normalizeShortcutHint,
+  shortcutHintDisplayText,
+} from "./shortcut-hint-format";
 
 type ShortcutHintMouseEvent = {
   pixelX?: number;
@@ -18,10 +28,6 @@ export interface ShortcutHintProps {
   onPress?: (event?: ShortcutHintMouseEvent) => void;
 }
 
-export function getShortcutHintWidth(hotkey: string, label: string, prefix = ""): number {
-  return prefix.length + hotkey.length + label.length + 2;
-}
-
 function stopMouseEvent(event?: ShortcutHintMouseEvent) {
   event?.stopPropagation?.();
   event?.preventDefault?.();
@@ -35,10 +41,12 @@ export function ShortcutHint({
   dataGloomRole,
   onPress,
 }: ShortcutHintProps) {
+  const { nativePaneChrome = false } = useUiCapabilities();
   const interactive = !!onPress && !disabled;
   const keyColor = disabled ? colors.textMuted : colors.textBright;
   const labelColor = disabled ? colors.textMuted : colors.textDim;
-  const keyText = `[${hotkey}]`;
+  const hint = normalizeShortcutHint(hotkey, label);
+  const keyText = `[${hint.hotkey}]`;
   const triggerMouseDownRef = useRef(false);
   const startPress = (event?: ShortcutHintMouseEvent) => {
     triggerMouseDownRef.current = true;
@@ -53,11 +61,12 @@ export function ShortcutHint({
 
   return (
     <Text
-      width={getShortcutHintWidth(hotkey, label, prefix)}
+      {...(nativePaneChrome ? {} : { width: getShortcutHintWidth(hotkey, label, prefix) })}
       content={new StyledText([
         ...(prefix ? [{ text: prefix, fg: labelColor }] : []),
         { text: keyText, fg: keyColor },
-        { text: label, fg: labelColor },
+        ...(hint.glue ? [{ text: hint.glue, fg: labelColor }] : []),
+        { text: hint.label, fg: labelColor },
       ])}
       fg={disabled ? colors.textMuted : colors.textDim}
       attributes={interactive ? TextAttributes.BOLD : 0}

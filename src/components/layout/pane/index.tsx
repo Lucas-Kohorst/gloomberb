@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { paneBg } from "../../../theme/colors";
 import { PaneBodyFrame, getPaneWindowAttributes } from "./frame";
 import { PaneHeader, type PaneHeaderQuickSetting } from "./header";
-import { hasPaneFooterContent, PaneFooterBar, type CombinedPaneFooter } from "./footer";
+import { hasPaneFooterContent, measurePaneFooterHintRows, PaneFooterBar, type CombinedPaneFooter } from "./footer";
 import { resolveNativePaneHeaderRows, resolvePaneBodyFrame, shouldReservePaneFooter } from "./sizing";
 
 interface PaneWrapperProps {
@@ -62,6 +62,10 @@ export function PaneWrapper({
   const showFooter = hasPaneFooterContent(footer);
   const reserveFooter = !!title && shouldReservePaneFooter(nativePaneChrome, showFooter);
   const renderFooter = !!title && (reserveFooter || showFooter);
+  const footerRows = measurePaneFooterHintRows(footer, Math.max(1, Math.floor(width) - 2), {
+    focused,
+    nativePaneChrome,
+  });
   const bodyFrame = resolvePaneBodyFrame({
     height: typeof height === "number" ? height : undefined,
     nativePaneChrome,
@@ -70,6 +74,7 @@ export function PaneWrapper({
     headerRows: title
       ? nativePaneChrome ? resolveNativePaneHeaderRows(cellHeightPx) : 1
       : 0,
+    footerRows,
   });
 
   return (

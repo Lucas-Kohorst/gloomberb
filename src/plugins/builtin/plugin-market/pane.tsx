@@ -419,8 +419,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     ],
     hints: installMode
       ? [
-          { id: "install-submit", key: "Enter", label: " install", onPress: handleInstallForm, disabled: busy || !installRef.trim() },
-          { id: "install-cancel", key: "Esc", label: " cancel", onPress: cancelInstall },
+          { id: "install-submit", key: "Enter", label: "install", onPress: handleInstallForm, disabled: busy || !installRef.trim() },
+          { id: "install-cancel", key: "Esc", label: "cancel", onPress: cancelInstall },
         ]
       : [
           { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: busy },
@@ -442,7 +442,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
             ? [{ id: "update", key: "u", label: "pdate", onPress: updateSelected, disabled: busy }]
             : []),
           ...(canRemove
-            ? [{ id: "remove", key: "x", label: " remove", onPress: removeSelected, disabled: busy }]
+            ? [{ id: "remove", key: "x", label: "remove", onPress: removeSelected, disabled: busy }]
             : []),
         ],
   }), [

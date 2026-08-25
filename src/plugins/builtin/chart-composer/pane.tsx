@@ -593,7 +593,7 @@ function ChartComposerSurface({
       { id: "resolution", key: "r", label: "es", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
       { id: "reload", key: "Shift+R", label: "reload", onPress: footerReload },
-      { id: "share", key: "y", label: " share", onPress: shareChart },
+      { id: "share", key: "y", label: "share", onPress: shareChart },
     ],
   }), [
     footerDates,

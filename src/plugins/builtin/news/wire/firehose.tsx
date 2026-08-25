@@ -129,7 +129,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     onShare: shareArticle,
   });
 
-  // [/]search hint — separate registration so it combines with the article footer.
+  // [/] search hint — separate registration so it combines with the article footer.
   usePaneFooter("news-wire:firehose:search", () => ({
     order: -1,
     hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],

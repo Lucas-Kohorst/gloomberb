@@ -217,7 +217,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
-    expect(frame).toContain("[/]search");
+    expect(frame).toContain("[/] search");
     expect(frame).toContain("[r]efresh");
     expect(frame).not.toContain("[1-4]filter");
     expect(frame).not.toContain("[1-3]browse");
@@ -255,7 +255,7 @@ describe("prediction markets pane interactions", () => {
     expect(frame).toContain("Kalshi primary rule");
     expect(frame).toContain("\u2190 Back Will the Fed cut rates?");
     expect(frame.match(/Will the Fed cut rates\?/g) ?? []).toHaveLength(1);
-    expect(frame).not.toContain("[/]search");
+    expect(frame).not.toContain("[/] search");
     expect(frame).not.toContain("[w]atch");
     expect(frame).not.toContain("[1-4]filter");
 

@@ -126,7 +126,7 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   }, { enabled: focused && !!article });
 
   const shareHint: PaneHint[] = article
-    ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
+    ? [{ id: "share", key: "y", label: "share", onPress: shareArticle }]
     : [];
   const archiveHint: PaneHint[] = archiveAction.enabled
     ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]

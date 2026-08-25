@@ -185,7 +185,7 @@ export function TweetSearchTable({
     if (!selectedTweet) return [];
     return [
       ...(shareSelectedTweet
-        ? [{ id: "share", key: "y", label: " share", onPress: shareSelectedTweet }]
+        ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedTweet }]
         : []),
       { id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) },
     ];

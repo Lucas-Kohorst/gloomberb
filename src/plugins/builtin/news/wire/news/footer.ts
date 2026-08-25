@@ -69,7 +69,7 @@ export function useNewsArticleFooter({
   const trailingHints = useMemo<PaneHint[]>(() => {
     const trailing: PaneHint[] = [];
     if (onShare && article) {
-      trailing.push({ id: "share", key: "y", label: " share", onPress: onShare });
+      trailing.push({ id: "share", key: "y", label: "share", onPress: onShare });
     }
     if (archiveAction.enabled) {
       trailing.push({ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive });

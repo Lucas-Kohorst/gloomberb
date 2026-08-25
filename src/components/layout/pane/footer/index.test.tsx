@@ -177,6 +177,35 @@ function ExternalLinkFooterHarness() {
   );
 }
 
+function CrowdedHintsRegistration() {
+  usePaneFooter("crowded", () => ({
+    hints: [
+      { id: "series", key: "s", label: "eries" },
+      { id: "window", key: "w", label: "indow" },
+      { id: "mode", key: "m", label: "ode" },
+      { id: "log", key: "l", label: "og" },
+      { id: "res", key: "r", label: "es" },
+      { id: "range", key: "1-8", label: "range" },
+      { id: "reload", key: "Shift+R", label: "reload" },
+      { id: "share", key: "y", label: "share" },
+    ],
+  }), []);
+  return null;
+}
+
+function CrowdedFooterHarness() {
+  return (
+    <PaneFooterProvider>
+      {(footer) => (
+        <Box width={42} height={2}>
+          <CrowdedHintsRegistration />
+          <PaneFooterBar footer={footer} focused width={42} />
+        </Box>
+      )}
+    </PaneFooterProvider>
+  );
+}
+
 describe("clipPaneFooterInfo", () => {
   test("caps info copy so chrome never dumps a JSON blob", () => {
     const clipped = clipPaneFooterInfo({
@@ -330,6 +359,24 @@ describe("PaneFooterBar", () => {
       await testSetup!.renderOnce();
     });
     expect(refreshCount).toBe(1);
+  });
+
+  test("spaces non-prefix hints and wraps extra actions onto a second row", async () => {
+    testSetup = await testRender(<CrowdedFooterHarness />, { width: 42, height: 2 });
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("[s]eries");
+    expect(frame).toContain("[1-8] range");
+    expect(frame).toContain("[Shift+R] reload");
+    expect(frame).toContain("[y] share");
+    expect(frame).not.toContain("[y]share");
+    expect(frame).not.toContain("[1-8]range");
+    const lines = frame.split("\n").filter((line) => /\[(?:s|y|1-8|Shift\+R)\]/.test(line));
+    expect(lines.length).toBeGreaterThanOrEqual(2);
   });
 
   test("opens a poll interval list and applies the chosen option", async () => {
