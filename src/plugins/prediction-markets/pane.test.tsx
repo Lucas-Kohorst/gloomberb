@@ -117,8 +117,11 @@ describe("prediction markets pane interactions", () => {
     const fiveRow = optionLines.findIndex((line) => line.includes("5 minutes"));
     expect(fiveRow).toBeGreaterThanOrEqual(0);
 
+    const fiveCol = optionLines[fiveRow]?.indexOf("5 minutes") ?? -1;
+    expect(fiveCol).toBeGreaterThanOrEqual(0);
+
     await act(async () => {
-      await testSetup!.mockMouse.click(4, fiveRow);
+      await testSetup!.mockMouse.click(fiveCol + 1, fiveRow);
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
     });

@@ -365,8 +365,11 @@ describe("PaneFooterBar", () => {
     const fiveRow = openLines.findIndex((line) => line.includes("5 minutes"));
     expect(fiveRow).toBeGreaterThanOrEqual(0);
 
+    const fiveCol = openLines[fiveRow]?.indexOf("5 minutes") ?? -1;
+    expect(fiveCol).toBeGreaterThanOrEqual(0);
+
     await act(async () => {
-      await testSetup!.mockMouse.click(4, fiveRow);
+      await testSetup!.mockMouse.click(fiveCol + 1, fiveRow);
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
     });
