@@ -69,6 +69,8 @@ export interface TickerListTableViewProps {
   onRowActivate?: (ticker: TickerRecord) => void;
   emptyTitle?: string;
   emptyHint?: string;
+  /** Folded into every row revision (portfolio totals, FX, screener reasons). */
+  revisionScope?: string | number;
   virtualize?: boolean;
   overscan?: number;
 }
@@ -107,6 +109,39 @@ function getPriceHistory(financials: TickerFinancials | undefined): PricePoint[]
   return financials?.priceHistory;
 }
 
+export function buildTickerListRowRevision(
+  ticker: TickerRecord,
+  financials: TickerFinancials | undefined,
+  flash: string,
+  revisionScope?: string | number,
+): string {
+  const quote = financials?.quote;
+  const lastBar = financials?.priceHistory.at(-1);
+  const positions = ticker.metadata.positions
+    .map((position) => `${position.shares}:${position.avgCost}:${position.marketValue ?? ""}`)
+    .join(",");
+  return [
+    revisionScope ?? "",
+    quote?.lastUpdated ?? "",
+    quote?.price ?? "",
+    quote?.change ?? "",
+    quote?.changePercent ?? "",
+    quote?.bid ?? "",
+    quote?.ask ?? "",
+    quote?.bidSize ?? "",
+    quote?.askSize ?? "",
+    quote?.volume ?? "",
+    quote?.marketCap ?? "",
+    quote?.marketState ?? "",
+    quote?.preMarketPrice ?? "",
+    quote?.postMarketPrice ?? "",
+    financials?.priceHistory.length ?? 0,
+    lastBar?.close ?? "",
+    positions,
+    flash,
+  ].join(":");
+}
+
 export function TickerListTableView({
   focused = false,
   rootBefore,
@@ -136,6 +171,7 @@ export function TickerListTableView({
   onRowActivate,
   emptyTitle = t("No tickers."),
   emptyHint = t("Press Ctrl+P to add one."),
+  revisionScope,
   virtualize = true,
   overscan = 4,
 }: TickerListTableViewProps) {
@@ -204,6 +240,16 @@ export function TickerListTableView({
     };
   }, [financialsMap, resolveCell, safeFlashSymbols]);
 
+  const getRowRevision = useCallback((ticker: TickerRecord) => {
+    const symbol = ticker.metadata.ticker;
+    return buildTickerListRowRevision(
+      ticker,
+      financialsMap.get(symbol),
+      safeFlashSymbols.get(symbol) ?? "",
+      revisionScope,
+    );
+  }, [financialsMap, revisionScope, safeFlashSymbols]);
+
   const showTickerContextMenu = useCallback((
     ticker: TickerRecord,
     event: TableMouseEvent,
@@ -263,6 +309,7 @@ export function TickerListTableView({
       onRowContextMenu={handleRowContextMenu}
       rowContextMenuSurface
       renderCell={renderCell}
+      getRowRevision={getRowRevision}
       emptyStateTitle={emptyTitle}
       emptyStateHint={emptyHint}
       virtualize={virtualize}
