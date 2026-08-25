@@ -1,0 +1,528 @@
+import { Box, Text, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  GloomPlugin,
+  PaneProps,
+  PaneTemplateCreateOptions,
+  PaneTemplateContext,
+} from "../../../types/plugin";
+import type { NewsArticle } from "../../../news/types";
+import {
+  FeedDataTableStackView,
+  InputSearchBar,
+  Spinner,
+  useUpdatedAgo,
+  type FeedDataTableItem,
+} from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
+import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
+import { colors } from "../../../theme/colors";
+import { useDebouncedPluginPaneState, usePluginPaneState, usePluginConfigState } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { registerConnectionSource } from "../connections/register";
+import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { AdjacentDevClient, loadCftcBrowserFilings } from "./client";
+import {
+  ADJACENT_DEV_API_KEY_CONFIG,
+  ADJACENT_DEV_CONNECTION_ID,
+  ADJACENT_DEV_PLUGIN_ID,
+  type CftcFiling,
+  type CftcFilingDocument,
+} from "./types";
+
+const SEARCH_DEBOUNCE_MS = 250;
+const CFTC_PAGE_SIZE = 50;
+
+const trimSearchValue = (value: string) => value.trim();
+
+function formatFilingDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function getDisplayFormLabel(form: string): string {
+  const trimmed = form.trim();
+  return trimmed || "FILING";
+}
+
+function getFormDescription(form: string): string {
+  const f = form.trim().toUpperCase();
+  switch (f) {
+    case "COT": return "Commitments of Traders";
+    case "COT/A": return "Commitments of Traders (Amended)";
+    case "COT-COMM": return "COT Commercial";
+    case "COT-NONCOMM": return "COT Non-Commercial";
+    case "FORM 1": return "Annual Report";
+    case "FORM 1-A": return "Annual Report (Amended)";
+    default: return "";
+  }
+}
+
+function filingEntityLabel(filing: CftcFiling): string | undefined {
+  if (filing.ticker && filing.companyName) return `${filing.companyName} (${filing.ticker})`;
+  return filing.companyName || filing.ticker || undefined;
+}
+
+function getFilingDisplayTitle(filing: CftcFiling): string {
+  const formLabel = getDisplayFormLabel(filing.form);
+  const description = filing.primaryDocDescription?.trim();
+  return description ? `${formLabel} | ${description}` : formLabel;
+}
+
+function buildDetailBody(filing: CftcFiling): string {
+  const sections = [
+    filing.primaryDocDescription?.trim(),
+    filing.items ? `Items: ${filing.items}` : undefined,
+    filing.primaryDocument ? `Primary document: ${filing.primaryDocument}` : undefined,
+  ].filter((value): value is string => !!value && value.trim().length > 0);
+
+  return sections.length > 0
+    ? sections.join("\n\n")
+    : "No additional CFTC filing description is available for this entry.";
+}
+
+function buildDetailBodyWithDocuments({
+  filing,
+  documents,
+  documentsLoading,
+  primaryContent,
+}: {
+  filing: CftcFiling;
+  documents: CftcFilingDocument[];
+  documentsLoading: boolean;
+  primaryContent: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("Documents");
+  if (documentsLoading && documents.length === 0) {
+    lines.push("Loading filing documents...");
+  } else if (documents.length === 0) {
+    lines.push("No filing documents were listed for this filing.");
+  } else {
+    for (const doc of documents) {
+      const label = doc.description?.trim() || doc.type;
+      lines.push(`• ${label}${doc.document ? ` — ${doc.document}` : ""}`);
+    }
+  }
+  lines.push("", "Primary Filing Content", primaryContent);
+  return lines.join("\n");
+}
+
+function cftcFilingToArticle(filing: CftcFiling, body?: string | null): NewsArticle {
+  const form = filing.form.trim();
+  const company = filing.companyName || filing.ticker || filing.accessionNumber;
+  return {
+    id: `cftc:${filing.accessionNumber}`,
+    title: `${form} ${company}`.trim(),
+    url: filing.filingUrl,
+    source: "CFTC",
+    publishedAt: filing.filingDate,
+    summary: filing.primaryDocDescription || `${form} filed ${formatFilingDate(filing.filingDate)}`,
+    topic: "filing",
+    topics: ["filing", form, "cftc"],
+    sectors: [],
+    categories: ["CFTC", form],
+    tickers: filing.ticker ? [filing.ticker] : [],
+    scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+    isBreaking: false,
+    isDeveloping: false,
+    importance: 0,
+    origin: "cftc",
+    body: body ?? undefined,
+  };
+}
+
+function toFeedItems(
+  filings: CftcFiling[],
+  selectedAccessionNumber: string | undefined,
+  primaryContent: string,
+  loadingContent: boolean,
+  documents: CftcFilingDocument[],
+  loadingDocuments: boolean,
+  showEntity = false,
+): FeedDataTableItem[] {
+  return filings.map((filing) => {
+    const displayTitle = getFilingDisplayTitle(filing);
+    const formDesc = getFormDescription(filing.form);
+    const selected = filing.accessionNumber === selectedAccessionNumber;
+    const fallbackBody = buildDetailBody(filing);
+    const detailBody = selected
+      ? buildDetailBodyWithDocuments({
+          filing,
+          documents,
+          documentsLoading: loadingDocuments,
+          primaryContent: loadingContent ? "Loading filing content..." : primaryContent || fallbackBody,
+        })
+      : fallbackBody;
+    const entityLabel = showEntity ? filingEntityLabel(filing) : undefined;
+    const enrichedTitle = [entityLabel, displayTitle, formDesc].filter(Boolean).join(" | ");
+
+    return {
+      id: filing.accessionNumber,
+      eyebrow: filing.ticker || filing.form,
+      title: enrichedTitle,
+      timestamp: filing.filingDate,
+      detailTitle: enrichedTitle,
+      detailMeta: [
+        `Filed ${formatFilingDate(filing.filingDate)}`,
+        `Accession ${filing.accessionNumber}`,
+        ...(filing.items ? [`Items ${filing.items}`] : []),
+      ],
+      detailBody,
+    };
+  });
+}
+
+function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
+  return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+}
+
+function createCftcBrowserInstance(
+  prefix: string,
+  titlePrefix: string,
+  options?: PaneTemplateCreateOptions,
+) {
+  const query = queryFromTemplateOptions(options);
+  const encoded = encodeURIComponent(query.toUpperCase()).replace(/%/g, "~");
+  return {
+    instanceId: query ? `${prefix}:${encoded}` : `${prefix}:latest`,
+    title: query ? `${titlePrefix} ${query.toUpperCase()}` : titlePrefix,
+    placement: "floating" as const,
+    binding: { kind: "none" as const },
+    settings: { query },
+  };
+}
+
+function CftcPane({ width, height, focused }: PaneProps) {
+  const [apiKey] = usePluginConfigState<string>(ADJACENT_DEV_API_KEY_CONFIG, "");
+  const client = useMemo(() => new AdjacentDevClient({ apiKey: apiKey || undefined }), [apiKey]);
+
+  const [storedQuery] = usePaneSettingValue("query", "");
+  const initialQuery = String(storedQuery ?? "").trim();
+  const [query, setQuery] = usePluginPaneState("query", initialQuery);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const [filings, setFilings] = useState<CftcFiling[]>([]);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [documents, setDocuments] = useState<CftcFilingDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [filingContent, setFilingContent] = useState<string>("");
+  const [loadingContent, setLoadingContent] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const load = useCallback((nextQuery: string) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStatus("loading");
+    setError(null);
+    void loadCftcBrowserFilings(client, nextQuery)
+      .then((nextFilings) => {
+        if (abortRef.current !== controller) return;
+        setFilings(nextFilings);
+        setStatus("loaded");
+        setLastUpdated(Date.now());
+      })
+      .catch((loadError) => {
+        if (abortRef.current !== controller) return;
+        if (loadError instanceof Error && loadError.name === "AbortError") return;
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setFilings([]);
+        setStatus("error");
+      });
+  }, [client]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      load(query);
+    }, query.trim() ? SEARCH_DEBOUNCE_MS : 0);
+    return () => clearTimeout(timeoutId);
+  }, [load, query]);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+  }, []);
+
+  const openFiling = openItemId
+    ? filings.find((filing) => filing.accessionNumber === openItemId) ?? null
+    : null;
+
+  // Load documents and content for the open filing
+  useEffect(() => {
+    if (!openFiling) {
+      setDocuments([]);
+      setFilingContent("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingDocuments(true);
+    setLoadingContent(true);
+    setDocuments([]);
+    setFilingContent("");
+    void client.getFilingDocuments(openFiling.accessionNumber)
+      .then((docs) => {
+        if (cancelled) return;
+        setDocuments(docs);
+        setLoadingDocuments(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadingDocuments(false);
+      });
+    void client.getFilingContent(openFiling.accessionNumber)
+      .then((content) => {
+        if (cancelled) return;
+        setFilingContent(content ?? "");
+        setLoadingContent(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFilingContent("");
+        setLoadingContent(false);
+      });
+    return () => { cancelled = true; };
+  }, [client, openFiling?.accessionNumber]);
+
+  const loading = status === "loading" && filings.length === 0;
+  const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
+
+  const popOutArticle = usePopOutNewsArticle();
+  const popOutSelected = useCallback(() => {
+    if (!openFiling) return;
+    popOutArticle(cftcFilingToArticle(openFiling, filingContent || null));
+  }, [filingContent, openFiling, popOutArticle]);
+
+  useEffect(() => {
+    if (filings.length > 0 && selectedIdx >= filings.length) {
+      setSelectedIdx(Math.max(0, filings.length - 1));
+    }
+  }, [selectedIdx, setSelectedIdx, filings.length]);
+
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((current) => current + 1);
+  }, []);
+  const blurSearch = useCallback(() => {
+    setSearchFocused(false);
+  }, []);
+  const updateQuery = useCallback((nextQuery: string) => {
+    setQuery(nextQuery);
+    setSelectedIdx(0);
+    setOpenItemId(null);
+  }, [setQuery, setSelectedIdx]);
+
+  useShortcut((event) => {
+    if (!focused || openItemId) return;
+    if (searchFocused) {
+      if (isPlainKey(event, "escape")) {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        setSearchFocused(false);
+      }
+      return;
+    }
+    if (event.targetEditable) return;
+    if (isPlainKey(event, "/")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      focusSearch();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      load(query);
+      return;
+    }
+    if (isPlainKey(event, "p") && openFiling) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      popOutSelected();
+    }
+  }, { allowEditable: true, enabled: focused });
+
+  usePaneStatusLinkFooter({
+    registrationId: ADJACENT_DEV_PLUGIN_ID,
+    focused,
+    url: error ? null : openFiling?.filingUrl,
+    source: openFiling?.form,
+    label: "filing",
+    loading,
+    error,
+    info: updatedAgo
+      ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
+      : undefined,
+    showOpenHint: !error && !!openFiling?.filingUrl,
+    hints: [
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
+      ...(openFiling
+        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
+        : []),
+    ],
+  });
+
+  const handleRootKeyDown = useCallback((event: { name?: string; preventDefault?: () => void; stopPropagation?: () => void }, context: { selectedIndex: number }) => {
+    if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
+      stopSearchFocusNavigation(event);
+      focusSearch();
+      return true;
+    }
+    if (event.name === "/") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+      return true;
+    }
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      load(query);
+      return true;
+    }
+    if (event.name === "p" && openFiling) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelected();
+      return true;
+    }
+    return false;
+  }, [focusSearch, load, openFiling, popOutSelected, query]);
+
+  const rootBefore = (
+    <InputSearchBar
+      value={query}
+      focused={focused && !openItemId}
+      active={searchFocused}
+      width={width}
+      focusToken={searchFocusToken}
+      inputRef={searchInputRef}
+      placeholder="ticker, company, or form"
+      debounceMs={SEARCH_DEBOUNCE_MS}
+      normalizeValue={trimSearchValue}
+      onFocus={focusSearch}
+      onBlur={blurSearch}
+      onNavigateDown={blurSearch}
+      onQueryChange={updateQuery}
+    />
+  );
+
+  if (loading) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label={query.trim() ? `Searching CFTC for ${query.trim()}...` : "Loading latest CFTC filings..."} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error && filings.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {rootBefore}
+        <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
+          <Text fg={colors.textDim}>Error: {error}</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <FeedDataTableStackView
+      width={width}
+      height={height}
+      focused={focused && !searchFocused}
+      rootBefore={rootBefore}
+      items={toFeedItems(
+        filings,
+        openFiling?.accessionNumber,
+        filingContent,
+        loadingContent,
+        documents,
+        loadingDocuments,
+        true,
+      )}
+      selectedIdx={selectedIdx}
+      onSelect={setSelectedIdx}
+      onOpenItemIdChange={setOpenItemId}
+      onRootKeyDown={handleRootKeyDown}
+      sourceLabel="Form"
+      titleLabel="Filing"
+      emptyStateTitle={
+        query.trim()
+          ? `No CFTC filings for ${query.trim()}.`
+          : "No recent CFTC filings."
+      }
+    />
+  );
+}
+
+let disposeConnection: (() => void) | null = null;
+
+export const adjacentDevPlugin: GloomPlugin = {
+  id: ADJACENT_DEV_PLUGIN_ID,
+  name: "Adjacent Dev",
+  version: "1.0.0",
+  description: "CFTC filings via the Adjacent Dev API. Search by ticker, company, or form type.",
+  toggleable: true,
+
+  panes: [
+    {
+      id: "cftc-filings",
+      name: "CFTC Filings",
+      icon: "C",
+      component: CftcPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 32 },
+    },
+  ],
+
+  paneTemplates: [
+    {
+      id: "cftc-filings-pane",
+      paneId: "cftc-filings",
+      label: "CFTC Filings",
+      description: "Latest CFTC filings. Search a ticker or company, or open CFTC AAPL to jump there.",
+      keywords: ["cftc", "filings", "cot", "commitments", "traders", "adjacent", "dev"],
+      category: "Data",
+      shortcut: {
+        prefix: "CFTC",
+        argPlaceholder: "ticker or company",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        return createCftcBrowserInstance("cftc", "CFTC", options);
+      },
+    },
+  ],
+
+  setup() {
+    disposeConnection = registerConnectionSource({
+      id: ADJACENT_DEV_CONNECTION_ID,
+      name: "Adjacent Dev",
+      kind: "api",
+      pluginId: ADJACENT_DEV_PLUGIN_ID,
+      priority: 650,
+      authRequired: true,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+  },
+};
+
+export default adjacentDevPlugin;

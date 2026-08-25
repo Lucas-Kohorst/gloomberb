@@ -541,6 +541,7 @@ async function handleByokKeysRequest(request: Request, env: Env): Promise<Respon
 
   const knownEnvVars = [
     "ADJACENT_API_KEY",
+    "ADJACENT_DEV_API_KEY",
     "HYPERLIQUID_API_KEY",
     "SEC_EDGAR_EMAIL",
   ];

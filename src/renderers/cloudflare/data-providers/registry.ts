@@ -1,4 +1,5 @@
 import { adjacentProvider } from "./adjacent";
+import { adjacentDevProvider } from "./adjacent-dev";
 import { llmStatsProvider } from "./llm-stats";
 import { nwsCliProvider } from "./nws-cli";
 import { owidProvider } from "./owid";
@@ -35,6 +36,7 @@ const PROVIDERS: readonly KeyedDataProvider[] = [
   nwsCliProvider,
   llmStatsProvider,
   adjacentProvider,
+  adjacentDevProvider,
   voteHubProvider,
   usListingsProvider,
   owidProvider,

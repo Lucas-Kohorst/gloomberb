@@ -35,8 +35,18 @@ const SEC_EDGAR_SERVICE: ByokKnownService = {
   description: "SEC filings data. Requires an email address in the User-Agent header per SEC fair-access policy.",
 };
 
+const ADJACENT_DEV_SERVICE: ByokKnownService = {
+  id: "adjacent-dev",
+  name: "Adjacent Dev (CFTC)",
+  apiUrl: "https://api.dev.adjacent.markets",
+  authType: "bearer",
+  envVar: "ADJACENT_DEV_API_KEY",
+  description: "CFTC filings data via the Adjacent Dev API.",
+};
+
 const BUILTIN_SERVICES: ByokKnownService[] = [
   ADJACENT_SERVICE,
+  ADJACENT_DEV_SERVICE,
   HYPERLIQUID_SERVICE,
   SEC_EDGAR_SERVICE,
 ];

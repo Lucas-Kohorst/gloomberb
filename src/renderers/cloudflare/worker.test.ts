@@ -359,6 +359,7 @@ describe("Adjacent Cloud keyed-data providers", () => {
     const body = await response?.json() as { providers: Array<{ id: string }> };
     expect(body.providers.map((provider) => provider.id).sort()).toEqual([
       "adjacent",
+      "adjacent-dev",
       "digitraffic-ais",
       "llm-stats",
       "nasa-firms",
