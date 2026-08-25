@@ -15,7 +15,7 @@ import { Box, Text, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { paneRefreshHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { paneDelayedStatus, paneRefreshHint, usePaneStatusFooter } from "../shared/pane-footer";
 import { loadCdsActivity, type CdsActivity, type CdsActivityLoader } from "./client";
 import {
   buildIssuerColumns,
@@ -257,7 +257,7 @@ export function CdsPane({
   const asOfLabel = formatAsOf(activity?.asOf ?? null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(asOfLabel ? [{ id: "as-of", parts: [{ text: `as of ${asOfLabel}`, tone: "muted" as const }] }] : []),
-    ...(activity ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
+    ...(activity ? [paneDelayedStatus()] : []),
   ], [activity, asOfLabel]);
   usePaneStatusFooter({
     registrationId: paneId,

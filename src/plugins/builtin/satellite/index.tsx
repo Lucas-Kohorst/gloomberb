@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ImageSurface, Text, type InputRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  dataErrorMessage,
   EmptyState,
   InputSearchBar,
   Spinner,
   Tabs,
+  unavailableTitle,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -19,6 +21,7 @@ import type { GloomPlugin, PaneProps } from "../../../types/plugin";
 import { registerConnectionSource } from "../connections/register";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import {
+  paneDelayedStatus,
   paneRefreshHint,
   paneSearchHint,
   usePaneStatusLinkFooter,
@@ -183,7 +186,7 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(hotspots.length > 0 || tab === "imagery"
-      ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }]
+      ? [paneDelayedStatus()]
       : []),
     ...(tab === "imagery" ? [{ id: "layer", parts: [{ text: layer.label, tone: "muted" as const }] }] : []),
   ], [hotspots.length, layer.label, tab]);
@@ -272,7 +275,7 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height} padding={1}>
         {tabs}
-        <EmptyState title="FIRMS unavailable." />
+        <EmptyState title={unavailableTitle("FIRMS")} message={dataErrorMessage(error)} />
       </Box>
     );
   }

@@ -1,5 +1,41 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_10: ChangelogRelease = {
+  id: "hosted-v0-13-10",
+  tagName: "v0.13.10",
+  version: "0.13.10",
+  title: "Connections, pane chrome, COMM→FUT, 5m polls",
+  publishedAt: "2026-08-25T18:15:00.000Z",
+  url: "",
+  body: `One Yahoo Connection row, shared live/delayed footer chips, commodities on the futures board, and slower default PM/Twitter polls.
+
+## Connections
+
+- Hosted \`/api/data\` URLs go through \`keyedDataUrl\`. Adjacent Cloud still folds VoteHub / OWID / weather / listings onto one Connections row. World Bank, OpenSky, and FIRMS stay their own origins.
+- Yahoo ESG, screener, dividends, and short-interest report as Yahoo, not extra CONN rows.
+
+## Chrome
+
+- Shared \`live\` / \`delayed\` footer chips. Search hints are \`/\` (screener still binds \`s\` in-pane).
+- WB / AIS / SAT empty copy uses the two-line unavailable helper.
+
+## Futures
+
+- \`COMM\` opens \`FUT\` with equity, rates, and FX collapsed. One delayed Yahoo quote poller. HO, PA, ZL, CT, and CC join the board.
+
+## Polls
+
+- Prediction catalog and Twitter default to 5 minutes. The 1/5/15/30 menu still opts into 1m; a stored 1-minute override is kept. RSS stays 30m.
+
+## What to test
+
+- CONN: one Yahoo row; Adjacent Cloud is one row; WB / AIS / SAT still list separately.
+- \`COMM\` and \`FUT\` open the same futures board; COMM starts with commodity sectors expanded.
+- PM / Twitter footer shows \`poll 5m\` on a fresh config; 1m still available in the interval menu.
+- Hard-reload hosted so the status pill shows v0.13.10.
+`,
+};
+
 const RELEASE_0_13_9: ChangelogRelease = {
   id: "hosted-v0-13-9",
   tagName: "v0.13.9",
@@ -530,6 +566,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_10,
   RELEASE_0_13_9,
   RELEASE_0_13_8,
   RELEASE_0_13_7,

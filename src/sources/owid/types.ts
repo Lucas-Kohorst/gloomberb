@@ -1,7 +1,7 @@
 /**
  * Our World in Data grapher prints.
  *
- * Adjacent Cloud: GET `/api/data/owid/charts?q=` (search),
+ * Keyed-data: GET `/api/data/owid/charts?q=` (search),
  * `/api/data/owid/meta/{slug}` (metadata probe), and
  * `/api/data/owid/{slug}` / `/api/data/owid/{slug}/{entity}`.
  * Join key is grapher slug + entity code (ISO alpha-3 or OWID custom), not a

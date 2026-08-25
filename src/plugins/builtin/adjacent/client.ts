@@ -26,7 +26,7 @@ import {
   unwrapAdjacentNewsArticles,
   unwrapAdjacentSimilarMarkets,
 } from "./normalize";
-import { adjacentCloudDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
+import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { withConnectionRequest } from "../connections/register";
 
 const BASE_URL = "https://api.adjacent.markets/api/v1";
@@ -83,7 +83,7 @@ export interface AdjacentClientOptions {
 
 function buildUrl(path: string, params?: Record<string, string | number | undefined>): string {
   const origin = isHostedWebClient()
-    ? adjacentCloudDataUrl("adjacent", path.replace(/^\//, ""))
+    ? keyedDataUrl("adjacent", path.replace(/^\//, ""))
     : `${BASE_URL}${path}`;
   const url = origin.startsWith("/")
     ? new URL(origin, "https://adjacent-cloud.local")

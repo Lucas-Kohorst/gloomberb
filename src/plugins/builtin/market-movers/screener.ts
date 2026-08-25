@@ -1,6 +1,7 @@
 import { createThrottledFetch, type ThrottledFetchTransport } from "../../../utils/throttled-fetch";
 import type { PluginPersistence } from "../../../types/plugin";
 import { withConnectionRequest } from "../connections/register";
+import { YAHOO_CONNECTION_ID } from "../../../sources/yahoo-finance/http";
 import { apiClient } from "../../../api-client";
 import type {
   CloudMarketResponse,
@@ -70,7 +71,7 @@ export function createYahooScreenerApi(transport?: ThrottledFetchTransport): Yah
         }
 
         try {
-          return await withConnectionRequest("yahoo-screener", "screener", () =>
+          return await withConnectionRequest(YAHOO_CONNECTION_ID, "screener", () =>
             client.fetchJson<T>(url.toString()));
         } catch (error) {
           lastError = error;

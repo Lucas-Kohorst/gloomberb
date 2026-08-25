@@ -145,6 +145,32 @@ describe("connection source registry", () => {
     ]);
   });
 
+  test("reports leftover Yahoo fragment traffic on the Yahoo origin", () => {
+    disposers.push(registerConnectionSource({
+      id: "yahoo",
+      name: "Yahoo Finance",
+      kind: "asset-data",
+      pluginId: "yahoo",
+    }));
+
+    const reports: Array<{ id: string; operation?: string }> = [];
+    setConnectionRequestReporter((id, report) => {
+      reports.push({ id, operation: report.operation });
+    });
+    reportConnectionRequest("yahoo-esg", { success: true, durationMs: 4, operation: "esg" });
+    reportConnectionRequest("yahoo-screener", { success: true, durationMs: 6, operation: "screener" });
+    reportConnectionRequest("yahoo-dividends", { success: true, durationMs: 7, operation: "dividends" });
+    reportConnectionRequest("yahoo-short-interest", { success: true, durationMs: 5, operation: "short-interest" });
+
+    expect(reports).toEqual([
+      { id: "yahoo", operation: "esg" },
+      { id: "yahoo", operation: "screener" },
+      { id: "yahoo", operation: "dividends" },
+      { id: "yahoo", operation: "short-interest" },
+    ]);
+    expect(listConnectionSources().map((source) => source.id)).toEqual(["yahoo"]);
+  });
+
   test("Adjacent Cloud plugin lists one source, not VoteHub/OWID/weather children", async () => {
     await adjacentPlugin.setup?.({
       persistence: { getResource: () => null, setResource() {} },
@@ -226,7 +252,7 @@ describe("recordRequest rate limits", () => {
   });
 
   test("a later 429 does not drop a live connection to error", () => {
-    const idle = createInitialConnectionState("yahoo-short-interest", "Yahoo", "api", "si");
+    const idle = createInitialConnectionState("example-source", "Example", "api", "si");
     const live = recordRequest(idle, { success: true, durationMs: 80, operation: "fetch" });
     const limited = recordRequest(live, {
       success: false,

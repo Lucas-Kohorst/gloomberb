@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.13.10 — Connections, pane chrome, COMM→FUT, 5m polls
+
+One Yahoo Connection row, shared live/delayed footer chips, commodities on the futures board, and slower default PM/Twitter polls.
+
+### Connections
+
+- Hosted `/api/data` URLs go through `keyedDataUrl`. Adjacent Cloud still folds VoteHub / OWID / weather / listings onto one Connections row. World Bank, OpenSky, and FIRMS stay their own origins.
+- Yahoo ESG, screener, dividends, and short-interest report as Yahoo, not extra CONN rows.
+
+### Chrome
+
+- Shared `live` / `delayed` footer chips. Search hints are `/` (screener still binds `s` in-pane).
+- WB / AIS / SAT empty copy uses the two-line unavailable helper.
+
+### Futures
+
+- `COMM` opens `FUT` with equity, rates, and FX collapsed. One delayed Yahoo quote poller. HO, PA, ZL, CT, and CC join the board.
+
+### Polls
+
+- Prediction catalog and Twitter default to 5 minutes. The 1/5/15/30 menu still opts into 1m; a stored 1-minute override is kept. RSS stays 30m.
+
+### What to test
+
+- CONN: one Yahoo row; Adjacent Cloud is one row; WB / AIS / SAT still list separately.
+- `COMM` and `FUT` open the same futures board; COMM starts with commodity sectors expanded.
+- PM / Twitter footer shows `poll 5m` on a fresh config; 1m still available in the interval menu.
+- Hard-reload hosted so the status pill shows v0.13.10.
+
 ## v0.13.9 — Kalshi proxy, research panes, article chrome
 
 Hosted Kalshi loads from the venue CORS proxy. Firehose RSS collapses by guid. Robinhood hosted OAuth uses a stable callback URI. Disconnect no longer stalls the tab. Article headers are fully draggable and readers drop the poll chip. New research panes: commodities, World Bank, 10-K/Q, AIS traffic, satellite.

@@ -15,7 +15,7 @@ import {
   type FeedDataTableItem,
 } from "../../../components";
 import { registerConnectionSource } from "../connections/register";
-import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { fetchEarningsTranscripts } from "./client";
 import type { EarningsTranscript } from "./types";
 
@@ -185,8 +185,8 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     error,
     showOpenHint: !error && !!openUrl,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
+      paneSearchHint(focusSearch),
+      paneRefreshHint(() => load(query)),
     ],
   });
 

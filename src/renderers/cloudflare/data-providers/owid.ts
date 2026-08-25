@@ -22,7 +22,7 @@ function parsePage(raw: string | null): number | null {
 }
 
 /**
- * Adjacent Cloud OWID origin. Hosted clients call
+ * OWID keyed-data origin. Hosted clients call
  * `GET /api/data/owid/charts?q=`, `GET /api/data/owid/meta/{slug}`, and
  * `GET /api/data/owid/{slug}/{entity}`.
  * Desktop hits ourworldindata.org directly. Worker caches successful prints only.

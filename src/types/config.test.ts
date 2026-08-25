@@ -75,6 +75,11 @@ describe("normalizePaneId", () => {
     expect(normalizePaneId("plugin-discovery")).toBe("plugin-market");
     expect(createPaneInstance("plugin-discovery").paneId).toBe("plugin-market");
   });
+
+  test("folds the retired commodities board into futures", () => {
+    expect(normalizePaneId("commodities")).toBe("futures");
+    expect(createPaneInstance("commodities").paneId).toBe("futures");
+  });
 });
 
 describe("normalizePaneLayout", () => {

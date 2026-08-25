@@ -16,6 +16,7 @@ import { colors } from "../../../theme/colors";
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { usePluginAppActions } from "../../runtime";
+import { paneDelayedStatus } from "../shared/pane-footer";
 import { CREDIT_CONDITIONS_CONNECTION_ID, getCachedCreditConditions, loadCreditConditions } from "./client";
 import {
   CREDIT_SERIES,
@@ -156,7 +157,7 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   const asOf = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
-    ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
+    ...(rows.length > 0 ? [paneDelayedStatus()] : []),
     ...(partial ? [{ id: "partial", parts: [{ text: `PARTIAL ${rows.length}/${CREDIT_SERIES.length}`, tone: "warning" as const, bold: true }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),

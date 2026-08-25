@@ -23,6 +23,7 @@ import { formatCompact, formatNumber } from "../../../utils/format";
 import { openUrl } from "../../../components/ui/external-link";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { fetchLlmStatsData } from "./client";
 import {
   compareLlmStatsRows,
@@ -414,8 +415,8 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: load },
+      paneSearchHint(focusSearch),
+      paneRefreshHint(load),
       { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
     ],
   }), [error, focusSearch, load, openSelected, searchQuery, selected?.url, status, updatedAgo]);

@@ -76,7 +76,7 @@ import type {
   ThirteenFDetailTab,
   ThirteenFHoldingRecord,
 } from "./types";
-import { usePaneStatusFooter, usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint, usePaneStatusFooter, usePaneStatusLinkFooter } from "../shared/pane-footer";
 
 interface FundSeed {
   cik: string;
@@ -273,8 +273,8 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
     error,
     info: browserStatusInfo,
     hints: [
-      { id: "search", key: "/", label: "search", onPress: focusSearch },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      paneSearchHint(focusSearch),
+      paneRefreshHint(refresh),
     ],
   });
 

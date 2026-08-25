@@ -15,8 +15,9 @@ import { voteHubProvider } from "./votehub";
 import type { KeyedDataProvider, KeyedDataProviderSummary } from "./types";
 
 /**
- * Adjacent Cloud keyed-data providers. Add BLS / WU / CF Benchmarks / FOMC
- * here as a new module + this array entry. Do not add a one-off Worker route.
+ * Hosted keyed-data providers (`GET /api/data/{provider}`). Add BLS / WU /
+ * CF Benchmarks / FOMC here as a new module + this array entry. Do not add a
+ * one-off Worker route.
  *
  * adjacent, llm-stats, weather (TWC + NWS CLI), VoteHub, US listings, OWID,
  * plus keyless research origin proxies (World Bank, OpenSky, Digitraffic AIS,

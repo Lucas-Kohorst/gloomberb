@@ -21,6 +21,7 @@ import { usePopOutNewsArticle } from "./news/pop-out";
 import { useNewsReadState } from "./read-state";
 import { usePersistedNewsArticles } from "./persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
+import { paneSearchHint } from "../../shared/pane-footer";
 import type { PluginModule } from "../../plugin-module";
 import { buildNewsPaneSettingsDef, getNewsPaneSettings } from "./settings";
 
@@ -133,7 +134,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
   // [/] search hint — separate registration so it combines with the article footer.
   usePaneFooter("news-wire:firehose:search", () => ({
     order: -1,
-    hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
+    hints: [paneSearchHint(focusSearch)],
   }), [focusSearch]);
 
   // [s] / [/] search shortcut — only when search is not already focused.
