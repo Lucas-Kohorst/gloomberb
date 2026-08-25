@@ -5,6 +5,8 @@ import { resolveHostedPersistUserId } from "./hosted-user-persist";
 const STORAGE_PREFIX = "gloomberb:hosted-plugin-state:";
 const LEGACY_STORAGE_KEY = "gloomberb:hosted-plugin-state";
 
+let lastWritten: { userId: string; json: string } | null = null;
+
 /** Backend init owns the Gloom Cloud session blob. Everything else in this plugin is local. */
 export const HOSTED_BACKEND_MANAGED_PLUGIN_STATE_KEYS: ReadonlySet<string> = new Set([
   "gloomberb-cloud:session",
@@ -86,9 +88,12 @@ export function writeHostedPluginState(
   if (!backend) return;
   try {
     const snapshot = sanitizePluginStateMap(state);
+    const json = Object.keys(snapshot).length === 0 ? "" : JSON.stringify(snapshot);
+    if (lastWritten?.userId === userId && lastWritten.json === json) return;
+    lastWritten = { userId, json };
     const key = hostedPluginStateStorageKey(userId);
-    if (Object.keys(snapshot).length === 0) backend.removeItem(key);
-    else backend.setItem(key, JSON.stringify(snapshot));
+    if (!json) backend.removeItem(key);
+    else backend.setItem(key, json);
   } catch {
     // Ignore quota or security errors.
   }

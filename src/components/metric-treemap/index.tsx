@@ -1,14 +1,16 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
 import { blendHex, colors, priceColor } from "../../theme/colors";
 import { blendForContrast, higherContrast } from "../../theme/color-utils";
 import { t } from "../../i18n";
 import { padTo } from "../../utils/format";
 import {
-  buildMetricTreemap,
-  buildMetricTreemapRects,
+  buildMetricTreemapNavigationTiles,
+  metricTreemapGeometryKey,
+  overlayMetricTreemapItems,
   type FloatMetricTreemapTile,
   type MetricTreemapItem,
+  type MetricTreemapLayoutMode,
   type MetricTreemapTile,
 } from "./layout";
 
@@ -18,6 +20,27 @@ export {
   type MetricTreemapDirection,
   type MetricTreemapItem,
 } from "./layout";
+
+/** Squarify once per id/weight/size; quote ticks only swap tile item refs. */
+export function useMetricTreemapLayout<T>(
+  items: MetricTreemapItem<T>[],
+  width: number,
+  height: number,
+  cellAspect: number,
+  mode: MetricTreemapLayoutMode,
+): Array<MetricTreemapTile<T> | FloatMetricTreemapTile<T>> {
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const geometryKey = metricTreemapGeometryKey(items, width, height, cellAspect, mode);
+  const layoutTiles = useMemo(
+    () => buildMetricTreemapNavigationTiles(itemsRef.current, width, height, cellAspect, mode),
+    [cellAspect, geometryKey, height, mode, width],
+  );
+  return useMemo(
+    () => overlayMetricTreemapItems(layoutTiles, items),
+    [items, layoutTiles],
+  );
+}
 
 type PreventableMouseEvent = { preventDefault(): void };
 
@@ -213,7 +236,7 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
 }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const chartWidth = Math.max(1, width - 2);
-  const tiles = useMemo(() => buildMetricTreemapRects(items, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, items]);
+  const tiles = useMetricTreemapLayout(items, chartWidth, height, cellAspect, "float");
 
   if (tiles.length === 0) {
     return (
@@ -263,34 +286,18 @@ function DesktopMetricTreemapSurface<T>({ items, width, height, selectedId, onSe
   );
 }
 
-export function MetricTreemapSurface<T>({
+function TerminalMetricTreemapSurface<T>({
   items,
   width,
   height,
   selectedId,
   onSelect,
   onActivate,
+  cellAspect,
   emptyStateTitle,
-}: MetricTreemapSurfaceProps<T>) {
-  const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
+}: MetricTreemapSurfaceProps<T> & { cellAspect: number }) {
   const chartWidth = Math.max(1, width - 2);
-  const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
-  const tiles = useMemo(() => buildMetricTreemap(items, chartWidth, height, cellAspect), [cellAspect, chartWidth, height, items]);
-
-  if (nativePaneChrome) {
-    return (
-      <DesktopMetricTreemapSurface
-        items={items}
-        width={width}
-        height={height}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onActivate={onActivate}
-        cellAspect={cellAspect}
-        emptyStateTitle={emptyStateTitle}
-      />
-    );
-  }
+  const tiles = useMetricTreemapLayout(items, chartWidth, height, cellAspect, "integer");
 
   if (tiles.length === 0) {
     return (
@@ -314,5 +321,46 @@ export function MetricTreemapSurface<T>({
         ))}
       </Box>
     </Box>
+  );
+}
+
+export function MetricTreemapSurface<T>({
+  items,
+  width,
+  height,
+  selectedId,
+  onSelect,
+  onActivate,
+  emptyStateTitle,
+}: MetricTreemapSurfaceProps<T>) {
+  const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
+  const cellAspect = Math.max(0.5, Math.min(4, cellHeightPx / Math.max(1, cellWidthPx)));
+
+  if (nativePaneChrome) {
+    return (
+      <DesktopMetricTreemapSurface
+        items={items}
+        width={width}
+        height={height}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        onActivate={onActivate}
+        cellAspect={cellAspect}
+        emptyStateTitle={emptyStateTitle}
+      />
+    );
+  }
+
+  return (
+    <TerminalMetricTreemapSurface
+      items={items}
+      width={width}
+      height={height}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      onActivate={onActivate}
+      cellAspect={cellAspect}
+      emptyStateTitle={emptyStateTitle}
+    />
   );
 }

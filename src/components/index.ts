@@ -5,6 +5,7 @@ export {
   buildMetricTreemapNavigationTiles,
   findMetricTreemapNeighbor,
   MetricTreemapSurface,
+  useMetricTreemapLayout,
   type MetricTreemapDirection,
   type MetricTreemapItem,
 } from "./metric-treemap";

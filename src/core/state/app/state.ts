@@ -99,8 +99,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case "MERGE_QUOTE": {
-      const financials = new Map(state.financials);
       const current = state.financials.get(action.symbol);
+      if (current?.quote === action.quote) return state;
+      const financials = new Map(state.financials);
       financials.set(action.symbol, resolveTickerFinancialsQuoteState(current, action.quote)!);
       return { ...state, financials };
     }

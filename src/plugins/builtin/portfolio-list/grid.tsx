@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from "react";
 import {
-  buildMetricTreemapNavigationTiles,
   findMetricTreemapNeighbor,
   MetricTreemapSurface,
+  useMetricTreemapLayout,
   type MetricTreemapDirection,
   type MetricTreemapItem,
 } from "../../../components";
@@ -115,9 +115,12 @@ export function PortfolioGrid({
     () => buildPortfolioGridItems(sortedTickers, financialsMap, columnContext, isPortfolioTab),
     [columnContext, financialsMap, isPortfolioTab, sortedTickers],
   );
-  const navigationTiles = useMemo(
-    () => buildMetricTreemapNavigationTiles(items, chartWidth, height, cellAspect, nativePaneChrome ? "float" : "integer"),
-    [cellAspect, chartWidth, height, items, nativePaneChrome],
+  const navigationTiles = useMetricTreemapLayout(
+    items,
+    chartWidth,
+    height,
+    cellAspect,
+    nativePaneChrome ? "float" : "integer",
   );
   const selectedIdx = cursorSymbol
     ? sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol)

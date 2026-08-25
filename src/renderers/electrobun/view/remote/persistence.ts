@@ -104,7 +104,23 @@ class RemotePluginStateStore {
     }
   }
 
-  private persistLocalState(): void {
+  private readonly localPersistScheduler = createPersistScheduler<void>({
+    delayMs: PLUGIN_STATE_SAVE_DEBOUNCE_MS,
+    save: () => {
+      this.writeLocalStateNow();
+    },
+  });
+
+  private persistLocalState(immediate = false): void {
+    if (!this.persistLocal) return;
+    if (immediate) {
+      void this.localPersistScheduler.saveImmediately(undefined);
+      return;
+    }
+    this.localPersistScheduler.schedule(undefined);
+  }
+
+  private writeLocalStateNow(): void {
     if (!this.persistLocal) return;
     const snapshot: Record<string, Record<string, unknown>> = {};
     for (const [pluginId, values] of this.state) {
@@ -121,6 +137,8 @@ class RemotePluginStateStore {
   }
 
   set(pluginId: string, key: string, value: unknown, schemaVersion = 1): void {
+    const current = this.state.get(pluginId)?.get(key);
+    if (Object.is(current, value)) return;
     if (!this.state.has(pluginId)) this.state.set(pluginId, new Map());
     this.state.get(pluginId)!.set(key, value);
     this.getScheduler(pluginId, key).schedule({ pluginId, key, value, schemaVersion });
@@ -135,7 +153,7 @@ class RemotePluginStateStore {
       .catch(() => {})
       .then(() => backendRequest("pluginState.delete", { pluginId, key }))
       .catch(() => {});
-    this.persistLocalState();
+    this.persistLocalState(true);
   }
 
   keys(pluginId: string): string[] {
@@ -144,10 +162,11 @@ class RemotePluginStateStore {
 
   clear(pluginId: string): void {
     this.state.delete(pluginId);
-    this.persistLocalState();
+    this.persistLocalState(true);
   }
 
   async flush(): Promise<void> {
+    await this.localPersistScheduler.flush();
     await Promise.all([...this.schedulers.values()].map((scheduler) => scheduler.flush()));
     await this.flushBackendSaves();
   }

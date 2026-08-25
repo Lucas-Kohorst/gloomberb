@@ -55,6 +55,25 @@ describe("hosted plugin state persist", () => {
     expect(isHostedBackendManagedPluginStateKey("gloomberb-cloud", "session")).toBe(true);
   });
 
+  test("does not rewrite localStorage when the snapshot is unchanged", () => {
+    setHostedConfigUserId("user-1");
+    const snapshot = { news: { read: ["a"] } };
+    writeHostedPluginState(snapshot);
+    const originalSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+    let writes = 0;
+    globalThis.localStorage.setItem = (key, value) => {
+      writes += 1;
+      originalSetItem(key, value);
+    };
+    try {
+      writeHostedPluginState(snapshot);
+      expect(writes).toBe(0);
+      expect(readHostedPluginState()).toEqual(snapshot);
+    } finally {
+      globalThis.localStorage.setItem = originalSetItem;
+    }
+  });
+
   test("does not leak one user's plugin state into another account", () => {
     setHostedConfigUserId("user-1");
     writeHostedPluginState({ news: { read: ["a"] } });
