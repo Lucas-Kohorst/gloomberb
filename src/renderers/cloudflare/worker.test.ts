@@ -950,6 +950,45 @@ describe("Gloom Cloud /cloud origin gate", () => {
     expect(upstream).toContain("https://api.gloom.sh/cloud/logos/ticker/AAPL");
   });
 
+  test("GET /cloud/credit/cds with a session proxies to api.gloom.sh/cloud/credit/cds", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url.startsWith("https://api.gloom.sh/cloud/credit/cds")) {
+        return Response.json({ source: "DTCC PPD", asOf: null, trades: [] });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/credit/cds?days=5", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/credit/cds?days=5");
+    expect(upstream.some((url) => url.includes("https://api.gloom.sh/credit/cds"))).toBe(false);
+  });
+
+  test("GET /cloud/cloud/credit/cds with a session also reaches the Cloud CDS route", async () => {
+    const upstream: string[] = [];
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      upstream.push(url);
+      if (url.startsWith("https://api.gloom.sh/cloud/credit/cds")) {
+        return Response.json({ source: "DTCC PPD", asOf: null, trades: [] });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/cloud/cloud/credit/cds", { origin: ORIGIN, sessionToken: "tok" }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(upstream).toContain("https://api.gloom.sh/cloud/credit/cds");
+  });
+
   test("POST /cloud/research/equity-diagnostic with a session proxies to the Cloud research route", async () => {
     const upstream: Array<{ url: string; method?: string; body?: string }> = [];
     globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {

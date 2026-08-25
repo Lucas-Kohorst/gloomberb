@@ -1141,3 +1141,21 @@ describe("apiClient equity diagnostic", () => {
     expect(JSON.parse(String(seenInit?.body))).toEqual({ symbol: "AAPL", mode: "cache-first" });
   });
 });
+
+describe("apiClient CDS", () => {
+  test("asks Gloom Cloud for /cloud/credit/cds with issuer and window", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input) => {
+      seenUrl = String(input);
+      return createResponse({ source: "DTCC PPD", asOf: null, trades: [] });
+    });
+
+    await apiClient.getCloudCds({ issuer: "Oracle Corporation", days: 5, limit: 500 });
+
+    const url = new URL(seenUrl);
+    expect(url.pathname).toBe("/cloud/credit/cds");
+    expect(url.searchParams.get("issuer")).toBe("Oracle Corporation");
+    expect(url.searchParams.get("days")).toBe("5");
+    expect(url.searchParams.get("limit")).toBe("500");
+  });
+});

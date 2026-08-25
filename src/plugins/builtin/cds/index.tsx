@@ -1,5 +1,7 @@
 import type { PaneTemplateCreateOptions } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
+import { CDS_CONNECTION_ID } from "./client";
 import { CDS_PANE_ID } from "./model";
 import { CdsPane } from "./pane";
 
@@ -12,6 +14,8 @@ function explicitSymbol(options?: PaneTemplateCreateOptions): string | null {
   const raw = options?.symbol ?? options?.ticker?.metadata.ticker ?? options?.arg;
   return raw?.trim().toUpperCase() || null;
 }
+
+let disposeCdsConnection: (() => void) | null = null;
 
 export const cdsModule: PluginModule = {
   panes: [{
@@ -44,4 +48,17 @@ export const cdsModule: PluginModule = {
         : { instanceId: `${CDS_PANE_ID}:market`, title: "CDS", placement: "floating" };
     },
   }],
+  setup() {
+    disposeCdsConnection = registerConnectionSource({
+      id: CDS_CONNECTION_ID,
+      name: "Gloom Cloud CDS",
+      kind: "api",
+      pluginId: "macro",
+      authRequired: true,
+    });
+  },
+  dispose() {
+    disposeCdsConnection?.();
+    disposeCdsConnection = null;
+  },
 };

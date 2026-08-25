@@ -3,6 +3,7 @@ import {
   CLEARED_SORT,
   applySortPreference,
   compareSortValues,
+  cycleSortPreference,
   nextSortPreference,
   type SortPreference,
 } from "./sort-values";
@@ -91,5 +92,18 @@ describe("nextSortPreference", () => {
       resetTo: natural,
     });
     expect(sort).toEqual({ columnId: "volume", direction: "desc" });
+  });
+});
+
+describe("cycleSortPreference", () => {
+  test("walks each column ascending then descending from the keyboard", () => {
+    const columns = ["issuer", "trades"] as const;
+    let sort: SortPreference<(typeof columns)[number]> = { columnId: "issuer", direction: "asc" };
+    sort = cycleSortPreference(columns, sort, 1);
+    expect(sort).toEqual({ columnId: "issuer", direction: "desc" });
+    sort = cycleSortPreference(columns, sort, 1);
+    expect(sort).toEqual({ columnId: "trades", direction: "asc" });
+    sort = cycleSortPreference(columns, sort, -1);
+    expect(sort).toEqual({ columnId: "issuer", direction: "desc" });
   });
 });

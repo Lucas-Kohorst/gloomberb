@@ -14,8 +14,8 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
-import { useAutoRefresh } from "../shared/auto-refresh";
-import { usePaneStatusFooter } from "../shared/pane-footer";
+import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { paneRefreshHint, usePaneStatusFooter } from "../shared/pane-footer";
 import { loadCdsActivity, type CdsActivity, type CdsActivityLoader } from "./client";
 import {
   buildIssuerColumns,
@@ -261,9 +261,11 @@ export function CdsPane({
   ], [activity, asOfLabel]);
   usePaneStatusFooter({
     registrationId: paneId,
+    focused,
     loading: status === "loading",
     error,
     info: footerInfo,
+    hints: [paneRefreshHint(load, { disabled: status === "loading" && !activity })],
   });
 
   if (status === "loading" && !activity) {
