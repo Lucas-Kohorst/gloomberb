@@ -12,7 +12,9 @@ import {
 
 const RSS_CACHE_KIND = "rss-feed";
 export const RSS_FEED_CACHE_POLICY = {
-  staleMs: 2 * 60 * 1000,
+  // 15m matches the slower feed poll options so Firehose does not refetch
+  // every default wire on a 2-minute loop.
+  staleMs: 15 * 60 * 1000,
   expireMs: 7 * 24 * 60 * 60 * 1000,
 } as const;
 

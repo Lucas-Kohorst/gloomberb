@@ -4,6 +4,8 @@ import {
   DEFAULT_TWEET_SORT,
   DEFAULT_TWITTER_FEED_QUERY,
   DEFAULT_TWITTER_FEED_TITLE,
+  POLLING_X_FEED_QUERY,
+  POLLING_X_FEED_TITLE,
   TWEET_CELL_MAX_CHARS,
   buildTweetColumns,
   deriveFeedTitle,
@@ -65,6 +67,13 @@ describe("twitter feed defaults", () => {
     expect(namedTwitterFeedTitle(DEFAULT_TWITTER_FEED_QUERY)).toBe(DEFAULT_TWITTER_FEED_TITLE);
     expect(deriveFeedTitle(`  ${DEFAULT_TWITTER_FEED_QUERY}  `)).toBe("Markets");
     expect(deriveFeedTitle("from:Reuters")).not.toBe("Markets");
+  });
+
+  test("names the polling-accounts query Polling", () => {
+    expect(namedTwitterFeedTitle(POLLING_X_FEED_QUERY)).toBe(POLLING_X_FEED_TITLE);
+    expect(POLLING_X_FEED_QUERY).toContain("from:VoteHub");
+    expect(POLLING_X_FEED_QUERY).toContain("from:RCPolitics");
+    expect(POLLING_X_FEED_QUERY).toContain("from:gelliottmorris");
   });
 
   test("retitles a persisted Markets list even if the stored tab was the truncated id", () => {

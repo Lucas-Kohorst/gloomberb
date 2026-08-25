@@ -27,6 +27,7 @@ import { marketMoversModule } from "./market-movers";
 import { optionsCalcModule } from "./options-calc";
 import { tvModule } from "./tv";
 import { composeBuiltinPlugin, type PluginModule } from "./plugin-module";
+import { paneCsvModule } from "./shared/pane-csv-module";
 import { portfolioListModule } from "./portfolio-list";
 import { scannerModule } from "./scanner";
 import { screenerModule } from "./screener";
@@ -61,7 +62,7 @@ export const applicationPlugin = composeBuiltinPlugin({
   name: "Application",
   version: "1.0.0",
   description: "Core layout, help, release information, API key management, and connection health.",
-  modules: [layoutManagerModule, helpModule, changelogModule, byokModule, connectionsModule],
+  modules: [layoutManagerModule, helpModule, changelogModule, byokModule, connectionsModule, paneCsvModule],
 });
 
 export const portfolioPlugin = composeBuiltinPlugin({

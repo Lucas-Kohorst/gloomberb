@@ -12,6 +12,8 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
 
   // -- Wires & national general news ----------------------------------------
   { id: "adjacent-press", url: "https://adjacent.markets/press/rss", name: "Adjacent Press", category: "general", authority: 82, enabled: true },
+  { id: "prophet-notes", url: "https://www.prophetnotes.com/feed", name: "Prophet Notes", category: "geopolitical", authority: 78, enabled: true },
+  { id: "sentinel-team", url: "https://blog.sentinel-team.org/feed", name: "Sentinel", category: "geopolitical", authority: 76, enabled: true },
   { id: "bbc-business", url: "https://feeds.bbci.co.uk/news/business/rss.xml", name: "BBC Business", category: "general", authority: 80, enabled: true },
   { id: "bbc-world", url: "https://feeds.bbci.co.uk/news/world/rss.xml", name: "BBC World", category: "general", authority: 80, enabled: true },
   { id: "bbc-tech", url: "https://feeds.bbci.co.uk/news/technology/rss.xml", name: "BBC Technology", category: "tech", authority: 74, enabled: true },
@@ -155,6 +157,8 @@ export const DEFAULT_FEEDS: RssFeedConfig[] = [
   { id: "foreign-policy", url: "https://foreignpolicy.com/feed/", name: "Foreign Policy", category: "geopolitical", authority: 72, enabled: true },
   { id: "defense-news", url: "https://www.defensenews.com/arc/outboundfeeds/rss/?outputType=xml", name: "Defense News", category: "geopolitical", authority: 70, enabled: true },
   { id: "war-on-the-rocks", url: "https://warontherocks.com/feed/", name: "War on the Rocks", category: "geopolitical", authority: 68, enabled: true },
+  { id: "metaculus-news", url: "https://www.metaculus.com/rss/", name: "Metaculus", category: "geopolitical", authority: 70, enabled: true },
+  { id: "zvi-ai", url: "https://thezvi.substack.com/feed", name: "Don't Worry About the Vase", category: "tech", authority: 64, enabled: true },
 
   // -- International / regional markets -------------------------------------
   { id: "economic-times-top", url: "https://economictimes.indiatimes.com/rssfeedstopstories.cms", name: "Economic Times Top Stories", category: "general", authority: 68, enabled: true },

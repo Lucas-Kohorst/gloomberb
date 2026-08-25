@@ -9,7 +9,9 @@ import {
 } from "react";
 import type { ScrollBoxRenderable } from "../../ui";
 import { useShortcut } from "../../react/input";
+import { useOptionalPaneInstanceId, usePaneInstance } from "../../state/app/context";
 import { DataTable, type DataTableColumn, type DataTableProps } from "../ui";
+import { publishPaneCsvSnapshot } from "./csv-export";
 import {
   isNextTableRowKey,
   isPreviousTableRowKey,
@@ -129,6 +131,23 @@ export function DataTableView<
   scrollToIndexVersion = 0,
   ...tableProps
 }: DataTableViewProps<T, C>) {
+  const paneId = useOptionalPaneInstanceId();
+  const pane = usePaneInstance();
+  const paneTitle = pane?.title?.trim() || pane?.paneId || "table";
+  useEffect(() => {
+    return publishPaneCsvSnapshot({
+      paneId: paneId ?? "__detached__",
+      title: paneTitle,
+      focused,
+      columns: tableProps.columns.map((column) => column.label),
+      rows: () => tableProps.items.map((item, index) => (
+        tableProps.columns.map((column) => (
+          tableProps.renderCell(item, column, index, { selected: false }).text ?? ""
+        ))
+      )),
+    });
+  }, [focused, paneId, paneTitle, tableProps.columns, tableProps.items, tableProps.renderCell]);
+
   const {
     effectiveHeaderScrollRef,
     effectiveScrollRef,
