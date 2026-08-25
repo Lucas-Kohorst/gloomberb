@@ -1,6 +1,6 @@
 import type { NativeRendererHost } from "../../../ui";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
-import { hasWebCtrlModifier, normalizeWebKeyName, shouldConsumeWebAppKeyDown, shouldDispatchWebNativeKeyDown, webKeySequence } from "./key-event";
+import { hasWebCtrlModifier, resolveWebShortcutKeyName, shouldConsumeWebAppKeyDown, shouldDispatchWebNativeKeyDown, webKeySequence } from "./key-event";
 
 type Listener = (...args: unknown[]) => void;
 type KeypressListener = (event: {
@@ -43,7 +43,7 @@ class WebKeyInput {
   emitKeyPress(event: KeyboardEvent): void {
     if (!shouldDispatchWebNativeKeyDown(event)) return;
     const payload = {
-      name: normalizeWebKeyName(event.key),
+      name: resolveWebShortcutKeyName(event),
       sequence: webKeySequence(event),
       ctrl: hasWebCtrlModifier(event),
       option: event.altKey,

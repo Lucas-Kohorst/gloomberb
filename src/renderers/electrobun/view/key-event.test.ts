@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  resolveWebShortcutKeyName,
   shouldConsumeWebAppKeyDown,
   shouldDispatchWebAppKeyDown,
   shouldDispatchWebNativeKeyDown,
@@ -15,6 +16,16 @@ function keyEvent(overrides: Record<string, unknown>) {
     ...overrides,
   } as never;
 }
+
+describe("resolveWebShortcutKeyName", () => {
+  test("maps Option+Digit keys to the physical number so Mac option-digit shortcuts match", () => {
+    expect(resolveWebShortcutKeyName({ key: "¡", code: "Digit1", altKey: true })).toBe("1");
+    expect(resolveWebShortcutKeyName({ key: "™", code: "Digit2", altKey: true })).toBe("2");
+    expect(resolveWebShortcutKeyName({ key: "1", code: "Digit1", altKey: true })).toBe("1");
+    expect(resolveWebShortcutKeyName({ key: "¡", code: "Digit1", altKey: false })).toBe("¡");
+    expect(resolveWebShortcutKeyName({ key: "1", code: "Digit1" })).toBe("1");
+  });
+});
 
 describe("shouldConsumeWebAppKeyDown", () => {
   test("consumes non-editable app keydowns", () => {

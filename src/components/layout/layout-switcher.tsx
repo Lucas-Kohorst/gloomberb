@@ -1,4 +1,5 @@
-import { Box, Text, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
+import { Box, Text, contextMenuDivider, useContextMenu, useUiCapabilities, useUiHost } from "../../ui";
+import { formatLayoutSwitchShortcutHint, layoutSwitchUsesOption } from "../../utils/layout-switch-shortcut";
 import { useDialog, type PromptContext } from "../../ui/dialog";
 import { useCallback, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
@@ -36,7 +37,8 @@ function stopChromeMouse(event?: StatusBarEvent) {
 }
 
 export function useLayoutSwitcher() {
-  const { nativeContextMenu } = useUiCapabilities();
+  const uiHost = useUiHost();
+  const { nativeContextMenu, nativePaneChrome } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const dialog = useDialog();
   const registry = getSharedRegistry();
@@ -44,10 +46,14 @@ export function useLayoutSwitcher() {
   const layouts = useAppSelector(selectSavedLayouts);
   const activeLayoutIdx = useAppSelector(selectActiveLayoutIndex);
   const { transientLayout } = useTransientLayout();
+  const optionLayoutSwitch = layoutSwitchUsesOption({
+    kind: uiHost.kind,
+    nativePaneChrome,
+  });
 
   const hasMultipleLayouts = layouts.length > 1 || !!transientLayout;
   const savedLayoutTabs = layouts.map((layout, index) => ({
-    label: `^${index + 1} ${truncate(layout.name, 14)}`,
+    label: `${formatLayoutSwitchShortcutHint(index + 1, optionLayoutSwitch)} ${truncate(layout.name, 14)}`,
     value: String(index),
     reorderable: true,
   }));

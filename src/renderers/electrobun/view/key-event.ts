@@ -95,6 +95,20 @@ export function shouldConsumeWebAppKeyDown(event: WebKeyDefaultEvent): boolean {
   return true;
 }
 
+const OPTION_DIGIT_CODE = /^Digit([1-9])$/;
+
+export function resolveWebShortcutKeyName(event: {
+  key: string;
+  code?: string;
+  altKey?: boolean;
+}): string {
+  if (event.altKey) {
+    const digit = OPTION_DIGIT_CODE.exec(event.code ?? "");
+    if (digit) return digit[1]!;
+  }
+  return normalizeWebKeyName(event.key);
+}
+
 export function normalizeWebKeyName(key: string): string {
   const controlLetter = controlLetterForKey(key);
   if (controlLetter) return controlLetter;

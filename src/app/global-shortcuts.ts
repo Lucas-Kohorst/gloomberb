@@ -1,6 +1,7 @@
 import type { Dispatch } from "react";
 import { useShortcut } from "../react/input";
-import { useNativeRenderer, useRendererHost } from "../ui";
+import { useNativeRenderer, useRendererHost, useUiHost } from "../ui";
+import { isLayoutSwitchShortcut, layoutSwitchUsesOption } from "../utils/layout-switch-shortcut";
 import { useDialogState } from "../ui/dialog";
 import type { PluginRegistry } from "../plugins/registry";
 import type { AppAction, AppState } from "../state/app/context";
@@ -35,6 +36,11 @@ export function useAppGlobalShortcuts({
   const dialogOpen = useDialogState((s) => s.isOpen);
   const nativeRenderer = useNativeRenderer();
   const rendererHost = useRendererHost();
+  const uiHost = useUiHost();
+  const optionLayoutSwitch = layoutSwitchUsesOption({
+    kind: uiHost.kind,
+    nativePaneChrome: uiHost.capabilities?.nativePaneChrome,
+  });
 
   useShortcut((event) => {
     if (isCopyShortcut(event) && copyActiveSelection(nativeRenderer)) {
@@ -70,7 +76,7 @@ export function useAppGlobalShortcuts({
       });
       return;
     }
-    if (!isDetachedWindow && !state.commandBarOpen && /^[1-9]$/.test(event.name ?? "") && (event.ctrl || event.meta || event.super) && (state.config.layouts ?? []).length > 1) {
+    if (!isDetachedWindow && !state.commandBarOpen && isLayoutSwitchShortcut(event, optionLayoutSwitch) && (state.config.layouts ?? []).length > 1) {
       const idx = parseInt(event.name!, 10) - 1;
       const layouts = state.config.layouts ?? [];
       if (idx < layouts.length && idx !== state.config.activeLayoutIndex) {
