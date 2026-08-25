@@ -167,6 +167,7 @@ function AdjacentMarketNewsStack({
       void loadNews();
     },
     onShare: shareArticle,
+    showPoll: !detailArticle,
   });
 
   const detailContent = detailArticle ? (

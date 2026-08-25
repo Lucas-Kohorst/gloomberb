@@ -15,7 +15,7 @@ import { usePaneSettingValue } from "../../../state/app/context";
 import { encodeSortPreference } from "../../../components/data-table/sort-settings";
 import { getSubstackPaneSettings } from "./settings";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { useFeedPollInterval } from "../shared/feed-poll-interval";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import {
   SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
 } from "../shared/article-pop-out";
@@ -543,7 +543,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       ...(activeFeedState.error ? [{ id: "error", parts: [{ text: activeFeedState.error, tone: "warning" as const }] }] : []),
       ...(activeDetail.error && detailOpen ? [{ id: "detail-error", parts: [{ text: activeDetail.error, tone: "warning" as const }] }] : []),
     ],
-    trailingInfo: [poll.segment],
+    trailingInfo: [...pollFooterTrailingInfo(!detailOpen, poll.segment)],
     hints: auth ? [
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },

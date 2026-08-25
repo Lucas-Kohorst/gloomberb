@@ -83,6 +83,7 @@ export function NewsPresetPane({
       void getSharedNewsService()?.load(query);
     },
     onShare: shareArticle,
+    showPoll: !detailArticle,
   });
 
   const detailContent = detailArticle ? (

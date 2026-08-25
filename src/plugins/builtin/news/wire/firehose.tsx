@@ -127,6 +127,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
     onPopOut: () => popOutArticle(readableArticle),
     onRefresh: refresh,
     onShare: shareArticle,
+    showPoll: !detailArticle,
   });
 
   // [/] search hint — separate registration so it combines with the article footer.

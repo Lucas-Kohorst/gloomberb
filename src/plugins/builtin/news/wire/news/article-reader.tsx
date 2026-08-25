@@ -78,6 +78,7 @@ export function NewsArticleReaderPane({ focused, width, height }: PaneProps) {
     error: error ?? jina.error,
     onRefresh: jina.refresh,
     onShare: shareArticle,
+    showPoll: false,
   });
 
   if (loading && !article) {

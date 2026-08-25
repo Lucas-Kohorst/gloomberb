@@ -149,6 +149,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
         });
       }
       : undefined,
+    showPoll: !openItemId,
   });
 
   if (!ticker) return <TickerEmptyState kind="news" symbol={null} detail="news" />;

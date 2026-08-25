@@ -115,6 +115,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       void getSharedNewsService()?.load(query);
     },
     onShare: shareArticle,
+    showPoll: !detailArticle,
   });
 
   const rootBefore = (
