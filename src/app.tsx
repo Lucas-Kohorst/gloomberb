@@ -41,6 +41,7 @@ import { useAppPaneRuntime } from "./app/pane-runtime";
 import { bindPluginRegistryRuntimeAccess } from "./app/runtime/plugin-bindings";
 import { useAppStartupRuntime } from "./app/runtime/startup";
 import { useTickerRefreshRuntime } from "./app/runtime/ticker-refresh";
+import { useUiYieldRuntime } from "./app/runtime/ui-yield";
 import { useAppUpdateRuntime } from "./app/runtime/update";
 import { createCoreSyncContributors } from "./sync/core-contributors";
 import { useCloudSyncRuntime } from "./sync/react";
@@ -145,6 +146,7 @@ function AppInner({
     updateProgress,
   ]);
   const appActive = useAppActive();
+  useUiYieldRuntime({ commandBarOpen, inputCaptured });
   const appActiveRef = useRef(appActive);
   const rendererHost = useRendererHost();
   const dialog = useDialog();

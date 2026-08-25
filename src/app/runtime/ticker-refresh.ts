@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type Dispatch } from "react";
+import { shouldYieldToUi, subscribeUiYield } from "../../utils/ui-yield";
 import type { MarketDataCoordinator } from "../../market-data/coordinator";
 import { instrumentFromTicker } from "../../market-data/request-types";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -47,7 +48,11 @@ export function useTickerRefreshRuntime({
   });
 
   useEffect(() => {
-    refreshQueueRef.current.queue.setPaused(!appActive);
+    const syncPause = () => {
+      refreshQueueRef.current.queue.setPaused(!appActive || shouldYieldToUi());
+    };
+    syncPause();
+    return subscribeUiYield(syncPause);
   }, [appActive]);
 
   const performRefreshTicker = useCallback(async (symbol: string, tickerOverride?: TickerRecord | null) => {

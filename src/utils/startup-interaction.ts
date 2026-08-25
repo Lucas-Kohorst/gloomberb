@@ -1,3 +1,5 @@
+import { shouldYieldToUi, whenUiQuiet } from "./ui-yield";
+
 type Resolve = () => void;
 
 type IdleHost = typeof globalThis & {
@@ -64,15 +66,23 @@ export function isStartupNetworkDeferred(): boolean {
   return deferred && !interactive;
 }
 
-/**
- * Resolves immediately unless `enableStartupNetworkDeferral()` ran and first
- * paint has not been marked yet. Tests and the TUI never enable deferral.
- */
-export function whenStartupBackground(): Promise<void> {
+function whenStartupPaintReady(): Promise<void> {
   if (!deferred || interactive) return Promise.resolve();
   return new Promise((resolve) => {
     waiters.push(resolve);
   });
+}
+
+/**
+ * Resolves immediately unless `enableStartupNetworkDeferral()` ran and first
+ * paint has not been marked yet. After paint, also waits while the user is
+ * typing, using Command-K, or dragging so those frames stay free.
+ * Tests and the TUI never enable deferral.
+ */
+export function whenStartupBackground(): Promise<void> {
+  const afterPaint = whenStartupPaintReady();
+  if (!shouldYieldToUi()) return afterPaint;
+  return afterPaint.then(() => whenUiQuiet());
 }
 
 /** Double-rAF so the first App commit paints before RSS/PM/Adjacent stampede. */
@@ -90,14 +100,17 @@ export function armStartupInteractiveAfterFirstPaint(): void {
 }
 
 export function runAfterStartupBackground(task: () => void): () => void {
-  if (!deferred || interactive) {
-    task();
-    return () => {};
-  }
   let cancelled = false;
-  void whenStartupBackground().then(() => {
+  const run = () => {
     if (!cancelled) task();
-  });
+  };
+  if ((!deferred || interactive) && !shouldYieldToUi()) {
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }
+  void whenStartupBackground().then(run);
   return () => {
     cancelled = true;
   };

@@ -1,5 +1,6 @@
 import type { NewsCapability } from "../capabilities";
 import { isStartupNetworkDeferred, whenStartupBackground } from "../utils/startup-interaction";
+import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../utils/ui-yield";
 import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 import {
@@ -98,6 +99,7 @@ export class NewsService {
   private readonly queries = new Map<string, NewsQueryEntry>();
   private articles: NewsArticle[] = [];
   private version = 0;
+  private notifyScheduled = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
   private readonly pollIntervalMs: () => number;
@@ -208,11 +210,32 @@ export class NewsService {
     return this.version;
   }
 
-  private notify(): void {
+  private flushNotify(): void {
     this.version++;
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  private notify(): void {
+    if (this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    const flush = () => {
+      if (shouldYieldToUi()) {
+        void whenUiQuiet().then(() => {
+          this.notifyScheduled = false;
+          this.notify();
+        });
+        return;
+      }
+      this.notifyScheduled = false;
+      this.flushNotify();
+    };
+    if (isUiYieldEnabled() && typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+      return;
+    }
+    flush();
   }
 
   getQueryState(query: NewsQuery): NewsQueryState {
