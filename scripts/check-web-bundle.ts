@@ -92,6 +92,14 @@ for (const document of ["index.html", "share.html"]) {
       process.exit(1);
     }
     hashedWebMainHref = hashed[1];
+    if (!htmlText.includes("__GLOOM_ROBINHOOD_BROWSER_SRC")) {
+      console.error(
+        "index.html must set window.__GLOOM_ROBINHOOD_BROWSER_SRC to the unsplit"
+        + "\nrobinhood-browser.<hash>.js bundle. Split MCP/Zod chunks throw minified"
+        + "\nReferenceErrors (`Y0 is not defined`) on Connect Broker.",
+      );
+      process.exit(1);
+    }
   }
 }
 
@@ -144,7 +152,45 @@ if (leaked.length > 0) {
   process.exit(1);
 }
 
+const dynamicChunks = referencedDynamicImportChunks(source);
+for (const specifier of dynamicChunks) {
+  const chunkPath = join(dirname(bundlePath), specifier.slice(2));
+  const chunkFile = Bun.file(chunkPath);
+  if (!await chunkFile.exists()) {
+    console.error(`Hosted entry dynamically imports missing chunk ${specifier}.`);
+    process.exit(1);
+  }
+  try {
+    await import(`${pathToFileURL(chunkPath).href}?bundle-check=${Date.now()}`);
+  } catch (error) {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.error(`Hosted dynamic chunk failed to evaluate: ${specifier}\n${detail}`);
+    console.error(
+      "\nBun code-splitting dropped a binding from this lazy chunk (Connect Broker shows"
+      + "\nthat as a minified ReferenceError like `Y0 is not defined`). Keep the module"
+      + "\nin the hosted entry graph, or stop splitting that import.",
+    );
+    process.exit(1);
+  }
+}
+
+const robinhoodFiles = names.filter((name) => /^robinhood-browser\.[A-Za-z0-9_-]+\.js$/.test(name));
+if (robinhoodFiles.length !== 1) {
+  console.error(
+    `Expected one hashed robinhood-browser.<hash>.js in ${outdir}, found ${robinhoodFiles.length}.`,
+  );
+  process.exit(1);
+}
+try {
+  await import(`${pathToFileURL(join(outdir, robinhoodFiles[0]!)).href}?bundle-check=${Date.now()}`);
+} catch (error) {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  console.error(`Unsplit Robinhood browser bundle failed to evaluate: ${robinhoodFiles[0]}\n${detail}`);
+  process.exit(1);
+}
+
 console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
+console.log(`Unsplit Robinhood browser bundle evaluates (${robinhoodFiles[0]}).`);
 console.log("Hosted pages reference only root-absolute asset URLs (index.html, share.html).");
 console.log(`index.html references hashed ${hashedWebMainHref}.`);
 console.log(
@@ -186,6 +232,11 @@ async function evaluateHostedEntry(path: string, source: string): Promise<void> 
 function referencedRelativeModules(source: string): string[] {
   const matches = source.matchAll(/["'](\.\/(?:chunk|web-main|share-main)[^"']+\.js)["']/g);
   return [...matches].flatMap((match) => match[1] ? [match[1]] : []);
+}
+
+function referencedDynamicImportChunks(source: string): string[] {
+  const matches = source.matchAll(/import\(["'](\.\/chunk-[^"']+\.js)["']\)/g);
+  return [...new Set([...matches].flatMap((match) => match[1] ? [match[1]] : []))];
 }
 
 async function reachableBundleBytes(entryPath: string): Promise<number> {
