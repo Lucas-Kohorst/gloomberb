@@ -12,6 +12,7 @@ import type { AppAction, AppState } from "../../state/app/context";
 import type { AppConfig, BrokerInstanceConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import type { TickerRecord } from "../../types/ticker";
+import { requireValidBroker } from "../../brokers/require-valid-broker";
 import {
   createBrokerInstanceId,
   getBrokerInstance,
@@ -131,8 +132,7 @@ export function bindPluginRegistryRuntimeAccess({
     const broker = pluginRegistry.brokers.get(instance.brokerType);
     if (!broker) throw new Error(`Broker "${instance.brokerType}" is not available.`);
 
-    const valid = await broker.validate(instance).catch(() => false);
-    if (!valid) throw new Error(`${broker.name} setup is incomplete.`);
+    await requireValidBroker(broker, instance);
 
     await broker.connect?.(instance);
     if (broker.listAccounts) {

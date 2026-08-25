@@ -11,20 +11,15 @@ import {
   takePendingRobinhoodOAuth,
   type RobinhoodAuthHost,
 } from "./mcp-session";
-import { openExternalAuthorizationUrl, startLocalOAuthCallback } from "./oauth-callback-local";
-import { ROBINHOOD_POSITION_TOOLS, requireRobinhoodPositionTools } from "./position-tools";
-import { ROBINHOOD_MCP_URL } from "../../shared/robinhood-oauth";
+import { openAuthorizationPopup, startBrowserOAuthCallback } from "./oauth-callback-browser";
 
-export { ROBINHOOD_MCP_URL };
-export { ROBINHOOD_POSITION_TOOLS, requireRobinhoodPositionTools };
-
-const nativeHost: RobinhoodAuthHost = {
-  startCallback: startLocalOAuthCallback,
-  openAuthorizationUrl: openExternalAuthorizationUrl,
+const browserHost: RobinhoodAuthHost = {
+  startCallback: startBrowserOAuthCallback,
+  openAuthorizationUrl: openAuthorizationPopup,
 };
 
 export async function loadRobinhoodPortfolio(instance: BrokerInstanceConfig) {
-  return loadPortfolio(instance, nativeHost);
+  return loadPortfolio(instance, browserHost);
 }
 
 export const robinhoodBroker: BrokerAdapter = {
@@ -61,15 +56,15 @@ export const robinhoodBroker: BrokerAdapter = {
   },
 
   async previewOrder(instance, request: BrokerOrderRequest) {
-    return previewRobinhoodOrder(instance, request, nativeHost);
+    return previewRobinhoodOrder(instance, request, browserHost);
   },
 
   async placeOrder(instance, request: BrokerOrderRequest) {
-    return placeRobinhoodOrder(instance, request, nativeHost);
+    return placeRobinhoodOrder(instance, request, browserHost);
   },
 
   async cancelOrder(instance, orderId: number) {
-    await cancelRobinhoodOrder(instance, orderId, nativeHost);
+    await cancelRobinhoodOrder(instance, orderId, browserHost);
   },
 
   toConfigValues() {

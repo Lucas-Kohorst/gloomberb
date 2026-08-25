@@ -1,7 +1,9 @@
+import type { GloomPlugin } from "../../types/plugin";
 import type { BrokerAdapter, BrokerConnectionStatus } from "../../types/broker";
 import type { BrokerInstanceConfig } from "../../types/config";
-import type { GloomPlugin } from "../../types/plugin";
+import type { BrokerOrderRequest } from "../../types/trading";
 import { registerConnectionSource, withConnectionRequest } from "../builtin/connections/register";
+import { isRobinhoodOAuthConfigured, robinhoodConfigSchema } from "./connection";
 import { loadRobinhoodNativeModule } from "./native-loader";
 import type { BrokerPortfolioSnapshot } from "./normalize";
 
@@ -24,7 +26,7 @@ async function loadRobinhoodPortfolio(instance: BrokerInstanceConfig): Promise<B
       const module = await loadRobinhoodNativeModule();
       return module.loadRobinhoodPortfolio(instance);
     });
-    setStatus(instance.id, "connected", "Read-only OAuth connection");
+    setStatus(instance.id, "connected", "OAuth · read accounts, trade Agentic");
     return snapshot;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Robinhood sync failed.";
@@ -33,24 +35,24 @@ async function loadRobinhoodPortfolio(instance: BrokerInstanceConfig): Promise<B
   }
 }
 
+async function withRobinhoodRuntime<T>(
+  instance: BrokerInstanceConfig,
+  operation: string,
+  run: (module: Awaited<ReturnType<typeof loadRobinhoodNativeModule>>) => Promise<T>,
+): Promise<T> {
+  return withConnectionRequest(ROBINHOOD_CONNECTION_ID, operation, async () => {
+    const module = await loadRobinhoodNativeModule();
+    return run(module);
+  });
+}
+
 export const robinhoodBroker: BrokerAdapter = {
   id: "robinhood",
   name: "Robinhood",
-  configSchema: [{
-    key: "connectionMode",
-    label: "Connection",
-    type: "select",
-    required: true,
-    defaultValue: "oauth",
-    options: [{
-      label: "Robinhood sign-in (read-only sync)",
-      value: "oauth",
-      description: "Gloomberb opens Robinhood in your browser.",
-    }],
-  }],
+  configSchema: robinhoodConfigSchema(),
 
   async validate(instance) {
-    return instance.config.connectionMode === "oauth";
+    return isRobinhoodOAuthConfigured(instance);
   },
 
   async importPositions(instance) {
@@ -74,7 +76,7 @@ export const robinhoodBroker: BrokerAdapter = {
       const module = await loadRobinhoodNativeModule();
       await module.robinhoodBroker.disconnect?.(instance);
     } catch {
-      // Native sync is unavailable in the web/hosted renderer.
+      // Native sync is unavailable in some renderers; still mark disconnected.
     }
     setStatus(instance.id, "disconnected");
   },
@@ -82,7 +84,9 @@ export const robinhoodBroker: BrokerAdapter = {
   getStatus(instance) {
     return statuses.get(instance.id) ?? {
       state: instance.config.oauth ? "connected" : "disconnected",
-      message: instance.config.oauth ? "Read-only OAuth connection" : "Sign in during the first sync",
+      message: instance.config.oauth
+        ? "OAuth · read accounts, trade Agentic"
+        : "Sign in during the first sync",
       mode: "oauth",
       updatedAt: 0,
     };
@@ -107,6 +111,33 @@ export const robinhoodBroker: BrokerAdapter = {
     }
   },
 
+  async previewOrder(instance, request: BrokerOrderRequest) {
+    return withRobinhoodRuntime(instance, "preview-order", (module) => {
+      if (!module.robinhoodBroker.previewOrder) {
+        throw new Error("Robinhood order preview is unavailable in this app.");
+      }
+      return module.robinhoodBroker.previewOrder(instance, request);
+    });
+  },
+
+  async placeOrder(instance, request: BrokerOrderRequest) {
+    return withRobinhoodRuntime(instance, "place-order", (module) => {
+      if (!module.robinhoodBroker.placeOrder) {
+        throw new Error("Robinhood trading is unavailable in this app.");
+      }
+      return module.robinhoodBroker.placeOrder(instance, request);
+    });
+  },
+
+  async cancelOrder(instance, orderId: number) {
+    await withRobinhoodRuntime(instance, "cancel-order", async (module) => {
+      if (!module.robinhoodBroker.cancelOrder) {
+        throw new Error("Robinhood cancel is unavailable in this app.");
+      }
+      await module.robinhoodBroker.cancelOrder(instance, orderId);
+    });
+  },
+
   toConfigValues() {
     return { connectionMode: "oauth" };
   },
@@ -123,7 +154,7 @@ export const robinhoodPlugin: GloomPlugin = {
   id: "robinhood",
   name: "Robinhood",
   version: "1.0.0",
-  description: "Read-only account and position sync through Robinhood Trading MCP.",
+  description: "Read every Robinhood account; trade only the Agentic account.",
   toggleable: true,
   broker: robinhoodBroker,
   paneTemplates: [
@@ -131,8 +162,8 @@ export const robinhoodPlugin: GloomPlugin = {
       id: "robinhood-connect",
       paneId: "brokers",
       label: "Robinhood",
-      description: "Sign in to Robinhood and sync read-only accounts and positions",
-      keywords: ["robinhood", "hood", "rh", "broker", "positions", "sync", "oauth"],
+      description: "Sign in to Robinhood. Reads all accounts; trades the Agentic account",
+      keywords: ["robinhood", "hood", "rh", "broker", "positions", "sync", "oauth", "agentic", "trade"],
       shortcut: { prefix: "RH" },
       singleton: true,
       createInstance: () => ({ placement: "floating" }),

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeRobinhoodSnapshot } from "./normalize";
-import { requireRobinhoodPositionTools } from "./position-tools";
+import { mapRobinhoodOrderArguments } from "./mcp-session";
+import {
+  assertRobinhoodAgenticTrade,
+  isRobinhoodAgenticAccount,
+  requireRobinhoodPositionTools,
+} from "./position-tools";
 
 describe("Robinhood position normalization", () => {
   test("normalizes nested accounts and positions without duplicate records", () => {
@@ -60,7 +65,7 @@ describe("Robinhood position normalization", () => {
 });
 
 describe("Robinhood tool boundary", () => {
-  test("accepts only the two read-only position-sync tools", () => {
+  test("requires read-only account and position tools even when trade tools are listed", () => {
     const selected = requireRobinhoodPositionTools([
       { name: "get_accounts", annotations: { readOnlyHint: true } },
       { name: "get_equity_positions", annotations: { readOnlyHint: true } },
@@ -71,5 +76,48 @@ describe("Robinhood tool boundary", () => {
       { name: "get_accounts", annotations: { readOnlyHint: true } },
       { name: "get_equity_positions", annotations: { readOnlyHint: false } },
     ])).toThrow("read-only get_equity_positions");
+  });
+});
+
+describe("Robinhood Agentic trade gate", () => {
+  test("treats Agentic account types as tradable and others as read-only", () => {
+    expect(isRobinhoodAgenticAccount({ name: "Agentic", accountId: "RH-A" })).toBe(true);
+    expect(isRobinhoodAgenticAccount({ accountType: "AGENTIC_INDIVIDUAL", accountId: "RH-A" })).toBe(true);
+    expect(isRobinhoodAgenticAccount({ name: "Individual", accountId: "RH-1" })).toBe(false);
+    assertRobinhoodAgenticTrade({ name: "Agentic Individual", accountId: "RH-A" }, "RH-A");
+    expect(() => assertRobinhoodAgenticTrade({ name: "Individual", accountId: "RH-1" }, "RH-1"))
+      .toThrow("limited to the Agentic account");
+  });
+});
+
+describe("Robinhood order argument mapping", () => {
+  test("fills schema fields for an Agentic equity order", () => {
+    expect(mapRobinhoodOrderArguments(
+      {
+        properties: {
+          account_id: {},
+          symbol: {},
+          side: {},
+          quantity: {},
+          order_type: {},
+          limit_price: {},
+        },
+      },
+      {
+        accountId: "RH-A",
+        action: "BUY",
+        orderType: "LMT",
+        quantity: 2,
+        limitPrice: 10.5,
+        contract: { brokerId: "robinhood", symbol: "HOOD" },
+      },
+    )).toEqual({
+      account_id: "RH-A",
+      symbol: "HOOD",
+      side: "buy",
+      quantity: 2,
+      order_type: "limit",
+      limit_price: 10.5,
+    });
   });
 });

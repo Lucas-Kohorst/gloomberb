@@ -4,6 +4,7 @@ import type { BrokerAdapter, BrokerPosition } from "../types/broker";
 import type { AppConfig, BrokerInstanceConfig } from "../types/config";
 import type { BrokerAccount } from "../types/trading";
 import type { TickerRecord } from "../types/ticker";
+import { requireValidBroker } from "./require-valid-broker";
 import { getBrokerInstance } from "../utils/broker-instances";
 import {
   clearBrokerInstanceTickerData,
@@ -133,11 +134,8 @@ export async function syncBrokerInstance({
     throw new Error(`Broker "${instance.brokerType}" is not available.`);
   }
 
-  const valid = await broker.validate(instance).catch(() => false);
+  await requireValidBroker(broker, instance);
   throwIfBrokerImportCancelled(signal);
-  if (!valid) {
-    throw new Error(`${broker.name} setup is incomplete.`);
-  }
 
   const tickers = await loadTickerMap(tickerRepository, existingTickers);
   throwIfBrokerImportCancelled(signal);
