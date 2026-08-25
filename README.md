@@ -248,6 +248,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `ANR <ticker>` | Analyst targets and ratings |
 | `DIAG <ticker>` | Equity Diagnostic with cited flags and anomalies |
 | `SEC <ticker>` | SEC filings and company disclosures |
+| `10K <ticker>` / `10Q <ticker>` | 10-K and 10-Q periodic reports |
 | `OMON <ticker>` | Options monitor |
 | `HDS <ticker>` | Institutional holders |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
@@ -285,7 +286,9 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `TBO` | TheBuildout infrastructure intelligence |
 | `CG` | Congress trading disclosures |
 | `WEI` | Global equity indices |
+| `COMM` | Energy, metals, and agriculture front-month prices |
 | `ECON` | Economic events and releases |
+| `WB` | Country and regional GDP, CPI, unemployment, and population |
 | `GC` | Yield curve |
 | `AUCT` | Treasury auction results |
 | `CRD` | ICE BofA US corporate option-adjusted spreads |
@@ -296,6 +299,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `FLOW` | Unusual options activity |
 | `ERN` | Earnings calendar |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
+| `AIS` | Delayed OpenSky aircraft and public AIS ship positions |
+| `SAT` | NASA FIRMS fire hotspots and GIBS / HLS satellite imagery |
 | `BI` / `SP` | S&P 500 sector performance |
 | `FXC` | Major FX cross rates |
 | `FNG` | Fear and greed market gauge |

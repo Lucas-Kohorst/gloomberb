@@ -22,6 +22,8 @@ import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
+import { trafficPlugin } from "./builtin/traffic";
+import { satellitePlugin } from "./builtin/satellite";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -40,6 +42,8 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   predictionMarketsPlugin,
   congressTradesPlugin,
   buildoutPlugin,
+  trafficPlugin,
+  satellitePlugin,
   substackPlugin,
   notesPlugin,
   aiPlugin,

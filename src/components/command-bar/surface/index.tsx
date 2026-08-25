@@ -15,7 +15,11 @@ import {
   looksLikeArticleQuery,
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
-import { buildArticleSearchResultItems, useAdjacentArticleSearch } from "../routes/root/article-results";
+import {
+  buildArticleSearchResultItems,
+  useAdjacentArticleSearch,
+  useFilingArticleSearch,
+} from "../routes/root/article-results";
 import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
 import {
   buildChartSeriesAssistContext,
@@ -197,12 +201,13 @@ export function CommandBar({
   }), [activeTickerSymbol, availableCommands, getAvailablePaneShortcutTemplates, getAvailablePluginCommands, rootQuery]);
 
   const planAccess = usePlanAccess();
-  const watchArticles = looksLikeArticleQuery(rootQuery);
-  const newsCacheVersion = useNewsCacheVersion(watchArticles);
+  const watchNews = looksLikeArticleQuery(rootQuery);
+  const newsCacheVersion = useNewsCacheVersion(watchNews);
   const [warmingNewsCache, setWarmingNewsCache] = useState(false);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
+  const filingNews = useFilingArticleSearch(rootQuery);
   useEffect(() => {
-    if (!watchArticles) {
+    if (!watchNews) {
       setWarmingNewsCache(false);
       return;
     }
@@ -223,20 +228,20 @@ export function CommandBar({
     return () => {
       cancelled = true;
     };
-  }, [watchArticles]);
+  }, [watchNews]);
   const articleResultItems = useMemo(() => {
     const cached = cachedNewsArticles();
     const seen = new Set<string>();
     const articles = [];
-    for (const article of [...cached, ...adjacentNews.articles]) {
+    for (const article of [...cached, ...adjacentNews.articles, ...filingNews.articles]) {
       if (seen.has(article.id)) continue;
       seen.add(article.id);
       articles.push(article);
     }
-    // Local firehose/RSS matches appear immediately. Wait only on Adjacent,
-    // or a cold empty cache that is still warming from idle prefetch / one poll.
-    const stillLoading = adjacentNews.phase === "loading"
-      || (cached.length === 0 && warmingNewsCache);
+    const stillLoading = (watchNews && (
+      adjacentNews.phase === "loading"
+      || (cached.length === 0 && warmingNewsCache)
+    )) || (filingNews.phase === "loading" && filingNews.articles.length === 0);
     return buildArticleSearchResultItems({
       articles,
       query: rootQuery,
@@ -252,6 +257,8 @@ export function CommandBar({
     adjacentNews.articles,
     adjacentNews.phase,
     closeAll,
+    filingNews.articles,
+    filingNews.phase,
     newsCacheVersion,
     pluginRegistry,
     rootQuery,

@@ -359,12 +359,17 @@ describe("Adjacent Cloud keyed-data providers", () => {
     const body = await response?.json() as { providers: Array<{ id: string }> };
     expect(body.providers.map((provider) => provider.id).sort()).toEqual([
       "adjacent",
+      "digitraffic-ais",
       "llm-stats",
+      "nasa-firms",
+      "nasa-gibs",
       "nws-cli",
+      "opensky",
       "owid",
       "twc-kalshi",
       "us-listings",
       "votehub",
+      "world-bank",
     ]);
   });
 
@@ -580,6 +585,43 @@ PRECIPITATION (IN)
       makeEnv(),
     );
     expect(blocked?.status).toBe(404);
+  });
+
+  test("World Bank, OpenSky, and FIRMS proxy allowlisted paths only", async () => {
+    let fetchedUrl = "";
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      fetchedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof globalThis.fetch;
+
+    const wb = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/world-bank/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&callback=evil"),
+      makeEnv(),
+    );
+    expect(wb?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json");
+
+    const blockedWb = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/world-bank/v2/secret"),
+      makeEnv(),
+    );
+    expect(blockedWb?.status).toBe(404);
+
+    const sky = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/opensky/api/states/all?lamin=10&lomin=-20&lamax=42&lomax=65"),
+      makeEnv(),
+    );
+    expect(sky?.status).toBe(200);
+    expect(fetchedUrl).toBe("https://opensky-network.org/api/states/all?lamin=10&lomin=-20&lamax=42&lomax=65");
+
+    const firms = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/data/nasa-firms/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv"),
+      makeEnv(),
+    );
+    expect(firms?.status).toBe(200);
+    expect(fetchedUrl).toBe(
+      "https://firms.modaps.eosdis.nasa.gov/data/active_fire/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv",
+    );
   });
 
   test("US listings master caches Nasdaq/NYSE files for 12 hours", async () => {

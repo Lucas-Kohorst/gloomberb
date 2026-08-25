@@ -25,6 +25,9 @@ import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { registerConnectionSource } from "../connections/register";
 import { loadSecBrowserFilings } from "./client";
+import { filingToArticle, isPeriodicFiling } from "./filing-article";
+import { filingMatchesForms, parseFormsSetting } from "./forms";
+import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import {
   formatFilingMetaDate,
   renderFilingNotice,
@@ -341,6 +344,15 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     void summary.summarize(summarizeTarget, content);
   }, [contentCache, summarizeTarget, summary]);
   const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const popOutArticle = usePopOutNewsArticle();
+  const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
+  const popOutSelected = useCallback(() => {
+    if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
+    popOutArticle(filingToArticle(
+      summarizeTarget,
+      contentCache.get(summarizeTarget.accessionNumber),
+    ));
+  }, [contentCache, popOutArticle, summarizeTarget]);
 
   useEffect(() => {
     if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
@@ -357,9 +369,14 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     loading: loading || !!summary.summarizingAccession,
     error: error ?? summary.summaryError,
     showOpenHint: !error && !!openFiling?.filingUrl,
-    hints: canSummarize
-      ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
-      : undefined,
+    hints: [
+      ...(canPopOut
+        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
+        : []),
+      ...(canSummarize
+        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
+        : []),
+    ],
   });
 
   if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
@@ -403,9 +420,30 @@ function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
 }
 
+const PERIODIC_FORMS_SETTING = "10-K,10-Q,10-K/A,10-Q/A";
+
+function createSecBrowserInstance(
+  prefix: string,
+  titlePrefix: string,
+  options?: PaneTemplateCreateOptions,
+  extraSettings: Record<string, string> = {},
+) {
+  const query = queryFromTemplateOptions(options);
+  const encoded = encodeURIComponent(query.toUpperCase()).replace(/%/g, "~");
+  return {
+    instanceId: query ? `${prefix}:${encoded}` : `${prefix}:latest`,
+    title: query ? `${titlePrefix} ${query.toUpperCase()}` : titlePrefix,
+    placement: "floating" as const,
+    binding: { kind: "none" as const },
+    settings: { query, ...extraSettings },
+  };
+}
+
 function SecPane({ width, height, focused }: PaneProps) {
   const { ticker } = usePaneTicker();
   const [storedQuery] = usePaneSettingValue("query", "");
+  const [formsSetting] = usePaneSettingValue("forms", "");
+  const formFilter = parseFormsSetting(String(formsSetting ?? ""));
   const initialQuery = String(storedQuery ?? "").trim() || ticker?.metadata.ticker || "";
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -462,25 +500,29 @@ function SecPane({ width, height, focused }: PaneProps) {
     || documentsEntry?.phase === "loading"
     || documentsEntry?.phase === "refreshing"
   );
+  const visibleFilings = useMemo(
+    () => (formFilter ? filings.filter((filing) => filingMatchesForms(filing.form, formFilter)) : filings),
+    [filings, formFilter],
+  );
   const contentTargets = useMemo(() => [
     ...(openFiling ? [openFiling] : []),
     ...buildInlineFilingContentTargets(openFiling, openDocuments),
-    ...filings.filter((filing) => OWNERSHIP_FORMS.has(filing.form.trim())),
-  ], [filings, openDocuments, openFiling]);
+    ...visibleFilings.filter((filing) => OWNERSHIP_FORMS.has(filing.form.trim())),
+  ], [openDocuments, openFiling, visibleFilings]);
   const { contentCache } = useSecFilingContentCache({
     scopeKey: `browser:${query.trim().toLowerCase() || "latest"}`,
     targets: contentTargets,
   });
   const loadingContent = !!openFiling && !contentCache.has(openFiling.accessionNumber);
-  const loading = status === "loading" && filings.length === 0;
+  const loading = status === "loading" && visibleFilings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
 
   const summary = useFilingSummary({
-    filings,
+    filings: visibleFilings,
     contentCache,
   });
-  const selectedFiling = filings[selectedIdx] ?? null;
+  const selectedFiling = visibleFilings[selectedIdx] ?? null;
   const summarizeTarget = openFiling ?? selectedFiling ?? null;
   const handleSummarize = useCallback(() => {
     if (!summarizeTarget) return;
@@ -489,12 +531,21 @@ function SecPane({ width, height, focused }: PaneProps) {
     void summary.summarize(summarizeTarget, content);
   }, [contentCache, summarizeTarget, summary]);
   const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const popOutArticle = usePopOutNewsArticle();
+  const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
+  const popOutSelected = useCallback(() => {
+    if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
+    popOutArticle(filingToArticle(
+      summarizeTarget,
+      contentCache.get(summarizeTarget.accessionNumber),
+    ));
+  }, [contentCache, popOutArticle, summarizeTarget]);
 
   useEffect(() => {
-    if (filings.length > 0 && selectedIdx >= filings.length) {
-      setSelectedIdx(Math.max(0, filings.length - 1));
+    if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
+      setSelectedIdx(Math.max(0, visibleFilings.length - 1));
     }
-  }, [filings.length, selectedIdx, setSelectedIdx]);
+  }, [selectedIdx, setSelectedIdx, visibleFilings.length]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -530,6 +581,12 @@ function SecPane({ width, height, focused }: PaneProps) {
       event.stopPropagation?.();
       event.preventDefault?.();
       load(query);
+      return;
+    }
+    if (isPlainKey(event, "p") && canPopOut) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      popOutSelected();
     }
   }, { allowEditable: true, enabled: focused });
 
@@ -548,6 +605,9 @@ function SecPane({ width, height, focused }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
+      ...(canPopOut
+        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
+        : []),
       ...(canSummarize
         ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
         : []),
@@ -572,8 +632,14 @@ function SecPane({ width, height, focused }: PaneProps) {
       load(query);
       return true;
     }
+    if (event.name === "p" && canPopOut) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelected();
+      return true;
+    }
     return false;
-  }, [focusSearch, load, query]);
+  }, [canPopOut, focusSearch, load, popOutSelected, query]);
 
   const rootBefore = (
     <InputSearchBar
@@ -620,7 +686,7 @@ function SecPane({ width, height, focused }: PaneProps) {
       focused={focused && !searchFocused}
       rootBefore={rootBefore}
       items={toFeedItems(
-        filings,
+        visibleFilings,
         openFiling?.accessionNumber,
         contentCache,
         loadingContent,
@@ -636,7 +702,11 @@ function SecPane({ width, height, focused }: PaneProps) {
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Form"
       titleLabel="Filing"
-      emptyStateTitle={query.trim() ? `No SEC filings for ${query.trim()}.` : "No recent SEC filings."}
+      emptyStateTitle={
+        query.trim()
+          ? (formFilter ? `No matching filings for ${query.trim()}.` : `No SEC filings for ${query.trim()}.`)
+          : (formFilter ? "No matching filings." : "No recent SEC filings.")
+      }
     />
   );
 }
@@ -670,16 +740,41 @@ export const secModule: PluginModule = {
         argOptional: true,
       },
       createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
-        const query = queryFromTemplateOptions(options);
-        return {
-          instanceId: query
-            ? `sec:${encodeURIComponent(query.toUpperCase()).replace(/%/g, "~")}`
-            : "sec:latest",
-          title: query ? `SEC ${query.toUpperCase()}` : "SEC",
-          placement: "floating" as const,
-          binding: { kind: "none" as const },
-          settings: { query },
-        };
+        return createSecBrowserInstance("sec", "SEC", options);
+      },
+    },
+    {
+      id: "sec-10k-pane",
+      paneId: "sec",
+      label: "10-K / 10-Q",
+      description:
+        "Annual and quarterly SEC reports (10-K, 10-Q, and amendments). Search a ticker, then pop out the filing into the article reader.",
+      keywords: ["10-k", "10-q", "annual", "quarterly", "edgar", "sec", "filing"],
+      shortcut: {
+        prefix: "10K",
+        argPlaceholder: "ticker or company",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        return createSecBrowserInstance("sec-10k", "10-K/Q", options, { forms: PERIODIC_FORMS_SETTING });
+      },
+    },
+    {
+      id: "sec-10q-pane",
+      paneId: "sec",
+      label: "10-Q / 10-K",
+      description:
+        "Quarterly and annual SEC reports (10-Q, 10-K, and amendments). Search a ticker, then pop out the filing into the article reader.",
+      keywords: ["10-q", "10-k", "quarterly", "annual", "edgar", "sec", "filing"],
+      shortcut: {
+        prefix: "10Q",
+        argPlaceholder: "ticker or company",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        return createSecBrowserInstance("sec-10q", "10-Q/K", options, { forms: PERIODIC_FORMS_SETTING });
       },
     },
   ],
