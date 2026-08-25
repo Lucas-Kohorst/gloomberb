@@ -1315,6 +1315,7 @@ describe("hosted Kalshi API proxy", () => {
     expect(fetchedHeaders?.get("User-Agent")).toBe("gloomberb-cloud/1.0");
     expect(response?.headers.get("access-control-allow-origin")).toBe("*");
     expect(response?.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(response?.headers.get("x-gloom-kalshi-source")).toBe("kalshi");
   });
 
   test("does not cache upstream error responses", async () => {
@@ -1368,6 +1369,7 @@ describe("hosted Kalshi API proxy", () => {
     expect(body.events[0]?.event_ticker).toBe("KXNBA-26");
     expect(body.events[0]?.markets[0]?.ticker).toBe("KXNBA-26-SAS");
     expect(body.events[0]?.markets[0]?.last_price_dollars).toBe("0.65");
+    expect(response?.headers.get("x-gloom-kalshi-source")).toBe("adjacent");
     expect(fetched.some((url) => url.includes("api.adjacent.markets/api/v1/public/markets"))).toBe(true);
   });
 

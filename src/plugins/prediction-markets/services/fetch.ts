@@ -2,8 +2,10 @@ import type { PluginPersistence } from "../../../types/plugin";
 import {
   ADJACENT_DATA_ALIAS_ID,
   KALSHI_PROXY_PATH,
+  KALSHI_SOURCE_HEADER,
   KEYED_DATA_ALIAS_PATH,
   KEYED_DATA_PATH,
+  type KalshiSourceKind,
 } from "../../../shared/hosted-api";
 import { httpFetch } from "../../../utils/http-transport";
 import { measurePerf } from "../../../utils/perf-marks";
@@ -55,6 +57,7 @@ export function attachPredictionMarketsPersistence(
 export function resetPredictionMarketsPersistence(): void {
   predictionMarketsPersistence = null;
   predictionResourceInflight.clear();
+  resetKalshiProxySource();
 }
 
 function connectionIdForPredictionUrl(url: string): string | null {
@@ -86,8 +89,30 @@ export function isHostedOriginFailureError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (isBlockedRequestError(error)) return true;
   const message = error.message;
-  if (/Request failed \((401|403|522|524|530|502|503|504)\)/.test(message)) return true;
+  if (/Request failed \((401|403|429|522|524|530|502|503|504)\)/.test(message)) return true;
   return /timed out|timeout|TimeoutError|The operation was aborted/i.test(message);
+}
+
+let kalshiProxySawAdjacent = false;
+
+export function consumeKalshiProxyAdjacent(): boolean {
+  const saw = kalshiProxySawAdjacent;
+  kalshiProxySawAdjacent = false;
+  return saw;
+}
+
+export function markKalshiProxySource(source: KalshiSourceKind): void {
+  kalshiProxySawAdjacent = source === "adjacent";
+}
+
+export function resetKalshiProxySource(): void {
+  kalshiProxySawAdjacent = false;
+}
+
+function noteKalshiProxyHeaders(headers: Headers): void {
+  if (headers.get(KALSHI_SOURCE_HEADER) === "adjacent") {
+    kalshiProxySawAdjacent = true;
+  }
 }
 
 /** Browser transport failures. Chrome/Firefox/Safari each word theirs differently. */
@@ -127,6 +152,9 @@ export async function fetchJson<T>(url: string): Promise<T> {
       response = await PREDICTION_FETCH.fetch(url);
     } catch (error) {
       throw describeBlockedRequest(url, error) ?? error;
+    }
+    if (connectionId === "kalshi") {
+      noteKalshiProxyHeaders(response.headers);
     }
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${url}`);

@@ -22,7 +22,7 @@ import {
   sessionCookieHeader,
   upstreamSessionCookieHeader,
 } from "./gloom-cloud";
-import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
+import { KALSHI_PROXY_PATH, KALSHI_SOURCE_HEADER } from "../../shared/hosted-api";
 import {
   fetchKalshiListFromAdjacent,
   KALSHI_ORIGIN_FAILURE_STATUSES,
@@ -801,6 +801,8 @@ async function handleKalshiProxyRequest(request: Request, env: Env, url: URL): P
     const responseHeaders = new Headers({
       "content-type": upstream.headers.get("content-type") ?? "application/json",
       "access-control-allow-origin": "*",
+      "access-control-expose-headers": KALSHI_SOURCE_HEADER,
+      [KALSHI_SOURCE_HEADER]: "kalshi",
     });
     if (upstream.ok) {
       responseHeaders.set("cache-control", "public, max-age=60");

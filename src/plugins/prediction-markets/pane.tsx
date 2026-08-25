@@ -115,6 +115,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const detailUpdatedAgo = useUpdatedAgo(controller.lastRefreshAt);
   const updatedAgo = controller.detailOpen ? detailUpdatedAgo : catalogUpdatedAgo;
   const liveBook = controller.detailOpen && controller.selectedSummary?.venue === "polymarket";
+  const includeKalshi =
+    controller.effectiveVenueScope === "all" || controller.effectiveVenueScope === "kalshi";
+  const kalshiDelayed = includeKalshi && controller.kalshiFeed === "delayed";
+  const kalshiLive = includeKalshi && controller.kalshiFeed === "live";
   const newsTabOpen = controller.detailOpen && controller.detailTab === "news";
   useShortcut((event) => {
     if (!focused) return;
@@ -138,7 +142,8 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           id: "catalog",
           parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
         }] : []),
-        ...(liveBook ? [{ id: "live", parts: [{ text: "live", tone: "value" as const }] }] : []),
+        ...(liveBook || (!controller.detailOpen && kalshiLive) ? [{ id: "live", parts: [{ text: "live", tone: "value" as const }] }] : []),
+        ...(!liveBook && kalshiDelayed ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
         ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ],
       trailingInfo: !controller.detailOpen ? [controller.poll.segment] : [],
@@ -166,8 +171,11 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.searchQuery,
     controller.selectedRow,
     controller.selectedSummary?.venue,
+    controller.kalshiFeed,
     graphExpression,
     graphSelected,
+    kalshiDelayed,
+    kalshiLive,
     liveBook,
     marketUrl,
     newsTabOpen,

@@ -119,7 +119,9 @@ export async function fetchKalshiListFromAdjacent(
       headers: {
         "content-type": "application/json",
         "access-control-allow-origin": "*",
+        "access-control-expose-headers": "x-gloom-kalshi-source",
         "cache-control": "public, max-age=60",
+        "x-gloom-kalshi-source": "adjacent",
       },
     });
   } catch {

@@ -701,7 +701,7 @@ describe("prediction markets plugin registration and services", () => {
     ).toBe(true);
   });
 
-  test("loads hosted Kalshi catalogs from Adjacent auth markets, not the CORS proxy", async () => {
+  test("loads hosted Kalshi catalogs from the CORS proxy, not Adjacent", async () => {
     (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
@@ -709,67 +709,59 @@ describe("prediction markets plugin registration and services", () => {
     globalThis.fetch = (async (input: Request | string | URL) => {
       const url = String(input);
       fetchUrls.push(url);
-      if (url.includes("/api/feed/mkt/markets")) {
+      if (url.includes(`${KALSHI_PROXY_PATH}/events`)) {
         return new Response(
           JSON.stringify({
-            data: [
-              {
-                category: "Sports",
-                display_ticker: "KXNBA-26-SAS",
-                end_date: "2028-06-29T14:00:00Z",
-                market_id: "kalshi:KXNBA-26-SAS",
-                open_interest: 21126222,
-                platform: "kalshi",
-                probability: 65,
-                question: "Will the San Antonio win the 2026 Pro Basketball Finals?",
-                status: "active",
+            events: [{
+              title: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+              category: "Sports",
+              event_ticker: "KXNBA-26",
+              series_ticker: "KXNBA",
+              markets: [{
                 ticker: "KXNBA-26-SAS",
-                volume_24h: 1092341.9,
-              },
-            ],
-            meta: { has_next: false, page: 1, per_page: 50 },
+                title: "Will the San Antonio win the 2026 Pro Basketball Finals?",
+                yes_sub_title: "SAS",
+                event_ticker: "KXNBA-26",
+                status: "open",
+                market_type: "binary",
+                last_price_dollars: "0.72",
+                volume_24h_fp: "15000",
+              }],
+            }],
           }),
-          { status: 200 },
+          { status: 200, headers: { "x-gloom-kalshi-source": "kalshi" } },
         );
+      }
+      if (url.includes(`${KALSHI_PROXY_PATH}/markets`)) {
+        return new Response(JSON.stringify({ markets: [] }), {
+          status: 200,
+          headers: { "x-gloom-kalshi-source": "kalshi" },
+        });
       }
       throw new Error(`Unexpected hosted catalog URL: ${url}`);
     }) as unknown as typeof fetch;
 
     try {
       const markets = await loadKalshiCatalog("", "all", "top", { force: true });
-      expect(markets).toHaveLength(1);
-      expect(markets[0]?.marketId).toBe("KXNBA-26-SAS");
-      expect(markets[0]?.yesPrice).toBe(0.65);
-      expect(
-        fetchUrls.some((url) =>
-          url.includes("/api/feed/mkt/markets") &&
-          url.includes("platform=kalshi") &&
-          url.includes("per_page="),
-        ),
-      ).toBe(true);
-      expect(fetchUrls.some((url) => url.includes("/public"))).toBe(false);
-      expect(
-        fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/`)),
-      ).toBe(false);
-      expect(
-        fetchUrls.some((url) => url.includes("external-api.kalshi.com")),
-      ).toBe(false);
-      expect(fetchUrls.some((url) => url.includes("/events"))).toBe(false);
+      expect(markets.some((market) => market.marketId === "KXNBA-26-SAS")).toBe(true);
+      expect(markets.find((market) => market.marketId === "KXNBA-26-SAS")?.yesPrice).toBe(0.72);
+      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events`))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("/api/feed/mkt"))).toBe(false);
+      expect(fetchUrls.some((url) => url.includes("api.adjacent.markets"))).toBe(false);
+      expect(fetchUrls.some((url) => url.includes("external-api.kalshi.com"))).toBe(false);
 
       fetchUrls.length = 0;
       await loadKalshiCatalog("nba", "all", "top", { force: true });
-      expect(
-        fetchUrls.some((url) => url.includes("search=nba") && !url.includes("q=nba")),
-      ).toBe(true);
+      expect(fetchUrls.some((url) => url.includes(`${KALSHI_PROXY_PATH}/events`))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("search=nba"))).toBe(false);
     } finally {
       delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
     }
   });
 
-  // Kalshi rate-limits Cloudflare egress, so `/api/proxy/kalshi/*` answers 429
-  // for effectively every hosted detail request. Detail has to come from
-  // Adjacent instead, and regressing to the proxy silently blanks the market.
-  test("serves hosted Kalshi detail from Adjacent, never the venue proxy", async () => {
+  // Hosted detail tries the Kalshi CORS proxy first. Adjacent is last-resort
+  // when the market ticker itself 429s/522s off Cloudflare egress.
+  test("serves hosted Kalshi detail from Adjacent when the venue proxy 429s", async () => {
     (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED = true;
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
@@ -856,7 +848,8 @@ describe("prediction markets plugin registration and services", () => {
 
     try {
       const detail = await loadKalshiDetail(summary, "1D");
-      expect(fetchUrls.some((url) => url.includes(KALSHI_PROXY_PATH))).toBe(false);
+      expect(fetchUrls.some((url) => url.includes(KALSHI_PROXY_PATH))).toBe(true);
+      expect(fetchUrls.some((url) => url.includes("markets/kalshi:KXNBA-26-SAS"))).toBe(true);
       expect(detail.history.at(-1)?.close).toBe(0.65);
       expect(detail.trades[0]?.price).toBe(0.65);
       expect(detail.rules).toContain("Resolves Yes if San Antonio win.");
