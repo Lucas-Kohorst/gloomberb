@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES,
+  DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
   formatPollIntervalFooterLabel,
   isXLivePollingEnabled,
   nextPollIntervalMinutes,
@@ -37,11 +39,21 @@ describe("feed poll interval", () => {
     expect(nextPollIntervalMinutes(60)).toBe(1);
   });
 
+  test("prediction catalog and twitter defaults are 5 minutes, not the global RI", () => {
+    expect(DEFAULT_TWITTER_POLL_INTERVAL_MINUTES).toBe(5);
+    expect(DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES).toBe(5);
+  });
+
   test("prefers a stored override, then a pane default, then the global RI", () => {
     expect(resolveFeedPollIntervalMinutes(30, null, undefined)).toBe(30);
-    expect(resolveFeedPollIntervalMinutes(30, null, 1)).toBe(1);
-    expect(resolveFeedPollIntervalMinutes(30, 15, 1)).toBe(15);
-    expect(resolveFeedPollIntervalMinutes(30, "5", 1)).toBe(5);
+    expect(resolveFeedPollIntervalMinutes(30, null, DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES)).toBe(5);
+    expect(resolveFeedPollIntervalMinutes(30, 15, DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES)).toBe(15);
+    expect(resolveFeedPollIntervalMinutes(30, "5", DEFAULT_TWITTER_POLL_INTERVAL_MINUTES)).toBe(5);
+  });
+
+  test("keeps a stored 1-minute override when the pane default is 5", () => {
+    expect(resolveFeedPollIntervalMinutes(30, 1, DEFAULT_TWITTER_POLL_INTERVAL_MINUTES)).toBe(1);
+    expect(resolveFeedPollIntervalMinutes(30, "1", DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES)).toBe(1);
   });
 
   test("omits the poll chip when article chrome should not poll", () => {

@@ -17,9 +17,9 @@ export function coercePollIntervalMinutes(value: unknown): number | null {
   }
   return null;
 }
-export const DEFAULT_TWITTER_POLL_INTERVAL_MINUTES = 1;
+export const DEFAULT_TWITTER_POLL_INTERVAL_MINUTES = 5;
 export const TWITTER_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
-export const DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES = 1;
+export const DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES = 5;
 export const PREDICTION_POLL_INTERVAL_CONFIG_KEY = "pollIntervalMinutes";
 /** gloomberb-cloud pluginConfig. Off unless the stored value is exactly true. */
 export const X_LIVE_POLLING_CONFIG_KEY = "xLivePollingEnabled";
