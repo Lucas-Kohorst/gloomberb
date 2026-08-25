@@ -14,8 +14,8 @@ interface CloudUpgradeStatusWidgetProps {
 }
 
 /**
- * Global entitlement status: the trial countdown while Pro is on loan, or the
- * delay free accounts get on cloud data. Signed-out users already have sign-in
+ * Global entitlement status: the trial countdown while Pro is on loan, or an
+ * upgrade CTA for free accounts. Signed-out users already have sign-in
  * affordances next to it, and paying subscribers have nothing to report.
  */
 export function CloudUpgradeStatusWidget({ controller = chatController }: CloudUpgradeStatusWidgetProps) {
@@ -56,12 +56,9 @@ export function CloudUpgradeStatusWidget({ controller = chatController }: CloudU
       {trial ? (
         <Text fg={tone}>{tf("Pro trial {days}d", { days: access.trialDaysLeft })}</Text>
       ) : (
-        <>
-          <Text fg={tone}>{t("delayed data")}</Text>
-          <Text fg={hovered ? colors.textBright : tone}>
-            {nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`}
-          </Text>
-        </>
+        <Text fg={hovered ? colors.textBright : tone}>
+          {nativePaneChrome ? t("upgrade") : ` ${t("upgrade")}`}
+        </Text>
       )}
     </Box>
   );

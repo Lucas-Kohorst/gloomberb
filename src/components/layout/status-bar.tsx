@@ -14,7 +14,7 @@ import { getSharedRegistry } from "../../plugins/registry";
 import { gridlockAllPanes } from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
-import { LayoutSwitcherControl, useLayoutSwitcher } from "./layout-switcher";
+import { useLayoutSwitcher } from "./layout-switcher";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
 
@@ -86,15 +86,6 @@ export function StatusBar() {
         },
       } : {})}
     >
-      <Box
-        paddingLeft={nativePaneChrome ? 0 : 1}
-        flexShrink={0}
-        flexDirection="row"
-        alignItems="center"
-        {...(nativePaneChrome ? { gap: 1 } : {})}
-      >
-        <LayoutSwitcherControl />
-      </Box>
       {showGridlockTip && (
         nativePaneChrome ? (
           <NativeGridlockTip
