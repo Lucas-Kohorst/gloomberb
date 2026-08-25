@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import {
   Box,
   ScrollBox,
@@ -401,7 +401,9 @@ export function AdjacentIndicesPane({
   }, [client]);
 
   useEffect(() => {
-    load();
+    return runAfterStartupBackground(() => {
+      load();
+    });
   }, [load]);
 
   const columns = useMemo(() => createIndexColumns(width), [width]);

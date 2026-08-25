@@ -7,6 +7,11 @@ import { TickerRepository } from "../../data/ticker-repository";
 import { createDefaultConfig, ADJACENT_WATCHLIST_ID, type BrokerInstanceConfig } from "../../types/config";
 import type { AppAction } from "./context";
 import { initializeAppState } from "./bootstrap";
+import {
+  enableStartupNetworkDeferral,
+  markStartupInteractive,
+  resetStartupInteractionForTests,
+} from "../../utils/startup-interaction";
 
 const tempPaths: string[] = [];
 
@@ -17,6 +22,7 @@ function createTempDbPath(name: string): string {
 }
 
 afterEach(() => {
+  resetStartupInteractionForTests();
   for (const path of tempPaths.splice(0)) {
     if (existsSync(path)) rmSync(path, { force: true });
   }
@@ -570,5 +576,88 @@ describe("initializeAppState", () => {
     expect(setTickers?.type).toBe("SET_TICKERS");
     if (setTickers?.type !== "SET_TICKERS") return;
     expect(setTickers.tickers.size).toBe(0);
+  });
+
+  test("defers background quote warmup until first paint when startup deferral is on", async () => {
+    enableStartupNetworkDeferral();
+    const dbPath = createTempDbPath("app-bootstrap-defer-refresh");
+    const persistence = new AppPersistence(dbPath);
+    const tickerRepository = new TickerRepository(persistence.tickers);
+    const defaultConfig = createDefaultConfig(dbPath);
+    const config = {
+      ...defaultConfig,
+      recentTickers: ["NVDA"],
+      layout: {
+        ...defaultConfig.layout,
+        dockRoot: { kind: "pane" as const, instanceId: "portfolio-list:main" },
+        instances: defaultConfig.layout.instances
+          .filter((instance) => instance.paneId === "portfolio-list")
+          .map((instance) => ({
+            ...instance,
+            settings: {
+              ...(instance.settings ?? {}),
+              columnIds: ["ticker", "price", "change_pct", "latency"],
+            },
+          })),
+      },
+    };
+
+    await tickerRepository.createTicker({
+      ticker: "AAPL",
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: "Apple Inc.",
+      portfolios: [],
+      watchlists: ["main"],
+      positions: [],
+      broker_contracts: [],
+      custom: {},
+      tags: [],
+    });
+    await tickerRepository.createTicker({
+      ticker: "NVDA",
+      exchange: "NASDAQ",
+      currency: "USD",
+      name: "NVIDIA Corporation",
+      portfolios: [],
+      watchlists: ["main"],
+      positions: [],
+      broker_contracts: [],
+      custom: {},
+      tags: [],
+    });
+
+    const quoteRefreshes: string[] = [];
+    await initializeAppState({
+      config,
+      tickerRepository,
+      dataProvider: {} as any,
+      sessionSnapshot: {
+        paneState: {
+          "portfolio-list:main": {
+            collectionId: "main",
+            cursorSymbol: "AAPL",
+          },
+        },
+        focusedPaneId: "portfolio-list:main",
+        activePanel: "left",
+        statusBarVisible: true,
+        openPaneIds: ["portfolio-list:main"],
+        hydrationTargets: [],
+        exchangeCurrencies: [],
+        savedAt: Date.now(),
+      },
+      dispatch: () => {},
+      refreshTicker: () => {},
+      refreshQuote: (symbol) => { quoteRefreshes.push(symbol); },
+      autoImportBrokerPositions: async () => {},
+    });
+
+    expect(quoteRefreshes).toEqual(["AAPL"]);
+    markStartupInteractive();
+    await Promise.resolve();
+    expect(quoteRefreshes).toEqual(["AAPL", "NVDA"]);
+
+    persistence.close();
   });
 });

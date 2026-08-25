@@ -54,6 +54,11 @@ export async function hydrateHostedWorkspaceFromCloud(
   pull: {
     pullConfig?: () => Promise<HostedConfigSnapshotResponse>;
     pullSync?: () => Promise<HostedSyncPull>;
+    /**
+     * When false, skip `writeHostedUserConfig`. Use this for a post-paint overlay
+     * so a stale pull cannot stamp localStorage before the caller decides to apply.
+     */
+    persist?: boolean;
   } = {},
 ): Promise<{ config: AppConfig; tickers: TickerRecord[] }> {
   restoreHostedLocalWorkspaceExtras();
@@ -107,7 +112,12 @@ export async function hydrateHostedWorkspaceFromCloud(
   const incoming = parseIncomingTickerRecords(collectionsPayload);
   if (incoming.length > 0) mergeHostedTickers(incoming);
   const tickers = readHostedTickers();
-  writeHostedUserConfig(config);
+  if (pull.persist !== false) writeHostedUserConfig(config);
   hydrateHostedByokConfig(config);
   return { config, tickers };
+}
+
+/** Shallow copy so a background overlay cannot mutate live React state. */
+export function cloneAppConfigForOverlay(config: AppConfig): AppConfig {
+  return { ...config };
 }

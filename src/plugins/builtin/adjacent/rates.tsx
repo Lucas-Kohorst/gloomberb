@@ -1,3 +1,4 @@
+import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
@@ -199,7 +200,9 @@ export function AdjacentRatesPane({
   }, [client]);
 
   useEffect(() => {
-    load();
+    return runAfterStartupBackground(() => {
+      load();
+    });
   }, [load]);
 
   useEffect(() => {

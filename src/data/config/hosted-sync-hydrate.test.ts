@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import { hydrateHostedWorkspaceFromCloud } from "./hosted-sync-hydrate";
 import { readHostedTickers } from "./hosted-ticker-persist";
-import { setHostedConfigUserId, writeHostedUserConfig } from "./hosted-user-persist";
+import { setHostedConfigUserId, writeHostedUserConfig, peekHostedUserConfigStamp } from "./hosted-user-persist";
 import type { SyncSnapshot } from "../../sync/types";
 
 function installMemoryStorage(): void {
@@ -143,5 +143,24 @@ describe("hosted workspace hydrate", () => {
 
     expect(result.config.watchlists.some((watchlist) => watchlist.id === "custom")).toBe(true);
     expect(result.config.portfolios.some((portfolio) => portfolio.id === "stale")).toBe(false);
+  });
+
+  test("persist: false overlays without rewriting the local stamp", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    writeHostedUserConfig(config);
+    const stamp = peekHostedUserConfigStamp()?.updatedAt ?? null;
+    expect(stamp).toBeTruthy();
+
+    await hydrateHostedWorkspaceFromCloud(config, {
+      persist: false,
+      pullConfig: async () => ({
+        config: { theme: "amber" } as Record<string, unknown>,
+        updatedAt: "2099-01-01T00:00:00.000Z",
+      }),
+      pullSync: async () => ({ snapshot: snapshot({ theme: "amber" }) }),
+    });
+
+    expect(peekHostedUserConfigStamp()?.updatedAt).toBe(stamp);
   });
 });
