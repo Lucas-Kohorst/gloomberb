@@ -32,6 +32,24 @@ export function computeReturns(closes: number[]): number[] {
   return returns;
 }
 
+export function dailyClosesFromObservations(
+  points: Array<{ date: Date; close?: number | null; value?: number | null }>,
+): PricePoint[] {
+  const byDate = new Map<string, { date: Date; close: number }>();
+  for (const point of points) {
+    const candidate = typeof point.close === "number" ? point.close : point.value;
+    if (typeof candidate !== "number" || !Number.isFinite(candidate)) continue;
+    const close = candidate;
+    const timestamp = point.date.getTime();
+    if (!Number.isFinite(timestamp)) continue;
+    const dateKey = new Date(timestamp).toISOString().slice(0, 10);
+    byDate.set(dateKey, { date: new Date(`${dateKey}T00:00:00Z`), close });
+  }
+  return [...byDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, entry]) => ({ date: entry.date, close: entry.close }));
+}
+
 export function computeDatedReturns(points: PricePoint[]): DatedReturn[] {
   const sorted = [...points]
     .filter((point) => Number.isFinite(getPricePointTimestamp(point)) && Number.isFinite(point.close))

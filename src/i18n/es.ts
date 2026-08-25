@@ -375,6 +375,7 @@ export const es: Record<string, string> = {
   "CNN Fear & Greed sentiment gauge with the seven indicator charts.": "Índice CNN Fear & Greed con sus siete gráficos de indicadores.",
   "NxN Pearson correlation matrix for tickers in portfolios/watchlists": "Matriz de correlación de Pearson NxN para tickers de carteras/listas",
   "Date-aligned Pearson correlation matrix for ticker returns.": "Matriz de correlación de Pearson de retornos alineados por fecha.",
+  "Date-aligned Pearson correlation matrix for ticker and prediction-market returns.": "Matriz de correlación de Pearson de retornos de tickers y mercados de predicción alineados por fecha.",
   "Browse 13F fund filings, estimated long-book performance, holdings, changes, and filing history.": "Explora presentaciones 13F, rendimiento estimado del libro largo, posiciones, cambios e historial.",
   "Browse institutional 13F fund filings and estimated long-book performance.": "Explora presentaciones 13F institucionales y rendimiento estimado del libro largo.",
   "Size positions from Kelly, risk budget, and asymmetric payoff assumptions.": "Calcula posiciones con Kelly, presupuesto de riesgo y pagos asimétricos.",

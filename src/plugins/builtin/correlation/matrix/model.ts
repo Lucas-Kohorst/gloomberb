@@ -1,7 +1,13 @@
-import type { QueryEntry } from "../../../../market-data/result-types";
 import { colors } from "../../../../theme/colors";
-import type { PricePoint } from "../../../../types/financials";
-import { computeDatedReturns, correlateDatedReturns, type CorrelationResult, type DatedReturn } from "../compute";
+import type { ResolvedSeries } from "../../../../time-series/types";
+import { parseSeriesExpression } from "../../chart-composer/presets";
+import {
+  computeDatedReturns,
+  correlateDatedReturns,
+  dailyClosesFromObservations,
+  type CorrelationResult,
+  type DatedReturn,
+} from "../compute";
 import type { CorrelationRangePreset } from "../settings";
 
 export const ROW_HEADER_WIDTH = 7;
@@ -19,7 +25,13 @@ export interface CorrelationSeries {
 }
 
 export function displaySymbol(symbol: string): string {
-  return symbol.length > 5 ? symbol.slice(0, 5) : symbol;
+  const parsed = parseSeriesExpression(symbol);
+  const label = parsed?.kind === "prediction-market"
+    ? parsed.marketId
+    : parsed?.kind === "adjacent-index"
+      ? parsed.indexId.toUpperCase()
+      : symbol;
+  return label.length > 8 ? label.slice(0, 8) : label;
 }
 
 export function pairKey(left: string, right: string): string {
@@ -38,25 +50,23 @@ function formatSeriesSymbolList(symbols: string[], seriesBySymbol: Map<string, C
   }));
 }
 
-export function getSeriesForEntry(
+export function getSeriesForResolvedSeries(
   symbol: string,
-  entry: QueryEntry<PricePoint[]> | undefined,
+  resolved: ResolvedSeries | undefined,
+  loading: boolean,
 ): CorrelationSeries {
-  const priceHistory = entry?.data ?? entry?.lastGoodData ?? null;
+  const priceHistory = resolved
+    ? dailyClosesFromObservations(resolved.points)
+    : [];
 
-  if (!priceHistory || priceHistory.length === 0) {
-    if (entry?.error?.reasonCode === "NO_DATA") {
-      return { symbol, returns: [], status: "empty", observationCount: 0 };
+  if (priceHistory.length === 0) {
+    if (resolved?.error) {
+      return { symbol, returns: [], status: "error", observationCount: 0 };
     }
-    if (entry?.phase === "error" || entry?.error) {
-      return {
-        symbol,
-        returns: [],
-        status: "error",
-        observationCount: 0,
-      };
+    if (loading) {
+      return { symbol, returns: [], status: "loading", observationCount: 0 };
     }
-    return { symbol, returns: [], status: "loading", observationCount: 0 };
+    return { symbol, returns: [], status: "empty", observationCount: 0 };
   }
 
   const returns = computeDatedReturns(priceHistory);

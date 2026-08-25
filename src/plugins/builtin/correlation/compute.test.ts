@@ -4,6 +4,7 @@ import {
   computeDatedReturns,
   computeReturns,
   correlateDatedReturns,
+  dailyClosesFromObservations,
   pearsonCorrelation,
 } from "./compute";
 
@@ -18,6 +19,21 @@ describe("computeReturns", () => {
 
   test("skips zero or invalid previous closes", () => {
     expect(computeReturns([0, 10, 20, Number.NaN, 30])).toEqual([1]);
+  });
+});
+
+describe("dailyClosesFromObservations", () => {
+  test("collapses intra-day yes-prices onto one close per UTC date", () => {
+    const closes = dailyClosesFromObservations([
+      { date: new Date("2024-01-01T10:00:00Z"), value: 40 },
+      { date: new Date("2024-01-01T20:00:00Z"), value: 50 },
+      { date: new Date("2024-01-02T15:00:00Z"), value: 55 },
+    ]);
+    expect(closes).toEqual([
+      { date: new Date("2024-01-01T00:00:00Z"), close: 50 },
+      { date: new Date("2024-01-02T00:00:00Z"), close: 55 },
+    ]);
+    expect(computeDatedReturns(closes)).toEqual([{ dateKey: "2024-01-02", value: 0.1 }]);
   });
 });
 

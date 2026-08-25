@@ -1,10 +1,10 @@
 import type { TimeRange } from "../../time-series/range";
 import {
   buildCorrelationMatrix,
+  getSeriesForResolvedSeries,
   pairKey,
   type CorrelationSeries,
 } from "../../plugins/builtin/correlation/matrix/model";
-import { computeDatedReturns } from "../../plugins/builtin/correlation/compute";
 import {
   buildRelationshipAnalysis,
   DEFAULT_RELATIONSHIP_SECOND_SYMBOL,
@@ -29,6 +29,11 @@ import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { resolveChartSpecData } from "../../time-series/resolve";
+import {
+  loadAdjacentIndexSeries,
+  loadPredictionMarketSeries,
+} from "../../time-series/hooks";
+import { buildCorrelationChartSpec } from "../../plugins/builtin/correlation/symbols";
 import { formatTimestamp } from "../helpers";
 import { buildTickerReport } from "../commands/ticker";
 import { createBaseConverter } from "../base-converter";
@@ -639,15 +644,27 @@ async function buildCorrelationReport(
 ): Promise<PaneFunctionReport> {
   const symbols = resolvedSymbols(resolved);
   const range = resolvedPriceRange(resolved);
-  const series = await Promise.all(symbols.map(async (symbol): Promise<CorrelationSeries> => {
-    const returns = computeDatedReturns(await loadPriceHistory(context, symbol, range));
-    return {
-      symbol,
-      returns,
-      status: returns.length >= 5 ? "ready" : "insufficient",
-      observationCount: returns.length,
-    };
-  }));
+  const spec = buildCorrelationChartSpec(symbols, range);
+  const result = await resolveChartSpecData(spec, {
+    dataProvider: context.dataProvider,
+    loadFredSeries: async (request) => ({
+      data: await apiClient.getCloudFredSeries(request.seriesId, {
+        startDate: request.startDate,
+        sortOrder: request.sortOrder,
+      }),
+      fetchedAt: Date.now(),
+      stale: false,
+      source: "network",
+    }),
+    loadAdjacentIndexSeries,
+    loadPredictionMarketSeries,
+  });
+  const resolvedById = new Map(result.series.map((series) => [series.id, series] as const));
+  const series = symbols.map((symbol, index): CorrelationSeries => {
+    const specSeries = spec.series[index];
+    const loaded = specSeries ? resolvedById.get(specSeries.id) : undefined;
+    return getSeriesForResolvedSeries(symbol, loaded, false);
+  });
   const bySymbol = new Map(series.map((entry) => [entry.symbol, entry]));
   const matrix = buildCorrelationMatrix(symbols, bySymbol);
   const rows = symbols.flatMap((left, leftIndex) => symbols.slice(leftIndex + 1).map((right) => {

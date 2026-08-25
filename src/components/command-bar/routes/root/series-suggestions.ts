@@ -5,6 +5,7 @@ import {
   type SeriesCatalogInstrument,
   type SeriesCatalogSuggestion,
 } from "../../../../plugins/builtin/chart-composer/series-catalog";
+import type { ParsedSeriesExpression } from "../../../../plugins/builtin/chart-composer/presets";
 import { useSeriesCatalogSuggestions } from "../../../../plugins/builtin/chart-composer/use-series-catalog";
 import type { ResultItem } from "../../list/model";
 
@@ -42,6 +43,10 @@ export interface ChartSeriesSuggestionOptions {
   onRun: (expression: string) => void;
   /** Opens the Data Catalog pane, optionally pre-filtered. */
   onOpenCatalog?: (query: string) => void;
+  /** Keep only series the current command can consume. */
+  acceptExpression?: (expression: ParsedSeriesExpression) => boolean;
+  /** Shortcut badge on suggestion rows. Defaults to G. */
+  shortcutRight?: string;
   limit?: number;
 }
 
@@ -57,6 +62,8 @@ export function useChartSeriesSuggestions({
   enabled,
   onRun,
   onOpenCatalog,
+  acceptExpression,
+  shortcutRight = "G",
   limit = 6,
 }: ChartSeriesSuggestionOptions): ResultItem[] {
   const { prefix, leg } = useMemo(() => splitCurrentLeg(argText), [argText]);
@@ -87,7 +94,10 @@ export function useChartSeriesSuggestions({
         }
       : null;
     if (!argText.trim()) return catalogItem ? [catalogItem] : [];
-    if (suggestions.length === 0) {
+    const accepted = acceptExpression
+      ? suggestions.filter((suggestion) => acceptExpression(suggestion.expression))
+      : suggestions;
+    if (accepted.length === 0) {
       if (loading && trimmedLeg.length > 0) {
         return [
           {
@@ -104,19 +114,20 @@ export function useChartSeriesSuggestions({
       }
       return catalogItem ? [catalogItem] : [];
     }
-    const seriesItems = suggestions.slice(0, limit).map((suggestion) =>
-      buildChartSeriesItem({ suggestion, prefix, onRun }),
+    const seriesItems = accepted.slice(0, limit).map((suggestion) =>
+      buildChartSeriesItem({ suggestion, prefix, onRun, shortcutRight }),
     );
     return catalogItem ? [...seriesItems, catalogItem] : seriesItems;
-  }, [argText, enabled, limit, loading, onOpenCatalog, onRun, prefix, suggestions, trimmedLeg]);
+  }, [acceptExpression, argText, enabled, limit, loading, onOpenCatalog, onRun, prefix, shortcutRight, suggestions, trimmedLeg]);
 }
 
 function buildChartSeriesItem(options: {
   suggestion: SeriesCatalogSuggestion;
   prefix: string;
   onRun: (expression: string) => void;
+  shortcutRight: string;
 }): ResultItem {
-  const { suggestion, prefix, onRun } = options;
+  const { suggestion, prefix, onRun, shortcutRight } = options;
   const expressionText = formatParsedSeriesExpression(suggestion.expression);
   const completed = completeExpression(prefix, expressionText);
   return {
@@ -125,8 +136,8 @@ function buildChartSeriesItem(options: {
     detail: suggestion.description,
     category: CHART_SERIES_CATEGORY,
     kind: "action",
-    right: "G",
-    shortcutQuery: "G",
+    right: shortcutRight,
+    shortcutQuery: shortcutRight,
     searchText: [suggestion.label, suggestion.description, expressionText, "chart", "series"].join(" "),
     action: () => onRun(completed),
   };

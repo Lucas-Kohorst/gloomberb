@@ -7,6 +7,10 @@ import type { DataProvider } from "../../../types/data-provider";
 import type { Portfolio, TickerRecord, Watchlist } from "../../../types/ticker";
 import { resolveTickerSearch, upsertTickerFromSearchResult } from "../../../tickers/search";
 import { parseTickerListInput } from "../../../tickers/list";
+import {
+  isCorrelationPredictionSeries,
+  parseCorrelationSymbolsInput,
+} from "../../../plugins/builtin/correlation/symbols";
 
 export interface SharedWorkflowDeps {
   dataProvider: DataProvider;
@@ -196,12 +200,22 @@ export async function resolveTickerListInput(
   rawInput: string,
   collectionId: string | null,
   deps: SharedWorkflowDeps,
+  options?: { allowPredictionSeries?: boolean },
 ): Promise<string[]> {
-  const tokens = parseTickerListInput(rawInput);
+  const tokens = options?.allowPredictionSeries
+    ? parseCorrelationSymbolsInput(rawInput)
+    : parseTickerListInput(rawInput);
   const symbols: string[] = [];
   const seen = new Set<string>();
 
   for (const token of tokens) {
+    if (options?.allowPredictionSeries && isCorrelationPredictionSeries(token)) {
+      const key = token.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      symbols.push(token);
+      continue;
+    }
     const resolvedTicker = await resolveTickerInputOrThrow(token, null, collectionId, deps);
     const symbol = resolvedTicker.symbol;
 

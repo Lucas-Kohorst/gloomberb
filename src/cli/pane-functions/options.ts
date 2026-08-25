@@ -1,5 +1,6 @@
 import type { PaneTemplateCreateOptions, PaneTemplateDef } from "../../types/plugin";
 import { parseTickerListInput } from "../../tickers/list";
+import { parseCorrelationSymbolsInput } from "../../plugins/builtin/correlation/symbols";
 import { normalizeTickerInput } from "../../tickers/search";
 import {
   FINANCIAL_SUB_TABS,
@@ -201,12 +202,16 @@ export function buildCreateOptions(
     const raw = arg.replace(/\$/g, "");
     createOptions.arg = raw;
     try {
-      createOptions.symbols = parseTickerListInput(raw);
+      createOptions.symbols = template.id === "correlation-pane"
+        ? parseCorrelationSymbolsInput(raw)
+        : parseTickerListInput(raw);
     } catch {
-      createOptions.symbols = raw
-        .split(",")
-        .map((entry) => cleanTickerInput(entry))
-        .filter(Boolean);
+      createOptions.symbols = template.id === "correlation-pane"
+        ? raw.split(/[,\n]/).map((entry) => entry.trim()).filter(Boolean)
+        : raw
+          .split(",")
+          .map((entry) => cleanTickerInput(entry))
+          .filter(Boolean);
     }
   }
 

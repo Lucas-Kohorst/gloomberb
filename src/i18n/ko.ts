@@ -374,6 +374,7 @@ export const ko: Record<string, string> = {
   "CNN Fear & Greed sentiment gauge with the seven indicator charts.": "CNN 공포·탐욕 지수와 7개 지표 차트.",
   "NxN Pearson correlation matrix for tickers in portfolios/watchlists": "포트폴리오/관심 목록 종목의 NxN Pearson 상관행렬",
   "Date-aligned Pearson correlation matrix for ticker returns.": "날짜를 맞춘 종목 수익률 Pearson 상관행렬.",
+  "Date-aligned Pearson correlation matrix for ticker and prediction-market returns.": "날짜를 맞춘 종목 및 예측시장 수익률 Pearson 상관행렬.",
   "Browse 13F fund filings, estimated long-book performance, holdings, changes, and filing history.": "13F 공시, 추정 롱 포트폴리오 성과, 보유종목, 변동 및 공시 이력을 봅니다.",
   "Browse institutional 13F fund filings and estimated long-book performance.": "기관 13F 공시와 추정 롱 포트폴리오 성과를 봅니다.",
   "Size positions from Kelly, risk budget, and asymmetric payoff assumptions.": "Kelly 기준, 위험 예산 및 비대칭 손익 가정으로 포지션 규모를 계산합니다.",

@@ -23,6 +23,7 @@ import {
 } from "../../../plugins/builtin/chart-composer/series-catalog";
 import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
 import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
+import { isMarketFieldId } from "../../../time-series/field-catalog";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -245,6 +246,11 @@ export function CommandBar({
     && rootShortcutIntent.prefix === "G"
     ? rootShortcutIntent
     : null;
+  const correlationSeriesIntent = rootShortcutIntent.kind !== "none"
+    && rootShortcutIntent.source === "pane-template"
+    && rootShortcutIntent.prefix === "CORR"
+    ? rootShortcutIntent
+    : null;
   const chartSeriesTemplateId = chartSeriesIntent?.source === "pane-template"
     ? chartSeriesIntent.template.id
     : null;
@@ -257,18 +263,35 @@ export function CommandBar({
     [activeTickerData, activeTickerSymbol],
   );
   const chartSeriesItems = useChartSeriesSuggestions({
-    argText: chartSeriesIntent?.argText ?? (catalogChartQuery ? rootQuery : ""),
+    argText: chartSeriesIntent?.argText
+      ?? correlationSeriesIntent?.argText
+      ?? (catalogChartQuery ? rootQuery : ""),
     defaultInstrument: chartSeriesDefaultInstrument,
-    enabled: !currentRoute && (!!chartSeriesIntent || catalogChartQuery),
+    enabled: !currentRoute && (!!chartSeriesIntent || !!correlationSeriesIntent || catalogChartQuery),
+    acceptExpression: correlationSeriesIntent
+      ? (expression) => (
+        expression.kind === "prediction-market"
+        || expression.kind === "adjacent-index"
+        || (expression.kind === "security" && isMarketFieldId(expression.fieldId))
+      )
+      : undefined,
+    shortcutRight: correlationSeriesIntent ? "CORR" : "G",
     onRun: (expression) => {
+      if (correlationSeriesIntent) {
+        pluginRegistry.createPaneFromTemplate("correlation-pane", { arg: expression });
+        closeAll({ revertThemePreview: false });
+        return;
+      }
       const templateId = chartSeriesTemplateId ?? "chart-composer-pane";
       pluginRegistry.createPaneFromTemplate(templateId, { arg: expression });
       closeAll({ revertThemePreview: false });
     },
-    onOpenCatalog: (query) => {
-      pluginRegistry.createPaneFromTemplate(DATA_CATALOG_TEMPLATE_ID, { arg: query });
-      closeAll({ revertThemePreview: false });
-    },
+    onOpenCatalog: correlationSeriesIntent
+      ? undefined
+      : (query) => {
+        pluginRegistry.createPaneFromTemplate(DATA_CATALOG_TEMPLATE_ID, { arg: query });
+        closeAll({ revertThemePreview: false });
+      },
   });
   const buildAssistInventory = useCallback(() => applyChartSeriesContextToAssistInventory(
     applyNewsFeedContextToAssistInventory(

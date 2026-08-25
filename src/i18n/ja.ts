@@ -376,6 +376,7 @@ export const ja: Record<string, string> = {
   "CNN Fear & Greed sentiment gauge with the seven indicator charts.": "CNN Fear & Greed 指数と 7 つの指標チャート。",
   "NxN Pearson correlation matrix for tickers in portfolios/watchlists": "NxN ポートフォリオ/ウォッチリストの銘柄のピアソン相関行列",
   "Date-aligned Pearson correlation matrix for ticker returns.": "日付を揃えた銘柄リターンのピアソン相関行列。",
+  "Date-aligned Pearson correlation matrix for ticker and prediction-market returns.": "日付を揃えた銘柄および予測市場リターンのピアソン相関行列。",
   "Browse 13F fund filings, estimated long-book performance, holdings, changes, and filing history.": "13F ファンドの提出書類、ロングブックの推定パフォーマンス、保有銘柄、変更、提出履歴を参照します。",
   "Browse institutional 13F fund filings and estimated long-book performance.": "機関投資家向けの 13F ファンドの提出書類とロングブックの推定パフォーマンスを参照します。",
   "Size positions from Kelly, risk budget, and asymmetric payoff assumptions.": "ケリー基準、リスク予算、非対称損益の想定からポジションを算出。",

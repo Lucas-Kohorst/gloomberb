@@ -1,8 +1,12 @@
 import type { TimeRange } from "../../../components/chart/core/types";
 import type { PaneSettingsDef } from "../../../types/plugin";
-import { formatTickerListInput, MAX_TICKER_LIST_SIZE, parseTickerListInput } from "../../../tickers/list";
+import { formatTickerListInput } from "../../../tickers/list";
+import {
+  MAX_CORRELATION_SYMBOLS,
+  parseCorrelationSymbolsInput,
+} from "./symbols";
 
-export const MAX_CORRELATION_TICKERS = MAX_TICKER_LIST_SIZE;
+export const MAX_CORRELATION_TICKERS = MAX_CORRELATION_SYMBOLS;
 const DEFAULT_CORRELATION_RANGE: CorrelationRangePreset = "1Y";
 const CORRELATION_RANGE_OPTIONS = ["1M", "3M", "6M", "1Y", "5Y"] as const;
 export const DEFAULT_CORRELATION_SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMD"];
@@ -22,10 +26,6 @@ function isCorrelationRangePreset(value: unknown): value is CorrelationRangePres
 
 function normalizeCorrelationRange(value: unknown): CorrelationRangePreset {
   return isCorrelationRangePreset(value) ? value : DEFAULT_CORRELATION_RANGE;
-}
-
-function parseCorrelationSymbolsInput(raw: string, maxTickers = MAX_CORRELATION_TICKERS): string[] {
-  return parseTickerListInput(raw, maxTickers);
 }
 
 function coerceStoredSymbols(value: unknown): string[] {
@@ -56,7 +56,7 @@ export function getCorrelationPaneSettings(settings: Record<string, unknown> | u
         symbolsText = storedText;
       } catch (error) {
         symbols = [];
-        symbolsError = error instanceof Error ? error.message : "Invalid ticker list.";
+        symbolsError = error instanceof Error ? error.message : "Invalid series list.";
       }
     }
   }
@@ -75,8 +75,8 @@ export function buildCorrelationSettingsDef(): PaneSettingsDef {
     fields: [
       {
         key: "symbolsText",
-        label: "Tickers",
-        description: `Enter up to ${MAX_CORRELATION_TICKERS} tickers. Empty uses the default CORR preset.`,
+        label: "Series",
+        description: `Enter up to ${MAX_CORRELATION_TICKERS} tickers or POLY:/KALSHI:/ADJ: series. Empty uses the default CORR preset.`,
         type: "text",
         placeholder: formatTickerListInput(DEFAULT_CORRELATION_SYMBOLS),
       },

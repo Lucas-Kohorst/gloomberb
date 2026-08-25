@@ -116,7 +116,12 @@ async function resolvePaneTemplateOptions(
     };
   } else if (template.shortcut?.argPlaceholder === "tickers") {
     const rawInput = resolvedOptions?.arg ?? resolvedOptions?.values?.tickers ?? "";
-    const symbols = await resolveTickerListInput(rawInput, baseContext.activeCollectionId, deps);
+    const symbols = await resolveTickerListInput(
+      rawInput,
+      baseContext.activeCollectionId,
+      deps,
+      template.id === "correlation-pane" ? { allowPredictionSeries: true } : undefined,
+    );
     resolvedOptions = {
       ...resolvedOptions,
       arg: rawInput,

@@ -376,6 +376,7 @@ export const zhCN: Record<string, string> = {
   "CNN Fear & Greed sentiment gauge with the seven indicator charts.": "CNN 恐惧与贪婪情绪仪表及七项指标图。",
   "NxN Pearson correlation matrix for tickers in portfolios/watchlists": "组合/自选股票的 NxN 皮尔逊相关性矩阵",
   "Date-aligned Pearson correlation matrix for ticker returns.": "按日期对齐的收益率皮尔逊相关性矩阵。",
+  "Date-aligned Pearson correlation matrix for ticker and prediction-market returns.": "按日期对齐的股票与预测市场收益率皮尔逊相关性矩阵。",
   "Browse 13F fund filings, estimated long-book performance, holdings, changes, and filing history.": "浏览 13F 基金申报、多头组合估算表现、持仓、变动与历史。",
   "Browse institutional 13F fund filings and estimated long-book performance.": "浏览机构 13F 申报与多头组合估算表现。",
   "Size positions from Kelly, risk budget, and asymmetric payoff assumptions.": "基于凯利公式、风险预算与非对称收益假设计算仓位。",

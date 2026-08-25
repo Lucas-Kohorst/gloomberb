@@ -144,6 +144,7 @@ export function useCommandBarPaneTemplateActions({
           trimmedList,
           activeCollectionId,
           buildWorkflowDeps(),
+          template.id === "correlation-pane" ? { allowPredictionSeries: true } : undefined,
         );
         const createOptions = {
           arg: trimmedList,

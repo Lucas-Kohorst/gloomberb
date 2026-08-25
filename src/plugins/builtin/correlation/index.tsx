@@ -1,15 +1,15 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useMemo, useState } from "react";
 import { usePaneFooter } from "../../../components";
-import type { PaneProps } from "../../../types/plugin";
+import type { PaneProps, PaneTemplateCreateOptions } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { colors } from "../../../theme/colors";
 import { usePluginTickerActions } from "../../runtime";
 import { useAppSelector, usePaneInstance } from "../../../state/app/context";
-import { useChartQueries } from "../../../market-data/hooks";
-import { buildChartKey } from "../../../market-data/selectors";
+import { useResolvedChartSpec } from "../../../time-series/hooks";
 import { formatTickerListInput } from "../../../tickers/list";
+import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { formatCorrelation } from "./compute";
 import {
   DEFAULT_CORRELATION_SYMBOLS,
@@ -17,6 +17,11 @@ import {
   buildCorrelationSettingsDef,
   getCorrelationPaneSettings,
 } from "./settings";
+import {
+  buildCorrelationChartSpec,
+  isCorrelationPredictionSeries,
+  parseCorrelationSymbolsInput,
+} from "./symbols";
 import { resolveCorrelationHeatmapCellColors } from "./colors";
 import {
   buildRelationshipGraphSettingsDef,
@@ -33,61 +38,54 @@ import {
   buildStatusSummary,
   type CorrelationSeries,
   displaySymbol,
-  getSeriesForEntry,
+  getSeriesForResolvedSeries,
   pairKey,
   rowHeaderColor,
 } from "./matrix/model";
 import { SymbolLabelCell } from "./matrix/symbol-cell";
+import { buildEmptyChartPreset } from "../chart-composer/presets";
+
+function correlationSymbolsFromCreateOptions(options?: PaneTemplateCreateOptions): string[] {
+  try {
+    if (options?.symbols && options.symbols.length > 0) {
+      return parseCorrelationSymbolsInput(options.symbols.join(","));
+    }
+    const raw = options?.arg ?? options?.values?.tickers ?? "";
+    if (raw.trim()) return parseCorrelationSymbolsInput(raw);
+  } catch {
+    return [];
+  }
+  return [];
+}
 
 function CorrelationMatrixPane({ width, height }: PaneProps) {
   const pane = usePaneInstance();
   const { navigateTicker, pinTicker } = usePluginTickerActions();
+  const popOutChart = useGraphChartPopOut();
   const tickers = useAppSelector((state) => state.tickers);
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const settings = useMemo(() => getCorrelationPaneSettings(pane?.settings), [pane?.settings]);
+  const symbols = settings.symbolsError ? [] : settings.symbols;
+  const symbolsKey = symbols.join(",");
 
-  const instruments = useMemo(() => {
-    if (settings.symbolsError) return [];
-    return settings.symbols.map((symbol) => {
-      const ticker = tickers.get(symbol);
-      return {
-        symbol,
-        exchange: ticker?.metadata.exchange ?? "",
-      };
-    });
-  }, [settings.symbols.join(","), settings.symbolsError, tickers]);
+  const spec = useMemo(() => {
+    if (settings.symbolsError || symbols.length < 2) return buildEmptyChartPreset();
+    return buildCorrelationChartSpec(symbols, settings.rangePreset);
+  }, [settings.rangePreset, settings.symbolsError, symbolsKey]);
 
-  const instrumentKey = instruments.map((instrument) => `${instrument.symbol}|${instrument.exchange}`).join(",");
-
-  const chartRequests = useMemo(
-    () => instruments.map((instrument) => ({
-      instrument: {
-        symbol: instrument.symbol,
-        exchange: instrument.exchange,
-      },
-      bufferRange: settings.rangePreset,
-      granularity: "resolution" as const,
-      resolution: "1d" as const,
-    })),
-    [instrumentKey, settings.rangePreset],
-  );
-
-  const chartEntries = useChartQueries(chartRequests);
+  const resolution = useResolvedChartSpec(spec);
 
   const seriesBySymbol = useMemo(() => {
     const map = new Map<string, CorrelationSeries>();
-    for (let i = 0; i < instruments.length; i++) {
-      const instrument = instruments[i]!;
-      const request = chartRequests[i]!;
-      const key = buildChartKey(request);
-      const entry = chartEntries.get(key);
-      map.set(instrument.symbol, getSeriesForEntry(instrument.symbol, entry));
+    const resolvedById = new Map(resolution.series.map((series) => [series.id, series] as const));
+    for (let i = 0; i < symbols.length; i++) {
+      const symbol = symbols[i]!;
+      const specSeries = spec.series[i];
+      const resolved = specSeries ? resolvedById.get(specSeries.id) : undefined;
+      map.set(symbol, getSeriesForResolvedSeries(symbol, resolved, resolution.loading));
     }
     return map;
-  }, [chartEntries, chartRequests, instruments]);
-
-  const symbols = instruments.map((instrument) => instrument.symbol);
-  const symbolsKey = symbols.join(",");
+  }, [resolution.loading, resolution.series, spec.series, symbolsKey]);
 
   const matrix = useMemo(() => {
     return buildCorrelationMatrix(symbols, seriesBySymbol);
@@ -108,12 +106,16 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
   }), [settings.rangePreset, settings.symbolsError, statusSummary]);
 
   const openSymbol = useCallback((symbol: string) => {
+    if (isCorrelationPredictionSeries(symbol)) {
+      popOutChart(symbol);
+      return;
+    }
     if (tickers.has(symbol)) {
       pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
       return;
     }
     navigateTicker(symbol);
-  }, [navigateTicker, pinTicker, tickers]);
+  }, [navigateTicker, pinTicker, popOutChart, tickers]);
 
   const clearHoveredSymbol = useCallback((symbol: string) => {
     setHoveredSymbol((current) => (current === symbol ? null : current));
@@ -122,8 +124,8 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
   if (settings.symbolsError) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
-        <Text fg={colors.negative}>Invalid CORR tickers: {settings.symbolsError}</Text>
-        <Text fg={colors.textMuted}>Open pane settings and enter tickers like AAPL, MSFT, NVDA.</Text>
+        <Text fg={colors.negative}>Invalid CORR series: {settings.symbolsError}</Text>
+        <Text fg={colors.textMuted}>Open pane settings and enter tickers or POLY:/KALSHI:/ADJ: series.</Text>
       </Box>
     );
   }
@@ -131,7 +133,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
   if (symbols.length < 2) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={2} paddingY={1}>
-        <Text fg={colors.textMuted}>Enter at least 2 tickers in pane settings</Text>
+        <Text fg={colors.textMuted}>Enter at least 2 tickers or prediction-market series in pane settings</Text>
       </Box>
     );
   }
@@ -139,7 +141,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
   const headerBg = colors.panel;
   const rowHeaderWidth = Math.max(
     ROW_HEADER_WIDTH,
-    Math.min(12, Math.max(...symbols.map((symbol) => displaySymbol(symbol).length)) + 2),
+    Math.min(14, Math.max(...symbols.map((symbol) => displaySymbol(symbol).length)) + 2),
   );
   const availableCellWidth = Math.floor((Math.max(width - rowHeaderWidth - 4, symbols.length * MIN_MATRIX_CELL_WIDTH)) / symbols.length);
   const cellWidth = Math.max(MIN_MATRIX_CELL_WIDTH, Math.min(MATRIX_CELL_WIDTH, availableCellWidth));
@@ -246,25 +248,24 @@ export const correlationModule: PluginModule = {
       id: "correlation-pane",
       paneId: "correlation",
       label: "Correlation Matrix",
-      description: "Date-aligned Pearson correlation matrix for ticker returns.",
-      keywords: ["correlation", "corr", "matrix", "pearson", "returns", "covariance"],
+      description: "Date-aligned Pearson correlation matrix for ticker and prediction-market returns.",
+      keywords: ["correlation", "corr", "matrix", "pearson", "returns", "covariance", "polymarket", "kalshi", "adjacent"],
       shortcut: { prefix: "CORR", argPlaceholder: "tickers", argKind: "ticker-list" },
       wizard: [
         {
           key: "tickers",
-          label: "Correlation Tickers",
+          label: "Correlation Series",
           placeholder: formatTickerListInput(DEFAULT_CORRELATION_SYMBOLS),
           defaultValue: formatTickerListInput(DEFAULT_CORRELATION_SYMBOLS),
           body: [
-            `Enter 2-${MAX_CORRELATION_TICKERS} ticker symbols separated by commas.`,
+            `Enter 2-${MAX_CORRELATION_TICKERS} tickers or POLY:/KALSHI:/ADJ: series separated by commas.`,
           ],
           type: "text",
         },
       ],
       createInstance: (_context, options) => {
-        const symbols = options?.symbols && options.symbols.length >= 2
-          ? options.symbols
-          : DEFAULT_CORRELATION_SYMBOLS;
+        const parsed = correlationSymbolsFromCreateOptions(options);
+        const symbols = parsed.length >= 2 ? parsed : DEFAULT_CORRELATION_SYMBOLS;
         return {
           title: buildCorrelationPaneTitle(symbols, "1Y"),
           placement: "floating",
