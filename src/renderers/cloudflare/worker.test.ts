@@ -1434,3 +1434,34 @@ describe("hosted Gloom Cloud WebSocket proxy", () => {
     expect(cookie).not.toContain("__Host-gloom.session");
   });
 });
+
+describe("hosted Robinhood OAuth routes", () => {
+  afterEach(() => {
+    mockSessionUser = null;
+    restoreFetch();
+  });
+
+  test("callback page returns HTML that posts the code back to the app", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("GET", "/api/oauth/robinhood/callback?code=abc&state=xyz"),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get("content-type")).toContain("text/html");
+    const html = await response?.text() ?? "";
+    expect(html).toContain("gloomberb-robinhood-oauth");
+    expect(html).toContain("abc");
+    expect(html).toContain("postMessage");
+  });
+
+  test("token proxy requires a signed-in hosted session", async () => {
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/api/oauth/robinhood/token", {
+        origin: ORIGIN,
+        body: "grant_type=authorization_code",
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(401);
+  });
+});

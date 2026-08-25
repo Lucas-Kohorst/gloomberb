@@ -29,6 +29,11 @@ export function getBrokerRemoteClient(): BrokerRemoteClient | null {
   return brokerRemoteClient;
 }
 
+/** Hosted has no bun capability host; run broker adapters in the renderer. */
+export function shouldWrapBrokerAdaptersForRemoteHost(hosted: boolean): boolean {
+  return !hosted;
+}
+
 function disconnectedStatus(): BrokerConnectionStatus {
   return { state: "disconnected", updatedAt: 0 };
 }

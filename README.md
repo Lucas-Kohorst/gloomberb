@@ -143,7 +143,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 
 Use **New Portfolio** or **Add Broker Account** (`BR` / `RH`) to connect a broker. Gloomberb can import positions from Interactive Brokers and Robinhood.
 
-- Robinhood opens a browser sign-in page. Gloomberb uses only the read-only account and equity-position tools from the Robinhood Trading MCP server. Sign-in needs the desktop or terminal app (local OAuth callback). Hosted/web shows the broker in Connections but cannot complete that callback.
+- Robinhood opens a browser sign-in page (OAuth public client, no app secret). Gloomberb can **read every Robinhood account** and **place orders only in the Agentic account**. Hosted/web uses a popup plus `/api/oauth/robinhood/callback`; desktop and terminal use a local callback. There is no Robinhood client id/secret to paste in Connections — if sign-in fails, allow popups (hosted) or retry from the desktop/terminal app.
 - Interactive Brokers syncs via Flex Query or a local Gateway / TWS session.
 
 Gloomberb saves the connection data on the local device. It does not include broker credentials or Robinhood OAuth tokens in Gloom Cloud or hosted snapshots. A later position sync updates the managed portfolios and removes positions that the broker no longer reports.

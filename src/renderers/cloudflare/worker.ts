@@ -34,6 +34,12 @@ import {
   isTrustedOrAbsentOrigin,
   withHostedCors,
 } from "./hosted-origins";
+import {
+  proxyRobinhoodTokenRequest,
+  renderRobinhoodOAuthCallbackPage,
+  ROBINHOOD_OAUTH_CALLBACK_PATH,
+  ROBINHOOD_OAUTH_TOKEN_PATH,
+} from "./robinhood-oauth";
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -55,6 +61,7 @@ export default {
       return handleKeyedDataRequest(request, env, url);
     }
     if (url.pathname.startsWith("/api/auth/")) return handleAuthRequest(request, env, url);
+    if (url.pathname.startsWith("/api/oauth/robinhood/")) return handleRobinhoodOAuthRequest(request, env, url);
     if (url.pathname === "/cloud/ws") return proxyGloomCloudWebSocket(request, env, url);
     if (url.pathname.startsWith("/cloud/")) return proxyToGloomCloud(request, env, url);
     if (url.pathname.startsWith("/_gloomberb/")) return handleBackendRequest(request, env, url);
@@ -241,6 +248,39 @@ async function handleAuthRequest(request: Request, env: Env, url: URL): Promise<
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   return getSession(request, env);
+}
+
+async function handleRobinhoodOAuthRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  if (request.method === "GET" && url.pathname === ROBINHOOD_OAUTH_CALLBACK_PATH) {
+    return new Response(renderRobinhoodOAuthCallbackPage(url), {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
+  }
+  if (request.method === "OPTIONS" && url.pathname === ROBINHOOD_OAUTH_TOKEN_PATH) {
+    const origin = request.headers.get("Origin");
+    if (!origin || !isTrustedHostedOrigin(origin, url)) return invalidOriginResponse(request);
+    return new Response(null, { status: 204, headers: hostedCorsHeaders(origin) });
+  }
+  if (request.method === "POST" && url.pathname === ROBINHOOD_OAUTH_TOKEN_PATH) {
+    if (!hasTrustedHostedOrigin(request, url)) return invalidOriginResponse(request);
+    const token = readSessionCookie(request);
+    if (!token) {
+      return withHostedCors(request, Response.json({ error: "Sign in to connect Robinhood." }, { status: 401 }));
+    }
+    const session = await gloomFetch(env, "/auth/get-session", { token });
+    const sessionBody = session.ok
+      ? await session.json().catch(() => null) as { user?: unknown } | null
+      : null;
+    if (!sessionBody?.user) {
+      return withHostedCors(request, Response.json({ error: "Sign in to connect Robinhood." }, { status: 401 }));
+    }
+    return withHostedCors(request, await proxyRobinhoodTokenRequest(request));
+  }
+  return Response.json({ error: "Not found" }, { status: 404 });
 }
 
 async function getSession(request: Request, env: Env): Promise<Response> {

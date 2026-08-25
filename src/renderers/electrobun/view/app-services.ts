@@ -1,6 +1,6 @@
 import { isHostedWebClient } from "../../../shared/hosted-api";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
-import { createRemoteBrokerAdapter } from "../../../brokers/remote-broker-adapter";
+import { createRemoteBrokerAdapter, shouldWrapBrokerAdaptersForRemoteHost } from "../../../brokers/remote-broker-adapter";
 import { NewsService } from "../../../news/aggregator";
 import { setSharedNewsService } from "../../../news/hooks";
 import { newsPollIntervalMsFromMinutes } from "../../../news/poll-interval";
@@ -58,7 +58,9 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
   const marketData = new MarketDataCoordinator(dataProvider);
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence, {
     enableCapabilityHandlers: false,
-    wrapBrokerAdapter: (broker) => createRemoteBrokerAdapter(broker),
+    wrapBrokerAdapter: shouldWrapBrokerAdaptersForRemoteHost(hosted)
+      ? (broker) => createRemoteBrokerAdapter(broker)
+      : undefined,
   });
   if (cloudProvider && dataProvider instanceof AssetDataRouter) {
     dataProvider.attachRegistry(pluginRegistry);
