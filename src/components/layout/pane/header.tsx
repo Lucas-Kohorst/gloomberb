@@ -193,6 +193,7 @@ export function PaneHeader({
         data-floating={floating ? "true" : "false"}
         data-focused={focused ? "true" : "false"}
         data-window-mode-selected={windowModeSelected ? "true" : "false"}
+        data-title-drag={onTitleMouseDown ? undefined : "true"}
         aria-label="Drag to move pane"
         title="Drag to move pane"
         onMouseDown={onHeaderMouseDown}
@@ -251,6 +252,7 @@ export function PaneHeader({
               flexShrink: 1,
               minWidth: 0,
               cursor: onTitleMouseDown ? "text" : undefined,
+              userSelect: onTitleMouseDown ? undefined : "none",
             }}
           >
             {title}

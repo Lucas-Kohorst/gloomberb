@@ -7,6 +7,15 @@ export const SUBSTACK_ARTICLE_READER_TEMPLATE_ID = "substack-article-pane";
 export const TWEET_READER_PANE_ID = "x-tweet";
 export const TWEET_READER_TEMPLATE_ID = "x-tweet-pane";
 
+const ARTICLE_READER_PANE_IDS = new Set([
+  NEWS_ARTICLE_READER_PANE_ID,
+  SUBSTACK_ARTICLE_READER_PANE_ID,
+]);
+
+export function isArticleReaderPane(paneId: string): boolean {
+  return ARTICLE_READER_PANE_IDS.has(paneId);
+}
+
 export function articleReaderInstanceId(paneId: string, articleId: string): string {
   return `${paneId}:${encodeURIComponent(articleId).replace(/%/g, "~")}`;
 }

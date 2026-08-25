@@ -20,14 +20,20 @@ describe("FloatingPaneWrapper", () => {
   test("leaves the native header interior move-owned and exposes all eight resize handles", () => {
     const resizeHandles: Array<Record<string, unknown>> = [];
     const headerHitTargets: Array<Record<string, unknown>> = [];
+    const headers: Array<Record<string, unknown>> = [];
+    const titles: Array<Record<string, unknown>> = [];
     const Box = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
       if (props["data-gloom-role"] === "resize-handle") resizeHandles.push(props);
+      if (props["data-gloom-role"] === "pane-header") headers.push(props);
       if (props["data-gloom-role"] === "pane-header-actions" || props["data-gloom-role"] === "pane-close") {
         headerHitTargets.push(props);
       }
       return <div>{children}</div>;
     };
-    const Inline = ({ children }: { children?: ReactNode }) => <span>{children}</span>;
+    const Inline = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
+      if (props["data-gloom-role"] === "pane-title") titles.push(props);
+      return <span>{children}</span>;
+    };
     const ui = {
       capabilities: { nativePaneChrome: true },
       Box,
@@ -103,6 +109,76 @@ describe("FloatingPaneWrapper", () => {
       .toBeLessThan(markup.indexOf('data-gloom-role="pane-close"'));
     expect(markup).not.toContain("tabindex=");
     expect(markup).toContain('aria-label="Pane is floating — tile pane"');
+    expect(headers).toEqual([
+      expect.objectContaining({
+        "data-gloom-role": "pane-header",
+        "data-title-drag": "true",
+      }),
+    ]);
+    expect(titles).toEqual([
+      expect.objectContaining({
+        "data-gloom-role": "pane-title",
+        selectable: false,
+      }),
+    ]);
+    expect(titles[0]?.["data-gloom-interactive"]).toBeUndefined();
+    expect(titles[0]?.onMouseDown).toBeUndefined();
+  });
+
+  test("keeps ticker titles as click targets instead of full-header drag", () => {
+    const headers: Array<Record<string, unknown>> = [];
+    const titles: Array<Record<string, unknown>> = [];
+    const Box = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
+      if (props["data-gloom-role"] === "pane-header") headers.push(props);
+      return <div>{children}</div>;
+    };
+    const Inline = ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => {
+      if (props["data-gloom-role"] === "pane-title") titles.push(props);
+      return <span>{children}</span>;
+    };
+    const ui = {
+      capabilities: { nativePaneChrome: true },
+      Box,
+      Text: Inline,
+      Span: Inline,
+      Strong: Inline,
+      Underline: Inline,
+      ScrollBox: Box,
+      Input: Box,
+      Textarea: Box,
+      ChartSurface: Box,
+      ImageSurface: Box,
+      SpinnerMark: Inline,
+      AsciiText: Inline,
+    } as unknown as UiHost;
+
+    renderToStaticMarkup(
+      <UiHostProvider ui={ui} renderer={rendererHost}>
+        <FloatingPaneWrapper
+          paneId="floating:chart"
+          title="NVDA"
+          x={8}
+          y={2}
+          width={32}
+          height={10}
+          zIndex={75}
+          focused
+          onTitleMouseDown={() => {}}
+        >
+          <span>body</span>
+        </FloatingPaneWrapper>
+      </UiHostProvider>,
+    );
+
+    expect(headers[0]?.["data-title-drag"]).toBeUndefined();
+    expect(titles[0]?.["data-gloom-interactive"]).toBe("true");
+    expect(typeof titles[0]?.onMouseDown).toBe("function");
+    let stopped = false;
+    (titles[0]?.onMouseDown as (event: { stopPropagation(): void; preventDefault(): void }) => void)({
+      stopPropagation() { stopped = true; },
+      preventDefault() {},
+    });
+    expect(stopped).toBe(true);
   });
 
   test("keeps resize L-brackets hidden until the handle itself is hovered", async () => {

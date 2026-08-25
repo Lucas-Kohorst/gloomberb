@@ -1,4 +1,5 @@
 import { Box } from "../../../../ui";
+import { isArticleReaderPane } from "../../../../plugins/builtin/shared/article-pop-out";
 import type {
   DockDividerLayout,
   DockLeafLayout,
@@ -155,7 +156,9 @@ export function ShellPaneLayers({
                         onHeaderContextMenu={nativePaneChrome && nativeContextMenu === true ? (event) => handleNativePaneContextMenu(leaf.instanceId, rect, event) : undefined}
                         onActionMouseDown={(event) => handlePaneAction(leaf.instanceId, rect, event)}
                         onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(leaf.instanceId, event) : undefined}
-                        onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(leaf.instanceId, event) : undefined}
+                        onTitleMouseDown={onTitleMouseDown && !isArticleReaderPane(pane.instance.paneId)
+                          ? (event) => onTitleMouseDown(leaf.instanceId, event)
+                          : undefined}
                       >
                         <PaneContent
                           component={pane.def.component}
@@ -226,7 +229,9 @@ export function ShellPaneLayers({
                       onActionMouseDown={(event) => handlePaneAction(pane.instance.instanceId, preview, event)}
                       onFloatToggleMouseDown={nativePaneChrome ? (event) => handlePaneFloatToggle(pane.instance.instanceId, event) : undefined}
                       onCloseMouseDown={(event) => handleFloatingCloseMouseDown(pane.instance.instanceId, event)}
-                      onTitleMouseDown={onTitleMouseDown ? (event) => onTitleMouseDown(pane.instance.instanceId, event) : undefined}
+                      onTitleMouseDown={onTitleMouseDown && !isArticleReaderPane(pane.instance.paneId)
+                        ? (event) => onTitleMouseDown(pane.instance.instanceId, event)
+                        : undefined}
                       onResizeMouseDown={nativePaneChrome
                         ? (corner, event) => startNativeFloatResize(pane.instance.instanceId, preview, corner, event)
                         : undefined}
