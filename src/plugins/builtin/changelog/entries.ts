@@ -1,5 +1,44 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_6: ChangelogRelease = {
+  id: "hosted-v0-13-6",
+  tagName: "v0.13.6",
+  version: "0.13.6",
+  title: "Unread click-through, PM search, OPT layout tabs",
+  publishedAt: "2026-08-25T14:30:00.000Z",
+  url: "",
+  body: `Clicking an Unread row opens that chat channel. Prediction Markets search filters grouped Polymarket and Kalshi lists, including multi-word queries. Desktop layout tabs use Option so they no longer steal the browser tab switcher. Empty panes use ESG’s centered two-line no-data copy.
+
+## Chat
+
+- Click a row in Unread — including \`#help unread\` — to open that channel.
+
+## Prediction markets
+
+- Search filters grouped Polymarket and Kalshi rows as you type. Multi-word queries like \`anthropic ipo\` keep only matching events.
+
+## Chrome
+
+- Home / Monitor / Adjacent layout tabs are OPT 1/2/3 on desktop and hosted (Option/Alt). Terminal still uses Ctrl+number / \`^N\`.
+- Desktop tabs no longer draw a hover underline on inactive labels like Chart.
+
+## Empty states
+
+- No-data panes center two lines: \`No X data\` / \`{symbol} has no Y.\` Footers keep loading and unavailable chips only.
+
+## What to test
+
+- Unread: click \`#help unread\` (or any row) — chat opens that channel.
+- PM: type \`anthropic ipo\` — the list shrinks to matching markets.
+- Desktop: Option+1/2/3 switches layouts; Command+1/2/3 does not. No underline on tab hover.
+- Empty ESG / holders / news: centered two-line copy.
+
+## Not in this build
+
+- Correlation matrix prediction-market series.
+`,
+};
+
 const RELEASE_0_13_5: ChangelogRelease = {
   id: "hosted-v0-13-5",
   tagName: "v0.13.5",
@@ -369,6 +408,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_6,
   RELEASE_0_13_5,
   RELEASE_0_13_4,
   RELEASE_0_13_3,

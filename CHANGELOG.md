@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.13.6 — Unread click-through, PM search, OPT layout tabs
+
+Clicking an Unread row opens that chat channel. Prediction Markets search filters grouped Polymarket and Kalshi lists, including multi-word queries. Desktop layout tabs use Option so they no longer steal the browser tab switcher. Empty panes use ESG’s centered two-line no-data copy.
+
+### Chat
+
+- Click a row in Unread — including `#help unread` — to open that channel.
+
+### Prediction markets
+
+- Search filters grouped Polymarket and Kalshi rows as you type. Multi-word queries like `anthropic ipo` keep only matching events.
+
+### Chrome
+
+- Home / Monitor / Adjacent layout tabs are **OPT 1/2/3** on desktop and hosted (Option/Alt). Terminal still uses Ctrl+number / `^N`.
+- Desktop tabs no longer draw a hover underline on inactive labels like Chart.
+
+### Empty states
+
+- No-data panes center two lines: `No X data` / `{symbol} has no Y.` Footers keep loading and unavailable chips only.
+
+### What to test
+
+- Unread: click `#help unread` (or any row) — chat opens that channel.
+- PM: type `anthropic ipo` — the list shrinks to matching markets.
+- Desktop: Option+1/2/3 switches Home/Monitor/Adjacent; Command+1/2/3 does not. No underline on tab hover.
+- ESG / holders / news empty: centered two-line copy, not a footer “no data” chip.
+
+### Not in this build
+
+- Correlation matrix prediction-market series.
+
 ## v0.13.5 — First-paint snappiness, PM Enter, layout chrome, upgrade label
 
 Home stays interactive while feeds fill. Prediction Markets expand grouped rows with Enter and drop the leftover 1–4 footer hints. Layout tabs sit on the bottom-left status bar again. The delayed-data chip says `upgrade`.
