@@ -14,6 +14,7 @@ import {
   isNextTableRowKey,
   isPreviousTableRowKey,
   isTableActivationKey,
+  shouldInterceptNativeTableActivation,
   stopTableKey,
   TableViewFrame,
   type TableViewKeyEvent,
@@ -506,6 +507,12 @@ export function DataTableView<
       stopTableKey(event);
       activateSelection();
     }
+  }, {
+    phase: "before",
+    interceptNative: (event) => shouldInterceptNativeTableActivation(
+      event,
+      typeof document === "undefined" ? null : document.activeElement,
+    ),
   });
 
   return (

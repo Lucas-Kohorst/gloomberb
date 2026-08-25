@@ -171,7 +171,11 @@ describe("prediction markets pane interactions", () => {
     expect(frame).not.toContain("VOL = native venue units");
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Kalshi");
-    expect(frame).toContain("[1-4]filter");
+    expect(frame).toContain("[/]search");
+    expect(frame).toContain("[r]efresh");
+    expect(frame).not.toContain("[1-4]filter");
+    expect(frame).not.toContain("[1-3]browse");
+    expect(frame).not.toContain("[4]watchlist");
 
     const lines = frame.split("\n");
     const kalshiRow = lines.findIndex((line) =>
@@ -292,7 +296,7 @@ describe("prediction markets pane interactions", () => {
     expect(testSetup.captureCharFrame()).not.toContain("Loading market detail...");
   });
 
-  test("selects All, Watchlist, Ending, and New with 1-4", async () => {
+  test("cycles filter tabs with [ and ] without number-key shortcuts", async () => {
     installPredictionMarketMocks();
 
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
@@ -304,25 +308,11 @@ describe("prediction markets pane interactions", () => {
       ];
 
     expect(pluginState()?.selectedRowKey).not.toBeNull();
+    const categoryBefore = pluginState()?.categoryId;
 
     await emitKeypress(testSetup, { name: "2", sequence: "2" });
     await flushFrames(testSetup);
-    expect(pluginState()?.categoryId).toBe("watchlist");
-
-    await emitKeypress(testSetup, { name: "3", sequence: "3" });
-    await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("ending");
-    expect(pluginState()?.categoryId).toBe("all");
-
-    await emitKeypress(testSetup, { name: "4", sequence: "4" });
-    await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("new");
-
-    await emitKeypress(testSetup, { name: "1", sequence: "1" });
-    await flushFrames(testSetup);
-    expect(pluginState()?.browseTab).toBe("top");
-    expect(pluginState()?.categoryId).toBe("all");
-    expect(pluginState()?.selectedRowKey).not.toBeNull();
+    expect(pluginState()?.categoryId).toBe(categoryBefore);
 
     await emitKeypress(testSetup, { name: "]", sequence: "]" });
     await flushFrames(testSetup);
@@ -537,7 +527,8 @@ describe("prediction markets pane interactions", () => {
 
     await emitKeypress(testSetup, { name: "j", sequence: "j" });
     await flushFrames(testSetup);
-    await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
+    // Hosted web normalizes Enter to "return"; both names must expand a group.
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     await flushFrames(testSetup);
 
     let frame = testSetup.captureCharFrame();
