@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
-  EmptyState,
-  ErrorState,
   LoadingState,
+  TickerEmptyState,
   Tabs,
   usePaneFooter,
   usePaneTicker,
@@ -274,10 +273,14 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
 
   const chartHeight = Math.max(1, height - 1 - (nativePaneChrome ? 1 : 0));
 
-  if (!symbol) return <EmptyState title="No ticker selected." />;
+  if (!symbol) return <TickerEmptyState kind="holders" symbol={null} detail="holder filings" />;
   if (loading && sortedRows.length === 0) return <LoadingState title="Loading holders..." />;
-  if (error && sortedRows.length === 0) return <ErrorState error={error} />;
-  if (sortedRows.length === 0) return <EmptyState title="No holders available." />;
+  if (error && sortedRows.length === 0) {
+    return <TickerEmptyState kind="holders" symbol={symbol} detail="holder filings" error={error} />;
+  }
+  if (sortedRows.length === 0) {
+    return <TickerEmptyState kind="holders" symbol={symbol} detail="holder filings" />;
+  }
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -312,7 +315,8 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
           onHeaderClick={handleHeaderClick}
           getItemKey={(row) => row.id}
           renderCell={renderCell}
-          emptyStateTitle="No holders available."
+          emptyStateTitle="No holders data"
+          emptyStateMessage={`${symbol} has no holder filings.`}
         />
       ) : (
         <HoldersTreemap

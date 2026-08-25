@@ -2,6 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../../ui";
 import {
   DataTableView,
+  dataErrorMessage,
+  isNoDataError,
+  noDataMessage,
+  unavailableTitle,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -215,7 +219,18 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       ))}
       getItemKey={(row) => row.key}
       renderCell={renderCell}
-      emptyStateTitle={loading ? "Loading historical prices..." : "No historical prices"}
+      emptyStateTitle={loading
+        ? "Loading historical prices..."
+        : error && !isNoDataError(error)
+          ? unavailableTitle("historical")
+          : "No historical data"}
+      emptyStateMessage={loading
+        ? undefined
+        : error && !isNoDataError(error)
+          ? dataErrorMessage(error)
+          : symbol
+            ? noDataMessage(symbol, "historical prices")
+            : undefined}
     />
   );
 }

@@ -6,6 +6,7 @@ import { usePaneStateValue, usePaneTicker } from "../../../../state/app/context"
 import {
   DataTableView,
   Tabs,
+  TickerEmptyState,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -53,11 +54,12 @@ export function FinancialsTab({
   bodyScrollId?: string;
   allowArrowSubTabNavigation?: boolean;
 }) {
-  const { financials } = usePaneTicker();
+  const { financials, ticker } = usePaneTicker();
   return (
     <ResolvedFinancialsTab
       focused={focused}
       financials={financials}
+      symbol={ticker?.metadata.ticker ?? null}
       headerScrollId={headerScrollId}
       bodyScrollId={bodyScrollId}
       allowArrowSubTabNavigation={allowArrowSubTabNavigation}
@@ -68,12 +70,14 @@ export function FinancialsTab({
 export function ResolvedFinancialsTab({
   focused,
   financials,
+  symbol = null,
   headerScrollId,
   bodyScrollId,
   allowArrowSubTabNavigation = true,
 }: {
   focused: boolean;
   financials: ReturnType<typeof usePaneTicker>["financials"];
+  symbol?: string | null;
   headerScrollId?: string;
   bodyScrollId?: string;
   allowArrowSubTabNavigation?: boolean;
@@ -284,7 +288,7 @@ export function ResolvedFinancialsTab({
   }, [rows, selectedRowId]);
 
   if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
-    return <Text fg={colors.textDim}>No financial data available.</Text>;
+    return <TickerEmptyState kind="financial" symbol={symbol} detail="financial statements" />;
   }
 
   const renderCell = (
@@ -395,6 +399,7 @@ export function ResolvedFinancialsTab({
         getRowBackgroundColor={(row) => row.kind === "group" && row.depth === 0 ? colors.panel : undefined}
         renderCell={renderCell}
         emptyStateTitle="No financial data"
+        emptyStateMessage={symbol ? `${symbol} has no financial statements.` : undefined}
         showHorizontalScrollbar
         resetScrollKey={`${resolvedPeriod}:${subTab.key}:${displayStatements.length}`}
         rootBefore={(

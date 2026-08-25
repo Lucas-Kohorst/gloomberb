@@ -91,7 +91,7 @@ export function isYahooEsgUnavailable(error: unknown): boolean {
 }
 
 export function esgUnavailableMessage(symbol: string): string {
-  return `Yahoo has no ESG scores for ${symbol}.`;
+  return `${symbol} has no Yahoo ESG scores.`;
 }
 
 /**

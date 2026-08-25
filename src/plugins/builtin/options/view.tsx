@@ -7,9 +7,8 @@ import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue } from "../../../market-data/hooks";
 import {
   DataTableView,
-  EmptyState,
-  ErrorState,
   LoadingState,
+  TickerEmptyState,
   Spinner,
   Tabs,
   type DataTableKeyEvent,
@@ -384,10 +383,21 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     return false;
   }, [enterInteractive, exitInteractive, interactive, openCalc, rows.length, selectAdjacentExpiration]);
 
-  if (!ticker) return <EmptyState title="Select a ticker to view options." />;
+  if (!ticker) return <TickerEmptyState kind="options" symbol={null} detail="listed options" />;
   if (loading && !chain) return <LoadingState title="Loading options..." />;
-  if (error && !chain) return <ErrorState error={error} />;
-  if (!chain || chain.expirationDates.length === 0) return <EmptyState title="No options available." />;
+  if (error && !chain) {
+    return (
+      <TickerEmptyState
+        kind="options"
+        symbol={ticker.metadata.ticker}
+        detail="listed options"
+        error={error}
+      />
+    );
+  }
+  if (!chain || chain.expirationDates.length === 0) {
+    return <TickerEmptyState kind="options" symbol={ticker.metadata.ticker} detail="listed options" />;
+  }
 
   const posShares = isOpt && parsed
     ? ticker.metadata.positions.reduce((sum, p) => sum + p.shares, 0)
@@ -462,7 +472,8 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         onVisibleRangeChange={handleVisibleStrikeRangeChange}
         getItemKey={(row) => String(row.strike)}
         renderCell={renderCell}
-        emptyStateTitle="No strikes available."
+        emptyStateTitle="No options data"
+        emptyStateMessage="No strikes for this expiration."
         columnGap={0}
         horizontalPadding={0}
         fillAvailableWidth={false}

@@ -88,6 +88,7 @@ export interface DataTableProps<
   emptyContent?: ReactNode;
   bodyAfter?: ReactNode;
   emptyStateTitle: string;
+  emptyStateMessage?: string;
   emptyStateHint?: string;
   virtualize?: boolean;
   overscan?: number;

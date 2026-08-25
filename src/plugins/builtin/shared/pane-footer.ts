@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import {
+  footerErrorChip,
   useExternalLinkFooter,
   usePaneFooter,
   type PaneFooterSegment,
@@ -42,10 +43,11 @@ function buildPaneStatusInfo({
   error?: string | null;
   info?: readonly PaneFooterSegment[];
 }): PaneFooterSegment[] {
+  const errorChip = footerErrorChip(error);
   return [
     ...info,
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-    ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+    ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
   ];
 }
 

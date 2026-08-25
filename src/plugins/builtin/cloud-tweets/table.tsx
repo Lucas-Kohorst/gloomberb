@@ -3,6 +3,9 @@ import { TextAttributes } from "../../../ui";
 import {
   DataTableStackView,
   TickerBadgeList,
+  dataErrorMessage,
+  isNoDataError,
+  unavailableTitle,
   type DataTableCell,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
@@ -121,6 +124,7 @@ export function TweetSearchTable({
   onError,
   onFocusSearch,
   emptyStateTitle,
+  emptyStateMessage,
   emptyStateHint,
 }: {
   focused: boolean;
@@ -135,6 +139,7 @@ export function TweetSearchTable({
   onError?: (message: string) => void;
   onFocusSearch?: () => void;
   emptyStateTitle?: string;
+  emptyStateMessage?: string;
   emptyStateHint?: string;
 }) {
   const { createPaneFromTemplate } = usePluginAppActions();
@@ -350,6 +355,15 @@ export function TweetSearchTable({
   const emptyContent = error && isAuthError(error)
     ? <CloudAuthNotice message={error} showSignup />
     : undefined;
+  const transportError = error && !isAuthError(error) && !isNoDataError(error);
+  const resolvedEmptyTitle = loading
+    ? "Loading tweets..."
+    : transportError
+      ? unavailableTitle("tweet")
+      : emptyStateTitle ?? "No tweet data";
+  const resolvedEmptyMessage = loading || transportError
+    ? (transportError ? dataErrorMessage(error) : undefined)
+    : emptyStateMessage;
 
   return (
     <DataTableStackView<CloudTweetPayload, TweetColumn>
@@ -382,8 +396,9 @@ export function TweetSearchTable({
       getItemKey={(tweet) => tweet.id}
       renderCell={renderCell}
       emptyContent={emptyContent}
-      emptyStateTitle={loading ? "Loading tweets..." : error ?? emptyStateTitle ?? "No tweets"}
-      emptyStateHint={emptyStateHint ?? data?.query}
+      emptyStateTitle={resolvedEmptyTitle}
+      emptyStateMessage={resolvedEmptyMessage}
+      emptyStateHint={resolvedEmptyMessage ? undefined : emptyStateHint}
     />
   );
 }

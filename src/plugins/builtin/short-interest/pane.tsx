@@ -3,8 +3,10 @@ import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   EmptyState,
+  footerErrorChip,
   Spinner,
   StaticChartSurface,
+  TickerEmptyState,
   usePaneFooter,
   usePaneTicker,
   type DataTableCell,
@@ -156,20 +158,23 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
     }
   }, []);
 
-  usePaneFooter("short-interest", () => ({
-    info: [
-      ...(symbol ? [{ id: "symbol", parts: [{ text: symbol, tone: "label" as const }] }] : []),
-      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(status === "error" && error ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }] : []),
-      ...(status === "loaded" && records.length > 0
-        ? [{ id: "latest", parts: [{ text: `latest ${formatCompact(records[records.length - 1]!.sharesShort)}`, tone: "muted" as const }] }]
-        : []),
-    ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  }), [error, records, refresh, status, symbol]);
+  usePaneFooter("short-interest", () => {
+    const errorChip = footerErrorChip(status === "error" ? error : null);
+    return {
+      info: [
+        ...(symbol ? [{ id: "symbol", parts: [{ text: symbol, tone: "label" as const }] }] : []),
+        ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+        ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
+        ...(status === "loaded" && records.length > 0
+          ? [{ id: "latest", parts: [{ text: `latest ${formatCompact(records[records.length - 1]!.sharesShort)}`, tone: "muted" as const }] }]
+          : []),
+      ],
+      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
+    };
+  }, [error, records, refresh, status, symbol]);
 
   if (!ticker || !symbol) {
-    return <EmptyState title="No ticker selected" message="Select a ticker to view short interest." />;
+    return <TickerEmptyState kind="short interest" symbol={null} detail="short interest" />;
   }
 
   if ((status === "idle" || status === "loading") && records.length === 0) {
@@ -177,19 +182,20 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }
 
   if (status === "error" && records.length === 0) {
-    return <EmptyState title="Failed to load short interest" message={error ?? undefined} hint="Press [r] to retry" />;
+    return <TickerEmptyState kind="short interest" symbol={symbol} detail="short interest" error={error} />;
   }
 
   if (status === "loaded" && records.length === 0) {
     const usEquitiesOnly = hasClassifiableUsEquityMetadata(ticker) && !isUsEquityTicker(ticker);
-    return (
-      <EmptyState
-        title={usEquitiesOnly ? "US equities only" : "No short interest data"}
-        message={usEquitiesOnly
-          ? "Short interest data is available for US equities."
-          : `No short interest found for ${symbol}.`}
-      />
-    );
+    if (usEquitiesOnly) {
+      return (
+        <EmptyState
+          title="US equities only"
+          message="Short interest data is available for US equities."
+        />
+      );
+    }
+    return <TickerEmptyState kind="short interest" symbol={symbol} detail="short interest" />;
   }
 
   const chartHeight = Math.max(1, Math.floor((height - 1) * 0.35));
@@ -245,7 +251,8 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
           onHeaderClick={handleHeaderClick}
           getItemKey={(row) => row.key}
           renderCell={renderCell}
-          emptyStateTitle={status === "loading" ? "Loading..." : "No data"}
+          emptyStateTitle={status === "loading" ? "Loading..." : "No short interest data"}
+          emptyStateMessage={symbol ? `${symbol} has no short interest.` : undefined}
         />
       </Box>
     </Box>

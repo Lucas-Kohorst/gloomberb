@@ -1,14 +1,12 @@
-import { Text } from "../../../ui";
 import { useRef, useEffect, useMemo, useState } from "react";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { usePaneTicker } from "../../../state/app/context";
-import { colors } from "../../../theme/colors";
 import type { NewsArticle } from "../../../types/news-source";
 import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState } from "../../runtime";
 import { usePopOutNewsArticle } from "./wire/news/pop-out";
-import { EmptyState, ErrorState, FeedDataTableStackView, LoadingState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
+import { FeedDataTableStackView, LoadingState, TickerEmptyState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
 import { shouldSkipJinaForKnownBody } from "../shared/jina-article-text";
 import { useJinaArticle } from "../shared/jina-reader";
 import { getSharedNewsService, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
@@ -153,10 +151,21 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       : undefined,
   });
 
-  if (!ticker) return <EmptyState title="Select a ticker to view news." />;
+  if (!ticker) return <TickerEmptyState kind="news" symbol={null} detail="news" />;
   if (loading && news.length === 0) return <LoadingState title="Loading news..." />;
-  if (error && news.length === 0) return <ErrorState error={error} />;
-  if (news.length === 0) return <EmptyState title="No news available." />;
+  if (error && news.length === 0) {
+    return (
+      <TickerEmptyState
+        kind="news"
+        symbol={ticker.metadata.ticker}
+        detail="news"
+        error={error}
+      />
+    );
+  }
+  if (news.length === 0) {
+    return <TickerEmptyState kind="news" symbol={ticker.metadata.ticker} detail="news" />;
+  }
 
   const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary, jina.content);
 
@@ -175,7 +184,8 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
       onPopOut={(item) => popOutArticle(news.find((article) => article.id === item.id) ?? openArticle ?? selected)}
       sourceLabel="Source"
       titleLabel="Headline"
-      emptyStateTitle="No news."
+      emptyStateTitle="No news data"
+      emptyStateMessage={ticker.metadata.ticker ? `${ticker.metadata.ticker} has no news.` : undefined}
       markdown
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}

@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextAttributes } from "../../../ui";
 import {
   DataTableView,
+  dataErrorMessage,
+  isNoDataError,
+  noDataMessage,
+  unavailableTitle,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
@@ -111,7 +115,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   const reload = useCallback((forceRefresh = false) => {
     if (symbols.length === 0) {
       setRows([]);
-      setError("No tickers selected");
+      setError(null);
       return;
     }
     if (!dataProvider) {
@@ -210,7 +214,18 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       ))}
       getItemKey={(row) => row.symbol}
       renderCell={renderCell}
-      emptyStateTitle={loading ? "Loading peers..." : error ?? "No peers"}
+      emptyStateTitle={loading
+        ? "Loading peers..."
+        : error && !isNoDataError(error)
+          ? unavailableTitle("peer")
+          : "No peer data"}
+      emptyStateMessage={loading
+        ? undefined
+        : error && !isNoDataError(error)
+          ? dataErrorMessage(error)
+          : symbol
+            ? noDataMessage(symbol, "peers")
+            : undefined}
     />
   );
 }
