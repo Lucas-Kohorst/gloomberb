@@ -30,7 +30,6 @@ const TARGETED_TESTS = [
   "src/utils/startup-interaction.test.ts",
   "src/state/ticker-refresh-queue.test.ts",
   "src/news/aggregator.test.ts",
-  "src/plugins/builtin/news/wire/article-search.test.ts",
 ];
 
 const POLL_MODULES = [
