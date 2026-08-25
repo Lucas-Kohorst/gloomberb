@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.13.7 — Pane chrome, Robinhood connect
+
+Desktop pane footers keep the top of `[g]raph`. Chat sidebars scroll instead of slicing the last name. Hosted Robinhood sign-in completes OAuth: read every account, trade only Agentic.
+
+### Chrome
+
+- Pane footer hints no longer shear glyphs against the top rule (`[g]raph` reading as `[q]raph`).
+- Chat channel lists scroll when they overflow. The splitter meets the footer; the online-count row stays pinned.
+
+### Brokers
+
+- Connect Robinhood on hosted no longer reports **Robinhood setup is incomplete** after a working OAuth path.
+- Reads every account. Preview and place only the Agentic account.
+- Robinhood Trading MCP is a public OAuth client — no Connections env secret to paste.
+
+### What to test
+
+- Focus a prediction-market pane: `[g]raph` shows a full `g`.
+- Float a short chat pane with enough DMs to overflow: last name scrolls, splitter reaches the footer.
+- Hosted: BR / RH → Connect Robinhood → **Robinhood sign-in (read accounts, trade Agentic)**. Stay signed in, allow popups. Connections should show connected, not incomplete.
+
 ## v0.13.6 — Unread click-through, CDS, CSV, share charts, PM search
 
 Clicking an Unread row opens that chat channel. `CDS` shows DTCC activity. `CSV` copies the focused table. Shared charts fill the page with last / change / range. Prediction Markets search filters grouped lists, and FOMC rows match Fed funds / 10Y feeds. Status bar drops the Layouts chrome and the delayed-data label. Empty panes use ESG’s two-line copy. CORR mixes tickers with `POLY:`, `KALSHI:`, and `ADJ:` series.

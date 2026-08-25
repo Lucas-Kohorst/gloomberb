@@ -1,5 +1,33 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_7: ChangelogRelease = {
+  id: "hosted-v0-13-7",
+  tagName: "v0.13.7",
+  version: "0.13.7",
+  title: "Pane chrome, Robinhood connect",
+  publishedAt: "2026-08-25T15:35:00.000Z",
+  url: "",
+  body: `Desktop pane footers keep the top of [g]raph. Chat sidebars scroll instead of slicing the last name. Hosted Robinhood sign-in completes OAuth: read every account, trade only Agentic.
+
+## Chrome
+
+- Pane footer hints no longer shear glyphs against the top rule (\`[g]raph\` reading as \`[q]raph\`).
+- Chat channel lists scroll when they overflow. The splitter meets the footer; the online-count row stays pinned.
+
+## Brokers
+
+- Connect Robinhood on hosted no longer reports Robinhood setup is incomplete after a working OAuth path.
+- Reads every account. Preview and place only the Agentic account.
+- Robinhood Trading MCP is a public OAuth client — no Connections env secret to paste.
+
+## What to test
+
+- Focus a prediction-market pane: \`[g]raph\` shows a full \`g\`.
+- Float a short chat pane with enough DMs to overflow: last name scrolls, splitter reaches the footer.
+- Hosted: BR / RH → Connect Robinhood → Robinhood sign-in. Stay signed in, allow popups. Connections should show connected, not incomplete.
+`,
+};
+
 const RELEASE_0_13_6: ChangelogRelease = {
   id: "hosted-v0-13-6",
   tagName: "v0.13.6",
@@ -434,6 +462,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_7,
   RELEASE_0_13_6,
   RELEASE_0_13_5,
   RELEASE_0_13_4,
