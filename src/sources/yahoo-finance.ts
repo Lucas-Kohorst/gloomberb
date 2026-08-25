@@ -263,7 +263,7 @@ export class YahooFinanceClient implements DataProvider {
     const symbol = getYahooSymbol(ticker, exchange);
     const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=${count}`;
     try {
-      const resp = await fetch(url, {
+      const resp = await httpFetch(url, {
         headers: this.http.defaultHeaders(),
         signal: AbortSignal.timeout(5000),
       });
@@ -326,7 +326,7 @@ export class YahooFinanceClient implements DataProvider {
   /** Fetch article summary by scraping og:description from the article page */
   async getArticleSummary(url: string): Promise<string | null> {
     try {
-      const resp = await fetch(url, {
+      const resp = await httpFetch(url, {
         headers: {
           ...this.http.defaultHeaders(),
           Accept: "text/html",

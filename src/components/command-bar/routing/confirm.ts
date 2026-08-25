@@ -67,6 +67,10 @@ export function useCommandBarConfirmRoute({
         setRouteStack((current) => current.slice(0, -1));
       } else if (currentRoute.successBehavior !== "stay") {
         closeAll({ revertThemePreview: false });
+      } else {
+        updateTopRoute((route) => route.kind === "confirm"
+          ? { ...route, pending: false }
+          : route);
       }
     } catch (error) {
       updateTopRoute((route) => route.kind === "confirm"

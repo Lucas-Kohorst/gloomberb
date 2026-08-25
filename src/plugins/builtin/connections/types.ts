@@ -111,7 +111,6 @@ export function recordRequest(
 export function updateWebSocketState(
   state: ConnectionState,
   wsState: ConnectionState["wsState"],
-  now = Date.now(),
 ): ConnectionState {
   const status: ConnectionStatus = wsState === "open"
     ? "connected"
@@ -124,19 +123,7 @@ export function updateWebSocketState(
     ...state,
     wsState,
     status,
-    lastMessageAt: wsState === "open" ? state.lastMessageAt : state.lastMessageAt,
-  };
-}
-
-export function recordWebSocketMessage(
-  state: ConnectionState,
-  now = Date.now(),
-): ConnectionState {
-  return {
-    ...state,
-    lastMessageAt: now,
-    wsState: "open",
-    status: "connected",
+    lastMessageAt: state.lastMessageAt,
   };
 }
 

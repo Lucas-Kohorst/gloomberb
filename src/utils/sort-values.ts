@@ -111,8 +111,16 @@ export function compareSortValues(
   if (leftEmpty) return 1;
   if (rightEmpty) return -1;
 
-  const comparison = typeof left === "string" && typeof right === "string"
-    ? left.localeCompare(right)
-    : Number(left) - Number(right);
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const leftIsNumeric = Number.isFinite(leftNumber);
+  const rightIsNumeric = Number.isFinite(rightNumber);
+  const comparison = leftIsNumeric && rightIsNumeric
+    ? leftNumber - rightNumber
+    : leftIsNumeric !== rightIsNumeric
+      ? leftIsNumeric ? -1 : 1
+      : typeof left === "string" && typeof right === "string"
+        ? left.localeCompare(right)
+        : 0;
   return direction === "asc" ? comparison : -comparison;
 }
