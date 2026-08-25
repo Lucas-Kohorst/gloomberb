@@ -1,5 +1,48 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_5: ChangelogRelease = {
+  id: "hosted-v0-13-5",
+  tagName: "v0.13.5",
+  version: "0.13.5",
+  title: "First-paint snappiness, PM Enter, layout chrome, upgrade label",
+  publishedAt: "2026-08-25T00:00:00.000Z",
+  url: "",
+  body: `Home stays interactive while feeds fill. Prediction Markets expand grouped rows with Enter and drop leftover 1–4 footer hints. Layout tabs sit on the bottom-left status bar. The delayed-data chip says upgrade.
+
+## First load
+
+- Dense Home first paint no longer blocks drag, resize, chat, or the command bar while RSS, quotes, and catalogs catch up.
+- Typing, Command-K / Ctrl+P, and pane resize yield Firehose and quote refreshes so those frames stay snappy after first paint.
+
+## Prediction markets
+
+- One filter row. \`h\`/\`l\` and \`[\` / \`]\` still move filters; Shift+\`h\`/\`l\` still move venues.
+- Enter on a grouped event expands or collapses it. Child contracts still open detail.
+- Footer no longer advertises \`[1-3]browse\`, \`[4]watchlist\`, or \`[1-4]filter\`.
+- Hosted Kalshi catalogs still load when the venue origin 522s.
+
+## Chrome
+
+- Layout tabs and Layouts live on the bottom-left status bar, not the header.
+- No static Ctrl+P command-bar hint. Command bar stays on Ctrl+P / Cmd+K.
+- Delayed-data CTA is lowercase \`upgrade\`.
+
+## Chat
+
+- DM rows show a green online dot before the name when that peer is present.
+
+## What to test
+
+- Dense Home: drag, resize, command bar, and chat while feeds fill.
+- PM grouped row Enter; no 1-3 / 4 footer hints.
+- Layout tabs bottom left; \`upgrade\` lowercase; Kalshi still lists markets.
+
+## Not in this build
+
+- Poll chip dropdown (click still cycles 1m / 5m / 15m / 30m). New configs still default to 30m.
+`,
+};
+
 const RELEASE_0_13_4: ChangelogRelease = {
   id: "hosted-v0-13-4",
   tagName: "v0.13.4",
@@ -326,6 +369,7 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_5,
   RELEASE_0_13_4,
   RELEASE_0_13_3,
   RELEASE_0_13_2,

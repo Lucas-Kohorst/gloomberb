@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.13.5 — First-paint snappiness, PM Enter, layout chrome, upgrade label
+
+Home stays interactive while feeds fill. Prediction Markets expand grouped rows with Enter and drop the leftover 1–4 footer hints. Layout tabs sit on the bottom-left status bar again. The delayed-data chip says `upgrade`.
+
+### First load
+
+- Dense Home first paint no longer blocks drag, resize, chat, or the command bar while RSS, quotes, and catalogs catch up.
+- Typing, Command-K / Ctrl+P, and pane resize yield Firehose and quote refreshes so those frames stay snappy after first paint.
+
+### Prediction markets
+
+- One filter row: All / Watchlist / Ending / New plus topics. `h`/`l` and `[` / `]` still move filters; Shift+`h`/`l` still move venues.
+- Enter on a grouped event expands or collapses it (hosted tab buttons no longer swallow the key). Child contracts still open detail.
+- Footer no longer advertises `[1-3]browse`, `[4]watchlist`, or `[1-4]filter`.
+- Hosted Kalshi catalogs still load when the venue origin 522s (Adjacent fallback from 0.13.4 follow-up). Retry spacing is already flattened on that path.
+
+### Chrome
+
+- Home / Monitor / Adjacent layout tabs and **Layouts** live on the bottom-left status bar (hosted and desktop), not the header.
+- Status bar no longer shows a static `Ctrl+P command bar` hint. Command bar stays on Ctrl+P / Cmd+K and the header ticker.
+- Delayed-data CTA next to the version is lowercase `upgrade`.
+
+### Chat
+
+- Direct-message rows show a green online dot before the name when that peer is present. Groups are unchanged.
+
+### What to test
+
+- Dense Home: drag, resize, open the command bar, and type in chat while WIRE / tweets / quotes are still filling.
+- PM: Enter on a grouped Kalshi/Polymarket row expands it; Enter on a child opens detail. No `1-3` / `4` browse/watchlist footer hints.
+- Layout tabs on the **bottom left**. Switch Home ↔ Monitor; open **Layouts**.
+- Chat DM list: green dot immediately before an online peer’s name.
+- Status bar: `upgrade` lowercase on delayed data; no `Ctrl+P command bar` label.
+- Kalshi still lists markets on hosted (including after a Worker 522).
+
+### Not in this build
+
+- Poll chip **dropdown** (1m / 5m / 15m / 30m option list). Click still cycles those intervals; new configs default to 30m. A follow-up will default to 1m and open a real menu.
+- Extra Kalshi 522 retry-flatten beyond what is already on main.
+
+### Also landed since 0.13.4
+
+- Adjacent Indices no longer crash Home on first paint (`useState` import).
+- Hosted notes sync, PM footer padding, Kalshi New sort.
+- Equity diagnostic pane + ticker logos; read-only Robinhood position sync; hosted config export/import/reset.
+
 ## v0.13.4 — Prediction markets, Chrome on-device AI, paid Adjacent
 
 Kalshi and Polymarket catalogs, similar markets, and news now go through paid Adjacent instead of the public API. Hosted Chrome can summarize filings with the on-device Prompt API (no provider key). The PM pane is denser, fully keyboardable, and searches as you type.
