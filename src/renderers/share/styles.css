@@ -88,6 +88,11 @@ textarea::-webkit-strong-password-auto-fill-button {
   box-shadow: inset 0 0 0 1px var(--gloom-border-focused);
 }
 
+.share-pane[data-layout="wide"] {
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
 .share-pane-header {
   display: flex;
   align-items: center;
@@ -120,6 +125,20 @@ textarea::-webkit-strong-password-auto-fill-button {
   text-overflow: ellipsis;
 }
 
+.share-pane[data-layout="wide"] .share-pane-header {
+  flex: 0 0 auto;
+  height: auto;
+  max-height: none;
+}
+
+.share-pane[data-layout="wide"] .share-pane-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  line-height: 1.35;
+  padding-block: 2px;
+}
+
 .share-pane-actions {
   display: flex;
   flex-direction: row;
@@ -140,9 +159,8 @@ textarea::-webkit-strong-password-auto-fill-button {
 
 .share-pane[data-layout="wide"] .share-pane-body {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px 24px 28px;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .share-pane[data-layout="document"] .share-pane-body > .share-body,
@@ -258,6 +276,10 @@ textarea::-webkit-strong-password-auto-fill-button {
   padding: 0;
 }
 
+.share-pane[data-layout="wide"] .share-loading-body {
+  margin: auto;
+}
+
 /* --- Article body ------------------------------------------------------ */
 
 .share-body {
@@ -326,38 +348,79 @@ textarea::-webkit-strong-password-auto-fill-button {
 
 .share-chart-frame {
   display: flex;
-  justify-content: center;
-  align-items: center;
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  min-height: 100%;
-  padding: 8px 12px 16px;
 }
 
 .share-chart {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   width: 100%;
-  max-width: 1080px;
-  margin-inline: auto;
   min-height: 0;
 }
 
 .share-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 14px;
-  margin: 0;
-  padding: 0 8px;
-  list-style: none;
-  min-height: var(--cell-h);
   align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0 10px;
+  min-height: var(--cell-h);
   font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--gloom-text-dim);
   background: var(--gloom-panel);
   border-bottom: 1px solid color-mix(in srgb, var(--gloom-border) 72%, transparent);
 }
 
-.share-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.share-legend ul {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.share-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.share-legend-name {
+  color: var(--gloom-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28ch;
+}
+
+.share-legend-last {
+  color: var(--gloom-text-bright);
+  font-weight: 700;
+}
+
+.share-legend-change[data-tone="pos"] { color: var(--gloom-positive); }
+.share-legend-change[data-tone="neg"] { color: var(--gloom-negative); }
+
+.share-legend-range,
+.share-legend-date,
+.share-legend-window {
+  color: var(--gloom-text-muted);
+  white-space: nowrap;
+}
+
+.share-legend-window {
+  margin-left: auto;
+}
 
 .share-swatch {
   width: 8px;
@@ -369,11 +432,18 @@ textarea::-webkit-strong-password-auto-fill-button {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
+  min-height: 280px;
 }
 
 .share-panel {
   position: relative;
   background: var(--gloom-bg);
+  flex: 0 0 auto;
+}
+
+.share-panel[data-fill="true"] {
+  flex: 1 1 auto;
+  min-height: 280px;
 }
 
 .share-panel + .share-panel {
@@ -393,13 +463,11 @@ textarea::-webkit-strong-password-auto-fill-button {
 .share-panel-canvas {
   width: 100%;
   height: 100%;
+  min-height: inherit;
   display: block;
 }
 
 .share-panel-canvas canvas {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
   display: block;
 }
 
@@ -407,7 +475,8 @@ textarea::-webkit-strong-password-auto-fill-button {
 
 .share-table-scroll {
   overflow: auto;
-  min-height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   background: var(--gloom-bg);
 }
 
@@ -501,10 +570,15 @@ textarea::-webkit-strong-password-auto-fill-button {
     padding: 10px 12px 20px;
   }
   .share-pane[data-layout="wide"] .share-pane-body {
-    padding: 12px 12px 20px;
-    align-items: flex-start;
+    padding: 0;
   }
-  .share-chart-frame {
-    padding: 4px 0 12px;
+  .share-legend {
+    gap: 2px 10px;
+    padding-inline: 8px;
+  }
+  .share-legend li { gap: 6px; }
+  .share-panels,
+  .share-panel[data-fill="true"] {
+    min-height: 220px;
   }
 }
