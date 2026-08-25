@@ -11,6 +11,7 @@ import { changelogModule } from "./changelog";
 import { connectionsModule } from "./connections";
 import { correlationModule } from "./correlation";
 import { bondSearchModule } from "./bond-search";
+import { cdsModule } from "./cds";
 import { creditConditionsModule } from "./credit-conditions";
 import { economicCalendarModule } from "./econ";
 import { earningsModule } from "./earnings";
@@ -108,7 +109,7 @@ export const macroPlugin = composeBuiltinPlugin({
   name: "Macro",
   version: "1.0.0",
   description:
-    "Economic calendar, yield curve, volatility, credit spreads, Treasury auctions, bond yields, earnings, IPOs, and live financial TV.",
+    "Economic calendar, yield curve, volatility, credit spreads, single-name CDS, Treasury auctions, bond yields, earnings, IPOs, and live financial TV.",
   toggleable: true,
   modules: [
     macroSharedResourcesModule,
@@ -116,6 +117,7 @@ export const macroPlugin = composeBuiltinPlugin({
     yieldCurveModule,
     volatilityModule,
     creditConditionsModule,
+    cdsModule,
     treasuryAuctionsModule,
     bondSearchModule,
     earningsModule,
