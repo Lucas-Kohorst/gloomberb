@@ -385,7 +385,7 @@ function OpenTuiTabs({
         const showClose = !!tab.onClose && (closeMode === "always" || active);
         const attributes = (active ? TextAttributes.BOLD : 0)
           | (
-            (variant === "underline" && !compact && (active || hovered))
+            (variant === "underline" && !compact && active)
               || (variant === "bare" && focusedActive)
               ? TextAttributes.UNDERLINE
               : 0

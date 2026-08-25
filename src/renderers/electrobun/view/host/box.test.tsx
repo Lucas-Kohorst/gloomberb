@@ -138,6 +138,38 @@ test("a tab bar occupies exactly the one row panes reserve for it", async () => 
   await act(async () => root.unmount());
 });
 
+test("inactive tabs do not draw an underline on hover", async () => {
+  const { WebTabs } = await import("./tabs");
+  const container = testWindow.document.createElement("div");
+  testWindow.document.body.appendChild(container);
+  const root = createRoot(container as unknown as HTMLElement);
+  await act(async () => {
+    root.render(
+      <WebTabs
+        tabs={[{ label: "Overview", value: "overview" }, { label: "Chart", value: "chart" }]}
+        activeValue="overview"
+        onSelect={() => {}}
+        palette={{
+          activeUnderline: "#ffffff",
+          inactiveUnderline: "#111111",
+          hoverUnderline: "#888888",
+          hoverBg: "#333333",
+        } as never}
+      />,
+    );
+  });
+  await settle();
+  const buttons = [...container.querySelectorAll('[data-gloom-role="tab-button"]')] as HTMLElement[];
+  const chart = buttons.find((button) => button.textContent?.includes("Chart"));
+  const overview = buttons.find((button) => button.textContent?.includes("Overview"));
+  expect(chart).toBeTruthy();
+  // Inactive tabs used to keep a bg-colored underline at opacity 0, then
+  // reveal it on hover. Do not mount that bar unless the tab is active.
+  expect(chart!.querySelector('[data-gloom-role="tab-underline"]')).toBeNull();
+  expect(overview?.querySelector('[data-gloom-role="tab-underline"]')).not.toBeNull();
+  await act(async () => root.unmount());
+});
+
 test("inline tabs size to content instead of claiming the full row", async () => {
   const { WebTabs } = await import("./tabs");
   const container = testWindow.document.createElement("div");
