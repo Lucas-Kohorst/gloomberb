@@ -25,7 +25,7 @@ import {
 } from "../shared/use-quote-board";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { paneDelayedStatus, paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
@@ -213,7 +213,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       info.push({ id: "error", parts: [{ text: `${failedCount} failed`, tone: "warning" }] });
     }
     if (latestTs > 0) {
-      info.push({ id: "delayed", parts: [{ text: "delayed", tone: "muted" }] });
+      info.push(paneDelayedStatus());
       info.push({
         id: "fresh",
         parts: [{
