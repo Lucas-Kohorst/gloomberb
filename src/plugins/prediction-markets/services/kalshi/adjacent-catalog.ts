@@ -298,6 +298,7 @@ function adjacentCatalogHasMore(raw: unknown, page: number): boolean {
 
 export function mapAdjacentKalshiMarket(
   row: AdjacentKalshiCatalogRow,
+  options?: { catalog?: boolean },
 ): PredictionMarketSummary | null {
   const platform = row.platform?.trim().toLowerCase();
   if (platform && platform !== "kalshi") return null;
@@ -349,9 +350,14 @@ export function mapAdjacentKalshiMarket(
     url: row.link?.trim()
       || row.url?.trim()
       || `https://kalshi.com/markets/${ticker}`,
-    description: row.description?.trim() ?? "",
-    rulesPrimary: row.rules_primary?.trim() || undefined,
-    rulesSecondary: row.rules_secondary?.trim() || undefined,
+    description: options?.catalog
+      ? ""
+      : [row.description, row.rules_primary, row.rules_secondary]
+        .map((value) => value?.trim())
+        .filter((value): value is string => !!value)
+        .join("\n\n"),
+    rulesPrimary: options?.catalog ? undefined : row.rules_primary?.trim() || undefined,
+    rulesSecondary: options?.catalog ? undefined : row.rules_secondary?.trim() || undefined,
     endsAt: row.end_date ?? row.ends_at ?? null,
     updatedAt: row.updated_at ?? null,
     createdAt: row.created_at ?? null,
@@ -381,7 +387,7 @@ export function mapAdjacentKalshiCatalog(
 ): PredictionMarketSummary[] {
   const deduped = new Map<string, PredictionMarketSummary>();
   for (const row of rows) {
-    const mapped = mapAdjacentKalshiMarket(row);
+    const mapped = mapAdjacentKalshiMarket(row, { catalog: true });
     if (!mapped) continue;
     if (
       categoryId !== "all"

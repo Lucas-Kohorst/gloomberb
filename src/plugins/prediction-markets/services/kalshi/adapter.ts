@@ -83,7 +83,7 @@ function kalshiUrl(path: string): string {
   return new URL(`${base}${path}`, origin).toString();
 }
 const KALSHI_EVENT_PAGE_LIMIT = 200;
-const DEFAULT_KALSHI_EVENT_MAX_PAGES = 8;
+const DEFAULT_KALSHI_EVENT_MAX_PAGES = 2;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
 const HOSTED_KALSHI_EVENT_MAX_PAGES = 1;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
@@ -238,6 +238,7 @@ async function loadKalshiVenueCatalog(
   searchQuery: string,
   categoryId: PredictionCategoryId,
   browseTab: PredictionBrowseTab,
+  options?: { firstPageOnly?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const localBrowse = searchQuery
     ? getCachedPredictionResource<PredictionMarketSummary[]>(
@@ -246,24 +247,29 @@ async function loadKalshiVenueCatalog(
       ) ?? []
     : [];
   const hosted = isHostedWebClient();
-  const maxPages = searchQuery
-    ? localBrowse.length > 0
-      ? 1
+  const firstPageOnly = options?.firstPageOnly === true && !searchQuery;
+  const maxPages = firstPageOnly
+    ? 1
+    : searchQuery
+      ? localBrowse.length > 0
+        ? 1
+        : hosted
+          ? HOSTED_KALSHI_EVENT_MAX_PAGES
+          : SEARCH_KALSHI_EVENT_MAX_PAGES
       : hosted
         ? HOSTED_KALSHI_EVENT_MAX_PAGES
-        : SEARCH_KALSHI_EVENT_MAX_PAGES
-    : hosted
-      ? HOSTED_KALSHI_EVENT_MAX_PAGES
-      : DEFAULT_KALSHI_EVENT_MAX_PAGES;
+        : DEFAULT_KALSHI_EVENT_MAX_PAGES;
   const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
       ? fetchKalshiCatalogEvents(maxPages)
       : fetchKalshiCatalogEventsForCategory(categoryId, maxPages),
-    !hosted && categoryId === "all" && !searchQuery
+    !firstPageOnly && !hosted && categoryId === "all" && !searchQuery
       ? fetchKalshiOpenMarkets().catch(() => [] as KalshiMarketRecord[])
       : Promise.resolve([] as KalshiMarketRecord[]),
   ]);
-  rememberKalshiCursor(searchQuery, categoryId, eventPage.nextCursor);
+  if (!firstPageOnly) {
+    rememberKalshiCursor(searchQuery, categoryId, eventPage.nextCursor);
+  }
   const events = eventPage.events;
   const fromEvents = normalizeKalshiCatalog(events, searchQuery, categoryId, browseTab);
   const merged = new Map<string, PredictionMarketSummary>();
@@ -291,10 +297,16 @@ async function loadHostedKalshiCatalog(
   normalizedQuery: string,
   categoryId: PredictionCategoryId,
   browseTab: PredictionBrowseTab,
+  options?: { firstPageOnly?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   resetKalshiProxySource();
   try {
-    const markets = await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
+    const markets = await loadKalshiVenueCatalog(
+      normalizedQuery,
+      categoryId,
+      browseTab,
+      options,
+    );
     const delayed = consumeKalshiProxyAdjacent();
     rememberKalshiCatalogSource("kalshi", delayed ? "delayed" : "live");
     return markets;
@@ -308,7 +320,9 @@ async function loadHostedKalshiCatalog(
       browseTab,
       page: 1,
     });
-    rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    if (!options?.firstPageOnly) {
+      rememberKalshiCursor(normalizedQuery, categoryId, page.nextCursor);
+    }
     return page.markets;
   }
 }
@@ -317,18 +331,32 @@ export async function loadKalshiCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
   browseTab: PredictionBrowseTab = "top",
-  options?: { force?: boolean },
+  options?: { force?: boolean; firstPageOnly?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  const firstPageOnly = options?.firstPageOnly === true && !normalizedQuery;
+  const resourceKey = buildPredictionCatalogResourceKey(
+    "kalshi",
+    categoryId,
+    normalizedQuery,
+    browseTab,
+  );
   return await loadCachedPredictionResource(
     "catalog",
-    buildPredictionCatalogResourceKey("kalshi", categoryId, normalizedQuery, browseTab),
+    resourceKey,
     async () => {
+      let page: PredictionMarketSummary[];
       if (isHostedWebClient()) {
-        return await loadHostedKalshiCatalog(normalizedQuery, categoryId, browseTab);
+        page = await loadHostedKalshiCatalog(normalizedQuery, categoryId, browseTab, {
+          firstPageOnly,
+        });
+      } else {
+        rememberKalshiCatalogSource("kalshi", "live");
+        page = await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab, {
+          firstPageOnly,
+        });
       }
-      rememberKalshiCatalogSource("kalshi", "live");
-      return await loadKalshiVenueCatalog(normalizedQuery, categoryId, browseTab);
+      return page;
     },
     PREDICTION_CACHE_POLICIES.catalog,
     options,
@@ -668,6 +696,17 @@ async function loadKalshiVenueDetail(
         loadKalshiTrades(summary).catch(() => []),
       ]);
       const eventMeta = event?.event;
+      const selectedRecord = (event?.markets ?? []).find(
+        (market) => market.ticker === summary.marketId,
+      );
+      const detailed = selectedRecord
+        ? normalizeKalshiMarket(selectedRecord, {
+            title: eventMeta?.title,
+            category: eventMeta?.category,
+            series_ticker: eventMeta?.series_ticker,
+            sub_title: eventMeta?.sub_title,
+          }, { allowDormant: true })
+        : null;
       const siblings: PredictionSiblingMarket[] = (event?.markets ?? [])
         .map((market) =>
           normalizeKalshiMarket(market, {
@@ -689,6 +728,7 @@ async function loadKalshiVenueDetail(
       return {
         summary: {
           ...summary,
+          ...(detailed ?? {}),
           eventLabel: event?.event?.title ?? summary.eventLabel,
           category: event?.event?.category ?? summary.category,
           seriesTicker: event?.event?.series_ticker ?? summary.seriesTicker,
@@ -700,8 +740,8 @@ async function loadKalshiVenueDetail(
         },
         siblings,
         rules: [
-          summary.rulesPrimary ?? "",
-          summary.rulesSecondary ?? "",
+          detailed?.rulesPrimary ?? summary.rulesPrimary ?? "",
+          detailed?.rulesSecondary ?? summary.rulesSecondary ?? "",
         ].filter((value) => value.trim().length > 0),
         history,
         book,

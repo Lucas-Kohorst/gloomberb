@@ -21,6 +21,7 @@ import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
 import { createPredictionColumns } from "./columns";
 import { getPredictionColumnValue } from "./metrics";
+import { buildPredictionListRowRevision } from "./rows";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import { paneDelayedStatus, paneLiveStatus } from "../builtin/shared/pane-footer";
@@ -294,6 +295,14 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     watchlistedRowKeys,
   ]);
 
+  const getRowRevision = useCallback((row: PredictionListRow) => {
+    return buildPredictionListRowRevision(
+      row,
+      watchlistedRowKeys.has(row.key),
+      relativeTimeBucket,
+    );
+  }, [relativeTimeBucket, watchlistedRowKeys]);
+
   const onCatalogScroll = useTableLoadMore(
     controller.scrollRef,
     controller.catalogHasMore && !controller.catalogLoadingMore && !controller.detailOpen,
@@ -376,6 +385,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
       headerScrollRef={controller.headerScrollRef}
       scrollRef={controller.scrollRef}
       getItemKey={(row) => row.key}
+      getRowRevision={getRowRevision}
       virtualize
       onBodyScrollActivity={onCatalogScroll}
       renderCell={renderCell}

@@ -9,9 +9,10 @@ import {
 } from "../cache";
 import type { PredictionCatalogCacheSetter } from "./catalog";
 import {
-  applyPredictionBestBidAskUpdate,
-  applyPredictionBookUpdate,
-  applyPredictionTradeUpdate,
+  POLYMARKET_LIVE_FLUSH_MS,
+  applyPendingPredictionLiveUpdates,
+  createPendingPredictionLiveUpdates,
+  pendingPredictionLiveUpdatesIsEmpty,
 } from "./live-updates";
 import { formatPredictionLoadError } from "./status";
 import { loadKalshiDetail } from "../services/kalshi/adapter";
@@ -56,6 +57,9 @@ export function usePredictionDetailData({
   const selectedSummaryRef = useRef<PredictionMarketSummary | null>(null);
   const detailLoadDelayRef = useRef(0);
   const currentDetailCacheKeyRef = useRef<string | null>(null);
+  const liveUpdatesRef = useRef(createPendingPredictionLiveUpdates());
+  const liveFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLiveFlushAtRef = useRef(0);
   const selectedSummaryKey = selectedSummary?.key ?? null;
   const selectedSummaryVenue = selectedSummary?.venue ?? null;
   const selectedYesTokenId = selectedSummary?.yesTokenId ?? null;
@@ -189,49 +193,66 @@ export function usePredictionDetailData({
     }
 
     const marketKey = selectedSummaryKey;
-    return subscribePolymarketMarket(
+    liveUpdatesRef.current = createPendingPredictionLiveUpdates();
+    lastLiveFlushAtRef.current = 0;
+    if (liveFlushTimerRef.current != null) {
+      clearTimeout(liveFlushTimerRef.current);
+      liveFlushTimerRef.current = null;
+    }
+
+    const flushLiveUpdates = () => {
+      liveFlushTimerRef.current = null;
+      lastLiveFlushAtRef.current = Date.now();
+      const pending = liveUpdatesRef.current;
+      if (pendingPredictionLiveUpdatesIsEmpty(pending)) return;
+      liveUpdatesRef.current = createPendingPredictionLiveUpdates();
+      setTransportState((current) => (current === "live" ? current : "live"));
+      setDetailCache((current) =>
+        updatePredictionDetailCacheEntries(current, marketKey, (detailEntry) =>
+          applyPendingPredictionLiveUpdates(detailEntry, pending),
+        ),
+      );
+    };
+
+    const scheduleLiveFlush = () => {
+      if (liveFlushTimerRef.current != null) return;
+      const elapsed = lastLiveFlushAtRef.current === 0
+        ? Number.POSITIVE_INFINITY
+        : Date.now() - lastLiveFlushAtRef.current;
+      const delay = elapsed >= POLYMARKET_LIVE_FLUSH_MS
+        ? 0
+        : POLYMARKET_LIVE_FLUSH_MS - elapsed;
+      liveFlushTimerRef.current = setTimeout(flushLiveUpdates, delay);
+    };
+
+    const unsubscribe = subscribePolymarketMarket(
       [selectedYesTokenId, selectedNoTokenId].filter(
         (value): value is string => !!value,
       ),
       {
         onBestBidAsk: (assetId, bestBid, bestAsk, spread) => {
-          setTransportState("live");
-          setDetailCache((current) =>
-            updatePredictionDetailCacheEntries(current, marketKey, (detailEntry) =>
-              applyPredictionBestBidAskUpdate(
-                detailEntry,
-                assetId,
-                bestBid,
-                bestAsk,
-                spread,
-              ),
-            ),
-          );
+          liveUpdatesRef.current.bbos.set(assetId, { bestBid, bestAsk, spread });
+          scheduleLiveFlush();
         },
         onBook: (assetId, bids, asks, lastTradePrice) => {
-          setTransportState("live");
-          setDetailCache((current) =>
-            updatePredictionDetailCacheEntries(current, marketKey, (detailEntry) =>
-              applyPredictionBookUpdate(
-                detailEntry,
-                assetId,
-                bids,
-                asks,
-                lastTradePrice,
-              ),
-            ),
-          );
+          liveUpdatesRef.current.books.set(assetId, { bids, asks, lastTradePrice });
+          scheduleLiveFlush();
         },
         onTrade: (assetId, trade) => {
-          setTransportState("live");
-          setDetailCache((current) =>
-            updatePredictionDetailCacheEntries(current, marketKey, (detailEntry) =>
-              applyPredictionTradeUpdate(detailEntry, assetId, trade),
-            ),
-          );
+          liveUpdatesRef.current.trades.push({ assetId, trade });
+          scheduleLiveFlush();
         },
       },
     );
+
+    return () => {
+      if (liveFlushTimerRef.current != null) {
+        clearTimeout(liveFlushTimerRef.current);
+        liveFlushTimerRef.current = null;
+      }
+      liveUpdatesRef.current = createPendingPredictionLiveUpdates();
+      unsubscribe();
+    };
   }, [
     selectedNoTokenId,
     selectedSummaryKey,

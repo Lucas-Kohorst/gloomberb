@@ -1,6 +1,10 @@
 import { measurePerf } from "../../../../utils/perf-marks";
 import { slugifyName } from "../../../../utils/slugify";
 import {
+  PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+  takeTopByMetric,
+} from "../../cache";
+import {
   matchesPredictionCategory,
   resolvePredictionDisplayCategory,
 } from "../../categories";
@@ -78,6 +82,7 @@ export function normalizePolymarketMarket(
   record: PolymarketMarketRecord,
   options?: {
     keyOverride?: string;
+    catalog?: boolean;
   },
 ): PredictionMarketSummary | null {
   const outcomes = parseStringArray(record.outcomes);
@@ -119,7 +124,9 @@ export function normalizePolymarketMarket(
     url: record.slug
       ? `https://polymarket.com/event/${record.slug}`
       : "https://polymarket.com",
-    description: record.description ?? event?.description ?? "",
+    description: options?.catalog
+      ? ""
+      : record.description ?? event?.description ?? "",
     endsAt: record.endDate ?? event?.endDate ?? null,
     updatedAt:
       record.updatedAt ??
@@ -170,9 +177,15 @@ function flattenPolymarketEvents(
   const deduped = new Map<string, PredictionMarketSummary>();
 
   for (const event of events) {
-    for (const market of event.markets ?? []) {
+    const rawMarkets = takeTopByMetric(
+      event.markets ?? [],
+      PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+      (market) => market.volume24hr ?? 0,
+    );
+    for (const market of rawMarkets) {
       const normalized = normalizePolymarketMarket(
         hydratePolymarketMarket(market, event),
+        { catalog: true },
       );
       if (!normalized) continue;
       if (normalized.status !== "open") continue;
