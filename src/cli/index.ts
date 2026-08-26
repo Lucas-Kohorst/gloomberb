@@ -31,8 +31,10 @@ import {
   installPlugin,
   listPlugins,
   removePlugin,
+  scaffoldPlugin,
   searchPlugins,
   updatePlugins,
+  validatePlugin,
 } from "./commands/plugins";
 import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
@@ -203,6 +205,36 @@ function createCoreCliCommands(
           fail("Usage: gloomberb plugin-search <query>");
         }
         await searchPlugins(query!);
+      },
+    },
+    {
+      name: "new",
+      aliases: ["plugin-new", "scaffold"],
+      description: "Scaffold a new plugin in ~/.gloomberb/plugins/",
+      help: {
+        usage: ["new <name>"],
+      },
+      execute: (args) => {
+        const name = args[0];
+        if (!name) {
+          fail("Usage: gloomberb new <plugin-name>");
+        }
+        scaffoldPlugin(name!);
+      },
+    },
+    {
+      name: "validate",
+      aliases: ["plugin-validate"],
+      description: "Validate a plugin has a valid GloomPlugin export",
+      help: {
+        usage: ["validate <name>"],
+      },
+      execute: async (args) => {
+        const name = args[0];
+        if (!name) {
+          fail("Usage: gloomberb validate <plugin-name>");
+        }
+        await validatePlugin(name!);
       },
     },
     apiCliCommand,

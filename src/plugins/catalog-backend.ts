@@ -17,6 +17,7 @@ import { debugPlugin } from "./builtin/debug";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
+import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { substackPlugin } from "./builtin/substack";
 import { tickerResearchBackendPlugin } from "./builtin/ticker-research-backend-plugin";
 import { trafficPlugin } from "./builtin/traffic";
@@ -52,6 +53,7 @@ const desktopBackendPlugins: GloomPlugin[] = [
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
+  pluginInspectorPlugin,
   debugPlugin,
 ];
 

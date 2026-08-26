@@ -53,6 +53,7 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
   "help",
   "layout-manager",
   "plugin-market",
+  "plugin-inspector",
 ]);
 
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {

@@ -24,6 +24,10 @@ export function getPluginsDir(): string {
   return pluginsDir;
 }
 
+export function setPluginsDirForTests(dir: string | null): void {
+  pluginsDir = dir;
+}
+
 export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
   const rootDir = getPluginsDir();
   if (!existsSync(rootDir)) return [];
