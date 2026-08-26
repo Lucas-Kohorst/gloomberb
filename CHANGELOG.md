@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.13.11 — CFTC on prod Adjacent, firehose ingest, market data overhaul, native-select fix
+
+CFTC filings move off adjacent-dev onto the production Adjacent API. The news firehose flushes query rebuilds on ingest so tweets appear immediately. Yahoo Finance snapshots and the live-quotes engine get a major overhaul. NativeSelect stops painting double text on WebKit. Prediction markets gain a cache layer and live updates.
+
+### Adjacent — CFTC migration
+
+- CFTC filings now use the production Adjacent client (`listFilings`, `getFilingDetail`, `getFilingFilters`) with `search` param, public 90-day window, and auth `/filings` with `org:filings:read`.
+- Pane id stays `cftc-filings` so existing layouts remount.
+- `adjacent-dev` plugin, BYOK service, catalog entries, hosted worker provider, and `ADJACENT_DEV_API_KEY` injection are deleted.
+- Ownership alias `adjacent-dev` → `adjacent` for leftover configs.
+
+### News — firehose, Substack, RSS, X
+
+- `NewsService.ingest` flushes scheduled query rebuilds immediately so pane tweets appear without waiting for the next refresh.
+- X pane keeps a global poll chip only. Live-poll UI, extra poll field, and leftover settings removed.
+- Substack home loads ingest as `substack-news` on pane load.
+- RSS `staleMs` follows `refreshIntervalMinutes` so the cache respects the chip interval.
+- Breaking notifications, firehose, industry pane, RSS pane, preset pane, table, and persisted articles updated.
+- Article ticker extraction improved.
+
+### Market data — Yahoo Finance, live quotes
+
+- Market-data coordinator (entries, events, quotes, subscriptions) overhauled.
+- Yahoo Finance snapshot fetching, options pipeline, request helpers, mappers, and types improved. New snapshot test suite.
+- Live-quotes engine improvements with 207 new test lines.
+- Inline-ticker resolution and quote-streaming hooks updated.
+- New `use-chart-resolution` hook with tests.
+- US listings client improvements and test updates.
+
+### Data table and pane chrome
+
+- NativeSelect switches from `appearance:auto` + `WebkitAppearance:menulist` to `appearance:none` with a custom SVG chevron. Fixes the double-text overlap where the native menulist painted its own text layer on top of the custom-styled text (e.g. "Hot Ph" under "White Ph" in theme selectors).
+- OpenTUI data table gains row memoization (`row-memo.ts`) to avoid re-rendering unchanged rows.
+- Desktop data table index test added.
+- Pane content and footer model improvements with test coverage.
+- Recently-arrived tracking and CSV export test updates.
+
+### Prediction markets
+
+- New prediction-markets cache module.
+- Live-updates controller with test coverage.
+- Kalshi adapter and normalizer improvements, adjacent-catalog updates.
+- Polymarket adapter and normalizer improvements.
+- Catalog and detail controller logic updated. Plugin test coverage expanded.
+
+### Electrobun desktop and plugin registry
+
+- RPC codec improvements with tests. External plugin loading. Renderer window error handling.
+- Backend RPC, app services, core capabilities, and desktop initialization updated.
+- Plugin registry context, contributions, index, and reload tests updated.
+- New `normalize-pane` runtime module with tests.
+- New desktop-runtime compile/rewrite/types modules.
+- Ticker detail gains a price-series module with tests.
+
+### Misc plugin updates
+
+- Alerts, buildout, cds, chart-composer, congress-trades, connections, correlation, earnings-transcripts, fear-greed, futures, insider, kelly-sizer, market-heatmap, market-movers, notes, options, owid, polls, portfolio-list, research, satellite, scanner, sec, sectors, shared, thirteenf, ticker-detail, traffic, tv, volatility, weather, world-indices, yield-curve, and IBKR trade.
+
+### What to test
+
+- CFTC filings pane opens with prod data; `cftc-filings` layout remounts.
+- Firehose tweets appear immediately after ingest (no waiting for next refresh).
+- X pane shows only the global poll chip; no live-poll UI.
+- Substack home ingests on load; RSS cache respects the chip interval.
+- Theme selector in account Display tab shows one name, not overlapping text.
+- Prediction markets list loads with cache; live updates refresh prices.
+- OpenTUI data table scrolls smoothly with row memoization.
+
 ## v0.13.10 — Connections, pane chrome, COMM→FUT, 5m polls
 
 One Yahoo Connection row, shared live/delayed footer chips, commodities on the futures board, and slower default PM/Twitter polls.
