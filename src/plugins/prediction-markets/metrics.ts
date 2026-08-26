@@ -225,6 +225,10 @@ export function filterPredictionMarkets(
   searchQuery: string,
   watchlist: Set<string>,
 ): PredictionListRow[] {
+  const hasSearch = searchQuery.trim().length > 0;
+  if (venueScope === "all" && categoryId === "all" && !hasSearch) {
+    return markets;
+  }
   return markets.filter((market) => {
     if (venueScope !== "all" && market.venue !== venueScope) return false;
     if (!matchesPredictionCategory(market, categoryId)) return false;

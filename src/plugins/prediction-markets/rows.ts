@@ -98,6 +98,27 @@ export function resolvePredictionListActivation(
   return row.kind === "group" ? "toggle-group" : "open-detail";
 }
 
+export function buildPredictionListRowRevision(
+  row: PredictionListRow,
+  watchlisted = false,
+  revisionScope: string | number = "",
+): string {
+  const group = row.kind === "group";
+  return [
+    revisionScope,
+    row.key,
+    row.yesPrice ?? "",
+    row.focusYesPrice ?? "",
+    row.volume24h ?? "",
+    row.lastTradePrice ?? "",
+    row.updatedAt ?? "",
+    group && row.expanded ? 1 : 0,
+    group ? row.marketCount : "",
+    group ? row.title : "",
+    watchlisted ? 1 : 0,
+  ].join(":");
+}
+
 export function togglePredictionGroupExpanded(
   expandedKeys: ReadonlySet<string>,
   groupKey: string,

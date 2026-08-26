@@ -1,4 +1,6 @@
 import type { PluginPersistence } from "../../../types/plugin";
+import { capPredictionCatalogByEvent } from "../cache";
+import type { PredictionMarketSummary } from "../types";
 import {
   ADJACENT_DATA_ALIAS_ID,
   KALSHI_PROXY_PATH,
@@ -32,7 +34,7 @@ const PREDICTION_FETCH = createThrottledFetch({
 });
 
 export const PREDICTION_CACHE_POLICIES = {
-  catalog: { staleMs: 30_000, expireMs: 10 * 60_000 },
+  catalog: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   detail: { staleMs: 10_000, expireMs: 5 * 60_000 },
   book: { staleMs: 5_000, expireMs: 30_000 },
   trades: { staleMs: 5_000, expireMs: 2 * 60_000 },
@@ -194,7 +196,10 @@ function setCachedPredictionResource<T>(
   cachePolicy: { staleMs: number; expireMs: number },
   sourceKey = DEFAULT_SOURCE_KEY,
 ): void {
-  predictionMarketsPersistence?.setResource(kind, key, value, {
+  const persisted = kind === "catalog" && Array.isArray(value)
+    ? capPredictionCatalogByEvent(value as PredictionMarketSummary[])
+    : value;
+  predictionMarketsPersistence?.setResource(kind, key, persisted, {
     sourceKey,
     cachePolicy,
   });

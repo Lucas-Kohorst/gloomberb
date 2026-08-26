@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { measurePerf } from "../../../utils/perf-marks";
+import { PREDICTION_CATALOG_PAINT_HEAD } from "../cache";
 import { usePredictionCatalogData } from "./catalog";
 import { usePredictionDetailData } from "./detail";
 import {
@@ -103,7 +104,10 @@ export function usePredictionMarketsDataState({
           ? sortPreference
           : getDefaultPredictionSort(browseTab),
       );
-      return flattenPredictionListRows(sorted, expandedGroupKeys);
+      const painted = sorted.length > PREDICTION_CATALOG_PAINT_HEAD
+        ? sorted.slice(0, PREDICTION_CATALOG_PAINT_HEAD)
+        : sorted;
+      return flattenPredictionListRows(painted, expandedGroupKeys);
     }, {
       browseTab,
       categoryId,

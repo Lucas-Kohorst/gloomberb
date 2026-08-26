@@ -28,6 +28,7 @@ export { loadPolymarketDetail } from "./detail";
 
 const POLYMARKET_CATALOG_OFFSETS = [0, 200, 400];
 const POLYMARKET_CATEGORY_OFFSETS = [0, 200];
+const POLYMARKET_POLL_OFFSETS = [0];
 const POLYMARKET_PAGE_SIZE = 200;
 
 export function nextPolymarketCatalogOffset(
@@ -105,13 +106,20 @@ export async function loadPolymarketCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
   browseTab: PredictionBrowseTab = "top",
-  options?: { force?: boolean },
+  options?: { force?: boolean; firstPageOnly?: boolean },
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const sortOrder = browseTabToPolymarketSort(browseTab);
+  const firstPageOnly = options?.firstPageOnly === true && normalizedQuery.length === 0;
+  const resourceKey = buildPredictionCatalogResourceKey(
+    "polymarket",
+    categoryId,
+    normalizedQuery,
+    browseTab,
+  );
   return await loadCachedPredictionResource(
     "catalog",
-    buildPredictionCatalogResourceKey("polymarket", categoryId, normalizedQuery, browseTab),
+    resourceKey,
     // Gamma directly — Adjacent was an extra multi-page hop that only made the
     // browse pane wait before we already had a working venue catalog.
     async () => {
@@ -127,12 +135,14 @@ export async function loadPolymarketCatalog(
         );
       }
 
+      const pollOffsets = firstPageOnly ? POLYMARKET_POLL_OFFSETS : null;
+
       if (categoryId !== "all") {
         const tagSlugs = getPolymarketCategoryTagSlugs(categoryId);
         const categoryPages = await Promise.all(
           tagSlugs.map((tagSlug) =>
             loadPolymarketCatalogPages(
-              POLYMARKET_CATEGORY_OFFSETS,
+              pollOffsets ?? POLYMARKET_CATEGORY_OFFSETS,
               tagSlug,
               sortOrder,
             ).catch(() => []),
@@ -147,7 +157,7 @@ export async function loadPolymarketCatalog(
       }
 
       const pages = await loadPolymarketCatalogPages(
-        POLYMARKET_CATALOG_OFFSETS,
+        pollOffsets ?? POLYMARKET_CATALOG_OFFSETS,
         undefined,
         sortOrder,
       );

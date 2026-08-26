@@ -1,4 +1,8 @@
 import { measurePerf } from "../../../../utils/perf-marks";
+import {
+  PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+  takeTopByMetric,
+} from "../../cache";
 import { matchesPredictionCategory } from "../../categories";
 import { matchesPredictionSearchHaystack } from "../../search";
 import type {
@@ -88,7 +92,7 @@ export function normalizeKalshiMarket(
     series_ticker?: string;
     sub_title?: string;
   },
-  options?: { allowDormant?: boolean },
+  options?: { allowDormant?: boolean; catalog?: boolean },
 ): PredictionMarketSummary | null {
   if (record.market_type && record.market_type !== "binary") return null;
   if (!options?.allowDormant && isDormantKalshiMarket(record)) return null;
@@ -131,9 +135,13 @@ export function normalizeKalshiMarket(
     tags: category ? [category] : [],
     status: record.status === "active" ? "open" : (record.status ?? "unknown"),
     url: `https://kalshi.com/markets/${record.ticker}`,
-    description: [record.rules_primary, record.rules_secondary]
-      .filter(Boolean)
-      .join("\n\n"),
+    description: options?.catalog
+      ? ""
+      : [record.rules_primary, record.rules_secondary]
+        .filter(Boolean)
+        .join("\n\n"),
+    rulesPrimary: options?.catalog ? undefined : record.rules_primary,
+    rulesSecondary: options?.catalog ? undefined : record.rules_secondary,
     endsAt: record.close_time ?? null,
     updatedAt:
       record.updated_time ?? record.open_time ?? record.created_time ?? null,
@@ -154,8 +162,6 @@ export function normalizeKalshiMarket(
     openInterestUnit: "usd",
     liquidity: parseFloatSafe(record.liquidity_dollars),
     liquidityUnit: "usd",
-    rulesPrimary: record.rules_primary,
-    rulesSecondary: record.rules_secondary,
   };
 }
 
@@ -187,16 +193,23 @@ function flattenKalshiEvents(
   const deduped = new Map<string, PredictionMarketSummary>();
 
   for (const event of events) {
-    const eventText = [event.title, event.category ?? "", event.sub_title ?? ""]
-      .join(" ")
-      .toLowerCase();
-    for (const market of event.markets ?? []) {
+    const eventText = normalizedQuery
+      ? [event.title, event.category ?? "", event.sub_title ?? ""]
+        .join(" ")
+        .toLowerCase()
+      : "";
+    const rawMarkets = takeTopByMetric(
+      event.markets ?? [],
+      PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+      (market) => parseFloatSafe(market.volume_24h_fp) ?? 0,
+    );
+    for (const market of rawMarkets) {
       const normalized = normalizeKalshiMarket(market, {
         title: event.title,
         category: event.category,
         series_ticker: event.series_ticker,
         sub_title: event.sub_title,
-      });
+      }, { catalog: true });
       if (!normalized) continue;
       if (
         categoryId !== "all" &&

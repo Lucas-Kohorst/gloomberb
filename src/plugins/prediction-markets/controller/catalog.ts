@@ -1,9 +1,11 @@
 import { runAfterStartupBackground } from "../../../utils/startup-interaction";
-import { shouldYieldToUi } from "../../../utils/ui-yield";
+import { shouldYieldToUi, whenUiQuiet } from "../../../utils/ui-yield";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   buildPredictionCatalogCacheKey,
   buildPredictionCatalogResourceKey,
+  capPredictionCatalogByEvent,
+  mergePredictionCatalogPage,
   samePredictionCatalogSummaries,
   updatePredictionErrorState,
   updatePredictionPendingCounts,
@@ -40,11 +42,14 @@ function readCatalogSlice(
   cacheKey: string,
   resourceKey: string,
 ): PredictionMarketSummary[] {
-  return (
-    catalogCache[cacheKey] ??
-    getCachedPredictionResource<PredictionMarketSummary[]>("catalog", resourceKey) ??
-    []
+  const fromState = catalogCache[cacheKey];
+  if (fromState) return fromState;
+  const persisted = getCachedPredictionResource<PredictionMarketSummary[]>(
+    "catalog",
+    resourceKey,
   );
+  if (!persisted || persisted.length === 0) return [];
+  return capPredictionCatalogByEvent(persisted);
 }
 
 export function usePredictionCatalogData({
@@ -259,7 +264,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean; force?: boolean },
+      options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -271,20 +276,24 @@ export function usePredictionCatalogData({
       }
       try {
         const next = await loadPolymarketCatalog(search, category, browseTab, options);
+        if (shouldYieldToUi()) await whenUiQuiet();
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
-          if (samePredictionCatalogSummaries(previous, next)) {
+          const slice = options?.firstPageOnly
+            ? mergePredictionCatalogPage(previous, next)
+            : next;
+          if (samePredictionCatalogSummaries(previous, slice)) {
             return current;
           }
           return {
             ...current,
-            [cacheKey]: next,
+            [cacheKey]: slice,
           };
         });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        if (!search.trim()) {
+        if (!search.trim() && !options?.firstPageOnly) {
           setPolymarketNextOffset(nextPolymarketCatalogOffset(category, search));
         }
         setCatalogLastRefreshAt(Date.now());
@@ -312,7 +321,7 @@ export function usePredictionCatalogData({
       cacheKey: string,
       search: string,
       category: PredictionCategoryId,
-      options?: { showPending?: boolean; force?: boolean },
+      options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean },
     ) => {
       const showPending =
         options?.showPending ??
@@ -324,21 +333,25 @@ export function usePredictionCatalogData({
       }
       try {
         const next = await loadKalshiCatalog(search, category, browseTab, options);
+        if (shouldYieldToUi()) await whenUiQuiet();
         setKalshiFeed(getKalshiCatalogFeed());
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
-          if (samePredictionCatalogSummaries(previous, next)) {
+          const slice = options?.firstPageOnly
+            ? mergePredictionCatalogPage(previous, next)
+            : next;
+          if (samePredictionCatalogSummaries(previous, slice)) {
             return current;
           }
           return {
             ...current,
-            [cacheKey]: next,
+            [cacheKey]: slice,
           };
         });
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        if (!search.trim()) {
+        if (!search.trim() && !options?.firstPageOnly) {
           setKalshiNextCursor(kalshiCatalogCursor(search, category));
         }
         setCatalogLastRefreshAt(Date.now());
@@ -374,14 +387,31 @@ export function usePredictionCatalogData({
 
   useEffect(() => {
     if (!includePolymarket) return;
+    let cancelled = false;
+    let waiting = false;
     const cancelStartup = runAfterStartupBackground(() => {
-      void loadPolymarket(polymarketBrowseKey, "", categoryId);
+      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
+        firstPageOnly: true,
+      });
     });
-    const intervalId = setInterval(() => {
-      if (shouldYieldToUi()) return;
-      void loadPolymarket(polymarketBrowseKey, "", categoryId);
-    }, pollIntervalMs);
+    const tick = () => {
+      if (cancelled) return;
+      if (shouldYieldToUi()) {
+        if (waiting) return;
+        waiting = true;
+        void whenUiQuiet().then(() => {
+          waiting = false;
+          tick();
+        });
+        return;
+      }
+      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
+        firstPageOnly: true,
+      });
+    };
+    const intervalId = setInterval(tick, pollIntervalMs);
     return () => {
+      cancelled = true;
       cancelStartup();
       clearInterval(intervalId);
     };
@@ -389,14 +419,31 @@ export function usePredictionCatalogData({
 
   useEffect(() => {
     if (!includeKalshi) return;
+    let cancelled = false;
+    let waiting = false;
     const cancelStartup = runAfterStartupBackground(() => {
-      void loadKalshi(kalshiBrowseKey, "", categoryId);
+      void loadKalshi(kalshiBrowseKey, "", categoryId, {
+        firstPageOnly: true,
+      });
     });
-    const intervalId = setInterval(() => {
-      if (shouldYieldToUi()) return;
-      void loadKalshi(kalshiBrowseKey, "", categoryId);
-    }, pollIntervalMs);
+    const tick = () => {
+      if (cancelled) return;
+      if (shouldYieldToUi()) {
+        if (waiting) return;
+        waiting = true;
+        void whenUiQuiet().then(() => {
+          waiting = false;
+          tick();
+        });
+        return;
+      }
+      void loadKalshi(kalshiBrowseKey, "", categoryId, {
+        firstPageOnly: true,
+      });
+    };
+    const intervalId = setInterval(tick, pollIntervalMs);
     return () => {
+      cancelled = true;
       cancelStartup();
       clearInterval(intervalId);
     };
@@ -435,6 +482,7 @@ export function usePredictionCatalogData({
       void loadPolymarket(polymarketBrowseKey, "", categoryId, {
         showPending: true,
         force: true,
+        firstPageOnly: true,
       });
       if (polymarketSearchKey && normalizedSearchQuery) {
         void loadPolymarket(
@@ -449,6 +497,7 @@ export function usePredictionCatalogData({
       void loadKalshi(kalshiBrowseKey, "", categoryId, {
         showPending: true,
         force: true,
+        firstPageOnly: true,
       });
       if (kalshiSearchKey && normalizedSearchQuery) {
         void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {

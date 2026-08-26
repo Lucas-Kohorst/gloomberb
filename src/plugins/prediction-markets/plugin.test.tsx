@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import {
+  PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+  capPredictionCatalogByEvent,
+  mergePredictionCatalogPage,
+  samePredictionCatalogSummaries,
+  slimPredictionCatalogSummary,
+} from "./cache";
+import {
   cleanupPredictionTest,
   installPredictionMarketMocks,
   MemoryPersistence,
@@ -13,6 +20,7 @@ import {
 } from "./navigation";
 import { resolvePredictionKeyboardCommand } from "./keyboard";
 import {
+  buildPredictionListRowRevision,
   buildPredictionListRows,
   flattenPredictionListRows,
   resolvePredictionListActivation,
@@ -271,6 +279,96 @@ describe("prediction markets plugin registration and services", () => {
     );
   });
 
+  test("row revisions stay stable until quote, volume, or group shape changes", () => {
+    const [row] = buildPredictionListRows([
+      normalizeKalshiMarket({
+        ticker: "KAL-1",
+        title: "Will the Fed cut rates?",
+        yes_sub_title: "Yes",
+        event_ticker: "FED-1",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.48",
+        volume_24h_fp: "15000",
+      } as any)!,
+    ]);
+    const market = row!;
+    const base = buildPredictionListRowRevision(market);
+    expect(buildPredictionListRowRevision({
+      ...market,
+      status: "closed",
+      description: "other",
+    })).toBe(base);
+    expect(buildPredictionListRowRevision({
+      ...market,
+      yesPrice: 0.61,
+      focusYesPrice: 0.61,
+    })).not.toBe(base);
+    expect(buildPredictionListRowRevision({
+      ...market,
+      volume24h: 20_000,
+    })).not.toBe(base);
+    expect(buildPredictionListRowRevision({
+      ...market,
+      lastTradePrice: 0.5,
+    })).not.toBe(base);
+    expect(buildPredictionListRowRevision({
+      ...market,
+      updatedAt: "2026-04-19T12:00:00Z",
+    })).not.toBe(base);
+    expect(buildPredictionListRowRevision(market, true)).not.toBe(base);
+    expect(buildPredictionListRowRevision(market, false, 1)).not.toBe(base);
+
+    const groups = buildPredictionListRows([
+      normalizeKalshiMarket(
+        {
+          ticker: "KXFED-27APR-T4.25",
+          title: "Will the upper bound be above 4.25%?",
+          yes_sub_title: "Above 4.25%",
+          event_ticker: "KXFED-27APR",
+          status: "open",
+          market_type: "binary",
+          last_price_dollars: "0.48",
+          volume_24h_fp: "15000",
+        } as any,
+        { title: "Fed funds" },
+      )!,
+      normalizeKalshiMarket(
+        {
+          ticker: "KXFED-27APR-T4.50",
+          title: "Will the upper bound be above 4.50%?",
+          yes_sub_title: "Above 4.50%",
+          event_ticker: "KXFED-27APR",
+          status: "open",
+          market_type: "binary",
+          last_price_dollars: "0.31",
+          volume_24h_fp: "12000",
+        } as any,
+        { title: "Fed funds" },
+      )!,
+    ]);
+    const group = groups[0]!;
+    const collapsed = flattenPredictionListRows(groups, new Set())[0]!;
+    const expandedHeader = flattenPredictionListRows(
+      groups,
+      togglePredictionGroupExpanded(new Set(), group.key),
+    )[0]!;
+    expect(buildPredictionListRowRevision(expandedHeader)).not.toBe(
+      buildPredictionListRowRevision(collapsed),
+    );
+    expect(group.kind).toBe("group");
+    expect(buildPredictionListRowRevision({
+      ...group,
+      title: "Other event",
+    })).not.toBe(buildPredictionListRowRevision(group));
+    if (group.kind === "group") {
+      expect(buildPredictionListRowRevision({
+        ...group,
+        marketCount: group.marketCount + 1,
+      })).not.toBe(buildPredictionListRowRevision(group));
+    }
+  });
+
   test("hides overflow prediction columns as the pane narrows", () => {
     expect(createPredictionColumns(64).map((column) => column.id)).toEqual([
       "watch",
@@ -347,6 +445,8 @@ describe("prediction markets plugin registration and services", () => {
         (row) => row.marketId,
       ),
     ).toEqual(["KAL-BTC"]);
+    expect(filterPredictionMarkets(rows, "all", "all", "", new Set())).toBe(rows);
+    expect(filterPredictionMarkets(rows, "all", "all", "   ", new Set())).toBe(rows);
   });
 
   test("does not keep unrelated grouped events for a multi-word search", () => {
@@ -679,6 +779,225 @@ describe("prediction markets plugin registration and services", () => {
     expect(markets).toHaveLength(1);
     expect(markets[0]?.marketId).toBe("pm-stable");
     expect(resetFetchCount).toBe(3);
+  });
+
+  test("poll catalog merge updates page 0 without dropping extra rows", () => {
+    const pageZero = normalizePolymarketMarket({
+      id: "pm-a",
+      question: "Page zero",
+      conditionId: "cond-a",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.40","0.60"]',
+      clobTokenIds: '["yes-a","no-a"]',
+      volume24hr: 1000,
+      active: true,
+      closed: false,
+    })!;
+    const extra = normalizePolymarketMarket({
+      id: "pm-extra",
+      question: "Load more row",
+      conditionId: "cond-extra",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.22","0.78"]',
+      clobTokenIds: '["yes-extra","no-extra"]',
+      volume24hr: 500,
+      active: true,
+      closed: false,
+    })!;
+    const refreshed = normalizePolymarketMarket({
+      id: "pm-a",
+      question: "Page zero",
+      conditionId: "cond-a",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.41","0.59"]',
+      clobTokenIds: '["yes-a","no-a"]',
+      volume24hr: 1100,
+      active: true,
+      closed: false,
+    })!;
+
+    const merged = mergePredictionCatalogPage([pageZero, extra], [refreshed]);
+    expect(merged.map((market) => market.marketId)).toEqual(["pm-a", "pm-extra"]);
+    expect(merged[0]?.yesPrice).toBe(0.41);
+    expect(
+      samePredictionCatalogSummaries(
+        merged,
+        mergePredictionCatalogPage(merged, [refreshed]),
+      ),
+    ).toBe(true);
+  });
+
+  test("slim catalog summaries drop rules text and cap nested event markets", () => {
+    const fat = {
+      ...normalizePolymarketMarket({
+        id: "pm-cap",
+        question: "Cap nested markets",
+        conditionId: "cond-cap",
+        outcomes: '["Yes","No"]',
+        outcomePrices: '["0.40","0.60"]',
+        clobTokenIds: '["yes-cap","no-cap"]',
+        volume24hr: 1000,
+        active: true,
+        closed: false,
+        events: [{ id: "e1", title: "Event" }],
+      })!,
+      description: "long settlement rules",
+      rulesPrimary: "rule a",
+      rulesSecondary: "rule b",
+    };
+    const slim = slimPredictionCatalogSummary(fat);
+    expect(slim.description).toBe("");
+    expect(slim.rulesPrimary).toBeUndefined();
+    expect(slim.rulesSecondary).toBeUndefined();
+
+    const nested = Array.from({ length: PREDICTION_CATALOG_MAX_EVENT_MARKETS + 8 }, (_, index) => ({
+      ...fat,
+      key: `polymarket:e1-${index}`,
+      marketId: `m-${index}`,
+      eventId: "e1",
+      volume24h: index,
+    }));
+    const capped = capPredictionCatalogByEvent(nested);
+    expect(capped).toHaveLength(PREDICTION_CATALOG_MAX_EVENT_MARKETS);
+    expect(capped.every((market) => market.description === "")).toBe(true);
+    expect(Math.min(...capped.map((market) => market.volume24h ?? 0))).toBe(8);
+  });
+
+  test("interval poll fetches only Polymarket offset 0 without rewriting cached extras into the page", async () => {
+    const persistence = new MemoryPersistence();
+    attachPredictionMarketsPersistence(persistence);
+    const extra = normalizePolymarketMarket({
+      id: "pm-extra",
+      question: "Load more row",
+      conditionId: "cond-extra",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.22","0.78"]',
+      clobTokenIds: '["yes-extra","no-extra"]',
+      volume24hr: 500,
+      active: true,
+      closed: false,
+    })!;
+    const staleFront = normalizePolymarketMarket({
+      id: "pm-front",
+      question: "Front row",
+      conditionId: "cond-front",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.40","0.60"]',
+      clobTokenIds: '["yes-front","no-front"]',
+      volume24hr: 1000,
+      active: true,
+      closed: false,
+    })!;
+    persistence.setResource("catalog", "polymarket:all:all", [staleFront, extra], {
+      cachePolicy: PREDICTION_CACHE_POLICIES.catalog,
+      sourceKey: "remote",
+    });
+
+    const fetchUrls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      fetchUrls.push(url);
+      if (url.includes("gamma-api.polymarket.com/events?")) {
+        return new Response(
+          JSON.stringify([
+            {
+              id: "event-front",
+              title: "Front row",
+              tags: [{ label: "Macro", slug: "economy" }],
+              markets: [
+                {
+                  id: "pm-front",
+                  question: "Front row",
+                  conditionId: "cond-front",
+                  outcomes: '["Yes","No"]',
+                  outcomePrices: '["0.55","0.45"]',
+                  clobTokenIds: '["yes-front","no-front"]',
+                  volume24hr: 1500,
+                  active: true,
+                  closed: false,
+                },
+              ],
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const markets = await loadPolymarketCatalog("", "all", "top", {
+      firstPageOnly: true,
+      force: true,
+    });
+
+    expect(fetchUrls.some((url) => url.includes("offset=0"))).toBe(true);
+    expect(fetchUrls.some((url) => url.includes("offset=200"))).toBe(false);
+    expect(fetchUrls.some((url) => url.includes("offset=400"))).toBe(false);
+    expect(markets.map((market) => market.marketId)).toEqual(["pm-front"]);
+    expect(markets[0]?.yesPrice).toBe(0.55);
+    expect(markets[0]?.description).toBe("");
+    const persisted = persistence.getResource<typeof markets>("catalog", "polymarket:all:all", {
+      sourceKey: "remote",
+    });
+    expect(persisted?.value.map((market) => market.marketId)).toEqual(["pm-front"]);
+    expect(
+      mergePredictionCatalogPage([staleFront, extra], markets).map((market) => market.marketId),
+    ).toEqual(["pm-front", "pm-extra"]);
+  });
+
+  test("interval poll fetches one Kalshi event page and skips open-market paging", async () => {
+    attachPredictionMarketsPersistence(new MemoryPersistence());
+    let eventPages = 0;
+    let marketPages = 0;
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      if (url.includes("/trade-api/v2/events?")) {
+        eventPages += 1;
+        return new Response(
+          JSON.stringify({
+            events: [
+              {
+                title: "Fed cut",
+                category: "Economics",
+                event_ticker: "FED-1",
+                series_ticker: "FED",
+                markets: [
+                  {
+                    ticker: "KAL-FED",
+                    title: "Will the Fed cut rates?",
+                    yes_sub_title: "Yes",
+                    event_ticker: "FED-1",
+                    status: "open",
+                    market_type: "binary",
+                    last_price_dollars: "0.48",
+                    volume_24h_fp: "15000",
+                  },
+                ],
+              },
+            ],
+            cursor: `page-${eventPages}`,
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/trade-api/v2/markets?")) {
+        marketPages += 1;
+        return new Response(
+          JSON.stringify({ markets: [], cursor: `m-${marketPages}` }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const markets = await loadKalshiCatalog("", "all", "top", {
+      firstPageOnly: true,
+      force: true,
+    });
+
+    expect(eventPages).toBe(1);
+    expect(marketPages).toBe(0);
+    expect(markets.some((market) => market.marketId === "KAL-FED")).toBe(true);
   });
 
   test("uses remote catalog endpoints for search and category changes", async () => {
