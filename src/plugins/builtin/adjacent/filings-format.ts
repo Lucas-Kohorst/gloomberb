@@ -1,4 +1,10 @@
-import { CFTC_FEED_LABELS, type CftcFiling, type CftcFilingDetail } from "./types";
+import {
+  CFTC_FEED_LABELS,
+  CFTC_KIND_LABELS,
+  type CftcFiling,
+  type CftcFilingDetail,
+  type CftcFilingKind,
+} from "./types";
 
 export function formatDate(date: Date | undefined): string | undefined {
   if (!date || Number.isNaN(date.getTime()) || date.getTime() === 0) return undefined;
@@ -7,6 +13,33 @@ export function formatDate(date: Date | undefined): string | undefined {
 
 export function feedLabel(filing: CftcFiling): string {
   return CFTC_FEED_LABELS[filing.feed] ?? filing.feed;
+}
+
+export function filingKind(filing: CftcFiling): CftcFilingKind {
+  switch (filing.feed) {
+    case "dcm_products":
+      return "new-contract";
+    case "dco":
+      return "registration";
+    case "ptc_dcm_rules":
+    case "dco_rules":
+      return "amendment";
+  }
+}
+
+export function filingKindLabel(filing: CftcFiling): string {
+  return CFTC_KIND_LABELS[filingKind(filing)];
+}
+
+/**
+ * List rows only show time, org, and title. Kind and a non-empty status have
+ * to live in the title or two filings for the same product look identical.
+ */
+export function filingListTitle(filing: CftcFiling): string {
+  const kind = filingKindLabel(filing);
+  const status = filing.status.trim();
+  const prefix = status ? `${kind} · ${status}` : kind;
+  return `${prefix} | ${filing.title}`;
 }
 
 /**
@@ -23,6 +56,7 @@ export function filingClassification(filing: CftcFiling): string | undefined {
 
 export function buildDetailMeta(filing: CftcFiling): string[] {
   const meta: string[] = [];
+  meta.push(filingKindLabel(filing));
   if (filing.status) meta.push(filing.status);
   const statusDate = formatDate(filing.statusDate);
   if (statusDate) meta.push(statusDate);
@@ -54,7 +88,6 @@ export function stripMarkdownHeader(markdown: string, title: string): string {
   while (index < lines.length && lines[index]!.trimStart().startsWith("- **")) index += 1;
   skipBlank();
 
-  // On DCM product rows the description is the title verbatim.
   if (index < lines.length && /^##\s+description$/i.test(lines[index]!.trim())) {
     let lookahead = index + 1;
     while (lookahead < lines.length && lines[lookahead]!.trim() === "") lookahead += 1;

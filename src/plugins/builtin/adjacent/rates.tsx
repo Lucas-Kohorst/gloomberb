@@ -6,11 +6,13 @@ import {
   DataTableStackView,
   EmptyState,
   Spinner,
+  nextStackSortPreference,
   usePaneFooter,
   useUpdatedAgo,
   type DataTableColumn,
   type DataTableCell,
   type DataTableKeyEvent,
+  type StackSortPreference,
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -22,23 +24,31 @@ import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import type { AdjacentClient } from "./client";
 import type { AdjacentRateRow, AdjacentRateSource } from "./types";
-import { normalizeAdjacentRate } from "./normalize";
+import {
+  adjacentRateSortValue,
+  normalizeAdjacentRate,
+  type AdjacentRateSortColumnId,
+} from "./normalize";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface RateColumn extends DataTableColumn {
-  id: "name" | "value" | "spread";
+  id: AdjacentRateSortColumnId;
 }
 
 export function createRateColumns(width: number): RateColumn[] {
   const valueWidth = 10;
+  const chg1dWidth = 7;
   const spreadWidth = 8;
-  const showSpread = width >= 32;
-  const tableChromeWidth = (showSpread ? 3 : 2) + 2;
-  const nameWidth = Math.max(1, width - valueWidth - (showSpread ? spreadWidth : 0) - tableChromeWidth);
+  const showChg1d = width >= 38;
+  const showSpread = width >= 48;
+  const extraWidth = (showChg1d ? chg1dWidth : 0) + (showSpread ? spreadWidth : 0);
+  const tableChromeWidth = 2 + (showChg1d ? 1 : 0) + (showSpread ? 1 : 0) + 2;
+  const nameWidth = Math.max(1, width - valueWidth - extraWidth - tableChromeWidth);
   return [
     { id: "name", label: "RATE", width: nameWidth, align: "left" },
     { id: "value", label: "VALUE", width: valueWidth, align: "right" },
+    ...(showChg1d ? [{ id: "chg1d" as const, label: "1D", width: chg1dWidth, align: "right" as const }] : []),
     ...(showSpread ? [{ id: "spread" as const, label: "SPREAD", width: spreadWidth, align: "right" as const }] : []),
   ];
 }
@@ -55,6 +65,9 @@ function renderRateCell(
     case "value":
       if (row.value == null) return { text: "—", color: sel ?? colors.textDim };
       return { text: row.value.toFixed(2), color: sel };
+    case "chg1d":
+      if (row.change1d == null) return { text: "—", color: sel ?? colors.textDim };
+      return { text: formatPercentRaw(row.change1d), color: sel ?? priceColor(row.change1d) };
     case "spread":
       if (row.spread == null) return { text: "—", color: sel ?? colors.textDim };
       return { text: formatPercentRaw(row.spread), color: sel ?? priceColor(row.spread) };
@@ -127,6 +140,12 @@ function RateDetail({
               {rate.value?.toFixed(2) ?? "—"}
             </Text>
           </Box>
+          {rate.change1d != null && (
+            <Box flexDirection="row" gap={1}>
+              <Text fg={colors.textDim}>1D:</Text>
+              <Text fg={priceColor(rate.change1d)}>{formatPercentRaw(rate.change1d)}</Text>
+            </Box>
+          )}
           {rate.spread != null && (
             <Box flexDirection="row" gap={1}>
               <Text fg={colors.textDim}>Spread:</Text>
@@ -175,8 +194,10 @@ export function AdjacentRatesPane({
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [sortColumnId, setSortColumnId] = useState<RateColumn["id"] | null>("value");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [sortPreference, setSortPreference] = useState<StackSortPreference<AdjacentRateSortColumnId>>({
+    columnId: "chg1d",
+    direction: "desc",
+  });
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -205,23 +226,27 @@ export function AdjacentRatesPane({
     });
   }, [load]);
 
-  useEffect(() => {
-    if (rates.length > 0 && (!selectedId || !rates.find((r) => r.id === selectedId))) {
-      setSelectedId(rates[0]!.id);
-    }
-  }, [rates, selectedId]);
-
   const columns = useMemo(() => createRateColumns(width), [width]);
-  const sortedRates = useMemo(() => applySortPreference(
-    rates,
-    { columnId: sortColumnId, direction: sortDirection },
-    (row, columnId) => (columnId === "name" ? row.name : row[columnId]),
-  ), [rates, sortColumnId, sortDirection]);
+  const sortedRates = useMemo(
+    () => applySortPreference(rates, sortPreference, adjacentRateSortValue),
+    [rates, sortPreference],
+  );
   const selectedRate = sortedRates.find((r) => r.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (sortedRates.length === 0) return;
+    if (!selectedId || !sortedRates.some((row) => row.id === selectedId)) {
+      setSelectedId(sortedRates[0]!.id);
+    }
+  }, [selectedId, sortedRates]);
 
   const renderCell = useCallback(
     (row: AdjacentRateRow, column: RateColumn, _index: number, rowState: { selected: boolean }) =>
       renderRateCell(row, column, rowState.selected),
+    [],
+  );
+  const getRowRevision = useCallback(
+    (row: AdjacentRateRow) => `${row.id}:${row.value ?? ""}:${row.change1d ?? ""}:${row.spread ?? ""}`,
     [],
   );
 
@@ -300,18 +325,18 @@ export function AdjacentRatesPane({
       rootHeight={height}
       columns={columns}
       items={sortedRates}
-      sortColumnId={sortColumnId}
-      sortDirection={sortDirection}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => {
-        const next = columnId as RateColumn["id"];
-        if (sortColumnId === next) {
-          setSortDirection((current) => current === "asc" ? "desc" : "asc");
-          return;
-        }
-        setSortColumnId(next);
-        setSortDirection(next === "name" ? "asc" : "desc");
+        const next = columnId as AdjacentRateSortColumnId;
+        setSortPreference((current) => nextStackSortPreference(
+          current,
+          next,
+          next === "name" ? "asc" : "desc",
+        ));
       }}
       getItemKey={(row) => row.id}
+      getRowRevision={getRowRevision}
       renderCell={renderCell}
       emptyStateTitle="No reference rates."
       emptyStateHint="Press r to refresh."

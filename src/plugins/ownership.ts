@@ -45,6 +45,7 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   polls: "adjacent",
   "llm-stats": "adjacent",
   weather: "adjacent",
+  "adjacent-dev": "adjacent",
 };
 
 const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
@@ -62,7 +63,7 @@ const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   "ticker-research": ["short-interest", "dividend-yield", "esg"],
   "market-overview": ["market-halts", "scanner", "commodities"],
   macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions", "country-econ"],
-  adjacent: ["polls", "llm-stats", "weather"],
+  adjacent: ["polls", "llm-stats", "weather", "adjacent-dev"],
   "plugin-market": ["plugin-discovery"],
 };
 

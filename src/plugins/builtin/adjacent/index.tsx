@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { PaneProps } from "../../../types/plugin";
+import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { pollsModule } from "../polls";
 import { llmStatsModule } from "../llm-stats";
@@ -13,6 +13,7 @@ import {
 } from "./client";
 import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
+import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
 import { createAdjacentNewsCapability } from "./news";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
@@ -56,6 +57,11 @@ function AdjacentRatesPaneWrapper(props: PaneProps) {
   return <AdjacentRatesPane client={client} {...props} />;
 }
 
+function AdjacentFilingsPaneWrapper(props: PaneProps) {
+  const client = useAdjacentClient();
+  return <AdjacentFilingsPane client={client} {...props} />;
+}
+
 const adjacentMarketsModule: PluginModule = {
   panes: [
     {
@@ -75,6 +81,15 @@ const adjacentMarketsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 60, height: 24 },
+    },
+    {
+      id: "cftc-filings",
+      name: "CFTC Filings",
+      icon: "C",
+      component: AdjacentFilingsPaneWrapper,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 100, height: 32 },
     },
   ],
 
@@ -98,6 +113,33 @@ const adjacentMarketsModule: PluginModule = {
       category: "Data",
       shortcut: { prefix: "ADR" },
       createInstance: () => ({ placement: "floating" }),
+    },
+    {
+      id: "cftc-filings-pane",
+      paneId: "cftc-filings",
+      label: "CFTC Filings",
+      description:
+        "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or open CFTC CME to jump there.",
+      keywords: [
+        "cftc",
+        "filings",
+        "dcm",
+        "dco",
+        "products",
+        "rules",
+        "certification",
+        "adjacent",
+      ],
+      category: "Data",
+      shortcut: {
+        prefix: "CFTC",
+        argPlaceholder: "organization or product",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        return createCftcBrowserInstance("cftc", "CFTC", options);
+      },
     },
   ],
 
@@ -166,7 +208,7 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices and rates, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
+    "Shared reference data cached at the edge: Adjacent indices, rates, and CFTC filings, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
   toggleable: true,
   modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule, owidModule],
 });

@@ -10,7 +10,6 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
-import { adjacentDevPlugin } from "./builtin/adjacent-dev";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { debugPlugin } from "./builtin/debug";
@@ -48,7 +47,6 @@ const desktopBackendPlugins: GloomPlugin[] = [
   applicationPlugin,
   newsPlugin,
   adjacentPlugin,
-  adjacentDevPlugin,
   predictionMarketsBackendPlugin,
   congressTradesPlugin,
   buildoutPlugin,

@@ -1,10 +1,8 @@
 import { Box, Text, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-  GloomPlugin,
   PaneProps,
   PaneTemplateCreateOptions,
-  PaneTemplateContext,
 } from "../../../types/plugin";
 import type { NewsArticle } from "../../../news/types";
 import {
@@ -18,18 +16,22 @@ import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { colors } from "../../../theme/colors";
-import { useDebouncedPluginPaneState, usePluginPaneState, usePluginConfigState } from "../../runtime";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
-import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
-import { AdjacentDevClient, loadCftcFilings } from "./client";
-import { buildDetailBody, buildDetailMeta, feedLabel, stripLeadingHeading } from "./format";
+import type { AdjacentClient } from "./client";
+import { loadCftcFilings } from "./client";
 import {
-  ADJACENT_DEV_API_KEY_CONFIG,
-  ADJACENT_DEV_CONNECTION_ID,
-  ADJACENT_DEV_PLUGIN_ID,
+  buildDetailBody,
+  buildDetailMeta,
+  feedLabel,
+  filingListTitle,
+  stripLeadingHeading,
+} from "./filings-format";
+import {
   type CftcFiling,
   type CftcFilingDetail,
 } from "./types";
@@ -74,7 +76,7 @@ function toFeedItems(
     return {
       id: String(filing.id),
       eyebrow: filing.orgCode || feedLabel(filing),
-      title: filing.title,
+      title: filingListTitle(filing),
       timestamp: filing.statusDate,
       detailTitle: filing.title,
       detailMeta: buildDetailMeta(filing),
@@ -91,7 +93,7 @@ function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
 }
 
-function createCftcBrowserInstance(
+export function createCftcBrowserInstance(
   prefix: string,
   titlePrefix: string,
   options?: PaneTemplateCreateOptions,
@@ -107,10 +109,12 @@ function createCftcBrowserInstance(
   };
 }
 
-function CftcPane({ width, height, focused }: PaneProps) {
-  const [apiKey] = usePluginConfigState<string>(ADJACENT_DEV_API_KEY_CONFIG, "");
-  const client = useMemo(() => new AdjacentDevClient({ apiKey: apiKey || undefined }), [apiKey]);
-
+export function AdjacentFilingsPane({
+  width,
+  height,
+  focused,
+  client,
+}: PaneProps & { client: AdjacentClient }) {
   const [storedQuery] = usePaneSettingValue("query", "");
   const initialQuery = String(storedQuery ?? "").trim();
   const [query, setQuery] = usePluginPaneState("query", initialQuery);
@@ -165,8 +169,6 @@ function CftcPane({ width, height, focused }: PaneProps) {
     ? filings.find((filing) => String(filing.id) === openItemId) ?? null
     : null;
   const selectedFiling = filings[selectedIdx] ?? null;
-  // Detail carries the body and the cftc.gov link, so the selected row needs it
-  // too: pop out and open both work without drilling into a filing first.
   const detailFiling = openFiling ?? selectedFiling;
   const detailFilingId = detailFiling?.id;
 
@@ -185,7 +187,6 @@ function CftcPane({ width, height, focused }: PaneProps) {
     let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
-    // Debounced so arrowing through the list does not fire a request per row.
     const timeoutId = setTimeout(() => {
       void client.getFilingDetail(detailFilingId)
         .then((next) => {
@@ -208,7 +209,8 @@ function CftcPane({ width, height, focused }: PaneProps) {
 
   const loading = status === "loading" && filings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
+  const poll = useFeedPollInterval();
+  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
 
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const popOutSelected = useCallback(() => {
@@ -257,12 +259,10 @@ function CftcPane({ width, height, focused }: PaneProps) {
       event.preventDefault?.();
       load(query);
     }
-    // `p` is bound by the footer hint below, which fires in both list and
-    // detail mode. Handling it here too would pop out twice.
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
-    registrationId: ADJACENT_DEV_PLUGIN_ID,
+    registrationId: "cftc-filings",
     focused,
     url: error ? null : detail?.sourceUrl || null,
     source: detailFiling ? feedLabel(detailFiling) : undefined,
@@ -270,13 +270,14 @@ function CftcPane({ width, height, focused }: PaneProps) {
     loading,
     error,
     info: [
-      ...(client.authenticated
-        ? []
-        : [{ id: "tier", parts: [{ text: "public · last 90d", tone: "muted" as const }] }]),
+      ...(client.isPublic
+        ? [{ id: "tier", parts: [{ text: "public · last 90d", tone: "muted" as const }] }]
+        : []),
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
         : []),
     ],
+    trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!detail?.sourceUrl,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
@@ -370,77 +371,3 @@ function CftcPane({ width, height, focused }: PaneProps) {
     />
   );
 }
-
-let disposeConnection: (() => void) | null = null;
-
-export const adjacentDevPlugin: GloomPlugin = {
-  id: ADJACENT_DEV_PLUGIN_ID,
-  name: "Adjacent Dev",
-  version: "1.0.0",
-  description:
-    "CFTC industry filings via the Adjacent Dev API. Search by organization, product, or description.",
-  toggleable: true,
-
-  panes: [
-    {
-      id: "cftc-filings",
-      name: "CFTC Filings",
-      icon: "C",
-      component: CftcPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 100, height: 32 },
-    },
-  ],
-
-  paneTemplates: [
-    {
-      id: "cftc-filings-pane",
-      paneId: "cftc-filings",
-      label: "CFTC Filings",
-      description:
-        "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or open CFTC CME to jump there.",
-      keywords: [
-        "cftc",
-        "filings",
-        "dcm",
-        "dco",
-        "products",
-        "rules",
-        "certification",
-        "adjacent",
-        "dev",
-      ],
-      category: "Data",
-      shortcut: {
-        prefix: "CFTC",
-        argPlaceholder: "organization or product",
-        argKind: "text",
-        argOptional: true,
-      },
-      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
-        return createCftcBrowserInstance("cftc", "CFTC", options);
-      },
-    },
-  ],
-
-  setup() {
-    disposeConnection = registerConnectionSource({
-      id: ADJACENT_DEV_CONNECTION_ID,
-      name: "Adjacent Dev",
-      kind: "api",
-      pluginId: ADJACENT_DEV_PLUGIN_ID,
-      priority: 650,
-      // The public tier serves the last 90 days without a key; a key only
-      // widens the window.
-      authRequired: false,
-    });
-  },
-
-  dispose() {
-    disposeConnection?.();
-    disposeConnection = null;
-  },
-};
-
-export default adjacentDevPlugin;
