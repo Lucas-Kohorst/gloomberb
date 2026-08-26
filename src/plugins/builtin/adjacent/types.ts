@@ -272,6 +272,7 @@ export interface AdjacentRateRow {
   name: string;
   value: number | null;
   spread: number | null;
+  change1d: number | null;
   category?: string;
 }
 
@@ -282,4 +283,89 @@ export interface AdjacentPriceHistoryPoint {
   high?: number;
   low?: number;
   volume?: number;
+}
+
+/** CFTC industry-filing feeds carried by the API. */
+export type CftcFeed = "ptc_dcm_rules" | "dcm_products" | "dco" | "dco_rules";
+
+export const CFTC_FEED_LABELS: Record<CftcFeed, string> = {
+  ptc_dcm_rules: "PTC/DCM Rules",
+  dcm_products: "DCM Products",
+  dco: "DCO",
+  dco_rules: "DCO Rules",
+};
+
+/**
+ * Adjacent does not send a filing-kind field. The feed is the closest
+ * official split: product self-certs vs rule amendments vs DCO registration.
+ */
+export type CftcFilingKind = "new-contract" | "amendment" | "registration";
+
+export const CFTC_KIND_LABELS: Record<CftcFilingKind, string> = {
+  "new-contract": "New contract",
+  amendment: "Amendment",
+  registration: "Registration",
+};
+
+export interface CftcFiling {
+  id: number;
+  title: string;
+  feed: CftcFeed;
+  orgCode: string;
+  status: string;
+  statusDate: Date;
+  docCount: number;
+  description?: string;
+  productName?: string;
+  productType?: string;
+  category?: string;
+  subcategory?: string;
+  productsAffected?: string;
+  remarks?: string;
+  receiptDate?: Date;
+  predictedEffectiveDate?: Date;
+  firstSeenAt?: Date;
+  lastSeenAt?: Date;
+}
+
+export interface CftcFilingDocument {
+  url: string;
+  title: string;
+}
+
+export interface CftcFilingDetail {
+  filing: CftcFiling;
+  markdown: string;
+  documents: CftcFilingDocument[];
+  sourceUrl: string;
+}
+
+export interface CftcFilingFilters {
+  feeds: string[];
+  orgs: string[];
+  statuses: string[];
+}
+
+export interface CftcPageMeta {
+  total: number | null;
+  page: number;
+  perPage: number;
+  totalPages: number | null;
+  hasNext: boolean;
+  hasPrev: boolean;
+  totalCapped?: boolean;
+}
+
+export interface CftcFilingsPage {
+  filings: CftcFiling[];
+  meta: CftcPageMeta;
+}
+
+export interface CftcFilingsQuery {
+  feed?: CftcFeed;
+  org?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  perPage?: number;
 }

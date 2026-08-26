@@ -4,7 +4,6 @@ import type {
 
 export interface HostedSharedVendorEnv {
   ADJACENT_API_KEY?: string;
-  ADJACENT_DEV_API_KEY?: string;
   ARTIFICIAL_ANALYSIS_API_KEY?: string;
 }
 
@@ -78,18 +77,9 @@ export function applyHostedSharedVendorKeys(
 
   if (
     (hostname === "api.adjacent.markets" || hostname.endsWith(".adjacent.markets"))
-    && hostname !== "api.dev.adjacent.markets"
     && !headerValue(headers, "authorization")
   ) {
     const envKey = env.ADJACENT_API_KEY?.trim();
-    if (envKey) return withHeader(payload, "Authorization", `Bearer ${envKey}`);
-  }
-
-  if (
-    hostname === "api.dev.adjacent.markets"
-    && !headerValue(headers, "authorization")
-  ) {
-    const envKey = env.ADJACENT_DEV_API_KEY?.trim();
     if (envKey) return withHeader(payload, "Authorization", `Bearer ${envKey}`);
   }
 
@@ -114,9 +104,6 @@ export function hostedPublicGetCacheTtlSeconds(payload: SharedHttpFetchRequest):
 
   if (hostname === "api.votehub.com" || hostname.endsWith(".votehub.com")) return 300;
   if (hostname === "api.adjacent.markets" || hostname.endsWith(".adjacent.markets")) {
-    return clientAuth ? null : 60;
-  }
-  if (hostname === "api.dev.adjacent.markets") {
     return clientAuth ? null : 60;
   }
   if (hostname === "artificialanalysis.ai" || hostname.endsWith(".artificialanalysis.ai")) {

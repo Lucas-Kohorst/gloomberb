@@ -78,6 +78,15 @@ describe("adjacent provider", () => {
     expect(alreadyPublic.kind).toBe("proxy");
     if (alreadyPublic.kind !== "proxy") throw new Error("expected proxy plan");
     expect(alreadyPublic.url).toBe("https://api.adjacent.markets/api/v1/public/markets?limit=5");
+
+    const filings = await adjacentProvider.resolve({
+      keyPath: "filings",
+      search: new URLSearchParams("search=NFL"),
+      env,
+    });
+    expect(filings.kind).toBe("proxy");
+    if (filings.kind !== "proxy") throw new Error("expected proxy plan");
+    expect(filings.url).toBe("https://api.adjacent.markets/api/v1/public/filings?search=NFL");
   });
 
   test("keeps auth paths when the Worker has an Adjacent key", async () => {

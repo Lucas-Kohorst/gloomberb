@@ -2,7 +2,7 @@ import type { KeyedDataProvider, ProviderPlan, ProviderResolveContext } from "./
 
 const ADJACENT_ORIGIN = "https://api.adjacent.markets";
 const PATH_RE = /^[A-Za-z0-9][A-Za-z0-9/_:.-]*$/;
-const PUBLIC_PREFIXES = ["markets", "indices", "rates", "events"] as const;
+const PUBLIC_PREFIXES = ["markets", "indices", "rates", "events", "filings"] as const;
 
 function adjacentSecret(env: ProviderResolveContext["env"] | undefined): string | undefined {
   const value = (env as { ADJACENT_API_KEY?: string } | undefined)?.ADJACENT_API_KEY?.trim();

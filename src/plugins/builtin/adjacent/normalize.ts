@@ -67,12 +67,31 @@ export function normalizeAdjacentIndex(index: AdjacentIndex): AdjacentIndexRow {
   };
 }
 
+export type AdjacentRateSortColumnId = "name" | "value" | "spread" | "chg1d";
+
+export function adjacentRateSortValue(
+  row: AdjacentRateRow,
+  columnId: AdjacentRateSortColumnId,
+): string | number | null {
+  switch (columnId) {
+    case "name":
+      return row.name;
+    case "value":
+      return row.value;
+    case "spread":
+      return row.spread;
+    case "chg1d":
+      return row.change1d;
+  }
+}
+
 export function normalizeAdjacentRate(rate: AdjacentRate): AdjacentRateRow {
   return {
     id: rate.rate_id,
     name: rate.name,
     value: rate.latest_price ?? null,
     spread: rate.spread ?? null,
+    change1d: rate.price_change_1d ?? null,
     category: undefined,
   };
 }

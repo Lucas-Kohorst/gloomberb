@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  adjacentRateSortValue,
   compareAdjacentIndexRows,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
@@ -10,6 +11,7 @@ import {
   unwrapAdjacentSimilarMarkets,
   formatYesOddsPercent,
 } from "./normalize";
+import { applySortPreference } from "../../../utils/sort-values";
 import { createIndexColumns } from "./indices";
 import { createRateColumns } from "./rates";
 import { getTableWidth } from "../../../components/ui/table-layout";
@@ -46,10 +48,33 @@ describe("adjacent normalize", () => {
       name: "Democrat House",
       latest_price: 85.5,
       spread: 0,
+      price_change_1d: 1.25,
     });
     expect(row.id).toBe("adj_bluh");
     expect(row.value).toBe(85.5);
     expect(row.spread).toBe(0);
+    expect(row.change1d).toBe(1.25);
+  });
+
+  test("sorts rates by 1d change descending", () => {
+    const house = normalizeAdjacentRate({
+      rate_id: "house",
+      name: "House",
+      latest_price: 85.5,
+      price_change_1d: 1.25,
+    });
+    const senate = normalizeAdjacentRate({
+      rate_id: "senate",
+      name: "Senate",
+      latest_price: 52,
+      price_change_1d: -0.4,
+    });
+    const sorted = applySortPreference(
+      [house, senate],
+      { columnId: "chg1d", direction: "desc" },
+      adjacentRateSortValue,
+    );
+    expect(sorted.map((row) => row.id)).toEqual(["house", "senate"]);
   });
 
   test("maps index price samples to price points, dropping invalid/null entries", () => {

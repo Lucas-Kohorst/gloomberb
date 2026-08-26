@@ -374,7 +374,7 @@ export function AdjacentIndicesPane({
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<IndexDetailTab>("overview");
   const [sortPreference, setSortPreference] = useState<StackSortPreference<AdjacentIndexSortColumnId>>({
-    columnId: "value",
+    columnId: "chg1d",
     direction: "desc",
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -427,6 +427,11 @@ export function AdjacentIndicesPane({
   const renderCell = useCallback(
     (row: AdjacentIndexRow, column: IndexColumn, _index: number, rowState: { selected: boolean }) =>
       renderIndexCell(row, column, rowState.selected),
+    [],
+  );
+  const getRowRevision = useCallback(
+    (row: AdjacentIndexRow) =>
+      `${row.id}:${row.value ?? ""}:${row.change1d ?? ""}:${row.change7d ?? ""}`,
     [],
   );
 
@@ -547,6 +552,7 @@ export function AdjacentIndicesPane({
         ));
       }}
       getItemKey={(row) => row.id}
+      getRowRevision={getRowRevision}
       renderCell={renderCell}
       emptyStateTitle="No indices."
       emptyStateHint="Press r to refresh."

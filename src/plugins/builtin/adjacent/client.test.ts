@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AdjacentClient } from "./client";
+import { filingKind, filingListTitle, stripLeadingHeading, stripMarkdownHeader } from "./filings-format";
+import type { CftcFiling } from "./types";
 
 const HEX_MARKET_ID = "polymarket:0x80b3af88cb9919808da1ce86b9794a0957f96ec98c29319dd7ba65e9744d82b1";
 
@@ -170,5 +172,182 @@ describe("AdjacentClient paths", () => {
       yes_price: 37,
       similarity: 0.91,
     });
+  });
+
+  test("routes filings to the public tier without a key and the auth tier with one", async () => {
+    setHosted(false);
+    mockFetch({ data: [], meta: {} });
+
+    await new AdjacentClient().listFilings({ perPage: 5 });
+    await new AdjacentClient({ apiKey: "ak_test" }).listFilings({ perPage: 5 });
+
+    expect(requested[0]?.url).toStartWith("https://api.adjacent.markets/api/v1/public/filings?");
+    expect(requested[1]?.url).toStartWith("https://api.adjacent.markets/api/v1/filings?");
+    expect(requested[1]?.authorization).toBe("Bearer ak_test");
+  });
+
+  test("maps snake_case filing fields and skips rows with no id or title", async () => {
+    setHosted(false);
+    mockFetch({
+      data: [
+        {
+          id: 63380,
+          title: "NFL Starter Designation Contracts",
+          feed: "dcm_products",
+          org_code: "QCEX",
+          status: "Certified",
+          status_date: "2026-08-25",
+          doc_count: 3,
+          product_type: "Swap (Binary Option)",
+          category: "Event",
+          receipt_date: "2026-08-20",
+        },
+        { title: "no id" },
+        { id: 5 },
+      ],
+      meta: { total: 703, page: 1, per_page: 5, total_pages: 141, has_next: true },
+    });
+
+    const page = await new AdjacentClient().listFilings({ perPage: 5 });
+    expect(page.filings).toHaveLength(1);
+    const filing = page.filings[0]!;
+    expect(filing.id).toBe(63380);
+    expect(filing.orgCode).toBe("QCEX");
+    expect(filing.docCount).toBe(3);
+    expect(filing.productType).toBe("Swap (Binary Option)");
+    expect(filing.statusDate.toISOString().slice(0, 10)).toBe("2026-08-25");
+    expect(filing.receiptDate?.toISOString().slice(0, 10)).toBe("2026-08-20");
+    expect(page.meta).toMatchObject({ total: 703, hasNext: true, hasPrev: false });
+  });
+
+  test("sends the search term as the relevance search filter", async () => {
+    setHosted(false);
+    mockFetch({ data: [], meta: {} });
+    await new AdjacentClient().listFilings({ search: "  NFL  ", perPage: 10 });
+    const url = new URL(requested[0]!.url);
+    expect(url.searchParams.get("search")).toBe("NFL");
+    expect(url.searchParams.get("q")).toBeNull();
+    expect(url.searchParams.get("per_page")).toBe("10");
+  });
+
+  test("reads the filing detail envelope and returns null on an unknown id", async () => {
+    setHosted(false);
+    mockFetch({
+      filing: {
+        id: 1,
+        title: "T",
+        feed: "dco",
+        org_code: "CME",
+        status: "Registered",
+        status_date: "2026-01-02",
+        doc_count: 1,
+      },
+      markdown: "# T\n\n- **Id:** 1\n\n## Attachments\n\nbody text",
+      documents: [{ url: "https://cftc.gov/a.pdf", title: "Cover Letter" }, { title: "no url" }],
+      source_url: "https://cftc.gov/filing/1",
+    });
+
+    const detail = await new AdjacentClient().getFilingDetail(1);
+    expect(requested[0]?.url).toBe(
+      "https://api.adjacent.markets/api/v1/public/filings/1/markdown",
+    );
+    expect(detail?.sourceUrl).toBe("https://cftc.gov/filing/1");
+    expect(detail?.documents).toEqual([
+      { url: "https://cftc.gov/a.pdf", title: "Cover Letter" },
+    ]);
+
+    globalThis.fetch = (async () => new Response("", { status: 404 })) as typeof fetch;
+    expect(await new AdjacentClient().getFilingDetail(2)).toBeNull();
+  });
+});
+
+describe("stripMarkdownHeader", () => {
+  test("drops the H1, the facts block, and a description that restates the title", () => {
+    const markdown = [
+      "# NFL Starter Designation Contracts",
+      "",
+      "- **Id:** 63380",
+      "- **Org:** QCEX",
+      "- **Status:** Certified (2026-08-25)",
+      "",
+      "## Description",
+      "",
+      "NFL Starter Designation Contracts",
+      "",
+      "## Attachments",
+      "",
+      "real body",
+    ].join("\n");
+
+    expect(stripMarkdownHeader(markdown, "NFL Starter Designation Contracts"))
+      .toBe("## Attachments\n\nreal body");
+  });
+
+  test("keeps a description that adds information beyond the title", () => {
+    const markdown = "# T\n\n- **Id:** 1\n\n## Description\n\nSomething else entirely";
+    expect(stripMarkdownHeader(markdown, "T"))
+      .toBe("## Description\n\nSomething else entirely");
+  });
+
+  test("passes through markdown that has no header block", () => {
+    expect(stripMarkdownHeader("just text", "T")).toBe("just text");
+  });
+});
+
+describe("filingListTitle", () => {
+  function filing(overrides: Partial<CftcFiling> & Pick<CftcFiling, "feed" | "title">): CftcFiling {
+    return {
+      id: 1,
+      orgCode: "KEX",
+      status: "",
+      statusDate: new Date("2026-08-26"),
+      docCount: 1,
+      ...overrides,
+    };
+  }
+
+  test("labels product self-certs as new contracts and keeps withdrawn rows distinct", () => {
+    const certified = filing({
+      feed: "dcm_products",
+      title: "Will there be at least [count] EF2+ tornadoes in Alabama in [time period]?",
+      status: "Certified",
+    });
+    const withdrawn = filing({
+      id: 2,
+      feed: "dcm_products",
+      title: "Will there be at least [count] EF2+ tornadoes in Alabama in [time period]?",
+      status: "Withdrawn",
+    });
+    expect(filingKind(certified)).toBe("new-contract");
+    expect(filingListTitle(certified)).toBe(
+      "New contract · Certified | Will there be at least [count] EF2+ tornadoes in Alabama in [time period]?",
+    );
+    expect(filingListTitle(withdrawn)).toBe(
+      "New contract · Withdrawn | Will there be at least [count] EF2+ tornadoes in Alabama in [time period]?",
+    );
+  });
+
+  test("labels rule feeds as amendments", () => {
+    expect(filingKind(filing({
+      feed: "ptc_dcm_rules",
+      title: "Weekly notification of rule amendments",
+    }))).toBe("amendment");
+    expect(filingListTitle(filing({
+      feed: "dco_rules",
+      title: "Changes to cash spreads",
+      status: "Notified",
+    }))).toBe("Amendment · Notified | Changes to cash spreads");
+  });
+});
+
+describe("stripLeadingHeading", () => {
+  test("drops the H1 but keeps the facts block", () => {
+    expect(stripLeadingHeading("# Title\n\n- **Id:** 1\n- **Org:** CME\n\nbody"))
+      .toBe("- **Id:** 1\n- **Org:** CME\n\nbody");
+  });
+
+  test("leaves markdown with no leading heading alone", () => {
+    expect(stripLeadingHeading("- **Id:** 1\n\nbody")).toBe("- **Id:** 1\n\nbody");
+    expect(stripLeadingHeading("## Not an H1")).toBe("## Not an H1");
   });
 });

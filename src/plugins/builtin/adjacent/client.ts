@@ -20,6 +20,14 @@ import type {
   AdjacentRatesResponse,
   AdjacentSimilarResponse,
   AdjacentTradesResponse,
+  CftcFeed,
+  CftcFiling,
+  CftcFilingDetail,
+  CftcFilingDocument,
+  CftcFilingFilters,
+  CftcFilingsPage,
+  CftcFilingsQuery,
+  CftcPageMeta,
 } from "./types";
 import {
   unwrapAdjacentMarketIds,
@@ -51,21 +59,95 @@ const ADJACENT_FETCH = createThrottledFetch({
 });
 
 export const ADJACENT_CACHE_POLICIES = {
-  markets: { staleMs: 30_000, expireMs: 10 * 60_000 },
+  markets: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   marketDetail: { staleMs: 10_000, expireMs: 5 * 60_000 },
   prices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
   candles: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
   trades: { staleMs: 5_000, expireMs: 2 * 60_000 },
   quotes: { staleMs: 5_000, expireMs: 30_000 },
   similar: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
-  events: { staleMs: 30_000, expireMs: 10 * 60_000 },
-  indices: { staleMs: 30_000, expireMs: 5 * 60_000 },
+  events: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
+  indices: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   constituents: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
   indexPrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
-  rates: { staleMs: 30_000, expireMs: 5 * 60_000 },
+  rates: { staleMs: 5 * 60_000, expireMs: 10 * 60_000 },
   ratePrices: { staleMs: 60_000, expireMs: 24 * 60 * 60_000 },
   news: { staleMs: 2 * 60_000, expireMs: 7 * 24 * 60 * 60_000 },
+  filings: { staleMs: 2 * 60_000, expireMs: 30 * 60_000 },
+  filingDetail: { staleMs: 5 * 60_000, expireMs: 30 * 60_000 },
 } as const;
+
+const CFTC_FEEDS: readonly CftcFeed[] = ["ptc_dcm_rules", "dcm_products", "dco", "dco_rules"];
+const DEFAULT_FILINGS_PER_PAGE = 100;
+const MAX_FILINGS_PER_PAGE = 500;
+
+function asString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function asDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function asFeed(value: unknown): CftcFeed {
+  return CFTC_FEEDS.includes(value as CftcFeed) ? value as CftcFeed : "dcm_products";
+}
+
+function parseFiling(raw: unknown): CftcFiling | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const id = typeof record.id === "number" ? record.id : Number(record.id);
+  if (!Number.isFinite(id)) return null;
+  const title = asString(record.title);
+  if (!title) return null;
+  return {
+    id,
+    title,
+    feed: asFeed(record.feed),
+    orgCode: asString(record.org_code) ?? "",
+    status: asString(record.status) ?? "",
+    statusDate: asDate(record.status_date) ?? new Date(0),
+    docCount: typeof record.doc_count === "number" ? record.doc_count : 0,
+    description: asString(record.description),
+    productName: asString(record.product_name),
+    productType: asString(record.product_type),
+    category: asString(record.category),
+    subcategory: asString(record.subcategory),
+    productsAffected: asString(record.products_affected),
+    remarks: asString(record.remarks),
+    receiptDate: asDate(record.receipt_date),
+    predictedEffectiveDate: asDate(record.predicted_effective_date),
+    firstSeenAt: asDate(record.first_seen_at),
+    lastSeenAt: asDate(record.last_seen_at),
+  };
+}
+
+function parseDocument(raw: unknown): CftcFilingDocument | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const url = asString(record.url);
+  if (!url) return null;
+  return { url, title: asString(record.title) ?? url };
+}
+
+function parseMeta(raw: unknown): CftcPageMeta {
+  const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const num = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  return {
+    total: num(record.total),
+    page: num(record.page) ?? 1,
+    perPage: num(record.per_page) ?? DEFAULT_FILINGS_PER_PAGE,
+    totalPages: num(record.total_pages),
+    hasNext: record.has_next === true,
+    hasPrev: record.has_prev === true,
+    totalCapped: record.total_capped === true ? true : undefined,
+  };
+}
 
 let adjacentPersistence: PluginPersistence | null = null;
 
@@ -226,6 +308,10 @@ export class AdjacentClient {
     return "/news";
   }
 
+  private filingsPath(): string {
+    return this.isPublic ? "/public/filings" : "/filings";
+  }
+
   async getMarkets(params?: {
     platform?: string;
     category?: string;
@@ -320,7 +406,7 @@ export class AdjacentClient {
   }
 
   async getSimilarMarkets(id: string): Promise<AdjacentSimilarResponse> {
-    const url = buildUrl(`${this.marketsPath()}/${id}/similar`);
+    const url = buildUrl(`/markets/${id}/similar`);
     const raw = await loadCached(
       "adjacent-similar",
       id,
@@ -484,6 +570,86 @@ export class AdjacentClient {
     const raw = await adjacentFetchJson<unknown>(url, this.apiKey);
     return unwrapAdjacentMarketIds(raw).slice(0, limit);
   }
+
+  async listFilings(query: CftcFilingsQuery = {}): Promise<CftcFilingsPage> {
+    const url = buildUrl(this.filingsPath(), {
+      feed: query.feed,
+      org: query.org,
+      status: query.status,
+      search: query.search?.trim() || undefined,
+      page: query.page && query.page > 1 ? query.page : undefined,
+      per_page: Math.min(query.perPage ?? DEFAULT_FILINGS_PER_PAGE, MAX_FILINGS_PER_PAGE),
+    });
+    const payload = await loadCached(
+      "adjacent-filings",
+      url,
+      () => adjacentFetchJson<{ data?: unknown[]; meta?: unknown }>(url, this.apiKey),
+      ADJACENT_CACHE_POLICIES.filings,
+    );
+    return {
+      filings: (payload.data ?? [])
+        .map(parseFiling)
+        .filter((filing): filing is CftcFiling => filing !== null),
+      meta: parseMeta(payload.meta),
+    };
+  }
+
+  async getFilingDetail(id: number): Promise<CftcFilingDetail | null> {
+    const url = buildUrl(`${this.filingsPath()}/${encodeURIComponent(String(id))}/markdown`);
+    return loadCached(
+      "adjacent-filing-detail",
+      url,
+      async () => {
+        try {
+          const payload = await adjacentFetchJson<{
+            filing?: unknown;
+            markdown?: unknown;
+            documents?: unknown[];
+            source_url?: unknown;
+          }>(url, this.apiKey);
+          const filing = parseFiling(payload.filing);
+          if (!filing) return null;
+          return {
+            filing,
+            markdown: asString(payload.markdown) ?? "",
+            documents: (payload.documents ?? [])
+              .map(parseDocument)
+              .filter((doc): doc is CftcFilingDocument => doc !== null),
+            sourceUrl: asString(payload.source_url) ?? "",
+          };
+        } catch (error) {
+          if (error instanceof Error && /\(404\)/.test(error.message)) return null;
+          throw error;
+        }
+      },
+      ADJACENT_CACHE_POLICIES.filingDetail,
+    );
+  }
+
+  async getFilingFilters(): Promise<CftcFilingFilters> {
+    const url = buildUrl(`${this.filingsPath()}/filters`);
+    const payload = await adjacentFetchJson<{
+      feeds?: unknown[];
+      orgs?: unknown[];
+      statuses?: unknown[];
+    }>(url, this.apiKey);
+    const strings = (values: unknown[] | undefined): string[] =>
+      (values ?? []).map(asString).filter((value): value is string => value !== undefined);
+    return {
+      feeds: strings(payload.feeds),
+      orgs: strings(payload.orgs),
+      statuses: strings(payload.statuses),
+    };
+  }
+}
+
+export async function loadCftcFilings(
+  client: AdjacentClient,
+  query: string,
+  perPage = DEFAULT_FILINGS_PER_PAGE,
+): Promise<CftcFilingsPage> {
+  const normalized = query.trim();
+  return client.listFilings(normalized ? { search: normalized, perPage } : { perPage });
 }
 
 export { getCached as getAdjacentCached, setCached as setAdjacentCached };
