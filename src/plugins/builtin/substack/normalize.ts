@@ -174,7 +174,6 @@ function normalizeArticle(row: unknown, sourcePublication?: SubstackPublication 
   const publication = normalizePublication(articlePublicationRecord(rowRecord, post)) ?? sourcePublication ?? null;
   const title = firstString(post, ["title", "name", "social_title", "email_subject"]) ?? firstString(rowRecord, ["title"]);
   const subtitle = firstString(post, ["subtitle", "description", "search_engine_description", "social_description"]);
-  const bodyHtml = firstRawString(post, ["body_html", "bodyHtml", "body"]);
   const coverImage = normalizeUrl(firstRawString(post, [
     "cover_image",
     "coverImage",
@@ -184,9 +183,8 @@ function normalizeArticle(row: unknown, sourcePublication?: SubstackPublication 
     "thumbnailUrl",
     "image",
   ]), publication?.baseUrl);
-  const extracted = bodyHtml
-    ? extractArticleContent(bodyHtml, { baseUrl: publication?.baseUrl, imageUrls: coverImage ? [coverImage] : [], title })
-    : { text: "", blocks: [], imageUrls: uniqueStrings([coverImage]), linkUrls: [], wordCount: 0, readMinutes: 1 };
+  // Feed rows must not parse or keep post HTML. Detail fetch still extracts
+  // bodyHtml; persisting it on every list item froze Substack and Firehose.
   const previewText = firstString(post, [
     "truncated_body_text",
     "body_preview",
@@ -194,9 +192,9 @@ function normalizeArticle(row: unknown, sourcePublication?: SubstackPublication 
     "subtitle",
     "description",
     "search_engine_description",
-  ]) ?? (extracted.text ? extracted.text.slice(0, 500) : null);
+  ]);
   const rawWordCount = firstNumber(post, ["wordcount", "word_count", "words"]);
-  const words = Math.max(0, Math.round(rawWordCount ?? extracted.wordCount ?? wordCount(previewText ?? "")));
+  const words = Math.max(0, Math.round(rawWordCount ?? wordCount(previewText ?? "")));
   const rawReadMinutes = firstNumber(post, [
     "reading_time_minutes",
     "read_time_minutes",
@@ -216,7 +214,7 @@ function normalizeArticle(row: unknown, sourcePublication?: SubstackPublication 
   const rawId = firstValue(post, ["id", "post_id", "postId", "canonical_slug"]) ?? firstValue(rowRecord, ["id", "post_id"]);
   const id = String(rawId ?? url ?? `${publication?.id ?? "substack"}:${slug ?? title ?? publishedAt ?? Math.random()}`).trim();
 
-  if (!title && !url && !bodyHtml) return null;
+  if (!title && !url) return null;
 
   return {
     id,
@@ -230,11 +228,23 @@ function normalizeArticle(row: unknown, sourcePublication?: SubstackPublication 
     publishedAt,
     subtitle,
     previewText,
-    bodyHtml,
-    imageUrls: extracted.imageUrls,
+    bodyHtml: null,
+    imageUrls: uniqueStrings([coverImage]),
     wordCount: words,
-    readMinutes: rawReadMinutes != null ? Math.max(1, Math.ceil(rawReadMinutes)) : estimateReadingMinutes(words || extracted.text),
+    readMinutes: rawReadMinutes != null ? Math.max(1, Math.ceil(rawReadMinutes)) : estimateReadingMinutes(words || previewText || ""),
   };
+}
+
+export function omitSubstackFeedBodies(
+  articles: readonly SubstackArticleSummary[],
+): SubstackArticleSummary[] {
+  let changed = false;
+  const next = articles.map((article) => {
+    if (!article.bodyHtml) return article;
+    changed = true;
+    return { ...article, bodyHtml: null };
+  });
+  return changed ? next : articles as SubstackArticleSummary[];
 }
 
 export function normalizeFeedItems(payload: unknown, sourcePublication?: SubstackPublication | null): SubstackArticleSummary[] {
@@ -266,7 +276,8 @@ export function normalizePostDetail(
     logoUrl: null,
     latestPublishedAt: null,
   }) ?? fallback;
-  const bodyHtml = normalized.bodyHtml ?? fallback.bodyHtml;
+  const bodyHtml = firstRawString(post, ["body_html", "bodyHtml", "body"])
+    ?? fallback.bodyHtml;
   const extracted = extractArticleContent(bodyHtml, {
     baseUrl: normalized.publicationBaseUrl ?? fallback.publicationBaseUrl,
     imageUrls: uniqueStrings([...fallback.imageUrls, ...normalized.imageUrls]),

@@ -62,6 +62,27 @@ function articleIds(articles: NewsArticle[]): Set<string> {
   return new Set(articles.map((article) => article.id));
 }
 
+function sameArticleIdSet(left: NewsArticle[], right: NewsArticle[]): boolean {
+  if (left === right) return true;
+  const leftIds = articleIds(left);
+  const rightIds = articleIds(right);
+  if (leftIds.size !== rightIds.size) return false;
+  for (const id of rightIds) {
+    if (!leftIds.has(id)) return false;
+  }
+  return true;
+}
+
+function containsArticleIds(haystack: NewsArticle[], needles: NewsArticle[]): boolean {
+  if (needles.length === 0) return true;
+  if (needles.length > haystack.length) return false;
+  const ids = articleIds(haystack);
+  for (const article of needles) {
+    if (!ids.has(article.id)) return false;
+  }
+  return true;
+}
+
 /** Refresh returns the latest head page; keep already-loaded pages and their cursor. */
 function mergeIncomingNewsPages(
   incoming: NewsArticle[],
@@ -100,6 +121,8 @@ export class NewsService {
   private articles: NewsArticle[] = [];
   private version = 0;
   private notifyScheduled = false;
+  private readonly pendingQueryRebuilds = new Set<string>();
+  private queryRebuildScheduled = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
   private readonly pollIntervalMs: () => number;
@@ -311,6 +334,31 @@ export class NewsService {
   }
 
   /**
+   * Merge a pane fetch into every latest-feed query so Firehose / ART see
+   * tweets and newsletters that already loaded in their own panes.
+   */
+  ingest(sourceId: string, articles: NewsArticle[]): void {
+    if (!sourceId || articles.length === 0) return;
+    const source = [...this.sources.values()].find((candidate) => (
+      newsCapabilitySourceId(candidate) === sourceId
+    ));
+    const attributed = articles.map((article) => (
+      source ? attributeArticle(source, article) : { ...article, origin: article.origin || sourceId }
+    ));
+    const entries = [...this.queries.values()].filter((entry) => {
+      if (normalizeNewsFeed(entry.query) !== "latest") return false;
+      return source ? this.queryAcceptsSource(entry, source) : true;
+    });
+    const targets = entries.length > 0
+      ? entries
+      : [this.getOrCreateQueryEntry({ feed: "latest", limit: 200 })];
+    for (const entry of targets) {
+      this.applySourceArticles(entry, sourceId, attributed, { retainExisting: true });
+    }
+    this.flushQueryRebuilds();
+  }
+
+  /**
    * Re-runs every watched query. Sources call this when their own state
    * changes out of band — signing into Substack, for example, turns an empty
    * source into a populated one without any query having changed.
@@ -354,11 +402,12 @@ export class NewsService {
         }
         if (entry.loadMoreInFlight) return entry.state;
         const incoming = filterNewsArticlesForQuery(dedupeNewsArticles(result.articles), query);
+        const latest = entry.state;
         const merged = mergeIncomingNewsPages(
           incoming,
-          current.articles,
+          latest.articles,
           result.nextCursor,
-          current.nextCursor,
+          latest.nextCursor,
         );
         const articles = filterNewsArticlesForQuery(merged.articles, query);
         const state: NewsQueryState = {
@@ -566,12 +615,14 @@ export class NewsService {
     return { articles, sourceIds, failedSourceIds: [], nextCursor: entry.state.nextCursor };
   }
 
-  private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): void {
+  private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): boolean {
+    const previousArticles = entry.state.articles;
     const snapshot = this.sourceFetchSnapshot(entry);
     const articles = filterNewsArticlesForQuery(dedupeNewsArticles(snapshot.articles), entry.query);
     const phase = articles.length > 0
       ? "ready"
       : entry.state.phase;
+    const idsChanged = !sameArticleIdSet(previousArticles, articles);
     entry.state = {
       phase,
       articles,
@@ -582,7 +633,37 @@ export class NewsService {
       loadingMore: entry.state.loadingMore,
     };
     entry.lastAccessedAt = this.now();
-    if (options.notify === false) return;
+    if (options.notify === false || !idsChanged) return idsChanged;
+    this.rebuildArticlePool();
+    this.notify();
+    return idsChanged;
+  }
+
+  private scheduleQueryRebuild(entry: NewsQueryEntry): void {
+    this.pendingQueryRebuilds.add(buildNewsQueryKey(entry.query));
+    if (this.queryRebuildScheduled) return;
+    this.queryRebuildScheduled = true;
+    const flush = () => {
+      this.queryRebuildScheduled = false;
+      this.flushQueryRebuilds();
+    };
+    if (isUiYieldEnabled() && typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+      return;
+    }
+    queueMicrotask(flush);
+  }
+
+  private flushQueryRebuilds(): void {
+    const keys = [...this.pendingQueryRebuilds];
+    this.pendingQueryRebuilds.clear();
+    let idsChanged = false;
+    for (const key of keys) {
+      const entry = this.queries.get(key);
+      if (!entry) continue;
+      if (this.rebuildQueryState(entry, { notify: false })) idsChanged = true;
+    }
+    if (!idsChanged) return;
     this.rebuildArticlePool();
     this.notify();
   }
@@ -593,12 +674,20 @@ export class NewsService {
     articles: NewsArticle[],
     options: { retainExisting?: boolean } = {},
   ): void {
-    const previous = options.retainExisting ? (entry.sourceArticles.get(sourceId) ?? []) : [];
-    entry.sourceArticles.set(
-      sourceId,
-      options.retainExisting ? dedupeNewsArticles([...articles, ...previous]) : articles,
-    );
-    this.rebuildQueryState(entry);
+    const previous = entry.sourceArticles.get(sourceId) ?? [];
+    let next: NewsArticle[];
+    if (!options.retainExisting) {
+      next = articles;
+    } else if (previous.length > 0 && containsArticleIds(articles, previous)) {
+      next = sameArticleIdSet(previous, articles) ? previous : dedupeNewsArticles(articles);
+    } else if (previous.length === 0) {
+      next = dedupeNewsArticles(articles);
+    } else {
+      next = dedupeNewsArticles([...articles, ...previous]);
+    }
+    entry.sourceArticles.set(sourceId, next);
+    if (sameArticleIdSet(previous, next)) return;
+    this.scheduleQueryRebuild(entry);
   }
 
   private queryAcceptsSource(entry: NewsQueryEntry, source: NewsCapability): boolean {

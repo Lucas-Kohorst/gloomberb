@@ -25,9 +25,15 @@ import { paneSearchHint } from "../../shared/pane-footer";
 import type { PluginModule } from "../../plugin-module";
 import { buildNewsPaneSettingsDef, getNewsPaneSettings } from "./settings";
 
-export const FIREHOSE_QUERY: NewsQuery = { feed: "latest", limit: 200 };
+const FIREHOSE_LIMIT = 200;
+export const FIREHOSE_QUERY: NewsQuery = { feed: "latest", limit: FIREHOSE_LIMIT };
 const FIREHOSE_COLUMNS: NewsColumnId[] = ["time", "origin", "source", "title", "tickers", "categories"];
 const FIREHOSE_DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
+
+export function takeFirehoseHead(articles: readonly NewsArticle[]): NewsArticle[] {
+  if (articles.length <= FIREHOSE_LIMIT) return articles as NewsArticle[];
+  return articles.slice(0, FIREHOSE_LIMIT);
+}
 
 /**
  * Filters the merged firehose stream by a free-text query. Matches against
@@ -39,9 +45,9 @@ export function filterFirehoseArticles(
   query: string,
 ): NewsArticle[] {
   const trimmed = query.trim().toLowerCase();
-  if (!trimmed) return [...articles];
+  if (!trimmed) return articles as NewsArticle[];
   const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return [...articles];
+  if (tokens.length === 0) return articles as NewsArticle[];
 
   return articles.filter((article) => {
     const haystack = [
@@ -62,7 +68,11 @@ export function filterFirehoseArticles(
 
 function FirehosePane({ focused, width, height }: PaneProps) {
   const newsState = useNewsArticles(FIREHOSE_QUERY);
-  const articles = usePersistedNewsArticles("firehose:articles", newsState.articles);
+  const liveHead = useMemo(
+    () => takeFirehoseHead(newsState.articles),
+    [newsState.articles],
+  );
+  const articles = usePersistedNewsArticles("firehose:articles", liveHead);
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
 
   const [searchQuery, setSearchQuery] = useState("");

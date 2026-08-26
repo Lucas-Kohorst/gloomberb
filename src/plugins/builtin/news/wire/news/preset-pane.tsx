@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
@@ -40,8 +41,13 @@ export function NewsPresetPane({
   emptyStateHint: string;
 }) {
   const newsState = useNewsArticles(query);
-  const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
-  const visibleArticles = query.limit != null ? articles.slice(0, query.limit) : articles;
+  const liveHead = useMemo(() => {
+    const limit = query.limit;
+    if (limit == null || newsState.articles.length <= limit) return newsState.articles;
+    return newsState.articles.slice(0, limit);
+  }, [newsState.articles, query.limit]);
+  const articles = usePersistedNewsArticles(`${paneKey}:articles`, liveHead);
+  const visibleArticles = articles;
   const atLimit = query.limit != null && visibleArticles.length >= query.limit;
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(
     atLimit ? null : query,

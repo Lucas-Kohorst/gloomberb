@@ -9,14 +9,6 @@ import {
 } from "../../../components/data-table/sort-settings";
 import type { PaneSettingsDef } from "../../../types/plugin";
 import {
-  buildPollIntervalSettingField,
-  coercePollIntervalMinutes,
-  DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
-  TWITTER_POLL_INTERVAL_CONFIG_KEY,
-  X_LIVE_POLLING_CONFIG_KEY,
-  isXLivePollingEnabled,
-} from "../shared/feed-poll-interval";
-import {
   DEFAULT_TWEET_SORT,
   TWEET_COLUMN_DEFS,
   TWEET_COLUMN_IDS,
@@ -46,29 +38,14 @@ export function buildTwitterFeedPaneSettingsDef(
   settings: Record<string, unknown> | undefined,
 ): PaneSettingsDef {
   const resolved = getTwitterFeedPaneSettings(settings);
-  const pollMinutes = coercePollIntervalMinutes(settings?.[TWITTER_POLL_INTERVAL_CONFIG_KEY])
-    ?? DEFAULT_TWITTER_POLL_INTERVAL_MINUTES;
   return {
     title: "X Feed Settings",
     values: {
-      [X_LIVE_POLLING_CONFIG_KEY]: isXLivePollingEnabled(settings?.[X_LIVE_POLLING_CONFIG_KEY]),
-      [TWITTER_POLL_INTERVAL_CONFIG_KEY]: String(pollMinutes),
       columnIds: [...resolved.columnIds],
       sort: encodeSortPreference(resolved.sort),
       density: resolved.density,
     },
     fields: [
-      {
-        key: X_LIVE_POLLING_CONFIG_KEY,
-        label: "Live polling",
-        description: "Refresh X timelines and searches on an interval. Off by default. Opening the pane or a manual refresh still loads once.",
-        type: "toggle",
-        storage: "plugin",
-      },
-      {
-        ...buildPollIntervalSettingField(TWITTER_POLL_INTERVAL_CONFIG_KEY),
-        description: "How often timelines reload when live polling is on.",
-      },
       {
         key: "density",
         label: "Density",

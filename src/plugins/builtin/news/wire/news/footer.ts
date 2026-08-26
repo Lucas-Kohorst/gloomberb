@@ -50,11 +50,11 @@ export function useNewsArticleFooter({
   });
 
   const accessInfo = useMemo<PaneFooterSegment[]>(() => {
-    if (access.isPayingPro) {
+    if (access.hasProAccess) {
       return [{ id: "news-access", parts: [{ text: t("real-time news"), tone: "positive" }] }];
     }
     return segment ? [segment] : [];
-  }, [access.isPayingPro, language, segment]);
+  }, [access.hasProAccess, language, segment]);
   const poll = useFeedPollInterval();
   const footerInfo = useMemo(
     () => [...accessInfo, ...(info ?? [])],

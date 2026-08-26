@@ -21,7 +21,7 @@ export interface XMarketsNewsCapabilityOptions {
 
 export function supportsXMarketsNewsQuery(query: NewsQuery): boolean {
   const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-  return feed === "latest" || feed === "top";
+  return feed === "latest";
 }
 
 /**
@@ -97,9 +97,15 @@ export function createXMarketsNewsCapability(
         if (!isVerified()) return [];
         try {
           const response = await search(DEFAULT_TWITTER_FEED_QUERY);
-          return response.tweets
-            .map(normalizeXMarketsTweet)
-            .filter((article): article is NewsArticle => article !== null);
+          const limit = Math.min(query.limit ?? DEFAULT_TWEET_LIMIT, DEFAULT_TWEET_LIMIT);
+          const articles: NewsArticle[] = [];
+          for (const tweet of response.tweets) {
+            const article = normalizeXMarketsTweet(tweet);
+            if (!article) continue;
+            articles.push(article);
+            if (articles.length >= limit) break;
+          }
+          return articles;
         } catch (error) {
           if (isAuthError(error)) return [];
           throw error;

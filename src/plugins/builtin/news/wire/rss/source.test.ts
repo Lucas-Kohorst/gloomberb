@@ -1,6 +1,14 @@
 import { describe, expect, mock, test } from "bun:test";
 import { MemoryPluginPersistence as MemoryPersistence } from "../../../../../test-support/plugin-persistence";
-import { createRssNewsCapability, RSS_FEED_CACHE_POLICY, RSS_FETCH_CONCURRENCY } from "./source";
+import {
+  createRssNewsCapability,
+  currentRssCacheStaleMs,
+  RSS_CACHED_HEAD_LIMIT,
+  RSS_FEED_CACHE_POLICY,
+  RSS_FETCH_CONCURRENCY,
+  rssFeedCachePolicy,
+} from "./source";
+import { setSharedRegistryForTests } from "../../../../registry";
 import type { RssFeedConfig } from "./parser";
 import { buildArticleTickerUniverse } from "../../../../../news/article-tickers";
 
@@ -20,6 +28,18 @@ const RSS_FIXTURE = `<rss version="2.0"><channel><item>
   <description>NVIDIA shares moved higher.</description>
 </item></channel></rss>`;
 
+describe("rssFeedCachePolicy", () => {
+  test("follows the live refresh-interval chip when a registry is bound", () => {
+    setSharedRegistryForTests({
+      getConfigFn: () => ({ refreshIntervalMinutes: 5 }),
+    } as never);
+    expect(currentRssCacheStaleMs()).toBe(5 * 60_000);
+    expect(rssFeedCachePolicy().staleMs).toBe(5 * 60_000);
+    setSharedRegistryForTests(undefined);
+    expect(currentRssCacheStaleMs()).toBe(RSS_FEED_CACHE_POLICY.staleMs);
+  });
+});
+
 describe("createRssNewsCapability", () => {
   test("caches fetched feed items with feed authority scoring", async () => {
     const persistence = new MemoryPersistence();
@@ -37,6 +57,55 @@ describe("createRssNewsCapability", () => {
     expect(items[0]!.isBreaking).toBe(true);
     expect(items[0]!.tickers).toContain("NVDA");
     expect(source.provider.getCachedNews?.({ scope: "global" })).toHaveLength(1);
+  });
+
+  test("getCachedNews stops reading after a bounded head of feeds", () => {
+    class CountingPersistence extends MemoryPersistence {
+      reads = 0;
+      getResource<T>(
+        kind: string,
+        key: string,
+        options?: { sourceKey?: string; schemaVersion?: number; allowExpired?: boolean },
+      ) {
+        this.reads += 1;
+        return super.getResource<T>(kind, key, options);
+      }
+    }
+    const persistence = new CountingPersistence();
+    const feeds: RssFeedConfig[] = Array.from({ length: 30 }, (_, index) => ({
+      ...FEED,
+      id: `feed-${index}`,
+      url: `https://example.com/${index}.xml`,
+      name: `Feed ${index}`,
+      authority: 100 - index,
+    }));
+    for (const feed of feeds) {
+      persistence.setResource("rss-feed", feed.id, {
+        items: Array.from({ length: 20 }, (_, itemIndex) => ({
+          id: `${feed.id}-${itemIndex}`,
+          title: `Headline ${itemIndex}`,
+          url: `https://example.com/${feed.id}/${itemIndex}`,
+          source: feed.name,
+          publishedAt: new Date().toISOString(),
+          categories: ["general"],
+          tickers: [],
+          importance: 50,
+          isBreaking: false,
+        })),
+      }, {
+        sourceKey: feed.url,
+        cachePolicy: RSS_FEED_CACHE_POLICY,
+      });
+    }
+    const source = createRssNewsCapability(feeds, { persistence, fetchText: async () => {
+      throw new Error("should not fetch");
+    } });
+
+    const items = source.provider.getCachedNews?.({ scope: "global", limit: 200 }) ?? [];
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.length).toBeLessThanOrEqual(200);
+    expect(items.length).toBeLessThanOrEqual(RSS_CACHED_HEAD_LIMIT);
+    expect(persistence.reads).toBeLessThan(feeds.length);
   });
 
   test("uses fresh plugin cache without refetching", async () => {

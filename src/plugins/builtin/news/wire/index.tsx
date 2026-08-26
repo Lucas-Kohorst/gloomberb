@@ -41,7 +41,7 @@ import {
   buildArticleTickerUniverse,
   setSharedArticleTickerUniverse,
 } from "../../../../news/article-tickers";
-import { ensureUsListingsUniverse } from "../../../../sources/us-listings/client";
+import { ensureUsListingsUniverse, peekUsListingsUniverse } from "../../../../sources/us-listings/client";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -64,7 +64,7 @@ const TopPane = createNewsPresetPane({
   title: "Top News",
   query: NEWS_QUERY_PRESETS.top,
   columns: ["time", "title", "tickers", "importance"],
-  defaultSort: { columnId: "time", direction: "desc" },
+  defaultSort: { columnId: "importance", direction: "desc" },
   emptyStateTitle: "No top stories yet",
   emptyStateHint: "Try refreshing later as wire stories arrive.",
 });
@@ -95,7 +95,7 @@ export const newsWireModule: PluginModule = {
       defaultFloatingSize: { width: 90, height: 30 },
       settings: (context) => buildNewsPaneSettingsDef(context.settings, {
         columns: ["time", "title", "tickers", "importance"],
-        sort: { columnId: "time", direction: "desc" },
+        sort: { columnId: "importance", direction: "desc" },
       }, { title: "Top News Settings" }),
     },
     {
@@ -163,7 +163,7 @@ export const newsWireModule: PluginModule = {
     },
   ],
   paneTemplates: [
-    { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "The 10 most recent wire stories", keywords: ["top", "news", "headlines", "stories", "wire"], shortcut: { prefix: "TOP" } },
+    { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Highest-score wire stories from the last 4 hours", keywords: ["top", "news", "headlines", "stories", "wire"], shortcut: { prefix: "TOP" } },
     { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" } },
     { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "Market news filtered by sector", keywords: ["news", "industry", "sector", "ni", "filter"], shortcut: { prefix: "NI" } },
     { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },
@@ -210,10 +210,9 @@ export const newsWireModule: PluginModule = {
       {
         persistence: ctx.persistence,
         tickerUniverse: async () => {
-          const [tickers, listings] = await Promise.all([
-            ctx.tickerRepository.loadAllTickers(),
-            ensureUsListingsUniverse(),
-          ]);
+          void ensureUsListingsUniverse();
+          const tickers = await ctx.tickerRepository.loadAllTickers();
+          const listings = peekUsListingsUniverse();
           const universe = buildArticleTickerUniverse({
             book: tickers.map((ticker) => ({
               symbol: ticker.metadata.ticker,
@@ -223,6 +222,7 @@ export const newsWireModule: PluginModule = {
               symbol: security.symbol,
               name: security.name,
             })) ?? [],
+            catalogNames: false,
           });
           setSharedArticleTickerUniverse(universe);
           return universe;

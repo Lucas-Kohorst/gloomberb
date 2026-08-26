@@ -11,11 +11,11 @@ import {
   type DataTableRootKeyContext,
   type PaneHint,
 } from "../../../components";
-import { usePluginAppActions, usePluginConfigState } from "../../runtime";
+import { usePluginAppActions } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { encodeSortPreference } from "../../../components/data-table/sort-settings";
 import { getTwitterFeedPaneSettings } from "./settings";
-import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
+import type { CloudTweetSearchResponse } from "../../../api-client";
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
 import { CloudAuthNotice } from "../cloud/auth-actions";
@@ -33,22 +33,18 @@ import {
   sortedTweets,
   tweetTickers,
   twitterUserSearchQuery,
+  X_FEED_CONNECTION_ID,
   type TweetColumn,
   type TweetLoadState,
   type TweetSortDirection,
 } from "./model";
 import { usePaneStatusLinkFooter, paneSearchHint, paneRefreshHint } from "../shared/pane-footer";
 import { tweetSharePayload, useCopyShareLink } from "../shared/article-share";
-import { twitterLivePollingLabel, useTwitterFetchStaleLabel } from "./footer";
+import { useTwitterFetchStaleLabel } from "./footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
-import {
-  DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
-  TWITTER_POLL_INTERVAL_CONFIG_KEY,
-  X_LIVE_POLLING_CONFIG_KEY,
-  isXLivePollingEnabled,
-  twitterLivePollIntervalMinutes,
-  useFeedPollInterval,
-} from "../shared/feed-poll-interval";
+import { useFeedPollInterval } from "../shared/feed-poll-interval";
+import { getSharedNewsService } from "../../../news/hooks";
+import { normalizeXMarketsTweet } from "./news-capability";
 import { usePopOutTweet } from "./pop-out";
 import { TweetDetail } from "./tweet-detail";
 
@@ -143,22 +139,23 @@ export function TweetSearchTable({
   emptyStateHint?: string;
 }) {
   const { createPaneFromTemplate } = usePluginAppActions();
-  const { data, loading, error, lastUpdated, reload } = useTweetSearchData(requestKey, load, onResult, onError, enabled);
-  const poll = useFeedPollInterval({
-    overrideConfigKey: TWITTER_POLL_INTERVAL_CONFIG_KEY,
-    defaultMinutes: DEFAULT_TWITTER_POLL_INTERVAL_MINUTES,
-  });
-  const [livePollingStored, setLivePolling] = usePluginConfigState<boolean>(
-    X_LIVE_POLLING_CONFIG_KEY,
-    false,
+  const ingestTweets = useCallback((result: CloudTweetSearchResponse) => {
+    const articles = result.tweets
+      .map(normalizeXMarketsTweet)
+      .filter((article): article is NonNullable<typeof article> => article !== null);
+    if (articles.length > 0) getSharedNewsService()?.ingest(X_FEED_CONNECTION_ID, articles);
+    onResult?.(result);
+  }, [onResult]);
+  const { data, loading, error, lastUpdated, reload } = useTweetSearchData(
+    requestKey,
+    load,
+    ingestTweets,
+    onError,
+    enabled,
   );
-  const livePolling = isXLivePollingEnabled(livePollingStored);
+  const poll = useFeedPollInterval();
   const staleLabel = useTwitterFetchStaleLabel(lastUpdated);
-  useAutoRefresh(
-    lastUpdated,
-    reload,
-    twitterLivePollIntervalMinutes(livePolling, poll.intervalMinutes),
-  );
+  useAutoRefresh(lastUpdated, reload, poll.intervalMinutes);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", undefined);
@@ -190,16 +187,11 @@ export function TweetSearchTable({
       { id: "pop-out", key: "p", label: "op out", onPress: () => popOutSelectedTweet(selectedTweet) },
     ];
   }, [popOutSelectedTweet, selectedTweet, shareSelectedTweet]);
-  const statusInfo = useMemo(() => [
-    {
-      id: "x-live-polling",
-      parts: [{ text: twitterLivePollingLabel(livePolling), tone: "muted" as const }],
-      onPress: () => setLivePolling(!livePolling),
-    },
-    ...(staleLabel
+  const statusInfo = useMemo(() => (
+    staleLabel
       ? [{ id: "stale", parts: [{ text: staleLabel, tone: "muted" as const }] }]
-      : []),
-  ], [livePolling, staleLabel]);
+      : []
+  ), [staleLabel]);
   const openSelectedTweet = usePaneStatusLinkFooter({
     registrationId: footerId,
     focused,
@@ -210,7 +202,7 @@ export function TweetSearchTable({
     loading,
     error,
     info: statusInfo,
-    trailingInfo: livePolling ? [poll.segment] : [],
+    trailingInfo: [poll.segment],
     showOpenHint: !!selectedTweet?.url,
     hints: [
       ...(onFocusSearch ? [paneSearchHint(onFocusSearch)] : []),

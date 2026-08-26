@@ -3,6 +3,7 @@ import type { MarketNewsItem, NewsStoryItem } from "../../../../types/news-sourc
 import { usePluginPaneState } from "../../../runtime";
 
 const MAX_PERSISTED_ARTICLES = 200;
+const PERSIST_DEBOUNCE_MS = 400;
 const EMPTY_PERSISTED_ARTICLES: PersistedNewsArticle[] = [];
 
 interface PersistedNewsStoryItem extends Omit<NewsStoryItem, "publishedAt"> {
@@ -31,10 +32,11 @@ function serializeStoryItem(item: NewsStoryItem): PersistedNewsStoryItem | null 
 function serializeArticle(article: MarketNewsItem): PersistedNewsArticle | null {
   const publishedAt = articleDate(article.publishedAt);
   if (!publishedAt) return null;
+  const { body: _body, items, ...rest } = article;
   return {
-    ...article,
+    ...rest,
     publishedAt: publishedAt.toISOString(),
-    items: article.items
+    items: items
       ?.map(serializeStoryItem)
       .filter((item): item is PersistedNewsStoryItem => !!item),
   };
@@ -87,11 +89,14 @@ export function usePersistedNewsArticles(key: string, articles: MarketNewsItem[]
 
   useEffect(() => {
     if (articles.length === 0) return;
-    const next = articles
-      .slice(0, MAX_PERSISTED_ARTICLES)
-      .map(serializeArticle)
-      .filter((article): article is PersistedNewsArticle => !!article);
-    setPersistedArticles((current) => samePersistedArticles(current, next) ? current : next);
+    const handle = setTimeout(() => {
+      const next = articles
+        .slice(0, MAX_PERSISTED_ARTICLES)
+        .map(serializeArticle)
+        .filter((article): article is PersistedNewsArticle => !!article);
+      setPersistedArticles((current) => samePersistedArticles(current, next) ? current : next);
+    }, PERSIST_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
   }, [articles, setPersistedArticles]);
 
   return articles.length > 0 ? articles : restoredArticles;

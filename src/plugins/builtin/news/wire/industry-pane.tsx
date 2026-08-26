@@ -9,7 +9,7 @@ import { usePaneSettingValue } from "../../../../state/app/context";
 import { encodeSortPreference } from "../../../../components/data-table/sort-settings";
 import { Spinner, Tabs } from "../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
-import { NewsArticleStackView, type NewsSortPreference } from "./news/table";
+import { NewsArticleStackView, takeNewsTableHead, type NewsSortPreference } from "./news/table";
 import { useNewsArticleFooter } from "./news/footer";
 import { usePopOutNewsArticle } from "./news/pop-out";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
@@ -39,8 +39,19 @@ function useIndustryArticles(sector: SectorNewsSelection): {
   const sectorState = useNewsArticles(
     sector === "all" ? null : NEWS_QUERY_PRESETS.sector(sector),
   );
-  const allArticles = usePersistedNewsArticles("industry:sector:all:articles", allState.articles);
-  const sectorArticles = usePersistedNewsArticles(`industry:sector:${sector}:articles`, sectorState.articles);
+  const allLive = useMemo(
+    () => takeNewsTableHead(allState.articles, NEWS_QUERY_PRESETS.sectorAll.limit),
+    [allState.articles],
+  );
+  const sectorLive = useMemo(
+    () => takeNewsTableHead(
+      sectorState.articles,
+      sector === "all" ? NEWS_QUERY_PRESETS.sectorAll.limit : NEWS_QUERY_PRESETS.sector(sector).limit,
+    ),
+    [sector, sectorState.articles],
+  );
+  const allArticles = usePersistedNewsArticles("industry:sector:all:articles", allLive);
+  const sectorArticles = usePersistedNewsArticles(`industry:sector:${sector}:articles`, sectorLive);
   const phase = sector === "all" ? allState.phase : sectorState.phase;
   return {
     articles: sector === "all" ? allArticles : sectorArticles,

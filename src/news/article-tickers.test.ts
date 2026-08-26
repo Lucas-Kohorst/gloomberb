@@ -53,6 +53,20 @@ describe("extractArticleTickers", () => {
     expect(extractArticleTickers("Nvidia beat earnings", catalog)).toEqual(["NVDA"]);
   });
 
+  test("catalogNames: false keeps cashtag catalog lookup without scanning listing names", () => {
+    const universe = buildArticleTickerUniverse({
+      book: [{ symbol: "HOOD", name: "Robinhood Markets" }],
+      catalog: [
+        { symbol: "BRK.B", name: "Berkshire Hathaway" },
+        { symbol: "SNOW", name: "Snowflake" },
+      ],
+      catalogNames: false,
+    });
+    expect(extractArticleTickers("Snowflake posted results", universe)).toEqual([]);
+    expect(extractArticleTickers("Buying $BRK.B", universe)).toEqual(["BRK.B"]);
+    expect(extractArticleTickers("Robinhood Markets rallied", universe)).toEqual(["HOOD"]);
+  });
+
   test("does not treat CEO, GDP, or THE as tickers", () => {
     expect(extractArticleTickers("CEO says GDP rose as THE market opened", catalog)).toEqual([]);
   });

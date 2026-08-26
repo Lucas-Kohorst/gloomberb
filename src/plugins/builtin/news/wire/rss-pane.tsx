@@ -401,7 +401,13 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 }) {
   const rendererHost = useRendererHost();
   const newsState = useNewsArticles({ feed: "latest", limit: 200 });
-  const articles = usePersistedNewsArticles("rss:articles", newsState.articles);
+  const liveHead = useMemo(
+    () => newsState.articles.length <= 200
+      ? newsState.articles
+      : newsState.articles.slice(0, 200),
+    [newsState.articles],
+  );
+  const articles = usePersistedNewsArticles("rss:articles", liveHead);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("rss:selectedArticleId", null);
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", RSS_COLUMNS);
   const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(RSS_SORT));

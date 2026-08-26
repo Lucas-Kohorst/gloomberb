@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeSubstackArticle } from "./news-capability";
+import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
+import { attachSubstackPersistence, resetSubstackPersistence } from "./api/store";
+import { createSubstackNewsCapability, normalizeSubstackArticle } from "./news-capability";
 import type { SubstackArticleSummary } from "./types";
 
 function makeSummary(overrides: Partial<SubstackArticleSummary> = {}): SubstackArticleSummary {
@@ -45,11 +47,30 @@ describe("normalizeSubstackArticle", () => {
     expect(article?.categories).toContain("newsletter");
   });
 
-  test("extracts tickers from title and body with the shared matcher", () => {
+  test("extracts tickers from title and preview with the shared matcher", () => {
     const article = normalizeSubstackArticle(makeSummary({
       title: "Semis and $NVDA",
-      bodyHtml: "<p>NASDAQ:MSFT and (AAPL) in the same tape.</p>",
+      previewText: "NASDAQ:MSFT and (AAPL) in the same tape.",
     }));
     expect(article?.tickers).toEqual(["NVDA", "MSFT", "AAPL"]);
+  });
+
+  test("caps cached firehose seed to the query limit and reads {items} feed payloads", () => {
+    const persistence = new MemoryPluginPersistence();
+    attachSubstackPersistence(persistence);
+    persistence.seedResource("feed", "subscribed", {
+      items: [
+        makeSummary({ id: "1", title: "One", url: "https://www.astralcodexten.com/p/one" }),
+        makeSummary({ id: "2", title: "Two", url: "https://www.astralcodexten.com/p/two" }),
+        makeSummary({ id: "3", title: "Three", url: "https://www.astralcodexten.com/p/three" }),
+      ],
+    }, { sourceKey: "substack", schemaVersion: 4 });
+
+    try {
+      const articles = createSubstackNewsCapability().provider.getCachedNews?.({ feed: "latest", limit: 2 }) ?? [];
+      expect(articles.map((article) => article.title)).toEqual(["One", "Two"]);
+    } finally {
+      resetSubstackPersistence();
+    }
   });
 });
