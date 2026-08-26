@@ -2,7 +2,6 @@ import type { PluginCapability, RegisteredCapability } from "../../../capabiliti
 import type { DataProvider } from "../../../types/data-provider";
 import type { GloomPluginContext } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
-import { isProviderMiss } from "../../../sources/provider-errors";
 import {
   type ConnectionState,
   type ConnectionSnapshot,
@@ -26,6 +25,35 @@ type ConnectionListener = (snapshot: ConnectionSnapshot) => void;
 const CLOUD_SOCKET_ID = "gloom-cloud-ws";
 const CLOUD_REST_ID = "gloom-cloud";
 const POLL_INTERVAL_MS = 3000;
+const NOTIFY_COALESCE_MS = 250;
+
+/** Chat + Cloud market REST methods. DataProvider router traffic is not Cloud REST. */
+const CLOUD_REST_OPS = [
+  "getChannels",
+  "getChatState",
+  "getChatPresence",
+  "getMessages",
+  "sendMessage",
+  "editMessage",
+  "openDirectChannel",
+  "openGroupChannel",
+  "updateChatChannelState",
+  "markChatNotificationsDelivered",
+  "getCloudQuote",
+  "getCloudQuotesBatch",
+  "getCloudFinancials",
+  "getCloudFinancialsBatch",
+  "getCloudHistory",
+  "getCloudHolders",
+  "getCloudAnalystResearch",
+  "getCloudCorporateActions",
+  "getCloudOptionsChain",
+  "getCloudExchangeRate",
+  "getCloudMarketScreener",
+  "getCloudProfile",
+  "getCloudFundamentals",
+  "getCloudStatements",
+] as const;
 
 interface ProviderEntry {
   id: string;
@@ -59,23 +87,23 @@ const statusOrder: Record<ConnectionStatus, number> = {
 export class ConnectionTracker {
   private readonly states = new Map<string, ConnectionState>();
   private readonly listeners = new Set<ConnectionListener>();
+  private readonly apiClientOriginals = new Map<string, (...args: unknown[]) => unknown>();
   private version = 0;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private notifyHandle: { type: "raf"; id: number } | { type: "timeout"; id: ReturnType<typeof setTimeout> } | null = null;
+  private notifyScheduled = false;
   private listCapabilities: (() => RegisteredCapability[]) | null = null;
-  private marketData: DataProvider | null = null;
   private disposers: Array<() => void> = [];
   private disposed = false;
 
-  attach(_ctx: GloomPluginContext, listCapabilities: () => RegisteredCapability[], marketData: DataProvider): void {
+  attach(_ctx: GloomPluginContext, listCapabilities: () => RegisteredCapability[], _marketData: DataProvider): void {
     this.listCapabilities = listCapabilities;
-    this.marketData = marketData;
 
     this.ensureConnection(CLOUD_REST_ID, "Gloom Cloud", "asset-data", "gloomberb-cloud", 1, false, true);
     this.ensureConnection(CLOUD_SOCKET_ID, "Gloom Cloud Stream", "websocket", "gloomberb-cloud", 0, true, true);
 
     this.syncFromRegistry();
-    this.wrapMarketData();
-    this.wrapCloudChat();
+    this.wrapCloudRest();
     this.subscribeCloudUserChanges();
     setConnectionRequestReporter((id, report) => {
       if (report.success) this.recordSuccess(id, report.operation ?? "request", report.durationMs);
@@ -98,6 +126,8 @@ export class ConnectionTracker {
       clearInterval(this.pollTimer);
       this.pollTimer = null;
     }
+    this.cancelScheduledNotify();
+    this.unwrapCloudRest();
     for (const dispose of this.disposers) {
       try { dispose(); } catch { /* ignore */ }
     }
@@ -194,85 +224,19 @@ export class ConnectionTracker {
     return true;
   }
 
-  // -- Market-data wrapping --------------------------------------------------
+  // -- Cloud REST wrapping ---------------------------------------------------
 
-  private wrapMarketData(): void {
-    if (!this.marketData) return;
-    const router = this.marketData;
-    const tracker = this;
-
-    function wrap<TArgs extends unknown[], TResult>(
-      operation: string,
-      fn: (...args: TArgs) => Promise<TResult>,
-    ): (...args: TArgs) => Promise<TResult> {
-      return async function (...args: TArgs): Promise<TResult> {
-        const start = Date.now();
-        try {
-          const result = await fn.apply(router, args);
-          tracker.recordSuccess(CLOUD_REST_ID, operation, Date.now() - start);
-          return result;
-        } catch (error) {
-          if (isProviderMiss(error)) {
-            tracker.recordSuccess(CLOUD_REST_ID, operation, Date.now() - start);
-          } else {
-            tracker.recordFailure(CLOUD_REST_ID, operation, Date.now() - start, error);
-          }
-          throw error;
-        }
-      };
-    }
-
-    const targets: Array<{ key: keyof DataProvider; op: string }> = [
-      { key: "getQuote", op: "getQuote" },
-      { key: "getTickerFinancials", op: "getTickerFinancials" },
-      { key: "search", op: "search" },
-      { key: "getPriceHistory", op: "getPriceHistory" },
-      { key: "getHolders", op: "getHolders" },
-      { key: "getAnalystResearch", op: "getAnalystResearch" },
-      { key: "getCorporateActions", op: "getCorporateActions" },
-      { key: "getOptionsChain", op: "getOptionsChain" },
-      { key: "getSecFilings", op: "getSecFilings" },
-      { key: "getExchangeRate", op: "getExchangeRate" },
-      { key: "getEarningsCalendar", op: "getEarningsCalendar" },
-      { key: "getQuotesBatch", op: "getQuotesBatch" },
-      { key: "getTickerFinancialsBatch", op: "getTickerFinancialsBatch" },
-    ];
-
-    for (const { key, op } of targets) {
-      const original = (router as unknown as Record<string, unknown>)[key];
-      if (typeof original !== "function") continue;
-      (router as unknown as Record<string, unknown>)[key] = wrap(op, original as (...args: unknown[]) => Promise<unknown>);
-    }
-  }
-
-  // -- Cloud chat wrapping ---------------------------------------------------
-
-  /**
-   * Chat REST calls go straight through the api client, bypassing the market
-   * data router that `wrapMarketData` instruments, so their traffic never
-   * reached Connections. Wrap them so chat activity reports against the Gloom
-   * Cloud REST connection like every other integration.
-   */
-  private wrapCloudChat(): void {
+  /** Cloud chat + market REST. DataProvider/Yahoo/IBKR traffic reports via register. */
+  private wrapCloudRest(): void {
     const client = apiClient as unknown as Record<string, unknown>;
     const tracker = this;
-    const chatOps = [
-      "getChannels",
-      "getChatState",
-      "getChatPresence",
-      "getMessages",
-      "sendMessage",
-      "editMessage",
-      "openDirectChannel",
-      "openGroupChannel",
-      "updateChatChannelState",
-      "markChatNotificationsDelivered",
-    ];
 
-    for (const op of chatOps) {
+    for (const op of CLOUD_REST_OPS) {
       const original = client[op];
       if (typeof original !== "function") continue;
+      if (this.apiClientOriginals.has(op)) continue;
       const run = original as (...args: unknown[]) => Promise<unknown>;
+      this.apiClientOriginals.set(op, run);
       client[op] = async function (...args: unknown[]): Promise<unknown> {
         const start = Date.now();
         try {
@@ -285,6 +249,14 @@ export class ConnectionTracker {
         }
       };
     }
+  }
+
+  private unwrapCloudRest(): void {
+    const client = apiClient as unknown as Record<string, unknown>;
+    for (const [op, original] of this.apiClientOriginals) {
+      client[op] = original;
+    }
+    this.apiClientOriginals.clear();
   }
 
   // -- Cloud socket monitoring -----------------------------------------------
@@ -370,11 +342,39 @@ export class ConnectionTracker {
   }
 
   private notify(): void {
-    this.version++;
-    const snapshot = this.getSnapshot();
-    for (const listener of this.listeners) {
-      listener(snapshot);
+    if (this.disposed || this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    const flush = () => {
+      this.notifyHandle = null;
+      this.notifyScheduled = false;
+      if (this.disposed) return;
+      this.version++;
+      const snapshot = this.getSnapshot();
+      for (const listener of this.listeners) {
+        listener(snapshot);
+      }
+    };
+    if (typeof requestAnimationFrame === "function") {
+      this.notifyHandle = { type: "raf", id: requestAnimationFrame(flush) };
+      return;
     }
+    this.notifyHandle = { type: "timeout", id: setTimeout(flush, NOTIFY_COALESCE_MS) };
+  }
+
+  private cancelScheduledNotify(): void {
+    if (!this.notifyHandle) {
+      this.notifyScheduled = false;
+      return;
+    }
+    if (this.notifyHandle.type === "raf") {
+      if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(this.notifyHandle.id);
+      }
+    } else {
+      clearTimeout(this.notifyHandle.id);
+    }
+    this.notifyHandle = null;
+    this.notifyScheduled = false;
   }
 }
 

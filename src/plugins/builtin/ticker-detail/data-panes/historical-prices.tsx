@@ -49,15 +49,15 @@ function pricePointDate(point: PricePoint): Date | null {
 }
 
 function formatMaybePrice(value: number | undefined): string {
-  return value == null ? "-" : formatNumber(value, 2);
+  return value == null ? "—" : formatNumber(value, 2);
 }
 
 function formatMaybePercent(value: number | null): string {
-  return value == null ? "-" : formatPercent(value);
+  return value == null ? "—" : formatPercent(value);
 }
 
 function formatMaybeCompact(value: number | undefined): string {
-  return value == null ? "-" : formatCompact(value);
+  return value == null ? "—" : formatCompact(value);
 }
 
 export function buildHistoricalPriceRows(points: PricePoint[]): HistoricalPriceRow[] {
@@ -107,7 +107,7 @@ function nextHistoryRange(current: TimeRange): TimeRange {
 export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const { symbol, exchange } = useBoundTicker();
-  const [range, setRange] = usePluginPaneState<TimeRange>("range", "ALL");
+  const [range, setRange] = usePluginPaneState<TimeRange>("range", "1Y");
   const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider) throw new Error("Market data unavailable");
@@ -178,7 +178,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       case "close":
         return { text: formatNumber(row.point.close, 2), color: selectedColor ?? colors.textBright, attributes: TextAttributes.BOLD };
       case "change":
-        return { text: row.change == null ? "-" : formatNumber(row.change, 2), color: selectedColor ?? priceColor(row.change ?? 0) };
+        return { text: row.change == null ? "—" : formatNumber(row.change, 2), color: selectedColor ?? priceColor(row.change ?? 0) };
       case "changePercent":
         return { text: formatMaybePercent(row.changePercent), color: selectedColor ?? priceColor(row.changePercent ?? 0) };
       case "volume":
@@ -218,6 +218,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
         { defaultDirection: "desc" },
       ))}
       getItemKey={(row) => row.key}
+      getRowRevision={(row) => `${row.key}:${row.point.close}:${row.point.volume ?? ""}:${row.change ?? ""}`}
       renderCell={renderCell}
       emptyStateTitle={loading
         ? "Loading historical prices..."

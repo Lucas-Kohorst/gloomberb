@@ -37,7 +37,7 @@ import {
   type FireColumn,
   type FireSort,
 } from "./model";
-import { matchesHotspotSearch } from "./parse";
+import { matchesHotspotSearch, mergeHotspots } from "./parse";
 import {
   FIRMS_CONNECTION_ID,
   GIBS_CONNECTION_ID,
@@ -113,9 +113,16 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
     setStatus("loading");
     setError(null);
     try {
-      const next = await loadFirmsHotspots();
+      const next = await loadFirmsHotspots({
+        onPartial: (partial) => {
+          if (fetchGen.current !== gen) return;
+          setHotspots((current) => mergeHotspots(current, partial));
+          setStatus("loaded");
+          setLastUpdated(Date.now());
+        },
+      });
       if (fetchGen.current !== gen) return;
-      setHotspots(next);
+      setHotspots((current) => mergeHotspots(current, next));
       setStatus("loaded");
       setLastUpdated(Date.now());
     } catch (err) {
@@ -136,9 +143,17 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
   }, [date, layer.layer, tab]);
 
   const visible = useMemo(() => {
-    const matched = hotspots.filter((row) => matchesHotspotSearch(row, searchQuery));
-    return sortFireRows(matched, sort).slice(0, FIRE_ROW_CAP);
+    const matched = searchQuery.trim()
+      ? hotspots.filter((row) => matchesHotspotSearch(row, searchQuery))
+      : hotspots;
+    const sorted = sortFireRows(matched, sort);
+    return sorted.length > FIRE_ROW_CAP ? sorted.slice(0, FIRE_ROW_CAP) : sorted;
   }, [hotspots, searchQuery, sort]);
+
+  const getRowRevision = useCallback(
+    (row: FireHotspot) => `${row.id}:${row.frp ?? ""}:${row.brightness ?? ""}:${row.acqTime}`,
+    [],
+  );
 
   useEffect(() => {
     if (!selectedId || !visible.some((row) => row.id === selectedId)) {
@@ -324,6 +339,7 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
       sortDirection={sort.direction}
       onHeaderClick={(columnId) => setSort((current) => nextFireSort(current, columnId as FireColumn["id"]))}
       getItemKey={(row) => row.id}
+      getRowRevision={getRowRevision}
       renderCell={(row, column, _index, state) => renderFireCell(row, column, state.selected)}
       emptyStateTitle="No fire hotspots."
       onRootKeyDown={handleRootKeyDown}

@@ -11,6 +11,13 @@ import type { RemoteControlRequest, RemoteControlResponse } from "../../../remot
 
 export const ELECTROBUN_CONTEXT_MENU_ACTION = "gloom.context-menu.select";
 
+export interface DesktopExternalPluginBundle {
+  dirName: string;
+  entryFile: string;
+  js?: string;
+  error?: string;
+}
+
 export interface ElectrobunBackendInit {
   config: AppConfig;
   sessionSnapshot: AppSessionSnapshot | null;
@@ -21,6 +28,7 @@ export interface ElectrobunBackendInit {
   desktopPlatform: string;
   windowKind: "main" | "detached";
   paneId?: string;
+  externalPlugins?: DesktopExternalPluginBundle[];
 }
 
 export interface DesktopRestartMessage {
@@ -137,6 +145,7 @@ export interface DesktopBackendRequestMap {
     response: null;
   };
   "session.delete": { request: { sessionId: string }; response: null };
+  "plugins.listExternal": { request: null; response: DesktopExternalPluginBundle[] };
 }
 
 export type DesktopBackendRequestMethod = keyof DesktopBackendRequestMap;
@@ -235,6 +244,7 @@ export interface ElectrobunDesktopRpcSchema {
       "desktop.deepLink": DesktopDeepLinkMessage;
       "update.progress": UpdateProgressMessage;
       "capability.event": CapabilityEventMessage;
+      "plugins.externalChanged": { bundles: DesktopExternalPluginBundle[] };
     };
   };
 }

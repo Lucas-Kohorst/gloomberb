@@ -47,6 +47,19 @@ export interface ComputeVolSurfaceOptions {
   now?: number;
 }
 
+/** Coarse live-spot bucket so penny ticks do not rebuild the IV grid. */
+export function quantizeVolSurfaceSpot(spot: number | null | undefined): number | null {
+  if (spot == null || !Number.isFinite(spot) || spot <= 0) return null;
+  const step = spot >= 50 ? 0.1 : 0.01;
+  return Math.round(spot / step) * step;
+}
+
+function indexContractsByStrike(contracts: readonly OptionContract[]): Map<number, OptionContract> {
+  const byStrike = new Map<number, OptionContract>();
+  for (const contract of contracts) byStrike.set(contract.strike, contract);
+  return byStrike;
+}
+
 /**
  * Mid price with a `lastPrice` fallback, matching the options-calc seed helper.
  * Returns null when no usable price exists.
@@ -121,12 +134,25 @@ export function computeVolSurface(
   let minIv = Number.POSITIVE_INFINITY;
   let maxIv = Number.NEGATIVE_INFINITY;
 
+  const contractsByExpiration = new Map<number, {
+    calls: Map<number, OptionContract>;
+    puts: Map<number, OptionContract>;
+  }>();
+  for (const expiration of expirations) {
+    const chain = chainsByExpiration.get(expiration);
+    if (!chain) continue;
+    contractsByExpiration.set(expiration, {
+      calls: indexContractsByStrike(chain.calls),
+      puts: indexContractsByStrike(chain.puts),
+    });
+  }
+
   const cells: (VolSurfaceCell | null)[][] = strikes.map((strike) =>
     expirations.map((expiration) => {
-      const chain = chainsByExpiration.get(expiration);
-      if (!chain || spot == null || spot <= 0) return null;
-      const call = chain.calls.find((c) => c.strike === strike);
-      const put = chain.puts.find((p) => p.strike === strike);
+      const indexed = contractsByExpiration.get(expiration);
+      if (!indexed || spot == null || spot <= 0) return null;
+      const call = indexed.calls.get(strike);
+      const put = indexed.puts.get(strike);
       const picked = pickPricableContract(call, put);
       if (!picked) return null;
       const price = contractMarketPrice(picked.contract);

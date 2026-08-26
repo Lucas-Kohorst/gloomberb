@@ -16,7 +16,7 @@ import {
 } from "../../../components";
 import { registerConnectionSource } from "../connections/register";
 import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
-import { fetchEarningsTranscripts } from "./client";
+import { fetchEarningsTranscriptContent, fetchEarningsTranscripts } from "./client";
 import type { EarningsTranscript } from "./types";
 
 const EARNINGS_TRANSCRIPTS_PANE_ID = "earnings-transcripts";
@@ -34,19 +34,22 @@ function toFeedItems(
   selectedId: string | undefined,
 ): FeedDataTableItem[] {
   return transcripts.map((transcript) => {
-    const participantLines = transcript.participants.length > 0
+    const selected = transcript.id === selectedId;
+    const participantLines = selected && transcript.participants.length > 0
       ? ["Participants", ...transcript.participants.map((p) => `${p.name} — ${p.role}`)]
       : [];
-    const sectionLines = transcript.sections.length > 0
+    const sectionLines = selected && transcript.sections.length > 0
       ? ["Key Sections", ...transcript.sections.map((s, i) => `[${i + 1}] ${s.text.slice(0, 200)}`)]
       : [];
-    const detailBody = [
-      ...participantLines,
-      ...(participantLines.length > 0 ? [""] : []),
-      ...sectionLines,
-      ...(sectionLines.length > 0 ? [""] : []),
-      transcript.body,
-    ].join("\n");
+    const detailBody = selected
+      ? [
+        ...participantLines,
+        ...(participantLines.length > 0 ? [""] : []),
+        ...sectionLines,
+        ...(sectionLines.length > 0 ? [""] : []),
+        transcript.body || "Loading filing content...",
+      ].join("\n")
+      : "";
 
     const meta: string[] = [];
     if (transcript.date) meta.push(`Filed ${transcript.date}`);
@@ -68,6 +71,38 @@ function toFeedItems(
 
 function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+}
+
+function useOpenTranscriptContent(
+  openItemId: string | null,
+  transcripts: EarningsTranscript[],
+  setTranscripts: (updater: (current: EarningsTranscript[]) => EarningsTranscript[]) => void,
+): void {
+  const contentGenRef = useRef(0);
+  useEffect(() => {
+    if (!openItemId) return;
+    const current = transcripts.find((transcript) => transcript.id === openItemId);
+    if (!current || current.contentLoaded) return;
+    contentGenRef.current += 1;
+    const gen = contentGenRef.current;
+    void fetchEarningsTranscriptContent(current)
+      .then((next) => {
+        if (contentGenRef.current !== gen) return;
+        setTranscripts((list) => list.map((item) => item.id === next.id ? next : item));
+      })
+      .catch(() => {
+        if (contentGenRef.current !== gen) return;
+        setTranscripts((list) => list.map((item) => (
+          item.id === openItemId
+            ? {
+              ...item,
+              contentLoaded: true,
+              body: "Filing content was not available for this document.",
+            }
+            : item
+        )));
+      });
+  }, [openItemId, setTranscripts, transcripts]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -127,6 +162,7 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
   }, []);
 
   const loading = status === "loading" && transcripts.length === 0;
+  useOpenTranscriptContent(openItemId, transcripts, setTranscripts);
   const selectedTranscript = openItemId
     ? transcripts.find((t) => t.id === openItemId) ?? null
     : null;
@@ -307,6 +343,7 @@ function EarningsTranscriptsTab({ width, height, focused }: { width: number; hei
       });
   }, [symbol]);
 
+  useOpenTranscriptContent(openItemId, transcripts, setTranscripts);
   const selectedTranscript = openItemId
     ? transcripts.find((t) => t.id === openItemId) ?? null
     : null;

@@ -313,6 +313,7 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(row) => row.etf}
+      getRowRevision={(row) => `${row.etf}:${row.price}:${row.changePercent}:${row.return1M}:${row.return1Y}:${row.loading}`}
       renderCell={renderCell}
       emptyStateTitle="No sector data available"
       showHorizontalScrollbar={false}

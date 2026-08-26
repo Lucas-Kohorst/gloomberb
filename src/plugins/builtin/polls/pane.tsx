@@ -1,3 +1,4 @@
+import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
@@ -504,7 +505,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const paneSettings = getPollsPaneSettings({ defaultTab: tab, columnIds, sort: sortValue });
   const resolvedTab = paneSettings.defaultTab;
   const [rowsByTab, setRowsByTab] = useState<Partial<Record<PollTabId, PollRow[]>>>({});
-  const [status, setStatus] = useState<LoadStatus>("idle");
+  const [status, setStatus] = useState<LoadStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -555,7 +556,9 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    load(resolvedTab);
+    return runAfterStartupBackground(() => {
+      load(resolvedTab);
+    });
   }, [load, resolvedTab]);
 
   useEffect(() => {
@@ -680,6 +683,10 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   const renderCell = useCallback(
     (row: PollRow, column: PollColumn, _index: number, rowState: { selected: boolean }) =>
       renderPollCell(row, column, rowState.selected),
+    [],
+  );
+  const getRowRevision = useCallback(
+    (row: PollRow) => `${row.id}:${row.result}:${row.endDate ?? ""}:${row.lead ?? ""}`,
     [],
   );
 
@@ -851,6 +858,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
           )));
         }}
         getItemKey={(row) => row.id}
+        getRowRevision={getRowRevision}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? "No matching polls." : resolvedTab === "all" ? "No polls." : "No polls in this category."}
         emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}

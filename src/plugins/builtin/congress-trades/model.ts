@@ -12,8 +12,8 @@ import type { CloudCongressHouseParams } from "../../../api-client/paths";
 export const CONGRESS_TRADES_PANE_ID = "congress-trades";
 export const CONGRESS_TRADE_LIMIT = 200;
 export const CONGRESS_FILING_LIMIT = 60;
-export const CONGRESS_MEMBER_TRADE_LIMIT = 2000;
-export const CONGRESS_MEMBER_FILING_LIMIT = 500;
+export const CONGRESS_MEMBER_TRADE_LIMIT = 200;
+export const CONGRESS_MEMBER_FILING_LIMIT = 80;
 
 export type CongressTab = "trades" | "members";
 export type LoadStatus = "idle" | "loading" | "loaded" | "error";

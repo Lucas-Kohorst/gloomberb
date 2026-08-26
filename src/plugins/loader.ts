@@ -56,19 +56,32 @@ export function setPluginsDirForTests(dir: string | null): void {
   pluginsDir = dir;
 }
 
-export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
-  const rootDir = getPluginsDir();
+export interface ExternalPluginEntry {
+  dirName: string;
+  pluginDir: string;
+  entryFile: string;
+}
+
+export async function listExternalPluginEntries(
+  rootDir = getPluginsDir(),
+): Promise<ExternalPluginEntry[]> {
   if (!existsSync(rootDir)) return [];
-
-  const results: LoadedExternalPlugin[] = [];
   const entries = await readdir(rootDir, { withFileTypes: true });
-
+  const plugins: ExternalPluginEntry[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const pluginDir = join(rootDir, entry.name);
-
     const entryFile = resolvePluginEntryFile(pluginDir);
-    if (!entryFile) continue;
+    if (entryFile) plugins.push({ dirName: entry.name, pluginDir, entryFile });
+  }
+  return plugins;
+}
+
+export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
+  const results: LoadedExternalPlugin[] = [];
+  const entries = await listExternalPluginEntries();
+
+  for (const { dirName, pluginDir, entryFile } of entries) {
 
     try {
       const mod = await import(entryFile);
@@ -80,7 +93,7 @@ export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
     } catch (err) {
       loaderLog.error(`Failed to load plugin from ${pluginDir}: ${err}`);
       results.push({
-        plugin: { id: entry.name, name: entry.name, version: "0.0.0" } as GloomPlugin,
+        plugin: { id: dirName, name: dirName, version: "0.0.0" } as GloomPlugin,
         path: pluginDir,
         error: String(err),
       });
@@ -97,7 +110,7 @@ export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
  */
 export function watchPluginsDir(
   callback: () => void,
-  debounceMs = 500,
+  debounceMs = 800,
 ): () => void {
   if (typeof Bun === "undefined") return () => {};
 

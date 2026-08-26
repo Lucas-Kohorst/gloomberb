@@ -88,7 +88,7 @@ function formatPeriod(period: string): string {
     .replace(/\bcurrent\b/g, "cur")
     .replace(/\bquarter\b/g, "qtr")
     .replace(/\byear\b/g, "yr")
-    || "-";
+    || "—";
 }
 
 function isFiscalEstimatePeriod(period: string): boolean {
@@ -102,7 +102,7 @@ function sortedQuarterlyStatements(financials: Pick<TickerFinancials, "quarterly
 }
 
 function quarterLabel(statement: FinancialStatement | undefined): string {
-  return statement?.date ? `Q${statement.date.slice(2)}` : "-";
+  return statement?.date ? `Q${statement.date.slice(2)}` : "—";
 }
 
 function daysBetween(leftDate: string, rightDate: string): number {
@@ -243,7 +243,7 @@ function estimateTone(pair: EstimatePair): EventRow["tone"] {
 
 function estimateValue(pair: EstimatePair): string {
   const growth = pair.eps?.growth ?? pair.revenue?.growth;
-  return growth == null ? "-" : formatPercent(growth);
+  return growth == null ? "—" : formatPercent(growth);
 }
 
 function ttmRow(quarterlyStatements: readonly FinancialStatement[]): EventRow | null {
@@ -259,7 +259,7 @@ function ttmRow(quarterlyStatements: readonly FinancialStatement[]): EventRow | 
     detail: "sum",
     annualEps: ttm.eps,
     annualRevenue: ttm.totalRevenue,
-    value: "-",
+    value: "—",
     tone: "muted",
   };
 }
@@ -304,11 +304,11 @@ export function buildEventRows(
       id: `earn:${earning.date}`,
       date: earning.date,
       status: "Earnings",
-      period: statement ? quarterLabel(statement) : earning.time?.trim() || "-",
+      period: statement ? quarterLabel(statement) : earning.time?.trim() || "—",
       detail: earningsDetail(earning),
       qEps: earning.epsActual ?? statement?.eps ?? earning.epsEstimate,
       qRevenue: statement?.totalRevenue,
-      value: earning.surprisePercent != null ? formatPercentRaw(earning.surprisePercent) : "-",
+      value: earning.surprisePercent != null ? formatPercentRaw(earning.surprisePercent) : "—",
       tone: earning.surprisePercent == null ? "muted" : earning.surprisePercent >= 0 ? "positive" : "negative",
     });
   }
@@ -335,7 +335,7 @@ export function buildEventRows(
       id: `div:${dividend.exDate}`,
       date: dividend.exDate,
       status: "Dividend",
-      period: "-",
+      period: "—",
       detail: "Ex-date",
       value: formatCurrency(dividend.amount, currency),
       tone: "positive",
@@ -347,7 +347,7 @@ export function buildEventRows(
       id: `split:${split.date}:${split.description ?? ""}`,
       date: split.date,
       status: "Split",
-      period: "-",
+      period: "—",
       detail: split.description ?? "Split",
       value: split.fromFactor && split.toFactor ? `${split.fromFactor}:${split.toFactor}` : formatNumber(split.ratio, 4),
       tone: "muted",
@@ -394,7 +394,7 @@ function eventSummaryLine(row: EventRow): string {
     row.qRevenue != null ? `Rev ${formatCompact(row.qRevenue)}` : null,
     row.annualEps != null ? `Ann EPS ${formatNumber(row.annualEps, 2)}` : null,
     row.annualRevenue != null ? `Ann Rev ${formatCompact(row.annualRevenue)}` : null,
-    row.value !== "-" ? row.value : null,
+    row.value !== "—" ? row.value : null,
     row.detail || null,
   ].filter((line): line is string => !!line).join(" | ");
 }
@@ -537,7 +537,7 @@ export function CorporateActionsView({
         case "qRevenue": return row.qRevenue ?? null;
         case "annualEps": return row.annualEps ?? null;
         case "annualRevenue": return row.annualRevenue ?? null;
-        case "value": return row.value === "-" ? null : row.value;
+        case "value": return row.value === "—" ? null : row.value;
         case "detail": return row.detail;
       }
     }),

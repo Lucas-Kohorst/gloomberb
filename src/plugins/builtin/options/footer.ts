@@ -48,8 +48,7 @@ export function useOptionsAccessFooter({
     segmentId: "options-access",
     shortcutScope: "options:upgrade",
   });
-  // Trial accounts stream real-time too, but the countdown is the status worth the row.
-  const coverage = access.hasProAccess && !access.isTrialActive
+  const coverage = access.hasProAccess
     ? resolveOptionsCoverageState(quoteCoverage.status)
     : null;
 

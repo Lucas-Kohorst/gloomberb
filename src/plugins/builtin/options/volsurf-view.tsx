@@ -30,6 +30,7 @@ import type { OptionsChain } from "../../../types/financials";
 import {
   computeVolSurface,
   formatIvCell,
+  quantizeVolSurfaceSpot,
   volSurfaceCellBackground,
   volSurfaceCellText,
   type VolSurface,
@@ -128,11 +129,12 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
   }, []);
 
   const spot = financials?.quote?.price ?? null;
+  const quantizedSpot = quantizeVolSurfaceSpot(spot);
   const dividendYield = financials?.fundamentals?.dividendYield ?? null;
 
   const surface = useMemo(
-    () => computeVolSurface(chainsByExpiration, { spot, dividendYield }),
-    [chainsByExpiration, dividendYield, spot],
+    () => computeVolSurface(chainsByExpiration, { spot: quantizedSpot, dividendYield }),
+    [chainsByExpiration, dividendYield, quantizedSpot],
   );
 
   const anyLoading = loadingBase
@@ -285,6 +287,7 @@ export function VolSurfaceView({ width, height, focused }: VolSurfaceViewProps) 
           sortDirection={sortPreference.direction}
           onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId))}
           getItemKey={(row) => String(row.strike)}
+          getRowRevision={(row) => `${row.strike}:${row.cells.map((cell) => cell?.impliedVolatility ?? "").join(",")}`}
           renderCell={renderCell}
           emptyStateTitle="No options data"
           emptyStateMessage="No strikes for this expiration."

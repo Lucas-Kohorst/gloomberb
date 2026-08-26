@@ -73,7 +73,7 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
     return buildCorrelationChartSpec(symbols, settings.rangePreset);
   }, [settings.rangePreset, settings.symbolsError, symbolsKey]);
 
-  const resolution = useResolvedChartSpec(spec);
+  const resolution = useResolvedChartSpec(spec, { liveStreaming: false });
 
   const seriesBySymbol = useMemo(() => {
     const map = new Map<string, CorrelationSeries>();

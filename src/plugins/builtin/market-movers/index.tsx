@@ -325,6 +325,7 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         sortDirection={sortPreference.direction}
         onHeaderClick={handleHeaderClick}
         getItemKey={(row) => `${row.symbol}-${row.rank}`}
+        getRowRevision={(row) => `${row.symbol}:${row.price}:${row.changePercent}:${row.volume}:${row.lastUpdated ?? 0}`}
         onActivate={(row) => openSymbol(row.symbol)}
         renderCell={renderMarketMoverCell}
         emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No data"}

@@ -62,14 +62,18 @@ export function hiloMinPriceValue(setting: HiloMinPrice): number {
   return setting === "1" ? 1 : setting === "5" ? 5 : 0;
 }
 
+export const HILO_PAINTED_HEAD_LIMIT = 200;
+
 export function filterHiloRows(
   rows: readonly ScannerHiloExtreme[] | undefined,
   minPrice: HiloMinPrice,
   sort: HiloSort,
+  limit = HILO_PAINTED_HEAD_LIMIT,
 ): ScannerHiloExtreme[] {
   const floor = hiloMinPriceValue(minPrice);
   const filtered = (rows ?? []).filter((row) => row.price >= floor);
-  return sort === "count"
+  const ranked = sort === "count"
     ? [...filtered].sort((left, right) => right.count - left.count || right.at - left.at)
     : [...filtered].sort((left, right) => right.at - left.at);
+  return ranked.length <= limit ? ranked : ranked.slice(0, limit);
 }

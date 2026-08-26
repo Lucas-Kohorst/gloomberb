@@ -31,6 +31,8 @@ import type {
 const BROWSER_PAGE_LIMIT = 75;
 const LATEST_FILINGS_PAGE_LIMIT = 120;
 const FORM_ENRICHMENT_LIMIT = 35;
+/** Fund detail paints this many holdings so Berkshire-sized 13Fs can open. */
+export const FUND_HOLDINGS_HEAD_LIMIT = 200;
 
 export interface BrowserLoadResult {
   rows: FundBrowserRow[];
@@ -177,9 +179,10 @@ export async function loadFundDetail(
   ));
   const latestForm = forms[0] ?? null;
   const previousForm = forms[1] ?? null;
+  const holdingsOptions = { ...apiOptions, maxRows: FUND_HOLDINGS_HEAD_LIMIT };
   const [latestHoldings, previousHoldings] = await Promise.all([
-    latestForm ? listThirteenFFormHoldings(cik, latestForm.accessionNumber, signal, apiOptions) : Promise.resolve([]),
-    previousForm ? listThirteenFFormHoldings(cik, previousForm.accessionNumber, signal, apiOptions) : Promise.resolve([]),
+    latestForm ? listThirteenFFormHoldings(cik, latestForm.accessionNumber, signal, holdingsOptions) : Promise.resolve([]),
+    previousForm ? listThirteenFFormHoldings(cik, previousForm.accessionNumber, signal, holdingsOptions) : Promise.resolve([]),
   ]);
   return {
     cik: normalizeCik(cik),

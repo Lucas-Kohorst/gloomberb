@@ -141,6 +141,7 @@ export function createRegistryPluginContext({
 
   return {
     registerPane: (pane) => contributions.registerPane(pluginId, pane, items),
+    registerPaneType: (pane) => contributions.registerPane(pluginId, pane, items),
     registerPaneTemplate: (template) => contributions.registerPaneTemplate(pluginId, template, items),
     registerCommand: (command) => contributions.registerCommand(pluginId, command, items),
     registerColumn: (column) => contributions.registerColumn(pluginId, column, items),

@@ -28,7 +28,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
-import { loadBrowserRows, loadFilingPositions, loadFundDetail } from "./data";
+import { FUND_HOLDINGS_HEAD_LIMIT, loadBrowserRows, loadFilingPositions, loadFundDetail } from "./data";
 import {
   DEFAULT_BROWSER_SORT,
   DEFAULT_FILING_POSITION_SORT,
@@ -428,9 +428,12 @@ function FundDetailView({
   }, [load]);
 
   const holdingRows = useMemo(() => buildFundHoldingRows(data), [data]);
-  const visibleHoldingRows = useMemo(() => (
-    sortHoldingRows(holdingRows.filter((row) => row.value != null), holdingSort)
-  ), [holdingRows, holdingSort]);
+  const visibleHoldingRows = useMemo(() => {
+    const sorted = sortHoldingRows(holdingRows.filter((row) => row.value != null), holdingSort);
+    return sorted.length <= FUND_HOLDINGS_HEAD_LIMIT
+      ? sorted
+      : sorted.slice(0, FUND_HOLDINGS_HEAD_LIMIT);
+  }, [holdingRows, holdingSort]);
   const filingRows = useMemo(() => sortTimelineRows(buildTimelineRows(data?.forms ?? []), filingSort), [data?.forms, filingSort]);
   const selectedHoldingIndex = selectedIndexById(visibleHoldingRows, holdingSelectedId);
   const selectedFilingIndex = selectedIndexById(filingRows, filingSelectedId);

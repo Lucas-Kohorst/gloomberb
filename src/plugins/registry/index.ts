@@ -538,7 +538,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
    * unregistered first. The `pluginId` may be either the plugin's actual ID
    * or its directory name (they may differ). Returns success/failure.
    */
-  async reloadExternalPlugin(pluginId: string): Promise<{ success: boolean; message: string }> {
+  async reloadExternalPlugin(pluginId: string): Promise<{
+    success: boolean;
+    message: string;
+    pluginId?: string;
+  }> {
     let entryFile = this.externalPluginEntryFiles.get(pluginId);
 
     // If the entry file is not tracked, try to resolve it from the plugins dir.
@@ -576,7 +580,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
       this.externalPluginEntryFiles.set(plugin.id, entryFile);
       await this.register(plugin);
       this.registryLog.info(`Reloaded external plugin: ${plugin.id}`);
-      return { success: true, message: `Reloaded ${plugin.id}` };
+      return { success: true, message: `Reloaded ${plugin.id}`, pluginId: plugin.id };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.registryLog.error("Failed to reload external plugin", { pluginId, error: message });
@@ -585,13 +589,57 @@ export class PluginRegistry implements PluginRuntimeAccess {
   }
 
   /**
-   * Reload all tracked external plugins.
+   * Discover plugins on disk, load new ones, reload existing, drop removed.
+   * Returns plugin ids that were not registered before this sync.
    */
-  async reloadExternalPlugins(): Promise<void> {
-    const pluginIds = [...this.externalPluginEntryFiles.keys()];
-    for (const pluginId of pluginIds) {
-      await this.reloadExternalPlugin(pluginId);
+  async syncExternalPluginsFromDisk(): Promise<{ added: string[] }> {
+    const { listExternalPluginEntries } = await import("../loader");
+    const entries = await listExternalPluginEntries();
+    const seenIds = new Set<string>();
+    const added: string[] = [];
+
+    for (const entry of entries) {
+      const alreadyRegistered = [...this.externalPluginEntryFiles.values()].includes(entry.entryFile)
+        || this.externalPluginEntryFiles.has(entry.dirName);
+      const result = await this.reloadExternalPlugin(entry.dirName);
+      if (!result.success || !result.pluginId) continue;
+      seenIds.add(result.pluginId);
+      if (!alreadyRegistered) added.push(result.pluginId);
     }
+
+    for (const pluginId of [...this.externalPluginEntryFiles.keys()]) {
+      if (seenIds.has(pluginId)) continue;
+      const result = await this.reloadExternalPlugin(pluginId);
+      if (result.success && result.pluginId) seenIds.add(result.pluginId);
+    }
+
+    for (const [pluginId, entryFile] of [...this.externalPluginEntryFiles]) {
+      if (seenIds.has(pluginId) || existsSync(entryFile)) continue;
+      try {
+        this.unregister(pluginId);
+      } catch (error) {
+        this.registryLog.error("Failed to unregister removed external plugin", {
+          pluginId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return { added };
+  }
+
+  openPrimaryPluginPane(pluginId: string): boolean {
+    const paneId = this.getPluginPaneIds(pluginId)[0];
+    if (!paneId) return false;
+    this.showPane(paneId);
+    return true;
+  }
+
+  /**
+   * Reload all external plugins on disk, including newly created directories.
+   */
+  async reloadExternalPlugins(): Promise<{ added: string[] }> {
+    return this.syncExternalPluginsFromDisk();
   }
 
   private removePlugin(pluginId: string): void {

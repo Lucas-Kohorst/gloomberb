@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes, useUiHost } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { SpeedometerGauge, usePaneFooter, useUpdatedAgo } from "../../../components";
+import { ErrorState, footerErrorChip, LoadingState, SpeedometerGauge, usePaneFooter, useUpdatedAgo } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
@@ -71,6 +71,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   });
 
   const updatedAgo = useUpdatedAgo(lastRefreshed);
+  const errorChip = footerErrorChip(error);
   usePaneFooter(paneId, () => ({
     info: [
       ...(data ? [{
@@ -80,29 +81,17 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
         ],
       }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
-      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
+      ...(errorChip ? [{ id: "error", parts: [{ text: errorChip.text, tone: errorChip.tone }] }] : []),
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }],
-  }), [data, error, loading, paneId, refresh, updatedAgo]);
+  }), [data, errorChip, loading, paneId, refresh, updatedAgo]);
 
   if (loading && !data) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>Loading Fear & Greed...</Text>
-        </Box>
-      </Box>
-    );
+    return <LoadingState title="Loading Fear & Greed..." />;
   }
 
   if (!data) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center" paddingX={1}>
-          <Text fg={colors.negative}>{error ?? "Fear & Greed data unavailable"}</Text>
-        </Box>
-      </Box>
-    );
+    return <ErrorState kind="Fear & Greed" error={error} />;
   }
 
   return (

@@ -1,4 +1,4 @@
-import { Box, ScrollBox, Text } from "../../../../ui";
+import { Box, ScrollBox } from "../../../../ui";
 import { useDialog } from "../../../../ui/dialog";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -7,7 +7,8 @@ import {
   usePaneInstanceId,
   usePaneTicker,
 } from "../../../../state/app/context";
-import { colors, hoverBg } from "../../../../theme/colors";
+import { hoverBg } from "../../../../theme/colors";
+import { TickerEmptyState } from "../../../../components";
 import type { TickerResearchTabProps } from "../../../../types/plugin";
 import { isGatewayConfigured } from "../../config";
 import { useIbkrGatewaySelection } from "../../gateway/selection";
@@ -208,11 +209,7 @@ export function TradeTab({ focused, width, onCapture }: TickerResearchTabProps) 
   });
 
   if (!ticker || !symbol) {
-    return (
-      <Box flexGrow={1} alignItems="center" justifyContent="center">
-        <Text fg={colors.textDim}>Select a ticker to draft an IBKR trade.</Text>
-      </Box>
-    );
+    return <TickerEmptyState kind="trade" symbol={null} detail="an IBKR trade ticket" />;
   }
 
   return (

@@ -9,6 +9,7 @@ import {
   contractMarketPrice,
   formatIvCell,
   normalizeIv,
+  quantizeVolSurfaceSpot,
   volSurfaceCellBackground,
   volSurfaceCellText,
   yearsToExpiry,
@@ -186,4 +187,12 @@ test("VolSurface cells expose strike, expiration, and solved type", () => {
   expect(cell.strike).toBe(100);
   expect(cell.expiration).toBe(expirationSec);
   expect(cell.type === "call" || cell.type === "put").toBe(true);
+});
+
+test("quantizeVolSurfaceSpot buckets penny ticks together", () => {
+  expect(quantizeVolSurfaceSpot(null)).toBeNull();
+  expect(quantizeVolSurfaceSpot(0)).toBeNull();
+  expect(quantizeVolSurfaceSpot(100.02)).toBe(100);
+  expect(quantizeVolSurfaceSpot(100.04)).toBe(100);
+  expect(quantizeVolSurfaceSpot(100.2)).toBe(100.2);
 });

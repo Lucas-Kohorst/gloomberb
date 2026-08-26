@@ -1,4 +1,4 @@
-import { Text, type ScrollBoxRenderable } from "../../../ui";
+import type { ScrollBoxRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
 import type { SecFilingItem } from "../../../types/data-provider";
@@ -8,8 +8,16 @@ import {
 } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
-import { colors } from "../../../theme/colors";
-import { FeedDataTableStackView, Spinner, useExternalLinkFooter, useTableLoadMore, type FeedDataTableItem } from "../../../components";
+import {
+  EmptyState,
+  ErrorState,
+  FeedDataTableStackView,
+  Spinner,
+  TickerEmptyState,
+  useExternalLinkFooter,
+  useTableLoadMore,
+  type FeedDataTableItem,
+} from "../../../components";
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
@@ -21,14 +29,13 @@ import {
   buildInsiderTransactionTitle,
   formatFilingFormLabel,
   formatFilingShortDate,
-  renderFilingNotice,
 } from "../sec/filing-display";
 import { useSecFilingContentCache } from "../sec/filing-content";
 
 const FORM4_PAGE_SIZE = 20;
-// Recent EDGAR dumps cap at 1,000 mixed forms. Older archives are fetched
-// until this many filings or company history ends.
-const SEC_FILING_SCAN_LIMIT = 20_000;
+// Stay inside the recent EDGAR dump. Scanning older archives for 20k mixed
+// forms blocked first paint before any Form 4 row could render.
+const SEC_FILING_SCAN_LIMIT = 1_000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface ParsedFiling {
@@ -222,12 +229,19 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     label: "filing",
   });
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view insider activity.</Text>;
-  if (!eligibleTicker) return renderFilingNotice("Insider transactions are only shown for US equities.", width);
+  if (!ticker) return <TickerEmptyState kind="insider" symbol={null} detail="Form 4 filings" />;
+  if (!eligibleTicker) {
+    return (
+      <EmptyState
+        title="US equities only"
+        message="Insider transactions are only shown for US equities."
+      />
+    );
+  }
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
-  if (error) return renderFilingNotice(`Error: ${error}`, width);
+  if (error) return <ErrorState kind="insider" error={error} />;
   if (!loading && form4Filings.length === 0) {
-    return renderFilingNotice(`No Form 4 filings found for ${ticker.metadata.ticker}.`, width);
+    return <TickerEmptyState kind="insider" symbol={ticker.metadata.ticker} detail="Form 4 filings" />;
   }
 
   return (

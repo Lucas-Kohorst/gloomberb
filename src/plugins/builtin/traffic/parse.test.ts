@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { matchesTrafficSearch, parseDigitTrafficPayload, parseOpenSkyPayload } from "./parse";
+import {
+  matchesTrafficSearch,
+  mergeTrafficVehicles,
+  parseDigitTrafficPayload,
+  parseOpenSkyPayload,
+} from "./parse";
 
 describe("traffic parsers", () => {
   test("maps OpenSky state vectors and drops rows without a position", () => {
@@ -43,5 +48,29 @@ describe("traffic parsers", () => {
     });
     expect(matchesTrafficSearch(vehicles[0]!, "uae")).toBe(true);
     expect(matchesTrafficSearch(vehicles[0]!, "ship")).toBe(false);
+  });
+
+  test("caps OpenSky and AIS payloads so a world firehose cannot flood the table", () => {
+    const states = Array.from({ length: 8 }, (_, index) => (
+      [`icao${index}`, `CALL${index}`, "US", 1, 1, 54.5, 24.4, 1000, false, 1, 1]
+    ));
+    expect(parseOpenSkyPayload({ states }, 0, 3)).toHaveLength(3);
+    const features = Array.from({ length: 8 }, (_, index) => ({
+      mmsi: 230000000 + index,
+      geometry: { coordinates: [24.9, 60.2] },
+      properties: { sog: 1, heading: 90, name: `SHIP${index}` },
+    }));
+    expect(parseDigitTrafficPayload({ features }, 0, 2)).toHaveLength(2);
+  });
+
+  test("merge reuses row identity when a poll does not move a vehicle", () => {
+    const previous = parseOpenSkyPayload({
+      states: [["abc123", "UAE123", "UAE", 1, 1, 54.5, 24.4, 1000, false, 1, 1]],
+    });
+    const next = parseOpenSkyPayload({
+      states: [["abc123", "UAE123", "UAE", 1, 1, 54.5, 24.4, 1000, false, 1, 1]],
+    });
+    const merged = mergeTrafficVehicles(previous, next);
+    expect(merged[0]).toBe(previous[0]);
   });
 });

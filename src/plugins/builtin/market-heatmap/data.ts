@@ -53,7 +53,9 @@ export interface MarketHeatmapSources {
 
 const YAHOO_SCREENER_URL = "https://query1.finance.yahoo.com/v1/finance/screener?lang=en-US&region=US&formatted=false&corsDomain=finance.yahoo.com";
 const NASDAQ_SCREENER_URL = "https://api.nasdaq.com/api/screener/stocks";
+export const MARKET_HEATMAP_PAINTED_LIMIT = 96;
 const DEFAULT_COUNT = 80;
+const NASDAQ_FETCH_LIMIT_CAP = 200;
 const CACHE_TTL_MS = 60_000;
 const defaultYahooClient = new YahooHttpClient();
 const activeFetches = new Map<string, Promise<MarketHeatmapResult>>();
@@ -163,10 +165,30 @@ export function parseYahooMarketHeatmapResponse(data: unknown, universe: MarketH
   return assets;
 }
 
-export function parseNasdaqMarketHeatmapResponse(data: unknown): MarketHeatmapAsset[] {
+export function takeLargestHeatmapAssets(
+  assets: readonly MarketHeatmapAsset[],
+  count: number,
+): MarketHeatmapAsset[] {
+  const limit = Math.max(0, Math.floor(count));
+  if (limit === 0) return [];
+  if (assets.length <= limit) {
+    return [...assets].sort((left, right) => (right.size ?? 0) - (left.size ?? 0));
+  }
+  return [...assets]
+    .sort((left, right) => (right.size ?? 0) - (left.size ?? 0))
+    .slice(0, limit);
+}
+
+function nasdaqScreenerRows(data: unknown): unknown[] {
   if (!isRecord(data)) return [];
   const dataNode = isRecord(data.data) ? data.data : null;
-  const rows = Array.isArray(dataNode?.rows) ? dataNode.rows : [];
+  if (Array.isArray(dataNode?.rows)) return dataNode.rows;
+  const table = isRecord(dataNode?.table) ? dataNode.table : isRecord(data.table) ? data.table : null;
+  return Array.isArray(table?.rows) ? table.rows : [];
+}
+
+export function parseNasdaqMarketHeatmapResponse(data: unknown, limit?: number): MarketHeatmapAsset[] {
+  const rows = nasdaqScreenerRows(data);
   const assets: MarketHeatmapAsset[] = [];
 
   for (const row of rows) {
@@ -195,7 +217,7 @@ export function parseNasdaqMarketHeatmapResponse(data: unknown): MarketHeatmapAs
     });
   }
 
-  return assets.sort((left, right) => (right.size ?? 0) - (left.size ?? 0));
+  return takeLargestHeatmapAssets(assets, limit ?? assets.length);
 }
 
 async function fetchYahooMarketHeatmap(
@@ -209,10 +231,10 @@ async function fetchYahooMarketHeatmap(
 
 async function fetchNasdaqMarketHeatmap(count: number, transport: MarketHeatmapFetchTransport): Promise<MarketHeatmapAsset[]> {
   const url = new URL(NASDAQ_SCREENER_URL);
+  const fetchLimit = Math.min(NASDAQ_FETCH_LIMIT_CAP, count + 16);
   url.searchParams.set("tableonly", "true");
-  url.searchParams.set("limit", "10000");
+  url.searchParams.set("limit", String(fetchLimit));
   url.searchParams.set("offset", "0");
-  url.searchParams.set("download", "true");
 
   const response = await transport(url.toString(), {
     headers: NASDAQ_HEADERS,
@@ -223,7 +245,7 @@ async function fetchNasdaqMarketHeatmap(count: number, transport: MarketHeatmapF
   }
 
   const data = await response.json();
-  return parseNasdaqMarketHeatmapResponse(data).slice(0, count);
+  return parseNasdaqMarketHeatmapResponse(data, count);
 }
 
 async function loadMarketHeatmap(
@@ -254,13 +276,28 @@ async function loadMarketHeatmap(
     : new Error("Market heatmap unavailable");
 }
 
+function heatmapCacheKey(universe: MarketHeatmapUniverseId, count: number): string {
+  return `${universe}:${count}`;
+}
+
+function normalizeHeatmapCount(count: number | undefined): number {
+  return Math.max(1, Math.min(MARKET_HEATMAP_PAINTED_LIMIT, Math.round(count ?? DEFAULT_COUNT)));
+}
+
+export function peekMarketHeatmapCache(
+  universe: MarketHeatmapUniverseId,
+  count?: number,
+): MarketHeatmapResult | null {
+  return memoryCache.get(heatmapCacheKey(universe, normalizeHeatmapCount(count)))?.result ?? null;
+}
+
 export async function fetchMarketHeatmap(
   universe: MarketHeatmapUniverseId,
   options?: MarketHeatmapFetchOptions,
   sources?: MarketHeatmapSources,
 ): Promise<MarketHeatmapResult> {
-  const count = Math.max(1, Math.min(160, Math.round(options?.count ?? DEFAULT_COUNT)));
-  const cacheKey = `${universe}:${count}`;
+  const count = normalizeHeatmapCount(options?.count);
+  const cacheKey = heatmapCacheKey(universe, count);
   const useCache = options?.cache !== false && !sources?.yahooClient && !sources?.nasdaqFetch;
   const now = Date.now();
   const cached = memoryCache.get(cacheKey);

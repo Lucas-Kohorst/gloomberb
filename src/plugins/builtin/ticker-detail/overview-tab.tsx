@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Box, ScrollBox, Text, useUiCapabilities } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useViewport } from "../../../react/input";
@@ -13,14 +14,11 @@ import {
   marketStateLabel,
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { EmptyState } from "../../../components";
+import { TickerEmptyState } from "../../../components";
 import { CompanyLogo } from "../../../components/company-logo";
-import {
-  CompositeChart,
-  pricePointsToResolvedSeries,
-} from "../../../components/chart/composite";
+import { CompositeChart } from "../../../components/chart/composite";
 import { resolveExchangeTimeZone } from "../../../utils/exchanges";
-import { appendLiveQuotePoint } from "../../../components/chart/core/data";
+import type { ResolvedSeries } from "../../../time-series/types";
 import { PriceReturnStrip } from "../../../components/price-performance";
 import {
   appendQuoteToPriceReturnHistory,
@@ -36,6 +34,7 @@ import {
   StatGrid,
 } from "./overview/components";
 import { buildOverviewStats, buildPositionRows } from "./overview/model";
+import { resolveOverviewPriceSeries } from "./overview/price-series";
 
 export function OverviewTab({
   width,
@@ -50,8 +49,9 @@ export function OverviewTab({
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useViewport();
   const { fractionalViewport = false, nativePaneChrome } = useUiCapabilities();
+  const priceSeriesRef = useRef<ResolvedSeries | null>(null);
 
-  if (!ticker) return <EmptyState title={t("No ticker selected.")} />;
+  if (!ticker) return <TickerEmptyState kind="overview" symbol={null} detail="overview" />;
 
   const quote = financials?.quote;
   const fundamentals = financials?.fundamentals;
@@ -80,21 +80,43 @@ export function OverviewTab({
 
   const contentWidth = Math.max((width || Math.floor(termWidth * 0.5)) - (fractionalViewport ? 2 : 4), 20);
   const chartWidth = contentWidth;
-  const hasHistory = (financials?.priceHistory?.length ?? 0) > 2;
-  const chartHistory = appendLiveQuotePoint(financials?.priceHistory ?? [], quote);
-  const chartDelta = (chartHistory.at(-1)?.close ?? 0) - (chartHistory[0]?.close ?? 0);
+  const priceHistory = financials?.priceHistory ?? [];
+  const hasHistory = priceHistory.length > 2;
   const chartTimeZone = resolveExchangeTimeZone(
     ticker.metadata.exchange || quote?.listingExchangeName || quote?.exchangeName,
   );
-  const priceSeries = pricePointsToResolvedSeries(chartHistory, {
+  const quantizedQuotePrice = quote && Number.isFinite(quote.price)
+    ? Math.round(quote.price * 100) / 100
+    : null;
+  const firstClose = priceHistory[0]?.close ?? 0;
+  const lastClose = quantizedQuotePrice ?? priceHistory.at(-1)?.close ?? 0;
+  const priceSeries = resolveOverviewPriceSeries(priceHistory, quote, {
     id: `${ticker.metadata.ticker}:price`,
     label: `${ticker.metadata.ticker} Price`,
-    color: priceColor(chartDelta),
+    color: priceColor(lastClose - firstClose),
     unit: quoteCurrency,
     style: "area",
     axis: "right",
     panelId: "price",
     timeBasis: chartTimeZone ? { kind: "market", timeZone: chartTimeZone } : undefined,
+  }, priceSeriesRef.current);
+  priceSeriesRef.current = priceSeries;
+  const performanceFields = buildPriceReturnFields(
+    appendQuoteToPriceReturnHistory(
+      priceHistory,
+      quote && quantizedQuotePrice != null
+        ? { price: quantizedQuotePrice, lastUpdated: quote.lastUpdated }
+        : null,
+    ),
+  ).map((field) => {
+    if (field.value != null) return field;
+    if (field.id === "1Y" && fundamentals?.return1Y != null) {
+      return { ...field, value: fundamentals.return1Y };
+    }
+    if (field.id === "3Y" && fundamentals?.return3Y != null) {
+      return { ...field, value: fundamentals.return3Y };
+    }
+    return field;
   });
   const hasBidAsk = quote?.bid != null || quote?.ask != null;
   const quoteBookInline = hasBidAsk && contentWidth >= 68;
@@ -113,18 +135,6 @@ export function OverviewTab({
     quoteCurrency,
     baseCurrency,
     toBase,
-  });
-  const performanceFields = buildPriceReturnFields(
-    appendQuoteToPriceReturnHistory(financials?.priceHistory ?? [], quote),
-  ).map((field) => {
-    if (field.value != null) return field;
-    if (field.id === "1Y" && fundamentals?.return1Y != null) {
-      return { ...field, value: fundamentals.return1Y };
-    }
-    if (field.id === "3Y" && fundamentals?.return3Y != null) {
-      return { ...field, value: fundamentals.return3Y };
-    }
-    return field;
   });
   const hasPerformance = performanceFields.some((field) => field.value != null);
   const positionRows = buildPositionRows({

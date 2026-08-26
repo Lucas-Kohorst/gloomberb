@@ -405,7 +405,7 @@ describe("data catalog inventory", () => {
   });
 
   test("maps redistributable OWID hits onto CAT rows and asks for an entity when World is unknown", () => {
-    expect(catalogOwidDiscoveryQuery("")).toBe("");
+    expect(catalogOwidDiscoveryQuery("")).toBeNull();
     expect(catalogOwidDiscoveryQuery("owid")).toBe("");
     expect(catalogOwidDiscoveryQuery("life expectancy")).toBe("life expectancy");
     expect(catalogOwidDiscoveryQuery("AAPL")).toBeNull();

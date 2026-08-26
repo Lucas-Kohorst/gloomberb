@@ -162,9 +162,9 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
       case "symbol":
         return { text: row.symbol, color: selectedColor ?? (row.error ? colors.warning : colors.textBright), attributes: TextAttributes.BOLD };
       case "price":
-        return { text: quote?.price != null ? formatCurrency(quote.price, quote.currency) : "-", color: selectedColor ?? colors.text };
+        return { text: quote?.price != null ? formatCurrency(quote.price, quote.currency) : "—", color: selectedColor ?? colors.text };
       case "change":
-        return { text: quote?.changePercent != null ? formatPercentRaw(quote.changePercent) : "-", color: selectedColor ?? priceColor(quote?.changePercent ?? 0) };
+        return { text: quote?.changePercent != null ? formatPercentRaw(quote.changePercent) : "—", color: selectedColor ?? priceColor(quote?.changePercent ?? 0) };
       case "marketCap":
         return { text: formatCompact(quote?.marketCap), color: selectedColor ?? colors.textDim };
       case "pe":

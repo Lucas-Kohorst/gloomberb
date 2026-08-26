@@ -4,6 +4,7 @@ import {
   parseNasdaqMarketHeatmapResponse,
   parseYahooMarketHeatmapResponse,
   resetMarketHeatmapCache,
+  takeLargestHeatmapAssets,
 } from "./data";
 
 afterEach(() => {
@@ -99,23 +100,47 @@ describe("market heatmap data", () => {
     });
   });
 
+  test("parses Nasdaq table.rows pages and caps the painted head", () => {
+    const rows = parseNasdaqMarketHeatmapResponse({
+      data: {
+        table: {
+          rows: [
+            { symbol: "SMALL", name: "Small Co", lastsale: "$10.00", netchange: "0.10", pctchange: "1.00%", marketCap: "1000000" },
+            { symbol: "BIG", name: "Big Co", lastsale: "$250.00", netchange: "-5.00", pctchange: "-2.00%", marketCap: "3000000000" },
+            { symbol: "MID", name: "Mid Co", lastsale: "$40.00", netchange: "0.50", pctchange: "1.25%", marketCap: "500000000" },
+          ],
+        },
+      },
+    }, 2);
+
+    expect(rows.map((row) => row.symbol)).toEqual(["BIG", "MID"]);
+    expect(takeLargestHeatmapAssets(rows, 1).map((row) => row.symbol)).toEqual(["BIG"]);
+  });
+
   test("falls back to Nasdaq for US equities when Yahoo returns no assets", async () => {
+    let nasdaqUrl = "";
     const result = await fetchMarketHeatmap("us-equity", { count: 1, cache: false }, {
       yahooClient: {
         async postJsonWithCrumb<T>() {
           return { finance: { result: [{ quotes: [] }] } } as T;
         },
       },
-      nasdaqFetch: async () => new Response(JSON.stringify({
-        data: {
-          rows: [
-            { symbol: "AAPL", name: "Apple", lastsale: "$200.00", netchange: "1.00", pctchange: "0.50%", marketCap: "3000000000000", volume: "50000000" },
-          ],
-        },
-      })),
+      nasdaqFetch: async (url) => {
+        nasdaqUrl = String(url);
+        return new Response(JSON.stringify({
+          data: {
+            rows: [
+              { symbol: "AAPL", name: "Apple", lastsale: "$200.00", netchange: "1.00", pctchange: "0.50%", marketCap: "3000000000000", volume: "50000000" },
+            ],
+          },
+        }));
+      },
     });
 
     expect(result.source).toBe("nasdaq");
     expect(result.assets.map((asset) => asset.symbol)).toEqual(["AAPL"]);
+    expect(nasdaqUrl).not.toContain("10000");
+    expect(nasdaqUrl).not.toContain("download=true");
+    expect(nasdaqUrl).toContain("limit=17");
   });
 });

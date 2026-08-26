@@ -128,6 +128,29 @@ describe("PluginRegistry lifecycle", () => {
     expect(registry.allPlugins.has("throwing-dispose")).toBe(false);
     expect(registry.panes.has("disposable-pane")).toBe(false);
   });
+
+  test("maps Agent title/render panes onto a React component", async () => {
+    const registry = createRegistry();
+    await registry.register(plugin("mixed-watchlist", (ctx) => {
+      ctx.registerPaneType({
+        id: "mixed-watchlist",
+        title: "Mixed Watch",
+        render: () => "MIXED WATCHLIST",
+      });
+    }));
+
+    const pane = registry.panes.get("mixed-watchlist");
+    expect(typeof pane?.component).toBe("function");
+    const node = pane?.component({
+      paneId: "mixed-watchlist:1",
+      paneType: "mixed-watchlist",
+      focused: true,
+      width: 40,
+      height: 12,
+    });
+    expect(node).not.toBeUndefined();
+    expect(typeof node === "object" && node !== null).toBe(true);
+  });
 });
 
 describe("built-in composite plugin ownership", () => {

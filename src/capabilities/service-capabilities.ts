@@ -24,6 +24,7 @@ export type BrokerRemoteEvent = BrokerStatusEvent | BrokerQuoteEvent;
 
 export type AiRunnerEvent =
   | { kind: "chunk"; output: string }
+  | { kind: "thinking"; output: string }
   | { kind: "done"; output: string; agentMessages?: AiAgentHistoryMessage[] }
   | { kind: "cancelled" }
   | { kind: "error"; error: string }

@@ -177,6 +177,7 @@ function HiloPane({ focused, width, height }: PaneProps) {
         { defaultDirection: columnId === "symbol" ? "asc" : "desc" },
       ))}
       getItemKey={rowKey}
+      getRowRevision={(row) => `${row.symbol}:${row.at}:${row.price}:${row.count}`}
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={(row, column, _index, rowState) => renderCell(side, row, column, rowState)}
       emptyContent={feed.payload ? undefined : <ScannerWaitingState />}

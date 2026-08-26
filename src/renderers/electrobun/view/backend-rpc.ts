@@ -13,6 +13,7 @@ import {
   type DesktopStateMessage,
   type DesktopThemePreviewMessage,
   type ElectrobunBackendInit,
+  type DesktopExternalPluginBundle,
   type RemoteControlRequestMessage,
   type ElectrobunDesktopRpcSchema,
   type UpdateProgressMessage,
@@ -28,6 +29,7 @@ type DesktopDockPreviewListener = (message: DesktopDockPreviewMessage) => void;
 type DesktopThemePreviewListener = (message: DesktopThemePreviewMessage) => void;
 type UpdateProgressListener = (message: UpdateProgressMessage) => void;
 type CapabilityEventListener = (message: CapabilityEventMessage) => void;
+type ExternalPluginsChangedListener = (bundles: DesktopExternalPluginBundle[]) => void;
 type RemoteControlRequestHandler = (request: RemoteControlRequest) => Promise<RemoteControlResponse>;
 
 let initSnapshot: ElectrobunBackendInit | null = null;
@@ -41,6 +43,7 @@ const desktopDockPreviewListeners = new Set<DesktopDockPreviewListener>();
 const desktopThemePreviewListeners = new Set<DesktopThemePreviewListener>();
 const updateProgressListeners = new Set<UpdateProgressListener>();
 const capabilityEventListeners = new Map<string, Set<CapabilityEventListener>>();
+const externalPluginsChangedListeners = new Set<ExternalPluginsChangedListener>();
 
 function dispatch<T>(
   listeners: Map<string, Set<(value: T) => void>>,
@@ -141,6 +144,10 @@ const rpc = Electroview.defineRPC<ElectrobunDesktopRpcSchema>({
           event: decodeRpcValue(message.event),
         });
       },
+      "plugins.externalChanged": (message) => {
+        const bundles = decodeRpcValue(message.bundles) as DesktopExternalPluginBundle[];
+        for (const listener of externalPluginsChangedListeners) listener(bundles);
+      },
     },
   },
 });
@@ -205,6 +212,13 @@ export function onCapabilityEvent(
   listener: (message: CapabilityEventMessage) => void,
 ): () => void {
   return subscribe(capabilityEventListeners, subscriptionId, listener);
+}
+
+export function onExternalPluginsChanged(listener: ExternalPluginsChangedListener): () => void {
+  externalPluginsChangedListeners.add(listener);
+  return () => {
+    externalPluginsChangedListeners.delete(listener);
+  };
 }
 
 export function onContextMenuSelect(

@@ -31,7 +31,11 @@ declare global {
 const servicesLog = debugLog.createLogger("services");
 const PLUGIN_REGISTRATION_BUDGET_MS = 5_000;
 
-export function createElectrobunAppServices({ config }: AppServicesFactoryOptions): AppRuntimeServices {
+export function createElectrobunAppServices({
+  config,
+  plugins = [],
+  externalPluginPaths = {},
+}: AppServicesFactoryOptions): AppRuntimeServices {
   servicesLog.info("create desktop web services start", {
     brokerInstanceCount: config.brokerInstances.length,
   });
@@ -103,12 +107,18 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
     },
   }));
 
-  const plugins = getRendererBuiltinPlugins();
+  const builtins = getRendererBuiltinPlugins();
+  const builtinIds = new Set(builtins.map((plugin) => plugin.id));
+  const extras = plugins.filter((plugin) => !builtinIds.has(plugin.id) && Boolean(externalPluginPaths[plugin.id]));
+  const allPlugins = [...builtins, ...extras];
   const pluginReadyPromises: Promise<void>[] = [];
-  for (const plugin of plugins) {
+  for (const plugin of allPlugins) {
+    const entryFile = externalPluginPaths[plugin.id];
     pluginReadyPromises.push(settleWithinBudget(
       measurePerfAsync("startup.services.register-plugin", () => (
-        pluginRegistry.register(plugin)
+        entryFile
+          ? pluginRegistry.registerExternalPlugin(plugin, entryFile)
+          : pluginRegistry.register(plugin)
       ), { pluginId: plugin.id }),
       PLUGIN_REGISTRATION_BUDGET_MS,
       `Plugin registration timed out: ${plugin.id}`,
@@ -129,7 +139,10 @@ export function createElectrobunAppServices({ config }: AppServicesFactoryOption
   measurePerf("startup.services.news-start", () => {
     newsService.start();
   });
-  servicesLog.info("create desktop web services complete", { pluginCount: plugins.length });
+  servicesLog.info("create desktop web services complete", {
+    pluginCount: allPlugins.length,
+    externalPluginCount: extras.length,
+  });
 
   return {
     persistence,

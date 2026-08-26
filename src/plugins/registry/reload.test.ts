@@ -8,6 +8,7 @@ import { TickerRepository } from "../../data/ticker-repository";
 import { createDefaultConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
 import { PluginRegistry } from "./index";
+import { setPluginsDirForTests } from "../loader";
 
 const dataProvider: DataProvider = {
   id: "test-provider",
@@ -55,6 +56,7 @@ afterEach(() => {
   currentRegistry = null;
   currentPersistence?.close();
   currentPersistence = null;
+  setPluginsDirForTests(null);
   if (tempDir && existsSync(tempDir)) {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -92,6 +94,7 @@ describe("PluginRegistry reload", () => {
 
   test("reloadExternalPlugins reloads all tracked external plugins", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-test"));
+    setPluginsDirForTests(tempDir);
 
     const dirA = join(tempDir, "plugin-a");
     const entryA = writePluginFile(dirA, "plugin-a", "Plugin A");
@@ -111,5 +114,43 @@ describe("PluginRegistry reload", () => {
 
     expect(registry.allPlugins.get("plugin-a")?.name).toBe("Plugin A v2");
     expect(registry.allPlugins.get("plugin-b")?.name).toBe("Plugin B v2");
+  });
+
+  test("syncs a newly created plugin from disk and opens its first pane", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-new-"));
+    setPluginsDirForTests(tempDir);
+    const pluginDir = join(tempDir, "hot-plugin");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "index.ts"), `
+export default {
+  id: "hot-plugin",
+  name: "Hot Plugin",
+  version: "1.0.0",
+  setup(ctx) {
+    ctx.registerPane({
+      id: "hot-plugin",
+      name: "Hot Plugin",
+      defaultPosition: "right",
+      component: () => null,
+    });
+  },
+};
+`);
+
+    const registry = createRegistry();
+    const opened: string[] = [];
+    registry.showPaneFn = (paneId) => {
+      opened.push(paneId);
+    };
+
+    const { added } = await registry.syncExternalPluginsFromDisk();
+    expect(added).toEqual(["hot-plugin"]);
+    expect(registry.allPlugins.has("hot-plugin")).toBe(true);
+
+    for (const pluginId of added) registry.openPrimaryPluginPane(pluginId);
+    expect(opened).toEqual(["hot-plugin"]);
+
+    const second = await registry.syncExternalPluginsFromDisk();
+    expect(second.added).toEqual([]);
   });
 });

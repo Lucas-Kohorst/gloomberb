@@ -5,6 +5,7 @@ import type { OptionTableRow } from "./types";
 import {
   buildOptionQuoteKey,
   buildOptionQuoteTargets,
+  optionRowRevision,
   overlayOptionRowQuotes,
   resolveOptionQuoteCoverage,
 } from "./live-quotes";
@@ -163,7 +164,8 @@ describe("options live quotes", () => {
       subscriptionStartedAt: 1_799_999_500_000,
     };
 
-    const overlaid = overlayOptionRowQuotes([original], entries, freshness)[0]!.call!;
+    const overlaidRows = overlayOptionRowQuotes([original], entries, freshness);
+    const overlaid = overlaidRows[0]!.call!;
 
     expect(overlaid).toMatchObject({
       lastPrice: 2.5,
@@ -337,5 +339,38 @@ describe("options live quotes", () => {
       visibleRange: { start: 0, end: 1 },
     });
     expect(resolveOptionQuoteCoverage(targets, entries, freshness).status).toBe("delayed");
+  });
+
+  test("reuses row objects when quotes do not change overlay fields", () => {
+    const original = [row(100), row(105)];
+    const freshness = {
+      now: 1_800_000_030_000,
+      subscriptionStartedAt: 1_799_999_500_000,
+    };
+    const unchanged = overlayOptionRowQuotes(original, new Map(), freshness);
+    expect(unchanged).toBe(original);
+
+    const live = overlayOptionRowQuotes(original, new Map([
+      [buildOptionQuoteKey(original[0]!.call!.contractSymbol), readyQuote({
+        symbol: original[0]!.call!.contractSymbol,
+        providerId: "gloomberb-cloud",
+        price: 2.4,
+        mark: 2.5,
+        bid: 2.45,
+        ask: 2.55,
+        currency: "USD",
+        change: 0,
+        changePercent: 0,
+        lastUpdated: 1_800_000_000_000,
+        receivedAt: 1_800_000_010_000,
+        dataSource: "live",
+        delivery: "stream",
+        stale: false,
+      })],
+    ]), freshness);
+    expect(live).not.toBe(original);
+    expect(live[1]).toBe(original[1]);
+    expect(optionRowRevision(live[0]!)).not.toBe(optionRowRevision(original[0]!));
+    expect(optionRowRevision(live[1]!)).toBe(optionRowRevision(original[1]!));
   });
 });

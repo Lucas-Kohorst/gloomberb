@@ -11,7 +11,9 @@ export const TRAFFIC_BBOXES: GeoBbox[] = [
 export const DEFAULT_BBOX_ID = "mena";
 
 export function findBbox(id: string): GeoBbox {
-  return TRAFFIC_BBOXES.find((entry) => entry.id === id) ?? TRAFFIC_BBOXES[0]!;
+  return TRAFFIC_BBOXES.find((entry) => entry.id === id)
+    ?? TRAFFIC_BBOXES.find((entry) => entry.id === DEFAULT_BBOX_ID)
+    ?? TRAFFIC_BBOXES[0]!;
 }
 
 export function inBbox(lat: number, lon: number, bbox: GeoBbox): boolean {

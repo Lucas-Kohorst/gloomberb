@@ -22,6 +22,8 @@ describe("OWID catalog snapshot", () => {
     expect(matchOwidCatalogEntries("co2").some((entry) => entry.slug.includes("co2"))).toBe(true);
     expect(matchOwidCatalogEntries("population").some((entry) => entry.slug === "population")).toBe(true);
     expect(matchOwidCatalogEntries("owid").length).toBe(OWID_CATALOG.length);
+    expect(matchOwidCatalogEntries("")).toBe(OWID_CATALOG);
+    expect(matchOwidCatalogEntries("owid")).toBe(OWID_CATALOG);
   });
 
   test("catalog rows chart through a resolving OWID spec", () => {

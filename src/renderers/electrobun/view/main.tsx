@@ -8,6 +8,7 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   backendRequest,
   initElectrobunBackend,
+  onExternalPluginsChanged,
   setElectrobunRemoteRequestHandler,
 } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
@@ -21,6 +22,7 @@ import {
 } from "./http-fetch";
 import { installElectrobunUpdateHost } from "./update-host";
 import { DesktopFatalScreen, ElectrobunErrorBoundary } from "./fatal-screen";
+import { resolveRendererWindowError } from "./renderer-window-error";
 import { WebInputHostProvider } from "./input-host";
 import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
@@ -30,6 +32,13 @@ import { createDesktopDeepLinkBridge } from "./desktop-deeplink-bridge";
 import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
+import { installGloomPluginRuntime } from "../../../plugins/desktop-runtime/view-runtime";
+import {
+  applyExternalPluginBundles,
+  instantiateExternalPluginBundles,
+  rememberLoadedExternalPluginIds,
+  shouldLoadDesktopExternalPlugins,
+} from "./external-plugins";
 import { enableUiYield } from "../../../utils/ui-yield";
 
 const rootElement = document.getElementById("root");
@@ -57,7 +66,12 @@ function renderFatalError(error: unknown, details?: string, title = "Gloomberb f
 }
 
 window.__gloomRenderFatalError = (error, details, source) => {
-  if (appMounted && source === "unhandledrejection") {
+  if (resolveRendererWindowError({
+    error,
+    details,
+    source,
+    appMounted,
+  }) === "ignore") {
     return;
   }
   renderFatalError(error, details, "Gloomberb crashed");
@@ -89,6 +103,14 @@ async function boot() {
   installElectrobunCloudApiFetchTransport();
   installElectrobunUpdateHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
+  installGloomPluginRuntime();
+  const externalPlugins = shouldLoadDesktopExternalPlugins()
+    ? await instantiateExternalPluginBundles(init.externalPlugins)
+    : [];
+  rememberLoadedExternalPluginIds(externalPlugins.filter((entry) => !entry.error).map((entry) => entry.plugin.id));
+  onExternalPluginsChanged((bundles) => {
+    void applyExternalPluginBundles(bundles);
+  });
   installElectrobunAiHost();
   installFocusScopeRelease();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
@@ -114,6 +136,7 @@ async function boot() {
                 <App
                   config={config}
                   servicesFactory={createElectrobunAppServices}
+                  externalPlugins={externalPlugins}
                   desktopWindowBridge={desktopWindowBridge}
                   desktopApplicationMenuBridge={desktopApplicationMenuBridge}
                   desktopDeepLinkBridge={desktopDeepLinkBridge}

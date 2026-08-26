@@ -67,6 +67,19 @@ export function formatLastPoll(timestamp: number | null, now = Date.now()): stri
   return formatRelativeAge(timestamp, now);
 }
 
+export function connectionRowRevision(row: ConnectionState, now = Date.now()): string {
+  return [
+    row.id,
+    row.status,
+    row.wsState,
+    row.lastError ?? "",
+    formatLastPoll(row.lastPolledAt, now),
+    formatLatency(row.lastLatencyMs),
+    row.successCount,
+    row.failureCount,
+  ].join(":");
+}
+
 export function truncate(value: string, width: number): string {
   return truncateToDisplayWidth(value, width);
 }

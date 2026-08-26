@@ -260,6 +260,12 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference((current) => nextFuturesSort(current, columnId))}
       getItemKey={(row) => row.type === "header" ? `header-${row.sector}` : row.contract.symbol}
+      getRowRevision={(row) => {
+        if (row.type === "header") return `header-${row.sector}`;
+        const state = quotes.get(row.contract.symbol);
+        const quote = state?.quote;
+        return `${row.contract.symbol}:${quote?.price ?? ""}:${quote?.changePercent ?? ""}:${quote?.lastUpdated ?? ""}:${state?.loading ? 1 : 0}`;
+      }}
       renderSectionHeader={(row) => row.type === "header"
         ? {
             text: `${collapsedSectors.has(row.sector) ? "▶" : "▼"} ${FUTURES_SECTOR_LABELS[row.sector]}`,

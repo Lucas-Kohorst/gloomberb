@@ -221,6 +221,7 @@ function FlowPane({ focused, width, height }: PaneProps) {
           defaultDirection: columnId === "ticker" || columnId === "type" || columnId === "side" ? "asc" : "desc",
         }))}
         getItemKey={(event) => event.id}
+        getRowRevision={(event) => event.id}
         onRootKeyDown={(event) => {
           if (event.name !== "g") return false;
           event.preventDefault?.();
