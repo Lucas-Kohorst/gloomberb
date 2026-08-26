@@ -331,7 +331,6 @@ function createScreenerSubmissionTool(
     label: "Submit screener results",
     description: "Submit the final, validated public-market screener results. Call this exactly once and do not return the result as prose.",
     parameters: ScreenerResultsSchema,
-    constrainedSampling: { type: "json_schema", strict: "prefer" },
     executionMode: "sequential",
     async execute(_toolCallId, params) {
       if (submitted) throw new Error("Screener results were already submitted.");
