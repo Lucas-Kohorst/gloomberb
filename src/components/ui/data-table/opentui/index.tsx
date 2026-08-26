@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, ScrollBox, Text, TextAttributes, useNativeRenderer } from "../../../../ui";
-import { hoverBg } from "../../../../theme/colors";
+import { Box, ScrollBox, Text, TextAttributes } from "../../../../ui";
 import { useThemeColors } from "../../../../theme/theme-context";
-import { blendHex } from "../../../../theme/color-utils";
 import { useAppDispatch, usePaneInstance } from "../../../../state/app/context";
 import { useViewport } from "../../../../react/input";
 import { padTo } from "../../../../utils/format";
@@ -28,11 +26,7 @@ import {
   resolveDataTableScrollTop,
   resolveDataTableVisibleWindow,
 } from "./model";
-
-interface DataTableRowPointerTarget<T> {
-  item: T;
-  index: number;
-}
+import { OpenTuiDataTableRow, type DataTableRowPointerTarget } from "./row";
 
 export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>({
   columns,
@@ -59,6 +53,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   renderCell,
   renderSectionHeader,
   getRowBackgroundColor,
+  getRowRevision,
   isRowArriving,
   emptyContent,
   bodyAfter,
@@ -80,7 +75,6 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
   const appViewport = useViewport();
-  const nativeRenderer = useNativeRenderer();
   const [scrollVersion, setScrollVersion] = useState(0);
   const lastAppliedScrollRequestRef = useRef<string | null>(null);
   const lastVisibleRangeRef = useRef<{
@@ -176,8 +170,7 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
     }
     onBodyScrollActivity();
     emitVisibleRange();
-    nativeRenderer.requestRender();
-  }, [emitVisibleRange, nativeRenderer, onBodyScrollActivity, virtualize]);
+  }, [emitVisibleRange, onBodyScrollActivity, virtualize]);
   useScrollBoxScrollActivity({
     scrollRef,
     onVerticalScroll: handleBodyScrollActivity,
@@ -396,134 +389,32 @@ export function OpenTuiDataTable<T, C extends DataTableColumn = DataTableColumn>
               "data-table.render-visible-rows",
               () => visibleItems.map((item, visibleIndex) => {
                 const index = startIndex + visibleIndex;
-                const sectionHeader = renderSectionHeader?.(item, index) ?? null;
-
-                if (sectionHeader) {
-                  return (
-                    <Box
-                      key={getItemKey(item, index)}
-                      flexDirection="row"
-                      height={1}
-                      {...tableContentWidthProps(contentWidth)}
-                      paddingX={horizontalPadding}
-                      backgroundColor={sectionHeader.backgroundColor ?? colors.bg}
-                      onMouseDown={(event: any) => {
-                        focusPane();
-                        onTableMouseDown?.(event);
-                        sectionHeader.onMouseDown?.(event);
-                        event.preventDefault();
-                      }}
-                    >
-                      <Text
-                        attributes={sectionHeader.attributes ?? TextAttributes.BOLD}
-                        fg={sectionHeader.color ?? colors.textBright}
-                      >
-                        {sectionHeader.text}
-                      </Text>
-                    </Box>
-                  );
-                }
-
+                const itemKey = getItemKey(item, index);
                 const selected = isSelected(item, index);
-                const rowState = { selected };
-                const rowBackgroundColor = getRowBackgroundColor?.(
-                  item,
-                  index,
-                  rowState,
-                );
-                const arriving = !selected && (isRowArriving?.(item, index) ?? false);
-                const rowBg = selected
-                  ? colors.selected
-                  : rowBackgroundColor
-                    ?? (arriving ? blendHex(colors.bg, colors.selected, 0.34) : undefined)
-                    ?? colors.bg;
-                const rowHoverBg = selected ? undefined : hoverBg(colors);
-
                 return (
-                  <Box
-                    key={getItemKey(item, index)}
-                    flexDirection="row"
-                    height={rowHeightCells}
-                    {...tableContentWidthProps(contentWidth)}
-                    paddingX={horizontalPadding}
-                    backgroundColor={rowBg}
-                    hoverBackgroundColor={rowHoverBg}
-                    data-gloom-context-menu-surface={rowContextMenuSurface ? "true" : undefined}
-                    onMouseDown={(event: any) => {
-                      focusPane();
-                      onTableMouseDown?.(event);
-                      if (onRowMouseDown?.(item, index, event) === true) {
-                        return;
-                      }
-                      event.preventDefault();
-                      handleRowMouseDown(getItemKey(item, index), {
-                        item,
-                        index,
-                      }, event);
-                    }}
-                    onContextMenu={(event: any) => {
-                      focusPane();
-                      onRowContextMenu?.(item, index, event);
-                    }}
-                  >
-                    {displayColumns.map((column) => {
-                      const cell = renderCell(item, column, index, rowState);
-                      return (
-                        <Box
-                          key={column.id}
-                          width={column.width + columnGap}
-                          backgroundColor={cell.backgroundColor ?? rowBg}
-                          onMouseDown={(event: any) => {
-                            focusPane();
-                            onTableMouseDown?.(event);
-                            if (cell.onMouseDown) {
-                              cell.onMouseDown(event);
-                              return;
-                            }
-                            if (onRowMouseDown?.(item, index, event) === true) {
-                              event.stopPropagation?.();
-                              return;
-                            }
-                            event.preventDefault();
-                            event.stopPropagation?.();
-                            handleRowMouseDown(getItemKey(item, index), {
-                              item,
-                              index,
-                            }, event);
-                          }}
-                        >
-                          {cell.content !== undefined ? (
-                            cell.content
-                          ) : column.wrap ? (
-                            <Box width={column.width} height={rowHeightCells} overflow="hidden">
-                              <Text
-                                width={column.width}
-                                wrapText
-                                wrapMode="word"
-                                attributes={cell.attributes ?? TextAttributes.NONE}
-                                fg={
-                                  cell.color ??
-                                  (selected ? colors.selectedText : colors.text)
-                                }
-                              >
-                                {cell.text}
-                              </Text>
-                            </Box>
-                          ) : (
-                            <Text
-                              attributes={cell.attributes ?? TextAttributes.NONE}
-                              fg={
-                                cell.color ??
-                                (selected ? colors.selectedText : colors.text)
-                              }
-                            >
-                              {padTo(cell.text, column.width, column.align)}
-                            </Text>
-                          )}
-                        </Box>
-                      );
-                    })}
-                  </Box>
+                  <OpenTuiDataTableRow
+                    key={itemKey}
+                    columns={displayColumns}
+                    columnGap={columnGap}
+                    horizontalPadding={horizontalPadding}
+                    contentWidth={contentWidth}
+                    rowHeight={rowHeightCells}
+                    focusPane={focusPane}
+                    onTableMouseDown={onTableMouseDown}
+                    onRowContextMenu={onRowContextMenu}
+                    onRowMouseDown={onRowMouseDown}
+                    onRowPointer={handleRowMouseDown}
+                    index={index}
+                    item={item}
+                    itemKey={itemKey}
+                    getRowBackgroundColor={getRowBackgroundColor}
+                    renderCell={renderCell}
+                    rowRevision={getRowRevision?.(item, index)}
+                    rowContextMenuSurface={rowContextMenuSurface}
+                    selected={selected}
+                    arriving={!selected && (isRowArriving?.(item, index) ?? false)}
+                    sectionHeader={renderSectionHeader?.(item, index) ?? null}
+                  />
                 );
               }),
               {

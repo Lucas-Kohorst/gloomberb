@@ -80,6 +80,24 @@ export function hasPaneFooterContent(footer?: CombinedPaneFooter | null): boolea
     || footer.hints.some((hint) => !hint.disabled);
 }
 
+/** Bottom-left pane chrome: source, last-updated, and errors only. */
+export function isPaneFooterLeftSegment(segment: PaneFooterSegment): boolean {
+  const id = segment.id.toLowerCase();
+  if (
+    id === "source"
+    || id === "updated"
+    || id === "external-link"
+    || id === "error"
+    || id.endsWith("-updated")
+    || id.endsWith("-source")
+    || id.endsWith("-error")
+  ) {
+    return true;
+  }
+  const text = segment.parts.map((part) => part.text.trim().toLowerCase()).join(" ");
+  return text.startsWith("source") || text.startsWith("updated");
+}
+
 export function combinePaneFooterRegistrations(registrations: Map<string, PaneFooterRegistration>): CombinedPaneFooter {
   if (registrations.size === 0) return EMPTY_FOOTER;
 
@@ -92,7 +110,9 @@ export function combinePaneFooterRegistrations(registrations: Map<string, PaneFo
   const trailingInfo: PaneFooterSegment[] = [];
   const hints: PaneHint[] = [];
   for (const [, registration] of ordered) {
-    if (registration.info) info.push(...registration.info);
+    if (registration.info) {
+      info.push(...registration.info.filter(isPaneFooterLeftSegment));
+    }
     if (registration.trailingInfo) trailingInfo.push(...registration.trailingInfo);
     if (registration.hints) hints.push(...registration.hints);
   }

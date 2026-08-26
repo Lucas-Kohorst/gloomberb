@@ -6,6 +6,9 @@ import { blendHex, colors } from "../../theme/colors";
 
 export type NativeSelectElement = HTMLSelectElement & { showPicker?: () => void };
 
+const chevronSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" fill="none" stroke="${colors.textDim}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const chevronUrl = `url("data:image/svg+xml,${encodeURIComponent(chevronSvg)}")`;
+
 interface NativeSelectOption {
   label: string;
   value: string;
@@ -56,14 +59,18 @@ export function NativeSelect({
     backgroundColor: blendHex(colors.panel, colors.textBright, 0.06),
     border: `1px solid ${colors.border}`,
     borderRadius: 6,
-    padding: "0 8px",
+    padding: "0 26px 0 8px",
     boxShadow: `inset 0 1px 0 ${blendHex(colors.bg, colors.textBright, 0.05)}`,
     cursor: "pointer",
     font: "inherit",
     letterSpacing: 0,
     outline: "none",
-    appearance: "auto",
-    WebkitAppearance: "menulist",
+    appearance: "none",
+    WebkitAppearance: "none",
+    backgroundImage: chevronUrl,
+    backgroundPosition: "right 8px center",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "10px 6px",
   };
 
   return (

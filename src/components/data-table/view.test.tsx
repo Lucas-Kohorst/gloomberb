@@ -10,6 +10,12 @@ import { createDefaultConfig } from "../../types/config";
 import { Box, Text } from "../../ui";
 import { DataTableView } from "./view";
 import type { DataTableCell, DataTableColumn } from "../ui";
+import {
+  getActivePaneCsvSnapshot,
+  PANE_CSV_MAX_ROWS,
+  resetPaneCsvSnapshots,
+  serializePaneCsv,
+} from "./csv-export";
 
 type Row =
   | { type: "section"; id: string; title: string }
@@ -36,6 +42,9 @@ const columns: Column[] = [
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 afterEach(async () => {
+  resetPaneCsvSnapshots();
+  setCsvItems = null;
+  csvCellWalks = 0;
   if (!testSetup) return;
   await act(async () => {
     testSetup!.renderer.destroy();
@@ -86,6 +95,47 @@ function Harness() {
               <Text>{`cursor=${cursorTitle} selected=${selectedTitle} activated=${activatedTitle}`}</Text>
             </Box>
           }
+        />
+      </PaneInstanceProvider>
+    </AppContext>
+  );
+}
+
+let setCsvItems: ((items: Row[]) => void) | null = null;
+let csvCellWalks = 0;
+
+function CsvExportHarness({
+  initialItems,
+}: {
+  initialItems: Row[];
+}) {
+  const [items, setItems] = useState(initialItems);
+  setCsvItems = setItems;
+  const state = createInitialState(
+    createDefaultConfig("/tmp/gloomberb-data-table-csv-test"),
+  );
+
+  return (
+    <AppContext value={{ state, dispatch: () => {} }}>
+      <PaneInstanceProvider paneId="data-table-csv-test">
+        <DataTableView<Row, Column>
+          focused
+          selection={{
+            kind: "index",
+            selectedIndex: 0,
+            onChange: () => {},
+          }}
+          columns={columns}
+          items={items}
+          sortColumnId={null}
+          sortDirection="asc"
+          onHeaderClick={() => undefined}
+          getItemKey={(row) => row.id}
+          renderCell={(row): DataTableCell => {
+            csvCellWalks += 1;
+            return { text: row.title };
+          }}
+          emptyStateTitle="No rows"
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -241,6 +291,69 @@ describe("DataTableView", () => {
     await renderSettled();
 
     expect(testSetup.captureCharFrame()).toContain("selected=Third row activated=Third row");
+  });
+
+  test("keeps CSV export on demand across item identity changes", async () => {
+    csvCellWalks = 0;
+    const firstItems = largeRows.map((row) => ({ ...row, title: `${row.title}-v1` }));
+    testSetup = await testRender(
+      <CsvExportHarness initialItems={firstItems} />,
+      { width: 60, height: 12 },
+    );
+
+    await renderSettled();
+    const snapshot = getActivePaneCsvSnapshot();
+    const afterRenderWalks = csvCellWalks;
+    expect(snapshot).not.toBeNull();
+    expect(afterRenderWalks).toBeLessThan(150);
+
+    for (let tick = 0; tick < 8; tick += 1) {
+      const nextItems = firstItems.map((row) => ({
+        ...row,
+        title: `${row.id}-v${tick + 2}`,
+      }));
+      await act(async () => {
+        setCsvItems?.(nextItems);
+        await testSetup!.renderOnce();
+      });
+    }
+
+    expect(getActivePaneCsvSnapshot()).toBe(snapshot);
+    expect(csvCellWalks - afterRenderWalks).toBeLessThan(firstItems.length);
+
+    const beforeSerialize = csvCellWalks;
+    const csv = serializePaneCsv(snapshot!);
+    expect(csvCellWalks - beforeSerialize).toBe(firstItems.length);
+    expect(csv.startsWith("Title\n")).toBe(true);
+    expect(csv).toContain("row-0-v9");
+    expect(csv).toContain("row-999-v9");
+    expect(csv).not.toContain("Row 0-v1");
+  });
+
+  test("caps CSV serialization so a fat table does not walk every row", async () => {
+    csvCellWalks = 0;
+    const overCapRows: Row[] = Array.from({ length: PANE_CSV_MAX_ROWS + 40 }, (_, index) => ({
+      type: "row",
+      id: `row-${index}`,
+      title: `Row ${index}`,
+    }));
+    testSetup = await testRender(
+      <CsvExportHarness initialItems={overCapRows} />,
+      { width: 60, height: 12 },
+    );
+
+    await renderSettled();
+    const snapshot = getActivePaneCsvSnapshot();
+    expect(snapshot).not.toBeNull();
+    const afterRenderWalks = csvCellWalks;
+    expect(afterRenderWalks).toBeLessThan(150);
+
+    const beforeSerialize = csvCellWalks;
+    const csv = serializePaneCsv(snapshot!);
+    expect(csvCellWalks - beforeSerialize).toBe(PANE_CSV_MAX_ROWS);
+    expect(csv).toContain("Row 0");
+    expect(csv).toContain(`Row ${PANE_CSV_MAX_ROWS - 1}`);
+    expect(csv).not.toContain(`Row ${PANE_CSV_MAX_ROWS}`);
   });
 
   test("does not scan every row when the selected index is explicit", async () => {

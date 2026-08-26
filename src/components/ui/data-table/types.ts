@@ -58,6 +58,11 @@ export interface DataTableProps<
   headerScrollId?: string;
   bodyScrollId?: string;
   getItemKey: (item: T, index: number) => string;
+  /**
+   * Precomputed selected row key for remote metadata. When set (including
+   * `null`), DataTable skips scanning `items` on every render.
+   */
+  selectedItemKey?: string | null;
   isSelected: (item: T, index: number) => boolean;
   onSelect: (item: T, index: number) => void;
   onActivate?: (item: T, index: number) => void;
@@ -86,9 +91,10 @@ export interface DataTableProps<
   /** True while a row should show a brief roll-in reveal (web CSS + terminal tint). */
   isRowArriving?: (item: T, index: number) => boolean;
   /**
-   * Stable visual fingerprint for a row. When set, the web table ignores
-   * `renderCell` identity and only re-renders the row when this value changes
-   * (or selection / geometry). Quote ticks should bump only the rows that moved.
+   * Stable visual fingerprint for a row. When set, web and terminal tables
+   * ignore `renderCell` identity and only re-render the row when this value
+   * changes (or selection / geometry). Quote ticks should bump only the rows
+   * that moved. Omit it to keep re-rendering with the parent.
    */
   getRowRevision?: (item: T, index: number) => string | number;
   emptyContent?: ReactNode;
