@@ -53,6 +53,19 @@ export interface AiProviderDefinition {
   fastModelIds: readonly string[];
 }
 
+/**
+ * A provider definition registered at runtime by a plugin. The id is a plain
+ * string (not limited to the hardcoded AiProviderId union) so plugins can
+ * register custom providers.
+ */
+export interface RuntimeAiProviderDefinition {
+  id: string;
+  name: string;
+  outputModes: readonly AiRunOutputMode[];
+  preferredModelIds?: readonly string[];
+  fastModelIds?: readonly string[];
+}
+
 export interface AiProvider {
   id: AiProviderId;
   name: string;
@@ -203,8 +216,34 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
 
 let detectedProviders: AiProvider[] | null = null;
 
+// Runtime-registered providers added by plugins via ctx.registerAiProvider().
+const runtimeProviderDefinitions = new Map<string, RuntimeAiProviderDefinition>();
+
 export function isAiProviderId(providerId: string): providerId is AiProviderId {
-  return (AI_PROVIDER_IDS as readonly string[]).includes(providerId);
+  return (AI_PROVIDER_IDS as readonly string[]).includes(providerId)
+    || runtimeProviderDefinitions.has(providerId);
+}
+
+/**
+ * Register a custom AI provider at runtime. Plugins call this via
+ * `ctx.registerAiProvider()` to add dynamically-discovered providers.
+ */
+export function registerRuntimeAiProvider(provider: RuntimeAiProviderDefinition): () => void {
+  runtimeProviderDefinitions.set(provider.id, provider);
+  // Invalidate the cached detected providers so the next detectProviders() call
+  // picks up the new provider.
+  detectedProviders = null;
+  return () => {
+    runtimeProviderDefinitions.delete(provider.id);
+    detectedProviders = null;
+  };
+}
+
+/**
+ * Get all runtime-registered provider definitions.
+ */
+export function getRuntimeProviderDefinitions(): RuntimeAiProviderDefinition[] {
+  return [...runtimeProviderDefinitions.values()];
 }
 
 export function migrateLegacyAiProviderId(providerId: string): string {
@@ -266,9 +305,22 @@ export function detectProviders(): AiProvider[] {
   // Chrome's Prompt API only exists in the hosted web client. Listing the
   // on-device provider anywhere else offers a "sign in" action for a model
   // that cannot be signed into and is not present on the platform.
-  detectedProviders = PROVIDER_DEFINITIONS
+  const builtinProviders = PROVIDER_DEFINITIONS
     .filter((definition) => definition.id !== "browser-builtin" || isHostedWebClient())
     .map(disconnectedProvider);
+
+  // Include runtime-registered providers from plugins.
+  const runtimeProviders: AiProvider[] = [...runtimeProviderDefinitions.values()].map((def) => ({
+    id: def.id as AiProviderId,
+    name: def.name,
+    available: false,
+    status: "not_authenticated" as AiProviderStatus,
+    unavailableReason: `${def.name} is not connected.`,
+    outputModes: [...def.outputModes],
+    defaultModelId: def.preferredModelIds?.[0],
+  }));
+
+  detectedProviders = [...builtinProviders, ...runtimeProviders];
   return detectedProviders;
 }
 

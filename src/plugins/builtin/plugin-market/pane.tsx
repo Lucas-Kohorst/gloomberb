@@ -223,11 +223,18 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     setError(null);
     try {
       const result = await installPluginAsync(trimmed);
-      notify({ body: result.message, type: result.success ? "success" : "error" });
       if (result.success) {
+        // Hot-reload the newly installed plugin without restarting.
+        const reloadResult = await registry?.reloadExternalPlugin(result.name);
+        notify({
+          body: reloadResult?.success ? reloadResult.message : result.message,
+          type: reloadResult?.success ? "success" : "info",
+        });
         setInstallMode(false);
         setInstallRef("");
         setRefreshCounter((c) => c + 1);
+      } else {
+        notify({ body: result.message, type: "error" });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -237,7 +244,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       setBusy(false);
       setBusyMessage(null);
     }
-  }, [notify]);
+  }, [notify, registry]);
 
   const handleInstallForm = useCallback(async () => {
     await handleInstallRef(installRef);
@@ -250,8 +257,17 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     setError(null);
     try {
       const result = await updatePluginAsync(row.dirName);
-      notify({ body: result.message, type: result.success ? "success" : "error" });
-      if (result.success) setRefreshCounter((c) => c + 1);
+      if (result.success) {
+        // Hot-reload the updated plugin without restarting.
+        const reloadResult = await registry?.reloadExternalPlugin(row.dirName);
+        notify({
+          body: reloadResult?.success ? reloadResult.message : result.message,
+          type: reloadResult?.success ? "success" : "info",
+        });
+        setRefreshCounter((c) => c + 1);
+      } else {
+        notify({ body: result.message, type: "error" });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -260,7 +276,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       setBusy(false);
       setBusyMessage(null);
     }
-  }, [notify]);
+  }, [notify, registry]);
 
   const handleRemove = useCallback(async (row: PluginRow) => {
     if (row.source !== "external" || !row.dirName) return;
@@ -271,6 +287,10 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       const result = await removePluginAsync(row.dirName);
       notify({ body: result.message, type: result.success ? "success" : "error" });
       if (result.success) {
+        // Unregister the removed plugin from the live registry.
+        if (registry && row.id) {
+          try { registry.unregister(row.id); } catch { /* plugin may not be registered */ }
+        }
         if (registry && row.id.startsWith("ext:") === false) {
           const currentConfig = stateRef.current.config;
           if (!currentConfig.disabledPlugins.includes(row.id)) {

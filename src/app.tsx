@@ -517,18 +517,29 @@ export function App({
 
   useEffect(() => bindAppActivity(renderer), [renderer]);
 
+  const externalPluginPaths = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const entry of externalPlugins) {
+      if (entry.entryFile && entry.plugin?.id) {
+        map[entry.plugin.id] = entry.entryFile;
+      }
+    }
+    return map;
+  }, [externalPlugins]);
+
   const services = useMemo(() => {
     return measurePerf("startup.app.create-services", () => (
       servicesFactory({
         config,
         plugins: getLoadablePlugins(externalPlugins),
+        externalPluginPaths,
       })
     ), {
       externalPluginCount: externalPlugins.length,
       disabledPluginCount: config.disabledPlugins.length,
       brokerInstanceCount: config.brokerInstances.length,
     });
-  }, [config.dataDir, externalPlugins, servicesFactory]);
+  }, [config.dataDir, externalPlugins, externalPluginPaths, servicesFactory]);
 
   useEffect(() => {
     return () => services.destroy();

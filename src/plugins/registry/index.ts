@@ -60,6 +60,9 @@ import { RegistryResumeStateListeners } from "./plugin-state";
 import { cloudSyncController } from "../../sync/controller";
 import { isReservedBuiltinPluginId } from "../ownership";
 import { resolveApiKey } from "../builtin/byok/store";
+import { resolvePluginEntryFile } from "../loader";
+import { existsSync } from "fs";
+import { join } from "path";
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -78,6 +81,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private slots = new RegistrySlots();
   private readonly contributions: RegistryContributions;
   private plugins = new Map<string, GloomPlugin>();
+  private externalPluginEntryFiles = new Map<string, string>();
   private readonly resumeStateListeners = new RegistryResumeStateListeners();
 
   readonly events: EventBus;
@@ -519,6 +523,77 @@ export class PluginRegistry implements PluginRuntimeAccess {
     this.events.emit("plugin:unregistered", { pluginId });
   }
 
+  /**
+   * Register an external plugin and record its entry file path so it can be
+   * hot-reloaded later via `reloadExternalPlugin`.
+   */
+  async registerExternalPlugin(plugin: GloomPlugin, entryFile: string): Promise<void> {
+    this.externalPluginEntryFiles.set(plugin.id, entryFile);
+    await this.register(plugin);
+  }
+
+  /**
+   * Reload a single external plugin by re-importing its entry file with a
+   * cache-busting query param. If the plugin is currently registered it is
+   * unregistered first. The `pluginId` may be either the plugin's actual ID
+   * or its directory name (they may differ). Returns success/failure.
+   */
+  async reloadExternalPlugin(pluginId: string): Promise<{ success: boolean; message: string }> {
+    let entryFile = this.externalPluginEntryFiles.get(pluginId);
+
+    // If the entry file is not tracked, try to resolve it from the plugins dir.
+    if (!entryFile) {
+      const { getPluginsDir } = await import("../loader");
+      const pluginDir = join(getPluginsDir(), pluginId);
+      if (!existsSync(pluginDir)) {
+        return { success: false, message: `Plugin directory not found: ${pluginId}` };
+      }
+      entryFile = resolvePluginEntryFile(pluginDir) ?? undefined;
+      if (!entryFile) {
+        return { success: false, message: `No entry file found for plugin: ${pluginId}` };
+      }
+    }
+
+    try {
+      const mod = await import(`${entryFile}?t=${Date.now()}`);
+      const plugin: GloomPlugin = mod.default ?? mod.plugin;
+      if (!plugin || !plugin.id || !plugin.name) {
+        return { success: false, message: `Invalid plugin export from ${entryFile}` };
+      }
+
+      // Unregister the old plugin if it is currently registered (by actual ID).
+      if (this.plugins.has(plugin.id)) {
+        try {
+          this.unregister(plugin.id);
+        } catch (error) {
+          this.registryLog.error("Failed to unregister plugin during reload", {
+            pluginId: plugin.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      this.externalPluginEntryFiles.set(plugin.id, entryFile);
+      await this.register(plugin);
+      this.registryLog.info(`Reloaded external plugin: ${plugin.id}`);
+      return { success: true, message: `Reloaded ${plugin.id}` };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.registryLog.error("Failed to reload external plugin", { pluginId, error: message });
+      return { success: false, message: `Failed to reload ${pluginId}: ${message}` };
+    }
+  }
+
+  /**
+   * Reload all tracked external plugins.
+   */
+  async reloadExternalPlugins(): Promise<void> {
+    const pluginIds = [...this.externalPluginEntryFiles.keys()];
+    for (const pluginId of pluginIds) {
+      await this.reloadExternalPlugin(pluginId);
+    }
+  }
+
   private removePlugin(pluginId: string): void {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) return;
@@ -527,6 +602,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     try { this.slots.unregister(pluginId); } catch (error) { cleanupError ??= error; }
     try { this.contributions.unregister(pluginId); } catch (error) { cleanupError ??= error; }
     this.plugins.delete(pluginId);
+    this.externalPluginEntryFiles.delete(pluginId);
     if (cleanupError) throw cleanupError;
   }
 

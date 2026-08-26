@@ -104,7 +104,7 @@ export async function installPluginAsync(ref: string): Promise<OperationResult> 
   return {
     name,
     success: true,
-    message: `Installed ${name}. Restart the app to load it.`,
+    message: `Installed ${name}. It will be loaded automatically.`,
   };
 }
 
@@ -135,7 +135,7 @@ export async function updatePluginAsync(name: string): Promise<OperationResult> 
   return {
     name,
     success: true,
-    message: `Updated ${name}. Restart the app to apply changes.`,
+    message: `Updated ${name}. Changes will be applied automatically.`,
   };
 }
 

@@ -38,6 +38,8 @@ import {
   supportsAiRunOutputMode,
 } from "../runner-selection";
 import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt } from "../runner";
+import { parseToolCalls, executeToolCall, createPluginTools } from "../tools";
+import { getSharedRegistry } from "../../../registry";
 import { AiRunnerSelector } from "../runner-selector";
 import {
   AI_DEFAULT_MODEL_SETTING_KEY,
@@ -495,8 +497,23 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
         },
       });
       runRef.current = { controller, threadId: activeThread.id, assistantMessageId };
-      const output = await controller.done;
+      const rawOutput = await controller.done;
       if (!mountedRef.current) return;
+
+      // Process any tool calls in the AI response.
+      let output = rawOutput;
+      const toolCalls = parseToolCalls(rawOutput);
+      if (toolCalls.length > 0) {
+        const tools = createPluginTools(getSharedRegistry());
+        const toolResults: string[] = [];
+        for (const call of toolCalls) {
+          const result = await executeToolCall(tools, call);
+          const status = result.success ? "success" : "failed";
+          toolResults.push(`**Tool: ${call.tool}** — ${status}\n\`\`\`\n${result.output}\n\`\`\``);
+        }
+        output = `${rawOutput}\n\n${toolResults.join("\n\n")}`;
+      }
+
       setRunningMessageId(null);
       setStreamingOutput("");
       const transcriptDelta = completedAgentMessages.length

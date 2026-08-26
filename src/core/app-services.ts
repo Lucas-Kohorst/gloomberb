@@ -31,6 +31,7 @@ export interface AppServices extends AppRuntimeServices {
 export function createAppServices({
   config,
   plugins,
+  externalPluginPaths = {},
 }: AppServicesFactoryOptions): AppServices {
   servicesLog.info("create services start", {
     pluginCount: plugins.length,
@@ -74,8 +75,11 @@ export function createAppServices({
 
   const pluginReadyPromises: Promise<void>[] = [];
   for (const plugin of plugins) {
+    const entryFile = externalPluginPaths[plugin.id];
     pluginReadyPromises.push(measurePerfAsync("startup.services.register-plugin", () => (
-      pluginRegistry.register(plugin)
+      entryFile
+        ? pluginRegistry.registerExternalPlugin(plugin, entryFile)
+        : pluginRegistry.register(plugin)
     ), { pluginId: plugin.id }));
   }
   measurePerf("startup.services.news-start", () => {

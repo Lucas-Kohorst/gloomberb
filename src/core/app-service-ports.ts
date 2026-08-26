@@ -41,6 +41,8 @@ export interface AppRuntimeServices {
 export interface AppServicesFactoryOptions {
   config: AppConfig;
   plugins: readonly GloomPlugin[];
+  /** Maps external plugin IDs to their entry file paths for hot-reload. */
+  externalPluginPaths?: Record<string, string>;
 }
 
 export type AppServicesFactory = (options: AppServicesFactoryOptions) => AppRuntimeServices;

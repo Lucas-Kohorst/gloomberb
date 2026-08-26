@@ -5,7 +5,8 @@ import { dispatchCli } from "../../cli/index";
 import { getDataDir, initDataDir, setConfigStoreHost } from "../../data/config/store";
 import { applyLanguageFromConfig } from "../../i18n";
 import * as nodeConfigStoreHost from "../../data/config/store/node";
-import { loadExternalPlugins } from "../../plugins/loader";
+import { loadExternalPlugins, watchPluginsDir } from "../../plugins/loader";
+import { getSharedRegistry } from "../../plugins/registry";
 import { OpenTuiInputHostProvider } from "./input-host";
 import { debugLog } from "../../utils/debug-log";
 import { UiHostProvider } from "../../ui/host";
@@ -151,6 +152,19 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
         </OpenTuiInputHostProvider>
       </UiHostProvider>,
     );
+
+    // Hot-reload external plugins when files change in ~/.gloomberb/plugins/.
+    const stopWatcher = watchPluginsDir(() => {
+      const registry = getSharedRegistry();
+      if (!registry) return;
+      appLog.info("Plugin directory changed, reloading external plugins");
+      void registry.reloadExternalPlugins().catch((error) => {
+        appLog.error("Failed to reload external plugins", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    });
+    host.renderer.once("destroy", () => stopWatcher());
   } catch (error) {
     if (exitTimer) clearTimeout(exitTimer);
     stopMainThreadMonitor();
