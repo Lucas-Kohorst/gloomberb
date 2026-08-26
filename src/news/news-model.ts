@@ -4,6 +4,8 @@ import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 
 export const MAX_ARTICLES = 10_000;
 export const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
+export const TOP_NEWS_WINDOW_MS = 4 * 60 * 60 * 1000;
+const TOP_NEWS_EXCLUDED_ORIGINS = new Set(["rss", "x-feed"]);
 
 const FEEDS = new Set<NewsFeed>(["latest", "top", "breaking", "ticker", "sector", "topic"]);
 const DETAIL_CAPABLE_ARTICLE = Symbol("detail-capable-news-article");
@@ -186,6 +188,18 @@ function sortByPublishedAt(items: NewsArticle[]): NewsArticle[] {
   return [...items].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
 }
 
+function articleImportance(item: NewsArticle): number {
+  return item.scores?.importance ?? item.importance ?? 0;
+}
+
+function sortTopNewsArticles(items: NewsArticle[]): NewsArticle[] {
+  return [...items].sort((a, b) => {
+    const scoreDelta = articleImportance(b) - articleImportance(a);
+    if (scoreDelta !== 0) return scoreDelta;
+    return b.publishedAt.getTime() - a.publishedAt.getTime();
+  });
+}
+
 function hasStoryItems(item: NewsArticle | null | undefined): boolean {
   return (item?.items?.length ?? 0) > 0;
 }
@@ -313,10 +327,16 @@ export function mergeNewsArticle(base: NewsArticle, detail: NewsArticle): NewsAr
 }
 
 export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuery): NewsArticle[] {
+  const feed = normalizeNewsFeed(query);
   let filtered = items;
-  if (query.since) {
-    const sinceMs = query.since.getTime();
+  const sinceMs = feed === "top"
+    ? Math.max(query.since?.getTime() ?? 0, Date.now() - TOP_NEWS_WINDOW_MS)
+    : query.since?.getTime();
+  if (sinceMs != null && sinceMs > 0) {
     filtered = filtered.filter((item) => item.publishedAt.getTime() > sinceMs);
+  }
+  if (feed === "top") {
+    filtered = filtered.filter((item) => !item.origin || !TOP_NEWS_EXCLUDED_ORIGINS.has(item.origin));
   }
   const topics = query.topics ?? query.categories;
   if (topics && topics.length > 0) {
@@ -343,6 +363,8 @@ export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuer
   if (query.breaking != null) {
     filtered = filtered.filter((item) => item.isBreaking === query.breaking);
   }
-  // Page size is a fetch hint. Accumulated load-more results keep MAX_ARTICLES.
+  if (feed === "top") {
+    return sortTopNewsArticles(filtered).slice(0, MAX_ARTICLES);
+  }
   return filtered.slice(0, MAX_ARTICLES);
 }

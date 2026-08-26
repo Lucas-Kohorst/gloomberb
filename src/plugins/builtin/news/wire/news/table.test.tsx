@@ -11,7 +11,13 @@ import {
 import { createDefaultConfig } from "../../../../../types/config";
 import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import type { MarketNewsItem } from "../../../../../types/news-source";
-import { NewsArticleStackView, type NewsSortPreference } from "./table";
+import {
+  buildNewsArticleRowRevision,
+  NEWS_TABLE_MAX_ROWS,
+  NewsArticleStackView,
+  takeNewsTableHead,
+  type NewsSortPreference,
+} from "./table";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -88,6 +94,69 @@ afterEach(async () => {
     });
     testSetup = undefined;
   }
+});
+
+describe("takeNewsTableHead", () => {
+  test("returns the same array when it already fits the cap", () => {
+    const articles = [
+      makeArticle({ id: "a", title: "A" }),
+      makeArticle({ id: "b", title: "B" }),
+    ];
+    expect(takeNewsTableHead(articles)).toBe(articles);
+    expect(takeNewsTableHead(articles, 2)).toBe(articles);
+  });
+
+  test("caps a 10k-style pool without sorting the tail", () => {
+    const many = Array.from({ length: NEWS_TABLE_MAX_ROWS + 50 }, (_, index) => (
+      makeArticle({ id: `id-${index}`, title: `Story ${index}` })
+    ));
+    const head = takeNewsTableHead(many);
+    expect(head).toHaveLength(NEWS_TABLE_MAX_ROWS);
+    expect(head[0]!.id).toBe("id-0");
+    expect(head.at(-1)!.id).toBe(`id-${NEWS_TABLE_MAX_ROWS - 1}`);
+    expect(head).not.toBe(many);
+  });
+});
+
+describe("buildNewsArticleRowRevision", () => {
+  test("stays stable when unused article fields change", () => {
+    const article = makeArticle({ id: "a", title: "Hello" });
+    const first = buildNewsArticleRowRevision(article, false);
+    const second = buildNewsArticleRowRevision(
+      makeArticle({
+        id: "a",
+        title: "Hello",
+        summary: "updated blurb",
+        importance: 88,
+        source: "Bloomberg",
+      }),
+      false,
+    );
+    expect(first).toBe(second);
+  });
+
+  test("changes when title, published time, or read state updates", () => {
+    const article = makeArticle({ id: "a", title: "Hello" });
+    const base = buildNewsArticleRowRevision(article, false);
+    const titled = buildNewsArticleRowRevision(
+      makeArticle({ id: "a", title: "Hello!" }),
+      false,
+    );
+    const dated = buildNewsArticleRowRevision(
+      makeArticle({
+        id: "a",
+        title: "Hello",
+        publishedAt: new Date("2026-04-19T12:00:00Z"),
+      }),
+      false,
+    );
+    const read = buildNewsArticleRowRevision(article, true);
+    const override = buildNewsArticleRowRevision(article, false, "Other");
+    expect(titled).not.toBe(base);
+    expect(dated).not.toBe(base);
+    expect(read).not.toBe(base);
+    expect(override).not.toBe(base);
+  });
 });
 
 describe("NewsArticleStackView", () => {

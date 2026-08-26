@@ -74,15 +74,18 @@ describe("breaking news notifications", () => {
 
     const dispose = setupBreakingNewsNotifications(ctx);
     const oldArticle = article("old", "Old headline");
+    const olderFresh = article("mid", "Older fresh");
+    olderFresh.publishedAt = new Date("2026-01-01T00:00:00.000Z");
     const newArticle = article("new", "New headline");
+    newArticle.publishedAt = new Date("2026-06-01T00:00:00.000Z");
 
     listener?.(ready([oldArticle]));
-    listener?.(ready([newArticle, oldArticle]));
+    listener?.(ready([olderFresh, newArticle, oldArticle]));
 
     expect(notifications).toHaveLength(1);
     expect(notifications[0]).toMatchObject({
       title: "Breaking News",
-      body: "New headline",
+      body: "New headline (+1 more)",
       desktop: "always",
       persistent: true,
     });

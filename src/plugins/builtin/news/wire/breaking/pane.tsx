@@ -1,10 +1,11 @@
+import { useMemo } from "react";
 import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { Spinner } from "../../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
-import { NewsArticleStackView, type NewsSortPreference } from "../news/table";
+import { NewsArticleStackView, takeNewsTableHead, type NewsSortPreference } from "../news/table";
 import { useNewsArticleFooter } from "../news/footer";
 import { usePopOutNewsArticle } from "../news/pop-out";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
@@ -16,7 +17,11 @@ const DEFAULT_SORT: NewsSortPreference = { columnId: "importance", direction: "d
 
 export function BreakingPane({ focused, width, height }: PaneProps) {
   const breakingState = useNewsArticles(NEWS_QUERY_PRESETS.breaking);
-  const articles = usePersistedNewsArticles("breaking:articles", breakingState.articles);
+  const liveHead = useMemo(
+    () => takeNewsTableHead(breakingState.articles, NEWS_QUERY_PRESETS.breaking.limit),
+    [breakingState.articles],
+  );
+  const articles = usePersistedNewsArticles("breaking:articles", liveHead);
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(NEWS_QUERY_PRESETS.breaking, breakingState);
   const loading = breakingState.phase === "loading" || (breakingState.phase === "refreshing" && articles.length === 0);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("breaking:selectedArticleId", null);

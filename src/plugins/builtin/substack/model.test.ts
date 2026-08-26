@@ -4,6 +4,7 @@ import {
   articleMatchesPublication,
   normalizeFeedItems,
   normalizePostDetail,
+  omitSubstackFeedBodies,
   normalizeSubscriptions,
   sortSubscriptionsByLatest,
 } from "./normalize";
@@ -158,6 +159,30 @@ describe("Substack feed normalization", () => {
     });
     expect(sorted.map((publication) => publication.name)).toEqual(["Beta", "Alpha"]);
     expect(articleMatchesPublication(feed[1]!, sorted[0]!)).toBe(true);
+  });
+
+  test("drops feed body HTML instead of parsing or persisting it", () => {
+    const feed = normalizeFeedItems({
+      items: [{
+        post: {
+          id: "html",
+          title: "With body",
+          post_date: "2026-06-05T10:00:00Z",
+          body_html: "<p>".repeat(200) + "huge post" + "</p>".repeat(200),
+          truncated_body_text: "A teaser.",
+          cover_image: "https://cdn.example/cover.png",
+        },
+      }],
+    });
+    expect(feed[0]).toMatchObject({
+      title: "With body",
+      previewText: "A teaser.",
+      bodyHtml: null,
+      imageUrls: ["https://cdn.example/cover.png"],
+    });
+    expect(omitSubstackFeedBodies([
+      { ...feed[0]!, bodyHtml: "<p>cached</p>" },
+    ])[0]?.bodyHtml).toBeNull();
   });
 
   test("merges fetched post body into an existing summary", () => {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { MemoryPluginPersistence } from "../../../test-support/plugin-persistence";
 import {
   attachSubstackPersistence,
+  readResource,
   resetSubstackPersistence,
   setSubstackFetchTransportForTests,
 } from "./api/store";
@@ -176,6 +177,44 @@ describe("Substack cached data loading", () => {
     expect(requests).toHaveLength(requestCountAfterFirstLoad);
   });
 
+  test("persists the subscribed feed without post HTML bodies", async () => {
+    const persistence = new MemoryPluginPersistence();
+    attachSubstackPersistence(persistence);
+    installAuthenticatedTransport((url) => {
+      if (url === "https://substack.com/api/v1/subscriptions/page_v2") {
+        return Response.json({
+          result: {
+            subscriptions: [{ id: "sub-alpha", publication_id: "alpha" }],
+            publicationMap: {
+              alpha: { id: "alpha", name: "Alpha Research", base_url: "https://alpha.example" },
+            },
+          },
+        });
+      }
+      if (url.startsWith("https://substack.com/api/v1/reader/feed?")) {
+        return Response.json({
+          items: [{
+            post: {
+              id: "html",
+              title: "HTML post",
+              post_date: "2026-06-05T10:00:00Z",
+              body_html: "<p>Do not persist this body.</p>",
+              publication: { id: "alpha", name: "Alpha Research", base_url: "https://alpha.example" },
+            },
+          }],
+        });
+      }
+    });
+
+    await completeSubstackMagicLink(LOGIN_URL, EMAIL);
+    await loadSubstackHome(false);
+
+    const cached = readResource<{ items: SubstackArticleSummary[] }>("feed", "subscribed");
+    const items = Array.isArray(cached?.value) ? cached.value : cached?.value.items;
+    expect(items?.[0]?.title).toBe("HTML post");
+    expect(items?.[0]?.bodyHtml).toBeNull();
+  });
+
   test("hydrates cached home, merged publication pages, and article detail synchronously", () => {
     const persistence = new MemoryPluginPersistence();
     attachSubstackPersistence(persistence);
@@ -191,7 +230,7 @@ describe("Substack cached data loading", () => {
       readMinutes: 2,
       wordCount: 440,
     });
-    const cacheOptions = { sourceKey: "substack", schemaVersion: 3 };
+    const cacheOptions = { sourceKey: "substack", schemaVersion: 4 };
 
     persistence.seedResource("subscriptions", "me", [pub], cacheOptions);
     persistence.seedResource("feed", "subscribed", [firstArticle], cacheOptions);

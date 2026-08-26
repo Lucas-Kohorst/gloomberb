@@ -2,6 +2,8 @@ import type { PluginPersistence } from "../../../../types/plugin";
 import type { CachePolicy, PersistedResourceValue } from "../../../../types/persistence";
 import { createThrottledFetch, type ThrottledFetchTransport } from "../../../../utils/throttled-fetch";
 import { normalizedHttpUrl } from "../../../../utils/url";
+import { omitSubstackFeedBodies } from "../normalize";
+import type { SubstackArticleSummary } from "../types";
 import { SubstackAuthError, type SubstackAuthState, type SubstackCachedData } from "./types";
 
 export const SUBSTACK_ORIGIN = "https://substack.com";
@@ -9,7 +11,7 @@ export const SUBSTACK_ORIGIN = "https://substack.com";
 const AUTH_STATE_KEY = "auth";
 const AUTH_SCHEMA_VERSION = 1;
 export const CACHE_SOURCE = "substack";
-export const CACHE_SCHEMA_VERSION = 3;
+export const CACHE_SCHEMA_VERSION = 4;
 const DEFAULT_HEADERS = {
   accept: "application/json,text/plain,*/*",
   "accept-language": "en-US,en;q=0.9",
@@ -149,8 +151,23 @@ export function readResource<T>(kind: string, key: string, allowExpired = false)
   }) ?? null;
 }
 
+function persistableResourceValue<T>(kind: string, value: T): T {
+  if (kind === "feed") {
+    if (Array.isArray(value)) return omitSubstackFeedBodies(value as SubstackArticleSummary[]) as T;
+    if (value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
+      const record = value as { items: SubstackArticleSummary[] };
+      return { ...record, items: omitSubstackFeedBodies(record.items) } as T;
+    }
+  }
+  if (kind === "publication" && value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
+    const record = value as { items: SubstackArticleSummary[] };
+    return { ...record, items: omitSubstackFeedBodies(record.items) } as T;
+  }
+  return value;
+}
+
 function writeResource<T>(kind: string, key: string, value: T, cachePolicy: CachePolicy): PersistedResourceValue<T> | null {
-  return substackPersistence?.setResource<T>(kind, key, value, {
+  return substackPersistence?.setResource<T>(kind, key, persistableResourceValue(kind, value), {
     sourceKey: CACHE_SOURCE,
     schemaVersion: CACHE_SCHEMA_VERSION,
     cachePolicy,

@@ -4,7 +4,7 @@ import {
   dedupeNewsArticles,
   titleSourceKey,
 } from "../../../../news/news-model";
-import { filterFirehoseArticles } from "./firehose";
+import { filterFirehoseArticles, takeFirehoseHead } from "./firehose";
 import type { NewsArticle } from "../../../../news/types";
 
 function makeArticle(overrides: Partial<NewsArticle> & { url: string }): NewsArticle {
@@ -215,6 +215,18 @@ describe("filterFirehoseArticles", () => {
   it("returns all articles when query is empty", () => {
     expect(filterFirehoseArticles(articles, "")).toHaveLength(3);
     expect(filterFirehoseArticles(articles, "   ")).toHaveLength(3);
+    expect(filterFirehoseArticles(articles, "")).toBe(articles);
+  });
+
+  it("caps the painted firehose head without copying a short list", () => {
+    expect(takeFirehoseHead(articles)).toBe(articles);
+    const many = Array.from({ length: 250 }, (_, index) => (
+      makeArticle({ id: String(index), url: `https://n.com/${index}` })
+    ));
+    const head = takeFirehoseHead(many);
+    expect(head).toHaveLength(200);
+    expect(head[0]!.id).toBe("0");
+    expect(head).not.toBe(many);
   });
 
   it("filters by title keyword", () => {

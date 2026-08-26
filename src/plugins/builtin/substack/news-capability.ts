@@ -10,6 +10,7 @@ import { withConnectionRequest } from "../connections/register";
 
 const SUBSTACK_FEED_CACHE_KIND = "feed";
 const SUBSTACK_FEED_CACHE_KEY = "subscribed";
+const SUBSTACK_NEWS_HEAD_LIMIT = 200;
 
 function supports(query: NewsQuery): boolean {
   const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
@@ -27,8 +28,8 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
   const publishedAt = article.publishedAt ? new Date(article.publishedAt) : null;
   if (!publishedAt || Number.isNaN(publishedAt.getTime())) return null;
 
-  // The reader feed already ships post HTML. Carrying the extracted text keeps
-  // the firehose reader off r.jina.ai, which cannot see a subscriber-only post.
+  // List rows persist without HTML. If a summary still has bodyHtml (open
+  // detail / tests), extract it so Firehose can read subscriber-only posts.
   const body = article.bodyHtml
     ? extractArticleContent(article.bodyHtml, {
       baseUrl: article.publicationBaseUrl,
@@ -53,7 +54,6 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
       article.title,
       article.subtitle,
       article.previewText,
-      body,
     ]),
     scores: {
       importance: 50,
@@ -68,10 +68,27 @@ export function normalizeSubstackArticle(article: SubstackArticleSummary): NewsA
   };
 }
 
-function normalizeAll(items: SubstackArticleSummary[]): NewsArticle[] {
-  return items
-    .map(normalizeSubstackArticle)
-    .filter((article): article is NewsArticle => article !== null);
+function cachedFeedItems(value: unknown): SubstackArticleSummary[] {
+  if (Array.isArray(value)) return value as SubstackArticleSummary[];
+  if (value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
+    return (value as { items: SubstackArticleSummary[] }).items;
+  }
+  return [];
+}
+
+function newsHeadLimit(query: NewsQuery): number {
+  return Math.min(query.limit ?? SUBSTACK_NEWS_HEAD_LIMIT, SUBSTACK_NEWS_HEAD_LIMIT);
+}
+
+function normalizeAll(items: SubstackArticleSummary[], limit: number): NewsArticle[] {
+  const articles: NewsArticle[] = [];
+  for (const item of items) {
+    const article = normalizeSubstackArticle(item);
+    if (!article) continue;
+    articles.push(article);
+    if (articles.length >= limit) break;
+  }
+  return articles;
 }
 
 /**
@@ -90,13 +107,12 @@ export function createSubstackNewsCapability(): NewsCapability {
       getCachedNews(query: NewsQuery): NewsArticle[] {
         if (!supports(query)) return [];
         try {
-          const cached = readResource<SubstackArticleSummary[]>(
+          const cached = readResource<unknown>(
             SUBSTACK_FEED_CACHE_KIND,
             SUBSTACK_FEED_CACHE_KEY,
             true,
           );
-          if (!cached?.value || !Array.isArray(cached.value)) return [];
-          return normalizeAll(cached.value);
+          return normalizeAll(cachedFeedItems(cached?.value), newsHeadLimit(query));
         } catch {
           return [];
         }
@@ -107,7 +123,7 @@ export function createSubstackNewsCapability(): NewsCapability {
           const home = await withConnectionRequest("substack", "home-feed", () =>
             loadSubstackHome(),
           );
-          return normalizeAll(home.feed);
+          return normalizeAll(home.feed, newsHeadLimit(query));
         } catch (error) {
           if (error instanceof SubstackAuthError) return [];
           throw error;

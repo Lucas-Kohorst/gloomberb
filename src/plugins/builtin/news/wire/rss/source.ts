@@ -6,18 +6,40 @@ import { parseRssFeed, type RssFeedConfig } from "./parser";
 import { enrichNewsItem } from "../categories";
 import { withConnectionRequest, reportConnectionRequest } from "../../../connections/register";
 import { dedupeNewsArticles } from "../../../../../news/news-model";
+import { newsPollIntervalMsFromMinutes } from "../../../../../news/poll-interval";
+import { getSharedRegistry } from "../../../../registry";
 import {
   buildArticleTickerUniverse,
   type ArticleTickerUniverse,
 } from "../../../../../news/article-tickers";
 
 const RSS_CACHE_KIND = "rss-feed";
-export const RSS_FEED_CACHE_POLICY = {
-  // 15m matches the slower feed poll options so Firehose does not refetch
-  // every default wire on a 2-minute loop.
-  staleMs: 15 * 60 * 1000,
-  expireMs: 7 * 24 * 60 * 60 * 1000,
-} as const;
+const RSS_CACHE_EXPIRE_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_RSS_CACHE_STALE_MS = 15 * 60 * 1000;
+
+export function rssFeedCachePolicy(staleMs = currentRssCacheStaleMs()): {
+  staleMs: number;
+  expireMs: number;
+} {
+  return {
+    staleMs,
+    expireMs: RSS_CACHE_EXPIRE_MS,
+  };
+}
+
+export function currentRssCacheStaleMs(): number {
+  try {
+    const minutes = getSharedRegistry()?.getConfigFn?.().refreshIntervalMinutes;
+    if (typeof minutes === "number" && minutes >= 1) {
+      return newsPollIntervalMsFromMinutes(minutes);
+    }
+  } catch {
+    // Tests and early startup have no live registry config.
+  }
+  return DEFAULT_RSS_CACHE_STALE_MS;
+}
+
+export const RSS_FEED_CACHE_POLICY = rssFeedCachePolicy(DEFAULT_RSS_CACHE_STALE_MS);
 
 interface CachedNewsItem extends Omit<MarketNewsItem, "publishedAt"> {
   publishedAt: string;
@@ -28,6 +50,22 @@ interface CachedFeedPayload {
 }
 
 export const RSS_FETCH_CONCURRENCY = 6;
+/** Seed/getCachedNews stop after this many items so Firehose can paint. */
+export const RSS_CACHED_HEAD_LIMIT = 400;
+const RSS_PARTIAL_HEAD = 200;
+const RSS_PARTIAL_MIN_INTERVAL_MS = 400;
+const RSS_CACHE_YIELD_EVERY = 8;
+
+function rankEnabledFeeds(feeds: readonly RssFeedConfig[]): RssFeedConfig[] {
+  return feeds
+    .filter((feed) => feed.enabled)
+    .slice()
+    .sort((left, right) => right.authority - left.authority || left.name.localeCompare(right.name));
+}
+
+function yieldToUi(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 const rssClient = createThrottledFetch({
   requestsPerMinute: 30,
@@ -68,7 +106,7 @@ export interface RssNewsCapabilityOptions {
 
 function supportsQuery(query: NewsQuery): boolean {
   const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-  return feed === "latest" || feed === "top";
+  return feed === "latest";
 }
 
 function serializeItem(item: MarketNewsItem): CachedNewsItem {
@@ -153,7 +191,7 @@ function writeFeedCache(
     items: items.map(serializeItem),
   }, {
     sourceKey: feed.url,
-    cachePolicy: RSS_FEED_CACHE_POLICY,
+    cachePolicy: rssFeedCachePolicy(),
     provenance: { url: feed.url, name: feed.name },
   });
 }
@@ -199,15 +237,21 @@ export function createRssNewsCapability(
       supports: supportsQuery,
       getCachedNews(query: NewsQuery): MarketNewsItem[] {
         if (!supportsQuery(query)) return [];
-        const enabledFeeds = getFeeds().filter((feed) => feed.enabled);
-        return dedupeNewsArticles(enabledFeeds.flatMap((feed) => readFeedCache(options.persistence, feed, { allowExpired: true }) ?? []));
+        const limit = Math.min(query.limit ?? RSS_CACHED_HEAD_LIMIT, RSS_CACHED_HEAD_LIMIT);
+        const collected: MarketNewsItem[] = [];
+        for (const feed of rankEnabledFeeds(getFeeds())) {
+          const cached = readFeedCache(options.persistence, feed, { allowExpired: true }) ?? [];
+          if (cached.length === 0) continue;
+          collected.push(...cached);
+          if (collected.length >= limit) break;
+        }
+        return collected.length === 0
+          ? []
+          : dedupeNewsArticles(collected).slice(0, limit);
       },
       async fetchNews(query: NewsQuery, fetchOptions?: { onPartial?: (articles: MarketNewsItem[]) => void }): Promise<MarketNewsItem[]> {
         if (!supportsQuery(query)) return [];
-        const enabledFeeds = getFeeds()
-          .filter((feed) => feed.enabled)
-          .slice()
-          .sort((left, right) => right.authority - left.authority || left.name.localeCompare(right.name));
+        const enabledFeeds = rankEnabledFeeds(getFeeds());
         let universePromise: Promise<ArticleTickerUniverse | undefined> | null = null;
         const resolveUniverse = () => {
           if (universePromise) return universePromise;
@@ -225,36 +269,69 @@ export function createRssNewsCapability(
         const collected: MarketNewsItem[] = [];
         let cacheOnlyHits = 0;
         let networkReports = 0;
-        let partialQueued = false;
-        const emitPartial = () => {
-          if (!fetchOptions?.onPartial || partialQueued) return;
-          partialQueued = true;
-          queueMicrotask(() => {
-            partialQueued = false;
-            fetchOptions.onPartial?.(dedupeNewsArticles(collected.slice()));
-          });
+        let partialTimer: ReturnType<typeof setTimeout> | null = null;
+        let lastPartialAt = 0;
+        const flushPartial = () => {
+          partialTimer = null;
+          lastPartialAt = Date.now();
+          fetchOptions?.onPartial?.(collected.slice());
+        };
+        const emitPartial = (force = false) => {
+          if (!fetchOptions?.onPartial || collected.length === 0) return;
+          if (partialTimer !== null) {
+            if (!force) return;
+            clearTimeout(partialTimer);
+            partialTimer = null;
+          }
+          if (force || lastPartialAt === 0) {
+            flushPartial();
+            return;
+          }
+          const wait = Math.max(0, RSS_PARTIAL_MIN_INTERVAL_MS - (Date.now() - lastPartialAt));
+          partialTimer = setTimeout(flushPartial, wait);
         };
 
         const pending: RssFeedConfig[] = [];
+        let sinceYield = 0;
+        let emittedHead = false;
         for (const feed of enabledFeeds) {
           const fresh = readFeedCache(options.persistence, feed);
-          if (fresh) {
-            collected.push(...fresh);
-            cacheOnlyHits += 1;
-          } else {
+          if (!fresh) {
             pending.push(feed);
+            continue;
+          }
+          collected.push(...fresh);
+          cacheOnlyHits += 1;
+          if (!emittedHead && collected.length >= RSS_PARTIAL_HEAD) {
+            emitPartial(true);
+            emittedHead = true;
+            await yieldToUi();
+            sinceYield = 0;
+            continue;
+          }
+          sinceYield += 1;
+          if (sinceYield >= RSS_CACHE_YIELD_EVERY) {
+            sinceYield = 0;
+            await yieldToUi();
           }
         }
-        if (collected.length > 0) emitPartial();
+        if (collected.length > 0) emitPartial(!emittedHead);
 
-        await mapPool(pending, RSS_FETCH_CONCURRENCY, async (feed) => {
-          const result = await fetchFeed(feed, resolveUniverse);
-          collected.push(...result.items);
-          if (result.fromCache) cacheOnlyHits += 1;
-          else networkReports += 1;
-          emitPartial();
-          return result;
-        });
+        try {
+          await mapPool(pending, RSS_FETCH_CONCURRENCY, async (feed) => {
+            const result = await fetchFeed(feed, resolveUniverse);
+            collected.push(...result.items);
+            if (result.fromCache) cacheOnlyHits += 1;
+            else networkReports += 1;
+            emitPartial();
+            return result;
+          });
+        } finally {
+          if (partialTimer !== null) {
+            clearTimeout(partialTimer);
+            partialTimer = null;
+          }
+        }
 
         // When every feed is served from cache, no withConnectionRequest ran.
         // Emit one synthetic success so Connections reflects RSS as in use.

@@ -35,8 +35,18 @@ function notificationSubtitle(article: MarketNewsItem): string {
   return tickers ? `${article.source} ${tickers}` : article.source;
 }
 
+function newestArticle(articles: MarketNewsItem[]): MarketNewsItem | undefined {
+  let latest = articles[0];
+  if (!latest) return undefined;
+  for (let index = 1; index < articles.length; index += 1) {
+    const article = articles[index]!;
+    if (article.publishedAt.getTime() > latest.publishedAt.getTime()) latest = article;
+  }
+  return latest;
+}
+
 function notifyNewBreakingArticles(ctx: GloomPluginContext, articles: MarketNewsItem[]): void {
-  const latest = [...articles].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())[0];
+  const latest = newestArticle(articles);
   if (!latest) return;
 
   const extraCount = articles.length - 1;

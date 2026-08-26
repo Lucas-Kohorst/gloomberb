@@ -75,9 +75,9 @@ describe("normalizeXMarketsTweet", () => {
 });
 
 describe("supportsXMarketsNewsQuery", () => {
-  test("supports latest and top, not ticker queries", () => {
+  test("supports latest, not top or ticker queries", () => {
     expect(supportsXMarketsNewsQuery({ feed: "latest" })).toBe(true);
-    expect(supportsXMarketsNewsQuery({ feed: "top" })).toBe(true);
+    expect(supportsXMarketsNewsQuery({ feed: "top" })).toBe(false);
     expect(supportsXMarketsNewsQuery({})).toBe(true);
     expect(supportsXMarketsNewsQuery({ feed: "ticker", ticker: "NVDA" })).toBe(false);
     expect(supportsXMarketsNewsQuery({ scope: "ticker", ticker: "NVDA" })).toBe(false);
@@ -116,6 +116,19 @@ describe("createXMarketsNewsCapability", () => {
     expect(articles[0]?.source).toBe("@marketsbot");
     expect(articles[0]?.tickers).toEqual(["NVDA"]);
     expect(articles[0]?.body).toBe("Markets rally on $NVDA earnings");
+  });
+
+  test("caps firehose seed to the query limit", async () => {
+    const capability = createXMarketsNewsCapability({
+      isVerified: () => true,
+      search: async () => makeSearchResponse([
+        makeTweet({ id: "1", url: "https://x.com/marketsbot/status/1" }),
+        makeTweet({ id: "2", url: "https://x.com/marketsbot/status/2" }),
+        makeTweet({ id: "3", url: "https://x.com/marketsbot/status/3" }),
+      ]),
+    });
+    const articles = await capability.provider.fetchNews({ feed: "latest", limit: 2 });
+    expect(articles.map((article) => article.id)).toEqual(["x:1", "x:2"]);
   });
 
   test("returns [] on auth errors and rethrows other failures", async () => {

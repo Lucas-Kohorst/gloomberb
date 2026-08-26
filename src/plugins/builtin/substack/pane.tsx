@@ -16,6 +16,8 @@ import { encodeSortPreference } from "../../../components/data-table/sort-settin
 import { getSubstackPaneSettings } from "./settings";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
+import { getSharedNewsService } from "../../../news/hooks";
+import { normalizeSubstackArticle } from "./news-capability";
 import {
   SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
 } from "../shared/article-pop-out";
@@ -127,6 +129,10 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     loadSubstackHome(force)
       .then((data) => {
         if (homeFetchGenRef.current !== gen) return;
+        const articles = data.feed
+          .map(normalizeSubstackArticle)
+          .filter((article): article is NonNullable<typeof article> => article !== null);
+        if (articles.length > 0) getSharedNewsService()?.ingest("substack-news", articles);
         setHome({
           data,
           loading: false,

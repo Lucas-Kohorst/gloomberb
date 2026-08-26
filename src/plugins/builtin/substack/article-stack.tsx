@@ -125,6 +125,7 @@ export function SubstackArticleStack({
       sortDirection={sort.direction}
       onHeaderClick={onHeaderClick}
       getItemKey={(article) => article.id}
+      getRowRevision={(article) => `${article.id}:${readArticleIds.has(article.id) ? "1" : "0"}:${article.publishedAt ?? ""}`}
       renderCell={renderCell}
       emptyStateTitle={activeFeedState.loading ? "Loading articles..." : activeFeedState.error ?? "No Substack posts"}
       emptyStateHint={activePublication ? activePublication.name : "Authenticated reader feed"}

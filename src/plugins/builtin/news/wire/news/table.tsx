@@ -21,6 +21,17 @@ export type NewsColumnId = "rank" | "time" | "origin" | "source" | "title" | "ti
 
 export type NewsSortPreference = StackSortPreference<NewsColumnId>;
 
+/** Paint/sort/arrival cap shared by industry, breaking, and feed tables. */
+export const NEWS_TABLE_MAX_ROWS = 200;
+
+export function takeNewsTableHead<T>(
+  articles: readonly T[],
+  limit = NEWS_TABLE_MAX_ROWS,
+): T[] {
+  if (articles.length <= limit) return articles as T[];
+  return articles.slice(0, limit);
+}
+
 type NewsTableColumn = DataTableColumn & { id: NewsColumnId };
 
 interface NewsArticleStackBaseProps {
@@ -41,6 +52,19 @@ interface NewsArticleStackBaseProps {
   titleForArticle?: (article: MarketNewsItem) => string;
   scrollRef?: RefObject<ScrollBoxRenderable | null>;
   onBodyScrollActivity?: () => void;
+}
+
+export function buildNewsArticleRowRevision(
+  article: MarketNewsItem,
+  read: boolean,
+  title = article.title,
+): string {
+  return [
+    article.id,
+    article.publishedAt.getTime(),
+    read ? 1 : 0,
+    title,
+  ].join(":");
 }
 
 function compareText(a: string, b: string): number {
@@ -176,9 +200,13 @@ export function NewsArticleStackView({
   emptyStateHint,
   titleForArticle,
 }: NewsArticleStackViewProps) {
+  const tableArticles = useMemo(
+    () => takeNewsTableHead(articles),
+    [articles],
+  );
   const sortedArticles = useMemo(
-    () => sortNewsArticles(articles, sortPreference),
-    [articles, sortPreference],
+    () => sortNewsArticles(tableArticles, sortPreference),
+    [tableArticles, sortPreference],
   );
   const articleIds = useMemo(
     () => sortedArticles.map((article) => article.id),
@@ -249,6 +277,7 @@ export function NewsArticleStackView({
               symbols={tickers}
               width={column.width}
               fallbackColor={selectedColor ?? colors.textBright}
+              liveQuote={false}
             />
           ),
           color: selectedColor ?? colors.textBright,
@@ -265,6 +294,14 @@ export function NewsArticleStackView({
           color: selectedColor ?? (item.importance >= 80 ? colors.positive : colors.textDim),
         };
     }
+  }, [readArticleIds, titleForArticle]);
+
+  const getRowRevision = useCallback((article: MarketNewsItem) => {
+    return buildNewsArticleRowRevision(
+      article,
+      readArticleIds?.has(article.id) === true,
+      titleForArticle?.(article),
+    );
   }, [readArticleIds, titleForArticle]);
 
   const handleDetailKeyDown = useCallback((event: {
@@ -309,6 +346,7 @@ export function NewsArticleStackView({
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference(nextSortPreference(sortPreference, columnId as NewsColumnId))}
       getItemKey={(item) => item.id}
+      getRowRevision={getRowRevision}
       getRowBackgroundColor={getRowBackgroundColor}
       isRowArriving={isRowArriving}
       renderCell={renderCell}

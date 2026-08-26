@@ -7,6 +7,8 @@
  * they exist in the catalog snapshot.
  * Bare tokens: mega-caps or the user's book only — never the full catalog.
  * Company names: watchlist + catalog snapshot (not mega-caps alone).
+ * RSS ingest can pass `catalogNames: false` so Firehose does not scan the
+ * full listings name list on every headline.
  */
 
 export const MEGA_CAP_TICKERS = new Set([
@@ -129,6 +131,8 @@ function addSymbols(target: Set<string>, symbol: string): void {
 export function buildArticleTickerUniverse(options: {
   book?: Iterable<TickerUniverseInput | string>;
   catalog?: Iterable<TickerUniverseInput | string>;
+  /** When false, catalog symbols still validate cashtags but names are skipped. */
+  catalogNames?: boolean;
 } = {}): ArticleTickerUniverse {
   const bookSymbols = new Set<string>();
   const catalogSymbols = new Set<string>();
@@ -140,6 +144,7 @@ export function buildArticleTickerUniverse(options: {
   const ingest = (
     items: Iterable<TickerUniverseInput | string> | undefined,
     intoBook: boolean,
+    takeNames: boolean,
   ) => {
     if (!items) return;
     for (const item of items) {
@@ -147,13 +152,14 @@ export function buildArticleTickerUniverse(options: {
       if (!symbol) continue;
       if (intoBook) addSymbols(bookSymbols, symbol);
       addSymbols(catalogSymbols, symbol);
+      if (!takeNames) continue;
       const name = normalizeCompanyName(typeof item === "string" ? null : item.name);
       if (name && !nameMap.has(name)) nameMap.set(name, symbol);
     }
   };
 
-  ingest(options.book, true);
-  ingest(options.catalog, false);
+  ingest(options.book, true, true);
+  ingest(options.catalog, false, options.catalogNames !== false);
 
   for (const ticker of MEGA_CAP_TICKERS) addSymbols(catalogSymbols, ticker);
   for (const symbol of bookSymbols) addSymbols(catalogSymbols, symbol);
