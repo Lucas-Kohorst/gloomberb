@@ -121,6 +121,11 @@ export interface AiRunHost {
     onAuthEvent?: (event: AiAuthProgressEvent) => void,
   ): Promise<AiRuntimeCatalog>;
   disconnect?(providerId: AiProviderId): Promise<AiRuntimeCatalog>;
+  /**
+   * Register a custom Pi provider at runtime. Plugins can use this to add
+   * dynamically-discovered providers without reinitialising the runtime.
+   */
+  registerProvider?(provider: unknown): void;
 }
 
 export interface AiProviderStatusResult {

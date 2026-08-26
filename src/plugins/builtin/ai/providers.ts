@@ -11,6 +11,14 @@ export const AI_PROVIDER_IDS = [
   "github-copilot",
   "xai",
   "openrouter",
+  "deepseek",
+  "groq",
+  "cerebras",
+  "mistral",
+  "together",
+  "fireworks",
+  "amazon-bedrock",
+  "google-vertex",
 ] as const;
 
 export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
@@ -128,6 +136,68 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
       "google/gemini-2.5-flash-lite",
       "openai/gpt-4o-mini",
     ],
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["deepseek-v4-pro", "deepseek-v4-flash"],
+    fastModelIds: ["deepseek-v4-flash"],
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
+    fastModelIds: ["llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+  },
+  {
+    id: "cerebras",
+    name: "Cerebras",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gpt-oss-120b", "gemma-4-31b"],
+    fastModelIds: ["gemma-4-31b", "gpt-oss-120b"],
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["mistral-large-2512", "mistral-large-latest"],
+    fastModelIds: ["ministral-8b-latest", "ministral-3b-latest"],
+  },
+  {
+    id: "together",
+    name: "Together AI",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["Qwen/Qwen3.7-Max", "moonshotai/Kimi-K3"],
+    fastModelIds: ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen2.5-7B-Instruct-Turbo"],
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: [
+      "accounts/fireworks/models/deepseek-v4-pro",
+      "accounts/fireworks/models/kimi-k2p7-code",
+    ],
+    fastModelIds: [
+      "accounts/fireworks/models/gpt-oss-20b",
+      "accounts/fireworks/models/qwen3p7-plus",
+    ],
+  },
+  {
+    id: "amazon-bedrock",
+    name: "Amazon Bedrock",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["anthropic.claude-opus-4-8", "anthropic.claude-sonnet-5"],
+    fastModelIds: ["amazon.nova-lite-v1:0", "amazon.nova-micro-v1:0"],
+  },
+  {
+    id: "google-vertex",
+    name: "Vertex AI (Gemini)",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["gemini-3.6-flash", "gemini-3.5-flash"],
+    fastModelIds: ["gemini-2.5-flash-lite", "gemini-3.5-flash-lite"],
   },
 ];
 

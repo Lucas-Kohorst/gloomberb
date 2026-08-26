@@ -4,6 +4,19 @@ import {
   type AiAgentHistoryMessage,
 } from "../agent-history";
 
+/**
+ * UI-only custom message types for the chat pane. These are never sent to the
+ * LLM — the agent's `convertToLlm` filters them out — but the chat UI can render
+ * them as tool cards, build progress indicators, and inline notifications.
+ */
+declare module "@earendil-works/pi-agent-core" {
+  interface CustomAgentMessages {
+    toolCard: { role: "tool_card"; toolName: string; args: unknown; result?: unknown; timestamp: number };
+    buildProgress: { role: "build_progress"; step: string; status: "running" | "done" | "error"; detail?: string; timestamp: number };
+    notification: { role: "notification"; text: string; kind: "info" | "success" | "error"; timestamp: number };
+  }
+}
+
 export type LocalAgentProviderId = string;
 
 export interface LocalAgentAttachmentMetadata {

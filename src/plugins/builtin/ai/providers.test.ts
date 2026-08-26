@@ -31,6 +31,14 @@ describe("Pi provider catalog", () => {
       "github-copilot",
       "xai",
       "openrouter",
+      "deepseek",
+      "groq",
+      "cerebras",
+      "mistral",
+      "together",
+      "fireworks",
+      "amazon-bedrock",
+      "google-vertex",
     ]);
     expect(GLOOMBERB_PI_PROVIDER_IDS).toEqual(AI_PROVIDER_IDS.filter((id) => id !== "browser-builtin" && id !== "ollama"));
     expect(new Set(AI_PROVIDER_IDS).size).toBe(AI_PROVIDER_IDS.length);

@@ -1,4 +1,5 @@
 import {
+  createProvider,
   getSupportedThinkingLevels,
   type Api,
   type AssistantMessage,
@@ -9,11 +10,14 @@ import {
   type AuthType,
   type Context,
   type CredentialStore,
+  type CreateProviderOptions,
   type Message,
   type Model,
   type Models,
   type ModelsStore,
+  type MutableModels,
   type ModelThinkingLevel,
+  type Provider,
   type ThinkingLevel,
   type Tool,
 } from "@earendil-works/pi-ai";
@@ -188,7 +192,7 @@ export interface PiAiRuntimeOptions {
   dataDir?: string;
   credentials?: CredentialStore;
   modelsStore?: ModelsStore;
-  models?: Models;
+  models?: MutableModels;
   providerFactories?: readonly PiProviderFactory[];
 }
 
@@ -318,7 +322,7 @@ function stripPromptSignal(prompt: AuthPrompt): PiSerializableAuthPrompt {
 }
 
 export class PiAiRuntime {
-  private readonly models: Models;
+  private readonly models: MutableModels;
 
   constructor(options: PiAiRuntimeOptions) {
     if (options.models) {
@@ -335,6 +339,27 @@ export class PiAiRuntime {
       modelsStore,
       providerFactories: options.providerFactories,
     });
+  }
+
+  /**
+   * Register a pre-built Pi provider at runtime. Plugins can use this to add
+   * custom or dynamically-discovered providers without reinitialising the
+   * models collection.
+   */
+  registerCustomProvider(provider: Provider): void {
+    this.models.setProvider(provider);
+  }
+
+  /**
+   * Build and register a custom provider from a `CreateProviderOptions`
+   * descriptor. Returns the created provider for further inspection.
+   */
+  createCustomProvider<TApi extends Api = Api>(
+    options: CreateProviderOptions<TApi>,
+  ): Provider<TApi> {
+    const provider = createProvider(options);
+    this.models.setProvider(provider);
+    return provider;
   }
 
   async getCatalog(options: {

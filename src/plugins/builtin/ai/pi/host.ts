@@ -1,4 +1,4 @@
-import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
+import type { AuthEvent, AuthPrompt, Provider } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import { sendRemoteControlRequest } from "../../../../remote/client";
@@ -331,6 +331,7 @@ function createScreenerSubmissionTool(
     label: "Submit screener results",
     description: "Submit the final, validated public-market screener results. Call this exactly once and do not return the result as prose.",
     parameters: ScreenerResultsSchema,
+    constrainedSampling: { type: "json_schema", strict: "prefer" },
     executionMode: "sequential",
     async execute(_toolCallId, params) {
       if (submitted) throw new Error("Screener results were already submitted.");
@@ -466,6 +467,9 @@ export function createPiAiHost(options: CreatePiAiHostOptions): AiRunHost {
       }
       await runtime.logout(providerId);
       return getCatalog();
+    },
+    registerProvider(provider: Provider) {
+      runtime.registerCustomProvider(provider);
     },
     async checkStatus(providerId) {
       const summary = await runtime.getProviderSummary(providerId);
