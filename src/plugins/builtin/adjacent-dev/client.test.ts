@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { AdjacentDevClient } from "./client";
-import { stripMarkdownHeader } from "./format";
+import { stripLeadingHeading, stripMarkdownHeader } from "./format";
 
 function stubJson(body: unknown, requested: string[]): void {
   setHttpFetchTransport((url) => {
@@ -135,5 +135,19 @@ describe("stripMarkdownHeader", () => {
 
   test("passes through markdown that has no header block", () => {
     expect(stripMarkdownHeader("just text", "T")).toBe("just text");
+  });
+});
+
+describe("stripLeadingHeading", () => {
+  // The reader has no meta row, so the facts block stays; only the duplicated
+  // title comes off.
+  test("drops the H1 but keeps the facts block", () => {
+    expect(stripLeadingHeading("# Title\n\n- **Id:** 1\n- **Org:** CME\n\nbody"))
+      .toBe("- **Id:** 1\n- **Org:** CME\n\nbody");
+  });
+
+  test("leaves markdown with no leading heading alone", () => {
+    expect(stripLeadingHeading("- **Id:** 1\n\nbody")).toBe("- **Id:** 1\n\nbody");
+    expect(stripLeadingHeading("## Not an H1")).toBe("## Not an H1");
   });
 });

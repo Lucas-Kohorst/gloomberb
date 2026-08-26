@@ -67,6 +67,20 @@ export function stripMarkdownHeader(markdown: string, title: string): string {
   return lines.slice(index).join("\n").trim();
 }
 
+/**
+ * The article reader shows the title in its own header, so a leading H1
+ * duplicates it. The facts block is kept: the reader has no meta row.
+ */
+export function stripLeadingHeading(markdown: string): string {
+  const lines = markdown.split("\n");
+  let index = 0;
+  while (index < lines.length && lines[index]!.trim() === "") index += 1;
+  if (index >= lines.length || !lines[index]!.startsWith("# ")) return markdown.trim();
+  index += 1;
+  while (index < lines.length && lines[index]!.trim() === "") index += 1;
+  return lines.slice(index).join("\n").trim();
+}
+
 /** Falls back to the list row's own fields until the attachment text arrives. */
 export function buildDetailBody(
   filing: CftcFiling,

@@ -25,7 +25,7 @@ import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
 import { AdjacentDevClient, loadCftcFilings } from "./client";
-import { buildDetailBody, buildDetailMeta, feedLabel } from "./format";
+import { buildDetailBody, buildDetailMeta, feedLabel, stripLeadingHeading } from "./format";
 import {
   ADJACENT_DEV_API_KEY_CONFIG,
   ADJACENT_DEV_CONNECTION_ID,
@@ -35,6 +35,7 @@ import {
 } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 250;
+const DETAIL_DEBOUNCE_MS = 300;
 const CFTC_PAGE_SIZE = 100;
 
 const trimSearchValue = (value: string) => value.trim();
@@ -58,7 +59,7 @@ function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null
     isDeveloping: false,
     importance: 0,
     origin: "cftc",
-    body: detail?.markdown || undefined,
+    body: detail ? stripLeadingHeading(detail.markdown) || undefined : undefined,
   };
 }
 
@@ -124,6 +125,7 @@ function CftcPane({ width, height, focused }: PaneProps) {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [detail, setDetail] = useState<CftcFilingDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailCacheRef = useRef<Map<number, CftcFilingDetail>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback((nextQuery: string) => {
@@ -162,39 +164,57 @@ function CftcPane({ width, height, focused }: PaneProps) {
   const openFiling = openItemId
     ? filings.find((filing) => String(filing.id) === openItemId) ?? null
     : null;
+  const selectedFiling = filings[selectedIdx] ?? null;
+  // Detail carries the body and the cftc.gov link, so the selected row needs it
+  // too: pop out and open both work without drilling into a filing first.
+  const detailFiling = openFiling ?? selectedFiling;
+  const detailFilingId = detailFiling?.id;
 
   useEffect(() => {
-    if (!openFiling) {
+    if (detailFilingId == null) {
       setDetail(null);
+      setDetailLoading(false);
+      return;
+    }
+    const cached = detailCacheRef.current.get(detailFilingId);
+    if (cached) {
+      setDetail(cached);
       setDetailLoading(false);
       return;
     }
     let cancelled = false;
     setDetail(null);
     setDetailLoading(true);
-    void client.getFilingDetail(openFiling.id)
-      .then((next) => {
-        if (cancelled) return;
-        setDetail(next);
-        setDetailLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDetail(null);
-        setDetailLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [client, openFiling?.id]);
+    // Debounced so arrowing through the list does not fire a request per row.
+    const timeoutId = setTimeout(() => {
+      void client.getFilingDetail(detailFilingId)
+        .then((next) => {
+          if (cancelled) return;
+          if (next) detailCacheRef.current.set(detailFilingId, next);
+          setDetail(next);
+          setDetailLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setDetail(null);
+          setDetailLoading(false);
+        });
+    }, DETAIL_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [client, detailFilingId]);
 
   const loading = status === "loading" && filings.length === 0;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query));
 
-  const popOutArticle = usePopOutNewsArticle();
+  const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
   const popOutSelected = useCallback(() => {
-    if (!openFiling) return;
-    popOutArticle(cftcFilingToArticle(openFiling, detail));
-  }, [detail, openFiling, popOutArticle]);
+    if (!detailFiling) return;
+    popOutArticle(cftcFilingToArticle(detailFiling, detail));
+  }, [detail, detailFiling, popOutArticle]);
 
   useEffect(() => {
     if (filings.length > 0 && selectedIdx >= filings.length) {
@@ -236,20 +256,16 @@ function CftcPane({ width, height, focused }: PaneProps) {
       event.stopPropagation?.();
       event.preventDefault?.();
       load(query);
-      return;
     }
-    if (isPlainKey(event, "p") && openFiling) {
-      event.stopPropagation?.();
-      event.preventDefault?.();
-      popOutSelected();
-    }
+    // `p` is bound by the footer hint below, which fires in both list and
+    // detail mode. Handling it here too would pop out twice.
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
     registrationId: ADJACENT_DEV_PLUGIN_ID,
     focused,
     url: error ? null : detail?.sourceUrl || null,
-    source: openFiling ? feedLabel(openFiling) : undefined,
+    source: detailFiling ? feedLabel(detailFiling) : undefined,
     label: "filing",
     loading,
     error,
@@ -265,7 +281,7 @@ function CftcPane({ width, height, focused }: PaneProps) {
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
-      ...(openFiling
+      ...(detailFiling
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),
     ],
@@ -289,14 +305,8 @@ function CftcPane({ width, height, focused }: PaneProps) {
       load(query);
       return true;
     }
-    if (event.name === "p" && openFiling) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      popOutSelected();
-      return true;
-    }
     return false;
-  }, [focusSearch, load, openFiling, popOutSelected, query]);
+  }, [focusSearch, load, query]);
 
   const rootBefore = (
     <InputSearchBar
