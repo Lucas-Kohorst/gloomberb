@@ -37,7 +37,7 @@ import {
   menuForPane,
   menuItemsForFallback,
 } from "./menu";
-import { canRetargetPaneTicker, listFollowSourceOptions, setPaneFollowSource } from "../../../plugins/ticker-follow";
+import { tickerLinkMenuItems } from "./ticker-link-menu";
 import {
   makeSnapGuides,
   resolveExternalDockPreview,
@@ -437,8 +437,8 @@ export function Shell({
     [config, paneState],
   );
   const getPaneTitle = useCallback(
-    (pane: ResolvedPane): string => getPaneDisplayTitle(titleState, pane.instance, pane.def),
-    [titleState],
+    (pane: ResolvedPane): string => getPaneDisplayTitle(titleState, pane.instance, pane.def, pluginRegistry.panes),
+    [pluginRegistry.panes, titleState],
   );
   const openPaneTickerSearch = useCallback((paneId: string) => {
     const pane = paneMap.get(paneId);
@@ -496,28 +496,13 @@ export function Shell({
       openPaneSettings,
       desktopWindowBridge,
       nativePaneChrome && rendererHost.copyPngImage ? copyPaneScreenshot : undefined,
-      {
-        changeTicker: canRetargetPaneTicker(pane.instance)
-          ? () => openPaneTickerSearch(paneId)
-          : undefined,
-        follow: canRetargetPaneTicker(pane.instance)
-          ? {
-            current: pane.instance.binding?.kind === "follow" ? pane.instance.binding.sourceInstanceId : "fixed",
-            options: listFollowSourceOptions(visibleLayout, paneId, (instance) => {
-              const source = paneMap.get(instance.instanceId);
-              return source ? getPaneTitle(source) : instance.title || instance.paneId;
-            }),
-            onSelect: (value) => {
-              persistLayout(setPaneFollowSource(
-                visibleLayout,
-                paneId,
-                value,
-                resolveTickerForPane(titleState as any, paneId),
-              ));
-            },
-          }
-          : undefined,
-      },
+      tickerLinkMenuItems({
+        instance: pane.instance,
+        layout: visibleLayout,
+        panes: pluginRegistry.panes,
+        state: titleState,
+        persistLayout,
+      }),
     );
     void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
@@ -541,7 +526,7 @@ export function Shell({
         items: fallbackItems,
       });
     });
-  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, openPaneTickerSearch, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
+  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
 
   const {
     handleFloatingCloseMouseDown,

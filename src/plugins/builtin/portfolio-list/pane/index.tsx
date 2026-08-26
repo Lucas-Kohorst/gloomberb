@@ -7,6 +7,7 @@ import {
   type TickerListVisibleRange,
 } from "../../../../components";
 import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
+import { useTickerSourceActivate } from "../../shared/ticker-source";
 import {
   copyOnWriteTickerFinancialsMap,
   mergeTickerFinancials,
@@ -73,6 +74,7 @@ import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
   const { notify, createPaneFromTemplate } = usePluginAppActions();
+  const activateTicker = useTickerSourceActivate();
   const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
@@ -265,9 +267,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     setSortPreference({ columnId, direction: "asc" });
   }, [activeSort.columnId, activeSort.direction, setSortPreference]);
 
-  const openTickerFloating = useCallback((symbol: string) => {
-    pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
-  }, [pinTicker]);
+  const openTickerFloating = useCallback((symbol: string, options?: { newPane?: boolean }) => {
+    activateTicker(symbol, { floating: true, newPane: options?.newPane });
+  }, [activateTicker]);
 
   const chartSelectedTicker = useCallback((ticker?: TickerRecord | null) => {
     const symbol = ticker?.metadata.ticker;
@@ -368,7 +370,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       event.stopPropagation?.();
       const ticker = sortedTickers[safeSelectedIdx];
       if (ticker) {
-        openTickerFloating(ticker.metadata.ticker);
+        flushCursorSymbol(ticker.metadata.ticker);
+        openTickerFloating(ticker.metadata.ticker, { newPane: true });
       }
       return true;
     }
@@ -407,6 +410,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     cashDrawerExpanded,
     chartSelectedTicker,
     deleteSelectedTicker,
+    flushCursorSymbol,
     focused,
     isPortfolioTab,
     openTickerFloating,

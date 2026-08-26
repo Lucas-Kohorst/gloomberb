@@ -57,7 +57,7 @@ export function DetachedPaneShell({ pluginRegistry, desktopWindowBridge }: Detac
     [config, paneState],
   );
   const title = instance && paneDef
-    ? getPaneDisplayTitle(titleState, instance, paneDef)
+    ? getPaneDisplayTitle(titleState, instance, paneDef, pluginRegistry.panes)
     : "Detached Pane";
   const focused = windowFocused;
 
