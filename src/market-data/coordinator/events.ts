@@ -1,4 +1,5 @@
 import { measurePerf } from "../../utils/perf-marks";
+import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../../utils/ui-yield";
 
 export class MarketDataCoordinatorEvents {
   private version = 0;
@@ -78,11 +79,25 @@ export class MarketDataCoordinatorEvents {
   private scheduleNotify(): void {
     if (this.pendingNotify) return;
     this.pendingNotify = true;
-    setTimeout(() => this.flushNotify(), 0);
+    const flush = () => {
+      if (isUiYieldEnabled() && shouldYieldToUi()) {
+        void whenUiQuiet().then(() => {
+          this.pendingNotify = false;
+          this.scheduleNotify();
+        });
+        return;
+      }
+      this.pendingNotify = false;
+      this.flushNotify();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+      return;
+    }
+    setTimeout(flush, 0);
   }
 
   private flushNotify(): void {
-    this.pendingNotify = false;
     const listeners = [...this.pendingListeners];
     this.pendingListeners.clear();
     for (const listener of listeners) {

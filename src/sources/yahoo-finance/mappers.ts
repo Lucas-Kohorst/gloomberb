@@ -274,6 +274,20 @@ export function mapYahooEarningsCalendarEvent(
   };
 }
 
+const YAHOO_MARKET_STATES = new Set<MarketState>([
+  "PRE",
+  "REGULAR",
+  "POST",
+  "PREPRE",
+  "POSTPOST",
+  "CLOSED",
+]);
+
+export function normalizeYahooMarketState(value: unknown): MarketState | undefined {
+  const normalized = typeof value === "string" ? value.toUpperCase() as MarketState : undefined;
+  return normalized && YAHOO_MARKET_STATES.has(normalized) ? normalized : undefined;
+}
+
 export function deriveMarketState(meta: NonNullable<ChartResult["meta"]>): MarketState {
   const ctp = meta.currentTradingPeriod;
   if (!ctp) return "CLOSED";

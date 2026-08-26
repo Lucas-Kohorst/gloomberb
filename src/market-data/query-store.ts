@@ -7,16 +7,23 @@ export class QueryStore<T> {
   constructor(private readonly onChange: (key: string) => void) {}
 
   get(key: string): QueryEntry<T> {
-    return this.entries.get(key) ?? createIdleEntry<T>();
+    const existing = this.entries.get(key);
+    if (existing) return existing;
+    const idle = createIdleEntry<T>();
+    this.entries.set(key, idle);
+    return idle;
   }
 
   set(key: string, entry: QueryEntry<T>): void {
+    if (this.entries.get(key) === entry) return;
     this.entries.set(key, entry);
     this.onChange(key);
   }
 
   update(key: string, updater: (current: QueryEntry<T>) => QueryEntry<T>): QueryEntry<T> {
-    const next = updater(this.get(key));
+    const current = this.get(key);
+    const next = updater(current);
+    if (next === current) return current;
     this.entries.set(key, next);
     this.onChange(key);
     return next;

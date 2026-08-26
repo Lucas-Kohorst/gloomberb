@@ -1,12 +1,24 @@
 import { canonicalTimeSeriesFieldId, isMarketFieldId } from "./field-catalog";
 import type { DataProvider, QuoteSubscriptionTarget } from "../types/data-provider";
-import type { Quote } from "../types/financials";
+import type { PricePoint, Quote } from "../types/financials";
 import type { BrokerContractRef } from "../types/instrument";
-import type { ChartSeriesSpec, ChartSpec, SecuritySeriesSource } from "./types";
+import {
+  type ChartResolutionResult,
+  type ChartSeriesSpec,
+  type ChartSpec,
+  type ResolvedSeries,
+  type SecuritySeriesSource,
+  type TimeSeriesPoint,
+} from "./types";
 import { activeStudyInputSeriesIds } from "./studies";
 import { valuationSeriesUsesLiveQuote } from "./fundamentals";
+import { appendLiveQuotePoint } from "./chart-data";
+import {
+  CHART_RESOLUTION_STEP_MS,
+  type ManualChartResolution,
+} from "./resolution";
 
-export const LIVE_CHART_REFRESH_INTERVAL_MS = 1_000;
+export const LIVE_CHART_REFRESH_INTERVAL_MS = 5_000;
 
 function normalized(value: string | undefined): string {
   return value?.trim().toUpperCase() ?? "";
@@ -112,6 +124,256 @@ function hasResolutionRelevantChange(next: Quote, current: Quote | undefined): b
     || next.postMarketPrice !== current.postMarketPrice
     || next.exchangeName !== current.exchangeName
     || next.listingExchangeName !== current.listingExchangeName;
+}
+
+function livePriceFieldId(fieldId: string): string | null {
+  const canonical = canonicalTimeSeriesFieldId(fieldId);
+  if (
+    canonical === "market.ohlcv"
+    || canonical === "market.open"
+    || canonical === "market.high"
+    || canonical === "market.low"
+    || canonical === "market.close"
+  ) {
+    return canonical;
+  }
+  return null;
+}
+
+function resolutionForCadence(cadenceMs: number): ManualChartResolution | undefined {
+  for (const [resolution, step] of Object.entries(CHART_RESOLUTION_STEP_MS) as Array<
+    [ManualChartResolution, number]
+  >) {
+    if (step === cadenceMs) return resolution;
+  }
+  return undefined;
+}
+
+function patchResolution(
+  spec: ChartSpec,
+  series: ResolvedSeries,
+): ManualChartResolution | undefined {
+  if (series.timeBasis?.cadenceMs != null) {
+    const matched = resolutionForCadence(series.timeBasis.cadenceMs);
+    if (matched) return matched;
+  }
+  return spec.viewport.resolution === "auto" ? undefined : spec.viewport.resolution;
+}
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function toPricePoint(point: TimeSeriesPoint): PricePoint | null {
+  const close = finiteNumber(point.close)
+    ? point.close
+    : finiteNumber(point.value)
+      ? point.value
+      : null;
+  if (close == null) return null;
+  return {
+    date: point.date,
+    ...(finiteNumber(point.open) ? { open: point.open } : {}),
+    ...(finiteNumber(point.high) ? { high: point.high } : {}),
+    ...(finiteNumber(point.low) ? { low: point.low } : {}),
+    close,
+    ...(finiteNumber(point.volume) ? { volume: point.volume } : {}),
+  };
+}
+
+function fieldValue(fieldId: string, point: PricePoint): number {
+  if (fieldId === "market.open") return finiteNumber(point.open) ? point.open : point.close;
+  if (fieldId === "market.high") return finiteNumber(point.high) ? point.high : point.close;
+  if (fieldId === "market.low") return finiteNumber(point.low) ? point.low : point.close;
+  return point.close;
+}
+
+function withLivePrice(
+  point: TimeSeriesPoint,
+  next: PricePoint,
+  fieldId: string,
+): TimeSeriesPoint {
+  return {
+    ...point,
+    value: fieldValue(fieldId, next),
+    open: finiteNumber(next.open) ? next.open : point.open ?? null,
+    high: finiteNumber(next.high) ? next.high : point.high ?? null,
+    low: finiteNumber(next.low) ? next.low : point.low ?? null,
+    close: next.close,
+    volume: finiteNumber(next.volume) ? next.volume : point.volume,
+  };
+}
+
+function lastBarUnchanged(current: TimeSeriesPoint, next: TimeSeriesPoint): boolean {
+  return current.value === next.value
+    && current.open === next.open
+    && current.high === next.high
+    && current.low === next.low
+    && current.close === next.close;
+}
+
+function liveTailSeries(
+  result: ChartResolutionResult,
+  seriesId: string,
+): ResolvedSeries | undefined {
+  return (result.bufferedSeries ?? result.series).find((entry) => entry.id === seriesId)
+    ?? result.series.find((entry) => entry.id === seriesId);
+}
+
+function patchablePriceSeries(spec: ChartSpec): ChartSeriesSpec[] | null {
+  if (spec.studies.some((study) => study.kind !== "volume")) return null;
+  const patchable: ChartSeriesSpec[] = [];
+  for (const series of spec.series) {
+    if (series.source.kind !== "security") {
+      if (series.visible !== false) return null;
+      continue;
+    }
+    const fieldId = canonicalTimeSeriesFieldId(series.source.fieldId);
+    if (valuationSeriesUsesLiveQuote(fieldId)) return null;
+    if (fieldId === "market.volume" || fieldId === "market.dividends") continue;
+    const priceField = livePriceFieldId(fieldId);
+    if (!priceField) {
+      if (series.visible !== false) return null;
+      continue;
+    }
+    if (series.transform !== "raw") return null;
+    if (series.visible === false) continue;
+    patchable.push(series);
+  }
+  return patchable.length > 0 ? patchable : null;
+}
+
+function applyLastBarPatch(
+  seriesList: readonly ResolvedSeries[] | undefined,
+  seriesId: string,
+  lastTime: number,
+  fieldId: string,
+  price: PricePoint,
+  latestChangePercent: number | undefined,
+): ResolvedSeries[] | undefined {
+  if (!seriesList) return undefined;
+  let changed = false;
+  const next = seriesList.map((entry) => {
+    if (entry.id !== seriesId) return entry;
+    const last = entry.points.at(-1);
+    const nextChange = finiteNumber(latestChangePercent)
+      ? latestChangePercent
+      : entry.latestChangePercent;
+    if (last == null || last.date.getTime() !== lastTime) {
+      if (nextChange === entry.latestChangePercent) return entry;
+      changed = true;
+      return { ...entry, latestChangePercent: nextChange };
+    }
+    const nextPoint = withLivePrice(last, price, fieldId);
+    if (lastBarUnchanged(last, nextPoint) && nextChange === entry.latestChangePercent) {
+      return entry;
+    }
+    changed = true;
+    return {
+      ...entry,
+      latestChangePercent: nextChange,
+      points: [...entry.points.slice(0, -1), nextPoint],
+    };
+  });
+  return changed ? next : seriesList as ResolvedSeries[];
+}
+
+/**
+ * Updates the last bar/print from a live quote when studies and transforms
+ * would not change. Returns the same result if nothing changed, or null when
+ * the full resolver must rebuild.
+ */
+export function patchResolvedChartWithLiveQuotes(
+  result: ChartResolutionResult,
+  spec: ChartSpec,
+  quoteOverrides: ReadonlyMap<string, Quote>,
+  now: number,
+): ChartResolutionResult | null {
+  if (result.loading || quoteOverrides.size === 0) return null;
+  const patchable = patchablePriceSeries(spec);
+  if (!patchable) return null;
+
+  let next: ChartResolutionResult = result;
+  let changed = false;
+  for (const seriesSpec of patchable) {
+    if (seriesSpec.source.kind !== "security") continue;
+    const fieldId = livePriceFieldId(seriesSpec.source.fieldId);
+    if (!fieldId) continue;
+    const quote = quoteOverrides.get(chartQuoteOverrideKeyForSource(seriesSpec.source));
+    if (!quote) continue;
+    const tail = liveTailSeries(next, seriesSpec.id);
+    if (!tail || tail.points.length === 0) return null;
+    const resolution = patchResolution(spec, tail);
+    if (!resolution) return null;
+    const last = tail.points.at(-1);
+    const previous = tail.points.at(-2);
+    if (!last) return null;
+    const lastPrice = toPricePoint(last);
+    const previousPrice = previous ? toPricePoint(previous) : null;
+    if (!lastPrice || (previous && !previousPrice)) return null;
+    const history = previousPrice ? [previousPrice, lastPrice] : [lastPrice];
+    const extended = appendLiveQuotePoint(history, quote, {
+      now,
+      mode: "ohlc",
+      resolution,
+    });
+    if (extended.length !== history.length) return null;
+    const nextPrice = extended.at(-1);
+    if (!nextPrice) return null;
+    const lastTime = last.date.getTime();
+    const latestChangePercent = finiteNumber(quote.changePercent)
+      ? quote.changePercent
+      : undefined;
+    const series = applyLastBarPatch(
+      next.series,
+      seriesSpec.id,
+      lastTime,
+      fieldId,
+      nextPrice,
+      latestChangePercent,
+    );
+    const bufferedSeries = applyLastBarPatch(
+      next.bufferedSeries,
+      seriesSpec.id,
+      lastTime,
+      fieldId,
+      nextPrice,
+      latestChangePercent,
+    );
+    const legendSeries = applyLastBarPatch(
+      next.legendSeries,
+      seriesSpec.id,
+      lastTime,
+      fieldId,
+      nextPrice,
+      latestChangePercent,
+    );
+    const timelineSeries = applyLastBarPatch(
+      next.timelineSeries,
+      seriesSpec.id,
+      lastTime,
+      fieldId,
+      nextPrice,
+      latestChangePercent,
+    );
+    if (
+      series === next.series
+      && bufferedSeries === next.bufferedSeries
+      && legendSeries === next.legendSeries
+      && timelineSeries === next.timelineSeries
+    ) {
+      continue;
+    }
+    changed = true;
+    next = {
+      ...next,
+      series: series ?? next.series,
+      ...(bufferedSeries ? { bufferedSeries } : {}),
+      ...(legendSeries ? { legendSeries } : {}),
+      ...(timelineSeries ? { timelineSeries } : {}),
+    };
+  }
+  return changed ? next : result;
 }
 
 export interface LiveChartQuoteSubscriptionOptions {

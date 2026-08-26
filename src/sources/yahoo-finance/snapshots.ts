@@ -14,10 +14,14 @@ import {
 } from "./financials";
 import {
   deriveMarketState,
+  financeRawNumber,
+  normalizeMarketValue,
+  normalizePositiveMarketValue,
   normalizeSubUnitCurrency,
+  normalizeYahooMarketState,
   type ExtendedHoursData,
 } from "./mappers";
-import type { ChartResult } from "./types";
+import type { ChartResult, YahooQuoteApiResult } from "./types";
 
 type YahooChartSnapshot = {
   meta: NonNullable<ChartResult["meta"]>;
@@ -56,10 +60,15 @@ interface YahooSnapshotLoaders {
   providerId: string;
 }
 
-type YahooQuoteLoaders = Pick<
-  YahooSnapshotLoaders,
-  "fetchChart" | "fetchExtendedHoursData" | "fetchQuoteSupplement" | "providerId"
->;
+export interface YahooQuoteLoaders {
+  fetchQuotes: (symbols: string[]) => Promise<YahooQuoteApiResult[]>;
+  fetchExtendedHoursData: (
+    symbol: string,
+    meta: NonNullable<ChartResult["meta"]>,
+    regularClose?: number,
+  ) => Promise<ExtendedHoursData>;
+  providerId: string;
+}
 
 function normalizePriceHistory(history: PricePoint[], currencyDivisor: number): void {
   for (const point of history) {
@@ -110,7 +119,7 @@ export async function loadYahooTickerFinancials(
   loaders: YahooSnapshotLoaders,
 ): Promise<TickerFinancials> {
   const [chart, tsRaw, profile] = await Promise.all([
-    loaders.fetchChart(symbol, "5y"),
+    loaders.fetchChart(symbol, "5y", "1wk"),
     loaders.fetchTimeseries(symbol, [
       ...YAHOO_TIMESERIES_TYPES.annual,
       ...YAHOO_TIMESERIES_TYPES.quarterly,
@@ -199,29 +208,86 @@ export async function loadYahooTickerFinancials(
   };
 }
 
+export async function loadYahooQuotes(
+  symbols: string[],
+  loaders: YahooQuoteLoaders,
+): Promise<Map<string, Quote>> {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const symbol of symbols) {
+    const key = symbol.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(symbol);
+  }
+
+  const rawList = await loaders.fetchQuotes(unique);
+  const rawBySymbol = new Map<string, YahooQuoteApiResult>();
+  for (const raw of rawList) {
+    if (!raw.symbol) continue;
+    rawBySymbol.set(raw.symbol.toUpperCase(), raw);
+  }
+
+  const quotes = new Map<string, Quote>();
+  await Promise.all(unique.map(async (symbol) => {
+    const raw = rawBySymbol.get(symbol.toUpperCase());
+    if (!raw) return;
+    quotes.set(symbol.toUpperCase(), await assembleYahooQuote(symbol, raw, loaders));
+  }));
+  return quotes;
+}
+
 export async function loadYahooQuote(
   symbol: string,
   loaders: YahooQuoteLoaders,
 ): Promise<Quote> {
-  const chart = await loaders.fetchChart(symbol, "1mo");
-  const { meta, history } = chart;
-  const { normalizedCurrency, currencyDivisor } = normalizeChartCurrency(chart);
-  const quoteSupplement = await loaders.fetchQuoteSupplement(symbol, currencyDivisor);
-  const latest = history[history.length - 1]!;
-  const prev = history.length > 1 ? history[history.length - 2]!.close : meta.chartPreviousClose;
-  const price = meta.regularMarketPrice ?? latest.close;
-  const change = prev != null ? price - prev : 0;
+  const quotes = await loadYahooQuotes([symbol], loaders);
+  const quote = quotes.get(symbol.toUpperCase());
+  if (!quote) throw new Error(`No quote for ${symbol}`);
+  return quote;
+}
 
-  const marketState = deriveMarketState(meta);
-  const extendedHoursBase = quoteSupplement.previousClose ?? prev;
-  const extHours = await loaders.fetchExtendedHoursData(
-    symbol,
-    meta,
-    extendedHoursBase == null ? undefined : extendedHoursBase * currencyDivisor,
-  );
-  if (currencyDivisor !== 1) {
-    normalizeExtendedHoursPrices(extHours, currencyDivisor);
+async function assembleYahooQuote(
+  symbol: string,
+  raw: YahooQuoteApiResult,
+  loaders: YahooQuoteLoaders,
+): Promise<Quote> {
+  const { currency: normalizedCurrency, divisor } = normalizeSubUnitCurrency(raw.currency || "USD");
+  const price = normalizePositiveMarketValue(financeRawNumber(raw.regularMarketPrice), divisor);
+  if (price == null) throw new Error(`No quote for ${symbol}`);
+
+  const previousClose = normalizeMarketValue(financeRawNumber(raw.regularMarketPreviousClose), divisor);
+  const changeRaw = financeRawNumber(raw.regularMarketChange);
+  const change = changeRaw != null
+    ? changeRaw / divisor
+    : previousClose != null ? price - previousClose : 0;
+  const changePercent = financeRawNumber(raw.regularMarketChangePercent)
+    ?? (previousClose ? (change / previousClose) * 100 : 0);
+
+  const explicitState = normalizeYahooMarketState(raw.marketState);
+  const marketState = explicitState ?? "CLOSED";
+  let extHours = compactExtendedHours(mapYahooQuoteExtendedHours(raw, divisor));
+  const needsExtendedHours =
+    (marketState === "PRE" && extHours.preMarketPrice == null)
+    || (marketState === "POST" && extHours.postMarketPrice == null);
+
+  if (needsExtendedHours) {
+    const regularCloseRaw = financeRawNumber(raw.regularMarketPreviousClose);
+    const fetched = await loaders.fetchExtendedHoursData(
+      symbol,
+      {
+        regularMarketPrice: financeRawNumber(raw.regularMarketPrice),
+        chartPreviousClose: regularCloseRaw,
+        marketState: explicitState,
+      },
+      regularCloseRaw,
+    );
+    if (divisor !== 1) normalizeExtendedHoursPrices(fetched, divisor);
+    extHours = { ...fetched, ...extHours };
   }
+
+  const exchangeName = raw.exchangeName || raw.exchange;
+  const fullExchangeName = raw.fullExchangeName || exchangeName;
 
   return {
     symbol,
@@ -229,21 +295,53 @@ export async function loadYahooQuote(
     price,
     currency: normalizedCurrency,
     change,
-    changePercent: prev ? (change / prev) * 100 : 0,
-    high52w: meta.fiftyTwoWeekHigh,
-    low52w: meta.fiftyTwoWeekLow,
-    name: meta.shortName || meta.longName,
-    lastUpdated: yahooMarketTimestamp(meta),
-    exchangeName: meta.exchangeName,
-    fullExchangeName: meta.fullExchangeName,
-    listingExchangeName: meta.exchangeName,
-    listingExchangeFullName: meta.fullExchangeName,
+    changePercent,
+    high52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekHigh), divisor),
+    low52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekLow), divisor),
+    name: raw.shortName || raw.longName,
+    lastUpdated: yahooMarketTimestamp({ regularMarketTime: financeRawNumber(raw.regularMarketTime) }),
+    exchangeName,
+    fullExchangeName,
+    listingExchangeName: exchangeName,
+    listingExchangeFullName: fullExchangeName,
     marketState,
-    sessionConfidence: "derived",
+    sessionConfidence: explicitState ? "explicit" : "unknown",
     dataSource: "delayed",
-    ...quoteSupplement,
+    bid: normalizePositiveMarketValue(financeRawNumber(raw.bid), divisor),
+    ask: normalizePositiveMarketValue(financeRawNumber(raw.ask), divisor),
+    bidSize: financeRawNumber(raw.bidSize),
+    askSize: financeRawNumber(raw.askSize),
+    previousClose,
+    open: normalizeMarketValue(financeRawNumber(raw.regularMarketOpen), divisor),
+    high: normalizeMarketValue(financeRawNumber(raw.regularMarketDayHigh), divisor),
+    low: normalizeMarketValue(financeRawNumber(raw.regularMarketDayLow), divisor),
     ...extHours,
   };
+}
+
+function mapYahooQuoteExtendedHours(
+  raw: YahooQuoteApiResult,
+  divisor: number,
+): ExtendedHoursData {
+  return {
+    preMarketPrice: normalizeMarketValue(financeRawNumber(raw.preMarketPrice), divisor),
+    preMarketChange: normalizeMarketValue(financeRawNumber(raw.preMarketChange), divisor),
+    preMarketChangePercent: financeRawNumber(raw.preMarketChangePercent),
+    postMarketPrice: normalizeMarketValue(financeRawNumber(raw.postMarketPrice), divisor),
+    postMarketChange: normalizeMarketValue(financeRawNumber(raw.postMarketChange), divisor),
+    postMarketChangePercent: financeRawNumber(raw.postMarketChangePercent),
+  };
+}
+
+function compactExtendedHours(data: ExtendedHoursData): ExtendedHoursData {
+  const result: ExtendedHoursData = {};
+  if (data.preMarketPrice != null) result.preMarketPrice = data.preMarketPrice;
+  if (data.preMarketChange != null) result.preMarketChange = data.preMarketChange;
+  if (data.preMarketChangePercent != null) result.preMarketChangePercent = data.preMarketChangePercent;
+  if (data.postMarketPrice != null) result.postMarketPrice = data.postMarketPrice;
+  if (data.postMarketChange != null) result.postMarketChange = data.postMarketChange;
+  if (data.postMarketChangePercent != null) result.postMarketChangePercent = data.postMarketChangePercent;
+  return result;
 }
 
 function yahooMarketTimestamp(meta: NonNullable<ChartResult["meta"]>): number {

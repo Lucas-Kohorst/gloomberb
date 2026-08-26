@@ -126,18 +126,52 @@ export function useTickerFinancials(symbol: string | null | undefined, ticker: T
   return financials;
 }
 
-function buildTickerFinancialsKeys(tickers: TickerRecord[], options: TickerInstrumentOptions = {}): string[] {
+export function buildTickerFinancialsKeys(tickers: TickerRecord[], options: TickerInstrumentOptions = {}): string[] {
   const keys: string[] = [];
   for (const ticker of tickers) {
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
     if (!instrument) continue;
-    keys.push(
-      buildSnapshotKey(instrument),
-      buildQuoteKey(instrument),
-      buildChartKey({ instrument, bufferRange: "5Y", granularity: "range" }),
-    );
+    keys.push(buildQuoteKey(instrument));
   }
   return keys;
+}
+
+function tickerFinancialsQuoteUnchanged(
+  previous: TickerFinancials,
+  next: TickerFinancials,
+): boolean {
+  return previous === next || previous.quote === next.quote;
+}
+
+function tickerFinancialsMapsEquivalent(
+  left: Map<string, TickerFinancials>,
+  right: Map<string, TickerFinancials>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [symbol, financials] of right) {
+    if (left.get(symbol) !== financials) return false;
+  }
+  return true;
+}
+
+export function copyOnWriteTickerFinancialsMap(
+  previous: Map<string, TickerFinancials> | undefined,
+  next: Map<string, TickerFinancials>,
+): Map<string, TickerFinancials> {
+  if (!previous) return next;
+  let changed = previous.size !== next.size;
+  const result = new Map<string, TickerFinancials>();
+  for (const [symbol, financials] of next) {
+    const prev = previous.get(symbol);
+    if (prev && tickerFinancialsQuoteUnchanged(prev, financials)) {
+      result.set(symbol, prev);
+    } else {
+      result.set(symbol, financials);
+      if (prev !== financials) changed = true;
+    }
+  }
+  if (!changed && tickerFinancialsMapsEquivalent(previous, result)) return previous;
+  return result;
 }
 
 /**
@@ -170,9 +204,15 @@ export function useTickerFinancialsMap(
   const tickerKey = buildTickerFinancialsMapKey(tickers, options);
   const subscriptionKeys = useMemo(() => buildTickerFinancialsKeys(tickers, options), [optionsKey, tickerKey]);
   const keysVersion = useCoordinatorKeysVersion(subscriptionKeys);
+  const previousMapRef = useRef<Map<string, TickerFinancials>>(new Map());
 
   return useMemo(() => {
-    if (!coordinator) return new Map<string, TickerFinancials>();
+    if (!coordinator) {
+      if (previousMapRef.current.size === 0) return previousMapRef.current;
+      const empty = new Map<string, TickerFinancials>();
+      previousMapRef.current = empty;
+      return empty;
+    }
     const result = new Map<string, TickerFinancials>();
     for (const ticker of tickers) {
       const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
@@ -182,7 +222,9 @@ export function useTickerFinancialsMap(
         result.set(ticker.metadata.ticker, financials);
       }
     }
-    return result;
+    const reused = copyOnWriteTickerFinancialsMap(previousMapRef.current, result);
+    previousMapRef.current = reused;
+    return reused;
   }, [coordinator, keysVersion, optionsKey, tickerKey, subscriptionKeys]);
 }
 
@@ -205,6 +247,30 @@ export function useQuoteEntry(symbol: string | null | undefined, ticker: TickerR
   return entry;
 }
 
+function quoteEntryMapsEquivalent(
+  left: Map<string, QueryEntry<Quote>>,
+  right: Map<string, QueryEntry<Quote>>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [key, entry] of right) {
+    if (left.get(key) !== entry) return false;
+  }
+  return true;
+}
+
+export function copyOnWriteQuoteEntryMap(
+  previous: Map<string, QueryEntry<Quote>> | undefined,
+  next: Map<string, QueryEntry<Quote>>,
+): Map<string, QueryEntry<Quote>> {
+  if (!previous) return next;
+  if (quoteEntryMapsEquivalent(previous, next)) return previous;
+  const result = new Map<string, QueryEntry<Quote>>();
+  for (const [key, entry] of next) {
+    result.set(key, previous.get(key) === entry ? previous.get(key)! : entry);
+  }
+  return result;
+}
+
 /**
  * Observe quote entries already populated by the shared stream without issuing
  * one HTTP snapshot request per instrument.
@@ -221,15 +287,24 @@ export function useQuoteEntries(
   );
   const keysVersion = useCoordinatorKeysVersion(keys);
   const coordinator = getSharedMarketDataCoordinator();
+  const previousMapRef = useRef<Map<string, QueryEntry<Quote>>>(new Map());
 
   return useMemo(() => {
-    if (!coordinator) return new Map<string, QueryEntry<Quote>>();
-    return new Map(
+    if (!coordinator) {
+      if (previousMapRef.current.size === 0) return previousMapRef.current;
+      const empty = new Map<string, QueryEntry<Quote>>();
+      previousMapRef.current = empty;
+      return empty;
+    }
+    const result = new Map(
       instruments.map((instrument) => [
         buildQuoteKey(instrument),
         coordinator.getQuoteEntry(instrument),
       ]),
     );
+    const reused = copyOnWriteQuoteEntryMap(previousMapRef.current, result);
+    previousMapRef.current = reused;
+    return reused;
   }, [coordinator, instrumentKey, keysVersion]);
 }
 

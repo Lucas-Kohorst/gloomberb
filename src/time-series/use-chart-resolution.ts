@@ -9,6 +9,7 @@ import type { ChartResolutionResult, ChartSpec } from "./types";
 import {
   LIVE_CHART_REFRESH_INTERVAL_MS,
   liveChartQuoteTargetSignature,
+  patchResolvedChartWithLiveQuotes,
   subscribeToLiveChartQuotes,
 } from "./live-quotes";
 import type { Quote } from "../types/financials";
@@ -167,6 +168,31 @@ export function useChartResolution(
         if (liveSubscriptionGenerationRef.current !== subscriptionGeneration) return;
         liveQuoteOverridesRef.current = quoteOverrides;
         const request = latestRequestRef.current;
+        const current = resultRef.current;
+        const canPatch = !request.options.autoViewport
+          && !request.options.requestViewport
+          && !current.loading
+          && hasRenderableData(current);
+        if (canPatch) {
+          const patched = patchResolvedChartWithLiveQuotes(
+            current,
+            request.spec,
+            quoteOverrides,
+            (request.sources.now ?? new Date()).getTime(),
+          );
+          if (patched) {
+            if (patched !== current) {
+              const generation = ++generationRef.current;
+              if (
+                liveSubscriptionGenerationRef.current === subscriptionGeneration
+                && generationRef.current === generation
+              ) {
+                setResult(patched);
+              }
+            }
+            return;
+          }
+        }
         const generation = ++generationRef.current;
         try {
           const next = await resolveChartSpecData(

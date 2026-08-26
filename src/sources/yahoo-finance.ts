@@ -1,5 +1,5 @@
 import type { Quote, PricePoint, TickerFinancials, OptionsChain, CompanyProfile, HolderData, AnalystResearchData, CorporateActionsData } from "../types/financials";
-import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, SecFilingItem } from "../types/data-provider";
+import type { DataProvider, EarningsEvent, MarketDataRequestContext, NewsItem, QuoteBatchResult, QuoteSubscriptionTarget, SecFilingItem } from "../types/data-provider";
 import type { TimeRange } from "../time-series/range";
 import {
   type ChartResolutionSupport,
@@ -22,6 +22,7 @@ import {
   fetchYahooChart,
   fetchYahooExtendedHoursData,
   fetchYahooQuoteSupplement,
+  fetchYahooQuotes,
   fetchYahooTimeseries,
 } from "./yahoo-finance/requests";
 import {
@@ -31,9 +32,11 @@ import {
   loadYahooPriceHistoryForResolution,
 } from "./yahoo-finance/history";
 import {
+  findYahooOptionContract,
   getYahooOptionQuote,
   loadYahooOptionsChain,
   loadYahooOptionsChainResult,
+  yahooOptionQuoteFromContract,
 } from "./yahoo-finance/options";
 import {
   loadYahooAnalystResearch,
@@ -43,7 +46,9 @@ import {
 } from "./yahoo-finance/quote-summary";
 import {
   loadYahooQuote,
+  loadYahooQuotes,
   loadYahooTickerFinancials,
+  type YahooQuoteLoaders,
 } from "./yahoo-finance/snapshots";
 
 const SEC_STATEMENT_SUPPLEMENT_EXCHANGES = new Set([
@@ -161,6 +166,20 @@ export class YahooFinanceClient implements DataProvider {
     return fetchYahooQuoteSupplement(this.http, symbol, currencyDivisor);
   }
 
+  private async fetchQuotes(symbols: string[]) {
+    return fetchYahooQuotes(this.http, symbols);
+  }
+
+  private quoteLoaders(): YahooQuoteLoaders {
+    return {
+      fetchQuotes: (symbols) => this.fetchQuotes(symbols),
+      fetchExtendedHoursData: (symbol, meta, regularClose) => (
+        this.fetchExtendedHoursData(symbol, meta, regularClose)
+      ),
+      providerId: this.id,
+    };
+  }
+
   /** Fetch full financials for a ticker */
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
     const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
@@ -210,20 +229,93 @@ export class YahooFinanceClient implements DataProvider {
 
     for (const symbol of symbolsToTry) {
       try {
-        return await loadYahooQuote(symbol, {
-          fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
-          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
-            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
-          ),
-          fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
-            this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
-          providerId: this.id,
-        });
+        return await loadYahooQuote(symbol, this.quoteLoaders());
       } catch (err) {
         lastError = err;
       }
     }
     throw lastError || new Error(`No quote for ${ticker}`);
+  }
+
+  async getQuotesBatch(
+    targets: QuoteSubscriptionTarget[],
+    _options?: { forceRefresh?: boolean },
+  ): Promise<QuoteBatchResult[]> {
+    const results: QuoteBatchResult[] = targets.map((target) => ({ target, quote: null }));
+    const pending: Array<{ index: number; yahooSymbol: string }> = [];
+    const optionGroups = new Map<string, Array<{
+      index: number;
+      target: QuoteSubscriptionTarget;
+      parsed: NonNullable<ReturnType<typeof parseOptionSymbol>>;
+    }>>();
+
+    for (const [index, target] of targets.entries()) {
+      const parsed = parseOptionSymbol(target.symbol);
+      if (parsed) {
+        const key = `${parsed.underlying}:${parsed.expTs}`;
+        const group = optionGroups.get(key) ?? [];
+        group.push({ index, target, parsed });
+        optionGroups.set(key, group);
+        continue;
+      }
+      pending.push({
+        index,
+        yahooSymbol: getYahooSymbol(target.symbol, target.exchange ?? ""),
+      });
+    }
+
+    await Promise.all([...optionGroups.values()].map(async (group) => {
+      const first = group[0]!;
+      try {
+        const { chain, underlyingMarketState } = await loadYahooOptionsChainResult({
+          exchange: "",
+          expirationDate: first.parsed.expTs,
+          fetchJsonWithCrumb: (url) => this.http.fetchJsonWithCrumb(url),
+          ticker: first.parsed.underlying,
+        });
+        for (const item of group) {
+          try {
+            const contract = findYahooOptionContract(chain, item.parsed);
+            if (!contract) throw new Error(`No option contract for ${item.target.symbol}`);
+            results[item.index] = {
+              target: item.target,
+              quote: yahooOptionQuoteFromContract({
+                contract,
+                providerId: this.id,
+                ticker: item.target.symbol,
+                underlyingMarketState,
+              }),
+            };
+          } catch (error) {
+            results[item.index] = { target: item.target, quote: null, error };
+          }
+        }
+      } catch (error) {
+        for (const item of group) {
+          results[item.index] = { target: item.target, quote: null, error };
+        }
+      }
+    }));
+
+    if (pending.length === 0) return results;
+
+    try {
+      const quotes = await loadYahooQuotes(
+        pending.map((item) => item.yahooSymbol),
+        this.quoteLoaders(),
+      );
+      for (const item of pending) {
+        results[item.index] = {
+          target: targets[item.index]!,
+          quote: quotes.get(item.yahooSymbol.toUpperCase()) ?? null,
+        };
+      }
+    } catch (error) {
+      for (const item of pending) {
+        results[item.index] = { target: targets[item.index]!, quote: null, error };
+      }
+    }
+    return results;
   }
 
   /** Fetch exchange rate to USD */
@@ -233,12 +325,11 @@ export class YahooFinanceClient implements DataProvider {
     fromCurrency = normalized;
     if (fromCurrency === "USD") return 1;
 
-    const { meta, history } = await this.fetchChart(`${fromCurrency}USD=X`, "1mo");
-    const rate = meta.regularMarketPrice ?? history[history.length - 1]?.close;
-    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+    const quote = await loadYahooQuote(`${fromCurrency}USD=X`, this.quoteLoaders());
+    if (typeof quote.price !== "number" || !Number.isFinite(quote.price) || quote.price <= 0) {
       throw new Error(`No exchange rate data for ${fromCurrency}/USD`);
     }
-    return rate;
+    return quote.price;
   }
 
   /** Search for a ticker by name/symbol. Hosted must use httpFetch so the Worker proxies CORS. */

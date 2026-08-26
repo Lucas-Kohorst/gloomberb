@@ -93,6 +93,7 @@ describe("useInlineTickers", () => {
       },
     });
     let quoteCalls = 0;
+    const actions: unknown[] = [];
     setSharedRegistryForTests({
       marketData: {
         getQuote: async () => {
@@ -105,7 +106,7 @@ describe("useInlineTickers", () => {
 
     await act(async () => {
       testSetup = await testRender(
-        <AppContext value={{ state, dispatch: () => {} }}>
+        <AppContext value={{ state, dispatch: (action) => actions.push(action) }}>
           <InlineTickerHarness liveQuotes={false} />
         </AppContext>,
         { width: 20, height: 1 },
@@ -119,5 +120,6 @@ describe("useInlineTickers", () => {
 
     expect(testSetup!.captureCharFrame()).toContain("ready");
     expect(quoteCalls).toBe(0);
+    expect(actions).toEqual([]);
   });
 });
