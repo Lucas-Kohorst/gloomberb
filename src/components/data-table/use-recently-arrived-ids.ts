@@ -2,12 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import {
   activeArrivalIds,
   createArrivalTracker,
+  MAX_TRACKED_SEEN_IDS,
   nextArrivalEventAt,
   observeItemIds,
   type ArrivalTracker,
 } from "./recently-arrived";
 
 const EMPTY_ARRIVAL_IDS: ReadonlySet<string> = new Set();
+
+function capObservedIds(ids: readonly string[]): readonly string[] {
+  return ids.length > MAX_TRACKED_SEEN_IDS ? ids.slice(0, MAX_TRACKED_SEEN_IDS) : ids;
+}
 
 function sameIdList(left: readonly string[] | null, right: readonly string[]): boolean {
   if (left === null) return false;
@@ -65,10 +70,11 @@ export function useRecentlyArrivedIds(ids: readonly string[]): ReadonlySet<strin
       }, Math.max(0, nextAt - now));
     };
 
-    if (!sameIdList(prevIdsRef.current, ids)) {
-      prevIdsRef.current = ids;
+    const observed = capObservedIds(ids);
+    if (!sameIdList(prevIdsRef.current, observed)) {
+      prevIdsRef.current = observed;
       const now = Date.now();
-      trackerRef.current = observeItemIds(trackerRef.current, ids, now);
+      trackerRef.current = observeItemIds(trackerRef.current, observed, now);
       publish(now);
     } else {
       publish(Date.now());

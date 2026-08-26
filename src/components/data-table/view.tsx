@@ -11,7 +11,7 @@ import type { ScrollBoxRenderable } from "../../ui";
 import { useShortcut } from "../../react/input";
 import { useOptionalPaneInstanceId, usePaneInstance } from "../../state/app/context";
 import { DataTable, type DataTableColumn, type DataTableProps } from "../ui";
-import { publishPaneCsvSnapshot } from "./csv-export";
+import { PANE_CSV_MAX_ROWS, publishPaneCsvSnapshot } from "./csv-export";
 import {
   isNextTableRowKey,
   isPreviousTableRowKey,
@@ -79,6 +79,7 @@ export interface DataTableViewProps<
     | "isSelected"
     | "onSelect"
     | "onActivate"
+    | "selectedItemKey"
   > {
   focused?: boolean;
   selection: DataTableSelection<T>;
@@ -134,19 +135,38 @@ export function DataTableView<
   const paneId = useOptionalPaneInstanceId();
   const pane = usePaneInstance();
   const paneTitle = pane?.title?.trim() || pane?.paneId || "table";
+  const csvSourceRef = useRef({
+    items: tableProps.items,
+    columns: tableProps.columns,
+    renderCell: tableProps.renderCell,
+  });
+  csvSourceRef.current = {
+    items: tableProps.items,
+    columns: tableProps.columns,
+    renderCell: tableProps.renderCell,
+  };
   useEffect(() => {
     return publishPaneCsvSnapshot({
       paneId: paneId ?? "__detached__",
       title: paneTitle,
       focused,
-      columns: tableProps.columns.map((column) => column.label),
-      rows: () => tableProps.items.map((item, index) => (
-        tableProps.columns.map((column) => (
-          tableProps.renderCell(item, column, index, { selected: false }).text ?? ""
-        ))
-      )),
+      get columns() {
+        return csvSourceRef.current.columns.map((column) => column.label);
+      },
+      rows: () => {
+        const { items, columns, renderCell } = csvSourceRef.current;
+        const limit = Math.min(items.length, PANE_CSV_MAX_ROWS);
+        const rows: string[][] = [];
+        for (let index = 0; index < limit; index += 1) {
+          const item = items[index]!;
+          rows.push(columns.map((column) => (
+            renderCell(item, column, index, { selected: false }).text ?? ""
+          )));
+        }
+        return rows;
+      },
     });
-  }, [focused, paneId, paneTitle, tableProps.columns, tableProps.items, tableProps.renderCell]);
+  }, [focused, paneId, paneTitle]);
 
   const {
     effectiveHeaderScrollRef,
@@ -168,6 +188,7 @@ export function DataTableView<
     : selection.kind === "index"
       ? selection.selectedIndex
       : null;
+  const selectedIndexHintRef = useRef(-1);
   const selectedIndexFromSelection = useMemo(() => {
     if (selection.kind === "none") return -1;
     if (selection.kind === "index") {
@@ -179,9 +200,19 @@ export function DataTableView<
         : -1;
     }
     if (selection.selectedId == null) return -1;
-    return tableProps.items.findIndex(
-      (item, index) => selection.getId(item, index) === selection.selectedId,
+    const hinted = selectedIndexHintRef.current;
+    if (
+      hinted >= 0
+      && hinted < tableProps.items.length
+      && selection.getId(tableProps.items[hinted]!, hinted) === selection.selectedId
+    ) {
+      return hinted;
+    }
+    const index = tableProps.items.findIndex(
+      (item, itemIndex) => selection.getId(item, itemIndex) === selection.selectedId,
     );
+    selectedIndexHintRef.current = index;
+    return index;
   }, [selection, selectionKey, tableProps.items]);
   const navigableIndices = useMemo(() => {
     if (!isNavigable) return null;
@@ -544,6 +575,14 @@ export function DataTableView<
     >
       <DataTable<T, C>
         {...tableProps}
+        selectedItemKey={
+          effectiveSelectedIndex >= 0
+            ? tableProps.getItemKey(
+              tableProps.items[effectiveSelectedIndex]!,
+              effectiveSelectedIndex,
+            )
+            : null
+        }
         headerScrollRef={effectiveHeaderScrollRef}
         scrollRef={effectiveScrollRef}
         syncHeaderScroll={effectiveSyncHeaderScroll}

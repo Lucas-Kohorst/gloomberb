@@ -100,4 +100,50 @@ describe("PaneContent", () => {
     expect(frame).toContain("完成");
     expect(frame).not.toContain("Done");
   });
+
+  test("does not crash when a layout pane has no component", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-missing-pane-test");
+
+    testSetup = await testRender(
+      <AppProvider config={config}>
+        <PaneContent
+          component={undefined as never}
+          paneId="mixed-watchlist:1"
+          paneType="mixed-watchlist"
+          focused
+          width={24}
+          height={4}
+        />
+      </AppProvider>,
+      { width: 32, height: 6 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame().replace(/\s+/g, " ")).toContain('Pane "mixed-watchlist" has no view.');
+  });
+
+  test("keeps a throwing pane from taking down the shell", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-pane-crash-test");
+
+    function Boom() {
+      throw new Error("boom");
+    }
+
+    testSetup = await testRender(
+      <AppProvider config={config}>
+        <PaneContent
+          component={Boom}
+          paneId="mixed-watchlist:1"
+          paneType="mixed-watchlist"
+          focused
+          width={24}
+          height={8}
+        />
+      </AppProvider>,
+      { width: 40, height: 10 },
+    );
+
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain('Pane "mixed-watchlist" crashed: boom');
+  });
 });

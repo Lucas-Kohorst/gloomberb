@@ -64,22 +64,25 @@ export function observeItemIds(
   ids: readonly string[],
   now: number,
 ): ArrivalTracker {
+  const observed = ids.length > MAX_TRACKED_SEEN_IDS
+    ? ids.slice(0, MAX_TRACKED_SEEN_IDS)
+    : ids;
   const arrivals = pruneArrivals(tracker.arrivals, now);
 
   if (!tracker.primed) {
     // Stay unprimed on an empty list so the first real hydrate does not
     // animate every row as if it just arrived on the wire.
-    if (ids.length === 0) return tracker;
+    if (observed.length === 0) return tracker;
     return {
       primed: true,
-      seenIds: rememberIds([], ids),
+      seenIds: rememberIds([], observed),
       arrivals: [],
     };
   }
 
   const seen = new Set(tracker.seenIds);
   const fresh: string[] = [];
-  for (const id of ids) {
+  for (const id of observed) {
     if (seen.has(id)) continue;
     seen.add(id);
     fresh.push(id);
@@ -95,7 +98,7 @@ export function observeItemIds(
   });
 
   if (fresh.length === 0 && arrivals.length === tracker.arrivals.length) {
-    const nextSeen = rememberIds(tracker.seenIds, ids);
+    const nextSeen = rememberIds(tracker.seenIds, observed);
     if (
       nextSeen.length === tracker.seenIds.length
       && nextSeen.every((id, index) => id === tracker.seenIds[index])
@@ -107,7 +110,7 @@ export function observeItemIds(
 
   return {
     primed: true,
-    seenIds: rememberIds(tracker.seenIds, ids),
+    seenIds: rememberIds(tracker.seenIds, observed),
     arrivals: [...arrivals, ...newArrivals],
   };
 }

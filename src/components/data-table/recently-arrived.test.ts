@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ARRIVAL_HIGHLIGHT_MS,
   ARRIVAL_STAGGER_MS,
+  MAX_TRACKED_SEEN_IDS,
   activeArrivalIds,
   createArrivalTracker,
   nextArrivalEventAt,
@@ -59,6 +60,14 @@ describe("observeItemIds", () => {
 
     expect(tracker.arrivals).toEqual([]);
     expect(activeArrivalIds(tracker, 3_000).size).toBe(0);
+  });
+
+  test("caps observation so a huge id list does not walk as seen", () => {
+    const ids = Array.from({ length: MAX_TRACKED_SEEN_IDS + 500 }, (_, index) => `id-${index}`);
+    const tracker = observeItemIds(createArrivalTracker(), ids, 1_000);
+    expect(tracker.seenIds).toHaveLength(MAX_TRACKED_SEEN_IDS);
+    expect(tracker.seenIds[0]).toBe("id-0");
+    expect(tracker.seenIds.at(-1)).toBe(`id-${MAX_TRACKED_SEEN_IDS - 1}`);
   });
 
   test("expires arrivals and reports the next timer boundary", () => {

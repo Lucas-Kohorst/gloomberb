@@ -32,6 +32,23 @@ describe("pane CSV export", () => {
     );
   });
 
+  test("does not invoke the rows thunk until serialize", () => {
+    let walks = 0;
+    publishPaneCsvSnapshot({
+      paneId: "polls:main",
+      title: "Polls",
+      focused: true,
+      columns: ["Race"],
+      rows: () => {
+        walks += 1;
+        return [["MI-SEN"]];
+      },
+    });
+    expect(walks).toBe(0);
+    expect(getActivePaneCsvSnapshot()?.rows()).toEqual([["MI-SEN"]]);
+    expect(walks).toBe(1);
+  });
+
   test("keeps the last focused snapshot after the pane blurs", () => {
     publishPaneCsvSnapshot({
       paneId: "pm:main",

@@ -1,10 +1,10 @@
-import { memo, useCallback } from "react";
+import { Component, memo, useCallback, type ErrorInfo, type ReactNode } from "react";
 import { useAppLanguage } from "../../../i18n/react";
 import { PaneInstanceProvider } from "../../../state/app/context";
 import { useThemeColors } from "../../../theme/theme-context";
 import { PaneKeyboardScrollController } from "../../../state/pane-scroll-registry";
 import type { PaneDef } from "../../../types/plugin";
-import { Box } from "../../../ui";
+import { Box, Text } from "../../../ui";
 
 interface PaneContentProps {
   component: PaneDef["component"];
@@ -14,6 +14,28 @@ interface PaneContentProps {
   width: number;
   height: number;
   onClose?: (paneId: string) => void;
+}
+
+class PaneRenderErrorBoundary extends Component<
+  { paneType: string; children: ReactNode },
+  { error: Error | null }
+> {
+  override state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error): { error: Error } {
+    return { error };
+  }
+
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("[pane] render failed", this.props.paneType, error, info.componentStack);
+  }
+
+  override render(): ReactNode {
+    if (this.state.error) {
+      return <Text>{`Pane "${this.props.paneType}" crashed: ${this.state.error.message}`}</Text>;
+    }
+    return this.props.children;
+  }
 }
 
 export const PaneContent = memo(function PaneContent({
@@ -44,14 +66,20 @@ export const PaneContent = memo(function PaneContent({
         overflow="hidden"
         data-gloom-role="pane-content"
       >
-        <Component
-          paneId={paneId}
-          paneType={paneType}
-          focused={focused}
-          width={width}
-          height={height}
-          close={onClose ? close : undefined}
-        />
+        <PaneRenderErrorBoundary paneType={paneType}>
+          {typeof Component === "function" ? (
+            <Component
+              paneId={paneId}
+              paneType={paneType}
+              focused={focused}
+              width={width}
+              height={height}
+              close={onClose ? close : undefined}
+            />
+          ) : (
+            <Text>{`Pane "${paneType}" has no view.`}</Text>
+          )}
+        </PaneRenderErrorBoundary>
       </Box>
     </PaneInstanceProvider>
   );
