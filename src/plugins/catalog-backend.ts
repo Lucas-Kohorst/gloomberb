@@ -27,6 +27,14 @@ import { coingeckoPlugin } from "./builtin/coingecko";
 import { ibkrPlugin } from "./ibkr";
 import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { predictionMarketsBackendPlugin } from "./prediction-markets/backend-plugin";
+import { usaspendingPlugin } from "./builtin/usaspending";
+import { openskyPlugin } from "./builtin/opensky";
+import { nasaFirmsPlugin } from "./builtin/nasa-firms";
+import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
+import { spaceWeatherPlugin } from "./builtin/space-weather";
+import { federalRegisterPlugin } from "./builtin/federal-register";
+import { ofacSanctionsPlugin } from "./builtin/ofac-sanctions";
+import { crtShPlugin } from "./builtin/crt-sh";
 
 const desktopBackendPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -54,6 +62,14 @@ const desktopBackendPlugins: GloomPlugin[] = [
   alertsPlugin,
   pluginMarketPlugin,
   pluginInspectorPlugin,
+  usaspendingPlugin,
+  openskyPlugin,
+  nasaFirmsPlugin,
+  usgsEarthquakesPlugin,
+  spaceWeatherPlugin,
+  federalRegisterPlugin,
+  ofacSanctionsPlugin,
+  crtShPlugin,
   debugPlugin,
 ];
 

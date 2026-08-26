@@ -26,6 +26,14 @@ import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 import { trafficPlugin } from "./builtin/traffic";
 import { satellitePlugin } from "./builtin/satellite";
+import { usaspendingPlugin } from "./builtin/usaspending";
+import { openskyPlugin } from "./builtin/opensky";
+import { nasaFirmsPlugin } from "./builtin/nasa-firms";
+import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
+import { spaceWeatherPlugin } from "./builtin/space-weather";
+import { federalRegisterPlugin } from "./builtin/federal-register";
+import { ofacSanctionsPlugin } from "./builtin/ofac-sanctions";
+import { crtShPlugin } from "./builtin/crt-sh";
 
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
@@ -55,6 +63,14 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   alertsPlugin,
   pluginMarketPlugin,
   pluginInspectorPlugin,
+  usaspendingPlugin,
+  openskyPlugin,
+  nasaFirmsPlugin,
+  usgsEarthquakesPlugin,
+  spaceWeatherPlugin,
+  federalRegisterPlugin,
+  ofacSanctionsPlugin,
+  crtShPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {
