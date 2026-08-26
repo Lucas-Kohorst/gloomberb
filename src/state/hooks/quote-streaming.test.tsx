@@ -11,6 +11,7 @@ import { useLiveQuoteEntries, useQuoteStreaming, useQuoteUpdates } from "./quote
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 let bumpHarness: (() => void) | null = null;
 let togglePollingPriority: (() => void) | null = null;
+let toggleLivePriority: (() => void) | null = null;
 let updateLiveTargets: ((symbol: string) => void) | null = null;
 let updateFreshnessScope: ((scope: string) => void) | null = null;
 let observedSubscriptionStartedAt = 0;
@@ -53,6 +54,20 @@ function QuotePollingPriorityHarness() {
   return <text>{selected ? "selected" : "idle"}</text>;
 }
 
+function QuoteLivePriorityHarness() {
+  const [selected, setSelected] = useState(false);
+  toggleLivePriority = () => setSelected((current) => !current);
+  useQuoteStreaming([{
+    symbol: "AAPL",
+    exchange: "NASDAQ",
+    surface: "watchlist",
+    visible: selected,
+    selected,
+    weight: selected ? 100 : 10,
+  }]);
+  return <text>{selected ? "selected" : "idle"}</text>;
+}
+
 function FollowedQuoteStreamingHarness() {
   const liveStreaming = useLiveStreamingSetting();
   useQuoteUpdates([{
@@ -83,6 +98,7 @@ afterEach(async () => {
   }
   bumpHarness = null;
   togglePollingPriority = null;
+  toggleLivePriority = null;
   updateLiveTargets = null;
   updateFreshnessScope = null;
   observedSubscriptionStartedAt = 0;
@@ -185,6 +201,34 @@ describe("useQuoteStreaming", () => {
     expect(testSetup.captureCharFrame()).toContain("polling");
     expect(subscribeCalls).toBe(0);
     expect(loadCalls).toBe(1);
+  });
+
+  test("does not resubscribe when only visible or weight changes", async () => {
+    let subscribeCalls = 0;
+    let unsubscribeCalls = 0;
+    const coordinator = {
+      subscribeQuotes: () => {
+        subscribeCalls += 1;
+        return () => {
+          unsubscribeCalls += 1;
+        };
+      },
+    };
+    setSharedMarketDataCoordinator(coordinator as unknown as MarketDataCoordinator);
+
+    testSetup = await testRender(<QuoteLivePriorityHarness />, { width: 20, height: 1 });
+    await act(async () => testSetup!.renderOnce());
+    expect(subscribeCalls).toBe(1);
+    expect(unsubscribeCalls).toBe(0);
+
+    await act(async () => {
+      toggleLivePriority?.();
+      await Promise.resolve();
+    });
+    await act(async () => testSetup!.renderOnce());
+    expect(testSetup.captureCharFrame()).toContain("selected");
+    expect(subscribeCalls).toBe(1);
+    expect(unsubscribeCalls).toBe(0);
   });
 
   test("does not restart polling when only subscription priority changes", async () => {

@@ -9,6 +9,7 @@ export type ChartResult = {
     regularMarketTime?: number;
     currentTradingPeriod?: { pre?: TradingPeriod; regular?: TradingPeriod; post?: TradingPeriod };
     preMarketPrice?: number; postMarketPrice?: number;
+    marketState?: string;
   };
   timestamp?: number[];
   indicators?: { quote?: Array<{ open?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; close?: (number | null)[]; volume?: (number | null)[] }> };
@@ -24,6 +25,45 @@ export type ChartResult = {
 };
 
 export type ChartResponse = { chart?: { result?: ChartResult[]; error?: { description?: string } | null } };
+
+export type YahooQuoteApiResult = {
+  symbol?: string;
+  currency?: string;
+  shortName?: string;
+  longName?: string;
+  regularMarketPrice?: number;
+  regularMarketChange?: number;
+  regularMarketChangePercent?: number;
+  regularMarketPreviousClose?: number;
+  regularMarketOpen?: number;
+  regularMarketDayHigh?: number;
+  regularMarketDayLow?: number;
+  regularMarketTime?: number;
+  regularMarketVolume?: number;
+  bid?: number;
+  ask?: number;
+  bidSize?: number;
+  askSize?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyTwoWeekLow?: number;
+  exchange?: string;
+  exchangeName?: string;
+  fullExchangeName?: string;
+  marketState?: string;
+  preMarketPrice?: number;
+  preMarketChange?: number;
+  preMarketChangePercent?: number;
+  postMarketPrice?: number;
+  postMarketChange?: number;
+  postMarketChangePercent?: number;
+};
+
+export type YahooQuoteResponse = {
+  quoteResponse?: {
+    result?: YahooQuoteApiResult[] | null;
+    error?: { code?: string; description?: string } | null;
+  };
+};
 
 export type TimeseriesResponse = { timeseries?: { result?: Array<Record<string, any>>; error?: { description?: string } | null } };
 

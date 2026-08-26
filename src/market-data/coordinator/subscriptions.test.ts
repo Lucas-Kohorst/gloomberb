@@ -108,11 +108,17 @@ describe("MarketDataCoordinator key subscriptions", () => {
 
     unsubscribeDetail();
 
-    expect(subscriptions).toHaveLength(1);
     expect(disposals).toBe(1);
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions[1]?.[0]).toMatchObject({
+      surface: "portfolio",
+      visible: false,
+      selected: false,
+      weight: 10,
+    });
   });
 
-  test("does not subscribe off-screen portfolio rows that are not selected", () => {
+  test("subscribes the full collection including off-screen rows", () => {
     const subscriptions: QuoteSubscriptionTarget[][] = [];
     const provider = createTestDataProvider({
       id: "test-provider",
@@ -139,7 +145,69 @@ describe("MarketDataCoordinator key subscriptions", () => {
     ]);
 
     expect(subscriptions).toHaveLength(1);
-    expect(subscriptions[0]?.map((target) => target.symbol)).toEqual(["HOOD"]);
+    expect(subscriptions[0]?.map((target) => target.symbol).sort()).toEqual(["AAPL", "BTC-USD", "HOOD"]);
+    expect(subscriptions[0]?.find((target) => target.symbol === "HOOD")).toMatchObject({
+      visible: true,
+      selected: true,
+      weight: 100,
+    });
+    expect(subscriptions[0]?.find((target) => target.symbol === "BTC-USD")).toMatchObject({
+      visible: false,
+      weight: 10,
+    });
+  });
+
+  test("does not dispose the quote socket when only visible or weight changes", () => {
+    jest.useFakeTimers();
+    try {
+      const subscriptions: QuoteSubscriptionTarget[][] = [];
+      let disposals = 0;
+      const provider = createTestDataProvider({
+        id: "test-provider",
+        subscribeQuotes: (targets) => {
+          subscriptions.push(targets);
+          return () => {
+            disposals += 1;
+          };
+        },
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const aapl = { symbol: "AAPL", exchange: "NASDAQ" };
+      const msft = { symbol: "MSFT", exchange: "NASDAQ" };
+
+      const unsubscribeWindow = coordinator.subscribeQuotes([
+        {
+          instrument: aapl,
+          priority: { surface: "watchlist", visible: true, selected: true, weight: 100 },
+        },
+        {
+          instrument: msft,
+          priority: { surface: "watchlist", visible: false, selected: false, weight: 10 },
+        },
+      ]);
+      expect(subscriptions).toHaveLength(1);
+      expect(subscriptions[0]?.map((target) => target.symbol).sort()).toEqual(["AAPL", "MSFT"]);
+
+      unsubscribeWindow();
+      const unsubscribeScrolled = coordinator.subscribeQuotes([
+        {
+          instrument: aapl,
+          priority: { surface: "watchlist", visible: false, selected: false, weight: 10 },
+        },
+        {
+          instrument: msft,
+          priority: { surface: "watchlist", visible: true, selected: true, weight: 100 },
+        },
+      ]);
+
+      expect(disposals).toBe(0);
+      expect(subscriptions).toHaveLength(1);
+
+      unsubscribeScrolled();
+      jest.runAllTimers();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("replaces a capped target window without retaining pending removals", () => {

@@ -41,4 +41,31 @@ describe("buildQuoteStreamSubscriptionKey", () => {
     expect(target?.exchange).toBe("IBIS");
     expect(buildQuoteStreamSubscriptionKey(target!)).toContain("LPK|IBIS");
   });
+
+  test("ignores viewport priority when building subscribe identity", () => {
+    const base = {
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      surface: "watchlist" as const,
+    };
+
+    expect(buildQuoteStreamSubscriptionKey({
+      ...base,
+      visible: false,
+      selected: false,
+      weight: 10,
+    })).toBe(buildQuoteStreamSubscriptionKey({
+      ...base,
+      visible: true,
+      selected: true,
+      weight: 100,
+    }));
+    expect(buildQuoteStreamSubscriptionKey({
+      ...base,
+      route: "provider",
+    })).not.toBe(buildQuoteStreamSubscriptionKey({
+      ...base,
+      route: "broker",
+    }));
+  });
 });

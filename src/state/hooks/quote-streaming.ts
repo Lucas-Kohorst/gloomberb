@@ -40,7 +40,6 @@ export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget)
     ?? target.context?.instrument?.localSymbol
     ?? target.context?.instrument?.symbol
     ?? "";
-  const weight = Number.isFinite(target.weight) ? String(target.weight) : "";
   return [
     target.symbol,
     target.exchange ?? "",
@@ -49,9 +48,6 @@ export function buildQuoteStreamSubscriptionKey(target: QuoteSubscriptionTarget)
     contractKey,
     target.route ?? "auto",
     target.surface ?? "",
-    target.visible ? "visible" : "",
-    target.selected ? "selected" : "",
-    weight,
   ].join("|");
 }
 

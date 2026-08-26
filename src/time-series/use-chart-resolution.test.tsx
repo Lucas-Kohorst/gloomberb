@@ -392,4 +392,54 @@ describe("useChartResolution", () => {
     expect(latestResult?.series.every((series) => series.points.length === 0)).toBe(true);
     expect(latestResult?.errors).toEqual([]);
   });
+
+  test("patches the last candle from a live quote without rebuilding history", async () => {
+    let historyCalls = 0;
+    let quoteHandler: Parameters<NonNullable<DataProvider["subscribeQuotes"]>>[1] | null = null;
+    let quoteTarget: Parameters<NonNullable<DataProvider["subscribeQuotes"]>>[0][number] | null = null;
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => EMPTY_FINANCIALS,
+      getPriceHistoryForResolution: async () => {
+        historyCalls += 1;
+        return INITIAL_HISTORY;
+      },
+      subscribeQuotes: (targets, onQuote) => {
+        quoteTarget = targets[0] ?? null;
+        quoteHandler = onQuote;
+        return () => {};
+      },
+    });
+    const sources: ChartResolveSources = {
+      ...sourcesFor(provider),
+      now: new Date("2025-01-03T20:00:00.000Z"),
+    };
+    testSetup = await testRender(<ResolutionHarness sources={sources} />, {
+      width: 24,
+      height: 1,
+    });
+
+    await waitFor(() => latestResult?.loading === false && latestResult.series[0]?.points.length === 2);
+    const firstPoint = latestResult!.series[0]!.points[0];
+    const lastGoodSeries = latestResult!.series;
+
+    await act(async () => {
+      quoteHandler!(quoteTarget!, {
+        symbol: "TEST",
+        price: 108,
+        currency: "USD",
+        change: 4,
+        changePercent: 3.85,
+        lastUpdated: Date.parse("2025-01-03T20:00:00.000Z"),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await testSetup!.renderOnce();
+    });
+    await waitFor(() => latestResult?.series[0]?.points.at(-1)?.close === 108);
+
+    expect(historyCalls).toBe(1);
+    expect(latestResult?.series).not.toBe(lastGoodSeries);
+    expect(latestResult?.series[0]?.points[0]).toBe(firstPoint);
+    expect(latestResult?.series[0]?.points).toHaveLength(2);
+    expect(latestResult?.errors).toEqual([]);
+  });
 });

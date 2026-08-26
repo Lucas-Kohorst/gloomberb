@@ -119,6 +119,14 @@ export function appendLiveQuotePoint(
   if (options.mode === "ohlc") {
     if (quoteBelongsToLatestBar(latestTime, quoteTime, options.resolution)) {
       const merged = mergeQuoteIntoLatestBar(latest, quotePrice);
+      if (
+        merged.close === latest.close
+        && merged.open === latest.open
+        && merged.high === latest.high
+        && merged.low === latest.low
+      ) {
+        return points;
+      }
       return [...points.slice(0, -1), merged];
     }
     return [

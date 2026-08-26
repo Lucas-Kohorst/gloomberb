@@ -2,7 +2,7 @@ import type { DataProvider, QuoteSubscriptionTarget } from "../../types/data-pro
 import type { Quote } from "../../types/financials";
 import type { InstrumentRef } from "../request-types";
 import { QUOTE_STREAM_UPDATE_THROTTLE_MS } from "../quotes/cadence";
-import { isLiveQuoteSubscriptionTarget, mergeQuoteSubscriptionTargets } from "../quote-subscription-target";
+import { mergeQuoteSubscriptionTargets } from "../quote-subscription-target";
 import { QueryStore } from "../query-store";
 import type { QueryEntry } from "../result-types";
 import { buildQuoteKey, toMarketDataContext } from "../selectors";
@@ -82,6 +82,10 @@ function quoteTargetFromInstrument(
     context: toMarketDataContext(instrument),
     ...priority,
   };
+}
+
+function quoteProviderSubscriptionSignature(key: string, target: QuoteSubscriptionTarget): string {
+  return [key, target.route ?? "", target.surface ?? ""].join(":");
 }
 
 type CoordinatorSingleFlight = <T>(key: string, task: () => Promise<T>) => Promise<T>;
@@ -266,23 +270,16 @@ export class QuoteSubscriptionManager {
     const activeEntries = [...this.quoteSubscriptions.entries()]
       .filter(([, entry]) => entry.targets.size > 0)
       .sort(([left], [right]) => left.localeCompare(right));
-    const nextSignature = activeEntries.map(([key, entry]) => [
-      key,
-      entry.target.route ?? "",
-      entry.target.surface ?? "",
-      entry.target.visible ? "visible" : "",
-      entry.target.selected ? "selected" : "",
-      Number.isFinite(entry.target.weight) ? entry.target.weight : "",
-    ].join(":")).join("|");
+    const nextSignature = activeEntries
+      .map(([key, entry]) => quoteProviderSubscriptionSignature(key, entry.target))
+      .join("|");
     if (nextSignature === this.quoteSubscriptionSignature) return;
 
     this.quoteSubscriptionDispose?.();
     this.quoteSubscriptionDispose = null;
     this.quoteSubscriptionSignature = nextSignature;
 
-    const targets = activeEntries
-      .map(([, entry]) => entry.target)
-      .filter(isLiveQuoteSubscriptionTarget);
+    const targets = activeEntries.map(([, entry]) => entry.target);
     if (targets.length === 0) return;
 
     this.quoteSubscriptionDispose = this.dataProvider.subscribeQuotes(targets, (target, quote) => {

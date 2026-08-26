@@ -68,6 +68,13 @@ async function fetchUniverse(): Promise<UsListingsUniverse | null> {
   });
 }
 
+/** In-memory listings only. Never starts a network fetch. */
+export function peekUsListingsUniverse(): UsListingsUniverse | null {
+  if (testUniverse !== undefined) return testUniverse;
+  if (cached && cached.expiresAt > Date.now()) return cached.universe;
+  return null;
+}
+
 export async function ensureUsListingsUniverse(): Promise<UsListingsUniverse | null> {
   if (testUniverse !== undefined) return testUniverse;
   if (cached && cached.expiresAt > Date.now()) return cached.universe;
@@ -90,7 +97,8 @@ export async function ensureUsListingsUniverse(): Promise<UsListingsUniverse | n
 }
 
 export async function searchUsListedUniverse(query: string): Promise<InstrumentSearchResult[]> {
-  const universe = await ensureUsListingsUniverse();
-  if (!universe) return [];
-  return searchUsListingsUniverse(universe, query);
+  const cached = peekUsListingsUniverse();
+  if (cached) return searchUsListingsUniverse(cached, query);
+  void ensureUsListingsUniverse();
+  return [];
 }

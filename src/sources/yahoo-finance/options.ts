@@ -1,6 +1,7 @@
 import type { MarketDataRequestContext } from "../../types/data-provider";
 import type { MarketState, OptionContract, OptionsChain, Quote } from "../../types/financials";
 import { parseOptionSymbol } from "../../utils/options";
+import { normalizeYahooMarketState } from "./mappers";
 import { getYahooSymbolsToTry } from "./symbols";
 
 type YahooFetchJsonWithCrumb = <T>(url: string) => Promise<T>;
@@ -27,20 +28,6 @@ interface GetYahooOptionQuoteOptions {
 export interface YahooOptionsChainResult {
   chain: OptionsChain;
   underlyingMarketState?: MarketState;
-}
-
-const MARKET_STATES = new Set<MarketState>([
-  "PRE",
-  "REGULAR",
-  "POST",
-  "PREPRE",
-  "POSTPOST",
-  "CLOSED",
-]);
-
-function normalizeYahooMarketState(value: unknown): MarketState | undefined {
-  const normalized = typeof value === "string" ? value.toUpperCase() as MarketState : undefined;
-  return normalized && MARKET_STATES.has(normalized) ? normalized : undefined;
 }
 
 function deriveOptionMarketState(underlyingMarketState?: MarketState): MarketState | undefined {
@@ -126,27 +113,30 @@ export async function loadYahooOptionsChain(
   return (await loadYahooOptionsChainResult(options)).chain;
 }
 
-export async function getYahooOptionQuote({
-  context,
-  getOptionsChainResult,
-  providerId,
-  ticker,
-}: GetYahooOptionQuoteOptions): Promise<Quote> {
-  const parsed = parseOptionSymbol(ticker);
-  if (!parsed) throw new Error(`Unsupported option symbol ${ticker}`);
-  const { chain, underlyingMarketState } = await getOptionsChainResult(
-    parsed.underlying,
-    "",
-    parsed.expTs,
-    context,
-  );
+export function findYahooOptionContract(
+  chain: OptionsChain,
+  parsed: { strike: number; expTs: number; side: "C" | "P" },
+): OptionContract | undefined {
   const contracts = parsed.side === "C" ? chain.calls : chain.puts;
-  const contract = contracts.find((candidate) =>
+  return contracts.find((candidate) =>
     Math.abs(candidate.strike - parsed.strike) < 0.001 &&
     candidate.expiration === parsed.expTs
   );
-  if (!contract) throw new Error(`No option contract for ${ticker}`);
+}
 
+export function yahooOptionQuoteFromContract({
+  contract,
+  now = Date.now(),
+  providerId,
+  ticker,
+  underlyingMarketState,
+}: {
+  contract: OptionContract;
+  now?: number;
+  providerId: string;
+  ticker: string;
+  underlyingMarketState?: MarketState;
+}): Quote {
   const mark = contract.bid > 0 && contract.ask > 0
     ? (contract.bid + contract.ask) / 2
     : contract.bid > 0
@@ -156,10 +146,10 @@ export async function getYahooOptionQuote({
         : undefined;
   const marketState = deriveOptionMarketState(underlyingMarketState);
   const lastUpdated = mark != null
-    ? Date.now()
+    ? now
     : contract.lastTradeDate > 0
       ? contract.lastTradeDate * 1000
-      : Date.now();
+      : now;
   return {
     symbol: ticker,
     providerId,
@@ -181,4 +171,28 @@ export async function getYahooOptionQuote({
     sessionConfidence: marketState ? "derived" : "unknown",
     dataSource: "delayed",
   };
+}
+
+export async function getYahooOptionQuote({
+  context,
+  getOptionsChainResult,
+  providerId,
+  ticker,
+}: GetYahooOptionQuoteOptions): Promise<Quote> {
+  const parsed = parseOptionSymbol(ticker);
+  if (!parsed) throw new Error(`Unsupported option symbol ${ticker}`);
+  const { chain, underlyingMarketState } = await getOptionsChainResult(
+    parsed.underlying,
+    "",
+    parsed.expTs,
+    context,
+  );
+  const contract = findYahooOptionContract(chain, parsed);
+  if (!contract) throw new Error(`No option contract for ${ticker}`);
+  return yahooOptionQuoteFromContract({
+    contract,
+    providerId,
+    ticker,
+    underlyingMarketState,
+  });
 }

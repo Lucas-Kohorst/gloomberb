@@ -9,6 +9,7 @@ import {
   financeRawNumber,
   normalizeMarketValue,
   normalizePositiveMarketValue,
+  normalizeYahooMarketState,
   type ExtendedHoursData,
 } from "./mappers";
 import type {
@@ -16,8 +17,12 @@ import type {
   ChartResult,
   QuoteSummaryResponse,
   TimeseriesResponse,
+  YahooQuoteApiResult,
+  YahooQuoteResponse,
 } from "./types";
 import type { YahooHttpClient } from "./http";
+
+const YAHOO_QUOTE_BATCH_LIMIT = 100;
 
 export async function fetchYahooChart(
   http: YahooHttpClient,
@@ -61,13 +66,51 @@ export async function fetchYahooChart(
   return { meta: result.meta || {}, history, events: result.events };
 }
 
+export async function fetchYahooQuotes(
+  http: YahooHttpClient,
+  symbols: string[],
+): Promise<YahooQuoteApiResult[]> {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const symbol of symbols) {
+    const trimmed = symbol.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(trimmed);
+  }
+  if (unique.length === 0) return [];
+
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += YAHOO_QUOTE_BATCH_LIMIT) {
+    chunks.push(unique.slice(i, i + YAHOO_QUOTE_BATCH_LIMIT));
+  }
+  const nested = await Promise.all(chunks.map((chunk) => fetchYahooQuoteChunk(http, chunk)));
+  return nested.flat();
+}
+
+async function fetchYahooQuoteChunk(
+  http: YahooHttpClient,
+  symbols: string[],
+): Promise<YahooQuoteApiResult[]> {
+  const params = new URLSearchParams({ symbols: symbols.join(",") });
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?${params}`;
+  const data = await http.fetchJsonWithCrumb<YahooQuoteResponse>(url);
+  const result = data.quoteResponse?.result;
+  if (result?.length) return result;
+  const description = data.quoteResponse?.error?.description;
+  if (description) throw new Error(description);
+  return [];
+}
+
 export async function fetchYahooExtendedHoursData(
   http: YahooHttpClient,
   symbol: string,
   meta: NonNullable<ChartResult["meta"]>,
   regularClose?: number,
 ): Promise<ExtendedHoursData> {
-  const marketState = deriveMarketState(meta);
+  const marketState = normalizeYahooMarketState(meta.marketState) ?? deriveMarketState(meta);
   if (marketState !== "PRE" && marketState !== "POST") return {};
 
   try {
@@ -81,7 +124,8 @@ export async function fetchYahooExtendedHoursData(
     const result = data.chart?.result?.[0];
     if (!result?.timestamp?.length) return {};
     const closes = result.indicators?.quote?.[0]?.close || [];
-    return extractExtendedHoursPrices(meta, result.timestamp, closes, marketState, regularClose);
+    const periodMeta = result.meta?.currentTradingPeriod ? result.meta : meta;
+    return extractExtendedHoursPrices(periodMeta, result.timestamp, closes, marketState, regularClose);
   } catch {
     return {};
   }

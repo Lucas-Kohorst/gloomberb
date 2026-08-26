@@ -66,9 +66,13 @@ export function createAttempt(
 }
 
 export function loadingEntry<T>(current: QueryEntry<T>): QueryEntry<T> {
+  const phase = current.lastGoodData || current.data ? "refreshing" : "loading";
+  if (current.phase === phase && current.error === null && current.attempts.length === 0) {
+    return current;
+  }
   return {
     ...current,
-    phase: current.lastGoodData || current.data ? "refreshing" : "loading",
+    phase,
     error: null,
     attempts: [],
   };

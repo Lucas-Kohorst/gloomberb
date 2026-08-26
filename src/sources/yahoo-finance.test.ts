@@ -147,6 +147,17 @@ describe("YahooFinanceClient exchange aliases", () => {
   test("fetches Yahoo quotes and history for crypto pairs", async () => {
     const provider = new YahooFinanceClient() as any;
     const fetched: string[] = [];
+    provider.fetchQuotes = async (symbols: string[]) => {
+      fetched.push(...symbols);
+      return [{
+        symbol: "BTC-USD",
+        currency: "USD",
+        regularMarketPrice: 111_000,
+        shortName: "Bitcoin USD",
+        regularMarketTime: 1_700_000_000,
+        marketState: "REGULAR",
+      }];
+    };
     provider.fetchChart = async (symbol: string) => {
       fetched.push(symbol);
       return {
@@ -162,7 +173,6 @@ describe("YahooFinanceClient exchange aliases", () => {
         ],
       };
     };
-    provider.fetchQuoteSupplement = async () => ({});
     provider.fetchExtendedHoursData = async () => ({});
 
     const quote = await provider.getQuote("BTC-USD", "CCC");
@@ -172,6 +182,127 @@ describe("YahooFinanceClient exchange aliases", () => {
 
     const history = await provider.getPriceHistory("BTC-USD", "CCC", "1Y");
     expect(history.at(-1)?.close).toBe(111_000);
+  });
+
+  test("getQuote does not download a 1mo chart", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const chartRanges: string[] = [];
+    provider.fetchQuotes = async () => [{
+      symbol: "AAPL",
+      currency: "USD",
+      regularMarketPrice: 190,
+      marketState: "REGULAR",
+    }];
+    provider.fetchChart = async (_symbol: string, range: string) => {
+      chartRanges.push(range);
+      throw new Error(`unexpected chart fetch range=${range}`);
+    };
+    provider.fetchExtendedHoursData = async () => ({});
+
+    const quote = await provider.getQuote("AAPL", "NASDAQ");
+    expect(quote.price).toBe(190);
+    expect(chartRanges).not.toContain("1mo");
+  });
+
+  test("getQuotesBatch uses one multi-symbol quote request", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const requested: string[][] = [];
+    provider.fetchQuotes = async (symbols: string[]) => {
+      requested.push(symbols);
+      return [
+        { symbol: "AAPL", currency: "USD", regularMarketPrice: 190, marketState: "REGULAR" },
+        { symbol: "MSFT", currency: "USD", regularMarketPrice: 420, marketState: "REGULAR" },
+      ];
+    };
+    provider.fetchExtendedHoursData = async () => ({});
+
+    const results = await provider.getQuotesBatch([
+      { symbol: "AAPL", exchange: "NASDAQ" },
+      { symbol: "MSFT", exchange: "NASDAQ" },
+    ]);
+
+    expect(requested).toEqual([["AAPL", "MSFT"]]);
+    expect(results.map((item: { quote: { price: number } | null }) => item.quote?.price)).toEqual([190, 420]);
+  });
+
+  test("getExchangeRate uses v7 quote and not a 1mo chart", async () => {
+    const provider = new YahooFinanceClient() as any;
+    const chartRanges: string[] = [];
+    provider.fetchQuotes = async () => [{
+      symbol: "EURUSD=X",
+      currency: "USD",
+      regularMarketPrice: 1.08,
+      marketState: "REGULAR",
+    }];
+    provider.fetchChart = async (_symbol: string, range: string) => {
+      chartRanges.push(range);
+      throw new Error(`unexpected chart fetch range=${range}`);
+    };
+    provider.fetchExtendedHoursData = async () => ({});
+
+    const rate = await provider.getExchangeRate("EUR");
+    expect(rate).toBe(1.08);
+    expect(chartRanges).toEqual([]);
+  });
+
+  test("getQuotesBatch shares one options chain fetch per expiration", async () => {
+    const provider = new YahooFinanceClient() as any;
+    let chainFetches = 0;
+    provider.http.fetchJsonWithCrumb = async () => {
+      chainFetches += 1;
+      return {
+        optionChain: {
+          result: [{
+            underlyingSymbol: "AMD",
+            expirationDates: [1_821_139_200],
+            quote: { marketState: "REGULAR" },
+            options: [{
+              calls: [{
+                contractSymbol: "AMD270917C00230000",
+                strike: 230,
+                currency: "USD",
+                lastPrice: 251,
+                change: 1.5,
+                percentChange: 0.6,
+                volume: 10,
+                openInterest: 20,
+                bid: 250.25,
+                ask: 254.5,
+                impliedVolatility: 0.4,
+                inTheMoney: false,
+                expiration: 1_821_139_200,
+                lastTradeDate: 1_800_000_000,
+              }, {
+                contractSymbol: "AMD270917C00240000",
+                strike: 240,
+                currency: "USD",
+                lastPrice: 241,
+                change: 1,
+                percentChange: 0.4,
+                volume: 8,
+                openInterest: 12,
+                bid: 240.25,
+                ask: 244.5,
+                impliedVolatility: 0.41,
+                inTheMoney: false,
+                expiration: 1_821_139_200,
+                lastTradeDate: 1_800_000_000,
+              }],
+              puts: [],
+            }],
+          }],
+        },
+      };
+    };
+
+    const results = await provider.getQuotesBatch([
+      { symbol: "AMD   270917C00230000", exchange: "OPTIONS" },
+      { symbol: "AMD   270917C00240000", exchange: "OPTIONS" },
+    ]);
+
+    expect(chainFetches).toBe(1);
+    expect(results[0]?.quote?.price).toBe(252.375);
+    expect(results[1]?.quote?.price).toBe(242.375);
   });
 
   test("normalizes compact crypto pairs to Yahoo symbols", () => {

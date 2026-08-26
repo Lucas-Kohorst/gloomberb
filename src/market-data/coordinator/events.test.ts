@@ -1,8 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { enableUiYield, resetUiYieldForTests, setUiYieldReason, UI_YIELD_QUIET_MS } from "../../utils/ui-yield";
 import { MarketDataCoordinatorEvents } from "./events";
 
 const waitMicrotask = () => Promise.resolve();
-const waitTimer = () => new Promise((resolve) => setTimeout(resolve, 0));
+const waitNotify = () => new Promise<void>((resolve) => {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => resolve());
+    return;
+  }
+  setTimeout(resolve, 0);
+});
+
+afterEach(() => {
+  resetUiYieldForTests();
+});
 
 describe("MarketDataCoordinatorEvents", () => {
   test("coalesces version bumps before notifying external-store listeners", async () => {
@@ -22,7 +33,7 @@ describe("MarketDataCoordinatorEvents", () => {
     expect(events.getKeysVersion(["quote:AMD"])).toBe(1);
     expect(calls).toEqual([]);
 
-    await waitTimer();
+    await waitNotify();
     expect(calls).toEqual([1]);
   });
 
@@ -39,11 +50,33 @@ describe("MarketDataCoordinatorEvents", () => {
 
     events.bump("quote:AMD");
     await waitMicrotask();
-    await waitTimer();
+    await waitNotify();
     expect(order).toEqual(["AMD"]);
 
     await waitMicrotask();
-    await waitTimer();
+    await waitNotify();
     expect(order).toEqual(["AMD", "NVDA"]);
+  });
+
+  test("defers listener flushes while UI yield is enabled", async () => {
+    enableUiYield();
+    setUiYieldReason("input", true);
+
+    const events = new MarketDataCoordinatorEvents();
+    const calls: number[] = [];
+    events.subscribeKeys(["quote:AMD"], () => {
+      calls.push(events.getKeysVersion(["quote:AMD"]));
+    });
+
+    events.bump("quote:AMD");
+    await waitMicrotask();
+    expect(events.getKeysVersion(["quote:AMD"])).toBe(1);
+    await waitNotify();
+    expect(calls).toEqual([]);
+
+    setUiYieldReason("input", false);
+    await Bun.sleep(UI_YIELD_QUIET_MS + 20);
+    await waitNotify();
+    expect(calls).toEqual([1]);
   });
 });
