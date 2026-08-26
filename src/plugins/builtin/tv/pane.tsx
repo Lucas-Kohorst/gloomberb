@@ -221,7 +221,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
             ? `${streamKind}${replayDetail}`
             : "offline";
   const updatedAgo = useUpdatedAgo(lastUpdated);
-  useAutoRefresh(lastUpdated, refresh);
+  useAutoRefresh(lastUpdated, refresh, 10);
 
   usePaneFooter(paneId, () => ({
     info: [{

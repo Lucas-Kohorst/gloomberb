@@ -136,6 +136,7 @@ export function RelatedCompaniesLine({
           symbols={symbols}
           width={badgeWidth}
           fallbackColor={colors.textBright}
+          liveQuote={false}
         />
       ) : null}
       <Text fg={colors.textDim}>
@@ -287,6 +288,7 @@ export function tickerBadges({
       symbols={symbols}
       width={width}
       fallbackColor={fallbackColor}
+      liveQuote={false}
     />
   );
 }
@@ -345,6 +347,7 @@ export function CompanyCell({
         symbols={[symbol]}
         width={badgeWidth}
         fallbackColor={selected ? colors.selectedText : colors.textBright}
+        liveQuote={false}
       />
       <Text fg={selected ? colors.selectedText : colors.text}>
         {truncate(company.name, Math.max(0, width - badgeWidth))}

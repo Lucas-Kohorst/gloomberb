@@ -17,9 +17,9 @@ export function entityLatestRows(print: OwidChartPrint): Array<OwidEntity & { la
   });
 }
 
-export function filterChartHits(hits: readonly OwidChartSearchHit[], query: string): OwidChartSearchHit[] {
+export function filterChartHits(hits: readonly OwidChartSearchHit[], query: string): readonly OwidChartSearchHit[] {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return [...hits];
+  if (tokens.length === 0) return hits;
   return hits.filter((hit) => {
     const catalog = findOwidCatalogEntryBySlug(hit.slug);
     const hay = [

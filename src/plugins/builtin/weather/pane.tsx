@@ -321,6 +321,7 @@ function emptyWeatherRow(station: {
 }
 
 function overlayYesterdayFromArchive(rows: WeatherRow[], archive: WeatherArchiveState, now = Date.now()): WeatherRow[] {
+  if (archive.records.length === 0) return rows;
   return rows.map((row) => {
     const localDate = zonedDateKey(row.timezone || "UTC", now);
     const yesterday = addUtcDays(localDate, -1);
@@ -388,7 +389,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [archive, rawRows],
   );
   const filteredRows = useMemo(
-    () => allRows.filter((row) => matchesQuery(row, searchQuery)),
+    () => searchQuery.trim() ? allRows.filter((row) => matchesQuery(row, searchQuery)) : allRows,
     [allRows, searchQuery],
   );
   const rows = useMemo(
@@ -707,12 +708,22 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const columns = useMemo(() => createColumns(width), [width]);
   const reportColumns = useMemo(() => createReportColumns(width), [width]);
   const filteredReportRows = useMemo(
-    () => reportRows.filter((row) => {
+    () => {
       const needle = searchQuery.trim().toLowerCase();
-      if (!needle) return true;
-      return row.city.toLowerCase().includes(needle) || row.stationId.toLowerCase().includes(needle);
-    }),
+      if (!needle) return reportRows;
+      return reportRows.filter((row) => (
+        row.city.toLowerCase().includes(needle) || row.stationId.toLowerCase().includes(needle)
+      ));
+    },
     [reportRows, searchQuery],
+  );
+  const getWeatherRowRevision = useCallback(
+    (row: WeatherRow) => `${row.id}:${row.high}:${row.implied}:${row.now}:${row.status}:${row.yForecast}:${row.ySettlement}`,
+    [],
+  );
+  const getReportRowRevision = useCallback(
+    (row: WeatherCityAccuracy) => `${row.stationId}:${row.hitRate}:${row.mae}:${row.bias}:${row.samples}`,
+    [],
   );
   const renderReport = useCallback(
     (row: WeatherCityAccuracy, column: ReportColumn, _index: number, rowState: { selected: boolean }) =>
@@ -847,6 +858,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             ));
           }}
           getItemKey={(row) => row.stationId}
+          getRowRevision={getReportRowRevision}
           renderCell={renderReport}
           emptyStateTitle={report.samples === 0 ? "No stored forecast days yet." : "No matching cities."}
           emptyStateHint="Kalshi Y.FC is implied at local midnight vs official print. TWC HIGH freezes on first visit."
@@ -899,6 +911,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
           ));
         }}
         getItemKey={(row) => row.id}
+        getRowRevision={getWeatherRowRevision}
         renderCell={renderCell}
         emptyStateTitle={searchQuery.trim() ? "No matching stations." : "No climate reports."}
         emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}

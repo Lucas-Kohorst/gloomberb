@@ -384,6 +384,14 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         },
       ))}
       getItemKey={(alert) => alert.id}
+      getRowRevision={(alert) => [
+        alert.id,
+        alert.status,
+        alert.lastCheckedPrice ?? "",
+        alert.lastCheckError ?? "",
+        alert.triggeredAt ?? "",
+        alert.lastCheckedAt ?? "",
+      ].join(":")}
       onActivate={(alert) => {
         if (alert.status === "triggered") rearmAlert(alert.id);
       }}

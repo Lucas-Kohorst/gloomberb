@@ -297,10 +297,9 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
     }
     return providerId;
   };
-  const requireCatalogProvider = async (value: unknown): Promise<AiProviderId> => {
+  const requireKnownProvider = (value: unknown): AiProviderId => {
     const providerId = requireProviderId(value);
-    const catalog = await aiHost.getCatalog?.();
-    if (!catalog?.providers.some((provider) => provider.providerId === providerId)) {
+    if (aiHost.hasProvider && !aiHost.hasProvider(providerId)) {
       throw new Error(`Unknown AI provider: ${providerId}`);
     }
     return providerId;
@@ -342,7 +341,7 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
     operations: {
       getCatalog: op(async () => aiHost.getCatalog?.() ?? { providers: [], accounts: [], models: [] }),
       connectProvider: stream(async (input: any, emit) => {
-        const providerId = await requireCatalogProvider(input.providerId);
+        const providerId = requireKnownProvider(input.providerId);
         const authType = optionalAuthType(input.authType);
         if (!aiHost.connect) throw new Error("In-app AI sign-in is unavailable.");
         let disposed = false;
@@ -361,19 +360,19 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
         };
       }),
       disconnectProvider: op(async (input: any) => {
-        const providerId = await requireCatalogProvider(input.providerId);
+        const providerId = requireKnownProvider(input.providerId);
         if (!aiHost.disconnect) throw new Error("In-app AI account disconnection is unavailable.");
         return aiHost.disconnect(providerId);
       }, "action"),
       checkProviderStatus: op(async (input: any) => {
-        const providerId = await requireCatalogProvider(input.providerId);
+        const providerId = requireKnownProvider(input.providerId);
         if (!aiHost.checkStatus) {
           throw new Error("AI provider status checks are unavailable.");
         }
         return aiHost.checkStatus(providerId);
       }),
       run: stream(async (input: any, emit) => {
-        const providerId = await requireCatalogProvider(input.providerId);
+        const providerId = requireKnownProvider(input.providerId);
         const prompt = requireString(input.prompt, "AI prompt");
         const messages = optionalMessages(input.messages);
         const agentMessages = optionalAgentMessages(input.agentMessages);
@@ -399,6 +398,9 @@ function createAiRunnerCapability(options: CoreCapabilityOptions): PluginCapabil
             : "plain",
           onChunk: (output) => {
             if (!disposed) emit({ kind: "chunk", output });
+          },
+          onThinking: (output) => {
+            if (!disposed) emit({ kind: "thinking", output });
           },
           onAgentMessages: (nextMessages) => {
             completedAgentMessages = nextMessages;

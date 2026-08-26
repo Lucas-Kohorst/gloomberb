@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildHiloBarRows, terminalBarCells } from "./hilo-model";
+import { buildHiloBarRows, filterHiloRows, terminalBarCells } from "./hilo-model";
 
 const windows = {
   s30: { highs: 42, lows: 11 },
@@ -40,5 +40,18 @@ describe("hilo bar scaling", () => {
     expect(terminalBarCells(42 / 512, 20)).toEqual({ full: 1, half: true });
     expect(terminalBarCells(0.001, 20)).toEqual({ full: 0, half: true });
     expect(terminalBarCells(0, 20)).toEqual({ full: 0, half: false });
+  });
+});
+
+describe("filterHiloRows", () => {
+  test("caps the painted head so a large scanner snapshot cannot flatten the pane", () => {
+    const rows = Array.from({ length: 250 }, (_, index) => ({
+      symbol: `S${index}`,
+      price: 10,
+      count: index,
+      at: index,
+    }));
+    expect(filterHiloRows(rows, "off", "count")).toHaveLength(200);
+    expect(filterHiloRows(rows, "off", "count", 2).map((row) => row.symbol)).toEqual(["S249", "S248"]);
   });
 });

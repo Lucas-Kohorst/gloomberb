@@ -1,7 +1,7 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
-import { StaticChartSurface, type PaneFooterSegment } from "../../../components";
+import { ErrorState, LoadingState, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -94,23 +94,11 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   });
 
   if (loading && points.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>Loading...</Text>
-        </Box>
-      </Box>
-    );
+    return <LoadingState title="Loading yield curve..." />;
   }
 
   if (error && points.length === 0) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.negative}>{error}</Text>
-        </Box>
-      </Box>
-    );
+    return <ErrorState kind="yield curve" error={error} />;
   }
 
   const validPoints = parseYieldPoints(points);

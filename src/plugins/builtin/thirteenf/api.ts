@@ -304,19 +304,20 @@ export async function listThirteenFFormHoldings(
   cik: string,
   accessionNumber: string,
   signal?: AbortSignal,
-  options: { forceRefresh?: boolean } = {},
+  options: { forceRefresh?: boolean; maxRows?: number } = {},
 ): Promise<ThirteenFHoldingRecord[]> {
+  const maxRows = Math.max(1, Math.min(options.maxRows ?? MAX_FORM_ROWS, MAX_FORM_ROWS));
   const rows: ThirteenFHoldingRecord[] = [];
-  for (let offset = 0; offset < MAX_FORM_ROWS; offset += FORM_PAGE_LIMIT) {
+  for (let offset = 0; offset < maxRows; offset += FORM_PAGE_LIMIT) {
     const page = await listThirteenFFormHoldingsPage(cik, accessionNumber, signal, {
       ...options,
       offset,
-      limit: FORM_PAGE_LIMIT,
+      limit: Math.min(FORM_PAGE_LIMIT, maxRows - offset),
     });
     rows.push(...page.rows);
-    if (!page.hasMore) break;
+    if (!page.hasMore || rows.length >= maxRows) break;
   }
-  return rows;
+  return rows.length > maxRows ? rows.slice(0, maxRows) : rows;
 }
 
 export async function lookupThirteenFTickers(

@@ -3,7 +3,7 @@ import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { findBbox } from "./bbox";
-import { parseDigitTrafficPayload, parseOpenSkyPayload } from "./parse";
+import { parseDigitTrafficPayloadIncremental, parseOpenSkyPayloadIncremental } from "./parse";
 import {
   DIGITRAFFIC_CONNECTION_ID,
   OPENSKY_CONNECTION_ID,
@@ -51,26 +51,35 @@ function openskyUrl(bbox: GeoBbox): { desktop: string; keyPath: string; search: 
   };
 }
 
-export async function loadAircraft(bboxId: string): Promise<TrafficVehicle[]> {
+export async function loadAircraft(
+  bboxId: string,
+  options?: { onPartial?: (rows: TrafficVehicle[]) => void },
+): Promise<TrafficVehicle[]> {
   const bbox = findBbox(bboxId);
   const target = openskyUrl(bbox);
   return withConnectionRequest(OPENSKY_CONNECTION_ID, "states", async () => {
     const url = isHostedWebClient()
       ? keyedDataUrl("opensky", target.keyPath, target.search)
       : target.desktop;
-    return parseOpenSkyPayload(await readJson(url));
+    return parseOpenSkyPayloadIncremental(await readJson(url), { onPartial: options?.onPartial });
   });
 }
 
-export async function loadShips(): Promise<TrafficVehicle[]> {
+export async function loadShips(
+  options?: { onPartial?: (rows: TrafficVehicle[]) => void },
+): Promise<TrafficVehicle[]> {
   return withConnectionRequest(DIGITRAFFIC_CONNECTION_ID, "ais", async () => {
     const url = isHostedWebClient()
       ? keyedDataUrl("digitraffic-ais", "api/ais/v1/locations")
       : "https://meri.digitraffic.fi/api/ais/v1/locations";
-    return parseDigitTrafficPayload(await readJson(url));
+    return parseDigitTrafficPayloadIncremental(await readJson(url), { onPartial: options?.onPartial });
   });
 }
 
-export async function loadTraffic(kind: TrafficKind, bboxId: string): Promise<TrafficVehicle[]> {
-  return kind === "aircraft" ? loadAircraft(bboxId) : loadShips();
+export async function loadTraffic(
+  kind: TrafficKind,
+  bboxId: string,
+  options?: { onPartial?: (rows: TrafficVehicle[]) => void },
+): Promise<TrafficVehicle[]> {
+  return kind === "aircraft" ? loadAircraft(bboxId, options) : loadShips(options);
 }

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Text, type TextareaRenderable } from "../../../ui";
+import { Box, type TextareaRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import type { TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneTicker } from "../../../state/app/context";
-import { colors } from "../../../theme/colors";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { usePaneFooter } from "../../../components";
+import { TickerEmptyState, usePaneFooter } from "../../../components";
 import type { NotesFiles } from "./files";
 import { MarkdownNotePreview } from "./markdown-note-preview";
 import { useSyncedText } from "./text-state";
@@ -126,7 +125,7 @@ export function createNotesTab(notesFiles: NotesFiles) {
       ],
     }), [notesFocused]);
 
-    if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view notes.</Text>;
+    if (!ticker) return <TickerEmptyState kind="notes" symbol={null} detail="notes" />;
 
     return (
       <Box flexDirection="column" flexGrow={1}>

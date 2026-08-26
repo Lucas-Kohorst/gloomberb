@@ -107,12 +107,16 @@ function extractSections(body: string): TranscriptSection[] {
 
 /**
  * Build a transcript object from a filing and its extracted content.
+ * Pass `undefined` content for the list path so first paint is not blocked
+ * on fetching every 8-K/10-K body.
  */
 function buildTranscript(
   filing: SecFilingItem,
-  content: string | null,
+  content: string | null | undefined,
 ): EarningsTranscript {
-  const body = content ?? "Filing content was not available for this document.";
+  const contentLoaded = content !== undefined;
+  const body = content
+    ?? (contentLoaded ? "Filing content was not available for this document." : "");
   const form = filing.form.trim();
   const titleParts = [
     filing.ticker ?? filing.companyName,
@@ -127,10 +131,12 @@ function buildTranscript(
     form,
     quarter: deriveQuarter(filing),
     fiscalYear: deriveFiscalYear(filing),
-    participants: extractParticipants(body),
-    sections: extractSections(body),
+    participants: contentLoaded ? extractParticipants(body) : [],
+    sections: contentLoaded ? extractSections(body) : [],
     body,
+    contentLoaded,
     url: filing.filingUrl,
+    primaryDocumentUrl: filing.primaryDocumentUrl,
     title: titleParts.join(" | "),
   };
 }
@@ -147,20 +153,27 @@ export async function fetchEarningsTranscripts(symbol: string): Promise<Earnings
     // getRecentFilings returns the most recent filings across all forms.
     const allFilings = await secClient.getRecentFilings(normalized, FETCH_COUNT_FOR_FILTER);
     const earningsFilings = allFilings.filter(isEarningsFiling).slice(0, FETCH_LIMIT);
+    return earningsFilings.map((filing) => buildTranscript(filing, undefined));
+  });
+}
 
-    // Fetch content for each earnings filing in parallel.
-    const results = await Promise.allSettled(
-      earningsFilings.map(async (filing) => {
-        const content = await secClient.getFilingContent(filing);
-        return buildTranscript(filing, content);
-      }),
-    );
-
-    return results
-      .filter(
-        (r): r is PromiseFulfilledResult<EarningsTranscript> =>
-          r.status === "fulfilled",
-      )
-      .map((r) => r.value);
+export async function fetchEarningsTranscriptContent(
+  transcript: EarningsTranscript,
+): Promise<EarningsTranscript> {
+  if (transcript.contentLoaded) return transcript;
+  return withConnectionRequest(CONNECTION_ID, "content", async () => {
+    const content = await secClient.getFilingContent({
+      form: transcript.form,
+      filingUrl: transcript.url ?? "",
+      primaryDocumentUrl: transcript.primaryDocumentUrl,
+    });
+    const body = content ?? "Filing content was not available for this document.";
+    return {
+      ...transcript,
+      body,
+      contentLoaded: true,
+      participants: extractParticipants(body),
+      sections: extractSections(body),
+    };
   });
 }

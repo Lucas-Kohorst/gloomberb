@@ -397,6 +397,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
         sortDirection={sortPreference.direction}
         onHeaderClick={(columnId) => setSortSetting(encodeSortPreference(nextSortPreference(sortPreference, columnId)))}
         getItemKey={(row) => row.id}
+        getRowRevision={(row) => row.id}
         onActivate={chartSelected}
         renderCell={renderCell}
         emptyStateTitle={emptyCopy.title}

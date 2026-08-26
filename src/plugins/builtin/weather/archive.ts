@@ -118,6 +118,12 @@ export function mergeWeatherArchive(
     today?: string;
   },
 ): WeatherArchiveState {
+  if (
+    (input.observations == null || input.observations.length === 0)
+    && (input.implied == null || input.implied.length === 0)
+  ) {
+    return state;
+  }
   const now = input.now ?? Date.now();
   const today = input.today ?? new Date(now).toISOString().slice(0, 10);
   const byKey = new Map<string, WeatherDayRecord>();

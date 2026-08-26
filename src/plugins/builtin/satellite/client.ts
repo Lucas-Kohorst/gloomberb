@@ -3,7 +3,7 @@ import { httpFetch } from "../../../utils/http-transport";
 import { withConnectionRequest } from "../connections/register";
 import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import { FIRMS_CSV_PATH, gibsHostedPath, gibsHostedSearch, gibsWmsUrl } from "./layers";
-import { parseFirmsCsv } from "./parse";
+import { parseFirmsCsvIncremental } from "./parse";
 import { FIRMS_CONNECTION_ID, GIBS_CONNECTION_ID, type FireHotspot } from "./types";
 
 const CLIENT = createThrottledFetch({
@@ -21,14 +21,16 @@ const CLIENT = createThrottledFetch({
   },
 });
 
-export async function loadFirmsHotspots(): Promise<FireHotspot[]> {
+export async function loadFirmsHotspots(options?: {
+  onPartial?: (rows: FireHotspot[]) => void;
+}): Promise<FireHotspot[]> {
   return withConnectionRequest(FIRMS_CONNECTION_ID, "hotspots", async () => {
     const url = isHostedWebClient()
       ? keyedDataUrl("nasa-firms", FIRMS_CSV_PATH)
       : `https://firms.modaps.eosdis.nasa.gov/${FIRMS_CSV_PATH}`;
     const response = await CLIENT.fetch(url);
     if (!response.ok) throw new Error(`FIRMS request failed (${response.status})`);
-    return parseFirmsCsv(await response.text());
+    return parseFirmsCsvIncremental(await response.text(), { onPartial: options?.onPartial });
   });
 }
 

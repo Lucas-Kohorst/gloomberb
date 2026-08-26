@@ -86,10 +86,8 @@ export interface CloudAccessFooter {
 }
 
 /**
- * One compact footer status for cloud data entitlements: the delay free accounts
- * get on this pane, or the remaining trial days while Pro is on loan. Panes keep
- * ownership of their own richer states (e.g. options stream coverage) and only
- * render this segment when it is non-null.
+ * Pane-footer status for delayed cloud data on the free tier. Trial countdown
+ * lives only in the app footer (CloudUpgradeStatusWidget), not on every pane.
  */
 export function useCloudAccessFooter({
   delayLabel,
@@ -101,10 +99,8 @@ export function useCloudAccessFooter({
   const language = useAppLanguage();
   const access = usePlanAccess();
   const openUpgrade = useCloudUpgradeAction();
-  const openPlan = useCloudPlanAction();
 
-  const showTrial = access.isTrialActive;
-  const showUpgrade = !showTrial && !access.hasProAccess && degraded;
+  const showUpgrade = !access.hasProAccess && degraded;
   const bindsShortcut = !!shortcutScope && showUpgrade && focused;
 
   useShortcut(
@@ -119,16 +115,6 @@ export function useCloudAccessFooter({
   );
 
   const segment = useMemo<PaneFooterSegment | null>(() => {
-    if (showTrial) {
-      return {
-        id: segmentId,
-        onPress: openPlan,
-        parts: [{
-          text: tf("Pro trial · {days}d left", { days: access.trialDaysLeft }),
-          tone: "positive",
-        }],
-      };
-    }
     if (!showUpgrade) return null;
     return {
       id: segmentId,
@@ -141,14 +127,11 @@ export function useCloudAccessFooter({
       }],
     };
   }, [
-    access.trialDaysLeft,
     delayLabel,
     language,
-    openPlan,
     openUpgrade,
     segmentId,
     shortcutScope,
-    showTrial,
     showUpgrade,
   ]);
 

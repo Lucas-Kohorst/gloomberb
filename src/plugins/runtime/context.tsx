@@ -76,6 +76,7 @@ export function wrapPaneDefWithRuntime(
   pane: PaneDef,
   runtime: PluginRuntimeAccess,
 ): PaneDef {
+  const Inner = typeof pane.component === "function" ? pane.component : () => null;
   return {
     ...pane,
     component: (props) => createElement(
@@ -83,7 +84,7 @@ export function wrapPaneDefWithRuntime(
       {
         pluginId,
         runtime,
-        children: createElement(pane.component as any, props),
+        children: createElement(Inner as any, props),
       },
     ),
   };
@@ -94,6 +95,7 @@ export function wrapTickerResearchTabDefWithRuntime(
   tab: TickerResearchTabDef,
   runtime: PluginRuntimeAccess,
 ): TickerResearchTabDef {
+  const Inner = typeof tab.component === "function" ? tab.component : () => null;
   return {
     ...tab,
     component: (props) => createElement(
@@ -101,7 +103,7 @@ export function wrapTickerResearchTabDefWithRuntime(
       {
         pluginId,
         runtime,
-        children: createElement(tab.component as any, props),
+        children: createElement(Inner as any, props),
       },
     ),
   };

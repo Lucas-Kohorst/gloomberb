@@ -9,9 +9,12 @@ import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import {
+  EmptyState,
+  ErrorState,
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
+  TickerEmptyState,
   useTableLoadMore,
   useUpdatedAgo,
   type FeedDataTableItem,
@@ -28,10 +31,7 @@ import { loadSecBrowserFilings } from "./client";
 import { filingToArticle, isPeriodicFiling } from "./filing-article";
 import { filingMatchesForms, parseFormsSetting } from "./forms";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
-import {
-  formatFilingMetaDate,
-  renderFilingNotice,
-} from "./filing-display";
+import { formatFilingMetaDate } from "./filing-display";
 import {
   documentContentKey,
   documentHeading,
@@ -48,7 +48,9 @@ import { attachSecSummaryPersistence, resetSecSummaryPersistence } from "./summa
 import { renderFilingSummary, type FilingSummary } from "./summary-contract";
 import { useFilingSummary } from "./use-filing-summary";
 
-const SEC_FILING_FETCH_LIMIT = 20_000;
+// Recent EDGAR dumps already cap around 1,000 mixed forms. Painting and
+// parsing tens of thousands of rows before first paint freezes the pane.
+const SEC_FILING_FETCH_LIMIT = 400;
 const SEC_FILING_PAGE_SIZE = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
 
@@ -379,11 +381,20 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     ],
   });
 
-  if (!ticker) return <Text fg={colors.textDim}>Select a ticker to view SEC filings.</Text>;
-  if (!eligibleTicker) return renderFilingNotice("SEC filings are only shown for US equities.", width);
+  if (!ticker) return <TickerEmptyState kind="SEC" symbol={null} detail="recent filings" />;
+  if (!eligibleTicker) {
+    return (
+      <EmptyState
+        title="US equities only"
+        message="SEC filings are only shown for US equities."
+      />
+    );
+  }
   if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
-  if (error) return renderFilingNotice(`Error: ${error}`, width);
-  if (filings.length === 0) return renderFilingNotice(`No recent SEC filings for ${ticker.metadata.ticker}.`, width);
+  if (error) return <ErrorState kind="SEC" error={error} />;
+  if (filings.length === 0) {
+    return <TickerEmptyState kind="SEC" symbol={ticker.metadata.ticker} detail="recent filings" />;
+  }
 
   return (
     <FeedDataTableStackView
@@ -674,7 +685,7 @@ function SecPane({ width, height, focused }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        {renderFilingNotice(`Error: ${error}`, width)}
+        <ErrorState kind="SEC" error={error} />
       </Box>
     );
   }

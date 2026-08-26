@@ -26,7 +26,9 @@ import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import {
   MARKET_HEATMAP_UNIVERSES,
+  MARKET_HEATMAP_PAINTED_LIMIT,
   fetchMarketHeatmap,
+  peekMarketHeatmapCache,
   resetMarketHeatmapCache,
   type MarketHeatmapAsset,
   type MarketHeatmapUniverseId,
@@ -115,12 +117,22 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const loadUniverse = useCallback(async (universe: MarketHeatmapUniverseId, options?: { forceRefresh?: boolean }) => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
-    setLoading(true);
-    setLoadError(null);
+    const cached = options?.forceRefresh
+      ? null
+      : peekMarketHeatmapCache(universe, MARKET_HEATMAP_PAINTED_LIMIT);
+    if (cached) {
+      setAssets(cached.assets);
+      setLastUpdated(cached.fetchedAt);
+      setLoadError(null);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setLoadError(null);
+    }
 
     try {
       const result = await fetchMarketHeatmap(universe, {
-        count: 96,
+        count: MARKET_HEATMAP_PAINTED_LIMIT,
         forceRefresh: options?.forceRefresh,
       });
       if (fetchGenRef.current !== gen) return;
@@ -129,6 +141,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       setSelectedSymbol(result.assets[0]?.symbol ?? null);
     } catch {
       if (fetchGenRef.current !== gen) return;
+      if (cached) return;
       setAssets([]);
       setLastUpdated(null);
       setSelectedSymbol(null);

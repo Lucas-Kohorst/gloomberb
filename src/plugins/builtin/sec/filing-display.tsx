@@ -1,5 +1,3 @@
-import { Box, Text } from "../../../ui";
-import { colors } from "../../../theme/colors";
 import { formatCompact, formatCurrency } from "../../../utils/format";
 import { transactionTypeLabel, type InsiderTransaction } from "../insider/insider-data";
 
@@ -24,19 +22,6 @@ export function formatFilingFormLabel(form: string, fallback = "FORM 4"): string
   return value ? `FORM ${value}` : fallback;
 }
 
-export function renderFilingNotice(message: string, width: number) {
-  const lines = wrapNoticeLines(message, width - 4);
-  return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-      {lines.map((line, index) => (
-        <Box key={index} height={1}>
-          <Text fg={colors.textDim}>{line}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-}
-
 export function buildInsiderTransactionTitle(transaction: InsiderTransaction): string {
   const type = transactionTypeLabel(transaction.transactionType);
   const price = transaction.pricePerShare != null
@@ -58,27 +43,4 @@ export function buildInsiderTransactionDetailBody(transaction: InsiderTransactio
     `Shares Owned After: ${transaction.sharesOwned != null ? formatCompact(transaction.sharesOwned) : "—"}`,
   ];
   return lines.join("\n");
-}
-
-function wrapNoticeLines(text: string, width: number): string[] {
-  const maxWidth = Math.max(width, 12);
-  const words = text.trim().split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-
-  for (const word of words) {
-    if (!current) {
-      current = word;
-      continue;
-    }
-    if (current.length + 1 + word.length <= maxWidth) {
-      current = `${current} ${word}`;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-
-  if (current) lines.push(current);
-  return lines;
 }

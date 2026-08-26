@@ -57,6 +57,13 @@ export interface PaneDef {
   quickSettings?: readonly PaneQuickSettingDef[];
 }
 
+/** Agent plugins often register title/render instead of name/component. */
+export type PluginPaneRegistration = Partial<PaneDef> & {
+  id: string;
+  title?: string;
+  render?: (props?: PaneProps) => unknown;
+};
+
 export interface PaneQuickSettingDef {
   type: "toggle";
   key: string;
@@ -513,7 +520,9 @@ export interface PinTickerOptions {
 }
 
 export interface GloomPluginContext {
-  registerPane(pane: PaneDef): void;
+  registerPane(pane: PluginPaneRegistration): void;
+  /** Agent plugins often call this; same as registerPane. */
+  registerPaneType(pane: PluginPaneRegistration): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
   registerColumn(column: CustomColumnDef): void;
@@ -587,7 +596,7 @@ export interface GloomPlugin {
   setup?(ctx: GloomPluginContext): void | Promise<void>;
   dispose?(): void;
 
-  panes?: PaneDef[];
+  panes?: PluginPaneRegistration[];
   paneTemplates?: PaneTemplateDef[];
   broker?: BrokerAdapter;
   capabilities?: PluginCapability[];

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { matchesHotspotSearch, parseFirmsCsv } from "./parse";
+import { keepHottestHotspots, matchesHotspotSearch, mergeHotspots, parseFirmsCsv } from "./parse";
 
 const CSV = [
   "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight",
@@ -28,5 +28,26 @@ describe("parseFirmsCsv", () => {
     expect(matchesHotspotSearch(row, "2026-08-24")).toBe(true);
     expect(matchesHotspotSearch(row, "34.50")).toBe(true);
     expect(matchesHotspotSearch(row, "modis")).toBe(false);
+  });
+
+  test("keeps the hottest pixels when over cap", () => {
+    const csv = [
+      "latitude,longitude,bright_ti4,scan,track,acq_date,acq_time,satellite,confidence,version,bright_ti5,frp,daynight",
+      "1,1,300,0.4,0.4,2026-08-24,0100,N,high,2.0NRT,290.0,1.0,D",
+      "2,2,300,0.4,0.4,2026-08-24,0200,N,high,2.0NRT,290.0,40.0,D",
+      "3,3,300,0.4,0.4,2026-08-24,0300,N,high,2.0NRT,290.0,9.0,D",
+    ].join("\n");
+    const rows = parseFirmsCsv(csv, 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.frp).toBe(40);
+    expect(keepHottestHotspots(parseFirmsCsv(csv, 10), 2).map((row) => row.frp)).toEqual([40, 9]);
+  });
+
+  test("merge reuses row identity when a poll does not move a hotspot", () => {
+    const previous = parseFirmsCsv(CSV);
+    const next = parseFirmsCsv(CSV);
+    const merged = mergeHotspots(previous, next);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toBe(previous[0]);
   });
 });

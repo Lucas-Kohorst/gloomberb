@@ -31,13 +31,14 @@ await writeElectrobunViewPage({
         '</div>',
       ].join("");
       const renderBootstrapError = (error, details = "", source = "bootstrap-error") => {
+        const message = error && typeof error === "object" && "message" in error ? error.message : String(error);
+        if (/resizeobserver loop/i.test([message, details].filter(Boolean).join(" "))) return;
         if (typeof window.__gloomRenderFatalError === "function") {
           window.__gloomRenderFatalError(error, details, source);
           return;
         }
         const root = document.getElementById("root");
         if (!root) return;
-        const message = error && typeof error === "object" && "message" in error ? error.message : String(error);
         const stack = error && typeof error === "object" && "stack" in error ? error.stack : "";
         const errorText = [message, details, stack].filter(Boolean).join("\\n");
         root.innerHTML = bootstrapFatalHtml;

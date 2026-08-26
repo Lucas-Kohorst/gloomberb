@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
-import { StaticChartSurface, type PaneFooterSegment } from "../../../components";
+import { ErrorState, LoadingState, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import { PriceSparkline } from "../../../components/price-sparkline/view";
 import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
@@ -239,23 +239,11 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   });
 
   if (loading && !data) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.textMuted}>Loading volatility data...</Text>
-        </Box>
-      </Box>
-    );
+    return <LoadingState title="Loading volatility data..." />;
   }
 
   if (!data) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} justifyContent="center" alignItems="center" paddingX={1}>
-          <Text fg={colors.negative}>{error ?? "Volatility data unavailable"}</Text>
-        </Box>
-      </Box>
-    );
+    return <ErrorState kind="volatility" error={error} />;
   }
 
   const labelWidth = 10;

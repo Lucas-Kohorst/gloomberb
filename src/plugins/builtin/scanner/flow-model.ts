@@ -76,30 +76,36 @@ function expiryDaysFromNow(expiry: string, now: number): number | null {
  * The shared feed is published once for everyone, so every user preference is a
  * local predicate over the same events. Never push these upstream.
  */
+export const FLOW_PAINTED_HEAD_LIMIT = 200;
+
 export function filterFlowEvents(
   events: readonly ScannerFlowEvent[] | undefined,
   filters: FlowFilters,
   watchlist: ReadonlySet<string>,
   now = Date.now(),
+  limit = FLOW_PAINTED_HEAD_LIMIT,
 ): ScannerFlowEvent[] {
   const minPremium = Number(filters.minPremium);
   const minVolOi = filters.volOi === "off" ? null : Number(filters.volOi);
   const maxExpiryDays = filters.expiry === "all" ? null : Number(filters.expiry);
 
-  return (events ?? []).filter((event) => {
-    if (!(event.premium >= minPremium)) return false;
-    if (filters.side === "calls" && event.right !== "C") return false;
-    if (filters.side === "puts" && event.right !== "P") return false;
-    if (filters.kind === "sweeps" && event.kind !== "sweep") return false;
-    if (filters.kind === "blocks" && event.kind !== "block") return false;
-    if (minVolOi != null && !(typeof event.volOi === "number" && event.volOi >= minVolOi)) return false;
+  const matched: ScannerFlowEvent[] = [];
+  for (const event of events ?? []) {
+    if (!(event.premium >= minPremium)) continue;
+    if (filters.side === "calls" && event.right !== "C") continue;
+    if (filters.side === "puts" && event.right !== "P") continue;
+    if (filters.kind === "sweeps" && event.kind !== "sweep") continue;
+    if (filters.kind === "blocks" && event.kind !== "block") continue;
+    if (minVolOi != null && !(typeof event.volOi === "number" && event.volOi >= minVolOi)) continue;
     if (maxExpiryDays != null) {
       const days = expiryDaysFromNow(event.expiry, now);
-      if (days == null || days > maxExpiryDays || days < -1) return false;
+      if (days == null || days > maxExpiryDays || days < -1) continue;
     }
-    if (filters.universe === "watchlist" && !watchlist.has(event.underlying.toUpperCase())) return false;
-    return true;
-  });
+    if (filters.universe === "watchlist" && !watchlist.has(event.underlying.toUpperCase())) continue;
+    matched.push(event);
+    if (matched.length >= limit) break;
+  }
+  return matched;
 }
 
 export function formatFlowPremium(premium: number): string {

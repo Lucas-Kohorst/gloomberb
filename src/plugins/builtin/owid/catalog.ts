@@ -236,9 +236,9 @@ export function matchesOwidCatalogQuery(entry: OwidCatalogEntry, query: string):
   ));
 }
 
-export function matchOwidCatalogEntries(query: string): OwidCatalogEntry[] {
+export function matchOwidCatalogEntries(query: string): readonly OwidCatalogEntry[] {
   const trimmed = query.trim();
-  if (!trimmed || /^(owid|our world in data)$/i.test(trimmed)) return [...OWID_CATALOG];
+  if (!trimmed || /^(owid|our world in data)$/i.test(trimmed)) return OWID_CATALOG;
   return OWID_CATALOG.filter((entry) => matchesOwidCatalogQuery(entry, trimmed));
 }
 

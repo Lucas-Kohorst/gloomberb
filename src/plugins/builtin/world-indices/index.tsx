@@ -124,6 +124,12 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(row) => row.type === "header" ? `header-${row.region}` : row.entry.symbol}
+      getRowRevision={(row) => {
+        if (row.type === "header") return `header-${row.region}`;
+        const state = quotes.get(row.entry.symbol);
+        const quote = state?.quote;
+        return `${row.entry.symbol}:${quote?.price ?? ""}:${quote?.changePercent ?? ""}:${quote?.lastUpdated ?? ""}:${state?.loading ? 1 : 0}`;
+      }}
       renderSectionHeader={(row) => row.type === "header"
         ? { text: REGION_LABELS[row.region] }
         : null}

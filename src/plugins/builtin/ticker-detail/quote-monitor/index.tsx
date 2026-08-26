@@ -96,7 +96,10 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
   if (symbols.length === 0) {
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        <EmptyState title="No tickers selected." />
+        <EmptyState
+          title="No ticker selected"
+          message="Select a ticker to view quote monitor data."
+        />
       </Box>
     );
   }

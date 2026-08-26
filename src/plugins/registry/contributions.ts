@@ -9,6 +9,7 @@ import type {
   TickerAction,
   TickerResearchTabDef,
 } from "../../types/plugin";
+import { normalizeRegisteredPane, type LoosePaneDef } from "../runtime/normalize-pane";
 
 export interface ContextMenuProviderEntry {
   pluginId: string;
@@ -86,10 +87,11 @@ export class RegistryContributions {
     return items;
   }
 
-  registerPane(pluginId: string, pane: PaneDef, items = this.getOrCreatePluginItems(pluginId)): void {
-    setUnique(this.panesMap, pane.id, this.options.wrapPaneDef(pluginId, pane));
-    this.paneOwners.set(pane.id, pluginId);
-    items.panes.push(pane.id);
+  registerPane(pluginId: string, pane: PaneDef | LoosePaneDef, items = this.getOrCreatePluginItems(pluginId)): void {
+    const normalized = normalizeRegisteredPane(pane);
+    setUnique(this.panesMap, normalized.id, this.options.wrapPaneDef(pluginId, normalized));
+    this.paneOwners.set(normalized.id, pluginId);
+    items.panes.push(normalized.id);
   }
 
   registerPaneTemplate(pluginId: string, template: PaneTemplateDef, items = this.getOrCreatePluginItems(pluginId)): void {

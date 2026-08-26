@@ -220,7 +220,9 @@ export function MemberTradesDetail({
     ))
     ?? member
   ), [detailPayload?.members, member]);
-  const maybeTruncated = status === "loaded" && trades.length >= CONGRESS_MEMBER_TRADE_LIMIT;
+  const maybeTruncated = status === "loaded"
+    && trades.length >= CONGRESS_MEMBER_TRADE_LIMIT
+    && (!detailPayload || !canLoadMoreCongress(detailPayload));
 
   useEffect(() => {
     if (selectedTradeId && sortedRows.some((trade) => trade.id === selectedTradeId)) return;

@@ -9,6 +9,7 @@ import {
 
 const PROBE_CONCURRENCY = 4;
 const QUERY_CACHE_LIMIT = 8;
+const OWID_METADATA_PROBE_LIMIT = 16;
 export const OWID_SNAPSHOT_QUERY = "";
 
 const catalogOwidRowsCache = new Map<string, CatalogSeriesRow[]>();
@@ -91,7 +92,8 @@ export async function loadCatalogOwidRows(query: string): Promise<CatalogSeriesR
     }
     const metadataBySlug = new Map<string, OwidChartMetadataPrint>();
     const blockedSlugs = new Set<string>();
-    await mapPool(search.results, PROBE_CONCURRENCY, async (hit) => {
+    const hits = search.results.slice(0, OWID_METADATA_PROBE_LIMIT);
+    await mapPool(hits, PROBE_CONCURRENCY, async (hit) => {
       const metadata = await probeOwidMetadata(hit.slug);
       if (metadata) {
         metadataBySlug.set(hit.slug, metadata);
@@ -99,7 +101,7 @@ export async function loadCatalogOwidRows(query: string): Promise<CatalogSeriesR
       }
       if (catalogOwidMetadataCache.get(hit.slug) === "blocked") blockedSlugs.add(hit.slug);
     });
-    const rows = catalogRowsFromOwidHits(search.results, metadataBySlug, blockedSlugs);
+    const rows = catalogRowsFromOwidHits(hits, metadataBySlug, blockedSlugs);
     rememberQueryRows(discovery, rows);
     return rows;
   })().finally(() => {

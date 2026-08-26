@@ -54,6 +54,9 @@ import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { resolveDesktopLiveStream } from "./desktop/media";
 import { initializeDesktopBackend } from "./desktop/initialization";
+import { compileExternalPlugins } from "../../../plugins/desktop-runtime/compile";
+import { getPluginsDir, watchPluginsDir } from "../../../plugins/loader";
+import { mkdirSync } from "fs";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
 import { applyWindowsWindowIcon } from "./desktop/windows-icons";
 import {
@@ -80,6 +83,7 @@ let mainWindow: BrowserWindow | null = null;
 let desktopWorkspace: DesktopWorkspace | null = null;
 let desktopRestartInProgress = false;
 let desktopRemoteControlServer: RemoteControlServer | null = null;
+let stopExternalPluginWatch: (() => void) | null = null;
 
 const windowRpcRegistry = createDesktopRpcRegistry<DesktopRpc>();
 const contextMenuRequestRpcs = new Map<string, DesktopRpc>();
@@ -423,8 +427,35 @@ async function initialize(
     void ensureDesktopRemoteControlServer().catch((error) => {
       console.error("[remote] desktop control endpoint failed", summarizeError(error));
     });
+    ensureExternalPluginWatch();
   }
   return init;
+}
+
+async function broadcastExternalPlugins(): Promise<void> {
+  const bundles = await compileExternalPlugins();
+  windowRpcRegistry.forEachReadyWindowRpc((rpc) => {
+    try {
+      rpc.send["plugins.externalChanged"]({
+        bundles: encodeRpcValue(bundles) as typeof bundles,
+      });
+    } catch (error) {
+      console.warn("external plugin broadcast failed", summarizeError(error));
+    }
+  });
+}
+
+function ensureExternalPluginWatch(): void {
+  if (stopExternalPluginWatch) return;
+  mkdirSync(getPluginsDir(), { recursive: true });
+  stopExternalPluginWatch = watchPluginsDir(() => {
+    void broadcastExternalPlugins().catch((error) => {
+      console.warn("external plugin reload failed", summarizeError(error));
+    });
+  });
+  void broadcastExternalPlugins().catch((error) => {
+    console.warn("external plugin reload failed", summarizeError(error));
+  });
 }
 
 async function handleBackendRequest(
@@ -440,6 +471,8 @@ async function handleBackendRequest(
       return resolveDesktopLiveStream(request.payload);
     case "remote.forward":
       return forwardRemoteControlRequest(request.payload.request);
+    case "plugins.listExternal":
+      return compileExternalPlugins();
     case "capability.invoke":
     case "capability.subscribe":
     case "capability.unsubscribe":

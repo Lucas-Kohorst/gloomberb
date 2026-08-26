@@ -43,6 +43,8 @@ type FinancialTableColumn = DataTableColumn & (
   | { id: string; kind: "statement"; statement: FinancialStatement }
 );
 
+const EMPTY_STATEMENTS: FinancialStatement[] = [];
+
 export function FinancialsTab({
   focused,
   headerScrollId,
@@ -82,8 +84,8 @@ export function ResolvedFinancialsTab({
   bodyScrollId?: string;
   allowArrowSubTabNavigation?: boolean;
 }) {
-  const annualStatements = financials?.annualStatements ?? [];
-  const quarterlyStatements = financials?.quarterlyStatements ?? [];
+  const annualStatements = financials?.annualStatements ?? EMPTY_STATEMENTS;
+  const quarterlyStatements = financials?.quarterlyStatements ?? EMPTY_STATEMENTS;
   const hasAnnualStatements = annualStatements.length > 0;
   const hasQuarterlyStatements = quarterlyStatements.length > 0;
   const fallbackPeriod: FinancialPeriod = hasAnnualStatements ? "annual" : "quarterly";
@@ -248,18 +250,26 @@ export function ResolvedFinancialsTab({
 
   const resolvedPeriod = resolveFinancialPeriod(period, hasAnnualStatements, hasQuarterlyStatements);
   const isAnnual = resolvedPeriod === "annual";
-  const rawStatements = isAnnual
-    ? annualStatements.slice(-5).reverse()
-    : quarterlyStatements.slice(-6).reverse();
-  const ttm = isAnnual ? computeTTM(quarterlyStatements) : null;
-  const displayStatements = ttm ? [ttm, ...rawStatements] : rawStatements;
-  const previousStatementMap = buildPreviousStatementMap(
-    resolvedPeriod,
-    annualStatements,
-    quarterlyStatements,
-    ttm,
+  const ttm = useMemo(
+    () => (isAnnual ? computeTTM(quarterlyStatements) : null),
+    [isAnnual, quarterlyStatements],
   );
-  const columns: FinancialTableColumn[] = [
+  const displayStatements = useMemo(() => {
+    const rawStatements = isAnnual
+      ? annualStatements.slice(-5).reverse()
+      : quarterlyStatements.slice(-6).reverse();
+    return ttm ? [ttm, ...rawStatements] : rawStatements;
+  }, [annualStatements, isAnnual, quarterlyStatements, ttm]);
+  const previousStatementMap = useMemo(
+    () => buildPreviousStatementMap(
+      resolvedPeriod,
+      annualStatements,
+      quarterlyStatements,
+      ttm,
+    ),
+    [annualStatements, quarterlyStatements, resolvedPeriod, ttm],
+  );
+  const columns = useMemo<FinancialTableColumn[]>(() => [
     {
       id: "metric",
       kind: "metric",
@@ -276,8 +286,11 @@ export function ResolvedFinancialsTab({
       align: "right",
       headerColor: statement.date === "TTM" ? colors.textBright : colors.textDim,
     })),
-  ];
-  const rows = buildFinancialRows(subTab.rows, displayStatements, collapsedGroups);
+  ], [displayStatements, isAnnual]);
+  const rows = useMemo(
+    () => buildFinancialRows(subTab.rows, displayStatements, collapsedGroups),
+    [collapsedGroups, displayStatements, subTab.rows],
+  );
   useEffect(() => {
     if (rows.length === 0) {
       if (selectedRowId !== null) setSelectedRowId(null);
@@ -287,11 +300,7 @@ export function ResolvedFinancialsTab({
     setSelectedRowId(rows[0]!.id);
   }, [rows, selectedRowId]);
 
-  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
-    return <TickerEmptyState kind="financial" symbol={symbol} detail="financial statements" />;
-  }
-
-  const renderCell = (
+  const renderCell = useCallback((
     row: FinancialTableRow,
     column: FinancialTableColumn,
   ): DataTableCell => {
@@ -357,7 +366,11 @@ export function ResolvedFinancialsTab({
         </Box>
       ),
     };
-  };
+  }, [previousStatementMap, toggleGroup]);
+
+  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
+    return <TickerEmptyState kind="financial" symbol={symbol} detail="financial statements" />;
+  }
 
   return (
     <Box
@@ -393,6 +406,7 @@ export function ResolvedFinancialsTab({
         // STOP: statement line items keep GAAP grouping; sorting would flatten sections.
         onHeaderClick={() => {}}
         getItemKey={(row) => row.id}
+        getRowRevision={(row) => row.kind === "group" ? `${row.id}:${row.expanded}` : row.id}
         onActivate={(row) => {
           if (row.kind === "group" && row.toggleable) toggleGroup(row.id);
         }}

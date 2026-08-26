@@ -37,7 +37,7 @@ import {
   type TrafficColumn,
   type TrafficSort,
 } from "./model";
-import { matchesTrafficSearch } from "./parse";
+import { matchesTrafficSearch, mergeTrafficVehicles } from "./parse";
 import {
   DIGITRAFFIC_CONNECTION_ID,
   OPENSKY_CONNECTION_ID,
@@ -121,9 +121,16 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
     setStatus("loading");
     setError(null);
     try {
-      const next = await loadTraffic(kind, bboxId);
+      const next = await loadTraffic(kind, bboxId, {
+        onPartial: (partial) => {
+          if (fetchGen.current !== gen) return;
+          setVehicles((current) => mergeTrafficVehicles(current, partial));
+          setStatus("loaded");
+          setLastUpdated(Date.now());
+        },
+      });
       if (fetchGen.current !== gen) return;
-      setVehicles(next);
+      setVehicles((current) => mergeTrafficVehicles(current, next));
       setStatus("loaded");
       setLastUpdated(Date.now());
     } catch (err) {
@@ -139,9 +146,18 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
   useAutoRefresh(lastUpdated, load, kind === "aircraft" ? 1 : 2);
 
   const visible = useMemo(() => {
-    const matched = vehicles.filter((row) => matchesTrafficSearch(row, searchQuery));
-    return sortTrafficRows(matched, sort).slice(0, TRAFFIC_ROW_CAP);
+    const matched = searchQuery.trim()
+      ? vehicles.filter((row) => matchesTrafficSearch(row, searchQuery))
+      : vehicles;
+    const sorted = sortTrafficRows(matched, sort);
+    return sorted.length > TRAFFIC_ROW_CAP ? sorted.slice(0, TRAFFIC_ROW_CAP) : sorted;
   }, [searchQuery, sort, vehicles]);
+
+  const getRowRevision = useCallback(
+    (row: TrafficVehicle) =>
+      `${row.id}:${row.lat.toFixed(3)}:${row.lon.toFixed(3)}:${row.altitudeM ?? ""}:${row.speedMs ?? ""}:${row.callsign}`,
+    [],
+  );
 
   useEffect(() => {
     if (!selectedId || !visible.some((row) => row.id === selectedId)) {
@@ -308,6 +324,7 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
       sortDirection={sort.direction}
       onHeaderClick={(columnId) => setSort((current) => nextTrafficSort(current, columnId as TrafficColumn["id"]))}
       getItemKey={(row) => row.id}
+      getRowRevision={getRowRevision}
       renderCell={(row, column, _index, state) => renderCell(row, column, state.selected)}
       emptyStateTitle={kind === "ship" ? "No public AIS positions." : "No aircraft in this box."}
       onRootKeyDown={handleRootKeyDown}

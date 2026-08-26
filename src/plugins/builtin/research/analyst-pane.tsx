@@ -42,7 +42,7 @@ function recommendationTotal(data: AnalystResearchData | null): number {
 }
 
 function formatRatingLabel(value: number | undefined): string {
-  return value == null ? "-" : `${formatNumber(value, 1)}/10`;
+  return value == null ? "—" : `${formatNumber(value, 1)}/10`;
 }
 
 function ratingActionColor(action: string | undefined): string {
@@ -53,7 +53,7 @@ function ratingActionColor(action: string | undefined): string {
 }
 
 function formatPriceTarget(value: number | undefined, currency: string): string {
-  if (value == null) return "-";
+  if (value == null) return "—";
   return formatCurrency(value, currency)
     .replace(/\.00\b/, "")
     .replace(/(\.\d)0\b/, "$1");
@@ -73,7 +73,7 @@ export function formatRatingTarget(
 ): string {
   const current = row.currentPriceTarget;
   const prior = row.priorPriceTarget;
-  if (current == null && prior == null) return "-";
+  if (current == null && prior == null) return "—";
   if (current == null) return ` ${formatPriceTarget(prior, currency)}`;
   if (prior == null) return ` ${formatPriceTarget(current, currency)}`;
 
@@ -110,11 +110,11 @@ function AnalystSummary({ data }: { data: AnalystResearchData | null }) {
     <Box flexDirection="column" paddingX={1} height={1}>
       <Box height={1} flexDirection="row">
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          {target?.average != null ? formatCurrency(target.average, currency) : "-"}
+          {target?.average != null ? formatCurrency(target.average, currency) : "—"}
         </Text>
         <Text fg={colors.textDim}> avg target </Text>
         <Text fg={upside == null ? colors.textDim : priceColor(upside)}>
-          {upside != null ? formatPercent(upside) : "-"}
+          {upside != null ? formatPercent(upside) : "—"}
         </Text>
         <Text fg={colors.textDim}> upside</Text>
       </Box>
@@ -136,11 +136,11 @@ export function buildAnalystFooterInfo(data: AnalystResearchData | null): PaneFo
       id: "target-range",
       parts: [
         { text: "low", tone: "label" },
-        { text: target.low != null ? formatCurrency(target.low, currency) : "-", tone: "muted" },
+        { text: target.low != null ? formatCurrency(target.low, currency) : "—", tone: "muted" },
         { text: "med", tone: "label" },
-        { text: target.median != null ? formatCurrency(target.median, currency) : "-", tone: "muted" },
+        { text: target.median != null ? formatCurrency(target.median, currency) : "—", tone: "muted" },
         { text: "high", tone: "label" },
-        { text: target.high != null ? formatCurrency(target.high, currency) : "-", tone: "value" },
+        { text: target.high != null ? formatCurrency(target.high, currency) : "—", tone: "value" },
       ],
     });
   }

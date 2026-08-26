@@ -117,11 +117,22 @@ export function overlayOptionContractQuote(
   if (contract.lastUpdated != null && quote.lastUpdated < contract.lastUpdated) return contract;
 
   const streamedPrice = isFiniteNumber(quote.mark) ? quote.mark : quote.price;
+  const lastPrice = isFiniteNumber(streamedPrice) ? streamedPrice : contract.lastPrice;
+  const bid = isFiniteNumber(quote.bid) ? quote.bid : contract.bid;
+  const ask = isFiniteNumber(quote.ask) ? quote.ask : contract.ask;
+  if (
+    lastPrice === contract.lastPrice
+    && bid === contract.bid
+    && ask === contract.ask
+    && quote.lastUpdated === contract.lastUpdated
+  ) {
+    return contract;
+  }
   return {
     ...contract,
-    lastPrice: isFiniteNumber(streamedPrice) ? streamedPrice : contract.lastPrice,
-    bid: isFiniteNumber(quote.bid) ? quote.bid : contract.bid,
-    ask: isFiniteNumber(quote.ask) ? quote.ask : contract.ask,
+    lastPrice,
+    bid,
+    ask,
     lastUpdated: quote.lastUpdated,
   };
 }
@@ -145,17 +156,40 @@ export function overlayOptionRowQuotes(
   quoteEntries: ReadonlyMap<string, QueryEntry<Quote>>,
   freshness: OptionsQuoteFreshness,
 ): OptionTableRow[] {
-  return rows.map((row) => ({
-    ...row,
-    call: overlayOptionContractQuote(
+  if (rows.length === 0 || quoteEntries.size === 0) return rows as OptionTableRow[];
+
+  let changed = false;
+  const next = rows.map((row) => {
+    const call = overlayOptionContractQuote(
       row.call,
       row.call ? freshOptionQuote(quoteEntries.get(buildOptionQuoteKey(row.call.contractSymbol)), freshness) : null,
-    ),
-    put: overlayOptionContractQuote(
+    );
+    const put = overlayOptionContractQuote(
       row.put,
       row.put ? freshOptionQuote(quoteEntries.get(buildOptionQuoteKey(row.put.contractSymbol)), freshness) : null,
-    ),
-  }));
+    );
+    if (call === row.call && put === row.put) return row;
+    changed = true;
+    return { ...row, call, put };
+  });
+  return changed ? next : rows as OptionTableRow[];
+}
+
+function contractRevision(contract: OptionContract | undefined): string {
+  if (!contract) return "";
+  return [
+    contract.lastUpdated ?? "",
+    contract.lastPrice,
+    contract.bid,
+    contract.ask,
+    contract.volume,
+    contract.openInterest,
+    contract.impliedVolatility,
+  ].join(":");
+}
+
+export function optionRowRevision(row: OptionTableRow): string {
+  return `${row.strike}:${contractRevision(row.call)}:${contractRevision(row.put)}`;
 }
 
 export function resolveOptionQuoteCoverage(

@@ -5,6 +5,8 @@ import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
 import type { VoteHubPoll } from "./types";
 
 const BASE_URL = "https://api.votehub.com";
+/** VoteHub /polls can dump thousands of rows; keep a recency-sorted head. */
+export const POLLS_FETCH_HEAD = 400;
 
 const VOTEHUB_FETCH = createThrottledFetch({
   requestsPerMinute: 30,
@@ -22,12 +24,24 @@ const VOTEHUB_FETCH = createThrottledFetch({
   },
 });
 
+function voteHubPollTime(poll: VoteHubPoll): number {
+  const value = poll.end_date ?? poll.start_date ?? poll.created_at;
+  if (!value) return 0;
+  const time = Date.parse(value.includes("T") ? value : `${value}T00:00:00Z`);
+  return Number.isFinite(time) ? time : 0;
+}
+
 export function parseVoteHubPollsPayload(body: unknown): VoteHubPoll[] {
-  if (Array.isArray(body)) return body.filter(isVoteHubPoll);
-  if (body && typeof body === "object" && Array.isArray((body as { polls?: unknown }).polls)) {
-    return (body as { polls: unknown[] }).polls.filter(isVoteHubPoll);
-  }
-  return [];
+  const polls = Array.isArray(body)
+    ? body.filter(isVoteHubPoll)
+    : body && typeof body === "object" && Array.isArray((body as { polls?: unknown }).polls)
+      ? (body as { polls: unknown[] }).polls.filter(isVoteHubPoll)
+      : [];
+  if (polls.length <= POLLS_FETCH_HEAD) return polls;
+  return polls
+    .slice()
+    .sort((left, right) => voteHubPollTime(right) - voteHubPollTime(left))
+    .slice(0, POLLS_FETCH_HEAD);
 }
 
 function isVoteHubPoll(value: unknown): value is VoteHubPoll {

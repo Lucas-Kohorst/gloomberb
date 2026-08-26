@@ -455,9 +455,10 @@ export function catalogRowsFromLlmStatsRows(models: readonly LlmStatsRow[]): Cat
   ));
 }
 
-/** CAT discovery query for OWID search. Null skips the live origin (ticker lookups). */
+/** CAT discovery query for OWID search. Null skips the live origin (empty + ticker lookups). */
 export function catalogOwidDiscoveryQuery(query: string): string | null {
   const trimmed = query.trim();
+  if (!trimmed) return null;
   if (/^(owid|our world in data)$/i.test(trimmed)) return "";
   if (looksLikeCatalogTickerQuery(trimmed)) return null;
   return trimmed;

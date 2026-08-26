@@ -319,7 +319,7 @@ export function sortIssuers(
   sort: IssuerSortPreference,
 ): CdsIssuerSummary[] {
   const columnId = sort.columnId;
-  if (!columnId) return [...rows];
+  if (!columnId) return rows as CdsIssuerSummary[];
   return [...rows].sort((left, right) => {
     const compared = compareSortValues(
       issuerSortValue(columnId, left),
@@ -379,7 +379,7 @@ function tradeSortValue(columnId: TradeColumnId, row: CdsTrade): string | number
 
 export function sortTrades(rows: readonly CdsTrade[], sort: TradeSortPreference): CdsTrade[] {
   const columnId = sort.columnId;
-  if (!columnId) return [...rows];
+  if (!columnId) return rows as CdsTrade[];
   return [...rows].sort((left, right) => {
     const compared = compareSortValues(
       tradeSortValue(columnId, left),

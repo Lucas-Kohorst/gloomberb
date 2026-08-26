@@ -85,6 +85,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
 }: DataTableProps<T, C>) {
   const dispatch = useAppDispatch();
   const paneInstanceId = usePaneInstance()?.instanceId ?? null;
+  const rootElementRef = useRef<HTMLDivElement | null>(null);
   const bodyElementRef = useRef<HTMLDivElement | null>(null);
   const lastVisibleRangeRef = useRef<{
     key: string | number | undefined;
@@ -181,7 +182,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     ? Math.max(1, tableWidth * WEB_CELL_WIDTH)
     : "100%";
   const measureViewportWidth = useCallback(() => {
-    const element = bodyElementRef.current;
+    const element = rootElementRef.current;
     const nextValue = element ? toCellX(element.clientWidth) : 0;
     setViewportWidth((current) => current === nextValue ? current : nextValue);
   }, []);
@@ -190,7 +191,7 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   useEffect(() => {
     measureViewportWidth();
     scheduleVisibleRangeMeasure();
-    const element = bodyElementRef.current;
+    const element = rootElementRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       scheduleViewportWidthMeasure();
@@ -290,12 +291,12 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     minWidth: 0,
     minHeight: 0,
     overflowX: horizontalScrollEnabled ? "auto" : "hidden",
-    overflowY: "auto",
+    overflowY: "scroll",
     backgroundColor: CSS_BG,
   };
 
   return (
-    <div data-gloom-role="data-table" style={rootStyle}>
+    <div ref={rootElementRef} data-gloom-role="data-table" style={rootStyle}>
       <div
         ref={bodyElementRef}
         data-gloom-role="data-table-body-scroll"

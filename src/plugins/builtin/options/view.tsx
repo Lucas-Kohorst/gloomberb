@@ -34,6 +34,7 @@ import type { OptionColumn, OptionColumnId, OptionTableRow, OptionsViewProps } f
 import {
   buildOptionQuoteTargets,
   OPTIONS_CHAIN_REFRESH_INTERVAL_MS,
+  optionRowRevision,
   overlayOptionRowQuotes,
   resolveOptionQuoteCoverage,
 } from "./live-quotes";
@@ -216,10 +217,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     ),
     [optionQuoteEntries, optionQuoteFreshness, optionQuoteTargets],
   );
-  const optionColumns: OptionColumn[] = OPTION_COLUMNS.map((column) => ({
+  const optionColumns: OptionColumn[] = useMemo(() => OPTION_COLUMNS.map((column) => ({
     ...column,
     headerColor: optionColumnColor(column.id, colors.panel),
-  }));
+  })), []);
 
   const openCalc = useCallback(() => {
     const row = rows[strikeIdx];
@@ -471,6 +472,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         visibleRangeKey={viewportKey}
         onVisibleRangeChange={handleVisibleStrikeRangeChange}
         getItemKey={(row) => String(row.strike)}
+        getRowRevision={optionRowRevision}
         renderCell={renderCell}
         emptyStateTitle="No options data"
         emptyStateMessage="No strikes for this expiration."

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseVoteHubPollsPayload, voteHubPollQuery } from "./client";
+import { POLLS_FETCH_HEAD, parseVoteHubPollsPayload, voteHubPollQuery } from "./client";
 import {
   computeMarginOfError,
   computeMovingAverage,
@@ -48,6 +48,19 @@ describe("VoteHub normalize", () => {
     expect(parseVoteHubPollsPayload([poll])).toHaveLength(1);
     expect(parseVoteHubPollsPayload({ polls: [poll] })).toHaveLength(1);
     expect(parseVoteHubPollsPayload({ data: [poll] })).toHaveLength(0);
+  });
+
+  test("caps oversized VoteHub payloads to a recency-sorted head", () => {
+    const polls = Array.from({ length: POLLS_FETCH_HEAD + 40 }, (_, index) =>
+      makePoll({
+        id: `p${index}`,
+        end_date: new Date(Date.UTC(2024, 0, 1 + index)).toISOString().slice(0, 10),
+      }),
+    );
+    const parsed = parseVoteHubPollsPayload(polls);
+    expect(parsed).toHaveLength(POLLS_FETCH_HEAD);
+    expect(parsed[0]?.id).toBe(`p${polls.length - 1}`);
+    expect(parsed.at(-1)?.id).toBe(`p${polls.length - POLLS_FETCH_HEAD}`);
   });
 
   test("omits poll_type for the All tab so VoteHub returns every category", () => {
@@ -138,8 +151,8 @@ describe("filterPollRows", () => {
   ];
 
   test("returns all rows for empty query", () => {
-    expect(filterPollRows(rows, "")).toHaveLength(3);
-    expect(filterPollRows(rows, "   ")).toHaveLength(3);
+    expect(filterPollRows(rows, "")).toBe(rows);
+    expect(filterPollRows(rows, "   ")).toBe(rows);
   });
 
   test("filters by subject case-insensitively", () => {

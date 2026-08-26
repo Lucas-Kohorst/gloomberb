@@ -46,10 +46,14 @@ export interface EarningsTranscript {
   participants: TranscriptParticipant[];
   /** Transcript sections (prepared remarks, Q&A, etc.). */
   sections: TranscriptSection[];
-  /** Full body text (fallback rendering). */
+  /** Full body text (fallback rendering). Empty until the open item loads. */
   body: string;
+  /** True once filing content was fetched for this row. */
+  contentLoaded: boolean;
   /** External URL to the source filing. */
   url: string | undefined;
+  /** Primary document URL used to fetch content on open. */
+  primaryDocumentUrl?: string;
   /** Title for display. */
   title: string;
 }

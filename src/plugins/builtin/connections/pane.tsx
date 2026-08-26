@@ -8,6 +8,7 @@ import { ConnectionTracker } from "./tracker";
 import type { ConnectionState } from "./types";
 import {
   buildConnectionColumns,
+  connectionRowRevision,
   renderConnectionCell,
   sortConnections,
   type ConnectionColumn,
@@ -95,6 +96,10 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
   const tableWidth = Math.max(24, width - 2);
   const columns = useMemo(() => buildConnectionColumns(tableWidth), [tableWidth]);
 
+  const getRowRevision = useCallback((row: ConnectionState) => (
+    connectionRowRevision(row, now)
+  ), [now]);
+
   const selectRow = useCallback((index: number, _row: ConnectionState) => {
     setSelectedIndex(index);
   }, []);
@@ -157,6 +162,7 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
             ));
           }}
           getItemKey={(row) => row.id}
+          getRowRevision={getRowRevision}
           renderCell={renderConnectionCell}
           emptyStateTitle={t("No connections registered.")}
           emptyStateHint={t("Connections appear when data providers are registered.")}

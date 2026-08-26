@@ -8,6 +8,7 @@ import {
 } from "../../../../components";
 import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
 import {
+  copyOnWriteTickerFinancialsMap,
   mergeTickerFinancials,
   useFxRatesMap,
   useTickerFinancialsMap,
@@ -24,6 +25,7 @@ import {
 } from "../../../../state/app/context";
 import { selectEffectiveExchangeRates } from "../../../../utils/exchange-rate-map";
 import { isPlainKey } from "../../../../utils/keyboard";
+import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
 import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
@@ -131,10 +133,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     portfolioId: isPortfolioTab ? activeCollectionId : undefined,
   }), [activeCollectionId, isPortfolioTab]);
   const marketFinancialsMap = useTickerFinancialsMap(tickers, financialsInstrumentOptions);
-  const financialsMap = useMemo(
-    () => mergeTickerFinancials(tickers, marketFinancialsMap, cachedFinancials),
-    [cachedFinancials, marketFinancialsMap, tickers],
-  );
+  const previousFinancialsMapRef = useRef<Map<string, TickerFinancials>>(new Map());
+  const financialsMap = useMemo(() => {
+    const merged = mergeTickerFinancials(tickers, marketFinancialsMap, cachedFinancials);
+    const next = copyOnWriteTickerFinancialsMap(previousFinancialsMapRef.current, merged);
+    previousFinancialsMapRef.current = next;
+    return next;
+  }, [cachedFinancials, marketFinancialsMap, tickers]);
   const valueFlashingEnabled = useAppSelector((state) => state.config.valueFlashingEnabled);
   const flashSymbols = useQuoteFlashMap(financialsMap, valueFlashingEnabled);
 
@@ -205,8 +210,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const orderResetKey = `${activeCollectionId}|${activeSort.columnId ?? ""}|${activeSort.direction}`;
   const orderedSymbols = useThrottledTickerOrder(candidateSymbols, orderResetKey);
   const tickerBySymbol = useMemo(
-    () => new Map(candidateSortedTickers.map((ticker) => [ticker.metadata.ticker, ticker])),
-    [candidateSortedTickers],
+    () => new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker])),
+    [tickers],
   );
   const sortedTickers = useMemo(
     () => orderedSymbols.flatMap((symbol) => {

@@ -14,7 +14,7 @@ import {
 import { useQuoteUpdates } from "../../../state/hooks/quote-streaming";
 import { getCollectionName, getCollectionTickerCount } from "../../../state/selectors";
 import { getSharedRegistry } from "../../registry";
-import { EmptyState, PaneFooterScope, Tabs, usePaneFooter } from "../../../components";
+import { EmptyState, PaneFooterScope, Tabs, TickerEmptyState, usePaneFooter } from "../../../components";
 import { useThrottledCommitValue } from "../../../react/use-throttled-commit-value";
 import { resolveOptionsTarget } from "../../../utils/options";
 import {
@@ -184,13 +184,20 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
 
   if (!ticker) {
     const isEmptyFollowCollection = paneInstance?.binding?.kind === "follow" && !!collectionId && collectionTickerCount === 0;
-    const message = isEmptyFollowCollection
-      ? tf("No tickers in {name}.", { name: collectionName || t("this collection") })
-      : t("No ticker selected.");
+    if (isEmptyFollowCollection) {
+      return (
+        <Box flexDirection="column" flexGrow={1} paddingX={1}>
+          <EmptyState
+            title="No tickers in this collection"
+            message={tf("No tickers in {name}.", { name: collectionName || t("this collection") })}
+          />
+        </Box>
+      );
+    }
 
     return (
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        <EmptyState title={message} />
+        <TickerEmptyState kind="overview" symbol={null} detail="overview" />
       </Box>
     );
   }

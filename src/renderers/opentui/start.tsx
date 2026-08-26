@@ -158,7 +158,9 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
       const registry = getSharedRegistry();
       if (!registry) return;
       appLog.info("Plugin directory changed, reloading external plugins");
-      void registry.reloadExternalPlugins().catch((error) => {
+      void registry.reloadExternalPlugins().then(({ added }) => {
+        for (const pluginId of added) registry.openPrimaryPluginPane(pluginId);
+      }).catch((error) => {
         appLog.error("Failed to reload external plugins", {
           error: error instanceof Error ? error.message : String(error),
         });

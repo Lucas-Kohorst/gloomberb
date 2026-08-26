@@ -48,4 +48,9 @@ describe("catalog OWID discovery", () => {
     expect(catalogOwidDiscoveryQuery("AAPL")).toBeNull();
     expect(await loadCatalogOwidRows("AAPL")).toEqual([]);
   });
+
+  test("does not live-search OWID for an empty CAT snapshot", async () => {
+    expect(catalogOwidDiscoveryQuery("")).toBeNull();
+    expect(await loadCatalogOwidRows("")).toEqual([]);
+  });
 });

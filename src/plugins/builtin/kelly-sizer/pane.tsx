@@ -3,6 +3,7 @@ import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import {
+  EmptyState,
   InputSearchBar,
   Tabs,
   usePaneFooter,
@@ -422,12 +423,11 @@ export function KellySizerPane({ focused, width, height }: PaneProps) {
 
   if (!requestedSymbol || !ticker) {
     return (
-      <Box flexDirection="column" width={width} height={height} paddingX={1} paddingY={1}>
-        <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Position Sizer</Text>
-        <Box height={1} />
-        <Text fg={colors.textMuted}>Select a tradable quote or open with KELLY &lt;ticker&gt;.</Text>
-        <Text fg={colors.textDim}>Equity, crypto, FX, futures, and options use return %. Odds is for 0–1 yes/no contracts.</Text>
-      </Box>
+      <EmptyState
+        title="No ticker selected"
+        message="Select a ticker to view position sizer data."
+        hint="Open with KELLY <ticker>."
+      />
     );
   }
 

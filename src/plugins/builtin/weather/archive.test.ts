@@ -34,6 +34,15 @@ describe("weather forecast archive", () => {
     });
   });
 
+  test("skips cloning when there is nothing to merge", () => {
+    const archive = mergeWeatherArchive(EMPTY_WEATHER_ARCHIVE, {
+      today: "2026-08-19",
+      observations: [{ stationId: "LAX", date: "2026-08-19", high: 83, official: false }],
+    });
+    expect(mergeWeatherArchive(archive, {})).toBe(archive);
+    expect(mergeWeatherArchive(archive, { observations: [], implied: [] })).toBe(archive);
+  });
+
   test("stores the first open Kalshi implied and ignores settled 0/1 books", () => {
     const open = mergeWeatherArchive(EMPTY_WEATHER_ARCHIVE, {
       today: "2026-08-19",

@@ -25,6 +25,8 @@ import {
   paneIdFromDetachedRpcKey,
 } from "../window/focus";
 import type { DesktopBackendRequestPayload, ElectrobunBackendInit } from "../../shared/protocol";
+import { compileExternalPlugins } from "../../../../plugins/desktop-runtime/compile";
+import { getPluginsDir } from "../../../../plugins/loader";
 
 interface DesktopWindowTarget {
   kind: "main" | "detached";
@@ -81,12 +83,14 @@ function normalizeInitWindowTarget<TRpc>(
   };
 }
 
-function buildInitializationPayload(
+async function buildInitializationPayload(
   config: AppConfig,
   services: AppServices,
   windowTarget: DesktopWindowTarget,
   options: InitializationPayloadOptions,
-): ElectrobunBackendInit {
+): Promise<ElectrobunBackendInit> {
+  mkdirSync(getPluginsDir(), { recursive: true });
+  const externalPlugins = await compileExternalPlugins().catch(() => []);
   return {
     config,
     sessionSnapshot: options.getSessionSnapshot(),
@@ -97,6 +101,7 @@ function buildInitializationPayload(
     desktopPlatform: process.platform,
     windowKind: windowTarget.kind,
     paneId: windowTarget.paneId,
+    externalPlugins,
   };
 }
 
@@ -121,7 +126,7 @@ export async function initializeDesktopBackend<TRpc>(
       options.setDesktopWorkspace(createDesktopWorkspace(currentConfig, options.getSessionSnapshot()));
       options.reconcileDetachedWindows();
     }
-    return buildInitializationPayload(currentConfig, currentServices, windowTarget, {
+    return await buildInitializationPayload(currentConfig, currentServices, windowTarget, {
       getDesktopSnapshot: options.getDesktopSnapshot,
       getSessionSnapshot: options.getSessionSnapshot,
       desktopThemePreview: options.getThemePreview(),
@@ -142,7 +147,7 @@ export async function initializeDesktopBackend<TRpc>(
   options.setDesktopWorkspace(createDesktopWorkspace(config, options.getSessionSnapshot()));
   options.reconcileDetachedWindows();
 
-  return buildInitializationPayload(config, services, windowTarget, {
+  return await buildInitializationPayload(config, services, windowTarget, {
     getDesktopSnapshot: options.getDesktopSnapshot,
     getSessionSnapshot: options.getSessionSnapshot,
     desktopThemePreview: options.getThemePreview(),

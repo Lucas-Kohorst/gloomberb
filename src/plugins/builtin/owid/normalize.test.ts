@@ -36,5 +36,6 @@ describe("OWID pane rows", () => {
     ];
     expect(filterChartHits(hits, "gdp").map((hit) => hit.slug)).toEqual(["gdp-per-capita-worldbank"]);
     expect(filterChartHits(hits, "longevity").map((hit) => hit.slug)).toEqual(["life-expectancy"]);
+    expect(filterChartHits(hits, "")).toBe(hits);
   });
 });
