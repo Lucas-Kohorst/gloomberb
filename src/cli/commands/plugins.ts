@@ -1,5 +1,5 @@
 import { join } from "path";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
 import { getPluginsDir } from "../../plugins/loader";
 import {
@@ -245,4 +245,122 @@ export async function searchPlugins(query: string) {
   ));
   console.log("");
   console.log(cliStyles.muted("Install with: gloomberb install <user/repo>"));
+}
+
+export function toDisplayName(name: string): string {
+  return name
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+export function toVariableName(name: string): string {
+  const parts = name.split("-").filter(Boolean);
+  if (parts.length === 0) return "myPlugin";
+  const first = parts[0]!.toLowerCase();
+  const rest = parts.slice(1).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
+  return [first, ...rest].join("");
+}
+
+export function buildPluginIndexContent(name: string): string {
+  const varName = toVariableName(name);
+  const displayName = toDisplayName(name);
+  return `import type { GloomPlugin } from "gloomberb/types/plugin";
+
+export const ${varName}: GloomPlugin = {
+  id: "${name}",
+  name: "${displayName}",
+  version: "0.1.0",
+  description: "A new Gloomberb plugin.",
+  toggleable: true,
+  setup(ctx) {
+    // Register panes, commands, columns, etc.
+  },
+};
+
+export default ${varName};
+`;
+}
+
+export function buildPluginPackageJson(name: string): string {
+  return JSON.stringify(
+    {
+      name,
+      version: "0.1.0",
+      description: "A new Gloomberb plugin.",
+      main: "index.ts",
+    },
+    null,
+    2,
+  ) + "\n";
+}
+
+export function scaffoldPlugin(name: string) {
+  validatePluginDirectoryName(name);
+  const pluginsDir = getPluginsDir();
+  if (!existsSync(pluginsDir)) {
+    mkdirSync(pluginsDir, { recursive: true });
+  }
+  const targetDir = join(pluginsDir, name);
+
+  if (existsSync(targetDir)) {
+    fail(`Plugin "${name}" already exists.`, pluginsDir);
+  }
+
+  mkdirSync(targetDir, { recursive: true });
+  writeFileSync(join(targetDir, "index.ts"), buildPluginIndexContent(name));
+  writeFileSync(join(targetDir, "package.json"), buildPluginPackageJson(name));
+
+  console.log(cliStyles.success(`Scaffolded plugin "${name}"`));
+  console.log(renderStat("Path", targetDir));
+  console.log("");
+  console.log(cliStyles.muted(`Edit ${join(targetDir, "index.ts")} to start building.`));
+  console.log(cliStyles.muted("Restart the app after editing to load your plugin."));
+}
+
+export async function validatePlugin(name: string) {
+  validatePluginDirectoryName(name);
+  const targetDir = join(PLUGINS_DIR, name);
+  if (!existsSync(targetDir)) {
+    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+  }
+
+  let entryFile: string | null = null;
+  const pkgPath = join(targetDir, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      if (pkg.main) entryFile = join(targetDir, pkg.main);
+    } catch { /* ignore malformed package.json */ }
+  }
+  if (!entryFile) {
+    for (const candidate of ["index.ts", "index.tsx", "index.js"]) {
+      const p = join(targetDir, candidate);
+      if (existsSync(p)) { entryFile = p; break; }
+    }
+  }
+
+  if (!entryFile) {
+    fail(`No entry file found for plugin "${name}".`, targetDir);
+  }
+
+  try {
+    const mod = await import(entryFile);
+    const plugin = mod.default ?? mod.plugin;
+    if (!plugin) {
+      fail(`Plugin "${name}" has no default export or named "plugin" export.`, entryFile);
+    }
+    if (!plugin.id || typeof plugin.id !== "string") {
+      fail(`Plugin "${name}" is missing a valid "id" field.`, entryFile);
+    }
+    if (!plugin.name || typeof plugin.name !== "string") {
+      fail(`Plugin "${name}" is missing a valid "name" field.`, entryFile);
+    }
+    console.log(cliStyles.success(`Valid: ${plugin.name} v${plugin.version || "0.0.0"}`));
+    console.log(renderStat("ID", plugin.id));
+    console.log(renderStat("Entry", entryFile));
+  } catch (err) {
+    fail(`Failed to load plugin "${name}": ${err instanceof Error ? err.message : String(err)}`, entryFile);
+  }
 }

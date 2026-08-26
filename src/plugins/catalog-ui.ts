@@ -22,6 +22,7 @@ import { adjacentDevPlugin } from "./builtin/adjacent-dev";
 import { buildoutPlugin } from "./builtin/buildout";
 import { congressTradesPlugin } from "./builtin/congress-trades";
 import { pluginMarketPlugin } from "./builtin/plugin-market";
+import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 import { trafficPlugin } from "./builtin/traffic";
 import { satellitePlugin } from "./builtin/satellite";
@@ -53,6 +54,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   macroPlugin,
   alertsPlugin,
   pluginMarketPlugin,
+  pluginInspectorPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {
