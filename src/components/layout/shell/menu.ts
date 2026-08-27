@@ -37,26 +37,6 @@ export function menuForPane(
   linkItems: ContextMenuItem[] = [],
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
-  if (tickerActions?.changeTicker) {
-    baseActions.push({
-      id: "change-ticker",
-      label: "Change Ticker",
-      onSelect: tickerActions.changeTicker,
-    });
-  }
-  if (tickerActions?.follow) {
-    baseActions.push({
-      id: "follow-ticker",
-      label: "Follow",
-      submenu: tickerActions.follow.options.map((option) => ({
-        id: `follow:${option.value}`,
-        label: option.label,
-        tooltip: option.description,
-        checked: option.value === tickerActions.follow?.current,
-        onSelect: () => tickerActions.follow?.onSelect(option.value),
-      })),
-    });
-  }
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
     baseActions.push({
       id: "settings",
