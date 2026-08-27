@@ -140,8 +140,14 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
       activateSearch();
       return true;
     }
+    if (event.name === "o" && selectedSymbol) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSymbol(selectedSymbol);
+      return true;
+    }
     return false;
-  }, [activateSearch, refresh]);
+  }, [activateSearch, openSymbol, refresh, selectedSymbol]);
 
   // Close search on Escape when search is active
   useShortcut((ev) => {
@@ -166,9 +172,10 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       paneSearchHint(activateSearch),
+      { id: "open", key: "o", label: "pen", onPress: () => selectedSymbol && openSymbol(selectedSymbol), disabled: !selectedSymbol },
       paneRefreshHint(refresh),
     ],
-  }), [activateSearch, filterCount, loadError, loading, refresh]);
+  }), [activateSearch, filterCount, loadError, loading, openSymbol, refresh, selectedSymbol]);
 
   if (loading && allResults.length === 0) {
     return (

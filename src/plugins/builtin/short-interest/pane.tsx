@@ -162,7 +162,6 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
     const errorChip = footerErrorChip(status === "error" ? error : null);
     return {
       info: [
-        ...(symbol ? [{ id: "symbol", parts: [{ text: symbol, tone: "label" as const }] }] : []),
         ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
         ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
         ...(status === "loaded" && records.length > 0
@@ -171,7 +170,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
       ],
       hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
     };
-  }, [error, records, refresh, status, symbol]);
+  }, [error, records, refresh, status]);
 
   if (!ticker || !symbol) {
     return <TickerEmptyState kind="short interest" symbol={null} detail="short interest" />;

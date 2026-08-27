@@ -10,6 +10,7 @@ import {
 import {
   DataTableStackView,
   EmptyState,
+  InputSearchBar,
   Spinner,
   Tabs,
   nextStackSortPreference,
@@ -45,6 +46,7 @@ import {
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
+import { paneSearchHint } from "../shared/pane-footer";
 
 export type AdjacentTab = "indices" | "rates";
 export type IndexDetailTab = "overview" | "chart" | "news";
@@ -378,6 +380,10 @@ export function AdjacentIndicesPane({
     direction: "desc",
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<import("../../../ui").InputRenderable | null>(null);
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -409,8 +415,9 @@ export function AdjacentIndicesPane({
 
   const columns = useMemo(() => createIndexColumns(width), [width]);
   const visibleIndices = useMemo(() => {
-    return applySortPreference(indices, sortPreference, adjacentIndexSortValue);
-  }, [indices, sortPreference]);
+    const query = searchQuery.trim().toLowerCase();
+    return applySortPreference(indices.filter((row) => !query || `${row.ticker} ${row.name}`.toLowerCase().includes(query)), sortPreference, adjacentIndexSortValue);
+  }, [indices, searchQuery, sortPreference]);
   const selectedIndex = visibleIndices.findIndex((i) => i.id === selectedId);
   const selectedIndexRow = selectedIndex >= 0 ? visibleIndices[selectedIndex]! : null;
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
@@ -441,6 +448,10 @@ export function AdjacentIndicesPane({
     if (!selectedIndexRow) return;
     popOutChart(`ADJ:${selectedIndexRow.id}`);
   }, [popOutChart, selectedIndexRow]);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
   const shareIndices = useCallback(() => {
     void shareTable({
       title: "Adjacent Indices",
@@ -459,6 +470,9 @@ export function AdjacentIndicesPane({
       event.stopPropagation?.();
       graphSelected();
       return;
+    }
+    if (isPlainKey(event, "/")) {
+      event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return;
     }
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
@@ -484,8 +498,9 @@ export function AdjacentIndicesPane({
       { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow },
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "share", key: "y", label: "share", onPress: shareIndices },
+      paneSearchHint(focusSearch),
     ],
-  }), [error, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
+  }), [error, focusSearch, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
@@ -523,7 +538,7 @@ export function AdjacentIndicesPane({
 
   return (
     <DataTableStackView<AdjacentIndexRow, IndexColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={detailOpen && !!selectedIndexRow}
       onBack={() => setDetailOpen(false)}
       detailContent={detailContent}
@@ -541,6 +556,7 @@ export function AdjacentIndicesPane({
       rootHeight={height}
       columns={columns}
       items={visibleIndices}
+      rootBefore={<InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or name" debounceMs={80} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => {

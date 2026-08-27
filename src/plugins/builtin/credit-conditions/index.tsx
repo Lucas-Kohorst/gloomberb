@@ -17,6 +17,7 @@ import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
 import { usePluginAppActions } from "../../runtime";
 import { paneDelayedStatus } from "../shared/pane-footer";
+import { openUrl } from "../../../components/ui/external-link";
 import { CREDIT_CONDITIONS_CONNECTION_ID, getCachedCreditConditions, loadCreditConditions } from "./client";
 import {
   CREDIT_SERIES,
@@ -144,6 +145,8 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
       reload();
     } else if (event.name === "g") {
       chartSelected();
+    } else if (event.name === "o" && selectedRow) {
+      openUrl(`https://fred.stlouisfed.org/series/${selectedRow.seriesId}`);
     } else if (["up", "k", "down", "j"].includes(event.name ?? "")) {
       const offset = event.name === "up" || event.name === "k" ? -1 : 1;
       setSelectedId(moveCreditSelection(sorted, selectedId, offset));
@@ -167,6 +170,7 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
     info: footerInfo,
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedRow },
+      { id: "open", key: "o", label: "pen", onPress: () => selectedRow && openUrl(`https://fred.stlouisfed.org/series/${selectedRow.seriesId}`), disabled: !selectedRow },
       { id: "refresh", key: "r", label: "efresh", onPress: reload, disabled: loading },
     ],
   }), [chartSelected, footerInfo, loading, paneId, reload, selectedRow]);

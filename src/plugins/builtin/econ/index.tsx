@@ -38,6 +38,7 @@ import {
 } from "./calendar-source";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { useAppActive } from "../../../state/app/activity";
+import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 
 let disposeEconCalendarConnection: (() => void) | null = null;
 
@@ -49,6 +50,10 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [impactFilter, setImpactFilter] = useState<ImpactFilter>("all");
   const [countryFilter, setCountryFilter] = useState<CountryFilter>("all");
+  const [sortPreference, setSortPreference] = useState<SortPreference<EconCalendarColumn["id"]>>({
+    columnId: null,
+    direction: "asc",
+  });
   const [now, setNow] = useState(Date.now());
   const appActive = useAppActive();
   const [detailEvent, setDetailEvent] = useState<EconEvent | null>(null);
@@ -92,10 +97,22 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     return () => clearInterval(interval);
   }, [appActive]);
 
-  const filtered = useMemo(() => events
-    .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
-    .sort((a, b) => b.date.getTime() - a.date.getTime()),
-  [countryFilter, events, impactFilter]);
+  const filtered = useMemo(() => {
+    const matching = events
+      .filter((ev) => matchesImpact(ev, impactFilter) && matchesCountry(ev, countryFilter))
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+    return applySortPreference(matching, sortPreference, (event, columnId) => {
+      switch (columnId) {
+        case "time": return event.time;
+        case "impact": return ({ high: 3, medium: 2, low: 1 })[event.impact];
+        case "country": return event.country;
+        case "event": return event.event;
+        case "actual": return event.actual;
+        case "forecast": return event.forecast;
+        case "prior": return event.prior;
+      }
+    });
+  }, [countryFilter, events, impactFilter, sortPreference]);
 
   const { rows, eventIdxToRowIdx, nowRowIdx, nextUpcomingEventIdx } = useMemo(() => {
     // Build display rows with separator headers and NOW marker
@@ -255,7 +272,9 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: () => load(true) }],
   });
 
-  const handleHeaderClick = useCallback(() => {}, []);
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextSortPreference(current, columnId as EconCalendarColumn["id"]));
+  }, []);
   const openDisplayRow = useCallback((row: DisplayRow) => {
     if (row.kind !== "event") return;
     setDetailEvent(row.event);
@@ -347,8 +366,8 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
       columns={columns}
       items={rows}
       isNavigable={(row) => row.kind === "event"}
-      sortColumnId={null}
-      sortDirection="asc"
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       headerScrollRef={headerScrollRef}
       scrollRef={scrollRef}

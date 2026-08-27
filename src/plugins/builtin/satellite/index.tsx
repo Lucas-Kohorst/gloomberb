@@ -39,7 +39,6 @@ import {
 } from "./model";
 import { matchesHotspotSearch, mergeHotspots } from "./parse";
 import {
-  FIRMS_CONNECTION_ID,
   GIBS_CONNECTION_ID,
   SATELLITE_PANE_ID,
   SATELLITE_PLUGIN_ID,
@@ -347,7 +346,6 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
   );
 }
 
-let disposeFirms: (() => void) | null = null;
 let disposeGibs: (() => void) | null = null;
 
 export const satellitePlugin: GloomPlugin = {
@@ -389,14 +387,6 @@ export const satellitePlugin: GloomPlugin = {
     createInstance: () => ({ placement: "floating" }),
   }],
   setup() {
-    disposeFirms = registerConnectionSource({
-      id: FIRMS_CONNECTION_ID,
-      name: "NASA FIRMS",
-      kind: "api",
-      pluginId: SATELLITE_PLUGIN_ID,
-      authRequired: false,
-      priority: 370,
-    });
     disposeGibs = registerConnectionSource({
       id: GIBS_CONNECTION_ID,
       name: "NASA GIBS",
@@ -407,9 +397,7 @@ export const satellitePlugin: GloomPlugin = {
     });
   },
   dispose() {
-    disposeFirms?.();
     disposeGibs?.();
-    disposeFirms = null;
     disposeGibs = null;
   },
 };

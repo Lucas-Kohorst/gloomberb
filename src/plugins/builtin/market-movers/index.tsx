@@ -261,8 +261,14 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       loadTab(activeTab, { forceRefresh: true });
       return true;
     }
+    if (key === "o" && selectedSymbol) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSymbol(selectedSymbol);
+      return true;
+    }
     return false;
-  }, [activeTab, loadTab]);
+  }, [activeTab, loadTab, openSymbol, selectedSymbol]);
 
   const refreshActiveTab = useCallback(() => {
     void loadTab(activeTab, { forceRefresh: true });
@@ -290,8 +296,11 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         parts: [{ text: "stale", tone: "muted" as const }],
       }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab }],
-  }), [feedStatus, loading, moversStale, refreshActiveTab, summaryQuotes]);
+    hints: [
+      { id: "open", key: "o", label: "pen", onPress: () => selectedSymbol && openSymbol(selectedSymbol), disabled: !selectedSymbol },
+      { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab },
+    ],
+  }), [feedStatus, loading, moversStale, openSymbol, refreshActiveTab, selectedSymbol, summaryQuotes]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>

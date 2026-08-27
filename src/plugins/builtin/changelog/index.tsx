@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { Box, ScrollBox, Text, TextAttributes, type ScrollBoxRenderable } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { usePaneInstance } from "../../../state/app/context";
 import {
   DataTableStackView,
+  InputSearchBar,
   Spinner,
   useExternalLinkFooter,
   type DataTableCell,
@@ -115,6 +116,10 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedReleaseId, setSelectedReleaseId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState(DEFAULT_CHANGELOG_SORT);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const [openReleaseId, setOpenReleaseId] = useState<string | null>(null);
   const detailScrollRef = useRef<ScrollBoxRenderable>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -157,8 +162,8 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   }, [loadReleases]);
 
   const sortedReleases = useMemo(
-    () => sortChangelogReleases(releases, sortPreference),
-    [releases, sortPreference],
+    () => sortChangelogReleases(releases.filter((release) => !searchQuery.trim() || `${release.version} ${release.title} ${release.body}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), sortPreference),
+    [releases, searchQuery, sortPreference],
   );
   const activeSelectedIdx = resolveSelectedReleaseIndex(sortedReleases, selectedReleaseId);
   const activeSelectedReleaseId = sortedReleases[activeSelectedIdx]?.id ?? null;
@@ -205,9 +210,16 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     if (!linkRelease) return;
     void copyShareLink(changelogReleaseSharePayload(linkRelease));
   }, [copyShareLink, linkRelease]);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
 
   useShortcut((event) => {
     if (!focused) return;
+    if (isPlainKey(event, "/") && !openRelease) {
+      event.stopPropagation?.(); event.preventDefault?.(); focusSearch(); return;
+    }
     if (isPlainKey(event, "y")) {
       if (!linkRelease) return;
       event.stopPropagation?.();
@@ -316,8 +328,9 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     if (linkRelease) {
       hints.push({ id: "share", key: "y", label: "share", onPress: shareRelease });
     }
+    hints.push({ id: "search", key: "/", label: "earch", onPress: focusSearch });
     return hints;
-  }, [linkRelease, loadReleases, shareRelease]);
+  }, [focusSearch, linkRelease, loadReleases, shareRelease]);
 
   useExternalLinkFooter({
     registrationId: "changelog",
@@ -353,7 +366,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
 
   return (
     <DataTableStackView<ChangelogRelease, ChangelogColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={!!openRelease}
       onBack={() => setOpenReleaseId(null)}
       detailContent={openRelease ? (
@@ -376,6 +389,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
+      rootBefore={<InputSearchBar value={searchQuery} focused={focused && !openRelease} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="version or text" debounceMs={80} onFocus={focusSearch} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
       columns={columns}
       items={sortedReleases}
       sortColumnId={sortPreference.columnId}

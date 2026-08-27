@@ -14,6 +14,7 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const [rates, setRates] = useState<Map<MajorCurrency, number>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number | null>(null);
   const fetchGenRef = useRef(0);
 
@@ -22,6 +23,7 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
 
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
+    setError(null);
 
     try {
       const results = await Promise.allSettled(
@@ -33,6 +35,8 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
       );
 
       if (fetchGenRef.current !== gen) return;
+      const rejected = results.filter((result) => result.status === "rejected");
+      setError(rejected.length > 0 ? `${rejected.length} rate${rejected.length === 1 ? "" : "s"} failed` : null);
 
       const newRates = new Map<MajorCurrency, number>();
       for (const result of results) {
@@ -77,9 +81,10 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
     info: [
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchRates }],
-  }), [fetchRates, loading, updatedAgo]);
+  }), [error, fetchRates, loading, updatedAgo]);
 
   // Row header: just the 3-letter code, no emoji (keeps width predictable)
   // Rates use flexGrow so they fill available space dynamically

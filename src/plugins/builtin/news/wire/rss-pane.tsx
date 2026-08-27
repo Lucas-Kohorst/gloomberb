@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes, useRendererHost } from "../../../../ui";
+import { Box, Text, TextAttributes, useRendererHost, type InputRenderable } from "../../../../ui";
 import {
   DataTableView,
+  InputSearchBar,
   EmptyState,
   Spinner,
   nextStackSortPreference,
@@ -31,6 +32,7 @@ import { useNewsReadState } from "./read-state";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../../shared/feed-poll-interval";
 import { useCopyShareLink, newsArticleSharePayload } from "../../shared/article-share";
 import { useArticleArchiveAction } from "../../shared/article-archive";
+import { paneSearchHint } from "../../shared/pane-footer";
 import { DEFAULT_FEEDS } from "./default-feeds";
 import {
   addUserNewsFeed,
@@ -408,6 +410,15 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     [newsState.articles],
   );
   const articles = usePersistedNewsArticles("rss:articles", liveHead);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
+  const filteredArticles = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return query ? articles.filter((article) => `${article.title} ${article.source}`.toLowerCase().includes(query)) : articles;
+  }, [articles, searchQuery]);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("rss:selectedArticleId", null);
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", RSS_COLUMNS);
   const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(RSS_SORT));
@@ -421,12 +432,12 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     ? paneSettings.sort
     : RSS_SORT;
   const loadNewsStory = useLoadNewsStory();
-  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(filteredArticles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(closeDetail);
   const copyShareLink = useCopyShareLink();
   const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
-  const selectedArticle = articles.find((article) => article.id === selectedArticleId) ?? null;
+  const selectedArticle = filteredArticles.find((article) => article.id === selectedArticleId) ?? null;
   const readableArticle = detailArticle ?? selectedArticle;
 
   const shareSelectedArticle = useCallback(() => {
@@ -473,6 +484,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       onManageFeeds();
       return true;
     }
+    if (isPlainKey(event, "/")) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -504,7 +516,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       return true;
     }
     return false;
-  }, [archiveAction, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }, [archiveAction, focusSearch, onManageFeeds, openSelectedSource, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   usePaneFooter("rss-articles", () => ({
     info: [
@@ -513,13 +525,14 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
     trailingInfo: [...pollFooterTrailingInfo(!detailArticle, poll.segment)],
     hints: [
       { id: "manage", key: "m", label: "anage", onPress: onManageFeeds },
+      paneSearchHint(focusSearch),
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void getSharedNewsService()?.load({ feed: "latest", limit: 200 }); } },
       ...(readableArticle ? [{ id: "open", key: "o", label: "pen", onPress: openSelectedSource }] : []),
       ...(readableArticle ? [{ id: "share", key: "y", label: "share", onPress: shareSelectedArticle }] : []),
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, detailArticle, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }), [archiveAction.archive, archiveAction.enabled, detailArticle, focusSearch, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;
@@ -538,7 +551,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   return (
     <NewsArticleStackView
-      articles={articles}
+      articles={filteredArticles}
       focused={focused}
       width={width}
       rootHeight={height}
@@ -554,6 +567,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       onRootKeyDown={handleKeyDown}
+      rootBefore={<InputSearchBar value={searchQuery} focused={focused && !detailArticle} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="title or source" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />}
       onPopOut={popOutSelectedArticle}
       onShare={readableArticle ? shareSelectedArticle : undefined}
       columns={effectiveColumns}
