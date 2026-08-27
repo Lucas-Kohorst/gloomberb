@@ -14,6 +14,9 @@ import {
   ratingColor,
   ratingLabel,
 } from "./format";
+import { openUrl } from "../../../components/ui/external-link";
+
+const FEAR_GREED_URL = "https://edition.cnn.com/markets/fear-and-greed";
 
 const DESKTOP_SUMMARY_STACK_WIDTH = 84;
 
@@ -67,6 +70,10 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
+    } else if (event.name === "o") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openUrl(FEAR_GREED_URL);
     }
   });
 
@@ -83,7 +90,10 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(errorChip ? [{ id: "error", parts: [{ text: errorChip.text, tone: errorChip.tone }] }] : []),
     ],
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading }],
+    hints: [
+      { id: "open", key: "o", label: "pen", onPress: () => openUrl(FEAR_GREED_URL) },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
+    ],
   }), [data, errorChip, loading, paneId, refresh, updatedAgo]);
 
   if (loading && !data) {

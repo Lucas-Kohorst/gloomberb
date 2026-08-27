@@ -1,4 +1,5 @@
 import { usePaneFooter, type PaneFooterSegment } from "../../../components";
+import { openUrl } from "../../../components/ui/external-link";
 import {
   countFailedQuotes,
   countLoadingQuotes,
@@ -6,10 +7,11 @@ import {
   type BoardQuoteMap,
 } from "../shared/use-quote-board";
 
-export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void) {
+export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void, selectedSymbol: string | null) {
   const loadingCount = countLoadingQuotes(quotes);
   const failedCount = countFailedQuotes(quotes);
   const latestQuoteTs = latestQuoteTimestamp(quotes);
+  const indexUrl = selectedSymbol ? `https://finance.yahoo.com/quote/${encodeURIComponent(selectedSymbol)}` : null;
 
   usePaneFooter("world-indices", () => {
     const info: PaneFooterSegment[] = [];
@@ -33,7 +35,10 @@ export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => vo
     }
     return {
       info,
-      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: onRefresh }],
+      hints: [
+        ...(indexUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(indexUrl) }] : []),
+        { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
+      ],
     };
-  }, [failedCount, latestQuoteTs, loadingCount, onRefresh]);
+  }, [failedCount, indexUrl, latestQuoteTs, loadingCount, onRefresh]);
 }

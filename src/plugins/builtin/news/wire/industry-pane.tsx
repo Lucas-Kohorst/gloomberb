@@ -120,6 +120,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     focused,
     article: readableArticle,
     loading,
+    error: newsState.error,
     onPopOut: () => popOutArticle(readableArticle),
     onRefresh: () => {
       const query = resolvedCategory === "all" ? NEWS_QUERY_PRESETS.sectorAll : NEWS_QUERY_PRESETS.sector(resolvedCategory);

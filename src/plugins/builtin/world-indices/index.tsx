@@ -15,6 +15,7 @@ import { useQuoteBoard, latestQuoteTimestamp } from "../shared/use-quote-board";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
+import { openUrl } from "../../../components/ui/external-link";
 import {
   buildFlatRows,
   DEFAULT_SORT_PREFERENCE,
@@ -93,15 +94,23 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
   }, [quotes]);
 
   useShortcut((event) => {
-    if (!focused || !isPlainKey(event, "r")) return;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    fetchAll();
+    if (!focused) return;
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      fetchAll();
+      return;
+    }
+    if (isPlainKey(event, "o") && selectedSymbol) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openUrl(`https://finance.yahoo.com/quote/${encodeURIComponent(selectedSymbol)}`);
+    }
   }, { enabled: focused });
 
   useAutoRefresh(latestQuoteTimestamp(quotes) || null, fetchAll);
 
-  useWorldIndicesFooter(quotes, fetchAll);
+  useWorldIndicesFooter(quotes, fetchAll, selectedSymbol);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>

@@ -11,9 +11,12 @@ import { colors } from "../../../theme/colors";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { usePluginAppActions } from "../../runtime";
+import { openUrl } from "../../../components/ui/external-link";
 import { getCachedVolData, loadVolData } from "./client";
 import { classifyTermStructure } from "./model";
 import type { VolData, VolMetric } from "./types";
+
+const VIX_URL = "https://fred.stlouisfed.org/series/VIXCLS";
 
 function formatValue(value: number | null, digits = 2): string {
   if (value == null || !Number.isFinite(value)) return "—";
@@ -205,6 +208,10 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
       event.preventDefault?.();
       event.stopPropagation?.();
       chartVix();
+    } else if (event.name === "o") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openUrl(VIX_URL);
     }
   });
 
@@ -234,6 +241,7 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
     info: statusInfo,
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: chartVix },
+      { id: "open", key: "o", label: "pen", onPress: () => openUrl(VIX_URL) },
       { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
     ],
   });

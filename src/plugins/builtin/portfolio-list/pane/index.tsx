@@ -1,7 +1,8 @@
-import { Box } from "../../../../ui";
+import { Box, type InputRenderable } from "../../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Tabs,
+  InputSearchBar,
   usePaneFooter,
   type DataTableKeyEvent,
   type TickerListVisibleRange,
@@ -70,6 +71,7 @@ import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
 import { CHART_COMPOSER_TEMPLATE_ID } from "../../shared/graph-pop-out";
 import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
+import { paneSearchHint } from "../../shared/pane-footer";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
@@ -96,6 +98,11 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const [now, setNow] = useState(Date.now());
   const [streamWindow, setStreamWindow] = useState({ start: 0, end: 24 });
   const [quickAddFocused, setQuickAddFocused] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
   const quickAddRef = useRef<QuickAddTickerInputHandle | null>(null);
 
   const {
@@ -218,9 +225,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const sortedTickers = useMemo(
     () => orderedSymbols.flatMap((symbol) => {
       const ticker = tickerBySymbol.get(symbol);
-      return ticker ? [ticker] : [];
+      return ticker && (!searchQuery.trim() || `${symbol} ${ticker.metadata.name ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())) ? [ticker] : [];
     }),
-    [orderedSymbols, tickerBySymbol],
+    [orderedSymbols, searchQuery, tickerBySymbol],
   );
 
   const selectedIdx = sortedTickers.findIndex((ticker) => ticker.metadata.ticker === cursorSymbol);
@@ -389,6 +396,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       toggleViewMode();
       return true;
     }
+    if (key === "/" && !quickAddFocused) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
 
     if (isPlainKey(event, "d") && canMutateCollection) {
       event.preventDefault?.();
@@ -420,6 +428,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     showCashDrawer,
     sortedTickers,
     toggleViewMode,
+    focusSearch,
   ]);
 
   useEffect(() => {
@@ -511,6 +520,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
         onPress: () => chartSelectedTicker(selectedTicker),
         disabled: !selectedTicker,
       },
+      paneSearchHint(focusSearch),
       ...(canMutateCollection ? [
         { id: "add", key: "a", label: "dd", onPress: toggleAdd },
         {
@@ -540,11 +550,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     showCashDrawer,
     summaryFooterInfo,
     toggleAdd,
+    focusSearch,
   ]);
 
   const showQuickAdd = canMutateCollection;
   const quickAddHeight = showQuickAdd ? 1 : 0;
-  const contentHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight);
+  const contentHeight = Math.max(1, height - headerHeight - drawerHeight - quickAddHeight - 1);
   const quickAddRow = activeCollectionId && activeCollectionEntry && quickAddCollectionKind ? (
     <QuickAddTickerInput
       ref={quickAddRef}
@@ -560,6 +571,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
+      <InputSearchBar value={searchQuery} focused={focused && !quickAddFocused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker or name" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />
       {showCollectionTabs && (
         <Box flexDirection="column" height={headerHeight}>
           <Box flexDirection="row" height={1}>
@@ -579,7 +591,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
       {viewMode === "table" ? (
         <PortfolioTickerTable
           columns={columns}
-          focused={focused && !quickAddFocused}
+          focused={focused && !quickAddFocused && !searchFocused}
           sortColumnId={activeSort.columnId}
           sortDirection={activeSort.direction}
           onHeaderClick={handleHeaderClick}
@@ -608,7 +620,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
           onToggleViewMode={toggleViewMode}
           onChartSelected={() => chartSelectedTicker(selectedTicker)}
           onDeleteSelected={canMutateCollection ? deleteSelectedTicker : undefined}
-          focused={focused && !quickAddFocused}
+          focused={focused && !quickAddFocused && !searchFocused}
           width={width}
           height={contentHeight}
         />

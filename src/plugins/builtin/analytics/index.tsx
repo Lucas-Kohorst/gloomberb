@@ -103,9 +103,6 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     event.stopPropagation?.();
     toggleView();
   }, { enabled: focused });
-  usePaneFooter("analytics", () => ({
-    hints: [{ id: "view", key: "v", label: "iew", onPress: toggleView }],
-  }), [toggleView]);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [sectorSort, setSectorSort] = useState<SectorSortPreference>(DEFAULT_SECTOR_SORT);
 
@@ -168,6 +165,17 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     [cachedFinancials, marketFinancials, portfolioTickers],
   );
   const brokerPerformance = useBrokerPortfolioPerformance(activePortfolio, config);
+  usePaneFooter("analytics", () => ({
+    info: [
+      ...(brokerPerformance.loading
+        ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }]
+        : []),
+      ...(brokerPerformance.error
+        ? [{ id: "error", parts: [{ text: brokerPerformance.error, tone: "warning" as const }] }]
+        : []),
+    ],
+    hints: [{ id: "view", key: "v", label: "iew", onPress: toggleView }],
+  }), [brokerPerformance.error, brokerPerformance.loading, toggleView]);
   const performanceChartPoints = useMemo(
     () => buildPerformanceChartPoints(brokerPerformance.performance),
     [brokerPerformance.performance],

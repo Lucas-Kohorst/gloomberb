@@ -22,6 +22,7 @@ import { applySortPreference } from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
+import { openUrl } from "../../../components/ui/external-link";
 import type { AdjacentClient } from "./client";
 import type { AdjacentRateRow, AdjacentRateSource } from "./types";
 import {
@@ -75,41 +76,20 @@ function renderRateCell(
 }
 
 function RateDetail({
-  client,
   rate,
+  sourceMarkets,
+  loading,
+  error,
   width,
   height,
 }: {
-  client: AdjacentClient;
   rate: AdjacentRateRow;
+  sourceMarkets: AdjacentRateSource[];
+  loading: boolean;
+  error: string | null;
   width: number;
   height: number;
 }) {
-  const [sourceMarkets, setSourceMarkets] = useState<AdjacentRateSource[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const genRef = useRef(0);
-
-  useEffect(() => {
-    genRef.current += 1;
-    const gen = genRef.current;
-    setLoading(true);
-    setError(null);
-    setSourceMarkets([]);
-
-    client.getRate(rate.id)
-      .then((rateDetail) => {
-        if (genRef.current !== gen) return;
-        setSourceMarkets(rateDetail.sources ?? []);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (genRef.current !== gen) return;
-        setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      });
-  }, [client, rate.id]);
-
   if (loading) {
     return (
       <Box flexDirection="column" width={width} height={height}>
@@ -198,7 +178,11 @@ export function AdjacentRatesPane({
     columnId: "chg1d",
     direction: "desc",
   });
+  const [sourceMarkets, setSourceMarkets] = useState<AdjacentRateSource[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const genRef = useRef(0);
+  const detailGenRef = useRef(0);
 
   const load = useCallback(() => {
     genRef.current += 1;
@@ -240,6 +224,31 @@ export function AdjacentRatesPane({
     }
   }, [selectedId, sortedRates]);
 
+  useEffect(() => {
+    if (!selectedRate) {
+      setSourceMarkets([]);
+      setDetailError(null);
+      setDetailLoading(false);
+      return;
+    }
+    detailGenRef.current += 1;
+    const gen = detailGenRef.current;
+    setDetailLoading(true);
+    setDetailError(null);
+    setSourceMarkets([]);
+    client.getRate(selectedRate.id)
+      .then((rateDetail) => {
+        if (detailGenRef.current !== gen) return;
+        setSourceMarkets(rateDetail.sources ?? []);
+        setDetailLoading(false);
+      })
+      .catch((err) => {
+        if (detailGenRef.current !== gen) return;
+        setDetailError(err instanceof Error ? err.message : String(err));
+        setDetailLoading(false);
+      });
+  }, [client, selectedRate?.id]);
+
   const renderCell = useCallback(
     (row: AdjacentRateRow, column: RateColumn, _index: number, rowState: { selected: boolean }) =>
       renderRateCell(row, column, rowState.selected),
@@ -250,11 +259,24 @@ export function AdjacentRatesPane({
     [],
   );
 
+  const firstKalshiSource = sourceMarkets.find((s) => s.platform === "kalshi");
+  const rateUrl = firstKalshiSource
+    ? `https://kalshi.com/markets/${firstKalshiSource.display_ticker ?? firstKalshiSource.market_id}`
+    : null;
+
   useShortcut((event) => {
-    if (!focused || !isPlainKey(event, "r")) return;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    load();
+    if (!focused) return;
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      load();
+      return;
+    }
+    if (isPlainKey(event, "o") && rateUrl) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openUrl(rateUrl);
+    }
   }, { enabled: focused });
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
@@ -278,8 +300,9 @@ export function AdjacentRatesPane({
     trailingInfo: [poll.segment],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
+      ...(rateUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(rateUrl) }] : []),
     ],
-  }), [error, load, poll.segment, status, updatedAgo]);
+  }), [error, load, poll.segment, rateUrl, status, updatedAgo]);
 
   if (status === "loading" && rates.length === 0) {
     return (
@@ -302,7 +325,7 @@ export function AdjacentRatesPane({
   }
 
   const detailContent = selectedRate ? (
-    <RateDetail client={client} rate={selectedRate} width={width} height={Math.max(height - 1, 1)} />
+    <RateDetail rate={selectedRate} sourceMarkets={sourceMarkets} loading={detailLoading} error={detailError} width={width} height={Math.max(height - 1, 1)} />
   ) : null;
   const detailTitle = selectedRate?.name;
 

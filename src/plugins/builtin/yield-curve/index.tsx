@@ -16,6 +16,9 @@ import {
 } from "./treasury-data";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { usePluginAppActions } from "../../runtime";
+import { openUrl } from "../../../components/ui/external-link";
+
+const YIELD_CURVE_URL = "https://fred.stlouisfed.org/series/DGS10";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";
@@ -72,6 +75,8 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
       load();
     } else if (ev.name === "g") {
       chartCurve();
+    } else if (ev.name === "o") {
+      openUrl(YIELD_CURVE_URL);
     }
   });
 
@@ -86,6 +91,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
     registrationId: "yield-curve",
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: chartCurve },
+      { id: "open", key: "o", label: "pen", onPress: () => openUrl(YIELD_CURVE_URL) },
       { id: "refresh", key: "r", label: "efresh", onPress: () => { void load(); } },
     ],
     loading,

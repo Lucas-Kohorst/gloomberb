@@ -28,6 +28,7 @@ import {
 import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { withConnectionRequest } from "../connections/register";
 import { graphFooterHint } from "../shared/graph-pop-out";
+import { openUrl } from "../../../components/ui/external-link";
 import { loadCorporateYields } from "./fred-yields";
 import {
   BOND_SEARCH_PANE_ID,
@@ -260,6 +261,12 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
         }
         return true;
       }
+      if (event.name === "o" && activeTab === "yields" && selectedEntry) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`);
+        return true;
+      }
       if (activeTab === "search") {
         if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
           stopSearchFocusNavigation(event);
@@ -275,7 +282,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       }
       return false;
     },
-    [activeTab, chartSelected, focusSearch, load, openHit, runSearch, searchQuery, selectedHit],
+    [activeTab, chartSelected, focusSearch, load, openHit, runSearch, searchQuery, selectedEntry, selectedHit],
   );
 
   useShortcut((event) => {
@@ -316,6 +323,7 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
       ];
       const hints = [
         graphFooterHint(chartSelected, !!selectedEntry),
+        ...(selectedEntry ? [{ id: "open" as const, key: "o" as const, label: "pen" as const, onPress: () => openUrl(`https://fred.stlouisfed.org/series/${selectedEntry.seriesId}`) }] : []),
         paneRefreshHint(() => load(true)),
       ];
       return { info, hints };

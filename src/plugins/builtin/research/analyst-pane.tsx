@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
-import { Box, Text, TextAttributes } from "../../../ui";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import {
   DataTableView,
+  InputSearchBar,
   LoadingState,
   TickerEmptyState,
   usePaneFooter,
@@ -305,12 +306,19 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   const dataProvider = useAssetData();
   const { symbol, exchange } = useSymbolBinding();
   const [sortPreference, setSortPreference] = useState<RatingSortPreference>(DEFAULT_RATING_SORT);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const loader = useCallback((nextSymbol: string, nextExchange: string, forceRefresh: boolean) => {
     if (!dataProvider?.getAnalystResearch) throw new Error("Analyst data unavailable");
     return dataProvider.getAnalystResearch(nextSymbol, nextExchange, forceRefresh ? { cacheMode: "refresh" } : undefined);
   }, [dataProvider]);
   const { data, loading, error, reload } = useTickerRequest<AnalystResearchData>(loader, symbol, exchange);
-  const rows = useMemo(() => sortRatingRows(data?.ratings ?? [], sortPreference), [data?.ratings, sortPreference]);
+  const rows = useMemo(() => sortRatingRows(
+    (data?.ratings ?? []).filter((row) => !searchQuery.trim() || `${row.firm} ${row.action ?? ""} ${row.current ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())),
+    sortPreference,
+  ), [data?.ratings, searchQuery, sortPreference]);
   const ratingCurrency = data?.priceTarget?.currency ?? data?.currency ?? "USD";
   const columns = useMemo(
     () => buildRatingColumns(data?.ratings ?? [], ratingCurrency),
@@ -349,6 +357,10 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   }, [ratingCurrency]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (event.name === "/") {
+      event.preventDefault?.(); event.stopPropagation?.();
+      setSearchFocused(true); setSearchFocusToken((value) => value + 1); return true;
+    }
     return handleRefreshKey(event, reload, { stopPropagation: true });
   }, [reload]);
   const handleHeaderClick = useCallback((columnId: string) => {
@@ -360,7 +372,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
       ...buildAnalystFooterInfo(data),
       ...loadingErrorFooterInfo(loading, error),
     ],
-    hints: [refreshFooterHint(reload)],
+    hints: [refreshFooterHint(reload), { id: "search", key: "/", label: "earch", onPress: () => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); } }],
   }), [data, error, loading, reload]);
 
   if (loading) return <LoadingState title="Loading analyst data..." />;
@@ -370,11 +382,11 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
 
   return (
     <DataTableView<AnalystResearchData["ratings"][number], RatingColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       selection={{ kind: "none" }}
       rootWidth={width}
       rootHeight={height}
-      rootBefore={<AnalystSummary data={data} />}
+      rootBefore={<><AnalystSummary data={data} /><InputSearchBar value={searchQuery} focused={focused} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="firm or rating" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} /></>}
       onRootKeyDown={handleKeyDown}
       columns={columns}
       items={rows}

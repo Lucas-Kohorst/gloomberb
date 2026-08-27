@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
+import { Box, useRendererHost, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
   EmptyState,
+  InputSearchBar,
   Spinner,
   Tabs,
   useTableLoadMore,
@@ -71,6 +72,11 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     columnId: "trades",
     direction: "desc",
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
   const fetchGenRef = useRef(0);
 
   const load = useCallback((refresh = false) => {
@@ -144,8 +150,9 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
 
   const trades = payload?.trades ?? [];
   const members = payload?.members ?? [];
-  const tradeRows = useMemo(() => sortedTrades(trades, tradeSort), [trades, tradeSort]);
-  const memberRows = useMemo(() => sortedMembers(members, memberSort), [members, memberSort]);
+  const query = searchQuery.trim().toLowerCase();
+  const tradeRows = useMemo(() => sortedTrades(trades.filter((trade) => !query || `${trade.ticker ?? ""} ${trade.memberName} ${trade.filingDate}`.toLowerCase().includes(query)), tradeSort), [query, trades, tradeSort]);
+  const memberRows = useMemo(() => sortedMembers(members.filter((member) => !query || `${member.memberName} ${member.id}`.toLowerCase().includes(query)), memberSort), [query, members, memberSort]);
   const tradeColumns = useMemo(() => buildTradeColumns(width), [width]);
   const memberColumns = useMemo(() => buildMemberColumns(width), [width]);
   const selectedTradeIndex = selectedIndexById(tradeRows, selectedTradeId);
@@ -228,6 +235,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     openSelectedTradeMember,
     openSelectedTradeSource,
     selectTab,
+    focusSearch,
   });
 
   useCongressTradesFooter({
@@ -243,6 +251,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     selectedTrade,
     status,
     lastUpdated,
+    focusSearch,
   });
 
   const detailContent = detailTrade ? (
@@ -303,9 +312,10 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
+      <InputSearchBar value={searchQuery} focused={focused && !detailMode} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="ticker, member, or date" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />
       {activeTab === "trades" ? (
         <DataTableStackView<CloudCongressTradePayload, TradeColumn>
-          focused={focused}
+          focused={focused && !searchFocused}
           detailOpen={detailMode !== null}
           onBack={() => setDetailMode(null)}
           detailTitle={detailTitle}
@@ -338,7 +348,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
         />
       ) : (
         <DataTableStackView<CloudCongressMemberPayload, MemberColumn>
-          focused={focused}
+          focused={focused && !searchFocused}
           detailOpen={detailMode !== null}
           onBack={() => setDetailMode(null)}
           detailTitle={detailTitle}

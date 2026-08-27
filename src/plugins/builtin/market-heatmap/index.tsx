@@ -263,7 +263,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       selectNeighbor("down");
       return;
     }
-    if (isPlainKey(event, "enter", "return") && selectedAsset) {
+    if (isPlainKey(event, "o", "enter", "return") && selectedAsset) {
       event.preventDefault();
       event.stopPropagation();
       openSymbol(selectedAsset.symbol);
@@ -294,9 +294,12 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
           parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
         }] : []),
       ],
-      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
+      hints: [
+        { id: "open", key: "o", label: "pen", onPress: () => selectedAsset && openSymbol(selectedAsset.symbol), disabled: !selectedAsset },
+        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      ],
     };
-  }, [feedStatus, loadError, loading, refresh, selectedAsset, updatedAgo]);
+  }, [feedStatus, loadError, loading, openSymbol, refresh, selectedAsset, updatedAgo]);
 
   const emptyStateTitle = loading
     ? "Loading market heatmap..."
