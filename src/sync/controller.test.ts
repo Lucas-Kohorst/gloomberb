@@ -240,7 +240,7 @@ test("keeps startup layout changes while serializing pull and push", async () =>
   const pushedConfig = pushes[0]?.snapshot.contributors["core.config"]?.payload as {
     layout: AppState["config"]["layout"];
   };
-  expect(pulls).toBe(1);
+  expect(pulls).toBe(2);
   expect(pushes).toHaveLength(1);
   expect(pushes[0]?.options).toEqual({ baseRevision: 7 });
   expect(state.config.theme).toBe("green");
@@ -314,6 +314,7 @@ test("keeps the latest layout when switching away and back during a pull", async
   expect(state.config.activeLayoutIndex).toBe(0);
   expect(pushedConfig.activeLayoutIndex).toBe(0);
 });
+
 
 test("aborts pull and skips push when runtime is swapped mid-iteration", async () => {
   let resolveApplyB!: () => void;
@@ -521,8 +522,8 @@ test("queues a second requestSync while one is in flight and runs it after", asy
   // Both promises resolve only after the queued sync also completes.
   await Promise.all([firstPromise, secondPromise]);
 
-  // One pull (cached for the queued run), two pushes (one per sync).
-  expect(pulls).toBe(1);
+  // Two pulls (one per sync — always pull before push), two pushes (one per sync).
+  expect(pulls).toBe(2);
   expect(pushes).toBe(2);
 });
 
@@ -563,4 +564,60 @@ test("skips push when snapshot signature is unchanged, but force overrides the s
   // Third sync with force: bypasses the signature check and pushes.
   await controller.requestSync({ force: true });
   expect(pushes).toBe(2);
+});
+
+test("pulls remote changes on later syncs instead of only once per session", async () => {
+  const applied: unknown[] = [];
+  const contributor: SyncContributor = {
+    id: "test.data",
+    schemaVersion: 1,
+    collect: () => ({ local: applied.at(-1) ?? null }),
+    apply: (payload) => {
+      applied.push(payload);
+    },
+  };
+  let remote = { value: 1 };
+  let remoteRevision = 4;
+  let pulls = 0;
+  const transport: SyncTransport = {
+    id: "repeat-pull",
+    isAvailable: () => true,
+    pullSnapshot: async () => {
+      pulls += 1;
+      return {
+        snapshot: {
+          schemaVersion: SYNC_SNAPSHOT_SCHEMA_VERSION,
+          appId: "gloomberb",
+          clientId: "remote-client",
+          createdAt: "2026-08-27T00:00:00.000Z",
+          contributors: {
+            "test.data": {
+              schemaVersion: 1,
+              updatedAt: "2026-08-27T00:00:00.000Z",
+              payload: remote,
+            },
+          },
+        },
+        revision: remoteRevision,
+        updatedAt: "2026-08-27T00:00:00.000Z",
+      };
+    },
+    pushSnapshot: async () => ({ revision: remoteRevision + 1, updatedAt: "2026-08-27T00:00:01.000Z" }),
+  };
+  const controller = new CloudSyncController();
+  controller.setRuntime({
+    getState: () => ({} as AppState),
+    dispatch: () => {},
+    tickerRepository: {} as TickerRepository,
+    getContributors: () => [{ pluginId: "test", contributor }],
+    getTransport: () => ({ pluginId: "test", transport }),
+  });
+
+  await controller.requestSync({ reason: "startup" });
+  remote = { value: 2 };
+  remoteRevision = 12;
+  await controller.requestSync({ reason: "poll" });
+
+  expect(pulls).toBe(2);
+  expect(applied).toEqual([{ value: 1 }, { value: 2 }]);
 });
