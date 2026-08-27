@@ -15,6 +15,14 @@ function request(method: string, url: URL, origin?: string): Request {
   return new Request(url, { method, headers });
 }
 
+function requestWithHeaders(
+  method: string,
+  url: URL,
+  headers: Record<string, string>,
+): Request {
+  return new Request(url, { method, headers: new Headers(headers) });
+}
+
 describe("hosted origin allowlist", () => {
   test("accepts the request host, custom domain, and workers.dev", () => {
     expect(isTrustedHostedOrigin(SHARE_HOSTED_ORIGIN, CUSTOM)).toBe(true);
@@ -35,5 +43,48 @@ describe("hosted origin allowlist", () => {
     expect(hasTrustedHostedOrigin(request("PUT", CUSTOM), CUSTOM)).toBe(false);
     expect(hasTrustedHostedOrigin(request("PUT", CUSTOM, "https://evil.example"), CUSTOM)).toBe(false);
     expect(hasTrustedHostedOrigin(request("GET", CUSTOM, "https://api.gloom.sh"), CUSTOM)).toBe(false);
+  });
+
+  test("POST without Origin passes via Sec-Fetch-Site same-origin fallback", () => {
+    expect(
+      hasTrustedHostedOrigin(
+        requestWithHeaders("POST", CUSTOM, { "Sec-Fetch-Site": "same-origin" }),
+        CUSTOM,
+      ),
+    ).toBe(true);
+    expect(
+      hasTrustedHostedOrigin(
+        requestWithHeaders("PUT", CUSTOM, { "Sec-Fetch-Site": "same-origin" }),
+        CUSTOM,
+      ),
+    ).toBe(true);
+  });
+
+  test("POST without Origin is rejected when Sec-Fetch-Site is cross-site", () => {
+    expect(
+      hasTrustedHostedOrigin(
+        requestWithHeaders("POST", CUSTOM, { "Sec-Fetch-Site": "cross-site" }),
+        CUSTOM,
+      ),
+    ).toBe(false);
+  });
+
+  test("POST without Origin falls back to Referer same-origin check", () => {
+    expect(
+      hasTrustedHostedOrigin(
+        requestWithHeaders("POST", CUSTOM, { Referer: `${SHARE_HOSTED_ORIGIN}/cloud/auth` }),
+        CUSTOM,
+      ),
+    ).toBe(true);
+    expect(
+      hasTrustedHostedOrigin(
+        requestWithHeaders("POST", CUSTOM, { Referer: "https://evil.example/" }),
+        CUSTOM,
+      ),
+    ).toBe(false);
+  });
+
+  test("POST without Origin, Sec-Fetch-Site, or Referer is rejected", () => {
+    expect(hasTrustedHostedOrigin(request("POST", CUSTOM), CUSTOM)).toBe(false);
   });
 });

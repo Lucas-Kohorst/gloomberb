@@ -36,8 +36,32 @@ export function hasTrustedHostedOrigin(request: Request, url: URL): boolean {
   const origin = request.headers.get("Origin");
   const method = request.method.toUpperCase();
   const mutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
-  if (!origin) return !mutating;
+  if (!origin) {
+    if (!mutating) return true;
+    return isSameOriginFallback(request, url);
+  }
   return isTrustedHostedOrigin(origin, url);
+}
+
+/**
+ * Fallback same-origin check for browsers that omit the `Origin` header on
+ * same-origin mutating requests (Firefox, Brave strict mode, privacy
+ * extensions). `Sec-Fetch-Site` is browser-controlled and cannot be set or
+ * overridden by JavaScript, so `same-origin` is a reliable CSRF signal. If the
+ * header is absent (older browsers), fall back to comparing the `Referer`
+ * origin against the request URL origin.
+ */
+function isSameOriginFallback(request: Request, url: URL): boolean {
+  const fetchSite = request.headers.get("Sec-Fetch-Site");
+  if (fetchSite === "same-origin") return true;
+  if (fetchSite && fetchSite !== "none") return false;
+  const referer = request.headers.get("Referer");
+  if (!referer) return false;
+  try {
+    return new URL(referer).origin === url.origin;
+  } catch {
+    return false;
+  }
 }
 
 export function hostedCorsHeaders(origin: string): Record<string, string> {
