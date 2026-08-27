@@ -138,14 +138,30 @@ async function fetchPolymarketMarketRecord(
 
 /**
  * Resolves a venue-native Polymarket identifier onto a chartable market.
- * Accepts a Gamma market id, a market slug, or an event id (which settles on
- * the event's busiest market).
+ * Accepts a Gamma market id, a market slug, an event id (which settles on
+ * the event's busiest market), or the synthetic "<eventId>:<slug>" id that
+ * normalizePolymarketMarket mints for Gamma records without an id.
  */
 export async function resolvePolymarketMarketById(
   marketId: string,
 ): Promise<PredictionMarketSummary | null> {
   const trimmed = marketId.trim();
   if (!trimmed) return null;
+
+  const composite = /^(\d+):(.+)$/.exec(trimmed);
+  if (composite?.[1] && composite[2]) {
+    const [, eventId, slug] = composite;
+    const bySlug = await fetchPolymarketMarketRecord(
+      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`,
+    );
+    if (bySlug) return normalizePolymarketMarket(bySlug);
+    const event = await loadPolymarketEvent(eventId);
+    const match = event?.markets?.find((market) => market.slug === slug);
+    if (match && event) {
+      return normalizePolymarketMarket(hydratePolymarketMarket(match, event));
+    }
+    return null;
+  }
 
   const byId = /^\d+$/.test(trimmed)
     ? await fetchPolymarketMarketRecord(`${POLYMARKET_GAMMA_BASE}/markets/${trimmed}`)

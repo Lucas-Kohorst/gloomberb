@@ -176,6 +176,37 @@ describe("venue-direct prediction market series", () => {
     expect(series?.points[0]?.date.getTime()).toBe(1_760_000_000_000);
   });
 
+  test("resolves the synthetic '<eventId>:<slug>' Polymarket id onto its slug market", async () => {
+    const requested = mockTransport([
+      [
+        "prices-history",
+        { history: [{ t: 1_760_000_000, p: 0.48 }, { t: 1_760_086_400, p: 0.5 }] },
+      ],
+      [
+        "gamma-api.polymarket.com/markets?slug=will-the-republicans-win-the-new-york-governor-race-in-2026",
+        [
+          {
+            id: "57185",
+            question: "Will the Republicans win the New York governor race in 2026?",
+            slug: "will-the-republicans-win-the-new-york-governor-race-in-2026",
+            outcomes: '["Yes","No"]',
+            outcomePrices: '["0.50","0.50"]',
+            clobTokenIds: '["yes-token","no-token"]',
+          },
+        ],
+      ],
+    ]);
+
+    const series = await loadVenuePredictionMarketSeries(
+      "polymarket",
+      "57184:will-the-republicans-win-the-new-york-governor-race-in-2026",
+    );
+
+    expect(series?.points.map((point) => point.close)).toEqual([0.48, 0.5]);
+    expect(series?.marketId).toBe("57185");
+    expect(requested.some((url) => url.includes("slug=will-the-republicans"))).toBe(true);
+  });
+
   test("returns null when the venue does not know the identifier", async () => {
     mockTransport([]);
 
