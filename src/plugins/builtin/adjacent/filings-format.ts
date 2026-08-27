@@ -42,6 +42,10 @@ export function filingListTitle(filing: CftcFiling): string {
   return `${prefix} | ${filing.title}`;
 }
 
+export function filingListTimestamp(filing: CftcFiling): Date {
+  return filing.firstSeenAt ?? filing.statusDate;
+}
+
 /**
  * Feed-specific columns: DCM product rows carry type/category, rules rows carry
  * a description, DCO rows carry remarks. `title` already holds the best of
