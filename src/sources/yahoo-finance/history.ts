@@ -5,6 +5,7 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../time-series/resolution";
+import { aggregateTo4h } from "../../time-series/aggregate";
 import { repairIsolatedIntradayOhlcOutliers } from "../../time-series/history-quality";
 import type { PricePoint } from "../../types/financials";
 import { normalizeSubUnitCurrency } from "./mappers";
@@ -26,6 +27,7 @@ const YAHOO_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
   { resolution: "5m", maxRange: "1W" },
   { resolution: "15m", maxRange: "1M" },
   { resolution: "1h", maxRange: "3M" },
+  { resolution: "4h", maxRange: "3M" },
   { resolution: "1d", maxRange: "5Y" },
   { resolution: "1wk", maxRange: "ALL" },
   { resolution: "1mo", maxRange: "ALL" },
@@ -85,13 +87,14 @@ export async function loadYahooPriceHistoryForResolution({
   resolution: ManualChartResolution;
   fetchChart: YahooChartFetcher;
 }): Promise<PricePoint[]> {
+  const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
   const effectiveChartRange = chartRange ?? RANGE_PARAMS[bufferRange ?? "1Y"].range;
   const symbolsToTry = getYahooSymbolsToTry(ticker, exchange);
   let lastError: any;
 
   for (const symbol of symbolsToTry) {
     try {
-      const { meta, history } = await fetchChart(symbol, effectiveChartRange, resolution);
+      const { meta, history } = await fetchChart(symbol, effectiveChartRange, sourceResolution);
 
       const { divisor } = normalizeSubUnitCurrency(meta.currency || "USD");
       if (divisor !== 1) {
@@ -103,9 +106,10 @@ export async function loadYahooPriceHistoryForResolution({
         }
       }
 
-      return isIntradayResolution(resolution)
+      const repaired = isIntradayResolution(sourceResolution)
         ? repairIsolatedIntradayOhlcOutliers(history)
         : history;
+      return resolution === "4h" ? aggregateTo4h(repaired) : repaired;
     } catch (err) {
       lastError = err;
     }

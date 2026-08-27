@@ -273,7 +273,7 @@ export function WebTradingViewChart({
       },
       timeScale: {
         visible: true,
-        rightOffset: 2,
+        rightOffset: 6,
         fixLeftEdge: false,
         fixRightEdge: false,
         borderVisible: false,

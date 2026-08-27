@@ -19,6 +19,7 @@ const CHART_RESOLUTION_ORDER: ChartResolution[] = [
   "30m",
   "45m",
   "1h",
+  "4h",
   "1d",
   "1wk",
   "1mo",
@@ -32,6 +33,7 @@ const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
   "30m": "30M",
   "45m": "45M",
   "1h": "1H",
+  "4h": "4H",
   "1d": "1D",
   "1wk": "1W",
   "1mo": "1MO",
@@ -66,6 +68,7 @@ export const CHART_RESOLUTION_STEP_MS: Record<ManualChartResolution, number> = {
   "30m": 30 * 60_000,
   "45m": 45 * 60_000,
   "1h": 60 * 60_000,
+  "4h": 4 * 60 * 60_000,
   "1d": 24 * 60 * 60_000,
   "1wk": 7 * 24 * 60 * 60_000,
   "1mo": 30 * 24 * 60 * 60_000,
@@ -78,6 +81,7 @@ const CHART_RESOLUTION_POINTS_PER_DAY: Record<ManualChartResolution, number> = {
   "30m": 13,
   "45m": 9,
   "1h": 7,
+  "4h": 6,
   "1d": 1,
   "1wk": 1 / 5,
   "1mo": 1 / 21,
@@ -242,7 +246,8 @@ export function isIntradayResolution(resolution: ManualChartResolution): boolean
     || resolution === "15m"
     || resolution === "30m"
     || resolution === "45m"
-    || resolution === "1h";
+    || resolution === "1h"
+    || resolution === "4h";
 }
 
 export function isRangePresetSupported(

@@ -230,7 +230,7 @@ export class CoinGeckoProvider implements AssetDataProvider {
     days: string,
     resolution: ManualChartResolution,
   ): Promise<PricePoint[]> {
-    const useOhlc = (resolution === "1d" || resolution === "1wk" || resolution === "1mo" || resolution === "1h")
+    const useOhlc = (resolution === "1d" || resolution === "1wk" || resolution === "1mo" || resolution === "1h" || resolution === "4h")
       && OHLC_DAYS.has(days);
     if (useOhlc) {
       try {
