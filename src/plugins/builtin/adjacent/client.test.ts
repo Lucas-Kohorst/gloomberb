@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { AdjacentClient } from "./client";
-import { filingKind, filingListTitle, stripLeadingHeading, stripMarkdownHeader } from "./filings-format";
+import {
+  filingKind,
+  filingListTimestamp,
+  filingListTitle,
+  stripLeadingHeading,
+  stripMarkdownHeader,
+} from "./filings-format";
 import type { CftcFiling } from "./types";
 
 const HEX_MARKET_ID = "polymarket:0x80b3af88cb9919808da1ce86b9794a0957f96ec98c29319dd7ba65e9744d82b1";
@@ -337,6 +343,24 @@ describe("filingListTitle", () => {
       title: "Changes to cash spreads",
       status: "Notified",
     }))).toBe("Amendment · Notified | Changes to cash spreads");
+  });
+});
+
+describe("filingListTimestamp", () => {
+  test("prefers firstSeenAt over statusDate", () => {
+    const firstSeenAt = new Date("2026-08-27T12:34:56.000Z");
+    const filing: CftcFiling = {
+      id: 1,
+      feed: "dcm_products",
+      title: "A filing",
+      orgCode: "KEX",
+      status: "Certified",
+      statusDate: new Date("2026-08-26T12:34:56.000Z"),
+      firstSeenAt,
+      docCount: 1,
+    };
+
+    expect(filingListTimestamp(filing)).toBe(firstSeenAt);
   });
 });
 
