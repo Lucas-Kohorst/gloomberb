@@ -4,6 +4,7 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../time-series/resolution";
+import { aggregateTo4h } from "../../time-series/aggregate";
 import { assetDataProvider, newsProvider, type PluginCapability } from "../../capabilities";
 import type {
   AssetDataProvider,
@@ -57,6 +58,7 @@ const CLOUD_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
   { resolution: "15m", maxRange: "3M" },
   { resolution: "30m", maxRange: "6M" },
   { resolution: "1h", maxRange: "1Y" },
+  { resolution: "4h", maxRange: "1Y" },
   { resolution: "1d", maxRange: "5Y" },
   { resolution: "1wk", maxRange: "5Y" },
   { resolution: "1mo", maxRange: "ALL" },
@@ -392,7 +394,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
     await requireVerifiedSession();
-    const interval = toCloudInterval(resolution);
+    const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
+    const interval = toCloudInterval(sourceResolution);
     const endDate = new Date();
     const startDate = getRangeStartDate(bufferRange, endDate);
     const includeTime = /(min|h)$/i.test(interval);
@@ -404,7 +407,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       }),
       `Cloud chart data is unavailable for ${ticker}`,
     );
-    return mapCloudPriceHistory(response, ticker, exchange, interval);
+    const points = mapCloudPriceHistory(response, ticker, exchange, interval);
+    return resolution === "4h" ? aggregateTo4h(points) : points;
   }
 
   async getDetailedPriceHistory(
@@ -416,7 +420,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
     await requireVerifiedSession();
-    const interval = toCloudInterval(barSize);
+    const sourceBarSize = barSize === "4h" ? "1h" : barSize;
+    const interval = toCloudInterval(sourceBarSize);
     const includeTime = /(min|h)$/i.test(interval);
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, {
@@ -426,7 +431,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
       }),
       `Cloud detailed chart history is unavailable for ${ticker}`,
     );
-    return mapCloudPriceHistory(response, ticker, exchange, interval);
+    const points = mapCloudPriceHistory(response, ticker, exchange, interval);
+    return barSize === "4h" ? aggregateTo4h(points) : points;
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {

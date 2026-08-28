@@ -16,6 +16,8 @@ import type { TickerRecord } from "../types/ticker";
 import { isPublicShareLocation } from "../plugins/builtin/shared/share-link";
 import { whenStartupBackground } from "../utils/startup-interaction";
 
+const CLOUD_SYNC_POLL_MS = 15_000;
+
 interface CloudSyncRuntimeOptions {
   state: AppState;
   getState: () => AppState;
@@ -23,6 +25,7 @@ interface CloudSyncRuntimeOptions {
   tickerRepository: AppTickerRepositoryPort;
   pluginRegistry: PluginRegistry;
   initialized: boolean;
+  appActive?: boolean;
 }
 
 function tickerMap(tickers: TickerRecord[]): Map<string, TickerRecord> {
@@ -61,6 +64,7 @@ export function useCloudSyncRuntime({
   tickerRepository,
   pluginRegistry,
   initialized,
+  appActive = true,
 }: CloudSyncRuntimeOptions): void {
   useEffect(() => {
     return cloudSyncController.setRuntime({
@@ -94,6 +98,15 @@ export function useCloudSyncRuntime({
       // Network or parse failure — keep the local first-paint workspace.
     });
   }, [initialized, dispatch, getState, tickerRepository]);
+
+  useEffect(() => {
+    if (!initialized || !appActive) return;
+    void cloudSyncController.requestSync({ reason: "foreground" });
+    const timer = setInterval(() => {
+      void cloudSyncController.requestSync({ reason: "poll" });
+    }, CLOUD_SYNC_POLL_MS);
+    return () => clearInterval(timer);
+  }, [appActive, initialized]);
 
   useEffect(() => subscribeToCloudVerification(apiClient, () => {
     if (!initialized) return;

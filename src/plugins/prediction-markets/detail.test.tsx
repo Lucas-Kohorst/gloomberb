@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { act } from "react";
 import { testRender } from "../../renderers/opentui/test-utils";
 import {
   ChartHarness,
@@ -124,4 +125,26 @@ describe("prediction markets detail views", () => {
     expect(frame).toContain("G");
   });
 
+  test("shows the chart crosshair on pointer movement", async () => {
+    testSetup = await testRender(
+      <ChartHarness
+        history={[
+          { date: "2026-04-01T00:00:00Z", close: 0.45 },
+          { date: "2026-04-02T00:00:00Z", close: 0.48 },
+          { date: "2026-04-03T00:00:00Z", close: 0.51 },
+        ]}
+      />,
+      { width: 80, height: 12 },
+    );
+    await flushFrames(testSetup);
+    const initialFrame = testSetup.captureCharFrame();
+
+    await act(async () => {
+      await testSetup!.mockMouse.moveTo(30, 5);
+      await testSetup!.renderOnce();
+    });
+    await flushFrames(testSetup);
+
+    expect(testSetup.captureCharFrame()).not.toBe(initialFrame);
+  });
 });

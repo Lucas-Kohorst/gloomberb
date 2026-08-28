@@ -18,8 +18,8 @@ function chartRange(options: NormalizedPaneFunctionOptions): ChartSpec["viewport
 function chartResolution(options: NormalizedPaneFunctionOptions): ChartSpec["viewport"]["resolution"] | null {
   const value = options.chartResolution ?? options.resolution;
   return value === "auto" || value === "1m" || value === "5m" || value === "15m"
-    || value === "30m" || value === "45m" || value === "1h" || value === "1d"
-    || value === "1wk" || value === "1mo"
+    || value === "30m" || value === "45m" || value === "1h" || value === "4h"
+    || value === "1d" || value === "1wk" || value === "1mo"
     ? value
     : null;
 }

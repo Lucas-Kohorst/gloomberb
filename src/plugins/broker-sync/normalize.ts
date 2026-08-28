@@ -1,9 +1,15 @@
 import type { BrokerPosition } from "../../types/broker";
 import type { BrokerAccount } from "../../types/trading";
+import { canonicalCryptoInstrument } from "../../sources/coingecko/ids";
 
 export interface BrokerPortfolioSnapshot {
   accounts: BrokerAccount[];
   positions: BrokerPosition[];
+}
+
+export interface RobinhoodPositionPayloadSource {
+  toolName: string;
+  payload: unknown;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -117,22 +123,37 @@ function sumOptional(left?: number, right?: number): number | undefined {
   return (left ?? 0) + (right ?? 0);
 }
 
-export function normalizeRobinhoodSnapshot(accountsPayload: unknown, positionsPayload: unknown): BrokerPortfolioSnapshot {
+export function normalizeRobinhoodSnapshot(
+  accountsPayload: unknown,
+  positionSources: readonly RobinhoodPositionPayloadSource[] | unknown,
+): BrokerPortfolioSnapshot {
   const accounts = allRecords(accountsPayload).flatMap((item): BrokerAccount[] => {
     const id = accountId(item);
     if (!id) return [];
     const type = text(item.accountType, item.account_type, item.type);
     const currency = text(item.currency, item.baseCurrency, item.base_currency, "USD").toUpperCase();
+    const cashBalance = numberValue(item.cashBalance, item.cash_balance, item.cash);
     return [{
       accountId: id,
       name: text(item.name, item.accountName, item.account_name, type && titleCase(type), id),
       currency,
       netLiquidation: numberValue(item.totalValue, item.total_value, item.portfolioValue, item.portfolio_value),
+      totalCashValue: numberValue(item.totalCashValue, item.total_cash_value, cashBalance),
+      cashBalances: cashBalance == null ? undefined : [{ currency, quantity: cashBalance }],
       buyingPower: numberValue(item.buyingPower, item.buying_power),
     }];
   });
 
-  const positions = allRecords(positionsPayload).flatMap((item): BrokerPosition[] => {
+  const sources: readonly RobinhoodPositionPayloadSource[] = Array.isArray(positionSources)
+    && positionSources.every((source) => (
+      source !== null
+      && typeof source === "object"
+      && "toolName" in source
+      && "payload" in source
+    ))
+    ? positionSources as readonly RobinhoodPositionPayloadSource[]
+    : [{ toolName: "get_equity_positions", payload: positionSources }];
+  const positions = sources.flatMap(({ toolName, payload }) => allRecords(payload).flatMap((item): BrokerPosition[] => {
     const instrument = nested(item, "instrument");
     const account = nested(item, "account");
     const costBasis = record(item.costBasis) ?? record(item.cost_basis) ?? {};
@@ -140,6 +161,9 @@ export function normalizeRobinhoodSnapshot(accountsPayload: unknown, positionsPa
     const symbol = text(item.symbol, item.ticker, instrument.symbol).toUpperCase();
     const shares = numberValue(item.quantity, item.shares, item.qty);
     if (!symbol || shares == null || shares === 0) return [];
+    const cryptoInstrument = toolName === "get_crypto_positions"
+      ? canonicalCryptoInstrument(symbol, "CRYPTO")
+      : null;
     const totalCost = numberValue(
       item.totalCost,
       item.total_cost,
@@ -172,20 +196,20 @@ export function normalizeRobinhoodSnapshot(accountsPayload: unknown, positionsPa
       marketValue != null ? marketValue / Math.abs(shares) : undefined,
     );
     return [{
-      ticker: symbol,
-      exchange: text(item.exchange, instrument.exchange, "SMART").toUpperCase(),
+      ticker: cryptoInstrument?.symbol ?? symbol,
+      exchange: cryptoInstrument?.exchange ?? text(item.exchange, instrument.exchange, "SMART").toUpperCase(),
       shares,
       avgCost,
       currency: text(item.currency, instrument.currency, "USD").toUpperCase(),
       accountId: accountId(item) || accountId(account) || undefined,
       name: text(item.name, item.description, instrument.name, symbol),
-      assetCategory: "STK",
+      assetCategory: cryptoInstrument ? "CRYPTO" : "STK",
       markPrice,
       marketValue,
       unrealizedPnl: numberValue(item.unrealizedPnl, item.unrealized_pnl, item.unrealizedGain, item.unrealized_gain),
       side: shares < 0 ? "short" : "long",
     }];
-  });
+  }));
 
   return uniqueSnapshot(accounts, positions);
 }

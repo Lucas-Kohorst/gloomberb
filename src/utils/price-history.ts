@@ -82,18 +82,16 @@ export function isPriceHistoryStaleForCurrentWindow(
   if (!Number.isFinite(latestTime)) return false;
   const age = now - latestTime;
   if (age <= MAX_SAME_SESSION_HISTORY_LAG_MS) return false;
+  const exchange = options.exchange || "NASDAQ";
   if (
-    options.exchange
-    && resolveExchangeTimeZone(options.exchange)
-    && isTimestampStaleForExchangeSession(latestTime, options.exchange, now)
+    resolveExchangeTimeZone(exchange)
+    && isTimestampStaleForExchangeSession(latestTime, exchange, now)
   ) {
     return true;
   }
-  if (age <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) {
-    return Boolean(options.exchange && resolveExchangeTimeZone(options.exchange));
-  }
-
-  return true;
+  const hasExchangeSession = Boolean(resolveExchangeTimeZone(exchange));
+  if (age <= MAX_CURRENT_INTRADAY_HISTORY_LAG_MS) return hasExchangeSession;
+  return !hasExchangeSession;
 }
 
 export function normalizeTickerFinancialsPriceHistory(financials: TickerFinancials): TickerFinancials {

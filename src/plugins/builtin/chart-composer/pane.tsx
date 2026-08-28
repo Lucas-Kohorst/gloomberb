@@ -590,9 +590,9 @@ function ChartComposerSurface({
         label: spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "inear" : "og",
         onPress: footerLog,
       },
-      { id: "resolution", key: "r", label: "es", onPress: footerResolution },
+      { id: "resolution", key: "v", label: "iew", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
-      { id: "reload", key: "Shift+R", label: "reload", onPress: footerReload },
+      { id: "reload", key: "r", label: "efresh", onPress: footerReload },
       { id: "share", key: "y", label: "share", onPress: shareChart },
     ],
   }), [

@@ -503,3 +503,34 @@ describe("syncBrokerInstance", () => {
     ])).toBe(restored);
   });
 });
+
+describe("syncBrokerInstances", () => {
+  test("skips profiles whose brokers require an explicit sync", async () => {
+    const instance = createBrokerInstance();
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-explicit-broker-sync"),
+      portfolios: [],
+      brokerInstances: [instance],
+    };
+    let imported = false;
+    const broker: BrokerAdapter = {
+      ...createDemoBroker(),
+      autoSync: false,
+      importPositions: async () => {
+        imported = true;
+        return [];
+      },
+    };
+
+    const result = await syncBrokerInstances({
+      config,
+      brokers: new Map([["demo", broker]]),
+      tickerRepository: createTickerRepository() as any,
+      existingTickers: new Map(),
+    });
+
+    expect(imported).toBe(false);
+    expect(result.results).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+});

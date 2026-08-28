@@ -17,17 +17,11 @@ export function resolveChartComposerShortcut(
 ): ChartComposerShortcut | null {
   if (event.defaultPrevented || event.propagationStopped || event.targetEditable) return null;
 
-  const exactShiftReload = event.name === "r"
-    && event.shift
-    && !event.ctrl
-    && !event.meta
-    && !event.super
-    && !event.alt;
-  if (exactShiftReload) return "reload";
+  if (isPlainKey(event, "r")) return "reload";
+  if (isPlainKey(event, "v")) return "resolution";
   if (isPlainKey(event, "s")) return "series";
   if (isPlainKey(event, "w")) return "dates";
   if (isPlainKey(event, "m")) return "mode";
-  if (isPlainKey(event, "r")) return "resolution";
   if (isPlainKey(event, "y")) return "share";
   if (isPlainKey(event, "l")) return "log";
   if (!isPlainKey(event, event.name ?? "")) return null;

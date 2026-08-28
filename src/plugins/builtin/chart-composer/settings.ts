@@ -42,6 +42,7 @@ export const CHART_RESOLUTIONS: ChartResolution[] = [
   "30m",
   "45m",
   "1h",
+  "4h",
   "1d",
   "1wk",
   "1mo",

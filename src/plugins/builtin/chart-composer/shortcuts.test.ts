@@ -25,7 +25,8 @@ describe("resolveChartComposerShortcut", () => {
     expect(resolveChartComposerShortcut(keyEvent("w", { ctrl: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("w", { meta: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("m", { ctrl: true, shift: true }), 8)).toBeNull();
-    expect(resolveChartComposerShortcut(keyEvent("r", { ctrl: true, shift: true }), 8)).toBeNull();
+    expect(resolveChartComposerShortcut(keyEvent("r", { ctrl: true }), 8)).toBeNull();
+    expect(resolveChartComposerShortcut(keyEvent("r", { meta: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("w", { targetEditable: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("w", { defaultPrevented: true }), 8)).toBeNull();
     expect(resolveChartComposerShortcut(keyEvent("w", { propagationStopped: true }), 8)).toBeNull();
@@ -35,8 +36,8 @@ describe("resolveChartComposerShortcut", () => {
     expect(resolveChartComposerShortcut(keyEvent("s"), 8)).toBe("series");
     expect(resolveChartComposerShortcut(keyEvent("w"), 8)).toBe("dates");
     expect(resolveChartComposerShortcut(keyEvent("m"), 8)).toBe("mode");
-    expect(resolveChartComposerShortcut(keyEvent("r"), 8)).toBe("resolution");
-    expect(resolveChartComposerShortcut(keyEvent("r", { shift: true }), 8)).toBe("reload");
+    expect(resolveChartComposerShortcut(keyEvent("v"), 8)).toBe("resolution");
+    expect(resolveChartComposerShortcut(keyEvent("r"), 8)).toBe("reload");
     expect(resolveChartComposerShortcut(keyEvent("y"), 8)).toBe("share");
     expect(resolveChartComposerShortcut(keyEvent("l"), 8)).toBe("log");
     expect(resolveChartComposerShortcut(keyEvent("9"), 8)).toBeNull();

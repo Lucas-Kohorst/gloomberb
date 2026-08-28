@@ -232,7 +232,14 @@ export function PredictionMarketDetailPane({
   const detailBodyHeight = Math.max(height - chromeRows, 6);
 
   return (
-    <>
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+    >
       {headerHeight > 0 && (
         <Box flexDirection="column" height={headerHeight} paddingBottom={1}>
           <Box flexDirection="row" height={1} gap={1}>
@@ -302,7 +309,13 @@ export function PredictionMarketDetailPane({
       )}
 
       {detailTab === "overview" || detailTab === "rules" ? (
-        <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
+        <ScrollBox
+          ref={scrollRef}
+          flexGrow={1}
+          flexShrink={1}
+          flexBasis={0}
+          scrollY
+        >
           {detailTab === "overview" && (
             <PredictionMarketOverviewView
               detailWidth={detailWidth}
@@ -334,31 +347,34 @@ export function PredictionMarketDetailPane({
       )}
 
       {detailTab === "book" && (
-        detail ? (
-          <PredictionMarketBookView
-            detail={detail}
-            focused={focused}
-            onPreviewOrder={onPreviewOrder}
-            width={detailWidth}
-          />
-        ) : (
-          <Box flexGrow={1} justifyContent="center">
-            <EmptyState
-              title={detailLoading ? "Loading order book." : "No order book."}
-              hint="This venue did not return current order book depth."
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} overflow="hidden">
+          {detail ? (
+            <PredictionMarketBookView
+              detail={detail}
+              focused={focused}
+              onPreviewOrder={onPreviewOrder}
+              width={detailWidth}
             />
-          </Box>
-        )
+          ) : (
+            <Box flexGrow={1} justifyContent="center">
+              <EmptyState
+                title={detailLoading ? "Loading order book." : "No order book."}
+                hint="This venue did not return current order book depth."
+              />
+            </Box>
+          )}
+        </Box>
       )}
 
       {detailTab === "trades" && (
-        <PredictionMarketTradesView
-          focused={focused}
-          trades={detail?.trades ?? []}
-          width={detailWidth}
-        />
+        <Box flexGrow={1} flexShrink={1} flexBasis={0} overflow="hidden">
+          <PredictionMarketTradesView
+            focused={focused}
+            trades={detail?.trades ?? []}
+            width={detailWidth}
+          />
+        </Box>
       )}
-
       {detailTab === "data" && (
         <PredictionMarketDataTab
           focused={focused}
@@ -386,6 +402,6 @@ export function PredictionMarketDetailPane({
           height={detailBodyHeight}
         />
       )}
-    </>
+    </Box>
   );
 }

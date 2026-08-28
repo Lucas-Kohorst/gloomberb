@@ -5,10 +5,12 @@ import {
   type ChartResolutionSupport,
   type ManualChartResolution,
 } from "../../time-series/resolution";
+import { aggregateTo4h } from "../../time-series/aggregate";
 
 export const COINGECKO_RESOLUTION_SUPPORT = normalizeChartResolutionSupport([
   { resolution: "5m", maxRange: "1D" },
   { resolution: "1h", maxRange: "3M" },
+  { resolution: "4h", maxRange: "3M" },
   { resolution: "1d", maxRange: "ALL" },
   { resolution: "1wk", maxRange: "ALL" },
   { resolution: "1mo", maxRange: "ALL" },
@@ -40,7 +42,7 @@ export function coinGeckoDaysForResolution(
   if (resolution === "5m" || resolution === "15m" || resolution === "30m" || resolution === "45m") {
     return "1";
   }
-  if (resolution === "1h") {
+  if (resolution === "1h" || resolution === "4h") {
     return bufferRange === "1D" || bufferRange === "1W" || bufferRange === "1M"
       ? RANGE_DAYS[bufferRange]
       : "90";
@@ -108,6 +110,7 @@ export function aggregateCoinGeckoHistory(
   points: readonly PricePoint[],
   resolution: ManualChartResolution,
 ): PricePoint[] {
+  if (resolution === "4h") return aggregateTo4h(points);
   if (resolution !== "1wk" && resolution !== "1mo") return [...points];
   const groups = new Map<string, PricePoint[]>();
   for (const point of points) {

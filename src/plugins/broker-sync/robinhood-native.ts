@@ -12,11 +12,11 @@ import {
   type RobinhoodAuthHost,
 } from "./mcp-session";
 import { openExternalAuthorizationUrl, startLocalOAuthCallback } from "./oauth-callback-local";
-import { ROBINHOOD_POSITION_TOOLS, requireRobinhoodPositionTools } from "./position-tools";
+import { discoverRobinhoodPositionTools } from "./position-tools";
 import { ROBINHOOD_MCP_URL } from "../../shared/robinhood-oauth";
 
 export { ROBINHOOD_MCP_URL };
-export { ROBINHOOD_POSITION_TOOLS, requireRobinhoodPositionTools };
+export { discoverRobinhoodPositionTools };
 
 const nativeHost: RobinhoodAuthHost = {
   startCallback: startLocalOAuthCallback,

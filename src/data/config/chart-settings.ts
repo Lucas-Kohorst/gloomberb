@@ -17,7 +17,7 @@ import {
 } from "../../time-series/spec";
 
 const CHART_RANGES = new Set<TimeRange>(["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"]);
-const CHART_RESOLUTIONS = new Set<ChartResolution>(["auto", "1m", "5m", "15m", "30m", "45m", "1h", "1d", "1wk", "1mo"]);
+const CHART_RESOLUTIONS = new Set<ChartResolution>(["auto", "1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk", "1mo"]);
 const PRICE_RENDER_MODES = new Set<SeriesStyle>(["area", "line", "candles", "ohlc", "hlc"]);
 const LEGACY_INDICATOR_IDS = new Set<LegacyChartIndicatorId>([
   "volume",
@@ -363,7 +363,7 @@ export function migrateChartPaneSettings(
   settings: Record<string, unknown> | undefined,
   context: LegacyChartMigrationContext = {},
 ): Record<string, unknown> | undefined {
-  if (context.migrateLegacy === false) return settings;
+  if (!context.migrateLegacy) return settings;
   if (paneId === "chart-composer" || paneId === "tradingview") {
     const retained = stripKeys(settings, [
       "chartAxisMode",

@@ -28,6 +28,7 @@ import {
   buildDetailBody,
   buildDetailMeta,
   feedLabel,
+  filingListTimestamp,
   filingListTitle,
   stripLeadingHeading,
 } from "./filings-format";
@@ -49,7 +50,7 @@ function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null
     title: filing.title,
     url: detail?.sourceUrl ?? "",
     source: "CFTC",
-    publishedAt: filing.statusDate,
+    publishedAt: filingListTimestamp(filing),
     summary: [filing.orgCode, filing.status, label].filter(Boolean).join(" · "),
     topic: "filing",
     topics: ["filing", "cftc", filing.feed],
@@ -77,7 +78,7 @@ function toFeedItems(
       id: String(filing.id),
       eyebrow: filing.orgCode || feedLabel(filing),
       title: filingListTitle(filing),
-      timestamp: filing.statusDate,
+      timestamp: filingListTimestamp(filing),
       detailTitle: filing.title,
       detailMeta: buildDetailMeta(filing),
       detailBody: buildDetailBody(

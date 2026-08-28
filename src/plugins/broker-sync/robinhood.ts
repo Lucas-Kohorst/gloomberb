@@ -49,6 +49,7 @@ async function withRobinhoodRuntime<T>(
 export const robinhoodBroker: BrokerAdapter = {
   id: "robinhood",
   name: "Robinhood",
+  autoSync: false,
   configSchema: robinhoodConfigSchema(),
 
   async validate(instance) {
@@ -67,8 +68,7 @@ export const robinhoodBroker: BrokerAdapter = {
     return (await loadRobinhoodPortfolio(instance)).accounts;
   },
 
-  async connect(instance) {
-    await loadRobinhoodPortfolio(instance);
+  async connect(_instance) {
   },
 
   async disconnect(instance) {

@@ -107,11 +107,11 @@ describe("chart-resolution", () => {
     >).map((resolution) => ({ resolution, maxRange: "ALL" as const }));
 
     expect(getSupportedChartResolutionsForViewport("1D", support))
-      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h"]);
+      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "4h"]);
     expect(getSupportedChartResolutionsForViewport("1W", support))
-      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "1d"]);
+      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d"]);
     expect(getSupportedChartResolutionsForViewport("1M", support))
-      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "1d", "1wk"]);
+      .toEqual(["1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk"]);
     expect(getSupportedChartResolutionsForViewport("3M", support))
       .toEqual(Object.keys(CHART_RESOLUTION_STEP_MS));
   });

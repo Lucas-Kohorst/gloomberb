@@ -70,6 +70,7 @@ export function PredictionMarketChart({
   width,
   height,
   loading = false,
+  focused = false,
   range,
   onRangeSelect,
 }: {
@@ -77,6 +78,7 @@ export function PredictionMarketChart({
   width: number;
   height: number;
   loading?: boolean;
+  focused?: boolean;
   range: PredictionHistoryRange;
   onRangeSelect: (range: PredictionHistoryRange) => void;
 }) {
@@ -144,8 +146,8 @@ export function PredictionMarketChart({
       <CompositeChart
         width={width}
         height={chartHeight}
-        focused={false}
-        interactive={false}
+        focused={focused}
+        interactive
         series={[priceSeries]}
         panels={[{ id: "price" }]}
         axisWidth={8}

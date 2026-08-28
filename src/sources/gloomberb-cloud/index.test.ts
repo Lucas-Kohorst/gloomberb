@@ -336,6 +336,30 @@ describe("GloomberbCloudProvider", () => {
     expect(history[0]?.close).toBe(250.12);
   });
 
+  test("derives four-hour bars from hourly cloud history", async () => {
+    apiClient.ensureVerifiedSession = async () => verifiedUser;
+
+    const requestArgs: { current: Record<string, string | number | undefined> | null } = { current: null };
+    apiClient.getCloudHistory = async (_symbol, _exchange, params = {}) => {
+      requestArgs.current = params;
+      return {
+        status: "success",
+        data: [
+          { date: "2026-03-27 00:00:00", open: 100, high: 102, low: 99, close: 101, volume: 10 },
+          { date: "2026-03-27 01:00:00", open: 101, high: 104, low: 100, close: 103, volume: 20 },
+          { date: "2026-03-27 04:00:00", open: 103, high: 105, low: 102, close: 104, volume: 30 },
+        ],
+      };
+    };
+
+    const provider = new GloomberbCloudProvider();
+    const history = await provider.getPriceHistoryForResolution("AAPL", "NASDAQ", "1Y", "4h");
+
+    expect(requestArgs.current?.interval).toBe("1h");
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ open: 100, high: 104, low: 99, close: 103, volume: 30 });
+  });
+
   test("does not advertise unsupported 45 minute chart resolution", () => {
     const provider = new GloomberbCloudProvider();
     expect(provider.getChartResolutionCapabilities()).not.toContain("45m");
