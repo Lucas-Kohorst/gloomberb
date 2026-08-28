@@ -10,6 +10,7 @@ import {
 } from "../../../../api-client";
 import {
   DEFAULT_CHAT_CHANNEL_ID,
+  mergePublicChannelCatalog,
   normalizeChannelId,
   normalizeChannels,
   type ChannelRuntimeState,
@@ -79,7 +80,8 @@ export class ChatControllerChannels {
 
     const request = apiClient.getChannels()
       .then((channels) => {
-        this.channels = normalizeChannels(channels);
+        // Public catalog omits DMs/groups; keep any already loaded from /chat/state.
+        this.channels = mergePublicChannelCatalog(this.channels, channels);
       })
       .catch(() => {
         // Keep the last backend-provided list if the refresh fails.

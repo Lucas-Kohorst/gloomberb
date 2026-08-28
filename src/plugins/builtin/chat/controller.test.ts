@@ -1380,6 +1380,55 @@ describe("ChatController", () => {
     expect(deliveredIds).toEqual([["n1"]]);
   });
 
+  test("keeps DMs from chat state when the public channel catalog refreshes", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const directChannel: ChatChannel = {
+      id: "dm:u2",
+      name: "u2",
+      kind: "direct",
+      created_at: "2026-03-28T00:00:00.000Z",
+      dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+    };
+    const groupChannel: ChatChannel = {
+      id: "grp:vista",
+      name: "VistaDex trading",
+      kind: "group",
+      created_at: "2026-03-28T00:01:00.000Z",
+      members: [
+        { id: "u2", username: "bob", displayName: "Bob" },
+        { id: "u3", username: "cara", displayName: "Cara" },
+      ],
+    };
+
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;
+    apiClient.getChatState = async () => ({
+      channels: [...SERVER_CHAT_CHANNELS, directChannel, groupChannel],
+      onlineCount: 0,
+      channelStates: [],
+      notifications: [],
+    });
+    controller.attachPersistence(persistence);
+
+    await controller.refreshChatState();
+    expect(controller.getChannels().map((channel) => channel.id)).toEqual([
+      ...SERVER_CHAT_CHANNELS.map((channel) => channel.id),
+      "dm:u2",
+      "grp:vista",
+    ]);
+
+    await controller.refreshChannels();
+    expect(controller.getChannels().map((channel) => channel.id)).toEqual([
+      ...SERVER_CHAT_CHANNELS.map((channel) => channel.id),
+      "dm:u2",
+      "grp:vista",
+    ]);
+  });
+
   test("toggles channel notifications optimistically and keeps the channel connected", async () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
