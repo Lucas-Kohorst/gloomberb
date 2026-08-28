@@ -8,9 +8,12 @@ import { createDefaultConfig } from "../../types/config";
 import type { TickerRecord } from "../../types/ticker";
 import {
   applyPredictionStarMemberships,
+  applyWatchlistSnapshots,
   ensureDefaultWatchlist,
+  hydrateWatchlistSnapshots,
   persistPredictionStarsToDefaultWatchlist,
   predictionCollectionSymbol,
+  resolveWatchlistMarkets,
 } from "./collection-watchlist";
 import { normalizeKalshiMarket } from "./services/kalshi/normalize";
 import { normalizePolymarketMarket } from "./services/polymarket/normalize";
@@ -133,5 +136,69 @@ describe("prediction market PF watchlist membership", () => {
     const hydrated = createDefaultConfig("cloud://users/user-1");
     hydrateHostedUserConfig(hydrated);
     expect(hydrated.watchlists.some((watchlist) => watchlist.id === "watchlist")).toBe(true);
+  });
+
+  test("keeps a starred market that is missing from the live catalog", () => {
+    const snapshots = applyWatchlistSnapshots([], [kalshi, polymarket], true);
+    const liveCatalog = [polymarket];
+    const watchlist = new Set([kalshi.key, polymarket.key]);
+
+    const resolved = resolveWatchlistMarkets(liveCatalog, snapshots, watchlist);
+    expect(resolved.map((market) => market.key).sort()).toEqual([
+      kalshi.key,
+      polymarket.key,
+    ].sort());
+    expect(resolved.find((market) => market.key === kalshi.key)?.title).toBe(kalshi.title);
+  });
+
+  test("prefers live catalog quotes over the starred snapshot", () => {
+    const stale = { ...kalshi, yesPrice: 0.11, title: "Stale Fed cut" };
+    const live = { ...kalshi, yesPrice: 0.72, title: "Live Fed cut" };
+    const resolved = resolveWatchlistMarkets(
+      [live],
+      applyWatchlistSnapshots([], [stale], true),
+      new Set([kalshi.key]),
+    );
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]?.yesPrice).toBe(0.72);
+    expect(resolved[0]?.title).toBe("Live Fed cut");
+  });
+
+  test("resolves a starred market with no snapshot and no live catalog entry via a key stub", () => {
+    const key = "kalshi:KXPRESPERSON";
+    const resolved = resolveWatchlistMarkets([], [], new Set([key]));
+    expect(resolved.map((market) => market.key)).toEqual([key]);
+    expect(resolved[0]?.marketId).toBe("KXPRESPERSON");
+    expect(resolved[0]?.title).toBe("KXPRESPERSON");
+  });
+
+  test("hydrates missing watchlist snapshots from ticker custom metadata", () => {
+    const key = "kalshi:KXPRESPERSON";
+    const ticker: TickerRecord = {
+      metadata: {
+        ticker: "KALSHI:KXPRESPERSON",
+        exchange: "KALSHI",
+        currency: "USD",
+        name: "Will the Fed cut rates?",
+        assetCategory: "KALSHI",
+        portfolios: [],
+        watchlists: ["watchlist"],
+        positions: [],
+        custom: {
+          predictionMarketKey: key,
+          predictionVenue: "kalshi",
+          predictionMarketId: "KXPRESPERSON",
+        },
+        tags: ["prediction"],
+      },
+    };
+    const tickers = new Map([[ticker.metadata.ticker, ticker]]);
+    const hydrated = hydrateWatchlistSnapshots([], [key], tickers);
+    expect(hydrated).toHaveLength(1);
+    expect(hydrated[0]?.key).toBe(key);
+    expect(hydrated[0]?.title).toBe("Will the Fed cut rates?");
+
+    const unchanged = hydrateWatchlistSnapshots(hydrated, [key], tickers);
+    expect(unchanged).toBe(hydrated);
   });
 });

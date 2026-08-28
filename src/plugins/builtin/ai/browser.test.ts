@@ -3,14 +3,19 @@ import {
   browserAiProviderStatus,
   createBrowserAiRunHost,
   getBrowserAiState,
+  parseBrowserRemoteControlRequest,
   type BrowserAiAvailability,
 } from "./browser";
 import { parseAssistCommandOutput } from "./assist-local";
+import { setInProcessRemoteHandle } from "../../../remote/in-process-handle";
+import type { RemoteControlRequest } from "../../../remote/types";
+import type { AiAgentHistoryMessage } from "./agent-history";
 
 const originalLanguageModel = (globalThis as { LanguageModel?: unknown }).LanguageModel;
 
 afterEach(() => {
   (globalThis as { LanguageModel?: unknown }).LanguageModel = originalLanguageModel;
+  setInProcessRemoteHandle(null);
 });
 
 describe("Chrome built-in AI detection", () => {
@@ -78,6 +83,92 @@ describe("createBrowserAiRunHost", () => {
       providerId: "anthropic",
       prompt: "hi",
     }).done).rejects.toThrow(/not available in the hosted client/);
+  });
+
+  test("structured output parses JSON remote requests through the in-process handle", async () => {
+    const requests: RemoteControlRequest[] = [];
+    setInProcessRemoteHandle(async (request) => {
+      requests.push(request);
+      return { ok: true, data: { opened: true } };
+    });
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "available",
+      create: async () => ({
+        prompt: async () => '```json\n{"type":"call","operation":"pane.show","input":{"paneId":"sec"}}\n```',
+        destroy() {},
+      }),
+    };
+    const host = createBrowserAiRunHost();
+    const agentMessages: AiAgentHistoryMessage[] = [];
+    const output = await host.run({
+      providerId: "browser-builtin",
+      prompt: "open SEC",
+      outputMode: "structured",
+      onAgentMessages: (messages) => agentMessages.push(...messages),
+    }).done;
+    expect(requests).toEqual([{
+      type: "call",
+      operation: "pane.show",
+      input: { paneId: "sec" },
+    }]);
+    expect(output).toContain("opened");
+    expect(agentMessages).toEqual([
+      expect.objectContaining({
+        role: "assistant",
+        content: [expect.objectContaining({
+          type: "toolCall",
+          name: "gloomberb_remote",
+        })],
+      }),
+      expect.objectContaining({
+        role: "toolResult",
+        toolName: "gloomberb_remote",
+        isError: false,
+      }),
+    ]);
+  });
+
+  test("structured output refuses capability.invoke without calling the handle", async () => {
+    const requests: RemoteControlRequest[] = [];
+    setInProcessRemoteHandle(async (request) => {
+      requests.push(request);
+      return { ok: true, data: {} };
+    });
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: async () => "available",
+      create: async () => ({
+        prompt: async () => JSON.stringify({
+          type: "call",
+          operation: "capability.invoke",
+          input: { capabilityId: "news", operationId: "search" },
+        }),
+        destroy() {},
+      }),
+    };
+    const host = createBrowserAiRunHost();
+    const output = await host.run({
+      providerId: "browser-builtin",
+      prompt: "search news",
+      outputMode: "structured",
+    }).done;
+    expect(requests).toEqual([]);
+    expect(output).toMatch(/capability\.invoke/);
+  });
+});
+
+describe("parseBrowserRemoteControlRequest", () => {
+  test("accepts fenced JSON and nested request wrappers", () => {
+    expect(parseBrowserRemoteControlRequest(
+      '```json\n{"type":"get","resource":"app://connections"}\n```',
+    )).toEqual({ type: "get", resource: "app://connections" });
+    expect(parseBrowserRemoteControlRequest(JSON.stringify({
+      request: { type: "call", operation: "layout.undo" },
+    }))).toEqual({ type: "call", operation: "layout.undo" });
+  });
+
+  test("ignores prose that is not a remote request", () => {
+    expect(parseBrowserRemoteControlRequest("Opened the pane.")).toBeNull();
+    expect(parseBrowserRemoteControlRequest('{"message":"done"}')).toBeNull();
   });
 });
 

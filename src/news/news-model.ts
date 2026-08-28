@@ -4,8 +4,8 @@ import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 
 export const MAX_ARTICLES = 10_000;
 export const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
-export const TOP_NEWS_WINDOW_MS = 4 * 60 * 60 * 1000;
-const TOP_NEWS_EXCLUDED_ORIGINS = new Set(["rss", "x-feed"]);
+export const TOP_NEWS_WINDOW_MS = 24 * 60 * 60 * 1000;
+const TOP_NEWS_EXCLUDED_ORIGINS = new Set(["rss", "x-feed", "substack-news", "substack"]);
 
 const FEEDS = new Set<NewsFeed>(["latest", "top", "breaking", "ticker", "sector", "topic"]);
 const DETAIL_CAPABLE_ARTICLE = Symbol("detail-capable-news-article");

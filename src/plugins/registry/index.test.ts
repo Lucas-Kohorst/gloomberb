@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { Type } from "typebox";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { AppPersistence } from "../../data/app-persistence";
 import { TickerRepository } from "../../data/ticker-repository";
 import { createDefaultConfig } from "../../types/config";
@@ -10,6 +12,7 @@ import {
   macroPlugin,
   portfolioPlugin,
 } from "../builtin/composite-plugins";
+import { getAiRunHost, setAiRunHost } from "../builtin/ai/runner";
 import { PluginRegistry } from "./index";
 
 const dataProvider: DataProvider = {
@@ -127,6 +130,42 @@ describe("PluginRegistry lifecycle", () => {
     expect(() => registry.unregister("throwing-dispose")).toThrow("dispose failed");
     expect(registry.allPlugins.has("throwing-dispose")).toBe(false);
     expect(registry.panes.has("disposable-pane")).toBe(false);
+  });
+
+  test("drops plugin-contributed agent tools when the plugin is unregistered", async () => {
+    const tools = new Map<string, AgentTool>();
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve(""), cancel() {} }),
+      registerTool(tool) { tools.set(tool.name, tool); },
+      unregisterTool(name) { tools.delete(name); },
+      getAvailableTools() {
+        return [...tools.values()].map((tool) => ({
+          name: tool.name,
+          description: tool.description ?? "",
+          parameters: {},
+        }));
+      },
+    });
+    try {
+      const registry = createRegistry();
+      await registry.register(plugin("agent-tools", (ctx) => {
+        ctx.registerAgentTool({
+          name: "plugin_echo",
+          label: "Echo",
+          description: "Echo a string.",
+          parameters: Type.Object({}),
+          async execute() {
+            return { content: [{ type: "text" as const, text: "ok" }], details: null };
+          },
+        });
+      }));
+      expect(getAiRunHost()?.getAvailableTools?.().some((tool) => tool.name === "plugin_echo")).toBe(true);
+
+      registry.unregister("agent-tools");
+      expect(getAiRunHost()?.getAvailableTools?.().some((tool) => tool.name === "plugin_echo")).toBe(false);
+    } finally {
+      setAiRunHost(null);
+    }
   });
 
   test("maps Agent title/render panes onto a React component", async () => {

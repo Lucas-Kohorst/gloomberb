@@ -534,6 +534,18 @@ export interface GloomPluginContext {
   registerShortcut(shortcut: KeyboardShortcut): void;
   registerTickerAction(action: TickerAction): void;
   registerContextMenuProvider(provider: ContextMenuProviderDef): void;
+  /**
+   * Register an agent tool the AI assistant can call. The tool is appended
+   * to the built-in agent tools for structured and screener output modes.
+   * Use a unique `name`; collisions with built-in tools are ignored.
+   */
+  registerAgentTool(tool: import("@earendil-works/pi-agent-core").AgentTool): void;
+  /**
+   * Contribute a system-prompt fragment that describes this plugin's
+   * agent tools. Fragments are appended to the base agent system prompt
+   * (structured and screener modes). No-op in renderers without a native AI host.
+   */
+  registerAgentPromptFragment(fragment: string): void;
   registerSyncContributor(contributor: SyncContributor): () => void;
   registerSyncTransport(transport: SyncTransport): () => void;
   watchNewsQuery?(

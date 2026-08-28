@@ -6,6 +6,8 @@ import {
   createProvider,
   fauxAssistantMessage,
   fauxProvider,
+  fauxText,
+  fauxThinking,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import {
@@ -183,6 +185,39 @@ describe("PiAiRuntime", () => {
       .rejects.toMatchObject({ code: "provider_not_configured" });
   });
 
+  test("catalog listing uses local credential checks so a hung refresh cannot empty the catalog", async () => {
+    const faux = fauxProvider({ provider: "anthropic", models: [{ id: "claude-opus-4-8", name: "Opus" }] });
+    const provider = createProvider({
+      id: "anthropic",
+      name: "Anthropic",
+      auth: {
+        apiKey: {
+          name: "Hang",
+          check: async () => ({ type: "api_key" as const, source: "local" }),
+          resolve: () => new Promise(() => {}),
+        },
+      },
+      models: faux.models,
+      api: { stream: faux.provider.stream, streamSimple: faux.provider.streamSimple },
+    });
+    const models = createModels({ credentials: new InMemoryCredentialStore() });
+    models.setProvider(provider);
+    const runtime = new PiAiRuntime({ models });
+
+    const catalog = await Promise.race([
+      runtime.getCatalog(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("catalog waited on hung auth refresh")), 250);
+      }),
+    ]);
+    expect(catalog.providers[0]?.connection).toMatchObject({
+      state: "connected",
+      source: "local",
+    });
+    expect(runtime.hasProvider("anthropic")).toBe(true);
+    expect(runtime.hasProvider("factory")).toBe(false);
+  });
+
   test("normalizes provider failures and cancellation", async () => {
     const failed = createFauxRuntime();
     failed.faux.setResponses([
@@ -236,5 +271,36 @@ describe("PiAiRuntime", () => {
     expect(result.text).toBe("Remote schema loaded.");
     expect(chunks.at(-1)).toBe("Remote schema loaded.");
     expect(result.messages.some((message) => message.role === "toolResult")).toBe(true);
+  });
+
+  test("enables thinking for reasoning models and streams expandable thinking text", async () => {
+    const faux = fauxProvider({
+      provider: "anthropic",
+      models: [{ id: "claude-opus-4-8", name: "Opus", reasoning: true }],
+    });
+    const models = createModels({ credentials: new InMemoryCredentialStore() });
+    models.setProvider(faux.provider);
+    const runtime = new PiAiRuntime({ models });
+    let requestedReasoning: string | undefined;
+    faux.setResponses([
+      (_context, options) => {
+        requestedReasoning = options?.reasoning;
+        return fauxAssistantMessage([
+          fauxThinking("Need a short reason."),
+          fauxText("Because."),
+        ]);
+      },
+    ]);
+    const thinkingChunks: string[] = [];
+
+    const result = await runtime.runAgent({
+      providerId: "anthropic",
+      prompt: "Why?",
+      onThinking: (chunk) => thinkingChunks.push(chunk),
+    }).done;
+
+    expect(requestedReasoning).toBe("medium");
+    expect(result.text).toBe("Because.");
+    expect(thinkingChunks.at(-1)).toBe("Need a short reason.");
   });
 });

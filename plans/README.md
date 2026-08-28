@@ -53,7 +53,15 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 054  | Settlement series matcher | P2 | M | — | DONE |
 | 055  | Command bar + analytics chrome | P2 | M | 049 | DONE |
 | 056  | DuckDB vs SQLite (research; keep SQLite KV) | — | — | — | RESEARCH |
-| 057  | Agent surface parity (registry tools + hosted handle) | P1 | L | remote + AGENT pane | READY |
+| 057  | Agent surface parity (registry tools + hosted handle) | P1 | L | remote + AGENT pane | DONE (v0; v1 data ops open) |
+| 058  | Remove legacy text-parsing tool path + dead runAiWithTools | P1 | S | — | DONE |
+| 059  | Sandbox read_file tool to allowed roots | P1 | S | — | DONE |
+| 060  | Fix captureDispatch console-capture race | P1 | S | — | DONE |
+| 061  | Render tool-call cards in workspace pane | P2 | M | — | DONE |
+| 062  | Plugin-contributed agent tools (registerTool + ctx.registerAgentTool) | P2 | S | — | DONE |
+| 063  | Factory provider agent protocol (runText → runAgent) | P1 | S | — | DONE |
+| 064  | Agent system prompt customization via plugin-contributed prompt fragments | P2 | S | 062 | DONE |
+| 065  | Agent as a first-class Gloom user (057 v1 data ops, hosted tool loop, series path) | P1 | L | 057 v0, 062, 064 | PARTIAL (PR A + D done; B, C, E remain) |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 
@@ -69,6 +77,14 @@ Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
   in parallel.
 - **014** is test-only and can be executed in parallel with any other plan.
 - **017–021** are all S-effort independent fixes and can be executed in parallel.
+- **058–064 (Aug 26 agent batch)**: 058 ∥ 059 ∥ 060 are P1 independent S-effort
+  fixes — execute first in parallel. 063 (Factory provider) is P1 S-effort,
+  independent. 061 (tool-call cards) is P2 M-effort, independent. 062 (plugin
+  tools) is P2 S-effort, independent. 064 (prompt fragments) is P2 S-effort,
+  **depends on 062** — execute 062 first.
+- **064 requires 062** — the prompt fragments describe the tools that
+  plugins register via plan 062's plugin-contributed agent tools API.
+  Execute 062 first; 064's fragments are meaningless without the tools.
 - **018 and 020** both touch `worker.ts` — coordinate to avoid merge conflicts.
 - **022, 023, 024** are independent feature plans. 022 (Treasury auctions) is the
   lowest-risk starting point. 024 (bond search) complements 022 but is higher risk

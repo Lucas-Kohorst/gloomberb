@@ -6,8 +6,10 @@ import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import { VERSION } from "../../version";
 import {
+  selectActiveLayoutIndex,
   selectGridlockTipSequence,
   selectGridlockTipVisible,
+  selectSavedLayouts,
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -18,6 +20,12 @@ import { useLayoutSwitcher } from "./layout-switcher";
 import { resolveAppStatusBarHeightCells } from "./shell/chrome";
 
 const GRIDLOCK_TIP_DURATION_MS = 60_000;
+const LAYOUT_CHIP_DIGIT_LIMIT = 9;
+
+function layoutChipLabel(index: number, name: string): string {
+  const slot = index + 1;
+  return slot <= LAYOUT_CHIP_DIGIT_LIMIT ? `${slot} ${name}` : name;
+}
 
 type StatusBarEvent = { stopPropagation?: () => void; preventDefault?: () => void };
 type HoveredControl = string | null;
@@ -92,6 +100,17 @@ export function StatusBar() {
         },
       } : {})}
     >
+      {nativePaneChrome ? (
+        <NativeLayoutChips
+          hoveredControl={hoveredControl}
+          setHoveredControl={setHoveredControl}
+        />
+      ) : (
+        <TerminalLayoutChips
+          hoveredControl={hoveredControl}
+          setHoveredControl={setHoveredControl}
+        />
+      )}
       {showGridlockTip && (
         nativePaneChrome ? (
           <NativeGridlockTip
@@ -110,6 +129,138 @@ export function StatusBar() {
         )
       )}
       <StatusBarWidgets />
+    </Box>
+  );
+}
+
+function useStatusBarLayouts() {
+  const dispatch = useAppDispatch();
+  const layouts = useAppSelector(selectSavedLayouts);
+  const activeLayoutIdx = useAppSelector(selectActiveLayoutIndex);
+  const { openLayoutContextMenu } = useLayoutSwitcher();
+
+  const switchLayout = (index: number, event?: StatusBarEvent) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (index === activeLayoutIdx) return;
+    dispatch({ type: "SWITCH_LAYOUT", index });
+  };
+
+  const openChipContextMenu = (index: number, event?: StatusBarEvent) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    void openLayoutContextMenu(index, event ?? {});
+  };
+
+  return { layouts, activeLayoutIdx, switchLayout, openChipContextMenu };
+}
+
+function NativeLayoutChips({
+  hoveredControl,
+  setHoveredControl,
+}: {
+  hoveredControl: HoveredControl;
+  setHoveredControl: SetHoveredControl;
+}) {
+  const { layouts, activeLayoutIdx, switchLayout, openChipContextMenu } = useStatusBarLayouts();
+  if (layouts.length === 0) return null;
+
+  return (
+    <Box
+      flexShrink={0}
+      flexDirection="row"
+      alignItems="center"
+      data-gloom-role="status-layouts"
+      style={{ gap: 4 }}
+    >
+      {layouts.map((layout, index) => {
+        const active = index === activeLayoutIdx;
+        const hoverKey = `layout-${index}`;
+        const hovered = hoveredControl === hoverKey;
+        return (
+          <Box
+            key={`${layout.id ?? layout.name}-${index}`}
+            alignItems="center"
+            onMouseOver={() => setHoveredControl((current) => (current === hoverKey ? current : hoverKey))}
+            onMouseOut={() => setHoveredControl((current) => (current === hoverKey ? null : current))}
+            onMouseDown={(event: StatusBarEvent) => switchLayout(index, event)}
+            onContextMenu={(event: StatusBarEvent) => openChipContextMenu(index, event)}
+            data-gloom-role="status-layout"
+            data-gloom-interactive="true"
+            aria-label={layout.name}
+            title={layout.name}
+            role="button"
+            tabIndex={0}
+            style={{
+              cursor: "pointer",
+              borderRadius: 4,
+              paddingInline: 6,
+              paddingBlock: 1,
+              backgroundColor: active
+                ? blendHex(colors.panel, colors.header, 0.42)
+                : hovered
+                  ? blendHex(colors.panel, colors.header, 0.22)
+                  : "transparent",
+            }}
+          >
+            <Text
+              fg={active ? colors.textBright : hovered ? colors.text : colors.textDim}
+              attributes={active ? TextAttributes.BOLD : undefined}
+            >
+              {layoutChipLabel(index, layout.name)}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
+function TerminalLayoutChips({
+  hoveredControl,
+  setHoveredControl,
+}: {
+  hoveredControl: HoveredControl;
+  setHoveredControl: SetHoveredControl;
+}) {
+  const { layouts, activeLayoutIdx, switchLayout, openChipContextMenu } = useStatusBarLayouts();
+  if (layouts.length === 0) return null;
+
+  return (
+    <Box
+      paddingLeft={1}
+      flexShrink={0}
+      flexDirection="row"
+      alignItems="center"
+      data-gloom-role="status-layouts"
+    >
+      {layouts.map((layout, index) => {
+        const active = index === activeLayoutIdx;
+        const hoverKey = `layout-${index}`;
+        const hovered = hoveredControl === hoverKey;
+        const label = layoutChipLabel(index, layout.name);
+        return (
+          <Box
+            key={`${layout.id ?? layout.name}-${index}`}
+            flexDirection="row"
+            onMouseOver={() => setHoveredControl((current) => (current === hoverKey ? current : hoverKey))}
+            onMouseDown={(event: StatusBarEvent) => switchLayout(index, event)}
+            onContextMenu={(event: StatusBarEvent) => openChipContextMenu(index, event)}
+            data-gloom-role="status-layout"
+            data-gloom-interactive="true"
+          >
+            {index > 0 ? <Box width={1} /> : null}
+            <Box backgroundColor={hovered && !active ? hoverBg() : undefined}>
+              <Text
+                fg={active ? colors.textBright : hovered ? colors.text : colors.textDim}
+                attributes={active ? TextAttributes.BOLD : undefined}
+              >
+                {label}
+              </Text>
+            </Box>
+          </Box>
+        );
+      })}
     </Box>
   );
 }

@@ -2,6 +2,7 @@ import type {
   AiConversationMessage,
   AiRunController,
   AiRunHost,
+  AiRunOutputMode,
   AiRuntimeCatalog,
   AiRuntimeProvider,
 } from "./runner";
@@ -9,6 +10,9 @@ import type { AiProviderStatus } from "./providers";
 import type { PaneSettingsDef } from "../../../types/plugin";
 import { isHostedWebClient } from "./providers";
 import { withDeadline } from "../../../utils/async-deadline";
+import { getInProcessRemoteHandle } from "../../../remote/in-process-handle";
+import type { AiAgentHistoryMessage } from "./agent-history";
+import { applyRemoteControlText, parseRemoteControlRequest } from "./remote-request";
 
 const BROWSER_AI_CHECK_TIMEOUT_MS = 5_000;
 
@@ -173,10 +177,69 @@ export async function downloadBrowserAiModel(): Promise<BrowserAiState> {
   return getBrowserAiState();
 }
 
+const STRUCTURED_NANO_INSTRUCTIONS = [
+  "You are the AI agent inside Gloomberb. Layouts, panes, datasets, and commands are your computer.",
+  "Reply with JSON only. Either a remote-control request or {\"message\":\"your answer\"}.",
+  "Valid request types: help, schema, get, call, patch, batch.",
+  "Read app://snapshot, app://pane-types, app://pane-templates, app://commands, or app://connections before guessing ids.",
+  "Examples:",
+  "{\"type\":\"get\",\"resource\":\"app://pane-types\"}",
+  "{\"type\":\"call\",\"operation\":\"pane.show\",\"input\":{\"paneId\":\"sec\"}}",
+  "{\"type\":\"call\",\"operation\":\"pane.createFromTemplate\",\"input\":{\"templateId\":\"sec-filings\"}}",
+  "{\"type\":\"call\",\"operation\":\"pane.createFromTemplate\",\"input\":{\"templateId\":\"chart-composer-pane\",\"options\":{\"arg\":\"POLY:fed-cut-september, FRED:FEDFUNDS\"}}}",
+  "pane.show chart-composer is empty. Seed series with chart-composer-pane options.arg.",
+  "{\"type\":\"call\",\"operation\":\"layout.new\",\"input\":{\"name\":\"Democrats\"}}",
+  "Never use capability.invoke.",
+].join(" ");
+
+export const parseBrowserRemoteControlRequest = parseRemoteControlRequest;
+
+async function collectPromptOutput(
+  session: LanguageModelSession,
+  prompt: string,
+  signal: AbortSignal,
+  onChunk?: (output: string) => void,
+): Promise<string> {
+  if (session.promptStreaming) {
+    let output = "";
+    for await (const chunk of session.promptStreaming(prompt, { signal })) {
+      const delta = chunk.startsWith(output) ? chunk.slice(output.length) : chunk;
+      output += delta;
+      onChunk?.(delta);
+    }
+    return output;
+  }
+  const output = await session.prompt(prompt, { signal });
+  onChunk?.(output);
+  return output;
+}
+
+async function runHostedStructuredRequest(
+  raw: string,
+  onAgentMessages?: (messages: AiAgentHistoryMessage[]) => void,
+): Promise<string | null> {
+  const handle = getInProcessRemoteHandle();
+  try {
+    const result = await applyRemoteControlText(
+      raw,
+      async (request) => {
+        if (!handle) return { ok: false, error: { code: "remote_unavailable", message: "Live app remote handle is not mounted." } };
+        return handle(request);
+      },
+      onAgentMessages,
+    );
+    return result.applied ? result.output : null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 export function createBrowserAiRunController(options: {
   prompt: string;
   messages?: AiConversationMessage[];
   onChunk?: (output: string) => void;
+  onAgentMessages?: (messages: AiAgentHistoryMessage[]) => void;
+  outputMode?: AiRunOutputMode;
 }): AiRunController {
   const abort = new AbortController();
   const done = (async () => {
@@ -186,21 +249,20 @@ export function createBrowserAiRunController(options: {
     if (state.availability !== "available") throw new Error(state.reason);
     const session = await api.create(BROWSER_AI_SESSION_OPTIONS);
     try {
-      const prompt = [...(options.messages ?? []), { role: "user", content: options.prompt }]
+      const conversation = [...(options.messages ?? []), { role: "user", content: options.prompt }]
         .map((message) => `${message.role}: ${message.content}`)
         .join("\n");
-      if (session.promptStreaming) {
-        let output = "";
-        for await (const chunk of session.promptStreaming(prompt, { signal: abort.signal })) {
-          const delta = chunk.startsWith(output) ? chunk.slice(output.length) : chunk;
-          output += delta;
-          options.onChunk?.(delta);
-        }
-        return output;
+      const prompt = options.outputMode === "structured"
+        ? `${STRUCTURED_NANO_INSTRUCTIONS}\n\n${conversation}`
+        : conversation;
+      const output = await collectPromptOutput(session, prompt, abort.signal, options.onChunk);
+      if (options.outputMode !== "structured") return output;
+      try {
+        const remoteOutput = await runHostedStructuredRequest(output, options.onAgentMessages);
+        return remoteOutput ?? output;
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
       }
-      const output = await session.prompt(prompt, { signal: abort.signal });
-      options.onChunk?.(output);
-      return output;
     } finally {
       session.destroy?.();
     }
@@ -212,7 +274,7 @@ export const browserAiRuntimeProvider: AiRuntimeProvider = {
   providerId: "browser-builtin",
   label: "Browser (on-device)",
   status: "ready",
-  outputModes: ["plain", "screener"],
+  outputModes: ["plain", "structured", "screener"],
   defaultModelId: "gemini-nano",
 };
 
@@ -268,7 +330,7 @@ export function createBrowserAiRunHost(
         message: status.available ? null : (status.unavailableReason ?? state.reason),
       };
     },
-    run({ providerId, prompt, messages, onChunk }) {
+    run({ providerId, prompt, messages, onChunk, onAgentMessages, outputMode }) {
       if (providerId !== "browser-builtin") {
         return {
           done: Promise.reject(new Error(`${providerId} ${HOSTED_PROVIDER_UNAVAILABLE}`)),
@@ -279,6 +341,8 @@ export function createBrowserAiRunHost(
         prompt,
         messages,
         onChunk,
+        onAgentMessages,
+        outputMode,
       });
     },
   };

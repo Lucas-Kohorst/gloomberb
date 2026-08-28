@@ -30,6 +30,10 @@ export interface ParsedToolCall {
 }
 
 /**
+ * @deprecated Text-parsing tool path. The agent protocol (pi-agent-core)
+ * handles tool-use internally via typed AgentTool objects; do not wire this
+ * back into a run path. Retained for tools.test.ts coverage only.
+ *
  * Parse fenced JSON tool-call blocks from an AI text response.
  *
  * Supports both ```json fenced blocks and bare inline JSON objects containing
@@ -114,18 +118,25 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
       name: "read_file",
       description: "Read a file from ~/.gloomberb/plugins/ or the app source directory.",
       parameters: {
-        path: { type: "string", description: "Relative path under ~/.gloomberb/plugins/ or an absolute path", required: true },
+        path: { type: "string", description: "Relative path under ~/.gloomberb/plugins/, or an absolute path under the app source directory (process.cwd())", required: true },
       },
       async execute(args): Promise<PluginToolResult> {
         const relPath = String(args.path ?? "");
         if (!relPath) return { success: false, output: "Missing required parameter: path" };
 
         const pluginsRoot = getPluginsRoot();
+        const appRoot = process.cwd();
         let fullPath: string;
         if (relPath.startsWith("/")) {
           fullPath = relPath;
+          if (!fullPath.startsWith(appRoot)) {
+            return { success: false, output: "Path must stay within the plugins directory or the app source directory" };
+          }
         } else {
           fullPath = join(pluginsRoot, relPath);
+          if (!fullPath.startsWith(pluginsRoot)) {
+            return { success: false, output: "Path must stay within the plugins directory" };
+          }
         }
 
         if (!existsSync(fullPath)) {
@@ -159,7 +170,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
     },
     {
       name: "reload_plugin",
-      description: "Reload an external plugin by re-importing its entry file. The plugin is unregistered and re-registered.",
+      description: "Reload an external plugin by re-importing its entry file. Usually unnecessary: new plugins load and open on their own when files change.",
       parameters: {
         pluginId: { type: "string", description: "The plugin ID or directory name to reload", required: true },
       },
@@ -203,7 +214,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
           cpSync(sourceDir, targetDir, { recursive: true });
           return {
             success: true,
-            output: `Forked ${sourcePluginId} to ~/.gloomberb/plugins/${newId}/. Edit the plugin id in the forked source, then use reload_plugin to load it.`,
+            output: `Forked ${sourcePluginId} to ~/.gloomberb/plugins/${newId}/. Edit the plugin id in the forked source. It will load automatically.`,
           };
         } catch (err) {
           return { success: false, output: `Failed to fork: ${err}` };
@@ -269,6 +280,10 @@ export function getToolDefinitions(tools: PluginTool[]) {
 }
 
 /**
+ * @deprecated Text-parsing tool path. The agent protocol (pi-agent-core)
+ * handles tool-use internally via typed AgentTool objects; do not wire this
+ * back into a run path. Retained for tools.test.ts coverage only.
+ *
  * Execute a parsed tool call against the available tools.
  */
 export async function executeToolCall(
@@ -288,6 +303,10 @@ export async function executeToolCall(
 }
 
 /**
+ * @deprecated Text-parsing tool path. The agent protocol (pi-agent-core)
+ * handles tool-use internally via typed AgentTool objects; do not wire this
+ * back into a run path. Retained for tools.test.ts coverage only.
+ *
  * Process all tool calls found in an AI response, executing each one and
  * returning a summary of results.
  */

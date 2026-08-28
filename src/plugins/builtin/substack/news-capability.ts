@@ -14,7 +14,7 @@ const SUBSTACK_NEWS_HEAD_LIMIT = 200;
 
 function supports(query: NewsQuery): boolean {
   const feed = query.feed ?? (query.scope === "ticker" ? "ticker" : "latest");
-  return feed === "latest" || feed === "top";
+  return feed === "latest";
 }
 
 /**

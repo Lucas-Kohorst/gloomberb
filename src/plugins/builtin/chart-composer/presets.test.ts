@@ -246,6 +246,21 @@ describe("chart composer expressions", () => {
     expect(spec.studies.filter((study) => study.kind === "ratio" || study.kind === "spread")).toHaveLength(0);
   });
 
+  test("plots a Polymarket Fed-cut series with the actual Fed funds rate", () => {
+    const spec = buildCustomChartPreset("POLY:fed-cut-september, FRED:FEDFUNDS");
+    expect(spec.series).toHaveLength(2);
+    expect(spec.series[0]?.source).toMatchObject({
+      kind: "prediction-market",
+      venue: "polymarket",
+      marketId: "fed-cut-september",
+    });
+    expect(spec.series[1]?.source).toMatchObject({
+      kind: "economic",
+      provider: "fred",
+      seriesId: "FEDFUNDS",
+    });
+  });
+
   test("defaults assets to price, macro to level, polls to percent, and PM to probability", () => {
     const price = buildCustomChartPreset("AAPL");
     const macro = buildCustomChartPreset("FRED:CPIAUCSL");

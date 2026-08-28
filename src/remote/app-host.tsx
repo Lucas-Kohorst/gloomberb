@@ -4,10 +4,14 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { AppAction, AppState } from "../state/app/context";
 import type { DesktopWindowBridge } from "../types/desktop-window";
 import { createAppRemoteController } from "./controller";
+import {
+  getInProcessRemoteHandle,
+  setInProcessRemoteHandle,
+  type RemoteControlHandler,
+} from "./in-process-handle";
 import { useRemoteUiRegistry } from "./semantic-tree";
-import type { RemoteControlRequest, RemoteControlResponse } from "./types";
 
-export type RemoteControlHandler = (request: RemoteControlRequest) => Promise<RemoteControlResponse>;
+export type { RemoteControlHandler } from "./in-process-handle";
 
 export interface RemoteControlAdapter {
   startServer?(options: { dataDir: string; handle: RemoteControlHandler }): void | (() => void | Promise<void>);
@@ -74,6 +78,15 @@ export function RemoteControlHost({
       cleanup();
     };
   }, [adapter, controller]);
+
+  useEffect(() => {
+    setInProcessRemoteHandle(controller.handle);
+    return () => {
+      if (getInProcessRemoteHandle() === controller.handle) {
+        setInProcessRemoteHandle(null);
+      }
+    };
+  }, [controller]);
 
   return children;
 }

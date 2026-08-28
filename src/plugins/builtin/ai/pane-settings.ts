@@ -232,7 +232,7 @@ export function buildAiPaneSettingsDef(options: BuildAiPaneSettingsOptions): Pan
     {
       key: AI_DEFAULT_PROVIDER_SETTING_KEY,
       label: "Default provider",
-      description: "Used by new AI panes and conversations.",
+      description: "Used by new threads. Existing threads keep the provider they were created with.",
       type: "select",
       storage: "plugin",
       clearOnChange: [AI_DEFAULT_MODEL_SETTING_KEY],
@@ -241,7 +241,7 @@ export function buildAiPaneSettingsDef(options: BuildAiPaneSettingsOptions): Pan
     {
       key: AI_DEFAULT_MODEL_SETTING_KEY,
       label: "Default model",
-      description: "Used when a pane does not have its own model override.",
+      description: "Used by new threads unless this pane overrides it.",
       type: "select",
       storage: "plugin",
       options: modelOptions(options.models, defaultProviderId, defaultModelId, "Auto (recommended)"),
@@ -253,7 +253,7 @@ export function buildAiPaneSettingsDef(options: BuildAiPaneSettingsOptions): Pan
       {
         key: paneProviderKey,
         label: "Provider for this pane",
-        description: "Overrides the shared default for this pane only.",
+        description: "Used by new threads in this pane. The open thread stays on its original provider.",
         type: "select",
         clearOnChange: [paneModelKey],
         options: [
@@ -267,7 +267,7 @@ export function buildAiPaneSettingsDef(options: BuildAiPaneSettingsOptions): Pan
       {
         key: paneModelKey,
         label: "Model for this pane",
-        description: "Overrides the shared default for this pane only.",
+        description: "Used by new threads in this pane. The open thread stays on its original model.",
         type: "select",
         options: modelOptions(options.models, effectiveProviderId, paneModelId, "Use default"),
       },

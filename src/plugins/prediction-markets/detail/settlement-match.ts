@@ -58,6 +58,27 @@ const CRYPTO_SERIES: ReadonlyArray<{
   { symbol: "XRP-USD", name: "XRP", tokens: ["xrp-usd", "ripple"] },
 ];
 
+const SECURITY_ALIASES: ReadonlyArray<{
+  symbol: string;
+  label: string;
+  names: readonly string[];
+  related?: ReadonlyArray<{ symbol: string; label: string }>;
+}> = [
+  {
+    symbol: "MSTR",
+    label: "Strategy (MSTR)",
+    names: ["microstrategy", "strategy inc", "strategy, inc"],
+    related: [
+      { symbol: "STRF", label: "Strategy Strife (STRF)" },
+      { symbol: "STRC", label: "Strategy Stretch (STRC)" },
+      { symbol: "STRK", label: "Strategy Strike (STRK)" },
+      { symbol: "STRD", label: "Strategy Stride (STRD)" },
+    ],
+  },
+];
+
+const EQUITY_TICKER_RE = /^[A-Z]{1,5}(?:[.-][A-Z0-9]+)?$/;
+
 const FRED_ALIASES: ReadonlyArray<{
   seriesId: string;
   label: string;
@@ -512,7 +533,49 @@ function matchTitleTickers(titleText: string, rows: SettlementSeriesMatch[]): vo
     const vol = findVolCatalogEntry(ticker);
     if (vol) {
       pushFred(rows, vol.seriesId, vol.label, "ticker");
+      continue;
     }
+    if (!EQUITY_TICKER_RE.test(ticker) || CRYPTO_CASHTAGS.has(ticker)) continue;
+    const entry = SECURITY_ALIASES.find((item) => item.symbol === ticker);
+    if (entry) {
+      pushPrimarySecurity(rows, entry, "ticker");
+      continue;
+    }
+    pushEquity(rows, ticker, ticker, "ticker");
+  }
+}
+
+function pushEquity(
+  rows: SettlementSeriesMatch[],
+  symbol: string,
+  label: string,
+  reason: SettlementMatchRank,
+): void {
+  pushSeries(rows, {
+    id: `equity:${symbol}`,
+    label,
+    source: "Yahoo",
+    expression: `${symbol}:price`,
+    reason,
+  });
+}
+
+function pushPrimarySecurity(
+  rows: SettlementSeriesMatch[],
+  entry: (typeof SECURITY_ALIASES)[number],
+  reason: SettlementMatchRank,
+): void {
+  pushEquity(rows, entry.symbol, entry.label, reason);
+  for (const related of entry.related ?? []) {
+    pushEquity(rows, related.symbol, related.label, "alias");
+  }
+}
+
+function matchSecurityAliases(text: string, rows: SettlementSeriesMatch[]): void {
+  const lower = haystack(text);
+  for (const entry of SECURITY_ALIASES) {
+    if (!entry.names.some((name) => hasPhrase(lower, name))) continue;
+    pushPrimarySecurity(rows, entry, "map");
   }
 }
 
@@ -611,8 +674,9 @@ export function matchSettlementSeries(summary: SummaryFields): SettlementMatchRe
   matchFomcCompanions(joinFields(rulesText, titleText, summary.description), series);
   matchCryptoPhrases(rulesText, "map", series);
   matchTreasuryPhrases(rulesText, "map", series);
-  matchTitleTickers(titleText, series);
+  matchTitleTickers(joinFields(titleText, rulesText), series);
   matchCryptoPhrases(titleText, "ticker", series);
+  matchSecurityAliases(joinFields(titleText, rulesText), series);
   matchWeakAliases(rulesText, series);
   matchPolls(fullText, series);
   matchAdjacentIndices(fullText, series);

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Box } from "../../../ui";
 import { EmptyState, Spinner } from "../../../components";
-import { useLoadNewsStory } from "../../../news/hooks";
-import type { NewsArticle } from "../../../news/types";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
+import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { AdjacentClient } from "../../builtin/adjacent/client";
 import type { AdjacentSimilarMarket } from "../../builtin/adjacent/types";
 import { SimilarMarketsView } from "../../builtin/adjacent/prediction-integration";
@@ -16,10 +16,12 @@ import {
 } from "../../builtin/news/wire/news/table";
 import { useNewsReadState } from "../../builtin/news/wire/read-state";
 import { useCopyShareLink, newsArticleSharePayload } from "../../builtin/shared/article-share";
+import type { PredictionMarketSummary } from "../types";
 import {
   useAdjacentMarketMatch,
   type AdjacentMarketLookup,
 } from "./adjacent-match";
+import { buildPredictionNewsQuery } from "./news-query";
 
 function matchHint(triedIds: string[], subject: string): string {
   if (triedIds.length > 0) {
@@ -107,44 +109,29 @@ export function PredictionSimilarTab({
 const NEWS_COLUMNS = ["time", "source", "title", "tickers", "categories"] as const;
 const NEWS_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
-function AdjacentMarketNewsStack({
-  client,
-  marketId,
+function PredictionNewsStack({
+  articles,
+  loading,
+  error,
   focused,
   width,
   height,
+  onRefresh,
+  emptyStateTitle,
+  emptyStateHint,
 }: {
-  client: AdjacentClient;
-  marketId: string;
+  articles: NewsArticle[];
+  loading: boolean;
+  error: string | null;
   focused: boolean;
   width: number;
   height: number;
+  onRefresh?: () => void;
+  emptyStateTitle: string;
+  emptyStateHint: string;
 }) {
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<NewsSortPreference>(NEWS_SORT);
-
-  const loadNews = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    return client.getMarketNews(marketId, { limit: 20 })
-      .then((response) => {
-        setArticles((response.news ?? []).map(normalizeAdjacentNewsArticle));
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      });
-  }, [client, marketId]);
-
-  useEffect(() => {
-    setArticles([]);
-    void loadNews();
-  }, [loadNews]);
-
   const loadNewsStory = useLoadNewsStory();
   const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(articles, loadNewsStory);
   const { readArticleIds, markArticleRead } = useNewsReadState();
@@ -163,9 +150,7 @@ function AdjacentMarketNewsStack({
     loading,
     error,
     onPopOut: () => popOutArticle(readableArticle),
-    onRefresh: () => {
-      void loadNews();
-    },
+    onRefresh,
     onShare: shareArticle,
     showPoll: !detailArticle,
   });
@@ -203,10 +188,96 @@ function AdjacentMarketNewsStack({
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
       columns={[...NEWS_COLUMNS]}
-      emptyStateTitle="No related news."
-      emptyStateHint="Adjacent did not return news for this market."
+      emptyStateTitle={emptyStateTitle}
+      emptyStateHint={emptyStateHint}
       onPopOut={() => popOutArticle(readableArticle)}
       onShare={shareArticle}
+    />
+  );
+}
+
+function TickerNewsStack({
+  query,
+  focused,
+  width,
+  height,
+}: {
+  query: NewsQuery;
+  focused: boolean;
+  width: number;
+  height: number;
+}) {
+  const newsState = useNewsArticles(query);
+  const loading = newsState.phase === "loading"
+    || (newsState.phase === "refreshing" && newsState.articles.length === 0);
+  const error = newsState.phase === "error" ? newsState.error : null;
+
+  return (
+    <PredictionNewsStack
+      articles={newsState.articles}
+      loading={loading}
+      error={error}
+      focused={focused}
+      width={width}
+      height={height}
+      onRefresh={() => {
+        void getSharedNewsService()?.load(query);
+      }}
+      emptyStateTitle="No ticker news."
+      emptyStateHint="No articles for these tickers."
+    />
+  );
+}
+
+function AdjacentMarketNewsStack({
+  client,
+  marketId,
+  focused,
+  width,
+  height,
+}: {
+  client: AdjacentClient;
+  marketId: string;
+  focused: boolean;
+  width: number;
+  height: number;
+}) {
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadNews = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    return client.getMarketNews(marketId, { limit: 20 })
+      .then((response) => {
+        setArticles((response.news ?? []).map(normalizeAdjacentNewsArticle));
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+  }, [client, marketId]);
+
+  useEffect(() => {
+    setArticles([]);
+    void loadNews();
+  }, [loadNews]);
+
+  return (
+    <PredictionNewsStack
+      articles={articles}
+      loading={loading}
+      error={error}
+      focused={focused}
+      width={width}
+      height={height}
+      onRefresh={() => {
+        void loadNews();
+      }}
+      emptyStateTitle="No related news."
+      emptyStateHint="Adjacent did not return news for this market."
     />
   );
 }
@@ -214,16 +285,49 @@ function AdjacentMarketNewsStack({
 export function PredictionNewsTab({
   client,
   lookup,
+  summary,
   focused,
   width,
   height,
 }: {
   client: AdjacentClient | null;
   lookup: AdjacentMarketLookup;
+  summary?: Pick<
+    PredictionMarketSummary,
+    | "venue"
+    | "marketId"
+    | "title"
+    | "marketLabel"
+    | "eventLabel"
+    | "eventTicker"
+    | "seriesTicker"
+    | "category"
+    | "description"
+    | "rulesPrimary"
+    | "rulesSecondary"
+    | "resolutionSource"
+    | "url"
+  > | null;
   focused: boolean;
   width: number;
   height: number;
 }) {
+  const query = useMemo(
+    () => summary ? buildPredictionNewsQuery(summary) : null,
+    [summary],
+  );
+
+  if (query) {
+    return (
+      <TickerNewsStack
+        query={query}
+        focused={focused}
+        width={width}
+        height={height}
+      />
+    );
+  }
+
   return (
     <AdjacentMarketTab
       client={client}

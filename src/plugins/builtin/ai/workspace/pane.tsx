@@ -25,8 +25,10 @@ import {
   usePluginPaneState,
   usePluginState,
 } from "../../../runtime";
+import { requestAccountManagementTab } from "../../account-management/navigation";
 import { buildTickerAiContext } from "../ticker-context";
-import type { AiAgentHistoryMessage } from "../agent-history";
+import { extractActionReceipts, extractToolCards, extractTurnThinking, type AgentActionReceipt, type AgentToolCard, type AiAgentHistoryMessage } from "../agent-history";
+import { getInProcessRemoteHandle } from "../../../../remote/in-process-handle";
 import { resolveDefaultAiProviderId, type AiProvider } from "../providers";
 import { useAiRuntimeProviders } from "../use-runtime-providers";
 import {
@@ -38,8 +40,7 @@ import {
   supportsAiRunOutputMode,
 } from "../runner-selection";
 import { checkAiProviderStatus, isAiRunCancelled, runAiPrompt } from "../runner";
-import { parseToolCalls, executeToolCall, createPluginTools } from "../tools";
-import { getSharedRegistry } from "../../../registry";
+
 import { AiRunnerSelector } from "../runner-selector";
 import {
   AI_DEFAULT_MODEL_SETTING_KEY,
@@ -58,6 +59,7 @@ import {
   type LocalAgentAttachmentPayload,
   type LocalAgentWorkspaceState,
 } from "./model";
+import { selectLiveDeskContext } from "./live-desk";
 
 export const LOCAL_AGENT_WORKSPACE_STATE_KEY = "local-agent-workspace";
 export const LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION = 1;
@@ -80,7 +82,129 @@ function providerLabel(providerId: string): string {
 
 function providerPrerequisite(provider: AiProvider): string {
   if (isAiProviderReady(provider)) return `${provider.name} is ready.`;
-  return `${provider.name} is not connected. Open settings to sign in or configure access.`;
+  return `${provider.name} is not connected. Sign in from Account Management.`;
+}
+
+function toggleExpandedId(current: ReadonlySet<string>, id: string): Set<string> {
+  const next = new Set(current);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+const MAX_VISIBLE_TOOL_CARDS = 5;
+const MAX_TOOL_RESULT_CHARS = 1_000;
+
+function truncateToolResult(text: string): string {
+  if (text.length <= MAX_TOOL_RESULT_CHARS) return text;
+  return `${text.slice(0, MAX_TOOL_RESULT_CHARS)}…[truncated ${text.length - MAX_TOOL_RESULT_CHARS} chars]`;
+}
+
+function formatToolArguments(args: Record<string, unknown>, lineWidth: number): string {
+  const json = (() => {
+    try {
+      return JSON.stringify(args);
+    } catch {
+      return "[unserializable arguments]";
+    }
+  })();
+  return truncateWithEllipsis(json, Math.max(lineWidth - "Arguments: ".length, 1));
+}
+
+function AgentReceiptRow({ receipt }: { receipt: AgentActionReceipt }) {
+  return (
+    <Box flexDirection="row">
+      <Text fg={colors.textDim}>{receipt.label}</Text>
+      {receipt.undoable ? (
+        <Text
+          fg={colors.textBright}
+          onMouseDown={() => {
+            void getInProcessRemoteHandle()?.({ type: "call", operation: "layout.undo" });
+          }}
+          style={{ cursor: "pointer" }}
+        >
+          {"  Undo"}
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
+function AgentToolCardView({
+  card,
+  lineWidth,
+  expanded,
+  onToggle,
+}: {
+  card: AgentToolCard;
+  lineWidth: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const statusColor = card.status === "success"
+    ? colors.positive
+    : card.status === "error"
+      ? colors.warning
+      : colors.textMuted;
+  const statusLabel = card.status === "running" ? "running" : card.status;
+  const marker = card.status === "running" ? "·" : expanded ? "▾" : "▸";
+  const header = `${marker} ${card.toolName} · ${statusLabel}`;
+  return (
+    <Box flexDirection="column">
+      <Box onMouseDown={onToggle} style={{ cursor: "pointer" }}>
+        <Text fg={statusColor} attributes={TextAttributes.BOLD} onMouseDown={onToggle} style={{ cursor: "pointer" }}>
+          {header}
+        </Text>
+      </Box>
+      {expanded && card.status !== "running" ? (
+        <Box flexDirection="column" paddingLeft={1}>
+          <Text fg={colors.textDim}>
+            Arguments: {formatToolArguments(card.arguments, lineWidth)}
+          </Text>
+          {card.result ? (
+            <ScrollBox height={Math.min(8, 3)} scrollY focusable={false}>
+              <Text fg={colors.textDim}>{truncateToolResult(card.result)}</Text>
+            </ScrollBox>
+          ) : null}
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+function AgentThinkingDisclosure({
+  thinking,
+  streaming,
+  expanded,
+  onToggle,
+  lineWidth,
+}: {
+  thinking: string;
+  streaming?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  lineWidth: number;
+}) {
+  if (!thinking && !streaming) return null;
+  const label = thinking
+    ? `${expanded ? "▾" : "▸"} Thinking`
+    : "Thinking…";
+  return (
+    <Box flexDirection="column">
+      <Box onMouseDown={onToggle} style={{ cursor: "pointer" }}>
+        <Text fg={colors.textMuted} onMouseDown={onToggle} style={{ cursor: "pointer" }}>
+          {label}
+        </Text>
+      </Box>
+      {expanded && thinking ? (
+        <MarkdownText
+          text={thinking}
+          lineWidth={lineWidth}
+          textColor={colors.textDim}
+        />
+      ) : null}
+    </Box>
+  );
 }
 
 function WorkspaceProviderChooser({
@@ -114,7 +238,7 @@ function WorkspaceProviderChooser({
   return (
     <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
       <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Choose an AI provider</Text>
-      <Text fg={colors.textDim}>Provider and model are fixed for this thread. Create another thread to switch.</Text>
+      <Text fg={colors.textDim}>Provider and model stay on this thread. + New clones them; switch here only when you want a different account.</Text>
       <Box height={1} />
       {statusMessage && <Text fg={colors.warning}>{statusMessage}</Text>}
       <AiRunnerSelector
@@ -142,7 +266,7 @@ function WorkspaceProviderChooser({
       {selectedProvider && !isAiProviderReady(selectedProvider) && (
         <Box paddingTop={1}>
           <Button
-            label={`Configure ${selectedProvider.name}`}
+            label="Sign in from Account Management"
             variant="primary"
             shortcut="s"
             onPress={onConfigure}
@@ -150,7 +274,7 @@ function WorkspaceProviderChooser({
         </Box>
       )}
       <Box height={1} />
-      <Text fg={colors.textMuted}>↑/↓ provider · m model · Enter create · s settings · Esc return to threads</Text>
+      <Text fg={colors.textMuted}>↑/↓ provider · m model · Enter create · s sign in · Esc return to threads</Text>
     </Box>
   );
 }
@@ -159,7 +283,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   const { nativePaneChrome } = useUiCapabilities();
   const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
-  const { openPaneSettings } = usePluginAppActions();
+  const { showPane } = usePluginAppActions();
   const providers = useAiRuntimeProviders();
   const workspaceProviders = useMemo(
     () => providers.filter((provider) => supportsAiRunOutputMode(provider, "structured")),
@@ -199,13 +323,16 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   const activeThread = workspace.threads.find((thread) => thread.id === paneThreadId)
     ?? workspace.threads.find((thread) => thread.id === workspace.activeThreadId)
     ?? null;
-  const activeSelection = useMemo(() => resolveAiPaneSelection({
+  const paneNewThreadDefaults = useMemo(() => resolveAiPaneSelection({
     settings: paneInstance?.settings,
-    savedProviderId: activeThread?.providerId,
-    savedModelId: activeThread?.modelId,
+    savedProviderId: null,
+    savedModelId: null,
     defaultProviderId: workspaceDefaultProviderId,
     defaultModelId: workspaceDefaultModelId,
-  }), [activeThread?.modelId, activeThread?.providerId, paneInstance?.settings, workspaceDefaultModelId, workspaceDefaultProviderId]);
+  }), [paneInstance?.settings, workspaceDefaultModelId, workspaceDefaultProviderId]);
+  const activeSelection = activeThread
+    ? { providerId: activeThread.providerId, modelId: activeThread.modelId }
+    : paneNewThreadDefaults;
   const activeThreadProviderSupported = activeThread
     ? providers.some((provider) => provider.id === activeThread.providerId)
     : true;
@@ -214,6 +341,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   ));
   const [selectedProviderIndex, setSelectedProviderIndex] = useState(preferredProviderIndex);
   const providerSelectionTouchedRef = useRef(false);
+  const explicitChooserRef = useRef(pendingNewThreadId !== null);
   const [modelId, setModelId] = useState(workspaceDefaultModelId);
   const [modelInputFocused, setModelInputFocused] = useState(false);
   const [checkingProviderId, setCheckingProviderId] = useState<string | null>(null);
@@ -223,6 +351,9 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   const [attachments, setAttachments] = useState<LocalAgentAttachmentPayload[]>([]);
   const [runningMessageId, setRunningMessageId] = useState<string | null>(null);
   const [streamingOutput, setStreamingOutput] = useState("");
+  const [streamingThinking, setStreamingThinking] = useState<string | null>(null);
+  const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(() => new Set());
+  const [expandedToolCardIds, setExpandedToolCardIds] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<TextareaRenderable | null>(null);
   const modelInputRef = useRef<InputRenderable | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
@@ -249,6 +380,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   const selectedFinancials = useAppSelector((state) => previousSymbol ? state.financials.get(previousSymbol) ?? null : null);
   const baseCurrency = useAppSelector((state) => state.config.baseCurrency);
   const exchangeRates = useAppSelector((state) => state.exchangeRates);
+  const liveDesk = useAppSelector(selectLiveDeskContext);
 
   const updateWorkspace = useCallback((updater: (current: LocalAgentWorkspaceState) => LocalAgentWorkspaceState) => {
     setPersistedWorkspace((current) => updater(normalizeLocalAgentWorkspace(current)));
@@ -259,13 +391,6 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     inputRef.current?.editBuffer.setText?.("");
     setAttachments([]);
   }, []);
-
-  const beginCreateThread = useCallback(() => {
-    providerSelectionTouchedRef.current = false;
-    setSelectedProviderIndex(preferredProviderIndex);
-    setModelId(workspaceDefaultModelId);
-    setCreating(true);
-  }, [preferredProviderIndex, workspaceDefaultModelId]);
 
   const selectProviderForCreation = useCallback((index: number) => {
     const provider = workspaceProviders[index];
@@ -284,9 +409,10 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     setSelectedProviderIndex(preferredProviderIndex);
   }, [creating, preferredProviderIndex]);
 
-  const openConfiguration = useCallback(() => {
-    openPaneSettings(paneId);
-  }, [openPaneSettings, paneId]);
+  const openAccounts = useCallback(() => {
+    requestAccountManagementTab("ai");
+    showPane("account-management");
+  }, [showPane]);
 
   const focusModelInput = useCallback(() => {
     setModelInputFocused(true);
@@ -309,6 +435,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       const status = await checkAiProviderStatus(provider);
       if (!mountedRef.current) return;
       if (!status.available || (!status.authenticated && !status.inconclusive)) {
+        explicitChooserRef.current = true;
         setStatusMessage(status.message ?? `${provider.name} is not ready.`);
         return;
       }
@@ -328,8 +455,10 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       setPaneThreadId(nextThreadId);
       clearDraft();
       setModelId("");
+      explicitChooserRef.current = false;
       setCreating(false);
     } catch (error) {
+      explicitChooserRef.current = true;
       if (mountedRef.current) {
         setStatusMessage(error instanceof Error ? error.message : `${provider.name} status check failed.`);
       }
@@ -338,6 +467,41 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       if (mountedRef.current) setCheckingProviderId(null);
     }
   }, [blurModelInput, clearDraft, setPaneThreadId, updateWorkspace]);
+
+  const beginCreateThread = useCallback(() => {
+    const cloneFromActive = activeThread && activeThreadProviderSupported
+      ? workspaceProviders.find((provider) => provider.id === activeThread.providerId)
+      : null;
+    const ready = cloneFromActive && isAiProviderReady(cloneFromActive)
+      ? cloneFromActive
+      : workspaceProviders.find((provider) => (
+        provider.id === paneNewThreadDefaults.providerId && isAiProviderReady(provider)
+      )) ?? workspaceProviders.find(isAiProviderReady);
+    if (ready) {
+      explicitChooserRef.current = false;
+      void createThread(
+        ready,
+        cloneFromActive && ready.id === cloneFromActive.id
+          ? (activeThread?.modelId ?? paneNewThreadDefaults.modelId ?? "")
+          : (paneNewThreadDefaults.modelId ?? ""),
+      );
+      return;
+    }
+    explicitChooserRef.current = true;
+    providerSelectionTouchedRef.current = false;
+    setSelectedProviderIndex(preferredProviderIndex);
+    setModelId(paneNewThreadDefaults.modelId ?? workspaceDefaultModelId);
+    setCreating(true);
+  }, [
+    activeThread,
+    activeThreadProviderSupported,
+    createThread,
+    paneNewThreadDefaults.modelId,
+    paneNewThreadDefaults.providerId,
+    preferredProviderIndex,
+    workspaceDefaultModelId,
+    workspaceProviders,
+  ]);
 
   useEffect(() => {
     if (seededRef.current) return;
@@ -358,6 +522,24 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       }
     }
   }, [createThread, paneInstance?.params?.modelId, paneInstance?.params?.providerId, paneInstance?.params?.threadId, providers, setPaneThreadId, workspace.threads, workspaceProviders]);
+
+  useEffect(() => {
+    if (explicitChooserRef.current || busyRef.current) return;
+    if (activeThread || !creating) return;
+    const ready = workspaceProviders.find((provider) => (
+      provider.id === paneNewThreadDefaults.providerId && isAiProviderReady(provider)
+    )) ?? workspaceProviders.find(isAiProviderReady);
+    if (!ready) return;
+    void createThread(ready, paneNewThreadDefaults.modelId ?? "", pendingNewThreadId ?? undefined);
+  }, [
+    activeThread,
+    creating,
+    createThread,
+    paneNewThreadDefaults.modelId,
+    paneNewThreadDefaults.providerId,
+    pendingNewThreadId,
+    workspaceProviders,
+  ]);
 
   useEffect(() => {
     if (!focused) return;
@@ -439,9 +621,10 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     setCheckingProviderId(provider.id);
     try {
       const providerStatus = await checkAiProviderStatus(provider);
-      if (!mountedRef.current) return;
       if (!providerStatus.available || (!providerStatus.authenticated && !providerStatus.inconclusive)) {
-        setStatusMessage(providerStatus.message ?? `${provider.name} is not ready.`);
+        if (mountedRef.current) {
+          setStatusMessage(providerStatus.message ?? `${provider.name} is not ready.`);
+        }
         busyRef.current = false;
         return;
       }
@@ -459,7 +642,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     const userMessageId = crypto.randomUUID();
     const assistantMessageId = crypto.randomUUID();
     const attachmentMetadata = attachments.map(({ content: _content, ...metadata }) => metadata);
-    const prompt = buildLocalAgentRequestPrompt(text, attachments);
+    const prompt = buildLocalAgentRequestPrompt(text, attachments, liveDesk);
     const priorAgentMessages = buildLocalAgentTranscript(activeThread);
     const transcriptPrefix = activeThread.agentMessages.length > 0
       ? []
@@ -471,14 +654,18 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       createdAt: now,
       attachments: attachmentMetadata,
     }]));
-    setInputValue("");
-    inputRef.current?.editBuffer.setText?.("");
-    setAttachments([]);
-    setStatusMessage(null);
-    setRunningMessageId(assistantMessageId);
-    setStreamingOutput("");
+    if (mountedRef.current) {
+      setInputValue("");
+      inputRef.current?.editBuffer.setText?.("");
+      setAttachments([]);
+      setStatusMessage(null);
+      setRunningMessageId(assistantMessageId);
+      setStreamingOutput("");
+      setStreamingThinking(null);
+    }
 
     let streamedOutput = "";
+    let streamedThinking = "";
     let completedAgentMessages: AiAgentHistoryMessage[] = [];
     try {
       const controller = runAiPrompt({
@@ -488,9 +675,14 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
         modelId: activeSelection.modelId ?? undefined,
         outputMode: "structured",
         onChunk: (output) => {
-          if (!mountedRef.current) return;
           streamedOutput = output;
+          if (!mountedRef.current) return;
           setStreamingOutput(streamedOutput);
+        },
+        onThinking: (output) => {
+          streamedThinking = output;
+          if (!mountedRef.current) return;
+          setStreamingThinking(output);
         },
         onAgentMessages: (messages) => {
           completedAgentMessages = messages;
@@ -498,46 +690,44 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       });
       runRef.current = { controller, threadId: activeThread.id, assistantMessageId };
       const rawOutput = await controller.done;
-      if (!mountedRef.current) return;
-
-      // Process any tool calls in the AI response.
-      let output = rawOutput;
-      const toolCalls = parseToolCalls(rawOutput);
-      if (toolCalls.length > 0) {
-        const tools = createPluginTools(getSharedRegistry());
-        const toolResults: string[] = [];
-        for (const call of toolCalls) {
-          const result = await executeToolCall(tools, call);
-          const status = result.success ? "success" : "failed";
-          toolResults.push(`**Tool: ${call.tool}** — ${status}\n\`\`\`\n${result.output}\n\`\`\``);
-        }
-        output = `${rawOutput}\n\n${toolResults.join("\n\n")}`;
+      if (mountedRef.current) {
+        setRunningMessageId(null);
+        setStreamingOutput("");
+        setStreamingThinking(null);
       }
-
-      setRunningMessageId(null);
-      setStreamingOutput("");
+      const thinking = extractTurnThinking(completedAgentMessages) || streamedThinking || undefined;
+      const toolCards = extractToolCards(completedAgentMessages);
+      const receipts = extractActionReceipts(completedAgentMessages);
       const transcriptDelta = completedAgentMessages.length
         ? completedAgentMessages
         : [
             { role: "user" as const, content: prompt },
             {
               role: "assistant" as const,
-              content: [{ type: "text" as const, text: output }],
+              content: [
+                ...(thinking ? [{ type: "thinking" as const, thinking }] : []),
+                { type: "text" as const, text: rawOutput },
+              ],
             },
           ];
       updateWorkspace((current) => appendLocalAgentTranscript(
         appendLocalAgentMessages(current, activeThread.id, [{
           id: assistantMessageId,
           role: "assistant",
-          content: output,
+          content: rawOutput,
           createdAt: Date.now(),
           status: "complete",
+          ...(thinking ? { thinking } : {}),
+          ...(toolCards.length ? { toolCards } : {}),
+          ...(receipts.length ? { receipts } : {}),
         }]),
         activeThread.id,
         [...transcriptPrefix, ...transcriptDelta],
       ));
     } catch (error) {
       if (isAiRunCancelled(error)) {
+        const thinking = extractTurnThinking(completedAgentMessages) || streamedThinking || undefined;
+        const toolCards = extractToolCards(completedAgentMessages);
         updateWorkspace((current) => appendLocalAgentTranscript(
           appendLocalAgentMessages(current, activeThread.id, [{
             id: assistantMessageId,
@@ -545,6 +735,8 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
             content: streamedOutput || "Cancelled before a response was received.",
             createdAt: Date.now(),
             status: "cancelled",
+            ...(thinking ? { thinking } : {}),
+            ...(toolCards.length ? { toolCards } : {}),
           }]),
           activeThread.id,
           [...transcriptPrefix, { role: "user", content: prompt }],
@@ -563,6 +755,8 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
         }
       } else {
         const message = error instanceof Error ? error.message : `${provider.name} failed.`;
+        const thinking = extractTurnThinking(completedAgentMessages) || streamedThinking || undefined;
+        const toolCards = extractToolCards(completedAgentMessages);
         updateWorkspace((current) => appendLocalAgentTranscript(
           appendLocalAgentMessages(current, activeThread.id, [{
             id: assistantMessageId,
@@ -570,6 +764,8 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
             content: `${streamedOutput}\n\nError: ${message}`,
             createdAt: Date.now(),
             status: "error",
+            ...(thinking ? { thinking } : {}),
+            ...(toolCards.length ? { toolCards } : {}),
           }]),
           activeThread.id,
           [...transcriptPrefix, { role: "user", content: prompt }],
@@ -582,9 +778,10 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       if (mountedRef.current) {
         setRunningMessageId(null);
         setStreamingOutput("");
+        setStreamingThinking(null);
       }
     }
-  }, [activeSelection.modelId, activeSelection.providerId, activeThread, activeThreadProviderSupported, attachments, providers, updateWorkspace]);
+  }, [activeSelection.modelId, activeSelection.providerId, activeThread, activeThreadProviderSupported, attachments, liveDesk, providers, updateWorkspace]);
 
   const submitInput = useCallback(() => {
     const value = inputRef.current?.editBuffer.getText() ?? inputValue;
@@ -618,7 +815,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
       if (event.name === "s") {
         event.stopPropagation?.();
         event.preventDefault?.();
-        openConfiguration();
+        openAccounts();
         return;
       }
       if (workspaceProviders.length === 0) return;
@@ -651,8 +848,6 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      busyRef.current = false;
-      runRef.current?.controller.cancel();
       dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
     };
   }, [dispatch]);
@@ -667,13 +862,13 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
           : [],
     hints: creating
       ? [{
-          id: "settings",
+          id: "sign-in",
           key: "s",
-          label: "ettings",
-          onPress: openConfiguration,
+          label: "ign in",
+          onPress: openAccounts,
         }]
       : [],
-  }), [checkingProviderId, creating, openConfiguration, runningMessageId, statusMessage]);
+  }), [checkingProviderId, creating, openAccounts, runningMessageId, statusMessage]);
 
   const messageText = activeThread?.messages.map((message) => message.content) ?? [];
   const { catalog, openTicker } = useInlineTickers(messageText);
@@ -682,30 +877,39 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
     return (
       <Box flexDirection="column" paddingX={1} paddingTop={1}>
         <Text fg={colors.warning}>No supported AI providers are available.</Text>
-        <Text fg={colors.textDim}>Open pane settings to review AI provider configuration.</Text>
+        <Text fg={colors.textDim}>Sign in from Account Management, then start a thread here.</Text>
         <Box paddingTop={1}>
-          <Button label="Open AI settings" variant="primary" shortcut="s" onPress={openConfiguration} />
+          <Button label="Sign in from Account Management" variant="primary" shortcut="s" onPress={openAccounts} />
         </Box>
       </Box>
     );
   }
 
   if (creating || !activeThread) {
+    const showChooser = explicitChooserRef.current
+      || !workspaceProviders.some(isAiProviderReady);
+    if (showChooser) {
+      return (
+        <WorkspaceProviderChooser
+          providers={workspaceProviders}
+          selectedIndex={selectedProviderIndex}
+          checkingProviderId={checkingProviderId}
+          statusMessage={statusMessage}
+          modelId={modelId}
+          modelInputRef={modelInputRef}
+          modelFocused={modelInputFocused && focused}
+          onSelectIndex={selectProviderForCreation}
+          onModelChange={setModelId}
+          onModelFocusRequest={focusModelInput}
+          onModelBlur={blurModelInput}
+          onConfigure={openAccounts}
+        />
+      );
+    }
     return (
-      <WorkspaceProviderChooser
-        providers={workspaceProviders}
-        selectedIndex={selectedProviderIndex}
-        checkingProviderId={checkingProviderId}
-        statusMessage={statusMessage}
-        modelId={modelId}
-        modelInputRef={modelInputRef}
-        modelFocused={modelInputFocused && focused}
-        onSelectIndex={selectProviderForCreation}
-        onModelChange={setModelId}
-        onModelFocusRequest={focusModelInput}
-        onModelBlur={blurModelInput}
-        onConfigure={openConfiguration}
-      />
+      <Box flexDirection="column" paddingX={1} paddingTop={1} flexGrow={1}>
+        <Spinner label="Starting chat…" />
+      </Box>
     );
   }
 
@@ -783,7 +987,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
               activeThreadProviderSupported ? activeSelection.modelId : activeThread.modelId,
             )}
           </Text>
-          <Text fg={colors.textDim}> · persistent thread</Text>
+          <Text fg={colors.textDim}> · live desk in context</Text>
           {!showSidebar && (
             <>
               <Text fg={colors.textDim}> · </Text>
@@ -806,8 +1010,8 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
         <ScrollBox ref={scrollRef} flexGrow={1} minHeight={0} scrollY focusable={false} paddingX={1}>
           {activeThread.messages.length === 0 ? (
             <Box flexDirection="column" paddingTop={1}>
-              <Text fg={colors.textDim}>Start a research conversation. No financial context is attached automatically.</Text>
-              <Text fg={colors.textMuted}>Press a to attach the selected ticker, then review the preview before sending.</Text>
+              <Text fg={colors.textDim}>This desk is already in context. Ask to open, place, or change panes.</Text>
+              <Text fg={colors.textMuted}>Optional: press a to dump extra ticker numbers into this message.</Text>
             </Box>
           ) : activeThread.messages.map((message) => (
             <Box key={message.id} flexDirection="column" paddingTop={1}>
@@ -823,6 +1027,44 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
               {message.attachments?.map((attachment) => (
                 <Text key={attachment.id} fg={colors.warning}>Attached: {attachment.label}</Text>
               ))}
+              {message.thinking ? (
+                <AgentThinkingDisclosure
+                  thinking={message.thinking}
+                  expanded={expandedThinkingIds.has(message.id)}
+                  onToggle={() => setExpandedThinkingIds((current) => toggleExpandedId(current, message.id))}
+                  lineWidth={contentWidth}
+                />
+              ) : null}
+              {message.toolCards?.length ? (() => {
+                const cards = message.toolCards!;
+                const visible = cards.length > MAX_VISIBLE_TOOL_CARDS
+                  ? cards.slice(-MAX_VISIBLE_TOOL_CARDS)
+                  : cards;
+                const hiddenCount = cards.length - visible.length;
+                return (
+                  <Box flexDirection="column">
+                    {hiddenCount > 0 ? (
+                      <Text fg={colors.textMuted}>+{hiddenCount} more tool call{hiddenCount === 1 ? "" : "s"}</Text>
+                    ) : null}
+                    {visible.map((card) => (
+                      <AgentToolCardView
+                        key={card.id}
+                        card={card}
+                        lineWidth={contentWidth}
+                        expanded={expandedToolCardIds.has(card.id)}
+                        onToggle={() => setExpandedToolCardIds((current) => toggleExpandedId(current, card.id))}
+                      />
+                    ))}
+                  </Box>
+                );
+              })() : null}
+              {message.receipts?.length ? (
+                <Box flexDirection="column">
+                  {message.receipts.map((receipt) => (
+                    <AgentReceiptRow key={receipt.id} receipt={receipt} />
+                  ))}
+                </Box>
+              ) : null}
               {message.content ? (
                 <MarkdownText
                   text={message.content}
@@ -841,6 +1083,15 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
               <Text fg={colors.positive} attributes={TextAttributes.BOLD}>
                 {providerLabel(activeThreadProviderSupported ? activeSelection.providerId : activeThread.providerId)} · streaming
               </Text>
+              {streamingThinking !== null && (
+                <AgentThinkingDisclosure
+                  thinking={streamingThinking}
+                  streaming
+                  expanded={expandedThinkingIds.has(runningMessageId)}
+                  onToggle={() => setExpandedThinkingIds((current) => toggleExpandedId(current, runningMessageId))}
+                  lineWidth={contentWidth}
+                />
+              )}
               {streamingOutput ? (
                 <MarkdownText
                   text={streamingOutput}
@@ -849,7 +1100,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
                   textColor={colors.text}
                   openTicker={openTicker}
                 />
-              ) : (
+              ) : streamingThinking !== null ? null : (
                 <Spinner label="Waiting for provider…" />
               )}
             </Box>
@@ -865,7 +1116,7 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
               {attachments.map((attachment) => (
                 <Box key={attachment.id} flexDirection="column" backgroundColor={colors.panel} paddingX={1}>
                   <Box flexDirection="row">
-                    <Text fg={colors.warning} attributes={TextAttributes.BOLD}>Attached: {attachment.label}</Text>
+                    <Text fg={colors.warning} attributes={TextAttributes.BOLD}>Ticker dump: {attachment.label}</Text>
                     <Box flexGrow={1} />
                     <Text fg={colors.textBright} onMouseDown={removeAttachments} style={{ cursor: "pointer" }}>Remove</Text>
                   </Box>
@@ -876,7 +1127,9 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
               ))}
               <Box height={1} flexDirection="row">
                 <Text fg={colors.textBright} onMouseDown={attachSelectedTicker} style={{ cursor: "pointer" }}>
-                  {attachments.length > 0 ? "Replace context" : `Attach ${previousSymbol ? previousSymbol : "selected ticker"}`}
+                  {attachments.length > 0
+                    ? "Replace ticker dump"
+                    : `Add ${previousSymbol ? previousSymbol : "ticker"} dump`}
                 </Text>
                 {runningMessageId && (
                   <Text fg={colors.warning} onMouseDown={cancelRun} style={{ cursor: "pointer" }}>  Cancel</Text>

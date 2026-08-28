@@ -1,9 +1,11 @@
 import {
+  clampThinkingLevel,
   createProvider,
   getSupportedThinkingLevels,
   type Api,
   type AssistantMessage,
   type AssistantMessageEvent,
+  type AuthCheck,
   type AuthEvent,
   type AuthInteraction,
   type AuthPrompt,
@@ -151,6 +153,7 @@ export interface PiPromptRequest {
   sessionId?: string;
   signal?: AbortSignal;
   onChunk?: (cumulativeText: string) => void;
+  onThinking?: (cumulativeThinking: string) => void;
   onEvent?: (event: AssistantMessageEvent) => void;
 }
 
@@ -180,6 +183,7 @@ export interface PiCreateAgentRequest {
 export interface PiAgentRunRequest extends PiCreateAgentRequest {
   prompt: string;
   onChunk?: (cumulativeText: string) => void;
+  onThinking?: (cumulativeThinking: string) => void;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
 }
 
@@ -197,6 +201,7 @@ export interface PiAiRuntimeOptions {
 }
 
 const PROVIDER_AUTH_TIMEOUT_MS = 5_000;
+const CATALOG_AUTH_TIMEOUT_MS = 1_000;
 
 function sanitizeErrorMessage(value: unknown): string {
   const raw = value instanceof Error ? value.message : String(value);
@@ -212,6 +217,45 @@ function assistantText(message: AssistantMessage): string {
     .filter((content): content is Extract<AssistantMessage["content"][number], { type: "text" }> => content.type === "text")
     .map((content) => content.text)
     .join("");
+}
+
+function assistantThinking(message: AssistantMessage): string {
+  return message.content
+    .filter((content): content is Extract<AssistantMessage["content"][number], { type: "thinking" }> => (
+      content.type === "thinking" && !content.redacted
+    ))
+    .map((content) => content.thinking)
+    .filter((text) => text.trim().length > 0)
+    .join("\n\n")
+    .trim();
+}
+
+function messagesThinking(messages: readonly AgentMessage[]): string {
+  const parts: string[] = [];
+  for (const message of messages) {
+    if (!isAssistantMessage(message)) continue;
+    const thinking = assistantThinking(message);
+    if (thinking) parts.push(thinking);
+  }
+  return parts.join("\n\n").trim();
+}
+
+function applyThinkingEvent(
+  event: AssistantMessageEvent,
+  cumulativeThinking: string,
+  onThinking?: (cumulativeThinking: string) => void,
+): string {
+  if (event.type === "thinking_start") {
+    const next = cumulativeThinking.length > 0 ? `${cumulativeThinking.trimEnd()}\n\n` : cumulativeThinking;
+    onThinking?.(next);
+    return next;
+  }
+  if (event.type === "thinking_delta") {
+    const next = cumulativeThinking + event.delta;
+    onThinking?.(next);
+    return next;
+  }
+  return cumulativeThinking;
 }
 
 function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
@@ -321,6 +365,18 @@ function stripPromptSignal(prompt: AuthPrompt): PiSerializableAuthPrompt {
   return serializable as PiSerializableAuthPrompt;
 }
 
+function connectionFromAuthCheck(authCheck: AuthCheck | undefined): PiProviderConnection {
+  if (!authCheck) return { state: "not_connected" };
+  const disconnectable = authCheck.type === "oauth" || authCheck.source === "stored credential";
+  return {
+    state: "connected",
+    type: authCheck.type,
+    ...(authCheck.source ? { source: authCheck.source } : {}),
+    origin: disconnectable ? "stored" : "external",
+    disconnectable,
+  };
+}
+
 export class PiAiRuntime {
   private readonly models: MutableModels;
 
@@ -380,11 +436,22 @@ export class PiAiRuntime {
       }
     }
 
-    const providers = await Promise.all(this.models.getProviders().map((provider) => this.getProviderSummary(provider.id)));
+    const providers = await Promise.all(
+      this.models.getProviders().map((provider) => (
+        this.getProviderSummary(provider.id, { verify: "local" })
+      )),
+    );
     return { providers, refreshErrors };
   }
 
-  async getProviderSummary(providerId: string): Promise<PiProviderSummary> {
+  hasProvider(providerId: string): boolean {
+    return this.models.getProvider(providerId) !== undefined;
+  }
+
+  async getProviderSummary(
+    providerId: string,
+    options: { verify?: "local" | "live" } = {},
+  ): Promise<PiProviderSummary> {
     const provider = this.models.getProvider(providerId);
     if (!provider) throw new PiRuntimeError("provider_not_found", `Unknown AI provider: ${providerId}`);
     if (!isAiProviderId(provider.id)) {
@@ -414,34 +481,47 @@ export class PiAiRuntime {
     let connection: PiProviderConnection;
     let availableIds = new Set<string>();
     try {
-      // getAuth performs the real OAuth refresh path. checkAuth only reports
-      // that a stored token exists, even when it is expired or revoked.
-      // Bound by a deadline so a hung network refresh never leaves the
-      // provider stuck on "checking" — it reaches a terminal error state.
-      const auth = await withDeadline(
-        this.models.getAuth(provider.id),
-        PROVIDER_AUTH_TIMEOUT_MS,
-        `${provider.id} auth check timed out.`,
-      );
-      const authCheck = auth
-        ? await withDeadline(
-            this.models.checkAuth(provider.id),
-            PROVIDER_AUTH_TIMEOUT_MS,
-            `${provider.id} credential check timed out.`,
-          )
-        : undefined;
-      const disconnectable = authCheck?.type === "oauth" || auth?.source === "stored credential";
-      connection = auth
-        ? {
-            state: "connected",
-            type: authCheck?.type ?? (provider.auth.oauth ? "oauth" : "api_key"),
-            source: auth.source,
-            origin: disconnectable ? "stored" : "external",
-            disconnectable,
-          }
-        : { state: "not_connected" };
-      if (auth) {
-        availableIds = new Set((await this.models.getAvailable(provider.id)).map((model) => model.id));
+      if ((options.verify ?? "live") === "local") {
+        // Catalog listing is inventory. checkAuth is local (stored token, env,
+        // CLI files) and must not wait on OAuth refresh. A hung refresh on
+        // one provider previously emptied the whole desktop catalog.
+        const authCheck = await withDeadline(
+          this.models.checkAuth(provider.id),
+          CATALOG_AUTH_TIMEOUT_MS,
+          `${provider.id} credential check timed out.`,
+        );
+        connection = connectionFromAuthCheck(authCheck);
+        if (authCheck) {
+          availableIds = new Set(provider.getModels().map((model) => model.id));
+        }
+      } else {
+        // Live status and runs still refresh OAuth so expired tokens fail
+        // closed before a request is sent.
+        const auth = await withDeadline(
+          this.models.getAuth(provider.id),
+          PROVIDER_AUTH_TIMEOUT_MS,
+          `${provider.id} auth check timed out.`,
+        );
+        const authCheck = auth
+          ? await withDeadline(
+              this.models.checkAuth(provider.id),
+              PROVIDER_AUTH_TIMEOUT_MS,
+              `${provider.id} credential check timed out.`,
+            )
+          : undefined;
+        const disconnectable = authCheck?.type === "oauth" || auth?.source === "stored credential";
+        connection = auth
+          ? {
+              state: "connected",
+              type: authCheck?.type ?? (provider.auth.oauth ? "oauth" : "api_key"),
+              ...(auth.source ? { source: auth.source } : {}),
+              origin: disconnectable ? "stored" : "external",
+              disconnectable,
+            }
+          : { state: "not_connected" };
+        if (auth) {
+          availableIds = new Set((await this.models.getAvailable(provider.id)).map((model) => model.id));
+        }
       }
     } catch (error) {
       connection = { state: "error", message: sanitizeErrorMessage(error) };
@@ -550,6 +630,7 @@ export class PiAiRuntime {
         });
 
         let cumulativeText = "";
+        let cumulativeThinking = "";
         let terminalMessage: AssistantMessage | null = null;
         let terminalError: AssistantMessage | null = null;
         for await (const event of stream) {
@@ -557,6 +638,8 @@ export class PiAiRuntime {
           if (event.type === "text_delta") {
             cumulativeText += event.delta;
             request.onChunk?.(cumulativeText);
+          } else if (event.type === "thinking_start" || event.type === "thinking_delta") {
+            cumulativeThinking = applyThinkingEvent(event, cumulativeThinking, request.onThinking);
           } else if (event.type === "done") {
             terminalMessage = event.message;
           } else if (event.type === "error") {
@@ -571,6 +654,8 @@ export class PiAiRuntime {
         }
         const finalText = assistantText(message);
         if (finalText !== cumulativeText) request.onChunk?.(finalText);
+        const finalThinking = assistantThinking(message);
+        if (finalThinking && finalThinking !== cumulativeThinking) request.onThinking?.(finalThinking);
         return { text: finalText, message };
       } catch (error) {
         if (controller.signal.aborted || isPiRunCancelled(error)) throw new PiRunCancelledError();
@@ -603,7 +688,7 @@ export class PiAiRuntime {
       initialState: {
         systemPrompt: request.systemPrompt ?? "",
         model,
-        thinkingLevel: request.thinkingLevel ?? "off",
+        thinkingLevel: clampThinkingLevel(model, request.thinkingLevel ?? "medium"),
         messages: [
           ...toPiMessages(request.messages, model),
           ...toPiAgentMessages(request.agentMessages, model),
@@ -624,6 +709,7 @@ export class PiAiRuntime {
         if (cancelled) throw new PiRunCancelledError();
 
         let cumulativeText = "";
+        let cumulativeThinking = "";
         let resultMessages: AgentMessage[] = [];
         agent.subscribe(async (event) => {
           await request.onEvent?.(event);
@@ -633,6 +719,12 @@ export class PiAiRuntime {
           } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
             cumulativeText += event.assistantMessageEvent.delta;
             request.onChunk?.(cumulativeText);
+          } else if (event.type === "message_update") {
+            cumulativeThinking = applyThinkingEvent(
+              event.assistantMessageEvent,
+              cumulativeThinking,
+              request.onThinking,
+            );
           } else if (event.type === "agent_end") {
             resultMessages = event.messages;
           }
@@ -646,6 +738,8 @@ export class PiAiRuntime {
         const finalAssistant = resultMessages.findLast(isAssistantMessage);
         const finalText = finalAssistant ? assistantText(finalAssistant) : cumulativeText;
         if (finalText && finalText !== cumulativeText) request.onChunk?.(finalText);
+        const finalThinking = messagesThinking(resultMessages);
+        if (finalThinking && finalThinking !== cumulativeThinking) request.onThinking?.(finalThinking);
         const userMessage: AgentMessage = {
           role: "user",
           content: request.prompt,

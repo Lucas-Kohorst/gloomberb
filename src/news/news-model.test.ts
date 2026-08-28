@@ -65,7 +65,7 @@ describe("dedupeNewsArticles identity", () => {
 describe("filterNewsArticlesForQuery top ranking", () => {
   const now = Date.now();
 
-  it("keeps the last 4 hours, drops RSS and X, and ranks by score", () => {
+  it("keeps the last 24 hours, drops RSS, X, and Substack, and ranks by score", () => {
     const high = makeArticle({
       id: "high",
       url: "https://wire.example/high",
@@ -79,6 +79,13 @@ describe("filterNewsArticlesForQuery top ranking", () => {
       origin: "adjacent",
       importance: 90,
       publishedAt: new Date(now - 90 * 60 * 1000),
+    });
+    const older = makeArticle({
+      id: "older",
+      url: "https://wire.example/older",
+      origin: "gloomberb-cloud",
+      importance: 70,
+      publishedAt: new Date(now - 5 * 60 * 60 * 1000),
     });
     const stale = makeArticle({
       id: "stale",
@@ -101,13 +108,20 @@ describe("filterNewsArticlesForQuery top ranking", () => {
       importance: 94,
       publishedAt: new Date(now - 5 * 60 * 1000),
     });
+    const newsletter = makeArticle({
+      id: "substack",
+      url: "https://www.astralcodexten.com/p/open-thread",
+      origin: "substack-news",
+      importance: 93,
+      publishedAt: new Date(now - 8 * 60 * 1000),
+    });
 
     const ranked = filterNewsArticlesForQuery(
-      [high, stale, rss, tweet, higher],
+      [high, older, stale, rss, tweet, newsletter, higher],
       { feed: "top" },
     );
 
-    expect(ranked.map((item) => item.id)).toEqual(["higher", "high"]);
+    expect(ranked.map((item) => item.id)).toEqual(["higher", "older", "high"]);
   });
 
   it("does not apply top ranking to latest", () => {

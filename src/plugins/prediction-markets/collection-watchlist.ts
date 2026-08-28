@@ -7,8 +7,9 @@ import { ADJACENT_WATCHLIST_ID, type AppConfig } from "../../types/config";
 import type { TickerRecord } from "../../types/ticker";
 import { addTickerToWatchlist, removeTickerFromWatchlist } from "../builtin/portfolio-list/mutations";
 import { getSharedRegistry } from "../registry";
+import { slimPredictionCatalogSummary } from "./cache";
 import { extractPolymarketSlug } from "./services/polymarket/normalize";
-import type { PredictionMarketSummary } from "./types";
+import type { PredictionMarketSummary, PredictionVenue } from "./types";
 
 export const DEFAULT_WATCHLIST_ID = "watchlist";
 
@@ -122,4 +123,170 @@ export async function persistPredictionStarsToDefaultWatchlist({
     dispatch({ type: "UPDATE_TICKER", ticker });
   }
   return nextTickers;
+}
+
+export function applyWatchlistSnapshots(
+  current: PredictionMarketSummary[],
+  summaries: PredictionMarketSummary[],
+  starred: boolean,
+): PredictionMarketSummary[] {
+  if (summaries.length === 0) return current;
+  if (!starred) {
+    const removed = new Set(summaries.map((summary) => summary.key));
+    return current.filter((snapshot) => !removed.has(snapshot.key));
+  }
+  const next = [...current];
+  const indexByKey = new Map(next.map((snapshot, index) => [snapshot.key, index]));
+  for (const summary of summaries) {
+    const slim = slimPredictionCatalogSummary(summary);
+    const existingIndex = indexByKey.get(summary.key);
+    if (existingIndex == null) {
+      indexByKey.set(summary.key, next.length);
+      next.push(slim);
+      continue;
+    }
+    next[existingIndex] = slim;
+  }
+  return next;
+}
+
+function createStubSummary({
+  key,
+  venue,
+  marketId,
+  title,
+}: {
+  key: string;
+  venue: PredictionVenue;
+  marketId: string;
+  title: string;
+}): PredictionMarketSummary {
+  return {
+    key,
+    venue,
+    marketId,
+    title,
+    marketLabel: title,
+    eventLabel: title,
+    status: "open",
+    url:
+      venue === "kalshi"
+        ? `https://kalshi.com/markets/${marketId}`
+        : `https://polymarket.com/event/${marketId}`,
+    description: "",
+    endsAt: null,
+    updatedAt: null,
+    createdAt: null,
+    yesPrice: null,
+    noPrice: null,
+    yesBid: null,
+    yesAsk: null,
+    noBid: null,
+    noAsk: null,
+    spread: null,
+    lastTradePrice: null,
+    volume24h: null,
+    volume24hUnit: "usd",
+    totalVolume: null,
+    totalVolumeUnit: "usd",
+    openInterest: null,
+    openInterestUnit: "usd",
+    liquidity: null,
+    liquidityUnit: "usd",
+  };
+}
+
+export function stubSummaryFromWatchlistKey(key: string): PredictionMarketSummary | null {
+  const separator = key.indexOf(":");
+  if (separator <= 0) return null;
+  const venue = key.slice(0, separator);
+  const marketId = key.slice(separator + 1);
+  if ((venue !== "kalshi" && venue !== "polymarket") || !marketId) return null;
+  return createStubSummary({ key, venue, marketId, title: marketId });
+}
+
+export function stubSummaryFromTicker(ticker: TickerRecord): PredictionMarketSummary | null {
+  const custom = ticker.metadata.custom;
+  const customKey = typeof custom.predictionMarketKey === "string" ? custom.predictionMarketKey : "";
+  const customMarketId = typeof custom.predictionMarketId === "string" ? custom.predictionMarketId : "";
+  const fromKey = customKey ? stubSummaryFromWatchlistKey(customKey) : null;
+  let venue: PredictionVenue | null =
+    custom.predictionVenue === "kalshi" || custom.predictionVenue === "polymarket"
+      ? custom.predictionVenue
+      : (fromKey?.venue ?? null);
+  let marketId = customMarketId || fromKey?.marketId || "";
+  let key = customKey;
+
+  if (!venue || !marketId) {
+    const symbol = ticker.metadata.ticker;
+    const separator = symbol.indexOf(":");
+    if (separator > 0) {
+      const prefix = symbol.slice(0, separator);
+      const rest = symbol.slice(separator + 1);
+      if (prefix === "KALSHI" && rest) {
+        venue = venue ?? "kalshi";
+        marketId = marketId || rest;
+      } else if (prefix === "POLY" && rest) {
+        venue = venue ?? "polymarket";
+        marketId = marketId || rest;
+      }
+    }
+  }
+
+  if (!key && venue && marketId) key = `${venue}:${marketId}`;
+  if (!venue || !key) return null;
+  if (!marketId) {
+    const parsed = stubSummaryFromWatchlistKey(key);
+    if (!parsed) return null;
+    venue = venue ?? parsed.venue;
+    marketId = parsed.marketId;
+  }
+
+  const title = ticker.metadata.name.trim() || marketId;
+  return createStubSummary({ key, venue, marketId, title });
+}
+
+export function hydrateWatchlistSnapshots(
+  current: PredictionMarketSummary[],
+  watchlistKeys: Iterable<string>,
+  tickers: ReadonlyMap<string, TickerRecord>,
+): PredictionMarketSummary[] {
+  const present = new Set(current.map((snapshot) => snapshot.key));
+  const missing: string[] = [];
+  for (const key of watchlistKeys) {
+    if (!present.has(key)) missing.push(key);
+  }
+  if (missing.length === 0) return current;
+
+  const tickerByMarketKey = new Map<string, TickerRecord>();
+  for (const ticker of tickers.values()) {
+    const customKey = ticker.metadata.custom.predictionMarketKey;
+    if (typeof customKey === "string" && customKey) {
+      tickerByMarketKey.set(customKey, ticker);
+    }
+  }
+
+  const next = [...current];
+  for (const key of missing) {
+    const ticker = tickerByMarketKey.get(key);
+    const stub = (ticker ? stubSummaryFromTicker(ticker) : null) ?? stubSummaryFromWatchlistKey(key);
+    if (stub) next.push(stub);
+  }
+  return next;
+}
+
+export function resolveWatchlistMarkets(
+  liveCatalog: PredictionMarketSummary[],
+  snapshots: PredictionMarketSummary[],
+  watchlist: Set<string>,
+): PredictionMarketSummary[] {
+  if (watchlist.size === 0) return [];
+  const liveByKey = new Map(liveCatalog.map((market) => [market.key, market]));
+  const snapshotByKey = new Map(snapshots.map((market) => [market.key, market]));
+  const resolved: PredictionMarketSummary[] = [];
+  for (const key of watchlist) {
+    const market = liveByKey.get(key) ?? snapshotByKey.get(key) ?? stubSummaryFromWatchlistKey(key);
+    if (market) resolved.push(market);
+  }
+  return resolved;
 }

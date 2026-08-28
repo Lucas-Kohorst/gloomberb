@@ -7,7 +7,6 @@ import {
   resolveDefaultAiProviderId,
   setDetectedProviders,
   type AiProvider,
-  type AiProviderId,
 } from "./providers";
 import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
 import { isHostedWebClient } from "./providers";
@@ -34,12 +33,10 @@ import {
   AI_PANE_PROVIDER_SETTING_KEY,
   buildAiPaneSettingsDef,
   resolveAiSharedDefaults,
-  type AiAccountSettingRow,
   type AiSharedDefaults,
 } from "./pane-settings";
+import { requestAccountManagementTab } from "../account-management/navigation";
 import {
-  connectAiRuntimeProvider,
-  disconnectAiRuntimeProvider,
   getAiRuntimeCatalog,
   subscribeAiRuntimeCatalog,
 } from "./runner";
@@ -112,78 +109,6 @@ function settingsModels(providerIds: ReadonlySet<string>) {
     }));
 }
 
-function accountSettingRows(providerIds: ReadonlySet<string>): AiAccountSettingRow[] {
-  return getAiRuntimeCatalog().accounts
-    .filter((account) => (
-      providerIds.has(account.providerId)
-      && (account.canLogin || account.canDisconnect)
-    ))
-    .map((account) => {
-      const disconnectable = account.canDisconnect;
-      return {
-        providerId: account.providerId,
-        providerLabel: account.providerLabel,
-        description: account.connectionLabel,
-        actionLabel: disconnectable ? "Disconnect" : "Connect",
-        async action(context) {
-          context.close();
-          if (disconnectable) {
-            context.notify({
-              body: `Disconnecting ${account.providerLabel}…`,
-              type: "info",
-              duration: 5_000,
-            });
-            try {
-              const catalog = await disconnectAiRuntimeProvider(account.providerId);
-              const remainingAccount = catalog.accounts.find((candidate) => (
-                candidate.providerId === account.providerId
-              ));
-              context.notify({
-                body: remainingAccount?.connectionState === "connected"
-                  ? `${account.providerLabel}'s Gloomberb account was removed. ${remainingAccount.connectionLabel} remains active.`
-                  : `${account.providerLabel} is disconnected from Gloomberb.`,
-                type: "success",
-              });
-            } catch (error) {
-              context.notify({
-                body: error instanceof Error ? error.message : `${account.providerLabel} disconnection failed.`,
-                type: "error",
-                persistent: true,
-              });
-            }
-            return;
-          }
-          context.notify({
-            body: `Opening ${account.providerLabel} sign-in in your browser…`,
-            type: "info",
-            duration: 5_000,
-          });
-          try {
-            await connectAiRuntimeProvider(account.providerId, undefined, (event) => {
-              if (event.type !== "device_code") return;
-              context.notify({
-                title: `${account.providerLabel} device sign-in`,
-                body: `Enter code ${event.userCode} at ${event.verificationUri}. The sign-in page has been opened in your browser.`,
-                type: "info",
-                persistent: true,
-              });
-            });
-            context.notify({
-              body: `${account.providerLabel} is connected.`,
-              type: "success",
-            });
-          } catch (error) {
-            context.notify({
-              body: error instanceof Error ? error.message : `${account.providerLabel} sign-in failed.`,
-              type: "error",
-              persistent: true,
-            });
-          }
-        },
-      };
-    });
-}
-
 function defaultsFromConfig(
   config: AppConfig,
   fallbackProviderId: string,
@@ -233,7 +158,7 @@ export const aiPlugin: GloomPlugin = {
             ...(browserStatus.unavailableReason
               ? { unavailableReason: browserStatus.unavailableReason }
               : {}),
-            outputModes: ["plain", "screener"],
+            outputModes: ["plain", "structured", "screener"],
             defaultModelId: "gemini-nano",
           },
         ]);
@@ -301,6 +226,16 @@ export const aiPlugin: GloomPlugin = {
     ctx.on("config:changed", ({ config }) => updateWizards(config));
     subscribeAiRuntimeCatalog(() => updateWizards(ctx.getConfig()));
 
+    const manageAiAccounts = {
+      actionLabel: "Open",
+      description: "Sign in and manage AI providers in Account Management.",
+      action(context: { close(): void }) {
+        context.close();
+        requestAccountManagementTab("ai");
+        ctx.showPane("account-management");
+      },
+    };
+
     ctx.registerTickerResearchTab({
       id: "ai-chat",
       name: "Ask AI",
@@ -355,7 +290,7 @@ export const aiPlugin: GloomPlugin = {
               activeThread?.modelId,
             ),
           },
-          accountRows: accountSettingRows(workspaceProviderIds),
+          manageAccounts: manageAiAccounts,
           additional: buildBrowserAiSettings(),
         });
       },
@@ -366,12 +301,11 @@ export const aiPlugin: GloomPlugin = {
       paneId: "local-agent-workspace",
       label: "AI Agent",
       description: "Create a persistent AI thread with optional model selection.",
-      keywords: ["ai", "agent", "claude", "openai", "chatgpt", "gemini", "copilot", "grok", "openrouter", "research", "thread"],
+      keywords: ["ai", "agent", "claude", "openai", "chatgpt", "gemini", "copilot", "grok", "factory", "openrouter", "research", "thread"],
       shortcut: { prefix: "AGENT" },
       createInstance: () => ({
         title: "AI Agent",
         placement: "floating",
-        params: { newThreadId: crypto.randomUUID() },
       }),
     });
 
@@ -419,7 +353,7 @@ export const aiPlugin: GloomPlugin = {
               activeTab?.modelId,
             ),
           },
-          accountRows: accountSettingRows(providerIds),
+          manageAccounts: manageAiAccounts,
           additional: {
             ...buildBrowserAiSettings(),
             ...buildAiScreenerPaneSettingsDef(getAiScreenerPaneSettings(context.settings)),

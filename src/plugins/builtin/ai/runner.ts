@@ -7,6 +7,7 @@ import {
   type AiProviderId,
   type AiProviderStatus,
 } from "./providers";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { AiAgentHistoryMessage } from "./agent-history";
 import { browserAiProviderStatus, refreshBrowserAiState } from "./browser";
 import { withDeadline } from "../../../utils/async-deadline";
@@ -110,11 +111,14 @@ export interface AiRunHost {
     agentMessages?: AiAgentHistoryMessage[];
     modelId?: string;
     onChunk?: (output: string) => void;
+    onThinking?: (output: string) => void;
     onAgentMessages?: (messages: AiAgentHistoryMessage[]) => void;
     outputMode?: AiRunOutputMode;
   }): AiRunController;
   checkStatus?(providerId: AiProviderId): Promise<AiProviderStatusResult>;
   getCatalog?(): Promise<AiRuntimeCatalog>;
+  /** Cheap registry lookup. Must not wait on auth or catalog discovery. */
+  hasProvider?(providerId: AiProviderId): boolean;
   connect?(
     providerId: AiProviderId,
     authType?: AiRuntimeAuthType,
@@ -126,6 +130,24 @@ export interface AiRunHost {
    * dynamically-discovered providers without reinitialising the runtime.
    */
   registerProvider?(provider: unknown): void;
+  /**
+   * Register a plugin-contributed agent tool at runtime. Plugins call this
+   * via `ctx.registerAgentTool()` from `setup()`. Registered tools are
+   * appended to the built-in tool arrays for both structured and screener
+   * output modes. A later registration with the same name replaces the
+   * previous tool so reloads do not keep the old execute closure.
+   */
+  registerTool?(tool: AgentTool): void;
+  /** Drop a plugin-contributed tool previously passed to `registerTool`. */
+  unregisterTool?(name: string): void;
+  /**
+   * Register a system-prompt fragment contributed by a plugin. Fragments
+   * are appended to the base agent system prompt (structured and screener
+   * modes) so the model learns about plugin-contributed tools.
+   */
+  registerAgentPromptFragment?(fragment: string): void;
+  /** Drop a fragment previously passed to `registerAgentPromptFragment`. */
+  unregisterAgentPromptFragment?(fragment: string): void;
   /** Tool definitions available to the agent for tool-use. */
   tools?: { name: string; description: string; parameters: Record<string, { type: string; description: string; required?: boolean }> }[];
   /** Return the available tool definitions for the agent. */
@@ -176,6 +198,11 @@ function publishCatalog(catalog: AiRuntimeCatalog): void {
 
 export function setAiRunHost(host: AiRunHost | null): void {
   configuredHost = host;
+}
+
+/** @internal — used by the plugin context to forward tool registrations. */
+export function getAiRunHost(): AiRunHost | null {
+  return configuredHost;
 }
 
 export async function installAiRunHost(
@@ -323,6 +350,7 @@ export function runAiPrompt({
   agentMessages,
   modelId,
   onChunk,
+  onThinking,
   onAgentMessages,
   outputMode,
 }: {
@@ -332,6 +360,7 @@ export function runAiPrompt({
   agentMessages?: AiAgentHistoryMessage[];
   modelId?: string;
   onChunk?: (output: string) => void;
+  onThinking?: (output: string) => void;
   onAgentMessages?: (messages: AiAgentHistoryMessage[]) => void;
   outputMode?: AiRunOutputMode;
 }): AiRunController {
@@ -359,6 +388,7 @@ export function runAiPrompt({
     agentMessages,
     modelId,
     onChunk,
+    onThinking,
     onAgentMessages,
     outputMode,
   });
@@ -369,88 +399,4 @@ export function runAiPrompt({
   return { done: reportedDone, cancel: controller.cancel };
 }
 
-/**
- * Run an AI prompt with tool-use support. The prompt is sent to the model
- * along with the available tool definitions. When the model's response
- * contains fenced JSON tool-call blocks, the tools are executed and their
- * results are appended to the response. The tool execution results are
- * reported via the onToolResults callback.
- *
- * This is a simple text-parsing approach (not a full function-calling protocol)
- * — the AI response is scanned for ```json blocks containing a "tool" field.
- */
-export function runAiWithTools({
-  providerId,
-  prompt,
-  messages,
-  agentMessages,
-  modelId,
-  outputMode,
-  tools,
-  onChunk,
-  onAgentMessages,
-  onToolResults,
-}: {
-  providerId: string;
-  prompt: string;
-  messages?: AiConversationMessage[];
-  agentMessages?: AiAgentHistoryMessage[];
-  modelId?: string;
-  outputMode?: AiRunOutputMode;
-  tools: { name: string; description: string; parameters: Record<string, { type: string; description: string; required?: boolean }> }[];
-  onChunk?: (output: string) => void;
-  onAgentMessages?: (messages: AiAgentHistoryMessage[]) => void;
-  onToolResults?: (results: { call: { tool: string; args: Record<string, unknown> }; result: { success: boolean; output: string; data?: unknown } }[]) => void;
-}): AiRunController {
-  // Build the system prompt suffix that describes available tools.
-  const toolInstructions = buildToolInstructions(tools);
-  const fullPrompt = `${prompt}\n\n${toolInstructions}`;
 
-  const controller = runAiPrompt({
-    providerId,
-    prompt: fullPrompt,
-    messages,
-    agentMessages,
-    modelId,
-    outputMode,
-    onChunk,
-    onAgentMessages,
-  });
-
-  const doneWithTools = controller.done.then(async (response) => {
-    // Parse and execute any tool calls in the response.
-    const { parseToolCalls, executeToolCall } = await import("./tools");
-    const calls = parseToolCalls(response);
-    if (calls.length === 0) return response;
-
-    const { createPluginTools } = await import("./tools");
-    const { getSharedRegistry } = await import("../../registry");
-    const pluginTools = createPluginTools(getSharedRegistry());
-    const results: { call: { tool: string; args: Record<string, unknown> }; result: { success: boolean; output: string; data?: unknown } }[] = [];
-    for (const call of calls) {
-      const result = await executeToolCall(pluginTools, call);
-      results.push({ call, result });
-    }
-
-    onToolResults?.(results);
-
-    // Append tool results to the response.
-    const toolOutput = results.map(({ call, result }) =>
-      `\n\n**Tool: ${call.tool}** — ${result.success ? "success" : "failed"}\n\`\`\`\n${result.output}\n\`\`\``,
-    ).join("");
-    return response + toolOutput;
-  });
-
-  return { done: doneWithTools, cancel: controller.cancel };
-}
-
-function buildToolInstructions(tools: { name: string; description: string; parameters: Record<string, { type: string; description: string; required?: boolean }> }[]): string {
-  if (!tools.length) return "";
-  const toolList = tools.map((tool) => {
-    const params = Object.entries(tool.parameters)
-      .map(([key, schema]) => `${key} (${schema.type}${schema.required ? ", required" : ""}): ${schema.description}`)
-      .join("; ");
-    return `- ${tool.name}: ${tool.description}${params ? ` Parameters: ${params}` : ""}`;
-  }).join("\n");
-  return `You have access to the following tools. To use a tool, output a fenced JSON block like:\n\`\`\`json\n{"tool": "tool_name", "args": {"param": "value"}}\n\`\`\`\n\nAvailable tools:\n${toolList}`;
-}
