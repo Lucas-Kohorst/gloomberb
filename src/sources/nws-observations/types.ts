@@ -1,4 +1,5 @@
 export const NWS_OBSERVATIONS_PROVIDER_ID = "nws-observations";
+export const NWS_OBSERVATIONS_CONNECTION_ID = "nws-observations";
 export const NWS_OBSERVATIONS_USER_AGENT =
   "Gloomberb (https://terminal.kohor.st; nws-observations@kohor.st)";
 
@@ -64,6 +65,41 @@ export interface NwsObservationLoadOptions {
   date?: string;
   /** Limit the number of observations fetched (NWS API default is 200). */
   limit?: number;
+  fetchImpl?: typeof fetch;
+  userAgent?: string;
+}
+
+/** A display-ready NWS ASOS observation, with US units for station detail. */
+export interface NwsStationObservation {
+  provider: typeof NWS_OBSERVATIONS_PROVIDER_ID;
+  stationId: string;
+  sourceUrl: string | null;
+  timestamp: string;
+  textDescription: string | null;
+  temperatureF: number | null;
+  dewpointF: number | null;
+  relativeHumidity: number | null;
+  windDirectionDeg: number | null;
+  windSpeedMph: number | null;
+  windGustMph: number | null;
+  visibilityMi: number | null;
+  barometricPressureInHg: number | null;
+  seaLevelPressureInHg: number | null;
+  precipitationLastHourIn: number | null;
+  precipitationLast3HoursIn: number | null;
+  precipitationLast6HoursIn: number | null;
+}
+
+export interface NwsStationObservationSet {
+  provider: typeof NWS_OBSERVATIONS_PROVIDER_ID;
+  seriesId: string;
+  icao: string;
+  observations: NwsStationObservation[];
+}
+
+export interface NwsStationObservationLoadOptions {
+  icao: string;
+  limit: number;
   fetchImpl?: typeof fetch;
   userAgent?: string;
 }

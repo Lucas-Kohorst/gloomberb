@@ -57,6 +57,8 @@ import {
 import { WEATHER_STATIONS, cliProductForStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
 import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
+import { StationDetail, type StationObservation } from "./station-detail";
+import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
@@ -198,11 +200,52 @@ function WeatherDetail({
   row,
   hourly,
   settlement,
+  nwsObservations,
+  width,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
   settlement: WeatherSettlementRecord | null;
+  nwsObservations: NwsStationObservation[];
+  width: number;
 }) {
+  const stationObservations: StationObservation[] = nwsObservations.map((observation) => ({
+    timestamp: observation.timestamp,
+    temperatureF: observation.temperatureF,
+    dewpointF: observation.dewpointF,
+    humidityPct: observation.relativeHumidity,
+    windDirection: observation.windDirectionDeg == null ? null : `${Math.round(observation.windDirectionDeg)}°`,
+    windSpeedMph: observation.windSpeedMph,
+    windGustMph: observation.windGustMph,
+    visibilityMiles: observation.visibilityMi,
+    pressureInHg: observation.barometricPressureInHg ?? observation.seaLevelPressureInHg,
+    precipitationIn: observation.precipitationLastHourIn,
+    skyCondition: observation.textDescription,
+    status: "NWS ASOS",
+  }));
+  if (stationObservations.length > 0) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Box paddingX={1} paddingBottom={1} flexDirection="column">
+          <Text fg={colors.textDim}>
+            {cliProductForStation(row.stationId)} · {row.icao} · print high {formatTemp(row.high)}°F · {statusLabel(row.status)}
+          </Text>
+          {settlement && (
+            <Text fg={settlement.meta.official ? colors.positive : colors.warning}>
+              Settlement feed {settlement.meta.sourceName}: {formatTemp(settlement.value)}
+              {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
+            </Text>
+          )}
+        </Box>
+        <StationDetail
+          observations={stationObservations}
+          stationLabel={`NWS ASOS cross-check · ${row.icao} · not Kalshi settlement authority`}
+          timeZone={row.timezone}
+          width={width}
+        />
+      </Box>
+    );
+  }
   const recentHourly = hourly.slice(-12).reverse();
   return (
     <ScrollBox flexGrow={1} scrollY>
@@ -393,6 +436,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
   const [settlementByStation, setSettlementByStation] = useState<Record<string, WeatherSettlementRecord | null>>({});
+  const [nwsByStation, setNwsByStation] = useState<Record<string, NwsStationObservation[]>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -639,6 +683,15 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             })
             .catch(() => undefined)
         : Promise.resolve(),
+      loadNwsStationObservations({ icao: selected.icao, limit: 96 })
+        .then((snapshot) => {
+          if (cancelled) return;
+          setNwsByStation((current) => ({ ...current, [selected.stationId]: snapshot.observations }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setNwsByStation((current) => ({ ...current, [selected.stationId]: [] }));
+        }),
     ]).catch(() => undefined);
     return () => {
       cancelled = true;
@@ -907,6 +960,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
               row={selected}
               hourly={hourlyByStation[selected.stationId] ?? []}
               settlement={settlementByStation[selected.stationId] ?? null}
+              nwsObservations={nwsByStation[selected.stationId] ?? []}
+              width={width}
             />
           ) : null
         }

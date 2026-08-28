@@ -151,6 +151,9 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const startAddAlert = useCallback(() => {
     openPluginCommandWorkflow("set-alert");
   }, [openPluginCommandWorkflow]);
+  const startAddWeatherAlert = useCallback(() => {
+    openPluginCommandWorkflow("set-weather-alert");
+  }, [openPluginCommandWorkflow]);
 
   const deleteSelectedAlert = useCallback(() => {
     const selected = rows[selectedIdx];
@@ -240,6 +243,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     ],
     hints: [
       { id: "add", key: "a", label: "dd alert", onPress: startAddAlert },
+      { id: "weather", key: "w", label: "eather", onPress: startAddWeatherAlert },
       {
         id: "edit",
         key: "e",
@@ -261,6 +265,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     editSelectedAlert,
     rows.length,
     startAddAlert,
+    startAddWeatherAlert,
     triggeredCount,
   ]);
 
@@ -279,6 +284,11 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       startAddAlert();
       return true;
     }
+    if (event.name === "w") {
+      event.preventDefault?.();
+      startAddWeatherAlert();
+      return true;
+    }
     if (event.name === "e") {
       event.preventDefault?.();
       editSelectedAlert();
@@ -290,7 +300,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       return true;
     }
     return false;
-  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert]);
+  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert, startAddWeatherAlert]);
 
   const renderCell = useCallback((
     alert: AlertRule,

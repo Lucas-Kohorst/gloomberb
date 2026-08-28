@@ -29,6 +29,7 @@ export function formatCurrentPrice(alert: AlertRule, maxWidth = 9): string {
     const days = Math.round(alert.lastCheckedPrice);
     return days === 0 ? "today" : `${days}d`;
   }
+  if (alert.condition === "weather") return alert.lastCheckedPrice == null ? "-" : String(alert.lastCheckedPrice);
   return alert.lastCheckedPrice == null
     ? "-"
     : formatMarketPrice(alert.lastCheckedPrice, {
@@ -41,6 +42,7 @@ export function formatAlertTargetPrice(alert: AlertRule, maxWidth = 9): string {
   if (alert.condition === "halted") return "—";
   if (alert.condition === "short_float") return `${alert.targetPrice}%`;
   if (alert.condition === "ex_div") return `${alert.targetPrice}d`;
+  if (alert.condition === "weather") return alert.message ?? "Weather";
   return formatMarketPrice(alert.targetPrice, {
     maxWidth,
     minimumFractionDigits: 2,
@@ -87,5 +89,7 @@ export function conditionLabel(condition: AlertCondition): string {
       return "SI %";
     case "ex_div":
       return "Ex-div";
+    case "weather":
+      return "Weather";
   }
 }

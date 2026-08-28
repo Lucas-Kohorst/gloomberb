@@ -29,6 +29,12 @@ Four-hour chart bars are available across supported providers. Robinhood desktop
 
 - Detail controls preserve table navigation and selection, keep overview and rules panes sized correctly, and restore chart crosshair interaction.
 
+### Weather
+
+- Settlement-aware feeds: NWS station observations, HKO rainfall, Weather Underground fallback, and severe-weather source mapping.
+- Weather pane detail shows NWS ASOS station observations as a cross-check against the Kalshi print.
+- `WA` weather alerts for threshold crossings, stale TWC, report finalization, and TWC/NWS disagreement.
+
 ### Gloom Cloud
 
 - Cloud sync pulls later portfolio changes instead of treating the first pull as permanent.
@@ -43,6 +49,7 @@ Four-hour chart bars are available across supported providers. Robinhood desktop
 - Restart with unchanged RSS settings and verify the config is not rewritten.
 - Navigate prediction-market book and trades tables with arrow keys.
 - Make a cloud portfolio change, sync twice, and verify the later remote update arrives.
+- Open WX, select a domestic station, and confirm settlement feed plus NWS ASOS detail.
 
 ## v0.13.11 — CFTC on prod Adjacent, firehose ingest, market data overhaul, native-select fix
 

@@ -3,7 +3,7 @@ import { isPriceAlertCondition } from "./types";
 
 export type { AlertRule };
 
-const KNOWN_CONDITIONS = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div"]);
+const KNOWN_CONDITIONS = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div", "weather"]);
 
 export function createAlert(
   symbol: string,
@@ -103,6 +103,8 @@ export function formatAlertDescription(alert: AlertRule): string {
       return `${alert.symbol} SI ≥ ${alert.targetPrice}%`;
     case "ex_div":
       return `${alert.symbol} ex-div ≤ ${alert.targetPrice}d`;
+    case "weather":
+      return alert.message ?? `${alert.symbol} weather alert`;
     default: {
       const prefix = alert.condition === "above" ? ">"
         : alert.condition === "below" ? "<" : "↕";
@@ -119,9 +121,9 @@ export function deserializeAlerts(json: string): AlertRule[] {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((a: any) =>
-      a?.id && a?.symbol && KNOWN_CONDITIONS.has(a?.condition) && typeof a?.targetPrice === "number"
-    );
+    return parsed.filter((a: any) => a?.id && a?.symbol && KNOWN_CONDITIONS.has(a?.condition)
+      && typeof a?.targetPrice === "number"
+      && (a.condition !== "weather" || (a.weather?.stationId && a.weather?.condition?.kind)));
   } catch {
     return [];
   }
