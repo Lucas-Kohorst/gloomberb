@@ -58,7 +58,7 @@ import {
 } from "./shared";
 import { RegistryResumeStateListeners } from "./plugin-state";
 import { cloudSyncController } from "../../sync/controller";
-import { getAiRunHost } from "../builtin/ai/runner";
+import { queueAgentPromptFragment, queueAgentTool } from "../builtin/ai/runner";
 import { isReservedBuiltinPluginId } from "../ownership";
 import { resolveApiKey } from "../builtin/byok/store";
 import { resolvePluginEntryFile } from "../loader";
@@ -461,13 +461,11 @@ export class PluginRegistry implements PluginRuntimeAccess {
       notify: (notification) => this.notifyFn(notification),
       registerAgentTool: (tool) => {
         items.agentTools.push(tool.name);
-        const host = getAiRunHost();
-        host?.registerTool?.(tool);
+        queueAgentTool(tool);
       },
       registerAgentPromptFragment: (fragment) => {
         items.agentPromptFragments.push(fragment);
-        const host = getAiRunHost();
-        host?.registerAgentPromptFragment?.(fragment);
+        queueAgentPromptFragment(fragment);
       },
     });
   }

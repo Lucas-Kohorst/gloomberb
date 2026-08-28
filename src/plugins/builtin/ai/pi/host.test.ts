@@ -64,6 +64,8 @@ describe("Pi AI host screener mode", () => {
     expect(NATIVE_AGENT_SYSTEM_PROMPT).toContain("chart-composer-pane");
     expect(NATIVE_AGENT_SYSTEM_PROMPT).toContain("POLY:marketId, FRED:FEDFUNDS");
     expect(NATIVE_AGENT_SYSTEM_PROMPT).toContain("pane.show chart-composer is empty");
+    expect(NATIVE_AGENT_SYSTEM_PROMPT).toContain("cftc-filings-pane");
+    expect(NATIVE_AGENT_SYSTEM_PROMPT).toContain("filings.rollup");
   });
   test("rejects an oversized tool submission and returns corrected parser-compatible JSON", async () => {
     const fixture = createHostFixture();

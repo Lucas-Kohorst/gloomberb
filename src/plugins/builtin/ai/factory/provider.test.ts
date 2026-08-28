@@ -38,6 +38,8 @@ describe("Factory droid-exec provider", () => {
     expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain('"arg":"POLY:fed-cut-september, FRED:FEDFUNDS"');
     expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain("pane.show chart-composer is empty");
     expect(FACTORY_AGENT_SYSTEM_PROMPT).not.toMatch(/pane\.show","input":\{"paneId":"chart-composer"\}/);
+    expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain("cftc-filings-pane");
+    expect(FACTORY_AGENT_SYSTEM_PROMPT).toContain("registerAgentPromptFragment");
   });
 
   test("builds a Pi provider with ambient droid auth and curated models", () => {

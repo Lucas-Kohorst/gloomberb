@@ -266,6 +266,7 @@ export function toVariableName(name: string): string {
 export function buildPluginIndexContent(name: string): string {
   const varName = toVariableName(name);
   const displayName = toDisplayName(name);
+  const shortcut = name.replace(/-/g, "").slice(0, 4).toUpperCase() || "PANE";
   return `import type { GloomPlugin } from "gloomberb/types/plugin";
 
 export const ${varName}: GloomPlugin = {
@@ -274,8 +275,26 @@ export const ${varName}: GloomPlugin = {
   version: "0.1.0",
   description: "A new Gloomberb plugin.",
   toggleable: true,
+  panes: [{
+    id: "${name}",
+    name: "${displayName}",
+    icon: "P",
+    component: () => null,
+  }],
+  paneTemplates: [{
+    id: "${name}-pane",
+    paneId: "${name}",
+    label: "${displayName}",
+    description: "${displayName} pane. Open with pane.createFromTemplate ${name}-pane.",
+    keywords: ["${name}"],
+    shortcut: { prefix: "${shortcut}" },
+  }],
   setup(ctx) {
-    // Register panes, commands, columns, etc.
+    ctx.registerAgentPromptFragment(
+      "${displayName}: pane.createFromTemplate ${name}-pane (${shortcut}).",
+    );
+    // Unique data the remote inventory does not already cover:
+    // ctx.registerAgentTool({ name: "${name.replace(/-/g, "_")}_lookup", ... });
   },
 };
 
@@ -316,7 +335,7 @@ export function scaffoldPlugin(name: string) {
   console.log(renderStat("Path", targetDir));
   console.log("");
   console.log(cliStyles.muted(`Edit ${join(targetDir, "index.ts")} to start building.`));
-  console.log(cliStyles.muted("Restart the app after editing to load your plugin."));
+  console.log(cliStyles.muted("Native reloads the plugin as soon as it compiles."));
 }
 
 export async function validatePlugin(name: string) {

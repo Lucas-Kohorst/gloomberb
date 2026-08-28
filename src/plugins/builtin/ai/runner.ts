@@ -167,6 +167,8 @@ type CatalogListener = () => void;
 let configuredHost: AiRunHost | null = null;
 let runtimeCatalog: AiRuntimeCatalog = { providers: [], accounts: [], models: [] };
 const catalogListeners = new Set<CatalogListener>();
+const pendingAgentTools = new Map<string, AgentTool>();
+const pendingAgentFragments: string[] = [];
 
 function canonicalProviderId(providerId: string): AiProviderId {
   const canonicalId = migrateLegacyAiProviderId(providerId);
@@ -198,6 +200,39 @@ function publishCatalog(catalog: AiRuntimeCatalog): void {
 
 export function setAiRunHost(host: AiRunHost | null): void {
   configuredHost = host;
+  if (!host) return;
+  for (const tool of pendingAgentTools.values()) host.registerTool?.(tool);
+  for (const fragment of pendingAgentFragments) host.registerAgentPromptFragment?.(fragment);
+}
+
+/** Queue a plugin tool so it still attaches if the AI host starts later. */
+export function queueAgentTool(tool: AgentTool): void {
+  pendingAgentTools.set(tool.name, tool);
+  configuredHost?.registerTool?.(tool);
+}
+
+export function dropQueuedAgentTool(name: string): void {
+  pendingAgentTools.delete(name);
+  configuredHost?.unregisterTool?.(name);
+}
+
+/** Queue a prompt fragment so plugin HOWTOs survive host install order. */
+export function queueAgentPromptFragment(fragment: string): void {
+  if (!fragment.trim()) return;
+  if (!pendingAgentFragments.includes(fragment)) pendingAgentFragments.push(fragment);
+  configuredHost?.registerAgentPromptFragment?.(fragment);
+}
+
+export function dropQueuedAgentPromptFragment(fragment: string): void {
+  const index = pendingAgentFragments.indexOf(fragment);
+  if (index >= 0) pendingAgentFragments.splice(index, 1);
+  configuredHost?.unregisterAgentPromptFragment?.(fragment);
+}
+
+/** @internal */
+export function resetQueuedAgentHarnessesForTests(): void {
+  pendingAgentTools.clear();
+  pendingAgentFragments.length = 0;
 }
 
 /** @internal — used by the plugin context to forward tool registrations. */

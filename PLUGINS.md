@@ -54,7 +54,11 @@ export const myPlugin: GloomPlugin = {
   ],
 
   setup(ctx) {
-    // Register tabs, commands, columns, etc.
+    ctx.registerAgentPromptFragment(
+      "My Plugin: pane.createFromTemplate my-plugin-pane.",
+    );
+    // Unique data the remote inventory does not already cover:
+    // ctx.registerAgentTool({ name: "my_plugin_lookup", ... });
   },
 
   dispose() {
@@ -64,6 +68,16 @@ export const myPlugin: GloomPlugin = {
 
 export default myPlugin;
 ```
+
+### Agent harness
+
+Every plugin that ships a pane must be visible to the in-app agent. `gloomberb new` scaffolds this. In `setup()`:
+
+- `registerAgentPromptFragment` — one or two sentences: template id, shortcut, and how to seed it (`options.arg`).
+- `registerAgentTool` — only when the plugin has unique data that `gloomberb_remote` `{type:"data"}` does not already expose.
+- Pane templates need a `description` and command-bar `shortcut`. Empty descriptions fall out of the assist inventory.
+
+Do not tell the user to restart after writing a plugin under `~/.gloomberb/plugins/`; native reloads as soon as it compiles.
 
 ### Built-in plugin composition
 

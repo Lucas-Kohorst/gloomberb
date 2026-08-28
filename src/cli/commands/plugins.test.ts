@@ -83,6 +83,9 @@ describe("scaffoldPlugin", () => {
       const indexContent = readFileSync(join(pluginDir, "index.ts"), "utf-8");
       expect(indexContent).toContain('id: "test-plugin"');
       expect(indexContent).toContain('name: "Test Plugin"');
+      expect(indexContent).toContain("registerAgentPromptFragment");
+      expect(indexContent).toContain("test-plugin-pane");
+      expect(indexContent).toContain("description:");
 
       const pkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf-8"));
       expect(pkg.name).toBe("test-plugin");

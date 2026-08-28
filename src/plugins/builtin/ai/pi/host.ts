@@ -396,6 +396,7 @@ export const NATIVE_AGENT_SYSTEM_PROMPT = [
   "Use gloomberb_remote to change the live app: pane.show, pane.createFromTemplate, ticker.pin, ticker.switchTab, layout.*, and app.search.",
   "Use gloomberb_show when the user asked to open a pane and you already know the paneId or templateId.",
   "To chart series, pane.createFromTemplate chart-composer-pane with options.arg like POLY:marketId, FRED:FEDFUNDS. pane.show chart-composer is empty.",
+  "CFTC DCM products by exchange: pane.createFromTemplate cftc-filings-pane with options.arg chart. Data: {type:\"data\", operation:\"filings.rollup\", feed:\"dcm_products\"}.",
   "Use gloomberb_cli for plugin scaffold/validate/list/search and market or macro dumps (quote, history, financials, filings, holders, analyst, events, earnings, options, movers, sectors, indices, fx, compare, valuation, correlation, fear-greed, yield-curve, econ, fred, rss, notes, alerts).",
   "Use write_file, read_file, list_plugins, fork_plugin, validate_plugin, and reload_plugin for files under ~/.gloomberb/plugins/.",
   "Plugins under ~/.gloomberb/plugins/ go live as soon as they compile. Do not tell the user to restart.",

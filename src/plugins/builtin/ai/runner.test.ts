@@ -7,6 +7,8 @@ import {
   getAiRuntimeCatalog,
   getAiRuntimeCatalogSnapshot,
   installAiRunHost,
+  queueAgentPromptFragment,
+  resetQueuedAgentHarnessesForTests,
   runAiPrompt,
   setAiRunHost,
   setAiRuntimeCatalog,
@@ -52,10 +54,23 @@ const originalLanguageModel = (globalThis as { LanguageModel?: unknown }).Langua
 
 afterEach(() => {
   setAiRunHost(null);
+  resetQueuedAgentHarnessesForTests();
   setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
   setDetectedProviders(null);
   (globalThis as { LanguageModel?: unknown }).LanguageModel = originalLanguageModel;
   delete (globalThis as { __GLOOM_CLOUD_HOSTED?: boolean }).__GLOOM_CLOUD_HOSTED;
+});
+
+describe("plugin agent harness queue", () => {
+  test("replays prompt fragments when the AI host is installed later", () => {
+    const fragments: string[] = [];
+    queueAgentPromptFragment("CFTC filings: pane.createFromTemplate cftc-filings-pane.");
+    setAiRunHost({
+      run: () => ({ done: Promise.resolve(""), cancel() {} }),
+      registerAgentPromptFragment(fragment) { fragments.push(fragment); },
+    });
+    expect(fragments).toEqual(["CFTC filings: pane.createFromTemplate cftc-filings-pane."]);
+  });
 });
 
 describe("AI runtime catalog", () => {
