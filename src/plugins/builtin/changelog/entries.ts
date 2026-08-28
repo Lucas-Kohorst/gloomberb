@@ -1,5 +1,127 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_12: ChangelogRelease = {
+  id: "hosted-v0-13-12",
+  tagName: "v0.13.12",
+  version: "0.13.12",
+  title: "4-hour charts, Robinhood desktop sync, chart reliability",
+  publishedAt: "2026-08-28T13:05:51.000Z",
+  url: "",
+  body: `Four-hour chart bars are available across supported providers. Robinhood desktop sync now imports equity, crypto, and cash holdings through Trading MCP without duplicate account-agnostic results. CFTC filing lists show ingestion times. Charts retain valid previous-session data while exchanges are closed, repaint after a theme change, and only migrate legacy settings during an explicit config migration.
+
+## Charts
+
+- 4-hour resolution is available for Yahoo, Gloom Cloud, and CoinGecko price history, aggregated on UTC boundaries.
+- Persisted intraday history without exchange metadata remains visible outside market hours instead of being discarded as stale.
+- Cached chart rasters repaint immediately after a theme change.
+- Legacy chart settings are converted only during an explicit migration, not during routine layout sanitization.
+
+## Brokers
+
+- Desktop Robinhood sync imports equity positions, crypto positions, and cash balances.
+- Account-scoped position tools run per account; account-agnostic tools run once, avoiding duplicated holdings.
+- Robinhood OAuth uses a stable local callback address, ignores stale browser callbacks, times out bounded connection stages, and only starts from an explicit Sync action.
+
+## Data
+
+- CFTC filing timestamps prefer the ingestion time when it is available.
+
+## News
+
+- Canonical feed settings no longer rewrite configuration on every startup; legacy and malformed settings still repair once.
+
+## Prediction markets
+
+- Detail controls preserve table navigation and selection, keep overview and rules panes sized correctly, and restore chart crosshair interaction.
+
+## Gloom Cloud
+
+- Cloud sync pulls later portfolio changes instead of treating the first pull as permanent.
+- Desktop retains a saved session when a cookieless session check returns no user during shutdown.
+
+## What to test
+
+- Set a chart to 4h and verify bars aggregate and refresh normally.
+- Sync a Robinhood account with equity, crypto, and cash holdings; each position appears once.
+- While markets are closed, reopen an intraday chart and confirm the last valid session remains visible.
+- Change the theme with a chart open and confirm the rendered chart repaints.
+- Restart with unchanged RSS settings and verify the config is not rewritten.
+- Navigate prediction-market book and trades tables with arrow keys.
+- Make a cloud portfolio change, sync twice, and verify the later remote update arrives.
+`,
+};
+
+const RELEASE_0_13_11: ChangelogRelease = {
+  id: "hosted-v0-13-11",
+  tagName: "v0.13.11",
+  version: "0.13.11",
+  title: "CFTC on prod Adjacent, firehose ingest, market data overhaul, native-select fix",
+  publishedAt: "2026-08-26T21:21:16.000Z",
+  url: "",
+  body: `CFTC filings move off adjacent-dev onto the production Adjacent API. The news firehose flushes query rebuilds on ingest so tweets appear immediately. Yahoo Finance snapshots and the live-quotes engine get a major overhaul. NativeSelect stops painting double text on WebKit. Prediction markets gain a cache layer and live updates.
+
+## Adjacent — CFTC migration
+
+- CFTC filings now use the production Adjacent client (\`listFilings\`, \`getFilingDetail\`, \`getFilingFilters\`) with \`search\` param, public 90-day window, and auth \`/filings\` with \`org:filings:read\`.
+- Pane id stays \`cftc-filings\` so existing layouts remount.
+- \`adjacent-dev\` plugin, BYOK service, catalog entries, hosted worker provider, and \`ADJACENT_DEV_API_KEY\` injection are deleted.
+- Ownership alias \`adjacent-dev\` → \`adjacent\` for leftover configs.
+
+## News — firehose, Substack, RSS, X
+
+- \`NewsService.ingest\` flushes scheduled query rebuilds immediately so pane tweets appear without waiting for the next refresh.
+- X pane keeps a global poll chip only. Live-poll UI, extra poll field, and leftover settings removed.
+- Substack home loads ingest as \`substack-news\` on pane load.
+- RSS \`staleMs\` follows \`refreshIntervalMinutes\` so the cache respects the chip interval.
+- Breaking notifications, firehose, industry pane, RSS pane, preset pane, table, and persisted articles updated.
+- Article ticker extraction improved.
+
+## Market data — Yahoo Finance, live quotes
+
+- Market-data coordinator (entries, events, quotes, subscriptions) overhauled.
+- Yahoo Finance snapshot fetching, options pipeline, request helpers, mappers, and types improved. New snapshot test suite.
+- Live-quotes engine improvements with 207 new test lines.
+- Inline-ticker resolution and quote-streaming hooks updated.
+- New \`use-chart-resolution\` hook with tests.
+- US listings client improvements and test updates.
+
+## Data table and pane chrome
+
+- NativeSelect switches from \`appearance:auto\` + \`WebkitAppearance:menulist\` to \`appearance:none\` with a custom SVG chevron. Fixes the double-text overlap where the native menulist painted its own text layer on top of the custom-styled text.
+- OpenTUI data table gains row memoization (\`row-memo.ts\`) to avoid re-rendering unchanged rows.
+- Desktop data table index test added.
+- Pane content and footer model improvements with test coverage.
+- Recently-arrived tracking and CSV export test updates.
+
+## Prediction markets
+
+- New prediction-markets cache module.
+- Live-updates controller with test coverage.
+- Kalshi adapter and normalizer improvements, adjacent-catalog updates.
+- Polymarket adapter and normalizer improvements.
+- Catalog and detail controller logic updated. Plugin test coverage expanded.
+
+## Electrobun desktop and plugin registry
+
+- RPC codec improvements with tests. External plugin loading. Renderer window error handling.
+- Backend RPC, app services, core capabilities, and desktop initialization updated.
+- Plugin registry context, contributions, index, and reload tests updated.
+- New \`normalize-pane\` runtime module with tests.
+- New desktop-runtime compile/rewrite/types modules.
+- Ticker detail gains a price-series module with tests.
+
+## What to test
+
+- CFTC filings pane opens with prod data; \`cftc-filings\` layout remounts.
+- Firehose tweets appear immediately after ingest (no waiting for next refresh).
+- X pane shows only the global poll chip; no live-poll UI.
+- Substack home ingests on load; RSS cache respects the chip interval.
+- Theme selector in account Display tab shows one name, not overlapping text.
+- Prediction markets list loads with cache; live updates refresh prices.
+- OpenTUI data table scrolls smoothly with row memoization.
+`,
+};
+
 const RELEASE_0_13_10: ChangelogRelease = {
   id: "hosted-v0-13-10",
   tagName: "v0.13.10",
@@ -566,6 +688,8 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_12,
+  RELEASE_0_13_11,
   RELEASE_0_13_10,
   RELEASE_0_13_9,
   RELEASE_0_13_8,
