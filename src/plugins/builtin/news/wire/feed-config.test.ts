@@ -33,7 +33,7 @@ class MemoryConfigState implements PluginConfigState {
 }
 
 describe("news feed config", () => {
-  test("normalizes legacy JSON feed storage and migrates disabled default feed names to ids", async () => {
+  test("normalizes legacy JSON feed storage and ignores removed default feed names", async () => {
     const config = new MemoryConfigState();
     config.values.set("feeds", JSON.stringify([
       { url: "https://example.com/rss.xml", name: "Example", authority: 120 },
@@ -47,7 +47,7 @@ describe("news feed config", () => {
     expect(settings.userFeeds).toHaveLength(1);
     expect(settings.userFeeds[0]!.id).toMatch(/^user-/);
     expect(settings.userFeeds[0]!.authority).toBe(100);
-    expect(settings.disabledDefaultFeedIds).toEqual(["default-cnbc-top"]);
+    expect(settings.disabledDefaultFeedIds).toEqual([]);
 
     await saveNewsFeedSettings(config, settings);
     expect(loadNewsFeedSettings(config).needsMigration).toBe(false);

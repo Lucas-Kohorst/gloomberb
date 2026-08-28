@@ -21,12 +21,28 @@ Four-hour chart bars are available across supported providers. Robinhood desktop
 
 - CFTC filing timestamps prefer the ingestion time when it is available.
 
+### News
+
+- Canonical feed settings no longer rewrite configuration on every startup; legacy and malformed settings still repair once.
+
+### Prediction markets
+
+- Detail controls preserve table navigation and selection, keep overview and rules panes sized correctly, and restore chart crosshair interaction.
+
+### Gloom Cloud
+
+- Cloud sync pulls later portfolio changes instead of treating the first pull as permanent.
+- Desktop retains a saved session when a cookieless session check returns no user during shutdown.
+
 ### What to test
 
 - Set a chart to 4h and verify bars aggregate and refresh normally.
 - Sync a Robinhood account with equity, crypto, and cash holdings; each position appears once.
 - While markets are closed, reopen an intraday chart and confirm the last valid session remains visible.
 - Change the theme with a chart open and confirm the rendered chart repaints.
+- Restart with unchanged RSS settings and verify the config is not rewritten.
+- Navigate prediction-market book and trades tables with arrow keys.
+- Make a cloud portfolio change, sync twice, and verify the later remote update arrives.
 
 ## v0.13.11 — CFTC on prod Adjacent, firehose ingest, market data overhaul, native-select fix
 
