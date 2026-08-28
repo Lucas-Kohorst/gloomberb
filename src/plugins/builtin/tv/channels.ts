@@ -12,6 +12,13 @@ export const TV_CHANNELS = [
     channelUrl: "https://www.youtube.com/@CNBC/live",
   },
   {
+    id: "kramer",
+    name: "Kramer",
+    channelId: "UCrp_UI8XtuYfpiqluWLD7Lw",
+    channelUrl: "https://www.youtube.com/@CNBCtelevision/live",
+    parentId: "cnbc",
+  },
+  {
     id: "yahoo-finance",
     name: "Yahoo Finance",
     channelId: "UCEAZeUIeJs0IjQiqTCdVSIg",
@@ -46,6 +53,23 @@ export const TV_CHANNELS = [
 export type TvChannel = (typeof TV_CHANNELS)[number];
 export type TvChannelId = TvChannel["id"];
 
+function channelParentId(channel: TvChannel): TvChannelId | undefined {
+  return "parentId" in channel ? channel.parentId : undefined;
+}
+
 export function getTvChannel(id: TvChannelId): TvChannel {
   return TV_CHANNELS.find((channel) => channel.id === id) ?? TV_CHANNELS[0];
+}
+
+export function getTvChannelTabId(id: TvChannelId): TvChannelId {
+  return channelParentId(getTvChannel(id)) ?? id;
+}
+
+export const TV_CHANNEL_TABS = TV_CHANNELS.filter((channel) => channelParentId(channel) == null);
+
+export function getTvChannelStreams(tabId: TvChannelId): TvChannel[] {
+  const resolvedTabId = getTvChannelTabId(tabId);
+  const tab = getTvChannel(resolvedTabId);
+  const streams = TV_CHANNELS.filter((channel) => channelParentId(channel) === resolvedTabId);
+  return streams.length > 0 ? [tab, ...streams] : [tab];
 }

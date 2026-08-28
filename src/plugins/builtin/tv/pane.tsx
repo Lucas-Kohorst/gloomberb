@@ -15,7 +15,14 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, ImageSurface, MediaSurface, Text, useRendererHost, useUiHost, type MediaSurfaceHandle } from "../../../ui";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { withConnectionRequest } from "../connections/register";
-import { getTvChannel, TV_CHANNELS, type TvChannelId } from "./channels";
+import {
+  getTvChannel,
+  getTvChannelStreams,
+  getTvChannelTabId,
+  TV_CHANNEL_TABS,
+  TV_CHANNELS,
+  type TvChannelId,
+} from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
 import { buildYoutubeLiveEmbedUrl, isYoutubeEmbedUrl } from "./youtube-embed";
 
@@ -62,6 +69,9 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   const terminalAutoPlayedRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const channel = getTvChannel(channelId);
+  const channelTabId = getTvChannelTabId(channelId);
+  const streamOptions = useMemo(() => getTvChannelStreams(channelTabId), [channelTabId]);
+  const showStreamTabs = streamOptions.length > 1;
 
   const persistChannelSelection = useCallback((nextId: TvChannelId) => {
     const nextChannel = getTvChannel(nextId);
@@ -128,11 +138,18 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   }, [channelId, persistChannelSelection]);
 
   const selectChannel = useCallback((nextId: string) => {
-    if (TV_CHANNELS.some((item) => item.id === nextId)) {
-      setMuted(true);
-      setChannelId(nextId as TvChannelId);
-    }
-  }, []);
+    if (!TV_CHANNEL_TABS.some((item) => item.id === nextId)) return;
+    if (getTvChannelTabId(channelId) === nextId) return;
+    setMuted(true);
+    setChannelId(nextId as TvChannelId);
+  }, [channelId]);
+
+  const selectStream = useCallback((nextId: string) => {
+    if (!TV_CHANNELS.some((item) => item.id === nextId)) return;
+    if (nextId === channelId) return;
+    setMuted(true);
+    setChannelId(nextId as TvChannelId);
+  }, [channelId]);
 
   const playInTerminal = useCallback(async () => {
     if (!stream || !renderer.playTerminalMedia) return;
@@ -181,9 +198,9 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   useShortcut((event) => {
     if (!focused) return;
     const channelIndex = Number(event.name) - 1;
-    if (Number.isInteger(channelIndex) && TV_CHANNELS[channelIndex]) {
+    if (Number.isInteger(channelIndex) && TV_CHANNEL_TABS[channelIndex]) {
       event.preventDefault?.();
-      selectChannel(TV_CHANNELS[channelIndex]!.id);
+      selectChannel(TV_CHANNEL_TABS[channelIndex]!.id);
       return;
     }
     if (event.name === "o") {
@@ -256,24 +273,42 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
     ],
   }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback, updatedAgo]);
 
-  const channelTabs = useMemo(() => TV_CHANNELS.map((item, index) => ({
+  const channelTabs = useMemo(() => TV_CHANNEL_TABS.map((item, index) => ({
     label: `${index + 1} ${item.name}`,
     value: item.id,
   })), []);
-  const mediaHeight = Math.max(6, height - 1);
+  const streamTabs = useMemo(() => streamOptions.map((item) => ({
+    label: item.name,
+    value: item.id,
+  })), [streamOptions]);
+  const chromeRows = 1 + (showStreamTabs ? 1 : 0);
+  const mediaHeight = Math.max(6, height - chromeRows);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} paddingX={1}>
         <Tabs
           tabs={channelTabs}
-          activeValue={channelId}
+          activeValue={channelTabId}
           onSelect={selectChannel}
           compact
           variant="bare"
           focused={focused}
         />
       </Box>
+      {showStreamTabs ? (
+        <Box height={1} paddingX={1}>
+          <Tabs
+            tabs={streamTabs}
+            activeValue={channelId}
+            onSelect={selectStream}
+            compact
+            variant="bare"
+            focused={focused}
+            keyboardNavigation={false}
+          />
+        </Box>
+      ) : null}
 
       {loading && !stream ? (
         <Box flexGrow={1} justifyContent="center" alignItems="center">

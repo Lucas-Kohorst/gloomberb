@@ -38,6 +38,21 @@ describe("youtube TV embed", () => {
     }
   });
 
+  test("maps the kramer source id to the CNBC Television live page", async () => {
+    const originalFetch = globalThis.fetch;
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response("nope", { status: 503 });
+    }) as typeof fetch;
+    try {
+      await expect(resolveHostedTvStream("kramer")).rejects.toThrow("live page is unavailable (503)");
+      expect(urls[0]).toBe("https://www.youtube.com/channel/UCrp_UI8XtuYfpiqluWLD7Lw/live");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("reports a YouTube consent interstitial precisely", async () => {
     const fetchImpl = (async () => ({
       ok: true,
