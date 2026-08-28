@@ -56,6 +56,7 @@ import {
 } from "./report";
 import { WEATHER_STATIONS, cliProductForStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
+import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
@@ -196,9 +197,11 @@ function matchesQuery(row: WeatherRow, query: string): boolean {
 function WeatherDetail({
   row,
   hourly,
+  settlement,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
+  settlement: WeatherSettlementRecord | null;
 }) {
   const recentHourly = hourly.slice(-12).reverse();
   return (
@@ -215,6 +218,12 @@ function WeatherDetail({
           {row.precip != null ? ` · precip ${row.precip}` : ""}
           {` · ${statusLabel(row.status)}`}
         </Text>
+        {settlement && (
+          <Text fg={settlement.meta.official ? colors.positive : colors.warning}>
+            Settlement feed {settlement.meta.sourceName}: {formatTemp(settlement.value)}
+            {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
+          </Text>
+        )}
         {(row.yForecast != null || row.ySettlement != null) && (
           <Text fg={colors.textMuted}>
             Yesterday forecast {formatTemp(row.yForecast, 1)}°F
@@ -238,7 +247,14 @@ function WeatherDetail({
             ))}
           </Box>
         )}
-        <Text fg={colors.textDim}>Chart with G WX:{row.stationId}:high</Text>
+        <Text fg={colors.textDim}>Settlement feeds</Text>
+        <Text fg={colors.text}>TWC/Kalshi: G WX:{row.stationId}:high</Text>
+        {row.scope === "domestic" && (
+          <Text fg={colors.text}>NWS CLI print: G NWS:{row.icao}:high</Text>
+        )}
+        {row.stationId === "HKG" && (
+          <Text fg={colors.text}>HKO monthly rainfall: Hong Kong Observatory</Text>
+        )}
       </Box>
     </ScrollBox>
   );
@@ -376,6 +392,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
+  const [settlementByStation, setSettlementByStation] = useState<Record<string, WeatherSettlementRecord | null>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -607,12 +624,22 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     if (!detailOpen || !selected) return;
     let cancelled = false;
-    loadWeatherHourly(selected.stationId)
-      .then((observations) => {
-        if (cancelled) return;
-        setHourlyByStation((current) => ({ ...current, [selected.stationId]: observations }));
-      })
-      .catch(() => undefined);
+    Promise.all([
+      loadWeatherHourly(selected.stationId)
+        .then((observations) => {
+          if (cancelled) return;
+          setHourlyByStation((current) => ({ ...current, [selected.stationId]: observations }));
+        })
+        .catch(() => undefined),
+      selected.scope === "domestic"
+        ? loadSettlementRecord(selected.stationId, selected.date, "high")
+            .then((record) => {
+              if (cancelled) return;
+              setSettlementByStation((current) => ({ ...current, [selected.stationId]: record }));
+            })
+            .catch(() => undefined)
+        : Promise.resolve(),
+    ]).catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -879,6 +906,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             <WeatherDetail
               row={selected}
               hourly={hourlyByStation[selected.stationId] ?? []}
+              settlement={settlementByStation[selected.stationId] ?? null}
             />
           ) : null
         }

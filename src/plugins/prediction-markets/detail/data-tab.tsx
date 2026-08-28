@@ -119,47 +119,56 @@ export function PredictionMarketDataTab({
           />
         </Box>
       ) : (
-        <DataTableView<SettlementSeriesMatch, DataColumn>
-          focused={focused}
-          keyboardNavigation={focused}
-          rootWidth={width}
-          rootBackgroundColor={colors.panel}
-          selection={{
-            kind: "id",
-            selectedId: selected?.id ?? null,
-            getId: (row) => row.id,
-            onChange: (id) => setSelectedId(id),
-          }}
-          onActivate={(row) => graphSeries(row)}
-          columns={DATA_COLUMNS}
-          items={rows}
-          sortColumnId={sortColumnId}
-          sortDirection={sortDirection}
-          onHeaderClick={(columnId) => {
-            const next = columnId as DataColumnId;
-            if (next === sortColumnId) {
-              setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
-            } else {
-              setSortColumnId(next);
-              setSortDirection("asc");
-            }
-          }}
-          getItemKey={(row) => row.id}
-          renderCell={(row, column) => {
-            switch (column.id) {
-              case "source":
-                return { text: row.source, color: colors.textDim };
-              case "expression":
-                return { text: row.expression, color: colors.textBright };
-              case "reason":
-                return { text: row.reason, color: colors.textDim };
-              case "series":
-              default:
-                return { text: row.label, color: colors.text };
-            }
-          }}
-          emptyStateTitle="No matching settlement series."
-        />
+        <>
+          <DataTableView<SettlementSeriesMatch, DataColumn>
+            focused={focused}
+            keyboardNavigation={focused}
+            rootWidth={width}
+            rootBackgroundColor={colors.panel}
+            selection={{
+              kind: "id",
+              selectedId: selected?.id ?? null,
+              getId: (row) => row.id,
+              onChange: (id) => setSelectedId(id),
+            }}
+            onActivate={(row) => graphSeries(row)}
+            columns={DATA_COLUMNS}
+            items={rows}
+            sortColumnId={sortColumnId}
+            sortDirection={sortDirection}
+            onHeaderClick={(columnId) => {
+              const next = columnId as DataColumnId;
+              if (next === sortColumnId) {
+                setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+              } else {
+                setSortColumnId(next);
+                setSortDirection("asc");
+              }
+            }}
+            getItemKey={(row) => row.id}
+            renderCell={(row, column) => {
+              switch (column.id) {
+                case "source":
+                  return { text: row.source, color: colors.textDim };
+                case "expression":
+                  return { text: row.expression, color: colors.textBright };
+                case "reason":
+                  return { text: row.reason, color: colors.textDim };
+                case "series":
+                default:
+                  return { text: row.label, color: colors.text };
+              }
+            }}
+            emptyStateTitle="No matching settlement series."
+          />
+          {selected?.description ? (
+            <Box paddingX={1}>
+              <Text fg={colors.textDim} width={sourceWidth} wrapMode="ellipsis">
+                {selected.description}
+              </Text>
+            </Box>
+          ) : null}
+        </>
       )}
     </Box>
   );

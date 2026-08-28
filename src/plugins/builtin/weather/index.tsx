@@ -5,6 +5,9 @@ import {
   WEATHER_PANE_ID,
 } from "./types";
 import { PredictionWeatherSettlementTab } from "./settlement-tab";
+import { registerWeatherSources } from "./sources";
+
+let disposeWeatherSources: Array<() => void> = [];
 
 export const weatherModule: PluginModule = {
   panes: [
@@ -25,7 +28,7 @@ export const weatherModule: PluginModule = {
       paneId: WEATHER_PANE_ID,
       label: "Weather",
       description:
-        "Browse Weather Company Kalshi climate observations. Chart TWC with G WX:LAX:high and NWS first-final CLI with G NWS:KNYC:high.",
+        "Browse settlement-aware weather observations. Chart TWC with G WX:LAX:high and NWS first-final CLI with G NWS:KNYC:high.",
       keywords: [
         "weather",
         "climate",
@@ -43,6 +46,14 @@ export const weatherModule: PluginModule = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
+
+  setup() {
+    disposeWeatherSources = registerWeatherSources();
+  },
+
+  dispose() {
+    for (const dispose of disposeWeatherSources.splice(0)) dispose();
+  },
 };
 
 export { TWC_KALSHI_URL, PredictionWeatherSettlementTab };

@@ -2,10 +2,11 @@ export const WEATHER_PLUGIN_ID = "weather";
 export const WEATHER_PANE_ID = "weather";
 export const WEATHER_CONNECTION_ID = "twc-kalshi";
 export const NWS_CLI_CONNECTION_ID = "nws-cli";
+export const NWS_OBSERVATIONS_CONNECTION_ID = "nws-observations";
 export const TWC_KALSHI_URL = "https://weather.com/kalshi";
 export const TWC_KALSHI_ORIGIN = "https://weather.com";
 
-export type WeatherPrintProvider = "twc-kalshi" | "nws-cli";
+export type WeatherPrintProvider = "twc-kalshi" | "nws-cli" | "nws-observations";
 export type WeatherMetric = "high" | "low" | "precip" | "hourly";
 export type WeatherReportStatus = "official" | "preliminary" | "pending" | "no_report" | "unknown";
 export type WeatherScope = "domestic" | "international";

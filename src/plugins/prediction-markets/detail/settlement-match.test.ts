@@ -52,6 +52,11 @@ describe("prediction market settlement series matching", () => {
     expect(expressions).toContain("WX:LAX:high");
     expect(expressions).toContain("NWS:KLAX:high");
     expect(result.sourceLabel).toMatch(/Weather Company/i);
+    const wx = result.series.find((row) => row.expression === "WX:LAX:high")!;
+    expect(wx.label).toBe("LAX · Daily high");
+    expect(wx.description).toMatch(/Weather Company CLILAX.*Los Angeles/i);
+    const nws = result.series.find((row) => row.expression === "NWS:KLAX:high")!;
+    expect(nws.description).toMatch(/NWS KLAX.*Daily Climate Report/i);
   });
 
   test("maps a CPI market onto FRED CPIAUCSL", () => {
@@ -138,5 +143,83 @@ describe("prediction market settlement series matching", () => {
     expect(result.series).toEqual([]);
     expect(result.sourceSnippet).toMatch(/MLB commissioner/i);
     expect(result.sourceLabel).toMatch(/MLB commissioner/i);
+  });
+
+  test("maps a Polymarket weather high market onto WX and NWS series", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "nyc-high-80",
+      title: "Will the high temperature in New York City be above 80°F on August 19?",
+      category: "Climate and Weather",
+      rulesPrimary:
+        "This market resolves based on the daily maximum temperature for New York City " +
+        "as reported by The Weather Company.",
+      resolutionSource: "The Weather Company",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("WX:NYC:high");
+    expect(expressions).toContain("NWS:KNYC:high");
+    expect(result.sourceLabel).toMatch(/Weather Company/i);
+    const wx = result.series.find((row) => row.expression === "WX:NYC:high")!;
+    expect(wx.reason).toBe("map");
+    expect(wx.description).toMatch(/Weather Company CLINYC.*New York/i);
+  });
+
+  test("maps a Polymarket weather low market by title without an explicit source", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "chi-low-30",
+      title: "Will the daily low temperature in Chicago drop below 30°F?",
+      category: "Climate",
+      rulesPrimary: "Resolves to the minimum temperature recorded for Chicago.",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("WX:MDW:low");
+    expect(expressions).toContain("NWS:KMDW:low");
+    const wx = result.series.find((row) => row.expression === "WX:MDW:low")!;
+    expect(wx.reason).toBe("alias");
+  });
+
+  test("maps a Polymarket precipitation market onto WX precip series", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "mia-rain",
+      title: "Will precipitation in Miami exceed 2 inches on August 19?",
+      category: "Climate and Weather",
+      rulesPrimary: "Resolves based on rainfall reported by the National Weather Service.",
+      resolutionSource: "National Weather Service",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("WX:MIA:precip");
+    // NWS CLI print is only for high/low, not precip.
+    expect(expressions).not.toContain("NWS:KMIA:precip");
+  });
+
+  test("maps Polymarket slug-style NYC weather titles from weather.gov rules", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "highest-temperature-in-nyc-on-august-27-2026",
+      title: "highest-temperature-in-nyc-on-august-27-2026-69forbelow",
+      category: "Weather",
+      rulesPrimary: "This market resolves to the highest temperature recorded by NOAA.",
+      resolutionSource: "https://www.weather.gov/wrh/timeseries?site=klga",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("WX:NYC:high");
+    expect(expressions).toContain("NWS:KNYC:high");
+  });
+
+  test("does not map a politics market that mentions a weather city onto weather feeds", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "pres-nyc",
+      title: "Will the Republican win New York City in the 2024 presidential election?",
+      category: "Politics",
+      rulesPrimary: "Resolves per certified Electoral College results.",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).not.toContain("WX:NYC:high");
+    expect(expressions).not.toContain("NWS:KNYC:high");
+    expect(result.series.some((row) => row.expression.startsWith("WX:"))).toBe(false);
   });
 });

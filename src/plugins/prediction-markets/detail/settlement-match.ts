@@ -8,6 +8,7 @@ import {
   findVolCatalogEntry,
 } from "../../builtin/chart-composer/universal-series";
 import {
+  WEATHER_STATIONS,
   findWeatherStation,
   canonicalWeatherStationId,
 } from "../../builtin/weather/stations";
@@ -16,7 +17,7 @@ import {
   resolveWeatherSettlement,
   weatherMetricLabel,
 } from "../../builtin/weather/mapping";
-import { TWC_KALSHI_URL } from "../../builtin/weather/types";
+import { TWC_KALSHI_URL, type WeatherMetric } from "../../builtin/weather/types";
 import type { PredictionMarketSummary } from "../types";
 
 /** How the matcher found a row. Higher precision first. */
@@ -29,6 +30,8 @@ export interface SettlementSeriesMatch {
   expression: string;
   reason: SettlementMatchRank;
   url?: string;
+  /** Longer explanation of source/station/metric for the detail line. */
+  description?: string;
 }
 
 export interface SettlementMatchResult {
@@ -322,6 +325,90 @@ function matchWeakAliases(rulesText: string, rows: SettlementSeriesMatch[]): voi
   }
 }
 
+// ---------------------------------------------------------------------------
+// Weather settlement detection
+// ---------------------------------------------------------------------------
+
+/** Title/rules phrases that signal a temperature / precip market. */
+const WEATHER_TITLE_RE =
+  /\b(temperature|daily\s+high|daily\s+low|max(?:imum)?\s+temp|min(?:imum)?\s+temp|precipitation|rainfall|snowfall|how\s+much\s+(?:rain|snow)|inches\s+of\s+(?:rain|snow))\b/i;
+
+/** Explicit settlement-source mentions (Weather Company, NWS, NOAA, CLI). */
+const WEATHER_SOURCE_RE =
+  /\b(weather\s+company|weather\.com|weather\.gov|national\s+weather\s+service|\bnws\b|\bnoaa\b|climatological\s+report|hong kong observatory|weather underground)\b/i;
+
+const WEATHER_CATEGORY_RE = /\b(weather|climate)\b/i;
+
+const WEATHER_METRIC_PATTERNS: ReadonlyArray<{ re: RegExp; metric: WeatherMetric }> = [
+  { re: /\b(low(?:est)?\s+temp|daily\s+low|min(?:imum)?\s+temp|low\s+temperature)\b/i, metric: "low" },
+  { re: /\b(precip(?:itation)?|rain(?:fall)?|snow(?:fall)?)\b/i, metric: "precip" },
+  { re: /\b(hourly\s+temp|temp(?:erature)?\s+at\s+\d+)\b/i, metric: "hourly" },
+];
+
+function detectWeatherMetric(text: string): WeatherMetric {
+  for (const { re, metric } of WEATHER_METRIC_PATTERNS) {
+    if (re.test(text)) return metric;
+  }
+  return "high";
+}
+
+/**
+ * Text-based weather detection for venues without Kalshi-style tickers
+ * (e.g. Polymarket). Requires a weather context keyword AND a matching
+ * station city name to avoid false positives on non-weather markets.
+ */
+function detectWeatherFromText(summary: SummaryFields): {
+  stationId: string;
+  metric: WeatherMetric;
+  hasExplicitSource: boolean;
+} | null {
+  const text = joinFields(
+    summary.title,
+    summary.description,
+    summary.rulesPrimary,
+    summary.rulesSecondary,
+    summary.resolutionSource,
+    summary.category,
+  );
+  const hasExplicitSource = WEATHER_SOURCE_RE.test(text);
+  const hasWeatherContext =
+    WEATHER_TITLE_RE.test(text)
+    || hasExplicitSource
+    || WEATHER_CATEGORY_RE.test(summary.category ?? "");
+  if (!hasWeatherContext) return null;
+  const normalizedText = text.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+
+  for (const station of WEATHER_STATIONS) {
+    const cleanCity = station.city
+      .replace(/\s*\(.*\)\s*/, "")
+      .replace(/,\s*[A-Z]{2}$/, "")
+      .trim();
+    const cityVariants = [
+      cleanCity,
+      station.id,
+      station.icao,
+      ...station.aliases,
+    ];
+    if (cleanCity.includes(",")) {
+      cityVariants.push(cleanCity.split(",")[0]!.trim());
+    }
+    if (cleanCity === "New York City") cityVariants.push("New York");
+
+    const matched = cityVariants.some((name) => {
+      const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      return normalizedName.length >= 3 && normalizedText.includes(normalizedName);
+    });
+    if (!matched) continue;
+
+    return {
+      stationId: station.id,
+      metric: detectWeatherMetric(text),
+      hasExplicitSource,
+    };
+  }
+  return null;
+}
+
 function matchWeather(summary: SummaryFields, rows: SettlementSeriesMatch[]): string | null {
   const settlement = resolveWeatherSettlement({
     venue: summary.venue,
@@ -338,35 +425,58 @@ function matchWeather(summary: SummaryFields, rows: SettlementSeriesMatch[]): st
   const parsed = parseKalshiWeatherSeriesTicker(
     summary.seriesTicker ?? summary.eventTicker ?? summary.marketId,
   );
-  const stationId = settlement?.stationId ?? parsed?.stationId ?? null;
-  const metric = settlement?.metric ?? parsed?.metric ?? "high";
+  let stationId = settlement?.stationId ?? parsed?.stationId ?? null;
+  let metric: WeatherMetric = settlement?.metric ?? parsed?.metric ?? "high";
+  let detected: { stationId: string; metric: WeatherMetric; hasExplicitSource: boolean } | null = null;
+  if (!stationId) {
+    detected = detectWeatherFromText(summary);
+    if (detected) {
+      stationId = detected.stationId;
+      metric = detected.metric;
+    }
+  }
   if (!stationId) return null;
   const station = findWeatherStation(stationId);
   const canonical = canonicalWeatherStationId(stationId) ?? stationId;
   const metricLabel = weatherMetricLabel(metric);
-  const reason: SettlementMatchRank = settlement || parsed ? "map" : "alias";
+  const structured = Boolean(settlement || parsed);
+  const reason: SettlementMatchRank =
+    structured || (detected?.hasExplicitSource ?? false) ? "map" : "alias";
+  const cityLabel = station?.city ?? canonical;
+  const cliProduct = settlement?.cliProduct ?? (station ? `CLI${canonical}` : null);
+
   pushSeries(rows, {
     id: `wx:${canonical}:${metric}`,
-    label: `${station?.city ?? canonical} · ${metricLabel}`,
+    label: `${canonical} · ${metricLabel}`,
     source: "Weather Company",
     expression: `WX:${canonical}:${metric}`,
     reason,
     url: TWC_KALSHI_URL,
+    description: `Weather Company ${cliProduct ?? `CLI${canonical}`} ${metricLabel.toLowerCase()} for ${cityLabel}`,
   });
   if (station?.scope === "domestic" && (metric === "high" || metric === "low")) {
     pushSeries(rows, {
       id: `nws:${station.icao}:${metric}`,
-      label: `${station.city} · NWS ${metricLabel}`,
+      label: `${station.icao} · NWS ${metricLabel}`,
       source: "NWS",
       expression: `NWS:${station.icao}:${metric}`,
       reason,
       url: "https://www.weather.gov",
+      description: `NWS ${station.icao} Daily Climate Report first-final ${metricLabel.toLowerCase()} print for ${cityLabel}`,
     });
   }
-  const cli = settlement?.cliProduct ?? (station ? `CLI${canonical}` : null);
-  return cli
-    ? `Weather Company ${cli}${settlement?.date ? ` · ${settlement.date}` : ""}`
-    : `Weather ${canonical}`;
+
+  if (settlement) {
+    return cliProduct
+      ? `Weather Company ${cliProduct}${settlement.date ? ` · ${settlement.date}` : ""}`
+      : `Weather ${canonical}`;
+  }
+  if (detected) {
+    return detected.hasExplicitSource
+      ? (summary.resolutionSource?.trim() || `Weather Company ${cliProduct ?? canonical}`)
+      : `Weather ${canonical}`;
+  }
+  return cliProduct ? `Weather Company ${cliProduct}` : `Weather ${canonical}`;
 }
 
 function cryptoFromToken(token: string): (typeof CRYPTO_SERIES)[number] | null {
