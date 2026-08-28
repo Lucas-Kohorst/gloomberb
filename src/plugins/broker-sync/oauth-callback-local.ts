@@ -3,6 +3,8 @@ import type { OAuthCallback } from "./oauth-callback";
 
 export type { OAuthCallback } from "./oauth-callback";
 
+export const ROBINHOOD_LOCAL_CALLBACK_PORT = 53921;
+
 export async function startLocalOAuthCallback(expectedState: string): Promise<OAuthCallback> {
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
@@ -42,8 +44,14 @@ export async function startLocalOAuthCallback(expectedState: string): Promise<OA
     finish(() => resolveCode(authorizationCode));
   });
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") {
+        reject(new Error("Another Gloomberb window is already waiting for Robinhood. Close it and try again."));
+        return;
+      }
+      reject(error);
+    });
+    server.listen(ROBINHOOD_LOCAL_CALLBACK_PORT, "127.0.0.1", resolve);
   });
   const address = server.address();
   if (!address || typeof address === "string") {
