@@ -96,23 +96,54 @@ describe("local agent workspace model", () => {
     expect(created.threads[0]?.title).toBe("New Google Gemini thread");
   });
 
-  test("sends no financial context unless the user selected an attachment", () => {
-    const state = createLocalAgentThread(EMPTY_LOCAL_AGENT_WORKSPACE, "openai-codex", { id: "thread-1", now: 10 });
-    const thread = state.threads[0];
-    if (!thread) throw new Error("Expected a created thread");
-    const withoutContext = buildLocalAgentRequestPrompt("Compare the risks", []);
-    const withContext = buildLocalAgentRequestPrompt("Compare the risks", [{
+  test("includes the live desk without a ticker dump unless the user attached one", () => {
+    const withoutDump = buildLocalAgentRequestPrompt("Compare the risks", [], {
+      layoutName: "Democrats",
+      focusedPaneId: "sec:main",
+      panes: [{
+        instanceId: "sec:main",
+        paneId: "sec",
+        placement: "docked",
+        focused: true,
+        ticker: "AAPL",
+      }],
+    });
+    const withDump = buildLocalAgentRequestPrompt("Compare the risks", [{
       id: "ticker:AAPL:10",
       kind: "ticker",
       label: "Ticker AAPL",
       preview: "Apple Inc. (AAPL)",
       content: "Company: Apple Inc. (AAPL)\nCurrent Price: $210.00",
-    }]);
+    }], {
+      layoutName: "Democrats",
+      focusedPaneId: "sec:main",
+      panes: [{
+        instanceId: "sec:main",
+        paneId: "sec",
+        placement: "docked",
+        focused: true,
+        ticker: "AAPL",
+      }],
+    });
 
-    expect(withoutContext).not.toContain("Apple Inc.");
-    expect(withoutContext).not.toContain("$210.00");
-    expect(withContext).toContain("Context explicitly attached by the user");
-    expect(withContext).toContain("Company: Apple Inc. (AAPL)");
+    expect(withoutDump).toContain("Live desk: Democrats");
+    expect(withoutDump).toContain("sec:main");
+    expect(withoutDump).toContain("AAPL");
+    expect(withoutDump).not.toContain("$210.00");
+    expect(withDump).toContain("Extra ticker dump attached by the user");
+    expect(withDump).toContain("Company: Apple Inc. (AAPL)");
+  });
+
+  test("clips oversized ticker attachments before they enter the prompt", () => {
+    const prompt = buildLocalAgentRequestPrompt("build a plugin", [{
+      id: "ticker:SPX:1",
+      kind: "ticker",
+      label: "Ticker SPX",
+      preview: "S&P 500",
+      content: "n".repeat(6_000),
+    }]);
+    expect(prompt).toContain("truncated");
+    expect(prompt.length).toBeLessThan(5_000);
   });
 
   test("passes completed conversation history as structured messages", () => {
@@ -147,6 +178,17 @@ describe("local agent workspace model", () => {
     expect(buildLocalAgentRequestPrompt("Current question", [])).toBe(
       "Current user request:\nCurrent question",
     );
+    expect(buildLocalAgentRequestPrompt("Open SEC", [], {
+      layoutName: "Democrats",
+      focusedPaneId: "ai:main",
+      panes: [{
+        instanceId: "ai:main",
+        paneId: "local-agent-workspace",
+        placement: "docked",
+        focused: true,
+        title: "AI Agent",
+      }],
+    })).toContain("Do not ask the user to attach panes.");
   });
 
   test("drops malformed persisted threads and preserves ordered messages", () => {
@@ -223,5 +265,156 @@ describe("local agent workspace model", () => {
       toolCallId: "tool-1",
       content: [{ type: "text", text: '{"ok":true}' }],
     });
+  });
+
+  test("preserves toolCards on a LocalAgentMessage through normalizeLocalAgentWorkspace", () => {
+    const normalized = normalizeLocalAgentWorkspace({
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        providerId: "anthropic",
+        title: "Research",
+        createdAt: 1,
+        updatedAt: 2,
+        messages: [{
+          id: "a1",
+          role: "assistant",
+          content: "Opened it.",
+          createdAt: 2,
+          status: "complete",
+          toolCards: [{
+            id: "call-1",
+            toolName: "gloomberb_remote",
+            arguments: { operation: "pane.open" },
+            status: "success",
+            isError: false,
+            result: '{"ok":true}',
+          }],
+        }],
+      }],
+    });
+
+    expect(normalized.threads[0]?.messages[0]?.toolCards).toEqual([{
+      id: "call-1",
+      toolName: "gloomberb_remote",
+      arguments: { operation: "pane.open" },
+      status: "success",
+      isError: false,
+      result: '{"ok":true}',
+    }]);
+  });
+
+  test("drops malformed toolCards entries without nuking the message", () => {
+    const normalized = normalizeLocalAgentWorkspace({
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        providerId: "anthropic",
+        title: "Research",
+        createdAt: 1,
+        updatedAt: 2,
+        messages: [{
+          id: "a1",
+          role: "assistant",
+          content: "Opened it.",
+          createdAt: 2,
+          status: "complete",
+          toolCards: [
+            { id: "good", toolName: "tool", arguments: {}, status: "success", isError: false },
+            { id: "bad", toolName: 123, arguments: {}, status: "success", isError: false } as unknown as never,
+            { id: "also-bad", toolName: "tool", arguments: "not-a-record", status: "success", isError: false } as unknown as never,
+          ],
+        }],
+      }],
+    });
+
+    const cards = normalized.threads[0]?.messages[0]?.toolCards;
+    expect(cards).toEqual([
+      { id: "good", toolName: "tool", arguments: {}, status: "success", isError: false },
+    ]);
+  });
+
+  test("preserves action receipts through normalizeLocalAgentWorkspace", () => {
+    const normalized = normalizeLocalAgentWorkspace({
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        providerId: "anthropic",
+        title: "Research",
+        createdAt: 1,
+        updatedAt: 2,
+        messages: [{
+          id: "a1",
+          role: "assistant",
+          content: "Opened it.",
+          createdAt: 2,
+          status: "complete",
+          receipts: [{
+            id: "call-1",
+            toolCallId: "call-1",
+            toolName: "gloomberb_show",
+            operation: "pane.show",
+            label: "opened sec",
+            undoable: true,
+          }],
+        }],
+      }],
+    });
+    expect(normalized.threads[0]?.messages[0]?.receipts).toEqual([{
+      id: "call-1",
+      toolCallId: "call-1",
+      toolName: "gloomberb_show",
+      operation: "pane.show",
+      label: "opened sec",
+      undoable: true,
+    }]);
+  });
+
+  test("preserves assistant thinking and backfills it from native history", () => {
+    const withField = normalizeLocalAgentWorkspace({
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        providerId: "xai",
+        title: "Grok",
+        createdAt: 1,
+        updatedAt: 2,
+        messages: [{
+          id: "a1",
+          role: "assistant",
+          content: "Because.",
+          createdAt: 2,
+          status: "complete",
+          thinking: "Need a short reason.",
+        }],
+      }],
+    });
+    expect(withField.threads[0]?.messages[0]?.thinking).toBe("Need a short reason.");
+
+    const backfilled = normalizeLocalAgentWorkspace({
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        providerId: "xai",
+        title: "Grok",
+        createdAt: 1,
+        updatedAt: 2,
+        messages: [
+          { id: "u1", role: "user", content: "Why?", createdAt: 1 },
+          { id: "a1", role: "assistant", content: "Because.", createdAt: 2, status: "complete" },
+        ],
+        agentMessages: [
+          { role: "user", content: "Why?" },
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "Need a short reason." },
+              { type: "text", text: "Because." },
+            ],
+          },
+        ],
+      }],
+    });
+    expect(backfilled.threads[0]?.messages[1]?.thinking).toBe("Need a short reason.");
   });
 });

@@ -1,6 +1,9 @@
 import { migrateLegacyAiProviderId, type AiProviderId } from "../providers";
 import {
+  extractThinkingTurns,
   normalizeAiAgentHistory,
+  type AgentActionReceipt,
+  type AgentToolCard,
   type AiAgentHistoryMessage,
 } from "../agent-history";
 
@@ -37,6 +40,9 @@ export interface LocalAgentMessage {
   createdAt: number;
   status?: "complete" | "cancelled" | "error";
   attachments?: LocalAgentAttachmentMetadata[];
+  thinking?: string;
+  toolCards?: AgentToolCard[];
+  receipts?: AgentActionReceipt[];
 }
 
 export interface LocalAgentThread {
@@ -87,6 +93,10 @@ function isProviderId(value: unknown): value is LocalAgentProviderId {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function providerTitle(providerId: string, providerLabel?: string): string {
   return providerLabel?.trim()
     || LEGACY_PROVIDER_TITLES[providerId]
@@ -115,6 +125,11 @@ function normalizeMessage(value: unknown): LocalAgentMessage | null {
   const status = message.status === "complete" || message.status === "cancelled" || message.status === "error"
     ? message.status
     : undefined;
+  const thinking = typeof message.thinking === "string" && message.thinking.trim()
+    ? message.thinking
+    : undefined;
+  const toolCards = normalizeToolCards(message.toolCards);
+  const receipts = normalizeReceipts(message.receipts);
   return {
     id: message.id,
     role: message.role,
@@ -122,7 +137,77 @@ function normalizeMessage(value: unknown): LocalAgentMessage | null {
     createdAt: message.createdAt,
     ...(status ? { status } : {}),
     ...(attachments?.length ? { attachments } : {}),
+    ...(thinking ? { thinking } : {}),
+    ...(toolCards.length ? { toolCards } : {}),
+    ...(receipts.length ? { receipts } : {}),
   };
+}
+
+function normalizeReceipts(value: unknown): AgentActionReceipt[] {
+  if (!Array.isArray(value)) return [];
+  const receipts: AgentActionReceipt[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const receipt = entry as Partial<AgentActionReceipt>;
+    if (
+      typeof receipt.id !== "string"
+      || typeof receipt.toolCallId !== "string"
+      || typeof receipt.toolName !== "string"
+      || typeof receipt.operation !== "string"
+      || typeof receipt.label !== "string"
+      || typeof receipt.undoable !== "boolean"
+    ) continue;
+    receipts.push({
+      id: receipt.id,
+      toolCallId: receipt.toolCallId,
+      toolName: receipt.toolName,
+      operation: receipt.operation,
+      label: receipt.label,
+      undoable: receipt.undoable,
+    });
+  }
+  return receipts;
+}
+
+function normalizeToolCards(value: unknown): AgentToolCard[] {
+  if (!Array.isArray(value)) return [];
+  const cards: AgentToolCard[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const card = entry as Partial<AgentToolCard>;
+    if (
+      typeof card.id !== "string"
+      || typeof card.toolName !== "string"
+      || !isRecord(card.arguments)
+      || (card.status !== "running" && card.status !== "success" && card.status !== "error")
+      || typeof card.isError !== "boolean"
+    ) continue;
+    const result = typeof card.result === "string" ? card.result : undefined;
+    cards.push({
+      id: card.id,
+      toolName: card.toolName,
+      arguments: { ...card.arguments },
+      status: card.status,
+      isError: card.isError,
+      ...(result ? { result } : {}),
+    });
+  }
+  return cards;
+}
+
+function withBackfilledThinking(thread: LocalAgentThread): LocalAgentThread {
+  const turns = extractThinkingTurns(thread.agentMessages);
+  if (turns.length === 0) return thread;
+  let turnIndex = 0;
+  let changed = false;
+  const messages = thread.messages.map((message) => {
+    if (message.role !== "assistant") return message;
+    const fromHistory = turns[turnIndex++] ?? "";
+    if (message.thinking || !fromHistory) return message;
+    changed = true;
+    return { ...message, thinking: fromHistory };
+  });
+  return changed ? { ...thread, messages } : thread;
 }
 
 function isThread(value: unknown): value is LocalAgentThread {
@@ -154,6 +239,7 @@ export function normalizeLocalAgentWorkspace(value: unknown): LocalAgentWorkspac
           .slice(-MAX_MESSAGES_PER_THREAD),
         agentMessages: trimAgentMessages(normalizeAiAgentHistory(thread.agentMessages)),
       }))
+      .map(withBackfilledThinking)
       .slice(0, MAX_THREADS)
     : [];
   const activeThreadId = typeof candidate.activeThreadId === "string"
@@ -280,15 +366,75 @@ export function appendLocalAgentTranscript(
   }));
 }
 
+const MAX_ATTACHMENT_CHARS = 4_000;
+const MAX_LIVE_DESK_CHARS = 2_500;
+const MAX_LIVE_DESK_PANES = 40;
+
+export interface LiveDeskPane {
+  instanceId: string;
+  paneId: string;
+  title?: string;
+  placement: "docked" | "floating" | "detached" | "hidden";
+  focused: boolean;
+  ticker?: string;
+}
+
+export interface LiveDeskSnapshot {
+  layoutName: string | null;
+  focusedPaneId: string | null;
+  panes: LiveDeskPane[];
+}
+
+function clippedAttachmentContent(content: string): string {
+  if (content.length <= MAX_ATTACHMENT_CHARS) return content;
+  return `${content.slice(0, MAX_ATTACHMENT_CHARS)}\n…[truncated ${content.length - MAX_ATTACHMENT_CHARS} chars]`;
+}
+
+export function formatLiveDeskContext(desk: LiveDeskSnapshot): string {
+  const visible = desk.panes.filter((pane) => pane.placement !== "hidden");
+  const hiddenCount = desk.panes.length - visible.length;
+  const listed = visible.slice(0, MAX_LIVE_DESK_PANES);
+  const lines = [
+    `Live desk: ${desk.layoutName?.trim() || "untitled"}`,
+    desk.focusedPaneId ? `Focused: ${desk.focusedPaneId}` : "Focused: none",
+  ];
+  for (const pane of listed) {
+    const bits = [pane.paneId, pane.placement];
+    if (pane.ticker) bits.push(pane.ticker);
+    if (pane.focused) bits.push("focused");
+    if (pane.title && pane.title !== pane.paneId) bits.push(pane.title);
+    lines.push(`- ${pane.instanceId}: ${bits.join(" · ")}`);
+  }
+  if (visible.length > listed.length) {
+    lines.push(`- +${visible.length - listed.length} more visible panes`);
+  }
+  if (hiddenCount > 0) lines.push(`- ${hiddenCount} hidden pane${hiddenCount === 1 ? "" : "s"}`);
+  const text = lines.join("\n");
+  if (text.length <= MAX_LIVE_DESK_CHARS) return text;
+  return `${text.slice(0, MAX_LIVE_DESK_CHARS)}\n…[truncated]`;
+}
+
 export function buildLocalAgentRequestPrompt(
   userText: string,
   attachments: LocalAgentAttachmentPayload[],
+  liveDesk?: LiveDeskSnapshot | string | null,
 ): string {
+  const deskText = typeof liveDesk === "string"
+    ? liveDesk
+    : liveDesk && liveDesk.panes.length > 0
+      ? formatLiveDeskContext(liveDesk)
+      : "";
   const sections: string[] = [];
+  if (deskText) {
+    sections.push([
+      "Live Gloomberb desk already on screen. Do not ask the user to attach panes.",
+      deskText,
+    ].join("\n"));
+  }
   if (attachments.length > 0) {
     sections.push([
-      "Context explicitly attached by the user for this request:",
-      ...attachments.map((attachment) => `\n[${attachment.label}]\n${attachment.content}`),
+      "Extra ticker dump attached by the user for this request:",
+      ...attachments.map((attachment) => `\n[${attachment.label}]\n${clippedAttachmentContent(attachment.content)}`),
     ].join("\n"));
   }
   sections.push(`Current user request:\n${userText.trim()}`);

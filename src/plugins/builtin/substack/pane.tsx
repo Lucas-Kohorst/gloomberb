@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
+import { Box, useRendererHost, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   EmptyState,
+  InputSearchBar,
   Spinner,
   usePaneFooter,
   useTableLoadMore,
@@ -73,6 +74,7 @@ import { stashSubstackArticle } from "./article-stash";
 import { useSubstackReadState } from "./read-state";
 import { useCopyShareLink, substackArticleSharePayload } from "../shared/article-share";
 import { useArticleArchiveAction } from "../shared/article-archive";
+import { paneSearchHint } from "../shared/pane-footer";
 
 const PUBLICATION_LOAD_MORE_THRESHOLD_ROWS = 8;
 
@@ -86,6 +88,11 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   const [activeTab, setActiveTab] = usePaneSettingValue<string>("defaultTab", SUBSTACK_FEED_TAB_ID);
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>("selectedArticleId", null);
   const [detailOpen, setDetailOpen] = usePluginPaneState<boolean>("detailOpen", false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
+  const focusSearch = useCallback(() => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); }, []);
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", undefined);
   const [sortValue, setSortValue] = usePaneSettingValue<unknown>(
     "sort",
@@ -216,6 +223,10 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     loadSubstackPublicationFeed(publication, force, offset)
       .then((entry: SubstackCachedData<SubstackPublicationFeedPage>) => {
         if (publicationFetchGenRef.current[tabId] !== gen) return;
+        const articles = entry.data.items
+          .map(normalizeSubstackArticle)
+          .filter((article): article is NonNullable<typeof article> => article !== null);
+        if (articles.length > 0) getSharedNewsService()?.ingest("substack-news", articles);
         setPublicationFeeds((current) => ({
           ...current,
           [tabId]: (() => {
@@ -295,9 +306,10 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     PUBLICATION_LOAD_MORE_THRESHOLD_ROWS,
   );
 
-  const sortedRows = useMemo(() => (
-    sortedSubstackArticles(activeFeedState.data ?? [], sort)
-  ), [activeFeedState.data, sort]);
+  const sortedRows = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return sortedSubstackArticles((activeFeedState.data ?? []).filter((article) => !query || `${article.title} ${article.publicationName ?? ""}`.toLowerCase().includes(query)), sort);
+  }, [activeFeedState.data, searchQuery, sort]);
 
   useEffect(() => {
     loadMoreActivePublicationRows();
@@ -462,6 +474,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (isPlainKey(event, "/")) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -481,7 +494,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [openSelectedArticle, popOutSelectedArticle, refreshActive]);
+  }, [focusSearch, openSelectedArticle, popOutSelectedArticle, refreshActive]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "j", "down")) {
@@ -551,6 +564,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     ],
     trailingInfo: [...pollFooterTrailingInfo(!detailOpen, poll.segment)],
     hints: auth ? [
+      paneSearchHint(focusSearch),
       { id: "refresh", key: "r", label: "efresh", onPress: refreshActive },
       { id: "open", key: "o", label: "pen", onPress: openSelectedArticle, disabled: !selectedArticle?.url },
       ...(detailOpen && selectedArticle
@@ -569,6 +583,7 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
     activeFeedState.loading,
     activeFeedState.loadingMore,
     auth,
+    focusSearch,
     detailOpen,
     openSelectedArticle,
     popOutSelectedArticle,
@@ -640,8 +655,9 @@ export function SubstackPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
+      <InputSearchBar value={searchQuery} focused={focused && !detailOpen} active={searchFocused} width={width} focusToken={searchFocusToken} inputRef={searchInputRef} placeholder="title or author" debounceMs={80} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onNavigateDown={() => setSearchFocused(false)} onQueryChange={setSearchQuery} />
       <SubstackArticleStack
-        focused={focused}
+        focused={focused && !searchFocused}
         detailOpen={detailOpen}
         onBack={() => setDetailOpen(false)}
         selectedArticle={selectedArticle}

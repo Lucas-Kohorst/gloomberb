@@ -1,4 +1,14 @@
 import type { Dispatch } from "react";
+import { fetchPublicFredSeries } from "../data/fred-public";
+import { getSharedNewsService } from "../news/hooks";
+import type { NewsQuery } from "../news/types";
+import { searchNewsArticles } from "../plugins/builtin/news/wire/article-search";
+import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
+import { getSharedAdjacentClient } from "../plugins/builtin/adjacent/client";
+import { loadKalshiCatalog, resolveKalshiMarketByTicker, loadKalshiHistory } from "../plugins/prediction-markets/services/kalshi/adapter";
+import { loadPolymarketCatalog } from "../plugins/prediction-markets/services/polymarket/adapter";
+import { resolvePolymarketMarketById, loadPolymarketHistory } from "../plugins/prediction-markets/services/polymarket/detail";
+import type { PredictionCategoryId } from "../plugins/prediction-markets/categories";
 import {
   dockPane,
   floatPane,
@@ -11,6 +21,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { AppAction, AppState } from "../state/app/context";
 import { setPaneSettings } from "../pane-settings";
 import type { DesktopWindowBridge } from "../types/desktop-window";
+import type { TickerRecord } from "../types/ticker";
 import { applyJsonPatch } from "./json-patch";
 import { revisionFor } from "./revision";
 import type {
@@ -35,6 +46,7 @@ import {
 } from "./controller-utils";
 import {
   buildGridDockRoot,
+  buildSeededLayout,
   regionToDockPosition,
   regionToRootEdge,
   requirePaneInstance,
@@ -57,6 +69,72 @@ const MAX_MARKET_DATA_FILINGS = 20;
 const MAX_MARKET_DATA_EARNINGS_SYMBOLS = 25;
 const MAX_MARKET_DATA_HOLDERS = 25;
 const MAX_MARKET_DATA_EVENT_ROWS = 20;
+const MAX_ECON_SERIES_OBSERVATIONS = 400;
+const MAX_ARTICLE_SEARCH_RESULTS = 50;
+const MAX_POLLS_RESULTS = 100;
+const MAX_PREDICTION_MARKETS_RESULTS = 50;
+
+function tickerBelongsToCollection(
+  ticker: TickerRecord,
+  collectionId: string,
+  kind: "watchlists" | "portfolios",
+): boolean {
+  if (ticker.metadata[kind]?.includes(collectionId)) return true;
+  return kind === "portfolios"
+    && (ticker.metadata.positions ?? []).some((position) => position.portfolio === collectionId);
+}
+
+function symbolsForCollection(
+  tickers: Map<string, TickerRecord>,
+  collectionId: string,
+  kind: "watchlists" | "portfolios",
+): string[] {
+  const symbols: string[] = [];
+  for (const [key, ticker] of tickers) {
+    if (tickerBelongsToCollection(ticker, collectionId, kind)) symbols.push(key);
+  }
+  return symbols;
+}
+
+function slimCollections(
+  defined: Array<{ id: string; name: string }>,
+  tickers: Map<string, TickerRecord>,
+  kind: "watchlists" | "portfolios",
+): Array<{ id: string; name: string; symbols: string[] }> {
+  const seen = new Set<string>();
+  const collections: Array<{ id: string; name: string; symbols: string[] }> = [];
+  for (const collection of defined) {
+    if (seen.has(collection.id)) continue;
+    seen.add(collection.id);
+    collections.push({
+      id: collection.id,
+      name: collection.name,
+      symbols: symbolsForCollection(tickers, collection.id, kind),
+    });
+  }
+  for (const ticker of tickers.values()) {
+    const ids = [
+      ...(ticker.metadata[kind] ?? []),
+      ...(kind === "portfolios" ? (ticker.metadata.positions ?? []).map((position) => position.portfolio) : []),
+    ];
+    for (const id of ids) {
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      collections.push({
+        id,
+        name: id,
+        symbols: symbolsForCollection(tickers, id, kind),
+      });
+    }
+  }
+  return collections;
+}
+
+function publishedAtIso(value: Date | string | undefined): string | undefined {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  if (typeof value === "string" && value.length > 0) return value;
+  return undefined;
+}
 
 function requiredMarketDataText(value: string, field: string): string {
   const normalized = value.trim();
@@ -184,6 +262,109 @@ export function createAppRemoteController({
           .slice(0, MAX_MARKET_DATA_EARNINGS_SYMBOLS);
         if (symbols.length === 0) throw new Error("Market data symbols are required.");
         return marketData.getEarningsCalendar(symbols);
+      }
+      case "econ.series": {
+        const limit = Math.min(
+          Number.isFinite(request.limit) ? Math.max(1, Math.trunc(request.limit!)) : MAX_ECON_SERIES_OBSERVATIONS,
+          MAX_ECON_SERIES_OBSERVATIONS,
+        );
+        const payload = await fetchPublicFredSeries(requiredMarketDataText(request.seriesId, "seriesId"), {
+          startDate: request.startDate,
+          endDate: request.endDate,
+          limit,
+        });
+        return {
+          ...payload,
+          observations: payload.observations.slice(0, limit),
+        };
+      }
+      case "watchlists.get": {
+        const state = getState();
+        return {
+          watchlists: slimCollections(state.config.watchlists ?? [], state.tickers, "watchlists"),
+        };
+      }
+      case "portfolios.get": {
+        const state = getState();
+        return {
+          portfolios: slimCollections(state.config.portfolios ?? [], state.tickers, "portfolios"),
+        };
+      }
+      case "articles.search": {
+        const service = getSharedNewsService();
+        if (!service) return { articles: [], error: "news_unavailable" };
+        const limit = Math.min(
+          Number.isFinite(request.limit) ? Math.max(1, Math.trunc(request.limit!)) : MAX_ARTICLE_SEARCH_RESULTS,
+          MAX_ARTICLE_SEARCH_RESULTS,
+        );
+        const query: NewsQuery = {
+          feed: request.feed ?? (request.ticker ? "ticker" : "latest"),
+          ticker: request.ticker,
+          limit: MAX_ARTICLE_SEARCH_RESULTS,
+        };
+        const loaded = await service.load(query);
+        const matched = request.query
+          ? searchNewsArticles(loaded.articles, request.query, limit)
+          : loaded.articles.slice(0, limit);
+        return {
+          articles: matched.map((article) => ({
+            id: article.id,
+            title: article.title,
+            source: article.source,
+            url: article.url,
+            publishedAt: publishedAtIso(article.publishedAt),
+            ...(article.tickers?.length ? { tickers: article.tickers } : {}),
+          })),
+        };
+      }
+      case "polls.list": {
+        const limit = Math.min(
+          Number.isFinite(request.limit) ? Math.max(1, Math.trunc(request.limit!)) : MAX_POLLS_RESULTS,
+          MAX_POLLS_RESULTS,
+        );
+        const polls = await fetchVoteHubPolls({ pollType: request.pollType, subject: request.subject });
+        return { polls: polls.slice(0, limit) };
+      }
+      case "indices.list": {
+        const response = await getSharedAdjacentClient().getIndices();
+        return { indices: response.data ?? [] };
+      }
+      case "indices.get": {
+        const response = await getSharedAdjacentClient().getIndexPrices(
+          requiredMarketDataText(request.indexId, "indexId"),
+        );
+        return { prices: response.data ?? [] };
+      }
+      case "markets.search": {
+        const limit = Math.min(
+          Number.isFinite(request.limit) ? Math.max(1, Math.trunc(request.limit!)) : MAX_PREDICTION_MARKETS_RESULTS,
+          MAX_PREDICTION_MARKETS_RESULTS,
+        );
+        const category = request.category as PredictionCategoryId | undefined;
+        const [kalshi, polymarket] = await Promise.all([
+          loadKalshiCatalog(request.query ?? "", category, "top"),
+          loadPolymarketCatalog(request.query ?? "", category, "top"),
+        ]);
+        return { markets: [...kalshi, ...polymarket].slice(0, limit) };
+      }
+      case "markets.get": {
+        const marketId = requiredMarketDataText(request.marketId, "marketId");
+        const market = request.venue === "kalshi"
+          ? await resolveKalshiMarketByTicker(marketId)
+          : await resolvePolymarketMarketById(marketId);
+        return { market };
+      }
+      case "markets.history": {
+        const marketId = requiredMarketDataText(request.marketId, "marketId");
+        const range = request.range ?? "ALL";
+        const summary = request.venue === "kalshi"
+          ? await resolveKalshiMarketByTicker(marketId)
+          : await resolvePolymarketMarketById(marketId);
+        if (!summary) return { history: [] };
+        const history = request.venue === "kalshi"
+          ? await loadKalshiHistory(summary, range)
+          : await loadPolymarketHistory(summary, range);
+        return { history };
       }
       default:
         throw new Error(
@@ -366,9 +547,32 @@ export function createAppRemoteController({
       case "layout.switch":
         dispatch({ type: "SWITCH_LAYOUT", index: numberInput(input, "index") });
         return getAfterMutationSummary();
-      case "layout.new":
-        dispatch({ type: "NEW_LAYOUT", name: stringInput(input, "name") });
+      case "layout.new": {
+        const panesInput = Array.isArray(input.panes) ? input.panes as unknown[] : undefined;
+        const layout = panesInput && panesInput.length > 0
+          ? buildSeededLayout(panesInput, pluginRegistry.panes, pluginRegistry.paneTemplates)
+          : undefined;
+        dispatch({
+          type: "NEW_LAYOUT",
+          name: stringInput(input, "name"),
+          activate: input.activate !== false,
+          ...(layout ? { layout } : {}),
+        });
         return getAfterMutationSummary();
+      }
+      case "layout.open": {
+        const index = optionalNumber(input, "index");
+        const name = optionalString(input, "name");
+        let target = index;
+        if (target === undefined) {
+          if (!name) throw new Error("name or index is required.");
+          const needle = name.toLowerCase();
+          target = getState().config.layouts.findIndex((layout) => layout.name.toLowerCase() === needle);
+          if (target < 0) throw new Error(`No layout named "${name}".`);
+        }
+        dispatch({ type: "SWITCH_LAYOUT", index: target });
+        return getAfterMutationSummary();
+      }
       case "layout.rename":
         dispatch({ type: "RENAME_LAYOUT", index: numberInput(input, "index"), name: stringInput(input, "name") });
         return getAfterMutationSummary();
@@ -514,6 +718,9 @@ export function createAppRemoteController({
           );
         }
         case "batch": {
+          if (!Array.isArray(request.requests)) {
+            return fail("invalid_request", new Error("batch request is missing requests."));
+          }
           const responses = [];
           const haltOnError = request.haltOnError !== false;
           let haltedAt: number | null = null;

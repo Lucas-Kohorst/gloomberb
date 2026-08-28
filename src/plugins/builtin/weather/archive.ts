@@ -4,6 +4,8 @@ export const WEATHER_ARCHIVE_DAYS = 30;
 export const WEATHER_ARCHIVE_STATE_KEY = "forecast-archive";
 export const WEATHER_ARCHIVE_SCHEMA_VERSION = 1;
 
+export type WeatherArchiveMetric = "high" | "low" | "precip";
+
 export interface WeatherDayRecord {
   stationId: string;
   date: string;
@@ -13,6 +15,14 @@ export interface WeatherDayRecord {
   impliedHigh: number | null;
   /** TWC official max — the Kalshi settlement print. */
   settlementHigh: number | null;
+  /** TWC low captured before the official print. */
+  forecastLow: number | null;
+  /** TWC official min — the Kalshi settlement print. */
+  settlementLow: number | null;
+  /** TWC precipitation captured before the official print. */
+  forecastPrecip: number | null;
+  /** TWC official precipitation — the Kalshi settlement print. */
+  settlementPrecip: number | null;
   forecastCapturedAt: number | null;
   impliedCapturedAt: number | null;
   settledAt: number | null;
@@ -28,6 +38,10 @@ export interface WeatherArchiveObservation {
   stationId: string;
   date: string;
   high: number | null;
+  /** Optional low (min temp) from the same observation. */
+  low?: number | null;
+  /** Optional precipitation from the same observation. */
+  precip?: number | null;
   official: boolean;
 }
 
@@ -49,6 +63,10 @@ function emptyRecord(stationId: string, date: string): WeatherDayRecord {
     forecastHigh: null,
     impliedHigh: null,
     settlementHigh: null,
+    forecastLow: null,
+    settlementLow: null,
+    forecastPrecip: null,
+    settlementPrecip: null,
     forecastCapturedAt: null,
     impliedCapturedAt: null,
     settledAt: null,
@@ -74,6 +92,14 @@ export function normalizeWeatherArchive(state: WeatherArchiveState | null | unde
       impliedHigh: typeof row.impliedHigh === "number" && Number.isFinite(row.impliedHigh) ? row.impliedHigh : null,
       settlementHigh: typeof row.settlementHigh === "number" && Number.isFinite(row.settlementHigh)
         ? row.settlementHigh
+        : null,
+      forecastLow: typeof row.forecastLow === "number" && Number.isFinite(row.forecastLow) ? row.forecastLow : null,
+      settlementLow: typeof row.settlementLow === "number" && Number.isFinite(row.settlementLow)
+        ? row.settlementLow
+        : null,
+      forecastPrecip: typeof row.forecastPrecip === "number" && Number.isFinite(row.forecastPrecip) ? row.forecastPrecip : null,
+      settlementPrecip: typeof row.settlementPrecip === "number" && Number.isFinite(row.settlementPrecip)
+        ? row.settlementPrecip
         : null,
       forecastCapturedAt: typeof row.forecastCapturedAt === "number" ? row.forecastCapturedAt : null,
       impliedCapturedAt: typeof row.impliedCapturedAt === "number" ? row.impliedCapturedAt : null,
@@ -133,17 +159,39 @@ export function mergeWeatherArchive(
 
   for (const observation of input.observations ?? []) {
     const stationId = canonicalWeatherStationId(observation.stationId) ?? observation.stationId;
-    if (!stationId || !observation.date || observation.high == null) continue;
+    if (!stationId || !observation.date) continue;
+    const hasHigh = observation.high != null;
+    const hasLow = observation.low != null;
+    const hasPrecip = observation.precip != null;
+    if (!hasHigh && !hasLow && !hasPrecip) continue;
     const key = recordKey(stationId, observation.date);
     const current = byKey.get(key) ?? emptyRecord(stationId, observation.date);
     if (observation.official) {
-      if (current.settlementHigh == null) {
+      if (hasHigh && current.settlementHigh == null) {
         current.settlementHigh = observation.high;
         current.settledAt = now;
       }
-    } else if (current.forecastHigh == null) {
-      current.forecastHigh = observation.high;
-      current.forecastCapturedAt = now;
+      if (hasLow && current.settlementLow == null) {
+        current.settlementLow = observation.low;
+        current.settledAt = now;
+      }
+      if (hasPrecip && current.settlementPrecip == null) {
+        current.settlementPrecip = observation.precip;
+        current.settledAt = now;
+      }
+    } else {
+      if (hasHigh && current.forecastHigh == null) {
+        current.forecastHigh = observation.high;
+        current.forecastCapturedAt = now;
+      }
+      if (hasLow && current.forecastLow == null) {
+        current.forecastLow = observation.low;
+        current.forecastCapturedAt = now;
+      }
+      if (hasPrecip && current.forecastPrecip == null) {
+        current.forecastPrecip = observation.precip;
+        current.forecastCapturedAt = now;
+      }
     }
     byKey.set(key, current);
   }
@@ -164,4 +212,36 @@ export function mergeWeatherArchive(
   const records = pruneArchive([...byKey.values()], today);
   records.sort((left, right) => right.date.localeCompare(left.date) || left.stationId.localeCompare(right.stationId));
   return { records };
+}
+
+/** Forecast value for a metric, or null when never captured. */
+export function archiveForecastValue(
+  row: WeatherDayRecord,
+  metric: WeatherArchiveMetric,
+): number | null {
+  if (metric === "low") return row.forecastLow;
+  if (metric === "precip") return row.forecastPrecip;
+  return row.forecastHigh;
+}
+
+/** Settlement value for a metric, or null when not yet official. */
+export function archiveSettlementValue(
+  row: WeatherDayRecord,
+  metric: WeatherArchiveMetric,
+): number | null {
+  if (metric === "low") return row.settlementLow;
+  if (metric === "precip") return row.settlementPrecip;
+  return row.settlementHigh;
+}
+
+/**
+ * Kalshi implied value for a metric. Only high has a mappable Kalshi series;
+ * low and precip implied are null until a series mapping exists.
+ */
+export function archiveImpliedValue(
+  row: WeatherDayRecord,
+  metric: WeatherArchiveMetric,
+): number | null {
+  if (metric !== "high") return null;
+  return row.impliedHigh;
 }

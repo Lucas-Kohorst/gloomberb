@@ -7,6 +7,10 @@ import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import { padTo } from "../../../utils/format";
 import { DETAIL_TABS } from "../navigation";
+import {
+  isPredictionWeatherSettlement,
+  PredictionWeatherSettlementTab,
+} from "../../builtin/weather/settlement-tab";
 import { getSharedAdjacentClient } from "../../builtin/adjacent/client";
 import { PredictionSimilarTab, PredictionNewsTab } from "./adjacent-tabs";
 import { PredictionMarketDataTab } from "./data-tab";
@@ -223,6 +227,7 @@ export function PredictionMarketDetailPane({
   const detailLoading = detailLoadCount > 0 && !detail;
   const detailTextWidth = Math.max(detailWidth, 12);
   const showDetailError = Boolean(detailError) && !detail;
+  const weatherSettlement = isPredictionWeatherSettlement(summaryMetrics);
   const chromeRows =
     headerHeight +
     3 +
@@ -301,7 +306,12 @@ export function PredictionMarketDetailPane({
         </Box>
       )}
 
-      {detailTab === "overview" || detailTab === "rules" ? (
+      {detailTab === "overview" && weatherSettlement ? (
+        <PredictionWeatherSettlementTab
+          summary={summaryMetrics}
+          width={detailTextWidth}
+        />
+      ) : detailTab === "overview" || detailTab === "rules" ? (
         <ScrollBox ref={scrollRef} flexGrow={1} scrollY>
           {detailTab === "overview" && (
             <PredictionMarketOverviewView
@@ -381,6 +391,7 @@ export function PredictionMarketDetailPane({
         <PredictionNewsTab
           client={adjacentClient}
           lookup={adjacentLookup}
+          summary={summaryMetrics}
           focused={focused}
           width={detailWidth}
           height={detailBodyHeight}

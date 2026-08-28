@@ -4,6 +4,7 @@ import type { AiRunOutputMode, AiRuntimeProvider } from "./runner";
 export const AI_PROVIDER_IDS = [
   "browser-builtin",
   "ollama",
+  "factory",
   "anthropic",
   "openai-codex",
   "openai",
@@ -82,7 +83,7 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
   {
     id: "browser-builtin",
     name: "Browser (on-device)",
-    outputModes: ["plain", "screener"],
+    outputModes: ALL_OUTPUT_MODES,
     preferredModelIds: ["gemini-nano"],
     fastModelIds: ["gemini-nano"],
   },
@@ -92,6 +93,13 @@ const PROVIDER_DEFINITIONS: readonly AiProviderDefinition[] = [
     outputModes: ["plain"],
     preferredModelIds: ["llama3.2", "qwen2.5", "phi3"],
     fastModelIds: ["qwen2.5", "phi3", "llama3.2"],
+  },
+  {
+    id: "factory",
+    name: "Factory",
+    outputModes: ALL_OUTPUT_MODES,
+    preferredModelIds: ["claude-opus-5", "claude-sonnet-5"],
+    fastModelIds: ["gemini-3.7-flash", "gpt-5.6-luna", "claude-sonnet-5"],
   },
   {
     id: "anthropic",
@@ -306,7 +314,11 @@ export function detectProviders(): AiProvider[] {
   // on-device provider anywhere else offers a "sign in" action for a model
   // that cannot be signed into and is not present on the platform.
   const builtinProviders = PROVIDER_DEFINITIONS
-    .filter((definition) => definition.id !== "browser-builtin" || isHostedWebClient())
+    .filter((definition) => {
+      if (definition.id === "browser-builtin") return isHostedWebClient();
+      if (definition.id === "factory") return !isHostedWebClient();
+      return true;
+    })
     .map(disconnectedProvider);
 
   // Include runtime-registered providers from plugins.

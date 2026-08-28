@@ -171,4 +171,86 @@ describe("StatusBar", () => {
       globalThis.clearTimeout = originalClearTimeout;
     }
   });
+
+  test("lists saved layouts as numbered chips on the left", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-layout-chips-test");
+    const state = {
+      ...createInitialState({
+        ...config,
+        layouts: [
+          { name: "Home", layout: cloneLayout(config.layout) },
+          { name: "Democrats", layout: cloneLayout(config.layout) },
+        ],
+        activeLayoutIndex: 0,
+      }),
+      statusBarVisible: true,
+    };
+
+    setSharedRegistryForTests({
+      panes: new Map(),
+      getLayoutFn: () => state.config.layout,
+      getTermSizeFn: () => ({ width: 120, height: 40 }),
+      updateLayoutFn: () => {},
+      notify: () => {},
+      Slot: () => null,
+    } as any);
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <StatusBar />
+      </AppContext>,
+      { width: 120, height: 1 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("Home");
+    expect(frame).toContain("Democrats");
+    expect(frame).toContain("1");
+    expect(frame).toContain("2");
+  });
+
+  test("clicking a layout chip switches to that layout", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-layout-chip-click-test");
+    const state = {
+      ...createInitialState({
+        ...config,
+        layouts: [
+          { name: "Home", layout: cloneLayout(config.layout) },
+          { name: "Democrats", layout: cloneLayout(config.layout) },
+        ],
+        activeLayoutIndex: 0,
+      }),
+      statusBarVisible: true,
+    };
+    const actions: Array<{ type: string; index?: number }> = [];
+
+    setSharedRegistryForTests({
+      panes: new Map(),
+      getLayoutFn: () => state.config.layout,
+      getTermSizeFn: () => ({ width: 120, height: 40 }),
+      updateLayoutFn: () => {},
+      notify: () => {},
+      Slot: () => null,
+    } as any);
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: (action) => actions.push(action as { type: string; index?: number }) }}>
+        <StatusBar />
+      </AppContext>,
+      { width: 120, height: 1 },
+    );
+
+    await testSetup.renderOnce();
+
+    const frame = testSetup.captureCharFrame();
+    const chipX = frame.split("\n")[0]?.indexOf("Democrats") ?? -1;
+    expect(chipX).toBeGreaterThanOrEqual(0);
+
+    await testSetup.mockMouse.click(chipX + 1, 0);
+    await testSetup.renderOnce();
+
+    expect(actions).toContainEqual({ type: "SWITCH_LAYOUT", index: 1 });
+  });
 });

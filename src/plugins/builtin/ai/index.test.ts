@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
 import type { PaneDef, PaneTemplateDef } from "../../../types/plugin";
+import { consumeRequestedAccountManagementTab } from "../account-management/navigation";
 import { aiPlugin } from "./index";
 import {
   AI_PROVIDER_IDS,
@@ -9,7 +10,6 @@ import {
   type AiProviderId,
 } from "./providers";
 import {
-  getAiRuntimeCatalog,
   setAiRunHost,
   setAiRuntimeCatalog,
   type AiRuntimeCatalog,
@@ -26,7 +26,7 @@ function catalog(readyProviderIds: readonly AiProviderId[]): AiRuntimeCatalog {
         label: definition.name,
         status: connected ? "ready" : "not_authenticated",
         ...(!connected ? { unavailableReason: "Not connected." } : {}),
-        outputModes: ["plain", "structured", "screener"],
+        outputModes: [...definition.outputModes],
         defaultModelId: definition.preferredModelIds[0],
       };
     }),
@@ -72,12 +72,14 @@ function setupPlugin(config = createDefaultConfig("/tmp/gloomberb-ai-plugin")) {
   const panes: PaneDef[] = [];
   const templates: PaneTemplateDef[] = [];
   const setCalls: Array<[string, unknown]> = [];
+  const shownPanes: string[] = [];
   const listeners: {
     configChanged?: (payload: { config: typeof config }) => void;
   } = {};
 
   aiPlugin.setup?.({
     getConfig: () => config,
+    showPane: (paneId: string) => { shownPanes.push(paneId); },
     configState: {
       get: (key: string) => config.pluginConfig.ai?.[key] ?? null,
       set: async (key: string, value: unknown) => {
@@ -105,141 +107,44 @@ function setupPlugin(config = createDefaultConfig("/tmp/gloomberb-ai-plugin")) {
     log: { warn() {} },
   } as any);
 
-  return { config, listeners, panes, setCalls, templates };
+  return { config, listeners, panes, setCalls, shownPanes, templates };
 }
 
 afterEach(() => {
   setDetectedProviders(null);
   setAiRunHost(null);
   setAiRuntimeCatalog({ providers: [], accounts: [], models: [] });
+  consumeRequestedAccountManagementTab();
 });
 
 describe("AI plugin shared provider settings", () => {
-  test("disconnects a Pi-owned account without offering a CLI fallback", async () => {
+  test("routes Agent account management to ACM instead of pane Connect/Disconnect", async () => {
     setAiRuntimeCatalog(catalog(["anthropic"]));
-    const disconnectedCatalog = catalog([]);
-    const disconnectCalls: string[] = [];
-    setAiRunHost({
-      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
-      disconnect: async (providerId) => {
-        disconnectCalls.push(providerId);
-        return disconnectedCatalog;
-      },
-    });
-    const { config, panes } = setupPlugin();
+    const { config, panes, shownPanes } = setupPlugin();
     const workspacePane = panes.find((pane) => pane.id === "local-agent-workspace");
-    const settingsContext = {
-      config,
-      layout: config.layout,
-      paneId: "agent-pane",
-      paneType: "local-agent-workspace",
-      pane: { instanceId: "agent-pane", paneId: "local-agent-workspace", title: "AI Agent" },
-      settings: {},
-      paneState: {},
-      activeTicker: null,
-      activeCollectionId: null,
-    };
-    const getWorkspaceSettings = () => (
-      typeof workspacePane?.settings === "function"
-        ? workspacePane.settings(settingsContext)
-        : null
-    );
-    const disconnectField = getWorkspaceSettings()?.fields.find(
-      (field) => field.key === "account:anthropic",
-    );
-    if (disconnectField?.type !== "action") throw new Error("Expected Claude account action");
-    expect(disconnectField.actionLabel).toBe("Disconnect");
-
-    const notifications: Array<{ body: string; type?: string }> = [];
-    await disconnectField.action({
-      ...settingsContext,
-      surface: "pane-dialog",
-      close() {},
-      openCommandBar() {},
-      notify: (notification: { body: string; type?: string }) => {
-        notifications.push(notification);
-      },
-    } as any);
-
-    expect(disconnectCalls).toEqual(["anthropic"]);
-    expect(getAiRuntimeCatalog()).toEqual(disconnectedCatalog);
-    expect(notifications.at(-1)).toMatchObject({
-      body: "Claude is disconnected from Gloomberb.",
-      type: "success",
-    });
-    expect(notifications.at(-1)?.body).not.toContain("fallback");
-    expect(getWorkspaceSettings()?.fields.find(
-      (field) => field.key === "account:anthropic",
-    )).toMatchObject({ type: "action", actionLabel: "Connect" });
-  });
-
-  test("surfaces device codes from the native sign-in stream while the browser opens", async () => {
-    const disconnectedCatalog = catalog([]);
-    const connectedCatalog = catalog(["github-copilot"]);
-    setAiRuntimeCatalog(disconnectedCatalog);
-    setAiRunHost({
-      run: () => ({ done: Promise.resolve("unused"), cancel() {} }),
-      connect: async (_providerId, _authType, onAuthEvent) => {
-        onAuthEvent?.({
-          type: "device_code",
-          userCode: "ABCD-EFGH",
-          verificationUri: "https://github.com/login/device",
-        });
-        return connectedCatalog;
-      },
-    });
-    const { config, panes } = setupPlugin();
-    const workspacePane = panes.find((pane) => pane.id === "local-agent-workspace");
-    const settingsContext = {
-      config,
-      layout: config.layout,
-      paneId: "agent-pane",
-      paneType: "local-agent-workspace",
-      pane: { instanceId: "agent-pane", paneId: "local-agent-workspace", title: "AI Agent" },
-      settings: {},
-      paneState: {},
-      activeTicker: null,
-      activeCollectionId: null,
-    };
     const settings = typeof workspacePane?.settings === "function"
-      ? workspacePane.settings(settingsContext)
+      ? workspacePane.settings({
+          config,
+          layout: config.layout,
+          paneId: "agent-pane",
+          paneType: "local-agent-workspace",
+          pane: { instanceId: "agent-pane", paneId: "local-agent-workspace", title: "AI Agent" },
+          settings: {},
+          paneState: {},
+          activeTicker: null,
+          activeCollectionId: null,
+        })
       : null;
-    const connectField = settings?.fields.find(
-      (field) => field.key === "account:github-copilot",
-    );
-    if (connectField?.type !== "action") throw new Error("Expected Copilot account action");
-
-    const notifications: Array<{
-      title?: string;
-      body: string;
-      type?: string;
-      persistent?: boolean;
-    }> = [];
-    await connectField.action({
-      ...settingsContext,
-      surface: "pane-dialog",
-      close() {},
-      openCommandBar() {},
-      notify(notification: {
-        title?: string;
-        body: string;
-        type?: string;
-        persistent?: boolean;
-      }) {
-        notifications.push(notification);
-      },
+    expect(settings?.fields.some((field) => field.key.startsWith("account:"))).toBe(false);
+    const manageField = settings?.fields.find((field) => field.key === "manageAiAccounts");
+    if (manageField?.type !== "action") throw new Error("Expected Account Management action");
+    let closed = false;
+    await manageField.action({
+      close() { closed = true; },
     } as any);
-
-    expect(notifications).toContainEqual(expect.objectContaining({
-      title: "GitHub Copilot device sign-in",
-      body: "Enter code ABCD-EFGH at https://github.com/login/device. The sign-in page has been opened in your browser.",
-      type: "info",
-      persistent: true,
-    }));
-    expect(notifications.at(-1)).toMatchObject({
-      body: "GitHub Copilot is connected.",
-      type: "success",
-    });
+    expect(closed).toBe(true);
+    expect(shownPanes).toEqual(["account-management"]);
+    expect(consumeRequestedAccountManagementTab()).toBe("ai");
   });
 
   test("opens the Agent pane directly while keeping every adapter in shared settings", async () => {
@@ -262,10 +167,10 @@ describe("AI plugin shared provider settings", () => {
     expect(workspaceInstance).toMatchObject({
       title: "AI Agent",
       placement: "floating",
-      params: { newThreadId: expect.any(String) },
     });
-    expect((workspaceInstance as any)?.params?.newThreadId).not.toBe("");
+    expect((workspaceInstance as any)?.params?.newThreadId).toBeUndefined();
     expect(workspaceTemplate?.keywords).toContain("ai");
+    expect(workspaceTemplate?.keywords).toContain("factory");
     expect(workspaceTemplate?.keywords).not.toContain("opencode");
 
     const workspacePane = panes.find((pane) => pane.id === "local-agent-workspace");
@@ -288,7 +193,10 @@ describe("AI plugin shared provider settings", () => {
     if (defaultProviderField?.type !== "select") {
       throw new Error("Expected shared default provider selector");
     }
-    expect(defaultProviderField.options.map((option) => option.value)).toEqual([...AI_PROVIDER_IDS]);
+    const providerIds = defaultProviderField.options.map((option) => option.value);
+    expect(providerIds).toContain("factory");
+    expect(providerIds).toContain("anthropic");
+    expect(providerIds).not.toContain("ollama");
 
     config.pluginConfig.ai = {
       defaultProviderId: "codex",

@@ -28,6 +28,8 @@ export async function createPaneCatalog(context: MarketContext, plugins: GloomPl
     registerShortcut: () => {},
     registerTickerAction: () => {},
     registerContextMenuProvider: () => {},
+    registerAgentTool: () => {},
+    registerAgentPromptFragment: () => {},
     registerSyncContributor: () => () => {},
     registerSyncTransport: () => () => {},
     watchNewsQuery: () => () => {},

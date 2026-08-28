@@ -203,9 +203,7 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
 
   const bbox = findBbox(bboxId);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
-    ...(kind === "aircraft" ? [{ id: "bbox", parts: [{ text: bbox.label, tone: "muted" as const }] }] : [
-      { id: "scope", parts: [{ text: "Baltic AIS", tone: "muted" as const }] },
-    ]),
+    ...(kind === "aircraft" ? [{ id: "bbox", parts: [{ text: bbox.label, tone: "muted" as const }] }] : []),
     ...(vehicles.length > 0 ? [paneDelayedStatus()] : []),
   ], [bbox.label, kind, vehicles.length]);
 

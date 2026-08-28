@@ -56,10 +56,12 @@ import {
 } from "./report";
 import { WEATHER_STATIONS, cliProductForStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
+import { StationDetail, type StationObservation } from "./station-detail";
+import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
-type WeatherSortColumnId = "city" | "station" | "high" | "implied" | "yForecast" | "ySettlement" | "low" | "now" | "status";
+type WeatherSortColumnId = "city" | "station" | "high" | "implied" | "edge" | "yForecast" | "ySettlement" | "low" | "now" | "metarTime" | "status";
 type ReportSortColumnId = "city" | "hit" | "mae" | "bias" | "samples";
 
 interface WeatherRow {
@@ -74,6 +76,7 @@ interface WeatherRow {
   ySettlement: number | null;
   low: number | null;
   now: number | null;
+  metarReportedAt: string | null;
   precip: number | null;
   status: WeatherReportStatus;
   date: string;
@@ -88,6 +91,21 @@ function formatTemp(value: number | null, decimals = 0): string {
   if (value == null) return "—";
   if (decimals > 0 && !Number.isInteger(value)) return value.toFixed(decimals);
   return `${Math.round(value)}`;
+}
+
+function formatMetarTime(value: string | null, timeZone: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).format(date).replace(",", "");
 }
 
 function statusLabel(status: WeatherReportStatus): string {
@@ -114,23 +132,27 @@ function createColumns(width: number): WeatherColumn[] {
   const impliedWidth = width >= 44 ? 5 : 0;
   const yForecastWidth = width >= 62 ? 5 : 0;
   const ySettlementWidth = width >= 54 ? 5 : 0;
-  const lowWidth = width >= 72 ? 5 : 0;
-  const nowWidth = width >= 80 ? 5 : 0;
-  const statusWidth = width >= 90 ? 8 : 0;
+  const edgeWidth = width >= 76 ? 5 : 0;
+  const nowWidth = width >= 80 ? 6 : 0;
+  const metarTimeWidth = width >= 104 ? 15 : 0;
+  const statusWidth = width >= 90 ? 7 : 0;
+  const lowWidth = width >= 84 ? 5 : 0;
   const cityWidth = Math.max(
     10,
-    width - stationWidth - highWidth - impliedWidth - yForecastWidth - ySettlementWidth - lowWidth - nowWidth - statusWidth - 8,
+    width - stationWidth - highWidth - impliedWidth - edgeWidth - yForecastWidth - ySettlementWidth - lowWidth - nowWidth - metarTimeWidth - statusWidth - 8,
   );
   return [
     { id: "city", label: "CITY", width: cityWidth, align: "left" },
     { id: "station", label: "STN", width: stationWidth, align: "left" },
-    { id: "high", label: "HIGH", width: highWidth, align: "right" },
-    ...(impliedWidth ? [{ id: "implied" as const, label: "IMPL", width: impliedWidth, align: "right" as const }] : []),
+    { id: "high", label: "PRINT", width: highWidth, align: "right" },
+    ...(impliedWidth ? [{ id: "implied" as const, label: "K EV", width: impliedWidth, align: "right" as const }] : []),
     ...(yForecastWidth ? [{ id: "yForecast" as const, label: "Y.FC", width: yForecastWidth, align: "right" as const }] : []),
     ...(ySettlementWidth ? [{ id: "ySettlement" as const, label: "Y.ST", width: ySettlementWidth, align: "right" as const }] : []),
+    ...(edgeWidth ? [{ id: "edge" as const, label: "Δ MKT", width: edgeWidth, align: "right" as const }] : []),
+    ...(nowWidth ? [{ id: "now" as const, label: "METAR", width: nowWidth, align: "right" as const }] : []),
+    ...(metarTimeWidth ? [{ id: "metarTime" as const, label: "AS OF (LOCAL)", width: metarTimeWidth, align: "right" as const }] : []),
+    ...(statusWidth ? [{ id: "status" as const, label: "STATUS", width: statusWidth, align: "left" as const }] : []),
     ...(lowWidth ? [{ id: "low" as const, label: "LOW", width: lowWidth, align: "right" as const }] : []),
-    ...(nowWidth ? [{ id: "now" as const, label: "NOW", width: nowWidth, align: "right" as const }] : []),
-    ...(statusWidth ? [{ id: "status" as const, label: "PRINT", width: statusWidth, align: "left" as const }] : []),
   ];
 }
 
@@ -145,6 +167,15 @@ function renderWeatherCell(row: WeatherRow, column: WeatherColumn, selected: boo
       return { text: formatTemp(row.high), color: sel ?? colors.text };
     case "implied":
       return { text: formatTemp(row.implied, 1), color: sel ?? colors.text };
+    case "edge": {
+      const observed = row.high ?? row.now;
+      if (row.implied == null || observed == null) return { text: "—", color: sel ?? colors.textDim };
+      const delta = row.implied - observed;
+      return {
+        text: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`,
+        color: sel ?? (delta === 0 ? colors.text : delta > 0 ? colors.positive : colors.negative),
+      };
+    }
     case "yForecast":
       return { text: formatTemp(row.yForecast, 1), color: sel ?? colors.text };
     case "ySettlement":
@@ -153,6 +184,8 @@ function renderWeatherCell(row: WeatherRow, column: WeatherColumn, selected: boo
       return { text: formatTemp(row.low), color: sel ?? colors.text };
     case "now":
       return { text: formatTemp(row.now), color: sel ?? colors.text };
+    case "metarTime":
+      return { text: formatMetarTime(row.metarReportedAt, row.timezone), color: sel ?? colors.textDim };
     case "status":
       return { text: statusLabel(row.status), color: statusColor(row.status, selected) };
   }
@@ -168,6 +201,10 @@ function weatherSortValue(row: WeatherRow, columnId: WeatherSortColumnId): SortC
       return row.high;
     case "implied":
       return row.implied;
+    case "edge":
+      return row.implied != null && (row.high ?? row.now) != null
+        ? row.implied - (row.high ?? row.now)!
+        : null;
     case "yForecast":
       return row.yForecast;
     case "ySettlement":
@@ -176,6 +213,8 @@ function weatherSortValue(row: WeatherRow, columnId: WeatherSortColumnId): SortC
       return row.low;
     case "now":
       return row.now;
+    case "metarTime":
+      return row.metarReportedAt;
     case "status":
       return statusLabel(row.status);
   }
@@ -196,11 +235,46 @@ function matchesQuery(row: WeatherRow, query: string): boolean {
 function WeatherDetail({
   row,
   hourly,
+  nwsObservations,
+  width,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
+  nwsObservations: NwsStationObservation[];
+  width: number;
 }) {
-  const recentHourly = hourly.slice(-12).reverse();
+  const stationObservations: StationObservation[] = nwsObservations.map((observation) => ({
+    timestamp: observation.timestamp,
+    temperatureF: observation.temperatureF,
+    dewpointF: observation.dewpointF,
+    humidityPct: observation.relativeHumidity,
+    windDirection: observation.windDirectionDeg == null ? null : `${Math.round(observation.windDirectionDeg)}°`,
+    windSpeedMph: observation.windSpeedMph,
+    windGustMph: observation.windGustMph,
+    visibilityMiles: observation.visibilityMi,
+    pressureInHg: observation.barometricPressureInHg ?? observation.seaLevelPressureInHg,
+    precipitationIn: observation.precipitationLastHourIn,
+    skyCondition: observation.textDescription,
+    status: "NWS ASOS",
+  }));
+  if (stationObservations.length > 0) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Box paddingX={1} paddingBottom={1}>
+          <Text fg={colors.textDim}>
+            Settlement context · {cliProductForStation(row.stationId)} · print high {formatTemp(row.high)}°F · {statusLabel(row.status)}
+          </Text>
+        </Box>
+        <StationDetail
+          observations={stationObservations}
+          stationLabel={`NWS ASOS cross-check · ${row.icao} · not Kalshi settlement authority`}
+          timeZone={row.timezone}
+          width={width}
+        />
+      </Box>
+    );
+  }
+  const recentHourly = [...hourly].reverse();
   return (
     <ScrollBox flexGrow={1} scrollY>
       <Box flexDirection="column" paddingX={1} gap={1}>
@@ -209,8 +283,11 @@ function WeatherDetail({
         </Text>
         <Text fg={colors.text}>
           {row.date ? `${row.date}  ` : ""}
-          high {formatTemp(row.high)}°F
-          {row.implied != null ? ` · Kalshi ${formatTemp(row.implied, 1)}°F` : ""}
+          print high {formatTemp(row.high)}°F
+          {row.implied != null ? ` · Kalshi EV ${formatTemp(row.implied, 1)}°F` : " · no Kalshi high market"}
+          {row.implied != null && (row.high ?? row.now) != null
+            ? ` · Δ market ${row.implied - (row.high ?? row.now)! >= 0 ? "+" : ""}${(row.implied - (row.high ?? row.now)!).toFixed(1)}`
+            : ""}
           {` · low ${formatTemp(row.low)}°F`}
           {row.precip != null ? ` · precip ${row.precip}` : ""}
           {` · ${statusLabel(row.status)}`}
@@ -225,20 +302,27 @@ function WeatherDetail({
           </Text>
         )}
         {row.now != null && (
-          <Text fg={colors.textMuted}>Latest hourly {formatTemp(row.now)}°F</Text>
+          <Text fg={colors.textMuted}>
+            Latest METAR {formatTemp(row.now)}°F
+            {row.metarReportedAt ? ` · ${formatMetarTime(row.metarReportedAt, row.timezone)} local` : ""}
+          </Text>
         )}
         {recentHourly.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
-            <Text fg={colors.textDim}>Hourly</Text>
+            <Text fg={colors.textDim}>METAR print tape · newest first · station {row.icao}</Text>
+            <Box flexDirection="row">
+              <Text fg={colors.textDim} width={17}>LOCAL / UTC</Text>
+              <Text fg={colors.textDim} width={7}>TEMP</Text>
+              <Text fg={colors.textDim}>STATUS</Text>
+            </Box>
             {recentHourly.map((obs) => (
               <Text key={`${obs.reportTimeUtc ?? obs.date}-${obs.hourLocal}`} fg={colors.text}>
-                {(obs.hourLocal != null ? `${String(obs.hourLocal).padStart(2, "0")}:00` : obs.reportTimeUtc ?? obs.date)
-                  + `  ${formatTemp(obs.tempF)}°F`}
+                {`${formatMetarTime(obs.reportTimeUtc, row.timezone).padEnd(11)} / ${(obs.reportTimeUtc ?? "—").replace("T", " ").replace(".000Z", "Z").slice(5).padEnd(5)}  ${formatTemp(obs.tempF)}°F  ${obs.status ?? "—"}`}
               </Text>
             ))}
           </Box>
         )}
-        <Text fg={colors.textDim}>Chart with G WX:{row.stationId}:high</Text>
+        <Text fg={colors.textDim}>[g]raph observed high · market EV is market-derived, not an independent forecast</Text>
       </Box>
     </ScrollBox>
   );
@@ -313,6 +397,7 @@ function emptyWeatherRow(station: {
     ySettlement: null,
     low: null,
     now: null,
+    metarReportedAt: null,
     precip: null,
     status: "no_report",
     date,
@@ -376,6 +461,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
+  const [nwsByStation, setNwsByStation] = useState<Record<string, NwsStationObservation[]>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -479,14 +565,24 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
 
         const hourly = await metar.catch(() => ({ observations: [] as WeatherHourlyObservation[] }));
         if (genRef.current !== gen) return;
-        const latestHourly = new Map<string, number>();
+        const latestHourly = new Map<string, WeatherHourlyObservation>();
         for (const obs of hourly.observations) {
           if (obs.tempF == null) continue;
-          latestHourly.set(obs.stationId, obs.tempF);
+          const previous = latestHourly.get(obs.stationId);
+          const reportedAt = Date.parse(obs.reportTimeUtc ?? "");
+          const previousReportedAt = Date.parse(previous?.reportTimeUtc ?? "");
+          if (
+            !previous
+            || (Number.isFinite(reportedAt)
+              && (!Number.isFinite(previousReportedAt) || reportedAt > previousReportedAt))
+          ) {
+            latestHourly.set(obs.stationId, obs);
+          }
         }
         const withNow = baseRows.map((row) => ({
           ...row,
-          now: latestHourly.get(row.stationId) ?? row.now,
+          now: latestHourly.get(row.stationId)?.tempF ?? row.now,
+          metarReportedAt: latestHourly.get(row.stationId)?.reportTimeUtc ?? row.metarReportedAt,
         }));
         setRowsByScope((current) => ({
           ...current,
@@ -613,6 +709,15 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         setHourlyByStation((current) => ({ ...current, [selected.stationId]: observations }));
       })
       .catch(() => undefined);
+    loadNwsStationObservations({ icao: selected.icao, limit: 96 })
+      .then((snapshot) => {
+        if (cancelled) return;
+        setNwsByStation((current) => ({ ...current, [selected.stationId]: snapshot.observations }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setNwsByStation((current) => ({ ...current, [selected.stationId]: [] }));
+      });
     return () => {
       cancelled = true;
     };
@@ -718,7 +823,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [reportRows, searchQuery],
   );
   const getWeatherRowRevision = useCallback(
-    (row: WeatherRow) => `${row.id}:${row.high}:${row.implied}:${row.now}:${row.status}:${row.yForecast}:${row.ySettlement}`,
+    (row: WeatherRow) => `${row.id}:${row.high}:${row.implied}:${row.now}:${row.metarReportedAt}:${row.status}:${row.yForecast}:${row.ySettlement}`,
     [],
   );
   const getReportRowRevision = useCallback(
@@ -879,6 +984,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             <WeatherDetail
               row={selected}
               hourly={hourlyByStation[selected.stationId] ?? []}
+              nwsObservations={nwsByStation[selected.stationId] ?? []}
+              width={width}
             />
           ) : null
         }

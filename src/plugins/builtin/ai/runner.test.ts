@@ -203,6 +203,7 @@ describe("AI runner", () => {
       agentMessages: undefined,
       modelId: "gpt-5.6-sol",
       onChunk: undefined,
+      onThinking: undefined,
       onAgentMessages: undefined,
       outputMode: "structured",
     }]);

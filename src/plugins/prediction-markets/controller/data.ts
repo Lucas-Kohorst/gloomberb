@@ -15,12 +15,14 @@ import {
 } from "../metrics";
 import { sortPredictionOutcomeMarkets } from "../outcome-order";
 import { isLivePredictionDetailTab } from "../navigation";
+import { resolveWatchlistMarkets } from "../collection-watchlist";
 import { buildPredictionListRows, flattenPredictionListRows } from "../rows";
 import type {
   PredictionBrowseTab,
   PredictionCategoryId,
   PredictionDetailTab,
   PredictionHistoryRange,
+  PredictionMarketSummary,
   PredictionSortPreference,
   PredictionVenueScope,
 } from "../types";
@@ -41,6 +43,7 @@ export function usePredictionMarketsDataState({
   selectedRowKey,
   sortPreference,
   watchlistSet,
+  watchlistSnapshots,
   expandedGroupKeys,
 }: {
   browseTab: PredictionBrowseTab;
@@ -59,6 +62,7 @@ export function usePredictionMarketsDataState({
   selectedRowKey: string | null;
   sortPreference: PredictionSortPreference;
   watchlistSet: Set<string>;
+  watchlistSnapshots: PredictionMarketSummary[];
 }) {
   const {
     allMarkets,
@@ -81,12 +85,46 @@ export function usePredictionMarketsDataState({
     searchQuery,
   });
 
+  const listMarkets = useMemo(() => {
+    if (categoryId !== "watchlist") return allMarkets;
+    const resolved = resolveWatchlistMarkets(
+      allMarkets,
+      watchlistSnapshots,
+      watchlistSet,
+    );
+    if (resolved.length === 0) return resolved;
+    const eventKeys = new Set<string>();
+    for (const market of resolved) {
+      if (market.venue === "polymarket" && market.eventId) {
+        eventKeys.add(`polymarket:event:${market.eventId}`);
+      } else if (market.venue === "kalshi" && market.eventTicker) {
+        eventKeys.add(`kalshi:event:${market.eventTicker}`);
+      }
+    }
+    if (eventKeys.size === 0) return resolved;
+    const seen = new Set(resolved.map((market) => market.key));
+    const extra: PredictionMarketSummary[] = [];
+    for (const market of allMarkets) {
+      if (seen.has(market.key)) continue;
+      const eventKey =
+        market.venue === "polymarket" && market.eventId
+          ? `polymarket:event:${market.eventId}`
+          : market.venue === "kalshi" && market.eventTicker
+            ? `kalshi:event:${market.eventTicker}`
+            : null;
+      if (!eventKey || !eventKeys.has(eventKey)) continue;
+      seen.add(market.key);
+      extra.push(market);
+    }
+    return extra.length === 0 ? resolved : [...resolved, ...extra];
+  }, [allMarkets, categoryId, watchlistSet, watchlistSnapshots]);
+
   const allRows = useMemo(
     () =>
-      measurePerf("prediction.rows.build", () => buildPredictionListRows(allMarkets), {
-        marketCount: allMarkets.length,
+      measurePerf("prediction.rows.build", () => buildPredictionListRows(listMarkets), {
+        marketCount: listMarkets.length,
       }),
-    [allMarkets],
+    [listMarkets],
   );
 
   const visibleRows = useMemo(() => {

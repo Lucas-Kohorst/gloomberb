@@ -5,6 +5,7 @@ import {
   getAiProviderDefinition,
   isHostedWebClient,
 } from "../ai/providers";
+
 import type { AiRuntimeAccount, AiRuntimeCatalog } from "../ai/runner";
 import type { BrowserAiState } from "../ai/browser";
 import { getByokKnownService } from "../byok/services";
@@ -72,10 +73,13 @@ export interface AiInventorySnapshot {
   activeProviderId: AiProviderId | null;
 }
 
+export type FactoryAvailability = "available" | "unavailable";
+
 export interface ResolveAiInventoryOptions {
   catalog: AiRuntimeCatalog;
   browserAiState: BrowserAiState | null;
   ollamaState: OllamaAvailability | null;
+  factoryState?: FactoryAvailability | null;
   byokKeys: ByokApiKeyEntry[];
   activeProviderId: string | null;
 }
@@ -185,13 +189,37 @@ function ollamaProviderStatus(
   };
 }
 
+function factoryProviderStatus(
+  account: AiRuntimeAccount | undefined,
+  state: FactoryAvailability | null | undefined,
+): { status: AiInventoryStatus; detail: string } {
+  if (isHostedWebClient()) {
+    return {
+      status: "unavailable",
+      detail: "Factory uses the local droid CLI and is not available in the hosted client.",
+    };
+  }
+  const available = state === "available"
+    || (state == null && account?.connectionState === "connected");
+  if (available) {
+    return { status: "available", detail: account?.connectionLabel || "Using the local droid CLI." };
+  }
+  if (account?.connectionState === "error") {
+    return { status: "error", detail: account.connectionLabel || "Connection error." };
+  }
+  return {
+    status: "unavailable",
+    detail: "Install the droid CLI and sign in with: droid login",
+  };
+}
+
 /**
  * Builds the unified AI provider inventory for the ACM. Every provider reaches
  * a terminal status (available / needs-key / unavailable / error) so the user
  * always knows which provider is active and what to fix.
  */
 export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInventorySnapshot {
-  const { catalog, browserAiState, ollamaState, byokKeys, activeProviderId } = options;
+  const { catalog, browserAiState, ollamaState, factoryState, byokKeys, activeProviderId } = options;
   const rows: AiProviderInventoryRow[] = [];
 
   for (const providerId of AI_PROVIDER_IDS) {
@@ -232,6 +260,23 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         canOAuth: false,
         isLocal: true,
         byokServiceId: OLLAMA_BYOK_SERVICE_ID,
+      });
+      continue;
+    }
+
+    if (providerId === "factory") {
+      const { status, detail } = factoryProviderStatus(account, factoryState);
+      rows.push({
+        id: providerId,
+        name: definition.name,
+        status,
+        detail,
+        isActive,
+        preferred: false,
+        hasKey: false,
+        canOAuth: false,
+        isLocal: true,
+        byokServiceId: null,
       });
       continue;
     }
@@ -321,6 +366,9 @@ export function aiInventoryFixAction(row: AiProviderInventoryRow): {
   if (row.id === "ollama") {
     return { label: "Start Ollama", kind: "start-ollama" };
   }
+  if (row.id === "factory") {
+    return null;
+  }
   if (row.canOAuth && !row.hasKey) {
     return { label: "Sign in or add key", kind: "sign-in" };
   }
@@ -367,7 +415,7 @@ export function aiProviderByokService(
       description: "Local Ollama LLM server. No API key required; configure the endpoint URL if not default.",
     };
   }
-  if (providerId === "browser-builtin") return null;
+  if (providerId === "browser-builtin" || providerId === "factory") return null;
   const existing = getByokKnownService(providerId);
   if (existing) {
     return { ...existing, authType: existing.authType === "none" ? "none" : "bearer" };

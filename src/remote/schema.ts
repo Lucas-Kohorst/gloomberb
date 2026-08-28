@@ -11,6 +11,7 @@ export const REMOTE_RESOURCES: RemoteResourceSchema[] = [
   { uri: "app://pane-state/{paneId}", description: "Runtime state for a pane instance.", patchable: true },
   { uri: "app://pane-settings/{paneId}", description: "Persisted settings for a pane instance.", patchable: true },
   { uri: "app://commands", description: "Registered command-bar commands." },
+  { uri: "app://connections", description: "Registered connection sources from live integrations." },
   { uri: "app://command-bar", description: "Current command-bar state and semantic result rows." },
   { uri: "app://command-bar/results", description: "Current semantic command-bar result rows." },
   { uri: "app://capabilities", description: "Registered plugin capability manifests." },
@@ -29,7 +30,7 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
   op("pane.show", "Show or focus a pane type.", "{ paneId: string }", "local-write"),
   op("pane.focus", "Focus a pane instance or pane type.", "{ paneId: string }", "local-write"),
   op("pane.close", "Close a pane instance or pane type.", "{ paneId: string }", "local-write"),
-  op("pane.createFromTemplate", "Create a pane from a registered template.", "{ templateId: string, options?: object }", "local-write"),
+  op("pane.createFromTemplate", "Create a pane from a registered template. Pass options.arg to seed chart-composer-pane with comma-separated series such as POLY:marketId, FRED:FEDFUNDS.", "{ templateId: string, options?: { arg?: string } }", "local-write"),
   op("pane.setState", "Patch pane runtime state.", "{ paneId: string, patch: object }", "local-write"),
   op("pane.setSetting", "Set one pane setting using the pane's registered setting field when available.", "{ paneId: string, key: string, value: any }", "local-write"),
   op("ticker.navigate", "Navigate a ticker into the best available ticker research target.", "{ symbol: string, sourcePaneId?: string }", "local-write"),
@@ -37,7 +38,8 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
   op("ticker.select", "Select a ticker in a target pane.", "{ symbol: string, paneId?: string }", "local-write"),
   op("ticker.switchTab", "Switch ticker research tab.", "{ tabId: string, paneId?: string }", "local-write"),
   op("layout.switch", "Switch active layout by index.", "{ index: number }", "local-write"),
-  op("layout.new", "Create a new blank layout.", "{ name: string }", "local-write"),
+  op("layout.new", "Create a new layout, optionally seeded with panes, and switch to the new desk unless activate is false.", "{ name: string, activate?: boolean, panes?: string[] }", "local-write"),
+  op("layout.open", "Switch to a saved layout by name or index. Alias for layout.switch.", "{ name?: string, index?: number }", "local-write"),
   op("layout.rename", "Rename a layout.", "{ index: number, name: string }", "local-write"),
   op("layout.duplicate", "Duplicate a layout.", "{ index: number }", "local-write"),
   op("layout.delete", "Delete a layout.", "{ index: number }", "local-write"),
@@ -104,6 +106,52 @@ export const REMOTE_AGENT_HELP = {
       request: { type: "call", operation: "layout.setGrid", input: { columns: 2 }, include: ["layout", "panes"] },
     },
     {
+      goal: "Open a custom chart with series already plotted",
+      request: {
+        type: "call",
+        operation: "pane.createFromTemplate",
+        input: { templateId: "chart-composer-pane", options: { arg: "POLY:fed-cut-september, FRED:FEDFUNDS" } },
+      },
+    },
+    {
+      goal: "Fetch a FRED series then seed chart-composer",
+      requests: [
+        { type: "data", operation: "econ.series", seriesId: "FEDFUNDS" },
+        {
+          type: "call",
+          operation: "pane.createFromTemplate",
+          input: { templateId: "chart-composer-pane", options: { arg: "FRED:FEDFUNDS" } },
+        },
+      ],
+    },
+    {
+      goal: "Compare polling vs prediction markets on the same subject",
+      requests: [
+        { type: "data", operation: "polls.list", subject: "trump" },
+        { type: "data", operation: "markets.search", query: "trump" },
+      ],
+    },
+    {
+      goal: "Find Fed-related prediction markets then chart their history",
+      requests: [
+        { type: "data", operation: "markets.search", query: "fed" },
+        {
+          type: "data",
+          operation: "markets.history",
+          venue: "kalshi",
+          marketId: "KX fedfundsmar25",
+          range: "1M",
+        },
+      ],
+    },
+    {
+      goal: "List Adjacent indices then pull prices for one",
+      requests: [
+        { type: "data", operation: "indices.list" },
+        { type: "data", operation: "indices.get", indexId: "spx" },
+      ],
+    },
+    {
       goal: "Move a chart cursor without mouse/keyboard control",
       request: { type: "call", operation: "ui.invokeMatching", input: { role: "chart", action: "moveCursor", input: { x: 20, y: 4 } } },
     },
@@ -119,6 +167,7 @@ export const REMOTE_AGENT_HELP = {
   caveats: [
     "Capability manifests are for plugin services; UI control should rely on app-level operations and shared semantic UI nodes so plugins remain remote-agnostic.",
     "If an operation changes UI, request include: ['commandBar'] or use batch include to avoid a follow-up get.",
+    "pane.show chart-composer is empty. Seed series with pane.createFromTemplate chart-composer-pane and options.arg.",
     "For charts, use visible semantic chart nodes with actions such as moveCursor, press, drag, release, and scroll.",
     "Use ui.invokeMatching only after checking app-level operations; it is intentionally generic and depends on visible semantic controls.",
   ],

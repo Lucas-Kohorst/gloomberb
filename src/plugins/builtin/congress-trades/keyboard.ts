@@ -13,6 +13,7 @@ export function useCongressTradesKeyboard({
   openSelectedTradeMember,
   openSelectedTradeSource,
   selectTab,
+  focusSearch,
 }: {
   activeTab: CongressTab;
   detailMode: DetailMode;
@@ -22,6 +23,7 @@ export function useCongressTradesKeyboard({
   openSelectedTradeMember: () => void;
   openSelectedTradeSource: () => void;
   selectTab: (tab: string) => void;
+  focusSearch: () => void;
 }) {
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (detailMode?.kind === "member") {
@@ -55,6 +57,7 @@ export function useCongressTradesKeyboard({
       load(true);
       return true;
     }
+    if (isPlainKey(event, "/")) { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
     if (activeTab === "trades" && isPlainKey(event, "t")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -74,7 +77,7 @@ export function useCongressTradesKeyboard({
       return true;
     }
     return false;
-  }, [activeTab, load, openSelectedTicker, openSelectedTradeMember, openSelectedTradeSource]);
+  }, [activeTab, focusSearch, load, openSelectedTicker, openSelectedTradeMember, openSelectedTradeSource]);
 
   useShortcut((event) => {
     if (!focused || detailMode || event.targetEditable) return;

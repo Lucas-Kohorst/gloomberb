@@ -24,6 +24,7 @@ export function useCongressTradesFooter({
   openSelectedTradeSource,
   payload,
   selectedTrade,
+  focusSearch,
   status,
   lastUpdated,
 }: {
@@ -37,6 +38,7 @@ export function useCongressTradesFooter({
   openSelectedTradeSource: () => void;
   payload: CloudCongressHousePayload | null;
   selectedTrade: CloudCongressTradePayload | null;
+  focusSearch: () => void;
   status: LoadStatus;
   lastUpdated: number | null;
 }) {
@@ -55,6 +57,7 @@ export function useCongressTradesFooter({
       ? []
       : [
           { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
+          { id: "search", key: "/", label: "earch", onPress: focusSearch },
           ...(activeTab === "trades" ? [
             { id: "member", key: "m", label: "ember", onPress: openSelectedTradeMember, disabled: !selectedTrade },
             { id: "ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !(detailTrade?.ticker ?? selectedTrade?.ticker) },
@@ -66,6 +69,7 @@ export function useCongressTradesFooter({
     detailMode,
     detailTrade,
     error,
+    focusSearch,
     load,
     lastUpdated,
     openSelectedTicker,

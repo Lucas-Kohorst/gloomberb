@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { EmptyState } from "../../../components";
+import { ExternalLinkText } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import type { PredictionMarketSummary } from "../../prediction-markets/types";
 import { loadKalshiImpliedHigh } from "./kalshi-forecast";
 import { loadWeatherHourly, loadWeatherObservation } from "./client";
 import { resolveWeatherSettlement, weatherMetricLabel } from "./mapping";
-import { cliProductForStation, findWeatherStation } from "./stations";
+import { findWeatherStation } from "./stations";
 import type { WeatherDailyObservation, WeatherHourlyObservation } from "./types";
 
 function formatTemp(value: number | null | undefined): string {
@@ -23,6 +24,34 @@ function observationForMetric(
     return observation.precipitation == null ? "—" : String(observation.precipitation);
   }
   return formatTemp(observation.maxTemp);
+}
+
+export function weatherSettlementStatusExplanation(
+  status: WeatherDailyObservation["status"] | null | undefined,
+): string {
+  switch (status) {
+    case "official": return "official — final Weather Company CLI print";
+    case "preliminary": return "preliminary — may still be revised";
+    case "pending": return "pending — final authority print is not available";
+    case "no_report": return "no report — authority published no value";
+    default: return "unknown — authority status is unavailable";
+  }
+}
+
+export function weatherReportTimestamp(
+  reportTimeUtc: string | null | undefined,
+  timeZone: string,
+): string | null {
+  if (!reportTimeUtc) return null;
+  const timestamp = new Date(reportTimeUtc);
+  if (!Number.isFinite(timestamp.getTime())) return reportTimeUtc;
+  const local = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    dateStyle: "short",
+    timeStyle: "short",
+    hour12: false,
+  }).format(timestamp);
+  return `${reportTimeUtc} UTC (${local} ${timeZone} local)`;
 }
 
 export function isPredictionWeatherSettlement(
@@ -116,7 +145,11 @@ export function PredictionWeatherSettlementTab({
   if (!settlement) {
     return (
       <Box flexGrow={1} justifyContent="center">
-        <EmptyState title="No Weather Company settlement for this market." />
+        <EmptyState
+          title="No Weather Company settlement for this market."
+          message={`Could not map ${summary.eventTicker ?? summary.marketId ?? "this market"} to a known station, date, and metric.`}
+          hint="Only Kalshi weather markets with a recognized CLI or station ticker are supported."
+        />
       </Box>
     );
   }
@@ -125,16 +158,54 @@ export function PredictionWeatherSettlementTab({
   const matchedHour = settlement.hour != null
     ? hourly.find((row) => row.hourLocal === settlement.hour)
     : null;
+  const latestHourly = hourly[hourly.length - 1];
   const lineWidth = Math.max(12, width - 2);
 
   return (
     <ScrollBox flexGrow={1} scrollY>
       <Box flexDirection="column" paddingX={1} gap={1}>
-        <Text fg={colors.textDim} width={lineWidth}>
-          {cliProductForStation(settlement.stationId)}
-          {station ? ` · ${station.icao}` : ""}
-          {` · ${settlement.date}`}
-        </Text>
+        <Box
+          flexDirection="column"
+          borderStyle="single"
+          borderColor={colors.border}
+          paddingX={1}
+          width={lineWidth}
+        >
+          <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Settlement provenance</Text>
+          <Text fg={colors.text}>Authority · Weather Company {settlement.cliProduct}</Text>
+          <Text fg={colors.textDim}>
+            Station · {settlement.cliProduct}
+            {station ? ` · ${station.city} · ${station.icao}` : ""}
+          </Text>
+          <Text fg={colors.textDim}>
+            Date · {settlement.date} local ({station?.timezone ?? "timezone unavailable"})
+          </Text>
+          {observation ? (
+            <Text fg={observation.official ? colors.positive : colors.warning}>
+              Status · {weatherSettlementStatusExplanation(observation.status)}
+            </Text>
+          ) : (
+            <Text fg={colors.textDim}>
+              Status · {loading ? "waiting for the authority print" : "authority print unavailable"}
+            </Text>
+          )}
+          {settlement.metric === "hourly" && (matchedHour ?? latestHourly)?.reportTimeUtc && (
+            <Text fg={colors.textDim}>
+              Reported · {weatherReportTimestamp(
+                (matchedHour ?? latestHourly)?.reportTimeUtc,
+                station?.timezone ?? "UTC",
+              )}
+            </Text>
+          )}
+          <Text fg={colors.textDim}>
+            Source · <ExternalLinkText url={settlement.settlementUrl} label="Weather Company settlement page" />
+          </Text>
+          <Text fg={colors.textMuted}>
+            Cross-check · {settlement.metric === "hourly"
+              ? "METAR hourly observations; not the settlement authority"
+              : "Kalshi implied value; informational only"}
+          </Text>
+        </Box>
         {loading ? (
           <Text fg={colors.textDim}>loading settlement print</Text>
         ) : error ? (

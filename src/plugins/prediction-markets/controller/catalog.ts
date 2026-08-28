@@ -78,70 +78,72 @@ export function usePredictionCatalogData({
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
 
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
+  const catalogCategoryId: PredictionCategoryId =
+    categoryId === "watchlist" ? "all" : categoryId;
   const polymarketBrowseKey = useMemo(
-    () => buildPredictionCatalogCacheKey("polymarket", categoryId, "", browseTab),
-    [browseTab, categoryId],
+    () => buildPredictionCatalogCacheKey("polymarket", catalogCategoryId, "", browseTab),
+    [browseTab, catalogCategoryId],
   );
   const kalshiBrowseKey = useMemo(
-    () => buildPredictionCatalogCacheKey("kalshi", categoryId, "", browseTab),
-    [browseTab, categoryId],
+    () => buildPredictionCatalogCacheKey("kalshi", catalogCategoryId, "", browseTab),
+    [browseTab, catalogCategoryId],
   );
   const polymarketSearchKey = useMemo(
     () =>
       normalizedSearchQuery
         ? buildPredictionCatalogCacheKey(
             "polymarket",
-            categoryId,
+            catalogCategoryId,
             debouncedSearchQuery,
             browseTab,
           )
         : null,
-    [browseTab, categoryId, debouncedSearchQuery, normalizedSearchQuery],
+    [browseTab, catalogCategoryId, debouncedSearchQuery, normalizedSearchQuery],
   );
   const kalshiSearchKey = useMemo(
     () =>
       normalizedSearchQuery
         ? buildPredictionCatalogCacheKey(
             "kalshi",
-            categoryId,
+            catalogCategoryId,
             debouncedSearchQuery,
             browseTab,
           )
         : null,
-    [browseTab, categoryId, debouncedSearchQuery, normalizedSearchQuery],
+    [browseTab, catalogCategoryId, debouncedSearchQuery, normalizedSearchQuery],
   );
   const polymarketBrowseResourceKey = useMemo(
     () =>
-      buildPredictionCatalogResourceKey("polymarket", categoryId, "", browseTab),
-    [browseTab, categoryId],
+      buildPredictionCatalogResourceKey("polymarket", catalogCategoryId, "", browseTab),
+    [browseTab, catalogCategoryId],
   );
   const kalshiBrowseResourceKey = useMemo(
-    () => buildPredictionCatalogResourceKey("kalshi", categoryId, "", browseTab),
-    [browseTab, categoryId],
+    () => buildPredictionCatalogResourceKey("kalshi", catalogCategoryId, "", browseTab),
+    [browseTab, catalogCategoryId],
   );
   const polymarketSearchResourceKey = useMemo(
     () =>
       normalizedSearchQuery
         ? buildPredictionCatalogResourceKey(
             "polymarket",
-            categoryId,
+            catalogCategoryId,
             normalizedSearchQuery,
             browseTab,
           )
         : null,
-    [browseTab, categoryId, normalizedSearchQuery],
+    [browseTab, catalogCategoryId, normalizedSearchQuery],
   );
   const kalshiSearchResourceKey = useMemo(
     () =>
       normalizedSearchQuery
         ? buildPredictionCatalogResourceKey(
             "kalshi",
-            categoryId,
+            catalogCategoryId,
             normalizedSearchQuery,
             browseTab,
           )
         : null,
-    [browseTab, categoryId, normalizedSearchQuery],
+    [browseTab, catalogCategoryId, normalizedSearchQuery],
   );
 
   const polymarketBrowse = readCatalogSlice(
@@ -390,7 +392,7 @@ export function usePredictionCatalogData({
     let cancelled = false;
     let waiting = false;
     const cancelStartup = runAfterStartupBackground(() => {
-      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
+      void loadPolymarket(polymarketBrowseKey, "", catalogCategoryId, {
         firstPageOnly: true,
       });
     });
@@ -405,7 +407,7 @@ export function usePredictionCatalogData({
         });
         return;
       }
-      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
+      void loadPolymarket(polymarketBrowseKey, "", catalogCategoryId, {
         firstPageOnly: true,
       });
     };
@@ -415,14 +417,14 @@ export function usePredictionCatalogData({
       cancelStartup();
       clearInterval(intervalId);
     };
-  }, [categoryId, includePolymarket, loadPolymarket, pollIntervalMs, polymarketBrowseKey]);
+  }, [catalogCategoryId, includePolymarket, loadPolymarket, pollIntervalMs, polymarketBrowseKey]);
 
   useEffect(() => {
     if (!includeKalshi) return;
     let cancelled = false;
     let waiting = false;
     const cancelStartup = runAfterStartupBackground(() => {
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
+      void loadKalshi(kalshiBrowseKey, "", catalogCategoryId, {
         firstPageOnly: true,
       });
     });
@@ -437,7 +439,7 @@ export function usePredictionCatalogData({
         });
         return;
       }
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
+      void loadKalshi(kalshiBrowseKey, "", catalogCategoryId, {
         firstPageOnly: true,
       });
     };
@@ -447,15 +449,15 @@ export function usePredictionCatalogData({
       cancelStartup();
       clearInterval(intervalId);
     };
-  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
+  }, [catalogCategoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
 
   useEffect(() => {
     if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {
       return;
     }
-    void loadPolymarket(polymarketSearchKey, debouncedSearchQuery, categoryId);
+    void loadPolymarket(polymarketSearchKey, debouncedSearchQuery, catalogCategoryId);
   }, [
-    categoryId,
+    catalogCategoryId,
     debouncedSearchQuery,
     includePolymarket,
     loadPolymarket,
@@ -467,9 +469,9 @@ export function usePredictionCatalogData({
     if (!includeKalshi || !kalshiSearchKey || !normalizedSearchQuery) {
       return;
     }
-    void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId);
+    void loadKalshi(kalshiSearchKey, debouncedSearchQuery, catalogCategoryId);
   }, [
-    categoryId,
+    catalogCategoryId,
     debouncedSearchQuery,
     includeKalshi,
     kalshiSearchKey,
@@ -479,7 +481,7 @@ export function usePredictionCatalogData({
 
   const refreshCatalog = useCallback(() => {
     if (includePolymarket) {
-      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
+      void loadPolymarket(polymarketBrowseKey, "", catalogCategoryId, {
         showPending: true,
         force: true,
         firstPageOnly: true,
@@ -488,25 +490,25 @@ export function usePredictionCatalogData({
         void loadPolymarket(
           polymarketSearchKey,
           debouncedSearchQuery,
-          categoryId,
+          catalogCategoryId,
           { force: true },
         );
       }
     }
     if (includeKalshi) {
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
+      void loadKalshi(kalshiBrowseKey, "", catalogCategoryId, {
         showPending: true,
         force: true,
         firstPageOnly: true,
       });
       if (kalshiSearchKey && normalizedSearchQuery) {
-        void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
+        void loadKalshi(kalshiSearchKey, debouncedSearchQuery, catalogCategoryId, {
           force: true,
         });
       }
     }
   }, [
-    categoryId,
+    catalogCategoryId,
     debouncedSearchQuery,
     includeKalshi,
     includePolymarket,
@@ -529,7 +531,7 @@ export function usePredictionCatalogData({
       if (canLoadPolymarket && polymarketNextOffset != null) {
         const page = await loadMorePolymarketCatalog(
           "",
-          categoryId,
+          catalogCategoryId,
           polymarketNextOffset,
         );
         setCatalogCache((current) => ({
@@ -545,7 +547,7 @@ export function usePredictionCatalogData({
       if (canLoadKalshi && kalshiNextCursor) {
         const page = await loadMoreKalshiCatalog(
           "",
-          categoryId,
+          catalogCategoryId,
           kalshiNextCursor,
         );
         setCatalogCache((current) => ({
@@ -563,7 +565,7 @@ export function usePredictionCatalogData({
       setLoadingMore(false);
     }
   }, [
-    categoryId,
+    catalogCategoryId,
     includeKalshi,
     includePolymarket,
     kalshiBrowseKey,

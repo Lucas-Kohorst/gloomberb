@@ -1,7 +1,9 @@
 import {
   getDockedPaneIds,
 } from "../plugins/pane-manager";
+import { createBlankLayout, createPaneInstance } from "../types/config";
 import type { DockLayoutNode, LayoutConfig, PaneInstanceConfig } from "../types/config";
+import type { PaneTemplateDef } from "../types/plugin";
 
 export function requirePaneInstance(layout: LayoutConfig, paneId: string): PaneInstanceConfig {
   const instance = layout.instances.find((entry) => entry.instanceId === paneId)
@@ -24,6 +26,41 @@ export function buildGridDockRoot(paneIds: string[], columns?: number): DockLayo
     ));
   }
   return buildSplit(rows, "vertical");
+}
+
+export function buildSeededLayout(
+  ids: string[],
+  panes: ReadonlyMap<string, unknown>,
+  paneTemplates: ReadonlyMap<string, PaneTemplateDef>,
+): LayoutConfig {
+  const resolvedPaneIds: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of ids) {
+    const id = String(raw);
+    let paneId = id;
+    if (!panes.has(id)) {
+      const template = paneTemplates.get(id);
+      if (template) {
+        paneId = template.paneId;
+      } else {
+        throw new Error(`Unknown pane or template "${id}".`);
+      }
+    }
+    if (!panes.has(paneId)) {
+      throw new Error(`Unknown pane "${paneId}".`);
+    }
+    if (!seen.has(paneId)) {
+      seen.add(paneId);
+      resolvedPaneIds.push(paneId);
+    }
+  }
+  const instances = resolvedPaneIds.map((paneId) => createPaneInstance(paneId));
+  const instanceIds = instances.map((instance) => instance.instanceId);
+  return {
+    ...createBlankLayout(),
+    instances,
+    dockRoot: buildGridDockRoot(instanceIds),
+  };
 }
 
 export function visiblePaneIds(layout: LayoutConfig): string[] {

@@ -309,16 +309,14 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
     : undefined;
 
   usePaneFooter(paneId, () => ({
-    info: [
-      { id: "count", parts: [{ text: `${rows.length} plugins`, tone: "muted" as const }] },
-    ],
+    info: [],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: refresh },
       ...(selectedRow?.path
         ? [{ id: "open", key: "o", label: "pen", onPress: openDetail }]
         : []),
     ],
-  }), [rows.length, refresh, openDetail, selectedRow]);
+  }), [refresh, openDetail, selectedRow]);
 
   if (!registry) {
     return (

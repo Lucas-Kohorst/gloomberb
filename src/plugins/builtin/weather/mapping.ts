@@ -231,6 +231,38 @@ export function isWeatherSettlementSource(hints: WeatherSettlementHints): boolea
     && /weather|climate|temperature|precipitation/i.test(blob);
 }
 
+/**
+ * Infer the settlement metric from free-text hints when no Kalshi series
+ * ticker is available. Checks the title first (most reliable), then the
+ * rules/description blob. Only returns a metric when the text unambiguously
+ * names one; defaults to "high" (the dominant Kalshi weather market).
+ */
+export function inferWeatherMetricFromHints(hints: WeatherSettlementHints): WeatherMetric {
+  const title = (hints.title ?? "").toLowerCase();
+  const blob = textBlob(hints).toLowerCase();
+  // Low / minimum / lowest temperature.
+  if (/\b(low(est)?|minimum|min)\b.*\btemp(erature)?\b/.test(title)
+    || /\btemp(erature)?\b.*\b(low(est)?|minimum|min)\b/.test(title)) {
+    return "low";
+  }
+  if (/\b(low(est)?|minimum|min)\b.*\btemp(erature)?\b/.test(blob)
+    || /\btemp(erature)?\b.*\b(low(est)?|minimum|min)\b/.test(blob)) {
+    return "low";
+  }
+  // Precipitation / rainfall / snowfall.
+  if (/\b(precip(itation)?|rain(fall)?|snow(fall)?)\b/.test(title)) {
+    return "precip";
+  }
+  if (/\b(precip(itation)?|rain(fall)?|snow(fall)?)\b/.test(blob)) {
+    return "precip";
+  }
+  // Hourly temperature (specific hour in the title).
+  if (/\bhourly\b|\b\d{1,2}\s*(am|pm)\b.*\btemp(erature)?\b/.test(title)) {
+    return "hourly";
+  }
+  return "high";
+}
+
 export function resolveWeatherSettlement(hints: WeatherSettlementHints): WeatherMarketSettlement | null {
   if (hints.venue && hints.venue !== "kalshi") return null;
   const series = parseKalshiWeatherSeriesTicker(
@@ -248,7 +280,7 @@ export function resolveWeatherSettlement(hints: WeatherSettlementHints): Weather
   if (!isWeatherSettlementSource(hints) && !series) return null;
   const date = stamp?.date;
   if (!date) return null;
-  const metric = series?.metric ?? (/\blow(est)? temperature\b/i.test(hints.title ?? "") ? "low" : "high");
+  const metric = series?.metric ?? inferWeatherMetricFromHints(hints);
   const canonical = canonicalWeatherStationId(stationId) ?? stationId;
   return {
     stationId: canonical,

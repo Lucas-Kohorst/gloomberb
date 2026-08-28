@@ -22,6 +22,7 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { togetherProvider } from "@earendil-works/pi-ai/providers/together";
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
+import { createFactoryProvider } from "../factory/provider";
 import { AI_PROVIDER_IDS, type AiProviderId } from "../providers";
 
 export type PiProviderFactory = () => Provider;
@@ -31,6 +32,7 @@ export type PiProviderFactory = () => Provider;
  * This is the complete application AI provider catalog.
  */
 const FACTORIES_BY_PROVIDER_ID = {
+  factory: createFactoryProvider,
   anthropic: anthropicProvider,
   "openai-codex": openaiCodexProvider,
   openai: openaiProvider,

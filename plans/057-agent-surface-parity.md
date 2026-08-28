@@ -17,6 +17,8 @@
 - **Depends on**: existing remote protocol + AI Agent pane (already on `main`)
 - **Category**: agents / platform
 - **Planned at**: 2026-08-25, `origin/main` @ `7b0f66cb`
+- **v0 DONE** — inventories, in-process handle, UI remote ops unblocked except `capability.invoke`, receipts+undo, hosted structured Nano JSON → `getInProcessRemoteHandle` (never `capability.invoke`)
+- **v1 open** — data ops (articles/polls/markets/econ/watchlists) not done
 
 ## What is already true (do not rebuild)
 

@@ -12,6 +12,7 @@ import {
 import {
   parseAlertCommandValues,
   parseAlertShortcutValues,
+  parseWeatherAlertCommandValues,
 } from "./command";
 import { isPriceAlertCondition } from "./types";
 import type { AlertRule } from "./types";
@@ -30,6 +31,8 @@ import {
 import { fetchMarketHalts } from "../market-halts/client";
 import { fetchShortInterest } from "../short-interest/client";
 import { fetchExDividendDate } from "../dividend-yield/client";
+import { canonicalWeatherStationId } from "../weather/stations";
+import { evaluateWeatherAlert } from "./weather-alert";
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
@@ -144,6 +147,58 @@ export const alertsPlugin: GloomPlugin = {
       },
     });
 
+    ctx.registerCommand({
+      id: "set-weather-alert",
+      label: "Add Weather Alert",
+      description: "Alert on a weather observation, report finalization, source age, or TWC/NWS disagreement",
+      keywords: ["weather", "temperature", "rain", "precipitation", "climate", "station", "alert"],
+      category: "data",
+      shortcut: "WA",
+      wizardLayout: "form",
+      wizard: [
+        { key: "station", label: "Station", placeholder: "LAX / KLAS", type: "text" },
+        { key: "condition", label: "Condition", type: "select", options: [
+          { label: "Crosses above target", value: "above" },
+          { label: "Crosses below target", value: "below" },
+          { label: "Report becomes final", value: "final" },
+          { label: "TWC source stale (minutes)", value: "stale" },
+          { label: "TWC / NWS differ by target", value: "discrepancy" },
+        ] },
+        { key: "metric", label: "Metric", type: "select", options: [
+          { label: "Daily high (°F)", value: "high" },
+          { label: "Daily low (°F)", value: "low" },
+          { label: "Precipitation (in)", value: "precip" },
+          { label: "Hourly temperature (°F)", value: "hourly" },
+        ] },
+        { key: "target", label: "Target", placeholder: "85 / 15 minutes / 2", type: "number" },
+      ],
+      async execute(values) {
+        const input = parseWeatherAlertCommandValues(values);
+        const stationId = input && canonicalWeatherStationId(input.stationId);
+        if (!input || !stationId) throw new Error("Choose a station, condition, metric where applicable, and target.");
+        const weatherCondition = input.condition === "observed-threshold-crossing"
+          ? { kind: input.condition as const, metric: input.metric!, threshold: input.target!, direction: values?.condition === "below" ? "below" as const : "above" as const }
+          : input.condition === "stale-source"
+            ? { kind: input.condition as const, sourceId: "twc-kalshi", maxAgeMs: input.target! * 60_000 }
+            : input.condition === "preliminary-to-final"
+              ? { kind: input.condition as const, metric: input.metric!, sourceId: "twc-kalshi" }
+              : { kind: input.condition as const, metric: input.metric!, maxDifference: input.target! };
+        const alert = createAlert(stationId, "weather", 0);
+        alert.weather = { stationId, condition: weatherCondition };
+        alert.message = input.condition === "stale-source"
+          ? `${stationId} TWC stale > ${input.target}m`
+          : input.condition === "preliminary-to-final"
+            ? `${stationId} ${input.metric} report final`
+            : input.condition === "source-discrepancy"
+              ? `${stationId} ${input.metric} TWC/NWS differs > ${input.target}`
+              : `${stationId} ${input.metric} crosses ${values?.condition} ${input.target}`;
+        const existing = loadAlerts(ctx);
+        existing.push(alert);
+        saveAlerts(ctx, existing);
+        ctx.notify({ body: `Alert set: ${alert.message}`, type: "success" });
+      },
+    });
+
     const markTriggered = (alert: AlertRule, detail: string, metric: number) => {
       alert.status = "triggered";
       alert.triggeredAt = Date.now();
@@ -177,6 +232,7 @@ export const alertsPlugin: GloomPlugin = {
         const shortAlerts = activeAlerts.filter((alert) => alert.condition === "short_float");
         const exDivAlerts = activeAlerts.filter((alert) => alert.condition === "ex_div");
         const priceAlerts = activeAlerts.filter((alert) => isPriceAlertCondition(alert.condition));
+        const weatherAlerts = activeAlerts.filter((alert) => alert.condition === "weather" && alert.weather);
         const now = new Date();
 
         const [haltResult, shortResult, exDivResult] = await Promise.all([
@@ -259,6 +315,26 @@ export const alertsPlugin: GloomPlugin = {
             if (evaluateExDivAlert(alert, exDate, now)) markTriggered(alert, `${days}d to ex-div`, days);
             changed = true;
           }
+        }
+
+        const weatherResults = await Promise.all(weatherAlerts.map(async (alert) => {
+          try { return { alert, result: await evaluateWeatherAlert(alert) }; }
+          catch (error) { return { alert, error }; }
+        }));
+        for (const result of weatherResults) {
+          if ("error" in result) {
+            Object.assign(result.alert, quoteErrorAlertFields(createQuoteErrorMessage(result.alert.symbol, result.error)));
+            changed = true;
+            continue;
+          }
+          if (!result.result) continue;
+          const { observation, triggered, reason } = result.result;
+          result.alert.lastCheckedPrice = observation.value;
+          result.alert.lastCheckedAt = Date.now();
+          result.alert.lastWeatherStatus = observation.status;
+          result.alert.lastCheckError = undefined;
+          if (triggered) markTriggered(result.alert, reason, observation.value);
+          changed = true;
         }
 
         const quoteResults = await Promise.all(priceAlerts.map(async (alert) => {

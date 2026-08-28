@@ -116,6 +116,7 @@ export function installElectrobunAiHost(): void {
       agentMessages,
       modelId,
       onChunk,
+      onThinking,
       onAgentMessages,
       outputMode,
     }) {
@@ -150,6 +151,9 @@ export function installElectrobunAiHost(): void {
         switch (event.kind) {
           case "chunk":
             onChunk?.(event.output);
+            break;
+          case "thinking":
+            onThinking?.(event.output);
             break;
           case "done":
             settle(() => {

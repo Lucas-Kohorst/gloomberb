@@ -103,7 +103,8 @@ function CorrelationMatrixPane({ width, height }: PaneProps) {
         ? [{ id: "error", parts: [{ text: settings.symbolsError, tone: "warning" as const }] }]
         : [{ id: "status", parts: [{ text: statusSummary, tone: "muted" as const }] }]),
     ],
-  }), [settings.rangePreset, settings.symbolsError, statusSummary]);
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: resolution.reload }],
+  }), [resolution.reload, settings.rangePreset, settings.symbolsError, statusSummary]);
 
   const openSymbol = useCallback((symbol: string) => {
     if (isCorrelationPredictionSeries(symbol)) {

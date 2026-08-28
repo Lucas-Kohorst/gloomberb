@@ -1,6 +1,7 @@
 import type { QuoteDataSource } from "../../../types/financials";
+import type { WeatherAlertCondition } from "./weather";
 
-export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div";
+export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div" | "weather";
 export type AlertStatus = "active" | "triggered" | "expired";
 
 export function isPriceAlertCondition(
@@ -25,4 +26,10 @@ export interface AlertRule {
   lastQuoteSource?: QuoteDataSource;
   lastQuoteProviderId?: string;
   message?: string;
+  /** Present only on weather alerts. `symbol` remains the station id for table compatibility. */
+  weather?: {
+    stationId: string;
+    condition: Exclude<WeatherAlertCondition, { kind: "market-probability" } | { kind: "market-spread" }>;
+  };
+  lastWeatherStatus?: "preliminary" | "final";
 }

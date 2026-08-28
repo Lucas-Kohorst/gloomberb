@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { AiRuntimeCatalog } from "../ai/runner";
 import type { BrowserAiState } from "../ai/browser";
 import {
@@ -140,6 +142,54 @@ describe("AI provider inventory status resolution", () => {
     expect(ollama.isActive).toBe(true);
     expect(ollama.isLocal).toBe(true);
     expect(ollama.byokServiceId).toBe("ollama");
+  });
+
+  test("Factory shows available from the Pi catalog without a filesystem probe", () => {
+    const snapshot = resolveAiInventory({
+      catalog: catalogWithConnected("factory"),
+      browserAiState: null,
+      ollamaState: null,
+      byokKeys: [],
+      activeProviderId: "factory",
+    });
+    const factory = snapshot.rows.find((r) => r.id === "factory")!;
+    expect(factory.status).toBe("available");
+    expect(factory.isLocal).toBe(true);
+    expect(canSelectAiProvider(factory)).toBe(true);
+  });
+
+  test("Factory shows available when the local droid CLI is present", () => {
+    const snapshot = resolveAiInventory({
+      catalog: emptyCatalog(),
+      browserAiState: null,
+      ollamaState: null,
+      factoryState: "available",
+      byokKeys: [],
+      activeProviderId: "factory",
+    });
+    const factory = snapshot.rows.find((r) => r.id === "factory")!;
+    expect(factory.status).toBe("available");
+    expect(factory.isActive).toBe(true);
+    expect(factory.isLocal).toBe(true);
+    expect(factory.byokServiceId).toBe(null);
+    expect(canSelectAiProvider(factory)).toBe(true);
+    expect(aiInventoryFixAction(factory)).toBe(null);
+  });
+
+  test("Factory shows unavailable when the droid CLI is missing", () => {
+    const snapshot = resolveAiInventory({
+      catalog: emptyCatalog(),
+      browserAiState: null,
+      ollamaState: null,
+      factoryState: "unavailable",
+      byokKeys: [],
+      activeProviderId: null,
+    });
+    const factory = snapshot.rows.find((r) => r.id === "factory")!;
+    expect(factory.status).toBe("unavailable");
+    expect(factory.detail).toContain("droid login");
+    expect(canSelectAiProvider(factory)).toBe(false);
+    expect(aiInventoryFixAction(factory)).toBe(null);
   });
 
   test("Ollama shows unavailable when the server is not running", () => {
@@ -345,6 +395,17 @@ describe("BYOK keys config selector", () => {
   test("returns the same empty array instance when no keys are stored", () => {
     const config: AppConfig = { pluginConfig: {} } as unknown as AppConfig;
     expect(byokKeysConfigSelector({ config })).toBe(byokKeysConfigSelector({ config }));
+  });
+});
+
+describe("AI providers tab renderer imports", () => {
+  test("does not import Node filesystem APIs into the desktop view", () => {
+    const source = readFileSync(
+      join(import.meta.dir, "ai-providers-tab.tsx"),
+      "utf8",
+    );
+    expect(source).not.toContain("ai/factory/detect");
+    expect(source).not.toContain("isFactoryCliAvailable");
   });
 });
 

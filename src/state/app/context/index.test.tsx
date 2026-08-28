@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cloneLayout, createBlankLayout, createDefaultConfig } from "../../../types/config";
+import { cloneLayout, createBlankLayout, createDefaultConfig, createPaneInstance } from "../../../types/config";
 import { appReducer, createInitialState } from "./index";
 import { removePane } from "../../../plugins/pane-manager";
 
@@ -239,6 +239,75 @@ describe("appReducer command bar state", () => {
     });
 
     expect(restored.focusedPaneId).toBe("portfolio-list:main");
+  });
+
+  test("NEW_LAYOUT switches to the blank desk by default", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-new-layout-activate"));
+    const activeIndex = initial.config.activeLayoutIndex;
+    const currentLayout = cloneLayout(initial.config.layout);
+    const currentFocus = initial.focusedPaneId;
+
+    const next = appReducer(initial, { type: "NEW_LAYOUT", name: "Scratch" });
+
+    expect(next.config.layouts.map((layout) => layout.name)).toEqual([
+      ...initial.config.layouts.map((layout) => layout.name),
+      "Scratch",
+    ]);
+    expect(next.config.activeLayoutIndex).toBe(initial.config.layouts.length);
+    expect(next.config.layout).toEqual(createBlankLayout());
+    expect(next.focusedPaneId).toBeNull();
+    expect(currentLayout).toEqual(initial.config.layout);
+    expect(currentFocus).toBe(initial.focusedPaneId);
+    expect(activeIndex).toBe(initial.config.activeLayoutIndex);
+  });
+
+  test("NEW_LAYOUT with activate false appends without switching desks", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-new-layout-stay"));
+    const currentLayout = cloneLayout(initial.config.layout);
+    const currentFocus = initial.focusedPaneId;
+    const currentPaneState = { ...initial.paneState };
+
+    const next = appReducer(initial, { type: "NEW_LAYOUT", name: "Democrats", activate: false });
+
+    expect(next.config.layouts.at(-1)?.name).toBe("Democrats");
+    expect(next.config.layouts.at(-1)?.layout).toEqual(createBlankLayout());
+    expect(next.config.activeLayoutIndex).toBe(initial.config.activeLayoutIndex);
+    expect(next.config.layout).toEqual(currentLayout);
+    expect(next.focusedPaneId).toBe(currentFocus);
+    expect(next.paneState).toEqual(currentPaneState);
+  });
+
+  test("NEW_LAYOUT with activate true still switches to the new desk", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-new-layout-explicit"));
+    const next = appReducer(initial, { type: "NEW_LAYOUT", name: "Research", activate: true });
+
+    expect(next.config.activeLayoutIndex).toBe(initial.config.layouts.length);
+    expect(next.config.layout).toEqual(createBlankLayout());
+    expect(next.focusedPaneId).toBeNull();
+  });
+
+  test("NEW_LAYOUT with layout keeps the furnished dock and instances", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-new-layout-seed"));
+    const instance = createPaneInstance("sec");
+    const seeded = {
+      dockRoot: { kind: "pane" as const, instanceId: instance.instanceId },
+      instances: [instance],
+      floating: [],
+      detached: [],
+    };
+    const next = appReducer(initial, { type: "NEW_LAYOUT", name: "Democrats", activate: false, layout: seeded });
+    const saved = next.config.layouts.at(-1)!;
+    expect(saved.name).toBe("Democrats");
+    expect(saved.layout).toEqual(seeded);
+    expect(saved.layout.dockRoot).not.toBeNull();
+    expect(saved.layout.instances.map((p) => p.paneId)).toContain("sec");
+    expect(next.config.activeLayoutIndex).toBe(initial.config.activeLayoutIndex);
+  });
+
+  test("NEW_LAYOUT without layout still creates a blank desk", () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-new-layout-blank"));
+    const next = appReducer(initial, { type: "NEW_LAYOUT", name: "Blank", activate: false });
+    expect(next.config.layouts.at(-1)?.layout).toEqual(createBlankLayout());
   });
 
   test("tracks manual update-check feedback", () => {

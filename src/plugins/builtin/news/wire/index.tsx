@@ -163,7 +163,7 @@ export const newsWireModule: PluginModule = {
     },
   ],
   paneTemplates: [
-    { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Highest-score wire stories from the last 4 hours", keywords: ["top", "news", "headlines", "stories", "wire"], shortcut: { prefix: "TOP" } },
+    { id: "news-top-pane", paneId: "news-top", label: "Top News", description: "Highest-score wire stories from the last 24 hours", keywords: ["top", "news", "headlines", "stories", "wire"], shortcut: { prefix: "TOP" } },
     { id: "news-feed-pane", paneId: "news-feed", label: "News Feed", description: "Chronological market news firehose", keywords: ["news", "feed", "firehose", "wire", "stream"], shortcut: { prefix: "N" } },
     { id: "news-industry-pane", paneId: "news-industry", label: "Sector News", description: "Market news filtered by sector", keywords: ["news", "industry", "sector", "ni", "filter"], shortcut: { prefix: "NI" } },
     { id: "news-breaking-pane", paneId: "news-breaking", label: "Breaking News", description: "Breaking and urgent market news", keywords: ["first", "breaking", "urgent", "alert", "flash"], shortcut: { prefix: "FIRST" } },

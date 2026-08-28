@@ -139,4 +139,18 @@ describe("prediction market settlement series matching", () => {
     expect(result.sourceSnippet).toMatch(/MLB commissioner/i);
     expect(result.sourceLabel).toMatch(/MLB commissioner/i);
   });
+
+  test("maps a MicroStrategy market onto MSTR and Strategy preferreds", () => {
+    const result = matchSettlementSeries(summary({
+      venue: "polymarket",
+      marketId: "mstr-2000",
+      title: "Will MicroStrategy (MSTR) close above $2,000 by December 31, 2026?",
+      eventLabel: "Strategy Inc share price",
+      rulesPrimary: "Resolves to the official NASDAQ:MSTR closing price.",
+    }));
+    const expressions = result.series.map((row) => row.expression);
+    expect(expressions).toContain("MSTR:price");
+    expect(expressions).toContain("STRF:price");
+    expect(expressions).toContain("STRC:price");
+  });
 });

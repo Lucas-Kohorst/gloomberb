@@ -135,13 +135,24 @@ export function reduceLayoutAction(state: AppState, action: AppAction): AppState
       );
       const newLayout: SavedLayout = {
         name: action.name,
-        layout: createBlankLayout(),
+        layout: action.layout ?? createBlankLayout(),
         paneState: {},
       };
       const layouts = [...currentConfig.layouts, newLayout];
+      const nextHistory = setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] });
+      if (action.activate === false) {
+        return {
+          ...state,
+          layoutHistory: nextHistory,
+          config: {
+            ...currentConfig,
+            layouts,
+          },
+        };
+      }
       return withFocusedPane({
         ...state,
-        layoutHistory: setHistoryForIndex(state.layoutHistory, layouts.length - 1, { past: [], future: [] }),
+        layoutHistory: nextHistory,
       }, {
         ...currentConfig,
         layout: cloneLayout(newLayout.layout),

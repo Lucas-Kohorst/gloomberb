@@ -73,6 +73,8 @@ export interface RegistryPluginContextOptions {
     emit: <K extends keyof PluginEvents>(event: K, payload: PluginEvents[K]) => void;
   };
   notify: (notification: AppNotificationRequest) => AppNotificationDelivery | void;
+  registerAgentTool: (tool: import("@earendil-works/pi-agent-core").AgentTool) => void;
+  registerAgentPromptFragment: (fragment: string) => void;
 }
 
 export function createRegistryPluginContext({
@@ -121,6 +123,8 @@ export function createRegistryPluginContext({
   openPaneSettings,
   events,
   notify,
+  registerAgentTool,
+  registerAgentPromptFragment,
 }: RegistryPluginContextOptions): GloomPluginContext {
   const pluginNamespace = `plugin:${pluginId}`;
   const pluginPersistence = createPluginPersistence(persistence.pluginState, persistence.resources, pluginNamespace, pluginId);
@@ -214,5 +218,8 @@ export function createRegistryPluginContext({
     emit: (event, payload) => events.emit(event, payload),
 
     notify,
+
+    registerAgentTool,
+    registerAgentPromptFragment,
   };
 }

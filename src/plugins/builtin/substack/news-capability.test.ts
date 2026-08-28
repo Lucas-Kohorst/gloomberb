@@ -55,6 +55,14 @@ describe("normalizeSubstackArticle", () => {
     expect(article?.tickers).toEqual(["NVDA", "MSFT", "AAPL"]);
   });
 
+  test("supports latest, not top", () => {
+    const capability = createSubstackNewsCapability();
+    expect(capability.provider.supports?.({ feed: "latest" })).toBe(true);
+    expect(capability.provider.supports?.({ feed: "top" })).toBe(false);
+    expect(capability.provider.supports?.({})).toBe(true);
+    expect(capability.provider.supports?.({ feed: "ticker", ticker: "NVDA" })).toBe(false);
+  });
+
   test("caps cached firehose seed to the query limit and reads {items} feed payloads", () => {
     const persistence = new MemoryPluginPersistence();
     attachSubstackPersistence(persistence);

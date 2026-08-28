@@ -24,6 +24,7 @@ describe("Pi provider catalog", () => {
     expect(AI_PROVIDER_IDS).toEqual([
       "browser-builtin",
       "ollama",
+      "factory",
       "anthropic",
       "openai-codex",
       "openai",
@@ -54,7 +55,7 @@ describe("Pi provider catalog", () => {
     for (const definition of definitions) {
       const provider = piProviders.find((candidate) => candidate.id === definition.id);
       if (definition.id === "browser-builtin") {
-        expect(definition.outputModes).toEqual(["plain", "screener"]);
+        expect(definition.outputModes).toEqual(["plain", "structured", "screener"]);
         continue;
       }
       if (definition.id === "ollama") {
@@ -106,9 +107,11 @@ describe("Pi provider catalog", () => {
   test("lists browser-builtin only on the hosted web client", () => {
     setDetectedProviders(null);
     expect(detectProviders().some((provider) => provider.id === "browser-builtin")).toBe(false);
+    expect(detectProviders().some((provider) => provider.id === "factory")).toBe(true);
     Object.defineProperty(globalThis, "__GLOOM_CLOUD_HOSTED", { configurable: true, value: true });
     setDetectedProviders(null);
     expect(detectProviders().some((provider) => provider.id === "browser-builtin")).toBe(true);
+    expect(detectProviders().some((provider) => provider.id === "factory")).toBe(false);
   });
 
   test("uses legacy ids only to migrate persisted selections", () => {

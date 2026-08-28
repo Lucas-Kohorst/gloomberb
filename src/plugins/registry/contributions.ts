@@ -9,6 +9,7 @@ import type {
   TickerAction,
   TickerResearchTabDef,
 } from "../../types/plugin";
+import { getAiRunHost } from "../builtin/ai/runner";
 import { normalizeRegisteredPane, type LoosePaneDef } from "../runtime/normalize-pane";
 
 export interface ContextMenuProviderEntry {
@@ -27,6 +28,8 @@ export interface PluginItems {
   shortcuts: string[];
   tickerActions: string[];
   contextMenuProviders: string[];
+  agentTools: string[];
+  agentPromptFragments: string[];
   eventDisposers: Array<() => void>;
   capabilityDisposers: Array<() => void>;
   newsQueryWatchDisposers: Array<() => void>;
@@ -79,6 +82,8 @@ export class RegistryContributions {
       shortcuts: [],
       tickerActions: [],
       contextMenuProviders: [],
+      agentTools: [],
+      agentPromptFragments: [],
       eventDisposers: [],
       capabilityDisposers: [],
       newsQueryWatchDisposers: [],
@@ -173,6 +178,9 @@ export class RegistryContributions {
     }
     for (const actionId of items.tickerActions) this.tickerActionsMap.delete(actionId);
     for (const providerKey of items.contextMenuProviders) this.contextMenuProvidersMap.delete(providerKey);
+    const host = getAiRunHost();
+    for (const toolName of items.agentTools) host?.unregisterTool?.(toolName);
+    for (const fragment of items.agentPromptFragments) host?.unregisterAgentPromptFragment?.(fragment);
     let disposeError: unknown;
     for (const dispose of [...items.eventDisposers, ...items.capabilityDisposers, ...items.newsQueryWatchDisposers]) {
       try {

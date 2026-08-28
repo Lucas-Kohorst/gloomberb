@@ -3,7 +3,11 @@ import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useViewport } from "../../../react/input";
 import { useAppInputCapture } from "../../../state/app/input-capture";
 import { useAppDispatch, useAppSelector, usePaneInstance } from "../../../state/app/context";
-import { persistPredictionStarsToDefaultWatchlist } from "../collection-watchlist";
+import {
+  applyWatchlistSnapshots,
+  hydrateWatchlistSnapshots,
+  persistPredictionStarsToDefaultWatchlist,
+} from "../collection-watchlist";
 import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
@@ -36,6 +40,7 @@ import type {
   PredictionDetailTab,
   PredictionHistoryRange,
   PredictionListRow,
+  PredictionMarketSummary,
   PredictionOrderPreviewIntent,
   PredictionSortPreference,
   PredictionVenueScope,
@@ -63,6 +68,9 @@ export function usePredictionMarketsController({
     "watchlist:v1",
     [],
   );
+  const [watchlistSnapshots, setWatchlistSnapshots] = usePluginState<
+    PredictionMarketSummary[]
+  >("watchlistSnapshots:v1", []);
   const [lastVenueScope, setLastVenueScope] =
     usePluginState<PredictionVenueScope>("lastVenueScope:v1", "all");
 
@@ -163,6 +171,7 @@ export function usePredictionMarketsController({
     selectedRowKey,
     sortPreference,
     watchlistSet,
+    watchlistSnapshots,
     expandedGroupKeys,
   });
 
@@ -206,6 +215,12 @@ export function usePredictionMarketsController({
     );
   }, [defaultSortPreference, setSortPreference]);
 
+  useEffect(() => {
+    setWatchlistSnapshots((current) =>
+      hydrateWatchlistSnapshots(current, watchlist, tickersBySymbol),
+    );
+  }, [setWatchlistSnapshots, tickersBySymbol, watchlist]);
+
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
   }, []);
@@ -226,15 +241,19 @@ export function usePredictionMarketsController({
         }
         return [...new Set([...current, ...rowMarketKeys])];
       });
+      const summaries = row.markets.length > 0 ? row.markets : [row.representative];
+      setWatchlistSnapshots((current) =>
+        applyWatchlistSnapshots(current, summaries, !allWatched),
+      );
       void persistPredictionStarsToDefaultWatchlist({
-        summaries: row.markets.length > 0 ? row.markets : [row.representative],
+        summaries,
         starred: !allWatched,
         config,
         tickers: tickersBySymbol,
         dispatch,
       });
     },
-    [config, dispatch, setWatchlist, tickersBySymbol, watchlist],
+    [config, dispatch, setWatchlist, setWatchlistSnapshots, tickersBySymbol, watchlist],
   );
 
   const setBrowseSelection = useCallback(

@@ -36,7 +36,41 @@ export type RemoteMarketDataRequest =
   | { type: "data"; operation: "holders"; symbol: string; exchange?: string }
   | { type: "data"; operation: "analystResearch"; symbol: string; exchange?: string }
   | { type: "data"; operation: "corporateActions"; symbol: string; exchange?: string }
-  | { type: "data"; operation: "earningsCalendar"; symbols: string[] };
+  | { type: "data"; operation: "earningsCalendar"; symbols: string[] }
+  | { type: "data"; operation: "econ.series"; seriesId: string; startDate?: string; endDate?: string; limit?: number }
+  | { type: "data"; operation: "watchlists.get" }
+  | { type: "data"; operation: "portfolios.get" }
+  | {
+    type: "data";
+    operation: "articles.search";
+    query?: string;
+    ticker?: string;
+    feed?: "latest" | "top" | "breaking" | "ticker";
+    limit?: number;
+  }
+  | { type: "data"; operation: "polls.list"; pollType?: string; subject?: string; limit?: number }
+  | { type: "data"; operation: "indices.list" }
+  | { type: "data"; operation: "indices.get"; indexId: string }
+  | {
+    type: "data";
+    operation: "markets.search";
+    query?: string;
+    category?: string;
+    limit?: number;
+  }
+  | {
+    type: "data";
+    operation: "markets.get";
+    venue: "kalshi" | "polymarket";
+    marketId: string;
+  }
+  | {
+    type: "data";
+    operation: "markets.history";
+    venue: "kalshi" | "polymarket";
+    marketId: string;
+    range?: "1D" | "1W" | "1M" | "ALL";
+  };
 
 export type RemoteControlRequest =
   | { type: "help"; topic?: string }

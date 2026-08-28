@@ -7,6 +7,36 @@ export interface AlertCommandInput {
   price: number;
 }
 
+export interface WeatherAlertCommandInput {
+  stationId: string;
+  condition: "observed-threshold-crossing" | "stale-source" | "preliminary-to-final" | "source-discrepancy";
+  metric?: "high" | "low" | "precip" | "hourly";
+  target?: number;
+}
+
+export function parseWeatherAlertCommandValues(values?: Record<string, string>): WeatherAlertCommandInput | null {
+  const stationId = values?.station?.trim().toUpperCase();
+  const condition = values?.condition;
+  const metric = values?.metric?.trim().toLowerCase();
+  const validMetric = metric === "high" || metric === "low" || metric === "precip" || metric === "hourly";
+  if (!stationId || !condition) return null;
+  if (condition === "final") {
+    return validMetric ? { stationId, condition: "preliminary-to-final", metric } : null;
+  }
+  const target = Number(values?.target);
+  if (!Number.isFinite(target) || target < 0) return null;
+  if (condition === "above" || condition === "below") {
+    return validMetric ? { stationId, condition: "observed-threshold-crossing", metric, target } : null;
+  }
+  if (condition === "stale") return { stationId, condition: "stale-source", target };
+  if (condition === "discrepancy") {
+    return validMetric && metric !== "hourly"
+      ? { stationId, condition: "source-discrepancy", metric, target }
+      : null;
+  }
+  return null;
+}
+
 function parseAlertCondition(value: string | undefined): AlertCondition | null {
   const normalized = value?.trim().toLowerCase();
   switch (normalized) {

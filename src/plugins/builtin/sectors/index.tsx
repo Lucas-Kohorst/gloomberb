@@ -258,16 +258,12 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
   usePaneFooter("sectors", () => ({
     info: [
       {
-        id: "collection",
-        parts: [{ text: activeCollection.label, tone: "label" }],
-      },
-      {
         id: "updated",
         parts: [{ text: lastRefreshText, tone: lastRefreshMs ? "value" : "muted" }],
       },
     ],
     hints: [{ id: "refresh", key: "r", label: "efresh", onPress: fetchAll }],
-  }), [activeCollection.label, fetchAll, lastRefreshMs, lastRefreshText]);
+  }), [fetchAll, lastRefreshMs, lastRefreshText]);
 
   const rootBefore = (
     <Box height={1} paddingX={1}>

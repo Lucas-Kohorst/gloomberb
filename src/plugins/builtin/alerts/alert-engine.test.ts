@@ -9,7 +9,7 @@ import {
   serializeAlerts,
   deserializeAlerts,
 } from "./alert-engine";
-import { parseAlertCommandValues, parseAlertShortcutValues } from "./command";
+import { parseAlertCommandValues, parseAlertShortcutValues, parseWeatherAlertCommandValues } from "./command";
 
 describe("evaluateAlert", () => {
   test("above: triggers when price exceeds target", () => {
@@ -157,5 +157,21 @@ describe("alert command parser", () => {
       condition: "ex_div",
       price: "7",
     });
+  });
+
+  test("parses weather conditions with only supported source metrics", () => {
+    expect(parseWeatherAlertCommandValues({
+      station: "lax", condition: "above", metric: "high", target: "85",
+    })).toEqual({
+      stationId: "LAX", condition: "observed-threshold-crossing", metric: "high", target: 85,
+    });
+    expect(parseWeatherAlertCommandValues({
+      station: "lax", condition: "stale", metric: "high", target: "15",
+    })).toEqual({
+      stationId: "LAX", condition: "stale-source", target: 15,
+    });
+    expect(parseWeatherAlertCommandValues({
+      station: "lax", condition: "discrepancy", metric: "hourly", target: "2",
+    })).toBeNull();
   });
 });
