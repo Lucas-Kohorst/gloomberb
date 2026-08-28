@@ -80,7 +80,6 @@ export class ChatControllerChannels {
 
     const request = apiClient.getChannels()
       .then((channels) => {
-        // Public catalog omits DMs/groups; keep any already loaded from /chat/state.
         this.channels = mergePublicChannelCatalog(this.channels, channels);
       })
       .catch(() => {
