@@ -49,6 +49,7 @@ async function withRobinhoodRuntime<T>(
 export const robinhoodBroker: BrokerAdapter = {
   id: "robinhood",
   name: "Robinhood",
+  autoSync: false,
   configSchema: robinhoodConfigSchema(),
 
   async validate(instance) {

@@ -320,6 +320,7 @@ export async function syncBrokerInstances({
 
   for (const instance of config.brokerInstances) {
     if (instance.enabled === false) continue;
+    if (brokers.get(instance.brokerType)?.autoSync === false) continue;
 
     const previousConfig = nextConfig;
     try {

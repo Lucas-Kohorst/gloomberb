@@ -82,6 +82,8 @@ export interface BrokerProfileAction {
 export interface BrokerAdapter {
   readonly id: string;
   readonly name: string;
+  /** Whether this profile may fetch during startup. Defaults to true. */
+  readonly autoSync?: boolean;
   readonly cachePolicy?: CachePolicyMap;
   validate(instance: BrokerInstanceConfig): Promise<boolean>;
   importPositions(instance: BrokerInstanceConfig): Promise<BrokerPosition[]>;
