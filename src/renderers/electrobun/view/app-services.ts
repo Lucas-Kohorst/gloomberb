@@ -82,8 +82,8 @@ export function createElectrobunAppServices({
   setSharedNewsService(newsService);
 
   newsService.register(newsProvider({
-    id: dataProvider.id,
-    name: dataProvider.name,
+    id: "gloomberb-cloud",
+    name: "Wire",
     priority: 0,
     provider: {
       fetchNews: (query) => (

@@ -10,6 +10,9 @@ const ORIGIN_LABELS: Record<string, string> = {
   adjacent: "Adjacent",
   yahoo: "Yahoo",
   "gloomberb-cloud": "Wire",
+  // Desktop web used to stamp the backend/router id on cloud wire stories.
+  "desktop-backend": "Wire",
+  "asset-data-router": "Wire",
   "x-feed": "X",
 };
 
