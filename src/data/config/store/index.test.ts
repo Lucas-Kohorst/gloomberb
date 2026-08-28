@@ -246,7 +246,7 @@ describe("sanitizeLayout", () => {
         fixedGeometry: true,
       }],
       detached: [],
-    }, DEFAULT_LAYOUT);
+    }, DEFAULT_LAYOUT, { migrateLegacy: true });
 
     expect(layout.floating).toEqual([{
       instanceId: "portfolio-list:main",
@@ -257,6 +257,28 @@ describe("sanitizeLayout", () => {
       fixedGeometry: true,
       zIndex: undefined,
     }]);
+  });
+
+  test("does not convert legacy chart settings during ordinary sanitization", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "ticker-detail:aapl" },
+      instances: [{
+        instanceId: "ticker-detail:aapl",
+        paneId: "ticker-research",
+        binding: { kind: "fixed", symbol: "AAPL" },
+        settings: {
+          chartRangePreset: "1Y",
+          chartResolution: "1wk",
+        },
+      }],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT);
+
+    expect(findPaneInstance(layout, "ticker-detail:aapl")?.settings).toEqual({
+      chartRangePreset: "1Y",
+      chartResolution: "1wk",
+    });
   });
 
   test("falls back to the default layout when given an obsolete column layout", () => {

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.13.12 — 4-hour charts, Robinhood desktop sync, chart reliability
+
+Four-hour chart bars are available across supported providers. Robinhood desktop sync now imports equity, crypto, and cash holdings through Trading MCP without duplicate account-agnostic results. CFTC filing lists show ingestion times. Charts retain valid previous-session data while exchanges are closed, repaint after a theme change, and only migrate legacy settings during an explicit config migration.
+
+### Charts
+
+- 4-hour resolution is available for Yahoo, Gloom Cloud, and CoinGecko price history, aggregated on UTC boundaries.
+- Persisted intraday history without exchange metadata remains visible outside market hours instead of being discarded as stale.
+- Cached chart rasters repaint immediately after a theme change.
+- Legacy chart settings are converted only during an explicit migration, not during routine layout sanitization.
+
+### Brokers
+
+- Desktop Robinhood sync imports equity positions, crypto positions, and cash balances.
+- Account-scoped position tools run per account; account-agnostic tools run once, avoiding duplicated holdings.
+- Robinhood OAuth uses a stable local callback address, ignores stale browser callbacks, times out bounded connection stages, and only starts from an explicit Sync action.
+
+### Data
+
+- CFTC filing timestamps prefer the ingestion time when it is available.
+
+### What to test
+
+- Set a chart to 4h and verify bars aggregate and refresh normally.
+- Sync a Robinhood account with equity, crypto, and cash holdings; each position appears once.
+- While markets are closed, reopen an intraday chart and confirm the last valid session remains visible.
+- Change the theme with a chart open and confirm the rendered chart repaints.
+
 ## v0.13.11 — CFTC on prod Adjacent, firehose ingest, market data overhaul, native-select fix
 
 CFTC filings move off adjacent-dev onto the production Adjacent API. The news firehose flushes query rebuilds on ingest so tweets appear immediately. Yahoo Finance snapshots and the live-quotes engine get a major overhaul. NativeSelect stops painting double text on WebKit. Prediction markets gain a cache layer and live updates.
