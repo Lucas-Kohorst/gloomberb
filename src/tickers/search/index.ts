@@ -11,6 +11,7 @@ import {
   findExactTickerSearchMatch,
   normalizeSearchText,
   normalizeTickerSymbol,
+  parseTickerListingQuery,
   rankTickerSearchItems,
 } from "./ranking";
 import type {
@@ -29,6 +30,7 @@ export type {
 } from "./types";
 export {
   findExactTickerSearchMatch,
+  parseTickerListingQuery,
   rankTickerSearchItems,
 } from "./ranking";
 export { upsertTickerFromSearchResult } from "./upsert";
@@ -186,7 +188,13 @@ export async function resolveTickerSearch({
   const symbol = normalizeTickerInput(activeTicker, query);
   if (!symbol) return null;
 
-  const local = tickers.get(symbol)
+  const listing = parseTickerListingQuery(symbol);
+  const localLookup = listing.symbol || symbol;
+  const local = (
+    listing.exchangeHints.length === 0
+      ? (tickers.get(symbol) ?? tickers.get(localLookup) ?? null)
+      : null
+  )
     ?? findExactTickerSearchMatch(createLocalTickerSearchCandidates(tickers.values()), symbol)?.ticker
     ?? null;
   if (local) {
@@ -247,15 +255,18 @@ async function searchProviderResults(
     }
   };
 
+  const listing = parseTickerListingQuery(query);
+  const providerQuery = listing.symbol || query;
+
   // Listed-universe master (Adjacent Cloud hydrate) first. Yahoo/cloud
   // typeahead is a supplement, not the security master.
   try {
-    push(await searchUsListedUniverse(query));
+    push(await searchUsListedUniverse(providerQuery));
   } catch {
     // listings miss must not block saved/typeahead search
   }
 
-  for (const searchQuery of buildProviderSearchQueries(query)) {
+  for (const searchQuery of buildProviderSearchQueries(providerQuery)) {
     let results: InstrumentSearchResult[] = [];
     try {
       results = await dataProvider.search(searchQuery, searchContext);

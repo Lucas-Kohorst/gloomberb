@@ -1,3 +1,4 @@
+import { CANONICAL_EXCHANGE_ALIASES, canonicalExchange } from "../../utils/exchanges";
 import type {
   TickerSearchInstrumentClass,
   TickerSearchRankableItem,
@@ -26,10 +27,13 @@ const COMPANY_NAME_SUFFIXES = new Set([
 
 const EXCHANGE_HINT_ALIASES: Record<string, string[]> = {
   NASDAQ: ["NASDAQ", "NMS"],
+  NMS: ["NASDAQ", "NMS"],
   NYSE: ["NYSE", "NYSE ARCA", "ARCA"],
   AMEX: ["AMEX"],
-  TSX: ["TSX", "TORONTO"],
-  TORONTO: ["TORONTO", "TSX"],
+  TSX: ["TSX", "TORONTO", "TOR"],
+  TORONTO: ["TORONTO", "TSX", "TOR"],
+  TOR: ["TSX", "TORONTO", "TOR"],
+  US: ["NASDAQ", "NMS", "NYSE", "AMEX", "ARCA", "NYSE ARCA", "BATS"],
   XETRA: ["XETRA"],
   TSE: ["TOKYO STOCK EXCHANGE", "TOKYO", "JPX", "TSE"],
   TOKYO: ["TOKYO STOCK EXCHANGE", "TOKYO", "JPX", "TSE"],
@@ -41,6 +45,8 @@ const EXCHANGE_HINT_ALIASES: Record<string, string[]> = {
   BUENOS: ["BUENOS AIRES", "BUE"],
   AIRES: ["BUENOS AIRES", "BUE"],
 };
+
+const TICKER_LIKE_RE = /^[A-Z0-9]{1,6}(?:[.\-\/][A-Z0-9]{1,3})?$/;
 
 const ASSET_HINT_MAP: Record<string, TickerSearchInstrumentClass> = {
   STOCK: "equity",
@@ -70,24 +76,38 @@ interface SearchQueryIntent {
   compactQuery: string;
   companyQuery: string;
   companyQueryKey: string;
+  symbolQuery: string;
   exchangeHints: string[];
   assetPreference: TickerSearchInstrumentClass | null;
+}
+
+export interface ParsedTickerListingQuery {
+  symbol: string;
+  textQuery: string;
+  exchangeHints: string[];
 }
 
 export function findExactTickerSearchMatch<T extends Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>>(
   items: T[],
   query: string,
 ): T | null {
-  const aliasForms = buildSymbolAliases(query);
+  const parsed = parseTickerListingQuery(query);
+  const matchQuery = parsed.symbol || query;
+  const aliasForms = buildSymbolAliases(matchQuery);
   const normalizedAliases = new Set(aliasForms.map((value) => normalizeSearchText(value)));
   const compactAliases = new Set(aliasForms.map((value) => compactSearchText(value)));
 
-  return items.find((item) =>
-    getItemSearchAliases(item).some((alias) =>
+  return items.find((item) => {
+    if (!itemMatchesExchangeHints(item, parsed.exchangeHints)) return false;
+    if (getItemSearchAliases(item).some((alias) =>
       normalizedAliases.has(normalizeSearchText(alias))
       || compactAliases.has(compactSearchText(alias))
-    )
-  ) ?? null;
+    )) {
+      return true;
+    }
+    return parsed.exchangeHints.length > 0
+      && isExchangeSuffixedSymbol(item.symbol || item.label, matchQuery);
+  }) ?? null;
 }
 
 export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "id" | "label" | "detail" | "kind" | "category" | "right"> & Partial<TickerSearchRankableItem>>(
@@ -178,8 +198,8 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
   for (const entry of filtered) {
     const exactSymbolRank = entry.symbolMatchRank >= 2 ? entry.symbolMatchRank : 0;
     const bucketKey = [
-      exactSymbolRank,
       hasExplicitHint ? entry.explicitIntentScore : 0,
+      exactSymbolRank,
       entry.companyMatchRank,
     ].join(":");
     const groupKey = entry.issuerGroupKey
@@ -208,15 +228,15 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
   }
 
   filtered.sort((a, b) => {
-    // Precedence is exact symbol, explicit query hints, whole-word company
-    // relevance, issuer relevance, provider order within that issuer, partial
-    // symbol, saved relevance, then stable source order.
+    // Precedence is explicit venue/asset hints, exact symbol, whole-word
+    // company relevance, issuer relevance, provider order within that issuer,
+    // partial symbol, saved relevance, then stable source order.
     const aExactSymbolRank = a.symbolMatchRank >= 2 ? a.symbolMatchRank : 0;
     const bExactSymbolRank = b.symbolMatchRank >= 2 ? b.symbolMatchRank : 0;
-    if (bExactSymbolRank !== aExactSymbolRank) return bExactSymbolRank - aExactSymbolRank;
     if (hasExplicitHint && b.explicitIntentScore !== a.explicitIntentScore) {
       return b.explicitIntentScore - a.explicitIntentScore;
     }
+    if (bExactSymbolRank !== aExactSymbolRank) return bExactSymbolRank - aExactSymbolRank;
     if (b.companyMatchRank !== a.companyMatchRank) {
       return b.companyMatchRank - a.companyMatchRank;
     }
@@ -226,6 +246,11 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
     if (
       a.issuerGroupKey
       && a.issuerGroupKey === b.issuerGroupKey
+      && !(
+        a.symbolMatchRank >= 2
+        && b.symbolMatchRank >= 2
+        && a.normalizedSymbol === b.normalizedSymbol
+      )
     ) {
       const aProviderRank = a.item.providerRank ?? Number.POSITIVE_INFINITY;
       const bProviderRank = b.item.providerRank ?? Number.POSITIVE_INFINITY;
@@ -288,11 +313,54 @@ export function classifyInstrumentKind(rawType?: string): TickerSearchInstrument
   return "other";
 }
 
+export function parseTickerListingQuery(query: string): ParsedTickerListingQuery {
+  const trimmed = query.trim().toUpperCase().replace(/\s+/g, " ");
+  if (!trimmed) return { symbol: "", textQuery: "", exchangeHints: [] };
+
+  const colonIndex = trimmed.indexOf(":");
+  if (colonIndex > 0 && colonIndex < trimmed.length - 1) {
+    const left = trimmed.slice(0, colonIndex).trim();
+    const right = trimmed.slice(colonIndex + 1).trim();
+    if (left && right && !left.includes(":")) {
+      const leftHint = resolveExchangeHint(left);
+      const rightHint = resolveExchangeHint(right);
+      if (leftHint || rightHint) {
+        if (leftHint && !rightHint) return listingQueryFromText(right, [leftHint]);
+        if (rightHint && !leftHint) return listingQueryFromText(left, [rightHint]);
+        return listingQueryFromText(right, [leftHint!]);
+      }
+    }
+  }
+
+  const tokens = trimmed.split(" ").filter(Boolean);
+  const exchangeHints: string[] = [];
+  const remaining: string[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token === "US") {
+      if (tokens.length === 2 && i === 1 && isTickerLikeToken(tokens[0]!)) {
+        exchangeHints.push("US");
+        continue;
+      }
+      remaining.push(token);
+      continue;
+    }
+    const hint = resolveExchangeHint(token);
+    if (hint && (i === 0 || i === tokens.length - 1)) {
+      exchangeHints.push(hint);
+      continue;
+    }
+    remaining.push(token);
+  }
+
+  return listingQueryFromText(remaining.join(" "), exchangeHints);
+}
+
 function analyzeSearchQuery(query: string): SearchQueryIntent {
-  const normalizedQuery = normalizeSearchText(query);
-  const compactQuery = compactSearchText(query);
-  const tokens = normalizedQuery.split(" ").filter(Boolean);
-  const exchangeHints = Array.from(new Set(tokens.filter((token) => token in EXCHANGE_HINT_ALIASES)));
+  const parsed = parseTickerListingQuery(query);
+  const normalizedFull = normalizeSearchText(query);
+  const tokens = normalizedFull.split(" ").filter(Boolean);
+  const exchangeHints = Array.from(new Set(parsed.exchangeHints));
 
   const assetHints = Array.from(new Set(
     tokens
@@ -301,17 +369,56 @@ function analyzeSearchQuery(query: string): SearchQueryIntent {
   ));
   const assetPreference = assetHints.length === 1 ? assetHints[0]! : null;
 
-  const companyTokens = tokens.filter((token) => !(token in EXCHANGE_HINT_ALIASES) && !(token in ASSET_HINT_MAP));
+  const companyTokens = (parsed.textQuery || normalizedFull).split(" ").filter((token) => (
+    token
+    && !(token in ASSET_HINT_MAP)
+    && resolveExchangeHint(token) == null
+  ));
   const companyQuery = companyTokens.join(" ");
+  const symbolQuery = parsed.symbol || companyQuery;
+  const normalizedQuery = companyQuery || parsed.textQuery || normalizedFull;
 
   return {
     normalizedQuery,
-    compactQuery,
+    compactQuery: compactSearchText(symbolQuery || normalizedQuery),
     companyQuery,
     companyQueryKey: normalizeCompanyName(companyQuery),
+    symbolQuery,
     exchangeHints,
     assetPreference,
   };
+}
+
+function listingQueryFromText(text: string, exchangeHints: string[]): ParsedTickerListingQuery {
+  const raw = text.trim().toUpperCase();
+  const textQuery = normalizeSearchText(raw);
+  const symbol = isTickerLikeToken(raw) || isTickerLikeToken(compactSearchText(raw))
+    ? (raw.includes(" ") ? compactSearchText(raw) : raw)
+    : textQuery;
+  return {
+    symbol,
+    textQuery,
+    exchangeHints: Array.from(new Set(exchangeHints)),
+  };
+}
+
+function isTickerLikeToken(token: string): boolean {
+  return TICKER_LIKE_RE.test(token);
+}
+
+function resolveExchangeHint(token: string): string | null {
+  const compact = compactSearchText(token);
+  if (!compact) return null;
+  if (compact === "US") return "US";
+  if (compact in EXCHANGE_HINT_ALIASES) return compact;
+  const canonical = canonicalExchange(compact);
+  if (canonical in EXCHANGE_HINT_ALIASES) return canonical;
+  if (compact in CANONICAL_EXCHANGE_ALIASES) return canonical;
+  if (compact.startsWith("NASDAQ")) return "NASDAQ";
+  if (compact === "NYSEARCA") return "NYSE";
+  if (compact === "NYSEAMERICAN") return "AMEX";
+  if (compact.startsWith("NYSE")) return "NYSE";
+  return null;
 }
 
 function getItemSearchAliases(item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>): string[] {
@@ -369,13 +476,16 @@ function scoreSymbolMatchRank(
   intent: SearchQueryIntent,
   item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>,
 ): number {
-  if (!intent.normalizedQuery && !intent.compactQuery) return 0;
+  const symbolQuery = intent.symbolQuery || intent.normalizedQuery;
+  if (!symbolQuery && !intent.compactQuery) return 0;
   const displaySymbol = normalizeSearchText(item.symbol || item.label);
   const compactDisplaySymbol = compactSearchText(item.symbol || item.label);
+  const normalizedSymbolQuery = normalizeSearchText(symbolQuery);
+  const compactSymbolQuery = compactSearchText(symbolQuery) || intent.compactQuery;
 
   if (
-    displaySymbol === intent.normalizedQuery
-    || (intent.compactQuery && compactDisplaySymbol === intent.compactQuery)
+    (normalizedSymbolQuery && displaySymbol === normalizedSymbolQuery)
+    || (compactSymbolQuery && compactDisplaySymbol === compactSymbolQuery)
   ) {
     return 3;
   }
@@ -384,15 +494,19 @@ function scoreSymbolMatchRank(
   if (aliases.some((alias) => {
     const normalizedAlias = normalizeSearchText(alias);
     const compactAlias = compactSearchText(alias);
-    return normalizedAlias === intent.normalizedQuery
-      || (intent.compactQuery && compactAlias === intent.compactQuery);
+    return (normalizedSymbolQuery && normalizedAlias === normalizedSymbolQuery)
+      || (compactSymbolQuery && compactAlias === compactSymbolQuery);
   })) {
     return 2;
   }
 
+  if (isExchangeSuffixedSymbol(item.symbol || item.label, symbolQuery)) {
+    return 2;
+  }
+
   if (
-    displaySymbol.startsWith(intent.normalizedQuery)
-    || (intent.compactQuery && compactDisplaySymbol.startsWith(intent.compactQuery))
+    (normalizedSymbolQuery && displaySymbol.startsWith(normalizedSymbolQuery))
+    || (compactSymbolQuery && compactDisplaySymbol.startsWith(compactSymbolQuery))
   ) {
     return 1;
   }
@@ -419,25 +533,8 @@ function scoreExchangePreference(
   item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>,
 ): number {
   if (intent.exchangeHints.length === 0) return 0;
-
-  const exchangeTexts = [
-    item.exchangeLabel,
-    item.primaryExchangeLabel,
-    item.right,
-  ]
-    .map((value) => normalizeSearchText(value || ""))
-    .filter(Boolean);
-
-  if (exchangeTexts.length === 0) return -400;
-
-  const matchesHint = intent.exchangeHints.some((hint) =>
-    (EXCHANGE_HINT_ALIASES[hint] ?? [hint]).some((alias) => {
-      const normalizedAlias = normalizeSearchText(alias);
-      return exchangeTexts.some((exchangeText) => exchangeText.includes(normalizedAlias));
-    })
-  );
-
-  return matchesHint ? 2_000 : -800;
+  if (collectExchangeTexts(item).length === 0) return -400;
+  return itemMatchesExchangeHints(item, intent.exchangeHints) ? 2_000 : -800;
 }
 
 function scoreListingPriority(item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>): number {
@@ -446,15 +543,81 @@ function scoreListingPriority(item: Pick<TickerSearchRankableItem, "label"> & Pa
   let score = 180;
   if (item.label.includes(".")) score -= 140;
   if (item.label.length <= 5) score += 120;
+  if (isUsPrimaryVenue(item)) score += 280;
   return score;
 }
 
 const US_PRIMARY_VENUES = new Set(["NASDAQ", "NMS", "NYSE", "AMEX", "ARCA", "NYSE ARCA", "BATS"]);
+const US_PRIMARY_CANONICAL = new Set(["NASDAQ", "NYSE", "AMEX", "ARCA", "BATS"]);
 
 function isUsPrimaryVenue(item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>): boolean {
   return [item.exchangeLabel, item.primaryExchangeLabel, item.right]
-    .map((value) => normalizeSearchText(value || ""))
-    .some((exchange) => US_PRIMARY_VENUES.has(exchange));
+    .some((value) => !!value && isUsPrimaryVenueName(value));
+}
+
+function isUsPrimaryVenueName(value: string): boolean {
+  const normalized = normalizeSearchText(value);
+  const compact = compactSearchText(value);
+  if (US_PRIMARY_VENUES.has(normalized) || US_PRIMARY_VENUES.has(compact)) return true;
+  const canonical = canonicalExchange(compact) || canonicalExchange(normalized);
+  if (US_PRIMARY_CANONICAL.has(canonical)) return true;
+  return compact.startsWith("NASDAQ") || compact.startsWith("NYSE");
+}
+
+function itemMatchesExchangeHints(
+  item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>,
+  hints: string[],
+): boolean {
+  if (hints.length === 0) return true;
+  return hints.some((hint) => itemMatchesExchangeHint(item, hint));
+}
+
+function itemMatchesExchangeHint(
+  item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>,
+  hint: string,
+): boolean {
+  if (hint === "US") return isUsPrimaryVenue(item);
+  const aliases = (EXCHANGE_HINT_ALIASES[hint] ?? [hint]).map((alias) => {
+    const compact = compactSearchText(alias);
+    return {
+      normalized: normalizeSearchText(alias),
+      compact,
+      canonical: canonicalExchange(compact) || canonicalExchange(alias),
+    };
+  });
+  const texts = collectExchangeTexts(item);
+  if (texts.length === 0) return false;
+  return texts.some((text) => {
+    const compactText = compactSearchText(text);
+    const canonicalText = canonicalExchange(compactText) || canonicalExchange(text);
+    return aliases.some((alias) =>
+      text.includes(alias.normalized)
+      || compactText === alias.compact
+      || (alias.canonical && (canonicalText === alias.canonical || text === alias.canonical))
+      || (alias.compact === "NASDAQ" && compactText.startsWith("NASDAQ"))
+      || (alias.compact === "NYSE" && compactText.startsWith("NYSE"))
+    );
+  });
+}
+
+function collectExchangeTexts(
+  item: Pick<TickerSearchRankableItem, "right"> & Partial<TickerSearchRankableItem>,
+): string[] {
+  return [item.exchangeLabel, item.primaryExchangeLabel, item.right]
+    .flatMap((value) => {
+      if (!value) return [];
+      const normalized = normalizeSearchText(value);
+      const compact = compactSearchText(value);
+      const canonical = canonicalExchange(compact) || canonicalExchange(value.trim().toUpperCase());
+      return [normalized, compact, canonical].filter(Boolean);
+    });
+}
+
+function isExchangeSuffixedSymbol(itemSymbol: string, querySymbol: string): boolean {
+  const item = normalizeTickerSymbol(itemSymbol);
+  const query = normalizeTickerSymbol(querySymbol);
+  if (!query || !item.startsWith(`${query}.`)) return false;
+  return /^\.[A-Z]{2,3}$/.test(item.slice(query.length));
 }
 
 function getCompanyNameKey(detail: string): string {

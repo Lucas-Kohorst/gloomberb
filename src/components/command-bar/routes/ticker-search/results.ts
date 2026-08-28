@@ -3,6 +3,7 @@ import {
   createLocalTickerSearchCandidates,
   type TickerSearchCandidate,
 } from "../../../../tickers/search";
+import { compactSearchText, parseTickerListingQuery } from "../../../../tickers/search/ranking";
 import type { ResultItem } from "../../list/model";
 
 export const QUICK_LOOK_TICKER_SEARCH_OPTIONS = { includeOptionContracts: false } as const;
@@ -20,7 +21,8 @@ export function createQuickLookTickerCandidates(tickers: Iterable<TickerRecord>)
 }
 
 export function normalizeCommandTickerSearchText(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  const listing = parseTickerListingQuery(value);
+  return compactSearchText(listing.symbol || value);
 }
 
 function isExactTickerResultMatch(item: ResultItem, query: string): boolean {

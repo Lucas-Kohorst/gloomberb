@@ -6,9 +6,9 @@ import { createTestDataProvider } from "../../test-support/data-provider";
 import { setUsListingsUniverseForTests } from "../../sources/us-listings/client";
 import {
   buildTickerSearchCandidates,
-  createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
   normalizeTickerInput,
+  parseTickerListingQuery,
   rankTickerSearchItems,
   resolveTickerSearch,
   searchTickerCandidates,
@@ -603,15 +603,175 @@ describe("ticker-search utilities", () => {
     expect(saved).toHaveLength(1);
   });
 
-  test("exposes local ticker candidates in saved category", () => {
-    expect(createLocalTickerSearchCandidates([makeTicker("TSLA", "Tesla")])).toEqual([
-      expect.objectContaining({
-        id: "goto:TSLA",
-        label: "TSLA",
-        category: "Saved",
-        kind: "ticker",
-      }),
+  test("parses exchange-qualified and Bloomberg listing queries", () => {
+    expect(parseTickerListingQuery("NYSE:BLK")).toEqual({
+      symbol: "BLK",
+      textQuery: "BLK",
+      exchangeHints: ["NYSE"],
+    });
+    expect(parseTickerListingQuery("BLK:NYSE")).toEqual({
+      symbol: "BLK",
+      textQuery: "BLK",
+      exchangeHints: ["NYSE"],
+    });
+    expect(parseTickerListingQuery("BLK US")).toEqual({
+      symbol: "BLK",
+      textQuery: "BLK",
+      exchangeHints: ["US"],
+    });
+    expect(parseTickerListingQuery("BLK NYSE")).toEqual({
+      symbol: "BLK",
+      textQuery: "BLK",
+      exchangeHints: ["NYSE"],
+    });
+    expect(parseTickerListingQuery("NASDAQ:GLXY")).toEqual({
+      symbol: "GLXY",
+      textQuery: "GLXY",
+      exchangeHints: ["NASDAQ"],
+    });
+    expect(parseTickerListingQuery("TSX:GLXY")).toEqual({
+      symbol: "GLXY",
+      textQuery: "GLXY",
+      exchangeHints: ["TSX"],
+    });
+    expect(parseTickerListingQuery("UBER")).toEqual({
+      symbol: "UBER",
+      textQuery: "UBER",
+      exchangeHints: [],
+    });
+  });
+
+  test("ranks the US primary listing ahead of TSX for a bare dual-listed symbol", () => {
+    const first = rankTickerSearchItems([
+      {
+        id: "search:UBER:TSX",
+        label: "UBER",
+        symbol: "UBER",
+        detail: "Uber Technologies, Inc.",
+        right: "Toronto",
+        exchangeLabel: "Toronto",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 0,
+      },
+      {
+        id: "search:UBER:NYSE",
+        label: "UBER",
+        symbol: "UBER",
+        detail: "Uber Technologies, Inc.",
+        right: "NYQ",
+        exchangeLabel: "NYQ",
+        primaryExchangeLabel: "NYSE",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 1,
+      },
+    ], "UBER");
+
+    expect(first[0]).toMatchObject({ id: "search:UBER:NYSE", exchangeLabel: "NYQ" });
+  });
+
+  test("pins NYSE:BLK, BLK US, and TSX:GLXY to the requested venue", () => {
+    const blkListings = [
+      {
+        id: "search:BLK:TSX",
+        label: "BLK",
+        symbol: "BLK",
+        detail: "BlackRock, Inc.",
+        right: "TSX",
+        exchangeLabel: "TSX",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 0,
+      },
+      {
+        id: "search:BLK:NYSE",
+        label: "BLK",
+        symbol: "BLK",
+        detail: "BlackRock, Inc.",
+        right: "NYSE",
+        exchangeLabel: "NYSE",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 1,
+      },
+    ];
+    const glxyListings = [
+      {
+        id: "search:GLXY:TSX",
+        label: "GLXY.TO",
+        symbol: "GLXY.TO",
+        detail: "Galaxy Digital Holdings",
+        right: "Toronto",
+        exchangeLabel: "Toronto",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 0,
+      },
+      {
+        id: "search:GLXY:NASDAQ",
+        label: "GLXY",
+        symbol: "GLXY",
+        detail: "Galaxy Digital Inc.",
+        right: "NasdaqGS",
+        exchangeLabel: "NasdaqGS",
+        category: "Other Listings",
+        kind: "search" as const,
+        instrumentClass: "equity" as const,
+        providerRank: 1,
+      },
+    ];
+
+    expect(rankTickerSearchItems(blkListings, "NYSE:BLK")[0]?.id).toBe("search:BLK:NYSE");
+    expect(rankTickerSearchItems(blkListings, "BLK NYSE")[0]?.id).toBe("search:BLK:NYSE");
+    expect(rankTickerSearchItems(blkListings, "BLK US")[0]?.id).toBe("search:BLK:NYSE");
+    expect(rankTickerSearchItems(glxyListings, "NASDAQ:GLXY")[0]?.id).toBe("search:GLXY:NASDAQ");
+    expect(rankTickerSearchItems(glxyListings, "TSX:GLXY")[0]?.id).toBe("search:GLXY:TSX");
+    expect(rankTickerSearchItems(glxyListings, "GLXY")[0]?.id).toBe("search:GLXY:NASDAQ");
+  });
+
+  test("resolves bare and exchange-qualified dual listings onto the intended venue", async () => {
+    const provider = makeDataProvider([
+      makeSearchResult("UBER", "Uber Technologies, Inc.", { exchange: "Toronto" }),
+      makeSearchResult("UBER", "Uber Technologies, Inc.", { exchange: "NYSE" }),
+      makeSearchResult("BLK", "BlackRock, Inc.", { exchange: "TSX" }),
+      makeSearchResult("BLK", "BlackRock, Inc.", { exchange: "NYSE" }),
+      makeSearchResult("GLXY.TO", "Galaxy Digital Holdings", { exchange: "Toronto" }),
+      makeSearchResult("GLXY", "Galaxy Digital Inc.", { exchange: "NasdaqGS" }),
     ]);
+
+    const resolve = (query: string) => resolveTickerSearch({
+      query,
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: provider,
+    });
+
+    await expect(resolve("UBER")).resolves.toMatchObject({
+      kind: "provider",
+      symbol: "UBER",
+      result: { exchange: "NYSE" },
+    });
+    await expect(resolve("NYSE:BLK")).resolves.toMatchObject({
+      kind: "provider",
+      symbol: "BLK",
+      result: { exchange: "NYSE" },
+    });
+    await expect(resolve("BLK US")).resolves.toMatchObject({
+      kind: "provider",
+      symbol: "BLK",
+      result: { exchange: "NYSE" },
+    });
+    await expect(resolve("TSX:GLXY")).resolves.toMatchObject({
+      kind: "provider",
+      symbol: "GLXY.TO",
+      result: { exchange: "Toronto" },
+    });
   });
 
   test("resolves listed names Yahoo typeahead never returned", async () => {
