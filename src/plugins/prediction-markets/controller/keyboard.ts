@@ -8,6 +8,7 @@ import {
   getAdjacentPredictionFilterId,
   getAdjacentPredictionVenueScope,
   resolvePredictionFilterId,
+  type PredictionFilterId,
 } from "../navigation";
 import type {
   PredictionBrowseTab,
