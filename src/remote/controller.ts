@@ -4,7 +4,9 @@ import { getSharedNewsService } from "../news/hooks";
 import type { NewsQuery } from "../news/types";
 import { searchNewsArticles } from "../plugins/builtin/news/wire/article-search";
 import { fetchVoteHubPolls } from "../plugins/builtin/polls/client";
-import { getSharedAdjacentClient } from "../plugins/builtin/adjacent/client";
+import { getSharedAdjacentClient, loadCftcFilingsFeed } from "../plugins/builtin/adjacent/client";
+import { rollupCftcFilingsByOrgMonth } from "../plugins/builtin/adjacent/filings-rollup";
+import type { CftcFeed } from "../plugins/builtin/adjacent/types";
 import { loadKalshiCatalog, resolveKalshiMarketByTicker, loadKalshiHistory } from "../plugins/prediction-markets/services/kalshi/adapter";
 import { loadPolymarketCatalog } from "../plugins/prediction-markets/services/polymarket/adapter";
 import { resolvePolymarketMarketById, loadPolymarketHistory } from "../plugins/prediction-markets/services/polymarket/detail";
@@ -365,6 +367,43 @@ export function createAppRemoteController({
           ? await loadKalshiHistory(summary, range)
           : await loadPolymarketHistory(summary, range);
         return { history };
+      }
+      case "filings.list": {
+        const feed = request.feed as CftcFeed | undefined;
+        const client = getSharedAdjacentClient();
+        const filings = await loadCftcFilingsFeed(client, {
+          feed,
+          search: request.search,
+          maxPages: 1,
+          perPage: Math.min(
+            Number.isFinite(request.limit) ? Math.max(1, Math.trunc(request.limit!)) : 50,
+            100,
+          ),
+        });
+        return {
+          publicWindow: client.isPublic,
+          filings: filings.map((filing) => ({
+            id: filing.id,
+            title: filing.title,
+            feed: filing.feed,
+            org: filing.orgCode,
+            status: filing.status,
+            statusDate: filing.statusDate.toISOString(),
+            productName: filing.productName ?? null,
+          })),
+        };
+      }
+      case "filings.rollup": {
+        const feed = (request.feed ?? "dcm_products") as CftcFeed;
+        const client = getSharedAdjacentClient();
+        const filings = await loadCftcFilingsFeed(client, {
+          feed,
+          search: request.search,
+        });
+        return rollupCftcFilingsByOrgMonth(filings, {
+          feed,
+          publicWindow: client.isPublic,
+        });
       }
       default:
         throw new Error(

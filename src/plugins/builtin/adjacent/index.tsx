@@ -17,6 +17,7 @@ import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
 import { createAdjacentNewsCapability } from "./news";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
+import { registerPluginAgentHarness } from "../../agent-harness";
 import { usePluginConfigState } from "../../runtime";
 import { ADJACENT_API_KEY_CONFIG, ADJACENT_PLUGIN_ID } from "./types";
 
@@ -119,7 +120,7 @@ const adjacentMarketsModule: PluginModule = {
       paneId: "cftc-filings",
       label: "CFTC Filings",
       description:
-        "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or open CFTC CME to jump there.",
+        "CFTC industry filings: DCM products, DCO registrations, and rule certifications. Search an organization or product, or pass chart to open a stacked DCM-products-by-exchange chart.",
       keywords: [
         "cftc",
         "filings",
@@ -129,6 +130,9 @@ const adjacentMarketsModule: PluginModule = {
         "rules",
         "certification",
         "adjacent",
+        "chart",
+        "kex",
+        "nodal",
       ],
       category: "Data",
       shortcut: {
@@ -158,6 +162,15 @@ const adjacentMarketsModule: PluginModule = {
       pluginId: ADJACENT_PLUGIN_ID,
       priority: 200,
       authRequired: false,
+    });
+
+    registerPluginAgentHarness(ctx, {
+      prompt: [
+        "CFTC filings: pane.createFromTemplate cftc-filings-pane (CFTC).",
+        "Pass options.arg \"chart\" for a stacked DCM-products-by-exchange bar chart, or an org/product search for the list.",
+        "Data: gloomberb_remote {type:\"data\", operation:\"filings.rollup\", feed:\"dcm_products\"}.",
+        "Public Adjacent is last 90 days; an Adjacent API key extends the window.",
+      ].join(" "),
     });
 
     ctx.registerCommand({

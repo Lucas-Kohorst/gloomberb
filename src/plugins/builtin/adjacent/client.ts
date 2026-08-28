@@ -652,6 +652,33 @@ export async function loadCftcFilings(
   return client.listFilings(normalized ? { search: normalized, perPage } : { perPage });
 }
 
+const MAX_CFTC_CHART_PAGES = 8;
+
+export async function loadCftcFilingsFeed(
+  client: AdjacentClient,
+  options: {
+    feed?: CftcFeed;
+    search?: string;
+    perPage?: number;
+    maxPages?: number;
+  } = {},
+): Promise<CftcFiling[]> {
+  const perPage = Math.min(options.perPage ?? MAX_FILINGS_PER_PAGE, MAX_FILINGS_PER_PAGE);
+  const maxPages = Math.max(1, options.maxPages ?? MAX_CFTC_CHART_PAGES);
+  const filings: CftcFiling[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const result = await client.listFilings({
+      feed: options.feed,
+      search: options.search?.trim() || undefined,
+      page,
+      perPage,
+    });
+    filings.push(...result.filings);
+    if (!result.meta.hasNext) break;
+  }
+  return filings;
+}
+
 export { getCached as getAdjacentCached, setCached as setAdjacentCached };
 
 let sharedApiKey: string | null = null;

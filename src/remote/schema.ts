@@ -145,6 +145,18 @@ export const REMOTE_AGENT_HELP = {
       ],
     },
     {
+      goal: "Open the CFTC DCM-products stacked bar chart",
+      request: {
+        type: "call",
+        operation: "pane.createFromTemplate",
+        input: { templateId: "cftc-filings-pane", options: { arg: "chart" } },
+      },
+    },
+    {
+      goal: "Roll up CFTC DCM product filings by exchange and month",
+      request: { type: "data", operation: "filings.rollup", feed: "dcm_products" },
+    },
+    {
       goal: "List Adjacent indices then pull prices for one",
       requests: [
         { type: "data", operation: "indices.list" },

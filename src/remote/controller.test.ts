@@ -83,6 +83,7 @@ mock.module("../plugins/builtin/adjacent/client", () => ({
   setAdjacentCached: () => {},
   setSharedAdjacentApiKey: () => {},
   getSharedAdjacentClient: () => ({
+    isPublic: true,
     getIndices: async () => {
       adjacentClientCalls.push({ method: "getIndices" });
       return adjacentIndicesResponse;
@@ -91,7 +92,26 @@ mock.module("../plugins/builtin/adjacent/client", () => ({
       adjacentClientCalls.push({ method: "getIndexPrices", arg: id });
       return adjacentIndexPricesResponse;
     },
+    listFilings: async (query?: { feed?: string; search?: string; page?: number }) => {
+      adjacentClientCalls.push({ method: "listFilings", arg: query?.feed ?? query?.search });
+      return {
+        filings: [{
+          id: 1,
+          title: "KEX product",
+          feed: "dcm_products",
+          orgCode: "KEX",
+          status: "Certified",
+          statusDate: new Date("2026-08-01T00:00:00Z"),
+          docCount: 1,
+        }],
+        meta: { page: 1, perPage: 100, hasNext: false },
+      };
+    },
   }),
+  loadCftcFilingsFeed: async (client: { listFilings: Function }, options?: { feed?: string }) => {
+    const page = await client.listFilings({ feed: options?.feed, page: 1 });
+    return page.filings;
+  },
 }));
 
 const kalshiCatalogCalls: Array<{ query: string; category?: string }> = [];
@@ -571,6 +591,26 @@ describe("createAppRemoteController", () => {
     expect(response).toMatchObject({
       ok: false,
       error: { message: expect.stringContaining("Unknown market data operation") },
+    });
+  });
+
+  test("filings.rollup stacks Adjacent CFTC DCM products by org and month", async () => {
+    adjacentClientCalls.length = 0;
+    const { controller } = createRegistryHarness();
+    const response = await controller.handle({
+      type: "data",
+      operation: "filings.rollup",
+      feed: "dcm_products",
+    });
+    expect(adjacentClientCalls.some((call) => call.method === "listFilings")).toBe(true);
+    expect(response).toMatchObject({
+      ok: true,
+      data: {
+        title: "Who filed DCM products",
+        feed: "dcm_products",
+        orgs: ["KEX"],
+        totals: [1],
+      },
     });
   });
 

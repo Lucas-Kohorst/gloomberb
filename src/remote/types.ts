@@ -70,6 +70,19 @@ export type RemoteMarketDataRequest =
     venue: "kalshi" | "polymarket";
     marketId: string;
     range?: "1D" | "1W" | "1M" | "ALL";
+  }
+  | {
+    type: "data";
+    operation: "filings.list";
+    feed?: "ptc_dcm_rules" | "dcm_products" | "dco" | "dco_rules";
+    search?: string;
+    limit?: number;
+  }
+  | {
+    type: "data";
+    operation: "filings.rollup";
+    feed?: "ptc_dcm_rules" | "dcm_products" | "dco" | "dco_rules";
+    search?: string;
   };
 
 export type RemoteControlRequest =
