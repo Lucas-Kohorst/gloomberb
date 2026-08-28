@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeRobinhoodSnapshot } from "./normalize";
-import { mapRobinhoodOrderArguments } from "./mcp-session";
+import {
+  normalizeRobinhoodSnapshot,
+  type RobinhoodPositionPayloadSource,
+} from "./normalize";
+import { loadRobinhoodPositionPayloads, mapRobinhoodOrderArguments } from "./mcp-session";
 import {
   assertRobinhoodAgenticTrade,
+  discoverRobinhoodPositionTools,
   isRobinhoodAgenticAccount,
-  requireRobinhoodPositionTools,
 } from "./position-tools";
 
 describe("Robinhood position normalization", () => {
@@ -62,21 +65,114 @@ describe("Robinhood position normalization", () => {
       marketValue: 250,
     })]);
   });
+
+  test("preserves the source asset category for crypto and equity positions", () => {
+    const sources: RobinhoodPositionPayloadSource[] = [
+      {
+        toolName: "get_crypto_positions",
+        payload: {
+          positions: [{
+            accountNumber: "RH-1",
+            instrument: { symbol: "BTC" },
+            quantity: "0.25",
+            total_cost: "10000",
+            market_value: "11000",
+          }],
+        },
+      },
+      {
+        toolName: "get_equity_positions",
+        payload: {
+          positions: [{
+            accountNumber: "RH-1",
+            instrument: { symbol: "HOOD" },
+            quantity: "2",
+            total_cost: "100",
+            market_value: "125",
+          }],
+        },
+      },
+    ];
+
+    const snapshot = normalizeRobinhoodSnapshot(
+      { accounts: [{ account_number: "RH-1", currency: "USD" }] },
+      sources,
+    );
+
+    expect(snapshot.positions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ticker: "BTC-USD", exchange: "CCC", assetCategory: "CRYPTO" }),
+      expect.objectContaining({ ticker: "HOOD", assetCategory: "STK" }),
+    ]));
+  });
+
+  test("maps account cash balance to total cash and a USD cash balance", () => {
+    const snapshot = normalizeRobinhoodSnapshot(
+      {
+        accounts: [{
+          account_number: "RH-1",
+          currency: "USD",
+          cash_balance: "1234.56",
+        }],
+      },
+      [],
+    );
+
+    expect(snapshot.accounts).toEqual([expect.objectContaining({
+      accountId: "RH-1",
+      totalCashValue: 1234.56,
+      cashBalances: [{ currency: "USD", quantity: 1234.56 }],
+    })]);
+  });
 });
 
 describe("Robinhood tool boundary", () => {
-  test("requires read-only account and position tools even when trade tools are listed", () => {
-    const selected = requireRobinhoodPositionTools([
+  test("discovers the read-only equity and crypto position tools", () => {
+    const selected = discoverRobinhoodPositionTools([
       { name: "get_accounts", annotations: { readOnlyHint: true } },
       { name: "get_equity_positions", annotations: { readOnlyHint: true } },
+      { name: "get_crypto_positions", annotations: { readOnlyHint: true } },
       { name: "place_equity_order", annotations: { readOnlyHint: false } },
     ]);
-    expect([...selected.keys()]).toEqual(["get_accounts", "get_equity_positions"]);
-    expect(() => requireRobinhoodPositionTools([
+
+    expect([...selected.keys()]).toEqual([
+      "get_accounts",
+      "get_equity_positions",
+      "get_crypto_positions",
+    ]);
+    expect(() => discoverRobinhoodPositionTools([
       { name: "get_accounts", annotations: { readOnlyHint: true } },
-      { name: "get_equity_positions", annotations: { readOnlyHint: false } },
-    ])).toThrow("read-only get_equity_positions");
+      { name: "get_equity_positions", annotations: { readOnlyHint: true } },
+      { name: "get_crypto_positions", annotations: { readOnlyHint: false } },
+    ])).toThrow("read-only get_crypto_positions");
+    expect(() => discoverRobinhoodPositionTools([
+      { name: "get_equity_positions", annotations: { readOnlyHint: true } },
+      { name: "get_crypto_positions", annotations: { readOnlyHint: true } },
+    ])).toThrow("get_accounts");
   });
+
+  test("keeps successful holdings when another account request fails", async () => {
+    const payloads = await loadRobinhoodPositionPayloads(
+      ["RH-1", "RH-2"],
+      new Map([
+        ["get_accounts", { name: "get_accounts", annotations: { readOnlyHint: true } }],
+        ["get_equity_positions", {
+          name: "get_equity_positions",
+          inputSchema: { properties: { account_id: {} } },
+          annotations: { readOnlyHint: true },
+        }],
+      ]),
+      async (_name, arguments_) => {
+        if (arguments_.account_id === "RH-2") throw new Error("account unavailable");
+        return { positions: [{ symbol: "HOOD", quantity: "1" }] };
+      },
+    );
+
+    expect(payloads).toEqual([{
+      toolName: "get_equity_positions",
+      payload: { positions: [{ symbol: "HOOD", quantity: "1" }] },
+    }]);
+  });
+
 });
 
 describe("Robinhood Agentic trade gate", () => {

@@ -1,4 +1,3 @@
-export const ROBINHOOD_POSITION_TOOLS = Object.freeze(["get_accounts", "get_equity_positions"]);
 export const ROBINHOOD_TRADE_TOOLS = Object.freeze([
   "review_equity_order",
   "place_equity_order",
@@ -14,15 +13,27 @@ export interface ListedRobinhoodTool {
   annotations?: { readOnlyHint?: boolean };
 }
 
-export function requireRobinhoodPositionTools(tools: ListedRobinhoodTool[]): Map<string, ListedRobinhoodTool> {
+const POSITION_TOOL_RE = /^get_(?:equity|crypto)_positions$/;
+
+export function discoverRobinhoodPositionTools(tools: ListedRobinhoodTool[]): Map<string, ListedRobinhoodTool> {
   const available = new Map(tools.map((tool) => [tool.name, tool]));
-  for (const toolName of ROBINHOOD_POSITION_TOOLS) {
-    const tool = available.get(toolName);
-    if (!tool || tool.annotations?.readOnlyHint === false) {
-      throw new Error(`Robinhood did not expose the read-only ${toolName} tool.`);
-    }
+  const accounts = available.get("get_accounts");
+  if (!accounts || accounts.annotations?.readOnlyHint === false) {
+    throw new Error("Robinhood did not expose the read-only get_accounts tool.");
   }
-  return new Map(ROBINHOOD_POSITION_TOOLS.map((toolName) => [toolName, available.get(toolName)!]));
+
+  const positions = new Map<string, ListedRobinhoodTool>([["get_accounts", accounts]]);
+  for (const tool of tools) {
+    if (!POSITION_TOOL_RE.test(tool.name)) continue;
+    if (tool.annotations?.readOnlyHint === false) {
+      throw new Error(`Robinhood did not expose the read-only ${tool.name} tool.`);
+    }
+    positions.set(tool.name, tool);
+  }
+  if (positions.size === 1) {
+    throw new Error("Robinhood did not expose a read-only positions tool.");
+  }
+  return positions;
 }
 
 export function findRobinhoodTool(

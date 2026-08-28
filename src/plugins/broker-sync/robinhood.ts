@@ -67,8 +67,7 @@ export const robinhoodBroker: BrokerAdapter = {
     return (await loadRobinhoodPortfolio(instance)).accounts;
   },
 
-  async connect(instance) {
-    await loadRobinhoodPortfolio(instance);
+  async connect(_instance) {
   },
 
   async disconnect(instance) {

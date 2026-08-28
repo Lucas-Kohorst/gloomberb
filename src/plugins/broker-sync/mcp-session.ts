@@ -14,9 +14,9 @@ import {
 } from "./oauth-provider";
 import {
   assertRobinhoodAgenticTrade,
+  discoverRobinhoodPositionTools,
   findRobinhoodTool,
   isRobinhoodAgenticAccount,
-  requireRobinhoodPositionTools,
   type ListedRobinhoodTool,
 } from "./position-tools";
 import { createRobinhoodFetch } from "./fetch";
@@ -85,6 +85,30 @@ function accountIds(payload: unknown): string[] {
 function positionArguments(inputSchema: unknown, accountId: string): Record<string, string> {
   const accountKey = Object.keys(schemaProperties(inputSchema)).find((key) => /account/i.test(key));
   return accountKey ? { [accountKey]: accountId } : {};
+}
+
+export async function loadRobinhoodPositionPayloads(
+  accountIds: readonly string[],
+  tools: ReadonlyMap<string, ListedRobinhoodTool>,
+  loadTool: (name: string, arguments_: Record<string, string>) => Promise<unknown>,
+): Promise<Array<{ toolName: string; payload: unknown }>> {
+  const positionTools = [...tools.entries()].filter(([name]) => name !== "get_accounts");
+  const requests = accountIds.length > 0
+    ? accountIds.flatMap((accountId) => positionTools.map(([toolName, tool]) => (
+      loadTool(toolName, positionArguments(tool.inputSchema, accountId))
+        .then((payload) => ({ toolName, payload }))
+    )))
+    : positionTools.map(([toolName]) => (
+      loadTool(toolName, {})
+        .then((payload) => ({ toolName, payload }))
+    ));
+  const settled = await Promise.allSettled(requests);
+  const payloads = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  if (payloads.length === 0 && settled.length > 0) {
+    const failure = settled.find((result) => result.status === "rejected");
+    throw failure?.reason;
+  }
+  return payloads;
 }
 
 export function mapRobinhoodOrderArguments(
@@ -185,16 +209,14 @@ export async function loadRobinhoodPortfolio(
   host: RobinhoodAuthHost,
 ): Promise<BrokerPortfolioSnapshot> {
   return withRobinhoodClient(instance, host, async (client, listed) => {
-    const tools = requireRobinhoodPositionTools(listed);
+    const tools = discoverRobinhoodPositionTools(listed);
     const accountsPayload = toolPayload(await client.callTool({ name: "get_accounts", arguments: {} }));
     const ids = accountIds(accountsPayload);
-    const positionTool = tools.get("get_equity_positions")!;
-    const positionPayloads = ids.length > 0
-      ? await Promise.all(ids.map((accountId) => client.callTool({
-        name: "get_equity_positions",
-        arguments: positionArguments(positionTool.inputSchema, accountId),
-      }).then(toolPayload)))
-      : [toolPayload(await client.callTool({ name: "get_equity_positions", arguments: {} }))];
+    const positionPayloads = await loadRobinhoodPositionPayloads(
+      ids,
+      tools,
+      (name, arguments_) => client.callTool({ name, arguments: arguments_ }).then(toolPayload),
+    );
     return normalizeRobinhoodSnapshot(accountsPayload, positionPayloads);
   });
 }
