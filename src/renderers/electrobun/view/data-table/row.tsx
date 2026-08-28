@@ -190,11 +190,12 @@ function WebDataTableRowInner<
 }: WebDataTableRowProps<T, C>) {
   const sectionHeader: DataTableSectionHeader | null =
     renderSectionHeader?.(item, index) ?? null;
-  const baseRowStyle: CSSProperties = {
+  const baseRowStyle = {
     position: "absolute",
     top: 0,
     left: 0,
     transform: `translateY(${rowStart}px)`,
+    "--gloom-row-y": `${rowStart}px`,
     display: "grid",
     gridTemplateColumns,
     columnGap: columnGapCss(columnGap),
@@ -202,11 +203,12 @@ function WebDataTableRowInner<
     width: "100%",
     minWidth: 0,
     height: rowSize,
+    overflow: "hidden",
     paddingLeft: inlinePaddingPx(horizontalPadding),
     paddingRight: inlinePaddingPx(horizontalPadding),
     boxSizing: "border-box",
     lineHeight: "var(--cell-h)",
-  };
+  } as CSSProperties;
 
   if (sectionHeader) {
     return (
