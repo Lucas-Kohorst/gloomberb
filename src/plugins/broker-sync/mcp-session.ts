@@ -4,6 +4,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ROBINHOOD_MCP_URL } from "../../shared/robinhood-oauth";
 import type { BrokerInstanceConfig } from "../../types/config";
 import type { BrokerOrder, BrokerOrderPreview, BrokerOrderRequest } from "../../types/trading";
+import { withDeadline } from "../../utils/async-deadline";
 import { normalizeRobinhoodSnapshot, type BrokerPortfolioSnapshot } from "./normalize";
 import type { OAuthCallback } from "./oauth-callback";
 import {
@@ -29,26 +30,6 @@ export interface RobinhoodAuthHost {
 
 const pendingOAuth = new Map<string, RobinhoodOAuthData>();
 const ROBINHOOD_AUTH_STEP_TIMEOUT_MS = 30_000;
-
-export async function awaitRobinhoodAuthStep<T>(
-  step: string,
-  operation: Promise<T>,
-  timeoutMs = ROBINHOOD_AUTH_STEP_TIMEOUT_MS,
-): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => {
-          reject(new Error(`Robinhood ${step} timed out. Check your connection and try Sync again.`));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
 
 export function takePendingRobinhoodOAuth(instanceId: string): Record<string, unknown> | null {
   const oauth = pendingOAuth.get(instanceId);
@@ -103,9 +84,13 @@ function accountIds(payload: unknown): string[] {
   return [...ids];
 }
 
-function positionArguments(inputSchema: unknown, accountId: string): Record<string, string> {
-  const accountKey = Object.keys(schemaProperties(inputSchema)).find((key) => /account/i.test(key));
-  return accountKey ? { [accountKey]: accountId } : {};
+function accountArgumentName(inputSchema: unknown): string | undefined {
+  return Object.keys(schemaProperties(inputSchema)).find((key) => /account/i.test(key));
+}
+
+function positionArguments(inputSchema: unknown, accountId?: string): Record<string, string> {
+  const accountKey = accountArgumentName(inputSchema);
+  return accountKey && accountId ? { [accountKey]: accountId } : {};
 }
 
 export async function loadRobinhoodPositionPayloads(
@@ -114,15 +99,14 @@ export async function loadRobinhoodPositionPayloads(
   loadTool: (name: string, arguments_: Record<string, string>) => Promise<unknown>,
 ): Promise<Array<{ toolName: string; payload: unknown }>> {
   const positionTools = [...tools.entries()].filter(([name]) => name !== "get_accounts");
-  const requests = accountIds.length > 0
-    ? accountIds.flatMap((accountId) => positionTools.map(([toolName, tool]) => (
-      loadTool(toolName, positionArguments(tool.inputSchema, accountId))
-        .then((payload) => ({ toolName, payload }))
-    )))
-    : positionTools.map(([toolName]) => (
-      loadTool(toolName, {})
-        .then((payload) => ({ toolName, payload }))
+  const requests = positionTools.flatMap(([toolName, tool]) => {
+    const argumentsByAccount = accountIds.length > 0 && accountArgumentName(tool.inputSchema)
+      ? accountIds.map((accountId) => positionArguments(tool.inputSchema, accountId))
+      : [positionArguments(tool.inputSchema)];
+    return argumentsByAccount.map((arguments_) => (
+      loadTool(toolName, arguments_).then((payload) => ({ toolName, payload }))
     ));
+  });
   const settled = await Promise.allSettled(requests);
   const payloads = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   if (payloads.length === 0 && settled.length > 0) {
@@ -163,20 +147,15 @@ async function connectMcp(
   fetchImpl?: typeof fetch,
 ): Promise<{ client: Client; transport: StreamableHTTPClientTransport }> {
   const fetchFn = fetchImpl ?? createRobinhoodFetch();
-  const makeConnection = async () => {
+  const createConnection = () => {
     const transport = new StreamableHTTPClientTransport(new URL(ROBINHOOD_MCP_URL), {
       authProvider: provider,
       fetch: fetchFn,
     });
     const client = new Client({ name: "gloomberb-robinhood", version: "1.0.0" }, { capabilities: {} });
-    await client.connect(transport);
     return { client, transport };
   };
-  const transport = new StreamableHTTPClientTransport(new URL(ROBINHOOD_MCP_URL), {
-    authProvider: provider,
-    fetch: fetchFn,
-  });
-  const client = new Client({ name: "gloomberb-robinhood", version: "1.0.0" }, { capabilities: {} });
+  const { client, transport } = createConnection();
   try {
     await client.connect(transport);
     return { client, transport };
@@ -186,9 +165,21 @@ async function connectMcp(
       throw error;
     }
     const authorizationCode = await callback.code;
-    await awaitRobinhoodAuthStep("token exchange", transport.finishAuth(authorizationCode));
+    await withDeadline(
+      transport.finishAuth(authorizationCode),
+      ROBINHOOD_AUTH_STEP_TIMEOUT_MS,
+      "Robinhood token exchange timed out. Check your connection and try Sync again.",
+      () => void client.close().catch(() => {}),
+    );
     await client.close().catch(() => {});
-    return await awaitRobinhoodAuthStep("authenticated connection", makeConnection());
+    const authenticatedConnection = createConnection();
+    return await withDeadline(
+      authenticatedConnection.client.connect(authenticatedConnection.transport)
+        .then(() => authenticatedConnection),
+      ROBINHOOD_AUTH_STEP_TIMEOUT_MS,
+      "Robinhood authenticated connection timed out. Check your connection and try Sync again.",
+      () => void authenticatedConnection.client.close().catch(() => {}),
+    );
   }
 }
 

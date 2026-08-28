@@ -17,4 +17,17 @@ describe("Robinhood local OAuth callback", () => {
       await second.close();
     }
   });
+
+  test("ignores a callback from a stale sign-in", async () => {
+    const callback = await startLocalOAuthCallback("current");
+    try {
+      const stale = await fetch(`${callback.redirectUrl}?code=stale-code&state=old`);
+      expect(stale.status).toBe(400);
+      const valid = await fetch(`${callback.redirectUrl}?code=current-code&state=current`);
+      expect(valid.status).toBe(200);
+      await expect(callback.code).resolves.toBe("current-code");
+    } finally {
+      await callback.close();
+    }
+  });
 });

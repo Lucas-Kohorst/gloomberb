@@ -3,11 +3,7 @@ import {
   normalizeRobinhoodSnapshot,
   type RobinhoodPositionPayloadSource,
 } from "./normalize";
-import {
-  awaitRobinhoodAuthStep,
-  loadRobinhoodPositionPayloads,
-  mapRobinhoodOrderArguments,
-} from "./mcp-session";
+import { loadRobinhoodPositionPayloads, mapRobinhoodOrderArguments } from "./mcp-session";
 import {
   assertRobinhoodAgenticTrade,
   discoverRobinhoodPositionTools,
@@ -130,14 +126,6 @@ describe("Robinhood position normalization", () => {
 });
 
 describe("Robinhood tool boundary", () => {
-  test("turns a stalled post-authentication request into an actionable error", async () => {
-    await expect(awaitRobinhoodAuthStep(
-      "authenticated connection",
-      new Promise(() => {}),
-      1,
-    )).rejects.toThrow("Robinhood authenticated connection timed out");
-  });
-
   test("discovers the read-only equity and crypto position tools", () => {
     const selected = discoverRobinhoodPositionTools([
       { name: "get_accounts", annotations: { readOnlyHint: true } },
@@ -163,6 +151,7 @@ describe("Robinhood tool boundary", () => {
   });
 
   test("keeps successful holdings when another account request fails", async () => {
+    const calls: Array<{ name: string; arguments_: Record<string, string> }> = [];
     const payloads = await loadRobinhoodPositionPayloads(
       ["RH-1", "RH-2"],
       new Map([
@@ -172,17 +161,26 @@ describe("Robinhood tool boundary", () => {
           inputSchema: { properties: { account_id: {} } },
           annotations: { readOnlyHint: true },
         }],
+        ["get_crypto_positions", {
+          name: "get_crypto_positions",
+          inputSchema: { properties: {} },
+          annotations: { readOnlyHint: true },
+        }],
       ]),
-      async (_name, arguments_) => {
-        if (arguments_.account_id === "RH-2") throw new Error("account unavailable");
+      async (name, arguments_) => {
+        calls.push({ name, arguments_ });
+        if (name === "get_equity_positions" && arguments_.account_id === "RH-2") {
+          throw new Error("account unavailable");
+        }
         return { positions: [{ symbol: "HOOD", quantity: "1" }] };
       },
     );
 
-    expect(payloads).toEqual([{
-      toolName: "get_equity_positions",
-      payload: { positions: [{ symbol: "HOOD", quantity: "1" }] },
+    expect(calls.filter((call) => call.name === "get_crypto_positions")).toEqual([{
+      name: "get_crypto_positions",
+      arguments_: {},
     }]);
+    expect(payloads).toHaveLength(2);
   });
 
 });

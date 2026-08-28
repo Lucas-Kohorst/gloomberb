@@ -6,6 +6,11 @@ function bucketStartMs(timestampMs: number): number {
   return Math.floor(timestampMs / FOUR_HOURS_MS) * FOUR_HOURS_MS;
 }
 
+/**
+ * Buckets anchor to the UTC epoch (continuous-market convention) for every
+ * source. Equity bars are intentionally not re-anchored to the exchange
+ * session open; no session metadata exists at this seam.
+ */
 export function aggregateTo4h(points: readonly PricePoint[]): PricePoint[] {
   if (points.length === 0) return [];
   const buckets = new Map<number, PricePoint[]>();

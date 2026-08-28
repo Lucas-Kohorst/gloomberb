@@ -24,8 +24,14 @@ export async function startLocalOAuthCallback(expectedState: string): Promise<OA
       response.writeHead(404).end("Not found.");
       return;
     }
-    const error = url.searchParams.get("error");
     const state = url.searchParams.get("state");
+    if (state !== expectedState) {
+      // A leftover tab from an earlier attempt must not cancel the live one.
+      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end("This Robinhood sign-in is stale. Return to Gloomberb and start a new sync.");
+      return;
+    }
+    const error = url.searchParams.get("error");
     const authorizationCode = url.searchParams.get("code");
     if (error) {
       response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
@@ -33,7 +39,7 @@ export async function startLocalOAuthCallback(expectedState: string): Promise<OA
       finish(() => rejectCode(new Error(`Robinhood sign-in failed: ${error}.`)));
       return;
     }
-    if (!authorizationCode || state !== expectedState) {
+    if (!authorizationCode) {
       response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
       response.end("Gloomberb could not verify this Robinhood sign-in.");
       finish(() => rejectCode(new Error("Gloomberb could not verify the Robinhood sign-in response.")));
@@ -46,7 +52,7 @@ export async function startLocalOAuthCallback(expectedState: string): Promise<OA
   await new Promise<void>((resolve, reject) => {
     server.once("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "EADDRINUSE") {
-        reject(new Error("Another Gloomberb window is already waiting for Robinhood. Close it and try again."));
+        reject(new Error("A Robinhood sign-in is already in progress. Finish it in your browser or wait, then try again."));
         return;
       }
       reject(error);
