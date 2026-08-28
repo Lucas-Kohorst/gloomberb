@@ -137,23 +137,6 @@ export function createEmptyChannelState(): ChannelRuntimeState {
   };
 }
 
-export function inferChatChannelKind(channel: Pick<ChatChannel, "id" | "kind" | "dmUser" | "members">): NonNullable<ChatChannel["kind"]> {
-  if (channel.kind === "public" || channel.kind === "direct" || channel.kind === "group") {
-    return channel.kind;
-  }
-  const id = channel.id.trim().toLowerCase();
-  if (id.startsWith("dm:")) return "direct";
-  if (id.startsWith("grp:") || id.startsWith("group:")) return "group";
-  if (channel.dmUser) return "direct";
-  if ((channel.members?.length ?? 0) > 0) return "group";
-  return "public";
-}
-
-export function isConversationChannel(channel: Pick<ChatChannel, "id" | "kind" | "dmUser" | "members">): boolean {
-  const kind = inferChatChannelKind(channel);
-  return kind === "direct" || kind === "group";
-}
-
 export function normalizeChannels(channels: ChatChannel[]): ChatChannel[] {
   const byId = new Map<string, ChatChannel>();
   for (const channel of channels) {
@@ -163,7 +146,7 @@ export function normalizeChannels(channels: ChatChannel[]): ChatChannel[] {
       ...channel,
       id,
       name: channel.name.trim() || id,
-      kind: inferChatChannelKind(channel),
+      kind: channel.kind ?? "public",
     });
   }
   return [...byId.values()];
@@ -172,10 +155,12 @@ export function normalizeChannels(channels: ChatChannel[]): ChatChannel[] {
 export function mergePublicChannelCatalog(current: ChatChannel[], incoming: ChatChannel[]): ChatChannel[] {
   const next = normalizeChannels(incoming);
   const nextIds = new Set(next.map((channel) => channel.id));
-  const retainedConversations = normalizeChannels(current).filter((channel) => (
-    isConversationChannel(channel) && !nextIds.has(channel.id)
-  ));
-  return [...next, ...retainedConversations];
+  return normalizeChannels([
+    ...next,
+    ...current.filter((channel) => (
+      (channel.kind === "direct" || channel.kind === "group") && !nextIds.has(channel.id)
+    )),
+  ]);
 }
 
 export function hydrateChannelRuntimeState({
