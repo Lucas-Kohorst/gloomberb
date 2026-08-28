@@ -3,7 +3,11 @@ import {
   normalizeRobinhoodSnapshot,
   type RobinhoodPositionPayloadSource,
 } from "./normalize";
-import { loadRobinhoodPositionPayloads, mapRobinhoodOrderArguments } from "./mcp-session";
+import {
+  awaitRobinhoodAuthStep,
+  loadRobinhoodPositionPayloads,
+  mapRobinhoodOrderArguments,
+} from "./mcp-session";
 import {
   assertRobinhoodAgenticTrade,
   discoverRobinhoodPositionTools,
@@ -126,6 +130,14 @@ describe("Robinhood position normalization", () => {
 });
 
 describe("Robinhood tool boundary", () => {
+  test("turns a stalled post-authentication request into an actionable error", async () => {
+    await expect(awaitRobinhoodAuthStep(
+      "authenticated connection",
+      new Promise(() => {}),
+      1,
+    )).rejects.toThrow("Robinhood authenticated connection timed out");
+  });
+
   test("discovers the read-only equity and crypto position tools", () => {
     const selected = discoverRobinhoodPositionTools([
       { name: "get_accounts", annotations: { readOnlyHint: true } },

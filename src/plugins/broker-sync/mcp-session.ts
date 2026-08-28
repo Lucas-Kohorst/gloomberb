@@ -28,6 +28,27 @@ export interface RobinhoodAuthHost {
 }
 
 const pendingOAuth = new Map<string, RobinhoodOAuthData>();
+const ROBINHOOD_AUTH_STEP_TIMEOUT_MS = 30_000;
+
+export async function awaitRobinhoodAuthStep<T>(
+  step: string,
+  operation: Promise<T>,
+  timeoutMs = ROBINHOOD_AUTH_STEP_TIMEOUT_MS,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Robinhood ${step} timed out. Check your connection and try Sync again.`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 export function takePendingRobinhoodOAuth(instanceId: string): Record<string, unknown> | null {
   const oauth = pendingOAuth.get(instanceId);
@@ -165,9 +186,9 @@ async function connectMcp(
       throw error;
     }
     const authorizationCode = await callback.code;
-    await transport.finishAuth(authorizationCode);
+    await awaitRobinhoodAuthStep("token exchange", transport.finishAuth(authorizationCode));
     await client.close().catch(() => {});
-    return makeConnection();
+    return await awaitRobinhoodAuthStep("authenticated connection", makeConnection());
   }
 }
 
