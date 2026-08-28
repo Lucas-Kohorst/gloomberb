@@ -1,5 +1,7 @@
-import { Box, Input, Text } from "../../ui";
+import { Box, Input, Text, TextAttributes } from "../../ui";
 import { useCallback, useMemo, useRef } from "react";
+import { useAppSelector } from "../../state/app/context";
+import { useNumberFlashMap } from "../../components/quote-flash";
 import {
   DataTableStackView,
   Spinner,
@@ -50,12 +52,14 @@ function predictionCellVersion(
   column: PredictionColumnDef,
   watchlisted: boolean,
   relativeTimeBucket: number,
+  flash: string,
 ): string {
   return [
     predictionRowVersion(row),
     column.id,
     watchlisted ? 1 : 0,
     column.id === "ends" || column.id === "updated" ? relativeTimeBucket : 0,
+    column.id === "yes" ? flash : "",
   ].join("|");
 }
 
@@ -76,6 +80,15 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     }
     return keys;
   }, [controller.visibleRows, controller.watchlistSet]);
+  const valueFlashingEnabled = useAppSelector((state) => state.config.valueFlashingEnabled);
+  const oddsByRow = useMemo(() => {
+    const next = new Map<string, number | null>();
+    for (const row of controller.visibleRows) {
+      next.set(row.key, row.focusYesPrice);
+    }
+    return next;
+  }, [controller.visibleRows]);
+  const flashDirections = useNumberFlashMap(oddsByRow, valueFlashingEnabled);
   const catalogStatusColor =
     controller.catalogStatus?.tone === "danger"
       ? colors.negative
@@ -117,6 +130,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   const detailUpdatedAgo = useUpdatedAgo(controller.lastRefreshAt);
   const updatedAgo = controller.detailOpen ? detailUpdatedAgo : catalogUpdatedAgo;
   const liveBook = controller.detailOpen && controller.selectedSummary?.venue === "polymarket";
+  const catalogLive = !controller.detailOpen && controller.catalogLive;
   const includeKalshi =
     controller.effectiveVenueScope === "all" || controller.effectiveVenueScope === "kalshi";
   const kalshiDelayed = includeKalshi && controller.kalshiFeed === "delayed";
@@ -144,7 +158,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           id: "catalog",
           parts: [{ text: controller.catalogStatus.message, tone: controller.catalogStatus.tone === "danger" ? "warning" as const : "muted" as const, color: catalogStatusColor }],
         }] : []),
-        ...(liveBook || (!controller.detailOpen && kalshiLive) ? [paneLiveStatus()] : []),
+        ...(liveBook || catalogLive || (!controller.detailOpen && kalshiLive) ? [paneLiveStatus()] : []),
         ...(!liveBook && kalshiDelayed ? [paneDelayedStatus()] : []),
         ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ],
@@ -178,6 +192,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     graphSelected,
     kalshiDelayed,
     kalshiLive,
+    catalogLive,
     liveBook,
     marketUrl,
     newsTabOpen,
@@ -269,9 +284,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     column: PredictionColumnDef,
   ) => {
     const watchlisted = watchlistedRowKeys.has(row.key);
+    const flash = column.id === "yes" ? flashDirections.get(row.key) : undefined;
     const value = cellCacheRef.current.get(
       `${row.key}:${column.id}`,
-      predictionCellVersion(row, column, watchlisted, relativeTimeBucket),
+      predictionCellVersion(row, column, watchlisted, relativeTimeBucket, flash ?? ""),
       () => getPredictionColumnValue(column, row, watchlisted),
     );
     if (column.id === "watch") {
@@ -285,12 +301,19 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
         },
       };
     }
+    const flashColor = flash === "up"
+      ? colors.positive
+      : flash === "down"
+        ? colors.negative
+        : undefined;
     return {
       text: value.text,
-      color: value.color,
+      color: flashColor ?? value.color,
+      attributes: flash ? TextAttributes.DIM : undefined,
     };
   }, [
     controller.actions.toggleWatchlist,
+    flashDirections,
     relativeTimeBucket,
     watchlistedRowKeys,
   ]);
@@ -299,9 +322,9 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     return buildPredictionListRowRevision(
       row,
       watchlistedRowKeys.has(row.key),
-      relativeTimeBucket,
+      `${relativeTimeBucket}:${flashDirections.get(row.key) ?? ""}`,
     );
-  }, [relativeTimeBucket, watchlistedRowKeys]);
+  }, [flashDirections, relativeTimeBucket, watchlistedRowKeys]);
 
   const onCatalogScroll = useTableLoadMore(
     controller.scrollRef,

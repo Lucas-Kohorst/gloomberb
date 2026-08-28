@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { measurePerf } from "../../../utils/perf-marks";
 import { PREDICTION_CATALOG_PAINT_HEAD } from "../cache";
 import { usePredictionCatalogData } from "./catalog";
+import { usePredictionCatalogLiveQuotes } from "./catalog-live";
 import { usePredictionDetailData } from "./detail";
 import {
   buildPredictionVisibleRowLookup,
@@ -215,9 +216,15 @@ export function usePredictionMarketsDataState({
     selectedSummary,
     setCatalogCache,
   });
+  const catalogLive = usePredictionCatalogLiveQuotes({
+    enabled: focused && !detailOpen,
+    rows: visibleRows,
+    setCatalogCache,
+  });
 
   return {
     catalogHasMore,
+    catalogLive,
     catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore,

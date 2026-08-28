@@ -4,16 +4,70 @@ import { getActiveQuoteDisplay } from "../market-data/market/status";
 
 export type QuoteFlashDirection = "up" | "down" | "flat";
 
-const FLASH_DURATION_MS = 450;
+export const FLASH_DURATION_MS = 450;
+
+export function resolveFlashDirection(previousPrice: number, nextPrice: number): QuoteFlashDirection {
+  if (nextPrice > previousPrice) return "up";
+  if (nextPrice < previousPrice) return "down";
+  return "flat";
+}
+
+/** Diff two numeric maps and record the next prices. First sightings do not flash. */
+export function collectNumberFlashes(
+  previousPrices: Map<string, number>,
+  nextValues: Iterable<readonly [string, number | null | undefined]>,
+): { prices: Map<string, number>; flashes: Map<string, QuoteFlashDirection> } {
+  const prices = new Map(previousPrices);
+  const flashes = new Map<string, QuoteFlashDirection>();
+  for (const [key, value] of nextValues) {
+    if (value == null || !Number.isFinite(value)) continue;
+    const previous = prices.get(key);
+    if (previous != null && previous !== value) {
+      flashes.set(key, resolveFlashDirection(previous, value));
+    }
+    prices.set(key, value);
+  }
+  return { prices, flashes };
+}
 
 function resolveFlashPrice(financials: TickerFinancials | null | undefined): number | null {
   return getActiveQuoteDisplay(financials?.quote)?.price ?? financials?.quote?.price ?? null;
 }
 
-function resolveFlashDirection(previousPrice: number, nextPrice: number): QuoteFlashDirection {
-  if (nextPrice > previousPrice) return "up";
-  if (nextPrice < previousPrice) return "down";
-  return "flat";
+export function useNumberFlashMap(
+  values: Iterable<readonly [string, number | null | undefined]>,
+  enabled: boolean,
+): Map<string, QuoteFlashDirection> {
+  const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
+  const previousPricesRef = useRef<Map<string, number>>(new Map());
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const { prices, flashes } = collectNumberFlashes(previousPricesRef.current, values);
+    previousPricesRef.current = prices;
+
+    if (!enabled) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+      setFlashSymbols((current) => (current.size === 0 ? current : new Map()));
+      return;
+    }
+
+    if (flashes.size === 0) return;
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setFlashSymbols(flashes);
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      setFlashSymbols(new Map());
+    }, FLASH_DURATION_MS);
+  }, [enabled, values]);
+
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  return flashSymbols;
 }
 
 export function useQuoteFlashMap(
@@ -25,18 +79,12 @@ export function useQuoteFlashMap(
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const changed = new Map<string, QuoteFlashDirection>();
-
+    const nextValues: Array<readonly [string, number | null]> = [];
     for (const [symbol, financials] of financialsMap) {
-      const price = resolveFlashPrice(financials);
-      if (price == null) continue;
-
-      const previousPrice = previousPricesRef.current.get(symbol);
-      if (previousPrice != null && previousPrice !== price) {
-        changed.set(symbol, resolveFlashDirection(previousPrice, price));
-      }
-      previousPricesRef.current.set(symbol, price);
+      nextValues.push([symbol, resolveFlashPrice(financials)]);
     }
+    const { prices, flashes } = collectNumberFlashes(previousPricesRef.current, nextValues);
+    previousPricesRef.current = prices;
 
     if (!enabled) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -45,10 +93,10 @@ export function useQuoteFlashMap(
       return;
     }
 
-    if (changed.size === 0) return;
+    if (flashes.size === 0) return;
 
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setFlashSymbols(changed);
+    setFlashSymbols(flashes);
     timeoutRef.current = setTimeout(() => {
       timeoutRef.current = null;
       setFlashSymbols(new Map());

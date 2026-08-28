@@ -52,8 +52,9 @@ export function updatePredictionCatalogCacheEntries(
     let cacheChanged = false;
     next[cacheKey] = markets.map((market) => {
       if (market.key !== marketKey) return market;
-      cacheChanged = true;
-      return updater(market);
+      const nextMarket = updater(market);
+      if (nextMarket !== market) cacheChanged = true;
+      return nextMarket;
     });
     changed = changed || cacheChanged;
   }

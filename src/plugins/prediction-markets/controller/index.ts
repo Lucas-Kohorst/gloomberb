@@ -414,6 +414,7 @@ export function usePredictionMarketsController({
     browseTab,
     categoryId,
     catalogHasMore: data.catalogHasMore,
+    catalogLive: data.catalogLive,
     catalogLastRefreshAt: data.catalogLastRefreshAt,
     catalogLoadCount: data.catalogLoadCount,
     catalogLoadingMore: data.catalogLoadingMore,

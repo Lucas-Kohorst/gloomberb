@@ -1,8 +1,49 @@
 import type {
   PredictionBookLevel,
   PredictionMarketDetail,
+  PredictionMarketSummary,
   PredictionTrade,
 } from "../types";
+
+export interface PredictionCatalogQuote {
+  yesPrice?: number | null;
+  yesBid?: number | null;
+  yesAsk?: number | null;
+  spread?: number | null;
+  lastTradePrice?: number | null;
+}
+
+export function applyPredictionSummaryQuote(
+  summary: PredictionMarketSummary,
+  quote: PredictionCatalogQuote,
+): PredictionMarketSummary {
+  const yesPrice = quote.yesPrice ?? summary.yesPrice;
+  const lastTradePrice = quote.lastTradePrice ?? summary.lastTradePrice;
+  const yesBid = quote.yesBid ?? summary.yesBid;
+  const yesAsk = quote.yesAsk ?? summary.yesAsk;
+  const spread = quote.spread ?? (
+    yesBid != null && yesAsk != null ? yesAsk - yesBid : summary.spread
+  );
+  if (
+    yesPrice === summary.yesPrice
+    && lastTradePrice === summary.lastTradePrice
+    && yesBid === summary.yesBid
+    && yesAsk === summary.yesAsk
+    && spread === summary.spread
+  ) {
+    return summary;
+  }
+  return {
+    ...summary,
+    yesPrice,
+    noPrice: yesPrice != null ? Math.max(0, 1 - yesPrice) : summary.noPrice,
+    lastTradePrice,
+    yesBid,
+    yesAsk,
+    spread,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 export const POLYMARKET_LIVE_FLUSH_MS = 500;
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PredictionMarketDetail, PredictionTrade } from "../types";
 import {
   applyPendingPredictionLiveUpdates,
+  applyPredictionSummaryQuote,
   createPendingPredictionLiveUpdates,
 } from "./live-updates";
 
@@ -63,6 +64,19 @@ function trade(index: number): PredictionTrade {
     size: 1,
   };
 }
+
+describe("prediction catalog quote apply", () => {
+  test("patches yes odds and keeps the same object when nothing changed", () => {
+    const current = detail().summary;
+    const unchanged = applyPredictionSummaryQuote(current, {});
+    expect(unchanged).toBe(current);
+    const next = applyPredictionSummaryQuote(current, { yesPrice: 0.61, lastTradePrice: 0.61 });
+    expect(next).not.toBe(current);
+    expect(next.yesPrice).toBe(0.61);
+    expect(next.noPrice).toBeCloseTo(0.39);
+    expect(next.lastTradePrice).toBe(0.61);
+  });
+});
 
 describe("prediction live updates", () => {
   test("batched trades prepend in order and keep 40", () => {
