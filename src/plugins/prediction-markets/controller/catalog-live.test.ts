@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { PredictionListRow, PredictionMarketSummary } from "../types";
 import {
   collectPredictionCatalogLiveTargets,
+  liveTargetSignature,
   MAX_PREDICTION_CATALOG_LIVE_MARKETS,
+  quoteFromBbo,
 } from "./catalog-live";
 
 function summary(
@@ -105,5 +107,34 @@ describe("collectPredictionCatalogLiveTargets", () => {
       }))
     ));
     expect(collectPredictionCatalogLiveTargets(rows)).toHaveLength(MAX_PREDICTION_CATALOG_LIVE_MARKETS);
+  });
+
+  test("live target signature ignores visual order of the same markets", () => {
+    const first = summary({
+      key: "polymarket:a",
+      venue: "polymarket",
+      marketId: "a",
+      yesTokenId: "yes-a",
+    });
+    const second = summary({
+      key: "polymarket:b",
+      venue: "polymarket",
+      marketId: "b",
+      yesTokenId: "yes-b",
+    });
+    expect(liveTargetSignature(collectPredictionCatalogLiveTargets([row(first), row(second)]))).toBe(
+      liveTargetSignature(collectPredictionCatalogLiveTargets([row(second), row(first)])),
+    );
+  });
+});
+
+describe("quoteFromBbo", () => {
+  test("updates the book without rewriting last-trade yes odds", () => {
+    const quote = quoteFromBbo(true, 0.54, 0.56, 0.02);
+    expect(quote.yesBid).toBe(0.54);
+    expect(quote.yesAsk).toBe(0.56);
+    expect(quote.spread).toBe(0.02);
+    expect(quote.yesPrice).toBeUndefined();
+    expect(quote.lastTradePrice).toBeUndefined();
   });
 });

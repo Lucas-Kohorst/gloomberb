@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { collectNumberFlashes } from "./quote-flash";
+import { collectNumberFlashes, numberFlashSignature } from "./quote-flash";
 
 describe("collectNumberFlashes", () => {
   test("does not flash the first observed price", () => {
@@ -28,5 +28,14 @@ describe("collectNumberFlashes", () => {
     ]);
     expect(flashes.size).toBe(0);
     expect(prices.get("aapl")).toBe(100);
+  });
+});
+
+describe("numberFlashSignature", () => {
+  test("is stable across map identity and insertion order", () => {
+    const left = numberFlashSignature(new Map([["b", 0.4], ["a", 0.55]]));
+    const right = numberFlashSignature([["a", 0.55], ["b", 0.4]]);
+    expect(left).toBe(right);
+    expect(numberFlashSignature(new Map([["a", 0.56], ["b", 0.4]]))).not.toBe(left);
   });
 });

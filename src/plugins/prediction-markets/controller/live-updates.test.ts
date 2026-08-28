@@ -76,6 +76,19 @@ describe("prediction catalog quote apply", () => {
     expect(next.noPrice).toBeCloseTo(0.39);
     expect(next.lastTradePrice).toBe(0.61);
   });
+
+  test("book quotes do not move last-trade yes odds", () => {
+    const current = detail().summary;
+    const next = applyPredictionSummaryQuote(current, {
+      yesBid: 0.54,
+      yesAsk: 0.56,
+      spread: 0.02,
+    });
+    expect(next.yesPrice).toBe(current.yesPrice);
+    expect(next.lastTradePrice).toBe(current.lastTradePrice);
+    expect(next.yesBid).toBe(0.54);
+    expect(next.yesAsk).toBe(0.56);
+  });
 });
 
 describe("prediction live updates", () => {

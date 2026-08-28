@@ -38,8 +38,11 @@ export function collectPredictionCatalogLiveTargets(
   return targets;
 }
 
-function liveTargetSignature(targets: readonly PredictionCatalogLiveTarget[]): string {
-  return targets.map((target) => `${target.key}:${target.yesTokenId}`).join("|");
+export function liveTargetSignature(targets: readonly PredictionCatalogLiveTarget[]): string {
+  return targets
+    .map((target) => `${target.key}:${target.yesTokenId}`)
+    .sort()
+    .join("|");
 }
 
 function quoteFromLastTrade(isYes: boolean, price: number): PredictionCatalogQuote {
@@ -47,7 +50,7 @@ function quoteFromLastTrade(isYes: boolean, price: number): PredictionCatalogQuo
   return { yesPrice, lastTradePrice: yesPrice };
 }
 
-function quoteFromBbo(
+export function quoteFromBbo(
   isYes: boolean,
   bestBid: number | null,
   bestAsk: number | null,
@@ -55,12 +58,10 @@ function quoteFromBbo(
 ): PredictionCatalogQuote {
   const yesBid = isYes ? bestBid : (bestAsk == null ? null : Math.max(0, 1 - bestAsk));
   const yesAsk = isYes ? bestAsk : (bestBid == null ? null : Math.max(0, 1 - bestBid));
-  const mid = yesBid != null && yesAsk != null ? (yesBid + yesAsk) / 2 : (yesAsk ?? yesBid ?? null);
   return {
     yesBid,
     yesAsk,
     spread: spread ?? (yesBid != null && yesAsk != null ? yesAsk - yesBid : null),
-    yesPrice: mid,
   };
 }
 
@@ -80,14 +81,17 @@ export function usePredictionCatalogLiveQuotes({
   const pendingRef = useRef(new Map<string, PredictionCatalogQuote>());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFlushAtRef = useRef(0);
+  const targetsRef = useRef(targets);
+  targetsRef.current = targets;
   const signature = liveTargetSignature(targets);
 
   useEffect(() => {
-    if (targets.length === 0) return;
+    const liveTargets = targetsRef.current;
+    if (liveTargets.length === 0) return;
 
     const byToken = new Map<string, { key: string; isYes: boolean }>();
     const assetIds: string[] = [];
-    for (const target of targets) {
+    for (const target of liveTargets) {
       byToken.set(target.yesTokenId, { key: target.key, isYes: true });
       assetIds.push(target.yesTokenId);
       if (target.noTokenId) {

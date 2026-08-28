@@ -27,6 +27,7 @@ import type {
 
 type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
+const EMPTY_CATALOG_SLICE: PredictionMarketSummary[] = [];
 
 interface UsePredictionCatalogDataOptions {
   browseTab: PredictionBrowseTab;
@@ -48,7 +49,7 @@ function readCatalogSlice(
     "catalog",
     resourceKey,
   );
-  if (!persisted || persisted.length === 0) return [];
+  if (!persisted || persisted.length === 0) return EMPTY_CATALOG_SLICE;
   return capPredictionCatalogByEvent(persisted);
 }
 
@@ -144,28 +145,44 @@ export function usePredictionCatalogData({
     [browseTab, categoryId, normalizedSearchQuery],
   );
 
-  const polymarketBrowse = readCatalogSlice(
-    catalogCache,
-    polymarketBrowseKey,
-    polymarketBrowseResourceKey,
+  const polymarketBrowse = useMemo(
+    () => readCatalogSlice(
+      catalogCache,
+      polymarketBrowseKey,
+      polymarketBrowseResourceKey,
+    ),
+    [catalogCache, polymarketBrowseKey, polymarketBrowseResourceKey],
   );
-  const kalshiBrowse = readCatalogSlice(
-    catalogCache,
-    kalshiBrowseKey,
-    kalshiBrowseResourceKey,
+  const kalshiBrowse = useMemo(
+    () => readCatalogSlice(
+      catalogCache,
+      kalshiBrowseKey,
+      kalshiBrowseResourceKey,
+    ),
+    [catalogCache, kalshiBrowseKey, kalshiBrowseResourceKey],
   );
-  const polymarketSearch =
-    polymarketSearchKey && polymarketSearchResourceKey
-      ? readCatalogSlice(
-          catalogCache,
-          polymarketSearchKey,
-          polymarketSearchResourceKey,
-        )
-      : [];
-  const kalshiSearch =
-    kalshiSearchKey && kalshiSearchResourceKey
-      ? readCatalogSlice(catalogCache, kalshiSearchKey, kalshiSearchResourceKey)
-      : [];
+  const polymarketSearch = useMemo(
+    () =>
+      polymarketSearchKey && polymarketSearchResourceKey
+        ? readCatalogSlice(
+            catalogCache,
+            polymarketSearchKey,
+            polymarketSearchResourceKey,
+          )
+        : EMPTY_CATALOG_SLICE,
+    [
+      catalogCache,
+      polymarketSearchKey,
+      polymarketSearchResourceKey,
+    ],
+  );
+  const kalshiSearch = useMemo(
+    () =>
+      kalshiSearchKey && kalshiSearchResourceKey
+        ? readCatalogSlice(catalogCache, kalshiSearchKey, kalshiSearchResourceKey)
+        : EMPTY_CATALOG_SLICE,
+    [catalogCache, kalshiSearchKey, kalshiSearchResourceKey],
+  );
 
   activeCatalogRef.current = {
     [polymarketBrowseKey]: polymarketBrowse,

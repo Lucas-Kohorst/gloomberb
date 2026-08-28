@@ -185,7 +185,7 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     controller.poll.segment,
     controller.searchLoading,
     controller.searchQuery,
-    controller.selectedRow,
+    controller.selectedRow?.key,
     controller.selectedSummary?.venue,
     controller.kalshiFeed,
     graphExpression,

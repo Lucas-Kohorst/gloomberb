@@ -30,6 +30,18 @@ export function collectNumberFlashes(
   return { prices, flashes };
 }
 
+export function numberFlashSignature(
+  values: Iterable<readonly [string, number | null | undefined]>,
+): string {
+  const parts: string[] = [];
+  for (const [key, value] of values) {
+    if (value == null || !Number.isFinite(value)) continue;
+    parts.push(`${key}:${value}`);
+  }
+  parts.sort();
+  return parts.join("|");
+}
+
 function resolveFlashPrice(financials: TickerFinancials | null | undefined): number | null {
   return getActiveQuoteDisplay(financials?.quote)?.price ?? financials?.quote?.price ?? null;
 }
@@ -41,9 +53,15 @@ export function useNumberFlashMap(
   const [flashSymbols, setFlashSymbols] = useState<Map<string, QuoteFlashDirection>>(new Map());
   const previousPricesRef = useRef<Map<string, number>>(new Map());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const signature = numberFlashSignature(values);
 
   useEffect(() => {
-    const { prices, flashes } = collectNumberFlashes(previousPricesRef.current, values);
+    const { prices, flashes } = collectNumberFlashes(
+      previousPricesRef.current,
+      valuesRef.current,
+    );
     previousPricesRef.current = prices;
 
     if (!enabled) {
@@ -61,7 +79,7 @@ export function useNumberFlashMap(
       timeoutRef.current = null;
       setFlashSymbols(new Map());
     }, FLASH_DURATION_MS);
-  }, [enabled, values]);
+  }, [enabled, signature]);
 
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
