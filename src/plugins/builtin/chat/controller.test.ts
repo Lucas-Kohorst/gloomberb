@@ -398,9 +398,30 @@ describe("ChatController", () => {
 
     controller.attachPersistence(persistence);
     apiClient.getSession = async () => null;
+    let chatStateLoads = 0;
+    apiClient.getChatState = async () => {
+      chatStateLoads += 1;
+      return {
+        channels: [
+          ...SERVER_CHAT_CHANNELS,
+          {
+            id: "dm:bob",
+            name: "@bob",
+            kind: "direct",
+            created_at: "2026-07-03T09:30:00.000Z",
+            dmUser: { id: "u2", username: "bob", displayName: "Bob" },
+          },
+        ],
+        onlineCount: 0,
+        channelStates: [],
+        notifications: [],
+      };
+    };
 
     await controller.refreshSession();
 
+    expect(chatStateLoads).toBe(1);
+    expect(controller.getChannels().some((channel) => channel.id === "dm:bob")).toBe(true);
     expect(apiClient.getSessionToken()).toBe("token-123");
     expect(persistence.getState<{
       sessionToken: string;
