@@ -5,6 +5,7 @@ import type { NewsArticle, NewsFeed, NewsQuery, NewsQueryState } from "./types";
 export const MAX_ARTICLES = 10_000;
 export const DEFAULT_GLOBAL_QUERY: NewsQuery = { feed: "latest", limit: MAX_ARTICLES };
 export const TOP_NEWS_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const TOP_NEWS_FETCH_LIMIT = 50;
 const TOP_NEWS_EXCLUDED_ORIGINS = new Set(["rss", "x-feed", "substack-news", "substack"]);
 
 const FEEDS = new Set<NewsFeed>(["latest", "top", "breaking", "ticker", "sector", "topic"]);
@@ -90,6 +91,13 @@ export function normalizeNewsQuery(query: NewsQuery): NewsQuery {
     tickerRelations: normalizeStringList(query.tickerRelations),
     limit: Math.max(1, Math.min(MAX_ARTICLES, query.limit ?? MAX_ARTICLES)),
   };
+}
+
+/** Sources see a larger page so 24h ranking can still fill `query.limit`. */
+export function expandNewsQueryForFetch(query: NewsQuery): NewsQuery {
+  if (normalizeNewsFeed(query) !== "top") return query;
+  const fetchLimit = Math.max(query.limit ?? 1, TOP_NEWS_FETCH_LIMIT);
+  return query.limit === fetchLimit ? query : { ...query, limit: fetchLimit };
 }
 
 export function createIdleNewsQueryState(): NewsQueryState {
@@ -198,6 +206,17 @@ function sortTopNewsArticles(items: NewsArticle[]): NewsArticle[] {
     if (scoreDelta !== 0) return scoreDelta;
     return b.publishedAt.getTime() - a.publishedAt.getTime();
   });
+}
+
+function rankTopNewsArticles(items: NewsArticle[], nowMs = Date.now()): NewsArticle[] {
+  const windowStart = nowMs - TOP_NEWS_WINDOW_MS;
+  const recent: NewsArticle[] = [];
+  const older: NewsArticle[] = [];
+  for (const item of items) {
+    if (item.publishedAt.getTime() > windowStart) recent.push(item);
+    else older.push(item);
+  }
+  return [...sortTopNewsArticles(recent), ...sortTopNewsArticles(older)];
 }
 
 function hasStoryItems(item: NewsArticle | null | undefined): boolean {
@@ -329,14 +348,12 @@ export function mergeNewsArticle(base: NewsArticle, detail: NewsArticle): NewsAr
 export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuery): NewsArticle[] {
   const feed = normalizeNewsFeed(query);
   let filtered = items;
-  const sinceMs = feed === "top"
-    ? Math.max(query.since?.getTime() ?? 0, Date.now() - TOP_NEWS_WINDOW_MS)
-    : query.since?.getTime();
-  if (sinceMs != null && sinceMs > 0) {
-    filtered = filtered.filter((item) => item.publishedAt.getTime() > sinceMs);
-  }
   if (feed === "top") {
     filtered = filtered.filter((item) => !item.origin || !TOP_NEWS_EXCLUDED_ORIGINS.has(item.origin));
+  }
+  const sinceMs = query.since?.getTime();
+  if (sinceMs != null && sinceMs > 0) {
+    filtered = filtered.filter((item) => item.publishedAt.getTime() > sinceMs);
   }
   const topics = query.topics ?? query.categories;
   if (topics && topics.length > 0) {
@@ -364,7 +381,8 @@ export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuer
     filtered = filtered.filter((item) => item.isBreaking === query.breaking);
   }
   if (feed === "top") {
-    return sortTopNewsArticles(filtered).slice(0, MAX_ARTICLES);
+    const limit = Math.min(MAX_ARTICLES, query.limit ?? MAX_ARTICLES);
+    return rankTopNewsArticles(filtered).slice(0, limit);
   }
   return filtered.slice(0, MAX_ARTICLES);
 }
