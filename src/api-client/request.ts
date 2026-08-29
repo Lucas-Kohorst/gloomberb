@@ -128,12 +128,7 @@ export class CloudApiRequestTransport {
 
   private async performRequest<T>(path: string, options?: RequestInit): Promise<T> {
     throwIfRequestAborted(options?.signal);
-    const headers = new Headers(options?.headers);
-    if (!headers.has("Content-Type") && options?.method && options.method !== "GET") {
-      headers.set("Content-Type", "application/json");
-    }
-    this.setSessionCookieHeader(headers);
-    headers.set("Origin", this.baseUrl);
+    const headers = this.buildRequestHeaders(options);
 
     const res = await (this.fetchTransport ?? cloudApiFetchTransport)(`${this.baseUrl}${path}`, {
       ...options,
@@ -191,10 +186,41 @@ export class CloudApiRequestTransport {
     return cookieNames.map((cookieName) => `${cookieName}=${this.sessionToken}`).join("; ");
   }
 
-  private setSessionCookieHeader(headers: Headers): void {
+  // Webview `Headers` drops Cookie/Origin as forbidden request headers. A
+  // plain map is what Electrobun can RPC to bun without losing the session.
+  private buildRequestHeaders(options?: RequestInit): Record<string, string> {
+    const headers = copyRequestHeaders(options?.headers);
+    if (!hasHeader(headers, "Content-Type") && options?.method && options.method !== "GET") {
+      headers["Content-Type"] = "application/json";
+    }
     const cookieHeader = this.buildSessionCookieHeader();
     if (cookieHeader) {
-      headers.set("Cookie", cookieHeader);
+      headers.Cookie = cookieHeader;
     }
+    headers.Origin = this.baseUrl;
+    return headers;
   }
+}
+
+function copyRequestHeaders(source: HeadersInit | undefined): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (!source) return headers;
+  if (source instanceof Headers) {
+    source.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return headers;
+  }
+  if (Array.isArray(source)) {
+    for (const [key, value] of source) {
+      headers[key] = value;
+    }
+    return headers;
+  }
+  return { ...source };
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  const lower = name.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
 }

@@ -61,3 +61,29 @@ describe("CloudApiRequestTransport market deadlines", () => {
     expect(fetchCalls).toBe(0);
   });
 });
+
+describe("CloudApiRequestTransport session cookies", () => {
+  test("sends the captured session cookie on a plain header map", async () => {
+    let seenHeaders: HeadersInit | undefined;
+    const transport = new CloudApiRequestTransport({
+      fetchTransport: async (_url, init) => {
+        seenHeaders = init?.headers;
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => JSON.stringify({ user: null }),
+        } as Response;
+      },
+    });
+
+    transport.setSessionToken("signed-token.value");
+    await transport.request("/auth/get-session");
+
+    expect(seenHeaders).toMatchObject({
+      Cookie: expect.stringContaining("gloomberb.session_token=signed-token.value"),
+      Origin: "https://api.gloom.sh",
+    });
+    expect(seenHeaders instanceof Headers).toBe(false);
+  });
+});

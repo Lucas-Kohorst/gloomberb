@@ -141,6 +141,11 @@ export async function refreshChatControllerSession({
       session.sessionChecked = true;
       persistSession(session.sessionToken, session.user);
       emit();
+      if (session.user?.emailVerified) {
+        ensureRealtimeSubscriptions();
+        await refreshChatState().catch(() => {});
+        ensureOpenChannelConnections();
+      }
       return;
     }
     applySignedOut();
