@@ -210,15 +210,14 @@ export function usePluginState<T>(key: string, fallback: T, options?: { schemaVe
   const { pluginId, runtime } = usePluginRenderContext();
   const schemaVersion = options?.schemaVersion;
   const fallbackRef = useRef(fallback);
-  fallbackRef.current = fallback;
 
   const subscribe = useCallback((listener: () => void) => (
     runtime.subscribeResumeState(pluginId, key, listener)
   ), [key, pluginId, runtime]);
 
   const getSnapshot = useCallback(() => (
-    runtime.getResumeState<T>(pluginId, key, schemaVersion) ?? fallback
-  ), [fallback, key, pluginId, runtime, schemaVersion]);
+    runtime.getResumeState<T>(pluginId, key, schemaVersion) ?? fallbackRef.current
+  ), [key, pluginId, runtime, schemaVersion]);
 
   const value = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
