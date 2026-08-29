@@ -4,6 +4,7 @@ import type { EarningsEvent } from "../../../types/data-provider";
 import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
 import { formatQuoteAgeWithSource, resolveQuoteAgeTimestamp } from "../../../market-data/quotes/time";
+import { computeHistoryReturn } from "../../../utils/price-history";
 import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
 import {
   formatMarketCost,
@@ -53,6 +54,11 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function resolveOneYearReturn(financials: TickerFinancials | undefined): number | undefined {
+  if (finiteNumber(financials?.fundamentals?.return1Y)) return financials.fundamentals.return1Y;
+  return computeHistoryReturn(financials?.priceHistory ?? [], 365);
 }
 
 function parseDateValue(value: Date | string | number | null | undefined): Date | null {
@@ -283,7 +289,7 @@ export function getColumnValue(
       return { text: formatCompact(toBaseQuote(activeQuote.price * quote.volume)) };
     }
     case "range_52w": {
-      const return1Y = fundamentals?.return1Y;
+      const return1Y = resolveOneYearReturn(financials);
       return finiteNumber(return1Y)
         ? { text: formatPercentRaw(return1Y * 100), color: priceColor(return1Y * 100) }
         : { text: "—" };
@@ -493,8 +499,10 @@ export function getSortValue(
       return activeQuote && finiteNumber(quote?.volume)
         ? toBaseQuote(activeQuote.price * quote.volume)
         : null;
-    case "range_52w":
-      return finiteNumber(fundamentals?.return1Y) ? fundamentals.return1Y * 100 : null;
+    case "range_52w": {
+      const return1Y = resolveOneYearReturn(financials);
+      return finiteNumber(return1Y) ? return1Y * 100 : null;
+    }
     case "market_cap":
       return quote?.marketCap ? toBaseQuote(quote.marketCap) : null;
     case "pe":

@@ -1,4 +1,5 @@
 import type { FinancialStatement, PricePoint } from "../../types/financials";
+import { computeHistoryReturn } from "../../utils/price-history";
 
 export const YAHOO_TIMESERIES_TYPES = {
   annual: [
@@ -173,16 +174,7 @@ export function latestYahooMetric(metrics: YahooTimeseriesMetrics, type: string)
 }
 
 export function computeYahooReturn(history: PricePoint[], days: number): number | undefined {
-  if (history.length < 2) return undefined;
-  const latest = history[history.length - 1]!;
-  const cutoff = new Date(latest.date.getTime() - days * 86400_000);
-  let baseline = history[0]!;
-  for (const point of history) {
-    if (point.date <= cutoff) baseline = point;
-    else break;
-  }
-  if (!baseline.close) return undefined;
-  return (latest.close - baseline.close) / baseline.close;
+  return computeHistoryReturn(history, days);
 }
 
 export function buildYahooStatements(

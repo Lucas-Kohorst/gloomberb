@@ -346,6 +346,21 @@ describe("portfolio-metrics", () => {
     expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(8);
   });
 
+  test("falls back to one-year price history for 52W% when return1Y is missing", () => {
+    const ticker = createTicker({ ticker: "ETH-USD", exchange: "CCC", name: "Ethereum USD", assetCategory: "CRYPTO" });
+    const financials = createFinancials({
+      quote: { symbol: "ETH-USD", price: 4_400, high52w: 4_800, low52w: 2_100 },
+      priceHistory: [
+        { date: new Date("2025-01-01T00:00:00Z"), close: 2_200 },
+        { date: new Date("2026-01-01T00:00:00Z"), close: 4_400 },
+      ],
+    });
+    const column: ColumnConfig = { id: "range_52w", label: "52W%", width: 7, align: "right" };
+
+    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+100.00%");
+    expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(100);
+  });
+
   test("formats supplemental analyst and corporate action columns", () => {
     const ticker = createTicker();
     const financials = createFinancials();

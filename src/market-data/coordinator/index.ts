@@ -379,18 +379,23 @@ export class MarketDataCoordinator {
 
   private resolveIncomingQuote(instrument: InstrumentRef, quote: Quote): Quote {
     const snapshot = resolveEntryData(this.snapshotStore.get(buildSnapshotKey(instrument)));
-    if (snapshot?.quote) {
-      if (hasLikelyQuoteUnitMismatch(snapshot.quote, quote)) return quote;
+    const currentQuote = resolveEntryData(this.quoteStore.get(buildQuoteKey(instrument)));
+    const existing = currentQuote ?? snapshot?.quote;
+    if (existing) {
+      if (hasLikelyQuoteUnitMismatch(existing, quote)) return quote;
       if (
-        typeof snapshot.quote.lastUpdated === "number"
+        typeof existing.lastUpdated === "number"
         && typeof quote.lastUpdated === "number"
-        && quote.lastUpdated < snapshot.quote.lastUpdated
+        && quote.lastUpdated < existing.lastUpdated
       ) {
-        return snapshot.quote;
+        return existing;
       }
     }
     const cachedFinancials = snapshot ?? this.readCachedFinancialsForInstrument(instrument);
-    return resolveTickerFinancialsQuoteState(cachedFinancials, quote)?.quote ?? quote;
+    const base = currentQuote
+      ? resolveTickerFinancialsQuoteState(cachedFinancials, currentQuote)
+      : cachedFinancials;
+    return resolveTickerFinancialsQuoteState(base, quote)?.quote ?? quote;
   }
 
   private readCachedFinancialsForInstrument(instrument: InstrumentRef): TickerFinancials | null {

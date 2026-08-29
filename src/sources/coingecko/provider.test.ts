@@ -189,4 +189,37 @@ describe("CoinGeckoProvider", () => {
     const quote = await provider.getQuote("FOO", "CCC");
     expect(quote.price).toBe(1.25);
   });
+
+  test("fills ETH snapshot 52W% from max market chart history", async () => {
+    const http: CoinGeckoHttp = {
+      async fetchJson(path) {
+        if (path === "/coins/ethereum") {
+          return {
+            name: "Ethereum",
+            market_data: {
+              current_price: { usd: 4_400 },
+              price_change_percentage_24h: 1.2,
+              market_cap: { usd: 510_000_000_000 },
+              total_volume: { usd: 20_000_000_000 },
+            },
+          };
+        }
+        if (path === "/coins/ethereum/market_chart") {
+          return {
+            prices: [
+              [Date.parse("2025-01-01T00:00:00Z"), 2_200],
+              [Date.parse("2026-01-01T00:00:00Z"), 4_400],
+            ],
+            total_volumes: [],
+          };
+        }
+        throw new Error(`unexpected ${path}`);
+      },
+    };
+    const provider = new CoinGeckoProvider(http);
+    const financials = await provider.getTickerFinancials("ETH-USD", "CCC");
+    expect(financials.fundamentals?.return1Y).toBe(1);
+    expect(financials.priceHistory).toHaveLength(2);
+    expect(financials.quote?.marketCap).toBe(510_000_000_000);
+  });
 });

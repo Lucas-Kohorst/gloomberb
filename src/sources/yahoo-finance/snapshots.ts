@@ -298,6 +298,8 @@ async function assembleYahooQuote(
     changePercent,
     high52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekHigh), divisor),
     low52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekLow), divisor),
+    volume: financeRawNumber(raw.regularMarketVolume),
+    marketCap: normalizePositiveMarketValue(financeRawNumber(raw.marketCap), 1),
     name: raw.shortName || raw.longName,
     lastUpdated: yahooMarketTimestamp({ regularMarketTime: financeRawNumber(raw.regularMarketTime) }),
     exchangeName,

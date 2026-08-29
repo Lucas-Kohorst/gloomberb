@@ -100,3 +100,20 @@ export function normalizeTickerFinancialsPriceHistory(financials: TickerFinancia
     ? financials
     : { ...financials, priceHistory };
 }
+
+export function computeHistoryReturn(history: PricePoint[], days: number): number | undefined {
+  if (history.length < 2) return undefined;
+  const latest = history[history.length - 1]!;
+  const latestTime = getPricePointTimestamp(latest);
+  if (!Number.isFinite(latestTime) || !latest.close) return undefined;
+  const cutoff = latestTime - days * 86_400_000;
+  let baseline = history[0]!;
+  for (const point of history) {
+    const time = getPricePointTimestamp(point);
+    if (!Number.isFinite(time)) continue;
+    if (time <= cutoff) baseline = point;
+    else break;
+  }
+  if (!baseline.close) return undefined;
+  return (latest.close - baseline.close) / baseline.close;
+}

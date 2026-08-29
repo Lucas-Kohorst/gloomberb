@@ -72,6 +72,11 @@ const STREAM_QUOTE_FIELDS: Array<keyof Quote> = [
   "stale",
 ];
 
+function stampQuoteReceivedAt(quote: Quote, receivedAt: number): Quote {
+  if (quote.stale === true || quote.receivedAt != null) return quote;
+  return { ...quote, receivedAt };
+}
+
 function quoteTargetFromInstrument(
   instrument: InstrumentRef,
   priority: QuoteSubscriptionPriority = {},
@@ -122,7 +127,7 @@ export async function loadQuoteEntry({
           cacheMode: options.forceRefresh ? "refresh" : "default",
         },
       );
-      const resolvedQuote = resolveQuote?.(instrument, quote) ?? quote;
+      const resolvedQuote = stampQuoteReceivedAt(resolveQuote?.(instrument, quote) ?? quote, Date.now());
       const source = resolvedQuote.providerId ?? dataProvider.id;
       const attempts = [createAttempt(source, startedAt, "success")];
       return quoteStore.update(key, (current) => readyQuoteEntry(current, resolvedQuote, source, attempts));
@@ -174,9 +179,10 @@ export async function loadQuoteBatchEntries({
       const instrument = misses[index];
       if (!instrument || !item.quote) return;
       const key = buildQuoteKey(instrument);
-      const quote = resolveQuote?.(instrument, item.quote) ?? item.quote;
+      const receivedAt = Date.now();
+      const quote = stampQuoteReceivedAt(resolveQuote?.(instrument, item.quote) ?? item.quote, receivedAt);
       const source = quote.providerId ?? dataProvider.id;
-      const attempts = [createAttempt(source, Date.now(), "success")];
+      const attempts = [createAttempt(source, receivedAt, "success")];
       results.set(key, quoteStore.update(key, (current) => readyQuoteEntry(current, quote, source, attempts)));
     });
   }

@@ -58,6 +58,24 @@ export function visibleWarmupKey(kind: "quote" | "snapshot", ticker: TickerRecor
   return `${kind}:${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}`;
 }
 
+export function visibleWarmupSignature(
+  tickers: TickerRecord[],
+  financialsMap: Map<string, TickerFinancials>,
+  requirements: VisibleWarmupRequirements,
+): string {
+  return tickers.map((ticker) => {
+    const financials = financialsMap.get(ticker.metadata.ticker);
+    return [
+      visibleWarmupKey("snapshot", ticker),
+      needsVisibleQuoteWarmup(financials) ? "1" : "0",
+      needsVisibleSnapshotWarmup(ticker, financials, requirements) ? "1" : "0",
+      financials?.priceHistory.length ?? 0,
+      Object.keys(financials?.fundamentals ?? {}).length,
+      financials?.profile ? "1" : "0",
+    ].join(":");
+  }).join("|");
+}
+
 export function needsVisibleQuoteWarmup(financials: TickerFinancials | undefined, now = Date.now()): boolean {
   return !financials?.quote || isQuoteStaleForCurrentSession(financials.quote, now);
 }
