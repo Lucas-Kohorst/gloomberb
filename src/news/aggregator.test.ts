@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
 import { NewsService } from "./aggregator";
 import { newsProvider, type NewsCapability } from "../capabilities";
-import type { MarketNewsItem } from "../types/news-source";
+import type { MarketNewsItem, NewsQuery } from "../types/news-source";
+import { TOP_NEWS_WINDOW_MS } from "./news-model";
 import { resetUiYieldForTests, setUiYieldReason, UI_YIELD_QUIET_MS } from "../utils/ui-yield";
 
 function makeItem(overrides: Partial<MarketNewsItem> & { url: string }): MarketNewsItem {
@@ -115,6 +116,42 @@ describe("NewsService", () => {
     await agg.refreshWatchedQueries();
     expect(agg.getQueryState(query).articles).toHaveLength(1);
     unwatch();
+  });
+
+  it("fills TOP to 10 from a larger page when the first 10 are mostly stale", async () => {
+    const now = Date.now();
+    const recentHigh = Array.from({ length: 6 }, (_, index) => makeItem({
+      url: `https://wire.example/recent-${index}`,
+      importance: 90 - index,
+      publishedAt: new Date(now - (index + 1) * 60_000),
+    }));
+    const stale = Array.from({ length: 4 }, (_, index) => makeItem({
+      url: `https://wire.example/stale-${index}`,
+      importance: 80 - index,
+      publishedAt: new Date(now - TOP_NEWS_WINDOW_MS - (index + 1) * 60_000),
+    }));
+    const recentLow = Array.from({ length: 4 }, (_, index) => makeItem({
+      url: `https://wire.example/recent-low-${index}`,
+      importance: 50 - index,
+      publishedAt: new Date(now - (10 + index) * 60_000),
+    }));
+    const pool = [...recentHigh, ...stale, ...recentLow];
+    const source = newsProvider({
+      id: "gloomberb-cloud",
+      name: "gloomberb-cloud",
+      provider: {
+        fetchNews: mock(async (query: NewsQuery) => pool.slice(0, query.limit ?? pool.length)),
+      },
+    });
+    agg.register(source);
+    const query = { feed: "top" as const, limit: 10 };
+    await agg.poll(query);
+    const articles = agg.getQueryState(query).articles;
+    expect(articles).toHaveLength(10);
+    expect(articles.map((article) => article.url)).toEqual([
+      ...recentHigh.map((article) => article.url),
+      ...recentLow.map((article) => article.url),
+    ]);
   });
 
   it("getTopStories returns items sorted by importance descending", async () => {
