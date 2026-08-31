@@ -66,6 +66,36 @@ describe("Robinhood position normalization", () => {
     })]);
   });
 
+  // Shares are canonicalized to a positive magnitude with the direction on `side`,
+  // so merging opposing legs of one contract has to net them rather than add them.
+  test("nets an offsetting short leg instead of summing canonicalized magnitudes", () => {
+    const snapshot = normalizeRobinhoodSnapshot(
+      { accounts: [{ account_number: "RH-1", currency: "USD" }] },
+      { positions: [
+        {
+          accountNumber: "RH-1",
+          instrument: { symbol: "HOOD" },
+          quantity: "5",
+          total_cost: "250",
+          market_value: "300",
+        },
+        {
+          accountNumber: "RH-1",
+          instrument: { symbol: "HOOD" },
+          quantity: "-3",
+          total_cost: "-150",
+          market_value: "-180",
+        },
+      ] },
+    );
+
+    expect(snapshot.positions).toEqual([expect.objectContaining({
+      ticker: "HOOD",
+      shares: 2,
+      side: "long",
+    })]);
+  });
+
   test("preserves the source asset category for crypto and equity positions", () => {
     const sources: RobinhoodPositionPayloadSource[] = [
       {

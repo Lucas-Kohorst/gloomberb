@@ -4,6 +4,7 @@ import type { EarningsEvent } from "../../../types/data-provider";
 import type { TickerRecord } from "../../../types/ticker";
 import { priceColor } from "../../../theme/colors";
 import { formatQuoteAgeWithSource, resolveQuoteAgeTimestamp } from "../../../market-data/quotes/time";
+import { computeHistoryReturn } from "../../../utils/price-history";
 import { convertCurrency, formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
 import {
   formatMarketCost,
@@ -26,6 +27,7 @@ import {
   getPortfolioPositionMetrics,
   resolveBrokerFallbackMarketValue,
   resolveBrokerFallbackPnl,
+  signedQuoteUnrealizedPnl,
 } from "./position-metrics";
 
 export interface ColumnContext {
@@ -53,6 +55,11 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function resolveOneYearReturn(financials: TickerFinancials | undefined): number | undefined {
+  if (finiteNumber(financials?.fundamentals?.return1Y)) return financials.fundamentals.return1Y;
+  return computeHistoryReturn(financials?.priceHistory ?? [], 365);
 }
 
 function parseDateValue(value: Date | string | number | null | undefined): Date | null {
@@ -283,7 +290,7 @@ export function getColumnValue(
       return { text: formatCompact(toBaseQuote(activeQuote.price * quote.volume)) };
     }
     case "range_52w": {
-      const return1Y = fundamentals?.return1Y;
+      const return1Y = resolveOneYearReturn(financials);
       return finiteNumber(return1Y)
         ? { text: formatPercentRaw(return1Y * 100), color: priceColor(return1Y * 100) }
         : { text: "—" };
@@ -340,10 +347,9 @@ export function getColumnValue(
       return { text: "—" };
     case "pnl":
       if (activeQuote && totalPriceUnits !== 0) {
-        const direction = totalPriceUnits >= 0 ? 1 : -1;
         const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
-        const pnl = direction * (marketValue - costBasis);
+        const pnl = signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
         return { text: `${pnl >= 0 ? "+" : ""}${formatCompact(pnl)}`, color: priceColor(pnl) };
       }
       if (brokerFallbackPnl != null) {
@@ -353,10 +359,9 @@ export function getColumnValue(
       return { text: "—" };
     case "pnl_pct":
       if (activeQuote && totalCost !== 0) {
-        const direction = totalPriceUnits >= 0 ? 1 : -1;
         const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
-        const pnl = direction * (marketValue - costBasis);
+        const pnl = signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
         const percent = costBasis !== 0 ? (pnl / costBasis) * 100 : 0;
         return { text: formatPercentRaw(percent), color: priceColor(percent) };
       }
@@ -493,8 +498,10 @@ export function getSortValue(
       return activeQuote && finiteNumber(quote?.volume)
         ? toBaseQuote(activeQuote.price * quote.volume)
         : null;
-    case "range_52w":
-      return finiteNumber(fundamentals?.return1Y) ? fundamentals.return1Y * 100 : null;
+    case "range_52w": {
+      const return1Y = resolveOneYearReturn(financials);
+      return finiteNumber(return1Y) ? return1Y * 100 : null;
+    }
     case "market_cap":
       return quote?.marketCap ? toBaseQuote(quote.marketCap) : null;
     case "pe":
@@ -540,10 +547,9 @@ export function getSortValue(
       return null;
     case "pnl":
       if (activeQuote && totalPriceUnits !== 0) {
-        const direction = totalPriceUnits >= 0 ? 1 : -1;
         const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
-        return direction * (marketValue - costBasis);
+        return signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
       }
       if (brokerFallbackPnl != null) {
         return toBasePosition(brokerFallbackPnl);
@@ -551,10 +557,9 @@ export function getSortValue(
       return null;
     case "pnl_pct":
       if (activeQuote && totalCost !== 0) {
-        const direction = totalPriceUnits >= 0 ? 1 : -1;
         const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
         const costBasis = toBasePosition(totalCost);
-        const pnl = direction * (marketValue - costBasis);
+        const pnl = signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
         return costBasis !== 0 ? (pnl / costBasis) * 100 : null;
       }
       if (brokerFallbackPnl != null && totalCost !== 0) {

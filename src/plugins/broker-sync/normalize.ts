@@ -86,7 +86,24 @@ function uniqueSnapshot(accounts: BrokerAccount[], positions: BrokerPosition[]):
       currency: position.currency,
     });
   }
-  return { accounts: uniqueAccounts, positions: mergeIdenticalPositions(positions) };
+  return { accounts: uniqueAccounts, positions: mergeIdenticalPositions(positions.map(withCanonicalShares)) };
+}
+
+/**
+ * Canonicalize broker positions so `shares` is a positive magnitude and `side`
+ * carries the direction. Some broker feeds report short shares as negative
+ * while also tagging `side: "short"`; leaving shares negative double-signs every
+ * downstream consumer that derives direction from `side`.
+ */
+function withCanonicalShares(position: BrokerPosition): BrokerPosition {
+  const side = position.side ?? (position.shares < 0 ? "short" : "long");
+  const shares = Math.abs(position.shares);
+  if (shares === position.shares && side === position.side) return position;
+  return { ...position, shares, side };
+}
+
+function signedBrokerShares(position: BrokerPosition): number {
+  return Math.abs(position.shares) * (position.side === "short" ? -1 : 1);
 }
 
 function mergeIdenticalPositions(positions: BrokerPosition[]): BrokerPosition[] {
@@ -104,13 +121,18 @@ function mergeIdenticalPositions(positions: BrokerPosition[]): BrokerPosition[] 
       merged.set(key, position);
       continue;
     }
-    const shares = existing.shares + position.shares;
-    const existingCost = (existing.avgCost ?? 0) * existing.shares;
-    const nextCost = (position.avgCost ?? 0) * position.shares;
+    // The key ignores side, so opposing legs of one contract land here and must
+    // still net out. That needs signed magnitudes now that `shares` is canonical.
+    const existingShares = signedBrokerShares(existing);
+    const nextShares = signedBrokerShares(position);
+    const shares = existingShares + nextShares;
+    const existingCost = (existing.avgCost ?? 0) * existingShares;
+    const nextCost = (position.avgCost ?? 0) * nextShares;
     merged.set(key, {
       ...existing,
-      shares,
-      avgCost: shares > 0 ? (existingCost + nextCost) / shares : existing.avgCost,
+      shares: Math.abs(shares),
+      side: shares < 0 ? "short" : "long",
+      avgCost: shares !== 0 ? (existingCost + nextCost) / shares : existing.avgCost,
       marketValue: sumOptional(existing.marketValue, position.marketValue),
       unrealizedPnl: sumOptional(existing.unrealizedPnl, position.unrealizedPnl),
     });
