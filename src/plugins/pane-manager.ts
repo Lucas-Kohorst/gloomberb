@@ -57,11 +57,14 @@ export {
   type PaneTypeAvailability,
 } from "./pane-manager/layout-state";
 export {
+  analyzeFloatingPaneVisibility,
   applyLayoutPreset,
   compactDockedPaneAtRect,
   gridlockAllPanes,
   LAYOUT_PRESET_IDS,
+  shouldShowTidyWindows,
   snapPaneToGridRect,
+  type FloatingPaneVisibility,
   type LayoutPresetId,
 } from "./pane-manager/gridlock";
 export { inferCompactedDockTree } from "./pane-manager/gridlock-inference";

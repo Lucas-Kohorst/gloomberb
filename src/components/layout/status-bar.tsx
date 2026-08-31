@@ -1,5 +1,5 @@
 import { Box, Text, TextAttributes, useUiCapabilities } from "../../ui";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { blendHex, colors, hoverBg } from "../../theme/colors";
 import { t } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
@@ -7,19 +7,21 @@ import { useAppDispatch, useAppSelector } from "../../state/app/context";
 import { VERSION } from "../../version";
 import {
   selectActiveLayoutIndex,
-  selectGridlockTipSequence,
-  selectGridlockTipVisible,
+  selectLayout,
   selectSavedLayouts,
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
 import { getSharedRegistry } from "../../plugins/registry";
-import { gridlockAllPanes } from "../../plugins/pane-manager";
+import {
+  gridlockAllPanes,
+  shouldShowTidyWindows,
+} from "../../plugins/pane-manager";
 import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import { useLayoutSwitcher } from "./layout-switcher";
+import { useTransientLayout } from "./transient-layout";
 import { resolveAppStatusBarHeightCells } from "./shell/chrome";
 
-const GRIDLOCK_TIP_DURATION_MS = 60_000;
 const LAYOUT_CHIP_DIGIT_LIMIT = 9;
 
 function layoutChipLabel(index: number, name: string): string {
@@ -37,41 +39,31 @@ export function StatusBar() {
   const registry = getSharedRegistry();
   const dispatch = useAppDispatch();
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
-  const gridlockTipVisible = useAppSelector(selectGridlockTipVisible);
-  const gridlockTipSequence = useAppSelector(selectGridlockTipSequence);
+  const layout = useAppSelector(selectLayout);
+  const { transientLayout } = useTransientLayout();
   const { activeLayoutIdx, openLayoutContextMenu } = useLayoutSwitcher();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
 
-  const showGridlockTip = gridlockTipVisible && !!registry;
+  const showTidyWindows = useMemo(() => shouldShowTidyWindows(layout), [layout])
+    && !transientLayout?.active
+    && !!registry;
 
-  useEffect(() => {
-    if (!gridlockTipVisible) return;
-    const timer = setTimeout(() => {
-      dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
-    }, GRIDLOCK_TIP_DURATION_MS);
-    return () => clearTimeout(timer);
-  }, [dispatch, gridlockTipSequence, gridlockTipVisible]);
-
-  const handleGridlockTip = (event?: StatusBarEvent) => {
+  const handleTidyWindows = (event?: StatusBarEvent) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
     if (!registry) return;
+    const currentLayout = registry.getLayoutFn();
     const { width, height } = registry.getTermSizeFn();
-    registry.updateLayoutFn(gridlockAllPanes(
-      registry.getLayoutFn(),
+    const nextLayout = gridlockAllPanes(
+      currentLayout,
       { x: 0, y: 0, width, height },
       registry.panes,
-    ));
+    );
+    if (nextLayout === currentLayout) return;
+    registry.updateLayoutFn(nextLayout);
     notifyGridlockComplete(registry.notify.bind(registry), () => {
       dispatch({ type: "UNDO_LAYOUT" });
     });
-    dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
-  };
-
-  const dismissGridlockTip = (event?: StatusBarEvent) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    dispatch({ type: "DISMISS_GRIDLOCK_TIP" });
   };
 
   if (!statusBarVisible) return null;
@@ -111,18 +103,16 @@ export function StatusBar() {
           setHoveredControl={setHoveredControl}
         />
       )}
-      {showGridlockTip && (
+      {showTidyWindows && (
         nativePaneChrome ? (
-          <NativeGridlockTip
-            dismissGridlockTip={dismissGridlockTip}
-            handleGridlockTip={handleGridlockTip}
+          <NativeTidyWindows
+            handleTidyWindows={handleTidyWindows}
             hoveredControl={hoveredControl}
             setHoveredControl={setHoveredControl}
           />
         ) : (
-          <TerminalGridlockTip
-            dismissGridlockTip={dismissGridlockTip}
-            handleGridlockTip={handleGridlockTip}
+          <TerminalTidyWindows
+            handleTidyWindows={handleTidyWindows}
             hoveredControl={hoveredControl}
             setHoveredControl={setHoveredControl}
           />
@@ -265,70 +255,51 @@ function TerminalLayoutChips({
   );
 }
 
-function NativeGridlockTip({
-  dismissGridlockTip,
-  handleGridlockTip,
+function NativeTidyWindows({
+  handleTidyWindows,
   hoveredControl,
   setHoveredControl,
 }: {
-  dismissGridlockTip: (event?: StatusBarEvent) => void;
-  handleGridlockTip: (event?: StatusBarEvent) => void;
+  handleTidyWindows: (event?: StatusBarEvent) => void;
   hoveredControl: HoveredControl;
   setHoveredControl: SetHoveredControl;
 }) {
+  const hovered = hoveredControl === "tidy-windows";
   return (
-    <Box paddingLeft={2} flexShrink={0} flexDirection="row" alignItems="center" gap={1}>
-      <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
+    <Box paddingLeft={2} flexShrink={0} flexDirection="row" alignItems="center">
       <Text
-        fg={hoveredControl === "gridlock-tip" ? colors.textBright : colors.borderFocused}
+        fg={hovered ? colors.textBright : colors.borderFocused}
         attributes={TextAttributes.BOLD}
-        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
-        onMouseDown={handleGridlockTip}
+        title={t("Tidy Windows")}
+        onMouseOver={() => setHoveredControl((current) => (current === "tidy-windows" ? current : "tidy-windows"))}
+        onMouseDown={handleTidyWindows}
         data-gloom-interactive="true"
       >
-        {t("Gridlock All")}
-      </Text>
-      <Text
-        fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
-        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
-        onMouseDown={dismissGridlockTip}
-        data-gloom-interactive="true"
-      >
-        {t("Dismiss")}
+        {t("Tidy Windows")}
       </Text>
     </Box>
   );
 }
 
-function TerminalGridlockTip({
-  dismissGridlockTip,
-  handleGridlockTip,
+function TerminalTidyWindows({
+  handleTidyWindows,
   hoveredControl,
   setHoveredControl,
 }: {
-  dismissGridlockTip: (event?: StatusBarEvent) => void;
-  handleGridlockTip: (event?: StatusBarEvent) => void;
+  handleTidyWindows: (event?: StatusBarEvent) => void;
   hoveredControl: HoveredControl;
   setHoveredControl: SetHoveredControl;
 }) {
+  const hovered = hoveredControl === "tidy-windows";
   return (
     <Box paddingLeft={1} flexShrink={0} flexDirection="row">
-      <Text fg={colors.textDim}>{t("Snapped a window?")}</Text>
-      <Box width={1} />
       <Box
-        backgroundColor={hoveredControl === "gridlock-tip" ? hoverBg() : colors.header}
-        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip" ? current : "gridlock-tip"))}
-        onMouseDown={handleGridlockTip}
+        backgroundColor={hovered ? hoverBg() : colors.header}
+        onMouseOver={() => setHoveredControl((current) => (current === "tidy-windows" ? current : "tidy-windows"))}
+        onMouseDown={handleTidyWindows}
       >
-        <Text fg={colors.headerText}> {t("Gridlock All")} </Text>
+        <Text fg={colors.headerText}> {t("Tidy Windows")} </Text>
       </Box>
-      <Text
-        fg={hoveredControl === "gridlock-tip-dismiss" ? colors.text : colors.textDim}
-        onMouseOver={() => setHoveredControl((current) => (current === "gridlock-tip-dismiss" ? current : "gridlock-tip-dismiss"))}
-        onMouseDown={dismissGridlockTip}
-      >
-        {" x"}
-      </Text>
     </Box>
   );
 }

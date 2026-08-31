@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { cloneLayout, createDefaultConfig, createPaneInstance, type LayoutConfig } from "../types/config";
 import {
   addPaneFloating,
+  analyzeFloatingPaneVisibility,
   applyLayoutPreset,
   applyDrop,
   compactDockedPaneAtRect,
@@ -15,6 +16,7 @@ import {
   getLeafRect,
   moveFloatingPane,
   resizeFloatingPaneFromCorner,
+  shouldShowTidyWindows,
   simulateDrop,
   snapPaneToGridRect,
 } from "./pane-manager";
@@ -134,6 +136,34 @@ describe("pane-manager split-tree drops", () => {
 
     expect(next.floating).toHaveLength(0);
     expect(getDockedPaneIds(next)).toHaveLength(layout.instances.length);
+  });
+
+  test("detects a floating pane whose title bar is buried", () => {
+    const layout: LayoutConfig = {
+      dockRoot: null,
+      instances: [
+        createPaneInstance("chat", { instanceId: "lower" }),
+        createPaneInstance("chat", { instanceId: "upper" }),
+      ],
+      floating: [
+        { instanceId: "lower", x: 0, y: 0, width: 40, height: 20, zIndex: 10 },
+        { instanceId: "upper", x: 0, y: 0, width: 40, height: 4, zIndex: 20 },
+      ],
+      detached: [],
+    };
+
+    const visibility = analyzeFloatingPaneVisibility(layout);
+    const lower = visibility.find((pane) => pane.instanceId === "lower");
+    expect(lower?.visibleRatio).toBeCloseTo(0.8);
+    expect(lower?.titleBarVisibleRatio).toBe(0);
+    expect(lower?.buried).toBe(true);
+    expect(shouldShowTidyWindows(layout)).toBe(true);
+
+    const separated = {
+      ...layout,
+      floating: [layout.floating[0]!, { ...layout.floating[1]!, x: 50 }],
+    };
+    expect(shouldShowTidyWindows(separated)).toBe(false);
   });
 
   test("gridlock drops pane types that cannot render before tiling", () => {
