@@ -2,6 +2,7 @@ import { isHostedWebClient, KALSHI_PROXY_PATH } from "../../../../shared/hosted-
 import {
   buildPredictionCatalogResourceKey,
   buildPredictionDetailResourceKey,
+  capPredictionCatalogByEvent,
 } from "../../cache";
 import { getKalshiCategoryNames } from "../../categories";
 import type {
@@ -83,7 +84,14 @@ function kalshiUrl(path: string): string {
   return new URL(`${base}${path}`, origin).toString();
 }
 const KALSHI_EVENT_PAGE_LIMIT = 200;
-const DEFAULT_KALSHI_EVENT_MAX_PAGES = 2;
+/**
+ * Kalshi cannot sort or filter by volume server-side and `/events` pages arrive in
+ * no volume order, so a shallow read ranks the "top" tab against an arbitrary slice.
+ * Measured across a full sweep, page 1 topped out near 13k contracts of 24h volume
+ * while page 2 held the 199k leader and pages past 5 carried none at all. Ranking
+ * therefore needs the deeper pool, fetched behind first paint.
+ */
+const DEEP_KALSHI_EVENT_MAX_PAGES = 5;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 4;
 const HOSTED_KALSHI_EVENT_MAX_PAGES = 1;
 const KALSHI_MARKET_PAGE_LIMIT = 200;
@@ -167,7 +175,7 @@ function buildKalshiMarketsUrl(cursor?: string): string {
 }
 
 async function fetchKalshiCatalogEvents(
-  maxPages = DEFAULT_KALSHI_EVENT_MAX_PAGES,
+  maxPages = DEEP_KALSHI_EVENT_MAX_PAGES,
   _limit = KALSHI_EVENT_PAGE_LIMIT,
   _signal?: AbortSignal,
   startCursor?: string,
@@ -189,7 +197,7 @@ async function fetchKalshiCatalogEvents(
 
 async function fetchKalshiCatalogEventsForCategory(
   categoryId: PredictionCategoryId,
-  maxPages = DEFAULT_KALSHI_EVENT_MAX_PAGES,
+  maxPages = DEEP_KALSHI_EVENT_MAX_PAGES,
   limit = KALSHI_EVENT_PAGE_LIMIT,
   signal?: AbortSignal,
   startCursor?: string,
@@ -258,7 +266,7 @@ async function loadKalshiVenueCatalog(
           : SEARCH_KALSHI_EVENT_MAX_PAGES
       : hosted
         ? HOSTED_KALSHI_EVENT_MAX_PAGES
-        : DEFAULT_KALSHI_EVENT_MAX_PAGES;
+        : DEEP_KALSHI_EVENT_MAX_PAGES;
   const [eventPage, openMarkets] = await Promise.all([
     categoryId === "all"
       ? fetchKalshiCatalogEvents(maxPages)
@@ -290,7 +298,11 @@ async function loadKalshiVenueCatalog(
       merged.set(market.key, market);
     }
   }
-  return sortKalshiCatalogMarkets([...merged.values()], browseTab);
+  // A deep sweep normalizes several thousand rows. Cap the ranked list the same way
+  // the persisted copy is capped so state and cache hold the same markets.
+  return capPredictionCatalogByEvent(
+    sortKalshiCatalogMarkets([...merged.values()], browseTab),
+  );
 }
 
 async function loadHostedKalshiCatalog(
@@ -335,12 +347,16 @@ export async function loadKalshiCatalog(
 ): Promise<PredictionMarketSummary[]> {
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const firstPageOnly = options?.firstPageOnly === true && !normalizedQuery;
-  const resourceKey = buildPredictionCatalogResourceKey(
+  const deepResourceKey = buildPredictionCatalogResourceKey(
     "kalshi",
     categoryId,
     normalizedQuery,
     browseTab,
   );
+  // A first-paint page and a deep sweep must not share a cache slot: the cheap page
+  // would otherwise satisfy the deep request for the whole catalog TTL and pin the
+  // "top" tab to whatever page 1 happened to contain.
+  const resourceKey = firstPageOnly ? `${deepResourceKey}:page1` : deepResourceKey;
   return await loadCachedPredictionResource(
     "catalog",
     resourceKey,
@@ -417,7 +433,7 @@ async function loadKalshiEvent(
   }
 }
 
-async function fetchKalshiMarketByTicker(
+export async function fetchKalshiMarketByTicker(
   ticker: string,
 ): Promise<KalshiMarketRecord | null> {
   try {

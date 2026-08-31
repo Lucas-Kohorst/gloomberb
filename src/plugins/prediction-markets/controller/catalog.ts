@@ -28,6 +28,13 @@ import type {
 type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
 const EMPTY_CATALOG_SLICE: PredictionMarketSummary[] = [];
+/**
+ * Browse paints from a single Kalshi events page to stay fast, but those pages are
+ * not ordered by volume, so ranking has to run against the deeper sweep. It lands
+ * shortly after first paint and then refreshes on the catalog cache's own cadence.
+ */
+const KALSHI_DEEP_SWEEP_DELAY_MS = 4_000;
+const KALSHI_DEEP_SWEEP_INTERVAL_MS = 5 * 60_000;
 
 interface UsePredictionCatalogDataOptions {
   browseTab: PredictionBrowseTab;
@@ -467,6 +474,23 @@ export function usePredictionCatalogData({
   }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
 
   useEffect(() => {
+    if (!includeKalshi) return;
+    let cancelled = false;
+    const sweep = () => {
+      if (cancelled) return;
+      // No pending state: first paint is already on screen and this only reranks it.
+      void loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
+    };
+    const startId = setTimeout(sweep, KALSHI_DEEP_SWEEP_DELAY_MS);
+    const intervalId = setInterval(sweep, KALSHI_DEEP_SWEEP_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(startId);
+      clearInterval(intervalId);
+    };
+  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi]);
+
+  useEffect(() => {
     if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {
       return;
     }
@@ -516,6 +540,9 @@ export function usePredictionCatalogData({
         force: true,
         firstPageOnly: true,
       });
+      // Rerank against the deep pool as well, reusing it while the catalog cache is
+      // fresh so a repeated refresh does not resweep every events page.
+      void loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
       if (kalshiSearchKey && normalizedSearchQuery) {
         void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
           force: true,
