@@ -2,6 +2,8 @@ import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
 import { getPluginsDir } from "../../plugins/loader";
+import { getLoadablePlugins } from "../../plugins/catalog";
+import { searchCommunityPlugins } from "../../plugins/builtin/plugin-market/search";
 import {
   cliStyles,
   renderSection,
@@ -10,11 +12,9 @@ import {
 } from "../../utils/cli-output";
 import { fail } from "../errors";
 
-const PLUGINS_DIR = getPluginsDir();
-
 function ensurePluginsDir() {
-  if (!existsSync(PLUGINS_DIR)) {
-    mkdirSync(PLUGINS_DIR, { recursive: true });
+  if (!existsSync(getPluginsDir())) {
+    mkdirSync(getPluginsDir(), { recursive: true });
   }
 }
 
@@ -50,10 +50,50 @@ function parseGitHubRef(rawRef: string): { url: string; name: string } {
   throw new Error(`Invalid plugin reference: ${ref}. Use user/repo or a GitHub URL.`);
 }
 
-export async function installPlugin(ref: string) {
+const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * Resolves a bare plugin id so `gloomberb install hackernews` works alongside
+ * `gloomberb install owner/repo`. A reference that already looks like a repo or
+ * URL is left alone. A bare id that matches a bundled/built-in plugin explains
+ * that it ships with the app instead of being cloned. Otherwise the fork's
+ * existing community-plugin search (GitHub, connection-registered) is used to
+ * find a matching repo; a lookup that finds nothing falls through to the normal
+ * parse error rather than inventing a repo name.
+ */
+async function resolveBarePluginId(rawRef: string): Promise<string> {
+  if (rawRef.includes("/") || rawRef.includes(":") || !PLUGIN_ID_PATTERN.test(rawRef)) {
+    return rawRef;
+  }
+
+  const bundled = getLoadablePlugins().find((plugin) => plugin.id === rawRef);
+  if (bundled) {
+    fail(
+      `"${bundled.name}" ships with Gloomberb.`,
+      `Enable it from the plugin marketplace (PLUGINS) instead of installing it.`,
+    );
+  }
+
+  try {
+    const results = await searchCommunityPlugins(rawRef);
+    if (results.length > 0) {
+      const exact = results.find((result) => result.fullName.split("/")[1] === rawRef);
+      const match = exact ?? results[0]!;
+      console.log(cliStyles.muted(`Resolved "${rawRef}" to ${match.fullName}`));
+      return match.fullName;
+    }
+  } catch {
+    // Search unavailable or offline: fall through so the plain parse error
+    // explains the accepted formats rather than blaming the network.
+  }
+  return rawRef;
+}
+
+export async function installPlugin(rawRef: string) {
   ensurePluginsDir();
+  const ref = await resolveBarePluginId(rawRef);
   const { url, name } = parseGitHubRef(ref);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
 
   if (existsSync(targetDir)) {
     fail(`Plugin "${name}" already exists.`, `Use "gloomberb update ${name}" to refresh it.`);
@@ -109,9 +149,9 @@ export async function installPlugin(ref: string) {
 }
 
 export async function removePlugin(name: string) {
-  const targetDir = join(PLUGINS_DIR, validatePluginDirectoryName(name));
+  const targetDir = join(getPluginsDir(), validatePluginDirectoryName(name));
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
   rmSync(targetDir, { recursive: true, force: true });
   console.log(cliStyles.success(`Removed plugin "${name}".`));
@@ -121,7 +161,7 @@ export async function updatePlugins(name?: string) {
   ensurePluginsDir();
   const dirs = name
     ? [validatePluginDirectoryName(name)]
-    : readdirSync(PLUGINS_DIR, { withFileTypes: true })
+    : readdirSync(getPluginsDir(), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
@@ -131,7 +171,7 @@ export async function updatePlugins(name?: string) {
   }
 
   for (const dir of dirs) {
-    const targetDir = join(PLUGINS_DIR, dir);
+    const targetDir = join(getPluginsDir(), dir);
     if (!existsSync(join(targetDir, ".git"))) {
       console.log(cliStyles.warning(`Skipping ${dir} (not a git repo)`));
       continue;
@@ -151,7 +191,7 @@ export async function updatePlugins(name?: string) {
 
 export function listPlugins() {
   ensurePluginsDir();
-  const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const entries = readdirSync(getPluginsDir(), { withFileTypes: true }).filter((entry) => entry.isDirectory());
 
   if (entries.length === 0) {
     console.log(cliStyles.muted("No plugins installed."));
@@ -160,7 +200,7 @@ export function listPlugins() {
   }
 
   const rows = entries.map((entry) => {
-    const dir = join(PLUGINS_DIR, entry.name);
+    const dir = join(getPluginsDir(), entry.name);
     let version = "—";
     let description = "—";
     const pkgPath = join(dir, "package.json");
@@ -186,7 +226,7 @@ export function listPlugins() {
     rows,
   ));
   console.log("");
-  console.log(renderStat("Directory", PLUGINS_DIR));
+  console.log(renderStat("Directory", getPluginsDir()));
 }
 
 export async function searchPlugins(query: string) {
@@ -340,9 +380,9 @@ export function scaffoldPlugin(name: string) {
 
 export async function validatePlugin(name: string) {
   validatePluginDirectoryName(name);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
 
   let entryFile: string | null = null;
