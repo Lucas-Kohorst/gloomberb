@@ -266,6 +266,7 @@ export function ChatContent({
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    ownProfileConfigured,
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,
@@ -702,6 +703,8 @@ export function ChatContent({
       canManageNotifications={!!user?.emailVerified}
       canCreateConversation={!!user?.emailVerified}
       directExpanded={directExpanded}
+      needsProfileSetup={!!user?.id && ownProfileConfigured === false}
+      onOpenProfile={openProfileSetup}
       onSelect={stackedNav ? selectChannelFromList : selectSidebarChannel}
       onFocusRequest={() => setSidebarFocused(true)}
       onCreateConversation={openNewDmDialog}
