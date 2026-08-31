@@ -33,6 +33,7 @@ import { fetchShortInterest } from "../short-interest/client";
 import { fetchExDividendDate } from "../dividend-yield/client";
 import { canonicalWeatherStationId } from "../weather/stations";
 import { evaluateWeatherAlert } from "./weather-alert";
+import type { WeatherAlertCondition } from "./weather";
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 let pollInFlight = false;
@@ -176,13 +177,18 @@ export const alertsPlugin: GloomPlugin = {
         const input = parseWeatherAlertCommandValues(values);
         const stationId = input && canonicalWeatherStationId(input.stationId);
         if (!input || !stationId) throw new Error("Choose a station, condition, metric where applicable, and target.");
-        const weatherCondition = input.condition === "observed-threshold-crossing"
-          ? { kind: input.condition as const, metric: input.metric!, threshold: input.target!, direction: values?.condition === "below" ? "below" as const : "above" as const }
+        const weatherCondition: Exclude<WeatherAlertCondition, { kind: "market-probability" } | { kind: "market-spread" }> = input.condition === "observed-threshold-crossing"
+          ? {
+            kind: "observed-threshold-crossing",
+            metric: input.metric!,
+            threshold: input.target!,
+            direction: values?.condition === "below" ? "below" : "above",
+          }
           : input.condition === "stale-source"
-            ? { kind: input.condition as const, sourceId: "twc-kalshi", maxAgeMs: input.target! * 60_000 }
+            ? { kind: "stale-source", sourceId: "twc-kalshi", maxAgeMs: input.target! * 60_000 }
             : input.condition === "preliminary-to-final"
-              ? { kind: input.condition as const, metric: input.metric!, sourceId: "twc-kalshi" }
-              : { kind: input.condition as const, metric: input.metric!, maxDifference: input.target! };
+              ? { kind: "preliminary-to-final", metric: input.metric, sourceId: "twc-kalshi" }
+              : { kind: "source-discrepancy", metric: input.metric!, maxDifference: input.target! };
         const alert = createAlert(stationId, "weather", 0);
         alert.weather = { stationId, condition: weatherCondition };
         alert.message = input.condition === "stale-source"
@@ -212,6 +218,10 @@ export const alertsPlugin: GloomPlugin = {
         desktop: "always",
         persistent: true,
         sound: "Glass",
+        action: {
+          label: "Open",
+          onClick: () => ctx.showPane("alerts"),
+        },
       });
     };
 
