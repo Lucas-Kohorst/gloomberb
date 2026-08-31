@@ -37,6 +37,7 @@ import { sectorsModule } from "./sectors";
 import { treasuryAuctionsModule } from "./treasury-auctions";
 import { volatilityModule } from "./volatility";
 import { worldIndicesModule } from "./world-indices";
+import { worldVenueMapModule } from "./world-venue-map";
 import { yieldCurveModule } from "./yield-curve";
 
 let disposeFredPublic: (() => void) | null = null;
@@ -94,6 +95,7 @@ export const marketOverviewPlugin = composeBuiltinPlugin({
   modules: [
     correlationModule,
     worldIndicesModule,
+    worldVenueMapModule,
     futuresModule,
     marketHeatmapModule,
     marketMoversModule,

@@ -60,6 +60,7 @@ import type {
   CloudMarketBatchPayload,
   CloudMarketScreenerCategory,
   CloudMarketScreenerPayload,
+  CloudWorldVenueMapPayload,
   CloudVerificationResponse,
   DeviceAuthStartResponse,
   DeviceAuthTokenResponse,
@@ -470,6 +471,10 @@ class GloomApiClient {
     mode: "cache-first" | "refresh" = "cache-first",
   ): Promise<CloudMarketResponse<CloudMarketBatchPayload<CloudQuotePayload>>> {
     return this.data.getCloudQuotesBatch(targets, mode);
+  }
+
+  async getCloudWorldVenues(): Promise<CloudMarketResponse<CloudWorldVenueMapPayload>> {
+    return this.data.getCloudWorldVenues();
   }
 
   async getCloudMarketScreener(
