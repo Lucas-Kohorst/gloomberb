@@ -59,6 +59,13 @@ import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type Wea
 import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
 import { StationDetail, type StationObservation } from "./station-detail";
 import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
+import {
+  latestCompleteKalshiWeatherPoint,
+  loadKalshiWeatherCalibrationsForStation,
+  loadKalshiWeatherIndexForStation,
+  type KalshiWeatherCalibrationTimeline,
+  type KalshiWeatherIndex,
+} from "./kalshi-index";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
@@ -201,14 +208,27 @@ function WeatherDetail({
   hourly,
   settlement,
   nwsObservations,
+  kalshiIndex,
+  kalshiCalibrations,
   width,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
   settlement: WeatherSettlementRecord | null;
   nwsObservations: NwsStationObservation[];
+  kalshiIndex: KalshiWeatherIndex | null;
+  kalshiCalibrations: KalshiWeatherCalibrationTimeline | null;
   width: number;
 }) {
+  const indexPoint = latestCompleteKalshiWeatherPoint(kalshiIndex);
+  const calibration = kalshiCalibrations?.calibrations.at(-1) ?? null;
+  const indexSummary = kalshiIndex
+    ? indexPoint
+      ? `Kalshi index ${indexPoint.valueF?.toFixed(2)}°F · ${indexPoint.timestampMs ? new Date(indexPoint.timestampMs).toISOString().slice(11, 16) : "—"}Z`
+      : kalshiIndex.points.length > 0
+        ? "Kalshi index pending quorum"
+        : "Kalshi index no points"
+    : null;
   const stationObservations: StationObservation[] = nwsObservations.map((observation) => ({
     timestamp: observation.timestamp,
     temperatureF: observation.temperatureF,
@@ -234,6 +254,14 @@ function WeatherDetail({
             <Text fg={settlement.meta.official ? colors.positive : colors.warning}>
               Settlement feed {settlement.meta.sourceName}: {formatTemp(settlement.value)}
               {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
+            </Text>
+          )}
+          {indexSummary && <Text fg={indexPoint ? colors.positive : colors.warning}>{indexSummary}</Text>}
+          {kalshiIndex?.configVersion && <Text fg={colors.textMuted}>Index config {kalshiIndex.configVersion}</Text>}
+          {calibration && (
+            <Text fg={colors.textMuted}>
+              Calibration {calibration.configVersion} · {calibration.stations.length} stations
+              {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
             </Text>
           )}
         </Box>
@@ -265,6 +293,14 @@ function WeatherDetail({
           <Text fg={settlement.meta.official ? colors.positive : colors.warning}>
             Settlement feed {settlement.meta.sourceName}: {formatTemp(settlement.value)}
             {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
+          </Text>
+        )}
+        {indexSummary && <Text fg={indexPoint ? colors.positive : colors.warning}>{indexSummary}</Text>}
+        {kalshiIndex?.configVersion && <Text fg={colors.textMuted}>Index config {kalshiIndex.configVersion}</Text>}
+        {calibration && (
+          <Text fg={colors.textMuted}>
+            Calibration {calibration.configVersion} · {calibration.stations.length} stations
+            {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
           </Text>
         )}
         {(row.yForecast != null || row.ySettlement != null) && (
@@ -437,6 +473,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
   const [settlementByStation, setSettlementByStation] = useState<Record<string, WeatherSettlementRecord | null>>({});
   const [nwsByStation, setNwsByStation] = useState<Record<string, NwsStationObservation[]>>({});
+  const [kalshiIndexByStation, setKalshiIndexByStation] = useState<Record<string, KalshiWeatherIndex | null>>({});
+  const [kalshiCalibrationsByStation, setKalshiCalibrationsByStation] = useState<Record<string, KalshiWeatherCalibrationTimeline | null>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -691,6 +729,24 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         .catch(() => {
           if (cancelled) return;
           setNwsByStation((current) => ({ ...current, [selected.stationId]: [] }));
+        }),
+      loadKalshiWeatherIndexForStation(selected.stationId, { detailed: true })
+        .then((index) => {
+          if (cancelled) return;
+          setKalshiIndexByStation((current) => ({ ...current, [selected.stationId]: index }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setKalshiIndexByStation((current) => ({ ...current, [selected.stationId]: null }));
+        }),
+      loadKalshiWeatherCalibrationsForStation(selected.stationId)
+        .then((calibrations) => {
+          if (cancelled) return;
+          setKalshiCalibrationsByStation((current) => ({ ...current, [selected.stationId]: calibrations }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setKalshiCalibrationsByStation((current) => ({ ...current, [selected.stationId]: null }));
         }),
     ]).catch(() => undefined);
     return () => {
@@ -961,6 +1017,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
               hourly={hourlyByStation[selected.stationId] ?? []}
               settlement={settlementByStation[selected.stationId] ?? null}
               nwsObservations={nwsByStation[selected.stationId] ?? []}
+              kalshiIndex={kalshiIndexByStation[selected.stationId] ?? null}
+              kalshiCalibrations={kalshiCalibrationsByStation[selected.stationId] ?? null}
               width={width}
             />
           ) : null
