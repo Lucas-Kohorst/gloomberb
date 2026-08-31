@@ -1,5 +1,144 @@
 import type { ChangelogRelease } from "../../../updater/github-releases";
 
+const RELEASE_0_13_15: ChangelogRelease = {
+  id: "hosted-v0-13-15",
+  tagName: "v0.13.15",
+  version: "0.13.15",
+  title: "Kalshi weather index and calibration provenance",
+  publishedAt: "2026-08-31T21:00:00.000Z",
+  url: "",
+  body: `Kalshi now publishes a canonical minute-resolution city temperature index used by hourly temperature markets. The weather pane surfaces this as supplementary market evidence alongside the existing NWS and TWC data — without replacing settlement authority.
+
+## Weather
+
+- The station detail view shows the latest complete Kalshi index value (Fahrenheit), the incomplete-point count, and the index config version. When no complete point exists yet, the pane reports "pending quorum" instead of inventing a zero.
+- The latest calibration summary (config version, station count, effective time, change reason) appears when Kalshi publishes the \`/calibrations\` endpoint. Until then the request fails gracefully and the pane omits the line.
+- Requests route through the shared Kalshi fetch path and report as \`kalshi\` traffic in the Connections pane. Hosted clients use the existing Kalshi proxy; native clients call the public endpoint directly.
+- Only explicitly supported stations (currently \`MIA → miami\`) issue a request. Unsupported stations skip the network call entirely.
+- Malformed records and incomplete points never become fake zero values. Timestamps tolerate both seconds and milliseconds. Bounded in-memory caches prevent redundant API calls.
+- The archive merge loop now coalesces \`null\` and \`undefined\` observation fields consistently, so a missing high/low/precip is treated the same way regardless of how the provider omitted it.`,
+};
+
+const RELEASE_0_13_14: ChangelogRelease = {
+  id: "hosted-v0-13-14",
+  tagName: "v0.13.14",
+  version: "0.13.14",
+  title: "Credential safety, watchlist quote hardening, QA introspection",
+  publishedAt: "2026-08-29T18:00:00.000Z",
+  url: "",
+  body: `An audit pass over v0.13.13. Three of these fixes repair defects that v0.13.13 itself introduced: a single deadline shared by every prediction-market subscription, which silently re-broke the live-odds fix it was meant to protect; a config-merge heuristic that could let a remote snapshot overwrite local broker credentials; and a \`--data-dir\` value that isolated part of the app while the rest wrote to the real home directory. Separately, the remote-control surface no longer serves credentials, and data tables can now be read cell by cell, so automation can catch a *wrong* number instead of only a missing row.
+
+## Prediction markets
+
+- Subscription setup used one absolute deadline shared across every market in the watchlist. The first market got the full budget and each one after it got whatever remained, so a watchlist long enough to exhaust the budget left its tail permanently unsubscribed — the exact "starred market never ticks" failure the previous release fixed. Each market now gets its own 15-second timeout, cleared in a \`finally\` so a resolved subscription never leaves a timer pending.
+- The subscription retry timer's handle was never stored, so it could not be cancelled on unmount and a torn-down watchlist kept retrying in the background. The handle is now retained and cleared, and retries stop after 20 attempts instead of running forever against a market no provider will ever price.
+- The Kalshi poll had no in-flight guard. A poll slower than the 10-second interval overlapped itself, stacking concurrent requests against the same market; a new poll is now skipped while one is still running.
+
+## Brokers
+
+- Merging a hosted config snapshot compared *key counts* to decide whether the incoming broker config was richer than the local one. A snapshot that happened to carry more keys — including a redacted or partially-populated one — could therefore replace working local credentials. The local credential bag now always wins; only identity and sync metadata is taken from the snapshot.
+- Re-adding a broker profile matched on the label alone, so two different accounts sharing a label collapsed into one and the first account's credentials were overwritten. Reuse now requires the submitted account to match the stored one, comparing only the fields both define — fields a profile gained after connecting, such as OAuth tokens and account ids, are absent from a fresh form and are no longer counted as a mismatch. A genuine re-add of the same account still reuses its profile, so its portfolios stay attached rather than being stranded; a different account under the same label forks to its own profile.
+
+## Isolated runs
+
+- Two paths still read the real home directory during an isolated run: the AI run-trace module resolved its path at import time, before any flag could apply, and the AI tools module read \`process.env.HOME\` directly. Both now route through the data-dir-aware plugins directory, so an isolated QA session no longer writes traces into the user's real profile.
+- \`--data-dir\` was validated in the full argument parser but not in the early pass that runs before the first path is derived. A flag-like value such as \`--data-dir --headless\` became a literal directory named \`--headless\` for one half of the app while the other half used the real home — state split across two locations. Both paths now share one validator and reject a missing or flag-like value with the same error.
+
+## Remote control
+
+- \`app://snapshot\` and \`app://config\` returned the entire app config, credentials included. Both now pass through an allowlist redactor: every value in a broker's config bag and every BYOK API key is replaced with \`[redacted]\`, while keys, broker identity, and key validation metadata survive — so a QA agent can still assert "this broker has credentials configured" without being handed them. Unrecognized fields are redacted by default, so a future credential field is not exposed by omission.
+
+## Panes and command bar
+
+- Removed the \`Esc\` and \`Enter\` navigation hints from pane footers. Footers are for status that can change plus action hints; a key that does the same thing in every pane is not either.
+- The BYOK key viewer gained an \`API\` command-bar shortcut, so it appears in the assist inventory instead of being reachable only by navigation.
+- Data tables expose a \`readRows\` action over the remote-control surface, returning the rendered text of each cell and group header. This closes the gap that let both marquee bugs of the previous release through: automation could see a group header and its rows existed, but not that the header read \`69%\` while the row beneath it read \`51%\`. Reads are pull-based and bounded, so nothing is added to the pushed snapshot.`,
+};
+
+const RELEASE_0_13_13: ChangelogRelease = {
+  id: "hosted-v0-13-13",
+  tagName: "v0.13.13",
+  version: "0.13.13",
+  title: "Prediction-market watchlist odds, broker recovery, pane standardization, QA harness",
+  publishedAt: "2026-08-28T21:40:00.000Z",
+  url: "",
+  body: `Broker profiles can no longer be silently deleted by a sync round-trip, and portfolios that outlived their profile are now visible and removable instead of rendering as tabs that can never sync. Prediction-market odds now live-update in the Watchlist. Pane footers report honest live/delayed/stale state with every hinted key bound, and long lists gain in-pane search. The Connections inventory is complete — IBKR, GitHub Releases, SEC Cloud, NASA FIRMS, and the Polymarket socket all report traffic. A \`GLOOMBERB_DATA_DIR\` override and remote footer snapshots make isolated TUI QA practical without \`HOME=\` hacks or tmux capture.
+
+## Prediction markets
+
+- Starring a Polymarket or Kalshi market upserts a \`POLY:\` / \`KALSHI:\` ticker into the Watchlist. Those rows now receive live odds through a quote bridge that runs regardless of whether the prediction-market pane is focused.
+- Polymarket resolves \`yesTokenId\` from Gamma, subscribes to the CLOB socket, and pushes best-bid/offer and last-trade updates into the market-data coordinator.
+- Kalshi polls market details every 10 seconds and pushes the same quote shape.
+- The coordinator exposes \`pushQuote(instrument, quote)\` so a plugin can populate the quote store without a provider round-trip.
+- Prediction tickers are excluded from the equity quote watchdog and warmup batches, ending silent Yahoo / Gloom Cloud retry loops against symbols no provider can price.
+- Polymarket socket connects report through the Connections pane.
+- VENUE survives at ordinary pane widths and reads \`POLY\` / \`KALSHI\`, matching the ticker namespace. It previously required a 148-cell pane, so provenance was effectively never visible.
+- A stale watchlist entry no longer stacks a second copy of an outcome set under one event header. Persisted snapshots still held contracts written under an older id scheme, so the same Fed outcome arrived twice under different ids — the legacy copy carrying no CLOB token, hence frozen at its cached price, and winning the group's advertised top odds at 69% while the live children read 49/51. Outcomes now dedupe on the resolved question and prefer the quotable contract. Repeated outcome labels are left intact, because Polymarket reuses the outcome title across the sides of a line and one game event legitimately lists \`Spread -1.5\` several times.
+- Grouped children are ordered by probability rather than volume, so the outcome the header advertises as the top odds is the first row beneath it.
+- A grouped row's spread, last trade, and NO price come from the same contract as the probability it prints, instead of from the highest-volume member.
+- Probability reads as a likelihood ramp — green at or above 60%, red at or below 40% — with a neutral band between, so a 49/51 event no longer prints one leg red and the other green off a 2c difference. Detail YES/NO still colors by side.
+
+## Pane footers
+
+- OpenSky reports \`delayed\` instead of \`live\` for the anonymous feed.
+- World indices, sectors, and the FX matrix carry delayed chips; sectors also surfaces previously swallowed quote and history errors.
+- Scanner no longer prints \`15m delayed\` and \`live\` at the same time.
+- Market movers shows background refresh failures. Market halts drops its row count and gains \`/\` search.
+- Correlation binds the \`[r]\`efresh key it was already advertising.
+- Watchlist and portfolio panes gain a live/delayed chip, \`[r]\`efresh, and \`[o]\`pen — Yahoo Finance for equities, the venue market page for prediction tickers.
+- Quote monitor gains a status footer. SEC, transcripts, and insider research tabs gain \`[r]\`efresh; SEC also gains \`[/]\` search.
+- Equity diagnostic renders its partial and stale chips. Events rows expose \`[o]\`pen when a filing URL exists. Holders gains \`/\` search.
+
+## Connections
+
+- IBKR registers as a broker source; Flex statement HTTP and TWS gateway connects report traffic.
+- GitHub Releases registers as a source and the changelog fetch reports through it.
+- NASA FIRMS registers as a public source, so satellite imagery traffic is visible without the keyed plugin.
+- Treasury and FRED yield loads report under \`fred-public\`.
+- Screener folds onto the existing Yahoo row instead of adding a duplicate \`yahoo-fundamentals\` entry.
+- SEC filing, document, and content reads register as Gloom Cloud REST operations.
+- The Connections pane itself gains \`/\` and \`[s]\` search, and stops repeating its title in the body.
+- TV is marked keyless; congressional trades is marked keyed.
+
+## News
+
+- The RSS pane filters to RSS-origin articles instead of the merged firehose, and shows fetch errors in place of a bare empty state.
+- Feed, sector, and breaking panes gain \`/\` search.
+- The X feed mounts its live/delayed status helpers and can be created from the pane picker.
+- Substack home, archive, and article fetches report through Connections.
+
+## Brokers
+
+- Broker profiles are no longer deleted when their credentials go missing. Sync strips a profile's credential bag on purpose, but the config loader treated a profile without one as malformed and dropped it — round-tripping that shape emptied the broker list entirely, with no error. The loader now keeps the profile and leaves the credentials blank, so you re-enter a secret instead of rediscovering your brokers.
+- A cloud snapshot can no longer clear local broker profiles or blank their tokens. Snapshots carry broker identity without secrets and were applied wholesale; the merge now keeps the local credentials whenever the snapshot has nothing to put in their place, and keeps profiles the snapshot has never seen.
+- A workspace whose only customization is its brokers is no longer treated as an untouched default that loses to an empty snapshot.
+- Broker portfolios keep their link to the profile that owns them. Account identifiers are deliberately kept out of synced payloads, so a synced portfolio came back without one — and both profile removal and stale-portfolio cleanup match on exactly that link, which left stranded portfolios impossible to clear. The link is now rebuilt from the portfolio id on load, repairing configs that already lost it.
+- A portfolio whose broker profile no longer exists now shows in Brokers as an \`Unlinked\` row, grouped by the missing profile, with an account count and \`[d]\`elete to clear it and its imported positions. These previously rendered as ordinary portfolio tabs that could never sync while the pane reported zero issues, because the issue count only looked at profiles that still existed.
+- Re-adding the same broker account reuses its profile. A label collision used to suffix \`-2\`, \`-3\`, and so on, so every re-add forked a new profile *and* a new set of portfolios, stranding the previous ones with their positions.
+- Broker detail no longer repeats the stack title as its first line.
+
+## QA
+
+- \`GLOOMBERB_DATA_DIR\` and \`--data-dir\` isolate a session's data directory.
+- That isolation now covers external plugins too. The flag is applied before the first path is derived from it, and the plugins directory is resolved per call rather than cached at import, so an isolated run no longer loads whatever is installed under \`$HOME\` — which could shadow a built-in module id and throw during startup.
+- \`app://connections\` exposes per-source status, last poll, latency, and success/failure counts.
+- New \`app://pane-footers\` resource exposes footer status and hints as structured data, so footer assertions no longer require terminal capture. Unlabelled key and bracket nodes are filtered out, so callers do not have to strip nulls.
+- The renderer raises its listener ceiling so \`MaxListenersExceededWarning\` stops printing into the grid.
+- 70 tests no longer pass or fail based on which files ran before them, taking \`bun test\` from 91 failures to 21 — all of which now also fail on their own. Two process-wide leaks were responsible: constructing an OpenTUI renderer replaces \`globalThis.requestAnimationFrame\` and never restores it, so after any render test every later file that prefers a frame over a timer queued callbacks that never ran; and \`mock.module()\` swaps the module registry permanently, leaving venue-adapter and Adjacent/polls stubs installed for every file after the suites that declared them.
+
+## What to test
+
+- Star a Polymarket market, open the Watchlist, and confirm the \`POLY:\` row ticks. Repeat with Kalshi and expect movement within ~10 seconds.
+- Confirm \`SKY\` reports delayed, and that scanner shows one freshness chip rather than two.
+- Open \`CONN\`, press \`/\`, and confirm IBKR, GitHub Releases, and NASA FIRMS are listed.
+- In the Watchlist, press \`r\` to refresh quotes and \`o\` to open the selected row's venue or Yahoo page.
+- Open \`BR\` with leftover broker portfolios and confirm each missing profile shows as one \`Unlinked\` row, counted as an issue, and that \`[d]\`elete clears its portfolio tabs.
+- Add a broker, remove it, add it again with the same label, and confirm you get one profile rather than a \`-2\` fork.
+- Start with \`GLOOMBERB_DATA_DIR=/tmp/qa\` and confirm the session writes nowhere else.
+- Read \`app://pane-footers\` and confirm footer status and hints come back as data.
+`,
+};
+
 const RELEASE_0_13_12: ChangelogRelease = {
   id: "hosted-v0-13-12",
   tagName: "v0.13.12",
@@ -695,6 +834,9 @@ const RELEASE_0_11_0: ChangelogRelease = {
 
 /** Newest first: the pane's default order and the GitHub merge both rely on it. */
 export const HOSTED_CHANGELOG_RELEASES: ChangelogRelease[] = [
+  RELEASE_0_13_15,
+  RELEASE_0_13_14,
+  RELEASE_0_13_13,
   RELEASE_0_13_12,
   RELEASE_0_13_11,
   RELEASE_0_13_10,
