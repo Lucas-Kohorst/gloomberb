@@ -28,13 +28,6 @@ import type {
 type PredictionCatalogCache = Record<string, PredictionMarketSummary[]>;
 export type PredictionCatalogCacheSetter = Dispatch<SetStateAction<PredictionCatalogCache>>;
 const EMPTY_CATALOG_SLICE: PredictionMarketSummary[] = [];
-/**
- * Browse paints from a single Kalshi events page to stay fast, but those pages are
- * not ordered by volume, so ranking has to run against the deeper sweep. It lands
- * shortly after first paint and then refreshes on the catalog cache's own cadence.
- */
-const KALSHI_DEEP_SWEEP_DELAY_MS = 4_000;
-const KALSHI_DEEP_SWEEP_INTERVAL_MS = 5 * 60_000;
 
 interface UsePredictionCatalogDataOptions {
   browseTab: PredictionBrowseTab;
@@ -445,10 +438,18 @@ export function usePredictionCatalogData({
     if (!includeKalshi) return;
     let cancelled = false;
     let waiting = false;
+    const rankKalshi = (options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean }) => {
+      if (cancelled) return;
+      void loadKalshi(kalshiBrowseKey, "", categoryId, options);
+    };
     const cancelStartup = runAfterStartupBackground(() => {
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
-        firstPageOnly: true,
-      });
+      void (async () => {
+        // One load owns ranking: paint the first events page, then replace it
+        // with the deeper volume-ranked pool. Kalshi cannot sort by volume.
+        await loadKalshi(kalshiBrowseKey, "", categoryId, { firstPageOnly: true });
+        if (cancelled) return;
+        rankKalshi({ showPending: false });
+      })();
     });
     const tick = () => {
       if (cancelled) return;
@@ -461,9 +462,7 @@ export function usePredictionCatalogData({
         });
         return;
       }
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
-        firstPageOnly: true,
-      });
+      rankKalshi({ showPending: false });
     };
     const intervalId = setInterval(tick, pollIntervalMs);
     return () => {
@@ -472,23 +471,6 @@ export function usePredictionCatalogData({
       clearInterval(intervalId);
     };
   }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
-
-  useEffect(() => {
-    if (!includeKalshi) return;
-    let cancelled = false;
-    const sweep = () => {
-      if (cancelled) return;
-      // No pending state: first paint is already on screen and this only reranks it.
-      void loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
-    };
-    const startId = setTimeout(sweep, KALSHI_DEEP_SWEEP_DELAY_MS);
-    const intervalId = setInterval(sweep, KALSHI_DEEP_SWEEP_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(startId);
-      clearInterval(intervalId);
-    };
-  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi]);
 
   useEffect(() => {
     if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {
@@ -535,14 +517,14 @@ export function usePredictionCatalogData({
       }
     }
     if (includeKalshi) {
-      void loadKalshi(kalshiBrowseKey, "", categoryId, {
-        showPending: true,
-        force: true,
-        firstPageOnly: true,
-      });
-      // Rerank against the deep pool as well, reusing it while the catalog cache is
-      // fresh so a repeated refresh does not resweep every events page.
-      void loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
+      void (async () => {
+        await loadKalshi(kalshiBrowseKey, "", categoryId, {
+          showPending: true,
+          force: true,
+          firstPageOnly: true,
+        });
+        await loadKalshi(kalshiBrowseKey, "", categoryId, { showPending: false });
+      })();
       if (kalshiSearchKey && normalizedSearchQuery) {
         void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId, {
           force: true,

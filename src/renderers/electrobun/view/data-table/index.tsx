@@ -146,11 +146,13 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
   const scheduleVisibleRangeMeasure = useRafCallback(emitVisibleRange);
   const lastAppliedScrollRequestRef = useRef<string | null>(null);
+  const getScrollElement = useCallback(() => bodyElementRef.current, []);
+  const estimateSize = useCallback(() => rowHeightPx, [rowHeightPx]);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => bodyElementRef.current,
-    estimateSize: () => rowHeightPx,
+    getScrollElement,
+    estimateSize,
     overscan,
     paddingStart: WEB_CELL_HEIGHT,
     scrollPaddingStart: WEB_CELL_HEIGHT,
@@ -242,7 +244,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scheduleVisibleRangeMeasure();
   }, [
     items.length,
-    rowVirtualizer,
     scrollToIndex,
     scrollToIndexAlign,
     scrollToIndexVersion,

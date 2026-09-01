@@ -200,12 +200,13 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     updatedAgo,
   ]);
 
+  const venueTabItems = useMemo(
+    () => VENUE_TABS.map((tab) => ({ label: tab.label, value: tab.value })),
+    [],
+  );
   const venueTabs = !controller.paneSettings.hideTabs ? (
     <Tabs
-      tabs={VENUE_TABS.map((tab) => ({
-        label: tab.label,
-        value: tab.value,
-      }))}
+      tabs={venueTabItems}
       activeValue={controller.effectiveVenueScope}
       onSelect={controller.actions.setVenue}
       compact
