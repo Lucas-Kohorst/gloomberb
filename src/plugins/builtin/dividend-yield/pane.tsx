@@ -1,34 +1,30 @@
-import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useShortcut } from "../../../react/input";
+import { Box, Text, TextAttributes } from "../../../ui";
 import {
   DataTableView,
-  Spinner,
   StaticChartSurface,
-  TickerEmptyState,
-  footerErrorChip,
   usePaneFooter,
+  usePaneTicker,
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
+import type { ProjectedChartPoint } from "../../../components/chart/core/data";
+import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatNumber, formatPercentRaw } from "../../../utils/format";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
-import type { ProjectedChartPoint } from "../../../components/chart/core/data";
-import { usePaneTicker } from "../../../state/app/context";
-import { fetchDividendData } from "./client";
-import type { DividendMetrics, DividendPayment } from "./types";
-import type { DividendData } from "./client";
+import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
+import { fetchDividendData, type DividendData } from "./client";
 import {
   buildDividendColumns,
+  DEFAULT_SORT_PREFERENCE,
   nextSortPreference,
   sortRows,
   toDividendRows,
-  DEFAULT_SORT_PREFERENCE,
   type DividendColumn,
   type DividendRow,
   type DividendSortPreference,
 } from "./model";
+import type { DividendMetrics, DividendPayment } from "./types";
 
 function formatYield(value: number | null): string {
   if (value == null) return "—";
@@ -108,6 +104,75 @@ function buildYieldChartPoints(payments: DividendPayment[], currentPrice: number
   return points;
 }
 
+function renderMetricCell(row: MetricRow, width: number) {
+  const valueWidth = Math.min(row.value.length, Math.max(6, width - 8));
+  const labelWidth = Math.max(8, width - valueWidth - 1);
+  return (
+    <Box height={1} flexDirection="row">
+      <Text fg={colors.textDim}>{row.label.slice(0, labelWidth).padEnd(labelWidth)}</Text>
+      <Text
+        fg={row.color ?? colors.text}
+        attributes={row.bold ? TextAttributes.BOLD : undefined}
+      >
+        {row.value}
+      </Text>
+    </Box>
+  );
+}
+
+const MIN_METRIC_COLUMN_WIDTH = 18;
+
+function DividendSummary({
+  metrics,
+  currency,
+  width,
+  chartPoints,
+}: {
+  metrics: DividendMetrics;
+  currency: string;
+  width: number;
+  chartPoints: ProjectedChartPoint[];
+}) {
+  const metricRows = buildMetricRows(metrics, currency);
+  // Two 18-cell blocks overflow anything narrower than 38 cells, so collapse.
+  const columnCount = width - 2 >= MIN_METRIC_COLUMN_WIDTH * 2 ? 2 : 1;
+  const colWidth = Math.max(MIN_METRIC_COLUMN_WIDTH, Math.floor((width - 2) / columnCount));
+  const rowCount = Math.ceil(metricRows.length / columnCount);
+  const chartHeight = chartPoints.length >= 2 ? 6 : 0;
+  const palette = resolveChartPalette(colors, "positive");
+
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="column" paddingX={1} height={rowCount}>
+        {Array.from({ length: rowCount }, (_, i) => {
+          const left = metricRows[i * columnCount]!;
+          const right = columnCount > 1 ? metricRows[i * columnCount + 1] : undefined;
+          return (
+            <Box key={left.label} height={1} flexDirection="row">
+              <Box width={colWidth}>{renderMetricCell(left, colWidth)}</Box>
+              {right ? <Box width={colWidth}>{renderMetricCell(right, colWidth)}</Box> : null}
+            </Box>
+          );
+        })}
+      </Box>
+      {chartPoints.length >= 2 && (
+        <Box flexDirection="column" paddingX={1} height={chartHeight}>
+          <StaticChartSurface
+            points={chartPoints}
+            width={Math.max(10, width - 2)}
+            height={chartHeight}
+            mode="line"
+            colors={palette}
+            yAxisLabel="Yield %"
+            yAxisColor={colors.textDim}
+            formatYAxisValue={(value) => `${value.toFixed(2)}%`}
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function renderCell(
   row: DividendRow,
   column: DividendColumn,
@@ -118,24 +183,19 @@ function renderCell(
   switch (column.id) {
     case "exDate":
       return { text: row.exDate, color: selectedColor ?? colors.textDim };
-    case "paymentDate":
-      return { text: row.paymentDate, color: selectedColor ?? colors.textDim };
     case "amount":
       return {
         text: formatNumber(row.amount, 4),
         color: selectedColor ?? colors.textBright,
         attributes: TextAttributes.BOLD,
       };
-    case "type":
-      return { text: row.type, color: selectedColor ?? colors.textDim };
     case "currency":
       return { text: row.currency, color: selectedColor ?? colors.textDim };
   }
 }
 
 export function DividendYieldPane({ focused, width, height }: { focused: boolean; width: number; height: number }) {
-  const { ticker, financials } = usePaneTicker();
-  const symbol = ticker?.metadata.ticker ?? null;
+  const { symbol, ticker, financials } = usePaneTicker();
   const currency = ticker?.metadata.currency ?? "USD";
   const exchange = ticker?.metadata.exchange ?? "";
   const quotePrice = financials?.quote?.price ?? null;
@@ -145,10 +205,7 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   const [error, setError] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<DividendSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [selectedIdx, setSelectedIdx] = useState(0);
-
   const fetchGenRef = useRef(0);
-  const quotePriceRef = useRef(quotePrice);
-  quotePriceRef.current = quotePrice;
 
   const load = useCallback(async (sym: string, price: number | null, listingExchange = "") => {
     fetchGenRef.current += 1;
@@ -159,6 +216,7 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
       const result = await fetchDividendData(sym, price, listingExchange);
       if (fetchGenRef.current !== gen) return;
       setData(result);
+      setSelectedIdx(0);
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -168,141 +226,81 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
     }
   }, []);
 
-  useEffect(() => {
-    if (symbol) void load(symbol, quotePriceRef.current, exchange);
-  }, [exchange, load, symbol]);
+  // Ten years of history must not be refetched on every live price tick, so the
+  // quote is read through a ref instead of being an effect dependency.
+  const quotePriceRef = useRef(quotePrice);
+  quotePriceRef.current = quotePrice;
 
-  useShortcut((ev) => {
-    if (!focused || !symbol) return;
-    if (ev.name === "r") {
-      ev.preventDefault?.();
-      void load(symbol, quotePriceRef.current, exchange);
+  useEffect(() => {
+    if (!symbol) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
     }
-  });
+    void load(symbol, quotePriceRef.current, exchange);
+  }, [exchange, load, symbol]);
 
   const refresh = useCallback(() => {
     if (symbol) void load(symbol, quotePriceRef.current, exchange);
   }, [exchange, load, symbol]);
 
-  usePaneFooter("dividend-yield", () => {
-    const errorChip = footerErrorChip(error);
-    return {
-      info: [
-        ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-        ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
-      ],
-      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-    };
-  }, [error, loading, refresh]);
+  usePaneFooter("dividend-yield", () => ({
+    info: loadingErrorFooterInfo(loading, error),
+  }), [error, loading]);
 
   const payments = data?.payments ?? [];
   const metrics = data?.metrics;
   const rows = useMemo(() => toDividendRows(payments), [payments]);
   const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
   const columns = useMemo(() => buildDividendColumns(width), [width]);
-  const metricRows = useMemo(() => (metrics ? buildMetricRows(metrics, currency) : []), [metrics, currency]);
-  const chartPoints = useMemo(() => buildYieldChartPoints(payments, null), [payments]);
+  const chartPoints = useMemo(
+    () => buildYieldChartPoints(payments, data?.price ?? quotePrice),
+    [data?.price, payments, quotePrice],
+  );
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextSortPreference(current, columnId));
   }, []);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "r") {
-      event.preventDefault?.();
-      refresh();
-      return true;
-    }
-    return false;
+    return handleRefreshKey(event, refresh, { stopPropagation: true });
   }, [refresh]);
 
-  if (!symbol) {
-    return <TickerEmptyState kind="dividend" symbol={null} detail="dividend history" />;
-  }
-
-  if (loading && !data) {
-    return (
-      <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Spinner label="Loading dividend data..." />
-      </Box>
-    );
-  }
-
-  if (error && !data) {
-    return <TickerEmptyState kind="dividend" symbol={symbol} detail="dividend history" error={error} />;
-  }
-
-  if (payments.length === 0) {
-    return <TickerEmptyState kind="dividend" symbol={symbol} detail="dividend history" />;
-  }
-
-  const chartWidth = Math.max(10, width - 2);
-  const chartHeight = Math.min(12, Math.max(6, Math.floor(height * 0.3)));
-  const palette = resolveChartPalette(colors, "positive");
-  const metricColWidth = Math.max(16, Math.floor((width - 2) / 2));
+  const emptyTitle = !symbol
+    ? "No ticker selected."
+    : loading
+      ? "Loading dividends..."
+      : error ?? "No dividend history";
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <ScrollBox flexGrow={1} scrollY focusable={false}>
-        <Box flexDirection="column">
-          {/* Metrics section */}
-          {metricRows.length > 0 && (
-            <Box flexDirection="column" paddingX={1} marginTop={1}>
-              {metricRows.map((row, i) => (
-                <Box key={i} height={1} flexDirection="row" justifyContent="space-between">
-                  <Text fg={colors.textDim}>{row.label.padEnd(metricColWidth - 12)}</Text>
-                  <Text
-                    fg={row.color ?? colors.text}
-                    attributes={row.bold ? TextAttributes.BOLD : undefined}
-                  >
-                    {row.value}
-                  </Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-
-          {/* Yield chart */}
-          {chartPoints.length >= 2 && (
-            <Box flexDirection="column" paddingX={1} marginTop={1}>
-              <StaticChartSurface
-                points={chartPoints}
-                width={chartWidth}
-                height={chartHeight}
-                mode="line"
-                colors={palette}
-                yAxisLabel="Yield %"
-                yAxisColor={colors.textDim}
-                formatYAxisValue={(value) => `${value.toFixed(2)}%`}
-              />
-            </Box>
-          )}
-
-          {/* Payment history table */}
-          <Box flexDirection="column" marginTop={1}>
-            <DataTableView<DividendRow, DividendColumn>
-              focused={focused}
-              selection={{
-                kind: "index",
-                selectedIndex: Math.min(selectedIdx, sortedRows.length - 1),
-                onChange: (index) => setSelectedIdx(index),
-              }}
-              onRootKeyDown={handleKeyDown}
-              rootWidth={width}
-              rootHeight={Math.max(6, height - chartHeight - metricRows.length - 4)}
-              columns={columns}
-              items={sortedRows}
-              sortColumnId={sortPreference.columnId}
-              sortDirection={sortPreference.direction}
-              onHeaderClick={handleHeaderClick}
-              getItemKey={(row) => row.key}
-              renderCell={renderCell}
-              emptyStateTitle="No dividend data"
-              emptyStateMessage={`${symbol} has no dividend history.`}
-            />
-          </Box>
-        </Box>
-      </ScrollBox>
-    </Box>
+    <DataTableView<DividendRow, DividendColumn>
+      focused={focused}
+      selection={{
+        kind: "index",
+        selectedIndex: sortedRows.length === 0 ? null : Math.min(selectedIdx, sortedRows.length - 1),
+        onChange: (index) => setSelectedIdx(index),
+      }}
+      onRootKeyDown={handleKeyDown}
+      resetScrollKey={symbol}
+      rootWidth={width}
+      rootHeight={height}
+      rootBefore={metrics ? (
+        <DividendSummary
+          metrics={metrics}
+          currency={payments[0]?.currency ?? currency}
+          width={width}
+          chartPoints={chartPoints}
+        />
+      ) : undefined}
+      columns={columns}
+      items={sortedRows}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
+      getItemKey={(row) => row.key}
+      renderCell={renderCell}
+      emptyStateTitle={emptyTitle}
+    />
   );
 }

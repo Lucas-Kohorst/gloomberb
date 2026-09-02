@@ -15,8 +15,9 @@ import {
   formatPredictionLoadError,
   getPredictionCatalogStatus,
 } from "./status";
+import { useAutoRefresh } from "../../builtin/shared/auto-refresh";
 import { getCachedPredictionResource } from "../services/fetch";
-import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog, getKalshiCatalogFeed } from "../services/kalshi/adapter";
+import { kalshiCatalogCursor, loadKalshiCatalog, loadMoreKalshiCatalog } from "../services/kalshi/adapter";
 import { loadMorePolymarketCatalog, loadPolymarketCatalog, nextPolymarketCatalogOffset } from "../services/polymarket/adapter";
 import type {
   PredictionBrowseTab,
@@ -69,13 +70,11 @@ export function usePredictionCatalogData({
     Record<string, string | null>
   >({});
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
-  const [catalogLastRefreshAt, setCatalogLastRefreshAt] = useState<number | null>(
-    null,
-  );
+  const [polymarketLoadedAt, setPolymarketLoadedAt] = useState<number | null>(null);
+  const [kalshiLoadedAt, setKalshiLoadedAt] = useState<number | null>(null);
   const [polymarketNextOffset, setPolymarketNextOffset] = useState<number | null>(null);
   const [kalshiNextCursor, setKalshiNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [kalshiFeed, setKalshiFeed] = useState<"live" | "delayed">("live");
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
 
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
@@ -310,10 +309,7 @@ export function usePredictionCatalogData({
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        if (!search.trim() && !options?.firstPageOnly) {
-          setPolymarketNextOffset(nextPolymarketCatalogOffset(category, search));
-        }
-        setCatalogLastRefreshAt(Date.now());
+        setPolymarketNextOffset(nextPolymarketCatalogOffset(category, search));
       } catch (error) {
         setCatalogErrors((current) =>
           updatePredictionErrorState(
@@ -323,6 +319,7 @@ export function usePredictionCatalogData({
           ),
         );
       } finally {
+        setPolymarketLoadedAt(Date.now());
         if (showPending) {
           setCatalogPending((current) =>
             updatePredictionPendingCounts(current, cacheKey, -1),
@@ -368,10 +365,7 @@ export function usePredictionCatalogData({
         setCatalogErrors((current) =>
           updatePredictionErrorState(current, cacheKey, null),
         );
-        if (!search.trim() && !options?.firstPageOnly) {
-          setKalshiNextCursor(kalshiCatalogCursor(search, category));
-        }
-        setCatalogLastRefreshAt(Date.now());
+        setKalshiNextCursor(kalshiCatalogCursor(search, category));
       } catch (error) {
         setCatalogErrors((current) =>
           updatePredictionErrorState(
@@ -381,6 +375,7 @@ export function usePredictionCatalogData({
           ),
         );
       } finally {
+        setKalshiLoadedAt(Date.now());
         if (showPending) {
           setCatalogPending((current) =>
             updatePredictionPendingCounts(current, cacheKey, -1),
@@ -402,81 +397,15 @@ export function usePredictionCatalogData({
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
+  // Reloads follow the one refresh cadence the user configured, instead of two
+  // hardcoded intervals nobody can change.
   useEffect(() => {
     if (!includePolymarket) return;
-    let cancelled = false;
-    let waiting = false;
-    const cancelStartup = runAfterStartupBackground(() => {
-      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
-        firstPageOnly: true,
-      });
-    });
-    const tick = () => {
-      if (cancelled) return;
-      if (shouldYieldToUi()) {
-        if (waiting) return;
-        waiting = true;
-        void whenUiQuiet().then(() => {
-          waiting = false;
-          tick();
-        });
-        return;
-      }
-      void loadPolymarket(polymarketBrowseKey, "", categoryId, {
-        firstPageOnly: true,
-      });
-    };
-    const intervalId = setInterval(tick, pollIntervalMs);
-    return () => {
-      cancelled = true;
-      cancelStartup();
-      clearInterval(intervalId);
-    };
-  }, [categoryId, includePolymarket, loadPolymarket, pollIntervalMs, polymarketBrowseKey]);
-
-  useEffect(() => {
-    if (!includeKalshi) return;
-    let cancelled = false;
-    let waiting = false;
-    const rankKalshi = (options?: { showPending?: boolean; force?: boolean; firstPageOnly?: boolean }) => {
-      if (cancelled) return;
-      void loadKalshi(kalshiBrowseKey, "", categoryId, options);
-    };
-    const cancelStartup = runAfterStartupBackground(() => {
-      void (async () => {
-        // One load owns ranking: paint the first events page, then replace it
-        // with the deeper volume-ranked pool. Kalshi cannot sort by volume.
-        await loadKalshi(kalshiBrowseKey, "", categoryId, { firstPageOnly: true });
-        if (cancelled) return;
-        rankKalshi({ showPending: false });
-      })();
-    });
-    const tick = () => {
-      if (cancelled) return;
-      if (shouldYieldToUi()) {
-        if (waiting) return;
-        waiting = true;
-        void whenUiQuiet().then(() => {
-          waiting = false;
-          tick();
-        });
-        return;
-      }
-      rankKalshi({ showPending: false });
-    };
-    const intervalId = setInterval(tick, pollIntervalMs);
-    return () => {
-      cancelled = true;
-      cancelStartup();
-      clearInterval(intervalId);
-    };
-  }, [categoryId, includeKalshi, kalshiBrowseKey, loadKalshi, pollIntervalMs]);
-
-  useEffect(() => {
-    if (!includePolymarket || !polymarketSearchKey || !normalizedSearchQuery) {
-      return;
-    }
-    void loadPolymarket(polymarketSearchKey, debouncedSearchQuery, categoryId);
+    void loadPolymarket(
+      polymarketCatalogKey,
+      debouncedSearchQuery,
+      categoryId,
+    );
   }, [
     categoryId,
     debouncedSearchQuery,
@@ -486,11 +415,13 @@ export function usePredictionCatalogData({
     polymarketSearchKey,
   ]);
 
+  useAutoRefresh(includePolymarket ? polymarketLoadedAt : null, useCallback(() => {
+    void loadPolymarket(polymarketCatalogKey, debouncedSearchQuery, categoryId);
+  }, [categoryId, debouncedSearchQuery, loadPolymarket, polymarketCatalogKey]));
+
   useEffect(() => {
-    if (!includeKalshi || !kalshiSearchKey || !normalizedSearchQuery) {
-      return;
-    }
-    void loadKalshi(kalshiSearchKey, debouncedSearchQuery, categoryId);
+    if (!includeKalshi) return;
+    void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
   }, [
     categoryId,
     debouncedSearchQuery,
@@ -599,16 +530,70 @@ export function usePredictionCatalogData({
     polymarketNextOffset,
   ]);
 
+  useAutoRefresh(includeKalshi ? kalshiLoadedAt : null, useCallback(() => {
+    void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
+  }, [categoryId, debouncedSearchQuery, kalshiCatalogKey, loadKalshi]));
+
+  const loadMoreCatalog = useCallback(async () => {
+    if (loadingMore) return;
+    const canLoadPolymarket = includePolymarket && polymarketNextOffset != null;
+    const canLoadKalshi = includeKalshi && !!kalshiNextCursor;
+    if (!canLoadPolymarket && !canLoadKalshi) return;
+    setLoadingMore(true);
+    try {
+      if (canLoadPolymarket && polymarketNextOffset != null) {
+        const page = await loadMorePolymarketCatalog(
+          debouncedSearchQuery,
+          categoryId,
+          polymarketNextOffset,
+        );
+        setCatalogCache((current) => ({
+          ...current,
+          [polymarketCatalogKey]: mergeCatalogMarkets(
+            current[polymarketCatalogKey] ?? activeCatalogRef.current[polymarketCatalogKey] ?? [],
+            page.markets,
+          ),
+        }));
+        setPolymarketNextOffset(page.hasMore ? page.nextOffset : null);
+      }
+      if (canLoadKalshi && kalshiNextCursor) {
+        const page = await loadMoreKalshiCatalog(
+          debouncedSearchQuery,
+          categoryId,
+          kalshiNextCursor,
+        );
+        setCatalogCache((current) => ({
+          ...current,
+          [kalshiCatalogKey]: mergeCatalogMarkets(
+            current[kalshiCatalogKey] ?? activeCatalogRef.current[kalshiCatalogKey] ?? [],
+            page.markets,
+          ),
+        }));
+        setKalshiNextCursor(page.nextCursor);
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [
+    categoryId,
+    debouncedSearchQuery,
+    includeKalshi,
+    includePolymarket,
+    kalshiCatalogKey,
+    kalshiNextCursor,
+    loadingMore,
+    polymarketCatalogKey,
+    polymarketNextOffset,
+  ]);
+
   return {
     allMarkets,
     catalogHasMore: (includePolymarket && polymarketNextOffset != null) || (includeKalshi && !!kalshiNextCursor),
-    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore: loadingMore,
     catalogStatus,
     kalshiFeed,
     debouncedSearchQuery,
-    refreshCatalog,
     loadMoreCatalog,
     setCatalogCache,
   };

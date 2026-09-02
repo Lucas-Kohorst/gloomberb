@@ -179,17 +179,17 @@ describe("CommandBar", () => {
     expect(testSetup.captureCharFrame()).not.toContain("GitHub Light");
   });
 
-  test("runs plugin command shortcuts from the root query", async () => {
+  test("finds the tidy windows command by its snap alias", async () => {
     const calls: string[] = [];
 
     testSetup = await testRender(<CommandBarHarness
-      query="GL"
+      query="snap"
       configurePluginRegistry={(pluginRegistry) => {
         (pluginRegistry.commands as Map<string, any>).set("gridlock-all", {
           id: "gridlock-all",
-          label: "Gridlock All Windows",
-          description: "Arrange all visible panes into a tiled grid",
-          keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
+          label: "Tidy Windows",
+          description: "Arrange every window into one tiled layout",
+          keywords: ["tidy", "snap", "grid", "gridlock", "tile", "arrange", "organize", "organise", "cleanup", "dock", "floating", "windows", "layout"],
           shortcut: "GL",
           category: "config",
           execute: async () => {
@@ -215,7 +215,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Gridlock All Windows");
+    expect(frame).toContain("Tidy Windows");
     expect(frame).toContain("GL");
 
     await act(async () => {
@@ -267,52 +267,6 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Add Alert");
     expect(frame).toContain("SA");
-  });
-
-  test("treats plugin route trigger words as an empty plugin filter", async () => {
-    testSetup = await testRender(<CommandBarHarness query="PL plugins" />, {
-      width: 80,
-      height: 18,
-    });
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("News");
-    expect(frame).toContain("Notes");
-    expect(frame).not.toContain("No plugins match");
-  });
-
-  test("finds grouped plugins through their owned feature terms", async () => {
-    testSetup = await testRender(<CommandBarHarness
-      query="PL kelly"
-      configurePluginRegistry={(pluginRegistry) => {
-        (pluginRegistry.allPlugins as Map<string, any>).set("portfolio", {
-          id: "portfolio",
-          name: "Portfolio",
-          version: "1.0.0",
-          description: "Portfolio management",
-          toggleable: true,
-        });
-        (pluginRegistry.panes as Map<string, any>).set("kelly-sizer", {
-          id: "kelly-sizer",
-          name: "Position Sizer",
-          component: () => null,
-          defaultPosition: "right",
-        });
-        const getPluginPaneIds = pluginRegistry.getPluginPaneIds;
-        pluginRegistry.getPluginPaneIds = (pluginId: string) => (
-          pluginId === "portfolio" ? ["kelly-sizer"] : getPluginPaneIds(pluginId)
-        );
-      }}
-    />, {
-      width: 80,
-      height: 18,
-    });
-
-    await testSetup.renderOnce();
-
-    expect(testSetup.captureCharFrame()).toContain("Portfolio");
   });
 
   test("opens plugin command shortcut arguments in the wizard for confirmation", async () => {

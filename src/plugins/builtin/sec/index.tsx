@@ -1,27 +1,13 @@
-import { Box, Text, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
 import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
-import { colors } from "../../../theme/colors";
-import {
-  EmptyState,
-  ErrorState,
-  FeedDataTableStackView,
-  InputSearchBar,
-  Spinner,
-  TickerEmptyState,
-  useTableLoadMore,
-  useUpdatedAgo,
-  type FeedDataTableItem,
-} from "../../../components";
-import { useShortcut } from "../../../react/input";
-import { isPlainKey } from "../../../utils/keyboard";
-import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
+import { useDebouncedPluginPaneState } from "../../runtime";
+import { usePaneTicker } from "../../../state/app/context";
+import type { ScrollBoxRenderable } from "../../../ui";
+import { EmptyState, FeedDataTableStackView, Spinner, useTableLoadMore, type FeedDataTableItem } from "../../../components";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { parseForm4Xml, transactionTypeLabel } from "../insider/insider-data";
@@ -48,9 +34,7 @@ import { attachSecSummaryPersistence, resetSecSummaryPersistence } from "./summa
 import { renderFilingSummary, type FilingSummary } from "./summary-contract";
 import { useFilingSummary } from "./use-filing-summary";
 
-// Recent EDGAR dumps already cap around 1,000 mixed forms. Painting and
-// parsing tens of thousands of rows before first paint freezes the pane.
-const SEC_FILING_FETCH_LIMIT = 400;
+const SEC_FILING_FETCH_LIMIT = 20_000;
 const SEC_FILING_PAGE_SIZE = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
 
@@ -327,6 +311,7 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     ...(openFiling ? [openFiling] : []),
     ...(selectedFiling && selectedFiling.accessionNumber !== openFiling?.accessionNumber ? [selectedFiling] : []),
     ...buildInlineFilingContentTargets(openFiling, openDocuments),
+    ...(selectedFiling && OWNERSHIP_FORMS.has(selectedFiling.form.trim()) ? [selectedFiling] : []),
   ], [openDocuments, openFiling, selectedFiling]);
   const { contentCache } = useSecFilingContentCache({
     scopeKey: `${ticker?.metadata.ticker ?? "none"}:${ticker?.metadata.exchange ?? ""}:${eligibleTicker}`,
@@ -368,33 +353,18 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     url: error ? null : openFiling?.filingUrl,
     source: openFiling?.form,
     label: "filing",
-    loading: loading || !!summary.summarizingAccession,
-    error: error ?? summary.summaryError,
+    loading,
+    error,
     showOpenHint: !error && !!openFiling?.filingUrl,
-    hints: [
-      ...(canPopOut
-        ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
-        : []),
-      ...(canSummarize
-        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
-        : []),
-    ],
   });
 
-  if (!ticker) return <TickerEmptyState kind="SEC" symbol={null} detail="recent filings" />;
-  if (!eligibleTicker) {
-    return (
-      <EmptyState
-        title="US equities only"
-        message="SEC filings are only shown for US equities."
-      />
-    );
+  if (!ticker) {
+    return <EmptyState title="No ticker selected." message="Select a ticker to view SEC filings." />;
   }
+  if (!eligibleTicker) return renderFilingNotice("SEC filings are only shown for US equities.", width);
   if (loading && filings.length === 0) return <Spinner label="Loading SEC filings..." />;
-  if (error) return <ErrorState kind="SEC" error={error} />;
-  if (filings.length === 0) {
-    return <TickerEmptyState kind="SEC" symbol={ticker.metadata.ticker} detail="recent filings" />;
-  }
+  if (error) return <EmptyState title="SEC filings unavailable." message={error} />;
+  if (filings.length === 0) return renderFilingNotice(`No recent SEC filings for ${ticker.metadata.ticker}.`, width);
 
   return (
     <FeedDataTableStackView
@@ -734,6 +704,7 @@ export const secModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
+      tableExport: true,
     },
   ],
 

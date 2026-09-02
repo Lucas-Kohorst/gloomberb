@@ -389,10 +389,28 @@ export interface CloudCdsResponse {
   trades: CloudCdsTradePayload[];
 }
 
+export interface CloudShortInterestPointPayload {
+  settlementDate: string;
+  sharesShort: number;
+  previousSharesShort: number | null;
+  averageDailyVolume: number | null;
+  daysToCover: number | null;
+  changePercent: number | null;
+  revised: boolean;
+}
+
+export interface CloudShortInterestPayload {
+  symbol: string;
+  issueName: string | null;
+  points: CloudShortInterestPointPayload[];
+}
+
 export interface CloudYieldPointPayload {
   maturity: string;
   maturityYears: number;
   yield: number | null;
+  /** FRED observation date. Absent on servers older than the field. */
+  asOf?: string | null;
 }
 
 type CloudCongressTradeSide = "BUY" | "SELL" | "EXCHANGE" | "OTHER";
@@ -455,6 +473,66 @@ export interface CloudCongressHousePayload {
   nextFilingOffset?: number;
   trades: CloudCongressTradePayload[];
   members: CloudCongressMemberPayload[];
+}
+
+export interface CloudEarningsCallPayload {
+  id: string;
+  ticker: string;
+  companyName: string | null;
+  fiscalYear: number | null;
+  fiscalQuarter: number | null;
+  callAt: string | null;
+  status: string;
+  durationSeconds: number | null;
+  wordCount: number | null;
+  hasTranscript: boolean;
+  sentiment: number | null;
+}
+
+export interface CloudEarningsCallListPayload {
+  calls: CloudEarningsCallPayload[];
+}
+
+export interface CloudTranscriptTurnPayload {
+  speaker: string;
+  role?: string;
+  company?: string;
+  text: string;
+  isQa: boolean;
+  startSeconds: number;
+}
+
+export interface CloudTranscriptParticipantPayload {
+  name: string;
+  role?: string;
+  company?: string;
+}
+
+export interface CloudEarningsTranscriptPayload {
+  id: string;
+  ticker: string;
+  companyName: string | null;
+  fiscalYear: number | null;
+  fiscalQuarter: number | null;
+  callAt: string | null;
+  timing: string | null;
+  webcastUrl: string | null;
+  durationSeconds: number | null;
+  status: string;
+  fullText: string;
+  turns: CloudTranscriptTurnPayload[];
+  participants: CloudTranscriptParticipantPayload[];
+  summary: string | null;
+  guidance: string | null;
+  riskFactors: string | null;
+  analystFocus: string | null;
+  notable: string | null;
+  sentiment: number | null;
+  sentimentRationale: string | null;
+  qaStartTurn: number | null;
+  wordCount: number | null;
+  asrModel: string | null;
+  updatedAt: string | null;
 }
 
 export interface CloudSecFilingPayload {

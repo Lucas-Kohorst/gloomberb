@@ -2,7 +2,16 @@ import {
   getTimeSeriesField,
   listTimeSeriesFields,
 } from "../../../time-series/field-catalog";
+import {
+  chartSeriesSourceKey,
+  type ChartSeriesCatalogItem,
+} from "../../../capabilities";
 import type { TimeSeriesFieldDefinition } from "../../../time-series/types";
+import {
+  FUTURES_CONTRACTS,
+  FUTURES_SECTOR_LABELS,
+} from "../futures/contracts";
+import { TREASURY_MATURITIES } from "../yield-curve/treasury-data";
 import {
   canonicalExchange,
   parsePublicTickerKey,
@@ -205,7 +214,7 @@ export function analyzeSeriesSearchQuery(query: string): SeriesSearchAnalysis {
   };
 }
 
-function fieldCategory(field: TimeSeriesFieldDefinition): string {
+export function fieldCategory(field: TimeSeriesFieldDefinition): string {
   if (field.id.startsWith("market.")) return "Market";
   if (field.id.startsWith("valuation.")) return "Valuation";
   return "Fundamentals";
@@ -253,178 +262,114 @@ function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | nul
   if (!query.includes(":")) return null;
   const expression = parseSeriesExpression(query);
   if (!expression) return null;
-  switch (expression.kind) {
-    case "economic":
-      return {
-        id: `fred:${expression.seriesId}`,
-        label: `FRED · ${expression.seriesId}`,
-        description: "Economic series from FRED",
-        detail: "FRED",
-        expression,
-      };
-    case "adjacent-index":
-      return {
-        id: `adj:${expression.indexId}`,
-        label: `ADJ · ${expression.indexId}`,
-        description: "Adjacent prediction-market index",
-        detail: "Adjacent",
-        expression,
-      };
-    case "future":
-      return {
-        id: `fut:${expression.code}`,
-        label: `${expression.name} (${expression.code})`,
-        description: `Futures · ${expression.symbol}`,
-        detail: "Futures",
-        expression,
-      };
-    case "treasury-yield":
-      return {
-        id: `ust:${expression.maturity}`,
-        label: `${expression.maturity} Treasury Yield`,
-        description: "US Treasury yield (FRED)",
-        detail: "UST",
-        expression,
-      };
-    case "benchmark":
-      return {
-        id: `bench:${expression.selector}:${expression.metric}`,
-        label: `${expression.selector} · ${expression.metric}`,
-        description: "AI benchmark (point-in-time)",
-        detail: "Bench",
-        expression,
-      };
-    case "poll":
-      return {
-        id: `poll:${expression.subject}:${expression.choice}`,
-        label: `${expression.subject} · ${expression.choice}`,
-        description: "VoteHub poll series",
-        detail: "Poll",
-        expression,
-      };
-    case "weather":
-      return {
-        id: `${expression.provider}:${expression.stationId}:${expression.metric}`,
-        label: `${expression.provider === "nws-cli" ? "NWS" : "WX"} · ${expression.stationId} ${expression.metric}`,
-        description: expression.provider === "nws-cli"
-          ? "NWS Daily Climate Report (first final CLI print)"
-          : "Weather Company Kalshi climate / hourly",
-        detail: expression.provider === "nws-cli" ? "NWS" : "WX",
-        expression,
-      };
-    case "owid":
-      return {
-        id: `owid:${expression.slug}:${expression.entity}`,
-        label: expression.label ?? `OWID · ${expression.slug} ${expression.entity}`,
-        description: "Our World in Data grapher series (CC BY 4.0)",
-        detail: "OWID",
-        expression,
-      };
-    case "prediction-market":
-      return {
-        id: `pm:${expression.venue}:${expression.marketId}`,
-        label: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${expression.label ?? expression.marketId}`,
-        description: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} yes-price`,
-        detail: expression.venue === "kalshi" ? "KALSHI" : "POLY",
-        expression,
-      };
-    default: {
-      const field = getTimeSeriesField(expression.fieldId);
-      const instrument = publicTickerKey(expression.symbol, expression.exchange);
-      return {
-        id: `${instrument}:${expression.fieldId}`,
-        label: `${instrument} · ${field?.label ?? expression.fieldId}`,
-        description: field
-          ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
-          : "Security series",
-        detail: field ? fieldFrequency(field) : "Security",
-        expression,
-      };
-    }
+  if (expression.kind === "economic") {
+    return {
+      id: `fred:${expression.seriesId}`,
+      label: expression.label ?? `FRED · ${expression.seriesId}`,
+      description: "Economic series from FRED",
+      detail: "FRED",
+      expression,
+    };
   }
-}
-
-/** Renders a parsed series expression back into the SYMBOL:field / FRED:id text the chart command accepts. */
-export function formatParsedSeriesExpression(expression: ParsedSeriesExpression): string {
-  switch (expression.kind) {
-    case "economic":
-      return `FRED:${expression.seriesId}`;
-    case "adjacent-index":
-      return `${SERIES_PREFIX.adjacentIndex}:${expression.indexId}`;
-    case "future":
-      return `${SERIES_PREFIX.future}:${expression.code}`;
-    case "treasury-yield":
-      return `${SERIES_PREFIX.treasury}:${expression.maturity}`;
-    case "benchmark":
-      return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
-    case "poll":
-      return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
-    case "weather":
-      return `${expression.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
-    case "owid":
-      return `${SERIES_PREFIX.owid}:${expression.slug}:${expression.entity}`;
-    case "prediction-market":
-      return formatPredictionSeriesExpression(expression);
-    default:
-      return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+  if (expression.kind === "capability") {
+    return {
+      id: chartSeriesSourceKey({
+        kind: "capability",
+        capabilityId: expression.capabilityId,
+        seriesId: expression.seriesId,
+      }),
+      label: expression.label ?? expression.seriesId,
+      description: `Plugin series from ${expression.capabilityId}`,
+      detail: "Plugin",
+      expression,
+    };
   }
+  const field = getTimeSeriesField(expression.fieldId);
+  const instrument = publicTickerKey(expression.symbol, expression.exchange);
+  return {
+    id: `${instrument}:${expression.fieldId}`,
+    label: expression.label ?? `${instrument} · ${field?.label ?? expression.fieldId}`,
+    description: field
+      ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
+      : "Security series",
+    detail: field ? fieldFrequency(field) : "Security",
+    expression,
+  };
 }
 
-/**
- * Field names the AI assistant can drop into a `G` expression. Each is a valid
- * alias the parser resolves (a field-id suffix or an explicit alias), so the
- * assistant never has to emit the verbose `fundamental.totalRevenue` form.
- */
-const ASSIST_FIELD_NAMES = [
-  "price", "close", "volume", "div", "dvd",
-  "revenue", "grossProfit", "grossMargin", "operatingIncome", "netIncome", "netMargin",
-  "freeCashFlow", "eps", "totalAssets", "totalDebt", "totalEquity",
-  "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",
-] as const;
-
-/**
- * Appended onto the `G` command descriptor so `/assist/command` knows the
- * series vocabulary and expression syntax, letting it map natural-language
- * chart queries ("show AAPL revenue vs MSFT revenue") onto a real expression.
- */
-export function buildChartSeriesAssistContext(): string {
-  return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
-    + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
-    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data, "
-    + "ADJ:indexId for Adjacent indices (e.g. ADJ:red, ADJ:blue, ADJ:red-tr), "
-    + "KALSHI:ticker for Kalshi yes-price (e.g. KALSHI:KXPRESPERSON), "
-    + "POLY:marketId for Polymarket yes-price, "
-    + "FUT:code for futures (e.g. FUT:ES), "
-    + "UST:maturity for Treasury yields (e.g. UST:10Y), "
-    + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
-    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
-    + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
-    + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
-    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL), "
-    + "BTC-USD:price for crypto. "
-    + "Use G <expression> to chart or CAT <query> to browse the Data Catalog. "
-    + "Natural language such as 'life expectancy', 'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' maps onto those expressions.";
+function matchesAliasQuery(query: string, ...values: string[]): boolean {
+  const tokens = words(query).map(compact);
+  const searchable = compact(values.join(" "));
+  return tokens.length > 0 && tokens.every((token) => searchable.includes(token));
 }
 
-const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID):/i;
-const CATALOG_SERIES_INTENT_RE = /\b(fred|cpi|gdp|unemployment|pce|nfp|treasury|ust|owid|weather|climate|nws|votehub|polls?|bitcoin|ethereum|crypto|llm-stats|aibench|benchmarks?|futures?)\b/i;
-
-/** True when the command bar should autocomplete CAT/G series without a prefix. */
-export function looksLikeCatalogSeriesQuery(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed) return false;
-  if (CATALOG_SERIES_PREFIX_RE.test(trimmed)) return true;
-  if (looksLikePredictionMarketQuery(trimmed)) return true;
-  if (looksLikeOwidSeriesQuery(trimmed)) return true;
-  return CATALOG_SERIES_INTENT_RE.test(trimmed);
+function coreAliasSuggestions(query: string): SeriesCatalogSuggestion[] {
+  const futures = FUTURES_CONTRACTS
+    .filter((contract) => matchesAliasQuery(
+      query,
+      `FUT:${contract.code}`,
+      contract.code,
+      contract.name,
+      `${contract.name} futures`,
+      contract.sector,
+      FUTURES_SECTOR_LABELS[contract.sector],
+    ))
+    .map((contract): SeriesCatalogSuggestion => ({
+      id: `${contract.symbol}:market.ohlcv`,
+      label: `FUT:${contract.code} · ${contract.name}`,
+      description: `${FUTURES_SECTOR_LABELS[contract.sector]} futures`,
+      detail: "Futures",
+      expression: {
+        kind: "security",
+        symbol: contract.symbol,
+        fieldId: "market.ohlcv",
+        label: contract.name,
+      },
+    }));
+  const treasuries = TREASURY_MATURITIES
+    .filter((treasury) => matchesAliasQuery(
+      query,
+      `UST:${treasury.maturity}`,
+      treasury.maturity,
+      treasury.seriesId,
+      `${treasury.maturity.replace("M", " month").replace("Y", " year")} US Treasury yield`,
+    ))
+    .map((treasury): SeriesCatalogSuggestion => ({
+      id: `fred:${treasury.seriesId}`,
+      label: `UST:${treasury.maturity} · Treasury Yield`,
+      description: `U.S. Treasury ${treasury.maturity} yield · FRED ${treasury.seriesId}`,
+      detail: "Treasury",
+      expression: {
+        kind: "economic",
+        provider: "fred",
+        seriesId: treasury.seriesId,
+        label: `${treasury.maturity} Treasury Yield`,
+      },
+    }));
+  return [...futures, ...treasuries];
 }
 
-/** Live OWID search is expensive; only run it when the query names that source. */
-export function looksLikeOwidSeriesQuery(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed) return false;
-  if (/^owid:/i.test(trimmed)) return true;
-  return /\b(owid|our world in data)\b/i.test(trimmed);
+export function buildCapabilitySeriesSuggestions(
+  items: ReadonlyArray<ChartSeriesCatalogItem & { capabilityId: string; capabilityName: string }>,
+): SeriesCatalogSuggestion[] {
+  return items.map((item) => ({
+    id: chartSeriesSourceKey({
+      kind: "capability",
+      capabilityId: item.capabilityId,
+      seriesId: item.seriesId,
+    }),
+    label: item.label,
+    description: item.description ?? item.capabilityName,
+    detail: item.detail ?? item.capabilityName,
+    expression: {
+      kind: "capability",
+      capabilityId: item.capabilityId,
+      seriesId: item.seriesId,
+      label: item.label,
+      style: item.style,
+      transform: item.transform,
+    },
+  }));
 }
 
 export function buildSeriesCatalogSuggestions(
@@ -452,18 +397,8 @@ export function buildSeriesCatalogSuggestions(
     .sort((left, right) => right.score - left.score || left.field.label.localeCompare(right.field.label));
 
   const suggestions: SeriesCatalogSuggestion[] = exact ? [exact] : [];
-  if (nl) {
-    const nlSuggestion = predictionExpressionSuggestion(nl);
-    if (!suggestions.some((entry) => entry.id === nlSuggestion.id)) {
-      suggestions.unshift(nlSuggestion);
-    }
-  }
-  if (!query.includes(":") && !analysis.metricQuery) {
-    for (const suggestion of [...owidCatalogSuggestions(query)].reverse()) {
-      if (!suggestions.some((entry) => entry.id === suggestion.id)) {
-        suggestions.unshift(suggestion);
-      }
-    }
+  for (const suggestion of coreAliasSuggestions(query)) {
+    if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
   }
   const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
   for (const instrument of instruments) {

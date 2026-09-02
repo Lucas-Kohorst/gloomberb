@@ -54,8 +54,10 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
   },
   {
     id: "open_interest",
+    // One cell wider than the value needs: OI is right aligned and ENDS is left
+    // aligned, so without the slack the two headers read as one "OI ENDS" word.
     label: "OI",
-    width: 10,
+    width: 11,
     align: "right",
     description: "Open interest in dollars.",
   },
@@ -134,7 +136,6 @@ export const DEFAULT_PREDICTION_COLUMN_IDS = [
   "vol_24h",
   "open_interest",
   "ends",
-  "status",
 ];
 
 export const PREDICTION_COLUMNS_BY_ID = new Map(

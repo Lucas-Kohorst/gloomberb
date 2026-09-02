@@ -10,11 +10,21 @@ import { SummaryLink } from "./shared";
 
 export function PredictionMarketOverviewView({
   detailWidth,
+  focused,
+  height,
+  historyRange,
+  loading,
+  onHistoryRangeChange,
   onSelectMarket,
   selectedRow,
   summary,
 }: {
   detailWidth: number;
+  focused: boolean;
+  height: number;
+  historyRange: PredictionHistoryRange;
+  loading: boolean;
+  onHistoryRangeChange: (range: PredictionHistoryRange) => void;
   onSelectMarket: (marketKey: string) => void;
   selectedRow: PredictionListRow | null;
   summary: PredictionMarketSummary;
@@ -31,6 +41,15 @@ export function PredictionMarketOverviewView({
           selectedRow={selectedRow}
         />
       )}
+      <PredictionMarketChart
+        history={detail?.history ?? []}
+        width={detailWidth}
+        height={Math.max(Math.floor(height * 0.36), 10)}
+        loading={loading}
+        focused={focused}
+        range={historyRange}
+        onRangeSelect={onHistoryRangeChange}
+      />
       <SummaryLink
         url={summary.url}
         maxLength={Math.max(detailWidth - 8, 12)}

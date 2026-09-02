@@ -1,7 +1,4 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
-import { httpFetch } from "../../../utils/http-transport";
-import { withConnectionRequest } from "../connections/register";
-import { TREASURY_CONNECTION_ID } from "./types";
 import type { TreasuryAuction, TreasuryAuctionRaw } from "./types";
 
 const BASE_URL =
@@ -37,12 +34,7 @@ const TREASURY_FETCH = createThrottledFetch({
   maxRetries: 2,
   timeoutMs: 15_000,
   backoffBaseMs: 800,
-  dedupeGetRequests: true,
-  defaultHeaders: {
-    Accept: "application/json",
-    "User-Agent": "gloomberb-treasury-auctions",
-  },
-  transport: httpFetch,
+  defaultHeaders: { Accept: "application/json" },
 });
 
 function isoDateDaysAgo(days: number, now = Date.now()): string {
@@ -149,13 +141,11 @@ export async function fetchTreasuryAuctions(
   sinceDays: number = AUCTION_HISTORY_DAYS,
 ): Promise<TreasuryAuction[]> {
   const requestedAt = Date.now();
-  return withConnectionRequest(TREASURY_CONNECTION_ID, "auctions", () =>
-    fetchAuctionPages(async (page) => {
-      const response = await TREASURY_FETCH.fetch(buildAuctionsUrl(sinceDays, requestedAt, page));
-      if (!response.ok) {
-        throw new Error(`Treasury Fiscal Data request failed (${response.status})`);
-      }
-      return response.json();
-    }),
-  );
+  return fetchAuctionPages(async (page) => {
+    const response = await TREASURY_FETCH.fetch(buildAuctionsUrl(sinceDays, requestedAt, page));
+    if (!response.ok) {
+      throw new Error(`Treasury Fiscal Data request failed (${response.status})`);
+    }
+    return response.json();
+  });
 }

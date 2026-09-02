@@ -38,7 +38,7 @@ function mapExtent(width: number, height: number, yUnitAspect = 1) {
   const unitAspect = Math.max(yUnitAspect, Number.EPSILON);
   const effectiveHeight = availableHeight * unitAspect;
   const latitudeSpan = MAX_LATITUDE - MIN_LATITUDE;
-  return { availableWidth, unitAspect, effectiveHeight, latitudeSpan };
+  return { availableWidth, availableHeight, unitAspect, effectiveHeight, latitudeSpan };
 }
 
 function fittedWorldMapScale(width: number, height: number, yUnitAspect = 1): number {
@@ -66,6 +66,7 @@ export function projectWorldPoint(
   const { availableWidth, unitAspect, effectiveHeight } = mapExtent(width, height, yUnitAspect);
   const scale = worldMapScale(width, height, yUnitAspect, viewport);
   const clampedLatitude = clamp(latitude, MIN_LATITUDE, MAX_LATITUDE);
+
   return {
     x: availableWidth / 2 + (longitude - viewport.centerLongitude) * scale,
     y: (effectiveHeight / 2 - (clampedLatitude - viewport.centerLatitude) * scale) / unitAspect,
@@ -85,36 +86,6 @@ export function unprojectWorldPoint(
   return {
     longitude: viewport.centerLongitude + (x - availableWidth / 2) / scale,
     latitude: viewport.centerLatitude - (y * unitAspect - effectiveHeight / 2) / scale,
-  };
-}
-
-export interface WorldMapTransform {
-  scale: number;
-  translateX: number;
-  translateY: number;
-}
-
-/**
- * Zoom and pan are affine in projected space, so geometry can be projected once at
- * the base viewport and moved with a transform. Derived by projecting two reference
- * points under both viewports rather than restating the projection algebra.
- */
-export function worldMapTransform(
-  width: number,
-  height: number,
-  viewport: WorldMapViewport,
-  yUnitAspect = 1,
-): WorldMapTransform {
-  const baseOrigin = projectWorldPoint(0, 0, width, height, yUnitAspect);
-  const baseReference = projectWorldPoint(90, 45, width, height, yUnitAspect);
-  const viewOrigin = projectWorldPoint(0, 0, width, height, yUnitAspect, viewport);
-  const viewReference = projectWorldPoint(90, 45, width, height, yUnitAspect, viewport);
-  const baseSpan = baseReference.x - baseOrigin.x;
-  const scale = baseSpan === 0 ? 1 : (viewReference.x - viewOrigin.x) / baseSpan;
-  return {
-    scale,
-    translateX: viewOrigin.x - scale * baseOrigin.x,
-    translateY: viewOrigin.y - scale * baseOrigin.y,
   };
 }
 

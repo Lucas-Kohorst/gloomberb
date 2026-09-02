@@ -335,8 +335,7 @@ describe("prediction markets pane interactions", () => {
       url.includes("/trade-api/v2/series/FED/markets/KAL-1/candlesticks"),
     );
 
-    expect(eventFetches.length).toBeGreaterThanOrEqual(1);
-    expect(eventFetches.length).toBeLessThanOrEqual(2);
+    expect(eventFetches).toHaveLength(1);
     expect(orderbookFetches).toHaveLength(1);
     expect(tradeFetches).toHaveLength(1);
     expect(historyFetches).toHaveLength(1);
@@ -533,7 +532,7 @@ describe("prediction markets pane interactions", () => {
     ).toEqual(tradeFirstBefore);
   });
 
-  test("toggles series expand/collapse with Enter and still opens child markets", async () => {
+  test("supports detail outcome navigation and escape return from the keyboard", async () => {
     attachPredictionMarketsPersistence(new MemoryPersistence());
 
     globalThis.fetch = (async (input: Request | string | URL) => {

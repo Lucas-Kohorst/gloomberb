@@ -243,8 +243,7 @@ function mergeStatementsByPeriod(
     const lastGroup = groups.at(-1);
     if (lastGroup && areNearbyFinancialPeriodEnds(lastGroup[0]!.date, statement.date)) {
       lastGroup.push(statement as InternalStatement);
-    }
-    else groups.push([statement as InternalStatement]);
+    } else groups.push([statement as InternalStatement]);
   }
   return groups
     .map(mergeStatementPeriodGroup)
@@ -601,12 +600,22 @@ function pointForStatement(
   };
 }
 
+/**
+ * `PricePoint.date` is typed as a `Date`, but history that has crossed a JSON
+ * boundary (persisted caches, the screenshot payload) arrives as a string. Read
+ * it defensively so a serialized round trip cannot crash valuation history.
+ */
+function pointTime(point: PricePoint): number {
+  const date = point.date;
+  return date instanceof Date ? date.getTime() : Date.parse(date as unknown as string);
+}
+
 function priceAtOrBefore(priceHistory: readonly PricePoint[], date: string): number | null {
   const target = Date.parse(date);
   if (!Number.isFinite(target)) return null;
   let closest: { time: number; close: number } | undefined;
   for (const point of priceHistory) {
-    const time = point.date.getTime();
+    const time = pointTime(point);
     if (!Number.isFinite(time) || time > target || !finiteNumber(point.close) || point.close <= 0) continue;
     if (!closest || time > closest.time) closest = { time, close: point.close };
   }
@@ -770,8 +779,7 @@ function dedupeFundamentalPeriods(points: readonly TimeSeriesPoint[]): TimeSerie
     const lastGroup = groups.at(-1);
     if (lastGroup && areNearbyFinancialPeriodEnds(lastGroup[0]!.observedAt, point.observedAt)) {
       lastGroup.push(point);
-    }
-    else groups.push([point]);
+    } else groups.push([point]);
   }
   return groups
     .map((group) => group.slice(1).reduce(preferredPeriodPoint, group[0]!))

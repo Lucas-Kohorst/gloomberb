@@ -229,7 +229,15 @@ export class YahooFinanceClient implements DataProvider {
 
     for (const symbol of symbolsToTry) {
       try {
-        return await loadYahooQuote(symbol, this.quoteLoaders());
+        return await loadYahooQuote(symbol, {
+          fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
+          fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
+            this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
+          providerId: this.id,
+        });
       } catch (err) {
         lastError = err;
       }

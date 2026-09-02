@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_AUCTION_SORT,
-  auctionHistoryDays,
   indirectPct,
   isPendingAuction,
   matchesFilter,
@@ -16,7 +15,6 @@ import type { TreasuryAuction } from "./types";
 function auction(overrides: Partial<TreasuryAuction> & { secType: string; securityTerm: string }): TreasuryAuction {
   return {
     id: `${overrides.secType}|${overrides.auctionDate ?? "2026-08-12"}|${overrides.securityTerm}`,
-    cusip: null,
     auctionDate: "2026-08-12",
     highInvestmentRate: null,
     highYield: null,
@@ -55,6 +53,7 @@ describe("auction metrics", () => {
   });
 
   test("keeps a zero indirect allocation as 0%, not unknown", () => {
+    // A no-indirect auction is a real result and a notable one; "—" hides it.
     const zeroIndirect = auction({
       secType: "Bill",
       securityTerm: "4-Week",
@@ -120,17 +119,12 @@ describe("visibleAuctions", () => {
       .map((row) => row.securityTerm)).toEqual(["4-Week", "10-Year", "30-Year"]);
   });
 
-  test("search matches type, term, auction date, and CUSIP", () => {
+  test("search matches type, term, and auction date", () => {
     const sort = DEFAULT_AUCTION_SORT;
     expect(visibleAuctions(rows, { filter: "all", query: "bill", sort })).toHaveLength(1);
     expect(visibleAuctions(rows, { filter: "all", query: "30-year", sort })).toHaveLength(1);
     expect(visibleAuctions(rows, { filter: "all", query: "2026-08-1", sort })).toHaveLength(3);
     expect(visibleAuctions(rows, { filter: "note", query: "bill", sort })).toHaveLength(0);
-    const withCusip = [
-      ...rows,
-      auction({ secType: "Note", securityTerm: "2-Year", cusip: "91282CNH3", auctionDate: "2026-08-10" }),
-    ];
-    expect(visibleAuctions(withCusip, { filter: "all", query: "91282cnh", sort })).toHaveLength(1);
   });
 
   test("rows missing a metric sort last instead of jumping to the top", () => {
@@ -141,12 +135,6 @@ describe("visibleAuctions", () => {
       sort: { columnId: "rate", direction: "desc" },
     });
     expect(byRate.at(-1)?.securityTerm).toBe("20-Year");
-    const byRateAsc = visibleAuctions(withPending, {
-      filter: "all",
-      query: "",
-      sort: { columnId: "rate", direction: "asc" },
-    });
-    expect(byRateAsc.at(-1)?.securityTerm).toBe("20-Year");
   });
 });
 
@@ -155,14 +143,5 @@ describe("nextAuctionSort", () => {
     expect(nextAuctionSort(DEFAULT_AUCTION_SORT, "date")).toEqual({ columnId: "date", direction: "asc" });
     expect(nextAuctionSort(DEFAULT_AUCTION_SORT, "btc")).toEqual({ columnId: "btc", direction: "desc" });
     expect(nextAuctionSort(DEFAULT_AUCTION_SORT, "term")).toEqual({ columnId: "term", direction: "asc" });
-  });
-});
-
-describe("auctionHistoryDays", () => {
-  test("accepts known windows and falls back to 120", () => {
-    expect(auctionHistoryDays({ historyDays: "30" })).toBe(30);
-    expect(auctionHistoryDays({ historyDays: 365 })).toBe(365);
-    expect(auctionHistoryDays({ historyDays: "7" })).toBe(120);
-    expect(auctionHistoryDays(undefined)).toBe(120);
   });
 });

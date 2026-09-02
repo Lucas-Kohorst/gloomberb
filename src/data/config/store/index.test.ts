@@ -248,15 +248,62 @@ describe("sanitizeLayout", () => {
       detached: [],
     }, DEFAULT_LAYOUT, { migrateLegacy: true });
 
-    expect(layout.floating).toEqual([{
-      instanceId: "portfolio-list:main",
-      x: 50,
-      y: 30,
-      width: 10,
-      height: 3,
-      fixedGeometry: true,
-      zIndex: undefined,
-    }]);
+    const pane = findPaneInstance(layout, "comparison-chart:main");
+    expect(pane?.paneId).toBe("chart-composer");
+    expect(pane?.settings).toEqual({
+      chartSpec: expect.objectContaining({
+        version: 2,
+        viewport: { range: "1Y", resolution: "1d" },
+        series: [
+          expect.objectContaining({
+            transform: "percent",
+            interpolation: "none",
+            source: expect.objectContaining({ fieldId: "market.close" }),
+          }),
+          expect.objectContaining({
+            transform: "percent",
+            interpolation: "none",
+            source: expect.objectContaining({ fieldId: "market.close" }),
+          }),
+        ],
+      }),
+    });
+  });
+
+  test("does not convert legacy chart settings during ordinary sanitization", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "ticker-detail:aapl" },
+      instances: [{
+        instanceId: "ticker-detail:aapl",
+        paneId: "ticker-research",
+        binding: { kind: "fixed", symbol: "AAPL" },
+        settings: {
+          chartRangePreset: "1Y",
+          chartResolution: "1wk",
+        },
+      }],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT, { migrateLegacy: true });
+
+    const settings = findPaneInstance(layout, "ticker-detail:aapl")?.settings;
+    expect(settings).toEqual({
+      hideTabs: true,
+      lockedTabId: "chart",
+      chartSpec: expect.objectContaining({
+        version: 2,
+        viewport: { range: "1Y", resolution: "1wk" },
+        series: [expect.objectContaining({
+          transform: "percent",
+          interpolation: "none",
+          source: expect.objectContaining({
+            kind: "security",
+            instrument: { symbol: "AAPL" },
+            fieldId: "market.ohlcv",
+          }),
+        })],
+      }),
+    });
   });
 
   test("does not convert legacy chart settings during ordinary sanitization", () => {
@@ -301,6 +348,175 @@ describe("sanitizeLayout", () => {
 });
 
 describe("loadConfig", () => {
+  test("folds saved graph plugin state into composer specs and removes only chart-owned state", async () => {
+    const dataDir = await createTempConfigDir();
+    const legacyLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "fundamental-graph:pair" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:nvda" },
+      },
+      instances: [
+        {
+          instanceId: "fundamental-graph:pair",
+          paneId: "fundamental-graph",
+          binding: { kind: "fixed" as const, symbol: "AAPL" },
+          settings: {
+            chartKind: "fundamental",
+            metric: "totalRevenue",
+            period: "quarterly",
+            periods: 8,
+            symbols: ["AAPL", "MSFT"],
+            symbolsText: "AAPL, MSFT",
+          },
+        },
+        {
+          instanceId: "ticker-detail:nvda",
+          paneId: "ticker-research",
+          binding: { kind: "fixed" as const, symbol: "NVDA" },
+          settings: {
+            hideTabs: true,
+            lockedTabId: "fundamental-graphs",
+            chartRangePreset: "1Y",
+            chartResolution: "1wk",
+          },
+        },
+      ],
+      floating: [],
+      detached: [],
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      layout: legacyLayout,
+      layouts: [{
+        name: "Graphs",
+        layout: legacyLayout,
+        paneState: {
+          "fundamental-graph:pair": {
+            cursorSymbol: "AAPL",
+            pluginState: {
+              "ticker-detail": {
+                period: "annual",
+                chartKind: "valuation",
+                metric: "evSales",
+                periods: 3,
+                selectedIdx: 4,
+                hiddenSeriesIds: ["MSFT"],
+                retainedPreference: "keep",
+              },
+            },
+          },
+          "ticker-detail:nvda": {
+            activeTabId: "fundamental-graphs",
+            financialSubTab: "cashflow",
+            pluginState: {
+              "ticker-detail": {
+                detailPeriod: "annual",
+                detailChartKind: "fundamental",
+                detailMetric: "grossProfit",
+                selectedIdx: 2,
+                hiddenSeriesIds: [],
+                retainedPreference: "keep-too",
+              },
+            },
+          },
+        },
+      }],
+      activeLayoutIndex: 0,
+    }));
+
+    const config = await loadConfig(dataDir);
+    const standalone = findPaneInstance(config.layout, "fundamental-graph:pair");
+    const standaloneSpec = standalone?.settings?.chartSpec as any;
+    expect(standalone?.paneId).toBe("chart-composer");
+    expect(standalone?.settings).toEqual({ chartSpec: expect.any(Object) });
+    expect(standaloneSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: 3 });
+    expect(standaloneSpec.series.map((series: any) => ({
+      symbol: series.source.instrument.symbol,
+      fieldId: series.source.fieldId,
+      period: series.source.period,
+      visible: series.visible,
+    }))).toEqual([
+      { symbol: "AAPL", fieldId: "valuation.evSales", period: "annual", visible: true },
+      { symbol: "MSFT", fieldId: "valuation.evSales", period: "annual", visible: false },
+    ]);
+
+    const research = findPaneInstance(config.layout, "ticker-detail:nvda");
+    const researchSpec = research?.settings?.chartSpec as any;
+    expect(research?.settings?.lockedTabId).toBe("chart");
+    expect(researchSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: undefined });
+    expect(researchSpec.series[0]).toEqual(expect.objectContaining({
+      style: "columns",
+      source: expect.objectContaining({
+        fieldId: "fundamental.grossProfit",
+        period: "annual",
+      }),
+    }));
+
+    expect(config.layouts[0]?.paneState).toEqual({
+      "fundamental-graph:pair": {
+        cursorSymbol: "AAPL",
+        pluginState: { "ticker-research": { retainedPreference: "keep" } },
+      },
+      "ticker-detail:nvda": {
+        activeTabId: "chart",
+        financialSubTab: "cashflow",
+        pluginState: { "ticker-research": { retainedPreference: "keep-too" } },
+      },
+    });
+  });
+
+  test("migrates global indicator selection and render mode without retaining plugin keys", async () => {
+    const dataDir = await createTempConfigDir();
+    const legacyLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "ticker-chart:aapl" },
+      instances: [{
+        instanceId: "ticker-chart:aapl",
+        paneId: "ticker-chart",
+        binding: { kind: "fixed" as const, symbol: "AAPL" },
+        settings: {
+          chartAxisMode: "percent",
+          chartRangePreset: "6M",
+          chartResolution: "1d",
+          chartRenderMode: "candles",
+        },
+      }],
+      floating: [],
+      detached: [],
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      layout: legacyLayout,
+      layouts: [{ name: "Price", layout: legacyLayout }],
+      activeLayoutIndex: 0,
+      chartPreferences: { renderer: "kitty", defaultRenderMode: "line" },
+      pluginConfig: {
+        "ticker-detail": {
+          chartIndicators: ["sma50", "bollinger20"],
+          chartIndicatorsVersion: 2,
+          retainedPreference: "keep",
+        },
+      },
+    }));
+
+    const config = await loadConfig(dataDir);
+    const pane = findPaneInstance(config.layout, "ticker-chart:aapl");
+    const spec = pane?.settings?.chartSpec as any;
+    expect(pane?.paneId).toBe("chart-composer");
+    expect(spec.viewport).toEqual({ range: "6M", resolution: "1d" });
+    expect(spec.series[0]).toEqual(expect.objectContaining({ style: "candles", transform: "raw" }));
+    expect(spec.studies.map((study: any) => ({ kind: study.kind, parameters: study.parameters }))).toEqual([
+      { kind: "sma", parameters: { period: 50 } },
+      { kind: "bollinger", parameters: { period: 20, stdDev: 2 } },
+    ]);
+    expect(config.pluginConfig).toEqual({
+      "ticker-research": { retainedPreference: "keep" },
+    });
+    expect(config.chartPreferences).toEqual({ renderer: "kitty" });
+  });
+
   test("defaults detached layouts to an empty list for older configs", async () => {
     const dataDir = await createTempConfigDir();
     const layoutWithoutDetached = {
@@ -308,7 +524,7 @@ describe("loadConfig", () => {
       detached: undefined,
     };
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: 19,
       layout: layoutWithoutDetached,
       layouts: [{ name: "Default", layout: layoutWithoutDetached }],
     }));
@@ -354,6 +570,19 @@ describe("loadConfig", () => {
 
     const invalidConfig = await loadConfig(invalidDir);
     expect(invalidConfig.onboardingProgress).toBeUndefined();
+  });
+
+  test("marks pre-onboarding configs complete so existing users skip the wizard", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 20,
+      onboardingProgress: { version: 1, stage: "ready" },
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.onboardingComplete).toBe(true);
+    expect(config.onboardingProgress).toBeUndefined();
   });
 
   test("fills in missing chart preferences for older configs", async () => {
@@ -463,8 +692,28 @@ describe("loadConfig", () => {
   test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
-      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
+      configVersion: 19,
+      disabledPlugins: [
+        "options",
+        "sec",
+        "thirteenf",
+        "world-indices",
+        "market-heatmap",
+        "fear-greed",
+        "chart-composer",
+        "comparison-chart",
+        "earnings-calendar",
+        "macro-tv",
+        "ibkr",
+        "broker-manager",
+        "analytics",
+        "kelly-sizer",
+        "portfolio-list",
+        "changelog",
+        "help",
+        "layout-manager",
+        "application",
+      ],
     }));
 
     const config = await loadConfig(dataDir);
@@ -475,7 +724,7 @@ describe("loadConfig", () => {
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
+      configVersion: 19,
       pluginConfig: {
         options: {
           selectedExpiration: "2026-06-19",
@@ -494,6 +743,18 @@ describe("loadConfig", () => {
         preferredTab: "analyst-research",
       },
     });
+  });
+
+  test("does not repeat the legacy Cloud-to-Macro disable migration", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      disabledPlugins: ["gloomberb-cloud"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["gloomberb-cloud"]);
   });
 
   test("enables Gloom Cloud when migrating older default configs", async () => {
@@ -539,6 +800,7 @@ describe("loadConfig", () => {
   test("preserves saved layout pane state and focus metadata", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
       layouts: [{
         name: "Chart",
         layout: DEFAULT_LAYOUT,

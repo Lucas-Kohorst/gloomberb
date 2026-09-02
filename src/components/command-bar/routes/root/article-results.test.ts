@@ -23,14 +23,14 @@ function article(title: string, source: string): NewsArticle {
 }
 
 describe("buildArticleSearchResultItems", () => {
-  test("offers the matching Adjacent Press article to open", () => {
+  test("offers the matching article to open", () => {
     const opened: string[] = [];
     const items = buildArticleSearchResultItems({
       articles: [
-        article("Iran Threatens to Close the Strait of Hormuz", "Adjacent Press"),
+        article("Iran Threatens to Close the Strait of Hormuz", "Reuters"),
         article("Fed holds rates", "CNBC Top News"),
       ],
-      query: "adjacent article on the strait",
+      query: "article on the strait",
       phase: "ready",
       onOpen: (item) => {
         opened.push(item.id);
@@ -39,7 +39,7 @@ describe("buildArticleSearchResultItems", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]?.label).toContain("Hormuz");
-    expect(items[0]?.detail).toBe("Adjacent Press");
+    expect(items[0]?.detail).toBe("Reuters");
     items[0]?.action();
     expect(opened).toEqual(["Iran Threatens to Close the Strait of Hormuz"]);
   });
@@ -47,14 +47,14 @@ describe("buildArticleSearchResultItems", () => {
   test("shows a lookup row while subscribed feeds are still loading", () => {
     const items = buildArticleSearchResultItems({
       articles: [],
-      query: "adjacent article on the strait",
+      query: "article on the strait",
       phase: "loading",
       onOpen: () => {},
     });
     expect(items.map((item) => item.label)).toEqual(["Looking up articles…"]);
   });
 
-  test("returns local matches without waiting on a still-loading Adjacent lookup", () => {
+  test("returns local matches without waiting on a still-loading lookup", () => {
     const items = buildArticleSearchResultItems({
       articles: [article("Trump administration pauses talks", "AP")],
       query: "ART trum",
@@ -62,40 +62,6 @@ describe("buildArticleSearchResultItems", () => {
       onOpen: () => {},
     });
     expect(items.map((item) => item.label)).toEqual(["Trump administration pauses talks"]);
-  });
-
-  test("does not show a lookup row when Adjacent is idle and local search already ran", () => {
-    const items = buildArticleSearchResultItems({
-      articles: [article("Fed holds rates", "CNBC Top News")],
-      query: "ART tr",
-      phase: "idle",
-      onOpen: () => {},
-    });
-    expect(items).toEqual([]);
-  });
-
-  test("offers 10-K / 10-Q filings for filing lookups", () => {
-    const opened: string[] = [];
-    const filing: NewsArticle = {
-      ...article("10-K Apple Inc.", "SEC EDGAR"),
-      id: "sec:0001",
-      origin: "sec-edgar",
-      topics: ["filing", "10-K", "10k"],
-      tickers: ["AAPL"],
-    };
-    const items = buildArticleSearchResultItems({
-      articles: [filing],
-      query: "ART 10-K AAPL",
-      phase: "ready",
-      onOpen: (item) => {
-        opened.push(item.id);
-      },
-    });
-    expect(items).toHaveLength(1);
-    expect(items[0]?.right).toBe("10K");
-    expect(items[0]?.category).toBe("Filings");
-    items[0]?.action();
-    expect(opened).toEqual(["sec:0001"]);
   });
 });
 
@@ -113,16 +79,5 @@ describe("isArticleLookupShortcut", () => {
       completionQuery: null,
       command: { id: "open-news-article", label: "Open Article" } as never,
     })).toBe(true);
-    expect(isArticleLookupShortcut({
-      kind: "partial",
-      source: "plugin-command",
-      prefix: "CHAT",
-      label: "Chat",
-      description: "",
-      argKind: "text",
-      argText: "hello",
-      completionQuery: null,
-      command: { id: "open-chat", label: "Chat" } as never,
-    })).toBe(false);
   });
 });

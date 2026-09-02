@@ -48,9 +48,8 @@ export function isAccountProfileConfigured(profile: AccountProfile): boolean {
   return OPTIONAL_PROFILE_FIELDS.some((field) => (profile[field] ?? "").trim().length > 0);
 }
 
-export function useChatProfilePopover(currentUserId?: string | null) {
+export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const [profilePopoverUser, setProfilePopoverUser] = useState<ChatUserSummary | null>(null);
-  const [profilePopoverPinned, setProfilePopoverPinned] = useState(false);
   const [ownProfileConfigured, setOwnProfileConfigured] = useState<boolean | null>(null);
   const profilePopoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ownProfileRef = useRef<ChatUserSummary | null>(null);
@@ -89,7 +88,7 @@ export function useChatProfilePopover(currentUserId?: string | null) {
 
   const refreshOwnProfile = useCallback((expectedUserId?: string, force = false) => {
     if (
-      !apiClient.getSessionToken()
+      !apiClient.isSignedIn()
       || ownProfileRequestRef.current
       || (
         !force
@@ -118,22 +117,17 @@ export function useChatProfilePopover(currentUserId?: string | null) {
 
   const showProfilePopover = useCallback((
     targetUser: ChatUserSummary,
-    options?: { ownProfile?: boolean; pin?: boolean },
+    options?: { ownProfile?: boolean },
   ) => {
     const ownProfile = options?.ownProfile === true;
-    const pin = options?.pin === true;
     const cachedUser = ownProfile && ownProfileRef.current?.id === targetUser.id
       ? ownProfileRef.current
       : targetUser;
-    if (!ownProfile && !pin && !hasPublicChatProfileInfo(cachedUser)) {
-      if (!pinnedRef.current) closeProfilePopover();
+    if (!ownProfile && !hasPublicChatProfileInfo(cachedUser)) {
+      closeProfilePopover();
       return;
     }
     cancelProfilePopoverClose();
-    if (pin) {
-      pinnedRef.current = true;
-      setProfilePopoverPinned(true);
-    }
     setProfilePopoverUser(cachedUser);
     if (ownProfile) refreshOwnProfile(targetUser.id);
   }, [cancelProfilePopoverClose, closeProfilePopover, refreshOwnProfile]);
@@ -148,25 +142,15 @@ export function useChatProfilePopover(currentUserId?: string | null) {
 
   // Force a refresh when the pane regains focus so returning from Account Management settles the answer.
   useEffect(() => {
-    if (!currentUserId) return;
-    if (ownProfileRef.current?.id !== currentUserId) setOwnProfileConfigured(null);
-    refreshOwnProfile(currentUserId, true);
-  }, [refreshOwnProfile, currentUserId]);
-
-  useEffect(() => {
-    if (!pendingProfile) return;
-    showProfilePopover(pendingProfile, {
-      pin: true,
-      ownProfile: pendingProfile.id === currentUserId,
-    });
-    consumePendingChatProfile();
-  }, [currentUserId, pendingProfile, showProfilePopover]);
+    if (!trackOwnProfileUserId) return;
+    if (ownProfileRef.current?.id !== trackOwnProfileUserId) setOwnProfileConfigured(null);
+    refreshOwnProfile(trackOwnProfileUserId, true);
+  }, [refreshOwnProfile, trackOwnProfileUserId]);
 
   return {
     cancelProfilePopoverClose,
     closeProfilePopover,
     ownProfileConfigured,
-    profilePopoverPinned,
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,

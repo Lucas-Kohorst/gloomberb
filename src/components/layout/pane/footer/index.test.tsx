@@ -22,11 +22,11 @@ afterEach(async () => {
 });
 
 function Registration({
-  onRefresh,
-  refreshDisabled = false,
+  onOpen,
+  openDisabled = false,
 }: {
-  onRefresh?: () => void;
-  refreshDisabled?: boolean;
+  onOpen?: () => void;
+  openDisabled?: boolean;
 }) {
   usePaneFooter("test", () => {
     return {
@@ -37,10 +37,10 @@ function Registration({
         },
       ],
       hints: [
-        { id: "refresh", key: "r", label: "efresh", onPress: onRefresh, disabled: refreshDisabled },
+        { id: "open", key: "o", label: "pen", onPress: onOpen, disabled: openDisabled },
       ],
     };
-  }, [onRefresh, refreshDisabled]);
+  }, [onOpen, openDisabled]);
   return null;
 }
 
@@ -88,18 +88,18 @@ function TranslatedFooterHarness() {
 
 function FooterHarness({
   focused = false,
-  onRefresh,
-  refreshDisabled = false,
+  onOpen,
+  openDisabled = false,
 }: {
   focused?: boolean;
-  onRefresh?: () => void;
-  refreshDisabled?: boolean;
+  onOpen?: () => void;
+  openDisabled?: boolean;
 }) {
   return (
     <PaneFooterProvider>
       {(footer) => (
         <Box width={64} height={1}>
-          <Registration onRefresh={onRefresh} refreshDisabled={refreshDisabled} />
+          <Registration onOpen={onOpen} openDisabled={openDisabled} />
           <PaneFooterBar footer={footer} focused={focused} width={64} />
         </Box>
       )}
@@ -251,8 +251,8 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("loading");
-    expect(frame).not.toContain("[r]efresh");
+    expect(frame).toContain("Rows 12");
+    expect(frame).not.toContain("[o]pen");
   });
 
   test("renders poll interval on the right after action hints", async () => {
@@ -323,7 +323,7 @@ describe("PaneFooterBar", () => {
 
   test("omits disabled controls instead of rendering muted hints", async () => {
     testSetup = await testRender(
-      <FooterHarness focused refreshDisabled onRefresh={() => {}} />,
+      <FooterHarness focused openDisabled onOpen={() => {}} />,
       { width: 64, height: 1 },
     );
     await act(async () => {
@@ -332,33 +332,33 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("loading");
-    expect(frame).not.toContain("[r]efresh");
+    expect(frame).toContain("Rows 12");
+    expect(frame).not.toContain("[o]pen");
   });
 
   test("calls hint onPress from mouse interaction", async () => {
-    let refreshCount = 0;
-    testSetup = await testRender(<FooterHarness focused onRefresh={() => { refreshCount += 1; }} />, { width: 64, height: 1 });
+    let openCount = 0;
+    testSetup = await testRender(<FooterHarness focused onOpen={() => { openCount += 1; }} />, { width: 64, height: 1 });
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
     });
 
     const line = testSetup.captureCharFrame().split("\n")[0] ?? "";
-    const col = line.indexOf("[r]efresh");
+    const col = line.indexOf("[o]pen");
     expect(col).toBeGreaterThanOrEqual(0);
 
     await act(async () => {
       await testSetup!.mockMouse.release(col + 1, 0);
       await testSetup!.renderOnce();
     });
-    expect(refreshCount).toBe(0);
+    expect(openCount).toBe(0);
 
     await act(async () => {
       await testSetup!.mockMouse.click(col + 1, 0);
       await testSetup!.renderOnce();
     });
-    expect(refreshCount).toBe(1);
+    expect(openCount).toBe(1);
   });
 
   test("spaces non-prefix hints and wraps extra actions onto a second row", async () => {

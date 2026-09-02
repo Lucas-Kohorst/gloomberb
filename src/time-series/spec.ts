@@ -1,4 +1,4 @@
-import type { ChartResolution, TimeRange } from "./range";
+import { CHART_RESOLUTIONS, TIME_RANGES, type ChartResolution, type TimeRange } from "./range";
 import { getChartResolutionLabel } from "./resolution";
 import {
   canonicalTimeSeriesFieldId,
@@ -26,9 +26,13 @@ import {
   type SeriesTransform,
   type SecuritySeriesSource,
 } from "./types";
+import {
+  isValidChartCapabilityId,
+  isValidChartSeriesId,
+} from "../capabilities/chart-series";
 
-const TIME_RANGES = new Set<TimeRange>(["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"]);
-const RESOLUTIONS = new Set<ChartResolution>(["auto", "1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk", "1mo"]);
+const RANGE_SET = new Set<TimeRange>(TIME_RANGES);
+const RESOLUTIONS = new Set<ChartResolution>(CHART_RESOLUTIONS);
 const PERIODS = new Set<SeriesPeriod>(["auto", "daily", "weekly", "monthly", "quarterly", "annual", "ttm"]);
 const STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"]);
 const ECONOMIC_STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"]);
@@ -199,52 +203,13 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     if (!seriesId || source.provider !== "fred") return null;
     return { kind: "economic", provider: "fred", seriesId };
   }
-  if (source.kind === "adjacent-index") {
-    const indexId = nonEmptyString(source.indexId);
-    if (!indexId) return null;
-    return { kind: "adjacent-index", indexId: indexId.toLowerCase() };
-  }
-  if (source.kind === "benchmark") {
-    const selector = nonEmptyString(source.selector);
-    const metric = nonEmptyString(source.metric);
-    if (!selector || !metric) return null;
-    return { kind: "benchmark", selector, metric: metric.toLowerCase() };
-  }
-  if (source.kind === "poll") {
-    const subject = nonEmptyString(source.subject);
-    const choice = nonEmptyString(source.choice);
-    if (!subject || !choice) return null;
-    return { kind: "poll", subject, choice };
-  }
-  if (source.kind === "weather") {
-    const stationId = nonEmptyString(source.stationId);
-    const metric = source.metric;
-    const provider = source.provider === "nws-cli" ? "nws-cli" : "twc-kalshi";
-    if (!stationId || (metric !== "high" && metric !== "low" && metric !== "precip" && metric !== "hourly")) {
-      return null;
-    }
-    if (provider === "nws-cli" && metric === "hourly") return null;
-    return { kind: "weather", provider, stationId: stationId.toUpperCase(), metric };
-  }
-  if (source.kind === "owid") {
-    const slug = nonEmptyString(source.slug)?.toLowerCase();
-    const entity = nonEmptyString(source.entity)?.toUpperCase();
-    if (!slug || !entity) return null;
-    return { kind: "owid", slug, entity };
-  }
-  if (source.kind === "prediction-market") {
-    const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
-    const marketId = nonEmptyString(source.marketId);
-    if (!venue || !marketId) return null;
-    return {
-      kind: "prediction-market",
-      venue,
-      marketId: venue === "kalshi" ? marketId.toUpperCase() : marketId,
-    };
-  }
-  if (source.kind === "constant") {
-    if (typeof source.value !== "number" || !Number.isFinite(source.value)) return null;
-    return { kind: "constant", value: source.value };
+  if (source.kind === "capability") {
+    const capabilityId = nonEmptyString(source.capabilityId);
+    const seriesId = nonEmptyString(source.seriesId);
+    if (!capabilityId || !seriesId
+      || !isValidChartCapabilityId(capabilityId)
+      || !isValidChartSeriesId(seriesId)) return null;
+    return { kind: "capability", capabilityId, seriesId };
   }
   if (source.kind !== "security") return null;
   const instrument = record(source.instrument);
@@ -406,7 +371,7 @@ export function normalizeChartSpec(value: unknown, fallback: ChartSpec = DEFAULT
   return {
     version: CHART_SPEC_VERSION,
     viewport: {
-      range: TIME_RANGES.has(viewport?.range as TimeRange)
+      range: RANGE_SET.has(viewport?.range as TimeRange)
         ? viewport!.range as TimeRange
         : fallbackCopy.viewport.range,
       resolution: RESOLUTIONS.has(viewport?.resolution as ChartResolution)
@@ -440,7 +405,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
   if (spec.version !== CHART_SPEC_VERSION) {
     errors.push(issue("version", "unsupported-version", `Unsupported chart spec version ${String(spec.version)}.`));
   }
-  if (!TIME_RANGES.has(spec.viewport.range)) errors.push(issue("viewport.range", "invalid-range", "Invalid date range."));
+  if (!RANGE_SET.has(spec.viewport.range)) errors.push(issue("viewport.range", "invalid-range", "Invalid date range."));
   if (!RESOLUTIONS.has(spec.viewport.resolution)) {
     errors.push(issue("viewport.resolution", "invalid-resolution", "Invalid chart resolution."));
   }
@@ -544,48 +509,12 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       if (!ECONOMIC_STYLES.has(entry.style)) {
         errors.push(issue(`${path}.style`, "unsupported-style", `${entry.style} is not valid for an economic scalar series.`));
       }
-    } else if (entry.source.kind === "adjacent-index") {
-      if (!entry.source.indexId.trim()) {
-        errors.push(issue(`${path}.source.indexId`, "missing-index", "Adjacent index ID is required."));
+    } else {
+      if (!isValidChartCapabilityId(entry.source.capabilityId)) {
+        errors.push(issue(`${path}.source.capabilityId`, "invalid-capability", "Chart series capability ID is invalid."));
       }
-    } else if (entry.source.kind === "benchmark") {
-      if (!entry.source.selector.trim()) {
-        errors.push(issue(`${path}.source.selector`, "missing-selector", "Benchmark selector is required."));
-      }
-      if (!entry.source.metric.trim()) {
-        errors.push(issue(`${path}.source.metric`, "missing-metric", "Benchmark metric is required."));
-      }
-    } else if (entry.source.kind === "poll") {
-      if (!entry.source.subject.trim()) {
-        errors.push(issue(`${path}.source.subject`, "missing-subject", "Poll subject is required."));
-      }
-      if (!entry.source.choice.trim()) {
-        errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
-      }
-    } else if (entry.source.kind === "weather") {
-      if (!entry.source.stationId.trim()) {
-        errors.push(issue(`${path}.source.stationId`, "missing-station", "Weather station is required."));
-      }
-      if (entry.source.provider === "nws-cli" && entry.source.metric === "hourly") {
-        errors.push(issue(`${path}.source.metric`, "unsupported-metric", "NWS CLI is daily high/low/precip only."));
-      }
-    } else if (entry.source.kind === "owid") {
-      if (!entry.source.slug.trim()) {
-        errors.push(issue(`${path}.source.slug`, "missing-slug", "OWID chart slug is required."));
-      }
-      if (!entry.source.entity.trim()) {
-        errors.push(issue(`${path}.source.entity`, "missing-entity", "OWID entity code is required."));
-      }
-    } else if (entry.source.kind === "prediction-market") {
-      if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {
-        errors.push(issue(`${path}.source.venue`, "invalid-venue", "Prediction market venue must be kalshi or polymarket."));
-      }
-      if (!entry.source.marketId.trim()) {
-        errors.push(issue(`${path}.source.marketId`, "missing-market", "Prediction market ID is required."));
-      }
-    } else if (entry.source.kind === "constant") {
-      if (!Number.isFinite(entry.source.value)) {
-        errors.push(issue(`${path}.source.value`, "invalid-constant", "Constant value must be a finite number."));
+      if (!isValidChartSeriesId(entry.source.seriesId)) {
+        errors.push(issue(`${path}.source.seriesId`, "invalid-series", "Provider series ID is invalid."));
       }
     }
     if (isOhlcSeriesStyle(entry.style)) {
@@ -595,7 +524,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
         firstCandleByPanel.set(
           entry.panelId,
           entry.label?.trim()
-            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.id),
+            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.source.seriesId),
         );
       }
       if (entry.transform !== "raw") {

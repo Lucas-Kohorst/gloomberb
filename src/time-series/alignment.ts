@@ -80,21 +80,22 @@ export function alignTimeSeries(
   const exactMaps = series.map((entry) => (
     new Map(entry.points.map((point) => [effectiveTimeSeriesPointTime(point), point]))
   ));
+  const carryPoints = series.map((entry) => [...entry.points].sort((left, right) => (
+    effectiveTimeSeriesPointTime(left) - effectiveTimeSeriesPointTime(right)
+  )));
   const sortedTimes = [...timeline].sort((left, right) => left - right);
-  // Moving pointer per series: both sortedTimes and entry.points are ascending
-  // by effective time, so the pointer only advances forward — O(T+P) per series
-  // instead of re-scanning all points for every timeline row.
   const carryPointers = new Array<number>(series.length).fill(-1);
   const rows: AlignedTimeSeriesRow[] = [];
   for (const time of sortedTimes) {
     const values: Record<string, AlignedSeriesValue | null> = {};
     series.forEach((entry, seriesIndex) => {
-      const points = entry.points;
-      let ptr = carryPointers[seriesIndex]!;
-      while (ptr + 1 < points.length && effectiveTimeSeriesPointTime(points[ptr + 1]!) <= time) {
-        ptr++;
-      }
-      carryPointers[seriesIndex] = ptr;
+      const points = carryPoints[seriesIndex]!;
+      let pointer = carryPointers[seriesIndex]!;
+      while (
+        pointer + 1 < points.length
+        && effectiveTimeSeriesPointTime(points[pointer + 1]!) <= time
+      ) pointer += 1;
+      carryPointers[seriesIndex] = pointer;
 
       const exact = exactMaps[seriesIndex]!.get(time);
       if (exact) {
@@ -106,13 +107,13 @@ export function alignTimeSeries(
         values[entry.id] = null;
         return;
       }
-      if (ptr < 0) {
+
+      if (pointer < 0) {
         values[entry.id] = null;
         return;
       }
-      const previous = points[ptr]!;
-      const previousEligibleAt = effectiveTimeSeriesPointTime(previous);
-      const age = time - previousEligibleAt;
+      const previous = points[pointer]!;
+      const age = time - effectiveTimeSeriesPointTime(previous);
       if (options.maxCarryMilliseconds !== undefined && age > options.maxCarryMilliseconds) {
         values[entry.id] = null;
         return;

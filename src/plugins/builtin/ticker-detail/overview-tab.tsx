@@ -14,9 +14,12 @@ import {
   marketStateLabel,
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { TickerEmptyState } from "../../../components";
+import { EmptyState } from "../../../components";
 import { CompanyLogo } from "../../../components/company-logo";
-import { CompositeChart } from "../../../components/chart/composite";
+import {
+  CompositeChart,
+  pricePointsToResolvedSeries,
+} from "../../../components/chart/composite";
 import { resolveExchangeTimeZone } from "../../../utils/exchanges";
 import type { ResolvedSeries } from "../../../time-series/types";
 import { PriceReturnStrip } from "../../../components/price-performance";
@@ -49,7 +52,6 @@ export function OverviewTab({
   const exchangeRatesState = useAppSelector((state) => state.exchangeRates);
   const { width: termWidth } = useViewport();
   const { fractionalViewport = false, nativePaneChrome } = useUiCapabilities();
-  const priceSeriesRef = useRef<ResolvedSeries | null>(null);
 
   if (!ticker) return <TickerEmptyState kind="overview" symbol={null} detail="overview" />;
 

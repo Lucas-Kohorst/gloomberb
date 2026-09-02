@@ -84,16 +84,20 @@ export function getRelatedTickers(eventTitle: string, country: string): string[]
   return resolveFredMapping(eventTitle, country)?.relatedTickers ?? [];
 }
 
-export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
-  const seen = new Set<string>();
-  const rows: Array<{ seriesId: string; label: string }> = [];
-  for (const [eventTitle, mapping] of Object.entries(SERIES_MAP)) {
-    if (seen.has(mapping.seriesId)) continue;
-    seen.add(mapping.seriesId);
-    rows.push({
-      seriesId: mapping.seriesId,
-      label: eventTitle.replace(/\b\w/g, (char) => char.toUpperCase()),
-    });
+const FRED_CATALOG_SERIES: ReadonlyArray<{ seriesId: string; label: string }> = (() => {
+  const labels = new Map<string, string>();
+  for (const [key, mapping] of Object.entries(SERIES_MAP)) {
+    const existing = labels.get(mapping.seriesId);
+    if (existing == null || key.length < existing.length) {
+      labels.set(mapping.seriesId, key);
+    }
   }
-  return rows;
+  return [...labels.entries()].map(([seriesId, key]) => ({
+    seriesId,
+    label: key.replace(/\b\w/g, (char) => char.toUpperCase()),
+  }));
+})();
+
+export function listFredCatalogSeries(): ReadonlyArray<{ seriesId: string; label: string }> {
+  return FRED_CATALOG_SERIES;
 }

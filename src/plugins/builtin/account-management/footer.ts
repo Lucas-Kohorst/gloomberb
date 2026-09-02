@@ -3,6 +3,11 @@ import { usePaneFooter, type PaneHint } from "../../../components";
 import { t } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 
+/**
+ * Email, plan, and visibility are fixed account metadata already rendered in the
+ * tabs, so the footer carries only what changes: the save action and the last
+ * save or error message.
+ */
 export function useAccountManagementFooter({
   busy,
   hasSession,
@@ -20,9 +25,10 @@ export function useAccountManagementFooter({
   ], [busy, hasSession, language, saveProfile]);
 
   usePaneFooter("account-management", () => ({
-    info: message
-      ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const }] }]
-      : [],
+    info: [
+      ...(busy ? [{ id: "busy", parts: [{ text: t("saving"), tone: "muted" as const }] }] : []),
+      ...(message ? [{ id: "status", parts: [{ text: message.text, tone: message.tone === "error" ? "negative" as const : message.tone === "success" ? "positive" as const : "muted" as const }] }] : []),
+    ],
     hints: footerHints,
-  }), [footerHints, language, message]);
+  }), [busy, footerHints, language, message]);
 }

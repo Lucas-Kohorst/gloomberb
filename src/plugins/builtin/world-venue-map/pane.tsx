@@ -15,7 +15,6 @@ import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
-import { withConnectionRequest } from "../connections/register";
 import {
   filterWorldVenues,
   formatVenueCountdown,
@@ -25,7 +24,6 @@ import {
 import { WorldVenueMap } from "./map";
 
 export const WORLD_VENUE_MAP_PANE_ID = "world-venue-map";
-export const WORLD_VENUE_MAP_CONNECTION_ID = "gloom-cloud-market-venues";
 
 type VenueColumnId = "status" | "mic" | "name" | "time";
 type VenueColumn = DataTableColumn & { id: VenueColumnId };
@@ -92,14 +90,10 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     if (!dataRef.current) setLoading(true);
     setError(null);
     try {
-      const response = await withConnectionRequest(
-        WORLD_VENUE_MAP_CONNECTION_ID,
-        "fetch venues",
-        () => apiClient.getCloudWorldVenues(),
-      );
+      const response = await apiClient.getCloudWorldVenues();
       if (generation !== generationRef.current) return;
       if (!response.data) throw new Error(response.reasonCode ?? "World venue data unavailable");
-      const next = response.stale || response.data.stale ? { ...response.data, stale: true } : response.data;
+      const next = response.stale ? { ...response.data, stale: true } : response.data;
       dataRef.current = next;
       setData(next);
       setLoading(false);
@@ -147,14 +141,14 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const refresh = useCallback(() => void load(), [load]);
 
   useShortcut((event) => {
-    if (!focused || searchFocused || event.targetEditable) return;
+    if (searchFocused || event.targetEditable) return;
     if (isPlainKey(event, "/")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
+      event.preventDefault();
+      event.stopPropagation();
       focusSearch();
     } else if (isPlainKey(event, "r")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
+      event.preventDefault();
+      event.stopPropagation();
       refresh();
     }
   }, { allowEditable: true, enabled: focused });
@@ -178,9 +172,9 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const openCount = venues.reduce((count, venue) => count + Number(venue.isOpen), 0);
   usePaneFooter(WORLD_VENUE_MAP_PANE_ID, () => ({
     info: [
-      ...(loading && !data ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(data && !data.stale ? [{ id: "live", parts: [{ text: "live", tone: "positive" as const }] }] : []),
-      ...(data?.stale ? [{ id: "stale", parts: [{ text: "stale", tone: "warning" as const }] }] : []),
+      ...(loading && !data ? [{ id: "loading", parts: [{ text: "LOADING", tone: "muted" as const }] }] : []),
+      ...(data && !data.stale ? [{ id: "live", parts: [{ text: "LIVE", tone: "positive" as const }] }] : []),
+      ...(data?.stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
@@ -206,7 +200,10 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
     switch (column.id) {
       case "status":
-        return { text: venue.isOpen ? "●" : "○", color: selectedColor ?? (venue.isOpen ? colors.positive : colors.textDim) };
+        return {
+          text: venue.isOpen ? "●" : "○",
+          color: selectedColor ?? (venue.isOpen ? colors.positive : colors.textDim),
+        };
       case "mic":
         return { text: venue.mic, color: selectedColor ?? colors.textBright, attributes: TextAttributes.BOLD };
       case "name":
@@ -278,7 +275,13 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const map = (
     <Box flexDirection="column" width={mapWidth} height={mapSectionHeight} overflow="hidden">
       <SelectedVenueHeader venue={selectedVenue} checkedAt={data.checkedAt} now={now} width={mapWidth} />
-      <WorldVenueMap venues={venues} selectedMic={selectedMic} width={mapWidth} height={mapHeight} onSelect={(venue) => setSelectedMic(venue.mic)} />
+      <WorldVenueMap
+        venues={venues}
+        selectedMic={selectedMic}
+        width={mapWidth}
+        height={mapHeight}
+        onSelect={(venue) => setSelectedMic(venue.mic)}
+      />
     </Box>
   );
 

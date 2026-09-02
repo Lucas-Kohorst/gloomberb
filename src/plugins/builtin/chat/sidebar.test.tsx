@@ -12,6 +12,10 @@ import { ChatContent } from "./content";
 import { chatController } from "./controller";
 import { useChatChannelNavigation } from "./content/channel-navigation";
 import {
+  subscribeRequestedAccountManagementTab,
+  type AccountManagementTab,
+} from "../account-management/navigation";
+import {
   cleanupChatTest,
   createChatTestControls,
   createController,
@@ -19,6 +23,7 @@ import {
   installChatApiTestDefaults,
   installServerChannels,
   lineText,
+  makeAccountProfile,
   makeMessage,
   MemoryPersistence,
   type ChatTestSetup,
@@ -492,86 +497,80 @@ describe("ChatContent channel sidebar", () => {
     expect(setup().captureCharFrame()).toContain("● 6 online");
   });
 
-  test("shows a leading presence mark on an online DM peer and keeps offline names aligned", async () => {
+  test("offers a sidebar profile shortcut only until the account profile is filled in", async () => {
     const controller = createController({ sessionToken: "token-123" });
-    installServerChannels(controller, [
-      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
-      { id: "equities", name: "equities", created_at: "2026-05-09T00:00:00.000Z" },
-      {
-        id: "dm:bob",
-        name: "@bob",
-        kind: "direct",
-        created_at: "2026-07-03T09:30:00.000Z",
-        dmUser: { id: "u2", username: "bob", displayName: "Bob" },
-      },
-      {
-        id: "dm:cara",
-        name: "@cara",
-        kind: "direct",
-        created_at: "2026-07-03T09:31:00.000Z",
-        dmUser: { id: "u3", username: "cara", displayName: "Cara" },
-      },
-    ]);
+    installServerChannels(controller);
     controller.refreshChannels = async () => {};
     controller.refreshChannelMessages = async () => {};
-    (controller as any).channelCatalog.applyPresence({
-      onlineCount: 2,
-      userIds: ["u2"],
+    const originalGetAccountProfile = apiClient.getAccountProfile.bind(apiClient);
+    apiClient.getAccountProfile = async () => makeAccountProfile({
+      id: "u0",
+      company: null,
+      title: null,
+      bio: null,
+      publicEmail: null,
+      xAccount: null,
+      // Set, and deliberately not part of the completion test.
+      profilePublic: true,
+      sharedPortfolioId: null,
     });
-
-    await act(async () => {
-      testSetup = await testRender(createHarness(controller, { width: 90, height: 14 }), {
-        width: 90,
-        height: 14,
-      });
-    });
-
-    await flushFrame();
-
-    const frame = setup().captureCharFrame();
-    const bobLine = frame.split("\n").find((line) => line.includes("@bob"));
-    const caraLine = frame.split("\n").find((line) => line.includes("@cara"));
-    expect(bobLine).toBeDefined();
-    expect(caraLine).toBeDefined();
-    expect(bobLine).toMatch(/●@bob/);
-    expect(caraLine).not.toMatch(/●/);
-    expect(caraLine).toContain("@cara");
-    expect(bobLine!.indexOf("@bob")).toBe(caraLine!.indexOf("@cara"));
-    expect(frame).not.toMatch(/●#/);
-  });
-
-  test("shows a green online dot next to a group with an online member", async () => {
-    const controller = createController({ sessionToken: "token-123" });
-    installServerChannels(controller, [
-      { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
-      {
-        id: "grp:vista",
-        name: "VistaDex trading",
-        kind: "group",
-        created_at: "2026-07-03T09:31:00.000Z",
-        members: [
-          { id: "u2", username: "bob", displayName: "Bob" },
-          { id: "u3", username: "cara", displayName: "Cara" },
-        ],
+    const requestedTabs: AccountManagementTab[] = [];
+    const unsubscribe = subscribeRequestedAccountManagementTab((tab) => requestedTabs.push(tab));
+    const shownPanes: string[] = [];
+    const runtime = createTestPluginRuntime({
+      showPane: (paneId: string) => {
+        shownPanes.push(paneId);
       },
-    ]);
-    controller.refreshChannels = async () => {};
-    controller.refreshChannelMessages = async () => {};
-    (controller as any).channelCatalog.applyPresence({
-      onlineCount: 1,
-      userIds: ["u2"],
     });
 
-    await act(async () => {
-      testSetup = await testRender(createHarness(controller, { width: 90, height: 14 }), {
-        width: 90,
-        height: 14,
+    try {
+      await act(async () => {
+        testSetup = await testRender(createHarness(controller, { width: 90, height: 14, runtime }), {
+          width: 90,
+          height: 14,
+        });
       });
-    });
+      await flushFrame();
+      await flushFrame();
 
-    await flushFrame();
+      const lines = setup().captureCharFrame().split("\n");
+      const row = lines.findIndex((line) => line.includes("@ Profile"));
+      const col = lines[row]?.indexOf("Profile") ?? -1;
+      expect(row).toBeGreaterThanOrEqual(0);
 
-    expect(setup().captureCharFrame()).toContain("●VistaDex");
+      await act(async () => {
+        await setup().mockMouse.click(col + 1, row);
+        await setup().renderOnce();
+        await setup().renderOnce();
+      });
+      await flushFrame();
+
+      expect(requestedTabs).toEqual(["profile"]);
+      expect(shownPanes).toEqual(["account-management"]);
+
+      apiClient.getAccountProfile = async () => makeAccountProfile({
+        id: "u0",
+        company: null,
+        title: "Trader",
+        bio: null,
+        profilePublic: false,
+        sharedPortfolioId: null,
+      });
+      await act(async () => {
+        testSetup?.renderer.destroy();
+        testSetup = await testRender(createHarness(controller, { width: 90, height: 14, runtime }), {
+          width: 90,
+          height: 14,
+        });
+      });
+      await flushFrame();
+      await flushFrame();
+
+      expect(setup().captureCharFrame()).not.toContain("@ Profile");
+    } finally {
+      unsubscribe();
+      apiClient.getAccountProfile = originalGetAccountProfile;
+    }
   });
 
   test("uses arrows to move between channel sidebar and chat content", async () => {

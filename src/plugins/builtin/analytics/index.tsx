@@ -1,6 +1,7 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Tabs, usePaneFooter } from "../../../components";
+import { TextAttributes } from "../../../ui";
+import { EmptyState, Tabs } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -54,13 +55,7 @@ import {
   type SectorSortPreference,
   type SectorTableRow,
 } from "./sector-model";
-import {
-  collectionMembers,
-  collectionUsesEqualWeight,
-  listAnalyticsCollections,
-  resolveAnalyticsCollection,
-  resolveTemplateCollectionId,
-} from "./portfolio-selection";
+import { describePortfolioTab, resolvePortfolioId, resolveTemplatePortfolioId } from "./portfolio-selection";
 import {
   AnalyticsMetricsPanel,
   AnalyticsViewSwitch,
@@ -121,8 +116,11 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
   const equalWeight = activeCollection ? collectionUsesEqualWeight(activeCollection) : false;
   const portfolioTabs = useMemo(
-    () => collections.map((collection) => ({ label: collection.name, value: collection.id })),
-    [collections],
+    () => portfolios.map((portfolio) => ({
+      label: describePortfolioTab(portfolio, config.brokerInstances),
+      value: portfolio.id,
+    })),
+    [config.brokerInstances, portfolios],
   );
 
   const handlePortfolioSelect = useCallback((portfolioId: string) => {
@@ -181,7 +179,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     [brokerPerformance.performance],
   );
   const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
-  const accountState = usePortfolioAccountState(activePortfolio, accountStateInput);
+  const { accountState, accountsError } = usePortfolioAccountState(activePortfolio, accountStateInput);
   const trackedCurrencies = useMemo(
     () => buildTrackedCurrencies(portfolioTickers, financials, baseCurrency),
     [baseCurrency, financials, portfolioTickers],
@@ -207,7 +205,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     [activePortfolioId, baseCurrency, effectiveExchangeRates, financials, portfolioTickers],
   );
 
-  const portfolioReturnSeries = useMemo(
+  const returnSeriesResult = useMemo(
     () => buildPortfolioReturnSeries({
       chartTargets,
       chartEntries,
@@ -217,6 +215,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
     }),
     [chartEntries, chartTargets, columnContext, equalWeight, financials],
   );
+  const portfolioReturnSeries = returnSeriesResult.returns;
 
   const portfolioReturns = useMemo(
     () => portfolioReturnSeries?.map((point) => point.value) ?? null,
@@ -283,8 +282,13 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
 
   const riskRows = useMemo(
-    () => buildAnalyticsRiskRows({ sharpe, beta, indicative: equalWeight }),
-    [beta, equalWeight, sharpe],
+    () => buildAnalyticsRiskRows({
+      sharpe,
+      beta,
+      coverage: returnSeriesResult.coverage,
+      missingCount: returnSeriesResult.missingCount,
+    }),
+    [beta, returnSeriesResult.coverage, returnSeriesResult.missingCount, sharpe],
   );
   const metricsHeight = summaryRows.length + riskRows.length + 3;
   const chromeRows = 2;
@@ -337,11 +341,13 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
 
           {!hasPositions ? (
             <Box paddingX={1} paddingY={1}>
-              <Text fg={colors.textMuted}>
-                {activeCollection?.kind === "watchlist"
-                  ? `No tickers found for ${activeCollection.name}`
-                  : `No positions found for ${activePortfolio?.name ?? "this portfolio"}`}
-              </Text>
+              <EmptyState
+                title="No positions in this portfolio."
+                message={accountsError ?? undefined}
+                hint={accountsError
+                  ? "Reconnect the broker in the Brokers pane (BR), then refresh."
+                  : "Add holdings from the Portfolio pane (PF), or connect a broker in BR to sync them."}
+              />
             </Box>
           ) : view === "risk" ? (
             <PortfolioRiskView
@@ -412,6 +418,9 @@ export const portfolioAnalyticsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+      portableShare: {
+        private: { params: true, settings: true, state: true },
+      },
     },
   ],
 

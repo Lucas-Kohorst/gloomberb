@@ -21,12 +21,12 @@ import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
-import { registerConnectionSource, withConnectionRequest } from "../connections/register";
-import type { SyncTransport } from "../../../sync/types";
+import { createPublicPaneShare } from "../shared/public-pane";
 
 interface GloomberbCloudPluginComponents {
   ChatPane: (props: PaneProps) => ReactNode;
   ChatStatusWidget: ComponentType;
+  extraModules?: readonly PluginModule[];
 }
 
 function createCloudDataModule(): PluginModule {
@@ -79,21 +79,15 @@ function createChatModule(
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
-      settings: (context) => buildChatPaneSettingsDef(context.settings),
-    }, {
-      id: UNREAD_INBOX_PANE_ID,
-      name: "Unread",
-      icon: "@",
-      component: UnreadInboxPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 56, height: 16 },
+      portableShare: {
+        private: { title: true, params: true, settings: true, state: true },
+      },
     }],
     paneTemplates: [{
       id: "new-chat-pane",
       paneId: "chat",
       label: "New Chat Pane",
-      description: "Open the floating chat window",
+      description: "Open the floating chat window for a channel",
       keywords: ["new", "chat", "pane", "message"],
       shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
       singleton: true,
@@ -107,6 +101,12 @@ function createChatModule(
         const targetMessageId = options?.values?.messageId?.trim() || null;
         return {
           placement: "floating",
+          // One pane per channel: re-opening the same channel focuses the pane
+          // that already holds it, even though its channelId setting drifts as
+          // the user switches channels inside the pane. A jump to a specific
+          // message stays unkeyed so it never lands on a pane that already
+          // scrolled past the target.
+          ...(targetMessageId ? {} : { instanceId: `chat:${channelId}` }),
           title: formatChatPaneTitle(channel, channelId),
           settings: {
             channelId,
@@ -196,6 +196,9 @@ const accountModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 72, height: 36 },
+    portableShare: {
+      private: { title: true, params: true, settings: true, state: true },
+    },
   }],
   paneTemplates: [{
     id: "account-management-pane",
@@ -215,6 +218,29 @@ const accountModule: PluginModule = {
   },
 };
 
+const congressTradesModule: PluginModule = {
+  panes: [{
+    id: CONGRESS_TRADES_PANE_ID,
+    name: "Congress",
+    icon: "G",
+    component: CongressTradesPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 112, height: 30 },
+    tableExport: true,
+  }],
+  paneTemplates: [{
+    id: "congress-trades-pane",
+    paneId: CONGRESS_TRADES_PANE_ID,
+    label: "Congress Trades",
+    description: "Track newly disclosed House periodic transaction reports.",
+    keywords: ["congress", "house", "trades", "ptr", "stock", "disclosures"],
+    shortcut: { prefix: "CG" },
+    createInstance: () => ({ placement: "floating" }),
+    publicShare: createPublicPaneShare("Congress Trades"),
+  }],
+};
+
 const twitterModule: PluginModule = {
   setup: registerTwitterFeedFeature,
   dispose: disposeTwitterFeedFeature,
@@ -223,6 +249,7 @@ const twitterModule: PluginModule = {
 export function createGloomberbCloudPlugin({
   ChatPane,
   ChatStatusWidget,
+  extraModules = [],
 }: GloomberbCloudPluginComponents): GloomPlugin {
   return composeBuiltinPlugin({
     id: "gloomberb-cloud",
@@ -235,6 +262,8 @@ export function createGloomberbCloudPlugin({
       createCloudDataModule(),
       createChatModule(ChatPane, ChatStatusWidget),
       accountModule,
+      ...extraModules,
+      congressTradesModule,
       twitterModule,
     ],
   });

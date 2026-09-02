@@ -44,6 +44,7 @@ describe("normalizeAuction", () => {
   });
 
   test("turns the API's literal \"null\" strings into null, not NaN", () => {
+    // Every metric arrives as a string, and unreported ones arrive as "null".
     const auction = normalizeAuction(LIVE_NOTE_ROW)!;
     expect(auction.highInvestmentRate).toBeNull();
     expect(auction.lowPrice).toBeNull();
@@ -84,6 +85,7 @@ describe("parseTreasuryAuctionsPayload", () => {
   });
 
   test("keeps two same-day auctions of the same type and term", () => {
+    // A reopening and a new issue share (type, date, term) but never a CUSIP.
     const auctions = parseTreasuryAuctionsPayload({
       data: [
         { ...LIVE_NOTE_ROW, cusip: "91282CAB1" },
@@ -116,6 +118,7 @@ describe("buildAuctionsUrl", () => {
 
 describe("fetchAuctionPages", () => {
   function page(rows: Array<Record<string, string>>, pages: number) {
+    // Live shape: the page count arrives as a string under meta["total-pages"].
     return { data: rows, meta: { count: rows.length, "total-pages": String(pages) } };
   }
 

@@ -295,15 +295,15 @@ async function assembleYahooQuote(
     price,
     currency: normalizedCurrency,
     change,
-    changePercent,
-    high52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekHigh), divisor),
-    low52w: normalizeMarketValue(financeRawNumber(raw.fiftyTwoWeekLow), divisor),
-    name: raw.shortName || raw.longName,
-    lastUpdated: yahooMarketTimestamp({ regularMarketTime: financeRawNumber(raw.regularMarketTime) }),
-    exchangeName,
-    fullExchangeName,
-    listingExchangeName: exchangeName,
-    listingExchangeFullName: fullExchangeName,
+    changePercent: prev ? (change / prev) * 100 : 0,
+    high52w: meta.fiftyTwoWeekHigh,
+    low52w: meta.fiftyTwoWeekLow,
+    name: meta.shortName || meta.longName,
+    lastUpdated: yahooMarketTimestamp(meta),
+    exchangeName: meta.exchangeName,
+    fullExchangeName: meta.fullExchangeName,
+    listingExchangeName: meta.exchangeName,
+    listingExchangeFullName: meta.fullExchangeName,
     marketState,
     sessionConfidence: explicitState ? "explicit" : "unknown",
     dataSource: "delayed",
@@ -317,31 +317,6 @@ async function assembleYahooQuote(
     low: normalizeMarketValue(financeRawNumber(raw.regularMarketDayLow), divisor),
     ...extHours,
   };
-}
-
-function mapYahooQuoteExtendedHours(
-  raw: YahooQuoteApiResult,
-  divisor: number,
-): ExtendedHoursData {
-  return {
-    preMarketPrice: normalizeMarketValue(financeRawNumber(raw.preMarketPrice), divisor),
-    preMarketChange: normalizeMarketValue(financeRawNumber(raw.preMarketChange), divisor),
-    preMarketChangePercent: financeRawNumber(raw.preMarketChangePercent),
-    postMarketPrice: normalizeMarketValue(financeRawNumber(raw.postMarketPrice), divisor),
-    postMarketChange: normalizeMarketValue(financeRawNumber(raw.postMarketChange), divisor),
-    postMarketChangePercent: financeRawNumber(raw.postMarketChangePercent),
-  };
-}
-
-function compactExtendedHours(data: ExtendedHoursData): ExtendedHoursData {
-  const result: ExtendedHoursData = {};
-  if (data.preMarketPrice != null) result.preMarketPrice = data.preMarketPrice;
-  if (data.preMarketChange != null) result.preMarketChange = data.preMarketChange;
-  if (data.preMarketChangePercent != null) result.preMarketChangePercent = data.preMarketChangePercent;
-  if (data.postMarketPrice != null) result.postMarketPrice = data.postMarketPrice;
-  if (data.postMarketChange != null) result.postMarketChange = data.postMarketChange;
-  if (data.postMarketChangePercent != null) result.postMarketChangePercent = data.postMarketChangePercent;
-  return result;
 }
 
 function yahooMarketTimestamp(meta: NonNullable<ChartResult["meta"]>): number {

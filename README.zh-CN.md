@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://gloomberb.com/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
+<img src="https://gloom.sh/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
 
 # Gloomberb
 
@@ -8,7 +8,7 @@
 
 桌面应用支持 macOS 和 Windows。终端界面（TUI）支持 macOS、Linux 和 Windows。
 
-<a href="https://gloomberb.com/download/desktop"><strong>下载桌面版</strong></a>
+<a href="https://gloom.sh/download/desktop"><strong>下载桌面版</strong></a>
 &nbsp;&middot;&nbsp;
 <a href="#安装">安装 TUI</a>
 &nbsp;&middot;&nbsp;
@@ -17,7 +17,7 @@
 <br />
 <br />
 
-<img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb 终端界面，显示投资组合、自选列表、市场数据和图表面板。" width="720" />
+<img src="https://gloom.sh/landing-terminal.png" alt="Gloomberb 终端界面，显示投资组合、自选列表、市场数据和图表面板。" width="720" />
 
 </div>
 
@@ -43,21 +43,21 @@ Gloomberb 有两种使用方式：
 ```bash
 brew install --cask vincelwt/tap/gloomberb
 # 或
-curl -fsSL gloomberb.com/install | bash
+curl -fsSL gloom.sh/install | bash
 ```
 
 两种方式都会安装 `Gloomberb.app`，以及一个通过应用内置运行时执行 TUI 的 `gloomberb` 命令，运行时只会存储一份。
 
 想直接下载？
 
-- [下载 Gloomberb（Mac 版）](https://gloomberb.com/download/desktop)
+- [下载 Gloomberb（Mac 版）](https://gloom.sh/download/desktop)
 
 ### Linux
 
 安装独立的 TUI 可执行文件：
 
 ```bash
-curl -fsSL gloomberb.com/install | bash
+curl -fsSL gloom.sh/install | bash
 ```
 
 默认会将 `gloomberb` 安装到 `~/.local/bin`。Linux 桌面安装包暂未发布。
@@ -136,10 +136,9 @@ gloomberb
 | `gloomberb portfolio [action]` | 管理手动投资组合 |
 | `gloomberb watchlist [action]` | 管理自选列表 |
 | `gloomberb notes\|alerts [action]` | 管理本地笔记与提醒 |
-| `gloomberb broker\|ibkr [action]` | 查看券商集成状态；交易操作需要显式指定账户/配置并加 `--yes` |
-| `gloomberb ai providers\|ask\|screen` | 使用已配置的 AI 服务商与选股器 |
+| `gloomberb broker\|ibkr [action]` | 查看券商配置 |
+| `gloomberb ai providers\|ask` | 使用已配置的 AI 服务商 |
 | `gloomberb rss fetch <url>` | 抓取 RSS 订阅源 |
-| `gloomberb buildout\|congress\|substack\|x-feed\|tweets` | 在已有会话可用时访问云端与社交数据源 |
 | `gloomberb provider status` | 查看已启用的数据源 |
 | `gloomberb config\|cache\|plugin\|layout\|pane\|debug\|doctor\|version\|changelog` | 查看和管理本地应用状态 |
 | `gloomberb fn [...]` | 运行基于面板的报告命令 |
@@ -149,8 +148,6 @@ gloomberb
 | `gloomberb install <user/repo>` | 从 GitHub 安装插件 |
 | `gloomberb remove <name>` | 移除已安装插件 |
 | `gloomberb update [name]` | 更新插件 |
-
-需要已登录云端会话的命令可能返回 `auth_required`；登录、账户管理与聊天相关操作目前仍需在应用界面中完成。
 
 ## 插件
 
@@ -175,6 +172,7 @@ gloomberb
 | `Ctrl+W` | 关闭聚焦面板 |
 | `Ctrl+Shift+M` | 移动聚焦窗口（`WIN resize` 进入缩放模式） |
 | `Ctrl+Shift+D` | 停靠或浮动聚焦面板 |
+| `Ctrl+Shift+E` | 将聚焦面板的表格导出为 CSV |
 | `Ctrl+Shift+L` | 布局操作 |
 | `Ctrl+Shift+G` | 所有窗口网格对齐 |
 | `Tab` | 切换面板 |
@@ -260,7 +258,8 @@ gloomberb
 | `AW` / `AP <ticker>` | 将股票添加到活动自选列表或投资组合 |
 | `RW` / `RP <ticker>` | 从活动自选列表或投资组合中移除股票 |
 | `PS` | 打开聚焦面板的设置 |
-| `LAY <action>` | 打开布局操作 |
+| `LAY` | 打开布局浏览器以切换、发布或添加布局 |
+| `LMA <query>` | 布局与面板排列操作 |
 | `WIN move\|resize` | 移动或缩放聚焦窗口 |
 | `GL` | 所有可见面板网格对齐 |
 | `SB` | 切换状态栏 |
@@ -270,6 +269,8 @@ gloomberb
 | `LANG <locale>` | 切换界面语言（`auto`、`en`、`es`、`zh-CN`、`zh-TW`、`ja` 或 `ko`） |
 | `PL <plugin>` | 在命令栏切换插件 |
 | `PLUGINS` / `PLUG` | 插件市场：搜索已安装和 GitHub 插件，并安装、开关、更新或移除 |
+
+发布的布局会保留可移植的面板设置与状态，包括搜索条件、图表视窗和绘图；凭据、账户、投资组合以及标记为私密的字段始终保留在本地。发布后会自动复制一个长期有效的 `term.gloom.sh/l/...` 社交分享链接。
 
 ## 本地化界面
 

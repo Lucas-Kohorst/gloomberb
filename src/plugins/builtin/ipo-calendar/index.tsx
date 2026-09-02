@@ -1,64 +1,66 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
+import {
+  attachIpoCalendarHealth,
+  resetIpoCalendarHealth,
+  STOCKANALYSIS_IPO_CONNECTION_ID,
+} from "./client";
+import { attachIpoCalendarPersistence, resetIpoCalendarPersistence } from "./cache";
 import { IPOCalendarPane } from "./pane";
+import { IPO_CALENDAR_PANE_ID } from "./types";
 
-let disposeConnections: Array<() => void> = [];
+let disposeConnection: (() => void) | null = null;
 
 export const ipoCalendarModule: PluginModule = {
+  setup(ctx) {
+    attachIpoCalendarHealth(ctx.connectionHealth);
+    attachIpoCalendarPersistence(ctx.persistence);
+    disposeConnection = ctx.connectionHealth.registerSource({
+      id: STOCKANALYSIS_IPO_CONNECTION_ID,
+      name: "Stock Analysis",
+      kind: "api",
+      ownerId: "macro",
+      detail: "stockanalysis.com",
+      priority: 300,
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+    resetIpoCalendarHealth();
+    resetIpoCalendarPersistence();
+  },
+
   panes: [
     {
-      id: "ipo-calendar",
+      id: IPO_CALENDAR_PANE_ID,
       name: "IPO Calendar",
       icon: "I",
       component: IPOCalendarPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 28 },
+      tableExport: true,
     },
   ],
 
   paneTemplates: [
     {
       id: "ipo-calendar-pane",
-      paneId: "ipo-calendar",
+      paneId: IPO_CALENDAR_PANE_ID,
       label: "IPO Calendar",
-      description: "Upcoming and recent IPOs with pricing, performance, and S-1 links.",
+      description: "Upcoming and recent IPOs from Stock Analysis: pricing, offer size, and first-day return.",
       keywords: [
         "ipo",
         "initial",
         "public",
         "offering",
-        "s-1",
-        "prospectus",
         "new",
         "listing",
         "debut",
       ],
       shortcut: { prefix: "IPO" },
+      createInstance: () => ({ placement: "floating" }),
     },
   ],
-
-  setup() {
-    disposeConnections = [
-      registerConnectionSource({
-        id: "stockanalysis-ipo",
-        name: "Stock Analysis (IPO Calendar)",
-        kind: "api",
-        pluginId: "ipo-calendar",
-        authRequired: false,
-      }),
-      registerConnectionSource({
-        id: "sec-edgar-ipo",
-        name: "SEC EDGAR (IPO Filings)",
-        kind: "api",
-        pluginId: "ipo-calendar",
-        authRequired: false,
-      }),
-    ];
-  },
-
-  dispose() {
-    for (const dispose of disposeConnections) dispose();
-    disposeConnections = [];
-  },
 };

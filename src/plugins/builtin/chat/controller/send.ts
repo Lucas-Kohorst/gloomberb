@@ -14,7 +14,6 @@ interface SendChannelMessageOptions {
   content: string;
   replyToId?: string;
   user: ChatSessionUser | null;
-  sessionToken: string | null;
   ensureConnection: () => void;
   getVisibleMessages: () => ChatMessage[];
   nextPendingMessageId: () => string;
@@ -30,7 +29,6 @@ export function sendChatMessageToChannel({
   content,
   replyToId,
   user,
-  sessionToken,
   ensureConnection,
   getVisibleMessages,
   nextPendingMessageId,
@@ -41,7 +39,7 @@ export function sendChatMessageToChannel({
 }: SendChannelMessageOptions): boolean {
   const messageContent = content.trim();
   if (!messageContent) return false;
-  if (!user?.emailVerified || !sessionToken) return false;
+  if (!user?.emailVerified) return false;
   if (hasPendingSend(channel, messageContent, replyToId)) return true;
   if (!channel.wsConnection) {
     ensureConnection();

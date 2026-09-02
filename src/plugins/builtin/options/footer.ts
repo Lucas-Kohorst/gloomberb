@@ -31,6 +31,7 @@ export function useOptionsAccessFooter({
   chain,
   error,
   focused,
+  hints,
   loading,
   quoteCoverage,
   hints,
@@ -38,6 +39,7 @@ export function useOptionsAccessFooter({
   chain: OptionsChain | null | undefined;
   error?: string | null;
   focused: boolean;
+  hints?: PaneHint[];
   loading?: boolean;
   quoteCoverage: Pick<OptionQuoteCoverage, "status">;
   hints?: PaneHint[];

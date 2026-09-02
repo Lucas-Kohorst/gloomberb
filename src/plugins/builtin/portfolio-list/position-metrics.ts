@@ -27,11 +27,6 @@ function normalizePositionMultiplier(multiplier: number | undefined): number {
     : 1;
 }
 
-/**
- * Direction of a position derived from `side` when present (shares are a
- * canonical positive magnitude), falling back to the sign of `shares` for
- * legacy positions that never set `side`.
- */
 export function signedPositionDirection(position: {
   shares: number;
   side?: "long" | "short";
@@ -41,11 +36,7 @@ export function signedPositionDirection(position: {
   return position.shares < 0 ? -1 : 1;
 }
 
-/**
- * Quote-path unrealized P&L. `absMarketValue` and `cost` are positive
- * magnitudes; `totalPriceUnits` carries the position direction so shorts
- * profit when market value falls below cost.
- */
+/** Quote-path unrealized P&L. Shorts profit when market value falls below cost. */
 export function signedQuoteUnrealizedPnl(
   absMarketValue: number,
   cost: number,

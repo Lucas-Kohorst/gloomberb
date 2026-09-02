@@ -184,7 +184,10 @@ export function usePredictionDetailData({
   ]);
 
   useEffect(() => {
+    // Same focus gate as the Kalshi polling above: an unfocused pane must not keep
+    // a live socket open.
     if (
+      !focused ||
       selectedSummaryVenue !== "polymarket" ||
       (!selectedYesTokenId && !selectedNoTokenId) ||
       !selectedSummaryKey
@@ -254,6 +257,7 @@ export function usePredictionDetailData({
       unsubscribe();
     };
   }, [
+    focused,
     selectedNoTokenId,
     selectedSummaryKey,
     selectedSummaryVenue,

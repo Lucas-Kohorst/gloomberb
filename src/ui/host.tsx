@@ -361,12 +361,10 @@ export interface UiHost {
   capabilities?: {
     nativePaneChrome?: boolean;
     titleBarOverlay?: boolean;
-    /**
-     * True only when the OS paints window traffic lights over the top-left of
-     * our own header, which is the sole reason to reserve leading inset there.
-     * A browser tab has no traffic lights even though it overlays the titlebar.
-     */
-    nativeTrafficLights?: boolean;
+    /** Native drag regions and traffic-light/window-control spacing. */
+    nativeWindowChrome?: boolean;
+    /** Enables public snapshot sharing controls for this host. */
+    publicSharing?: boolean;
     precisePointer?: boolean;
     fractionalViewport?: boolean;
     cellWidthPx?: number;
@@ -406,6 +404,12 @@ export interface UiHost {
   colorFromHex?(hex: string): unknown;
 }
 
+export interface SaveTextFileRequest {
+  name: string;
+  text: string;
+  mimeType: string;
+}
+
 export interface RendererHost {
   requestExit(): void;
   startWindowDrag?(): Promise<void> | void;
@@ -414,10 +418,13 @@ export interface RendererHost {
   copyText(text: string): Promise<void>;
   copyPngImage?(pngBase64: string): Promise<void>;
   readText(): Promise<string>;
+  saveTextFile?(request: SaveTextFileRequest): Promise<string>;
   supportsNativeDesktopNotifications?: boolean;
   notify(notification: AppNotificationRequest): void;
   showContextMenu?(items: ContextMenuItem[]): Promise<boolean>;
   playTerminalMedia?(url: string, title?: string, options?: { muted?: boolean }): Promise<void>;
+  /** Stop terminal playback started by `playTerminalMedia`. */
+  stopTerminalMedia?(): void;
   resolveLiveStream?(request: LiveStreamResolveRequest): Promise<ResolvedLiveStream>;
 }
 

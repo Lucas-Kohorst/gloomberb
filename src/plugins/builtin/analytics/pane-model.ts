@@ -79,6 +79,14 @@ export function buildPortfolioChartTargets(portfolioTickers: TickerRecord[]): Po
   });
 }
 
+export interface PortfolioReturnSeriesResult {
+  returns: DatedReturn[] | null;
+  /** Share of portfolio value whose history actually made it into the weighted series, 0..1. */
+  coverage: number;
+  /** Holdings dropped because their history was missing, still loading, or too short. */
+  missingCount: number;
+}
+
 export function buildPortfolioReturnSeries({
   chartTargets,
   chartEntries,
@@ -90,28 +98,35 @@ export function buildPortfolioReturnSeries({
   chartEntries: ChartEntryLookup;
   financials: Map<string, TickerFinancials>;
   columnContext: ColumnContext;
-  equalWeight?: boolean;
-}): DatedReturn[] | null {
+}): PortfolioReturnSeriesResult {
   const weightedSeries: WeightedReturnSeries[] = [];
-  const equalShare = chartTargets.length > 0 ? 1 / chartTargets.length : 0;
+  let coveredValue = 0;
+  let totalValue = 0;
+  let missingCount = 0;
   for (const { ticker, request } of chartTargets) {
+    const value = getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
+    const weight = value == null ? 0 : Math.abs(value);
+    totalValue += weight;
+
     const key = buildChartKey(request);
     const entry = chartEntries.get(key);
     const history = entry?.data ?? entry?.lastGoodData ?? null;
-    if (!history || history.length < 11) continue;
+    const returns = history && history.length >= 11 ? computeDatedReturns(history) : [];
+    if (value == null || returns.length < 10) {
+      missingCount += 1;
+      continue;
+    }
 
-    const returns = computeDatedReturns(history);
-    if (returns.length < 10) continue;
-
-    const value = equalWeight
-      ? equalShare
-      : getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
-    if (value == null) continue;
+    coveredValue += weight;
     weightedSeries.push({ weight: value, returns });
   }
 
   const returns = computeWeightedPortfolioReturns(weightedSeries);
-  return returns.length > 0 ? returns : null;
+  return {
+    returns: returns.length > 0 ? returns : null,
+    coverage: totalValue > 0 ? coveredValue / totalValue : chartTargets.length === 0 ? 1 : 0,
+    missingCount,
+  };
 }
 
 export function buildBenchmarkReturnSeries(
@@ -264,30 +279,42 @@ export function buildAnalyticsSummaryRows({
   return rows;
 }
 
+/**
+ * Names the slice of the portfolio the risk numbers actually describe, so a
+ * Sharpe built on half the book is never presented as the whole book.
+ */
+export function formatRiskCoverage(coverage: number, missingCount: number): string | null {
+  if (missingCount <= 0 || coverage >= 0.999) return null;
+  return `${formatPercentRaw(coverage * 100)} of value, ${missingCount} holding${missingCount === 1 ? "" : "s"} pending`;
+}
+
 export function buildAnalyticsRiskRows({
   sharpe,
   beta,
-  indicative = false,
+  coverage = 1,
+  missingCount = 0,
 }: {
   sharpe: number | null;
   beta: number | null;
-  indicative?: boolean;
+  coverage?: number;
+  missingCount?: number;
 }): AnalyticsMetricRow[] {
-  const indicativeDetail = indicative ? "indicative" : null;
+  const partial = formatRiskCoverage(coverage, missingCount);
+  const partialSuffix = partial ? ` - partial: ${partial}` : "";
   return [
     sharpe !== null
       ? {
         id: "sharpe",
         label: "Sharpe Ratio",
         value: formatNumber(sharpe, 2),
-        detail: [sharpeLabel(sharpe), indicativeDetail].filter(Boolean).join(" · "),
-        color: sharpeColor(sharpe),
+        detail: `${sharpeLabel(sharpe)}${partialSuffix}`,
+        color: partial ? colors.textMuted : sharpeColor(sharpe),
       }
       : {
         id: "sharpe",
         label: "Sharpe Ratio",
         value: "—",
-        detail: indicativeDetail ?? "insufficient data",
+        detail: partial ?? "insufficient data",
         color: colors.textMuted,
       },
     beta !== null
@@ -295,14 +322,14 @@ export function buildAnalyticsRiskRows({
         id: "beta",
         label: "Beta (SPY)",
         value: formatNumber(beta, 2),
-        detail: [betaLabel(beta), indicativeDetail].filter(Boolean).join(" · "),
-        color: betaColor(beta),
+        detail: `${betaLabel(beta)}${partialSuffix}`,
+        color: partial ? colors.textMuted : betaColor(beta),
       }
       : {
         id: "beta",
         label: "Beta (SPY)",
         value: "—",
-        detail: indicativeDetail ?? "insufficient data",
+        detail: partial ?? "insufficient data",
         color: colors.textMuted,
       },
   ];

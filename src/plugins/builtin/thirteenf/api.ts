@@ -13,7 +13,10 @@ import { withConnectionRequest } from "../connections/register";
 
 const FORMS_13F_BASE_URL = "https://forms13f.com/api/v1";
 const FORM_PAGE_LIMIT = 100;
-const MAX_FORM_ROWS = 2_000;
+// ponytail: large funds file well past 2,000 positions, and a silently clipped
+// list makes every weight, total, and buy/sell action wrong. Paging further is
+// slower but truthful; page in parallel if the wait becomes the problem.
+const MAX_FORM_ROWS = 20_000;
 const CACHE_KIND = "forms13f-api";
 const CACHE_SOURCE = "forms13f";
 const CACHE_SCHEMA_VERSION = 1;
@@ -128,11 +131,10 @@ async function fetchForms13F<T>(
     value = await apiClient.getCloudSec13F(path, params) as T;
   } catch {
     const url = `${FORMS_13F_BASE_URL}${path}?${searchParams.toString()}`;
-    const response = await withConnectionRequest("forms13f", path, () =>
-      httpFetch(url, {
-        headers: { Accept: "application/json" },
-        signal: options.signal,
-      }));
+    const response = await httpFetch(url, {
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    });
     if (!response.ok) {
       const stale = options.cache !== false ? readApiCache<T>(key, { allowExpired: true }) : null;
       if (stale) return stale;
@@ -308,14 +310,14 @@ export async function listThirteenFFormHoldings(
 ): Promise<ThirteenFHoldingRecord[]> {
   const maxRows = Math.max(1, Math.min(options.maxRows ?? MAX_FORM_ROWS, MAX_FORM_ROWS));
   const rows: ThirteenFHoldingRecord[] = [];
-  for (let offset = 0; offset < maxRows; offset += FORM_PAGE_LIMIT) {
+  for (let offset = 0; offset < MAX_FORM_ROWS; offset += FORM_PAGE_LIMIT) {
     const page = await listThirteenFFormHoldingsPage(cik, accessionNumber, signal, {
       ...options,
       offset,
-      limit: Math.min(FORM_PAGE_LIMIT, maxRows - offset),
+      limit: FORM_PAGE_LIMIT,
     });
     rows.push(...page.rows);
-    if (!page.hasMore || rows.length >= maxRows) break;
+    if (!page.hasMore) break;
   }
   return rows.length > maxRows ? rows.slice(0, maxRows) : rows;
 }

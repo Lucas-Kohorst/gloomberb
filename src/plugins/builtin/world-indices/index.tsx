@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataTableView } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
@@ -9,13 +9,12 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePaneInstance } from "../../../state/app/context";
-import { usePluginTickerActions } from "../../runtime";
-import { useQuoteBoard, latestQuoteTimestamp } from "../shared/use-quote-board";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion } from "./indices";
+import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
+import { useQuoteBoard } from "../shared/use-quote-board";
+import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion, resolveIndexEntries } from "./indices";
 import { useWorldIndicesFooter } from "./footer";
-import { openUrl } from "../../../components/ui/external-link";
+import { createPublicPaneShare } from "../shared/public-pane";
 import {
   buildFlatRows,
   DEFAULT_SORT_PREFERENCE,
@@ -27,21 +26,29 @@ import {
   createWorldIndexColumns,
   DEFAULT_WORLD_INDEX_COLUMN_IDS,
   renderWorldIndexCell,
-  WORLD_INDEX_COLUMN_DEFS,
+  usesSessionText,
   type WorldIndexColumn,
 } from "./table";
 
-const REFRESH_INTERVAL_MS = 60_000;
-const WORLD_INDEX_SYMBOLS = WORLD_INDICES.map((entry) => entry.symbol);
+/** Stable identity: a fresh literal here would remount the board every render. */
+const NO_SAVED_SYMBOLS: string[] = [];
 
 function WorldIndicesPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const paneInstance = usePaneInstance();
-  const { quotes, refresh: fetchAll } = useQuoteBoard(WORLD_INDEX_SYMBOLS, REFRESH_INTERVAL_MS);
+  const dataProvider = useAssetData();
+  const [savedSymbols] = usePaneSettingValue<string[]>("symbols", NO_SAVED_SYMBOLS);
+  const entries = useMemo(() => resolveIndexEntries(savedSymbols), [savedSymbols]);
+  const symbols = useMemo(() => entries.map((entry) => entry.symbol), [entries]);
+  // One cadence, the one the user configured, instead of a private 60s timer.
+  const refreshIntervalMinutes = useAppSelector((state) => state.config.refreshIntervalMinutes);
+  const { quotes, refresh } = useQuoteBoard(
+    symbols,
+    Math.max(1, refreshIntervalMinutes || 1) * 60_000,
+  );
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<WorldIndexSortPreference>(DEFAULT_SORT_PREFERENCE);
 
-  const indicesByRegion = useMemo(() => getIndicesByRegion(), []);
+  const indicesByRegion = useMemo(() => getIndicesByRegion(entries), [entries]);
   const flatRows = useMemo(
     () => buildFlatRows(indicesByRegion, sortPreference, quotes),
     [indicesByRegion, quotes, sortPreference],
@@ -84,33 +91,17 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
     [paneInstance?.settings?.columnIds, width],
   );
 
+  const sessionText = usesSessionText(width);
   const renderCell = useCallback((
     row: WorldIndexTableRow,
     column: WorldIndexColumn,
     _index: number,
     rowState: { selected: boolean },
   ) => {
-    return renderWorldIndexCell(row, column, rowState, quotes);
-  }, [quotes]);
+    return renderWorldIndexCell(row, column, rowState, quotes, { sessionText });
+  }, [quotes, sessionText]);
 
-  useShortcut((event) => {
-    if (!focused) return;
-    if (isPlainKey(event, "r")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      fetchAll();
-      return;
-    }
-    if (isPlainKey(event, "o") && selectedSymbol) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      openUrl(`https://finance.yahoo.com/quote/${encodeURIComponent(selectedSymbol)}`);
-    }
-  }, { enabled: focused });
-
-  useAutoRefresh(latestQuoteTimestamp(quotes) || null, fetchAll);
-
-  useWorldIndicesFooter(quotes, fetchAll, selectedSymbol);
+  useWorldIndicesFooter(quotes, refresh, focused);
 
   return (
     <DataTableView<WorldIndexTableRow, WorldIndexColumn>
@@ -128,7 +119,7 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={flatRows}
+      items={dataProvider ? flatRows : []}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
@@ -143,7 +134,7 @@ function WorldIndicesPane({ focused, width, height }: PaneProps) {
         ? { text: REGION_LABELS[row.region] }
         : null}
       renderCell={renderCell}
-      emptyStateTitle="No indices configured."
+      emptyStateTitle="No market data provider connected."
     />
   );
 }
@@ -157,11 +148,27 @@ export const worldIndicesModule: PluginModule = {
       component: WorldIndicesPane,
       defaultPosition: "right",
       defaultMode: "floating",
-      defaultFloatingSize: { width: 72, height: 32 },
-      settings: {
+      defaultFloatingSize: { width: 96, height: 32 },
+      tableExport: true,
+      // Resolved per open so the dialog shows the full board until the user
+      // saves a narrower selection.
+      settings: (context) => ({
         title: "World Indices Settings",
-        fields: [buildColumnVisibilityField(WORLD_INDEX_COLUMN_DEFS)],
-      },
+        values: {
+          symbols: resolveIndexEntries(context.settings.symbols as string[] | undefined)
+            .map((entry) => entry.symbol),
+        },
+        fields: [{
+          key: "symbols",
+          label: "Indices",
+          type: "ordered-multi-select",
+          options: WORLD_INDICES.map((entry) => ({
+            value: entry.symbol,
+            label: entry.shortName,
+            description: entry.name,
+          })),
+        }],
+      }),
     },
   ],
 
@@ -173,6 +180,7 @@ export const worldIndicesModule: PluginModule = {
       description: "Monitor global equity indices grouped by region.",
       keywords: ["world", "indices", "global", "equity", "markets", "international"],
       shortcut: { prefix: "WEI" },
+      publicShare: createPublicPaneShare("World Equity Indices"),
     },
   ],
 };

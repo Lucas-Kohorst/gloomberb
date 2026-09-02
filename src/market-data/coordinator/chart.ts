@@ -11,8 +11,9 @@ const TIME_RANGE_INDEX = new Map(TIME_RANGE_ORDER.map((range, index) => [range, 
 export function createBaselineChartRequest(instrument: InstrumentRef): ChartRequest {
   return {
     instrument,
-    bufferRange: "5Y",
-    granularity: "range",
+    bufferRange: "ALL",
+    granularity: "resolution",
+    resolution: "1wk",
   };
 }
 

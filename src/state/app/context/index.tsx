@@ -14,9 +14,7 @@ import {
 } from "react";
 import type { AppSessionStorePort } from "../../../core/app-service-ports";
 import { ThemeProvider } from "../../../theme/theme-context";
-import { syncFontFamily } from "../../../theme/font-family";
 import { syncFontScale } from "../../../theme/font-scale";
-import { getBrowserWindow } from "../../../utils/browser-location";
 import {
   findPaneInstance,
   materializeDetachedPanesAsFloating,
@@ -508,14 +506,10 @@ export function AppProvider({
     // The DOM renderer measures everything in grid cells, so resizing the cell
     // is what actually scales panes and windows. A resize notification makes
     // viewport-derived measurements re-read the new grid immediately.
-    if (syncFontScale(state.config.fontSize)) {
-      getBrowserWindow()?.dispatchEvent(new Event("resize"));
+    if (syncFontScale(state.config.fontSize) && typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new Event("resize"));
     }
   }, [state.config.fontSize]);
-
-  useLayoutEffect(() => {
-    syncFontFamily(state.config.fontFamily);
-  }, [state.config.fontFamily]);
 
   useLayoutEffect(() => {
     stateRef.current = state;

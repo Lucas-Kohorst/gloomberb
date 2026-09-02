@@ -1,18 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ChartResolveCache,
   resolveChartSpecData,
+  seedChartResolutionResult,
   type ChartResolveOptions,
   type ChartResolveSources,
 } from "./resolve";
 import type { ChartResolutionResult, ChartSpec } from "./types";
 import {
   LIVE_CHART_REFRESH_INTERVAL_MS,
+  chartQuoteOverrideKeyForSource,
   liveChartQuoteTargetSignature,
   patchResolvedChartWithLiveQuotes,
   subscribeToLiveChartQuotes,
 } from "./live-quotes";
-import type { Quote } from "../types/financials";
+import type { PricePoint, Quote } from "../types/financials";
+import { createBaselineChartRequest } from "../market-data/coordinator/chart";
+import { getSharedMarketDataCoordinator } from "../market-data/coordinator";
+import { resolveEntryData } from "../market-data/selectors";
+import { isMarketFieldId } from "./field-catalog";
+import { getPresetResolution } from "./resolution";
+import {
+  parsedPriceHistoryKey,
+  readParsedPriceHistory,
+} from "./parsed-history-cache";
 
 export interface UseChartResolutionResult extends ChartResolutionResult {
   reload: () => void;
@@ -40,6 +51,35 @@ function hasRenderableData(result: ChartResolutionResult): boolean {
   return (result.bufferedSeries ?? result.series).some((series) => series.points.length > 0);
 }
 
+function collectSeedHistory(spec: ChartSpec): Map<string, PricePoint[]> {
+  const history = new Map<string, PricePoint[]>();
+  const coordinator = getSharedMarketDataCoordinator();
+  for (const series of spec.series) {
+    if (series.source.kind !== "security" || !isMarketFieldId(series.source.fieldId)) continue;
+    const source = series.source;
+    const key = chartQuoteOverrideKeyForSource(source);
+    if (history.has(key)) continue;
+    const symbol = source.instrument.symbol;
+    const exchange = source.instrument.exchange ?? "";
+    const baseline = createBaselineChartRequest(source.instrument);
+    const presetResolution = spec.viewport.resolution === "auto"
+      ? getPresetResolution(spec.viewport.range)
+      : spec.viewport.resolution;
+    const remembered = readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, baseline.resolution))
+      ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, spec.viewport.range, presetResolution))
+      ?? readParsedPriceHistory(parsedPriceHistoryKey(symbol, exchange, baseline.bufferRange, presetResolution));
+    if (remembered?.length) {
+      history.set(key, remembered);
+      continue;
+    }
+    if (!coordinator) continue;
+    const entry = coordinator.getChartEntry(baseline);
+    const data = resolveEntryData(entry);
+    if (data?.length) history.set(key, data);
+  }
+  return history;
+}
+
 function withQuoteOverrides(
   sources: ChartResolveSources,
   liveOverrides: ReadonlyMap<string, Quote>,
@@ -58,9 +98,26 @@ export function useChartResolution(
   sources: ChartResolveSources,
   options: UseChartResolutionOptions = {},
 ): UseChartResolutionResult {
-  const [result, setResult] = useState<ChartResolutionResult>(EMPTY_RESULT);
-  const resultRef = useRef(result);
-  resultRef.current = result;
+  const coordinator = getSharedMarketDataCoordinator();
+  const [result, setResult] = useState<ChartResolutionResult>(
+    () => seedChartResolutionResult(spec, collectSeedHistory(spec)) ?? EMPTY_RESULT,
+  );
+  const needsSeed = !hasRenderableData(result);
+  const subscribeSeed = useCallback((listener: () => void) => {
+    if (!needsSeed || !coordinator) return () => {};
+    return coordinator.subscribe(listener);
+  }, [coordinator, needsSeed]);
+  const getSeedSnapshot = useCallback(() => {
+    if (!needsSeed || !coordinator) return 0;
+    return coordinator.getVersion();
+  }, [coordinator, needsSeed]);
+  useSyncExternalStore(subscribeSeed, getSeedSnapshot, () => 0);
+  const seeded = needsSeed
+    ? seedChartResolutionResult(spec, collectSeedHistory(spec))
+    : null;
+  const displayed = hasRenderableData(result) ? result : (seeded ?? result);
+  const resultRef = useRef(displayed);
+  resultRef.current = displayed;
   const [revision, setRevision] = useState(0);
   const generationRef = useRef(0);
   const liveSubscriptionGenerationRef = useRef(0);
@@ -103,18 +160,15 @@ export function useChartResolution(
     generationRef.current += 1;
     const generation = generationRef.current;
     const cacheIdentity = cacheIdentityRef.current;
-    const resetCache = cacheIdentity.spec !== spec
-      || cacheIdentity.sources !== sources
-      || cacheIdentity.revision !== revision;
+    const isExplicitReload = cacheIdentity.revision !== revision && cacheIdentity.revision !== -1;
+    const resetCache = cacheIdentity.sources !== sources || isExplicitReload;
     if (resetCache) {
       resolveCacheRef.current = new ChartResolveCache();
-      cacheIdentityRef.current = { spec, sources, revision };
     }
+    cacheIdentityRef.current = { spec, sources, revision };
     const cache = resolveCacheRef.current;
     const current = resultRef.current;
-    const backgroundRefresh = !resetCache
-      && !current.loading
-      && hasRenderableData(current);
+    const backgroundRefresh = hasRenderableData(current) && !isExplicitReload;
     if (!backgroundRefresh) {
       setResult((currentResult) => ({ ...currentResult, loading: true, errors: [] }));
     }
@@ -246,5 +300,5 @@ export function useChartResolution(
     return () => clearInterval(intervalId);
   }, [liveStreaming, liveTargetSignature, quotePollingIntervalMs]);
 
-  return { ...result, reload };
+  return { ...displayed, reload };
 }

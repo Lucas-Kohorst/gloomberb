@@ -10,6 +10,7 @@ import {
   getSearchResultSymbol,
   shouldReplaceTickerName,
 } from "./result";
+import { canonicalExchange } from "../../utils/exchanges";
 
 function cryptoMetadataFromSearchResult(result: InstrumentSearchResult): { symbol: string; exchange: string } | null {
   const hint = isCryptoSearchType(result.type) || isCryptoSearchType(result.brokerContract?.secType)
@@ -90,7 +91,6 @@ function mergeTickerMetadataFromSearchResult(
   } else if (
     nextExchange
     && metadata.exchange
-    && !canonical
     && canonicalExchange(nextExchange) !== canonicalExchange(metadata.exchange)
   ) {
     metadata.exchange = nextExchange;

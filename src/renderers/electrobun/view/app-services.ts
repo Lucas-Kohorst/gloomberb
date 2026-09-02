@@ -11,31 +11,19 @@ import type { NewsCapability } from "../../../capabilities";
 import { debugLog } from "../../../utils/debug-log";
 import { settleWithinBudget } from "../../../utils/async-deadline";
 import { measurePerf, measurePerfAsync } from "../../../utils/perf-marks";
-import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
 import { createRemoteAssetDataClient } from "./remote/asset-data-client";
 import { RemotePersistence } from "./remote/persistence";
 import { RemoteTickerRepository } from "./remote/ticker-repository";
-import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
-import { AssetDataRouter } from "../../../sources/provider-router";
-import { YahooFinanceClient } from "../../../sources/yahoo-finance";
-import { createGloomberbCloudSyncTransport } from "../../../plugins/builtin/cloud/plugin";
-import { getElectrobunBackendInitSnapshot } from "./backend-rpc";
-
-declare global {
-  interface Window {
-    __GLOOM_CLOUD_HOSTED?: boolean;
-    __GLOOM_CLOUD_AUTHENTICATED?: boolean;
-  }
-}
+import { connectBackendConnectionHealth } from "./remote/connection-health-backend";
+import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc";
+import { createCapabilityInvoker } from "./remote/capability-invoker";
+import { apiClient } from "../../../api-client";
+import { cloudNewsParams, mapCloudNewsArticle } from "../../../sources/gloomberb-cloud/news";
 
 const servicesLog = debugLog.createLogger("services");
 const PLUGIN_REGISTRATION_BUDGET_MS = 5_000;
 
-export function createElectrobunAppServices({
-  config,
-  plugins = [],
-  externalPluginPaths = {},
-}: AppServicesFactoryOptions): AppRuntimeServices {
+export function createElectrobunAppServices({ config, plugins }: AppServicesFactoryOptions): AppRuntimeServices {
   servicesLog.info("create desktop web services start", {
     brokerInstanceCount: config.brokerInstances.length,
   });
@@ -60,15 +48,21 @@ export function createElectrobunAppServices({
       : remoteDataProvider!
   ));
   const marketData = new MarketDataCoordinator(dataProvider);
+  const invokeCapability = createCapabilityInvoker({
+    request: backendRequest,
+    shouldApplyDeadline: () => false,
+    timeoutMs: 0,
+  });
   const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence, {
     enableCapabilityHandlers: false,
-    wrapBrokerAdapter: shouldWrapBrokerAdaptersForRemoteHost(hosted)
-      ? (broker) => createRemoteBrokerAdapter(broker)
-      : undefined,
+    wrapBrokerAdapter: (broker) => createRemoteBrokerAdapter(broker),
+    remoteCapabilityManifests: () => getElectrobunBackendInitSnapshot()?.capabilityManifests ?? [],
+    remoteCapabilityInvoke: (capabilityId, operationId, payload, options) => (
+      invokeCapability(capabilityId, operationId, payload, options)
+    ),
   });
-  if (cloudProvider && dataProvider instanceof AssetDataRouter) {
-    dataProvider.attachRegistry(pluginRegistry);
-  }
+  const newsService = new NewsService({ connectionHealth: pluginRegistry.connectionHealth });
+
   pluginRegistry.getConfigFn = () => config;
   const newsService = new NewsService({
     pollIntervalMs: () => newsPollIntervalMsFromMinutes(pluginRegistry.getConfigFn().refreshIntervalMinutes),
@@ -86,31 +80,21 @@ export function createElectrobunAppServices({
     name: "Wire",
     priority: 0,
     provider: {
-      fetchNews: (query) => (
-        cloudNewsCapability?.kind === "news"
-          ? cloudNewsCapability.provider.fetchNews(query)
-          : remoteDataProvider
-            ? remoteDataProvider.getNews(query)
-            : Promise.resolve([])
-      ),
+      fetchNews: (query) => dataProvider.getNews(query),
       fetchNewsPage: async (query) => {
-        if (cloudNewsCapability?.kind === "news" && cloudNewsCapability.provider.fetchNewsPage) {
-          return cloudNewsCapability.provider.fetchNewsPage(query);
+        try {
+          const response = await apiClient.getCloudNews(cloudNewsParams(query));
+          return {
+            articles: response.items.map((item) => mapCloudNewsArticle(item, query.ticker)),
+            nextCursor: response.nextCursor ?? null,
+          };
+        } catch {
+          return { articles: await dataProvider.getNews(query), nextCursor: null };
         }
-        const articles = cloudNewsCapability?.kind === "news"
-          ? await cloudNewsCapability.provider.fetchNews(query)
-          : remoteDataProvider
-            ? await remoteDataProvider.getNews(query)
-            : [];
-        return { articles, nextCursor: null };
       },
     },
   }));
 
-  const builtins = getRendererBuiltinPlugins();
-  const builtinIds = new Set(builtins.map((plugin) => plugin.id));
-  const extras = plugins.filter((plugin) => !builtinIds.has(plugin.id) && Boolean(externalPluginPaths[plugin.id]));
-  const allPlugins = [...builtins, ...extras];
   const pluginReadyPromises: Promise<void>[] = [];
   for (const plugin of allPlugins) {
     const entryFile = externalPluginPaths[plugin.id];
@@ -139,10 +123,15 @@ export function createElectrobunAppServices({
   measurePerf("startup.services.news-start", () => {
     newsService.start();
   });
-  servicesLog.info("create desktop web services complete", {
-    pluginCount: allPlugins.length,
-    externalPluginCount: extras.length,
+  let destroyed = false;
+  let disposeRemoteConnectionHealth: (() => void) | null = null;
+  const ready = Promise.all(pluginReadyPromises).then(() => {
+    if (destroyed) return;
+    const dispose = connectBackendConnectionHealth(pluginRegistry.connectionHealth);
+    if (destroyed) dispose();
+    else disposeRemoteConnectionHealth = dispose;
   });
+  servicesLog.info("create desktop web services complete", { pluginCount: plugins.length });
 
   return {
     persistence,
@@ -150,9 +139,11 @@ export function createElectrobunAppServices({
     dataProvider,
     marketData,
     pluginRegistry,
-    ready: Promise.all(pluginReadyPromises).then(() => {}),
+    ready,
     destroy() {
-      disposeHostedSyncTransport?.();
+      destroyed = true;
+      disposeRemoteConnectionHealth?.();
+      disposeRemoteConnectionHealth = null;
       setSharedMarketDataCoordinator(null);
       setSharedNewsService(null);
       newsService.stop();

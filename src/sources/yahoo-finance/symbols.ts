@@ -21,7 +21,7 @@ const EXCHANGE_SUFFIX_MAP: Record<string, string> = {
   BVME: ".MI", BM: ".MC",
   SIX: ".SW", EBS: ".SW", SWX: ".SW",
   SFB: ".ST", Stockholm: ".ST", OMX: ".ST", CPH: ".CO", HEX: ".HE", OSE: ".OL", OMXNO: ".OL", ICEX: ".IC",
-  VSE: ".VI", WSE: ".WA", PRA: ".PR", BUX: ".BD", ATHEX: ".AT", BVB: ".RO", BIST: ".IS",
+  VSE: ".VI", WSE: ".WA", GPW: ".WA", PRA: ".PR", BUX: ".BD", ATHEX: ".AT", BVB: ".RO", BIST: ".IS",
   TASE: ".TA",
   JSE: ".JO",
   BVMF: ".SA", MEXI: ".MX", BYMA: ".BA", BCS: ".SN",
@@ -83,15 +83,9 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
 
   const canonical = canonicalExchange(exchange) || exchange;
   const normalized = normalizeYahooTicker(ticker, canonical);
-  // Caret indices are already the Yahoo symbol. Suffix-guessing ^VIX.HK etc.
-  // is what 429s hosted Yahoo when CAT/G opens VIX or TNX as a security.
-  if (normalized.startsWith("^")) return [normalized];
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
   if (!canonical) {
-    // Hosted Yahoo 429s the unsuffixed US listing, then this walk used to
-    // accept the first foreign hit — COIN → COIN.JK (PT Indokripto).
-    if (isBareUsEquityYahooSymbol(normalized)) return [normalized];
     const symbols = new Set<string>();
     const candidates = [normalized];
     if (dotVariant) candidates.unshift(dotVariant);

@@ -11,7 +11,7 @@ export interface ReleaseInfo {
   publishedAt: string;
   updateAction: UpdateAction;
   compressed?: boolean;
-  /** Expected SHA-256 (hex) of the downloaded asset, from GitHub's asset digest. */
+  /** SHA-256 of the downloaded GitHub release asset. */
   checksum?: string;
 }
 
@@ -73,12 +73,7 @@ function getAssetBaseName(): string {
 }
 
 function parseAssetDigest(digest: string | undefined): string | undefined {
-  if (!digest) return undefined;
-  const prefix = "sha256:";
-  if (digest.startsWith(prefix)) {
-    return digest.slice(prefix.length).toLowerCase();
-  }
-  return undefined;
+  return /^sha256:([a-f\d]{64})$/i.exec(digest ?? "")?.[1]?.toLowerCase();
 }
 
 function resolveReleaseAsset(
@@ -277,6 +272,12 @@ export async function checkForUpdateDetailed(
         error: `No compatible release asset found for ${getAssetBaseName()}`,
       };
     }
+    if (!asset.checksum) {
+      return {
+        kind: "error",
+        error: `Release asset ${asset.name} is missing a valid SHA-256 digest`,
+      };
+    }
 
     return {
       kind: "available",
@@ -287,7 +288,7 @@ export async function checkForUpdateDetailed(
         publishedAt: data.published_at,
         updateAction,
         compressed: asset.compressed,
-        checksum: asset.checksum,
+        ...(asset.checksum ? { checksum: asset.checksum } : {}),
       },
     };
   } catch (error: unknown) {
@@ -346,6 +347,12 @@ export async function performUpdate(
     return;
   }
 
+  const checksum = /^[a-f\d]{64}$/i.exec(release.checksum ?? "")?.[0].toLowerCase();
+  if (!checksum) {
+    onProgress({ phase: "error", error: "Self-update requires a valid SHA-256 checksum." });
+    return;
+  }
+
   const updatePath = execPath + ".update";
   const oldPath = execPath + ".old";
   let unlinkUpdatePath: ((path: string) => void) | null = null;
@@ -394,20 +401,10 @@ export async function performUpdate(
       downloaded.set(chunk, offset);
       offset += chunk.byteLength;
     }
-
-    // Verify the SHA-256 checksum of the downloaded asset before installing.
-    // GitHub's asset digest covers the uploaded file (the compressed .gz when
-    // gzipped), so hash the raw bytes before decompression.
-    if (release.checksum) {
-      const hash = createHash("sha256").update(downloaded).digest("hex");
-      if (hash !== release.checksum) {
-        throw new Error(
-          `Checksum mismatch: expected ${release.checksum}, got ${hash}. ` +
-          "The downloaded binary may be corrupted or tampered with.",
-        );
-      }
+    const actual = createHash("sha256").update(downloaded).digest("hex");
+    if (actual !== checksum) {
+      throw new Error(`Checksum mismatch: expected ${checksum}, got ${actual}`);
     }
-
     const nextBinary = release.compressed
       ? new Uint8Array(gunzipSync(downloaded))
       : downloaded;

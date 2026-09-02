@@ -1,276 +1,177 @@
-/**
- * The share payload model, deliberately free of runtime dependencies on the
- * terminal.
- *
- * The slim share page (`src/renderers/share`) imports this module, so anything
- * pulled in here lands in that bundle. Keep it to types, plain data, and the
- * base64url codec — no React, no plugins, no theme, no market-data stack.
- *
- * Every payload is a *snapshot*: it carries the values that were on screen when
- * the link was created rather than a query to re-run. That is what lets a share
- * render immediately for a logged-out stranger, and it is why an "open in the
- * terminal" affordance matters — the terminal is where live data lives.
- */
+import {
+  parseMarketplaceLayoutPayload,
+  type LayoutMarketplacePayload,
+} from "../layout-marketplace/payload";
+import { safeExternalUrl } from "../utils/external-url";
 
-import type { ChartSpec, SeriesStyle, PanelScale } from "../time-series/types";
-import { isRecord } from "../utils/is-record";
+export const MAX_SHARE_BYTES = 128 * 1024;
+const MAX_TITLE_LENGTH = 200;
+const MAX_TEXT_LENGTH = 50_000;
+const MAX_TABLE_COLUMNS = 20;
+const MAX_TABLE_ROWS = 200;
+const MAX_CHART_SERIES = 20;
+const MAX_CHART_POINTS = 500;
+const MAX_PANE_DESCRIPTION_LENGTH = 500;
+const MAX_PANE_DATA_DEPTH = 8;
+const MAX_PANE_OBJECT_KEYS = 64;
+const MAX_PANE_ARRAY_ITEMS = 5_000;
+const MAX_PANE_STRING_LENGTH = 4_096;
+const PANE_TEMPLATE_ID = /^[a-z0-9][a-z0-9._:-]{0,119}$/;
 
-export const SHARE_KINDS = ["article", "chart", "table"] as const;
+type CellValue = string | number | boolean | null;
+export type ShareJsonValue = CellValue | ShareJsonValue[] | { [key: string]: ShareJsonValue };
 
-export type ShareKind = typeof SHARE_KINDS[number];
-
-// ---------------------------------------------------------------------------
-// Article
-// ---------------------------------------------------------------------------
-
-export interface ArticleShareStoryItem {
-  id: string;
-  sourceKey: string;
-  sourceName: string;
+export interface TableShareData {
   title: string;
-  summary?: string;
-  url: string;
-  publishedAt: string;
+  columns: Array<{ key: string; label: string }>;
+  rows: Array<Record<string, CellValue>>;
+  sourceUrl?: string;
 }
 
-export interface ArticleSharePayload {
-  type: "news" | "substack";
-  id: string;
+export interface ChartShareData {
   title: string;
-  url: string;
-  source: string;
-  summary?: string;
-  publishedAt?: string;
-  topics?: string[];
-  categories?: string[];
-  tickers?: string[];
-  importance?: number;
-  items?: ArticleShareStoryItem[];
-  // Substack-specific
-  subtitle?: string;
-  publicationName?: string;
-  publicationBaseUrl?: string;
-  slug?: string;
-  previewText?: string;
-  bodyHtml?: string;
-  imageUrls?: string[];
-  wordCount?: number;
-  readMinutes?: number;
+  series: Array<{
+    name: string;
+    points: Array<{ x: string | number; y: number }>;
+  }>;
+  sourceUrl?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Chart
-// ---------------------------------------------------------------------------
-
-/**
- * Keys are single letters because a chart snapshot is mostly points and the
- * KV record has a 512 KB ceiling: `{"t":1,"v":2}` against
- * `{"time":1,"value":2}` is a third of the bytes across thousands of points.
- */
-export interface ChartSharePoint {
-  /** Epoch milliseconds. */
-  t: number;
-  v?: number | null;
-  o?: number;
-  h?: number;
-  l?: number;
-  c?: number;
-}
-
-export interface ChartShareSeries {
-  id: string;
-  label: string;
-  color: string;
-  style: SeriesStyle;
-  axis: "left" | "right";
-  panelId: string;
-  unit?: string;
-  points: ChartSharePoint[];
-}
-
-export interface ChartSharePanel {
-  id: string;
-  label?: string;
-  height?: number;
-  scale?: PanelScale;
-}
-
-export interface ChartSharePayload {
+export interface ArticleShareData {
   title: string;
-  subtitle?: string;
-  capturedAt: string;
-  panels: ChartSharePanel[];
-  series: ChartShareSeries[];
-  /** Inclusive bounds the snapshot was captured at, as ISO strings. */
-  window?: { start: string; end: string };
-  /**
-   * The authored spec, so the terminal can reopen the chart live instead of
-   * replaying frozen points. Absent on legacy shares.
-   */
-  spec?: ChartSpec;
-}
-
-// ---------------------------------------------------------------------------
-// Table
-// ---------------------------------------------------------------------------
-
-export interface TableShareColumn {
-  id: string;
-  label: string;
-  align?: "left" | "right" | "center";
-  /** Relative width hint in characters, mirroring the pane's column config. */
-  width?: number;
-}
-
-export interface TableShareCell {
   text: string;
-  color?: string;
+  sourceUrl?: string;
 }
 
-export interface TableShareRow {
-  cells: TableShareCell[];
-  /** External destination for the row, when the source pane had one. */
-  url?: string;
-}
-
-export interface TableSharePayload {
+export interface LegacyPaneShareData {
+  version: 1;
+  templateId: string;
   title: string;
-  subtitle?: string;
-  capturedAt: string;
-  columns: TableShareColumn[];
-  rows: TableShareRow[];
-  /** Set when rows were capped, so the page can say the view is partial. */
-  truncatedFrom?: number;
-  /** Pane template the rows came from, so the terminal can reopen it live. */
-  paneTemplateId?: string;
+  description?: string;
+  data: Record<string, ShareJsonValue>;
 }
 
-// ---------------------------------------------------------------------------
-// Envelope
-// ---------------------------------------------------------------------------
+export interface PortablePaneShareData {
+  version: 2;
+  title: string;
+  description?: string;
+  layout: LayoutMarketplacePayload;
+}
+
+export type PaneShareData = LegacyPaneShareData | PortablePaneShareData;
 
 export type SharePayload =
-  | { kind: "article"; data: ArticleSharePayload }
-  | { kind: "chart"; data: ChartSharePayload }
-  | { kind: "table"; data: TableSharePayload };
+  | { kind: "table"; data: TableShareData }
+  | { kind: "chart"; data: ChartShareData }
+  | { kind: "article"; data: ArticleShareData }
+  | { kind: "pane"; data: PaneShareData };
 
-export interface ShareEnvelope {
-  kind: ShareKind;
-  data: unknown;
-  createdAt: string;
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-// ---------------------------------------------------------------------------
-// base64url codec (browser, Node, Bun, and Workers)
-// ---------------------------------------------------------------------------
-
-export function base64urlEncode(data: string): string {
-  const bytes = new TextEncoder().encode(data);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  const base64 = typeof btoa === "function"
-    ? btoa(binary)
-    : Buffer.from(data, "utf-8").toString("base64");
-  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+function shortString(value: unknown, max = MAX_TITLE_LENGTH): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= max;
 }
 
-export function base64urlDecode(encoded: string): string | null {
-  try {
-    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const pad = padded.length % 4;
-    const base64 = pad ? padded + "=".repeat(4 - pad) : padded;
-    if (typeof atob === "function") {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new TextDecoder().decode(bytes);
-    }
-    return Buffer.from(base64, "base64").toString("utf-8");
-  } catch {
-    return null;
+function safeOptionalUrl(value: unknown): value is string | undefined {
+  return value === undefined || (typeof value === "string" && safeExternalUrl(value) !== null);
+}
+
+function isCell(value: unknown): value is CellValue {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function isTableData(value: unknown): value is TableShareData {
+  if (!record(value) || !shortString(value.title) || !safeOptionalUrl(value.sourceUrl)) return false;
+  if (!Array.isArray(value.columns) || value.columns.length === 0 || value.columns.length > MAX_TABLE_COLUMNS) return false;
+  const keys = new Set<string>();
+  for (const column of value.columns) {
+    if (!record(column) || !shortString(column.key, 80) || !shortString(column.label, 120) || keys.has(column.key)) return false;
+    keys.add(column.key);
   }
+  return Array.isArray(value.rows)
+    && value.rows.length <= MAX_TABLE_ROWS
+    && value.rows.every((row) => record(row)
+      && Object.keys(row).every((key) => keys.has(key))
+      && Object.values(row).every(isCell));
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-//
-// Share payloads arrive from a URL or from KV, so both are untrusted input.
-// These parsers are the single gate: they return null rather than throwing so
-// callers can fall back to "this link is no longer available".
-// ---------------------------------------------------------------------------
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return isRecord(value) ? value : null;
+function isChartData(value: unknown): value is ChartShareData {
+  if (!record(value) || !shortString(value.title) || !safeOptionalUrl(value.sourceUrl)) return false;
+  return Array.isArray(value.series)
+    && value.series.length > 0
+    && value.series.length <= MAX_CHART_SERIES
+    && value.series.every((series) => record(series)
+      && shortString(series.name, 120)
+      && Array.isArray(series.points)
+      && series.points.length > 0
+      && series.points.length <= MAX_CHART_POINTS
+      && series.points.every((point) => record(point)
+        && ((typeof point.x === "string" && point.x.length <= 100) || (typeof point.x === "number" && Number.isFinite(point.x)))
+        && typeof point.y === "number"
+        && Number.isFinite(point.y)));
 }
 
-function asString(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
+function isArticleData(value: unknown): value is ArticleShareData {
+  return record(value)
+    && shortString(value.title)
+    && typeof value.text === "string"
+    && value.text.length <= MAX_TEXT_LENGTH
+    && safeOptionalUrl(value.sourceUrl);
 }
 
-export function parseArticleSharePayload(value: unknown): ArticleSharePayload | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  if (asString(record.id) === null) return null;
-  if (asString(record.title) === null) return null;
-  if (asString(record.url) === null) return null;
-  if (record.type !== "news" && record.type !== "substack") return null;
-  return record as unknown as ArticleSharePayload;
-}
-
-export function parseChartSharePayload(value: unknown): ChartSharePayload | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  if (!Array.isArray(record.series) || !Array.isArray(record.panels)) return null;
-  if (asString(record.title) === null) return null;
-  return record as unknown as ChartSharePayload;
-}
-
-export function parseTableSharePayload(value: unknown): TableSharePayload | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  if (!Array.isArray(record.columns) || !Array.isArray(record.rows)) return null;
-  if (asString(record.title) === null) return null;
-  return record as unknown as TableSharePayload;
-}
-
-/** Narrow an untrusted `{ kind, data }` pair into a renderable payload. */
-export function parseSharePayload(kind: unknown, data: unknown): SharePayload | null {
-  if (kind === "article") {
-    const parsed = parseArticleSharePayload(data);
-    return parsed ? { kind: "article", data: parsed } : null;
+function boundedJson(value: unknown, depth = 0): value is ShareJsonValue {
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.length <= MAX_PANE_STRING_LENGTH;
+  if (depth >= MAX_PANE_DATA_DEPTH) return false;
+  if (Array.isArray(value)) {
+    return value.length <= MAX_PANE_ARRAY_ITEMS && value.every((entry) => boundedJson(entry, depth + 1));
   }
-  if (kind === "chart") {
-    const parsed = parseChartSharePayload(data);
-    return parsed ? { kind: "chart", data: parsed } : null;
-  }
-  if (kind === "table") {
-    const parsed = parseTableSharePayload(data);
-    return parsed ? { kind: "table", data: parsed } : null;
+  if (!record(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= MAX_PANE_OBJECT_KEYS && entries.every(([, entry]) => boundedJson(entry, depth + 1));
+}
+
+function parsePaneData(value: unknown): PaneShareData | null {
+  if (!record(value) || !shortString(value.title)) return null;
+  if (
+    value.version === 1
+    && Object.keys(value).every((key) => ["version", "templateId", "title", "description", "data"].includes(key))
+    && typeof value.templateId === "string"
+    && PANE_TEMPLATE_ID.test(value.templateId)
+    && (value.description === undefined || shortString(value.description, MAX_PANE_DESCRIPTION_LENGTH))
+    && record(value.data)
+    && boundedJson(value.data)
+  ) return value as unknown as LegacyPaneShareData;
+  if (
+    value.version !== 2
+    || !Object.keys(value).every((key) => ["version", "title", "description", "layout"].includes(key))
+    || (value.description !== undefined && !shortString(value.description, MAX_PANE_DESCRIPTION_LENGTH))
+  ) return null;
+  const layout = parseMarketplaceLayoutPayload(value.layout);
+  return layout?.schemaVersion === 2 && layout.layout.instances.length === 1
+    ? {
+        version: 2,
+        title: value.title,
+        ...(value.description === undefined ? {} : { description: value.description }),
+        layout,
+      }
+    : null;
+}
+
+export function parseSharePayload(value: unknown): SharePayload | null {
+  if (!record(value) || !shortString(value.kind, 20) || !("data" in value)) return null;
+  let json: string;
+  try { json = JSON.stringify(value); } catch { return null; }
+  if (new TextEncoder().encode(json).byteLength > MAX_SHARE_BYTES) return null;
+  if (value.kind === "table" && isTableData(value.data)) return value as unknown as SharePayload;
+  if (value.kind === "chart" && isChartData(value.data)) return value as unknown as SharePayload;
+  if (value.kind === "article" && isArticleData(value.data)) return value as unknown as SharePayload;
+  if (value.kind === "pane") {
+    const data = parsePaneData(value.data);
+    if (data) return { kind: "pane", data };
   }
   return null;
-}
-
-/**
- * Chart shares created before snapshots stored only the authored spec, which
- * the slim page cannot draw — it has no market-data stack. Those links stay
- * valid by handing off to the terminal, which can still resolve them live.
- */
-export function isSpecOnlyChartShare(data: unknown): boolean {
-  const record = asRecord(data);
-  return !!record && !!asRecord(record.spec) && !Array.isArray(record.series);
-}
-
-/** Decode an inline `?a=` article payload. */
-export function decodeArticleSharePayload(encoded: string): ArticleSharePayload | null {
-  const json = base64urlDecode(encoded);
-  if (!json) return null;
-  try {
-    return parseArticleSharePayload(JSON.parse(json));
-  } catch {
-    return null;
-  }
-}
-
-export function encodeArticleSharePayload(payload: ArticleSharePayload): string {
-  return base64urlEncode(JSON.stringify(payload));
 }

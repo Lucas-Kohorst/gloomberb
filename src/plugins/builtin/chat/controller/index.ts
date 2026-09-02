@@ -79,11 +79,10 @@ export class ChatController {
 
   private readonly storage = new ChatControllerStorage({
     emit: (channelId) => this.emit(channelId),
-    getSessionToken: () => this.session.sessionToken,
     getUser: () => this.session.user,
   });
   private readonly channelCatalog = new ChatControllerChannels({
-    canLoadPrivateState: () => !!this.session.user?.emailVerified && !!this.session.sessionToken,
+    canLoadPrivateState: () => !!this.session.user?.emailVerified,
     ensureChannelState: (channelId) => this.ensureChannelState(channelId),
     getChannelStateIds: () => this.storage.channelStates.keys(),
     handleNotification: (notification, options) => this.handleChatNotification(notification, options),
@@ -96,7 +95,7 @@ export class ChatController {
     getChannelStateSnapshots: () => this.channelCatalog.getChannelStateSnapshots(),
     isChannelsLoading: () => this.channelCatalog.isLoading(),
     isSessionChecked: () => this.session.sessionChecked,
-    hasSessionToken: () => !!this.session.sessionToken,
+    hasSession: () => !!this.session.sessionToken || !!this.session.user,
     getOnlineCount: () => this.channelCatalog.getOnlineCount(),
     getOnlineUserIds: () => this.channelCatalog.getOnlineUserIds(),
     getOnlineUsernames: () => this.channelCatalog.getOnlineUsernames(),
@@ -113,7 +112,7 @@ export class ChatController {
   });
   private readonly realtime = new ChatControllerRealtime({
     getAppActive: () => this.appActive,
-    getSessionToken: () => this.session.sessionToken,
+    hasSession: () => !!this.session.sessionToken || !!this.session.user,
     getUser: () => this.session.user,
     refreshSession: () => this.refreshSession(),
     handleNotification: (notification) => this.handleChatNotification(notification),
@@ -213,7 +212,19 @@ export class ChatController {
     return this.storage.ensureChannelState(channelId);
   }
 
+  /** Single-flight: every open chat pane calls this on mount. */
   async refreshSession(): Promise<void> {
+    if (this.sessionRefreshPromise) return this.sessionRefreshPromise;
+    const request = this.runSessionRefresh().finally(() => {
+      this.sessionRefreshPromise = null;
+    });
+    this.sessionRefreshPromise = request;
+    return request;
+  }
+
+  private sessionRefreshPromise: Promise<void> | null = null;
+
+  private async runSessionRefresh(): Promise<void> {
     return refreshChatControllerSession({
       applySignedOut: () => this.applySignedOutSession(),
       channelStates: this.storage.channelStates,
@@ -405,7 +416,6 @@ export class ChatController {
       content,
       replyToId,
       user: this.session.user,
-      sessionToken: this.session.sessionToken,
       ensureConnection: () => this.ensureConnection(normalizedChannelId),
       getVisibleMessages: () => this.getVisibleMessages(normalizedChannelId),
       nextPendingMessageId: () => `local:${Date.now()}:${this.pendingMessageSeq += 1}`,
@@ -421,7 +431,7 @@ export class ChatController {
     const channel = this.ensureChannelState(normalizedChannelId);
     const messageContent = content.trim();
     if (!messageContent) return false;
-    if (!this.session.user?.emailVerified || !this.session.sessionToken) return false;
+    if (!this.session.user?.emailVerified) return false;
 
     const latestOwnMessage = [...getVisibleMessages(channel)]
       .reverse()
@@ -458,7 +468,7 @@ export class ChatController {
     ensureChatChannelConnection({
       channelId: normalizedChannelId,
       channel,
-      canConnect: !!this.session.user?.emailVerified && !!this.session.sessionToken,
+      canConnect: !!this.session.user?.emailVerified,
       stopSafetyRefresh: () => this.realtime.stopSafetyRefresh(),
       startSafetyRefresh: () => this.realtime.startSafetyRefresh(),
       refreshMessages: () => this.refreshChannelMessages(normalizedChannelId),
@@ -563,7 +573,7 @@ export class ChatController {
     const channel = this.ensureChannelState(channelId);
     return markChatChannelViewedThroughLatestMessage({
       channel,
-      canSyncReadState: !!this.session.user?.emailVerified && !!this.session.sessionToken,
+      canSyncReadState: !!this.session.user?.emailVerified,
       persist,
       persistChannelState: () => this.storage.persistChannelState(channelId),
       syncReadState: (messageId) => {

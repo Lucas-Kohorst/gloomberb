@@ -128,6 +128,9 @@ export function ChatContent({
     const nextRows = estimateComposerHeight(draft, composerTextWidthRef.current);
     setComposerRows((current) => (current === nextRows ? current : nextRows));
   }, []);
+  const retryMessages = useCallback(() => {
+    void controller.refreshChannelMessages(channelId).catch(() => {});
+  }, [channelId, controller]);
   const {
     channels,
     channelsLoading,
@@ -138,6 +141,7 @@ export function ChatContent({
     loadFailed,
     loadingOlderMessages,
     messages,
+    messagesError,
     onlineCount,
     onlineUserIds,
     onlineUsernames,
@@ -270,19 +274,7 @@ export function ChatContent({
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,
-  } = useChatProfilePopover(user?.id);
-
-  const presence = useMemo(() => ({
-    onlineUserIds,
-    onlineUsernames,
-    selfUserId: user?.id,
-    selfUsername: user?.username,
-  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
-  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
-  const channelMembers = useMemo(
-    () => listChannelMembers(activeChannel),
-    [activeChannel],
-  );
+  } = useChatProfilePopover(focused ? user?.id : undefined);
 
   const showUserProfilePopover = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
     showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
@@ -727,6 +719,42 @@ export function ChatContent({
       overflow={nativePaneChrome ? "hidden" : undefined}
       style={nativeFillStyle}
     >
+      {showChannelSidebar && (
+        <ChannelSidebar
+          channels={channels}
+          channelStates={channelStates}
+          activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
+          onlineCount={onlineCount}
+          width={channelSidebarWidth}
+          height={height}
+          focused={focused}
+          keyboardFocused={sidebarFocused}
+          loading={channelsLoading}
+          canManageNotifications={!!user?.emailVerified}
+          canCreateConversation={!!user?.emailVerified}
+          needsProfileSetup={!!user?.id && ownProfileConfigured === false}
+          onOpenProfile={openProfileSetup}
+          directExpanded={directExpanded}
+          onSelect={selectSidebarChannel}
+          onFocusRequest={() => setSidebarFocused(true)}
+          onCreateConversation={openNewDmDialog}
+          onToggleNotifications={(nextChannelId, enabled) => {
+            controller.setChannelNotificationsEnabled(nextChannelId, enabled);
+          }}
+          onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
+        />
+      )}
+
+      <Box
+        flexDirection="column"
+        width={chatWidth}
+        height={chatLayoutHeight}
+        flexGrow={nativePaneChrome ? 1 : undefined}
+        backgroundColor={chatContentBg}
+        position="relative"
+        onMouseDown={() => focusChatContent()}
+        style={nativeFillStyle}
+      >
       {!nativePaneChrome && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>
@@ -772,6 +800,8 @@ export function ChatContent({
         jumpToMessage={jumpToMessage}
         loading={loading}
         loadingOlderMessages={loadingOlderMessages}
+        messagesError={messagesError}
+        onRetryMessages={retryMessages}
         messageAreaHeight={messageAreaHeight}
         messageBodyWidth={messageBodyWidth}
         messages={visibleMessages}

@@ -1,6 +1,7 @@
+import type { ReactNode } from "react";
 import { Box, Text } from "../../ui";
 import { colors } from "../../theme/colors";
-import { t } from "../../i18n";
+import { t, tf } from "../../i18n";
 
 export interface EmptyStateProps {
   title: string;
@@ -10,65 +11,18 @@ export interface EmptyStateProps {
   fill?: boolean;
 }
 
-const DATA_ERROR_MESSAGES: Record<string, string> = {
-  NO_DATA: "No data is available.",
-  NOT_FOUND: "No data is available.",
-  BAD_MAPPING: "This symbol is not supported.",
-  UNSUPPORTED_RANGE: "This data is not available for the selected range.",
-  TIMEOUT: "The request timed out.",
-  UPSTREAM_ERROR: "The data source is unavailable.",
-};
-
-/** Converts provider reason codes into terse, user-facing copy. */
-export function dataErrorMessage(error: string | null | undefined): string {
-  const message = error?.trim();
-  if (!message) return "The data source is unavailable.";
-  const code = message.match(/\b(NO_DATA|NOT_FOUND|BAD_MAPPING|UNSUPPORTED_RANGE|TIMEOUT|UPSTREAM_ERROR)\b/)?.[1];
-  return code ? DATA_ERROR_MESSAGES[code] ?? "The data source is unavailable." : "The data source is unavailable.";
-}
-
-const NO_DATA_PATTERN =
-  /no .{0,48}(data|history|chain|scores|filings|transcripts|news|options|holders|ratings|events|tweets|prices|peers)( found)?(\s+for\b|$)/i;
-
-/** True when the failure is an empty result, not a transport/provider crash. */
-export function isNoDataError(error: string | null | undefined): boolean {
-  const message = error?.trim();
-  if (!message) return false;
-  if (/\b(NO_DATA|NOT_FOUND)\b/.test(message)) return true;
-  if (/^no .+ available\.?$/i.test(message)) return true;
-  return NO_DATA_PATTERN.test(message);
-}
-
-export function noDataTitle(kind: string): string {
-  return `No ${kind} data`;
-}
-
-export function noDataMessage(subject: string, detail: string): string {
-  return `${subject} has no ${detail}.`;
-}
-
-export function unavailableTitle(kind: string): string {
-  if (!kind) return "Data unavailable";
-  if (kind === kind.toUpperCase()) return `${kind} data unavailable`;
-  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)} data unavailable`;
-}
-
-/** Footer chip for real failures. Empty/no-data copy stays in the pane body. */
-export function footerErrorChip(error: string | null | undefined): { text: string; tone: "warning" } | null {
-  if (!error?.trim()) return null;
-  if (isNoDataError(error)) return null;
-  return { text: "unavailable", tone: "warning" };
-}
-
-export function EmptyState({ title, message, hint, fill = true }: EmptyStateProps) {
-  const body = (
-    <Box flexDirection="column" alignItems="center">
+export function EmptyState({ title, message, hint }: EmptyStateProps) {
+  // A fixed one-cell height clipped long text at the pane edge with no marker,
+  // so provider messages lost their tail. These rows own the pane body, so let
+  // them wrap instead.
+  return (
+    <Box flexDirection="column">
       <Box>
         <Text fg={colors.textDim}>{t(title)}</Text>
       </Box>
       {message && (
         <Box>
-          <Text fg={colors.textDim}>{t(message)}</Text>
+          <Text fg={colors.textMuted}>{t(message)}</Text>
         </Box>
       )}
       {hint && (
@@ -144,4 +98,72 @@ export function TickerEmptyState({
     return <EmptyState title={unavailableTitle(kind)} message={dataErrorMessage(error)} />;
   }
   return <EmptyState title={noDataTitle(kind)} message={noDataMessage(symbol, detail)} />;
+}
+
+/** The one loading phrasing: "Loading ..." with three dots, never the ellipsis glyph. */
+export function loadingText(thing?: string): string {
+  return thing ? tf("Loading {thing}...", { thing }) : t("Loading...");
+}
+
+/** The one failure phrasing: "<Thing> unavailable." */
+export function unavailableText(thing: string): string {
+  return tf("{thing} unavailable.", { thing });
+}
+
+export interface PaneStatusBodyProps {
+  loading?: boolean;
+  error?: string | null;
+  /** True when there is nothing to show and nothing is in flight. */
+  empty?: boolean;
+  /** Names what is being loaded or what failed, e.g. "movers". */
+  subject?: string;
+  emptyTitle?: string;
+  emptyMessage?: string;
+  children?: ReactNode;
+}
+
+/**
+ * Standard loading/error/empty body for a pane. Returns `children` once there
+ * is something to render, so a pane can wrap its content in one place instead
+ * of hand-rolling three near-identical states.
+ */
+export function PaneStatusBody({
+  loading = false,
+  error,
+  empty = false,
+  subject,
+  emptyTitle,
+  emptyMessage,
+  children,
+}: PaneStatusBodyProps) {
+  if (error) {
+    return (
+      <Box paddingX={1} paddingY={1}>
+        <EmptyState
+          title={subject ? unavailableText(subject) : error}
+          message={subject ? error : undefined}
+        />
+      </Box>
+    );
+  }
+  if (loading) {
+    // The screenshot renderer waits on this marker to know a pane is still
+    // fetching. It must be a real attribute, never a word match on body text.
+    return (
+      <Box paddingX={1} paddingY={1} data-gloom-status="loading">
+        <EmptyState title={loadingText(subject)} />
+      </Box>
+    );
+  }
+  if (empty) {
+    return (
+      <Box paddingX={1} paddingY={1}>
+        <EmptyState
+          title={emptyTitle ?? t("Nothing to show yet.")}
+          message={emptyMessage}
+        />
+      </Box>
+    );
+  }
+  return <>{children}</>;
 }

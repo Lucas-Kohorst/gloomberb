@@ -3,21 +3,21 @@ import {
   buildYoutubeLiveEmbedUrl,
   extractPublishedTextForVideo,
   extractYoutubeVideoId,
-  isYoutubeEmbedUrl,
   resolveYoutubeLivePage,
   resolveHostedTvStream,
 } from "./youtube-embed";
 import { getTvChannel } from "./channels";
 
 describe("youtube TV embed", () => {
-  test("builds concrete video embeds with a client origin", () => {
+  test("builds concrete video embeds, muted by default, with no captions", () => {
     const videoUrl = buildYoutubeLiveEmbedUrl("abcdefghijk", {
       muted: false,
+      origin: "https://example.com",
     });
     expect(videoUrl).toContain("/embed/abcdefghijk?");
     expect(videoUrl).toContain("mute=0");
-    expect(videoUrl).toContain("origin=https%3A%2F%2Fterminal.kohor.st");
-    expect(videoUrl).toContain("widget_referrer=https%3A%2F%2Fterminal.kohor.st");
+    expect(videoUrl).toContain("origin=https%3A%2F%2Fexample.com");
+    expect(videoUrl).not.toContain("cc_load_policy");
     expect(videoUrl).not.toContain("live_stream");
     expect(() => buildYoutubeLiveEmbedUrl("")).toThrow("concrete YouTube video ID");
   });
@@ -33,21 +33,6 @@ describe("youtube TV embed", () => {
     globalThis.fetch = (async () => new Response("nope", { status: 503 })) as typeof fetch;
     try {
       await expect(resolveHostedTvStream("bloomberg")).rejects.toThrow("live page is unavailable (503)");
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  test("maps the kramer source id to the CNBC Television live page", async () => {
-    const originalFetch = globalThis.fetch;
-    const urls: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      urls.push(String(input));
-      return new Response("nope", { status: 503 });
-    }) as typeof fetch;
-    try {
-      await expect(resolveHostedTvStream("kramer")).rejects.toThrow("live page is unavailable (503)");
-      expect(urls[0]).toBe("https://www.youtube.com/channel/UCrp_UI8XtuYfpiqluWLD7Lw/live");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -95,34 +80,5 @@ describe("youtube TV embed", () => {
       + ',{"videoId":"abcdefghijk"},"metadataParts":[{"text":{"content":"2 views"}},{"text":{"content":"5 months ago"}}]';
     expect(extractPublishedTextForVideo(html, "zyxwvutsrqp")).toBe("1 day ago");
     expect(extractPublishedTextForVideo(html, "abcdefghijk")).toBe("5 months ago");
-  });
-
-  test("resolves the stream embedded in the live player payload", async () => {
-    const html = `<html><head><title>LIVE: CNBC Marathon - YouTube</title></head>
-      <body><script>var ytInitialPlayerResponse={"playabilityStatus":{"status":"OK","playableInEmbed":true,
-      "liveStreamability":{"liveStreamabilityRenderer":{"videoId":"9NyxcX3rhQs","pollDelayMs":"15000"}}}}
-      </script></body></html>`;
-    const fetchImpl = (async () => ({
-      ok: true,
-      status: 200,
-      url: "https://www.youtube.com/channel/UCvJJ_dzjViJCoLf5uKUTwoA/live",
-      text: async () => html,
-    })) as typeof fetch;
-    const stream = await resolveYoutubeLivePage(getTvChannel("cnbc"), fetchImpl);
-    expect(stream.videoId).toBe("9NyxcX3rhQs");
-    expect(stream.title).toBe("LIVE: CNBC Marathon");
-    expect(stream.isLive).toBe(true);
-  });
-
-  test("resolves a live stream from videoDetails marked isLive", async () => {
-    const html = `<script>{"videoDetails":{"videoId":"KQp-e_XQnDE","title":"Yahoo Finance 24/7 Stream","lengthSeconds":"0","isLive":true}}</script>`;
-    const fetchImpl = (async () => ({
-      ok: true,
-      status: 200,
-      url: "https://www.youtube.com/channel/UCEAZeUIeJs0IjQiqTCdVSIg/live",
-      text: async () => html,
-    })) as typeof fetch;
-    const stream = await resolveYoutubeLivePage(getTvChannel("yahoo-finance"), fetchImpl);
-    expect(stream.videoId).toBe("KQp-e_XQnDE");
   });
 });

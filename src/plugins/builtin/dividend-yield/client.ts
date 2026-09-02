@@ -1,14 +1,30 @@
-import { withConnectionRequest } from "../connections/register";
-import { YAHOO_CONNECTION_ID, YahooHttpClient } from "../../../sources/yahoo-finance/http";
+import type { ConnectionHealthRegistry } from "../../../core/connection-health";
+import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, mapYahooDividends } from "../../../sources/yahoo-finance/mappers";
 import { fetchYahooChart } from "../../../sources/yahoo-finance/requests";
 import { getYahooSymbolsToTry } from "../../../sources/yahoo-finance/symbols";
 import type { QuoteSummaryResponse } from "../../../sources/yahoo-finance/types";
 import type { DividendMetrics, DividendPayment } from "./types";
 
-const CONNECTION_ID = YAHOO_CONNECTION_ID;
+export const YAHOO_DIVIDENDS_CONNECTION_ID = "yahoo-dividends";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const yahoo = new YahooHttpClient();
+
+let connectionHealth: ConnectionHealthRegistry | null = null;
+
+export function attachDividendYieldHealth(health?: ConnectionHealthRegistry): void {
+  connectionHealth = health ?? null;
+}
+
+export function resetDividendYieldHealth(): void {
+  connectionHealth = null;
+}
+
+function trackRequest<T>(operation: string, request: () => Promise<T>): Promise<T> {
+  return connectionHealth?.hasSource(YAHOO_DIVIDENDS_CONNECTION_ID)
+    ? connectionHealth.track(YAHOO_DIVIDENDS_CONNECTION_ID, operation, request)
+    : request();
+}
 
 interface QuoteSummaryDividendFields {
   trailingAnnualDividendRate: number | null;
@@ -80,6 +96,7 @@ function toDividendPayment(
 export interface DividendData {
   payments: DividendPayment[];
   metrics: DividendMetrics;
+  price: number | null;
 }
 
 export async function fetchDividendData(
@@ -108,10 +125,10 @@ async function fetchDividendDataForSymbol(
     + "?modules=summaryDetail,financialData,defaultKeyStatistics";
 
   const [chartResult, quoteResult] = await Promise.allSettled([
-    withConnectionRequest(CONNECTION_ID, "dividends", () =>
-      fetchYahooChart(yahoo, symbol, "10y", "1d"),
+    trackRequest("dividend-history", () =>
+      fetchYahooChart(yahoo, symbol, "10y", "1mo"),
     ),
-    withConnectionRequest(CONNECTION_ID, "dividends", () =>
+    trackRequest("quote-summary", () =>
       yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl),
     ),
   ]);
@@ -140,27 +157,10 @@ async function fetchDividendDataForSymbol(
   const metrics = buildMetrics(payments, quoteFields, resolvedPrice);
 
   if (payments.length === 0 && !quoteFields?.trailingAnnualDividendRate) {
-    const chartFailed = chartResult.status === "rejected";
-    const quoteFailed = quoteResult.status === "rejected";
-    if (chartFailed && quoteFailed) {
-      const reason = chartResult.reason ?? quoteResult.reason;
-      throw reason instanceof Error ? reason : new Error(`Dividend data unavailable for ${symbol}`);
-    }
-    return { payments: [], metrics };
+    throw new Error(`No dividend data found for ${symbol}`);
   }
 
-  return { payments, metrics };
-}
-
-export async function fetchExDividendDate(symbol: string): Promise<Date | null> {
-  const quoteUrl =
-    `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`
-    + "?modules=summaryDetail";
-  return withConnectionRequest(CONNECTION_ID, "dividends", async () => {
-    const data = await yahoo.fetchJsonWithCrumb<QuoteSummaryResponse>(quoteUrl);
-    const raw = extractDividendFields(data).exDividendDate;
-    return raw != null ? new Date(raw * 1000) : null;
-  });
+  return { payments, metrics, price: resolvedPrice };
 }
 
 function buildMetrics(

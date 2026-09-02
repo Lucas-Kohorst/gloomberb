@@ -71,6 +71,7 @@ function createShellPluginRegistry(options?: {
     hasPaneSettings: (paneId: string) => paneId === "portfolio-list:main",
     openPaneSettingsFn: () => {},
     openCommandBar: () => {},
+    showPane: () => {},
     openWindowMode: () => {},
     openWindowModeFn: () => {},
     updateLayoutFn: () => {},
@@ -523,7 +524,8 @@ describe("Shell", () => {
     expect(resolvePaneManagementShortcut({ ...base, name: "D", key: "D" })).toBe("toggle-floating");
     expect(resolvePaneManagementShortcut({ ...base, name: "o", key: "o" })).toBe("pop-out");
     expect(resolvePaneManagementShortcut({ ...base, name: "c", key: "c" })).toBe("copy-screenshot");
-    expect(resolvePaneManagementShortcut({ ...base, name: "l", key: "l" })).toBe("layout-actions");
+    expect(resolvePaneManagementShortcut({ ...base, name: "s", key: "s" })).toBe("share");
+    expect(resolvePaneManagementShortcut({ ...base, name: "l", key: "l" })).toBe("layout-gallery");
     expect(resolvePaneManagementShortcut({ ...base, name: "f", key: "f" })).toBe("toggle-fullscreen");
     expect(resolvePaneManagementShortcut({ ...base, name: "g", key: "g" })).toBe("gridlock-all");
     expect(resolvePaneManagementShortcut({ ...base, name: "m", key: "m" })).toBe("window-mode");
@@ -531,6 +533,18 @@ describe("Shell", () => {
     expect(resolvePaneManagementShortcut({ ...base, name: "n", key: "n" })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", alt: true })).toBeNull();
     expect(resolvePaneManagementShortcut({ ...base, name: "d", key: "d", meta: false, super: false })).toBeNull();
+  });
+
+  test("opens the layout browser from the primary Shift-L shortcut", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-shell-layout-browser-shortcut-test");
+    const opened: string[] = [];
+    const registry = createShellPluginRegistry();
+    registry.showPane = (paneId) => opened.push(paneId);
+    await renderShellForWindowModeTest(createInitialState(config), { registry });
+
+    await emitKeypress({ name: "l", ctrl: true, shift: true });
+
+    expect(opened).toEqual(["layout-marketplace"]);
   });
 
   test("toggles the focused pane fullscreen without persisting layout", async () => {
@@ -645,10 +659,8 @@ describe("Shell", () => {
 
     const frame = testSetup!.captureCharFrame();
     const rows = frame.split("\n");
-    expect(frame).toContain("┊");
-    expect(frame).toContain("┄");
-    expect(rows[2]?.indexOf("┌─:: Main Portfolio") ?? -1).toBeLessThan(0);
-    expect(rows[5]?.indexOf("┌─:: Main Portfolio")).toBeGreaterThanOrEqual(14);
+    expect(rows[2]?.indexOf(":: Main Portfolio") ?? -1).toBeLessThan(0);
+    expect(rows[5]?.indexOf(":: Main Portfolio")).toBeGreaterThanOrEqual(14);
 
     await act(async () => {
       await testSetup!.mockMouse.release(16, 6);

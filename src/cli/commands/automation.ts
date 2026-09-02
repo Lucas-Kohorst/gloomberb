@@ -227,5 +227,3 @@ export const rssCliCommand: CliCommandDef = {
     })) });
   },
 };
-
-

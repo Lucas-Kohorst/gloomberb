@@ -5,6 +5,7 @@ import {
   chartEvidenceMismatchesFor,
   missingActiveTabSelections,
   shotDataEvidenceFor,
+  shotExpectedText,
   shotPriceHistoryRange,
   shotSemanticRowCount,
   shotUnavailableSymbols,
@@ -130,6 +131,18 @@ describe("pane screenshot chart-data verification", () => {
           panelId: "macro",
           visible: true,
         },
+        {
+          id: "prediction",
+          sourceKind: "capability",
+          capabilityId: "prediction-markets.series",
+          providerSeriesId: "polymarket/event-1/market-1",
+          first: { date: "2026-01-01T00:00:00.000Z", value: 0.4 },
+          last: { date: "2026-01-02T00:00:00.000Z", value: 0.6 },
+          style: "area",
+          transform: "raw",
+          panelId: "prediction",
+          visible: true,
+        },
       ],
     };
     const metadata = {
@@ -137,12 +150,18 @@ describe("pane screenshot chart-data verification", () => {
       projectedPointCount: 42,
       baseSeries: expectedComposer.baseSeries?.map((series) => ({ ...series, pointCount: 12 })),
     };
-    expect(chartEvidenceMismatchesFor([{
+    const semanticUi = [{
       id: "chart-composer-data",
-      role: "chart-data",
+      role: "chart-data" as const,
       actions: [],
       metadata,
-    }], expectedComposer)).toEqual([]);
+    }];
+    expect(chartEvidenceMismatchesFor(semanticUi, expectedComposer)).toEqual([]);
+
+    const wrong = structuredClone(semanticUi);
+    (wrong[0]!.metadata.baseSeries![3]!.last as { value: number }).value = 0.7;
+    expect(chartEvidenceMismatchesFor(wrong, expectedComposer))
+      .toContain("rendered chart series prediction does not match");
   });
 });
 
@@ -176,6 +195,40 @@ describe("pane screenshot chart-composer inputs", () => {
 
     expect(shotSemanticRowCount(composer, payload([]), semanticUi)).toBe(12);
     expect(shotUnavailableSymbols(composer, payload([]), semanticUi)).toEqual([]);
+  });
+
+  test("accepts capability-backed composer evidence and reports an empty provider series", () => {
+    const composer = resolved("chart-composer", {});
+    const populated: RemoteUiNodeSnapshot[] = [{
+      id: "chart-composer-data",
+      role: "chart-data",
+      actions: [],
+      metadata: {
+        kind: "chart-composer",
+        baseSeries: [{
+          sourceKind: "capability",
+          capabilityId: "prediction-markets.series",
+          providerSeriesId: "polymarket:one",
+          pointCount: 5,
+        }],
+      },
+    }];
+    expect(shotSemanticRowCount(composer, payload([]), populated)).toBe(5);
+    expect(shotUnavailableSymbols(composer, payload([]), populated)).toEqual([]);
+
+    const empty = structuredClone(populated);
+    (empty[0]!.metadata as any).baseSeries[0].pointCount = 0;
+    expect(shotUnavailableSymbols(composer, payload([]), empty))
+      .toEqual(["CAP:prediction-markets.series:polymarket:one"]);
+  });
+
+  test("expects the composer legend short label, not the catalog metric label", () => {
+    const valuation = {
+      ...resolved("valuation-series", { metric: "priceSales", period: "annual" }),
+      pane: { id: CHART_COMPOSER_PANE_ID },
+    } as unknown as ResolvedPaneFunction;
+
+    expect(shotExpectedText(valuation, ["AAPL"], payload([]))).toEqual(["AAPL", "P/S"]);
   });
 
   test("reports an empty FRED composer source as unavailable", () => {

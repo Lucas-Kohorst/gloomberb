@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, useUiHost } from "../../../ui";
+import { Box, Text, useUiCapabilities, useUiHost } from "../../../ui";
 import {
   ChoiceDialog,
   Tabs,
@@ -13,10 +13,10 @@ import {
 import { CompositeChart } from "../../../components/chart/composite";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
-import type { ChartSpec, ResolvedSeries, SeriesStyle } from "../../../time-series/types";
-import { defaultChartSeriesPresentation } from "../../../time-series/spec";
+import type { ChartSpec, ResolvedSeries } from "../../../time-series/types";
 import { getSupportedChartResolutionsForViewport } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
+import { chartSeriesSourceKey } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
 import {
@@ -29,11 +29,12 @@ import { colors } from "../../../theme/colors";
 import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { SeriesEditorDialog } from "./editor";
-import { DateWindowDialog, type DateWindowDialogResult } from "./date-window-dialog";
 import { chartComposerSemanticMetadata } from "./semantic";
 import {
   canToggleChartSeries,
+  CHART_INTERACTION_VIEWPORT_SETTING_KEY,
   CHART_SPEC_SETTING_KEY,
+  parseChartInteractionViewport,
   parseChartSpecOr,
   projectVisibleChartSeries,
   toggleChartSeries,
@@ -41,8 +42,6 @@ import {
 import {
   buildEmptyChartPreset,
   buildPriceChartPreset,
-  buildTradingViewChartPreset,
-  applySeriesStyle,
   chartSeriesLabel,
   defaultFinancialTimestampMode,
   formatSeriesExpression,
@@ -55,19 +54,19 @@ import {
   type BuiltinStudySelection,
   type PairStudySelection,
 } from "./presets";
+import type { ChartInteractionViewport } from "./chart-spec";
 import {
   CHART_FORMULA_OPTIONS,
   CHART_RANGES as RANGES,
   CHART_RESOLUTIONS as RESOLUTIONS,
   CHART_STUDY_OPTIONS,
-  getChartInlineStyles,
-  getChartInlineStyleTarget,
 } from "./settings";
 import { resolveChartComposerShortcut } from "./shortcuts";
 import { ChartSeriesQuickAdd } from "./quick-add";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
-import { useShareView } from "../shared/use-share-view";
-import { buildChartSharePayload, describeChartSpec } from "../../../shares/chart-snapshot";
+import { usePublicShare } from "../shared/public-share";
+import { buildChartShareData } from "../../../shares/chart-snapshot";
+import { isPlainKey } from "../../../utils/keyboard";
 
 const RANGE_TABS = RANGES.map((range, index) => ({ label: `${index + 1}:${range}`, value: range }));
 const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
@@ -75,6 +74,28 @@ const AUTO_VIEWPORT_DEBOUNCE_MS = 350;
 interface RuntimeChartViewport {
   start: Date;
   end: Date;
+}
+
+interface RuntimeChartViewportState {
+  key: string;
+  adaptiveViewport: RuntimeChartViewport | null;
+  requestViewport: RuntimeChartViewport;
+}
+
+function runtimeViewportFromSetting(
+  setting: ChartInteractionViewport | null,
+  authoredViewportKey: string,
+): RuntimeChartViewportState | null {
+  if (!setting || setting.authoredViewportKey !== authoredViewportKey) return null;
+  const requestViewport = {
+    start: new Date(setting.start),
+    end: new Date(setting.end),
+  };
+  return {
+    key: authoredViewportKey,
+    adaptiveViewport: setting.adaptive ? requestViewport : null,
+    requestViewport,
+  };
 }
 
 function footerAnchorPoint(event?: PaneFooterPressEvent): { x: number; y: number } | undefined {
@@ -93,6 +114,7 @@ interface ChartComposerSurfaceProps {
   height: number;
   footerId: string;
   onCapture?: (capturing: boolean) => void;
+  liveWhenUnfocused?: boolean;
 }
 
 const QUICK_ADD_CAPTURE = "quick-add";
@@ -112,10 +134,12 @@ function ChartComposerSurface({
   height,
   footerId,
   onCapture,
+  liveWhenUnfocused = true,
 }: ChartComposerSurfaceProps) {
   const dialog = useDialog();
   const dispatch = useAppDispatch();
   const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const { publicSharing } = useUiCapabilities();
   const paneId = usePaneInstanceId();
   const liveStreaming = useLiveStreamingSetting();
   const dialogOpen = useDialogState((state) => state.isOpen);
@@ -136,13 +160,21 @@ function ChartComposerSurface({
             ?? defaultFinancialTimestampMode(entry.source.fieldId)
             ?? "",
         ]
-      : [entry.id, formatSeriesExpression(entry)]),
+      : entry.source.kind === "economic"
+        ? [entry.id, entry.source.kind, entry.source.seriesId]
+        : [entry.id, entry.source.kind, chartSeriesSourceKey(entry.source)]),
   }), [spec.series, spec.viewport.dateWindow, spec.viewport.maxPoints, spec.viewport.range, spec.viewport.resolution]);
-  const [runtimeViewportState, setRuntimeViewportState] = useState<{
-    key: string;
-    adaptiveViewport: RuntimeChartViewport | null;
-    requestViewport: RuntimeChartViewport;
-  } | null>(null);
+  const [storedInteractionViewport, setStoredInteractionViewport] = usePaneSettingValue<unknown>(
+    CHART_INTERACTION_VIEWPORT_SETTING_KEY,
+    null,
+  );
+  const persistedInteractionViewport = useMemo(
+    () => parseChartInteractionViewport(storedInteractionViewport),
+    [storedInteractionViewport],
+  );
+  const [runtimeViewportState, setRuntimeViewportState] = useState<RuntimeChartViewportState | null>(() => (
+    runtimeViewportFromSetting(persistedInteractionViewport, authoredViewportKey)
+  ));
   const runtimeViewportTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
   const adaptiveViewportRef = useRef<RuntimeChartViewport | null>(null);
   const requestViewportRef = useRef<RuntimeChartViewport | null>(null);
@@ -156,7 +188,7 @@ function ChartComposerSurface({
       : null,
     requestViewport: activeRuntimeViewport?.requestViewport,
     targetPointCount,
-    liveStreaming,
+    liveStreaming: liveStreaming && (liveWhenUnfocused || focused),
   });
   const availableResolutions = useMemo<ChartResolution[]>(() => {
     if (!resolution.resolutionSupport) {
@@ -188,10 +220,6 @@ function ChartComposerSurface({
   );
   const selectedStudies = getSelectedBuiltinStudies(spec);
   const selectedPairStudies = getSelectedPairStudies(spec);
-  const inlineStyleTarget = useMemo(() => getChartInlineStyleTarget(spec), [spec]);
-  const styles = useMemo(() => getChartInlineStyles(spec), [spec]);
-  const inlineStyle = inlineStyleTarget?.style ?? "line";
-  const inlineStyleLabel = inlineStyleTarget ? chartSeriesLabel(inlineStyleTarget) : "";
   const viewport = resolution.viewport;
   const baseSeriesIds = useMemo(() => new Set(spec.series.map((series) => series.id)), [spec.series]);
   // Hidden series are never loaded, so the resolver has nothing to report for
@@ -235,6 +263,11 @@ function ChartComposerSurface({
     ),
     [resolution.bufferedSeries, resolution.legendSeries, resolution.series, spec],
   );
+  const shareData = useMemo(() => buildChartShareData(plottedSeries), [plottedSeries]);
+  const createPublicShare = usePublicShare();
+  const shareChart = useCallback(() => {
+    if (shareData) void createPublicShare({ kind: "chart", data: shareData });
+  }, [createPublicShare, shareData]);
   const [interactionCaptured, setInteractionCapturedState] = useState(false);
   // Typing in quick-add must not freeze the plot: it only takes the keyboard.
   const [modalCaptured, setModalCaptured] = useState(false);
@@ -276,16 +309,21 @@ function ChartComposerSurface({
       clearTimeout(runtimeViewportTimerRef.current);
       runtimeViewportTimerRef.current = null;
     }
-    adaptiveViewportRef.current = null;
-    requestViewportRef.current = null;
-    setRuntimeViewportState((current) => current?.key === authoredViewportKey ? current : null);
+    const restored = runtimeViewportFromSetting(
+      persistedInteractionViewport,
+      authoredViewportKey,
+    );
+    adaptiveViewportRef.current = restored?.adaptiveViewport ?? null;
+    requestViewportRef.current = restored?.requestViewport ?? null;
+    setRuntimeViewportState((current) => current?.key === authoredViewportKey ? current : restored);
+    if (persistedInteractionViewport && !restored) setStoredInteractionViewport(null);
     return () => {
       if (runtimeViewportTimerRef.current !== null) {
         clearTimeout(runtimeViewportTimerRef.current);
         runtimeViewportTimerRef.current = null;
       }
     };
-  }, [authoredViewportKey]);
+  }, [authoredViewportKey, persistedInteractionViewport, setStoredInteractionViewport]);
   const handleChartViewportChange = useCallback((
     next: { start: Date; end: Date } | null,
     interaction: "pan" | "reset" | "sync" | "zoom",
@@ -299,6 +337,7 @@ function ChartComposerSurface({
       adaptiveViewportRef.current = null;
       requestViewportRef.current = null;
       setRuntimeViewportState(null);
+      setStoredInteractionViewport(null);
       return;
     }
     const start = next.start.getTime();
@@ -321,8 +360,14 @@ function ChartComposerSurface({
         adaptiveViewport,
         requestViewport,
       });
+      setStoredInteractionViewport({
+        authoredViewportKey,
+        start: requestViewport.start.toISOString(),
+        end: requestViewport.end.toISOString(),
+        adaptive: adaptiveViewport !== null,
+      } satisfies ChartInteractionViewport);
     }, AUTO_VIEWPORT_DEBOUNCE_MS);
-  }, [authoredViewportKey, spec.viewport.resolution]);
+  }, [authoredViewportKey, setStoredInteractionViewport, spec.viewport.resolution]);
 
   useRemoteUiNode({
     role: "chart-data",
@@ -356,31 +401,6 @@ function ChartComposerSurface({
       viewport: { ...spec.viewport, range, dateWindow: undefined, maxPoints: undefined },
     });
   }, [setSpec, spec]);
-  const openDateWindow = useCallback(async () => {
-    setInteractionCaptured("prompt", true);
-    try {
-      const result = await dialog.prompt<DateWindowDialogResult>({
-        closeOnClickOutside: true,
-        content: (context: PromptContext<DateWindowDialogResult>) => (
-          <DateWindowDialog {...context} initial={spec.viewport.dateWindow} />
-        ),
-      }).catch(() => null);
-      if (result?.kind === "apply") {
-        setSpec({
-          ...spec,
-          viewport: {
-            ...spec.viewport,
-            dateWindow: { start: result.start, end: result.end },
-            maxPoints: undefined,
-          },
-        });
-      } else if (result?.kind === "clear") {
-        setSpec({ ...spec, viewport: { ...spec.viewport, dateWindow: undefined } });
-      }
-    } finally {
-      setInteractionCaptured("prompt", false);
-    }
-  }, [dialog, setInteractionCaptured, setSpec, spec]);
   const setResolution = useCallback((next: ChartResolution) => {
     setSpec({ ...spec, viewport: { ...spec.viewport, resolution: next } });
   }, [setSpec, spec]);
@@ -393,15 +413,6 @@ function ChartComposerSurface({
     }
     setResolution("auto");
   }, [availableResolutions, setResolution, spec.viewport.resolution]);
-  const setInlineStyle = useCallback((style: SeriesStyle) => {
-    if (!inlineStyleTarget || !styles.includes(style)) return;
-    setSpec({
-      ...spec,
-      series: spec.series.map((series) => (
-        series.id === inlineStyleTarget.id ? applySeriesStyle(series, style) : series
-      )),
-    });
-  }, [inlineStyleTarget, setSpec, spec, styles]);
   const openRangePicker = useCallback(async () => {
     setInteractionCaptured("prompt", true);
     try {
@@ -456,30 +467,6 @@ function ChartComposerSurface({
     setResolution,
     spec.viewport.resolution,
   ]);
-  const openModePicker = useCallback(async () => {
-    if (styles.length === 0) return;
-    setInteractionCaptured("prompt", true);
-    try {
-      const next = await dialog.prompt<string>({
-        closeOnClickOutside: true,
-        content: (context: PromptContext<string>) => (
-          <ChoiceDialog
-            {...context}
-            title={`${inlineStyleLabel} Style`}
-            selectedChoiceId={inlineStyle}
-            choices={styles.map((value) => ({
-              id: value,
-              label: value.toUpperCase(),
-              description: `Draw ${inlineStyleLabel} as ${value}.`,
-            }))}
-          />
-        ),
-      }).catch(() => "");
-      if (styles.includes(next as SeriesStyle)) setInlineStyle(next as SeriesStyle);
-    } finally {
-      setInteractionCaptured("prompt", false);
-    }
-  }, [dialog, inlineStyle, inlineStyleLabel, setInlineStyle, setInteractionCaptured, styles]);
   const toggleSeries = useCallback((seriesId: string) => {
     const next = toggleChartSeries(spec, seriesId);
     if (next !== spec) setSpec(next);
@@ -500,42 +487,29 @@ function ChartComposerSurface({
   }, []);
   const currentActionsRef = useRef({
     openSeriesEditor,
-    openDateWindow,
-    openModePicker,
     openResolutionPicker,
     openRangePicker,
     reload: resolution.reload,
   });
   currentActionsRef.current = {
     openSeriesEditor,
-    openDateWindow,
-    openModePicker,
     openResolutionPicker,
     openRangePicker,
     reload: resolution.reload,
   };
   const footerSeries = useCallback(() => { void currentActionsRef.current.openSeriesEditor(); }, []);
-  const footerDates = useCallback(() => { void currentActionsRef.current.openDateWindow(); }, []);
-  const footerMode = useCallback(() => { void currentActionsRef.current.openModePicker(); }, []);
   const footerResolution = useCallback(() => { void currentActionsRef.current.openResolutionPicker(); }, []);
+  const footerReload = useCallback(() => { currentActionsRef.current.reload(); }, []);
   const footerRange = useCallback(() => { void currentActionsRef.current.openRangePicker(); }, []);
-  const footerReload = useCallback(() => currentActionsRef.current.reload(), []);
-  const footerLog = useCallback(() => setSpec(toggleMainPanelScale(spec)), [setSpec, spec]);
-  const shareView = useShareView();
-  // The snapshot carries the plotted points, so a shared link renders without
-  // the recipient re-resolving providers they may have no access to. The spec
-  // rides along for the "open live in terminal" hand-off.
-  const shareChart = useCallback(() => {
-    void shareView("chart", buildChartSharePayload({
-      title: describeChartSpec(spec, plottedSeries),
-      spec,
-      series: plottedSeries,
-      window: viewport ?? null,
-    }));
-  }, [plottedSeries, shareView, spec, viewport]);
 
   useShortcut((event) => {
     if (interactionCaptureRef.current || dialogOpen) return;
+    if (publicSharing && shareData && isPlainKey(event, "y")) {
+      event.preventDefault();
+      event.stopPropagation();
+      shareChart();
+      return;
+    }
     const shortcut = resolveChartComposerShortcut(event, RANGES.length);
     if (!shortcut) return;
     event.preventDefault();
@@ -551,12 +525,6 @@ function ChartComposerSurface({
         return;
       case "series":
         void openSeriesEditor();
-        return;
-      case "dates":
-        void openDateWindow();
-        return;
-      case "mode":
-        void openModePicker();
         return;
       case "resolution":
         void openResolutionPicker();
@@ -582,23 +550,13 @@ function ChartComposerSurface({
       { id: "series", key: "s", label: "eries", onPress: footerSeries },
       { id: "indicators", key: "i", label: "ndicators", onPress: openIndicators, disabled: indicatorsDisabled },
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
-      { id: "dates", key: "w", label: "indow", onPress: footerDates },
-      { id: "mode", key: "m", label: "ode", onPress: footerMode, disabled: styles.length === 0 },
-      {
-        id: "scale",
-        key: "l",
-        label: spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "inear" : "og",
-        onPress: footerLog,
-      },
-      { id: "resolution", key: "v", label: "iew", onPress: footerResolution },
+      { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
-      { id: "reload", key: "r", label: "efresh", onPress: footerReload },
-      { id: "share", key: "y", label: "share", onPress: shareChart },
+      ...(publicSharing
+        ? [{ id: "share", key: "y", label: " share", onPress: shareChart, disabled: !shareData }]
+        : []),
     ],
   }), [
-    footerDates,
-    footerLog,
-    footerMode,
     footerRange,
     footerReload,
     footerResolution,
@@ -607,12 +565,12 @@ function ChartComposerSurface({
     indicatorsDisabled,
     openFormulas,
     openIndicators,
+    publicSharing,
+    shareChart,
+    shareData,
     resolution.errors,
     resolution.loading,
     resolution.warnings,
-    shareChart,
-    spec.panels,
-    styles.length,
   ]);
 
   const emptyMessage = spec.series.length === 0
@@ -738,17 +696,58 @@ function ChartComposerSurface({
 
 function useBoundChartSpec(fallbackFor: (symbol: string | null) => ChartSpec) {
   const { symbol } = usePaneTicker();
-  const fallback = useMemo(() => fallbackFor(symbol), [fallbackFor, symbol]);
+  const fallback = useMemo(
+    () => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
+    [symbol],
+  );
+  const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
+  const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
+  return (
+    <ChartComposerSurface
+      spec={spec}
+      setSpec={setStoredSpec}
+      focused={focused}
+      width={width}
+      height={height}
+      footerId={`${CHART_COMPOSER_PANE_ID}:${paneId}`}
+    />
+  );
+}
+
+function firstChartSecuritySymbol(spec: ChartSpec): string | null {
+  for (const entry of spec.series) {
+    if (entry.source.kind === "security") return entry.source.instrument.symbol;
+  }
+  return null;
+}
+
+function specHasSecuritySymbol(spec: ChartSpec, symbol: string | null | undefined): boolean {
+  if (!symbol) return false;
+  return spec.series.some((entry) => (
+    entry.source.kind === "security" && entry.source.instrument.symbol === symbol
+  ));
+}
+
+export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
+  const { symbol } = usePaneTicker();
+  const fallback = useMemo(() => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(), [symbol]);
   const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
   const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
   const previousSymbolRef = useRef(symbol);
 
   useEffect(() => {
+    if (!symbol) return;
     const previousSymbol = previousSymbolRef.current;
-    previousSymbolRef.current = symbol;
-    if (!symbol || !previousSymbol || symbol === previousSymbol) return;
-    const rebound = rebindChartSecuritySymbol(spec, previousSymbol, symbol);
+    const fromSymbol = specHasSecuritySymbol(spec, previousSymbol)
+      ? previousSymbol
+      : firstChartSecuritySymbol(spec) ?? previousSymbol;
+    if (!fromSymbol || fromSymbol === symbol) {
+      previousSymbolRef.current = symbol;
+      return;
+    }
+    const rebound = rebindChartSecuritySymbol(spec, fromSymbol, symbol);
     if (rebound !== spec) setStoredSpec(rebound);
+    previousSymbolRef.current = symbol;
   }, [setStoredSpec, spec, symbol]);
 
   useEffect(() => {
@@ -811,6 +810,7 @@ export function ChartComposerResearchTab({ focused, width, height, onCapture }: 
       height={height}
       footerId="chart-composer:research"
       onCapture={onCapture}
+      liveWhenUnfocused={false}
     />
   );
 }

@@ -20,6 +20,7 @@ import {
   limitGraphRowsBySymbol,
   metricDef,
 } from "../../time-series/reporting";
+import { getTimeSeriesField } from "../../time-series/field-catalog";
 import {
   buildFinancialTableModel,
   formatFinancialHeader,
@@ -31,6 +32,7 @@ import type {
 } from "../../time-series/reporting";
 import type { TimeRange } from "../../time-series/range";
 import { appendLiveQuotePoint } from "../../time-series/chart-data";
+import { applyResolvedSeriesTransform } from "../../time-series/transforms";
 import { subtractTimeRange } from "../../time-series/date-window";
 import {
   buildPresetDateWindow,
@@ -40,6 +42,9 @@ import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec"
 import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import type { FredSeriesCacheEntry } from "../../data/fred-series";
+import type { ResolvedSeries } from "../../time-series/types";
+import { chartSeriesSourceKey, createChartSeriesResolver } from "../../capabilities";
+import { getSharedRegistry } from "../../plugins/registry";
 import {
   collectShotSymbols,
   clipPriceHistoryToRange,
@@ -80,6 +85,23 @@ async function collectShotFredSeries(
   return loaded.filter((entry): entry is [string, FredSeriesCacheEntry] => !!entry);
 }
 
+async function collectShotCapabilitySeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, ResolvedSeries]>> {
+  if (resolved.pane.id !== CHART_COMPOSER_PANE_ID) return [];
+  const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
+  const invoker = getSharedRegistry();
+  if (!spec || !invoker) return [];
+  const resolveSeries = createChartSeriesResolver(invoker);
+  return (await Promise.all(spec.series.flatMap((series) => {
+    if (series.source.kind !== "capability") return [];
+    const source = series.source;
+    return [resolveSeries(source, spec.viewport, series)
+      .then((value) => [chartSeriesSourceKey(source), value] as [string, ResolvedSeries])
+      .catch(() => null)];
+  }))).filter((entry): entry is [string, ResolvedSeries] => entry !== null);
+}
+
 export interface PaneScreenshotExpectedSelection {
   control: "metric" | "statement" | "period";
   value?: string;
@@ -110,10 +132,14 @@ export interface PaneScreenshotExpectedChartEvidence {
   sourceSeries?: PaneScreenshotChartSeriesEvidence[];
   baseSeries?: Array<{
     id: string;
-    sourceKind: string;
+    sourceKind: "security" | "economic" | "capability";
     symbol?: string;
     fieldId?: string;
     economicSeriesId?: string;
+    capabilityId?: string;
+    providerSeriesId?: string;
+    first?: { date: string; value: number | null } | null;
+    last?: { date: string; value: number | null } | null;
     style: string;
     transform: string;
     panelId: string;
@@ -263,7 +289,10 @@ async function buildDesktopShotPayload(
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
   const optionsChains: Array<[string, OptionsChain]> = [];
-  const fredSeries = await collectShotFredSeries(resolved);
+  const [fredSeries, capabilitySeries] = await Promise.all([
+    collectShotFredSeries(resolved),
+    collectShotCapabilitySeries(resolved),
+  ]);
   const includeOptionsChains = resolved.pane.id === OPTIONS_PANE_ID || resolved.template?.paneId === OPTIONS_PANE_ID;
   for (const symbol of collectShotSymbols(resolved, rawArg)) {
     const entry = await fetchTickerFinancials(context, symbol);
@@ -306,6 +335,7 @@ async function buildDesktopShotPayload(
     financials,
     optionsChains,
     fredSeries,
+    capabilitySeries,
     paneState,
   };
 }
@@ -616,6 +646,13 @@ function shotExpectedChart(
   if (isComposerChartPane(resolved.pane.id)) {
     const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
     if (!spec) return null;
+    const capabilitySeries = new Map(payload.capabilitySeries);
+    const capabilityPoint = (point: ResolvedSeries["points"][number] | undefined) => point
+      ? {
+          date: point.date.toISOString(),
+          value: typeof (point.value ?? point.close) === "number" ? point.value ?? point.close ?? null : null,
+        }
+      : null;
     return {
       kind: "chart-composer",
       symbols: [...new Set(spec.series.flatMap((series) => (
@@ -635,7 +672,16 @@ function shotExpectedChart(
           }
           : series.source.kind === "economic"
             ? { economicSeriesId: series.source.seriesId }
-            : {}),
+            : (() => {
+                const loaded = capabilitySeries.get(chartSeriesSourceKey(series.source));
+                const resolvedSeries = loaded ? applyResolvedSeriesTransform(loaded, series.transform) : undefined;
+                return {
+                  capabilityId: series.source.capabilityId,
+                  providerSeriesId: series.source.seriesId,
+                  first: capabilityPoint(resolvedSeries?.points[0]),
+                  last: capabilityPoint(resolvedSeries?.points.at(-1)),
+                };
+              })()),
         style: series.style,
         transform: series.transform,
         panelId: series.panelId,
@@ -786,6 +832,12 @@ export function chartEvidenceMismatchesFor(
           || actual.symbol !== series.symbol
           || actual.fieldId !== series.fieldId
           || actual.economicSeriesId !== series.economicSeriesId
+          || actual.capabilityId !== series.capabilityId
+          || actual.providerSeriesId !== series.providerSeriesId
+          || (series.sourceKind === "capability" && (
+            JSON.stringify(actual.first) !== JSON.stringify(series.first)
+            || JSON.stringify(actual.last) !== JSON.stringify(series.last)
+          ))
           || actual.style !== series.style
           || actual.transform !== series.transform
           || actual.panelId !== series.panelId
@@ -892,6 +944,9 @@ export function shotUnavailableSymbols(
       if (entry.sourceKind === "economic" && typeof entry.economicSeriesId === "string") {
         return [`FRED:${entry.economicSeriesId}`];
       }
+      if (entry.sourceKind === "capability" && typeof entry.capabilityId === "string" && typeof entry.providerSeriesId === "string") {
+        return [`CAP:${entry.capabilityId}:${entry.providerSeriesId}`];
+      }
       return [];
     });
   }
@@ -972,7 +1027,7 @@ export function shotSemanticRowCount(
   return payload.financials.filter(([, financials]) => !!financials.quote).length;
 }
 
-function shotExpectedText(
+export function shotExpectedText(
   resolved: ResolvedPaneFunction,
   symbols: string[],
   payload: DesktopPaneShotPayload,
@@ -984,8 +1039,14 @@ function shotExpectedText(
     const definition = metricDef(graphKind, metric);
     const period = resolved.options.period as FundamentalPeriod;
     const periodCount = resolved.options.periods == null ? null : Number(resolved.options.periods);
+    if (resolved.pane.id === CHART_COMPOSER_PANE_ID) {
+      // Chart series are labelled with the field short label ("P/S"), not the
+      // catalog label ("Price / Sales").
+      const field = getTimeSeriesField(`${graphKind}.${metric}`);
+      expected.push(field?.shortLabel ?? definition.label);
+      return expected.filter(Boolean);
+    }
     expected.push(definition.label);
-    if (isComposerChartPane(resolved.pane.id)) return expected.filter(Boolean);
     for (const [symbol, financials] of payload.financials) {
       const latestRow = limitGraphRowsBySymbol(
         graphRowsForFinancials(financials, graphKind, metric, period, symbol),

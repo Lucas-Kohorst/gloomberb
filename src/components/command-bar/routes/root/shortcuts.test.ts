@@ -48,18 +48,11 @@ const paneTemplates: PaneTemplateDef[] = [
     shortcut: { prefix: "SRCH", argPlaceholder: "query", argKind: "text" },
   },
   {
-    id: "sec-pane",
-    paneId: "sec",
-    label: "SEC",
-    description: "Browse recent SEC filings",
-    shortcut: { prefix: "SEC", argPlaceholder: "ticker or company", argKind: "text", argOptional: true },
-  },
-  {
-    id: "new-chat-pane",
-    paneId: "chat",
-    label: "Chat",
-    description: "Open the floating chat window",
-    shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
+    id: "cds-pane",
+    paneId: "cds",
+    label: "Single-Name CDS",
+    description: "CDS shortcut",
+    shortcut: { prefix: "CDS", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
   },
 ];
 
@@ -151,48 +144,16 @@ describe("ticker data root shortcuts", () => {
     }
   });
 
-  test("SEC without a ticker opens the broad filings browser", () => {
-    const intent = parse("SEC");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("sec-pane");
-      expect(intent.argText).toBe("");
-    }
-  });
+  test("optional ticker shortcuts do not infer the active ticker", () => {
+    const bare = parse("CDS", "MSFT");
+    expect(bare.kind).toBe("partial");
+    if (bare.kind === "none") throw new Error("Expected shortcut intent");
+    expect(bare.completionQuery).toBeNull();
 
-  test("CHAT without a channel opens the pane instead of staying partial", () => {
-    const intent = parse("CHAT");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("new-chat-pane");
-      expect(intent.argText).toBe("");
-    }
-  });
-
-  test("CHAT with a channel keeps the retarget arg", () => {
-    const intent = parse("CHAT #general");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("new-chat-pane");
-      expect(intent.argText).toBe("#general");
-    }
-  });
-
-  test("SEC with a ticker keeps the browser query", () => {
-    const intent = parse("SEC AAPL");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("sec-pane");
-      expect(intent.argText).toBe("AAPL");
-    }
+    const scoped = parse("CDS ORCL", "MSFT");
+    expect(scoped.kind).toBe("complete");
+    if (scoped.kind === "none") throw new Error("Expected shortcut intent");
+    expect(scoped.argText).toBe("ORCL");
   });
 
   test("EM accepts optional text tickers without active ticker inference", () => {

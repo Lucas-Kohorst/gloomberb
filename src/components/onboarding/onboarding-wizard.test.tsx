@@ -21,7 +21,7 @@ import type { TickerRecord } from "../../types/ticker";
 import { EventBus } from "../../plugins/event-bus";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { BrokerAdapter, BrokerPosition } from "../../types/broker";
-import { ACCOUNT_CHOICE_IDS } from "./account-step/model";
+import { ACCOUNT_CHOICE_IDS } from "../../plugins/builtin/cloud/auth-model";
 import { OnboardingWizard } from "./onboarding-wizard";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
@@ -174,12 +174,16 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
   });
 }
 
-async function waitForFrame(text: string, attempts = 20): Promise<string> {
+async function waitForFrame(text: string, attempts = 40): Promise<string> {
   for (let index = 0; index < attempts; index += 1) {
     const frame = testSetup!.captureCharFrame();
     if (frame.includes(text)) return frame;
     await act(async () => {
-      await Bun.sleep(0);
+      // Sleeping zero only drains the task queue. These steps wait on real
+      // filesystem writes, so once the fast path has not settled the retries
+      // need actual elapsed time; otherwise a loaded machine runs out of
+      // attempts while the write is still in flight.
+      await Bun.sleep(index < 5 ? 0 : 5);
       await testSetup!.renderOnce();
     });
   }
@@ -592,6 +596,49 @@ describe("OnboardingWizard", () => {
     await waitForFrame("Sign up free");
     expect(completionCount).toBe(0);
     expect(capturedConfig?.onboardingProgress?.stage).toBe("account");
+  });
+
+  test("loads the current Cloud price on the Pro step", async () => {
+    tempDataDir = await mkdtemp(join(tmpdir(), "gloomberb-onboarding-pro-price-"));
+    const getCloudPricing = apiClient.getCloudPricing;
+    let resolvePricing!: (pricing: Awaited<ReturnType<typeof apiClient.getCloudPricing>>) => void;
+    apiClient.getCloudPricing = () => new Promise((resolve) => {
+      resolvePricing = resolve;
+    });
+
+    try {
+      const pluginRegistry = createPluginRegistry();
+      const config = {
+        ...createDefaultConfig(tempDataDir),
+        onboardingProgress: {
+          version: 1 as const,
+          stage: "upgrade" as const,
+          accountStatus: "signed-in" as const,
+        },
+      };
+      testSetup = await testRender(
+        <WizardHarness config={config} pluginRegistry={pluginRegistry} />,
+        { width: 100, height: 30 },
+      );
+      await testSetup.renderOnce();
+      await act(async () => {
+        resolvePricing({
+          currency: "usd",
+          trialDays: 7,
+          founding: true,
+          monthly: { amount: 3900, anchorAmount: 4900 },
+          yearly: { amount: 39000, anchorAmount: 49000 },
+        });
+        await Bun.sleep(0);
+        await testSetup!.renderOnce();
+      });
+
+      const frame = testSetup.captureCharFrame();
+      expect(frame).toContain("$49/mo");
+      expect(frame).not.toContain("$29/mo");
+    } finally {
+      apiClient.getCloudPricing = getCloudPricing;
+    }
   });
 
   test("Not now skips Pro and moves directly to ready", async () => {

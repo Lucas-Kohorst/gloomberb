@@ -32,29 +32,11 @@ import {
 } from "../../../utils/exchanges";
 import { MAX_CHART_COMPOSER_SERIES } from "./chart-spec";
 import {
-  SERIES_PREFIX,
-  findFuturesCatalogEntry,
-  findTreasuryCatalogEntry,
-  findVolCatalogEntry,
-} from "./universal-series";
-import {
-  canonicalWeatherStationId,
-  findWeatherStation,
-} from "../weather/stations";
-import {
-  parseWeatherMetric,
-  weatherMetricLabel,
-} from "../weather/mapping";
-import type { WeatherPrintProvider } from "../weather/types";
-import {
-  normalizePredictionMarketId,
-  resolveAdjacentIndexQuery,
-} from "./prediction-series";
-import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
-import {
-  findOwidCatalogEntryBySlug,
-  owidSeriesLabel,
-} from "../owid/catalog";
+  isValidChartCapabilityId,
+  isValidChartSeriesId,
+} from "../../../capabilities/chart-series";
+import { FUTURES_CONTRACTS } from "../futures/contracts";
+import { TREASURY_MATURITIES } from "../yield-curve/treasury-data";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -94,22 +76,14 @@ export function shortChartFieldToken(fieldId: string): string {
 export type ParsedSeriesExpression =
   | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string }
   | { kind: "economic"; provider: "fred"; seriesId: string; label?: string }
-  | { kind: "adjacent-index"; indexId: string; label?: string }
-  | { kind: "future"; code: string; symbol: string; name: string; label?: string }
-  | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
-  | { kind: "benchmark"; selector: string; metric: string; label?: string }
-  | { kind: "poll"; subject: string; choice: string; label?: string }
-  | { kind: "weather"; provider: WeatherPrintProvider; stationId: string; metric: "high" | "low" | "precip" | "hourly"; label?: string }
-  | { kind: "owid"; slug: string; entity: string; label?: string }
-  | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
-
-/** A numeric literal leg of a derived formula, e.g. `100` in `100 - STRC:price`. */
-export interface ConstantSeriesExpression {
-  kind: "constant";
-  value: number;
-}
-
-export type SeriesOrConstant = ParsedSeriesExpression | ConstantSeriesExpression;
+  | {
+      kind: "capability";
+      capabilityId: string;
+      seriesId: string;
+      label?: string;
+      style?: SeriesStyle;
+      transform?: SeriesTransform;
+    };
 
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
@@ -155,12 +129,38 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parts = trimmed.split(":");
-  const prefix = parts[0]?.trim().toUpperCase() ?? "";
-
-  if (prefix === "FRED") {
+  if (parts[0]?.trim().toUpperCase() === "CAP") {
+    const separator = trimmed.indexOf(":", 4);
+    if (separator < 0) return null;
+    const capabilityId = trimmed.slice(4, separator);
+    const seriesId = trimmed.slice(separator + 1);
+    return isValidChartCapabilityId(capabilityId) && isValidChartSeriesId(seriesId)
+      ? { kind: "capability", capabilityId, seriesId }
+      : null;
+  }
+  if (parts[0]?.trim().toUpperCase() === "FRED") {
     const seriesId = parts.length === 2 ? parts[1]?.trim().toUpperCase() ?? "" : "";
     return /^[A-Z0-9._-]{1,80}$/.test(seriesId)
       ? { kind: "economic", provider: "fred", seriesId }
+      : null;
+  }
+  if (parts.length === 2 && parts[0]?.trim().toUpperCase() === "FUT") {
+    const code = parts[1]?.trim().toUpperCase();
+    const contract = FUTURES_CONTRACTS.find((entry) => entry.code === code);
+    return contract
+      ? { kind: "security", symbol: contract.symbol, fieldId: CHART_FIELD_IDS.price, label: contract.name }
+      : null;
+  }
+  if (parts.length === 2 && parts[0]?.trim().toUpperCase() === "UST") {
+    const maturity = parts[1]?.trim().toUpperCase();
+    const treasury = TREASURY_MATURITIES.find((entry) => entry.maturity === maturity);
+    return treasury
+      ? {
+          kind: "economic",
+          provider: "fred",
+          seriesId: treasury.seriesId,
+          label: `${treasury.maturity} Treasury Yield`,
+        }
       : null;
   }
 
@@ -379,36 +379,29 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
     if (parsed) return parsed;
     const display = leg.trim() || "empty series";
     throw new Error(
-      `Invalid chart series "${display}". Use SYMBOL:field, FRED:seriesId, ADJ:indexId, KALSHI:ticker, POLY:marketId, FUT:code, UST:maturity, BENCH:selector:metric, POLL:subject:choice, or OWID:slug:entity.`,
+      `Invalid chart series "${display}". Use SYMBOL, SYMBOL:field, FUT:code, UST:maturity, FRED:series, or CAP:capability-id:series-id.`,
     );
   });
 }
 
 export function formatSeriesExpression(series: ChartSeriesSpec): string {
-  switch (series.source.kind) {
-    case "economic":
-      return `FRED:${series.source.seriesId}`;
-    case "adjacent-index":
-      return `${SERIES_PREFIX.adjacentIndex}:${series.source.indexId}`;
-    case "benchmark":
-      return `${SERIES_PREFIX.benchmark}:${series.source.selector}:${series.source.metric}`;
-    case "poll":
-      return `${SERIES_PREFIX.poll}:${series.source.subject}:${series.source.choice}`;
-    case "weather":
-      return `${series.source.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${series.source.stationId}:${series.source.metric}`;
-    case "owid":
-      return `${SERIES_PREFIX.owid}:${series.source.slug}:${series.source.entity}`;
-    case "prediction-market":
-      return `${series.source.venue === "kalshi" ? SERIES_PREFIX.kalshi : SERIES_PREFIX.polymarket}:${series.source.marketId}`;
-    case "constant":
-      return String(series.source.value);
-    default:
-      return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
+  if (series.source.kind === "economic") return `FRED:${series.source.seriesId}`;
+  if (series.source.kind === "capability") {
+    return `CAP:${series.source.capabilityId}:${series.source.seriesId}`;
   }
+  return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
-  return seriesSpecLabel(series);
+  if (series.label?.trim()) return series.label.trim();
+  if (series.source.kind === "economic") return `FRED ${series.source.seriesId}`;
+  if (series.source.kind === "capability") return series.source.seriesId;
+  const instrument = publicTickerKey(
+    series.source.instrument.symbol,
+    series.source.instrument.exchange,
+  );
+  const field = getTimeSeriesField(series.source.fieldId);
+  return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {
@@ -475,10 +468,26 @@ export function buildSeriesSpec(
   index: number,
   overrides: Partial<Omit<ChartSeriesSpec, "id" | "source">> = {},
 ): ChartSeriesSpec {
-  if (expression.kind === "constant") {
-    const source = { kind: "constant" as const, value: expression.value };
-    const presentation = defaultChartSeriesPresentation(source);
-    const style = overrides.style ?? presentation.style;
+  if (expression.kind === "capability") {
+    const style = overrides.style ?? expression.style ?? "line";
+    return {
+      id: `${slug(expression.capabilityId)}-${slug(expression.seriesId)}-${index + 1}`,
+      source: {
+        kind: "capability",
+        capabilityId: expression.capabilityId,
+        seriesId: expression.seriesId,
+      },
+      ...(expression.label ? { label: expression.label } : {}),
+      transform: expression.transform ?? "raw",
+      axis: "auto",
+      panelId: "main",
+      ...overrides,
+      style,
+      interpolation: coerceSeriesInterpolationForStyle(style),
+    };
+  }
+  if (expression.kind === "economic") {
+    const style = overrides.style ?? "step";
     return {
       id: `const-${slug(String(expression.value))}-${index + 1}`,
       source,
@@ -725,26 +734,11 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
     return "percent";
   }
   if (series.transform === "index100") return "index";
-  switch (series.source.kind) {
-    case "economic":
-      return `economic:${series.source.seriesId}`;
-    case "adjacent-index":
-      return "level";
-    case "benchmark":
-      return `benchmark:${series.source.metric}`;
-    case "poll":
-      return "percent";
-    case "weather":
-      return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
-    case "owid":
-      return `owid:${series.source.slug}`;
-    case "prediction-market":
-      return "probability";
-    case "constant":
-      return "constant";
-    default:
-      return getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
-  }
+  return series.source.kind === "economic"
+    ? `economic:${series.source.seriesId}`
+    : series.source.kind === "capability"
+      ? `capability:${series.source.capabilityId}`
+      : getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
 }
 
 function nextGeneratedPanelId(

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import type { TickerFinancials } from "../../types/financials";
 import { mapCloudFinancials } from "./normalizers";
 
 describe("mapCloudFinancials", () => {
@@ -25,7 +24,7 @@ describe("mapCloudFinancials", () => {
         close: 23.1,
         volume: 1000,
       }],
-    } as unknown as TickerFinancials);
+    });
 
     expect(financials.quote?.currency).toBe("GBP");
     expect(financials.quote?.price).toBeCloseTo(0.231);

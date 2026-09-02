@@ -1,15 +1,13 @@
 import { useMemo } from "react";
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
-import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
+import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useDebouncedPluginPaneState } from "../../../../runtime";
-import { usePaneSettingValue } from "../../../../../state/app/context";
-import { Spinner } from "../../../../../components";
-import { encodeSortPreference } from "../../../../../components/data-table/sort-settings";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./detail-view";
 import {
   NewsArticleStackView,
+  newsTableStatusContent,
   type NewsColumnId,
   type NewsSortPreference,
 } from "./table";
@@ -41,19 +39,13 @@ export function NewsPresetPane({
   emptyStateHint: string;
 }) {
   const newsState = useNewsArticles(query);
-  const liveHead = useMemo(() => {
-    const limit = query.limit;
-    if (limit == null || newsState.articles.length <= limit) return newsState.articles;
-    return newsState.articles.slice(0, limit);
-  }, [newsState.articles, query.limit]);
-  const articles = usePersistedNewsArticles(`${paneKey}:articles`, liveHead);
-  const visibleArticles = articles;
-  const atLimit = query.limit != null && visibleArticles.length >= query.limit;
-  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(
-    atLimit ? null : query,
-    newsState,
-  );
-  const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && articles.length === 0);
+  const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
+  const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(query, newsState);
+  // The aggregator opens a query in "loading", so the first paint is a loading
+  // body rather than a definitive empty wire.
+  const loading = newsState.phase === "loading"
+    || (newsState.phase === "refreshing" && articles.length === 0);
+  const error = newsState.error;
   const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
     `${paneKey}:selectedArticleId`,
     null,
@@ -81,15 +73,9 @@ export function NewsPresetPane({
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
     focused,
-    article: readableArticle,
-    loading,
-    error: newsState.error,
-    onPopOut: () => popOutArticle(readableArticle),
-    onRefresh: () => {
-      void getSharedNewsService()?.load(query);
-    },
-    onShare: shareArticle,
-    showPoll: !detailArticle,
+    article: detailArticle,
+    loading: loading && articles.length > 0,
+    error,
   });
 
   const detailContent = detailArticle ? (
@@ -102,10 +88,6 @@ export function NewsPresetPane({
   ) : (
     <Box flexGrow={1} />
   );
-
-  if (loading && visibleArticles.length === 0) {
-    return <Spinner label={`Loading ${title.toLowerCase()}...`} />;
-  }
 
   return (
     <NewsArticleStackView
@@ -124,11 +106,16 @@ export function NewsPresetPane({
       onBack={closeDetail}
       detailContent={detailContent}
       detailTitle={detailArticle?.title}
-      columns={effectiveColumns}
+      columns={columns}
+      emptyContent={newsTableStatusContent({
+        loading,
+        error,
+        subject: title,
+        emptyTitle: emptyStateTitle,
+        emptyMessage: emptyStateHint,
+      })}
       emptyStateTitle={emptyStateTitle}
       emptyStateHint={emptyStateHint}
-      onPopOut={() => popOutArticle(readableArticle)}
-      onShare={shareArticle}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
     />

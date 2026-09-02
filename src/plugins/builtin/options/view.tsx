@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text } from "../../../ui";
-import { usePaneTicker, usePaneInstance } from "../../../state/app/context";
+import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { isPlainKey } from "../../../utils/keyboard";
+import { formatCompact } from "../../../utils/format";
 import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
-import { useOptionsQuery, useResolvedEntryValue } from "../../../market-data/hooks";
+import { useOptionsQuery, useResolvedEntryValue, useTickerFinancials } from "../../../market-data/hooks";
 import {
   DataTableView,
-  LoadingState,
-  TickerEmptyState,
+  EmptyState,
   Spinner,
   Tabs,
   type DataTableKeyEvent,
@@ -16,39 +16,86 @@ import {
 } from "../../../components";
 import { useShortcut } from "../../../react/input";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
+import { usePluginAppActions } from "../../runtime";
 import {
-  applySortPreference,
-  nextSortPreference,
-  type SortPreference,
-} from "../../../utils/sort-values";
+  OPTIONS_CALCULATOR_TEMPLATE_ID,
+  type OptionSide,
+} from "../options-calculator/model";
+import { buildChainCalcParams, resolveCalcSide } from "./calc-seed";
+import { calculateOptionGreeks, calculateOptionsSummary, type OptionsSummary } from "./analytics";
 import {
-  OPTION_COLUMNS,
+  DEFAULT_OPTION_FIELD_IDS,
   buildStrikeList,
+  createOptionColumns,
   findNearestStrikeIndex,
+  formatIv,
   optionColumnColor,
   optionSortValue,
   renderOptionCell,
   resolveDefaultStrikeTarget,
+  resolveOptionFieldIds,
 } from "./table";
-import type { OptionColumn, OptionColumnId, OptionTableRow, OptionsViewProps } from "./types";
+import type { OptionColumn, OptionFieldId, OptionTableRow, OptionsViewProps } from "./types";
 import {
   buildOptionQuoteTargets,
-  OPTIONS_CHAIN_REFRESH_INTERVAL_MS,
-  optionRowRevision,
   overlayOptionRowQuotes,
   resolveOptionQuoteCoverage,
+  resolveChainRefreshIntervalMs,
 } from "./live-quotes";
 import { useOptionsAccessFooter } from "./footer";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
 import { usePluginAppActions } from "../../runtime";
 import { buildOvmeSeed, serializeOvmeSeed, type OvmeOptionType } from "../options-calc/seed";
 
+type SummaryMetric = { label: string; value: string };
+
+function formatRatio(value: number | null | undefined): string {
+  return value == null || !Number.isFinite(value) ? "—" : value.toFixed(2);
+}
+
+function SummaryRow({ metrics }: { metrics: SummaryMetric[] }) {
+  return (
+    <Box flexDirection="row" height={1} gap={3} overflow="hidden">
+      {metrics.map((metric) => (
+        <Box key={metric.label} flexDirection="row" flexShrink={0}>
+          <Text fg={colors.textDim}>{`${metric.label} `}</Text>
+          <Text fg={colors.textBright}>{metric.value}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function OptionsSummaryStrip({ summary, secondary }: {
+  summary: OptionsSummary | null;
+  secondary: boolean;
+}) {
+  const volatility: SummaryMetric[] = [
+    { label: "ATM IV", value: formatIv(summary?.atmImpliedVolatility ?? undefined) },
+    { label: "HV30", value: formatIv(summary?.historicalVolatility30d ?? undefined) },
+    { label: "IV/HV", value: formatRatio(summary?.impliedHistoricalRatio) },
+  ];
+  return (
+    <Box flexDirection="column" height={secondary ? 2 : 1}>
+      <SummaryRow metrics={volatility} />
+      {secondary && (
+        <SummaryRow metrics={[
+          { label: "EXP VOL", value: summary ? formatCompact(summary.expirationVolume) : "—" },
+          { label: "P/C VOL", value: formatRatio(summary?.putCallVolumeRatio) },
+          { label: "P/C OI", value: formatRatio(summary?.putCallOpenInterestRatio) },
+        ]} />
+      )}
+    </Box>
+  );
+}
+
 export function OptionsView({ width, height, focused, onCapture = () => {} }: OptionsViewProps) {
   const { ticker, financials } = usePaneTicker();
-  const pane = usePaneInstance();
+  const { createPaneFromTemplate } = usePluginAppActions();
   const liveStreaming = useLiveStreamingSetting();
   const { createPaneFromTemplate } = usePluginAppActions();
   const [expIdx, setExpIdx] = useState(0);
+  const [calcSide, setCalcSide] = useState<OptionSide | null>(null);
   const [strikeIdx, setStrikeIdx] = useState(0);
   const [selectedSide, setSelectedSide] = useState<OvmeOptionType>("call");
   const [autoScrollVersion, setAutoScrollVersion] = useState(0);
@@ -69,6 +116,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   const parsed = target?.parsedOption ?? null;
   const effectiveTicker = target?.effectiveTicker ?? "";
   const effectiveExchange = target?.effectiveExchange ?? "";
+  const underlyingFinancials = useTickerFinancials(isOpt ? effectiveTicker : null, null);
+  const underlying = isOpt ? underlyingFinancials : financials;
+  const spot = underlying?.quote?.price;
+  const dividendYield = underlying?.fundamentals?.dividendYield;
   const instrument = target?.instrument ?? null;
   const baseRequest = target
     ? {
@@ -81,6 +132,9 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       },
     }
     : null;
+  const [chainRefreshMinutes] = usePaneSettingValue<string>("chainRefreshMinutes", "");
+  const [storedOptionFieldIds] = usePaneSettingValue<OptionFieldId[]>("optionColumnIds", DEFAULT_OPTION_FIELD_IDS);
+  const optionFieldIds = useMemo(() => resolveOptionFieldIds(storedOptionFieldIds), [storedOptionFieldIds]);
   const initialChainEntry = useOptionsQuery(baseRequest);
   const initialChain = useResolvedEntryValue(initialChainEntry);
   const selectedExpiration = initialChain?.expirationDates[expIdx];
@@ -93,10 +147,17 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     baseRequest && selectedExpiration != null
       ? { ...baseRequest, expirationDate: selectedExpiration }
       : null,
-    { refreshIntervalMs: chainRefreshIntervalMs },
+    { refreshIntervalMs: resolveChainRefreshIntervalMs(chainRefreshMinutes) },
   );
   const expirationChain = useResolvedEntryValue(expirationChainEntry);
+  // The expiration strip is expiry-independent, but strikes must never come from
+  // a different expiration than the selected one: the initial chain only covers
+  // whichever expiry the provider defaulted to.
   const chain = expirationChain ?? initialChain;
+  const initialChainExpiration = initialChain?.calls[0]?.expiration ?? initialChain?.puts[0]?.expiration ?? null;
+  const strikeChain = expirationChain
+    ?? (selectedExpiration == null || initialChainExpiration === selectedExpiration ? initialChain : null);
+  const strikesLoading = strikeChain === null;
   const expirationCount = chain?.expirationDates.length ?? 0;
   const loading = (initialChainEntry?.phase === "loading" || initialChainEntry?.phase === "refreshing") && !chain
     || (expirationChainEntry?.phase === "loading" || expirationChainEntry?.phase === "refreshing");
@@ -136,7 +197,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     onCaptureRef.current(false);
     setExpIdx(0);
     setStrikeIdx(0);
-    setSortPreference({ columnId: null, direction: "asc" });
+    setCalcSide(null);
   }, [effectiveTicker]);
 
   useEffect(() => {
@@ -152,24 +213,36 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     userSelectedStrikeRef.current = false;
   }, [expIdx]);
 
-  const strikes = useMemo(() => chain ? buildStrikeList(chain) : [], [chain]);
+  const strikes = useMemo(() => strikeChain ? buildStrikeList(strikeChain) : [], [strikeChain]);
   const callsByStrike = useMemo(
-    () => new Map(chain?.calls.map((c) => [c.strike, c]) ?? []),
-    [chain],
+    () => new Map(strikeChain?.calls.map((c) => [c.strike, c]) ?? []),
+    [strikeChain],
   );
   const putsByStrike = useMemo(
-    () => new Map(chain?.puts.map((p) => [p.strike, p]) ?? []),
-    [chain],
+    () => new Map(strikeChain?.puts.map((p) => [p.strike, p]) ?? []),
+    [strikeChain],
   );
   const snapshotRows = useMemo<OptionTableRow[]>(() => {
-    const unordered = strikes.map((strike) => ({
-      strike,
-      call: callsByStrike.get(strike),
-      put: putsByStrike.get(strike),
-      isPositionStrike: !!parsed && Math.abs(strike - parsed.strike) < 0.01,
-    }));
-    return applySortPreference(unordered, sortPreference, optionSortValue);
-  }, [callsByStrike, parsed, putsByStrike, sortPreference, strikes]);
+    const now = Date.now();
+    return strikes.map((strike) => {
+      const call = callsByStrike.get(strike);
+      const put = putsByStrike.get(strike);
+      return {
+        strike,
+        call,
+        put,
+        callGreeks: calculateOptionGreeks(call, "call", spot, dividendYield, now),
+        putGreeks: calculateOptionGreeks(put, "put", spot, dividendYield, now),
+        isPositionStrike: !!parsed && Math.abs(strike - parsed.strike) < 0.01,
+      };
+    });
+  }, [callsByStrike, dividendYield, parsed, putsByStrike, spot, strikes]);
+  const summary = useMemo(
+    () => strikeChain
+      ? calculateOptionsSummary(strikeChain, spot, underlying?.priceHistory ?? [])
+      : null,
+    [spot, strikeChain, underlying?.priceHistory],
+  );
   const visibleStrikeRange = visibleStrikeViewport?.key === viewportKey
     ? visibleStrikeViewport.range
     : null;
@@ -217,32 +290,31 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     ),
     [optionQuoteEntries, optionQuoteFreshness, optionQuoteTargets],
   );
-  const optionColumns: OptionColumn[] = useMemo(() => OPTION_COLUMNS.map((column) => ({
+  const optionColumns = useMemo<OptionColumn[]>(() => createOptionColumns(optionFieldIds).map((column) => ({
     ...column,
-    headerColor: optionColumnColor(column.id, colors.panel),
-  })), []);
+    headerColor: optionColumnColor(column, colors.panel),
+  })), [optionFieldIds]);
 
-  const openCalc = useCallback(() => {
-    const row = rows[strikeIdx];
-    const contract = selectedSide === "put"
-      ? row?.put ?? row?.call
-      : row?.call ?? row?.put;
-    if (!contract) return;
-    const type: OvmeOptionType = row?.put && contract === row.put ? "put" : "call";
-    const seed = buildOvmeSeed({
-      contract,
-      type,
-      spot: financials?.quote?.price ?? null,
-      dividendYield: financials?.fundamentals?.dividendYield ?? null,
-    });
-    createPaneFromTemplate("options-calc-pane", { values: serializeOvmeSeed(seed) });
-  }, [createPaneFromTemplate, financials?.fundamentals?.dividendYield, financials?.quote?.price, rows, selectedSide, strikeIdx]);
+  const selectedRow = rows[strikeIdx] ?? null;
+  const calcParams = useMemo(() => buildChainCalcParams({
+    symbol: effectiveTicker,
+    row: selectedRow,
+    side: resolveCalcSide(calcSide, parsed?.side, selectedRow),
+    // On an option ticker the pane quote is the contract's own price, so load
+    // the underlying snapshot rather than silently using the option mark as spot.
+    spot,
+    dividendYield,
+  }), [calcSide, dividendYield, effectiveTicker, parsed?.side, selectedRow, spot]);
 
-  const calcHints = useMemo(() => (
-    rows[strikeIdx]?.call || rows[strikeIdx]?.put
-      ? [{ id: "calc", key: "c", label: "alc", onPress: openCalc }]
-      : []
-  ), [openCalc, rows, strikeIdx]);
+  const openCalculator = useCallback(() => {
+    if (!calcParams) return;
+    createPaneFromTemplate(OPTIONS_CALCULATOR_TEMPLATE_ID, { values: calcParams });
+  }, [calcParams, createPaneFromTemplate]);
+
+  const footerHints = useMemo(
+    () => (calcParams ? [{ id: "calc", key: "c", label: "alc", onPress: openCalculator }] : undefined),
+    [calcParams, openCalculator],
+  );
 
   const renderCell = useCallback((
     row: OptionTableRow,
@@ -251,25 +323,27 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     rowState: { selected: boolean },
   ) => {
     const cell = renderOptionCell(row, column, index, rowState);
-    const side: OvmeOptionType | null = column.id.startsWith("call")
-      ? "call"
-      : column.id.startsWith("put")
-        ? "put"
-        : null;
-    if (!side) return cell;
+    if (!column.side) return cell;
+    // Clicking a call or put cell is the mouse way to choose which contract
+    // [c]alc opens, so it has to select the row itself as well.
+    const side: OptionSide = column.side;
     return {
       ...cell,
-      onMouseDown: (event: unknown) => {
-        cell.onMouseDown?.(event);
-        setSelectedSide(side);
+      onMouseDown: () => {
+        enterInteractive();
+        userSelectedStrikeRef.current = true;
+        setScrollToIndexAlign("nearest");
+        setStrikeIdx(index);
+        setCalcSide(side);
       },
     };
-  }, []);
+  }, [enterInteractive]);
 
   useOptionsAccessFooter({
     chain,
     error,
     focused,
+    hints: footerHints,
     loading,
     quoteCoverage: optionQuoteCoverage,
     hints: calcHints,
@@ -283,13 +357,13 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   }, [snapshotRows.length]);
 
   useEffect(() => {
-    if (snapshotRows.length === 0 || userSelectedStrikeRef.current) return;
-    const targetStrike = resolveDefaultStrikeTarget(parsed?.strike, financials?.quote?.price);
+    if (strikes.length === 0 || userSelectedStrikeRef.current) return;
+    const targetStrike = resolveDefaultStrikeTarget(parsed?.strike, spot);
     if (targetStrike == null) return;
     setScrollToIndexAlign("center");
     setStrikeIdx(findNearestStrikeIndex(snapshotRows.map((row) => row.strike), targetStrike));
     setAutoScrollVersion((version) => version + 1);
-  }, [expIdx, financials?.quote?.price, parsed?.strike, snapshotRows]);
+  }, [expIdx, parsed?.strike, spot, strikes]);
 
   useShortcut((event) => {
     if (event.defaultPrevented || event.propagationStopped || event.targetEditable) return;
@@ -321,10 +395,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       selectAdjacentExpiration(1);
       return;
     }
-    if (isPlainKey(event, "c")) {
+    if (isPlainKey(event, "c") && calcParams) {
       event.preventDefault();
       event.stopPropagation();
-      openCalc();
+      openCalculator();
     }
   }, { enabled: focused, phase: "before" });
 
@@ -356,6 +430,13 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       return true;
     }
 
+    if (isPlainKey(event, "c") && calcParams) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openCalculator();
+      return true;
+    }
+
     if (isPlainKey(event, "j", "down")) {
       if (rows.length === 0) return true;
       event.preventDefault?.();
@@ -382,31 +463,41 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     }
 
     return false;
-  }, [enterInteractive, exitInteractive, interactive, openCalc, rows.length, selectAdjacentExpiration]);
+  }, [
+    calcParams,
+    enterInteractive,
+    exitInteractive,
+    interactive,
+    openCalculator,
+    selectAdjacentExpiration,
+    strikes.length,
+  ]);
 
-  if (!ticker) return <TickerEmptyState kind="options" symbol={null} detail="listed options" />;
-  if (loading && !chain) return <LoadingState title="Loading options..." />;
-  if (error && !chain) {
-    return (
-      <TickerEmptyState
-        kind="options"
-        symbol={ticker.metadata.ticker}
-        detail="listed options"
-        error={error}
-      />
-    );
+  if (!ticker) {
+    return <EmptyState title="No ticker selected." message="Select a ticker to view options." />;
   }
+  if (loading && !chain) return <Spinner label="Loading options chain..." />;
+  if (error) return <EmptyState title="Options chain unavailable." message={error} />;
   if (!chain || chain.expirationDates.length === 0) {
-    return <TickerEmptyState kind="options" symbol={ticker.metadata.ticker} detail="listed options" />;
+    return <EmptyState title={`No options available for ${effectiveTicker}.`} />;
   }
 
   const posShares = isOpt && parsed
     ? ticker.metadata.positions.reduce((sum, p) => sum + p.shares, 0)
     : 0;
-  const expirationTabsWidth = Math.max(width - 7 - (loading ? 2 : 0), 8);
+  const expirationTabsWidth = Math.max(width - 9 - (loading ? 2 : 0), 8);
+  const summaryRowCount = height >= 10 ? 2 : height >= 7 ? 1 : 0;
+  const tableHeight = Math.max(1, height - 1 - summaryRowCount - (isOpt && parsed ? 1 : 0));
+  // The strip scrolls; without a marker a clipped last date reads as the last expiry.
+  const expirationStripOverflows = chain.expirationDates
+    .reduce((total, ts) => total + formatExpDate(ts).length + 2, 0) > expirationTabsWidth;
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1} onMouseDown={() => { if (!interactive) enterInteractive(); }}>
+      {summaryRowCount > 0 && (
+        <OptionsSummaryStrip summary={summary} secondary={summaryRowCount > 1} />
+      )}
+
       <Box flexDirection="row" height={1} gap={1}>
         <Text fg={colors.textDim}>Exp:</Text>
         <Box width={expirationTabsWidth} height={1} overflow="hidden">
@@ -427,6 +518,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
             scrollId="options-expiration-tabs-scroll"
           />
         </Box>
+        {expirationStripOverflows && <Text fg={colors.textDim}>{"\u203a"}</Text>}
         {loading && <Spinner />}
       </Box>
 
@@ -469,16 +561,16 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
           { defaultDirection: "desc" },
         ))}
         onTableMouseDown={enterInteractive}
+        onBodyScrollActivity={() => { userSelectedStrikeRef.current = true; }}
         visibleRangeKey={viewportKey}
         onVisibleRangeChange={handleVisibleStrikeRangeChange}
         getItemKey={(row) => String(row.strike)}
-        getRowRevision={optionRowRevision}
         renderCell={renderCell}
-        emptyStateTitle="No options data"
-        emptyStateMessage="No strikes for this expiration."
+        emptyStateTitle={strikesLoading ? "Loading strikes..." : "No strikes available."}
+        rootWidth={Math.max(1, width - 2)}
+        rootHeight={tableHeight}
         columnGap={0}
         horizontalPadding={0}
-        fillAvailableWidth={false}
         scrollToIndex={strikeIdx}
         scrollToIndexAlign={scrollToIndexAlign}
         scrollToIndexVersion={autoScrollVersion}

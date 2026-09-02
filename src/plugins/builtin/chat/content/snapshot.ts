@@ -85,7 +85,7 @@ export function useChatSnapshotState({
   const [hasSavedSession, setHasSavedSession] = useState(initialSnapshot.hasSavedSession);
   const [user, setUser] = useState<{ id: string; username: string; emailVerified: boolean } | null>(initialSnapshot.user);
   const [loading, setLoading] = useState(initialSnapshot.loading);
-  const [loadFailed, setLoadFailed] = useState(initialSnapshot.loadFailed);
+  const [messagesError, setMessagesError] = useState(initialSnapshot.messagesError);
   const [loadingOlderMessages, setLoadingOlderMessages] = useState(initialSnapshot.loadingOlderMessages);
   const [hasOlderMessages, setHasOlderMessages] = useState(initialSnapshot.hasOlderMessages);
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(() => resolveReplyTo(initialSnapshot));
@@ -118,7 +118,7 @@ export function useChatSnapshotState({
       setHasSavedSession(snapshot.hasSavedSession);
       setUser(snapshot.user);
       setLoading(snapshot.loading);
-      setLoadFailed(snapshot.loadFailed);
+      setMessagesError(snapshot.messagesError);
       setLoadingOlderMessages(snapshot.loadingOlderMessages);
       setHasOlderMessages(snapshot.hasOlderMessages);
       syncDraftFromSnapshot({
@@ -164,6 +164,7 @@ export function useChatSnapshotState({
     loadFailed,
     loadingOlderMessages,
     messages,
+    messagesError,
     onlineCount,
     onlineUserIds,
     onlineUsernames,

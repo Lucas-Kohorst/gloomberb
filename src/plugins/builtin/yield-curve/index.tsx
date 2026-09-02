@@ -1,13 +1,14 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
-import { ErrorState, LoadingState, StaticChartSurface, type PaneFooterSegment } from "../../../components";
+import { Button, EmptyState, Spinner, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
 import { resolveChartPalette } from "../../../components/chart/core/renderer";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import {
+  curveAsOf,
   loadYieldCurve,
   parseYieldPoints,
   isInverted,
@@ -15,10 +16,7 @@ import {
   type YieldPoint,
 } from "./treasury-data";
 import { usePaneStatusFooter } from "../shared/pane-footer";
-import { usePluginAppActions } from "../../runtime";
-import { openUrl } from "../../../components/ui/external-link";
-
-const YIELD_CURVE_URL = "https://fred.stlouisfed.org/series/DGS10";
+import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";
@@ -40,6 +38,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   const [points, setPoints] = useState<YieldPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const fetchGenRef = useRef(0);
   const { createPaneFromTemplate } = usePluginAppActions();
@@ -57,6 +56,7 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
       const data = await loadYieldCurve();
       if (fetchGenRef.current !== gen) return;
       setPoints(data);
+      setLastUpdated(Date.now());
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -68,6 +68,8 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     load();
   }, [load]);
+  useAutoRefresh(lastUpdated, load);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
 
   useShortcut((ev) => {
     if (!focused) return;
@@ -82,11 +84,16 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
 
   const inverted = isInverted(points);
   const bp = spreadBp(points);
+  // Treasury series are daily closes, so which session the curve represents is
+  // status the user needs; "updated Xm ago" only says when we last fetched it.
+  const asOf = curveAsOf(points);
 
   const yieldStatus = useMemo<PaneFooterSegment[]>(() => [
       ...(inverted ? [{ id: "inverted", parts: [{ text: "INVERTED", tone: "warning" as const, bold: true }] }] : []),
       ...(bp != null ? [{ id: "spread", parts: [{ text: `2Y-10Y ${bp >= 0 ? "+" : ""}${bp}bp`, tone: bp < 0 ? "warning" as const : "muted" as const }] }] : []),
-  ], [bp, inverted]);
+      ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
+  ], [asOf, bp, inverted, updatedAgo]);
   usePaneStatusFooter({
     registrationId: "yield-curve",
     hints: [
@@ -100,11 +107,21 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   });
 
   if (loading && points.length === 0) {
-    return <LoadingState title="Loading yield curve..." />;
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label="Loading yield curve..." />
+        </Box>
+      </Box>
+    );
   }
 
   if (error && points.length === 0) {
-    return <ErrorState kind="yield curve" error={error} />;
+    return (
+      <Box flexDirection="column" width={width} height={height} padding={1} gap={1}>
+        <EmptyState title="Yield curve unavailable." message={error} />
+      </Box>
+    );
   }
 
   const validPoints = parseYieldPoints(points);

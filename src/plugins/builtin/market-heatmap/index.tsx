@@ -22,7 +22,8 @@ import {
   formatPercentRaw,
 } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePluginPaneState, usePluginTickerActions } from "../../runtime";
+import { usePaneSettingValue } from "../../../state/app/context";
+import { usePluginTickerActions } from "../../runtime";
 import { useLiveQuoteEntries } from "../../../state/hooks/quote-streaming";
 import {
   MARKET_HEATMAP_UNIVERSES,
@@ -33,6 +34,7 @@ import {
   type MarketHeatmapAsset,
   type MarketHeatmapUniverseId,
 } from "./data";
+import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
 import {
   LIVE_STREAMING_QUICK_SETTING,
   useLiveStreamingSetting,
@@ -44,7 +46,14 @@ import {
   resolveScreenerQuoteFeedStatus,
 } from "../shared/screener-live-quotes";
 
-function sizeLabel(asset: MarketHeatmapAsset): string {
+function formatMoneyCompact(value: number | null | undefined, currency: string): string {
+  if (value == null) return "—";
+  if (currency.toUpperCase() === "USD") return `$${formatCompact(value)}`;
+  return `${formatCompact(value)} ${currency}`;
+}
+
+function sizeLabel(asset: MarketHeatmapAsset): string | null {
+  if (asset.size == null) return null;
   const label = asset.sizeKind === "net-assets" ? "Assets" : "Mkt";
   return `${label} ${formatMoneyCompact(asset.size, asset.currency)}`;
 }
@@ -54,22 +63,53 @@ function buildItems(assets: MarketHeatmapAsset[]): Array<MetricTreemapItem<Marke
     id: asset.symbol,
     label: asset.symbol,
     weight: asset.size ?? 0,
-    colorValue: asset.changePercent,
-    primaryText: formatPercentRaw(asset.changePercent),
+    colorValue: asset.hasChange ? asset.changePercent : null,
+    // No change data is not a flat session; 0.00% would be a made-up number.
+    primaryText: asset.hasChange ? formatPercentRaw(asset.changePercent) : "—",
     secondaryText: sizeLabel(asset),
     tertiaryText: asset.volume != null ? `Vol ${formatCompact(asset.volume)}` : asset.exchange || null,
     data: asset,
   }));
 }
 
+/**
+ * A tile that clips "$1.0T" into "$1.0" reads as a real, wrong number, so a
+ * metric that does not fit its tile is dropped instead of truncated. Layout
+ * depends on weights alone, so re-rendering with shorter text keeps the same
+ * geometry.
+ */
+function fitItemsToTiles(
+  items: Array<MetricTreemapItem<MarketHeatmapAsset>>,
+  tiles: Array<{ item: { id: string }; width: number; height: number }>,
+): Array<MetricTreemapItem<MarketHeatmapAsset>> {
+  const tileById = new Map(tiles.map((tile) => [tile.item.id, tile]));
+  return items.map((item) => {
+    const tile = tileById.get(item.id);
+    if (!tile) return item;
+    // Mirrors the terminal tile's own padding: one cell of border, one of gutter.
+    const innerWidth = Math.max(1, Math.floor(tile.width) - (tile.width > 2 ? 1 : 0) - 1);
+    const fits = (text: string | null | undefined) => (
+      text != null && text.length <= innerWidth ? text : null
+    );
+    return {
+      ...item,
+      primaryText: fits(item.primaryText),
+      secondaryText: fits(item.secondaryText),
+      tertiaryText: fits(item.tertiaryText),
+    };
+  });
+}
+
 function MarketHeatmapPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
   const liveStreaming = useLiveStreamingSetting();
   const { cellWidthPx = 8, cellHeightPx = 18, nativePaneChrome } = useUiCapabilities();
-  const [activeUniverse, setActiveUniverse] = usePluginPaneState<MarketHeatmapUniverseId>("universe", "us-equity");
+  // A pane setting, not private pane state, so the settings dialog can show it.
+  const [activeUniverse, setActiveUniverse] = usePaneSettingValue<MarketHeatmapUniverseId>("universe", "us-equity");
   const [assets, setAssets] = useState<MarketHeatmapAsset[]>([]);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  // The first load starts before the effect runs; an empty board is not "no data".
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const fetchGenRef = useRef(0);
@@ -108,6 +148,11 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     cellAspect,
     nativePaneChrome ? "float" : "integer",
   );
+  // Desktop tiles ellipsize, which is visible; terminal cells clip silently.
+  const displayItems = useMemo(
+    () => (nativePaneChrome ? items : fitItemsToTiles(items, navigationTiles)),
+    [items, nativePaneChrome, navigationTiles],
+  );
   const selectedIdx = selectedSymbol
     ? resolvedAssets.findIndex((asset) => asset.symbol === selectedSymbol)
     : -1;
@@ -138,7 +183,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       if (fetchGenRef.current !== gen) return;
       setAssets(result.assets);
       setLastUpdated(result.fetchedAt);
-      setSelectedSymbol(result.assets[0]?.symbol ?? null);
+      // Selection is the user's; the effect below only fills it when it is gone.
     } catch {
       if (fetchGenRef.current !== gen) return;
       if (cached) return;
@@ -270,36 +315,36 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     }
   });
 
-  usePaneFooter("market-heatmap", () => {
-    return {
-      info: [
-        ...(selectedAsset ? [{
-          id: "selected",
-          parts: [
-            { text: selectedAsset.symbol, tone: "label" as const },
-            { text: formatCurrency(selectedAsset.price, selectedAsset.currency), tone: "value" as const },
-            { text: formatPercentRaw(selectedAsset.changePercent), tone: "value" as const, color: priceColor(selectedAsset.changePercent), bold: true },
-          ],
-        }] : []),
-        ...(updatedAgo ? [{
-          id: "updated",
-          parts: [
-            { text: `updated ${updatedAgo}`, tone: "muted" as const },
-          ],
-        }] : []),
-        ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-        ...(loadError ? [{ id: "error", parts: [{ text: "error", tone: "muted" as const }] }] : []),
-        ...(feedStatus ? [{
-          id: "feed",
-          parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
-        }] : []),
-      ],
-      hints: [
-        { id: "open", key: "o", label: "pen", onPress: () => selectedAsset && openSymbol(selectedAsset.symbol), disabled: !selectedAsset },
-        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
-      ],
-    };
-  }, [feedStatus, loadError, loading, openSymbol, refresh, selectedAsset, updatedAgo]);
+  const updated = useUpdatedAgo(lastUpdated);
+  useAutoRefresh(lastUpdated, refresh);
+
+  usePaneFooter("market-heatmap", () => ({
+    info: [
+      ...(selectedAsset ? [{
+        id: "selected",
+        parts: [
+          { text: selectedAsset.symbol, tone: "label" as const },
+          { text: formatCurrency(selectedAsset.price, selectedAsset.currency), tone: "value" as const },
+          {
+            text: selectedAsset.hasChange ? formatPercentRaw(selectedAsset.changePercent) : "—",
+            tone: "value" as const,
+            color: selectedAsset.hasChange ? priceColor(selectedAsset.changePercent) : undefined,
+            bold: true,
+          },
+        ],
+      }] : []),
+      ...(updated ? [{
+        id: "updated",
+        parts: [{ text: `updated ${updated}`, tone: "muted" as const }],
+      }] : []),
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(loadError ? [{ id: "error", parts: [{ text: "error", tone: "muted" as const }] }] : []),
+      ...(feedStatus ? [{
+        id: "feed",
+        parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
+      }] : []),
+    ],
+  }), [feedStatus, loadError, loading, selectedAsset, updated]);
 
   const emptyStateTitle = loading
     ? "Loading market heatmap..."
@@ -323,7 +368,7 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
       </Box>
 
       <MetricTreemapSurface
-        items={items}
+        items={displayItems}
         width={width}
         height={chartHeight}
         selectedId={selectedSymbol}
@@ -350,7 +395,18 @@ export const marketHeatmapModule: PluginModule = {
       defaultMode: "floating",
       defaultFloatingSize: { width: 110, height: 36 },
       quickSettings: [LIVE_STREAMING_QUICK_SETTING],
-      settings: (context) => withLiveStreamingSetting({ fields: [] }, context.settings),
+      settings: (context) => withLiveStreamingSetting({
+        title: "Market Heatmap Settings",
+        fields: [{
+          key: "universe",
+          label: "Universe",
+          type: "select",
+          options: MARKET_HEATMAP_UNIVERSES.map((universe) => ({
+            value: universe.id,
+            label: universe.label,
+          })),
+        }],
+      }, context.settings),
     },
   ],
 

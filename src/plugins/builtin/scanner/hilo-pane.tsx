@@ -9,15 +9,10 @@ import {
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
-import {
-  applySortPreference,
-  nextSortPreference,
-  type SortPreference,
-} from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerHiloExtreme } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
 import { ScannerDeniedState } from "./denied";
 import { useHiloFeed, useScannerStatusFooter } from "./feed";
 import { HiloBars } from "./hilo-bars";
@@ -80,47 +75,21 @@ function HiloPane({ focused, width, height }: PaneProps) {
   const feed = useHiloFeed();
   const { selectTicker } = usePluginPaneActions();
   const { pinTicker } = usePluginTickerActions();
-  const { createPaneFromTemplate } = usePluginAppActions();
   const [minPrice] = usePaneSettingValue<HiloMinPrice>("minPrice", "1");
   const [sort] = usePaneSettingValue<HiloSort>("sort", "recent");
   const [activeSide, setActiveSide] = useState<Side>("lows");
   const [selected, setSelected] = useState<Record<Side, string | null>>({ lows: null, highs: null });
-  const [sortPreference, setSortPreference] = useState<SortPreference<"symbol" | "price" | "count">>({
-    columnId: null,
-    direction: "desc",
-  });
 
-  const hiloSortValue = useCallback((row: ScannerHiloExtreme, columnId: "symbol" | "price" | "count") => {
-    switch (columnId) {
-      case "symbol": return row.symbol;
-      case "price": return row.price;
-      case "count": return row.count;
-    }
-  }, []);
   const lows = useMemo(
-    () => applySortPreference(filterHiloRows(feed.payload?.lows, minPrice, sort), sortPreference, hiloSortValue),
-    [feed.payload?.lows, hiloSortValue, minPrice, sort, sortPreference],
+    () => filterHiloRows(feed.payload?.lows, minPrice, sort),
+    [feed.payload?.lows, minPrice, sort],
   );
   const highs = useMemo(
-    () => applySortPreference(filterHiloRows(feed.payload?.highs, minPrice, sort), sortPreference, hiloSortValue),
-    [feed.payload?.highs, hiloSortValue, minPrice, sort, sortPreference],
+    () => filterHiloRows(feed.payload?.highs, minPrice, sort),
+    [feed.payload?.highs, minPrice, sort],
   );
 
-  const selectedSymbol = useMemo(() => {
-    const rows = activeSide === "lows" ? lows : highs;
-    const key = selected[activeSide];
-    if (!key) return rows[0]?.symbol ?? null;
-    const match = rows.find((row, index) => rowKey(row, index) === key);
-    return match?.symbol ?? rows[0]?.symbol ?? null;
-  }, [activeSide, highs, lows, selected]);
-  const chartSelected = useCallback(() => {
-    if (!selectedSymbol) return;
-    createPaneFromTemplate("chart-composer-pane", { arg: selectedSymbol });
-  }, [createPaneFromTemplate, selectedSymbol]);
-
-  useScannerStatusFooter("hilo", feed, focused, [
-    { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedSymbol },
-  ]);
+  useScannerStatusFooter("hilo", feed, focused);
 
   const split = width >= SPLIT_MIN_WIDTH;
   const showBars = height >= BARS_MIN_HEIGHT;
@@ -136,18 +105,12 @@ function HiloPane({ focused, width, height }: PaneProps) {
   }, [selectTicker]);
 
   const handleSideSwitchKey = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "g") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      chartSelected();
-      return true;
-    }
     if (event.name !== "left" && event.name !== "right") return false;
     event.preventDefault?.();
     event.stopPropagation?.();
     setActiveSide(event.name === "left" ? "lows" : "highs");
     return true;
-  }, [chartSelected]);
+  }, []);
 
   if (feed.denied) {
     return <ScannerDeniedState reason={feed.deniedReason} />;
@@ -169,15 +132,10 @@ function HiloPane({ focused, width, height }: PaneProps) {
       rootHeight={tableHeight}
       columns={columns}
       items={rows}
-      sortColumnId={sortPreference.columnId}
-      sortDirection={sortPreference.direction}
-      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
-        current,
-        columnId as "symbol" | "price" | "count",
-        { defaultDirection: columnId === "symbol" ? "asc" : "desc" },
-      ))}
+      sortColumnId={null}
+      sortDirection="desc"
+      onHeaderClick={() => {}}
       getItemKey={rowKey}
-      getRowRevision={(row) => `${row.symbol}:${row.at}:${row.price}:${row.count}`}
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={(row, column, _index, rowState) => renderCell(side, row, column, rowState)}
       emptyContent={feed.payload ? undefined : <ScannerWaitingState />}

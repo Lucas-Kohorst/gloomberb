@@ -59,8 +59,6 @@ export interface AppState {
   refreshing: Set<string>;
   initialized: boolean;
   statusBarVisible: boolean;
-  gridlockTipVisible: boolean;
-  gridlockTipSequence: number;
   inputCaptured: boolean;
   updateAvailable: ReleaseInfo | null;
   updateProgress: UpdateProgress | null;
@@ -96,8 +94,6 @@ export type AppAction =
   | { type: "SET_BROKER_ACCOUNTS"; instanceId: string; accounts: BrokerAccount[] }
   | { type: "SET_INITIALIZED" }
   | { type: "TOGGLE_STATUS_BAR" }
-  | { type: "SHOW_GRIDLOCK_TIP" }
-  | { type: "DISMISS_GRIDLOCK_TIP" }
   | { type: "SET_THEME"; theme: string }
   | { type: "PREVIEW_THEME"; theme: string | null }
   | { type: "SET_UPDATE_AVAILABLE"; release: ReleaseInfo | null }
@@ -114,7 +110,13 @@ export type AppAction =
   | { type: "UPDATE_LAYOUT"; layout: LayoutConfig; focusedPaneId?: string | null }
   | { type: "SWITCH_LAYOUT"; index: number }
   | { type: "REORDER_LAYOUT"; fromIndex: number; toIndex: number }
-  | { type: "NEW_LAYOUT"; name: string; activate?: boolean; layout?: LayoutConfig }
+  | { type: "NEW_LAYOUT"; name: string }
+  | {
+      type: "INSTALL_LAYOUT_COPY";
+      name: string;
+      layout: LayoutConfig;
+      paneState: Record<string, PaneRuntimeState>;
+    }
   | { type: "DELETE_LAYOUT"; index: number }
   | { type: "RENAME_LAYOUT"; index: number; name: string }
   | { type: "DUPLICATE_LAYOUT"; index: number }

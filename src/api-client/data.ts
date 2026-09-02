@@ -4,6 +4,8 @@ import { normalizeTweetSearchResponse } from "./normalizers";
 import {
   cloudCdsPath,
   cloudCongressHousePath,
+  cloudEarningsCallsPath,
+  cloudEarningsTranscriptPath,
   cloudExchangeRatePath,
   cloudSec13FPath,
   cloudSecFilingContentPath,
@@ -20,6 +22,7 @@ import {
   cloudTweetSearchPath,
   type CloudCdsParams,
   type CloudCongressHouseParams,
+  type CloudEarningsCallsParams,
   type CloudFredSeriesParams,
   type CloudHistoryParams,
   type CloudNewsParams,
@@ -30,9 +33,12 @@ import {
 } from "./paths";
 import type {
   CloudAnalystResearchPayload,
+  CloudShortInterestPayload,
   CloudCdsResponse,
   CloudCompanyProfile,
   CloudCongressHousePayload,
+  CloudEarningsCallListPayload,
+  CloudEarningsTranscriptPayload,
   CloudCorporateActionsPayload,
   CloudEconEventPayload,
   CloudEquityDiagnosticMode,
@@ -149,6 +155,12 @@ export class CloudDataApi {
     return this.requestMarketSymbol("/market/analyst", symbol, exchange);
   }
 
+  async getCloudShortInterest(symbol: string, years?: number): Promise<CloudMarketResponse<CloudShortInterestPayload>> {
+    const params = new URLSearchParams({ symbol: symbol.toUpperCase() });
+    if (years != null) params.set("years", String(years));
+    return this.request<CloudMarketResponse<CloudShortInterestPayload>>(`/market/short-interest?${params}`);
+  }
+
   async getCloudCorporateActions(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudCorporateActionsPayload>> {
     return this.requestMarketSymbol("/market/corporate-actions", symbol, exchange);
   }
@@ -216,6 +228,16 @@ export class CloudDataApi {
 
   async getCloudCongressHouse(params: CloudCongressHouseParams = {}): Promise<CloudCongressHousePayload> {
     return this.request<CloudCongressHousePayload>(cloudCongressHousePath(params));
+  }
+
+  async getCloudEarningsCalls(
+    params: CloudEarningsCallsParams = {},
+  ): Promise<CloudEarningsCallListPayload> {
+    return this.request<CloudEarningsCallListPayload>(cloudEarningsCallsPath(params));
+  }
+
+  async getCloudEarningsTranscript(id: string): Promise<CloudEarningsTranscriptPayload> {
+    return this.request<CloudEarningsTranscriptPayload>(cloudEarningsTranscriptPath(id));
   }
 
   async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {

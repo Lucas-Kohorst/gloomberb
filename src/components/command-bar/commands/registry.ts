@@ -138,8 +138,15 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
-    id: "layout",
+    id: "layout-marketplace",
     prefix: "LAY",
+    label: "Layouts",
+    description: "Open the layout browser to switch, publish, or add layouts",
+    category: "Config",
+  },
+  {
+    id: "layout",
+    prefix: "LMA",
     label: "Layout Actions",
     description: "Organize panes and saved layouts",
     hasArg: true,
@@ -174,35 +181,17 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
-    id: "set-refresh-interval",
-    prefix: "RI",
-    label: "Set Refresh Interval",
-    description: "Set the system-wide poll interval for news and alt-data feeds (minutes; shown in those pane footers)",
-    hasArg: true,
-    argPlaceholder: "minutes",
-    category: "Config",
-  },
-  {
-    id: "set-auto-refresh",
-    prefix: "AR",
-    label: "Set Auto-Refresh",
-    description: "Auto-refresh network panes when data is stale (off, 1, 5, 15)",
-    hasArg: true,
-    argPlaceholder: "off|1|5|15",
-    category: "Config",
-  },
-  {
     id: "font-size-increase",
     prefix: "FONT+",
     label: "Increase Font Size",
-    description: "Increase the terminal-wide font size",
+    description: "Increase the app-wide font size",
     category: "Config",
   },
   {
     id: "font-size-decrease",
     prefix: "FONT-",
     label: "Decrease Font Size",
-    description: "Decrease the terminal-wide font size",
+    description: "Decrease the app-wide font size",
     category: "Config",
   },
   {
@@ -237,19 +226,6 @@ export const commands: Command[] = [
     description: "Switch the interface language",
     hasArg: true,
     argPlaceholder: "locale",
-    category: "Config",
-  },
-
-  // Plugins — fast keyboard toggle of the same installed list as the marketplace.
-  // Discovery, install, update, and remove live in the Plugin Marketplace pane
-  // (`PLUGINS` / `PLUG`). PL can jump there; it is not a second store.
-  {
-    id: "plugins",
-    prefix: "PL",
-    label: "Manage Plugins",
-    description: "Toggle plugins, or open the Plugin Marketplace (PLUGINS)",
-    hasArg: true,
-    argPlaceholder: "plugin name",
     category: "Config",
   },
 

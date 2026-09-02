@@ -166,6 +166,30 @@ describe("syncBrokerInstance", () => {
     ]);
   });
 
+  test("fails cleanly when the broker account cache cannot be persisted", async () => {
+    const config = {
+      ...createDefaultConfig("/tmp/gloomberb-sync-broker-persistence-error"),
+      portfolios: [],
+      brokerInstances: [createBrokerInstance()],
+    };
+    const tickerRepository = createTickerRepository();
+
+    await expect(syncBrokerInstance({
+      config,
+      instanceId: "demo-broker",
+      brokers: new Map([["demo", createDemoBroker()]]),
+      tickerRepository: tickerRepository as any,
+      resources: {
+        get: () => null,
+        list: () => [],
+        set: () => { throw new Error("disk full"); },
+        delete: () => {},
+      } as any,
+    })).rejects.toThrow("disk full");
+
+    expect(await tickerRepository.loadTicker("AAPL")).toBeNull();
+  });
+
   test("imports account and position data from one broker portfolio snapshot", async () => {
     const instance = createBrokerInstance();
     const config = {

@@ -50,6 +50,9 @@ const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
 const EMPTY_TRAILING_INFO: PaneFooterSegment[] = [];
 const EMPTY_HINTS: PaneHint[] = [];
 
+// `r` refreshes every pane, so it is global product knowledge and deliberately
+// has no per-pane footer hint. Do not reintroduce one. See PR #589.
+
 function buildPaneStatusInfo({
   loading = false,
   error,
@@ -103,18 +106,14 @@ export function usePaneStatusFooter({
   loading = false,
   error,
   info = EMPTY_STATUS_INFO,
-  trailingInfo = EMPTY_TRAILING_INFO,
   hints,
-  focused = false,
   enabled = true,
 }: {
   registrationId: string;
   loading?: boolean;
   error?: string | null;
   info?: readonly PaneFooterSegment[];
-  trailingInfo?: readonly PaneFooterSegment[];
   hints?: PaneHint[];
-  focused?: boolean;
   enabled?: boolean;
 }) {
   const statusInfo = useMemo(
@@ -128,10 +127,10 @@ export function usePaneStatusFooter({
   usePaneFooterHintBindings(focused, hints);
   usePaneFooter(
     registrationId,
-    () => enabled && (statusInfo.length > 0 || trailing.length > 0 || (hints?.length ?? 0) > 0)
-      ? { info: statusInfo, trailingInfo: trailing, hints }
+    () => enabled && (statusInfo.length > 0 || (hints?.length ?? 0) > 0)
+      ? { info: statusInfo, hints }
       : null,
-    [enabled, hints, registrationId, statusInfo, trailing],
+    [enabled, hints, registrationId, statusInfo],
   );
 }
 
@@ -146,9 +145,7 @@ export function usePaneStatusLinkFooter({
   loading = false,
   error,
   info = EMPTY_STATUS_INFO,
-  trailingInfo,
   hints,
-  trailingHints,
   showOpenHint = false,
 }: {
   registrationId: string;
@@ -159,9 +156,7 @@ export function usePaneStatusLinkFooter({
   loading?: boolean;
   error?: string | null;
   info?: readonly PaneFooterSegment[];
-  trailingInfo?: readonly PaneFooterSegment[];
   hints?: PaneHint[];
-  trailingHints?: PaneHint[];
   showOpenHint?: boolean;
 }) {
   const statusInfo = useMemo(
@@ -184,9 +179,7 @@ export function usePaneStatusLinkFooter({
     source,
     label,
     info: statusInfo,
-    trailingInfo: trailing,
     hints,
-    trailingHints,
     showHint: showOpenHint,
   });
 }

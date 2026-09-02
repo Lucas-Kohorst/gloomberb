@@ -19,7 +19,6 @@ export function buildYoutubeLiveEmbedUrl(
   if (!isValidYoutubeVideoId(videoId)) {
     throw new Error("A concrete YouTube video ID is required for an embed URL.");
   }
-  const origin = options?.origin ?? "https://terminal.kohor.st";
   const params = new URLSearchParams({
     autoplay: "1",
     mute: options?.muted === false ? "0" : "1",
@@ -27,9 +26,11 @@ export function buildYoutubeLiveEmbedUrl(
     rel: "0",
     modestbranding: "1",
     enablejsapi: "1",
-    origin,
-    widget_referrer: options?.widgetReferrer ?? origin,
   });
+  if (options?.origin) {
+    params.set("origin", options.origin);
+    params.set("widget_referrer", options.widgetReferrer ?? options.origin);
+  }
   return `https://www.youtube.com/embed/${videoId}?${params}`;
 }
 
@@ -95,9 +96,6 @@ export function extractPublishedTextForVideo(html: string, videoId: string): str
 }
 
 function extractLiveYoutubeVideoId(value: string): string | null {
-  // The channel /live page embeds the player payload for the currently-airing
-  // stream; this is the authoritative marker (more stable than the transient
-  // LIVE badge markup, which YouTube has stopped emitting on these pages).
   const streamabilityLive = /"liveStreamabilityRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"/.exec(value);
   if (streamabilityLive?.[1]) return streamabilityLive[1];
   const videoDetailsLive = /"videoDetails":\{"videoId":"([a-zA-Z0-9_-]{11})"(?:(?!\}).){0,400}?"isLive":true/.exec(value);
@@ -152,7 +150,7 @@ export async function resolveYoutubeLivePage(
 
   const videosPage = await fetchYoutubePage(`https://www.youtube.com/channel/${channel.channelId}/videos`, fetchImpl);
   if (isYoutubeConsentPage(videosPage.response, videosPage.html)) {
-      throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
+    throw new Error(`${channel.name} could not be resolved because YouTube returned a consent page.`);
   }
   const videoId = extractYoutubeVideoId(videosPage.response.url) ?? extractYoutubeVideoId(videosPage.html);
   if (!videoId || !YOUTUBE_VIDEO_ID.test(videoId)) {

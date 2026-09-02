@@ -2,22 +2,14 @@
 import { Window } from "happy-dom";
 
 const testWindow = new Window({ url: "http://localhost" });
-const globals: Record<string, unknown> = {
+Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
   window: testWindow,
   document: testWindow.document,
   navigator: testWindow.navigator,
   HTMLElement: testWindow.HTMLElement,
   MouseEvent: testWindow.MouseEvent,
-};
-for (const [name, value] of Object.entries(globals)) {
-  Object.defineProperty(globalThis, name, {
-    configurable: true,
-    enumerable: true,
-    value,
-    writable: true,
-  });
-}
+});
 
 import { expect, test } from "bun:test";
 import { act } from "react";

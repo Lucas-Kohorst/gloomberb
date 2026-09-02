@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import {
+  Button,
   DataTableView,
   EmptyState,
   Spinner,
@@ -10,15 +11,11 @@ import {
   type DataTableColumn,
   type PaneFooterSegment,
 } from "../../../components";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useAutoRefresh } from "../shared/auto-refresh";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
-import { usePluginAppActions } from "../../runtime";
-import { paneDelayedStatus } from "../shared/pane-footer";
-import { openUrl } from "../../../components/ui/external-link";
-import { CREDIT_CONDITIONS_CONNECTION_ID, getCachedCreditConditions, loadCreditConditions } from "./client";
+import { getCachedCreditConditions, loadCreditConditions } from "./client";
 import {
   CREDIT_SERIES,
   type CreditConditionRow,
@@ -81,7 +78,7 @@ function renderCell(
   };
 }
 
-function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
+export function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   const [initial] = useState(getCachedCreditConditions);
   const [rows, setRows] = useState(initial?.rows ?? []);
   const [selectedId, setSelectedId] = useState<CreditSeriesId | null>(initial?.rows[0]?.seriesId ?? null);
@@ -91,7 +88,6 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(initial?.errors[0] ?? null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const generation = useRef(0);
-  const { createPaneFromTemplate } = usePluginAppActions();
 
   const load = useCallback(async (force = false) => {
     const current = ++generation.current;
@@ -121,10 +117,6 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
 
   const sorted = useMemo(() => sortRows(rows, sort.id, sort.descending), [rows, sort]);
   const selectedRow = rows.find((row) => row.seriesId === selectedId) ?? rows[0] ?? null;
-  const chartSelected = useCallback(() => {
-    if (!selectedRow) return;
-    createPaneFromTemplate("chart-composer-pane", { arg: `FRED:${selectedRow.seriesId}` });
-  }, [createPaneFromTemplate, selectedRow]);
   const columns = useMemo<Column[]>(() => {
     const labelWidth = Math.max(12, width - 23);
     return COLUMNS.map((column) => column.id === "label" ? { ...column, width: labelWidth } : { ...column });
@@ -143,10 +135,6 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
     if (event.name === "r") {
       if (loading) return;
       reload();
-    } else if (event.name === "g") {
-      chartSelected();
-    } else if (event.name === "o" && selectedRow) {
-      openUrl(`https://fred.stlouisfed.org/series/${selectedRow.seriesId}`);
     } else if (["up", "k", "down", "j"].includes(event.name ?? "")) {
       const offset = event.name === "up" || event.name === "k" ? -1 : 1;
       setSelectedId(moveCreditSelection(sorted, selectedId, offset));
@@ -160,20 +148,13 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   const asOf = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
-    ...(rows.length > 0 ? [paneDelayedStatus()] : []),
+    ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
     ...(partial ? [{ id: "partial", parts: [{ text: `PARTIAL ${rows.length}/${CREDIT_SERIES.length}`, tone: "warning" as const, bold: true }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
   ], [asOf, error, loading, partial, rows.length, stale]);
-  usePaneFooter(paneId, () => ({
-    info: footerInfo,
-    hints: [
-      { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedRow },
-      { id: "open", key: "o", label: "pen", onPress: () => selectedRow && openUrl(`https://fred.stlouisfed.org/series/${selectedRow.seriesId}`), disabled: !selectedRow },
-      { id: "refresh", key: "r", label: "efresh", onPress: reload, disabled: loading },
-    ],
-  }), [chartSelected, footerInfo, loading, paneId, reload, selectedRow]);
+  usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
 
   if (rows.length === 0 && loading) {
     return (
@@ -225,8 +206,6 @@ function CreditConditionsPane({ paneId, focused, width, height }: PaneProps) {
   );
 }
 
-let disposeCreditConnection: (() => void) | null = null;
-
 export const creditConditionsModule: PluginModule = {
   panes: [{
     id: "credit-conditions",
@@ -245,17 +224,4 @@ export const creditConditionsModule: PluginModule = {
     keywords: ["credit", "spread", "oas", "corporate", "high yield", "investment grade", "macro"],
     shortcut: { prefix: "CRD" },
   }],
-  setup() {
-    disposeCreditConnection = registerConnectionSource({
-      id: CREDIT_CONDITIONS_CONNECTION_ID,
-      name: "FRED Credit Spreads",
-      kind: "api",
-      pluginId: "macro",
-      authRequired: false,
-    });
-  },
-  dispose() {
-    disposeCreditConnection?.();
-    disposeCreditConnection = null;
-  },
 };

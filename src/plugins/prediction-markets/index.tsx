@@ -1,9 +1,10 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
-import { registerConnectionSource } from "../builtin/connections/register";
+import { resolvePaneInstance } from "../../types/config";
 import { parsePredictionSearchShortcut } from "./navigation";
 import { PredictionMarketsPane } from "./pane";
 import { attachPredictionMarketsPersistence, resetPredictionMarketsPersistence } from "./services/fetch";
 import { predictionMarketsCliCommand } from "./cli";
+import { predictionChartSeriesCapability } from "./capability";
 import {
   buildPredictionMarketsPaneSettingsDef,
   createPredictionMarketsPaneSettings,
@@ -17,10 +18,13 @@ const predictionConnectionDisposers: Array<() => void> = [];
 
 function openPredictionMarkets(ctx: GloomPluginContext, query = ""): void {
   const parsed = parsePredictionSearchShortcut(query);
-  ctx.resume.setPaneState(MAIN_INSTANCE_ID, "venueScope", parsed.venueScope);
-  ctx.resume.setPaneState(MAIN_INSTANCE_ID, "searchQuery", parsed.searchQuery);
-  ctx.resume.setPaneState(MAIN_INSTANCE_ID, "selectedMarketKey", null);
-  ctx.focusPane(PANE_ID);
+  const existingInstanceId = resolvePaneInstance(ctx.getConfig().layout, PANE_ID)?.instanceId;
+  const targetInstanceId = existingInstanceId ?? MAIN_INSTANCE_ID;
+  ctx.resume.setPaneState(targetInstanceId, "venueScope", parsed.venueScope);
+  ctx.resume.setPaneState(targetInstanceId, "searchQuery", parsed.searchQuery);
+  ctx.resume.setPaneState(targetInstanceId, "selectedRowKey", null);
+  ctx.resume.setPaneState(targetInstanceId, "selectedDetailMarketKey", null);
+  ctx.focusPane(existingInstanceId ?? PANE_ID);
 }
 
 export const predictionMarketsPlugin: GloomPlugin = {
@@ -31,6 +35,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
     "Browse prediction markets (Polymarket and Kalshi).",
   toggleable: true,
   cliCommands: [predictionMarketsCliCommand],
+  capabilities: [predictionChartSeriesCapability],
   panes: [
     {
       id: PANE_ID,
@@ -40,6 +45,7 @@ export const predictionMarketsPlugin: GloomPlugin = {
       defaultPosition: "left",
       defaultMode: "floating",
       defaultFloatingSize: { width: 132, height: 36 },
+      tableExport: true,
       settings: (context) =>
         buildPredictionMarketsPaneSettingsDef(
           context.config,

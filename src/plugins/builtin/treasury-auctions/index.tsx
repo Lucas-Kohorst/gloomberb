@@ -1,18 +1,15 @@
 import type { PaneSettingsDef } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
 import {
   attachTreasuryAuctionsPersistence,
   resetTreasuryAuctionsPersistence,
+  TREASURY_FISCAL_DATA_CONNECTION_ID,
 } from "./cache";
 import { TreasuryAuctionsPane } from "./pane";
-import {
-  TREASURY_AUCTIONS_PANE_ID,
-  TREASURY_AUCTIONS_PLUGIN_ID,
-  TREASURY_CONNECTION_ID,
-} from "./types";
+import { TREASURY_AUCTIONS_PANE_ID } from "./types";
+import { createPublicPaneShare } from "../shared/public-pane";
 
-let disposeTreasuryConnection: (() => void) | null = null;
+let disposeConnection: (() => void) | null = null;
 
 function treasuryAuctionsSettings(): PaneSettingsDef {
   return {
@@ -35,6 +32,24 @@ function treasuryAuctionsSettings(): PaneSettingsDef {
 }
 
 export const treasuryAuctionsModule: PluginModule = {
+  setup(ctx) {
+    attachTreasuryAuctionsPersistence(ctx.persistence, ctx.connectionHealth);
+    disposeConnection = ctx.connectionHealth.registerSource({
+      id: TREASURY_FISCAL_DATA_CONNECTION_ID,
+      name: "Treasury Fiscal Data",
+      kind: "api",
+      ownerId: "macro",
+      priority: 300,
+      detail: "fiscaldata.treasury.gov",
+    });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+    resetTreasuryAuctionsPersistence();
+  },
+
   panes: [
     {
       id: TREASURY_AUCTIONS_PANE_ID,
@@ -44,6 +59,7 @@ export const treasuryAuctionsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 28 },
+      tableExport: true,
       settings: treasuryAuctionsSettings(),
     },
   ],
@@ -71,24 +87,7 @@ export const treasuryAuctionsModule: PluginModule = {
       ],
       shortcut: { prefix: "AUCT" },
       createInstance: () => ({ placement: "floating" }),
+      publicShare: createPublicPaneShare("Treasury Auctions"),
     },
   ],
-
-  setup(ctx) {
-    attachTreasuryAuctionsPersistence(ctx.persistence);
-    disposeTreasuryConnection = registerConnectionSource({
-      id: TREASURY_CONNECTION_ID,
-      name: "Treasury Fiscal Data",
-      kind: "asset-data",
-      pluginId: TREASURY_AUCTIONS_PLUGIN_ID,
-      authRequired: false,
-      priority: 320,
-    });
-  },
-
-  dispose() {
-    disposeTreasuryConnection?.();
-    disposeTreasuryConnection = null;
-    resetTreasuryAuctionsPersistence();
-  },
 };

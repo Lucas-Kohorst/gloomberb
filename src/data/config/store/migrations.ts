@@ -25,8 +25,7 @@ const CLOUD_DEFAULT_CONFIG_VERSION = 13;
 const CLOUD_MACRO_SPLIT_CONFIG_VERSION = 15;
 const PORTFOLIO_DEFAULT_COLUMNS_CONFIG_VERSION = 17;
 const BUILTIN_OWNERSHIP_AND_CHART_CONFIG_VERSION = 20;
-const ADJACENT_CLOUD_DATA_CONFIG_VERSION = 21;
-const ADJACENT_DEFAULT_LAYOUT_CONFIG_VERSION = 22;
+const ONBOARDING_BACKFILL_CONFIG_VERSION = 21;
 
 const LEGACY_MAIN_PORTFOLIO_COLUMN_IDS = DEFAULT_COLUMNS.map((column) => column.id);
 const PRE_SPARKLINE_PORTFOLIO_COLUMN_IDS = [
@@ -84,14 +83,9 @@ const CONFIG_MIGRATIONS: readonly ConfigMigration[] = [
     migrate: migrateBuiltinOwnershipAndChartState,
   },
   {
-    name: "fold-polls-aibench-weather-into-adjacent-cloud",
-    toVersion: ADJACENT_CLOUD_DATA_CONFIG_VERSION,
-    migrate: migrateAdjacentCloudDataFold,
-  },
-  {
-    name: "add-adjacent-default-layout",
-    toVersion: ADJACENT_DEFAULT_LAYOUT_CONFIG_VERSION,
-    migrate: migrateAdjacentDefaultLayout,
+    name: "backfill-onboarding-complete",
+    toVersion: ONBOARDING_BACKFILL_CONFIG_VERSION,
+    migrate: migrateOnboardingComplete,
   },
 ];
 
@@ -135,6 +129,16 @@ function pluginConfigMap(value: unknown): Record<string, Record<string, unknown>
       { ...(state as Record<string, unknown>) },
     ]),
   );
+}
+
+// Any config on disk predates this version, so the user already had a workspace and
+// should never be sent back through the wizard, whatever half-finished state it holds.
+function migrateOnboardingComplete(saved: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...saved,
+    onboardingComplete: true,
+    onboardingProgress: undefined,
+  };
 }
 
 function migrateCloudDefault(saved: Record<string, unknown>): Record<string, unknown> {

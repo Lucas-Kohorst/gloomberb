@@ -170,7 +170,6 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     canRemoveSelected,
     canUseSelectedBroker,
     editing: !!editDraft,
-    onCancelEdit: cancelEdit,
   });
 
   useBrokerManagerKeyboard({
@@ -273,10 +272,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       <Box height={1} flexDirection="row">
-        <Box flexGrow={1} flexDirection="row">
-          <Box width={8}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Brokers")}</Text>
-          </Box>
+        <Box flexGrow={1} flexDirection="row" overflow="hidden">
           <Text fg={colors.textDim}>{tf("{profiles} profiles · {connected} connected · {issues} issues", { profiles: rows.length, connected: connectedCount, issues: errorCount })}</Text>
         </Box>
         {busy && <Text fg={colors.textDim}>{busy}</Text>}
@@ -321,7 +317,6 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
           renderCell={renderBrokerCell}
           emptyStateTitle={t("No broker profiles.")}
           emptyStateHint={t("Add a broker profile to test connections and sync positions.")}
-          showHorizontalScrollbar={false}
         />
       </Box>
     </Box>
@@ -338,6 +333,9 @@ export const brokerManagerModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 24 },
+      portableShare: {
+        private: { title: true, params: true, settings: true, state: true },
+      },
     },
   ],
   paneTemplates: [

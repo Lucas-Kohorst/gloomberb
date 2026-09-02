@@ -7,27 +7,14 @@ import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
 import { applyNewsFeedContextToAssistInventory, applyChartSeriesContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
-import { getSharedNewsService, useNewsCacheVersion } from "../../../news/hooks";
-import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
+import { useNewsArticles } from "../../../news/hooks";
 import {
   ARTICLE_SEARCH_QUERY,
   cachedNewsArticles,
   looksLikeArticleQuery,
-  openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
-import {
-  buildArticleSearchResultItems,
-  useAdjacentArticleSearch,
-  useFilingArticleSearch,
-} from "../routes/root/article-results";
-import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
-import {
-  buildChartSeriesAssistContext,
-  looksLikeCatalogSeriesQuery,
-} from "../../../plugins/builtin/chart-composer/series-catalog";
-import type { SeriesCatalogInstrument } from "../../../plugins/builtin/chart-composer/series-catalog";
-import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
-import { isMarketFieldId } from "../../../time-series/field-catalog";
+import { buildArticleSearchResultItems } from "../routes/root/article-results";
+import { openUrl } from "../../ui/external-link";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -63,7 +50,7 @@ export function CommandBar({
     activePortfolio,
     activeTickerData,
     activeTickerSymbol,
-    availableCommands,
+    availableCommands: allAvailableCommands,
     cellHeightPx,
     cellWidthPx,
     dispatch,
@@ -80,6 +67,9 @@ export function CommandBar({
     titleBarOverlay,
     visibleListStateRef,
   } = useCommandBarEnvironment();
+  const availableCommands = useMemo(() => onCheckForUpdates
+    ? allAvailableCommands
+    : allAvailableCommands.filter((command) => command.id !== "check-for-updates"), [allAvailableCommands, onCheckForUpdates]);
   const {
     applyThemePreview,
     clearThemePreview,
@@ -123,7 +113,6 @@ export function CommandBar({
     adaptTickerSearchRouteResult,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     buildTickerSearchResultItems,
     buildWindowModeItems,
     collectionWorkflowActions,
@@ -393,6 +382,32 @@ export function CommandBar({
     ),
   }), [askAssistNow, assistActive, assistAutoAsk, assistState, planAccess.emailVerified, startAssistSignUp]);
 
+  const newsState = useNewsArticles(looksLikeArticleQuery(rootQuery) ? ARTICLE_SEARCH_QUERY : null);
+  const articleResultItems = useMemo(() => {
+    const cached = cachedNewsArticles();
+    const seen = new Set<string>();
+    const articles = [];
+    for (const article of [...cached, ...newsState.articles]) {
+      if (seen.has(article.id)) continue;
+      seen.add(article.id);
+      articles.push(article);
+    }
+    const localReady = cached.length > 0
+      || newsState.phase === "ready"
+      || newsState.phase === "refreshing"
+      || newsState.phase === "error";
+    const stillLoading = !localReady && (newsState.phase === "idle" || newsState.phase === "loading");
+    return buildArticleSearchResultItems({
+      articles,
+      query: rootQuery,
+      phase: stillLoading ? "loading" : "ready",
+      onOpen: (article) => {
+        openUrl(article.url);
+        closeAll({ revertThemePreview: false });
+      },
+    });
+  }, [closeAll, newsState.articles, newsState.phase, rootQuery]);
+
   const {
     activeMatch,
     orderedRootResults,
@@ -411,7 +426,6 @@ export function CommandBar({
     availableCommands,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     buildTickerSearchResultItems,
     buildWindowModeItems,
     createPaneTemplateItem,
@@ -430,7 +444,6 @@ export function CommandBar({
     pluginCommandItems,
     pluginCommandResultItems,
     articleResultItems,
-    chartSeriesItems,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,
@@ -494,7 +507,6 @@ export function CommandBar({
     adaptTickerSearchRouteResult,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     currentRoute,
     orderedRootResults,
     pluginRegistry,

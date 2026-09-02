@@ -18,6 +18,7 @@ type CloudApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 interface CloudAuthApiOptions {
   getCurrentUser(): AuthUser | null;
   getSessionToken(): string | null;
+  hasSessionCredential(): boolean;
   request: CloudApiRequest;
   requireCapturedSession(message: string): void;
   setCurrentUser(user: AuthUser | null): void;
@@ -29,7 +30,7 @@ export class CloudAuthApi {
   constructor(private readonly options: CloudAuthApiOptions) {}
 
   restoreCachedUser(user: PersistedAuthUser | null): void {
-    if (!this.options.getSessionToken() || !user?.id) {
+    if (!this.options.hasSessionCredential() || !user?.id) {
       this.options.setCurrentUser(null);
       return;
     }
@@ -123,6 +124,18 @@ export class CloudAuthApi {
       }
       throw error;
     }
+  }
+
+  /**
+   * Emails a password reset link. The reset itself completes on the gloom.sh
+   * site, so the app only ever sends the email. The server answers the same
+   * way whether or not the address exists.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    await this.options.request("/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
   }
 
   async sendVerification(): Promise<CloudVerificationResponse> {

@@ -1,52 +1,25 @@
-import type { AppConfig } from "../../../types/config";
-import type { TickerRecord } from "../../../types/ticker";
-import { hasPortfolioPosition } from "./metrics";
+import type { BrokerInstanceConfig } from "../../../types/config";
+import type { Portfolio } from "../../../types/ticker";
 
-export type AnalyticsCollectionKind = "portfolio" | "watchlist";
+/** Broker account ids look like "U13268153" or "DU1234567": a letter prefix then digits. */
+const RAW_ACCOUNT_ID = /^[A-Z]{1,2}\d{5,}$/;
 
-export interface AnalyticsCollection {
-  kind: AnalyticsCollectionKind;
-  id: string;
-  name: string;
+/**
+ * A portfolio auto-created from a broker sync is named after the raw account id,
+ * which is meaningless on its own, so prefix it with the broker instance label.
+ */
+export function describePortfolioTab(
+  portfolio: Portfolio,
+  brokerInstances: BrokerInstanceConfig[] | undefined,
+): string {
+  const name = portfolio.name.trim();
+  if (!RAW_ACCOUNT_ID.test(name)) return portfolio.name;
+  const instance = brokerInstances?.find((candidate) => candidate.id === portfolio.brokerInstanceId);
+  const prefix = instance?.label?.trim() || instance?.brokerType?.toUpperCase();
+  return prefix ? `${prefix} ${name}` : name;
 }
 
-export function listAnalyticsCollections(
-  config: Pick<AppConfig, "portfolios" | "watchlists">,
-): AnalyticsCollection[] {
-  return [
-    ...config.portfolios.map((portfolio) => ({
-      kind: "portfolio" as const,
-      id: portfolio.id,
-      name: portfolio.name,
-    })),
-    ...config.watchlists.map((watchlist) => ({
-      kind: "watchlist" as const,
-      id: watchlist.id,
-      name: watchlist.name,
-    })),
-  ];
-}
-
-export function resolveAnalyticsCollection(
-  config: Pick<AppConfig, "portfolios" | "watchlists">,
-  id: string | null | undefined,
-): AnalyticsCollection | null {
-  if (!id) return null;
-  const portfolio = config.portfolios.find((entry) => entry.id === id);
-  if (portfolio) {
-    return { kind: "portfolio", id: portfolio.id, name: portfolio.name };
-  }
-  const watchlist = config.watchlists.find((entry) => entry.id === id);
-  if (watchlist) {
-    return { kind: "watchlist", id: watchlist.id, name: watchlist.name };
-  }
-  return null;
-}
-
-export function resolvePortfolioId(
-  portfolios: { id: string }[],
-  portfolioId: string | null | undefined,
-): string | null {
+export function resolvePortfolioId(portfolios: Portfolio[], portfolioId: string | null | undefined): string | null {
   if (!portfolioId) return null;
   return portfolios.some((portfolio) => portfolio.id === portfolioId) ? portfolioId : null;
 }

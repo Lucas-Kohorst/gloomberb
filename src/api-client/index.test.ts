@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { AuthUser } from "./index";
 import { apiClient, setCloudApiFetchTransport } from "./index";
+import { publishableMarketplaceLayout } from "../layout-marketplace/payload";
+import { createDefaultConfig } from "../types/config";
+import type { PaneDef } from "../types/plugin";
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -104,11 +107,97 @@ afterEach(() => {
   setCloudApiFetchTransport(null);
   apiClient.setSessionToken(null);
   apiClient.setWebSocketToken(null);
-  apiClient.setHostedSocketBaseUrl(null);
+  apiClient.setCookieSessionMode(false);
   jest.useRealTimers();
 });
 
+describe("apiClient layout marketplace", () => {
+  test("lists and publishes validated layouts through authenticated transport", async () => {
+    const config = createDefaultConfig("/tmp/api-layout-marketplace-test");
+    const panes = new Map(config.layout.instances.map((instance) => [instance.paneId, {
+      id: instance.paneId,
+      name: instance.paneId,
+      component: () => null,
+      defaultPosition: "right" as const,
+    } satisfies PaneDef]));
+    const payload = publishableMarketplaceLayout(config.layout, {}, panes);
+    const entry = {
+      id: "0123456789abcdef0123456789abcdef",
+      name: "Research Desk",
+      ...payload,
+      author: { username: "analyst", displayName: "Analyst" },
+      publishedAt: "2026-08-26T00:00:00.000Z",
+    };
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    apiClient.setSessionToken("marketplace-session");
+    setCloudApiFetchTransport(async (url, init) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+      });
+      const path = new URL(url).pathname;
+      return createResponse(path === `/layouts/${entry.id}` || init?.method === "POST"
+        ? entry
+        : { items: [entry] });
+    });
+
+    await expect(apiClient.listMarketplaceLayouts()).resolves.toEqual([entry]);
+    await expect(apiClient.getMarketplaceLayout(entry.id)).resolves.toEqual(entry);
+    await expect(apiClient.publishMarketplaceLayout(entry.name, payload)).resolves.toEqual(entry);
+
+    expect(calls.map((call) => [new URL(call.url).pathname, call.method])).toEqual([
+      ["/layouts", "GET"],
+      [`/layouts/${entry.id}`, "GET"],
+      ["/layouts", "POST"],
+    ]);
+    expect(calls[2]?.body).toMatchObject({ name: "Research Desk", schemaVersion: 2, paneState: {} });
+  });
+});
+
 describe("apiClient auth cookies", () => {
+  test("accepts a browser-managed api.gloom.sh cookie without exposing its value", async () => {
+    apiClient.setCookieSessionMode(true);
+    setCloudApiFetchTransport(mockFetch(() => createResponse({ user: verifiedUser })));
+
+    await expect(apiClient.signIn("test@example.com", "password")).resolves.toEqual(verifiedUser);
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.isVerified()).toBe(true);
+  });
+
+  test("reports signed-in from the restored user when the cookie hides the raw token", async () => {
+    apiClient.setCookieSessionMode(true);
+    setCloudApiFetchTransport(mockFetch(() => createResponse({ user: verifiedUser })));
+
+    expect(apiClient.isSignedIn()).toBe(false);
+    await apiClient.signIn("test@example.com", "password");
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.isSignedIn()).toBe(true);
+  });
+
+  test("coalesces anonymous browser session checks and remembers the result", async () => {
+    apiClient.setCookieSessionMode(true);
+    let requests = 0;
+    let finishRequest!: () => void;
+    setCloudApiFetchTransport(async () => {
+      requests += 1;
+      await new Promise<void>((resolve) => { finishRequest = resolve; });
+      return createResponse({ user: null });
+    });
+
+    const checks = [
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+    ];
+    expect(requests).toBe(1);
+    finishRequest();
+
+    await expect(Promise.all(checks)).resolves.toEqual([null, null, null]);
+    await expect(apiClient.ensureVerifiedSession()).resolves.toBeNull();
+    expect(requests).toBe(1);
+  });
+
   test("captures secure session cookies after login and reuses them on session refresh", async () => {
     const seenCookies: Array<string | null> = [];
 
@@ -649,7 +738,9 @@ describe("apiClient scanner subscriptions", () => {
     };
     socket.receive({ type: "scanner.hilo", ...payload });
 
-    const subscribeCount = () => socket.sent.filter((message: { type?: string }) => message.type === "scanner.subscribe").length;
+    // A second pane must not open a second upstream subscription, and must not
+    // wait a tick for its first frame.
+    const subscribeCount = () => socket.sent.filter((message: any) => message.type === "scanner.subscribe").length;
     const before = subscribeCount();
     const unsubscribeSecond = apiClient.subscribeScanner("hilo", (event) => second.push(event));
     expect(subscribeCount()).toBe(before);
@@ -683,33 +774,6 @@ describe("apiClient scanner subscriptions", () => {
     expect(reconnected.sent).toContainEqual({ type: "scanner.subscribe", scanner: "flow" });
 
     unsubscribe();
-  });
-});
-
-describe("apiClient hosted socket", () => {
-  test("connects same-origin to the Worker without a token query param", () => {
-    const sockets = installTestWebSocket();
-    // Hosted holds only the opaque hosted-session sentinel and authenticates
-    // the socket through the same-origin cookie, so no token may hit the URL.
-    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
-    apiClient.setSessionToken("hosted-session");
-    apiClient.restoreCachedUser(verifiedUser);
-
-    const channel = apiClient.connectChannel("everyone", () => {});
-
-    expect(sockets).toHaveLength(1);
-    expect(sockets[0]!.url).toBe("wss://terminal.kohor.st/cloud/ws");
-
-    channel.close();
-  });
-
-  test("never captures a raw upstream token from a response body in hosted mode", async () => {
-    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
-    globalThis.fetch = mockFetch(async () => createResponse({ token: "raw-upstream-token", onlineCount: 0 }));
-
-    await apiClient.getChatPresence();
-
-    expect(apiClient.getWebSocketToken()).toBeNull();
   });
 });
 
@@ -1139,23 +1203,5 @@ describe("apiClient equity diagnostic", () => {
     await apiClient.getCloudEquityDiagnostic("AAPL");
 
     expect(JSON.parse(String(seenInit?.body))).toEqual({ symbol: "AAPL", mode: "cache-first" });
-  });
-});
-
-describe("apiClient CDS", () => {
-  test("asks Gloom Cloud for /cloud/credit/cds with issuer and window", async () => {
-    let seenUrl = "";
-    globalThis.fetch = mockFetch(async (input) => {
-      seenUrl = String(input);
-      return createResponse({ source: "DTCC PPD", asOf: null, trades: [] });
-    });
-
-    await apiClient.getCloudCds({ issuer: "Oracle Corporation", days: 5, limit: 500 });
-
-    const url = new URL(seenUrl);
-    expect(url.pathname).toBe("/cloud/credit/cds");
-    expect(url.searchParams.get("issuer")).toBe("Oracle Corporation");
-    expect(url.searchParams.get("days")).toBe("5");
-    expect(url.searchParams.get("limit")).toBe("500");
   });
 });

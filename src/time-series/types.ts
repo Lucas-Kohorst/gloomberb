@@ -2,7 +2,7 @@ import type { ChartResolution, TimeRange } from "./range";
 import type { ChartResolutionSupport } from "./resolution";
 import type { InstrumentRef } from "../market-data/request-types";
 
-export const CHART_SPEC_VERSION = 1 as const;
+export const CHART_SPEC_VERSION = 2 as const;
 
 export type SeriesPeriod = "auto" | "daily" | "weekly" | "monthly" | "quarterly" | "annual" | "ttm";
 export type SeriesStyle = "line" | "area" | "step" | "columns" | "points" | "candles" | "ohlc" | "hlc";
@@ -26,59 +26,14 @@ export interface EconomicSeriesSource {
   seriesId: string;
 }
 
-export interface AdjacentIndexSeriesSource {
-  kind: "adjacent-index";
-  indexId: string;
+/** Persisted provider-owned source. The opaque series ID includes provider lookup identity. */
+export interface CapabilitySeriesSource {
+  kind: "capability";
+  capabilityId: string;
+  seriesId: string;
 }
 
-export interface BenchmarkSeriesSource {
-  kind: "benchmark";
-  /** Organization name or model ID. */
-  selector: string;
-  metric: string;
-}
-
-export interface PollSeriesSource {
-  kind: "poll";
-  subject: string;
-  choice: string;
-}
-
-export interface WeatherSeriesSource {
-  kind: "weather";
-  provider: "twc-kalshi" | "nws-cli";
-  stationId: string;
-  metric: "high" | "low" | "precip" | "hourly";
-}
-
-export interface OwidSeriesSource {
-  kind: "owid";
-  slug: string;
-  entity: string;
-}
-
-export interface PredictionMarketSeriesSource {
-  kind: "prediction-market";
-  venue: "kalshi" | "polymarket";
-  marketId: string;
-}
-
-/** A numeric literal used as one leg of a derived formula (e.g. `100 - STRC:price`). */
-export interface ConstantSeriesSource {
-  kind: "constant";
-  value: number;
-}
-
-export type ChartSeriesSource =
-  | SecuritySeriesSource
-  | EconomicSeriesSource
-  | AdjacentIndexSeriesSource
-  | BenchmarkSeriesSource
-  | PollSeriesSource
-  | WeatherSeriesSource
-  | OwidSeriesSource
-  | PredictionMarketSeriesSource
-  | ConstantSeriesSource;
+export type ChartSeriesSource = SecuritySeriesSource | EconomicSeriesSource | CapabilitySeriesSource;
 
 export interface ChartSeriesSpec {
   id: string;

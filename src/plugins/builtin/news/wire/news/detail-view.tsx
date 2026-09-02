@@ -14,6 +14,7 @@ import { useInlineTickers } from "../../../../../state/hooks/inline-tickers";
 import { isPlainKey } from "../../../../../utils/keyboard";
 import { wrapTextLines } from "../../../../../utils/text-wrap";
 import { formatDetailDate } from "../../../../../utils/datetime-format";
+import { formatNewsCategory } from "../categories";
 
 function hasStoryItems(article: MarketNewsItem | null): boolean {
   return (article?.items?.length ?? 0) > 0;
@@ -196,6 +197,10 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const { catalog, openTicker } = useInlineTickers(tickerTexts);
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
+  const categoryLabels = useMemo(
+    () => item.categories.map(formatNewsCategory).filter(Boolean).join(" · "),
+    [item.categories],
+  );
   const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
   const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
   const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
@@ -249,7 +254,9 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
             </Box>
           )}
           <Box height={1} flexDirection="row">
-            <Text fg={colors.textDim}>{metaLine}</Text>
+            <Text fg={colors.textDim}>
+              {`${item.source} · last updated at ${lastUpdatedStr} · score ${item.importance}/100`}
+            </Text>
           </Box>
           {item.body?.trim() ? (
             <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} />
@@ -292,9 +299,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               <TextLines text={categoryLabels} width={innerW} color={colors.textMuted} nativePaneChrome />
             ) : (
               <Box height={1} flexDirection="row">
-                <Text fg={colors.textMuted}>
-                  {categoryLabels}
-                </Text>
+                <Text fg={colors.textMuted}>{categoryLabels}</Text>
               </Box>
             )
           )}

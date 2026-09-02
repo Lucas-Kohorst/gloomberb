@@ -6,7 +6,7 @@ import {
 
 interface ChatControllerRealtimeOptions {
   getAppActive: () => boolean;
-  getSessionToken: () => string | null;
+  hasSession: () => boolean;
   getUser: () => { emailVerified?: boolean } | null;
   refreshSession: () => Promise<void>;
   handleNotification: (notification: ChatNotification) => void;
@@ -26,7 +26,7 @@ export class ChatControllerRealtime {
 
   syncVerificationPolling(): void {
     const user = this.options.getUser();
-    if (!this.options.getAppActive() || !this.options.getSessionToken() || !user || user.emailVerified) {
+    if (!this.options.getAppActive() || !this.options.hasSession() || !user || user.emailVerified) {
       this.stopVerificationPolling();
       return;
     }
@@ -66,7 +66,7 @@ export class ChatControllerRealtime {
   startSafetyRefresh(): void {
     if (this.safetyRefreshTimer) return;
     this.safetyRefreshTimer = setInterval(() => {
-      if (!this.options.getUser()?.emailVerified || !this.options.getSessionToken()) {
+      if (!this.options.getUser()?.emailVerified || !this.options.hasSession()) {
         this.stopSafetyRefresh();
         return;
       }

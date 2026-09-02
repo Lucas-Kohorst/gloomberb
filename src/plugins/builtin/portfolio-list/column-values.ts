@@ -347,9 +347,11 @@ export function getColumnValue(
       return { text: "—" };
     case "pnl":
       if (activeQuote && totalPriceUnits !== 0) {
-        const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
-        const costBasis = toBasePosition(totalCost);
-        const pnl = signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
+        const pnl = signedQuoteUnrealizedPnl(
+          toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price),
+          toBasePosition(totalCost),
+          totalPriceUnits,
+        );
         return { text: `${pnl >= 0 ? "+" : ""}${formatCompact(pnl)}`, color: priceColor(pnl) };
       }
       if (brokerFallbackPnl != null) {
@@ -547,9 +549,11 @@ export function getSortValue(
       return null;
     case "pnl":
       if (activeQuote && totalPriceUnits !== 0) {
-        const marketValue = toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price);
-        const costBasis = toBasePosition(totalCost);
-        return signedQuoteUnrealizedPnl(marketValue, costBasis, totalPriceUnits);
+        return signedQuoteUnrealizedPnl(
+          toBaseQuote(Math.abs(totalPriceUnits) * activeQuote.price),
+          toBasePosition(totalCost),
+          totalPriceUnits,
+        );
       }
       if (brokerFallbackPnl != null) {
         return toBasePosition(brokerFallbackPnl);

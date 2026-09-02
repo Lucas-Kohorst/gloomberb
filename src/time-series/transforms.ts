@@ -54,50 +54,51 @@ function referencePoint(
   currentIndex: number,
   months: number,
   toleranceDays: number,
+  observationsSorted: boolean,
 ): TimeSeriesPoint | null {
   const current = points[currentIndex];
   if (!current) return null;
   const currentTime = current.observedAt.getTime();
   const target = shiftUtcMonths(current.observedAt, months).getTime();
   const maxDistance = toleranceDays * DAY_MS;
-
-  // Binary search for the insertion point of target in points[0..currentIndex),
-  // which is sorted ascending by observedAt.
-  let lo = 0;
-  let hi = currentIndex;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (points[mid]!.observedAt.getTime() < target) lo = mid + 1;
-    else hi = mid;
-  }
-
-  let best: { point: TimeSeriesPoint; distance: number; date: number } | null = null;
-
-  // Scan left from the insertion point — distances increase as we go back.
-  for (let i = lo - 1; i >= 0; i -= 1) {
-    const candidate = points[i]!;
+  let best: { point: TimeSeriesPoint; distance: number; date: number; index: number } | null = null;
+  const consider = (index: number) => {
+    const candidate = points[index]!;
     const candidateTime = candidate.observedAt.getTime();
-    if (!Number.isFinite(candidateTime) || candidateTime >= currentTime) continue;
-    const distance = target - candidateTime;
-    if (distance > maxDistance) break;
-    if (!best || distance < best.distance || (distance === best.distance && candidateTime > best.date)) {
-      best = { point: candidate, distance, date: candidateTime };
+    if (candidateTime >= currentTime) return;
+    const distance = Math.abs(candidateTime - target);
+    if (distance > maxDistance) return;
+    if (
+      !best
+      || distance < best.distance
+      || (distance === best.distance && candidateTime > best.date)
+      || (distance === best.distance && candidateTime === best.date && index < best.index)
+    ) {
+      best = { point: candidate, distance, date: candidateTime, index };
     }
+  };
+
+  if (!observationsSorted) {
+    for (let index = 0; index < currentIndex; index += 1) consider(index);
+    return (best as { point: TimeSeriesPoint } | null)?.point ?? null;
   }
 
-  // Scan right from the insertion point — distances increase as we go forward.
-  for (let i = lo; i < currentIndex; i += 1) {
-    const candidate = points[i]!;
-    const candidateTime = candidate.observedAt.getTime();
-    if (!Number.isFinite(candidateTime) || candidateTime >= currentTime) continue;
-    const distance = candidateTime - target;
-    if (distance > maxDistance) break;
-    if (!best || distance < best.distance || (distance === best.distance && candidateTime > best.date)) {
-      best = { point: candidate, distance, date: candidateTime };
-    }
+  let low = 0;
+  let high = currentIndex;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (points[middle]!.observedAt.getTime() < target) low = middle + 1;
+    else high = middle;
   }
-
-  return best?.point ?? null;
+  for (let index = low - 1; index >= 0; index -= 1) {
+    if (target - points[index]!.observedAt.getTime() > maxDistance) break;
+    consider(index);
+  }
+  for (let index = low; index < currentIndex; index += 1) {
+    if (points[index]!.observedAt.getTime() - target > maxDistance) break;
+    consider(index);
+  }
+  return (best as { point: TimeSeriesPoint } | null)?.point ?? null;
 }
 
 function mapNumericFields(
@@ -151,8 +152,11 @@ export function applySeriesTransform(
 
   const months = transform === "yoy" ? 12 : 3;
   const toleranceDays = transform === "yoy" ? 62 : 46;
+  const observationsSorted = points.every((point, index) => (
+    index === 0 || points[index - 1]!.observedAt.getTime() <= point.observedAt.getTime()
+  ));
   return points.map((point, index) => {
-    const reference = referencePoint(points, index, months, toleranceDays);
+    const reference = referencePoint(points, index, months, toleranceDays, observationsSorted);
     if (!reference) return mapNumericFields(point, () => null);
     return mapNumericFields(point, (value, field) => growthValue(value, reference[field]));
   });

@@ -1,7 +1,7 @@
 import type { AuthEvent, AuthPrompt, Provider } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
-import { sendInProcessOrRemoteControlRequest } from "../../../../remote/in-process-handle";
+import { sendRemoteControlRequest } from "../../../../remote/client";
 import { safeExternalUrl } from "../../../../utils/external-url";
 import type {
   RemoteAppKind,

@@ -1,12 +1,32 @@
 import { describe, expect, test } from "bun:test";
 import {
   analyzeSeriesSearchQuery,
+  buildCapabilitySeriesSuggestions,
   buildSeriesCatalogSuggestions,
 } from "./series-catalog";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 
 describe("chart composer series catalog", () => {
+  test("maps provider catalog metadata without provider-specific core branches", () => {
+    expect(buildCapabilitySeriesSuggestions([{
+      capabilityId: "custom.series",
+      capabilityName: "Custom Provider",
+      seriesId: "series-1",
+      label: "Custom history",
+      style: "step",
+    }])[0]).toMatchObject({
+      label: "Custom history",
+      detail: "Custom Provider",
+      expression: {
+        kind: "capability",
+        capabilityId: "custom.series",
+        seriesId: "series-1",
+        style: "step",
+      },
+    });
+  });
+
   test("maps a metric-only query onto the current security", () => {
     const suggestions = buildSeriesCatalogSuggestions("revenue", AAPL);
 
@@ -49,6 +69,25 @@ describe("chart composer series catalog", () => {
     expect(suggestions[0]?.expression).toMatchObject({
       symbol: "AAPL",
       fieldId: "fundamental.grossMargin",
+    });
+  });
+
+  test("suggests futures contracts and Treasury maturities from the board catalogs", () => {
+    expect(buildSeriesCatalogSuggestions("e-mini s&p", AAPL)[0]).toMatchObject({
+      label: "FUT:ES · E-Mini S&P 500",
+      expression: {
+        kind: "security",
+        symbol: "ES=F",
+        fieldId: "market.ohlcv",
+      },
+    });
+    expect(buildSeriesCatalogSuggestions("UST:10Y", AAPL)[0]).toMatchObject({
+      label: "10Y Treasury Yield",
+      expression: {
+        kind: "economic",
+        provider: "fred",
+        seriesId: "DGS10",
+      },
     });
   });
 

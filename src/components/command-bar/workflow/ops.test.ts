@@ -3,6 +3,7 @@ import { cloneLayout, createDefaultConfig, findPaneInstance, type LayoutConfig }
 import { createInitialState } from "../../../state/app/context";
 import { createTestDataProvider } from "../../../test-support/data-provider";
 import { applyPaneSettingFieldValue, createPaneTemplateOrThrow } from "./ops";
+import type { TickerRecord } from "../../../types/ticker";
 
 function makeDataProvider() {
   return createTestDataProvider({ id: "test" });
@@ -81,6 +82,59 @@ describe("createPaneTemplateOrThrow", () => {
 
     expect(buildCalls).toHaveLength(0);
     expect(placeCalls).toHaveLength(0);
+  });
+
+  test("uses an explicit shared symbol instead of the recipient's active ticker", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-test");
+    const state = createInitialState(config);
+    const msft: TickerRecord = {
+      metadata: {
+        ticker: "MSFT",
+        exchange: "NASDAQ",
+        currency: "USD",
+        name: "Microsoft",
+        portfolios: [],
+        watchlists: [],
+        positions: [],
+        broker_contracts: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    state.tickers.set("MSFT", msft);
+    let createdSymbol: string | null | undefined;
+
+    await createPaneTemplateOrThrow("ticker-pane", { symbol: "MSFT" }, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([["ticker-pane", {
+          id: "ticker-pane",
+          paneId: "ticker-view",
+          label: "Ticker View",
+          description: "Ticker View",
+          shortcut: { prefix: "TV", argPlaceholder: "ticker", argKind: "ticker" },
+          createInstance: (_context: unknown, options: { symbol?: string } | undefined) => {
+            createdSymbol = options?.symbol;
+            return { binding: { kind: "fixed", symbol: options?.symbol ?? "" } };
+          },
+        }]]),
+        panes: new Map([["ticker-view", {
+          id: "ticker-view",
+          name: "Ticker View",
+          component: () => null,
+          defaultPosition: "right",
+        }]]),
+        getPaneTemplatePluginId: () => undefined,
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: () => ({ instanceId: "ticker-view:1", paneId: "ticker-view" }) as any,
+      placePaneInstance: () => {},
+    });
+
+    expect(createdSymbol).toBe("MSFT");
   });
 
   test("passes pane template instance ids through to pane creation", async () => {
@@ -300,6 +354,142 @@ describe("createPaneTemplateOrThrow", () => {
       hideTabs: false,
       channelId: "general",
     });
+  });
+});
+
+describe("createPaneTemplateOrThrow pane reuse", () => {
+  async function runTemplate(
+    spec: Record<string, unknown>,
+    existing: Array<Record<string, unknown>>,
+  ): Promise<{
+    focused: string[];
+    created: number;
+    createdWith: Record<string, unknown> | null;
+    layouts: LayoutConfig[];
+  }> {
+    const config = createDefaultConfig("/tmp/gloomberb-workflow-ops-reuse");
+    const layout = cloneLayout(config.layout);
+    layout.instances = existing as never;
+    const state = createInitialState({ ...config, layout });
+    const focused: string[] = [];
+    const layouts: LayoutConfig[] = [];
+    let created = 0;
+    let createdWith: Record<string, unknown> | null = null;
+
+    await createPaneTemplateOrThrow("template", undefined, {
+      dataProvider: makeDataProvider() as any,
+      tickerRepository: makeTickerRepository() as any,
+      dispatch: () => {},
+      getState: () => state,
+      pluginRegistry: {
+        paneTemplates: new Map([
+          ["template", {
+            id: "template",
+            paneId: "chat",
+            label: "Chat",
+            description: "Chat",
+            createInstance: () => spec,
+          }],
+        ]),
+        panes: new Map([["chat", { id: "chat", name: "Chat", component: () => null }]]),
+        getPaneTemplatePluginId: () => undefined,
+        focusPaneFn: (paneId: string) => focused.push(paneId),
+        updateLayoutFn: (next: LayoutConfig) => {
+          layouts.push(next);
+          state.config.layout = next;
+        },
+        events: { emit: () => {} },
+      } as any,
+      buildPaneInstance: (_paneType: string, options?: Record<string, unknown>) => {
+        created += 1;
+        createdWith = options ?? null;
+        return { instanceId: "chat:new", paneId: "chat" } as any;
+      },
+      placePaneInstance: () => {},
+    });
+
+    return { focused, created, createdWith, layouts };
+  }
+
+  // The pane rewrites its own channelId as the user switches channels inside it,
+  // so reuse has to move it back onto the requested channel before focusing.
+  test("retargets the instance a stable id owns when its persisted channel drifted", async () => {
+    const result = await runTemplate(
+      { instanceId: "chat:general", title: "#general", settings: { channelId: "general" } },
+      [{
+        instanceId: "chat:general",
+        paneId: "chat",
+        title: "#random",
+        settings: { channelId: "random", fontScale: 2 },
+      }],
+    );
+
+    expect(result.focused).toEqual(["chat:general"]);
+    expect(result.created).toBe(0);
+    expect(findPaneInstance(result.layouts[0]!, "chat:general")).toMatchObject({
+      title: "#general",
+      settings: { channelId: "general", fontScale: 2 },
+    });
+  });
+
+  test("focuses a matching stable-id pane without rewriting the layout", async () => {
+    const result = await runTemplate(
+      { instanceId: "chat:general", title: "#general", settings: { channelId: "general" } },
+      [{
+        instanceId: "chat:general",
+        paneId: "chat",
+        title: "#general",
+        settings: { channelId: "general" },
+      }],
+    );
+
+    expect(result.focused).toEqual(["chat:general"]);
+    expect(result.layouts).toEqual([]);
+  });
+
+  test("never focuses another pane type holding the same stable id", async () => {
+    const result = await runTemplate(
+      { instanceId: "chat:general", settings: { channelId: "general" } },
+      [{ instanceId: "chat:general", paneId: "notes", settings: { channelId: "general" } }],
+    );
+
+    expect(result.focused).toEqual([]);
+    expect(result.created).toBe(1);
+    // Reusing the taken id would put two panes on one instance id.
+    expect(result.createdWith).toMatchObject({ instanceId: undefined });
+  });
+
+  test("keeps a different stable id on its own pane", async () => {
+    const result = await runTemplate(
+      { instanceId: "chat:trading", settings: { channelId: "trading" } },
+      [{ instanceId: "chat:general", paneId: "chat", settings: { channelId: "general" } }],
+    );
+
+    expect(result.focused).toEqual([]);
+    expect(result.created).toBe(1);
+  });
+
+  test("reuses an unkeyed template only on an equivalent spec, ignoring settings key order", async () => {
+    const existing = [{
+      instanceId: "chat:stored",
+      paneId: "chat",
+      binding: { kind: "fixed", symbol: "AAPL" },
+      settings: { limit: 10, channelId: "general" },
+    }];
+
+    const same = await runTemplate(
+      { binding: { kind: "fixed", symbol: "AAPL" }, settings: { channelId: "general", limit: 10 } },
+      existing,
+    );
+    expect(same.focused).toEqual(["chat:stored"]);
+    expect(same.created).toBe(0);
+
+    const different = await runTemplate(
+      { binding: { kind: "fixed", symbol: "MSFT" }, settings: { channelId: "general", limit: 10 } },
+      existing,
+    );
+    expect(different.focused).toEqual([]);
+    expect(different.created).toBe(1);
   });
 });
 

@@ -1,6 +1,12 @@
 import { httpFetch } from "../utils/http-transport";
 import { withDeadline } from "../utils/async-deadline";
 import { ApiRequestError, parseApiErrorMessage } from "./errors";
+import {
+  connectionHealth,
+  GLOOM_CLOUD_FRED_CONNECTION_ID,
+  GLOOM_CLOUD_HTTP_CONNECTION_ID,
+  type ConnectionHealthRegistry,
+} from "../core/connection-health";
 
 const DEFAULT_API_URL = "https://api.gloom.sh";
 const DEFAULT_MARKET_REQUEST_TIMEOUT_MS = 10_000;
@@ -16,7 +22,16 @@ export function setCloudApiFetchTransport(transport: CloudApiFetchTransport | nu
   cloudApiFetchTransport = transport ?? httpFetch;
 }
 
+declare const __GLOOMBERB_API_URL__: string | undefined;
+
 export function getCloudApiBaseUrl(): string {
+  // Browser bundles have no `process`; the build replaces this with a literal.
+  const bundled = typeof __GLOOMBERB_API_URL__ === "string" ? __GLOOMBERB_API_URL__ : "";
+  if (bundled) {
+    return typeof location !== "undefined" && bundled === location.origin
+      ? `${bundled}/api`
+      : bundled;
+  }
   if (typeof process === "undefined") {
     return DEFAULT_API_URL;
   }
@@ -32,18 +47,21 @@ export class CloudApiRequestTransport {
   private sessionToken: string | null = null;
   private sessionCookieName: SessionCookieName | null = null;
   private websocketToken: string | null = null;
-  private hostedSocketBaseUrl: string | null = null;
+  private cookieSessionMode = false;
   private readonly fetchTransport: CloudApiFetchTransport | null;
   private readonly marketRequestTimeoutMs: number;
+  private readonly connectionHealth: ConnectionHealthRegistry;
 
   readonly baseUrl = getCloudApiBaseUrl();
 
   constructor(options: {
     fetchTransport?: CloudApiFetchTransport;
     marketRequestTimeoutMs?: number;
+    connectionHealth?: ConnectionHealthRegistry;
   } = {}) {
     this.fetchTransport = options.fetchTransport ?? null;
     this.marketRequestTimeoutMs = options.marketRequestTimeoutMs ?? DEFAULT_MARKET_REQUEST_TIMEOUT_MS;
+    this.connectionHealth = options.connectionHealth ?? connectionHealth;
   }
 
   getSessionToken(): string | null {
@@ -52,6 +70,14 @@ export class CloudApiRequestTransport {
 
   getWebSocketToken(): string | null {
     return this.websocketToken;
+  }
+
+  hasSessionCredential(): boolean {
+    return this.cookieSessionMode || !!this.sessionToken;
+  }
+
+  setCookieSessionMode(enabled: boolean): void {
+    this.cookieSessionMode = enabled;
   }
 
   setSessionToken(token: string | null): void {
@@ -135,31 +161,37 @@ export class CloudApiRequestTransport {
     this.setSessionCookieHeader(headers);
     headers.set("Origin", this.baseUrl);
 
-    const res = await (this.fetchTransport ?? cloudApiFetchTransport)(`${this.baseUrl}${path}`, {
-      ...options,
-      headers,
-      credentials: "include",
-    });
-    throwIfRequestAborted(options?.signal);
-    this.extractSessionCookie(res);
-    const text = await res.text();
-    throwIfRequestAborted(options?.signal);
+    const operation = `${options?.method ?? "GET"} ${path.split("?")[0]}`;
+    const request = async () => {
+      const res = await (this.fetchTransport ?? cloudApiFetchTransport)(`${this.baseUrl}${path}`, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+      throwIfRequestAborted(options?.signal);
+      this.extractSessionCookie(res);
+      const text = await res.text();
+      throwIfRequestAborted(options?.signal);
 
-    if (!res.ok) {
-      const msg = parseApiErrorMessage(text);
-      throw new ApiRequestError(msg, res.status);
-    }
+      if (!res.ok) {
+        const msg = parseApiErrorMessage(text);
+        throw new ApiRequestError(msg, res.status);
+      }
 
-    if (!text) return undefined as T;
-    const parsed = JSON.parse(text) as T & { token?: string };
-    // The hosted client authenticates the socket through the Worker's HttpOnly
-    // cookie, so it must never hold a raw upstream token — the Worker also
-    // strips it from response bodies, but never capture it here as defense in
-    // depth.
-    if (!this.isHostedSocket() && typeof parsed?.token === "string" && parsed.token.length > 0) {
-      this.websocketToken = parsed.token;
-    }
-    return parsed as T;
+      if (!text) return undefined as T;
+      const parsed = JSON.parse(text) as T & { token?: string };
+      if (typeof parsed?.token === "string" && parsed.token.length > 0) {
+        this.websocketToken = parsed.token;
+      }
+      return parsed as T;
+    };
+    return this.connectionHealth.track(
+      GLOOM_CLOUD_HTTP_CONNECTION_ID,
+      operation,
+      () => path.startsWith("/cloud/econ/series/")
+        ? this.connectionHealth.track(GLOOM_CLOUD_FRED_CONNECTION_ID, operation, request)
+        : request(),
+    );
   }
 
   private extractSessionCookie(res: CloudApiResponse): void {

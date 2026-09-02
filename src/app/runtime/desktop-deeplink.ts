@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch } from "react";
+import { apiClient } from "../../api-client";
 import { getDockedPaneIds } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { AppAction, AppState } from "../../state/app/context";
@@ -11,25 +12,9 @@ import type { DesktopDeepLinkBridge } from "../../types/desktop-deeplink";
 import type { DesktopWindowBridge } from "../../types/desktop-window";
 import { requestAccountManagementTab } from "../../plugins/builtin/account-management/navigation";
 import { chatController } from "../../plugins/builtin/chat/controller";
-import { getBrowserLocation, getBrowserWindow } from "../../utils/browser-location";
-import {
-  NEWS_ARTICLE_READER_TEMPLATE_ID,
-  SUBSTACK_ARTICLE_READER_TEMPLATE_ID,
-} from "../../plugins/builtin/shared/article-pop-out";
-import {
-  decodeArticleSharePayload,
-  payloadToNewsArticle,
-  payloadToSubstackArticle,
-} from "../../plugins/builtin/shared/article-share";
-import { stashNewsArticle } from "../../plugins/builtin/news/wire/news/article-stash";
-import { stashSubstackArticle } from "../../plugins/builtin/substack/article-stash";
-import { stashChartSpec } from "../../plugins/builtin/chart-composer/chart-stash";
-import type { ChartSharePayload, TableSharePayload } from "../../shares/payload";
-import {
-  encodeArticleSharePayload,
-  parseArticleSharePayload,
-} from "../../shares/payload";
-import { resolveShare } from "../../sources/share-service";
+import { getShare } from "../../shares/api";
+import { openPaneShare } from "../../shares/pane";
+import { materializeMarketplaceLayout } from "../../layout-marketplace/payload";
 
 type CloudDeepLinkRoute = {
   kind: "cloud-alerts" | "cloud-emails" | "cloud-roundup" | "cloud-success";
@@ -39,6 +24,7 @@ type CloudDeepLinkRoute = {
 type CollectionDeepLinkKind = "collection" | "portfolio" | "watchlist";
 type AlertDeepLinkCondition = "above" | "below" | "crosses";
 type NewsDeepLinkKind = "breaking" | "feed" | "ticker" | "top";
+const SHARE_ID = /^[a-f0-9]{32}$/;
 
 export type DesktopDeepLinkAction =
   | { type: "open-account-management"; route: CloudDeepLinkRoute; message: string }
@@ -52,8 +38,8 @@ export type DesktopDeepLinkAction =
   | { type: "open-chat-channel"; channelId: string; messageId: string | null; message: string }
   | { type: "open-chat-dm"; participants: string; message: string }
   | { type: "open-news"; kind: NewsDeepLinkKind; symbol: string | null; message: string }
-  | { type: "open-article-reader"; articleType: "news" | "substack"; encodedPayload: string; message: string }
-  | { type: "open-share"; shortId: string; message: string }
+  | { type: "open-share"; id: string; message: string }
+  | { type: "open-layout"; id: string; message: string }
   | { type: "unsupported"; message: string };
 
 interface ParsedGloomUrl {
@@ -262,27 +248,18 @@ function parseNewsDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
   return { type: "unsupported", message: "Unsupported Gloomberb news link." };
 }
 
-function parseArticleDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
-  const encoded = param(parsed.url, "a");
-  if (!encoded) return { type: "unsupported", message: "Article links need an encoded payload." };
-  const payload = decodeArticleSharePayload(encoded);
-  if (!payload) return { type: "unsupported", message: "Article link payload is invalid." };
-  return {
-    type: "open-article-reader",
-    articleType: payload.type,
-    encodedPayload: encoded,
-    message: `Opened article "${payload.title}".`,
-  };
+function parseLayoutDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
+  const id = parsed.segments[0] ?? param(parsed.url, "id", "layout");
+  return id && SHARE_ID.test(id)
+    ? { type: "open-layout", id, message: "Added shared layout." }
+    : { type: "unsupported", message: "Layout links need a valid id." };
 }
 
 function parseShareDeepLink(parsed: ParsedGloomUrl): DesktopDeepLinkAction {
-  const shortId = param(parsed.url, "s", "id", "share");
-  if (!shortId) return { type: "unsupported", message: "Share links need a short ID." };
-  return {
-    type: "open-share",
-    shortId,
-    message: "Opening shared view...",
-  };
+  const id = parsed.segments[0] ?? param(parsed.url, "id", "share");
+  return id && SHARE_ID.test(id)
+    ? { type: "open-share", id, message: "Opened shared pane." }
+    : { type: "unsupported", message: "Share links need a valid id." };
 }
 
 export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAction {
@@ -306,10 +283,10 @@ export function resolveDesktopDeepLinkAction(rawUrl: string): DesktopDeepLinkAct
       return parseChatDeepLink(parsed);
     case "news":
       return parseNewsDeepLink(parsed);
-    case "article":
-      return parseArticleDeepLink(parsed);
     case "share":
       return parseShareDeepLink(parsed);
+    case "layout":
+      return parseLayoutDeepLink(parsed);
     default:
       return { type: "unsupported", message: "Unsupported Gloomberb link." };
   }
@@ -510,147 +487,31 @@ function handleOpenNews(
   notifySuccess(pluginRegistry, action.message);
 }
 
-function handleOpenArticleReader(
-  action: Extract<DesktopDeepLinkAction, { type: "open-article-reader" }>,
-  pluginRegistry: PluginRegistry,
-): void {
-  const payload = decodeArticleSharePayload(action.encodedPayload);
-  if (!payload) {
-    notifyError(pluginRegistry, "Article link payload is invalid.");
-    return;
-  }
-
-  if (payload.type === "news") {
-    if (!pluginRegistry.paneTemplates.has(NEWS_ARTICLE_READER_TEMPLATE_ID)) {
-      notifyError(pluginRegistry, "Article reader is unavailable.");
-      return;
-    }
-    const article = payloadToNewsArticle(payload);
-    stashNewsArticle(article);
-    void pluginRegistry.createPaneFromTemplateAsyncFn(NEWS_ARTICLE_READER_TEMPLATE_ID, {
-      arg: article.id,
-      values: {
-        title: article.title,
-        url: article.url,
-        source: article.source,
-      },
-    }).then(() => {
-      notifySuccess(pluginRegistry, action.message);
-    }).catch((error) => {
-      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open article.");
-    });
-    return;
-  }
-
-  // substack
-  if (!pluginRegistry.paneTemplates.has(SUBSTACK_ARTICLE_READER_TEMPLATE_ID)) {
-    notifyError(pluginRegistry, "Article reader is unavailable.");
-    return;
-  }
-  const article = payloadToSubstackArticle(payload);
-  stashSubstackArticle(article);
-  void pluginRegistry.createPaneFromTemplateAsyncFn(SUBSTACK_ARTICLE_READER_TEMPLATE_ID, {
-    arg: article.id,
-    values: {
-      title: article.title,
-      url: article.url ?? "",
-    },
-  }).then(() => {
-    notifySuccess(pluginRegistry, action.message);
-  }).catch((error) => {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open article.");
+async function handleOpenLayout(
+  action: Extract<DesktopDeepLinkAction, { type: "open-layout" }>,
+  options: DesktopDeepLinkHandlerOptions,
+): Promise<void> {
+  const entry = await apiClient.getMarketplaceLayout(action.id);
+  if (!entry) throw new Error("This shared layout is unavailable.");
+  const installed = materializeMarketplaceLayout(entry);
+  options.dispatch({
+    type: "INSTALL_LAYOUT_COPY",
+    name: entry.name,
+    layout: installed.layout,
+    paneState: installed.paneState,
   });
-}
-
-/**
- * A `/s/{id}` path skips the onboarding gate before the share is known to
- * exist, so the reader can open without a blocking network call at bootstrap.
- * When the id turns out to be bogus, drop back to the root so the visitor meets
- * the normal gate instead of sitting in an anonymous workspace.
- */
-function leaveUnresolvedShareLocation(): void {
-  const browserWindow = getBrowserWindow();
-  if (!browserWindow) return;
-  if (!/^\/s\/[A-Za-z0-9_-]+$/.test(browserWindow.location.pathname)) return;
-  browserWindow.history.replaceState(null, "", "/");
+  notifySuccess(options.pluginRegistry, `Layout "${entry.name}" added.`);
 }
 
 async function handleOpenShare(
   action: Extract<DesktopDeepLinkAction, { type: "open-share" }>,
   pluginRegistry: PluginRegistry,
 ): Promise<void> {
-  let resolved;
-  try {
-    resolved = await resolveShare(action.shortId);
-  } catch (error) {
-    notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to resolve share.");
-    // Keep `/s/{id}` so a refresh still has the share. Replacing it with `/`
-    // is how an authed SPA boot used to swallow the public reader on a blip.
-    return;
-  }
-  if (!resolved) {
-    notifyError(pluginRegistry, "This share link is no longer available.");
-    leaveUnresolvedShareLocation();
-    return;
-  }
-
-  if (resolved.kind === "article") {
-    const decoded = typeof resolved.data === "string"
-      ? decodeArticleSharePayload(resolved.data)
-      : parseArticleSharePayload(resolved.data);
-    if (!decoded) {
-      notifyError(pluginRegistry, "Shared article payload is invalid.");
-      return;
-    }
-    handleOpenArticleReader(
-      {
-        type: "open-article-reader",
-        articleType: decoded.type,
-        encodedPayload: encodeArticleSharePayload(decoded),
-        message: `Opened article "${decoded.title}".`,
-      },
-      pluginRegistry,
-    );
-    return;
-  }
-
-  if (resolved.kind === "chart") {
-    const data = resolved.data as ChartSharePayload | null;
-    if (!data?.spec) {
-      notifyError(pluginRegistry, "Shared chart payload is invalid.");
-      return;
-    }
-    if (!pluginRegistry.paneTemplates.has("chart-composer-pane")) {
-      notifyError(pluginRegistry, "Chart composer is unavailable.");
-      return;
-    }
-    const stashKey = `share:${action.shortId}`;
-    stashChartSpec(stashKey, data.spec);
-    void pluginRegistry.createPaneFromTemplateAsyncFn("chart-composer-pane", {
-      arg: stashKey,
-    }).then(() => {
-      notifySuccess(pluginRegistry, "Opened shared chart.");
-    }).catch((error) => {
-      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open shared chart.");
-    });
-    return;
-  }
-
-  if (resolved.kind === "table") {
-    // A table snapshot is frozen text, so there is nothing worth reopening in a
-    // pane except the live source it came from.
-    const templateId = (resolved.data as TableSharePayload | null)?.paneTemplateId;
-    if (!templateId || !pluginRegistry.paneTemplates.has(templateId)) {
-      notifyError(pluginRegistry, "The pane this table came from is unavailable.");
-      leaveUnresolvedShareLocation();
-      return;
-    }
-    void pluginRegistry.createPaneFromTemplateAsyncFn(templateId).then(() => {
-      notifySuccess(pluginRegistry, "Opened the live view for this table.");
-    }).catch((error) => {
-      notifyError(pluginRegistry, error instanceof Error ? error.message : "Failed to open shared table.");
-    });
-  }
+  const share = await getShare(action.id, fetch, { trackView: false });
+  if (!share) throw new Error("This share is unavailable or has expired.");
+  if (share.kind !== "pane") throw new Error("This link contains a snapshot, not a live pane.");
+  await openPaneShare(pluginRegistry, share.data);
+  notifySuccess(pluginRegistry, action.message);
 }
 
 export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHandlerOptions): void {
@@ -690,11 +551,15 @@ export function handleDesktopDeepLink(rawUrl: string, options: DesktopDeepLinkHa
     case "open-news":
       handleOpenNews(action, options.pluginRegistry);
       return;
-    case "open-article-reader":
-      handleOpenArticleReader(action, options.pluginRegistry);
-      return;
     case "open-share":
-      void handleOpenShare(action, options.pluginRegistry);
+      void handleOpenShare(action, options.pluginRegistry).catch((error) => {
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared pane.");
+      });
+      return;
+    case "open-layout":
+      void handleOpenLayout(action, options).catch((error) => {
+        notifyError(options.pluginRegistry, error instanceof Error ? error.message : "Could not open shared layout.");
+      });
       return;
   }
 }
@@ -703,34 +568,21 @@ export function useDesktopDeepLinkRuntime({
   desktopDeepLinkBridge,
   desktopWindowKind,
   dispatch,
+  initialized,
   pluginRegistry,
   stateRef,
 }: {
   desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   desktopWindowKind?: DesktopWindowBridge["kind"];
   dispatch: Dispatch<AppAction>;
+  initialized: boolean;
   pluginRegistry: PluginRegistry;
   stateRef: { current: AppState };
 }) {
   useEffect(() => {
-    if (desktopWindowKind !== "main" || !desktopDeepLinkBridge) return;
+    if (!initialized || desktopWindowKind === "detached" || !desktopDeepLinkBridge) return;
     return desktopDeepLinkBridge.subscribe((deeplink) => {
       handleDesktopDeepLink(deeplink.url, { dispatch, pluginRegistry, stateRef });
     });
-  }, [desktopDeepLinkBridge, desktopWindowKind, dispatch, pluginRegistry, stateRef]);
-
-  // Hosted shares arrive as normal browser navigations rather than through
-  // the desktop deep-link bridge.
-  useEffect(() => {
-    if (desktopDeepLinkBridge) return;
-    const browserLocation = getBrowserLocation();
-    if (!browserLocation) return;
-    const match = /^\/s\/([A-Za-z0-9_-]+)$/.exec(browserLocation.pathname);
-    if (!match) return;
-    handleDesktopDeepLink(`gloomberb://share?s=${match[1]}`, {
-      dispatch,
-      pluginRegistry,
-      stateRef,
-    });
-  }, [desktopDeepLinkBridge, dispatch, pluginRegistry, stateRef]);
+  }, [desktopDeepLinkBridge, desktopWindowKind, dispatch, initialized, pluginRegistry, stateRef]);
 }

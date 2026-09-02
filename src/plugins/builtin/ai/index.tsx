@@ -8,11 +8,10 @@ import {
   setDetectedProviders,
   type AiProvider,
 } from "./providers";
-import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
-import { isHostedWebClient } from "./providers";
-import { registerByokKnownService } from "../byok/services";
-import { aiProviderByokService } from "../account-management/ai-providers";
-import { AiScreenerPane } from "./screener/pane";
+import {
+  AI_SCREENER_PANE_STATE_KEY,
+  AiScreenerPane,
+} from "./screener/pane";
 import { buildAiScreenerPaneSettingsDef, getAiScreenerPaneSettings } from "./settings";
 import {
   LOCAL_AGENT_WORKSPACE_SCHEMA_VERSION,
@@ -54,6 +53,7 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
+import { getPluginPaneStateValue } from "../../runtime";
 
 function settingOrFallback(
   settings: Record<string, unknown>,
@@ -251,6 +251,9 @@ export const aiPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 96, height: 32 },
+      portableShare: {
+        private: { title: true, params: true, settings: true, state: true },
+      },
       settings: (context) => {
         const providers = detectProviders();
         const workspaceProviders = providers.filter((provider) => (
@@ -319,6 +322,9 @@ export const aiPlugin: GloomPlugin = {
       defaultFloatingSize: { width: 76, height: 24 },
       tickerSource: true,
       quickSettings: [LIVE_STREAMING_QUICK_SETTING],
+      portableShare: {
+        private: { title: true, params: true, settings: true, state: true },
+      },
       settings: (context) => {
         const providers = detectProviders();
         const screenerProviders = providers.filter((provider) => (
@@ -330,7 +336,12 @@ export const aiPlugin: GloomPlugin = {
         const currentFallbackProviderId = resolveDefaultAiProviderId(screenerRunners);
         const defaults = defaultsFromConfig(context.config, currentFallbackProviderId);
         const providerIds = new Set(screenerProviders.map((provider) => provider.id));
-        const persisted = ctx.resume.getState<PersistedAiScreenerPaneState>(
+        const persisted = getPluginPaneStateValue<PersistedAiScreenerPaneState | null>(
+          context.paneState,
+          "ai",
+          AI_SCREENER_PANE_STATE_KEY,
+          null,
+        ) ?? ctx.resume.getState<PersistedAiScreenerPaneState>(
           `screener-pane:${context.paneId}`,
           { schemaVersion: 1 },
         ) ?? EMPTY_PANE_STATE;

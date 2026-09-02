@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
-import { useShortcut } from "../../../react/input";
-import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import {
   DataTableStackView,
   EmptyState,
@@ -15,17 +12,20 @@ import {
   type PaneFooterSegment,
 } from "../../../components";
 import { colors } from "../../../theme/colors";
-import { formatMoneyCompact } from "../../../utils/format";
+import type { PaneProps } from "../../../types/plugin";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatRelativeAge } from "../../../utils/relative-time";
-import type { PaneProps } from "../../../types/plugin";
+import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
+import { cycleSortPreference } from "../../../utils/sort-values";
 import { usePaneInstance } from "../../../state/app/context";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { useAutoRefresh } from "../shared/auto-refresh";
 import { loadTreasuryAuctions } from "./cache";
 import {
   AUCTION_FILTERS,
   auctionHistoryDays,
+  AUCTION_SORT_COLUMN_IDS,
   DEFAULT_AUCTION_SORT,
   buildAuctionColumns,
   indirectPct,
@@ -70,7 +70,7 @@ function formatPct(value: number | null): string {
 }
 
 function formatMoney(value: number | null): string {
-  return formatMoneyCompact(value);
+  return value == null ? "—" : `$${formatCompact(value)}`;
 }
 
 function secTypeColor(secType: string, selected: boolean): string {
@@ -100,6 +100,8 @@ function renderAuctionCell(
 
   switch (column.id) {
     case "date":
+      // Announced auctions have no results yet; every metric cell reads "—",
+      // so the date carries the distinction instead of a second placeholder.
       return {
         text: formatAuctionDate(auction.auctionDate),
         color: rowState.selected ? colors.selectedText : isPendingAuction(auction) ? colors.warning : colors.textDim,
@@ -149,12 +151,6 @@ function TreasuryAuctionDetail({ auction, width }: { auction: TreasuryAuction; w
           <Text fg={colors.textDim}>{formatAuctionDate(auction.auctionDate, true)}</Text>
           {isPendingAuction(auction) && <Text fg={colors.warning}>results pending</Text>}
         </Box>
-        {auction.cusip && (
-          <>
-            <Box height={1} />
-            <DetailRow label="CUSIP" value={auction.cusip} />
-          </>
-        )}
         <Box height={1} />
         <DetailRow label="High rate" value={formatRate(rateValue(auction))} />
         {auction.avgMedYield != null && (
@@ -220,8 +216,8 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
   }, [historyDays]);
 
   useEffect(() => { load(false); }, [load]);
+  // The cache decides whether a tick becomes a request; only [r] forces it.
   const refresh = useCallback(() => load(false), [load]);
-  const reload = useCallback(() => load(true), [load]);
   useAutoRefresh(stale ? null : fetchedAt, refresh);
 
   const rows = useMemo(
@@ -249,11 +245,17 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     setFilter((current) => nextFilter(current));
     setDetailOpen(false);
   }, []);
+  const cycleSort = useCallback((step: 1 | -1) => {
+    setSortPreference((current) => {
+      const next = cycleSortPreference<AuctionColumnId>(AUCTION_SORT_COLUMN_IDS, current, step);
+      return { columnId: next.columnId ?? DEFAULT_AUCTION_SORT.columnId, direction: next.direction };
+    });
+  }, []);
 
   const handlePaneKey = useCallback((event: DataTableKeyEvent): boolean => {
     if (isPlainKey(event, "r")) {
       stopSearchFocusNavigation(event);
-      reload();
+      load(true);
       return true;
     }
     if (isPlainKey(event, "f")) {
@@ -261,8 +263,13 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       cycleFilter();
       return true;
     }
+    if (isPlainKey(event, "]") || isPlainKey(event, "[")) {
+      stopSearchFocusNavigation(event);
+      cycleSort(event.name === "]" ? 1 : -1);
+      return true;
+    }
     return false;
-  }, [cycleFilter, reload]);
+  }, [cycleFilter, cycleSort, load]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -273,25 +280,13 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+    if (isPlainKey(event, "/")) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
     }
     return handlePaneKey(event);
   }, [focusSearch, handlePaneKey]);
-
-  useShortcut(
-    (event) => {
-      if (!focused || detailOpen || searchFocused) return;
-      if (event.name === "s" || event.name === "/") {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        focusSearch();
-      }
-    },
-    { enabled: focused && !detailOpen && !searchFocused },
-  );
 
   const columns = useMemo(() => buildAuctionColumns(width), [width]);
   const activeFilterLabel = AUCTION_FILTERS.find((entry) => entry.value === filter)?.label ?? "All";
@@ -300,7 +295,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     const info: PaneFooterSegment[] = [];
     if (status === "loading") info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (error) info.push({ id: "error", parts: [{ text: "error", tone: "warning" }] });
-    if (stale) info.push({ id: "stale", parts: [{ text: "stale", tone: "warning" }] });
+    if (stale) info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
     if (filter !== "all") info.push({ id: "filter", parts: [{ text: activeFilterLabel, tone: "value" }] });
     if (searchQuery.trim()) {
       info.push({ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" }] });
@@ -310,23 +305,22 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
     }
     return {
       info,
-      hints: [
-        ...(!detailOpen
-          ? [paneSearchHint(focusSearch)]
-          : []),
-        { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
-        paneRefreshHint(reload),
-      ],
+      hints: detailOpen || auctions.length === 0
+        ? []
+        : [
+          { id: "search", key: "/", label: "search", onPress: focusSearch },
+          { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+        ],
     };
   }, [
     activeFilterLabel,
+    auctions.length,
     cycleFilter,
     detailOpen,
     error,
     fetchedAt,
     filter,
     focusSearch,
-    reload,
     searchQuery,
     stale,
     status,
@@ -361,7 +355,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Treasury auctions unavailable." message={error} hint="Press r to retry." />
+          <EmptyState title="Treasury auctions unavailable." message={error} />
         </Box>
       </Box>
     );
@@ -384,7 +378,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
             width={width}
             focusToken={searchFocusToken}
             inputRef={searchInputRef}
-            placeholder="type, term, CUSIP, or date"
+            placeholder="type, term, or date"
             debounceMs={80}
             onFocus={focusSearch}
             onBlur={blurSearch}
@@ -416,7 +410,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         getItemKey={(auction) => auction.id}
         renderCell={(auction, column, _index, rowState) => renderAuctionCell(auction, column, rowState)}
         emptyStateTitle={searchQuery.trim() ? "No matching auctions." : "No recent auctions."}
-        emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press r to refresh."}
+        emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       />
     </Box>
   );

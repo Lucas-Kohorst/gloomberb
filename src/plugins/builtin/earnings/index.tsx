@@ -12,7 +12,9 @@ import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { useAutoRefresh } from "../shared/auto-refresh";
+import type { PaneSettingsContext, PaneSettingsDef } from "../../../types/plugin";
+import { formatTickerListInput as formatTickers } from "../../../tickers/list";
 import {
   attachEarningsCalendarPersistence,
   loadEarningsCalendar,
@@ -43,8 +45,10 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const { navigateTicker } = usePluginTickerActions();
   const pane = usePaneInstance();
   const [events, setEvents] = useState<EarningsEvent[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Starts loading so the first frame never claims there are no earnings.
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [selectedIdx, setSelectedIdx] = usePluginPaneState<number>("selectedIdx", 0);
   const [sortPreference, setSortPreference] = useState<SortPreference<EarningsColumnId>>({
@@ -107,6 +111,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     if (tickerSymbols.length === 0) {
       setEvents([]);
       setError(null);
+      setStale(false);
       setLoading(false);
       return;
     }
@@ -114,10 +119,12 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     setLoading(true);
     setError(null);
     loadEarningsCalendar(dataProvider, tickerSymbols, { force })
-      .then((data) => {
+      .then((result) => {
         if (requestId !== requestIdRef.current) return;
-        setEvents(data);
-        setLastUpdated(Date.now());
+        setEvents(result.events);
+        setStale(result.stale);
+        setError(result.refreshError ?? null);
+        setLastUpdated(result.fetchedAt);
       })
       .catch((err) => {
         if (requestId !== requestIdRef.current) return;
@@ -132,6 +139,10 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     reload(false);
   }, [reload]);
+
+  // The 30-minute cache decides whether a tick reaches the provider.
+  const refresh = useCallback(() => reload(false), [reload]);
+  useAutoRefresh(stale ? null : lastUpdated, refresh);
 
   useEffect(() => () => {
     requestIdRef.current += 1;
@@ -176,14 +187,11 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("earnings-calendar", () => ({
     info: [
+      ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: [
-      { id: "refresh", key: "r", label: "efresh", onPress: () => reload(true) },
-      { id: "search", key: "/", label: "earch", onPress: () => { setSearchFocused(true); setSearchFocusToken((value) => value + 1); } },
-    ],
-  }), [error, loading, reload]);
+  }), [error, loading, stale]);
 
   return (
     <DataTableView<EarningsDisplayRow, EarningsColumn>
@@ -232,6 +240,36 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   );
 }
 
+/** The monitor's scope lives in pane settings, so it has to be editable there too. */
+function earningsSettings(context: PaneSettingsContext): PaneSettingsDef {
+  const collections = [
+    ...context.config.portfolios.map((portfolio) => ({ value: portfolio.id, label: portfolio.name })),
+    ...context.config.watchlists.map((watchlist) => ({ value: watchlist.id, label: watchlist.name })),
+  ];
+  const symbols = scopedSymbolsFromSettings(context.settings);
+  return {
+    title: "Earnings Scope",
+    values: { symbolsText: symbols.length > 0 ? formatTickers(symbols) : "" },
+    fields: [
+      {
+        key: "symbolsText",
+        label: "Tickers",
+        description: "Leave empty to follow a collection instead.",
+        type: "text",
+        placeholder: "AAPL, MSFT",
+        clearOnChange: ["symbols"],
+      },
+      ...(collections.length > 0 ? [{
+        key: "collectionId",
+        label: "Collection",
+        description: "Used when no tickers are listed above.",
+        type: "select" as const,
+        options: [{ value: "", label: "All tracked tickers" }, ...collections],
+      }] : []),
+    ],
+  };
+}
+
 export const earningsModule: PluginModule = {
   setup(ctx) {
     attachEarningsCalendarPersistence(ctx.persistence);
@@ -268,10 +306,8 @@ export const earningsModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 85, height: 25 },
-      settings: {
-        title: "Earnings Calendar Settings",
-        fields: [buildColumnVisibilityField(EARNINGS_COLUMN_DEFS)],
-      },
+      tableExport: true,
+      settings: earningsSettings,
     },
   ],
 

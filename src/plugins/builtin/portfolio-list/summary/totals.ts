@@ -5,6 +5,7 @@ import { getActiveQuoteDisplay } from "../../../../market-data/market/status";
 import {
   getPortfolioPositionMetrics,
   resolveBrokerFallbackMarketValue,
+  resolveBrokerFallbackPnl,
   signedQuoteUnrealizedPnl,
 } from "../position-metrics";
 
@@ -61,29 +62,28 @@ export function calculatePortfolioSummaryTotals(
       hasPositions = true;
       const direction = totalPriceUnits >= 0 ? 1 : -1;
       const marketValue = Math.abs(totalPriceUnits) * activeQuote.price;
-      const baseMarketValue = toBaseQuote(marketValue);
       const previousClose = quote.previousClose || (activeQuote.price - activeQuote.change);
-      const basePrevValue = toBaseQuote(Math.abs(totalPriceUnits) * previousClose);
-      const baseCostBasis = toBasePosition(totalCost);
-      totalMktValue += baseMarketValue;
-      totalPrevValue += basePrevValue;
-      totalCostBasis += baseCostBasis;
-      signedDailyPnl += direction * (baseMarketValue - basePrevValue);
-      signedUnrealizedPnl += signedQuoteUnrealizedPnl(baseMarketValue, baseCostBasis, totalPriceUnits);
+      const previousValue = Math.abs(totalPriceUnits) * previousClose;
+      const convertedMarket = toBaseQuote(marketValue);
+      const convertedCost = toBasePosition(totalCost);
+      totalMktValue += convertedMarket;
+      totalPrevValue += toBaseQuote(previousValue);
+      totalCostBasis += convertedCost;
+      signedDailyPnl += toBaseQuote(totalPriceUnits * (activeQuote.price - previousClose));
+      signedUnrealizedPnl += signedQuoteUnrealizedPnl(convertedMarket, convertedCost, totalPriceUnits);
     } else if (brokerFallbackMktValue != null) {
       hasPositions = true;
-      const baseBrokerMktValue = toBasePosition(brokerFallbackMktValue);
-      const baseCostBasis = toBasePosition(totalCost);
-      totalMktValue += baseBrokerMktValue;
-      totalCostBasis += baseCostBasis;
-      totalPrevValue += baseBrokerMktValue;
-      signedUnrealizedPnl += signedQuoteUnrealizedPnl(baseBrokerMktValue, baseCostBasis, totalPriceUnits);
+      totalMktValue += toBasePosition(brokerFallbackMktValue);
+      totalCostBasis += toBasePosition(totalCost);
+      totalPrevValue += toBasePosition(brokerFallbackMktValue);
+      const brokerPnl = resolveBrokerFallbackPnl(positionMetrics, brokerFallbackMktValue);
+      if (brokerPnl != null) signedUnrealizedPnl += toBasePosition(brokerPnl);
     }
   }
 
   const dailyPnl = signedDailyPnl;
-  const unrealizedPnl = signedUnrealizedPnl;
   const dailyPnlPct = totalPrevValue !== 0 ? (dailyPnl / totalPrevValue) * 100 : 0;
+  const unrealizedPnl = signedUnrealizedPnl;
   const unrealizedPnlPct = totalCostBasis !== 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
   const avgWatchlistChange = watchlistCount > 0 ? watchlistChangeSum / watchlistCount : 0;
 

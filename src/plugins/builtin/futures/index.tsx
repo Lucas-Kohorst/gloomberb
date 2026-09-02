@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type InputRenderable } from "../../../ui";
 import {
   DataTableView,
   InputSearchBar,
@@ -8,175 +7,147 @@ import {
   type DataTableRootKeyContext,
   type PaneFooterSegment,
 } from "../../../components";
-import { buildColumnVisibilityField, resolveVisibleColumns } from "../../../components/data-table/column-settings";
-import { useShortcut } from "../../../react/input";
-import { usePaneInstance } from "../../../state/app/context";
+import { useAppSelector, usePaneInstance } from "../../../state/app/context";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
+import { type InputRenderable } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { usePluginTickerActions } from "../../runtime";
+import { cycleSortPreference } from "../../../utils/sort-values";
+import { useAssetData, usePluginTickerActions } from "../../runtime";
 import type { PluginModule } from "../plugin-module";
 import {
-  countFailedQuotes,
-  countLoadingQuotes,
-  latestQuoteTimestamp,
+  quoteBoardFooterInfo,
+  quoteBoardStatus,
   useQuoteBoard,
 } from "../shared/use-quote-board";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { useGraphChartPopOut } from "../shared/graph-pop-out";
-import { paneDelayedStatus, paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
+import { boardErrorMessage } from "../world-indices/footer";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
-  FUTURES_SECTOR_ORDER,
-  type FuturesContract,
-  type FuturesSector,
   getContractsBySector,
+  type FuturesSector,
 } from "./contracts";
 import {
   buildFuturesRows,
   DEFAULT_FUTURES_SORT,
+  effectiveCollapsedSectors,
+  futuresRowId,
   nextFuturesSort,
+  type FuturesColumnId,
   type FuturesSortPreference,
   type FuturesTableRow,
 } from "./model";
 import {
   createFuturesColumns,
-  DEFAULT_FUTURES_COLUMN_IDS,
   FUTURES_COLUMN_DEFS,
   renderFuturesCell,
+  resolveFuturesColumnIds,
+  usesSessionText,
   type FuturesColumn,
 } from "./table";
 
-const REFRESH_INTERVAL_MS = 60_000;
+export const FUTURES_PANE_ID = "futures";
+
 const FUTURES_SYMBOLS = FUTURES_CONTRACTS.map((contract) => contract.symbol);
-const COMM_COLLAPSE_SECTORS: FuturesSector[] = ["equity-index", "rates", "currencies"];
-
-function parseCollapsedSectors(raw: string | undefined): Set<FuturesSector> {
-  if (!raw?.trim()) return new Set();
-  const allowed = new Set<string>(FUTURES_SECTOR_ORDER);
-  const next = new Set<FuturesSector>();
-  for (const token of raw.split(",")) {
-    const sector = token.trim();
-    if (allowed.has(sector)) next.add(sector as FuturesSector);
-  }
-  return next;
-}
-
-function matchesFuturesSearch(contract: FuturesContract, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  return (
-    contract.code.toLowerCase().includes(normalized) ||
-    contract.name.toLowerCase().includes(normalized) ||
-    contract.symbol.toLowerCase().includes(normalized)
-  );
-}
 
 function FuturesPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
+  const dataProvider = useAssetData();
   const paneInstance = usePaneInstance();
-  const { quotes, refresh } = useQuoteBoard(FUTURES_SYMBOLS, REFRESH_INTERVAL_MS);
+  // One cadence, the one the user configured, instead of a private 60s timer.
+  const refreshIntervalMinutes = useAppSelector((state) => state.config.refreshIntervalMinutes);
+  const { quotes, refresh } = useQuoteBoard(
+    FUTURES_SYMBOLS,
+    Math.max(1, refreshIntervalMinutes || 1) * 60_000,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<FuturesSortPreference>(DEFAULT_FUTURES_SORT);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [collapsedSectors, setCollapsedSectors] = useState<Set<FuturesSector>>(
-    () => parseCollapsedSectors(paneInstance?.params?.collapse),
-  );
+  const [collapsedSectors, setCollapsedSectors] = useState<ReadonlySet<FuturesSector>>(new Set());
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const contractsBySector = useMemo(() => getContractsBySector(), []);
+  const visibleCollapsed = effectiveCollapsedSectors(collapsedSectors, searchQuery);
   const rows = useMemo(
     () => buildFuturesRows(contractsBySector, sortPreference, quotes, {
-      filter: (contract) => matchesFuturesSearch(contract, searchQuery),
+      query: searchQuery,
       collapsed: collapsedSectors,
     }),
-    [contractsBySector, quotes, sortPreference, searchQuery, collapsedSectors],
+    [collapsedSectors, contractsBySector, quotes, searchQuery, sortPreference],
   );
 
+  const visibleColumnIds = useMemo(
+    () => resolveFuturesColumnIds(paneInstance?.settings?.columnIds as string[] | undefined),
+    [paneInstance?.settings?.columnIds],
+  );
   const columns = useMemo<FuturesColumn[]>(
-    () => resolveVisibleColumns(
-      createFuturesColumns(width),
-      paneInstance?.settings?.columnIds,
-      DEFAULT_FUTURES_COLUMN_IDS,
-    ),
-    [paneInstance?.settings?.columnIds, width],
+    () => createFuturesColumns(width, visibleColumnIds),
+    [visibleColumnIds, width],
   );
 
+  const sessionText = usesSessionText(width);
   const renderCell = useCallback((
     row: FuturesTableRow,
     column: FuturesColumn,
     _index: number,
     rowState: { selected: boolean },
-  ) => renderFuturesCell(row, column, rowState, quotes), [quotes]);
+  ) => renderFuturesCell(row, column, rowState, quotes, { sessionText }), [quotes, sessionText]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
     setSearchFocusToken((current) => current + 1);
   }, []);
-  const blurSearch = useCallback(() => {
-    setSearchFocused(false);
-  }, []);
+  const blurSearch = useCallback(() => setSearchFocused(false), []);
 
   const toggleSector = useCallback((sector: FuturesSector) => {
     setCollapsedSectors((current) => {
       const next = new Set(current);
-      if (next.has(sector)) {
-        next.delete(sector);
-      } else {
-        next.add(sector);
-      }
+      if (next.has(sector)) next.delete(sector);
+      else next.add(sector);
       return next;
     });
   }, []);
 
-  const selectedRow = useMemo(() => {
-    return rows.find((row) => {
-      if (row.type === "header") return `header-${row.sector}` === selectedId;
-      return row.contract.symbol === selectedId;
-    }) ?? null;
-  }, [rows, selectedId]);
+  const cycleSort = useCallback((step: 1 | -1) => {
+    setSortPreference((current) => cycleSortPreference<FuturesColumnId>(
+      visibleColumnIds,
+      current,
+      step,
+      { allowUnsorted: true },
+    ));
+  }, [visibleColumnIds]);
 
   useEffect(() => {
     if (rows.length === 0) {
       if (selectedId !== null) setSelectedId(null);
       return;
     }
-    if (!selectedId || !rows.some((row) => (row.type === "header" ? `header-${row.sector}` : row.contract.symbol) === selectedId)) {
-      const firstNavigable = rows.find((row) => row.type === "row") ?? rows[0] ?? null;
-      setSelectedId(firstNavigable ? (firstNavigable.type === "header" ? `header-${firstNavigable.sector}` : firstNavigable.contract.symbol) : null);
-    }
+    if (selectedId && rows.some((row) => futuresRowId(row) === selectedId)) return;
+    const firstNavigable = rows.find((row) => row.type === "row") ?? rows[0];
+    setSelectedId(firstNavigable ? futuresRowId(firstNavigable) : null);
   }, [rows, selectedId]);
 
-  useShortcut((event) => {
-    if (!focused || !isPlainKey(event, "r") || searchFocused) return;
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    refresh();
-  }, { enabled: focused && !searchFocused });
-
-  const popOutChart = useGraphChartPopOut();
-  const graphSelected = useCallback(() => {
-    if (!selectedRow || selectedRow.type !== "row") return;
-    popOutChart(`FUT:${selectedRow.contract.code}`);
-  }, [popOutChart, selectedRow]);
-
-  useShortcut((event) => {
-    if (!focused || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
+  const handlePaneKey = useCallback((event: DataTableKeyEvent): boolean => {
+    if (isPlainKey(event, "r")) {
+      stopSearchFocusNavigation(event);
+      refresh();
+      return true;
+    }
+    if (isPlainKey(event, "/")) {
+      stopSearchFocusNavigation(event);
       focusSearch();
+      return true;
     }
-    if (event.name === "g") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      graphSelected();
+    if (isPlainKey(event, "]") || isPlainKey(event, "[")) {
+      stopSearchFocusNavigation(event);
+      cycleSort(event.name === "]" ? 1 : -1);
+      return true;
     }
-  }, { enabled: focused && !searchFocused });
+    return false;
+  }, [cycleSort, focusSearch, refresh]);
 
   const handleRootKeyDown = useCallback((
     event: DataTableKeyEvent,
@@ -187,53 +158,30 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      focusSearch();
-      return true;
-    }
-    if (event.name === "g") {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      graphSelected();
-      return true;
-    }
-    return false;
-  }, [focusSearch, graphSelected]);
+    return handlePaneKey(event);
+  }, [focusSearch, handlePaneKey]);
 
-  const loadingCount = countLoadingQuotes(quotes);
-  const failedCount = countFailedQuotes(quotes);
-  const latestTs = latestQuoteTimestamp(quotes);
-  useAutoRefresh(latestTs || null, refresh);
-  usePaneFooter("futures", () => {
-    const info: PaneFooterSegment[] = [];
-    if (loadingCount > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
-    if (failedCount > 0) {
-      info.push({ id: "error", parts: [{ text: `${failedCount} failed`, tone: "warning" }] });
-    }
-    if (latestTs > 0) {
-      info.push(paneDelayedStatus());
-      info.push({
-        id: "fresh",
-        parts: [{
-          text: new Date(latestTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          tone: "muted",
-        }],
-      });
-    }
+  const status = quoteBoardStatus(quotes);
+  const errorMessage = boardErrorMessage(quotes);
+  usePaneFooter(FUTURES_PANE_ID, () => {
+    const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);
+    if (errorMessage) info.push({ id: "reason", parts: [{ text: errorMessage, tone: "warning" }] });
     if (searchQuery.trim()) {
       info.push({ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" }] });
     }
     return {
       info,
-      hints: [
-        { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !(selectedRow && selectedRow.type === "row") },
-        paneSearchHint(focusSearch),
-        paneRefreshHint(refresh),
-      ],
+      hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
     };
-  }, [failedCount, focusSearch, graphSelected, latestTs, loadingCount, refresh, searchQuery, selectedRow]);
+  }, [
+    errorMessage,
+    focusSearch,
+    searchQuery,
+    status.latestTs,
+    status.loading,
+    status.stale,
+    status.unavailable,
+  ]);
 
   return (
     <DataTableView<FuturesTableRow, FuturesColumn>
@@ -241,7 +189,7 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       selection={{
         kind: "id",
         selectedId,
-        getId: (row) => row.type === "row" ? row.contract.symbol : `header-${row.sector}`,
+        getId: (row) => futuresRowId(row),
         onChange: (id) => setSelectedId(id),
       }}
       isNavigable={() => true}
@@ -255,26 +203,22 @@ function FuturesPane({ focused, width, height }: PaneProps) {
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={rows}
+      items={dataProvider ? rows : []}
       sortColumnId={sortPreference.columnId}
       sortDirection={sortPreference.direction}
       onHeaderClick={(columnId) => setSortPreference((current) => nextFuturesSort(current, columnId))}
-      getItemKey={(row) => row.type === "header" ? `header-${row.sector}` : row.contract.symbol}
-      getRowRevision={(row) => {
-        if (row.type === "header") return `header-${row.sector}`;
-        const state = quotes.get(row.contract.symbol);
-        const quote = state?.quote;
-        return `${row.contract.symbol}:${quote?.price ?? ""}:${quote?.changePercent ?? ""}:${quote?.lastUpdated ?? ""}:${state?.loading ? 1 : 0}`;
-      }}
+      getItemKey={(row) => futuresRowId(row)}
       renderSectionHeader={(row) => row.type === "header"
         ? {
-            text: `${collapsedSectors.has(row.sector) ? "▶" : "▼"} ${FUTURES_SECTOR_LABELS[row.sector]}`,
-            onMouseDown: () => toggleSector(row.sector),
-          }
+          text: `${visibleCollapsed.has(row.sector) ? "▶" : "▼"} ${FUTURES_SECTOR_LABELS[row.sector]}`,
+          onMouseDown: () => toggleSector(row.sector),
+        }
         : null}
       renderCell={renderCell}
-      emptyStateTitle={searchQuery.trim() ? "No matching contracts." : "No contracts configured."}
-      emptyStateHint={searchQuery.trim() ? "Clear search or press r to refresh." : "Press [/] to search."}
+      emptyStateTitle={searchQuery.trim()
+        ? "No matching contracts."
+        : "No market data provider connected."}
+      emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       rootBefore={(
         <InputSearchBar
           value={searchQuery}
@@ -299,27 +243,42 @@ function FuturesPane({ focused, width, height }: PaneProps) {
 export const futuresModule: PluginModule = {
   panes: [
     {
-      id: "futures",
+      id: FUTURES_PANE_ID,
       name: "Futures",
       icon: "F",
       component: FuturesPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 76, height: 34 },
-      settings: {
+      tableExport: true,
+      // Resolved per open so the dialog shows the full default set until the
+      // user saves a narrower selection.
+      settings: (context) => ({
         title: "Futures Settings",
-        fields: [buildColumnVisibilityField(FUTURES_COLUMN_DEFS)],
-      },
+        values: {
+          columnIds: resolveFuturesColumnIds(context.settings.columnIds as string[] | undefined),
+        },
+        fields: [{
+          key: "columnIds",
+          label: "Columns",
+          type: "ordered-multi-select",
+          options: FUTURES_COLUMN_DEFS.map((column) => ({
+            value: column.id,
+            label: column.label,
+            description: column.description,
+          })),
+        }],
+      }),
     },
   ],
 
   paneTemplates: [
     {
       id: "futures-pane",
-      paneId: "futures",
+      paneId: FUTURES_PANE_ID,
       label: "Futures Board",
       description:
-        "Front-month futures across equity index, rates, energy, metals, agriculture, and FX, with last price, session change, and sortable columns. Search by ticker or name and expand/collapse sectors.",
+        "Front-month futures across equity index, rates, energy, metals, agriculture, and FX with last price, session change, search, and collapsible sectors.",
       keywords: [
         "futures",
         "commodities",
@@ -328,49 +287,13 @@ export const futuresModule: PluginModule = {
         "gold",
         "silver",
         "copper",
-        "palladium",
         "corn",
         "wheat",
-        "cotton",
-        "cocoa",
         "treasuries",
         "contracts",
         "cme",
       ],
       shortcut: { prefix: "FUT" },
-    },
-    {
-      id: "commodities-pane",
-      paneId: "futures",
-      label: "Commodities",
-      description:
-        "Delayed Yahoo commodities board: energy, metals, and agriculture front-month prices (oil, gas, gold, copper, grains, and softs). Same FUT quotes; equity-index, rates, and FX start collapsed.",
-      keywords: [
-        "commodities",
-        "oil",
-        "crude",
-        "brent",
-        "wti",
-        "gold",
-        "silver",
-        "copper",
-        "palladium",
-        "wheat",
-        "corn",
-        "soy",
-        "cotton",
-        "cocoa",
-        "natgas",
-        "metals",
-        "agriculture",
-        "delayed",
-      ],
-      category: "Data",
-      shortcut: { prefix: "COMM" },
-      createInstance: () => ({
-        placement: "floating",
-        params: { collapse: COMM_COLLAPSE_SECTORS.join(",") },
-      }),
     },
   ],
 };

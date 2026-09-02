@@ -307,7 +307,7 @@ export function ChannelSidebar({
                 </PaneSidebarRow>
               );
             })}
-            </PaneSidebarList>
+            <Box flexGrow={1} />
             {needsProfileSetup && (
               <PaneSidebarRow
                 active={false}

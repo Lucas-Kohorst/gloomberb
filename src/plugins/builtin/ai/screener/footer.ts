@@ -81,13 +81,6 @@ export function useAiScreenerFooter({
               onPress: onAddTab,
             },
             {
-              id: "refresh",
-              key: "r",
-              label: t("efresh"),
-              onPress: onRefresh,
-              disabled: !activeTab,
-            },
-            {
               id: "edit",
               key: "e",
               label: t("dit"),

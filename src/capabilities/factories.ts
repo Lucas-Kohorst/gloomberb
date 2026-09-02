@@ -1,8 +1,17 @@
 import type { AssetDataProvider } from "../types/data-provider";
 import type { NewsDataProvider } from "../types/capability-route-source";
+import {
+  chartSeriesCatalogOutputSchema,
+  chartSeriesCatalogRequestSchema,
+  chartSeriesResolveOutputSchema,
+  chartSeriesResolveRequestSchema,
+  isValidChartCapabilityId,
+} from "./chart-series";
 import type {
   AssetDataCapability,
   CapabilityOperation,
+  ChartSeriesCapability,
+  ChartSeriesProvider,
   NewsCapability,
 } from "./types";
 
@@ -80,6 +89,43 @@ export function assetDataProvider(provider: AssetDataProvider): AssetDataCapabil
         if (!provider.subscribeQuotes) throw new Error(`${provider.name} does not provide quote streaming.`);
         return provider.subscribeQuotes(input.targets ?? [], (target, quote) => emit({ target, quote }));
       }),
+    },
+  };
+}
+
+export function chartSeriesProvider(options: {
+  id: string;
+  name: string;
+  priority?: number;
+  provider: ChartSeriesProvider;
+}): ChartSeriesCapability {
+  if (!isValidChartCapabilityId(options.id)) {
+    throw new Error(`Invalid chart series capability ID "${options.id}".`);
+  }
+  return {
+    id: options.id,
+    kind: "chart-series",
+    name: options.name,
+    priority: options.priority,
+    provider: options.provider,
+    operations: {
+      catalog: {
+        ...op((input: any, ctx) => options.provider.catalog?.({ ...input, signal: ctx.signal }) ?? [], "query"),
+        input: chartSeriesCatalogRequestSchema,
+        output: chartSeriesCatalogOutputSchema,
+      },
+      search: {
+        ...op((input: any, ctx) => options.provider.search?.({ ...input, signal: ctx.signal })
+          ?? options.provider.catalog?.({ ...input, signal: ctx.signal })
+          ?? [], "query"),
+        input: chartSeriesCatalogRequestSchema,
+        output: chartSeriesCatalogOutputSchema,
+      },
+      resolve: {
+        ...op((input: any, ctx) => options.provider.resolve({ ...input, signal: ctx.signal }), "query"),
+        input: chartSeriesResolveRequestSchema,
+        output: chartSeriesResolveOutputSchema,
+      },
     },
   };
 }

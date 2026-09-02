@@ -3,11 +3,13 @@ import type { InstrumentSearchResult } from "../types/instrument";
 import { CloudAuthApi } from "./auth";
 import { CloudChatApi } from "./chat";
 import { CloudDataApi } from "./data";
+import { ApiRequestError } from "./errors";
 import { CloudApiRequestTransport } from "./request";
 import { CloudApiSocket } from "./socket";
 import type {
   CloudCdsParams,
   CloudCongressHouseParams,
+  CloudEarningsCallsParams,
   CloudFredSeriesParams,
   CloudSecFilingParams,
   CloudSecFilingsParams,
@@ -39,6 +41,7 @@ import type {
   CloudFundamentals,
   CloudHoldersPayload,
   CloudAnalystResearchPayload,
+  CloudShortInterestPayload,
   CloudBrowserHandoffResponse,
   CloudCorporateActionsPayload,
   CloudPricePointPayload,
@@ -49,6 +52,8 @@ import type {
   CloudFredSeriesPayload,
   CloudYieldPointPayload,
   CloudCongressHousePayload,
+  CloudEarningsCallListPayload,
+  CloudEarningsTranscriptPayload,
   CloudNewsPayload,
   CloudSecContentResponse,
   CloudSecDocumentsResponse,
@@ -72,6 +77,13 @@ import type {
   ScannerKind,
 } from "./types";
 import type { SyncSettings, SyncSnapshot } from "../sync/types";
+import {
+  isMarketplaceLayoutId,
+  parseMarketplaceLayoutEntry,
+  parseMarketplaceLayoutList,
+  type LayoutMarketplaceEntry,
+  type LayoutMarketplacePayload,
+} from "../layout-marketplace/payload";
 
 export type * from "./types";
 export { setCloudApiFetchTransport } from "./request";
@@ -97,6 +109,7 @@ class GloomApiClient {
     this.auth = new CloudAuthApi({
       getCurrentUser: () => this.currentUser,
       getSessionToken: () => this.transport.getSessionToken(),
+      hasSessionCredential: () => this.transport.hasSessionCredential(),
       request: (path, options) => this.request(path, options),
       requireCapturedSession: (message) => this.requireCapturedSession(message),
       setCurrentUser: (user) => this.setCurrentUser(user),
@@ -106,7 +119,7 @@ class GloomApiClient {
     this.socket = new CloudApiSocket({
       getBaseUrl: () => this.transport.getSocketBaseUrl(),
       getSocketAuthToken: () => this.getSocketAuthToken(),
-      isCookieAuthenticated: () => this.transport.isHostedSocket(),
+      hasSessionCredential: () => this.transport.hasSessionCredential(),
       hasVerifiedUser: () => this.currentUser?.emailVerified === true,
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
@@ -135,6 +148,11 @@ class GloomApiClient {
 
   getWebSocketToken(): string | null {
     return this.transport.getWebSocketToken();
+  }
+
+  setCookieSessionMode(enabled: boolean): void {
+    this.sessionChecked = false;
+    this.transport.setCookieSessionMode(enabled);
   }
 
   setSessionToken(token: string | null): void {
@@ -168,6 +186,15 @@ class GloomApiClient {
     return this.currentUser;
   }
 
+  /**
+   * Whether a signed-in session exists on this surface. Browser builds keep the
+   * session in an HttpOnly cookie, so the raw token is deliberately null there
+   * and the restored user is the only signal.
+   */
+  isSignedIn(): boolean {
+    return !!this.transport.getSessionToken() || !!this.currentUser;
+  }
+
   /** Notifies when the signed-in user changes, including plan and trial entitlement. */
   subscribeCurrentUser(listener: () => void): () => void {
     this.currentUserListeners.add(listener);
@@ -181,7 +208,7 @@ class GloomApiClient {
   }
 
   isVerified(): boolean {
-    return !!this.transport.getSessionToken() && !!this.currentUser?.emailVerified;
+    return this.transport.hasSessionCredential() && !!this.currentUser?.emailVerified;
   }
 
   private setCurrentUser(user: AuthUser | null): void {
@@ -212,7 +239,7 @@ class GloomApiClient {
   }
 
   private requireCapturedSession(message: string): void {
-    if (this.transport.getSessionToken()) return;
+    if (this.transport.hasSessionCredential()) return;
     this.transport.setWebSocketToken(null);
     this.setCurrentUser(null);
     throw new Error(message);
@@ -227,7 +254,7 @@ class GloomApiClient {
   }
 
   async ensureVerifiedSession(): Promise<AuthUser | null> {
-    if (!this.transport.getSessionToken()) return null;
+    if (!this.transport.hasSessionCredential()) return null;
     if (!this.currentUser && !this.sessionChecked) await this.getSession();
     return this.currentUser?.emailVerified ? this.currentUser : null;
   }
@@ -268,8 +295,30 @@ class GloomApiClient {
     return this.auth.sendVerification();
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    return this.auth.requestPasswordReset(email);
+  }
+
   async createBrowserHandoff(): Promise<CloudBrowserHandoffResponse> {
     return this.auth.createBrowserHandoff();
+  }
+
+  /** Creates a Stripe checkout session for Cloud Pro; the URL opens in a browser. */
+  async createCloudCheckout(): Promise<{ url: string }> {
+    return this.request<{ url: string }>("/stripe/checkout", { method: "POST", body: JSON.stringify({}) });
+  }
+
+  /** Stores a verified user's public terminal snapshot or pane handoff. */
+  async createTerminalShare(payload: unknown): Promise<{ id: string; expiresAt: string }> {
+    return this.request<{ id: string; expiresAt: string }>("/shares", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Stripe billing portal for an account that already has a subscription. */
+  async createBillingPortal(): Promise<{ url: string }> {
+    return this.request<{ url: string }>("/stripe/portal", { method: "POST", body: JSON.stringify({}) });
   }
 
   async getAccountProfile(): Promise<AccountProfile> {
@@ -304,6 +353,45 @@ class GloomApiClient {
         baseRevision: options?.baseRevision ?? null,
       }),
     });
+  }
+
+  async getMarketplaceLayout(
+    id: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<LayoutMarketplaceEntry | null> {
+    if (!isMarketplaceLayoutId(id)) return null;
+    try {
+      return parseMarketplaceLayoutEntry(await this.request<unknown>(`/layouts/${encodeURIComponent(id)}`, {
+        method: "GET",
+        signal: options?.signal,
+      }));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listMarketplaceLayouts(options?: { signal?: AbortSignal }): Promise<LayoutMarketplaceEntry[]> {
+    const items = parseMarketplaceLayoutList(await this.request<unknown>("/layouts", {
+      method: "GET",
+      signal: options?.signal,
+    }));
+    if (!items) throw new Error("The layout marketplace returned invalid data.");
+    return items;
+  }
+
+  async publishMarketplaceLayout(
+    name: string,
+    payload: LayoutMarketplacePayload,
+    options?: { signal?: AbortSignal },
+  ): Promise<LayoutMarketplaceEntry> {
+    const item = parseMarketplaceLayoutEntry(await this.request<unknown>("/layouts", {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim(), ...payload }),
+      signal: options?.signal,
+    }));
+    if (!item) throw new Error("The layout marketplace returned invalid data.");
+    return item;
   }
 
   async updateSyncSettings(update: Partial<SyncSettings>): Promise<SyncSettings> {
@@ -516,6 +604,10 @@ class GloomApiClient {
     return this.data.getCloudHolders(symbol, exchange);
   }
 
+  async getCloudShortInterest(symbol: string, years?: number): Promise<CloudMarketResponse<CloudShortInterestPayload>> {
+    return this.data.getCloudShortInterest(symbol, years);
+  }
+
   async getCloudAnalystResearch(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudAnalystResearchPayload>> {
     return this.data.getCloudAnalystResearch(symbol, exchange);
   }
@@ -556,6 +648,14 @@ class GloomApiClient {
     return this.data.getCloudEconomicCalendar();
   }
 
+  async getCloudEquityDiagnostic(
+    symbol: string,
+    exchange?: string,
+    mode: CloudEquityDiagnosticMode = "cache-first",
+  ): Promise<CloudEquityDiagnosticResult> {
+    return this.data.getCloudEquityDiagnostic(symbol, exchange, mode);
+  }
+
   async getCloudFredSeries(
     seriesId: string,
     params: CloudFredSeriesParams = {},
@@ -573,6 +673,16 @@ class GloomApiClient {
 
   async getCloudCongressHouse(params: CloudCongressHouseParams = {}): Promise<CloudCongressHousePayload> {
     return this.data.getCloudCongressHouse(params);
+  }
+
+  async getCloudEarningsCalls(
+    params: CloudEarningsCallsParams = {},
+  ): Promise<CloudEarningsCallListPayload> {
+    return this.data.getCloudEarningsCalls(params);
+  }
+
+  async getCloudEarningsTranscript(id: string): Promise<CloudEarningsTranscriptPayload> {
+    return this.data.getCloudEarningsTranscript(id);
   }
 
   async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {

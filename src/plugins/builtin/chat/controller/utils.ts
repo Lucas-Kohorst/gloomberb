@@ -45,7 +45,7 @@ export function formatReplyToast(message: ChatMessage): string {
 
 export function formatChannelToast(message: ChatMessage, direct = false): string {
   const author = message.user.username || t("Someone");
-  const snippet = formatChatMessageSnippet(message.content);
+  const snippet = formatMessageSnippet(message.content);
   if (direct && snippet) return snippet;
   return snippet ? `@${author}: ${snippet}` : tf("@{author} sent a message.", { author });
 }

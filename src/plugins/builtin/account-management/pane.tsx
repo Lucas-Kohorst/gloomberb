@@ -396,7 +396,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   const cachedFinancials = useAppSelector((state) => state.financials);
   const cachedExchangeRates = useAppSelector((state) => state.exchangeRates);
   const [sessionMarker, setSessionMarker] = useState(() => buildAccountSessionMarker());
-  const [hasSession, setHasSession] = useState(() => !!apiClient.getSessionToken());
+  const [hasSession, setHasSession] = useState(() => apiClient.isSignedIn());
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [pricing, setPricing] = useState<CloudPricing | null>(null);
   const [storedDraft, setStoredDraft] = usePluginConfigState<AccountDraft | null>(
@@ -455,9 +455,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     () => portfolios.find((portfolio) => portfolio.id === draft.sharedPortfolioId) ?? null,
     [draft.sharedPortfolioId, portfolios],
   );
+  // Only the Profile tab renders the shared-portfolio preview, so the quote,
+  // FX, and chart requests below stay off on every other tab.
   const portfolioTickers = useMemo(
-    () => draft.sharedPortfolioId ? getPortfolioPositionTickers(tickers, draft.sharedPortfolioId) : [],
-    [draft.sharedPortfolioId, tickers],
+    () => activeTab === "profile" && draft.sharedPortfolioId
+      ? getPortfolioPositionTickers(tickers, draft.sharedPortfolioId)
+      : [],
+    [activeTab, draft.sharedPortfolioId, tickers],
   );
   const marketFinancials = useTickerFinancialsMap(portfolioTickers);
   const financials = useMemo(
@@ -504,7 +508,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
       chartEntries,
       financials,
       columnContext,
-    }),
+    }).returns,
     [chartEntries, chartTargets, columnContext, financials],
   );
   const spyReturnSeries = useMemo(
@@ -538,10 +542,13 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   );
   useEffect(() => {
     const portfolioId = selectedAnalyticsPortfolio?.id;
-    if (!portfolioId) return;
+    // Off the Profile tab the preview is computed from no holdings, so publishing
+    // it would overwrite real analytics with blanks.
+    if (!portfolioId || activeTab !== "profile") return;
     const changed = setSyncedProfileAnalytics(portfolioId, localAnalyticsPreview.publicAnalytics);
     if (changed) cloudSyncController.schedulePush("profile-analytics");
   }, [
+    activeTab,
     localAnalyticsPreview.publicAnalytics?.oneYearReturn,
     localAnalyticsPreview.publicAnalytics?.spyBeta,
     selectedAnalyticsPortfolio?.id,
@@ -589,7 +596,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
 
   useEffect(() => {
     const unsubscribe = chatController.subscribe((snapshot) => {
-      setHasSession(!!apiClient.getSessionToken() || snapshot.hasSavedSession);
+      setHasSession(apiClient.isSignedIn() || snapshot.hasSavedSession);
       setSessionMarker(buildAccountSessionMarker());
     });
     void chatController.refreshSession().catch(() => {});
@@ -597,7 +604,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const loadProfile = useCallback(async () => {
-    if (!apiClient.getSessionToken()) {
+    if (!apiClient.isSignedIn()) {
       setProfile(null);
       setDraft(profileToDraft(null));
       setStoredDraft(null);
@@ -638,7 +645,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    if (!hasSession || !apiClient.getSessionToken()) return;
+    if (!hasSession || !apiClient.isSignedIn()) return;
     if (syncStatus.phase !== "synced" || syncStatus.revision == null) return;
     if (refreshedSyncRevisionRef.current === syncStatus.revision) return;
     refreshedSyncRevisionRef.current = syncStatus.revision;
@@ -906,7 +913,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
     turnOffEmailAlerts,
   });
 
-  if (!hasSession && !apiClient.getSessionToken() && activeTab !== "ai" && activeTab !== "display") {
+  if (!hasSession && !apiClient.isSignedIn()) {
     return (
       <Box flexDirection="column" width={width} height={height} paddingX={1} gap={1}>
         <Tabs

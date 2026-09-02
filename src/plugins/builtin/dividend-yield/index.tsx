@@ -1,9 +1,26 @@
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import {
+  attachDividendYieldHealth,
+  resetDividendYieldHealth,
+  YAHOO_DIVIDENDS_CONNECTION_ID,
+} from "./client";
 import { DividendYieldPane } from "./pane";
+
+let disposeConnection: (() => void) | null = null;
 
 export const dividendYieldModule: PluginModule = {
   setup(ctx) {
+    attachDividendYieldHealth(ctx.connectionHealth);
+    disposeConnection = ctx.connectionHealth.registerSource({
+      id: YAHOO_DIVIDENDS_CONNECTION_ID,
+      name: "Yahoo Finance Dividends",
+      kind: "api",
+      ownerId: "ticker-research",
+      detail: "finance.yahoo.com",
+      priority: 300,
+    });
+
     ctx.registerTickerResearchTab({
       id: "dividend-yield",
       name: "Dividends",
@@ -11,6 +28,12 @@ export const dividendYieldModule: PluginModule = {
       component: DividendYieldPane,
       isVisible: ({ ticker }) => !!ticker,
     });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+    resetDividendYieldHealth();
   },
 
   panes: [
@@ -22,6 +45,7 @@ export const dividendYieldModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 28 },
+      tableExport: true,
     },
   ],
 

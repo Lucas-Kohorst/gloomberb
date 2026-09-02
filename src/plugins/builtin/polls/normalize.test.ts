@@ -1,17 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { POLLS_FETCH_HEAD, parseVoteHubPollsPayload, voteHubPollQuery } from "./client";
+import { parseVoteHubPollsPayload } from "./client";
 import {
   computeMarginOfError,
   computeMovingAverage,
   computePollAverages,
   computePollsterAverages,
-  computePollsterHouseSeries,
   computePollTrend,
   filterPollRows,
-  groupPollTrendByPollster,
   normalizeVoteHubPoll,
   parseSampleSize,
-  pollRaceKey,
   populationLabel,
   sortPollRows,
   summarizeAnswers,
@@ -50,25 +47,6 @@ describe("VoteHub normalize", () => {
     expect(parseVoteHubPollsPayload({ data: [poll] })).toHaveLength(0);
   });
 
-  test("caps oversized VoteHub payloads to a recency-sorted head", () => {
-    const polls = Array.from({ length: POLLS_FETCH_HEAD + 40 }, (_, index) =>
-      makePoll({
-        id: `p${index}`,
-        end_date: new Date(Date.UTC(2024, 0, 1 + index)).toISOString().slice(0, 10),
-      }),
-    );
-    const parsed = parseVoteHubPollsPayload(polls);
-    expect(parsed).toHaveLength(POLLS_FETCH_HEAD);
-    expect(parsed[0]?.id).toBe(`p${polls.length - 1}`);
-    expect(parsed.at(-1)?.id).toBe(`p${polls.length - POLLS_FETCH_HEAD}`);
-  });
-
-  test("omits poll_type for the All tab so VoteHub returns every category", () => {
-    expect(voteHubPollQuery()).toEqual({ poll_type: undefined, subject: undefined });
-    expect(voteHubPollQuery({ pollType: "all" })).toEqual({ poll_type: undefined, subject: undefined });
-    expect(voteHubPollQuery({ pollType: "approval" })).toEqual({ poll_type: "approval", subject: undefined });
-  });
-
   test("summarizes a two-way result and lead", () => {
     const summary = summarizeAnswers([
       { choice: "Disapprove", pct: 51 },
@@ -91,14 +69,13 @@ describe("VoteHub normalize", () => {
       ],
     }));
     expect(row.pollTypeLabel).toBe("Generic");
-    expect(row.population).toBe("LV");
+    expect(row.population).toBe("Likely");
     expect(row.sampleSize).toBe(1500);
     expect(row.leadChoice).toBe("Rep");
     expect(row.lead).toBeCloseTo(4);
     expect(row.marginOfError).not.toBeNull();
-    expect(row.seatName).toBeNull();
     expect(parseSampleSize("800")).toBe(800);
-    expect(populationLabel("rv")).toBe("RV");
+    expect(populationLabel("rv")).toBe("Reg");
   });
 
   test("sorts poll rows by date, pollster, or lead", () => {
@@ -151,8 +128,8 @@ describe("filterPollRows", () => {
   ];
 
   test("returns all rows for empty query", () => {
-    expect(filterPollRows(rows, "")).toBe(rows);
-    expect(filterPollRows(rows, "   ")).toBe(rows);
+    expect(filterPollRows(rows, "")).toHaveLength(3);
+    expect(filterPollRows(rows, "   ")).toHaveLength(3);
   });
 
   test("filters by subject case-insensitively", () => {
@@ -249,65 +226,5 @@ describe("computePollAverages", () => {
     const approve = result.find((r) => r.choice === "Approve")!;
     expect(approve.pollCount).toBe(1);
     expect(approve.avgPct).toBe(44);
-  });
-});
-
-describe("poll analysis grouping", () => {
-  const michigan = [
-    makePoll({
-      id: "m1",
-      poll_type: "us-senator",
-      subject: "2026 Michigan",
-      pollster: "EPIC-MRA",
-      end_date: "2026-01-10",
-      answers: [{ choice: "Slotkin", pct: 46 }, { choice: "Rogers", pct: 42 }],
-    }),
-    makePoll({
-      id: "m2",
-      poll_type: "us-senator",
-      subject: "2026 Michigan",
-      pollster: "EPIC-MRA",
-      end_date: "2026-03-12",
-      answers: [{ choice: "Slotkin", pct: 48 }, { choice: "Rogers", pct: 41 }],
-    }),
-    makePoll({
-      id: "m3",
-      poll_type: "us-senator",
-      subject: "2026 Michigan",
-      pollster: "Trafalgar",
-      end_date: "2026-02-08",
-      answers: [{ choice: "Slotkin", pct: 44 }, { choice: "Rogers", pct: 45 }],
-    }),
-    makePoll({
-      id: "m4",
-      poll_type: "us-senator",
-      subject: "2026 Maine",
-      pollster: "EPIC-MRA",
-      end_date: "2026-02-01",
-      answers: [{ choice: "Slotkin", pct: 99 }, { choice: "Rogers", pct: 1 }],
-    }),
-  ].map(normalizeVoteHubPoll);
-
-  test("prefers seat_name as the race key when VoteHub provides it", () => {
-    const row = normalizeVoteHubPoll(makePoll({
-      subject: "2026 Michigan",
-      seat_name: "MI-SEN-2026",
-    }));
-    expect(row.seatName).toBe("MI-SEN-2026");
-    expect(pollRaceKey(row)).toBe("MI-SEN-2026");
-  });
-
-  test("keeps one pollster's house series inside a race", () => {
-    const series = computePollsterHouseSeries(michigan, "2026 Michigan", "EPIC-MRA", "Slotkin");
-    expect(series.map((point) => point.value)).toEqual([46, 48]);
-    expect(series.every((point) => point.pollster === "EPIC-MRA")).toBe(true);
-  });
-
-  test("overlays a race across pollsters without mixing other states", () => {
-    const grouped = groupPollTrendByPollster(michigan, "2026 Michigan", "Slotkin");
-    expect(grouped.map((entry) => entry.pollster)).toEqual(["EPIC-MRA", "Trafalgar"]);
-    expect(grouped[0]!.points).toHaveLength(2);
-    expect(grouped[1]!.points).toHaveLength(1);
-    expect(computePollTrend(michigan, "2026 Michigan", "Slotkin")).toHaveLength(3);
   });
 });

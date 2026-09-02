@@ -24,7 +24,7 @@ import type { AppServicesFactory, AppTickerRepositoryPort } from "./core/app-ser
 import { useThemeColors } from "./theme/theme-context";
 import type { AppConfig } from "./types/config";
 import type { DesktopDeepLinkBridge } from "./types/desktop-deeplink";
-import type { CliLaunchRequest } from "./types/plugin";
+import type { CliLaunchRequest, GloomPlugin } from "./types/plugin";
 import type { DataProvider } from "./types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "./types/desktop-window";
 import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
@@ -32,7 +32,6 @@ import type { LayoutBounds } from "./plugins/pane-manager";
 import type { AppSessionSnapshot } from "./core/state/session-persistence";
 import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { createAppNotifier } from "./notifications/app-notifier";
-import { getLoadablePlugins } from "./plugins/catalog";
 import { useBrokerImportRuntime } from "./app/runtime/broker-import";
 import { useDesktopDeepLinkRuntime } from "./app/runtime/desktop-deeplink";
 import { useDesktopApplicationMenuRuntime } from "./app/runtime/desktop-menu";
@@ -56,11 +55,12 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
-import { isPublicShareLocation, isShareTerminalHandoff } from "./plugins/builtin/shared/share-link";
+import { isPaneShareHandoff } from "./shares/location";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
 interface AppInnerProps {
+  externalPlugins: readonly LoadedExternalPlugin[];
   pluginRegistry: PluginRegistry;
   tickerRepository: AppTickerRepositoryPort;
   dataProvider: DataProvider;
@@ -70,6 +70,7 @@ interface AppInnerProps {
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
   desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   remoteControlAdapter?: RemoteControlAdapter;
+  updatesEnabled?: boolean;
   onboardingActive?: boolean;
   requireAccount?: boolean;
   onOnboardingComplete?: (config: AppConfig) => void | Promise<void>;
@@ -94,6 +95,7 @@ function ThemedAppRoot({ children }: { children: ReactNode }) {
 }
 
 function AppInner({
+  externalPlugins,
   pluginRegistry,
   tickerRepository,
   dataProvider,
@@ -103,6 +105,7 @@ function AppInner({
   desktopApplicationMenuBridge,
   desktopDeepLinkBridge,
   remoteControlAdapter,
+  updatesEnabled = true,
   onboardingActive = false,
   requireAccount = false,
   onOnboardingComplete,
@@ -161,6 +164,13 @@ function AppInner({
     renderToast: (notification) => {
       const type = notification.type ?? "info";
       let toastId: string | number | undefined;
+      const dismissAfter = (run: () => void) => () => {
+        try {
+          run();
+        } finally {
+          if (toastId != null) toast.dismiss(toastId);
+        }
+      };
       const options = {
         title: notification.title,
         subtitle: notification.subtitle,
@@ -168,13 +178,13 @@ function AppInner({
         action: notification.action
           ? {
             label: notification.action.label,
-            onClick: () => {
-              try {
-                notification.action?.onClick();
-              } finally {
-                if (toastId != null) toast.dismiss(toastId);
-              }
-            },
+            onClick: dismissAfter(() => notification.action?.onClick()),
+          }
+          : undefined,
+        secondaryAction: notification.secondaryAction
+          ? {
+            label: notification.secondaryAction.label,
+            onClick: dismissAfter(() => notification.secondaryAction?.onClick()),
           }
           : undefined,
       };
@@ -228,6 +238,7 @@ function AppInner({
   });
 
   const { runUpdateCheck, startUpdate } = useAppUpdateRuntime({
+    enabled: updatesEnabled,
     dispatch,
     isDetachedWindow,
     pluginRegistry,
@@ -251,6 +262,7 @@ function AppInner({
     desktopDeepLinkBridge,
     desktopWindowKind: desktopWindowBridge?.kind,
     dispatch,
+    initialized: state.initialized,
     pluginRegistry,
     stateRef,
   });
@@ -316,7 +328,7 @@ function AppInner({
     importBrokerPositions,
     marketData,
     pluginRegistry,
-    state,
+    stateRef,
     tickerRepository,
   });
 
@@ -334,13 +346,19 @@ function AppInner({
       && !onboardingActive,
   });
 
+  const persistConfig = useCallback((nextConfig: AppState["config"]) => {
+    scheduleConfigSave(nextConfig);
+  }, []);
+
   useAppPaneRuntime({
     dataProvider,
     detachedPaneId,
     dialog,
     dispatch,
+    externalPlugins,
     isDetachedWindow,
     notify,
+    persistConfig,
     pluginRegistry,
     state,
     stateRef,
@@ -413,7 +431,14 @@ function AppInner({
         desktopWindowBridge={desktopWindowBridge}
       >
         <ThemedAppRoot>
-          <Header onOpenHelp={() => pluginRegistry.showPane("help")} />
+          <Header
+            onOpenHelp={() => pluginRegistry.showPane("help")}
+            onOpenChangelog={(version) => {
+              void pluginRegistry.createPaneFromTemplateAsyncFn("changelog-pane", {
+                values: { version },
+              }).catch(() => {});
+            }}
+          />
           <TransientLayoutProvider>
             <Box
               flexDirection="column"
@@ -448,7 +473,7 @@ function AppInner({
               tickerRepository={tickerRepository}
               pluginRegistry={pluginRegistry}
               quitApp={() => rendererHost.requestExit()}
-              onCheckForUpdates={() => runUpdateCheck(true)}
+              onCheckForUpdates={updatesEnabled ? () => runUpdateCheck(true) : undefined}
               onNativeOccluderChange={setCommandBarNativeOccluder}
             />
           )}
@@ -463,6 +488,7 @@ interface AppProps {
   config: AppConfig;
   servicesFactory: AppServicesFactory;
   externalPlugins?: LoadedExternalPlugin[];
+  plugins: readonly GloomPlugin[];
   cliLaunchRequest?: CliLaunchRequest | null;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
@@ -470,14 +496,14 @@ interface AppProps {
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
-  /** Force the user to create/sign in to an account before the workspace opens. */
-  requireAccount?: boolean;
+  updatesEnabled?: boolean;
 }
 
 export function App({
   config: initialConfig,
   servicesFactory,
   externalPlugins: providedExternalPlugins,
+  plugins,
   cliLaunchRequest = null,
   desktopWindowBridge,
   desktopApplicationMenuBridge,
@@ -485,7 +511,7 @@ export function App({
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
-  requireAccount: requireAccountProp = false,
+  updatesEnabled = true,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -510,11 +536,10 @@ export function App({
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const publicShare = isPublicShareLocation();
-  const shareHandoff = isShareTerminalHandoff();
+  const shareHandoff = isPaneShareHandoff();
   const [showOnboarding, setShowOnboarding] = useState(() => (
     desktopWindowBridge?.kind !== "detached"
-    && !publicShare
+    && !shareHandoff
     && (!effectiveInitialConfig.onboardingComplete || !!effectiveInitialConfig.onboardingProgress)
   ));
 
@@ -534,15 +559,14 @@ export function App({
     return measurePerf("startup.app.create-services", () => (
       servicesFactory({
         config,
-        plugins: getLoadablePlugins(externalPlugins),
-        externalPluginPaths,
+        plugins,
       })
     ), {
       externalPluginCount: externalPlugins.length,
       disabledPluginCount: config.disabledPlugins.length,
       brokerInstanceCount: config.brokerInstances.length,
     });
-  }, [config.dataDir, externalPlugins, externalPluginPaths, servicesFactory]);
+  }, [config.dataDir, externalPlugins, plugins, servicesFactory]);
 
   useEffect(() => {
     return () => services.destroy();
@@ -571,6 +595,7 @@ export function App({
       >
         <AppLanguageConfigObserver />
         <AppInner
+          externalPlugins={externalPlugins}
           pluginRegistry={services.pluginRegistry}
           tickerRepository={services.tickerRepository}
           dataProvider={services.dataProvider}
@@ -580,6 +605,7 @@ export function App({
           desktopApplicationMenuBridge={desktopApplicationMenuBridge}
           desktopDeepLinkBridge={desktopDeepLinkBridge}
           remoteControlAdapter={remoteControlAdapter}
+          updatesEnabled={updatesEnabled}
           onboardingActive={showOnboarding}
           requireAccount={shareHandoff || requireAccountProp}
           onOnboardingComplete={(updatedConfig) => {

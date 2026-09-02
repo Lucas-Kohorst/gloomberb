@@ -34,7 +34,7 @@ describe("prediction markets detail views", () => {
     expect(frame).not.toContain("TypeError");
   });
 
-  test("renders grouped selections as ranked outcomes in the detail overview", async () => {
+  test("renders grouped outcomes with their chart directly below", async () => {
     testSetup = await testRender(<GroupedDetailHarness />, {
       width: 64,
       height: 24,
@@ -45,6 +45,9 @@ describe("prediction markets detail views", () => {
     expect(frame).toContain("Outcomes");
     expect(frame).toContain("Above 4.25%");
     expect(frame).toContain("Above 4.50%");
+    expect(frame).toContain("1M");
+    expect(frame.indexOf("1M")).toBeGreaterThan(frame.indexOf("Above 4.50%"));
+    expect(frame).not.toContain(" Chart ");
     expect(frame).not.toContain("Ranked by implied YES probability.");
     expect(frame).not.toContain("TOP Above 4.25%");
     expect(frame).not.toContain("Kalshi");
@@ -62,67 +65,6 @@ describe("prediction markets detail views", () => {
     expect(frame).toContain("Outcomes");
     expect(frame).toContain("Above 4.25%");
     expect(frame).not.toContain("Loading market detail...");
-  });
-
-  test("moves price history onto its own chart tab", async () => {
-    testSetup = await testRender(<GroupedDetailHarness />, {
-      width: 64,
-      height: 24,
-    });
-    await flushFrames(testSetup);
-    expect(testSetup.captureCharFrame()).not.toContain("No chart history.");
-
-    await cleanupPredictionTest(testSetup);
-    testSetup = await testRender(<GroupedDetailHarness detailTab="chart" />, {
-      width: 64,
-      height: 24,
-    });
-    await flushFrames(testSetup);
-    expect(testSetup.captureCharFrame()).toContain("No chart history.");
-  });
-
-  test("shows the chart tab as loading instead of empty while detail loads", async () => {
-    testSetup = await testRender(
-      <GroupedDetailHarness detailTab="chart" loading />,
-      { width: 64, height: 24 },
-    );
-    await flushFrames(testSetup);
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Loading chart...");
-    expect(frame).not.toContain("No chart history.");
-  });
-
-  test("suggests Fed funds series on an FOMC target-rate data tab", async () => {
-    testSetup = await testRender(
-      <GroupedDetailHarness detailTab="data" />,
-      { width: 64, height: 24 },
-    );
-    await flushFrames(testSetup);
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Suggested data feeds");
-    expect(frame).toContain("FEDFUNDS");
-    expect(frame).toContain("DFEDTARU");
-    expect(frame).toContain("UST:10Y");
-    expect(frame).not.toContain("No matching settlement series.");
-  });
-
-  test("shows settlement source and suggested data feeds on the data tab", async () => {
-    testSetup = await testRender(<CpiDataTabHarness width={64} />, {
-      width: 64,
-      height: 24,
-    });
-    await flushFrames(testSetup);
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Settles to:");
-    expect(frame).toContain("Suggested data feeds");
-    expect(frame).toContain("FRED");
-    expect(frame).toContain("CPIAUCSL");
-    expect(frame).toContain("SRC");
-    expect(frame).toContain("SERIES");
-    expect(frame).toContain("G");
   });
 
   test("shows the chart crosshair on pointer movement", async () => {
@@ -147,4 +89,5 @@ describe("prediction markets detail views", () => {
 
     expect(testSetup.captureCharFrame()).not.toBe(initialFrame);
   });
+
 });

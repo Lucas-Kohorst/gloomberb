@@ -6,8 +6,14 @@ import { CorporateActionsView } from "./corporate-actions-pane";
 import { EquityDiagnosticView } from "./equity-diagnostic-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
 
-function EarningsEstimatesAliasPane(props: { focused: boolean; width: number; height: number }) {
-  return <CorporateActionsView {...props} footerPaneId="earnings-estimates" />;
+function EarningsEstimatesPane(props: { focused: boolean; width: number; height: number }) {
+  return (
+    <CorporateActionsView
+      {...props}
+      footerPaneId="earnings-estimates"
+      variant="earnings-estimates"
+    />
+  );
 }
 
 export const researchModule: PluginModule = {
@@ -44,6 +50,16 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 28 },
+      tableExport: true,
+    },
+    {
+      id: "equity-diagnostic",
+      name: "Equity Diagnostic",
+      icon: "D",
+      component: EquityDiagnosticView,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 96, height: 30 },
     },
     {
       id: "equity-diagnostic",
@@ -62,6 +78,7 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 24 },
+      tableExport: true,
     },
     {
       id: "relative-valuation",
@@ -71,15 +88,17 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 24 },
+      tableExport: true,
     },
     {
       id: "earnings-estimates",
       name: "Earnings Estimates",
       icon: "E",
-      component: EarningsEstimatesAliasPane,
+      component: EarningsEstimatesPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 22 },
+      tableExport: true,
     },
   ],
 
@@ -91,6 +110,16 @@ export const researchModule: PluginModule = {
       description: "Price targets, recommendations, and recent analyst actions.",
       keywords: ["analyst", "research", "ratings", "target", "anr"],
       shortcut: "ANR",
+      publicShare: true,
+    }),
+    createTickerSurfacePaneTemplate({
+      id: "equity-diagnostic-pane",
+      paneId: "equity-diagnostic",
+      label: "Equity Diagnostic",
+      description: "Red flags, anomalies, green flags, and watch items for one company, with cited evidence.",
+      keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
+      shortcut: "DIAG",
+      publicShare: true,
     }),
     createTickerSurfacePaneTemplate({
       id: "equity-diagnostic-pane",
@@ -107,14 +136,16 @@ export const researchModule: PluginModule = {
       description: "Dividends, splits, reported earnings, and analyst estimates.",
       keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "estimate", "revenue", "evt"],
       shortcut: "EVT",
+      publicShare: true,
     }),
     createTickerSurfacePaneTemplate({
       id: "earnings-estimates-pane",
-      paneId: "corporate-actions",
+      paneId: "earnings-estimates",
       label: "Earnings Estimates",
-      description: "Open the Events view with EPS and revenue estimates.",
+      description: "EPS and revenue estimates with reported earnings.",
       keywords: ["earnings", "estimates", "ee", "analyst", "eps", "revenue", "events"],
       shortcut: "EE",
+      publicShare: true,
     }),
     {
       id: "relative-valuation-pane",

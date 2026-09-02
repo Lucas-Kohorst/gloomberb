@@ -93,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   apiClient.dispose();
   apiClient.setSessionToken(null);
+  apiClient.setCookieSessionMode(false);
   apiClient.connectChannel = originalConnectChannel;
   apiClient.getSession = originalGetSession;
   apiClient.getMessages = originalGetMessages;
@@ -147,6 +148,47 @@ describe("ChatController", () => {
     expect(snapshot.messages.map((entry) => entry.id)).toEqual(["m1"]);
   });
 
+  test("uses a browser cookie session without exposing its token", async () => {
+    const persistence = new MemoryPersistence();
+    const controller = new ChatController();
+    const sentMessages: string[] = [];
+
+    apiClient.setCookieSessionMode(true);
+    apiClient.restoreCachedUser({
+      id: "u1",
+      username: "vince",
+      emailVerified: true,
+    });
+    apiClient.getSession = async () => apiClient.getCurrentUser();
+    apiClient.connectChannel = () => ({
+      send: async (content) => {
+        sentMessages.push(content);
+        return {
+          id: "m1",
+          channelId: "everyone",
+          content,
+          replyToId: null,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          user: { id: "u1", username: "vince", displayName: "Vince" },
+        };
+      },
+      close: () => {},
+    });
+
+    controller.attachPersistence(persistence);
+    await controller.refreshSession();
+
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(controller.getSnapshot()).toMatchObject({
+      hasSavedSession: true,
+      user: { id: "u1", username: "vince", emailVerified: true },
+    });
+    expect(controller.send("hello from the browser")).toBe(true);
+    await flushMicrotasks();
+    expect(sentMessages).toEqual(["hello from the browser"]);
+    controller.dispose();
+  });
+
   test("rejects unknown shortcut channels after the server list loads", async () => {
     const controller = new ChatController();
     apiClient.getChannels = async () => SERVER_CHAT_CHANNELS;
@@ -157,16 +199,40 @@ describe("ChatController", () => {
     );
   });
 
-  test("resolves chat shortcuts by channel name and unique prefix", async () => {
+  test("keeps private channels when a public refresh finishes after chat state", async () => {
+    const persistence = new MemoryPersistence();
     const controller = new ChatController();
-    apiClient.getChannels = async () => [
-      { id: "everyone", name: "Lobby", created_at: "2026-03-26T12:10:05.684Z" },
-      { id: "help", name: "Help Desk", created_at: "2026-05-09T00:00:00.000Z" },
-    ];
+    const directChannel: ChatChannel = {
+      id: "dm:u2",
+      name: "u2",
+      kind: "direct",
+      created_at: "2026-03-28T00:00:00.000Z",
+    };
+    let resolvePublicChannels: ((channels: ChatChannel[]) => void) | undefined;
 
-    await expect(controller.resolveRequiredChannelId("Lobby")).resolves.toBe("everyone");
-    await expect(controller.resolveRequiredChannelId("#Help Desk")).resolves.toBe("help");
-    await expect(controller.resolveRequiredChannelId("hel")).resolves.toBe("help");
+    persistence.setState("session", {
+      sessionToken: "token-123",
+      user: { id: "u1", username: "vince", emailVerified: true },
+    }, { schemaVersion: 1 });
+    apiClient.getChannels = () => new Promise((resolve) => {
+      resolvePublicChannels = resolve;
+    });
+    apiClient.getChatState = async () => ({
+      channels: [...SERVER_CHAT_CHANNELS, directChannel],
+      onlineCount: 0,
+      channelStates: [],
+      notifications: [],
+    });
+    controller.attachPersistence(persistence);
+
+    const publicRefresh = controller.refreshChannels();
+    await controller.refreshChatState();
+    expect(controller.getChannels().map((channel) => channel.id)).toContain(directChannel.id);
+
+    resolvePublicChannels!(SERVER_CHAT_CHANNELS);
+    await publicRefresh;
+
+    expect(controller.getChannels().map((channel) => channel.id)).toContain(directChannel.id);
   });
 
   test("hydrates a cached verified user into the api client for offline use", async () => {
@@ -1479,10 +1545,11 @@ describe("ChatController", () => {
     expect(notifications).toHaveLength(1);
   });
 
-  test("displays server-issued channel notifications", () => {
+  test("opens a server-issued channel notification at its exact message", () => {
     const persistence = new MemoryPersistence();
     const controller = new ChatController();
     const notifications: AppNotificationRequest[] = [];
+    const openedMessages: string[] = [];
     const message: ChatMessage = {
       id: "m1",
       channelId: "options",
@@ -1498,6 +1565,8 @@ describe("ChatController", () => {
     }, { schemaVersion: 1 });
     controller.setNotifier((entry) => {
       notifications.push(entry);
+    }, (channelId, messageId) => {
+      openedMessages.push(`${channelId}:${messageId}`);
     });
     controller.attachPersistence(persistence);
 
@@ -1515,7 +1584,10 @@ describe("ChatController", () => {
       body: "@bob: new option flow",
       type: "info",
       desktop: "when-inactive",
+      action: expect.objectContaining({ label: "Open" }),
     }]);
+    notifications[0]?.action?.onClick();
+    expect(openedMessages).toEqual(["options:m1"]);
   });
 
   test("uses direct channel labels in server-issued notification titles", async () => {

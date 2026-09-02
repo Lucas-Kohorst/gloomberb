@@ -39,19 +39,23 @@ const POLYMARKET_GAMMA_BASE = "https://gamma-api.polymarket.com";
 
 export async function loadPolymarketEvent(
   eventId: string | undefined,
+  signal?: AbortSignal,
 ): Promise<PolymarketEventRecord | null> {
   if (!eventId) return null;
+  signal?.throwIfAborted();
   try {
     return await loadCachedPredictionResource(
       "rules",
       `polymarket:event:${eventId}`,
       async () =>
         await fetchJson<PolymarketEventRecord>(
-          `${POLYMARKET_GAMMA_BASE}/events/${eventId}`,
+          `https://gamma-api.polymarket.com/events/${eventId}`,
+          signal,
         ),
       PREDICTION_CACHE_POLICIES.rules,
     );
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     return null;
   }
 }
@@ -82,6 +86,25 @@ function findCanonicalPolymarketMarket(
       );
     }) ?? null
   );
+}
+
+export async function resolvePolymarketChartSummary(
+  eventId: string,
+  marketId: string,
+  signal?: AbortSignal,
+): Promise<PredictionMarketSummary> {
+  const event = await fetchJson<PolymarketEventRecord>(
+    `https://gamma-api.polymarket.com/events/${eventId}`,
+    signal,
+  );
+  const market = event.markets?.find((candidate) => candidate.id === marketId);
+  const summary = market
+    ? normalizePolymarketMarket(hydratePolymarketMarket(market, event))
+    : null;
+  if (!summary) {
+    throw new Error(`Polymarket market ${marketId} in event ${eventId} is no longer resolvable. Remove or replace this chart series.`);
+  }
+  return summary;
 }
 
 async function resolvePolymarketSummary(
@@ -124,74 +147,16 @@ async function resolvePolymarketSummary(
   };
 }
 
-async function fetchPolymarketMarketRecord(
-  url: string,
-): Promise<PolymarketMarketRecord | null> {
-  try {
-    const response = await fetchJson<PolymarketMarketRecord | PolymarketMarketRecord[]>(url);
-    if (Array.isArray(response)) return response[0] ?? null;
-    return response ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Resolves a venue-native Polymarket identifier onto a chartable market.
- * Accepts a Gamma market id, a market slug, an event id (which settles on
- * the event's busiest market), or the synthetic "<eventId>:<slug>" id that
- * normalizePolymarketMarket mints for Gamma records without an id.
- */
-export async function resolvePolymarketMarketById(
-  marketId: string,
-): Promise<PredictionMarketSummary | null> {
-  const trimmed = marketId.trim();
-  if (!trimmed) return null;
-
-  const composite = /^(\d+):(.+)$/.exec(trimmed);
-  if (composite?.[1] && composite[2]) {
-    const [, eventId, slug] = composite;
-    const bySlug = await fetchPolymarketMarketRecord(
-      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`,
-    );
-    if (bySlug) return normalizePolymarketMarket(bySlug);
-    const event = await loadPolymarketEvent(eventId);
-    const match = event?.markets?.find((market) => market.slug === slug);
-    if (match && event) {
-      return normalizePolymarketMarket(hydratePolymarketMarket(match, event));
-    }
-    return null;
-  }
-
-  const byId = /^\d+$/.test(trimmed)
-    ? await fetchPolymarketMarketRecord(`${POLYMARKET_GAMMA_BASE}/markets/${trimmed}`)
-    : null;
-  const record =
-    byId ??
-    (await fetchPolymarketMarketRecord(
-      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(trimmed)}&limit=1`,
-    ));
-  if (record) return normalizePolymarketMarket(record);
-
-  const event = await loadPolymarketEvent(trimmed);
-  if (!event?.markets?.length) return null;
-  let best: PredictionMarketSummary | null = null;
-  for (const eventMarket of event.markets) {
-    const summary = normalizePolymarketMarket(
-      hydratePolymarketMarket(eventMarket, event),
-    );
-    if (!summary) continue;
-    if (!best || (summary.volume24h ?? 0) > (best.volume24h ?? 0)) best = summary;
-  }
-  return best;
-}
-
 export async function loadPolymarketHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",
+  options: { start?: Date; end?: Date; signal?: AbortSignal; strict?: boolean } = {},
 ): Promise<PredictionHistoryPoint[]> {
   const tokenId = summary.yesTokenId;
-  if (!tokenId) return [];
+  if (!tokenId) {
+    if (options.strict) throw new Error(`Polymarket market ${summary.marketId} no longer exposes a YES token for chart history.`);
+    return [];
+  }
   const interval =
     range === "1D"
       ? "1d"
@@ -202,14 +167,24 @@ export async function loadPolymarketHistory(
           : "max";
   const fidelity =
     range === "1D" ? 15 : range === "1W" ? 60 : range === "1M" ? 240 : 1440;
+  const start = options.start ? Math.floor(options.start.getTime() / 1000) : null;
+  const end = options.end ? Math.floor(options.end.getTime() / 1000) : null;
+  const bounded = start !== null && end !== null && Number.isFinite(start) && Number.isFinite(end) && start <= end;
 
   const points = await loadCachedPredictionResource(
     "history",
-    `${summary.key}:${range}`,
+    `${summary.key}:${range}${bounded ? `:${start}:${end}` : ""}`,
     async () => {
-      const response = await fetchJson<PolymarketHistoryResponse>(
-        `https://clob.polymarket.com/prices-history?market=${tokenId}&interval=${interval}&fidelity=${fidelity}`,
-      );
+      const url = new URL("https://clob.polymarket.com/prices-history");
+      url.searchParams.set("market", tokenId);
+      url.searchParams.set("fidelity", String(fidelity));
+      if (bounded) {
+        url.searchParams.set("startTs", String(start));
+        url.searchParams.set("endTs", String(end));
+      } else {
+        url.searchParams.set("interval", interval);
+      }
+      const response = await fetchJson<PolymarketHistoryResponse>(url.toString(), options.signal);
       return (response.history ?? [])
         .map((point) => ({
           date: new Date(point.t * 1000),
@@ -270,19 +245,31 @@ async function loadPolymarketBook(
     "book",
     summary.key,
     async () => {
-      const [yesBook, noBook] = await Promise.all([
-        yesTokenId
-          ? fetchJson<PolymarketBookResponse>(
-              `https://clob.polymarket.com/book?token_id=${yesTokenId}`,
-            ).catch(() => null)
-          : Promise.resolve(null),
-        noTokenId
-          ? fetchJson<PolymarketBookResponse>(
-              `https://clob.polymarket.com/book?token_id=${noTokenId}`,
-            ).catch(() => null)
-          : Promise.resolve(null),
+      const loadSide = async (tokenId: string | null | undefined) => {
+        if (!tokenId) return { book: null, error: null as string | null };
+        try {
+          return {
+            book: await fetchJson<PolymarketBookResponse>(
+              `https://clob.polymarket.com/book?token_id=${tokenId}`,
+            ),
+            error: null as string | null,
+          };
+        } catch (error) {
+          // Keep the failure: an empty book and a failed book look identical downstream.
+          return {
+            book: null,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      };
+      const [yesResult, noResult] = await Promise.all([
+        loadSide(yesTokenId),
+        loadSide(noTokenId),
       ]);
+      const yesBook = yesResult.book;
+      const noBook = noResult.book;
       return {
+        error: yesResult.error ?? noResult.error,
         yesBids: (yesBook?.bids ?? [])
           .map(normalizePolymarketBookLevel)
           .filter((level): level is PredictionBookLevel => level != null),

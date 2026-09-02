@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef } from "react";
-import { Box, ChartSurface, Text, type BoxRenderable } from "../../../ui";
+import { Box, ChartSurface, Text, type BoxRenderable, type ChartSurfaceProps } from "../../../ui";
 import { colors } from "../../../theme/colors";
 import { computeGridLines, formatAxisCell } from "../core/renderer";
 import type { NativeChartBitmap } from "../native/chart-rasterizer";
+import { useShowChartTextFallback } from "../native/use-chart-text-fallback";
 import { useStaticChartBitmapSize } from "./chart/bitmap";
 import {
   buildMultiLineChartScene,
@@ -10,6 +11,7 @@ import {
   renderMultiLineTimeAxis,
   renderNativeMultiLineChart,
   resolveMultiLineCursorDate,
+  valueToPixelY,
   type MultiLineChartColors,
   type MultiLineChartSeries,
 } from "../multi-line/renderer";
@@ -101,15 +103,27 @@ export function StaticMultiLineChartSurface({
     : 0;
   const axisGap = axisWidth > 0 ? 1 : 0;
   const plotWidth = Math.max(1, totalWidth - axisWidth - axisGap);
-  const scene = useMemo(() => buildMultiLineChartScene(series, {
+  const plotOptions = useMemo(() => ({
     width: plotWidth,
     height: plotHeight,
     colors: chartColors,
     dates,
-    cursorDate,
+    cursorDate: null as Date | null,
     yDomain,
-  }), [chartColors, cursorDate, dates, plotHeight, plotWidth, series, yDomain]);
-  const textLines = useMemo(() => scene ? renderMultiLineChart(scene) : [], [scene]);
+  }), [chartColors, dates, plotHeight, plotWidth, yDomain]);
+  const scene = useMemo(
+    () => buildMultiLineChartScene(series, plotOptions),
+    [plotOptions, series],
+  );
+  const cursorScene = useMemo(
+    () => cursorDate == null ? scene : buildMultiLineChartScene(series, { ...plotOptions, cursorDate }),
+    [cursorDate, plotOptions, scene, series],
+  );
+  const showTextFallback = useShowChartTextFallback();
+  const textLines = useMemo(() => {
+    if (!showTextFallback) return [];
+    return cursorScene ? renderMultiLineChart(cursorScene) : [];
+  }, [cursorScene, showTextFallback]);
   const timeLabels = useMemo(() => scene ? renderMultiLineTimeAxis(scene) : "", [scene]);
   const effectiveAxisLabelsByRow = useMemo(() => {
     return new Map(axisLabels.map((entry) => [entry.row, entry.label] as const));
@@ -119,6 +133,27 @@ export function StaticMultiLineChartSurface({
     if (!scene || !bitmapSize) return null;
     return renderNativeMultiLineChart(scene, bitmapSize.pixelWidth, bitmapSize.pixelHeight);
   }, [bitmapSize, scene]);
+  const canvasCrosshair = useMemo<ChartSurfaceProps["crosshair"]>(() => {
+    if (!bitmap || !cursorScene || cursorScene.cursorX === null) return null;
+    const pixelX = (cursorScene.cursorX / Math.max(cursorScene.width - 1, 1)) * Math.max(bitmap.width - 1, 0);
+    const cursorIndex = cursorScene.cursorIndex;
+    const markers = cursorIndex === null
+      ? []
+      : cursorScene.series.flatMap((item) => {
+        const point = item.points[cursorIndex];
+        if (!point) return [];
+        return [{
+          pixelY: valueToPixelY(point.value, cursorScene.min, cursorScene.max, bitmap.height),
+          color: item.color,
+        }];
+      });
+    return {
+      pixelX,
+      pixelY: markers[0]?.pixelY ?? bitmap.height / 2,
+      color: chartColors.crosshairColor,
+      markers: markers.length > 0 ? markers : undefined,
+    };
+  }, [bitmap, chartColors.crosshairColor, cursorScene]);
 
   const handleCursorEvent = useCallback((event: ChartMouseEventLike) => {
     if (!scene || !onCursorDateChange) return;
@@ -152,6 +187,7 @@ export function StaticMultiLineChartSurface({
           height={plotHeight}
           flexDirection="column"
           bitmaps={bitmap ? [bitmap] : null}
+          crosshair={canvasCrosshair}
           onMouseMove={handleCursorEvent}
           onMouseDown={handleCursorEvent}
         >

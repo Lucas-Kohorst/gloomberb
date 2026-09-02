@@ -18,7 +18,7 @@ import {
   applySeriesTimestampMode,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
-  parseBinarySeriesExpression,
+  formatSeriesExpression,
   parseChartExpression,
   parseSeriesExpression,
   rebindChartSecuritySymbol,
@@ -30,6 +30,41 @@ import { applyChartComposerCapabilityOptions } from "./cli-options";
 import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 
 describe("chart composer expressions", () => {
+  test("round-trips bounded provider-neutral capability expressions", () => {
+    const expression = {
+      kind: "capability" as const,
+      capabilityId: "prediction-markets.series",
+      seriesId: "polymarket/event-1/market-1",
+      label: "Will it happen?",
+    };
+    const series = buildSeriesSpec(expression, 0);
+    expect(parseSeriesExpression(formatSeriesExpression(series))).toEqual({
+      kind: "capability",
+      capabilityId: expression.capabilityId,
+      seriesId: expression.seriesId,
+    });
+    expect(parseSeriesExpression("CAP:provider:series?params=%7B%7D")).toBeNull();
+    expect(parseSeriesExpression(`CAP:${"x".repeat(81)}:series`)).toBeNull();
+    expect(parseSeriesExpression(`CAP:provider:${"x".repeat(241)}`)).toBeNull();
+  });
+
+  test("maps futures and Treasury aliases onto existing core source kinds", () => {
+    expect(parseSeriesExpression("fut:es")).toEqual({
+      kind: "security",
+      symbol: "ES=F",
+      fieldId: "market.ohlcv",
+      label: "E-Mini S&P 500",
+    });
+    expect(parseSeriesExpression("ust:10y")).toEqual({
+      kind: "economic",
+      provider: "fred",
+      seriesId: "DGS10",
+      label: "10Y Treasury Yield",
+    });
+    expect(parseSeriesExpression("FUT:UNKNOWN")).toBeNull();
+    expect(parseSeriesExpression("UST:4Y")).toBeNull();
+  });
+
   test("appends catalog series with required panels and collision-safe IDs", () => {
     const initial = buildCustomChartPreset("AAPL:price, MSFT:price");
     const withVolume = appendChartSeries(initial, {
@@ -639,6 +674,17 @@ describe("chart composer spec persistence", () => {
       { style: "line", timestampMode: "period-end" },
       { style: "columns", timestampMode: "available-at" },
     ]);
+  });
+
+  test("migrates v1 security and economic specs but never treats v1 as capability-aware", () => {
+    const legacy = buildCustomChartPreset("AAPL:price, FRED:CPIAUCSL");
+    const migrated = parseChartSpec({ ...legacy, version: 1 });
+    expect(migrated?.version).toBe(2);
+    expect(migrated?.series.map((series) => series.source.kind)).toEqual(["security", "economic"]);
+
+    const capability = buildCustomChartPreset("CAP:prediction-markets.series:polymarket/event-1/market-1");
+    expect(parseChartSpec({ ...capability, version: 1 })).toBeNull();
+    expect(parseChartSpec(serializeChartSpec(capability))).toEqual(parseChartSpec(capability));
   });
 
   test("rejects chart specs authored by a newer unsupported version", () => {

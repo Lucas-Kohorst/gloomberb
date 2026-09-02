@@ -68,13 +68,11 @@ export function usePredictionMarketsDataState({
   const {
     allMarkets,
     catalogHasMore,
-    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore,
     catalogStatus,
     kalshiFeed,
     debouncedSearchQuery,
-    refreshCatalog,
     loadMoreCatalog,
     setCatalogCache,
   } = usePredictionCatalogData({
@@ -224,12 +222,9 @@ export function usePredictionMarketsDataState({
 
   return {
     catalogHasMore,
-    catalogLive,
-    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore,
     catalogStatus,
-    kalshiFeed,
     debouncedSearchQuery,
     detail,
     detailError,

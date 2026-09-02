@@ -25,15 +25,14 @@ import {
 } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";
 import { buildYoutubeLiveEmbedUrl, isYoutubeEmbedUrl } from "./youtube-embed";
-
-const YOUTUBE_CONNECTION_ID = "youtube";
+import { resolveTvStream } from "./youtube-stream";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
 
 function activeWebOrigin(): string | undefined {
-  const { protocol, origin } = getBrowserLocation() ?? {};
-  if (!protocol || !origin) return undefined;
-  return /^https?:$/.test(protocol) ? origin : undefined;
+  const location = (globalThis as { window?: { location?: { protocol?: string; origin?: string } } }).window?.location;
+  if (!location?.protocol || !location.origin) return undefined;
+  return /^https?:$/.test(location.protocol) ? location.origin : undefined;
 }
 
 function webMediaSource(stream: ResolvedLiveStream): string {
@@ -67,6 +66,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
   const [muted, setMuted] = useState(true);
   const mediaRef = useRef<MediaSurfaceHandle | null>(null);
   const terminalAutoPlayedRef = useRef<string | null>(null);
+  const recoveredStreamRef = useRef<string | null>(null);
   const generationRef = useRef(0);
   const channel = getTvChannel(channelId);
   const channelTabId = getTvChannelTabId(channelId);
@@ -133,6 +133,27 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
     };
   }, [load]);
 
+  // Resolved YouTube manifests expire within minutes, so an open pane re-resolves
+  // shortly before the current one dies instead of playing into an error.
+  useEffect(() => {
+    if (!stream) return;
+    const delay = Math.max(5_000, stream.expiresAt - 60_000 - Date.now());
+    const timer = setTimeout(() => {
+      void load(true);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [load, stream]);
+
+  // A dead manifest surfaces as a media error; re-resolve once per stream so a
+  // silent expiry recovers without the user pressing anything.
+  const handlePlaybackError = useCallback((message: string) => {
+    setPlaybackError(message);
+    const streamKey = stream ? `${stream.sourceId}:${stream.videoId}` : null;
+    if (!streamKey || recoveredStreamRef.current === streamKey) return;
+    recoveredStreamRef.current = streamKey;
+    void load(true);
+  }, [load, stream]);
+
   useEffect(() => {
     persistChannelSelection(channelId);
   }, [channelId, persistChannelSelection]);
@@ -171,6 +192,10 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
     terminalAutoPlayedRef.current = streamKey;
     void playInTerminal();
   }, [channel.id, isDesktop, loading, playInTerminal, stream]);
+
+  // Closing the pane must take the player with it; the media process is not
+  // tied to the React tree that started it.
+  useEffect(() => () => renderer.stopTerminalMedia?.(), [renderer]);
 
   const togglePlayback = useCallback(async () => {
     setPlaybackError(null);
@@ -221,6 +246,11 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
     if (event.name === "m" && stream) {
       event.preventDefault?.();
       toggleMute();
+      return;
+    }
+    if (event.name === "o") {
+      event.preventDefault?.();
+      void renderer.openExternal(channel.channelUrl);
     }
   });
 
@@ -263,7 +293,6 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: toggleMute,
         disabled: loading || !stream,
       },
-      { id: "refresh", key: "r", label: "efresh", onPress: refresh, disabled: loading },
       {
         id: "open",
         key: "o",
@@ -271,7 +300,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
         onPress: () => { void renderer.openExternal(channel.channelUrl); },
       },
     ],
-  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback, updatedAgo]);
+  }), [channel.channelUrl, error, loading, muted, paneId, playbackError, playbackState, refresh, renderer, status, stream, toggleMute, togglePlayback]);
 
   const channelTabs = useMemo(() => TV_CHANNEL_TABS.map((item, index) => ({
     label: `${index + 1} ${item.name}`,
@@ -331,7 +360,7 @@ export function TvPane({ paneId, focused, width, height }: PaneProps) {
           flexGrow={1}
           onPlaybackStateChange={setPlaybackState}
           onMutedChange={setMuted}
-          onError={setPlaybackError}
+          onError={handlePlaybackError}
         >
           <Box flexGrow={1} justifyContent="center" alignItems="center">
             <Text fg={colors.warning}>{playbackError ?? "Live video unavailable."}</Text>

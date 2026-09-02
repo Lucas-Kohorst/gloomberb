@@ -146,33 +146,10 @@ function describeBlockedRequest(url: string, error: unknown): Error | null {
   return new Error(`Request blocked by the browser (${BLOCKED_REQUEST_MARKER}) for ${url}`);
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const connectionId = connectionIdForPredictionUrl(url);
-  const run = async (): Promise<T> => {
-    let response: Response;
-    try {
-      response = await PREDICTION_FETCH.fetch(url);
-    } catch (error) {
-      throw describeBlockedRequest(url, error) ?? error;
-    }
-    if (connectionId === "kalshi") {
-      noteKalshiProxyHeaders(response.headers);
-    }
-    if (!response.ok) {
-      throw new Error(`Request failed (${response.status}) for ${url}`);
-    }
-    const body = await response.text();
-    return measurePerf(
-      "prediction.fetch.parse-json",
-      () => JSON.parse(body) as T,
-      {
-        sizeBytes: body.length,
-        url: summarizePredictionFetchUrl(url),
-      },
-    );
-  };
-  if (connectionId) {
-    return withConnectionRequest(connectionId, "fetch", run);
+export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await PREDICTION_FETCH.fetch(url, { signal });
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status}) for ${url}`);
   }
   return run();
 }
@@ -224,25 +201,15 @@ export async function loadCachedPredictionResource<T>(
   ) {
     return cached.value;
   }
-
-  const inflightKey = predictionResourceInflightKey(kind, key, sourceKey);
-  const pending = predictionResourceInflight.get(inflightKey);
-  if (pending) return pending as Promise<T>;
-
-  const work = (async () => {
-    try {
-      const nextValue = await fetcher();
-      setCachedPredictionResource(kind, key, nextValue, cachePolicy, sourceKey);
-      return nextValue;
-    } catch (error) {
-      if (cached) return cached.value;
-      throw error;
-    }
-  })().finally(() => {
-    predictionResourceInflight.delete(inflightKey);
-  });
-  predictionResourceInflight.set(inflightKey, work);
-  return work;
+  try {
+    const nextValue = await fetcher();
+    setCachedPredictionResource(kind, key, nextValue, cachePolicy);
+    return nextValue;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    if (cached) return cached.value;
+    throw error;
+  }
 }
 
 function summarizePredictionFetchUrl(url: string): string {

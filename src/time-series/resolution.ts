@@ -1,5 +1,5 @@
 import type { ChartResolution, TimeRange } from "./range";
-import { TIME_RANGES } from "./range";
+import { CHART_RESOLUTIONS, TIME_RANGES } from "./range";
 import { isDateWindowWithinTimeRange } from "./date-window";
 
 export type ManualChartResolution = Exclude<ChartResolution, "auto">;
@@ -9,21 +9,8 @@ export interface ChartResolutionSupport {
   maxRange: TimeRange;
 }
 
-export const TIME_RANGE_ORDER: TimeRange[] = [...TIME_RANGES];
-
-const CHART_RESOLUTION_ORDER: ChartResolution[] = [
-  "auto",
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "45m",
-  "1h",
-  "4h",
-  "1d",
-  "1wk",
-  "1mo",
-];
+export const TIME_RANGE_ORDER = TIME_RANGES;
+const CHART_RESOLUTION_ORDER = CHART_RESOLUTIONS;
 
 const CHART_RESOLUTION_LABELS: Record<ChartResolution, string> = {
   auto: "AUTO",
@@ -172,6 +159,16 @@ export function normalizeChartResolutionSupport(support: readonly ChartResolutio
     [...byResolution.entries()].map(([resolution, maxRange]) => ({ resolution, maxRange })),
   );
 }
+
+/** Yahoo-shaped support used for first paint when broker/provider support is async. */
+export const DEFAULT_CHART_RESOLUTION_SUPPORT: ChartResolutionSupport[] = normalizeChartResolutionSupport([
+  { resolution: "5m", maxRange: "1W" },
+  { resolution: "15m", maxRange: "1M" },
+  { resolution: "1h", maxRange: "3M" },
+  { resolution: "1d", maxRange: "5Y" },
+  { resolution: "1wk", maxRange: "ALL" },
+  { resolution: "1mo", maxRange: "ALL" },
+]);
 
 export function intersectChartResolutionSupport(
   supportSets: Array<readonly ChartResolutionSupport[]>,

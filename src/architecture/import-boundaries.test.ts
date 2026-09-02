@@ -67,7 +67,11 @@ describe("import boundaries", () => {
         return !file.startsWith("src/renderers/electrobun/");
       }
       if (specifier === "react-dom" || specifier.startsWith("react-dom/")) {
-        return !DOM_RENDERER_ROOTS.some((root) => file.startsWith(root));
+        return ![
+          "src/renderers/electrobun/",
+          "src/renderers/browser/",
+          "src/renderers/share/",
+        ].some((prefix) => file.startsWith(prefix));
       }
       return false;
     });

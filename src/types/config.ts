@@ -1,7 +1,7 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
 
-export const CURRENT_CONFIG_VERSION = 22;
+export const CURRENT_CONFIG_VERSION = 21;
 
 type ChartRendererPreference = "auto" | "kitty" | "braille";
 
@@ -150,15 +150,19 @@ export interface AppConfig {
   activeLayoutIndex: number;
   brokerInstances: BrokerInstanceConfig[];
   disabledPlugins: string[];
+  /**
+   * Plugins that used to ship inside Gloomberb and have since moved to their own
+   * repositories. Recorded once installed, so an upgrade restores them without
+   * re-installing on every launch, and so a user who removes one on purpose is
+   * not fought with.
+   */
+  seededPlugins?: string[];
   disabledSources: string[];
   pluginConfig: Record<string, Record<string, unknown>>;
   theme: string;
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
-  autoRefreshInterval: number;
   fontSize: number;
-  /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
-  fontFamily: string;
   recentTickers: string[];
   language?: LanguagePreference;
   onboardingComplete?: boolean;
@@ -747,6 +751,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     activeLayoutIndex: 0,
     brokerInstances: [],
     disabledPlugins: [],
+    seededPlugins: [],
     disabledSources: [],
     pluginConfig: {},
     theme: "adjacent",
@@ -754,9 +759,7 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       renderer: "auto",
     },
     valueFlashingEnabled: true,
-    autoRefreshInterval: 0,
     fontSize: 12,
-    fontFamily: "system-mono",
     recentTickers: [],
   };
 }

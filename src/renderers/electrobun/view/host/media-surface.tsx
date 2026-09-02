@@ -4,16 +4,6 @@ import { isYoutubeEmbedUrl } from "../../../../plugins/builtin/tv/youtube-embed"
 import type { MediaSurfaceHandle, MediaSurfaceProps } from "../../../../ui/host";
 import { cleanDomProps, commonStyle } from "./style";
 
-type HlsModule = typeof import("hls.js");
-type HlsPlayer = InstanceType<HlsModule["default"]>;
-
-let hlsModulePromise: Promise<HlsModule> | null = null;
-
-function loadHlsModule(): Promise<HlsModule> {
-  hlsModulePromise ??= import("hls.js");
-  return hlsModulePromise;
-}
-
 function postYoutubeCommand(frame: HTMLIFrameElement | null, func: string, args: unknown[] = []): void {
   frame?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
 }

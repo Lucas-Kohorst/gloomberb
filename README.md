@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://gloomberb.com/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
+<img src="https://gloom.sh/gloomberb-logo-grayscale.svg" alt="Gloomberb logo" width="76" />
 
 # Gloomberb
 
@@ -8,7 +8,7 @@
 
 Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 
-<a href="https://gloomberb.com/download/desktop"><strong>Download desktop</strong></a>
+<a href="https://gloom.sh/download/desktop"><strong>Download desktop</strong></a>
 &nbsp;&middot;&nbsp;
 <a href="#install"><strong>Install the TUI</strong></a>
 &nbsp;&middot;&nbsp;
@@ -17,7 +17,7 @@ Desktop app for macOS and Windows. Terminal UI for macOS, Linux, and Windows.
 <br />
 <br />
 
-<img src="https://gloomberb.com/landing-terminal.png" alt="Gloomberb terminal showing portfolio, watchlists, market data, and chart panels." width="720" />
+<img src="https://gloom.sh/landing-terminal.png" alt="Gloomberb terminal showing portfolio, watchlists, market data, and chart panels." width="720" />
 
 </div>
 
@@ -29,8 +29,24 @@ Gloomberb has two ways in:
 |---------|----------|-------------|
 | Desktop app | A polished app window, pop-out panes, OS shortcuts, and built-in updates | Published for macOS and Windows. It also installs a `gloomberb` terminal command for the TUI. |
 | Terminal UI | Fast keyboard workflows inside your terminal, SSH/dev boxes, Linux machines, and script-friendly setups | Runs with `gloomberb` on macOS, Linux, and Windows. |
+| Browser app | The shared DOM interface without an install | Open [term.gloom.sh](https://term.gloom.sh). |
 
-Both share the same command language, plugin system, market data surfaces, portfolios, watchlists, alerts, notes, and AI tools.
+The desktop app and TUI share the full command language and plugin system. The browser app uses the same official DOM renderer and layout with a reviewed browser plugin catalog.
+
+## Browser App
+
+[term.gloom.sh](https://term.gloom.sh) works anonymously with configuration, tickers, layouts, session state, and plugin state stored in the browser. Anonymous sessions receive rate-limited, 15-minute-delayed Gloom Cloud market data and read-only chat. Login remains optional and enables sync and chat posting; Pro accounts receive realtime market data. Cloud REST and WebSocket traffic uses the same-origin `/api` path, which the Worker forwards only to `https://api.gloom.sh`; it is not an arbitrary network proxy.
+
+The browser build intentionally omits brokers and native integrations, filesystem notes, local AI, external plugins, updater/debug tools, application menus, native window controls, pop-out native windows, and native context menus. Modules that still depend on desktop-only or CORS-blocked feeds are also absent for now: RSS/Substack, prediction markets and polls, market halts/heatmap/movers, dividend/ownership/SEC panes, earnings/IPO, and TV. Public shares open under `/s/:id` in a separate slim bundle. Share creation and owner deletion use the signed-in Gloom Cloud session through the same fixed API path; public reads require no account.
+
+Local browser development:
+
+```bash
+bun run web:build
+bunx wrangler dev
+```
+
+Validate the public artifacts with `bun run web:audit` and `bun run cloudflare:dry-run`. `wrangler.jsonc` remains generic for local checks. After verification passes on `main`, GitHub Actions deploys `term.gloom.sh` with `wrangler.production.jsonc`. The private Gloom Cloud API is deployed separately.
 
 ## Local web client
 
@@ -63,21 +79,21 @@ Install the desktop app and the `gloomberb` terminal command:
 ```bash
 brew install --cask vincelwt/tap/gloomberb
 # or
-curl -fsSL gloomberb.com/install | bash
+curl -fsSL gloom.sh/install | bash
 ```
 
 Both install `Gloomberb.app` and a `gloomberb` command that runs the TUI through the app bundle, so the bundled runtime is stored once.
 
 Prefer a direct download?
 
-- [Download Gloomberb for Mac](https://gloomberb.com/download/desktop)
+- [Download Gloomberb for Mac](https://gloom.sh/download/desktop)
 
 ### Linux
 
 Install the standalone TUI binary:
 
 ```bash
-curl -fsSL gloomberb.com/install | bash
+curl -fsSL gloom.sh/install | bash
 ```
 
 This installs `gloomberb` to `~/.local/bin` by default. A Linux desktop package is not published yet.
@@ -129,6 +145,7 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 | `TOP` | Ranked market stories |
 | `HM` | Market heatmap |
 | `MOST` | Market movers |
+| `HILO` | New highs and new lows |
 | `PF` | Portfolios and watchlists |
 | `KELLY AAPL` | Position sizing |
 | `HELP` | Full in-app shortcut list |
@@ -136,17 +153,18 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 ## What It Does
 
 - Research companies with quotes, charts, financials, filings, holders, insiders, options, analyst ratings, events, and relative valuation.
-- Follow markets with top stories, breaking news, sector feeds, Substack subscriptions, global indices, FX, macro events, yield curves, market movers, and fear/greed.
+- Follow markets with top stories, breaking news, sector feeds, Substack subscriptions, global indices, futures, FX, macro events, yield curves, Treasury auctions, market movers, new-high/new-low and options-flow scanners, and fear/greed.
 - Track portfolios and watchlists, connect brokers, set alerts, keep notes, run AI screens, browse prediction markets, and use Gloom Cloud chat.
 
 ### Broker position sync
 
-Use **New Portfolio** or **Add Broker Account** (`BR` / `RH`) to connect a broker. Gloomberb can import positions from Interactive Brokers and Robinhood.
+Use **New Portfolio** or **Add Broker Account** to connect a broker. Gloomberb can import positions from Interactive Brokers, Public, Robinhood, and SimpleFIN.
 
-- Robinhood opens a browser sign-in page (OAuth public client, no app secret). Gloomberb can **read every Robinhood account** and **place orders only in the Agentic account**. Hosted/web uses a popup plus `/api/oauth/robinhood/callback`; desktop and terminal use a local callback. There is no Robinhood client id/secret to paste in Connections — if sign-in fails, allow popups (hosted) or retry from the desktop/terminal app.
-- Interactive Brokers syncs via Flex Query or a local Gateway / TWS session.
+- Robinhood opens a browser sign-in page. Gloomberb uses only the read-only account and equity-position tools from the Robinhood Trading MCP server.
+- Public needs an API secret from Public API settings. Gloomberb creates a short-lived access token and uses only the account and portfolio endpoints.
+- SimpleFIN needs a one-time setup token from SimpleFIN Bridge. Gloomberb exchanges the token and imports only accounts that contain holdings.
 
-Gloomberb saves the connection data on the local device. It does not include broker credentials or Robinhood OAuth tokens in Gloom Cloud or hosted snapshots. A later position sync updates the managed portfolios and removes positions that the broker no longer reports.
+Gloomberb saves the connection data on the local device. It does not include this data in Gloom Cloud synchronization. A later position sync updates the managed portfolios and removes positions that the broker no longer reports.
 
 ## CLI
 
@@ -171,10 +189,9 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb portfolio [action]` | Manage manual portfolios |
 | `gloomberb watchlist [action]` | Manage watchlists |
 | `gloomberb notes|alerts [action]` | Manage local notes and alerts |
-| `gloomberb broker|ibkr [action]` | Inspect broker integrations; trading actions require explicit account/profile and `--yes` |
-| `gloomberb ai providers|ask|screen` | Use configured AI providers and screeners |
+| `gloomberb broker|ibkr [action]` | Inspect broker profiles |
+| `gloomberb ai providers|ask` | Use configured AI providers |
 | `gloomberb rss fetch <url>` | Fetch an RSS feed |
-| `gloomberb buildout|congress|substack|x-feed|tweets` | Access cloud and social data sources when an existing session is available |
 | `gloomberb provider status` | Inspect enabled data providers |
 | `gloomberb config|cache|plugin|layout|pane|debug|doctor|version|changelog` | Inspect and manage local app state |
 | `gloomberb fn [...]` | Run a pane-backed report command |
@@ -185,8 +202,6 @@ Human-readable output is the default. Automation can opt into structured output 
 | `gloomberb install <user/repo>` | Install a plugin from GitHub |
 | `gloomberb remove <name>` | Remove an installed plugin |
 | `gloomberb update [name]` | Update plugins |
-
-Commands that need a signed-in cloud session may return `auth_required`; sign-in, account management, and chat workflows are still handled in the app UI for now.
 
 ## Plugins
 
@@ -211,8 +226,9 @@ See [PLUGINS.md](PLUGINS.md) for the plugin API and the shared UI surface availa
 | `Ctrl+W` | Close focused pane |
 | `Ctrl+Shift+M` | Move focused window (`WIN resize` starts resize mode) |
 | `Ctrl+Shift+D` | Dock or float focused pane |
+| `Ctrl+Shift+E` | Export focused pane table as CSV |
 | `Ctrl+Shift+L` | Layout actions |
-| `Ctrl+Shift+G` | Gridlock all windows |
+| `Ctrl+Shift+G` | Tidy windows |
 | `Tab` | Switch panes |
 | `j` / `k` | Navigate lists |
 | `h` / `l` | Switch tabs |
@@ -232,6 +248,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `DES <ticker>` / `T <ticker>` | Security details for a ticker |
 | `FA <ticker>` | Financial statement view |
 | `G <series>` | Custom chart composer |
+| `CAT [query]` | Browse and search chartable series |
 | `GP <ticker>` | Price chart |
 | `TVC <ticker>` | TradingView pane (Lightweight Charts: candles, volume, drawings) |
 | `GIP <ticker>` | Intraday price chart |
@@ -250,7 +267,10 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `SEC <ticker>` | SEC filings and company disclosures |
 | `10K <ticker>` / `10Q <ticker>` | 10-K and 10-Q periodic reports |
 | `OMON <ticker>` | Options monitor |
+| `OVME` | Black-Scholes option calculator with Greeks and implied volatility |
 | `HDS <ticker>` | Institutional holders |
+| `DVD <ticker>` | Dividend yield and history |
+| `SI <ticker>` | Short interest |
 | `13F [fund/ticker/CIK]` | 13F fund filings and holdings |
 | `INS <ticker>` | Insider activity |
 | `EVT <ticker>` | Corporate actions, earnings, and estimates |
@@ -258,7 +278,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 
 ### Chart Composer
 
-`G`, `GP`, `GIP`, `TVC`, `CMP`, `GF`, and `GE` all open the same chart data path with different starting presets. `TVC` is the ticker-first TradingView pane. A custom `G` expression can mix unrelated data sources on one synchronized timeline:
+`G`, `GP`, `GIP`, `CMP`, `GF`, and `GE` all open the same chart composer with different starting presets. `CAT` opens a searchable catalog of those chartable series so you can graph one without typing the expression. A custom expression can mix unrelated data sources on one synchronized timeline:
 
 ```text
 G AAPL:price, MSFT:revenue, FRED:CPIAUCSL
@@ -275,6 +295,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `TOP` | Ranked market stories |
 | `HM` | Market heatmap for large US stocks and ETFs |
 | `MOST` | Top gainers, losers, most active, and trending tickers |
+| `HILO` | Session new highs and new lows with 30s/1m/5m momentum |
+| `FLOW` | Unusual options activity: sweeps, blocks, and large premium |
 | `PM <query>` | Polymarket and Kalshi prediction data |
 | `N` | News feed |
 | `CN <ticker>` | Ticker news |
@@ -286,18 +308,18 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `TBO` | TheBuildout infrastructure intelligence |
 | `CG` | Congress trading disclosures |
 | `WEI` | Global equity indices |
-| `COMM` | Energy, metals, and agriculture front-month prices |
+| `MAP` | Live world venue map with local market status and clocks |
+| `FUT` | Front-month futures across index, rates, energy, metals, grains, and FX |
 | `ECON` | Economic events and releases |
 | `WB` | Country and regional GDP, CPI, unemployment, and population |
 | `GC` | Yield curve |
-| `AUCT` | Treasury auction results |
-| `CRD` | ICE BofA US corporate option-adjusted spreads |
+| `AUCT` | Treasury auction results: high rate, bid-to-cover, indirect share, and size |
+| `VIX` | VIX 30-day/3-month implied-volatility curve |
+| `CRD` | Credit spreads |
 | `CDS [ticker]` | Single-name corporate CDS activity: most-active issuers, or one issuer's trades |
-| `BOND` | Corporate bond yields and spreads |
-| `VIX` | Volatility and term-structure dashboard |
-| `HILO` | Session new highs and lows |
-| `FLOW` | Unusual options activity |
 | `ERN` | Earnings calendar |
+| `IPO` | Upcoming and recent IPOs |
+| `HALT` | US trading halts with reason and resumption times |
 | `TV` | Live Bloomberg, CNBC, and Yahoo Finance television |
 | `AIS` | Delayed OpenSky aircraft and public AIS ship positions |
 | `SAT` | NASA FIRMS fire hotspots and GIBS / HLS satellite imagery |
@@ -326,12 +348,14 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `AW` / `AP <ticker>` | Add a ticker to the active watchlist or portfolio |
 | `RW` / `RP <ticker>` | Remove a ticker from the active watchlist or portfolio |
 | `PS` | Open focused pane settings |
-| `LAY <action>` | Open layout actions |
+| `LAY` | Open the layout browser to switch, publish, or add layouts |
+| `LMA <query>` | Layout and pane arrangement actions |
 | `WIN move\|resize` | Move or resize the focused window |
-| `GL` | Gridlock all visible panes |
+| `GL` | Tidy all windows |
 | `SB` | Toggle the status bar |
 | `VF` | Toggle quote value flashing |
 | `TH <theme>` | Change color theme |
+| `FONT+` / `FONT-` | Increase or decrease desktop font size |
 | `CONN` | Connection health |
 | `POLL` | Prediction-market polls |
 | `ART` | Loaded article lookup |
@@ -340,6 +364,8 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |
 | `PL <plugin>` | Toggle plugins from the command bar |
 | `PLUGINS` / `PLUG` | Plugin Marketplace: search installed and GitHub plugins, then install, toggle, update, or remove |
+
+Published layouts preserve portable pane setup and state, including searches, chart viewport, and drawings. Credentials, accounts, portfolios, and pane fields marked private stay local. Publishing copies a durable `term.gloom.sh/l/...` link for social sharing.
 
 ## Gloom Cloud sign-in
 

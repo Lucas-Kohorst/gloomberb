@@ -83,6 +83,60 @@ function updateTickerListPane(
   }));
 }
 
+/** Key order in stored settings is not guaranteed, so compare on sorted keys. */
+function stableKey(value: unknown): string {
+  return JSON.stringify(value, (_key, entry) => (
+    entry && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(Object.entries(entry as Record<string, unknown>).sort(
+        ([left], [right]) => left.localeCompare(right),
+      ))
+      : entry
+  ));
+}
+
+/**
+ * Find the pane a template would otherwise duplicate. A template that owns a
+ * stable instance id (Chat keys one pane per channel) claims that instance even
+ * after its settings drifted at runtime, as long as the id still belongs to the
+ * same kind of pane; everything else has to match the whole create spec, so a
+ * different ticker, collection or setting still opens its own pane.
+ */
+function findReusablePaneInstance(
+  instances: PaneInstanceConfig[],
+  paneId: string,
+  spec: PaneTemplateInstanceConfig,
+): PaneInstanceConfig | null {
+  if (spec.instanceId) {
+    const owner = instances.find((instance) => instance.instanceId === spec.instanceId);
+    return owner?.paneId === paneId ? owner : null;
+  }
+  const specKey = stableKey([spec.binding ?? { kind: "none" }, spec.params ?? {}, spec.settings ?? {}]);
+  return instances.find((instance) => (
+    instance.paneId === paneId
+    && stableKey([instance.binding ?? { kind: "none" }, instance.params ?? {}, instance.settings ?? {}]) === specKey
+  )) ?? null;
+}
+
+/**
+ * A stable-id pane outlives the spec that opened it (Chat rewrites its own
+ * channelId as the user switches channels inside the pane), so reuse has to put
+ * the pane back on the requested spec before focusing it, or the command lands
+ * on a pane showing something else. Returns null when nothing has to change.
+ */
+function retargetPaneInstance(
+  instance: PaneInstanceConfig,
+  spec: PaneTemplateInstanceConfig,
+): PaneInstanceConfig | null {
+  const next: PaneInstanceConfig = {
+    ...instance,
+    title: spec.title ?? instance.title,
+    binding: spec.binding ?? instance.binding,
+    params: spec.params ? { ...(instance.params ?? {}), ...spec.params } : instance.params,
+    settings: spec.settings ? { ...(instance.settings ?? {}), ...spec.settings } : instance.settings,
+  };
+  return stableKey(next) === stableKey(instance) ? null : next;
+}
+
 async function resolvePaneTemplateOptions(
   template: PaneTemplateDef,
   options: PaneTemplateCreateOptions | undefined,
@@ -103,7 +157,7 @@ async function resolvePaneTemplateOptions(
   let resolvedOptions = options;
   if (template.shortcut?.argPlaceholder === "ticker") {
     const resolvedTicker = await resolveTickerInputOrThrow(
-      resolvedOptions?.arg,
+      resolvedOptions?.symbol ?? resolvedOptions?.arg,
       baseContext.activeTicker,
       baseContext.activeCollectionId,
       deps,
@@ -269,8 +323,24 @@ export async function createPaneTemplateOrThrow(
     throw new Error(`Unknown pane "${template.paneId}".`);
   }
 
+  const instances = deps.getState().config.layout.instances;
+  const existing = findReusablePaneInstance(instances, template.paneId, spec);
+  if (existing) {
+    const retargeted = retargetPaneInstance(existing, spec);
+    if (retargeted) {
+      deps.pluginRegistry.updateLayoutFn(updatePaneInstance(
+        deps.getState().config.layout,
+        existing.instanceId,
+        () => retargeted,
+      ));
+    }
+    deps.pluginRegistry.focusPaneFn(existing.instanceId);
+    return;
+  }
+
   const instance = deps.buildPaneInstance(template.paneId, {
-    instanceId: spec.instanceId,
+    // A stable id another pane type already holds would collide, so the new pane picks its own.
+    instanceId: instances.some((entry) => entry.instanceId === spec.instanceId) ? undefined : spec.instanceId,
     title: spec.title,
     binding: spec.binding,
     params: spec.params,

@@ -21,6 +21,7 @@ import {
   syncConfigActiveLayoutState,
   useAppDispatch,
   useAppSelector,
+  useAppStateRef,
 } from "../../../state/app/context";
 import {
   selectCommandBarOpen,
@@ -59,6 +60,7 @@ import {
   useShellResolvedPanes,
   useShellVisibleLayout,
 } from "./layout-state";
+import { AuthDialogHost } from "../../../plugins/builtin/cloud/auth-dialog";
 import { DeviceSignInDialogHost } from "../../../plugins/builtin/cloud/device-signin-dialog";
 import { useShellPaneActions } from "./pane/actions";
 import { resolvePaneFocusSourceLayout } from "./fullscreen";
@@ -67,6 +69,9 @@ import {
   resolveShellCursorOcclusionRects,
   useShellCursorOcclusionGuard,
 } from "./cursor-occlusion";
+import { createShare, openLiveShareUrl } from "../../../shares/api";
+import { buildPaneSharePayload } from "../../../shares/pane";
+import type { SharePayload } from "../../../shares/payload";
 
 export { resolveAppHeaderHeightCells, resolveAppStatusBarHeightCells } from "./chrome";
 export { buildNativeWindowState } from "./native/window-state";
@@ -100,13 +105,14 @@ export function Shell({
   const previousFocusedPaneId = useAppSelector((state) => state.previousFocusedPaneId);
   const activePanel = useAppSelector((state) => state.activePanel);
   const commandBarOpen = useAppSelector(selectCommandBarOpen);
+  const stateRef = useAppStateRef();
   const inputCaptured = useAppSelector((state) => state.inputCaptured);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const rendererHost = useRendererHost();
   const { setTransientLayout } = useTransientLayout();
   const uiKind = useUiHost().kind;
   const shortcutDisplayMode = getShortcutDisplayMode(uiKind);
-  const { nativePaneChrome = false, nativeContextMenu, precisePointer, titleBarOverlay, cellHeightPx } = useUiCapabilities();
+  const { nativePaneChrome = false, nativeContextMenu, precisePointer, publicSharing, titleBarOverlay, cellHeightPx } = useUiCapabilities();
   const { showContextMenu } = useContextMenu();
   const { width, height } = useViewport();
   const shellRef = useRef<BoxRenderable | null>(null);
@@ -124,8 +130,9 @@ export function Shell({
   const dialogOpen = useDialogState((dialog) => dialog.isOpen);
   const [hoveredPaneId, setHoveredPaneId] = useState<string | null>(null);
   const setHoveredPaneIfChanged = useCallback((paneId: string | null) => {
+    if (commandBarOpen) return;
     setHoveredPaneId((current) => (current === paneId ? current : paneId));
-  }, []);
+  }, [commandBarOpen]);
   const [menuState, setMenuState] = useState<ActionMenuState | null>(null);
   const [transientFocusLayoutState, setTransientFocusLayoutState] = useState<TransientFocusLayoutState | null>(null);
   const transientFocusLayoutStateRef = useRef<TransientFocusLayoutState | null>(null);
@@ -136,6 +143,9 @@ export function Shell({
     setHoveredMenuItemId(null);
   }, []);
   const overlayOpen = commandBarOpen || dialogOpen || !!menuState;
+  useEffect(() => {
+    if (commandBarOpen) setHoveredPaneId(null);
+  }, [commandBarOpen]);
 
   const dragRuntime = useShellDragRuntimeState({
     contentHeight,
@@ -170,13 +180,14 @@ export function Shell({
     dispatch(hasFocusTarget
       ? { type: "UPDATE_LAYOUT", layout: nextLayout, focusedPaneId: options.focusedPaneId ?? null }
       : { type: "UPDATE_LAYOUT", layout: nextLayout });
+    const currentState = stateRef.current;
     scheduleConfigSave(syncConfigActiveLayoutState(
-      { ...config, layout: nextLayout },
-      paneState,
-      hasFocusTarget ? (options.focusedPaneId ?? null) : focusedPaneId,
-      activePanel,
+      { ...currentState.config, layout: nextLayout },
+      currentState.paneState,
+      hasFocusTarget ? (options.focusedPaneId ?? null) : currentState.focusedPaneId,
+      currentState.activePanel,
     ));
-  }, [activePanel, config, dispatch, focusedPaneId, paneState]);
+  }, [dispatch, stateRef]);
 
   const focusPane = useCallback((paneId: string) => {
     dispatch({ type: "FOCUS_PANE", paneId });
@@ -255,14 +266,16 @@ export function Shell({
   });
 
   const {
+    canExportPaneCsv,
     closeAllFloatingPanes,
     closeFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
+    exportFocusedPaneCsv,
+    exportPaneCsv,
     gridlockVisiblePanes,
     handleFloatingClose,
     openFocusedPaneSettings,
-    openLayoutMenu,
     openPaneSettings,
     popOutFocusedPane,
     toggleFocusedPaneFloating,
@@ -282,6 +295,9 @@ export function Shell({
     visibleLayout,
     width,
   });
+  const openLayoutGallery = useCallback(() => {
+    pluginRegistry.showPane("layout-marketplace");
+  }, [pluginRegistry]);
   const setTransientFocusLayout = useCallback((next: TransientFocusLayoutState | null) => {
     transientFocusLayoutStateRef.current = next;
     setTransientFocusLayoutState(next);
@@ -379,28 +395,6 @@ export function Shell({
     transientFocusLayoutState,
   ]);
 
-  useShellPaneManagementShortcuts({
-    cancelActiveDrag,
-    closeAllFloatingPanes,
-    closeFocusedPane,
-    copyFocusedPaneScreenshot,
-    focusedPaneId,
-    gridlockVisiblePanes,
-    hasActiveDrag,
-    inputCaptured,
-    openFocusedPaneSettings,
-    openLayoutMenu,
-    overlayOpen,
-    popOutFocusedPane,
-    startWindowMode,
-    toggleFocusedPaneFullscreen,
-    toggleFocusedPaneFloating,
-  });
-
-  const interactionDockLeafLayouts = useMemo(
-    () => getDockLeafLayouts(interactionLayout, bounds, dockGeometryOptions),
-    [bounds, dockGeometryOptions, interactionLayout],
-  );
   const dockLeafLayouts = useMemo(() => getDockLeafLayouts(activeLayout, bounds, dockGeometryOptions), [activeLayout, bounds, dockGeometryOptions]);
   const dockDividerLayouts = useMemo(() => getDockDividerLayouts(activeLayout, bounds, dockGeometryOptions), [activeLayout, bounds, dockGeometryOptions]);
   const snapGuides = useMemo(() => makeSnapGuides(width, contentHeight), [contentHeight, width]);
@@ -472,6 +466,52 @@ export function Shell({
       onMouseDown: (event) => handlePaneQuickSetting(paneId, setting.key, event),
     }))
   ), [config, handlePaneQuickSetting, pluginRegistry]);
+  const sharePane = useCallback(async (payload: Extract<SharePayload, { kind: "pane" }>) => {
+    try {
+      const { id } = await createShare(payload);
+      await rendererHost.copyText(openLiveShareUrl(id));
+      pluginRegistry.notify({ body: "Share link copied to clipboard", type: "success" });
+    } catch (error) {
+      pluginRegistry.notify({
+        body: error instanceof Error ? error.message : "Could not share this pane.",
+        type: "error",
+      });
+    }
+  }, [pluginRegistry, rendererHost]);
+  const shareFocusedPane = useCallback(() => {
+    if (!publicSharing || !focusedPaneId) return false;
+    const pane = paneMap.get(focusedPaneId);
+    if (!pane) return false;
+    const payload = buildPaneSharePayload(
+      pluginRegistry,
+      pane.instance,
+      paneState[focusedPaneId] ?? {},
+      resolveTickerForPane(titleState, focusedPaneId),
+    );
+    if (!payload) return false;
+    void sharePane(payload);
+    return true;
+  }, [focusedPaneId, paneMap, paneState, pluginRegistry, publicSharing, sharePane, titleState]);
+
+  useShellPaneManagementShortcuts({
+    cancelActiveDrag,
+    closeAllFloatingPanes,
+    closeFocusedPane,
+    copyFocusedPaneScreenshot,
+    exportFocusedPaneCsv,
+    focusedPaneId,
+    gridlockVisiblePanes,
+    hasActiveDrag,
+    inputCaptured,
+    openFocusedPaneSettings,
+    openLayoutGallery,
+    overlayOpen,
+    popOutFocusedPane,
+    shareFocusedPane,
+    startWindowMode,
+    toggleFocusedPaneFullscreen,
+    toggleFocusedPaneFloating,
+  });
 
   const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     const pane = paneMap.get(paneId);
@@ -484,6 +524,14 @@ export function Shell({
       title: getPaneTitle(pane),
       floating: !!pane.floating,
     };
+    const sharePayload = publicSharing
+      ? buildPaneSharePayload(
+          pluginRegistry,
+          pane.instance,
+          paneState[paneId] ?? {},
+          resolveTickerForPane(titleState, paneId),
+        )
+      : null;
     const items = menuForPane(
       pane,
       rect,
@@ -496,6 +544,7 @@ export function Shell({
       openPaneSettings,
       desktopWindowBridge,
       nativePaneChrome && rendererHost.copyPngImage ? copyPaneScreenshot : undefined,
+      sharePayload ? () => sharePane(sharePayload) : undefined,
       tickerLinkMenuItems({
         instance: pane.instance,
         layout: visibleLayout,
@@ -503,6 +552,7 @@ export function Shell({
         state: titleState,
         persistLayout,
       }),
+      canExportPaneCsv(paneId) ? exportPaneCsv : undefined,
     );
     void showContextMenu(context, items, event).then((shown) => {
       if (shown) return;
@@ -526,7 +576,7 @@ export function Shell({
         items: fallbackItems,
       });
     });
-  }, [contentHeight, copyPaneScreenshot, desktopWindowBridge, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, persistLayout, pluginRegistry, rendererHost.copyPngImage, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
+  }, [canExportPaneCsv, contentHeight, copyPaneScreenshot, desktopWindowBridge, exportPaneCsv, focusPane, getPaneTitle, nativePaneChrome, openPaneSettings, paneMap, paneState, persistLayout, pluginRegistry, publicSharing, rendererHost.copyPngImage, sharePane, shortcutDisplayMode, showContextMenu, titleState, visibleLayout, width]);
 
   const {
     handleFloatingCloseMouseDown,
@@ -545,7 +595,6 @@ export function Shell({
     bounds,
     closePaneMenu,
     contentHeight,
-    dispatch,
     dockGeometryOptions,
     dockDividerLayouts,
     dockLeafLayouts: interactionDockLeafLayouts,
@@ -572,6 +621,7 @@ export function Shell({
     visibleLayout,
     width,
     windowMode,
+    commandBarOpen,
   });
   const windowModeDockResizePathKey = windowMode?.focus.kind === "dock-resize"
     ? windowMode.focus.pathKey
@@ -598,8 +648,9 @@ export function Shell({
         }
         : {})}
     >
-      {/* Renders nothing; gives the QR sign-in command an always-mounted component with dialog access. */}
+      {/* Render nothing; give the auth commands always-mounted components with dialog access. */}
       <DeviceSignInDialogHost />
+      <AuthDialogHost />
       <Box
         position="absolute"
         left={0}

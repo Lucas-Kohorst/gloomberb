@@ -1,5 +1,5 @@
-import { type ComponentType, useMemo, useRef } from "react";
-import { useUiHost } from "../../../ui";
+import { type ComponentType, useEffect, useRef } from "react";
+import { useRendererHost, useUiHost } from "../../../ui";
 import { OpenTuiDataTable } from "./opentui";
 import type {
   DataTableColumn,
@@ -7,6 +7,9 @@ import type {
 } from "./types";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { remoteNumberValue, resolveRemoteItemIndex } from "../../../remote/semantic-helpers";
+import { useOptionalPaneInstanceId } from "../../../state/app/context";
+import { registerPaneTableExporter } from "../../../state/pane-table-export-registry";
+import { createDataTableCsv } from "../../data-table/export";
 
 export type {
   DataTableCell,
@@ -19,24 +22,22 @@ export type {
 export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
   props: DataTableProps<T, C>,
 ) {
-  const livePropsRef = useRef(props);
-  livePropsRef.current = props;
-  const selectedHintRef = useRef(-1);
-  const selectedId = props.selectedItemKey !== undefined
-    ? props.selectedItemKey
-    : resolveRemoteSelectedId(
-      props.items,
-      props.isSelected,
-      props.getItemKey,
-      selectedHintRef,
-    );
-  const columnsMeta = useMemo(
-    () => props.columns.map((column) => ({ id: column.id, label: column.label })),
-    [props.columns],
-  );
-  const rowCount = props.items.length;
-  const registration = useMemo(() => ({
-    role: "table" as const,
+  const paneId = useOptionalPaneInstanceId();
+  const renderer = useRendererHost();
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  useEffect(() => {
+    if (!paneId || !renderer.saveTextFile) return;
+    return registerPaneTableExporter(paneId, (filename) => renderer.saveTextFile!({
+      name: filename,
+      text: createDataTableCsv(propsRef.current),
+      mimeType: "text/csv;charset=utf-8",
+    }));
+  }, [paneId, renderer]);
+
+  useRemoteUiNode({
+    role: "table",
     label: "Data table",
     actions: {
       selectRow: (input: unknown) => {
@@ -65,16 +66,14 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
           current.onHeaderClick(columnId);
         }
       },
-      scrollTo: (input: unknown) => {
-        const current = livePropsRef.current;
-        const box = current.scrollRef.current;
+      scrollTo: (input) => {
+        const box = props.scrollRef.current;
         if (!box) return;
         box.scrollTo(Math.max(0, Math.round(remoteNumberValue(input, ["top", "index"]))));
-        current.onBodyScrollActivity();
+        props.onBodyScrollActivity();
       },
-      scrollBy: (input: unknown) => {
-        const current = livePropsRef.current;
-        const box = current.scrollRef.current;
+      scrollBy: (input) => {
+        const box = props.scrollRef.current;
         if (!box) return;
         const direction = input && typeof input === "object"
           ? (input as { direction?: unknown }).direction
@@ -83,7 +82,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
           ? remoteNumberValue(input, ["delta"], -1)
           : remoteNumberValue(input, ["delta"], 1);
         box.scrollTo(Math.max(0, Math.round((box.scrollTop ?? 0) + delta)));
-        current.onBodyScrollActivity();
+        props.onBodyScrollActivity();
       },
     },
     metadata: {

@@ -1,17 +1,21 @@
-import { useMemo } from "react";
-import { useShortcut } from "../../../../../react/input";
-import type { PaneFooterSegment, PaneHint } from "../../../../../components";
+import { useCallback, useMemo } from "react";
+import type { PaneFooterSegment } from "../../../../../components";
 import { t, tf } from "../../../../../i18n";
 import { useAppLanguage } from "../../../../../i18n/react";
+import { useShortcut } from "../../../../../react/input";
+import { useUiCapabilities } from "../../../../../ui";
+import { isPlainKey } from "../../../../../utils/keyboard";
 import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../shared/plan-access";
 import { usePaneStatusLinkFooter } from "../../../shared/pane-footer";
-import { pollFooterTrailingInfo, useFeedPollInterval } from "../../../shared/feed-poll-interval";
-import { useArticleArchiveAction } from "../../../shared/article-archive";
+import { usePublicShare } from "../../../shared/public-share";
 
 interface NewsFooterArticle {
+  title?: string | null;
+  summary?: string | null;
   source?: string | null;
   url?: string | null;
+  items?: Array<{ title?: string | null; summary?: string | null }>;
 }
 
 interface UseNewsArticleFooterOptions {
@@ -41,7 +45,29 @@ export function useNewsArticleFooter({
   showPoll = true,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
-  const archiveAction = useArticleArchiveAction(article?.url);
+  const { publicSharing } = useUiCapabilities();
+  const createPublicShare = usePublicShare();
+  const shareArticle = useCallback(() => {
+    if (!article?.title) return;
+    const text = [
+      article.summary,
+      ...(article.items ?? []).map((item) => item.summary || item.title),
+    ].filter((value): value is string => !!value?.trim()).join("\n\n").slice(0, 50_000);
+    void createPublicShare({
+      kind: "article",
+      data: {
+        title: article.title,
+        text,
+        ...(article.url ? { sourceUrl: article.url } : {}),
+      },
+    });
+  }, [article, createPublicShare]);
+  useShortcut((event) => {
+    if (!focused || !publicSharing || !article?.title || !isPlainKey(event, "y")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    shareArticle();
+  });
   const { access, segment } = useCloudAccessFooter({
     delayLabel: tf("{count}h", { count: CLOUD_NEWS_DELAY_HOURS }),
     focused,
@@ -117,9 +143,9 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
-    trailingInfo,
-    hints,
-    trailingHints,
+    hints: publicSharing && article?.title
+      ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
+      : undefined,
     showOpenHint: true,
     loading,
     error,

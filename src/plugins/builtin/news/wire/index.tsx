@@ -7,6 +7,12 @@ import {
   setupBreakingNewsNotifications,
 } from "./breaking/notifications";
 import {
+  BREAKING_MUTED_SECTOR_OPTIONS,
+  BREAKING_NEWS_MUTED_SECTORS_KEY,
+  BREAKING_NEWS_SCOPE_KEY,
+  BREAKING_SCOPE_OPTIONS,
+} from "./breaking/filters";
+import {
   addUserNewsFeed,
   getEnabledNewsFeeds,
   loadNewsFeedSettings,
@@ -17,31 +23,12 @@ import { NewsPresetPane } from "./news/preset-pane";
 import { NEWS_QUERY_PRESETS } from "./news/query-presets";
 import type { NewsColumnId, NewsSortPreference } from "./news/table";
 import { createRssNewsCapability } from "./rss/source";
-import { RssPane } from "./rss-pane";
-import { NewsArticleReaderPane } from "./news/article-reader";
+import { openUrl } from "../../../../components/ui/external-link";
 import {
-  ARTICLE_READER_FLOATING_SIZE,
-  NEWS_ARTICLE_READER_PANE_ID,
-  NEWS_ARTICLE_READER_TEMPLATE_ID,
-  articleReaderInstanceId,
-} from "../../shared/article-pop-out";
-import {
-  buildOpenArticleCommandResults,
   cachedNewsArticles,
-  cancelRssNewsWarm,
   loadNewsArticles,
-  openNewsArticle,
-  scheduleRssNewsWarm,
   searchNewsArticles,
 } from "./article-search";
-import { searchAdjacentRelatedArticles } from "../../adjacent/news";
-import { registerConnectionSource } from "../../connections/register";
-import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
-import {
-  buildArticleTickerUniverse,
-  setSharedArticleTickerUniverse,
-} from "../../../../news/article-tickers";
-import { ensureUsListingsUniverse, peekUsListingsUniverse } from "../../../../sources/us-listings/client";
 
 interface NewsPresetPaneConfig {
   paneKey: string;
@@ -60,23 +47,23 @@ function createNewsPresetPane(config: NewsPresetPaneConfig) {
 }
 
 const TopPane = createNewsPresetPane({
-  paneKey: "top",
+  paneKey: "top:curated",
   title: "Top News",
   query: NEWS_QUERY_PRESETS.top,
-  columns: ["time", "title", "tickers", "importance"],
+  columns: ["time", "source", "title", "tickers", "categories", "importance"],
   defaultSort: { columnId: "importance", direction: "desc" },
   emptyStateTitle: "No top stories yet",
-  emptyStateHint: "Try refreshing later as wire stories arrive.",
+  emptyStateHint: "Top stories appear when curated market sources publish them.",
 });
 
 const FeedPane = createNewsPresetPane({
   paneKey: "feed",
   title: "News Feed",
   query: NEWS_QUERY_PRESETS.feed,
-  columns: ["time", "source", "title", "tickers", "categories"],
+  columns: ["time", "source", "title", "tickers", "categories", "sentiment"],
   defaultSort: { columnId: "time", direction: "desc" },
   emptyStateTitle: "No feed stories yet",
-  emptyStateHint: "Try refreshing later as wire stories arrive.",
+  emptyStateHint: "Run the Add News Feed command to wire up another source.",
 });
 
 let disposeBreakingNewsNotifications: (() => void) | null = null;
@@ -143,13 +130,31 @@ export const newsWireModule: PluginModule = {
       defaultFloatingSize: { width: 85, height: 20 },
       settings: {
         title: "Breaking News Settings",
-        fields: [{
-          key: BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
-          label: "Notifications",
-          description: "Notify when new breaking stories arrive, even while this pane is closed.",
-          type: "toggle",
-          storage: "plugin",
-        }],
+        fields: [
+          {
+            key: BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
+            label: "Notifications",
+            description: "Notify when new breaking stories arrive, even while this pane is closed.",
+            type: "toggle",
+            storage: "plugin",
+          },
+          {
+            key: BREAKING_NEWS_SCOPE_KEY,
+            label: "Notify About",
+            description: "Which breaking stories are worth interrupting you for.",
+            type: "select",
+            storage: "plugin",
+            options: BREAKING_SCOPE_OPTIONS,
+          },
+          {
+            key: BREAKING_NEWS_MUTED_SECTORS_KEY,
+            label: "Muted Sectors",
+            description: "Never notify about stories confined to these sectors.",
+            type: "multi-select",
+            storage: "plugin",
+            options: BREAKING_MUTED_SECTOR_OPTIONS,
+          },
+        ],
       },
     },
     {
@@ -294,6 +299,37 @@ export const newsWireModule: PluginModule = {
           return;
         }
         openNewsArticle(match, ctx.createPaneFromTemplate);
+      },
+    });
+
+    ctx.registerCommand({
+      id: "open-news-article",
+      label: "Open Article",
+      description: "Search loaded news headlines by topic, e.g. ART hormuz.",
+      keywords: ["article", "news", "rss", "headline", "story", "open"],
+      category: "navigation",
+      shortcut: "ART",
+      shortcutArg: {
+        placeholder: "headline or topic",
+        kind: "text",
+        parse: (arg) => ({ query: arg.trim() }),
+      },
+      async execute(values) {
+        const query = values?.query ?? values?.shortcut ?? "";
+        const articles = cachedNewsArticles().length > 0
+          ? cachedNewsArticles()
+          : await loadNewsArticles();
+        const match = searchNewsArticles(articles, query)[0];
+        if (!match) {
+          ctx.notify({
+            body: query.trim()
+              ? `No article matched "${query.trim()}".`
+              : "No articles loaded yet.",
+            type: "error",
+          });
+          return;
+        }
+        openUrl(match.url);
       },
     });
 

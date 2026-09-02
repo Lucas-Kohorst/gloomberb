@@ -333,6 +333,16 @@ export function isDividendFieldId(id: string): boolean {
   return canonicalTimeSeriesFieldId(id) === "market.dividends";
 }
 
+export function isPriceOnlyMarketFieldId(id: string): boolean {
+  const canonical = canonicalTimeSeriesFieldId(id);
+  return canonical === "market.ohlcv"
+    || canonical === "market.open"
+    || canonical === "market.high"
+    || canonical === "market.low"
+    || canonical === "market.close"
+    || canonical === "market.volume";
+}
+
 export function isFundamentalFieldId(id: string): boolean {
   const canonical = canonicalTimeSeriesFieldId(id);
   return canonical.startsWith("fundamental.") || canonical.startsWith("valuation.");

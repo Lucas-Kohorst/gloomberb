@@ -1,17 +1,39 @@
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import { isUsEquityTicker } from "../../../utils/sec";
+import {
+  attachShortInterestHealth,
+  resetShortInterestHealth,
+  YAHOO_SHORT_INTEREST_CONNECTION_ID,
+} from "./client";
 import { ShortInterestView } from "./pane";
+
+let disposeConnection: (() => void) | null = null;
 
 export const shortInterestModule: PluginModule = {
   setup(ctx) {
+    attachShortInterestHealth(ctx.connectionHealth);
+    disposeConnection = ctx.connectionHealth.registerSource({
+      id: YAHOO_SHORT_INTEREST_CONNECTION_ID,
+      name: "Yahoo Finance Short Interest",
+      kind: "api",
+      ownerId: "ticker-research",
+      detail: "finance.yahoo.com",
+      priority: 300,
+    });
+
     ctx.registerTickerResearchTab({
       id: "short-interest",
       name: "Short Interest",
       order: 36,
       component: ShortInterestView,
-      isVisible: ({ ticker }) => isUsEquityTicker(ticker),
+      isVisible: ({ ticker }) => !!ticker,
     });
+  },
+
+  dispose() {
+    disposeConnection?.();
+    disposeConnection = null;
+    resetShortInterestHealth();
   },
 
   panes: [
@@ -23,6 +45,7 @@ export const shortInterestModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 25 },
+      tableExport: true,
     },
   ],
 
@@ -31,7 +54,8 @@ export const shortInterestModule: PluginModule = {
       id: "short-interest-pane",
       paneId: "short-interest",
       label: "Short Interest",
-      description: "Historical short interest, days to cover, and short % of float.",
+      // Yahoo's key-statistics module only carries the current and prior settlement dates.
+      description: "Bi-monthly short interest settlements from FINRA with days to cover and average daily volume.",
       keywords: ["short", "interest", "si", "shorts", "borrow", "days", "cover"],
       shortcut: "SI",
     }),

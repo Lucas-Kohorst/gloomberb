@@ -1,4 +1,5 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import type { Quote } from "../../../types/financials";
 import { formatMarketPrice } from "../../../market-data/market/format";
 import {
   createAlert,
@@ -14,9 +15,7 @@ import {
   parseAlertShortcutValues,
   parseWeatherAlertCommandValues,
 } from "./command";
-import { isPriceAlertCondition } from "./types";
-import type { AlertRule } from "./types";
-import { POLL_INTERVAL_MS } from "./constants";
+import { POLL_INTERVAL_MS, POLL_SECONDS_KEY } from "./constants";
 import { AlertsPane } from "./pane";
 import {
   createQuoteErrorMessage,
@@ -35,46 +34,7 @@ import { canonicalWeatherStationId } from "../weather/stations";
 import { evaluateWeatherAlert } from "./weather-alert";
 import type { WeatherAlertCondition } from "./weather";
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
-let pollInFlight = false;
-
-const SI_CACHE_MS = 60 * 60 * 1000;
-const EXDIV_CACHE_MS = 6 * 60 * 60 * 1000;
-const shortFloatCache = new Map<string, { at: number; value: number | null }>();
-const exDivCache = new Map<string, { at: number; value: Date | null }>();
-
-async function loadCached<T>(
-  cache: Map<string, { at: number; value: T }>,
-  key: string,
-  ttlMs: number,
-  load: () => Promise<T>,
-): Promise<T> {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs) return hit.value;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  return value;
-}
-
-async function loadUnique<T>(
-  symbols: string[],
-  load: (symbol: string) => Promise<T>,
-): Promise<{ values: Map<string, T>; errors: Map<string, unknown> }> {
-  const values = new Map<string, T>();
-  const errors = new Map<string, unknown>();
-  const results = await Promise.all(symbols.map(async (symbol) => {
-    try {
-      return { symbol, value: await load(symbol) };
-    } catch (error) {
-      return { symbol, error };
-    }
-  }));
-  for (const result of results) {
-    if ("error" in result) errors.set(result.symbol, result.error);
-    else values.set(result.symbol, result.value);
-  }
-  return { values, errors };
-}
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const alertsPlugin: GloomPlugin = {
   id: "alerts",
@@ -237,115 +197,50 @@ export const alertsPlugin: GloomPlugin = {
 
         ctx.log.info("poll", { total: alerts.length, active: activeAlerts.length });
 
-        let changed = false;
-        const haltAlerts = activeAlerts.filter((alert) => alert.condition === "halted");
-        const shortAlerts = activeAlerts.filter((alert) => alert.condition === "short_float");
-        const exDivAlerts = activeAlerts.filter((alert) => alert.condition === "ex_div");
-        const priceAlerts = activeAlerts.filter((alert) => isPriceAlertCondition(alert.condition));
-        const weatherAlerts = activeAlerts.filter((alert) => alert.condition === "weather" && alert.weather);
-        const now = new Date();
+      // One batched pass over the distinct symbols: the alerts pane reads the same
+      // persisted store, so this is the only place that talks to the provider.
+      const quoteKeys = [...new Set(activeAlerts.map((alert) => `${alert.symbol}\0${alert.exchange ?? ""}`))];
+      const results = await Promise.all(quoteKeys.map(async (key): Promise<[string, Quote | string]> => {
+        const [symbol, exchange = ""] = key.split("\0");
+        try {
+          return [key, await resolveAlertQuote(ctx.marketData, symbol ?? "", exchange)];
+        } catch (err) {
+          ctx.log.warn("poll: no quote", { symbol, exchange, error: String(err) });
+          return [key, createQuoteErrorMessage(symbol ?? "", err)];
+        }
+      }));
+      const quotes = new Map<string, Quote | string>(results);
 
-        const [haltResult, shortResult, exDivResult] = await Promise.all([
-          haltAlerts.length === 0
-            ? Promise.resolve(null)
-            : fetchMarketHalts().then((halts) => ({
-              tickers: new Set(halts.filter((halt) => halt.status === "active").map((halt) => halt.ticker.toUpperCase())),
-            })).catch((error: unknown) => ({ error })),
-          shortAlerts.length === 0
-            ? Promise.resolve(null)
-            : loadUnique([...new Set(shortAlerts.map((alert) => alert.symbol))], (symbol) =>
-              loadCached(shortFloatCache, symbol, SI_CACHE_MS, async () => {
-                const rows = await fetchShortInterest(symbol);
-                return rows.at(-1)?.shortPercentFloat ?? null;
-              })),
-          exDivAlerts.length === 0
-            ? Promise.resolve(null)
-            : loadUnique([...new Set(exDivAlerts.map((alert) => alert.symbol))], (symbol) =>
-              loadCached(exDivCache, symbol, EXDIV_CACHE_MS, () => fetchExDividendDate(symbol))),
-        ]);
-
-        if (haltResult && "error" in haltResult) {
-          for (const alert of haltAlerts) {
-            Object.assign(alert, quoteErrorAlertFields(createQuoteErrorMessage(alert.symbol, haltResult.error)));
-          }
+      let changed = false;
+      for (const alert of alerts) {
+        if (alert.status !== "active") continue;
+        const quote = quotes.get(`${alert.symbol}\0${alert.exchange ?? ""}`);
+        if (quote === undefined) continue;
+        if (typeof quote === "string") {
+          Object.assign(alert, quoteErrorAlertFields(quote));
           changed = true;
-        } else if (haltResult) {
-          for (const alert of haltAlerts) {
-            const halted = evaluateHaltedAlert(alert, haltResult.tickers);
-            alert.lastCheckedPrice = halted ? 1 : 0;
-            alert.lastCheckedAt = Date.now();
-            alert.lastCheckError = undefined;
-            if (halted) markTriggered(alert, "active halt", 1);
-            changed = true;
-          }
+          continue;
         }
 
-        if (shortResult) {
-          for (const alert of shortAlerts) {
-            const error = shortResult.errors.get(alert.symbol);
-            if (error) {
-              Object.assign(alert, quoteErrorAlertFields(createQuoteErrorMessage(alert.symbol, error)));
-              changed = true;
-              continue;
-            }
-            if (!shortResult.values.has(alert.symbol)) continue;
-            const pct = shortResult.values.get(alert.symbol) ?? null;
-            if (pct == null) {
-              Object.assign(alert, quoteErrorAlertFields(`No short % float for "${alert.symbol}".`));
-              changed = true;
-              continue;
-            }
-            alert.lastCheckedPrice = pct;
-            alert.lastCheckedAt = Date.now();
-            alert.lastCheckError = undefined;
-            if (evaluateShortFloatAlert(alert, pct)) markTriggered(alert, `${pct.toFixed(1)}% of float`, pct);
-            changed = true;
-          }
+        if (evaluateAlert(alert, quote.price)) {
+          alert.status = "triggered";
+          alert.triggeredAt = Date.now();
+          ctx.log.info("poll: TRIGGERED", { symbol: alert.symbol, price: quote.price });
+          ctx.notify({
+            body: `${formatAlertDescription(alert)} triggered at ${quote.price}`,
+            type: "success",
+            desktop: "always",
+            persistent: true,
+            sound: "Glass",
+            action: {
+              label: "Open",
+              onClick: () => ctx.showPane("alerts"),
+            },
+          });
         }
-
-        if (exDivResult) {
-          for (const alert of exDivAlerts) {
-            const error = exDivResult.errors.get(alert.symbol);
-            if (error) {
-              Object.assign(alert, quoteErrorAlertFields(createQuoteErrorMessage(alert.symbol, error)));
-              changed = true;
-              continue;
-            }
-            if (!exDivResult.values.has(alert.symbol)) continue;
-            const exDate = exDivResult.values.get(alert.symbol) ?? null;
-            if (!exDate) {
-              Object.assign(alert, quoteErrorAlertFields(`No ex-div date for "${alert.symbol}".`));
-              changed = true;
-              continue;
-            }
-            const days = utcDaysUntil(exDate, now);
-            alert.lastCheckedPrice = days;
-            alert.lastCheckedAt = Date.now();
-            alert.lastCheckError = undefined;
-            if (evaluateExDivAlert(alert, exDate, now)) markTriggered(alert, `${days}d to ex-div`, days);
-            changed = true;
-          }
-        }
-
-        const weatherResults = await Promise.all(weatherAlerts.map(async (alert) => {
-          try { return { alert, result: await evaluateWeatherAlert(alert) }; }
-          catch (error) { return { alert, error }; }
-        }));
-        for (const result of weatherResults) {
-          if ("error" in result) {
-            Object.assign(result.alert, quoteErrorAlertFields(createQuoteErrorMessage(result.alert.symbol, result.error)));
-            changed = true;
-            continue;
-          }
-          if (!result.result) continue;
-          const { observation, triggered, reason } = result.result;
-          result.alert.lastCheckedPrice = observation.value;
-          result.alert.lastCheckedAt = Date.now();
-          result.alert.lastWeatherStatus = observation.status;
-          result.alert.lastCheckError = undefined;
-          if (triggered) markTriggered(result.alert, reason, observation.value);
-          changed = true;
-        }
+        Object.assign(alert, quoteAlertFields(quote));
+        changed = true;
+      }
 
         const quoteResults = await Promise.all(priceAlerts.map(async (alert) => {
           try {
@@ -382,8 +277,17 @@ export const alertsPlugin: GloomPlugin = {
       }
     };
 
-    poll();
-    pollInterval = setInterval(poll, POLL_INTERVAL_MS);
+    // Re-armed each cycle so a change to the pane's Check interval setting takes
+    // effect on the next tick without a restart.
+    const scheduleNextPoll = () => {
+      const seconds = Number(ctx.paneSettings?.get<string>("alerts", POLL_SECONDS_KEY));
+      const delay = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : POLL_INTERVAL_MS;
+      pollTimer = setTimeout(() => {
+        void poll().finally(scheduleNextPoll);
+      }, delay);
+    };
+
+    void poll().finally(scheduleNextPoll);
 
     ctx.registerPane({
       id: "alerts",
@@ -393,6 +297,23 @@ export const alertsPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 82, height: 20 },
+      settings: {
+        title: "Alerts Settings",
+        fields: [
+          {
+            key: POLL_SECONDS_KEY,
+            label: "Check interval",
+            description: "How often active alerts are re-quoted.",
+            type: "select",
+            options: [
+              { value: "15", label: "15 seconds" },
+              { value: "30", label: "30 seconds" },
+              { value: "60", label: "1 minute" },
+              { value: "300", label: "5 minutes" },
+            ],
+          },
+        ],
+      },
     });
 
     ctx.registerPaneTemplate({
@@ -406,9 +327,9 @@ export const alertsPlugin: GloomPlugin = {
   },
 
   dispose() {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
     }
     pollInFlight = false;
   },

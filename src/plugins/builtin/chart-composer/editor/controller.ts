@@ -221,7 +221,7 @@ export function useSeriesEditorController({
     if (!selected) return false;
     const parsed = parseSeriesExpression(expression) ?? resolveAdjacentIndexQuery(expression);
     if (!parsed) {
-      setError("Use SYMBOL, SYMBOL:field, FRED:series, ADJ:index, KALSHI:ticker, or POLY:marketId.");
+      setError("Use SYMBOL, SYMBOL:field, FRED:series, or CAP:capability-id:series-id.");
       return false;
     }
     expressionCommitLockRef.current = true;
