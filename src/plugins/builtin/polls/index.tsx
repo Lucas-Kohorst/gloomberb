@@ -1,14 +1,10 @@
 import type { GloomPlugin } from "../../../types/plugin";
+import type { PluginModule } from "../plugin-module";
 import { PollsPane } from "./pane";
 import { POLLS_PANE_ID, POLLS_PLUGIN_ID } from "./types";
+import { buildPollsPaneSettingsDef } from "./settings";
 
-export const pollsPlugin: GloomPlugin = {
-  id: POLLS_PLUGIN_ID,
-  name: "Polls",
-  version: "1.0.0",
-  description: "Political polls from VoteHub (CC BY 4.0)",
-  toggleable: true,
-
+export const pollsModule: PluginModule = {
   panes: [
     {
       id: POLLS_PANE_ID,
@@ -18,6 +14,7 @@ export const pollsPlugin: GloomPlugin = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 32 },
+      settings: (context) => buildPollsPaneSettingsDef(context.settings),
     },
   ],
 
@@ -32,4 +29,13 @@ export const pollsPlugin: GloomPlugin = {
       createInstance: () => ({ placement: "floating" }),
     },
   ],
+};
+
+export const pollsPlugin: GloomPlugin = {
+  id: POLLS_PLUGIN_ID,
+  name: "Polls",
+  version: "1.0.0",
+  description: "Political polls from VoteHub (CC BY 4.0)",
+  toggleable: true,
+  ...pollsModule,
 };

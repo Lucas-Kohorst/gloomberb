@@ -26,7 +26,8 @@ export type CatalogSourceId =
   | "fred"
   | "futures"
   | "treasury"
-  | "valuation";
+  | "valuation"
+  | "owid";
 
 export type CatalogFilterId =
   | "all"
@@ -367,6 +368,36 @@ export function filterCatalogRows(
     (sources ? sources.has(entry.sourceId) : true)
     && matchesCatalogQuery(entry, query)
   ));
+}
+
+export function catalogOwidDiscoveryQuery(query: string): string | null {
+  const trimmed = query.trim();
+  if (!trimmed) return null;
+  if (/^(owid|our world in data)$/i.test(trimmed)) return "";
+  if (looksLikeCatalogTickerQuery(trimmed)) return null;
+  return trimmed;
+}
+
+export function catalogRowsFromOwidHits(
+  hits: readonly { slug: string; title?: string; url?: string }[],
+  _metadataBySlug?: ReadonlyMap<string, { title?: string; url?: string }>,
+  blockedSlugs: ReadonlySet<string> = new Set(),
+): CatalogSeriesRow[] {
+  return hits.flatMap((hit) => {
+    if (blockedSlugs.has(hit.slug)) return [];
+    const metadata = _metadataBySlug?.get(hit.slug);
+    const title = metadata?.title || hit.title || hit.slug;
+    return [row({
+      id: `owid:${hit.slug}`,
+      label: title,
+      source: "Our World in Data",
+      sourceId: "owid",
+      kind: "OWID",
+      expression: `OWID:${hit.slug}`,
+      url: hit.url || metadata?.url,
+      searchExtra: [hit.slug, hit.slug.replaceAll("-", " "), "owid"].join(" "),
+    })];
+  });
 }
 
 export function catalogEmptyCopy(

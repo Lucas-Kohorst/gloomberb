@@ -1,5 +1,7 @@
 import type { NewsCapability } from "../capabilities";
 import type { ConnectionHealthRegistry } from "../core/connection-health";
+import { whenStartupBackground } from "../utils/startup-interaction";
+import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../utils/ui-yield";
 import type { NewsArticle, NewsQuery, NewsQueryState } from "./types";
 import {
   DEFAULT_GLOBAL_QUERY,
@@ -120,6 +122,9 @@ export class NewsService {
   private readonly queries = new Map<string, NewsQueryEntry>();
   private articles: NewsArticle[] = [];
   private version = 0;
+  private notifyScheduled = false;
+  private readonly pendingQueryRebuilds = new Set<string>();
+  private queryRebuildScheduled = false;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private polling = false;
   private readonly pollIntervalMs: () => number;
@@ -613,6 +618,109 @@ export class NewsService {
       : request();
   }
 
+  private sourceFetchSnapshot(entry: NewsQueryEntry): SourceFetchResult {
+    const articles: NewsArticle[] = [];
+    const sourceIds: string[] = [];
+    for (const [sourceId, items] of entry.sourceArticles) {
+      sourceIds.push(sourceId);
+      articles.push(...items);
+    }
+    return { articles, sourceIds, failedSourceIds: [], nextCursor: entry.state.nextCursor };
+  }
+
+  private rebuildQueryState(entry: NewsQueryEntry, options: { notify?: boolean } = {}): boolean {
+    const previousArticles = entry.state.articles;
+    const snapshot = this.sourceFetchSnapshot(entry);
+    const articles = filterNewsArticlesForQuery(dedupeNewsArticles(snapshot.articles), entry.query);
+    const phase = articles.length > 0
+      ? "ready"
+      : entry.state.phase;
+    const idsChanged = !sameArticleIdSet(previousArticles, articles);
+    entry.state = {
+      phase,
+      articles,
+      error: null,
+      updatedAt: this.now(),
+      sourceIds: snapshot.sourceIds,
+      nextCursor: entry.state.nextCursor,
+      loadingMore: entry.state.loadingMore,
+    };
+    entry.lastAccessedAt = this.now();
+    if (options.notify === false || !idsChanged) return idsChanged;
+    this.rebuildArticlePool();
+    this.notify();
+    return idsChanged;
+  }
+
+  private scheduleQueryRebuild(entry: NewsQueryEntry): void {
+    this.pendingQueryRebuilds.add(buildNewsQueryKey(entry.query));
+    if (this.queryRebuildScheduled) return;
+    this.queryRebuildScheduled = true;
+    const flush = () => {
+      this.queryRebuildScheduled = false;
+      this.flushQueryRebuilds();
+    };
+    if (isUiYieldEnabled() && typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+      return;
+    }
+    queueMicrotask(flush);
+  }
+
+  private flushQueryRebuilds(): void {
+    const keys = [...this.pendingQueryRebuilds];
+    this.pendingQueryRebuilds.clear();
+    let idsChanged = false;
+    for (const key of keys) {
+      const entry = this.queries.get(key);
+      if (!entry) continue;
+      if (this.rebuildQueryState(entry, { notify: false })) idsChanged = true;
+    }
+    if (!idsChanged) return;
+    this.rebuildArticlePool();
+    this.notify();
+  }
+
+  private applySourceArticles(
+    entry: NewsQueryEntry,
+    sourceId: string,
+    articles: NewsArticle[],
+    options: { retainExisting?: boolean } = {},
+  ): void {
+    const previous = entry.sourceArticles.get(sourceId) ?? [];
+    let next: NewsArticle[];
+    if (!options.retainExisting) {
+      next = articles;
+    } else if (previous.length > 0 && containsArticleIds(articles, previous)) {
+      next = sameArticleIdSet(previous, articles) ? previous : dedupeNewsArticles(articles);
+    } else if (previous.length === 0) {
+      next = dedupeNewsArticles(articles);
+    } else {
+      next = dedupeNewsArticles([...articles, ...previous]);
+    }
+    entry.sourceArticles.set(sourceId, next);
+    if (sameArticleIdSet(previous, next)) return;
+    this.scheduleQueryRebuild(entry);
+  }
+
+  private queryAcceptsSource(entry: NewsQueryEntry, source: NewsCapability): boolean {
+    return source.isEnabled?.() !== false && (source.provider.supports?.(entry.query) ?? true);
+  }
+
+  private seedCachedSourcesForQuery(entry: NewsQueryEntry): void {
+    let changed = false;
+    for (const source of this.sources.values()) {
+      if (!this.queryAcceptsSource(entry, source)) continue;
+      const cached = (source.provider.getCachedNews?.(entry.query) ?? [])
+        .map((article) => attributeArticle(source, article));
+      if (cached.length === 0) continue;
+      entry.sourceArticles.set(newsCapabilitySourceId(source), cached);
+      changed = true;
+    }
+    if (!changed) return;
+    this.rebuildQueryState(entry);
+  }
+
   private seedCachedSource(source: NewsCapability): void {
     if (this.queries.size === 0) {
       this.getOrCreateQueryEntry(DEFAULT_GLOBAL_QUERY);
@@ -626,16 +734,8 @@ export class NewsService {
       const cached = (news.getCachedNews?.(entry.query) ?? [])
         .map((article) => attributeArticle(source, article));
       if (cached.length === 0) continue;
-      const entry = this.getOrCreateQueryEntry(query);
-      entry.state = {
-        phase: "ready",
-        articles: filterNewsArticlesForQuery(dedupeNewsArticles([...entry.state.articles, ...cached]), query),
-        error: null,
-        updatedAt: this.now(),
-        sourceIds: [...new Set([...entry.state.sourceIds, newsCapabilitySourceId(source)])],
-        nextCursor: entry.state.nextCursor,
-        loadingMore: false,
-      };
+      entry.sourceArticles.set(newsCapabilitySourceId(source), cached);
+      this.rebuildQueryState(entry, { notify: false });
       changed = true;
     }
     if (changed) {

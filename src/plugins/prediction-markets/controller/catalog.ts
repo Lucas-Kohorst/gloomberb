@@ -70,11 +70,13 @@ export function usePredictionCatalogData({
     Record<string, string | null>
   >({});
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
+  const [catalogLastRefreshAt, setCatalogLastRefreshAt] = useState<number | null>(null);
   const [polymarketLoadedAt, setPolymarketLoadedAt] = useState<number | null>(null);
   const [kalshiLoadedAt, setKalshiLoadedAt] = useState<number | null>(null);
   const [polymarketNextOffset, setPolymarketNextOffset] = useState<number | null>(null);
   const [kalshiNextCursor, setKalshiNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [kalshiFeed, setKalshiFeed] = useState<"live" | "delayed">("live");
   const activeCatalogRef = useRef<PredictionCatalogCache>({});
 
   const normalizedSearchQuery = debouncedSearchQuery.trim().toLowerCase();
@@ -143,6 +145,8 @@ export function usePredictionCatalogData({
         : null,
     [browseTab, categoryId, normalizedSearchQuery],
   );
+  const polymarketCatalogKey = polymarketSearchKey ?? polymarketBrowseKey;
+  const kalshiCatalogKey = kalshiSearchKey ?? kalshiBrowseKey;
 
   const polymarketBrowse = useMemo(
     () => readCatalogSlice(
@@ -348,7 +352,6 @@ export function usePredictionCatalogData({
       try {
         const next = await loadKalshiCatalog(search, category, browseTab, options);
         if (shouldYieldToUi()) await whenUiQuiet();
-        setKalshiFeed(getKalshiCatalogFeed());
         setCatalogCache((current) => {
           const previous = current[cacheKey] ?? activeCatalogRef.current[cacheKey];
           const slice = options?.firstPageOnly
@@ -476,60 +479,6 @@ export function usePredictionCatalogData({
     polymarketSearchKey,
   ]);
 
-  const loadMoreCatalog = useCallback(async () => {
-    if (loadingMore) return;
-    const canLoadPolymarket = includePolymarket && polymarketNextOffset != null;
-    const canLoadKalshi = includeKalshi && !!kalshiNextCursor;
-    if (!canLoadPolymarket && !canLoadKalshi) return;
-    setLoadingMore(true);
-    try {
-      if (canLoadPolymarket && polymarketNextOffset != null) {
-        const page = await loadMorePolymarketCatalog(
-          "",
-          categoryId,
-          polymarketNextOffset,
-        );
-        setCatalogCache((current) => ({
-          ...current,
-          [polymarketBrowseKey]: mergeCatalogMarkets(
-            current[polymarketBrowseKey] ?? activeCatalogRef.current[polymarketBrowseKey] ?? [],
-            page.markets,
-          ),
-        }));
-        setPolymarketNextOffset(page.hasMore ? page.nextOffset : null);
-        setCatalogLastRefreshAt(Date.now());
-      }
-      if (canLoadKalshi && kalshiNextCursor) {
-        const page = await loadMoreKalshiCatalog(
-          "",
-          categoryId,
-          kalshiNextCursor,
-        );
-        setCatalogCache((current) => ({
-          ...current,
-          [kalshiBrowseKey]: mergeCatalogMarkets(
-            current[kalshiBrowseKey] ?? activeCatalogRef.current[kalshiBrowseKey] ?? [],
-            page.markets,
-          ),
-        }));
-        setKalshiNextCursor(page.nextCursor);
-        setKalshiFeed(getKalshiCatalogFeed());
-        setCatalogLastRefreshAt(Date.now());
-      }
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [
-    categoryId,
-    includeKalshi,
-    includePolymarket,
-    kalshiBrowseKey,
-    kalshiNextCursor,
-    loadingMore,
-    polymarketBrowseKey,
-    polymarketNextOffset,
-  ]);
-
   useAutoRefresh(includeKalshi ? kalshiLoadedAt : null, useCallback(() => {
     void loadKalshi(kalshiCatalogKey, debouncedSearchQuery, categoryId);
   }, [categoryId, debouncedSearchQuery, kalshiCatalogKey, loadKalshi]));
@@ -555,6 +504,7 @@ export function usePredictionCatalogData({
           ),
         }));
         setPolymarketNextOffset(page.hasMore ? page.nextOffset : null);
+        setCatalogLastRefreshAt(Date.now());
       }
       if (canLoadKalshi && kalshiNextCursor) {
         const page = await loadMoreKalshiCatalog(
@@ -570,6 +520,7 @@ export function usePredictionCatalogData({
           ),
         }));
         setKalshiNextCursor(page.nextCursor);
+        setCatalogLastRefreshAt(Date.now());
       }
     } finally {
       setLoadingMore(false);
@@ -589,11 +540,13 @@ export function usePredictionCatalogData({
   return {
     allMarkets,
     catalogHasMore: (includePolymarket && polymarketNextOffset != null) || (includeKalshi && !!kalshiNextCursor),
+    catalogLastRefreshAt,
     catalogLoadCount,
     catalogLoadingMore: loadingMore,
     catalogStatus,
     kalshiFeed,
     debouncedSearchQuery,
+    refreshCatalog,
     loadMoreCatalog,
     setCatalogCache,
   };

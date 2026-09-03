@@ -1,6 +1,7 @@
 import { Box } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, EmptyState, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
+import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { PluginModule } from "../plugin-module";
@@ -140,14 +141,6 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
       })
       .filter((quote): quote is MarketSummaryQuote => !!quote)
   ), [summaryBoard, summarySymbols]);
-
-  useEffect(() => {
-    void loadSummary();
-  }, [loadSummary]);
-
-  useAutoRefresh(summaryFetchedAt, () => {
-    void loadSummary();
-  });
 
   const loadTab = useCallback(async (
     tab: TabId,

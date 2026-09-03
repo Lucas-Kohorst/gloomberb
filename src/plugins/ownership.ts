@@ -33,7 +33,8 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "market-movers": "market-overview",
   options: "ticker-research",
   "options-calc": "portfolio",
-  "plugin-discovery": "plugin-market",
+  "plugin-discovery": "application",
+  "plugin-market": "application",
   "portfolio-list": "portfolio",
   research: "ticker-research",
   scanner: "market-overview",
@@ -56,18 +57,16 @@ const NON_TOGGLEABLE_BUILTIN_PLUGIN_IDS = new Set([
   "changelog",
   "help",
   "layout-manager",
-  "plugin-market",
   "plugin-inspector",
 ]);
 
 const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
-  application: ["layout-manager", "help", "changelog", "byok", "connections"],
+  application: ["layout-manager", "help", "changelog", "byok", "connections", "plugin-market", "plugin-discovery"],
   portfolio: ["portfolio-list", "analytics", "kelly-sizer", "options-calc"],
   "ticker-research": ["short-interest", "dividend-yield", "esg"],
   "market-overview": ["market-halts", "scanner", "commodities"],
   macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions", "country-econ"],
   adjacent: ["polls", "llm-stats", "weather", "adjacent-dev"],
-  "plugin-market": ["plugin-discovery"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {

@@ -18,6 +18,14 @@ export function getPaneTemplateDisplayLabel(template: Pick<PaneTemplateDef, "lab
   return label;
 }
 
+export function getPaneShortcutPrefixes(template: Pick<PaneTemplateDef, "shortcut">): string[] {
+  const shortcut = template.shortcut;
+  if (!shortcut?.prefix) return [];
+  return [shortcut.prefix, ...(shortcut.aliases ?? [])]
+    .map((prefix) => prefix.trim().toUpperCase())
+    .filter(Boolean);
+}
+
 export function getPaneTemplateArgKind(template: PaneTemplateDef): string | undefined {
   return template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
 }
@@ -92,11 +100,15 @@ export function getAvailablePaneShortcutTemplatesForQuery(options: {
   return [...options.pluginRegistry.paneTemplates.values()].filter((template) => {
     const pluginId = options.pluginRegistry.getPaneTemplatePluginId(template.id);
     if (pluginId && disabledPluginIds.has(pluginId)) return false;
-    const prefix = template.shortcut?.prefix?.toUpperCase();
-    if (!prefix) return false;
-    const arg = trimmed.slice(prefix.length).trim();
+    const prefixes = getPaneShortcutPrefixes(template);
+    if (prefixes.length === 0) return false;
+    const matchedPrefix = prefixes.find((prefix) => (
+      upper === prefix || upper.startsWith(`${prefix} `)
+    ));
+    if (!matchedPrefix) return false;
+    const arg = trimmed.slice(matchedPrefix.length).trim();
     const argKind = getPaneTemplateArgKind(template);
-    if (upper !== prefix && (!argKind || !upper.startsWith(`${prefix} `))) return false;
+    if (upper !== matchedPrefix && !argKind) return false;
     if (!template.canCreate) return true;
     try {
       const canCreate = template.canCreate(options.context, arg ? { arg } : undefined);

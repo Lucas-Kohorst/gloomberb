@@ -147,6 +147,68 @@ async function resolvePolymarketSummary(
   };
 }
 
+async function fetchPolymarketMarketRecord(
+  url: string,
+): Promise<PolymarketMarketRecord | null> {
+  try {
+    const response = await fetchJson<PolymarketMarketRecord | PolymarketMarketRecord[]>(url);
+    if (Array.isArray(response)) return response[0] ?? null;
+    return response ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves a venue-native Polymarket identifier onto a chartable market.
+ * Accepts a Gamma market id, a market slug, an event id (which settles on
+ * the event's busiest market), or the synthetic "<eventId>:<slug>" id that
+ * normalizePolymarketMarket mints for Gamma records without an id.
+ */
+export async function resolvePolymarketMarketById(
+  marketId: string,
+): Promise<PredictionMarketSummary | null> {
+  const trimmed = marketId.trim();
+  if (!trimmed) return null;
+
+  const composite = /^(\d+):(.+)$/.exec(trimmed);
+  if (composite?.[1] && composite[2]) {
+    const [, eventId, slug] = composite;
+    const bySlug = await fetchPolymarketMarketRecord(
+      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(slug)}&limit=1`,
+    );
+    if (bySlug) return normalizePolymarketMarket(bySlug);
+    const event = await loadPolymarketEvent(eventId);
+    const match = event?.markets?.find((market) => market.slug === slug);
+    if (match && event) {
+      return normalizePolymarketMarket(hydratePolymarketMarket(match, event));
+    }
+    return null;
+  }
+
+  const byId = /^\d+$/.test(trimmed)
+    ? await fetchPolymarketMarketRecord(`${POLYMARKET_GAMMA_BASE}/markets/${trimmed}`)
+    : null;
+  const record =
+    byId ??
+    (await fetchPolymarketMarketRecord(
+      `${POLYMARKET_GAMMA_BASE}/markets?slug=${encodeURIComponent(trimmed)}&limit=1`,
+    ));
+  if (record) return normalizePolymarketMarket(record);
+
+  const event = await loadPolymarketEvent(trimmed);
+  if (!event?.markets?.length) return null;
+  let best: PredictionMarketSummary | null = null;
+  for (const eventMarket of event.markets) {
+    const summary = normalizePolymarketMarket(
+      hydratePolymarketMarket(eventMarket, event),
+    );
+    if (!summary) continue;
+    if (!best || (summary.volume24h ?? 0) > (best.volume24h ?? 0)) best = summary;
+  }
+  return best;
+}
+
 export async function loadPolymarketHistory(
   summary: PredictionMarketSummary,
   range: "1D" | "1W" | "1M" | "ALL",

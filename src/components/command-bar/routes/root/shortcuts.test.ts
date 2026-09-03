@@ -169,4 +169,30 @@ describe("ticker data root shortcuts", () => {
     expect(scoped.source).toBe("plugin-command");
     expect(scoped.argText).toBe("AAPL,MSFT");
   });
+
+  test("pane shortcut aliases resolve to the same template", () => {
+    const templates: PaneTemplateDef[] = [{
+      id: "plugin-marketplace-pane",
+      paneId: "plugin-marketplace",
+      label: "Plugin Marketplace",
+      description: "Search installed and GitHub plugins",
+      shortcut: { prefix: "PLUGINS", aliases: ["PLUG", "PL"] },
+    }];
+    const parseAlias = (query: string) => parseRootShortcutIntent({
+      query,
+      commands: [],
+      pluginCommands: [],
+      paneTemplates: templates,
+      activeTicker: null,
+    });
+    for (const query of ["PLUGINS", "PLUG", "PL"]) {
+      const intent = parseAlias(query);
+      expect(intent.kind).toBe("partial");
+      if (intent.kind === "none") throw new Error("Expected shortcut intent");
+      expect(intent.source).toBe("pane-template");
+      if (intent.source === "pane-template") {
+        expect(intent.template.id).toBe("plugin-marketplace-pane");
+      }
+    }
+  });
 });

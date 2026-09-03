@@ -19,6 +19,7 @@ import {
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
   formatSeriesExpression,
+  parseBinarySeriesExpression,
   parseChartExpression,
   parseSeriesExpression,
   rebindChartSecuritySymbol,

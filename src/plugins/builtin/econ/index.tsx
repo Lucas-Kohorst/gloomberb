@@ -59,7 +59,12 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [impactFilter, setImpactFilter] = usePluginPaneState<ImpactFilter>("impactFilter", "all");
   const [countryFilter, setCountryFilter] = usePluginPaneState<CountryFilter>("countryFilter", "all");
+  const [sortPreference, setSortPreference] = useState<SortPreference<EconCalendarColumn["id"]>>({
+    columnId: null,
+    direction: "asc",
+  });
   const [now, setNow] = useState(Date.now());
+  const today = new Date(now);
   const appActive = useAppActive();
   const [detailEvent, setDetailEvent] = useState<EconEvent | null>(null);
 

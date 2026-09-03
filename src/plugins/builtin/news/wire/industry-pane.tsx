@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
 import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
+import { usePaneSettingValue } from "../../../../state/app/context";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
 import { Tabs } from "../../../../components";
 import { NewsDetailView, useNewsArticleDetail } from "./news/detail-view";
@@ -111,7 +112,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     <Box height={1} flexShrink={0} overflow="hidden">
       <Tabs
         tabs={tabs}
-        activeValue={resolvedCategory}
+        activeValue={category}
         onSelect={(value) => setCategory(value as SectorNewsSelection)}
         compact
         variant="bare"

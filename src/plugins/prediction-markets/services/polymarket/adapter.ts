@@ -22,6 +22,7 @@ import type {
   PolymarketEventRecord,
   PolymarketSearchResponse,
 } from "./types";
+import { loadPolymarketEvent } from "./detail";
 
 export { normalizePolymarketMarket } from "./normalize";
 export { loadPolymarketDetail } from "./detail";

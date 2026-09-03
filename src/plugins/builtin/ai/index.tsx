@@ -4,10 +4,14 @@ import { AskAiResearchTab } from "./ask-ai-detail-tab";
 import {
   AI_PROVIDER_IDS,
   detectProviders,
+  isHostedWebClient,
   resolveDefaultAiProviderId,
   setDetectedProviders,
   type AiProvider,
 } from "./providers";
+import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
+import { registerByokKnownService } from "../byok/services";
+import { aiProviderByokService } from "../account-management/ai-providers";
 import {
   AI_SCREENER_PANE_STATE_KEY,
   AiScreenerPane,

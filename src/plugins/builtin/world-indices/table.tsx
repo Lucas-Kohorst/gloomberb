@@ -11,6 +11,16 @@ import type {
 
 export type WorldIndexColumn = DataTableColumn & { id: WorldIndexColumnId };
 
+export const DEFAULT_WORLD_INDEX_COLUMN_IDS: WorldIndexColumnId[] = [
+  "status",
+  "symbol",
+  "name",
+  "price",
+  "change",
+  "changePercent",
+  "time",
+];
+
 const SESSION_TEXT_MIN_WIDTH = 84;
 const CHANGE_MIN_WIDTH = 62;
 const TIME_MIN_WIDTH = 78;

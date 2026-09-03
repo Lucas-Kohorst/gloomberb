@@ -7,8 +7,9 @@ import {
   type DataTableKeyEvent,
   type TickerListVisibleRange,
 } from "../../../../components";
+import { usePluginAppActions } from "../../../runtime";
 import { useTickerSourceActivate } from "../../shared/ticker-source";
-import { useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
+import { copyOnWriteTickerFinancialsMap, mergeTickerFinancials, useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { useAppActive } from "../../../../state/app/activity";
 import {
   useAppDispatch,
@@ -24,7 +25,14 @@ import { isPlainKey } from "../../../../utils/keyboard";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
-import { calculatePortfolioSummaryTotals, resolveCollectionSortPreference, type ColumnContext } from "../metrics";
+import { tf } from "../../../../i18n";
+import { getSharedRegistry } from "../../../registry";
+import {
+  calculatePortfolioSummaryTotals,
+  isTimeSensitiveColumnId,
+  resolveCollectionSortPreference,
+  type ColumnContext,
+} from "../metrics";
 import {
   PortfolioCashMarginDrawer,
   shouldToggleCashMarginDrawer,
@@ -53,6 +61,7 @@ import {
   sortTickers,
 } from "./data";
 import { usePortfolioPaneStreaming } from "./streaming";
+import { usePredictionWatchlistQuotes } from "../../../prediction-markets/watchlist-quotes";
 import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
 import { CHART_COMPOSER_TEMPLATE_ID } from "../../shared/graph-pop-out";
@@ -60,7 +69,9 @@ import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 import { paneSearchHint } from "../../shared/pane-footer";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
+  const { notify, createPaneFromTemplate } = usePluginAppActions();
   const activateTicker = useTickerSourceActivate();
+  const dispatch = useAppDispatch();
   const paneInstance = usePaneInstance();
   const appActive = useAppActive();
   const config = useAppSelector((state) => state.config);
@@ -261,6 +272,12 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     activateTicker(symbol, { floating: true, newPane: options?.newPane });
   }, [activateTicker]);
 
+  const chartSelectedTicker = useCallback((ticker?: TickerRecord | null) => {
+    const symbol = ticker?.metadata.ticker;
+    if (!symbol) return;
+    createPaneFromTemplate(CHART_COMPOSER_TEMPLATE_ID, { arg: symbol });
+  }, [createPaneFromTemplate]);
+
   const toggleViewMode = useCallback(() => {
     if (!isPortfolioTab) return;
     setViewMode((current) => current === "table" ? "grid" : "table");
@@ -459,6 +476,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     visibleWarmupRequirements,
     liveStreaming,
   });
+
+  usePredictionWatchlistQuotes(tickers, { enabled: appActive });
 
   const summaryFooterInfo = useMemo(() => buildPortfolioFooterSegments({
     accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,

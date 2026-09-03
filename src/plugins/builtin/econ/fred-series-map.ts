@@ -116,3 +116,7 @@ export function listFredCatalogSeries(): ReadonlyArray<{ seriesId: string; label
     ...EXTRA_CATALOG_SERIES.filter((entry) => !known.has(entry.seriesId)),
   ];
 }
+
+export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
+  return [...FRED_CATALOG_SERIES];
+}

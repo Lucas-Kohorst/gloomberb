@@ -1,9 +1,13 @@
-import type { ReactNode } from "react";
 import {
   getPaneSidebarWidth,
   PaneSidebar,
   PaneSidebarRow,
 } from "../components/layout/pane/sidebar";
+import {
+  MarketplaceActionRow,
+  MarketplaceNote,
+  MarketplaceSection,
+} from "../components/marketplace/sidebar";
 import { Button } from "../components/ui/button";
 import { TextField } from "../components/ui/fields";
 import { Spinner } from "../components/ui/loading";
@@ -21,55 +25,7 @@ import {
 
 const PREVIEW = { width: 640, height: 320 };
 const ELLIPSIS = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } as const;
-
-function SidebarSection({ title, count }: { title: string; count: number }) {
-  const colors = useThemeColors();
-  return (
-    <Box height={1} flexDirection="row" alignItems="center" paddingX={1} flexShrink={0}>
-      <Text fg={colors.textMuted} attributes={TextAttributes.BOLD}>
-        {`${t(title).toUpperCase()} ${count}`}
-      </Text>
-    </Box>
-  );
-}
-
-function SidebarNote({ children }: { children: ReactNode }) {
-  const colors = useThemeColors();
-  return (
-    <Box flexDirection="row" paddingX={1} paddingY={1} flexShrink={0}>
-      <Text fg={colors.textDim} wrapText>{children}</Text>
-    </Box>
-  );
-}
-
-function SidebarActionRow({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <PaneSidebarRow active={false} ariaLabel={label} onSelect={onPress}>
-      {({ foregroundColor, listWidth, onMouseDown }) => (
-        <Box
-          width={listWidth}
-          height={1}
-          flexDirection="row"
-          role="button"
-          tabIndex={0}
-          aria-label={label}
-          data-gloom-role="layout-gallery-row"
-          data-gloom-interactive="true"
-          onMouseDown={onMouseDown}
-          onKeyDown={(event: { key?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault?.();
-            event.stopPropagation?.();
-            onPress();
-          }}
-          style={{ cursor: "pointer" }}
-        >
-          <Text fg={foregroundColor}>{`  ${label}`}</Text>
-        </Box>
-      )}
-    </PaneSidebarRow>
-  );
-}
+const ROW_ROLE = "layout-gallery-row";
 
 function EntryRow({
   entry,
@@ -143,8 +99,8 @@ function DiscoverStatus({ controller }: { controller: LayoutGalleryController })
   if (!controller.signedIn) {
     return (
       <>
-        <SidebarNote>{t("A Gloom account is required to browse community layouts.")}</SidebarNote>
-        <SidebarActionRow label={t("Log in")} onPress={controller.requestSignIn} />
+        <MarketplaceNote>{t("A Gloom account is required to browse community layouts.")}</MarketplaceNote>
+        <MarketplaceActionRow label={t("Log in")} onPress={controller.requestSignIn} rowRole={ROW_ROLE} />
       </>
     );
   }
@@ -159,18 +115,18 @@ function DiscoverStatus({ controller }: { controller: LayoutGalleryController })
   if (discover.state.status === "error") {
     return (
       <>
-        <SidebarNote><Text fg={colors.negative} wrapText>{discover.state.error}</Text></SidebarNote>
-        <SidebarActionRow label={t("Retry")} onPress={discover.refresh} />
+        <MarketplaceNote><Text fg={colors.negative} wrapText>{discover.state.error}</Text></MarketplaceNote>
+        <MarketplaceActionRow label={t("Retry")} onPress={discover.refresh} rowRole={ROW_ROLE} />
       </>
     );
   }
   if (controller.community.length === 0) {
     return (
-      <SidebarNote>
+      <MarketplaceNote>
         {controller.query.trim()
           ? t("No community layouts match this search.")
           : t("No community layouts published yet.")}
-      </SidebarNote>
+      </MarketplaceNote>
     );
   }
   return null;
@@ -334,13 +290,13 @@ export function LayoutGalleryDesktop({
               focusable={false}
               data-gloom-role="layout-gallery-sidebar"
             >
-              <SidebarSection title="Your Layouts" count={controller.owned.length} />
+              <MarketplaceSection title="Your Layouts" count={controller.owned.length} />
               {controller.owned.length === 0 ? (
-                <SidebarNote>
+                <MarketplaceNote>
                   {controller.query.trim()
                     ? t("No saved layouts match this search.")
                     : t("No saved layouts yet.")}
-                </SidebarNote>
+                </MarketplaceNote>
               ) : controller.owned.map((entry) => (
                 <EntryRow
                   key={entry.id}
@@ -350,7 +306,7 @@ export function LayoutGalleryDesktop({
                 />
               ))}
 
-              <SidebarSection title="Discover" count={controller.community.length} />
+              <MarketplaceSection title="Discover" count={controller.community.length} />
               <DiscoverStatus controller={controller} />
               {controller.community.map((entry) => (
                 <EntryRow

@@ -20,7 +20,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../utils/text-wrap";
 import type { ResolvedSeries } from "../../../time-series/types";
 import { downsampleCompositeChartScene } from "./downsample";
-import { reuseResolvedSeriesList } from "./panel-series";
+import { groupSeriesByPanelId, reuseResolvedSeriesList } from "./panel-series";
 import {
   consumeChartMouseEvent,
   getGlobalMouseX,
@@ -1474,7 +1474,9 @@ export function CompositeChart({
 }: CompositeChartProps) {
   const activeThemeColors = useThemeColors();
   const { cellWidthPx = 8, pixelRatio = 1 } = useUiCapabilities();
-  const isDesktopWeb = useUiHost().kind === "desktop-web";
+  const ui = useUiHost();
+  const isDesktopWeb = ui.kind === "desktop-web";
+  const nativeTvChrome = !!ui.TradingViewChart;
   const showTextFallback = useShowChartTextFallback();
   const [internalCursorDate, setInternalCursorDate] = useState<Date | null>(null);
   const [legendKeyboardIndex, setLegendKeyboardIndex] = useState<number | null>(null);

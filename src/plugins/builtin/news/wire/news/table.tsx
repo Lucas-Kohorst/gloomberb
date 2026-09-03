@@ -18,10 +18,12 @@ import { newsOriginLabel } from "../../../../../news/origins";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
 import { truncateWithEllipsis } from "../../../../../utils/text-wrap";
 import { formatNewsCategory } from "../categories";
+import { useRecentlyArrivedIds } from "../../../../../components/data-table/use-recently-arrived-ids";
 
 export type NewsColumnId =
   | "rank"
   | "time"
+  | "origin"
   | "source"
   | "title"
   | "tickers"
@@ -30,6 +32,19 @@ export type NewsColumnId =
   | "importance";
 
 const SENTIMENT_ORDER: Record<string, number> = { negative: -1, neutral: 0, positive: 1 };
+
+export function buildNewsArticleRowRevision(
+  article: MarketNewsItem,
+  read: boolean,
+  title = article.title,
+): string {
+  return [
+    article.id,
+    article.publishedAt.getTime(),
+    read ? 1 : 0,
+    title,
+  ].join(":");
+}
 
 /**
  * Ticker badges are laid out by content, so a column that cannot fit them all
@@ -164,6 +179,7 @@ function nextSortPreference(current: NewsSortPreference, columnId: NewsColumnId)
   return {
     columnId,
     direction: columnId === "title" || columnId === "source" || columnId === "categories"
+      || columnId === "origin"
       ? "asc"
       : "desc",
   };
@@ -173,6 +189,7 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
   const fixedWidths: Record<Exclude<NewsColumnId, "title">, number> = {
     rank: 4,
     time: 4,
+    origin: 8,
     source: 12,
     tickers: 18,
     categories: 10,
@@ -183,6 +200,7 @@ function buildColumns(width: number, columnIds: NewsColumnId[]): NewsTableColumn
   const labels: Record<NewsColumnId, string> = {
     rank: "#",
     time: "TIME",
+    origin: "ORIGIN",
     source: "SOURCE",
     title: "HEADLINE",
     tickers: "TICKERS",

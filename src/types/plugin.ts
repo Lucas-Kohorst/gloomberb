@@ -190,6 +190,8 @@ export interface PaneTemplateContext {
 
 interface PaneTemplateShortcut {
   prefix: string;
+  /** Extra prefixes that open this same template without extra command-bar rows. */
+  aliases?: string[];
   argPlaceholder?: string;
   argKind?: "text" | "ticker" | "ticker-list";
   argOptional?: boolean;

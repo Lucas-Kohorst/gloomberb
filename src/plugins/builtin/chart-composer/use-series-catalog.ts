@@ -218,6 +218,16 @@ export function useSeriesCatalogSuggestions({
     loading: boolean;
     error: string | null;
   }>({ query: "", instruments: [], loading: false, error: null });
+  const [marketSearch, setMarketSearch] = useState<{
+    query: string;
+    markets: PredictionMarketSearchHit[];
+    loading: boolean;
+  }>({ query: "", markets: [], loading: false });
+  const [owidSearch, setOwidSearch] = useState<{
+    query: string;
+    suggestions: SeriesCatalogSuggestion[];
+    loading: boolean;
+  }>({ query: "", suggestions: [], loading: false });
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -362,17 +372,28 @@ export function useSeriesCatalogSuggestions({
   const instruments = search.query === analysis.instrumentQuery
     ? search.instruments
     : [];
+  const markets = marketSearch.query === query.trim() ? marketSearch.markets : [];
+  const owidSuggestions = owidSearch.query === query.trim() ? owidSearch.suggestions : [];
   const suggestions = useMemo(() => {
-    const builtIn = buildSeriesCatalogSuggestions(query, defaultInstrument, instruments);
+    const builtIn = buildSeriesCatalogSuggestions(
+      query,
+      defaultInstrument,
+      instruments,
+      8,
+      markets,
+      owidSuggestions,
+    );
     const provider = providerSearch.query === query.trim() ? providerSearch.suggestions : [];
     return [...provider, ...builtIn.filter((entry) => !provider.some((candidate) => candidate.id === entry.id))].slice(0, 8);
-  }, [defaultInstrument, instruments, providerSearch, query]);
+  }, [defaultInstrument, instruments, markets, owidSuggestions, providerSearch, query]);
 
   return {
     suggestions,
     instruments,
     loading: (search.loading && search.query === analysis.instrumentQuery)
-      || (providerSearch.loading && providerSearch.query === query.trim()),
+      || (providerSearch.loading && providerSearch.query === query.trim())
+      || (marketSearch.loading && marketSearch.query === query.trim())
+      || (owidSearch.loading && owidSearch.query === query.trim()),
     error: (search.query === analysis.instrumentQuery ? search.error : null)
       ?? (providerSearch.query === query.trim() ? providerSearch.error : null),
   };

@@ -694,26 +694,6 @@ function ChartComposerSurface({
   );
 }
 
-function useBoundChartSpec(fallbackFor: (symbol: string | null) => ChartSpec) {
-  const { symbol } = usePaneTicker();
-  const fallback = useMemo(
-    () => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
-    [symbol],
-  );
-  const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
-  const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
-  return (
-    <ChartComposerSurface
-      spec={spec}
-      setSpec={setStoredSpec}
-      focused={focused}
-      width={width}
-      height={height}
-      footerId={`${CHART_COMPOSER_PANE_ID}:${paneId}`}
-    />
-  );
-}
-
 function firstChartSecuritySymbol(spec: ChartSpec): string | null {
   for (const entry of spec.series) {
     if (entry.source.kind === "security") return entry.source.instrument.symbol;
@@ -728,9 +708,9 @@ function specHasSecuritySymbol(spec: ChartSpec, symbol: string | null | undefine
   ));
 }
 
-export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
+function useBoundChartSpec(fallbackFor: (symbol: string | null) => ChartSpec) {
   const { symbol } = usePaneTicker();
-  const fallback = useMemo(() => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(), [symbol]);
+  const fallback = useMemo(() => fallbackFor(symbol), [fallbackFor, symbol]);
   const [storedSpec, setStoredSpec] = usePaneSettingValue<unknown>(CHART_SPEC_SETTING_KEY, fallback);
   const spec = useMemo(() => parseChartSpecOr(storedSpec, fallback), [fallback, storedSpec]);
   const previousSymbolRef = useRef(symbol);

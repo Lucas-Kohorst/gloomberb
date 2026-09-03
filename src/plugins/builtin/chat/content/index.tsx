@@ -128,9 +128,6 @@ export function ChatContent({
     const nextRows = estimateComposerHeight(draft, composerTextWidthRef.current);
     setComposerRows((current) => (current === nextRows ? current : nextRows));
   }, []);
-  const retryMessages = useCallback(() => {
-    void controller.refreshChannelMessages(channelId).catch(() => {});
-  }, [channelId, controller]);
   const {
     channels,
     channelsLoading,
@@ -226,6 +223,17 @@ export function ChatContent({
   const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
   const activeChannel = useMemo(() => channels.find((channel) => channel.id === channelId), [channelId, channels]);
   const activeChannelTitle = useMemo(() => formatChatPaneTitle(activeChannel, channelId), [activeChannel, channelId]);
+  const presence = useMemo(() => ({
+    onlineUserIds,
+    onlineUsernames,
+    selfUserId: user?.id,
+    selfUsername: user?.username,
+  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
+  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
+  const channelMembers = useMemo(
+    () => listChannelMembers(activeChannel),
+    [activeChannel],
+  );
   const recentMentionSuggestions = useMemo(() => buildRecentMentionSuggestions({
     activeChannel,
     currentUserId: user?.id,
@@ -719,42 +727,6 @@ export function ChatContent({
       overflow={nativePaneChrome ? "hidden" : undefined}
       style={nativeFillStyle}
     >
-      {showChannelSidebar && (
-        <ChannelSidebar
-          channels={channels}
-          channelStates={channelStates}
-          activeChannelId={sidebarFocused ? sidebarCursorChannelId : channelId}
-          onlineCount={onlineCount}
-          width={channelSidebarWidth}
-          height={height}
-          focused={focused}
-          keyboardFocused={sidebarFocused}
-          loading={channelsLoading}
-          canManageNotifications={!!user?.emailVerified}
-          canCreateConversation={!!user?.emailVerified}
-          needsProfileSetup={!!user?.id && ownProfileConfigured === false}
-          onOpenProfile={openProfileSetup}
-          directExpanded={directExpanded}
-          onSelect={selectSidebarChannel}
-          onFocusRequest={() => setSidebarFocused(true)}
-          onCreateConversation={openNewDmDialog}
-          onToggleNotifications={(nextChannelId, enabled) => {
-            controller.setChannelNotificationsEnabled(nextChannelId, enabled);
-          }}
-          onToggleDirectExpanded={() => setDirectExpanded((expanded) => !expanded)}
-        />
-      )}
-
-      <Box
-        flexDirection="column"
-        width={chatWidth}
-        height={chatLayoutHeight}
-        flexGrow={nativePaneChrome ? 1 : undefined}
-        backgroundColor={chatContentBg}
-        position="relative"
-        onMouseDown={() => focusChatContent()}
-        style={nativeFillStyle}
-      >
       {!nativePaneChrome && (
         <Box height={1} width={contentWidth}>
           <Text fg={colors.border}>{"-".repeat(contentWidth)}</Text>

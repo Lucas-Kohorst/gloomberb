@@ -151,7 +151,7 @@ export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T
   if (!response.ok) {
     throw new Error(`Request failed (${response.status}) for ${url}`);
   }
-  return run();
+  return response.json() as Promise<T>;
 }
 
 export function getCachedPredictionResource<T>(

@@ -339,6 +339,7 @@ export function PredictionMarketDetailPane({
         >
           {detailTab === "overview" && (
             <PredictionMarketOverviewView
+              detail={detail}
               detailWidth={detailWidth}
               focused={focused}
               height={height}

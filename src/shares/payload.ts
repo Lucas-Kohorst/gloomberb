@@ -43,6 +43,40 @@ export interface ArticleShareData {
   sourceUrl?: string;
 }
 
+export interface ArticleShareStoryItem {
+  id: string;
+  sourceKey: string;
+  sourceName: string;
+  title: string;
+  summary?: string;
+  url: string;
+  publishedAt: string;
+}
+
+export interface ArticleSharePayload {
+  type: "news" | "substack";
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  summary?: string;
+  publishedAt?: string;
+  topics?: string[];
+  categories?: string[];
+  tickers?: string[];
+  importance?: number;
+  items?: ArticleShareStoryItem[];
+  subtitle?: string;
+  publicationName?: string;
+  publicationBaseUrl?: string;
+  slug?: string;
+  previewText?: string;
+  bodyHtml?: string;
+  imageUrls?: string[];
+  wordCount?: number;
+  readMinutes?: number;
+}
+
 export interface LegacyPaneShareData {
   version: 1;
   templateId: string;
@@ -174,4 +208,54 @@ export function parseSharePayload(value: unknown): SharePayload | null {
     if (data) return { kind: "pane", data };
   }
   return null;
+}
+
+export function base64urlEncode(data: string): string {
+  const bytes = new TextEncoder().encode(data);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const base64 = typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(data, "utf-8").toString("base64");
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+export function base64urlDecode(encoded: string): string | null {
+  try {
+    const padded = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = padded.length % 4;
+    const base64 = pad ? padded + "=".repeat(4 - pad) : padded;
+    if (typeof atob === "function") {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new TextDecoder().decode(bytes);
+    }
+    return Buffer.from(base64, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+export function parseArticleSharePayload(value: unknown): ArticleSharePayload | null {
+  if (!record(value)) return null;
+  if (typeof value.id !== "string") return null;
+  if (typeof value.title !== "string") return null;
+  if (typeof value.url !== "string") return null;
+  if (value.type !== "news" && value.type !== "substack") return null;
+  return value as unknown as ArticleSharePayload;
+}
+
+export function decodeArticleSharePayload(encoded: string): ArticleSharePayload | null {
+  const json = base64urlDecode(encoded);
+  if (!json) return null;
+  try {
+    return parseArticleSharePayload(JSON.parse(json));
+  } catch {
+    return null;
+  }
+}
+
+export function encodeArticleSharePayload(payload: ArticleSharePayload): string {
+  return base64urlEncode(JSON.stringify(payload));
 }

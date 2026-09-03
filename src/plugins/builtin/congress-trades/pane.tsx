@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, useRendererHost, type ScrollBoxRenderable } from "../../../ui";
+import { Box, useRendererHost, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
+  InputSearchBar,
   PaneStatusBody,
   Tabs,
   useTableLoadMore,
@@ -252,7 +253,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     payload,
     selectedTrade,
     status,
-    lastUpdated,
+    lastUpdated: lastLoadedAt,
     focusSearch,
   });
 

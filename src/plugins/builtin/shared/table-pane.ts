@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { DataTableKeyEvent, PaneFooterSegment } from "../../../components";
+import { footerErrorChip, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 
 export function loadingErrorFooterInfo(loading: boolean, error: string | null | undefined): PaneFooterSegment[] {
   const errorChip = footerErrorChip(error);

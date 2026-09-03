@@ -2,6 +2,8 @@ import type { PluginModule } from "../plugin-module";
 import { ConnectionsPane, setSharedConnectionTracker } from "./pane";
 import { ConnectionTracker } from "./tracker";
 
+export { CONNECTION_HEALTH_CAPABILITY_ID } from "./index.ts";
+
 let tracker: ConnectionTracker | null = null;
 
 export const connectionsModule: PluginModule = {

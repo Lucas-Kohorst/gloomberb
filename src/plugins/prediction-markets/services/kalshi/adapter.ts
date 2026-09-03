@@ -89,6 +89,11 @@ const DEFAULT_KALSHI_EVENT_MAX_PAGES = 3;
 const SEARCH_KALSHI_EVENT_MAX_PAGES = 3;
 const kalshiCursors = new Map<string, string | null>();
 
+export function resetKalshiCatalogFeed(): void {
+  kalshiCursors.clear();
+  resetKalshiProxySource();
+}
+
 function kalshiCursorKey(searchQuery: string, categoryId: PredictionCategoryId): string {
   return `${categoryId}:${searchQuery.trim().toLowerCase()}`;
 }
@@ -244,6 +249,30 @@ async function loadKalshiEvent(
   } catch {
     return null;
   }
+}
+
+export async function fetchKalshiMarketByTicker(
+  ticker: string,
+): Promise<KalshiMarketRecord | null> {
+  try {
+    const response = await fetchJson<{ market?: KalshiMarketRecord }>(
+      kalshiUrl(`/markets/${encodeURIComponent(ticker)}`),
+    );
+    return response.market ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveKalshiMarketByTicker(
+  ticker: string,
+): Promise<PredictionMarketSummary | null> {
+  const normalized = ticker.trim().toUpperCase();
+  if (!normalized) return null;
+  const record = await fetchKalshiMarketByTicker(normalized);
+  if (!record) return null;
+  const event = await loadKalshiEvent(record.event_ticker);
+  return normalizeKalshiMarket(record, event?.event, { allowDormant: true });
 }
 
 export async function resolveKalshiChartSummary(

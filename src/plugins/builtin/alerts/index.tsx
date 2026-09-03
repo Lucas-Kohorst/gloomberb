@@ -35,6 +35,7 @@ import { evaluateWeatherAlert } from "./weather-alert";
 import type { WeatherAlertCondition } from "./weather";
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let pollInFlight = false;
 
 export const alertsPlugin: GloomPlugin = {
   id: "alerts",
@@ -165,26 +166,6 @@ export const alertsPlugin: GloomPlugin = {
       },
     });
 
-    const markTriggered = (alert: AlertRule, detail: string, metric: number) => {
-      alert.status = "triggered";
-      alert.triggeredAt = Date.now();
-      alert.lastCheckedPrice = metric;
-      alert.lastCheckedAt = Date.now();
-      alert.lastCheckError = undefined;
-      ctx.log.info("poll: TRIGGERED", { symbol: alert.symbol, condition: alert.condition, detail });
-      ctx.notify({
-        body: `${formatAlertDescription(alert)} triggered (${detail})`,
-        type: "success",
-        desktop: "always",
-        persistent: true,
-        sound: "Glass",
-        action: {
-          label: "Open",
-          onClick: () => ctx.showPane("alerts"),
-        },
-      });
-    };
-
     const poll = async () => {
       if (pollInFlight) return;
       pollInFlight = true;
@@ -241,35 +222,6 @@ export const alertsPlugin: GloomPlugin = {
         Object.assign(alert, quoteAlertFields(quote));
         changed = true;
       }
-
-        const quoteResults = await Promise.all(priceAlerts.map(async (alert) => {
-          try {
-            const quote = await resolveAlertQuote(ctx.marketData, alert.symbol, alert.exchange);
-            return { alert, quote };
-          } catch (error) {
-            return { alert, error };
-          }
-        }));
-        for (const result of quoteResults) {
-          if ("error" in result && result.error) {
-            ctx.log.error("poll: error", { symbol: result.alert.symbol, error: String(result.error) });
-            Object.assign(result.alert, quoteErrorAlertFields(createQuoteErrorMessage(result.alert.symbol, result.error)));
-            changed = true;
-            continue;
-          }
-          const quote = "quote" in result ? result.quote : null;
-          if (!quote || typeof quote.price !== "number") {
-            ctx.log.warn("poll: no quote", { symbol: result.alert.symbol });
-            Object.assign(result.alert, quoteErrorAlertFields(`No quote found for "${result.alert.symbol}".`));
-            changed = true;
-            continue;
-          }
-          if (evaluateAlert(result.alert, quote.price)) {
-            markTriggered(result.alert, formatMarketPrice(quote.price, { minimumFractionDigits: 2 }), quote.price);
-          }
-          Object.assign(result.alert, quoteAlertFields(quote));
-          changed = true;
-        }
 
         if (changed) saveAlerts(ctx, alerts);
       } finally {

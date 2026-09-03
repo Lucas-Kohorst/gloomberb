@@ -107,7 +107,7 @@ export class ChatControllerChannels {
     if (this.presencePromise) return this.presencePromise;
     const request = apiClient.getChatPresence()
       .then((presence) => {
-        this.onlineCount = presence.onlineCount;
+        this.applyPresence(presence);
         this.options.emit();
       })
       .finally(() => {

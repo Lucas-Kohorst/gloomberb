@@ -1,4 +1,12 @@
 import { useEffect, useMemo, useSyncExternalStore, type Dispatch } from "react";
+import { isHostedWebClient } from "../shared/hosted-api";
+import { apiClient } from "../api-client";
+import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
+import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
+import { hydrateHostedWorkspaceFromCloud, cloneAppConfigForOverlay } from "../data/config/hosted-sync-hydrate";
+import { readHostedTickers } from "../data/config/hosted-ticker-persist";
+import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
+import type { AppConfig } from "../types/config";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginRegistry } from "../plugins/registry";
@@ -9,7 +17,37 @@ import type { TickerRecord } from "../types/ticker";
 import { isPublicShareLocation } from "../plugins/builtin/shared/share-link";
 import { whenStartupBackground } from "../utils/startup-interaction";
 
-const CLOUD_SYNC_POLL_MS = 15_000;
+function tickerMap(tickers: TickerRecord[]): Map<string, TickerRecord> {
+  return new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
+}
+
+async function applyHostedCloudOverlay(args: {
+  capturedConfig: AppConfig;
+  getState: () => AppState;
+  dispatch: Dispatch<AppAction>;
+  tickerRepository: AppTickerRepositoryPort;
+  beforeApply?: Promise<void>;
+}): Promise<void> {
+  const working = cloneAppConfigForOverlay(args.capturedConfig);
+  const hydrated = await hydrateHostedWorkspaceFromCloud(working, {
+    pullConfig: fetchHostedConfigSnapshot,
+    pullSync: () => apiClient.getSyncSnapshot(),
+    persist: false,
+  });
+  if (args.beforeApply) await args.beforeApply;
+  if (args.getState().config !== args.capturedConfig) return;
+  args.dispatch({ type: "SET_CONFIG", config: hydrated.config });
+  // An empty overlay must not replace the sqlite book. That is how Main
+  // Portfolio went blank while ~/.gloomberb still had the holdings.
+  if (hydrated.tickers.length > 0) {
+    args.dispatch({ type: "SET_TICKERS", tickers: tickerMap(hydrated.tickers) });
+    for (const ticker of hydrated.tickers) {
+      await args.tickerRepository.saveTicker(ticker);
+    }
+  }
+  writeHostedUserConfig(hydrated.config);
+  hydrateHostedByokConfig(hydrated.config);
+}
 
 const CLOUD_SYNC_POLL_MS = 15_000;
 

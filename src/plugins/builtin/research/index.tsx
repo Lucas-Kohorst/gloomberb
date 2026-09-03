@@ -62,15 +62,6 @@ export const researchModule: PluginModule = {
       defaultFloatingSize: { width: 96, height: 30 },
     },
     {
-      id: "equity-diagnostic",
-      name: "Equity Diagnostic",
-      icon: "D",
-      component: EquityDiagnosticView,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 96, height: 30 },
-    },
-    {
       id: "corporate-actions",
       name: "Corporate Actions",
       icon: "E",
@@ -120,14 +111,6 @@ export const researchModule: PluginModule = {
       keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
       shortcut: "DIAG",
       publicShare: true,
-    }),
-    createTickerSurfacePaneTemplate({
-      id: "equity-diagnostic-pane",
-      paneId: "equity-diagnostic",
-      label: "Equity Diagnostic",
-      description: "Red flags, anomalies, green flags, and watch items for one company, with cited evidence.",
-      keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
-      shortcut: "DIAG",
     }),
     createTickerSurfacePaneTemplate({
       id: "corporate-actions-pane",

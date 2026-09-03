@@ -72,6 +72,10 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const { openPluginCommandWorkflow } = usePluginAppActions();
   const dialog = useDialog();
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [sortPreference, setSortPreference] = useState<SortPreference<AlertColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
   const storeError = useMemo(() => readAlertsStoreError(alertsJson), [alertsJson]);
 

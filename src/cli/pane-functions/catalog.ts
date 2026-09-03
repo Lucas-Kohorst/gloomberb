@@ -59,6 +59,9 @@ export function buildPaneFunctionLookup(registry: PaneFunctionCatalog): Map<stri
   // one that happens to list "ai" as a keyword.
   for (const template of registry.paneTemplates.values()) {
     registerResolverToken(lookup, template.shortcut?.prefix, template);
+    for (const alias of template.shortcut?.aliases ?? []) {
+      registerResolverToken(lookup, alias, template);
+    }
   }
   for (const template of registry.paneTemplates.values()) {
     registerResolverToken(lookup, template.id, template);

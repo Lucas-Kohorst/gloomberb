@@ -22,6 +22,7 @@ import {
   createFeed,
   deriveFeedTitle,
   normalizeFeedQuery,
+  normalizeFeeds,
   parseTwitterFeedState,
   persistTwitterFeedState,
   resolvePersistedTwitterFeeds,
@@ -68,6 +69,15 @@ export function TwitterTickerTab({ focused, width, height }: TickerResearchTabPr
 export function TwitterFeedPane({ focused, width, height }: PaneProps) {
   const paneId = usePaneInstanceId();
   const paneInstance = usePaneInstance();
+  const [configState, setConfigState] = usePluginConfigState<PersistedTwitterFeedState>(
+    TWITTER_FEEDS_CONFIG_KEY,
+    EMPTY_FEED_STATE,
+  );
+  const [resumeState, setResumeState] = usePluginState<PersistedTwitterFeedState>(
+    twitterFeedResumeStateKey(paneId),
+    EMPTY_FEED_STATE,
+    { schemaVersion: TWEET_SEARCH_SCHEMA_VERSION },
+  );
   const [legacyPersistedState, setLegacyPersistedState] = usePluginState<PersistedTwitterFeedState>(
     `twitter-feed:${paneId}`,
     EMPTY_FEED_STATE,
@@ -77,7 +87,6 @@ export function TwitterFeedPane({ focused, width, height }: PaneProps) {
     "feeds",
     null,
   );
-  const persistedState = panePersistedState ?? legacyPersistedState;
   const [launchRequest, setLaunchRequest] = usePluginState<TwitterFeedLaunchRequest | null>(
     TWITTER_FEED_LAUNCH_STATE_KEY,
     null,

@@ -326,4 +326,52 @@ describe("NewsArticleStackView", () => {
     expect(frame).toContain("Tech");
     expect(frame).not.toMatch(/\btech\b/);
   });
+
+  test("paints ORIGIN for the firehose origin column instead of undefined", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-origin-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-firehose:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({
+                id: "wire",
+                title: "Treasury yields jump after payrolls",
+                origin: "gloomberb-cloud",
+              }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            selectedArticleId="wire"
+            setSelectedArticleId={() => {}}
+            sortPreference={sortPreference}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "origin", "source", "title", "tickers", "categories"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    const header = frame.split("\n")[0] ?? "";
+    expect(header).toContain("ORIGIN");
+    expect(header).not.toMatch(/\bundefined\b/);
+    expect(frame).toContain("Treasury yields");
+    expect(frame).toContain("Wire");
+  });
 });

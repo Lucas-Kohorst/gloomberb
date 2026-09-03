@@ -18,6 +18,8 @@ import { colors } from "../../../theme/colors";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import { truncateToDisplayWidth } from "../../../utils/format";
 
+export function setSharedConnectionTracker(_tracker: unknown): void {}
+
 interface ConnectionColumn extends DataTableColumn {
   id: "service" | "status" | "request" | "latency" | "last";
 }

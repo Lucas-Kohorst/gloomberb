@@ -9,6 +9,8 @@ import { useCloudAccessFooter } from "../../../shared/cloud-upgrade";
 import { CLOUD_NEWS_DELAY_HOURS } from "../../../shared/plan-access";
 import { usePaneStatusLinkFooter } from "../../../shared/pane-footer";
 import { usePublicShare } from "../../../shared/public-share";
+import { pollFooterTrailingInfo, useFeedPollInterval } from "../../../shared/feed-poll-interval";
+import { useArticleArchiveAction } from "../../../shared/article-archive";
 
 interface NewsFooterArticle {
   title?: string | null;
@@ -45,6 +47,7 @@ export function useNewsArticleFooter({
   showPoll = true,
 }: UseNewsArticleFooterOptions) {
   const language = useAppLanguage();
+  const archiveAction = useArticleArchiveAction(article?.url);
   const { publicSharing } = useUiCapabilities();
   const createPublicShare = usePublicShare();
   const shareArticle = useCallback(() => {
@@ -143,9 +146,9 @@ export function useNewsArticleFooter({
     url: article?.url,
     source: article?.source,
     info: footerInfo,
-    hints: publicSharing && article?.title
-      ? [{ id: "share", key: "y", label: " share", onPress: shareArticle }]
-      : undefined,
+    trailingInfo,
+    hints,
+    trailingHints,
     showOpenHint: true,
     loading,
     error,

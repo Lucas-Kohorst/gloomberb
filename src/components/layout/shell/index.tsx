@@ -70,6 +70,7 @@ import {
   resolveShellCursorOcclusionRects,
   useShellCursorOcclusionGuard,
 } from "./cursor-occlusion";
+import { canRetargetPaneTicker } from "../../../plugins/ticker-follow";
 import { createShare, openLiveShareUrl } from "../../../shares/api";
 import { buildPaneSharePayload } from "../../../shares/pane";
 import type { SharePayload } from "../../../shares/payload";
@@ -405,7 +406,7 @@ export function Shell({
   );
   const activePaneDrag = dragRef.current?.type === "pane-drag" ? dragRef.current : null;
   const activeHoverOverlay = activePaneDrag && dragCursor && dockPreview?.kind !== "compact"
-    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, interactionDockLeafLayouts, activePaneDrag.paneId)
+    ? resolveHoverOverlay(dragCursor.x, dragCursor.y, dockLeafLayouts, activePaneDrag.paneId)
     : null;
   const effectiveDockPreview = dockPreview ?? externalDockPreview;
   useShellNativeSurfaceWindowState({
@@ -598,7 +599,7 @@ export function Shell({
     contentHeight,
     dockGeometryOptions,
     dockDividerLayouts,
-    dockLeafLayouts: interactionDockLeafLayouts,
+    dockLeafLayouts: dockLeafLayouts,
     dragRuntime,
     focusPane,
     focusedPaneId,

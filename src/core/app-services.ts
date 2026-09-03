@@ -73,6 +73,7 @@ export function createAppServices({
   });
 
   providerRouter.attachRegistry(pluginRegistry);
+  pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
   pluginRegistry.registerNewsCapabilityFn = (capability) => newsService.register(capability);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
@@ -87,7 +88,12 @@ export function createAppServices({
       entryFile
         ? pluginRegistry.registerExternalPlugin(plugin, entryFile)
         : pluginRegistry.register(plugin)
-    ), { pluginId: plugin.id }));
+    ), { pluginId: plugin.id }).catch((error: unknown) => {
+      servicesLog.error("plugin register failed", {
+        pluginId: plugin.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }));
   }
   measurePerf("startup.services.news-start", () => {
     newsService.start();

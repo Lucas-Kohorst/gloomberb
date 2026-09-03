@@ -27,6 +27,7 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import { useScrollbarActivity } from "../scrollbar-activity";
 import {
   CSS_BG,
+  CSS_TEXT_BRIGHT,
   CSS_TEXT_DIM,
   cellTextStyle,
   toCellX,
@@ -146,6 +147,8 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
   const scheduleVisibleRangeMeasure = useRafCallback(emitVisibleRange);
   const lastAppliedScrollRequestRef = useRef<string | null>(null);
+  const getScrollElement = useCallback(() => bodyElementRef.current, []);
+  const estimateSize = useCallback(() => rowHeightPx, [rowHeightPx]);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,

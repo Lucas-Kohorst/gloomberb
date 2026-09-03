@@ -377,11 +377,7 @@ export function ResolvedFinancialsTab({
         </Box>
       ),
     };
-  }, [previousStatementMap, toggleGroup]);
-
-  if (!financials || (!hasAnnualStatements && !hasQuarterlyStatements)) {
-    return <TickerEmptyState kind="financial" symbol={symbol} detail="financial statements" />;
-  }
+  };
 
   return (
     <Box

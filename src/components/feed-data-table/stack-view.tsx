@@ -67,6 +67,9 @@ interface FeedDataTableStackViewProps {
   isItemRead?: (item: FeedDataTableItem) => boolean;
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
   onOpenItemIdChange?: (itemId: string | null) => void;
+  openItemId?: string | null;
+  onPopOut?: (item: FeedDataTableItem) => void;
+  markdown?: boolean;
   scrollRef?: RefObject<ScrollBoxRenderable | null>;
   onBodyScrollActivity?: () => void;
 }
@@ -154,6 +157,9 @@ export function FeedDataTableStackView({
   isItemRead,
   onOpenItem,
   onOpenItemIdChange,
+  openItemId: controlledOpenItemId,
+  onPopOut,
+  markdown = false,
   scrollRef,
   onBodyScrollActivity,
 }: FeedDataTableStackViewProps) {

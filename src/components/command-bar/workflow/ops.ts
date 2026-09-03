@@ -324,17 +324,17 @@ export async function createPaneTemplateOrThrow(
   }
 
   const instances = deps.getState().config.layout.instances;
-  const existing = findReusablePaneInstance(instances, template.paneId, spec);
-  if (existing) {
-    const retargeted = retargetPaneInstance(existing, spec);
+  const reusable = findReusablePaneInstance(instances, template.paneId, spec);
+  if (reusable) {
+    const retargeted = retargetPaneInstance(reusable, spec);
     if (retargeted) {
       deps.pluginRegistry.updateLayoutFn(updatePaneInstance(
         deps.getState().config.layout,
-        existing.instanceId,
+        reusable.instanceId,
         () => retargeted,
       ));
     }
-    deps.pluginRegistry.focusPaneFn(existing.instanceId);
+    deps.pluginRegistry.focusPaneFn(reusable.instanceId);
     return;
   }
 

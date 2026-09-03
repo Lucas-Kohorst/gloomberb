@@ -4,6 +4,7 @@ import { useShortcut } from "../../../react/input";
 import { usePaneInstance } from "../../../state/app/context";
 import {
   DataTableStackView,
+  InputSearchBar,
   PaneStatusBody,
   useExternalLinkFooter,
   type DataTableCell,

@@ -1,14 +1,18 @@
 import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { PredictionMarketChart } from "../chart";
 import type {
+  PredictionHistoryRange,
   PredictionListRow,
+  PredictionMarketDetail,
   PredictionMarketSummary,
 } from "../types";
 import { PredictionMarketOutcomesView } from "./outcomes";
 import { SummaryLink } from "./shared";
 
 export function PredictionMarketOverviewView({
+  detail,
   detailWidth,
   focused,
   height,
@@ -19,6 +23,7 @@ export function PredictionMarketOverviewView({
   selectedRow,
   summary,
 }: {
+  detail: PredictionMarketDetail | null;
   detailWidth: number;
   focused: boolean;
   height: number;

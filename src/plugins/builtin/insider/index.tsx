@@ -225,7 +225,14 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   if (!ticker) {
     return <EmptyState title="No ticker selected." message="Select a ticker to view insider activity." />;
   }
-  if (!eligibleTicker) return renderFilingNotice("Insider transactions are only shown for US equities.", width);
+  if (!eligibleTicker) {
+    return (
+      <EmptyState
+        title="US equities only"
+        message="Insider transactions are only shown for US equities."
+      />
+    );
+  }
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
   if (error) return <EmptyState title="Insider filings unavailable." message={error} />;
   if (!loading && form4Filings.length === 0) {

@@ -132,6 +132,7 @@ class GloomApiClient {
       getSocketAuthToken: () => this.getSocketAuthToken(),
       hasSessionCredential: () => this.transport.hasSessionCredential(),
       hasVerifiedUser: () => this.currentUser?.emailVerified === true,
+      isCookieAuthenticated: () => this.transport.isHostedSocket(),
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
       markCurrentUserUnverified: () => {

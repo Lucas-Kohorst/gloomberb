@@ -107,17 +107,15 @@ export function pluginSupportsTarget(plugin: GloomPlugin, target: PluginTarget):
 }
 
 export async function loadExternalPlugins(target: PluginTarget = "cli"): Promise<LoadedExternalPlugin[]> {
-  if (!existsSync(PLUGINS_DIR)) return [];
+  const rootDir = getPluginsDir();
+  if (!existsSync(rootDir)) return [];
 
   const results: LoadedExternalPlugin[] = [];
-  const entries = await listExternalPluginEntries();
+  const entries = await listExternalPluginEntries(rootDir);
 
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const pluginDir = join(PLUGINS_DIR, entry.name);
-
-    const entryFile = await resolvePluginEntry(pluginDir);
-    if (!entryFile) continue;
+    const pluginDir = entry.pluginDir;
+    const entryFile = entry.entryFile;
 
     // Repairs `gloomberb`/`react` links for plugins copied in by hand or left
     // behind by a `bun install` that pruned them.
@@ -138,7 +136,7 @@ export async function loadExternalPlugins(target: PluginTarget = "cli"): Promise
     } catch (err) {
       loaderLog.error(`Failed to load plugin from ${pluginDir}: ${err}`);
       results.push({
-        plugin: { id: dirName, name: dirName, version: "0.0.0" } as GloomPlugin,
+        plugin: { id: entry.dirName, name: entry.dirName, version: "0.0.0" } as GloomPlugin,
         path: pluginDir,
         error: String(err),
       });

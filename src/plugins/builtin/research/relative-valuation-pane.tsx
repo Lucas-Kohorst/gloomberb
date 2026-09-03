@@ -17,7 +17,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { usePaneInstance } from "../../../state/app/context";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { colors, priceColor } from "../../../theme/colors";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { applySortPreference, compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
@@ -134,6 +134,10 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [sortPreference, setSortPreference] = useState<RelativeSortPreference>(DEFAULT_RELATIVE_SORT);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const columns = useMemo(() => buildRelativeColumns(width), [width]);
   const sortedRows = useMemo(
     () => applySortPreference(rows.filter((row) => !searchQuery.trim() || `${row.symbol} ${row.financials?.quote?.name ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), sortPreference, (row, columnId) => {
@@ -197,8 +201,6 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   useEffect(() => {
     reload(false);
   }, [reload]);
-
-  const sortedRows = useMemo(() => sortRelativeRows(rows, sortPreference), [rows, sortPreference]);
 
   useClampSelectedIndex(rows.length, selectedIdx, setSelectedIdx);
 

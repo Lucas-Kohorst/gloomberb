@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { GloomPlugin } from "../../../types/plugin";
-import { PLUGIN_MARKET_TEMPLATE_ID } from "../../../plugins/builtin/plugin-market/types";
+import { PLUGIN_MARKETPLACE_TEMPLATE_ID } from "../../../plugins/builtin/plugin-marketplace";
 import { buildPluginToggleItems } from "./plugin-items";
 
 function plugin(id: string, name: string, toggleable = true): GloomPlugin {
@@ -54,7 +54,7 @@ describe("buildPluginToggleItems", () => {
     items[0]?.pluginToggle?.();
     expect(persisted).toEqual([{ disabledPlugins: ["notes"] }]);
     items[1]?.action();
-    expect((registry as unknown as { created: string[] }).created).toEqual([PLUGIN_MARKET_TEMPLATE_ID]);
+    expect((registry as unknown as { created: string[] }).created).toEqual([PLUGIN_MARKETPLACE_TEMPLATE_ID]);
   });
 
   test("filters toggles and surfaces the marketplace jump for discovery queries", () => {

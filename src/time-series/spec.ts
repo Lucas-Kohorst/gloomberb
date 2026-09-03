@@ -98,6 +98,8 @@ export function defaultChartSeriesPresentation(source: ChartSeriesSource): Chart
     }
     case "economic":
       return { style: "step", transform: "raw", unit: "level", unitGroup: "level" };
+    case "capability":
+      return { style: "line", transform: "raw", unit: "", unitGroup: `capability:${source.capabilityId}` };
     case "adjacent-index":
       return { style: "line", transform: "raw", unit: "index", unitGroup: "level" };
     case "benchmark":
@@ -210,6 +212,53 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
       || !isValidChartCapabilityId(capabilityId)
       || !isValidChartSeriesId(seriesId)) return null;
     return { kind: "capability", capabilityId, seriesId };
+  }
+  if (source.kind === "adjacent-index") {
+    const indexId = nonEmptyString(source.indexId);
+    if (!indexId) return null;
+    return { kind: "adjacent-index", indexId: indexId.toLowerCase() };
+  }
+  if (source.kind === "benchmark") {
+    const selector = nonEmptyString(source.selector);
+    const metric = nonEmptyString(source.metric);
+    if (!selector || !metric) return null;
+    return { kind: "benchmark", selector, metric: metric.toLowerCase() };
+  }
+  if (source.kind === "poll") {
+    const subject = nonEmptyString(source.subject);
+    const choice = nonEmptyString(source.choice);
+    if (!subject || !choice) return null;
+    return { kind: "poll", subject, choice };
+  }
+  if (source.kind === "weather") {
+    const stationId = nonEmptyString(source.stationId);
+    const metric = source.metric;
+    const provider = source.provider === "nws-cli" ? "nws-cli" : "twc-kalshi";
+    if (!stationId || (metric !== "high" && metric !== "low" && metric !== "precip" && metric !== "hourly")) {
+      return null;
+    }
+    if (provider === "nws-cli" && metric === "hourly") return null;
+    return { kind: "weather", provider, stationId: stationId.toUpperCase(), metric };
+  }
+  if (source.kind === "owid") {
+    const slug = nonEmptyString(source.slug)?.toLowerCase();
+    const entity = nonEmptyString(source.entity)?.toUpperCase();
+    if (!slug || !entity) return null;
+    return { kind: "owid", slug, entity };
+  }
+  if (source.kind === "prediction-market") {
+    const venue = source.venue === "kalshi" || source.venue === "polymarket" ? source.venue : null;
+    const marketId = nonEmptyString(source.marketId);
+    if (!venue || !marketId) return null;
+    return {
+      kind: "prediction-market",
+      venue,
+      marketId: venue === "kalshi" ? marketId.toUpperCase() : marketId,
+    };
+  }
+  if (source.kind === "constant") {
+    if (typeof source.value !== "number" || !Number.isFinite(source.value)) return null;
+    return { kind: "constant", value: source.value };
   }
   if (source.kind !== "security") return null;
   const instrument = record(source.instrument);
@@ -509,12 +558,55 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       if (!ECONOMIC_STYLES.has(entry.style)) {
         errors.push(issue(`${path}.style`, "unsupported-style", `${entry.style} is not valid for an economic scalar series.`));
       }
-    } else {
+    } else if (entry.source.kind === "capability") {
       if (!isValidChartCapabilityId(entry.source.capabilityId)) {
         errors.push(issue(`${path}.source.capabilityId`, "invalid-capability", "Chart series capability ID is invalid."));
       }
       if (!isValidChartSeriesId(entry.source.seriesId)) {
         errors.push(issue(`${path}.source.seriesId`, "invalid-series", "Provider series ID is invalid."));
+      }
+    } else if (entry.source.kind === "adjacent-index") {
+      if (!entry.source.indexId.trim()) {
+        errors.push(issue(`${path}.source.indexId`, "missing-index", "Adjacent index ID is required."));
+      }
+    } else if (entry.source.kind === "benchmark") {
+      if (!entry.source.selector.trim()) {
+        errors.push(issue(`${path}.source.selector`, "missing-selector", "Benchmark selector is required."));
+      }
+      if (!entry.source.metric.trim()) {
+        errors.push(issue(`${path}.source.metric`, "missing-metric", "Benchmark metric is required."));
+      }
+    } else if (entry.source.kind === "poll") {
+      if (!entry.source.subject.trim()) {
+        errors.push(issue(`${path}.source.subject`, "missing-subject", "Poll subject is required."));
+      }
+      if (!entry.source.choice.trim()) {
+        errors.push(issue(`${path}.source.choice`, "missing-choice", "Poll choice is required."));
+      }
+    } else if (entry.source.kind === "weather") {
+      if (!entry.source.stationId.trim()) {
+        errors.push(issue(`${path}.source.stationId`, "missing-station", "Weather station is required."));
+      }
+      if (entry.source.provider === "nws-cli" && entry.source.metric === "hourly") {
+        errors.push(issue(`${path}.source.metric`, "unsupported-metric", "NWS CLI is daily high/low/precip only."));
+      }
+    } else if (entry.source.kind === "owid") {
+      if (!entry.source.slug.trim()) {
+        errors.push(issue(`${path}.source.slug`, "missing-slug", "OWID chart slug is required."));
+      }
+      if (!entry.source.entity.trim()) {
+        errors.push(issue(`${path}.source.entity`, "missing-entity", "OWID entity code is required."));
+      }
+    } else if (entry.source.kind === "prediction-market") {
+      if (entry.source.venue !== "kalshi" && entry.source.venue !== "polymarket") {
+        errors.push(issue(`${path}.source.venue`, "invalid-venue", "Prediction market venue must be kalshi or polymarket."));
+      }
+      if (!entry.source.marketId.trim()) {
+        errors.push(issue(`${path}.source.marketId`, "missing-market", "Prediction market ID is required."));
+      }
+    } else if (entry.source.kind === "constant") {
+      if (!Number.isFinite(entry.source.value)) {
+        errors.push(issue(`${path}.source.value`, "invalid-constant", "Constant value must be a finite number."));
       }
     }
     if (isOhlcSeriesStyle(entry.style)) {
@@ -524,7 +616,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
         firstCandleByPanel.set(
           entry.panelId,
           entry.label?.trim()
-            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.source.seriesId),
+            || (entry.source.kind === "security" ? entry.source.instrument.symbol : entry.id),
         );
       }
       if (entry.transform !== "raw") {

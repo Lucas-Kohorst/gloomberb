@@ -106,6 +106,12 @@ export interface ChartResolveSources {
   now?: Date;
   /** Latest streamed quote per security identity, layered over snapshot data. */
   quoteOverrides?: ReadonlyMap<string, Quote>;
+  /** Provider-neutral boundary for plugin-owned chart series. */
+  resolveCapabilitySeries?: (
+    source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>,
+    viewport: ChartSpec["viewport"],
+    spec: ChartSeriesSpec,
+  ) => Promise<ResolvedSeries>;
 }
 
 const SERIES_COLORS = [
@@ -120,20 +126,6 @@ const SERIES_COLORS = [
   "#8ce99a",
   "#ffd43b",
 ] as const;
-
-export interface ChartResolveSources {
-  dataProvider: DataProvider | null;
-  loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
-  now?: Date;
-  /** Latest streamed quote per security identity, layered over snapshot data. */
-  quoteOverrides?: ReadonlyMap<string, Quote>;
-  /** Provider-neutral boundary for plugin-owned chart series. */
-  resolveCapabilitySeries?: (
-    source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>,
-    viewport: ChartSpec["viewport"],
-    spec: ChartSeriesSpec,
-  ) => Promise<ResolvedSeries>;
-}
 
 export interface ChartResolveOptions {
   /** Runtime zoom window used only to choose an adaptive Auto resolution. */
@@ -153,6 +145,7 @@ export class ChartResolveCache {
   readonly resolutionSupportByInstrument = new Map<string, Promise<ChartResolutionSupport[]>>();
   readonly fredSeriesByRequest = new Map<string, Promise<FredSeriesLoadResult>>();
   readonly capabilitySeriesByRequest = new Map<string, Promise<ResolvedSeries>>();
+  readonly universalSeriesByKey = new Map<string, Promise<UniversalSeriesLoadResult>>();
 }
 
 interface DateBounds {
@@ -206,12 +199,7 @@ function seriesPresentation(spec: ChartSeriesSpec) {
 // made a series the user had added disappear from the legend while it still sat
 // in the series editor, with nothing on screen to explain the difference.
 function unloadableSeries(spec: ChartSeriesSpec, index: number, warning: string): ResolvedSeries {
-  const field = spec.source.kind === "security" ? getTimeSeriesField(spec.source.fieldId) : undefined;
-  const label = spec.source.kind === "security"
-    ? `${instrumentLabel(spec.source)} ${field?.shortLabel ?? spec.source.fieldId.split(".").at(-1) ?? "Series"}`
-    : spec.source.kind === "economic"
-      ? `FRED ${spec.source.seriesId}`
-      : spec.source.seriesId;
+  const presentation = seriesPresentation(spec);
   return {
     id: spec.id,
     label: presentation.label,
@@ -1345,6 +1333,10 @@ export async function resolveChartSpecData(
           () => sources.loadPredictionMarketSeries!(venue, marketId),
         );
         return baseUniversalSeries(seriesSpec, data, index);
+      }
+
+      if (seriesSpec.source.kind === "constant") {
+        return baseConstantSeries(seriesSpec, index);
       }
 
       const source = seriesSpec.source;

@@ -420,24 +420,6 @@ export class CloudApiSocket {
       return;
     }
 
-    const scannerKind = typeof parsed?.type === "string" ? SCANNER_MESSAGE_KINDS[parsed.type] : undefined;
-    if (scannerKind) {
-      const { type: _type, ...payload } = parsed;
-      this.emitScannerEvent(scannerKind, { type: "data", payload });
-      return;
-    }
-
-    if (parsed?.type === "scanner.denied") {
-      const denied = SCANNER_MESSAGE_KINDS[`scanner.${parsed.scanner}`];
-      if (denied) {
-        this.emitScannerEvent(denied, {
-          type: "denied",
-          reason: typeof parsed.reason === "string" ? parsed.reason : "pro_required",
-        });
-      }
-      return;
-    }
-
     if (parsed?.type === "market.quote" && parsed.quote && typeof parsed.symbol === "string") {
       const key = marketKey(parsed.symbol, parsed.exchange);
       const quote: CloudQuotePayload = {

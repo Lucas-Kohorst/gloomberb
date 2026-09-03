@@ -325,6 +325,7 @@ export function useResolvedChartSpec(
   const sources = useMemo(() => ({
     dataProvider,
     loadFredSeries: loadFred,
+    loadPredictionMarketSeries,
     resolveCapabilitySeries: createChartSeriesResolver(capabilityInvoker),
   }), [capabilityInvoker, dataProvider]);
   return useChartResolution(hydratedSpec, sources, options);

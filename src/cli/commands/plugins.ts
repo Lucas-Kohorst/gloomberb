@@ -11,9 +11,11 @@ import {
 } from "../../utils/cli-output";
 import { fail } from "../errors";
 
+const PLUGINS_DIR = getPluginsDir();
+
 function ensurePluginsDir() {
-  if (!existsSync(getPluginsDir())) {
-    mkdirSync(getPluginsDir(), { recursive: true });
+  if (!existsSync(PLUGINS_DIR)) {
+    mkdirSync(PLUGINS_DIR, { recursive: true });
   }
 }
 
@@ -65,7 +67,7 @@ export async function installPlugin(ref: string, options: InstallPluginOptions =
   };
   ensurePluginsDir();
   const { url, name } = parseGitHubRef(ref);
-  const targetDir = join(getPluginsDir(), name);
+  const targetDir = join(PLUGINS_DIR, name);
 
   if (existsSync(targetDir)) {
     fail(`Plugin "${name}" already exists.`, `Use "gloomberb update ${name}" to refresh it.`);
@@ -134,9 +136,9 @@ export async function installPlugin(ref: string, options: InstallPluginOptions =
 }
 
 export async function removePlugin(name: string) {
-  const targetDir = join(getPluginsDir(), validatePluginDirectoryName(name));
+  const targetDir = join(PLUGINS_DIR, validatePluginDirectoryName(name));
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, getPluginsDir());
+    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
   }
   rmSync(targetDir, { recursive: true, force: true });
   console.log(cliStyles.success(`Removed plugin "${name}".`));
@@ -146,7 +148,7 @@ export async function updatePlugins(name?: string) {
   ensurePluginsDir();
   const dirs = name
     ? [validatePluginDirectoryName(name)]
-    : readdirSync(getPluginsDir(), { withFileTypes: true })
+    : readdirSync(PLUGINS_DIR, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
@@ -156,7 +158,7 @@ export async function updatePlugins(name?: string) {
   }
 
   for (const dir of dirs) {
-    const targetDir = join(getPluginsDir(), dir);
+    const targetDir = join(PLUGINS_DIR, dir);
     if (!existsSync(join(targetDir, ".git"))) {
       console.log(cliStyles.warning(`Skipping ${dir} (not a git repo)`));
       continue;
@@ -177,7 +179,7 @@ export async function updatePlugins(name?: string) {
 
 export function listPlugins() {
   ensurePluginsDir();
-  const entries = readdirSync(getPluginsDir(), { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
 
   if (entries.length === 0) {
     console.log(cliStyles.muted("No plugins installed."));
@@ -186,7 +188,7 @@ export function listPlugins() {
   }
 
   const rows = entries.map((entry) => {
-    const dir = join(getPluginsDir(), entry.name);
+    const dir = join(PLUGINS_DIR, entry.name);
     let version = "—";
     let description = "—";
     const pkgPath = join(dir, "package.json");
@@ -212,7 +214,7 @@ export function listPlugins() {
     rows,
   ));
   console.log("");
-  console.log(renderStat("Directory", getPluginsDir()));
+  console.log(renderStat("Directory", PLUGINS_DIR));
 }
 
 export async function searchPlugins(query: string) {
@@ -319,8 +321,6 @@ export const ${varName}: GloomPlugin = {
     ctx.registerAgentPromptFragment(
       "${displayName}: pane.createFromTemplate ${name}-pane (${shortcut}).",
     );
-    // Unique data the remote inventory does not already cover:
-    // ctx.registerAgentTool({ name: "${name.replace(/-/g, "_")}_lookup", ... });
   },
 };
 
@@ -343,14 +343,11 @@ export function buildPluginPackageJson(name: string): string {
 
 export function scaffoldPlugin(name: string) {
   validatePluginDirectoryName(name);
-  const pluginsDir = getPluginsDir();
-  if (!existsSync(pluginsDir)) {
-    mkdirSync(pluginsDir, { recursive: true });
-  }
-  const targetDir = join(pluginsDir, name);
+  ensurePluginsDir();
+  const targetDir = join(PLUGINS_DIR, name);
 
   if (existsSync(targetDir)) {
-    fail(`Plugin "${name}" already exists.`, pluginsDir);
+    fail(`Plugin "${name}" already exists.`, PLUGINS_DIR);
   }
 
   mkdirSync(targetDir, { recursive: true });
@@ -366,9 +363,9 @@ export function scaffoldPlugin(name: string) {
 
 export async function validatePlugin(name: string) {
   validatePluginDirectoryName(name);
-  const targetDir = join(getPluginsDir(), name);
+  const targetDir = join(PLUGINS_DIR, name);
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, getPluginsDir());
+    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
   }
 
   let entryFile: string | null = null;

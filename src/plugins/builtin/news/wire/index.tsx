@@ -23,6 +23,31 @@ import { NewsPresetPane } from "./news/preset-pane";
 import { NEWS_QUERY_PRESETS } from "./news/query-presets";
 import type { NewsColumnId, NewsSortPreference } from "./news/table";
 import { createRssNewsCapability } from "./rss/source";
+import { RssPane } from "./rss-pane";
+import { NewsArticleReaderPane } from "./news/article-reader";
+import {
+  ARTICLE_READER_FLOATING_SIZE,
+  NEWS_ARTICLE_READER_PANE_ID,
+  NEWS_ARTICLE_READER_TEMPLATE_ID,
+  articleReaderInstanceId,
+} from "../../shared/article-pop-out";
+import {
+  buildOpenArticleCommandResults,
+  cachedNewsArticles,
+  cancelRssNewsWarm,
+  loadNewsArticles,
+  openNewsArticle,
+  scheduleRssNewsWarm,
+  searchNewsArticles,
+} from "./article-search";
+import { searchAdjacentRelatedArticles } from "../../adjacent/news";
+import { registerConnectionSource } from "../../connections/register";
+import { buildNewsPaneSettingsDef, buildRssPaneSettingsDef } from "./settings";
+import {
+  buildArticleTickerUniverse,
+  setSharedArticleTickerUniverse,
+} from "../../../../news/article-tickers";
+import { ensureUsListingsUniverse, peekUsListingsUniverse } from "../../../../sources/us-listings/client";
 
 interface NewsPresetPaneConfig {
   paneKey: string;

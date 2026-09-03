@@ -17,6 +17,7 @@ import {
 } from "./treasury-data";
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
+import { usePluginAppActions } from "../../runtime";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";

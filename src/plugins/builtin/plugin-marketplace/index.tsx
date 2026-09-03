@@ -4,11 +4,16 @@ import { PluginMarketplacePane, PLUGIN_MARKETPLACE_PANE_ID } from "./pane";
 export { PLUGIN_MARKETPLACE_PANE_ID } from "./pane";
 export { setMarketplaceHost } from "./store";
 
+export const PLUGIN_MARKETPLACE_TEMPLATE_ID = "plugin-marketplace-pane";
+
+const MARKETPLACE_DESCRIPTION =
+  "Search installed and GitHub plugins, then install, toggle, update, or remove them.";
+
 export const pluginMarketplaceModule: PluginModule = {
   panes: [
     {
       id: PLUGIN_MARKETPLACE_PANE_ID,
-      name: "Plugins",
+      name: "Plugin Marketplace",
       icon: "P",
       component: PluginMarketplacePane,
       defaultPosition: "right",
@@ -19,13 +24,31 @@ export const pluginMarketplaceModule: PluginModule = {
 
   paneTemplates: [
     {
-      id: "plugin-marketplace-pane",
+      id: PLUGIN_MARKETPLACE_TEMPLATE_ID,
       paneId: PLUGIN_MARKETPLACE_PANE_ID,
-      label: "Plugins",
-      description: "Browse and install Gloomberb plugins, and enable or disable the ones you have.",
-      keywords: ["plugin", "plugins", "marketplace", "install", "extend", "addon", "extension"],
-      shortcut: { prefix: "PL" },
-      createInstance: () => ({ placement: "floating" }),
+      label: "Plugin Marketplace",
+      description: MARKETPLACE_DESCRIPTION,
+      keywords: [
+        "plugin",
+        "plugins",
+        "marketplace",
+        "market",
+        "discover",
+        "github",
+        "install",
+        "manage",
+        "toggle",
+        "plug",
+        "extend",
+        "addon",
+        "extension",
+      ],
+      shortcut: { prefix: "PLUGINS", aliases: ["PLUG", "PL"] },
+      singleton: true,
+      createInstance: () => ({
+        placement: "floating",
+        title: "Plugin Marketplace",
+      }),
     },
   ],
 };

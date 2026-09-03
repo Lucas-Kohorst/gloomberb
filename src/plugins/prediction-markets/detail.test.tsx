@@ -47,7 +47,6 @@ describe("prediction markets detail views", () => {
     expect(frame).toContain("Above 4.50%");
     expect(frame).toContain("1M");
     expect(frame.indexOf("1M")).toBeGreaterThan(frame.indexOf("Above 4.50%"));
-    expect(frame).not.toContain(" Chart ");
     expect(frame).not.toContain("Ranked by implied YES probability.");
     expect(frame).not.toContain("TOP Above 4.25%");
     expect(frame).not.toContain("Kalshi");

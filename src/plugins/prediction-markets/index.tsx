@@ -1,4 +1,5 @@
 import type { GloomPlugin, GloomPluginContext } from "../../types/plugin";
+import { registerConnectionSource } from "../builtin/connections/register";
 import { resolvePaneInstance } from "../../types/config";
 import { parsePredictionSearchShortcut } from "./navigation";
 import { PredictionMarketsPane } from "./pane";

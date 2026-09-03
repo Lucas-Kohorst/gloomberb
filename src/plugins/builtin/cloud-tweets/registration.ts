@@ -1,17 +1,25 @@
 import type { GloomPluginContext } from "../../../types/plugin";
 import { canonicalExchange } from "../../../utils/exchanges";
+import { apiClient } from "../../../api-client";
+import { getSharedNewsService } from "../../../news/hooks";
+import { registerConnectionSource } from "../connections/register";
+import { scheduleLatestNewsWarm } from "../news/wire/article-search";
+import { createXMarketsNewsCapability } from "./news-capability";
 import {
   POLLING_X_FEED_QUERY,
   TWITTER_FEED_LAUNCH_SCHEMA_VERSION,
   TWITTER_FEED_LAUNCH_STATE_KEY,
   TWITTER_FEED_PANE_ID,
+  X_FEED_CONNECTION_ID,
   normalizeFeeds,
+  resolveTwitterFeedQuery,
   type TwitterFeedLaunchRequest,
 } from "./model";
 import {
   TwitterFeedPane,
   TwitterTickerTab,
 } from "./pane";
+import { buildTwitterFeedPaneSettingsDef } from "./settings";
 import { TweetReaderPane } from "./tweet-reader";
 import {
   ARTICLE_READER_FLOATING_SIZE,

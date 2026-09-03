@@ -37,6 +37,30 @@ import {
 } from "../../../capabilities/chart-series";
 import { FUTURES_CONTRACTS } from "../futures/contracts";
 import { TREASURY_MATURITIES } from "../yield-curve/treasury-data";
+import {
+  SERIES_PREFIX,
+  findFuturesCatalogEntry,
+  findTreasuryCatalogEntry,
+  findVolCatalogEntry,
+} from "./universal-series";
+import {
+  canonicalWeatherStationId,
+  findWeatherStation,
+} from "../weather/stations";
+import {
+  parseWeatherMetric,
+  weatherMetricLabel,
+} from "../weather/mapping";
+import type { WeatherPrintProvider } from "../weather/types";
+import {
+  normalizePredictionMarketId,
+  resolveAdjacentIndexQuery,
+} from "./prediction-series";
+import { normalizeOwidEntityCode, normalizeOwidSlug } from "../../../sources/owid/parse";
+import {
+  findOwidCatalogEntryBySlug,
+  owidSeriesLabel,
+} from "../owid/catalog";
 
 const CHART_FIELD_IDS = {
   price: "market.ohlcv",
@@ -129,6 +153,7 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parts = trimmed.split(":");
+  const prefix = parts[0]?.trim().toUpperCase() ?? "";
   if (parts[0]?.trim().toUpperCase() === "CAP") {
     const separator = trimmed.indexOf(":", 4);
     if (separator < 0) return null;
@@ -389,6 +414,10 @@ export function formatSeriesExpression(series: ChartSeriesSpec): string {
   if (series.source.kind === "capability") {
     return `CAP:${series.source.capabilityId}:${series.source.seriesId}`;
   }
+  if (series.source.kind === "prediction-market") {
+    const prefix = series.source.venue === "kalshi" ? "KALSHI" : "POLY";
+    return `${prefix}:${series.source.marketId}`;
+  }
   return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
 }
 
@@ -396,6 +425,10 @@ export function chartSeriesLabel(series: ChartSeriesSpec): string {
   if (series.label?.trim()) return series.label.trim();
   if (series.source.kind === "economic") return `FRED ${series.source.seriesId}`;
   if (series.source.kind === "capability") return series.source.seriesId;
+  if (series.source.kind === "prediction-market") {
+    const prefix = series.source.venue === "kalshi" ? "KALSHI" : "POLY";
+    return `${prefix} ${series.source.marketId}`;
+  }
   const instrument = publicTickerKey(
     series.source.instrument.symbol,
     series.source.instrument.exchange,
@@ -486,8 +519,10 @@ export function buildSeriesSpec(
       interpolation: coerceSeriesInterpolationForStyle(style),
     };
   }
-  if (expression.kind === "economic") {
-    const style = overrides.style ?? "step";
+  if (expression.kind === "constant") {
+    const source = { kind: "constant" as const, value: expression.value };
+    const presentation = defaultChartSeriesPresentation(source);
+    const style = overrides.style ?? presentation.style;
     return {
       id: `const-${slug(String(expression.value))}-${index + 1}`,
       source,
@@ -734,11 +769,28 @@ function effectiveSeriesUnitGroup(series: ChartSeriesSpec): string {
     return "percent";
   }
   if (series.transform === "index100") return "index";
-  return series.source.kind === "economic"
-    ? `economic:${series.source.seriesId}`
-    : series.source.kind === "capability"
-      ? `capability:${series.source.capabilityId}`
-      : getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
+  switch (series.source.kind) {
+    case "economic":
+      return `economic:${series.source.seriesId}`;
+    case "capability":
+      return `capability:${series.source.capabilityId}`;
+    case "adjacent-index":
+      return "level";
+    case "benchmark":
+      return `benchmark:${series.source.metric}`;
+    case "poll":
+      return "percent";
+    case "weather":
+      return `${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
+    case "owid":
+      return `owid:${series.source.slug}`;
+    case "prediction-market":
+      return "probability";
+    case "constant":
+      return "constant";
+    default:
+      return getTimeSeriesField(series.source.fieldId)?.unitGroup ?? series.source.fieldId;
+  }
 }
 
 function nextGeneratedPanelId(

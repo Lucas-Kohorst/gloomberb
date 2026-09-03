@@ -1,6 +1,7 @@
 import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
+  applyDrop,
   floatAtRect,
   getDockLeafLayouts,
   simulateDrop,

@@ -539,7 +539,11 @@ export const coreConfigSyncContributor: SyncContributor = {
   id: "core.config",
   schemaVersion: 1,
   collect: ({ state }) => collectCoreConfigPayload(state.config),
-  apply: (payload, { baselinePayload, baselineState, state, dispatch }) => {
+  apply: (payload, { snapshot, baselinePayload, baselineState, state, dispatch }) => {
+    const localStamp = peekHostedUserConfigStamp();
+    if (shouldKeepNewerHostedLocalConfig(state.config, localStamp?.updatedAt, snapshot?.createdAt)) {
+      return;
+    }
     const nextConfig = mergeConfigPayload(state.config, payload, baselineState.config, baselinePayload);
     if (!nextConfig || valuesEqual(nextConfig, state.config)) return;
     dispatch({ type: "SET_CONFIG", config: nextConfig });
@@ -561,13 +565,27 @@ export const coreCollectionsSyncContributor: SyncContributor = {
     if (!isPlainObject(payload)) return;
     hydrateProfileAnalytics(payload);
     const lastSyncedTickers = lastSyncedTickersById(baselinePayload);
+
+    const currentState = getState();
+    const nextPortfolios = mergeNamedEntries<Portfolio>(currentState.config.portfolios, payload.portfolios);
+    const nextWatchlists = mergeNamedEntries<Watchlist>(currentState.config.watchlists, payload.watchlists);
+    if (
+      nextPortfolios !== currentState.config.portfolios
+      || nextWatchlists !== currentState.config.watchlists
+    ) {
+      const nextConfig: AppConfig = {
+        ...currentState.config,
+        portfolios: nextPortfolios,
+        watchlists: nextWatchlists,
+      };
+      dispatch({ type: "SET_CONFIG", config: nextConfig });
+      scheduleConfigSave(nextConfig);
+    }
+
     const incomingRecords: TickerRecord[] = [];
     for (const parsed of parseIncomingTickerRecords(payload)) {
       if (!isCurrent()) return;
-      if (!isPlainObject(rawTicker)) continue;
-      const current = typeof rawTicker.ticker === "string"
-        ? getState().tickers.get(rawTicker.ticker)
-        : null;
+      const current = getState().tickers.get(parsed.metadata.ticker);
       // Local edits the cloud has never seen (CLI positions, offline changes)
       // win here and are uploaded by the push that follows this pull.
       if (tickerChangedSinceLastSync(current, lastSyncedTickers)) continue;

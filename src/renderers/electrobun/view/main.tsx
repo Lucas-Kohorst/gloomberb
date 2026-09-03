@@ -9,7 +9,6 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   backendRequest,
   initElectrobunBackend,
-  onExternalPluginsChanged,
   setElectrobunRemoteRequestHandler,
 } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
@@ -34,8 +33,10 @@ import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
 import { getRendererPlugins } from "../../../plugins/catalog-ui";
+import { installGloomPluginRuntime } from "../../../plugins/desktop-runtime/view-runtime";
 import { loadDesktopExternalPlugins } from "./external-plugins";
 import { setPluginInstaller } from "../../../plugins/builtin/plugin-marketplace/store";
+import { enableUiYield } from "../../../utils/ui-yield";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
@@ -104,13 +105,6 @@ async function boot() {
   installElectrobunUpdateHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
   installGloomPluginRuntime();
-  const externalPlugins = shouldLoadDesktopExternalPlugins()
-    ? await instantiateExternalPluginBundles(init.externalPlugins)
-    : [];
-  rememberLoadedExternalPluginIds(externalPlugins.filter((entry) => !entry.error).map((entry) => entry.plugin.id));
-  onExternalPluginsChanged((bundles) => {
-    void applyExternalPluginBundles(bundles);
-  });
   installElectrobunAiHost();
   installFocusScopeRelease();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot

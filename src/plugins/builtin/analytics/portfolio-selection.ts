@@ -1,5 +1,47 @@
-import type { BrokerInstanceConfig } from "../../../types/config";
-import type { Portfolio } from "../../../types/ticker";
+import type { AppConfig, BrokerInstanceConfig } from "../../../types/config";
+import type { Portfolio, TickerRecord } from "../../../types/ticker";
+import { hasPortfolioPosition } from "./metrics";
+
+export type AnalyticsCollectionKind = "portfolio" | "watchlist";
+
+export interface AnalyticsCollection {
+  kind: AnalyticsCollectionKind;
+  id: string;
+  name: string;
+}
+
+export function listAnalyticsCollections(
+  config: Pick<AppConfig, "portfolios" | "watchlists">,
+): AnalyticsCollection[] {
+  return [
+    ...config.portfolios.map((portfolio) => ({
+      kind: "portfolio" as const,
+      id: portfolio.id,
+      name: portfolio.name,
+    })),
+    ...config.watchlists.map((watchlist) => ({
+      kind: "watchlist" as const,
+      id: watchlist.id,
+      name: watchlist.name,
+    })),
+  ];
+}
+
+export function resolveAnalyticsCollection(
+  config: Pick<AppConfig, "portfolios" | "watchlists">,
+  id: string | null | undefined,
+): AnalyticsCollection | null {
+  if (!id) return null;
+  const portfolio = config.portfolios.find((entry) => entry.id === id);
+  if (portfolio) {
+    return { kind: "portfolio", id: portfolio.id, name: portfolio.name };
+  }
+  const watchlist = config.watchlists.find((entry) => entry.id === id);
+  if (watchlist) {
+    return { kind: "watchlist", id: watchlist.id, name: watchlist.name };
+  }
+  return null;
+}
 
 /** Broker account ids look like "U13268153" or "DU1234567": a letter prefix then digits. */
 const RAW_ACCOUNT_ID = /^[A-Z]{1,2}\d{5,}$/;

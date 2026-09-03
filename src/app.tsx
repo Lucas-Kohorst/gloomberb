@@ -58,6 +58,7 @@ import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
 import { isPaneShareHandoff } from "./shares/location";
 import { apiClient } from "./api-client";
+import { isPublicShareLocation } from "./plugins/builtin/shared/share-link";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
@@ -585,13 +586,14 @@ export function App({
       servicesFactory({
         config,
         plugins,
+        externalPluginPaths,
       })
     ), {
       externalPluginCount: externalPlugins.length,
       disabledPluginCount: config.disabledPlugins.length,
       brokerInstanceCount: config.brokerInstances.length,
     });
-  }, [config.dataDir, externalPlugins, plugins, servicesFactory]);
+  }, [config.dataDir, externalPlugins, externalPluginPaths, plugins, servicesFactory]);
 
   useEffect(() => {
     return () => services.destroy();

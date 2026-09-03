@@ -1,6 +1,7 @@
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
 import { httpFetch } from "../../utils/http-transport";
 
+export const YAHOO_CONNECTION_ID = "yahoo";
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1500;
 const FETCH_TIMEOUT_MS = 20_000;

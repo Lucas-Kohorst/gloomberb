@@ -56,16 +56,20 @@ import {
 } from "./report";
 import { WEATHER_STATIONS, cliProductForStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
+import {
+  loadKalshiWeatherCalibrationsForStation,
+  type KalshiWeatherCalibrationTimeline,
+} from "./kalshi-calibrations";
+import {
+  latestCompleteKalshiWeatherPoint,
+  loadKalshiWeatherIndexForStation,
+  type KalshiWeatherIndex,
+} from "./kalshi-index";
+import { NWS_OBSERVATIONS_DEFAULT_LIMIT } from "./nws-observations";
+import { useWeatherPolling } from "./polling";
 import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
 import { StationDetail, type StationObservation } from "./station-detail";
 import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
-import {
-  latestCompleteKalshiWeatherPoint,
-  loadKalshiWeatherCalibrationsForStation,
-  loadKalshiWeatherIndexForStation,
-  type KalshiWeatherCalibrationTimeline,
-  type KalshiWeatherIndex,
-} from "./kalshi-index";
 
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 type WeatherPaneTab = WeatherScope | "report";
@@ -220,8 +224,15 @@ function WeatherDetail({
   kalshiCalibrations: KalshiWeatherCalibrationTimeline | null;
   width: number;
 }) {
+  const { degreeDays } = useWeatherPolling(row.stationId);
   const indexPoint = latestCompleteKalshiWeatherPoint(kalshiIndex);
   const calibration = kalshiCalibrations?.calibrations.at(-1) ?? null;
+  const degreeDaysLine = degreeDays ? (
+    <Text fg={colors.textMuted}>
+      HDD {degreeDays.hdd.toFixed(1)} · CDD {degreeDays.cdd.toFixed(1)}
+      {` · month ${degreeDays.monthlyCumulativeHdd.toFixed(1)} / ${degreeDays.monthlyCumulativeCdd.toFixed(1)} (${degreeDays.dayCount}d)`}
+    </Text>
+  ) : null;
   const indexSummary = kalshiIndex
     ? indexPoint
       ? `Kalshi index ${indexPoint.valueF?.toFixed(2)}°F · ${indexPoint.timestampMs ? new Date(indexPoint.timestampMs).toISOString().slice(11, 16) : "—"}Z`
@@ -264,6 +275,7 @@ function WeatherDetail({
               {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
             </Text>
           )}
+          {degreeDaysLine}
         </Box>
         <StationDetail
           observations={stationObservations}
@@ -303,6 +315,7 @@ function WeatherDetail({
             {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
           </Text>
         )}
+        {degreeDaysLine}
         {(row.yForecast != null || row.ySettlement != null) && (
           <Text fg={colors.textMuted}>
             Yesterday forecast {formatTemp(row.yForecast, 1)}°F
@@ -721,7 +734,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             })
             .catch(() => undefined)
         : Promise.resolve(),
-      loadNwsStationObservations({ icao: selected.icao, limit: 96 })
+      loadNwsStationObservations({ icao: selected.icao, limit: NWS_OBSERVATIONS_DEFAULT_LIMIT })
         .then((snapshot) => {
           if (cancelled) return;
           setNwsByStation((current) => ({ ...current, [selected.stationId]: snapshot.observations }));
@@ -1011,7 +1024,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         detailOpen={detailOpen && !!selected}
         onBack={() => setDetailOpen(false)}
         detailContent={
-          selected ? (
+          selected && detailOpen ? (
             <WeatherDetail
               row={selected}
               hourly={hourlyByStation[selected.stationId] ?? []}

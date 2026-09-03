@@ -12,6 +12,14 @@ import {
   useCommandBarSearchProviders,
 } from "../routes/root/search-providers";
 import { openUrl } from "../../ui/external-link";
+import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
+import {
+  buildChartSeriesAssistContext,
+  looksLikeCatalogSeriesQuery,
+  type SeriesCatalogInstrument,
+} from "../../../plugins/builtin/chart-composer/series-catalog";
+import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
+import { isMarketFieldId } from "../../../time-series/field-catalog";
 import { useRouteListState } from "../routing/list-state";
 import { useCommandBarRootRuntime } from "../routes/root/runtime";
 import { parseRootShortcutIntent } from "../routes/root/shortcuts";
@@ -193,6 +201,7 @@ export function CommandBar({
   const [warmingNewsCache, setWarmingNewsCache] = useState(false);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
   const filingNews = useFilingArticleSearch(rootQuery);
+  const newsState = useNewsArticles(watchNews ? ARTICLE_SEARCH_QUERY : null);
   useEffect(() => {
     if (!watchNews) {
       setWarmingNewsCache(false);
@@ -220,13 +229,15 @@ export function CommandBar({
     const cached = cachedNewsArticles();
     const seen = new Set<string>();
     const articles = [];
-    for (const article of [...cached, ...adjacentNews.articles, ...filingNews.articles]) {
+    for (const article of [...cached, ...adjacentNews.articles, ...filingNews.articles, ...newsState.articles]) {
       if (seen.has(article.id)) continue;
       seen.add(article.id);
       articles.push(article);
     }
     const stillLoading = (watchNews && (
       adjacentNews.phase === "loading"
+      || newsState.phase === "loading"
+      || newsState.phase === "idle"
       || (cached.length === 0 && warmingNewsCache)
     )) || (filingNews.phase === "loading" && filingNews.articles.length === 0);
     return buildArticleSearchResultItems({
@@ -246,6 +257,8 @@ export function CommandBar({
     closeAll,
     filingNews.articles,
     filingNews.phase,
+    newsState.articles,
+    newsState.phase,
     newsCacheVersion,
     pluginRegistry,
     rootQuery,

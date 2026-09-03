@@ -765,6 +765,80 @@ function predictionExpressionSuggestion(
   };
 }
 
+export function formatParsedSeriesExpression(expression: ParsedSeriesExpression): string {
+  switch (expression.kind) {
+    case "economic":
+      return `FRED:${expression.seriesId}`;
+    case "adjacent-index":
+      return `${SERIES_PREFIX.adjacentIndex}:${expression.indexId}`;
+    case "future":
+      return `${SERIES_PREFIX.future}:${expression.code}`;
+    case "treasury-yield":
+      return `${SERIES_PREFIX.treasury}:${expression.maturity}`;
+    case "benchmark":
+      return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
+    case "poll":
+      return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    case "weather":
+      return `${expression.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
+    case "owid":
+      return `${SERIES_PREFIX.owid}:${expression.slug}:${expression.entity}`;
+    case "prediction-market":
+      return formatPredictionSeriesExpression(expression);
+    case "capability":
+      return `CAP:${expression.capabilityId}:${expression.seriesId}`;
+    case "constant":
+      return String(expression.value);
+    default:
+      return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+  }
+}
+
+const ASSIST_FIELD_NAMES = [
+  "price", "close", "volume", "div", "dvd",
+  "revenue", "grossProfit", "grossMargin", "operatingIncome", "netIncome", "netMargin",
+  "freeCashFlow", "eps", "totalAssets", "totalDebt", "totalEquity",
+  "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",
+] as const;
+
+export function buildChartSeriesAssistContext(): string {
+  return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
+    + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
+    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data, "
+    + "ADJ:indexId for Adjacent indices (e.g. ADJ:red, ADJ:blue, ADJ:red-tr), "
+    + "KALSHI:ticker for Kalshi yes-price (e.g. KALSHI:KXPRESPERSON), "
+    + "POLY:marketId for Polymarket yes-price, "
+    + "FUT:code for futures (e.g. FUT:ES), "
+    + "UST:maturity for Treasury yields (e.g. UST:10Y), "
+    + "BENCH:org:metric for AI benchmarks (e.g. BENCH:OpenAI:tps), "
+    + "POLL:subject:choice for poll trends (e.g. POLL:Trump Approval:Approve), "
+    + "WX:station:metric for Weather Company climate (e.g. WX:LAX:high), "
+    + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
+    + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL), "
+    + "BTC-USD:price for crypto. "
+    + "Use G <expression> to chart or CAT <query> to browse the Data Catalog. "
+    + "Natural language such as 'life expectancy', 'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' maps onto those expressions.";
+}
+
+const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID):/i;
+const CATALOG_SERIES_INTENT_RE = /\b(fred|cpi|gdp|unemployment|pce|nfp|treasury|ust|owid|weather|climate|nws|votehub|polls?|bitcoin|ethereum|crypto|llm-stats|aibench|benchmarks?|futures?)\b/i;
+
+export function looksLikeOwidSeriesQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (/^owid:/i.test(trimmed)) return true;
+  return /\b(owid|our world in data)\b/i.test(trimmed);
+}
+
+export function looksLikeCatalogSeriesQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  if (CATALOG_SERIES_PREFIX_RE.test(trimmed)) return true;
+  if (looksLikePredictionMarketQuery(trimmed)) return true;
+  if (looksLikeOwidSeriesQuery(trimmed)) return true;
+  return CATALOG_SERIES_INTENT_RE.test(trimmed);
+}
+
 function appendPredictionMarketHits(
   suggestions: SeriesCatalogSuggestion[],
   hits: readonly PredictionMarketSearchHit[],

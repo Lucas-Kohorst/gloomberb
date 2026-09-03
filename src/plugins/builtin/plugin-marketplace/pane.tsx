@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DataTableStackView,
-  EmptyState,
   InputSearchBar,
   Spinner,
   useExternalLinkFooter,
@@ -14,23 +13,23 @@ import {
 import { useShortcut } from "../../../react/input";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, ScrollBox, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiHost, type InputRenderable } from "../../../ui";
 import { formatCompact } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { formatRelativeAge } from "../../../utils/relative-time";
-import { canInstallPlugins, getCurrentPluginTarget } from "../../current-target";
+import { getCurrentPluginTarget } from "../../current-target";
 import { loadRegistry, registryPluginUrl } from "./feed";
+import { PluginGalleryDesktop, type PluginGalleryController } from "./gallery-desktop";
 import {
-  collectCategories,
   filterEntries,
   mergeCatalog,
   sortEntries,
-  unsupportedLabel,
   isInstallable,
   type MarketplaceEntry,
   type RegistryPlugin,
 } from "./model";
 import { getMarketplaceHost, getPluginInstaller } from "./store";
+import { statusOf } from "./status";
 
 export const PLUGIN_MARKETPLACE_PANE_ID = "plugin-marketplace";
 
@@ -47,23 +46,6 @@ function buildColumns(width: number): Column[] {
     { id: "stars", label: "STARS", width: starsWidth, align: "right" },
     { id: "status", label: "STATUS", width: statusWidth, align: "left" },
   ];
-}
-
-function statusOf(
-  entry: MarketplaceEntry,
-  installedNow: readonly string[],
-): { text: string; color: string } {
-  if (installedNow.includes(entry.id)) return { text: "restart to load", color: colors.warning };
-  if (entry.loadError) return { text: "failed", color: colors.negative };
-  const unsupported = unsupportedLabel(entry);
-  if (unsupported) return { text: unsupported.toLowerCase(), color: colors.warning };
-  if (entry.bundled) return { text: "included", color: colors.textDim };
-  if (entry.installed) {
-    return entry.enabled
-      ? { text: "enabled", color: colors.positive }
-      : { text: "disabled", color: colors.textDim };
-  }
-  return { text: "available", color: colors.textBright };
 }
 
 function renderCell(
@@ -151,6 +133,8 @@ function EntryDetail({ entry, width }: { entry: MarketplaceEntry; width: number 
 }
 
 export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
+  const ui = useUiHost();
+  const renderer = useRendererHost();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -202,6 +186,8 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     () => rows.find((entry) => entry.id === selectedId) ?? rows[0] ?? null,
     [rows, selectedId],
   );
+  const installed = useMemo(() => rows.filter((entry) => entry.installed === true), [rows]);
+  const discover = useMemo(() => rows.filter((entry) => entry.installed === false), [rows]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -209,25 +195,25 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   }, []);
   const blurSearch = useCallback(() => setSearchFocused(false), []);
 
-  const toggleSelected = useCallback(() => {
+  const toggle = useCallback((entry: MarketplaceEntry) => {
     const host = getMarketplaceHost();
-    if (!host || !selected || !selected.installed || !selected.toggleable) return;
-    host.setPluginEnabled(selected.id, !selected.enabled);
+    if (!host || !entry.installed || !entry.toggleable) return;
+    host.setPluginEnabled(entry.id, !entry.enabled);
     setLocalRevision((value) => value + 1);
-  }, [selected]);
+  }, []);
 
-  const installSelected = useCallback(() => {
-    const install = getPluginInstaller();
-    if (!selected || !isInstallable(selected) || !install || installing) return;
-    if (installedNow.includes(selected.id)) return;
+  const install = useCallback((entry: MarketplaceEntry) => {
+    const installPlugin = getPluginInstaller();
+    if (!isInstallable(entry) || !installPlugin || installing) return;
+    if (installedNow.includes(entry.id)) return;
     // Installs address the repository, not the plugin id: there is no central
     // name resolution, so owner/repo is the only unambiguous reference.
-    const repo = selected.repo;
+    const repo = entry.repo;
     if (!repo) return;
-    const target = selected.id;
+    const target = entry.id;
     setInstalling(target);
     setInstallError(null);
-    void install(repo).then((result) => {
+    void installPlugin(repo).then((result) => {
       setInstalling(null);
       if (result.ok) {
         setInstalledNow((current) => [...current, target]);
@@ -236,7 +222,23 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
       }
       setInstallError(result.error ?? "Install failed.");
     });
-  }, [installedNow, installing, selected]);
+  }, [installedNow, installing]);
+
+  const toggleSelected = useCallback(() => {
+    if (selected) toggle(selected);
+  }, [selected, toggle]);
+
+  const installSelected = useCallback(() => {
+    if (selected) install(selected);
+  }, [install, selected]);
+
+  const sourceUrl = selected ? registryPluginUrl(selected.id) : null;
+  const openSource = useCallback(() => {
+    if (!sourceUrl) return;
+    void renderer.openExternal(sourceUrl);
+  }, [renderer, sourceUrl]);
+  const canInstall = !!selected && isInstallable(selected) && !installedNow.includes(selected.id) && !!getPluginInstaller();
+  const canToggle = !!selected && selected.installed && selected.toggleable;
 
   /**
    * Pane keys go through the table's key handler rather than a global shortcut:
@@ -310,14 +312,45 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     url: selected ? registryPluginUrl(selected.id) : null,
     source: selected ? "gloom.sh" : null,
     info,
-    hints: selected && isInstallable(selected) && !installedNow.includes(selected.id) && getPluginInstaller()
+    hints: canInstall
       ? [{ id: "install", key: "i", label: "nstall", onPress: installSelected }]
-      : selected?.installed && selected.toggleable
-        ? [{ id: "toggle", key: "e", label: selected.enabled ? "disable" : "nable", onPress: toggleSelected }]
+      : canToggle
+        ? [{ id: "toggle", key: "e", label: selected?.enabled ? "disable" : "nable", onPress: toggleSelected }]
         : [],
   });
 
   const columns = useMemo(() => buildColumns(width), [width]);
+
+  const controller: PluginGalleryController = {
+    query,
+    setQuery,
+    installed,
+    discover,
+    selected,
+    select: (id) => setSelectedId(id),
+    status,
+    refresh,
+    install,
+    toggle,
+    installing,
+    installError,
+    installedNow,
+    canInstall,
+    canToggle,
+    openSource,
+    sourceUrl,
+  };
+
+  if (ui.kind === "desktop-web") {
+    return (
+      <PluginGalleryDesktop
+        controller={controller}
+        focused={focused}
+        width={width}
+        height={height}
+      />
+    );
+  }
 
   if (status === "loading" && entries.length === 0) {
     return (

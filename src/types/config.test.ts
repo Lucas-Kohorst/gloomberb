@@ -72,8 +72,10 @@ describe("resolvePaneInstance", () => {
 
 describe("normalizePaneId", () => {
   test("folds the retired plugin-discovery pane into the marketplace", () => {
-    expect(normalizePaneId("plugin-discovery")).toBe("plugin-market");
-    expect(createPaneInstance("plugin-discovery").paneId).toBe("plugin-market");
+    expect(normalizePaneId("plugin-discovery")).toBe("plugin-marketplace");
+    expect(createPaneInstance("plugin-discovery").paneId).toBe("plugin-marketplace");
+    expect(normalizePaneId("plugin-market")).toBe("plugin-marketplace");
+    expect(createPaneInstance("plugin-market").paneId).toBe("plugin-marketplace");
   });
 
   test("folds the retired commodities board into futures", () => {

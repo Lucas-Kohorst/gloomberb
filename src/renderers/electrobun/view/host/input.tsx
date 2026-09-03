@@ -13,6 +13,7 @@ import {
 import { editableTextContextMenuItems } from "../../../../ui/context-menu";
 import { useRendererHost, useUiCapabilities, type InputRenderable, type TextareaRenderable } from "../../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
+import { DISABLE_AUTOFILL_DOM_PROPS } from "./disable-autofill";
 import { cellHeight, cellWidth, cleanDomProps, commonStyle } from "./style";
 
 function textInputStyle(props: Record<string, unknown>, multiline: boolean): CSSProperties {

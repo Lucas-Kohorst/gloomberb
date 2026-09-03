@@ -1,7 +1,7 @@
 import { Box, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TextAttributes } from "../../../ui";
-import { EmptyState, Tabs } from "../../../components";
+import { EmptyState, Tabs, usePaneFooter } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors } from "../../../theme/colors";
@@ -55,7 +55,7 @@ import {
   type SectorSortPreference,
   type SectorTableRow,
 } from "./sector-model";
-import { describePortfolioTab, resolvePortfolioId, resolveTemplatePortfolioId } from "./portfolio-selection";
+import { collectionMembers, collectionUsesEqualWeight, describePortfolioTab, listAnalyticsCollections, resolveAnalyticsCollection, resolvePortfolioId, resolveTemplateCollectionId, resolveTemplatePortfolioId } from "./portfolio-selection";
 import {
   AnalyticsMetricsPanel,
   AnalyticsViewSwitch,

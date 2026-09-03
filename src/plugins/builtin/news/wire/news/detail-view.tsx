@@ -14,7 +14,6 @@ import { useInlineTickers } from "../../../../../state/hooks/inline-tickers";
 import { isPlainKey } from "../../../../../utils/keyboard";
 import { wrapTextLines } from "../../../../../utils/text-wrap";
 import { formatDetailDate } from "../../../../../utils/datetime-format";
-import { formatNewsCategory } from "../categories";
 
 function hasStoryItems(article: MarketNewsItem | null): boolean {
   return (article?.items?.length ?? 0) > 0;
@@ -198,17 +197,13 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
   const categoryLabels = useMemo(
-    () => item.categories.map(formatNewsCategory).filter(Boolean).join(" · "),
+    () => (item.categories ?? []).map(formatNewsCategoryLabel).filter(Boolean).join(" · "),
     [item.categories],
   );
   const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
   const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
   const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
     .filter((part) => part && part !== "—")
-    .join(" · ");
-  const categoryLabels = (item.categories ?? [])
-    .map(formatNewsCategoryLabel)
-    .filter(Boolean)
     .join(" · ");
 
   const scrollBy = useCallback((delta: number) => {

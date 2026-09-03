@@ -45,7 +45,7 @@ export function liveTargetSignature(targets: readonly PredictionCatalogLiveTarge
     .join("|");
 }
 
-function quoteFromLastTrade(isYes: boolean, price: number): PredictionCatalogQuote {
+export function quoteFromLastTrade(isYes: boolean, price: number): PredictionCatalogQuote {
   const yesPrice = isYes ? price : Math.max(0, 1 - price);
   return { yesPrice, lastTradePrice: yesPrice };
 }

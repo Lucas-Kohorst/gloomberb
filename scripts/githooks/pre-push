@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Default local CI on every push: changed tests + CLI data shape.
+# bun install copies this into .git/hooks/pre-push.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+exec bun run scripts/qa.ts --hook

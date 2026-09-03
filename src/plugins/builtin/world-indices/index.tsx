@@ -9,7 +9,7 @@ import {
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
+import { useAppSelector, usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { useQuoteBoard } from "../shared/use-quote-board";
 import { WORLD_INDICES, REGION_LABELS, getIndicesByRegion, resolveIndexEntries } from "./indices";
@@ -34,6 +34,7 @@ import {
 const NO_SAVED_SYMBOLS: string[] = [];
 
 function WorldIndicesPane({ focused, width, height }: PaneProps) {
+  const paneInstance = usePaneInstance();
   const { pinTicker } = usePluginTickerActions();
   const dataProvider = useAssetData();
   const [savedSymbols] = usePaneSettingValue<string[]>("symbols", NO_SAVED_SYMBOLS);

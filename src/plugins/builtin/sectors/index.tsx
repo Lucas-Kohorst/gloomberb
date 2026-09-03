@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box } from "../../../ui";
 import { DataTableView, Tabs, usePaneFooter, type DataTableCell, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
+import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { PricePoint, Quote } from "../../../types/financials";
-import { usePaneSettingValue } from "../../../state/app/context";
+import { usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCurrency, formatPercentRaw } from "../../../utils/format";
 import { useAssetData, useDebouncedPluginPaneState, usePluginPaneState, usePluginTickerActions } from "../../runtime";
@@ -25,6 +26,7 @@ import {
   ONE_MONTH_DAYS,
   ONE_YEAR_DAYS,
   buildSectorColumns,
+  DEFAULT_SECTOR_COLUMN_IDS,
   computeTrailingReturn,
   latestHistoryClose,
   nextSortPreference,

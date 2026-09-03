@@ -1,14 +1,13 @@
 import { Box, ScrollBox, Text, type InputRenderable } from "../../../ui";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { InputSearchBar, SegmentedControl, usePaneFooter } from "../../../components";
-import type { PaneProps } from "../../../types/plugin";
+import type { PaneProps, PaneTemplateCreateOptions } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { colors } from "../../../theme/colors";
 import { usePluginTickerActions } from "../../runtime";
 import { useAppSelector, usePaneInstance, usePaneSettingValue } from "../../../state/app/context";
-import { useChartQueries } from "../../../market-data/hooks";
-import { buildChartKey } from "../../../market-data/selectors";
+import { useResolvedChartSpec } from "../../../time-series/hooks";
 import { formatTickerListInput } from "../../../tickers/list";
 import { useGraphChartPopOut } from "../shared/graph-pop-out";
 import { formatCorrelation } from "./compute";
@@ -68,6 +67,8 @@ function CorrelationMatrixPane({ focused, width, height }: PaneProps) {
   const tickers = useAppSelector((state) => state.tickers);
   const [hoveredSymbol, setHoveredSymbol] = useState<string | null>(null);
   const settings = useMemo(() => getCorrelationPaneSettings(pane?.settings), [pane?.settings]);
+  const symbols = settings.symbolsError ? [] : settings.symbols;
+  const symbolsKey = symbols.join(",");
   const [rangePreset, setRangePreset] = usePaneSettingValue<CorrelationRangePreset>("rangePreset", settings.rangePreset);
   const [symbolsText, setSymbolsText] = usePaneSettingValue<string>("symbolsText", settings.symbolsText);
   const [symbolsEditing, setSymbolsEditing] = useState(false);

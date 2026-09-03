@@ -61,10 +61,9 @@ export function createElectrobunAppServices({ config, plugins }: AppServicesFact
       invokeCapability(capabilityId, operationId, payload, options)
     ),
   });
-  const newsService = new NewsService({ connectionHealth: pluginRegistry.connectionHealth });
-
   pluginRegistry.getConfigFn = () => config;
   const newsService = new NewsService({
+    connectionHealth: pluginRegistry.connectionHealth,
     pollIntervalMs: () => newsPollIntervalMsFromMinutes(pluginRegistry.getConfigFn().refreshIntervalMinutes),
   });
 
@@ -96,13 +95,10 @@ export function createElectrobunAppServices({ config, plugins }: AppServicesFact
   }));
 
   const pluginReadyPromises: Promise<void>[] = [];
-  for (const plugin of allPlugins) {
-    const entryFile = externalPluginPaths[plugin.id];
+  for (const plugin of plugins) {
     pluginReadyPromises.push(settleWithinBudget(
       measurePerfAsync("startup.services.register-plugin", () => (
-        entryFile
-          ? pluginRegistry.registerExternalPlugin(plugin, entryFile)
-          : pluginRegistry.register(plugin)
+        pluginRegistry.register(plugin)
       ), { pluginId: plugin.id }),
       PLUGIN_REGISTRATION_BUDGET_MS,
       `Plugin registration timed out: ${plugin.id}`,

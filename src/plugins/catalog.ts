@@ -2,6 +2,7 @@ import type { GloomPlugin, PluginTarget } from "../types/plugin";
 import type { LoadedExternalPlugin } from "./loader";
 import { debugPlugin } from "./builtin/debug";
 import { uiBuiltinPlugins } from "./catalog-ui";
+import { isReservedBuiltinPluginId } from "./ownership";
 
 export interface PluginCatalogEntry {
   plugin: GloomPlugin;
@@ -31,7 +32,10 @@ export function getPluginCatalog(externalPlugins: LoadedExternalPlugin[] = []): 
       plugin: entry.plugin,
       source: "external" as const,
       path: entry.path,
-      error: entry.error,
+      error: entry.error
+        ?? (isReservedBuiltinPluginId(entry.plugin.id)
+          ? `Plugin id is reserved by a built-in module: ${entry.plugin.id}`
+          : undefined),
       unsupportedTarget: entry.unsupportedTarget,
     })),
   ];

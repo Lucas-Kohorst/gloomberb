@@ -8,6 +8,7 @@ import {
   Tabs,
   usePaneFooter,
   useTableLoadMore,
+  useUpdatedAgo,
   type DataTableKeyEvent,
   type DataTableRootKeyContext,
 } from "../../components";
@@ -317,6 +318,14 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     relativeTimeBucket,
     watchlistedRowKeys,
   ]);
+
+  const getRowRevision = useCallback((row: PredictionListRow) => {
+    return buildPredictionListRowRevision(
+      row,
+      watchlistedRowKeys.has(row.key),
+      `${relativeTimeBucket}:${flashDirections.get(row.key) ?? ""}`,
+    );
+  }, [flashDirections, relativeTimeBucket, watchlistedRowKeys]);
 
   const onCatalogScroll = useTableLoadMore(
     controller.scrollRef,

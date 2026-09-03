@@ -14,7 +14,7 @@ import {
   marketStateLabel,
 } from "../../../market-data/market/status";
 import { selectEffectiveExchangeRates } from "../../../utils/exchange-rate-map";
-import { EmptyState } from "../../../components";
+import { EmptyState, TickerEmptyState } from "../../../components";
 import { CompanyLogo } from "../../../components/company-logo";
 import {
   CompositeChart,
@@ -84,6 +84,7 @@ export function OverviewTab({
   const chartWidth = contentWidth;
   const priceHistory = financials?.priceHistory ?? [];
   const hasHistory = priceHistory.length > 2;
+  const priceSeriesRef = useRef<ResolvedSeries | null>(null);
   const chartTimeZone = resolveExchangeTimeZone(
     ticker.metadata.exchange || quote?.listingExchangeName || quote?.exchangeName,
   );

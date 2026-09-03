@@ -3,11 +3,11 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
 } from "../../../types/plugin";
-import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
+import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
 import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
-import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
+import { ChartComposerPane, ChartComposerResearchTab, TradingViewPane } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import {
   CHART_COMPOSER_TEMPLATE_ID,
@@ -85,7 +85,9 @@ function chartTitle(spec: ChartSpec, prefix = "G"): string {
       ? publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)
       : series.source.kind === "economic"
         ? `FRED:${series.source.seriesId}`
-        : series.label?.trim() || series.source.seriesId
+        : series.source.kind === "prediction-market"
+          ? `${series.source.venue === "kalshi" ? "KALSHI" : "POLY"}:${series.source.marketId}`
+          : series.label?.trim() || series.source.seriesId
   ));
   if (labels.length === 0) return "Custom Chart";
   const remaining = spec.series.length - labels.length;
@@ -273,50 +275,6 @@ const chartComposerTemplates: PaneTemplateDef[] = [
         : null,
     },
   },
-  {
-    id: DATA_CATALOG_TEMPLATE_ID,
-    paneId: DATA_CATALOG_PANE_ID,
-    label: "Data Catalog",
-    description: "Browse Assets (securities, crypto, FX, futures, prediction contracts) vs Data (FRED, treasuries, Adjacent, polls, AI benchmarks, weather, OWID).",
-    keywords: [
-      "catalog",
-      "series",
-      "data",
-      "assets",
-      "chart",
-      "fred",
-      "kalshi",
-      "polymarket",
-      "adjacent",
-      "prediction",
-      "futures",
-      "fx",
-      "forex",
-      "treasury",
-      "polls",
-      "dividends",
-      "dvd",
-      "crypto",
-      "options",
-      "option",
-      "llm-stats",
-      "benchmark",
-      "weather",
-      "nws",
-      "owid",
-      "our world in data",
-    ],
-    shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
-    canCreate: () => true,
-    createInstance: (_context, options) => {
-      const query = options?.arg?.trim() ?? options?.values?.query?.trim() ?? "";
-      return {
-        title: query ? `Catalog · ${query}` : "Data Catalog",
-        placement: "floating" as const,
-        ...(query ? { settings: { query } } : {}),
-      };
-    },
-  },
   securityTemplate({
     id: "graph-price-pane",
     prefix: "GP",
@@ -415,6 +373,22 @@ export const chartComposerModule: PluginModule = {
       context.settings,
     ),
   }, {
+    id: TRADINGVIEW_PANE_ID,
+    name: "TradingView",
+    icon: "V",
+    component: TradingViewPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 100, height: 32 },
+    quickSettings: [LIVE_STREAMING_QUICK_SETTING],
+    settings: (context) => withLiveStreamingSetting(
+      buildChartComposerPaneSettingsDef(
+        context.settings,
+        context.activeTicker,
+      ),
+      context.settings,
+    ),
+  }, {
     id: DATA_CATALOG_PANE_ID,
     name: "Data Catalog",
     icon: "C",
@@ -422,6 +396,7 @@ export const chartComposerModule: PluginModule = {
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 110, height: 32 },
+    settings: (context) => buildDataCatalogPaneSettingsDef(context.settings),
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {

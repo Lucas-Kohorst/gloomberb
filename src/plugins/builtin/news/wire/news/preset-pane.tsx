@@ -17,6 +17,8 @@ import { useNewsReadState } from "../read-state";
 import { usePersistedNewsArticles } from "../persisted-articles";
 import { useCopyShareLink, newsArticleSharePayload } from "../../../shared/article-share";
 import { getNewsPaneSettings } from "../settings";
+import { encodeSortPreference } from "../../../../../components/data-table/sort-settings";
+import { usePaneSettingValue } from "../../../../../state/app/context";
 
 export function NewsPresetPane({
   focused,
@@ -40,6 +42,7 @@ export function NewsPresetPane({
 }) {
   const newsState = useNewsArticles(query);
   const articles = usePersistedNewsArticles(`${paneKey}:articles`, newsState.articles);
+  const visibleArticles = articles;
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(query, newsState);
   // The aggregator opens a query in "loading", so the first paint is a loading
   // body rather than a definitive empty wire.

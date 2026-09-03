@@ -7,6 +7,8 @@ export function sourceFallbackLabel(source: ChartSeriesSpec["source"]): string {
   switch (source.kind) {
     case "economic":
       return `FRED ${source.seriesId}`.trim() || "FRED series";
+    case "capability":
+      return source.seriesId.trim() || source.capabilityId.trim() || "Series";
     case "adjacent-index":
       return `ADJ ${source.indexId}`.trim() || "Adjacent index";
     case "benchmark":

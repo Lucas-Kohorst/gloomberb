@@ -1,13 +1,16 @@
+import { useEffect, useState } from "react";
 import { Box } from "../../../ui";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { usePaneTicker } from "../../../state/app/context";
 import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
-import { EmptyState } from "../../../components";
-import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
+import { EmptyState, useUpdatedAgo } from "../../../components";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
 import { newsWireModule } from "./wire";
+import { firehoseModule } from "./wire/firehose";
 import { NewsDetailView, useNewsArticleDetail } from "./wire/news/detail-view";
+import { usePopOutNewsArticle } from "./wire/news/pop-out";
 import {
   NewsArticleStackView,
   newsTableStatusContent,
@@ -52,6 +55,15 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
   const loading = newsState.phase === "loading"
     || (newsState.phase === "refreshing" && news.length === 0);
   const error = newsState.error;
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
+  const popOutArticle = usePopOutNewsArticle();
+
+  useEffect(() => {
+    if (newsState.phase === "ready" || newsState.phase === "refreshing") {
+      setLastUpdated(Date.now());
+    }
+  }, [news.length, newsState.phase]);
 
   const articleSummaryEntry = useArticleSummary(
     detailArticle && !detailArticle.summary ? detailArticle.url : null,
@@ -67,16 +79,13 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     registrationId: "news",
     focused,
     article: detailArticle,
-    // Stale rows stay on screen during a refresh or a failure, so the pane says
-    // so in the footer instead of replacing them.
     loading: loading && news.length > 0,
     error,
     info: [
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
-      ...(jina.loading ? [{ id: "rendering", parts: [{ text: "rendering article", tone: "muted" as const }] }] : []),
     ],
-    onPopOut: () => popOutArticle(openArticle ?? selected),
+    onPopOut: () => popOutArticle(detailArticle),
     onRefresh: instrument
       ? () => {
         void getSharedNewsService()?.load({
@@ -88,7 +97,7 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
         });
       }
       : undefined,
-    showPoll: !openItemId,
+    showPoll: !detailWithSummary,
   });
 
   if (!ticker) {

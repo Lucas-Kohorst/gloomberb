@@ -246,6 +246,12 @@ export function stubSummaryFromTicker(ticker: TickerRecord): PredictionMarketSum
   return createStubSummary({ key, venue, marketId, title });
 }
 
+export function isPredictionMarketTicker(ticker: TickerRecord): boolean {
+  const category = ticker.metadata.assetCategory;
+  if (category === "POLYMARKET" || category === "KALSHI") return true;
+  return stubSummaryFromTicker(ticker) != null;
+}
+
 export function hydrateWatchlistSnapshots(
   current: PredictionMarketSummary[],
   watchlistKeys: Iterable<string>,

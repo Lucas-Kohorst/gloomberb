@@ -16,12 +16,15 @@ import { buildWhoCommandResults } from "../chat/profile-search";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
 import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
+import { CongressTradesPane, CONGRESS_TRADES_PANE_ID } from "../congress-trades/pane";
 import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
 import { createPublicPaneShare } from "../shared/public-pane";
+import { registerConnectionSource, withConnectionRequest } from "../connections/register";
+import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
   ChatPane: (props: PaneProps) => ReactNode;
@@ -79,9 +82,18 @@ function createChatModule(
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
+      settings: (context) => buildChatPaneSettingsDef(context.settings),
       portableShare: {
         private: { title: true, params: true, settings: true, state: true },
       },
+    }, {
+      id: UNREAD_INBOX_PANE_ID,
+      name: "Unread",
+      icon: "@",
+      component: UnreadInboxPane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 56, height: 16 },
     }],
     paneTemplates: [{
       id: "new-chat-pane",

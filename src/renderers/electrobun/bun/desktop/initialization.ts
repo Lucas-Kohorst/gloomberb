@@ -26,6 +26,8 @@ import {
 } from "../window/focus";
 import type { DesktopBackendRequestPayload, ElectrobunBackendInit } from "../../shared/protocol";
 import type { CapabilityRegistry } from "../../../../capabilities";
+import { compileExternalPlugins } from "../../../../plugins/desktop-runtime/compile";
+import { getPluginsDir } from "../../../../plugins/loader";
 
 interface DesktopWindowTarget {
   kind: "main" | "detached";
@@ -86,7 +88,7 @@ export function desktopRendererCapabilityManifests(registry: CapabilityRegistry)
   return registry.manifests({ rendererOnly: true, includeDisabled: true });
 }
 
-function buildInitializationPayload(
+async function buildInitializationPayload(
   config: AppConfig,
   services: AppServices,
   windowTarget: DesktopWindowTarget,

@@ -366,6 +366,16 @@ export class MarketDataCoordinator {
     return this.quoteSubscriptionManager.subscribe(targets);
   }
 
+  /**
+   * Push a quote into the coordinator store from an external source (e.g.
+   * prediction-market live odds bridged into the watchlist).  Bypasses the
+   * normal provider router so non-standard symbols (POLY:, KALSHI:) can tick
+   * without a registered DataProvider.
+   */
+  pushQuote(instrument: InstrumentRef, quote: Quote): void {
+    this.applyStreamQuote(instrument, quote);
+  }
+
   private applyStreamQuote(instrument: InstrumentRef, quote: Quote): void {
     const key = buildQuoteKey(instrument);
     const current = this.quoteStore.get(key);
