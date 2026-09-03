@@ -1,0 +1,89 @@
+import { describe, expect, test } from "bun:test";
+import type { NewsArticle } from "../../../../news/types";
+import { buildArticleSearchResultItems } from "./article-results";
+
+function article(title: string, source: string): NewsArticle {
+  return {
+    id: title,
+    title,
+    source,
+    url: `https://example.com/${title}`,
+    publishedAt: new Date("2026-08-14T12:00:00Z"),
+    topic: "general",
+    topics: [],
+    sectors: [],
+    categories: [],
+    tickers: [],
+    scores: { importance: 50, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+    isBreaking: false,
+    isDeveloping: false,
+    importance: 50,
+  };
+}
+
+describe("buildArticleSearchResultItems", () => {
+  test("offers the matching article to open", () => {
+    const opened: string[] = [];
+    const items = buildArticleSearchResultItems({
+      articles: [
+        article("Iran Threatens to Close the Strait of Hormuz", "Reuters"),
+        article("Fed holds rates", "CNBC Top News"),
+      ],
+      query: "article on the strait",
+      phase: "ready",
+      onOpen: (item) => {
+        opened.push(item.id);
+      },
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.label).toContain("Hormuz");
+    expect(items[0]?.detail).toBe("Reuters");
+    items[0]?.action();
+    expect(opened).toEqual(["Iran Threatens to Close the Strait of Hormuz"]);
+  });
+
+  test("shows a lookup row while subscribed feeds are still loading", () => {
+    const items = buildArticleSearchResultItems({
+      articles: [],
+      query: "article on the strait",
+      phase: "loading",
+      onOpen: () => {},
+    });
+    expect(items.map((item) => item.label)).toEqual(["Looking up articles…"]);
+  });
+
+  test("returns local matches without waiting on a still-loading lookup", () => {
+    const items = buildArticleSearchResultItems({
+      articles: [article("Trump administration pauses talks", "AP")],
+      query: "ART trum",
+      phase: "loading",
+      onOpen: () => {},
+    });
+    expect(items.map((item) => item.label)).toEqual(["Trump administration pauses talks"]);
+  });
+
+  test("offers 10-K / 10-Q filings for filing lookups", () => {
+    const opened: string[] = [];
+    const filing: NewsArticle = {
+      ...article("10-K Apple Inc.", "SEC EDGAR"),
+      id: "sec:0001",
+      origin: "sec-edgar",
+      topics: ["filing", "10-K", "10k"],
+      tickers: ["AAPL"],
+    };
+    const items = buildArticleSearchResultItems({
+      articles: [filing],
+      query: "ART 10-K AAPL",
+      phase: "ready",
+      onOpen: (item) => {
+        opened.push(item.id);
+      },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.right).toBe("10K");
+    expect(items[0]?.category).toBe("Filings");
+    items[0]?.action();
+    expect(opened).toEqual(["sec:0001"]);
+  });
+});

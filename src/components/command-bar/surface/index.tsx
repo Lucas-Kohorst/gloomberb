@@ -7,6 +7,18 @@ import { usePlanAccess } from "../../../plugins/builtin/shared/plan-access";
 import { applyNewsFeedContextToAssistInventory, applyChartSeriesContextToAssistInventory, buildAssistCommandInventory } from "../assist/inventory";
 import { useCommandBarAssist } from "../assist/runtime";
 import { shouldAutoAskAssist, type AssistRowHandlers } from "../assist/model";
+import { getSharedNewsService, useNewsArticles, useNewsCacheVersion } from "../../../news/hooks";
+import {
+  ARTICLE_SEARCH_QUERY,
+  cachedNewsArticles,
+  looksLikeArticleQuery,
+  openNewsArticle,
+} from "../../../plugins/builtin/news/wire/article-search";
+import {
+  buildArticleSearchResultItems,
+  useAdjacentArticleSearch,
+  useFilingArticleSearch,
+} from "../routes/root/article-results";
 import {
   getAvailableCommandBarSearchProviders,
   useCommandBarSearchProviders,
