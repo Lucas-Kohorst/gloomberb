@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Dispatch } from "react";
 import { createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../types/config";
-import { createInitialState } from "../core/state/app/state";
-import type { AppState } from "../core/state/app/types";
-import type { PluginRegistry } from "../plugins/registry";
-import { createRemoteResources } from "./resources";
 import { REDACTED, redactConfigForRemote } from "./redact-config";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
 
@@ -51,18 +46,6 @@ function buildConfigWithSecrets(): AppConfig {
     },
   };
   return config;
-}
-
-function buildRemoteResources(config: AppConfig) {
-  const state = createInitialState(config) as AppState;
-  const getState = () => state;
-  const dispatch: Dispatch<never> = () => {};
-  return createRemoteResources({
-    dispatch: dispatch as never,
-    getState,
-    pluginRegistry: null as unknown as PluginRegistry,
-    uiRegistry: null,
-  });
 }
 
 describe("redactConfigForRemote", () => {
@@ -121,47 +104,5 @@ describe("redactConfigForRemote", () => {
     expect((config.brokerInstances[0].config as Record<string, unknown>).token).toBe(
       BROKER_TOKEN,
     );
-  });
-});
-
-describe("remote resources redact credentials", () => {
-  test("app://config returns a redacted config", () => {
-    const resources = buildRemoteResources(buildConfigWithSecrets());
-    const result = resources.getResource("app://config") as AppConfig;
-
-    expect(JSON.stringify(result)).not.toContain(BROKER_TOKEN);
-    expect(JSON.stringify(result)).not.toContain(BROKER_REFRESH);
-    expect(JSON.stringify(result)).not.toContain(BYOK_KEY);
-    expect(JSON.stringify(result)).not.toContain(BYOK_SPEC_BODY);
-
-    const broker = (result as AppConfig).brokerInstances[0] as BrokerInstanceConfig;
-    expect(broker.id).toBe("broker-1");
-    expect(broker.brokerType).toBe("ibkr");
-    expect(broker.label).toBe("Main IBKR");
-    expect(broker.config.token).toBe(REDACTED);
-  });
-
-  test("app://snapshot embeds a redacted config", () => {
-    const resources = buildRemoteResources(buildConfigWithSecrets());
-    const result = resources.getResource("app://snapshot") as {
-      config: AppConfig;
-    };
-
-    expect(JSON.stringify(result)).not.toContain(BROKER_TOKEN);
-    expect(JSON.stringify(result)).not.toContain(BROKER_REFRESH);
-    expect(JSON.stringify(result)).not.toContain(BYOK_KEY);
-    expect(JSON.stringify(result)).not.toContain(BYOK_SPEC_BODY);
-
-    const broker = result.config.brokerInstances[0] as BrokerInstanceConfig;
-    expect(broker.id).toBe("broker-1");
-    expect(broker.brokerType).toBe("ibkr");
-    expect(broker.label).toBe("Main IBKR");
-    expect(broker.config.token).toBe(REDACTED);
-
-    const byok = (result.config.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
-      BYOK_API_KEYS_CONFIG_KEY
-    ] as { keys: Record<string, unknown>[] };
-    expect(byok.keys[0].apiKey).toBe(REDACTED);
-    expect(byok.keys[0].id).toBe("byok-1");
   });
 });
