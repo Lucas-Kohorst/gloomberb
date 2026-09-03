@@ -16,6 +16,7 @@ import type { ChartResolution, TimeRange } from "../../../components/chart/core/
 import type { ChartSpec, ResolvedSeries } from "../../../time-series/types";
 import { getSupportedChartResolutionsForViewport } from "../../../time-series/resolution";
 import { useResolvedChartSpec } from "../../../time-series/hooks";
+import { defaultChartSeriesPresentation } from "../../../time-series/spec";
 import { chartSeriesSourceKey } from "../../../capabilities";
 import { useShortcut } from "../../../react/input";
 import { useDialog, useDialogState, type PromptContext } from "../../../ui/dialog";
