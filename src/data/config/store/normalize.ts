@@ -53,6 +53,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(candidate.brokerInstances),
     disabledPlugins,
+    seededPlugins: sanitizeUniqueStringList(candidate.seededPlugins ?? defaults.seededPlugins),
     disabledSources: sanitizeUniqueStringList(candidate.disabledSources ?? defaults.disabledSources),
     pluginConfig: sanitizePluginConfig(candidate.pluginConfig),
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,

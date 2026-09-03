@@ -392,6 +392,15 @@ describe("sanitizeLayout", () => {
 });
 
 describe("loadConfig", () => {
+  test("keeps seededPlugins so extracted plugins are not reinstalled on every launch", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      seededPlugins: ["substack", "ibkr"],
+    }));
+    const config = await loadConfig(dataDir);
+    expect(config.seededPlugins).toEqual(["substack", "ibkr"]);
+  });
+
   test("migrates unreachable pane instances and their saved state", async () => {
     const dataDir = await createTempConfigDir();
     const hiddenPaneId = "ticker-research:closed";

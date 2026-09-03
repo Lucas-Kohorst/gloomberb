@@ -1,7 +1,7 @@
 /**
  * Local CI for Gloomberb.
  *
- *   bun run qa              tests for changed files + CLI data shape + TUI boot
+ *   bun run qa              tests for this checkout's changes + CLI data shape + TUI boot
  *   bun run qa --fast       skip live TUI / pilotty
  *   bun run qa --live       also open changed panes (or --all-panes)
  *   bun run qa --hook       default pre-push: tests + CLI (set GLOOM_QA_LIVE=1 for TUI)
@@ -54,7 +54,7 @@ function printHelp(): void {
 Usage: bun run qa [--fast] [--live] [--all-panes] [--offline] [--hook]
 
 Always (and on every git push via the default pre-push hook):
-  - bun test on files related to the git diff
+  - bun test on files related to this checkout (working tree + commits since local main)
   - catalog-ui duplicate-pane guard
   - CLI JSON probes (ticker + pane fn) with shape invariants
 
@@ -76,20 +76,39 @@ function gitLines(args: string[]): string[] {
     .filter(Boolean);
 }
 
+function gitRev(ref: string): string | null {
+  return gitLines(["rev-parse", "--verify", ref])[0] ?? null;
+}
+
+/** This checkout's integration branch. Never a foreign remote such as gloomsh/main. */
+function localIntegrationRef(): string | null {
+  if (gitRev("main")) return "main";
+  if (gitRev("origin/main")) return "origin/main";
+  return null;
+}
+
 function changedFiles(): string[] {
   const files = new Set<string>();
   for (const line of [
-    ...gitLines(["diff", "--name-only"]),
-    ...gitLines(["diff", "--cached", "--name-only"]),
+    ...gitLines(["diff", "--name-only", "HEAD"]),
+    ...gitLines(["ls-files", "--others", "--exclude-standard"]),
   ]) {
     files.add(line);
   }
-  const base = gitLines(["merge-base", "HEAD", "gloomsh/main"])[0]
-    ?? gitLines(["merge-base", "HEAD", "origin/main"])[0];
-  if (base) {
-    for (const line of gitLines(["diff", "--name-only", `${base}...HEAD`])) files.add(line);
+  const integration = localIntegrationRef();
+  const head = gitRev("HEAD");
+  if (integration && head) {
+    const base = gitLines(["merge-base", "HEAD", integration])[0];
+    if (base && base !== head) {
+      for (const line of gitLines(["diff", "--name-only", `${base}...HEAD`])) files.add(line);
+    }
   }
-  return [...files].filter((file) => !file.startsWith("plans/") && !file.endsWith(".md"));
+  return [...files].filter((file) => (
+    !file.startsWith("plans/")
+    && !file.startsWith("wx/")
+    && !file.endsWith(".md")
+    && file !== "worker-configuration.d.ts"
+  ));
 }
 
 function which(bin: string): boolean {
@@ -144,6 +163,8 @@ async function seedConfig(home: string): Promise<void> {
       mkdirSync(dir, { recursive: true });
       const config = createDefaultConfig(dir);
       config.onboardingComplete = true;
+      // Isolated QA homes must not clone extracted plugins from GitHub.
+      config.seededPlugins = ["substack", "ibkr", "ibkr-gateway"];
       writeFileSync(join(dir, "config.json"), JSON.stringify(config));
     `,
   ], { env: { HOME: home }, timeoutMs: 30_000 });
