@@ -39,6 +39,13 @@ import {
   getVisibleWindowForDateRange,
 } from "../../components/chart/core/date-window";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
+import {
+  defaultValuationSeriesLoader,
+  requiredSeries as valuationRequiredSeries,
+} from "../../plugins/builtin/market-valuation/client";
+import type { DatedObservation } from "../../plugins/builtin/market-valuation/series";
+import { defaultStatLoader } from "../../plugins/builtin/econ-statistics/client";
+import { STATS } from "../../plugins/builtin/econ-statistics/stats";
 import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import type { FredSeriesCacheEntry } from "../../data/fred-series";
@@ -57,6 +64,23 @@ import {
 const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
 const OPTIONS_PANE_ID = "options";
+const MARKET_VALUATION_PANE_ID = "market-valuation";
+const ECON_STATISTICS_PANE_ID = "econ-statistics";
+
+/** Same reason as the valuation legs: the renderer cannot fill its own cache. */
+async function collectShotStatSeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, DatedObservation[]]>> {
+  if (resolved.pane.id !== ECON_STATISTICS_PANE_ID) return [];
+  const loaded = await Promise.all(STATS.map(async (def) => {
+    try {
+      return [def.seriesId, await defaultStatLoader(def)] as [string, DatedObservation[]];
+    } catch {
+      return null;
+    }
+  }));
+  return loaded.filter((entry): entry is [string, DatedObservation[]] => !!entry);
+}
 
 function isComposerChartPane(paneId: string): boolean {
   return paneId === CHART_COMPOSER_PANE_ID || paneId === TRADINGVIEW_PANE_ID;
@@ -83,6 +107,25 @@ async function collectShotFredSeries(
     }
   }));
   return loaded.filter((entry): entry is [string, FredSeriesCacheEntry] => !!entry);
+}
+
+/**
+ * The pane reads its legs from a client cache the shot renderer cannot fill itself,
+ * so fetch them here on the Bun side and hand them over with the payload.
+ */
+async function collectShotValuationSeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, DatedObservation[]]>> {
+  if (resolved.pane.id !== MARKET_VALUATION_PANE_ID) return [];
+  const loaded = await Promise.all(valuationRequiredSeries().map(async (def) => {
+    try {
+      const series = await defaultValuationSeriesLoader(def);
+      return [def.key, series.observations] as [string, DatedObservation[]];
+    } catch {
+      return null;
+    }
+  }));
+  return loaded.filter((entry): entry is [string, DatedObservation[]] => !!entry);
 }
 
 async function collectShotCapabilitySeries(
@@ -289,9 +332,11 @@ async function buildDesktopShotPayload(
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
   const optionsChains: Array<[string, OptionsChain]> = [];
-  const [fredSeries, capabilitySeries] = await Promise.all([
+  const [fredSeries, capabilitySeries, valuationSeries, statSeries] = await Promise.all([
     collectShotFredSeries(resolved),
     collectShotCapabilitySeries(resolved),
+    collectShotValuationSeries(resolved),
+    collectShotStatSeries(resolved),
   ]);
   const includeOptionsChains = resolved.pane.id === OPTIONS_PANE_ID || resolved.template?.paneId === OPTIONS_PANE_ID;
   for (const symbol of collectShotSymbols(resolved, rawArg)) {
@@ -335,6 +380,8 @@ async function buildDesktopShotPayload(
     financials,
     optionsChains,
     fredSeries,
+    valuationSeries,
+    statSeries,
     capabilitySeries,
     paneState,
   };

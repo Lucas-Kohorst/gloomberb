@@ -299,6 +299,52 @@ export interface CommandResultDef {
   execute: () => void | Promise<void>;
 }
 
+export interface CommandBarResultLineSegment {
+  text: string;
+  emphasis?: "match" | "muted";
+}
+
+export interface CommandBarResultLine {
+  segments: CommandBarResultLineSegment[];
+}
+
+export interface CommandBarResultDef {
+  id: string;
+  label: string;
+  detail?: string;
+  /** Rendered under the label. Each entry is one additional row. */
+  lines?: CommandBarResultLine[];
+  category?: string;
+  /** Short tag drawn left of the label, e.g. a document type. Six characters at most. */
+  badge?: string;
+  right?: string;
+  keywords?: string[];
+  disabled?: boolean;
+  execute: () => void | Promise<void>;
+}
+
+export interface CommandBarSearchContext {
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface CommandBarSearchProvider {
+  id: string;
+  /** Section heading for these rows, e.g. "Documents". */
+  category: string;
+  /** Sort position of the section. Higher sinks. Navigation sections are negative; use a positive value to sit below them. */
+  priority?: number;
+  /** Skip provide() below this length. Default 3. */
+  minQueryLength?: number;
+  /** Default 300. */
+  debounceMs?: number;
+  provide(
+    query: string,
+    context: CommandBarSearchContext,
+    signal: AbortSignal,
+  ): Promise<CommandBarResultDef[]>;
+}
+
 interface CliHelpColumn {
   header: string;
   align?: "left" | "right" | "center";
@@ -550,6 +596,7 @@ export interface GloomPluginContext {
   registerPaneType(pane: PluginPaneRegistration): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
+  registerCommandBarSearchProvider(provider: CommandBarSearchProvider): () => void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerCapability(capability: PluginCapability): void;

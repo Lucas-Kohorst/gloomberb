@@ -22,13 +22,6 @@ import { buildRootShortcutItem } from "./shortcut-items";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
-/** The ART plugin command claims the prefix, so article rows must still be shown. */
-export function isArticleLookupShortcut(intent: RootShortcutIntent): boolean {
-  return intent.kind !== "none"
-    && intent.source === "plugin-command"
-    && intent.command.id === "open-news-article";
-}
-
 interface PaneTemplateItemOptions {
   category?: string;
   createOptions?: PaneTemplateCreateOptions;
@@ -74,7 +67,12 @@ export interface RootResultModelOptions {
   pluginCommandResultItems: (command: CommandDef, shortcutArg: string) => ResultItem[];
   rootQuery: string;
   rootShortcutIntent: RootShortcutIntent;
-  articleResultItems?: ResultItem[];
+  /**
+   * Rows from plugin search providers, already ordered by provider priority.
+   * Appended after the local matches so a late answer never moves the row the
+   * user is aiming at, and only ever adds to what the bar already resolved.
+   */
+  providerResultItems?: ResultItem[];
   runDirectCommand: (command: Command, arg: string) => void;
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
@@ -123,7 +121,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
-    articleResultItems = [],
+    providerResultItems = [],
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -179,13 +177,9 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     && rootShortcutIntent.source === "plugin-command"
     && shortcutItem
   ) {
-    if (isArticleLookupShortcut(rootShortcutIntent)) {
-      items.push(shortcutItem);
-    } else {
-      const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
-      items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
-    }
-    } else if (match && match.command.id === "layout") {
+    const dynamicItems = pluginCommandResultItems(rootShortcutIntent.command, rootShortcutIntent.argText);
+    items.push(...(dynamicItems.length > 0 ? dynamicItems : [shortcutItem]));
+  } else if (match && match.command.id === "layout") {
     items.push(...buildLayoutItems(match.arg, { confirmDangerousActions: true }));
   } else if (match && match.command.id === "window-mode") {
     items.push(...buildWindowModeItems(match.arg));
@@ -236,23 +230,35 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       ...tickerActionItems(),
       ...pluginCommandItems(),
     ];
-    const matchedItems = fuzzyFilter(allItems, rootQuery, (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`);
+    const matchedItems = fuzzyFilter(
+      allItems,
+      rootQuery,
+      (item) => `${item.label} ${item.searchText || ""} ${item.detail} ${item.right || ""}`,
+      (item) => item.label,
+    );
     items.push(...matchedItems);
   }
 
-  if (rootShortcutIntent.kind === "none" || isArticleLookupShortcut(rootShortcutIntent)) {
-    items.push(...articleResultItems);
+  const shortcutClaimedQuery = rootShortcutIntent.kind !== "none";
+  // Counted before the provider rows: they arrive whenever the network answers,
+  // and an assist offer must not appear and vanish as they land.
+  const matchCount = items.length;
+  // A resolved prefix means the user is speaking the command language, so
+  // free-text providers stay out of the way.
+  if (!shortcutClaimedQuery) {
+    items.push(...providerResultItems);
   }
 
-  // Built from the local matches, then moved above them: the AI answers the
-  // question the user typed, so it leads the list. Rows landing here renumber
-  // everything below, which the root selection effect absorbs by identity.
+  // Built from the local matches, then placed above them: the AI turns the
+  // typed sentence into commands, so its answer leads the list. Its Thinking
+  // placeholder holds the rows from the start, and the root selection effect
+  // follows rows by identity when the answer renumbers what sits below.
   const assistItems = assist
     && isAssistSectionVisible(
       assist,
       rootQuery,
-      items.length,
-      rootShortcutIntent.kind !== "none" && !isArticleLookupShortcut(rootShortcutIntent),
+      matchCount,
+      shortcutClaimedQuery,
     )
     ? buildAssistResultItems({ ...assist, query: rootQuery })
     : [];

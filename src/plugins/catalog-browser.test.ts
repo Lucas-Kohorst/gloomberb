@@ -63,6 +63,7 @@ describe("browser plugin catalog", () => {
       "market-heatmap",
       "market-movers",
       "market-halts",
+      "fear-greed",
       "earnings-calendar",
       "ipo-calendar",
       "tv",

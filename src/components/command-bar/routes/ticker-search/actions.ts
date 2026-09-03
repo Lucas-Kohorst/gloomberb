@@ -12,6 +12,7 @@ import type { ResultItem } from "../../list/model";
 import {
   buildTickerSearchCacheKey,
   createQuickLookTickerCandidates,
+  formatInstrumentBadge,
 } from "./results";
 
 interface UseCommandBarTickerSearchActionsOptions {
@@ -61,13 +62,20 @@ export function useCommandBarTickerSearchActions({
 
   const mapTickerSearchCandidateToResultItem = useCallback((candidate: TickerSearchCandidate): ResultItem => {
     const detail = formatTickerSearchDetail(candidate);
-    const right = formatTickerSearchRight(candidate);
+    // The class lives in the badge, so the trailing text carries only the
+    // venue rather than saying "Equity" twice on one row. An unclassified
+    // instrument has no class to show, so the badge column lifts its venue
+    // instead (a short exchange code qualifies on its own) and the trailing
+    // text goes quiet rather than repeating it.
+    const badge = formatInstrumentBadge(candidate);
+    const right = candidate.exchangeLabel || candidate.primaryExchangeLabel || candidate.right || undefined;
 
     if (candidate.kind === "ticker" && candidate.ticker) {
       return {
         id: candidate.id,
         label: candidate.label,
         detail,
+        badge,
         right,
         category: candidate.category,
         kind: "ticker",
@@ -84,6 +92,7 @@ export function useCommandBarTickerSearchActions({
       id: candidate.id,
       label: candidate.label,
       detail,
+      badge,
       right,
       category: candidate.category,
       kind: "search",
@@ -155,14 +164,6 @@ export function useCommandBarTickerSearchActions({
     readTickerSearchCache,
     writeTickerSearchCache,
   };
-}
-
-function formatTickerSearchRight(candidate: TickerSearchCandidate): string | undefined {
-  const assetClass = formatInstrumentClass(candidate.instrumentClass);
-  const exchange = candidate.exchangeLabel || candidate.primaryExchangeLabel || candidate.right || "";
-  if (!exchange) return assetClass;
-  if (assetClass === "Other") return exchange;
-  return `${assetClass} ${exchange}`;
 }
 
 function formatTickerSearchDetail(candidate: TickerSearchCandidate): string {

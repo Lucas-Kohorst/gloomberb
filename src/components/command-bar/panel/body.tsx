@@ -1,10 +1,8 @@
 import { Box, Text, TextAttributes } from "../../../ui";
+import { commandBarMatchText } from "../../../theme/colors";
 import { useThemeColors } from "../../../theme/theme-context";
 import { Button, Spinner } from "../../ui";
-import {
-  CommandBarListBody,
-  CommandBarListHeader,
-} from "../list/view";
+import { CommandBarListBody } from "../list/view";
 import {
   CommandBarMultiSelectBody,
   isMultiSelectPickerRoute,
@@ -24,7 +22,9 @@ type CommandBarPanelBodyProps = Omit<
   | "nativeOccluderRect"
   | "onNativeOccluderChange"
   | "onOverlayClose"
+  | "onQueryChange"
   | "panelBounds"
+  | "rootGhostSuffix"
   | "selectedScrollRowIndex"
   | "termHeight"
   | "termWidth"
@@ -39,6 +39,7 @@ export function CommandBarPanelBody({
   contentPadding,
   currentRoute,
   getWorkflowInputRef,
+  hasChromeRow,
   labelWidth,
   listBodyHeight,
   nativeListRows,
@@ -57,15 +58,12 @@ export function CommandBarPanelBody({
   onMultiSelectSelect,
   onMultiSelectToggle,
   onNativeSelectRef,
-  onQueryChange,
   onThemeCommit,
   onThemePreview,
   onWorkflowActiveTextareaSync,
   onWorkflowSubmit,
   palette,
   queryDisplayWidth,
-  rootGhostSuffix,
-  rootQueryLength,
   rootShortcutFeedback,
   themePickerActive,
   themePickerFilter,
@@ -90,62 +88,51 @@ export function CommandBarPanelBody({
 
   return (
     <>
-      {!nativePaneChrome && <Box height={1} backgroundColor={paletteBg} />}
+      {/* The desktop sheet pads itself in CSS; the terminal spends a row. */}
+      {!nativePaneChrome && <Box height={1} />}
 
-      {!nativePaneChrome && (
-        <Box
-          height={1}
-          paddingX={contentPadding}
-          flexDirection="row"
-          alignItems="center"
-        >
-          {currentRoute && (
-            <Box marginRight={1}>
-              <Button label={t("Back")} variant="ghost" onPress={onBack} />
+      {/* Rows stop at the results column, so a selection bar on a wide window
+          does not run on past the text into empty sheet. */}
+      <Box
+        key={bodySlotKey}
+        flexDirection="column"
+        flexGrow={1}
+        width={queryDisplayWidth + contentPadding * 2}
+        backgroundColor={panelBg}
+      >
+        {/* The query itself is typed in the header prompt. This row only exists
+            when it has something to say: the way back from a nested screen, or
+            what a typed prefix resolved to. Its height is reserved in
+            panel/layout.ts, which is why the render is keyed on the same flag. */}
+        {hasChromeRow && (
+          <>
+            <Box height={1} paddingX={contentPadding} flexDirection="row">
+              {currentRoute ? (
+                <>
+                  <Text
+                    fg={paletteSubtleText}
+                    onMouseDown={(event: any) => {
+                      event.stopPropagation?.();
+                      event.preventDefault?.();
+                      onBack();
+                    }}
+                    data-gloom-interactive="true"
+                  >
+                    {`\u2190 ${t("Back")}`}
+                  </Text>
+                  <Box width={2} />
+                  <Text fg={paletteText} attributes={TextAttributes.BOLD}>
+                    {truncateText(t(getCommandBarPanelTitle(currentRoute)), Math.max(1, queryDisplayWidth - 8))}
+                  </Text>
+                </>
+              ) : rootShortcutFeedback ? (
+                <Text fg={paletteSubtleText}>
+                  {truncateText(rootShortcutFeedback, queryDisplayWidth)}
+                </Text>
+              ) : null}
             </Box>
-          )}
-          <Box flexGrow={1}>
-            <Text fg={paletteText} attributes={TextAttributes.BOLD}>
-              {t(getCommandBarPanelTitle(currentRoute))}
-            </Text>
-          </Box>
-        </Box>
-      )}
-
-      <Box key={bodySlotKey} flexDirection="column" flexGrow={1} width="100%" backgroundColor={panelBg}>
-        {nativePaneChrome && currentRoute && (
-          <Box height={1} paddingX={contentPadding}>
-            <Text
-              fg={paletteSubtleText}
-              onMouseDown={(event: any) => {
-                event.stopPropagation?.();
-                event.preventDefault?.();
-                onBack();
-              }}
-              data-gloom-interactive="true"
-            >
-              {`← ${t("Back")}`}
-            </Text>
-          </Box>
-        )}
-        {(visibleListState || currentRoute?.kind === "picker") && visibleListState && (
-          <CommandBarListHeader
-            kind={visibleListState.kind}
-            title={visibleListState.title}
-            query={visibleListState.query}
-            queryDisplayWidth={queryDisplayWidth}
-            nativePaneChrome={nativePaneChrome}
-            inputBg={inputBg}
-            paletteBg={paletteBg}
-            paletteText={paletteText}
-            paletteSubtleText={paletteSubtleText}
-            cursorColor={themeColors.textBright}
-            contentPadding={contentPadding}
-            rootGhostSuffix={rootGhostSuffix}
-            rootQueryLength={rootQueryLength}
-            rootShortcutFeedback={rootShortcutFeedback}
-            onQueryChange={onQueryChange}
-          />
+            <Box height={1} />
+          </>
         )}
 
         {themePickerActive && (
@@ -184,6 +171,7 @@ export function CommandBarPanelBody({
             paletteBg={paletteBg}
             paletteHeadingText={paletteHeadingText}
             paletteHoverBg={paletteHoverBg}
+            paletteMatchText={commandBarMatchText(themeColors)}
             paletteSelectedBg={paletteSelectedBg}
             paletteSelectedText={paletteSelectedText}
             paletteSubtleText={paletteSubtleText}
@@ -249,13 +237,12 @@ export function CommandBarPanelBody({
         )}
       </Box>
 
-      {!nativePaneChrome && <Box flexGrow={1} />}
+      {!nativePaneChrome && <Box height={1} />}
     </>
   );
 }
 
-function getCommandBarPanelTitle(route: CommandBarRoute | null): string {
-  if (!route) return "Commands";
+function getCommandBarPanelTitle(route: CommandBarRoute): string {
   if (route.kind === "mode") {
     if (route.screen === "layout") return "Layout Actions";
     if (route.payload?.action === "replace-pane") return "Replace ticker";

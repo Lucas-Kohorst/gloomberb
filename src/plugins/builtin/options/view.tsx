@@ -30,7 +30,6 @@ import {
   findNearestStrikeIndex,
   formatIv,
   optionColumnColor,
-  optionSortValue,
   renderOptionCell,
   resolveDefaultStrikeTarget,
   resolveOptionFieldIds,
@@ -44,8 +43,6 @@ import {
 } from "./live-quotes";
 import { useOptionsAccessFooter } from "./footer";
 import { useLiveStreamingSetting } from "../shared/live-streaming";
-import { usePluginAppActions } from "../../runtime";
-import { buildOvmeSeed, serializeOvmeSeed, type OvmeOptionType } from "../options-calc/seed";
 
 type SummaryMetric = { label: string; value: string };
 
@@ -93,11 +90,9 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   const { ticker, financials } = usePaneTicker();
   const { createPaneFromTemplate } = usePluginAppActions();
   const liveStreaming = useLiveStreamingSetting();
-  const { createPaneFromTemplate } = usePluginAppActions();
   const [expIdx, setExpIdx] = useState(0);
   const [calcSide, setCalcSide] = useState<OptionSide | null>(null);
   const [strikeIdx, setStrikeIdx] = useState(0);
-  const [selectedSide, setSelectedSide] = useState<OvmeOptionType>("call");
   const [autoScrollVersion, setAutoScrollVersion] = useState(0);
   const [scrollToIndexAlign, setScrollToIndexAlign] = useState<"nearest" | "center">("nearest");
   const [visibleStrikeViewport, setVisibleStrikeViewport] = useState<{
@@ -105,10 +100,6 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     range: DataTableVisibleRange;
   } | null>(null);
   const [interactive, setInteractive] = useState(false);
-  const [sortPreference, setSortPreference] = useState<SortPreference<OptionColumnId>>({
-    columnId: null,
-    direction: "asc",
-  });
   const userSelectedStrikeRef = useRef(false);
   const onCaptureRef = useRef(onCapture);
   const target = resolveOptionsTarget(ticker);
@@ -139,10 +130,6 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
   const initialChain = useResolvedEntryValue(initialChainEntry);
   const selectedExpiration = initialChain?.expirationDates[expIdx];
   const viewportKey = `${effectiveTicker}:${selectedExpiration ?? "initial"}`;
-  const chainRefreshMinutes = Number(pane?.settings?.chainRefreshMinutes);
-  const chainRefreshIntervalMs = Number.isFinite(chainRefreshMinutes) && chainRefreshMinutes > 0
-    ? chainRefreshMinutes * 60_000
-    : OPTIONS_CHAIN_REFRESH_INTERVAL_MS;
   const expirationChainEntry = useOptionsQuery(
     baseRequest && selectedExpiration != null
       ? { ...baseRequest, expirationDate: selectedExpiration }
@@ -346,22 +333,21 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     hints: footerHints,
     loading,
     quoteCoverage: optionQuoteCoverage,
-    hints: calcHints,
   });
 
   useEffect(() => {
     setStrikeIdx((index) => {
-      if (snapshotRows.length === 0) return 0;
-      return Math.min(index, snapshotRows.length - 1);
+      if (strikes.length === 0) return 0;
+      return Math.min(index, strikes.length - 1);
     });
-  }, [snapshotRows.length]);
+  }, [strikes.length]);
 
   useEffect(() => {
     if (strikes.length === 0 || userSelectedStrikeRef.current) return;
     const targetStrike = resolveDefaultStrikeTarget(parsed?.strike, spot);
     if (targetStrike == null) return;
     setScrollToIndexAlign("center");
-    setStrikeIdx(findNearestStrikeIndex(snapshotRows.map((row) => row.strike), targetStrike));
+    setStrikeIdx(findNearestStrikeIndex(strikes, targetStrike));
     setAutoScrollVersion((version) => version + 1);
   }, [expIdx, parsed?.strike, spot, strikes]);
 
@@ -437,31 +423,6 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       return true;
     }
 
-    if (isPlainKey(event, "j", "down")) {
-      if (rows.length === 0) return true;
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      userSelectedStrikeRef.current = true;
-      setScrollToIndexAlign("nearest");
-      setStrikeIdx((i) => Math.min(i + 1, rows.length - 1));
-      return true;
-    }
-    if (isPlainKey(event, "k", "up")) {
-      if (rows.length === 0) return true;
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      userSelectedStrikeRef.current = true;
-      setScrollToIndexAlign("nearest");
-      setStrikeIdx((i) => Math.max(i - 1, 0));
-      return true;
-    }
-    if (isPlainKey(event, "c")) {
-      event.preventDefault?.();
-      event.stopPropagation?.();
-      openCalc();
-      return true;
-    }
-
     return false;
   }, [
     calcParams,
@@ -470,7 +431,6 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     interactive,
     openCalculator,
     selectAdjacentExpiration,
-    strikes.length,
   ]);
 
   if (!ticker) {
@@ -542,24 +502,19 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
             setStrikeIdx(index);
           },
         }}
-        onCursorChange={(_row, index) => {
+        onCursorChange={() => {
           userSelectedStrikeRef.current = true;
           setScrollToIndexAlign("nearest");
           enterInteractive();
-          setStrikeIdx(index);
         }}
         onRootKeyDown={handleTableKeyDown}
         headerScrollId="options-table-header-scroll"
         bodyScrollId="options-table-body-scroll"
         columns={optionColumns}
         items={rows}
-        sortColumnId={sortPreference.columnId}
-        sortDirection={sortPreference.direction}
-        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
-          current,
-          columnId as OptionColumnId,
-          { defaultDirection: "desc" },
-        ))}
+        sortColumnId={null}
+        sortDirection="asc"
+        onHeaderClick={() => {}}
         onTableMouseDown={enterInteractive}
         onBodyScrollActivity={() => { userSelectedStrikeRef.current = true; }}
         visibleRangeKey={viewportKey}

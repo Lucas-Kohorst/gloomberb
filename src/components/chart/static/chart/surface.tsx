@@ -102,6 +102,8 @@ export function StaticChartSurface({
   yAxisLabel,
   yAxisColor,
   formatYAxisValue,
+  yDomain,
+  lineColors,
 }: StaticChartSurfaceProps) {
   const themeColors = useThemeColors();
   const { cellWidthPx = 8, cellHeightPx = 18 } = useUiCapabilities();
@@ -128,18 +130,22 @@ export function StaticChartSurface({
     colors,
     timeAxisDates,
     indicators,
+    yDomain,
+    lineColors,
   }), [
     assetCategory,
     axisMode,
     colors,
     currency,
     indicators,
+    lineColors,
     mode,
     plotHeight,
     showVolume,
     timeAxisDates,
     totalWidth,
     volumeHeight,
+    yDomain,
   ]);
   const axisScene = useMemo(
     () => buildChartScene(points, axisSourceOptions),
@@ -174,18 +180,22 @@ export function StaticChartSurface({
     colors,
     timeAxisDates,
     indicators,
+    yDomain,
+    lineColors,
   }), [
     assetCategory,
     axisMode,
     colors,
     currency,
     indicators,
+    lineColors,
     mode,
     plotHeight,
     plotWidth,
     showVolume,
     timeAxisDates,
     volumeHeight,
+    yDomain,
   ]);
   const cursorOptions = useMemo<RenderChartOptions>(() => ({
     ...plotOptions,

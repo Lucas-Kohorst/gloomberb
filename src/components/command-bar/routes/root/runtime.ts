@@ -8,7 +8,9 @@ import type { TickerSearchCandidate } from "../../../../tickers/search";
 import type { AssistRowHandlers } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
+import type { CommandBarCategoryPriorities } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
+import { normalizeCommandTickerSearchText } from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { buildRootResultModel, type RootResultModel } from "./results";
 import { useRootProviderSearch } from "./provider-search";
@@ -62,7 +64,9 @@ interface UseCommandBarRootRuntimeOptions {
   }): ResultItem[];
   pluginCommandItems(): ResultItem[];
   pluginCommandResultItems(command: CommandDef, shortcutArg: string): ResultItem[];
-  articleResultItems?: ResultItem[];
+  providerResultItems?: ResultItem[];
+  providerCategoryPriorities?: CommandBarCategoryPriorities;
+  providerSearching?: boolean;
   readTickerSearchCache(
     query: string,
     brokerId?: string | null,
@@ -113,7 +117,9 @@ export function useCommandBarRootRuntime({
   paneShortcutItems,
   pluginCommandItems,
   pluginCommandResultItems,
-  articleResultItems = [],
+  providerResultItems = [],
+  providerCategoryPriorities,
+  providerSearching = false,
   readTickerSearchCache,
   rootModeKind,
   rootQuery,
@@ -186,7 +192,7 @@ export function useCommandBarRootRuntime({
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
-    articleResultItems,
+    providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -214,7 +220,7 @@ export function useCommandBarRootRuntime({
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
-    articleResultItems,
+    providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
@@ -224,28 +230,44 @@ export function useCommandBarRootRuntime({
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
-  const rootTickerSearchArg = rootSecurityDescriptionArg;
+  // Free text that no prefix claims also goes to symbol search, so "nvidia"
+  // finds NVDA without the backtick. Skipped when a local row already carries
+  // that exact name, since an "Exact Match" symbol would otherwise outrank it.
+  const rootPlainTickerSearchArg = useMemo(() => {
+    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    const trimmed = rootQuery.trim();
+    if (trimmed.length < 2) return null;
+    const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
+    const hasExactLocalRow = rootResultModel.items.some((item) => (
+      item.kind !== "ticker"
+      && item.kind !== "search"
+      && normalizeCommandTickerSearchText(item.label) === normalizedQuery
+    ));
+    return hasExactLocalRow ? null : trimmed;
+  }, [activeMatch, currentRoute, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
+  const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
 
   const {
     activeRootProviderResultsKey,
     orderedRootResults,
-    rootSearching,
+    rootSearching: tickerSearching,
     rootSectionOrder,
   } = useRootProviderSearch({
     activeCollectionId,
     buildTickerSearchResultItems,
+    categoryPriorities: providerCategoryPriorities,
     currentRoute,
     dataProvider,
     localTickerSearchResultItems,
     portfolios: state.config.portfolios,
     readTickerSearchCache,
-    rootPlainTickerSearchArg: null,
-    rootQuery,
+    rootPlainTickerSearchArg,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,
     writeTickerSearchCache,
   });
+  const rootSearching = tickerSearching || providerSearching;
 
   useLayoutEffect(() => {
     if (currentRoute) return;
@@ -266,15 +288,15 @@ export function useCommandBarRootRuntime({
 
     setRootSelectedIdx((current) => {
       if (rootSelectionNavigatedRef.current) {
-        // The user picked this row: rows arriving above it — an AI answer, a
-        // provider result — may renumber it, never take the highlight from it.
+        // The user picked this row. Async sections append below it, but an
+        // exact symbol match still lands above, so the row is tracked by id
+        // rather than by index.
         const selectedId = previousResultIds[current];
         const shiftedIdx = selectedId ? resultIds.indexOf(selectedId) : -1;
         if (shiftedIdx >= 0) return shiftedIdx;
         return clampSelectedIdx(current, resultIds.length);
       }
-      // Untouched, the selection follows the best row on offer, which is what
-      // an AI answer becomes the moment it lands at the top of the list.
+      // Untouched, the selection follows the best row on offer.
       const defaultIdx = orderedRootResults.findIndex(isDefaultSelectable);
       return clampSelectedIdx(Math.max(rootResultModel.initialIdx, defaultIdx), resultIds.length);
     });

@@ -53,6 +53,7 @@ async function boot(): Promise<void> {
                 plugins={getBrowserBuiltinPlugins()}
                 desktopDeepLinkBridge={deepLinkBridge}
                 updatesEnabled={false}
+                requireSignIn
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

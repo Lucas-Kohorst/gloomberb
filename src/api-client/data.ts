@@ -1,6 +1,11 @@
 import type { TickerFinancials } from "../types/financials";
 import type { InstrumentSearchResult } from "../types/instrument";
-import { normalizeTweetSearchResponse } from "./normalizers";
+import {
+  normalizeSavedSearchHits,
+  normalizeSavedSearchResponse,
+  normalizeSearchResponse,
+  normalizeTweetSearchResponse,
+} from "./normalizers";
 import {
   cloudCdsPath,
   cloudCongressHousePath,
@@ -12,11 +17,17 @@ import {
   cloudSecFilingDocumentsPath,
   cloudSecFilingsPath,
   cloudFredSeriesPath,
+  cloudShillerPath,
   cloudHistoryPath,
   cloudMarketSearchPath,
   cloudMarketSymbolPath,
   cloudNewsPath,
   cloudOptionsChainPath,
+  cloudSavedSearchHitsPath,
+  cloudSavedSearchPath,
+  cloudSavedSearchesPath,
+  cloudSearchDocumentPath,
+  cloudSearchPath,
   cloudStatementsPath,
   cloudTickerTweetsPath,
   cloudTweetSearchPath,
@@ -26,6 +37,7 @@ import {
   type CloudFredSeriesParams,
   type CloudHistoryParams,
   type CloudNewsParams,
+  type CloudSearchParams,
   type CloudSecFilingParams,
   type CloudSecFilingsParams,
   type CloudTickerTweetsParams,
@@ -44,6 +56,7 @@ import type {
   CloudEquityDiagnosticMode,
   CloudEquityDiagnosticResult,
   CloudFredSeriesPayload,
+  CloudShillerPayload,
   CloudFundamentals,
   CloudHoldersPayload,
   CloudMarketBatchPayload,
@@ -53,6 +66,14 @@ import type {
   CloudMarketScreenerPayload,
   CloudNewsListResponse,
   CloudNewsPayload,
+  CloudSavedSearch,
+  CloudSavedSearchInput,
+  CloudSavedSearchListResponse,
+  CloudSearchDocType,
+  CloudSearchDocument,
+  CloudSearchDocumentResponse,
+  CloudSearchHit,
+  CloudSearchResponse,
   CloudSecContentResponse,
   CloudSecDocumentsResponse,
   CloudSecFilingsResponse,
@@ -218,6 +239,10 @@ export class CloudDataApi {
     return this.request<CloudFredSeriesPayload>(cloudFredSeriesPath(seriesId, params));
   }
 
+  async getCloudShiller(): Promise<CloudShillerPayload> {
+    return this.request<CloudShillerPayload>(cloudShillerPath());
+  }
+
   async getCloudYieldCurve(): Promise<CloudYieldPointPayload[]> {
     return this.request<CloudYieldPointPayload[]>("/cloud/econ/yield-curve");
   }
@@ -254,6 +279,68 @@ export class CloudDataApi {
 
   async getCloudSec13F(path: string, params: Record<string, string | number | undefined> = {}): Promise<unknown> {
     return this.request<unknown>(cloudSec13FPath(path, params));
+  }
+
+  /**
+   * Cross-document full-text search. Pro-gated: unentitled accounts get a 402,
+   * which the caller turns into the access gate rather than an empty result.
+   */
+  async searchCloudDocuments(
+    params: CloudSearchParams,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchResponse> {
+    return normalizeSearchResponse(
+      await this.request<CloudSearchResponse>(cloudSearchPath(params), { signal: options?.signal }),
+    );
+  }
+
+  async getCloudSearchDocument(
+    docType: CloudSearchDocType,
+    sourceId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchDocument> {
+    const response = await this.request<CloudSearchDocumentResponse>(
+      cloudSearchDocumentPath(docType, sourceId),
+      { signal: options?.signal },
+    );
+    return response.document;
+  }
+
+  async getCloudSavedSearches(options?: { signal?: AbortSignal }): Promise<CloudSavedSearch[]> {
+    const response = await this.request<CloudSavedSearchListResponse>(cloudSavedSearchesPath(), {
+      signal: options?.signal,
+    });
+    return response.searches ?? [];
+  }
+
+  async createCloudSavedSearch(input: CloudSavedSearchInput): Promise<CloudSavedSearch> {
+    return normalizeSavedSearchResponse(await this.request<unknown>(cloudSavedSearchesPath(), {
+      method: "POST",
+      body: JSON.stringify(input),
+    }));
+  }
+
+  async updateCloudSavedSearch(
+    id: string,
+    update: Partial<CloudSavedSearchInput>,
+  ): Promise<CloudSavedSearch> {
+    return normalizeSavedSearchResponse(await this.request<unknown>(cloudSavedSearchPath(id), {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    }));
+  }
+
+  async deleteCloudSavedSearch(id: string): Promise<void> {
+    await this.request<void>(cloudSavedSearchPath(id), { method: "DELETE" });
+  }
+
+  async getCloudSavedSearchHits(
+    id: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchHit[]> {
+    return normalizeSavedSearchHits(await this.request<unknown>(cloudSavedSearchHitsPath(id), {
+      signal: options?.signal,
+    }));
   }
 
   async getCloudNews(params: CloudNewsParams = {}): Promise<CloudNewsListResponse> {

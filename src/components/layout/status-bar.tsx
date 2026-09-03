@@ -1,17 +1,17 @@
-import { Box, Span, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
+import { Box, Text, TextAttributes, contextMenuDivider, useContextMenu, useUiCapabilities } from "../../ui";
 import { useDialog, type PromptContext } from "../../ui/dialog";
 import { useCallback, useMemo, useState } from "react";
 import { blendHex, hoverBg } from "../../theme/colors";
 import { t, tf } from "../../i18n";
 import { useThemeColors } from "../../theme/theme-context";
 import { useAppDispatch, useAppSelector } from "../../state/app/context";
-import { VERSION } from "../../version";
 import {
   selectActiveLayoutIndex,
   selectLayout,
   selectSavedLayouts,
   selectStatusBarVisible,
 } from "../../state/selectors-ui";
+import { useViewport } from "../../react/input";
 import { getSharedRegistry } from "../../plugins/registry";
 import {
   gridlockAllPanes,
@@ -21,14 +21,19 @@ import { notifyGridlockComplete } from "../../plugins/gridlock-notification";
 import { PluginSlot } from "../../react/plugins/plugin-slot";
 import type { ContextMenuItem } from "../../types/context-menu";
 import type { LayoutConfig } from "../../types/config";
+import { VERSION } from "../../version";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { Tabs } from "../ui/tabs";
 import { useTransientLayout } from "./transient-layout";
-import { resolveAppStatusBarHeightCells } from "./shell/chrome";
 
 type StatusBarEvent = { stopPropagation?: () => void; preventDefault?: () => void };
 type HoveredControl = string | null;
 type SetHoveredControl = (updater: (current: HoveredControl) => HoveredControl) => void;
+
+/** Rendered width of the Tidy Windows control, including its leading gap. */
+const TIDY_WINDOWS_COLUMNS = 15;
+/** Space held back for the `status:widget` plugin slot, which sizes itself. */
+const STATUS_WIDGET_COLUMNS = 20;
 
 type LayoutTabItem = {
   label: string;
@@ -47,8 +52,9 @@ type StatusBarViewProps = {
   hoveredControl: HoveredControl;
   layoutTabItems: LayoutTabItem[];
   layoutTabsWidth: number;
-  openCommandBar: (event?: StatusBarEvent) => void;
+  openChangelog?: (event?: StatusBarEvent) => void;
   openLayoutContextMenu: (index: number, event: any) => void | Promise<unknown>;
+  rightAvailableWidth: number;
   setHoveredControl: SetHoveredControl;
   showTidyWindows: boolean;
 };
@@ -60,15 +66,18 @@ function truncate(text: string, width: number): string {
   return `${text.slice(0, width - 2)}..`;
 }
 
-export function StatusBar() {
-  useThemeColors();
-  const { nativePaneChrome, cellHeightPx } = useUiCapabilities();
+export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: string) => void } = {}) {
+  const { nativePaneChrome, nativeContextMenu } = useUiCapabilities();
+  const { showContextMenu } = useContextMenu();
+  const dialog = useDialog();
   const registry = getSharedRegistry();
   const dispatch = useAppDispatch();
+  const { width: termWidth } = useViewport();
+  const layouts = useAppSelector(selectSavedLayouts);
+  const activeLayoutIdx = useAppSelector(selectActiveLayoutIndex);
   const statusBarVisible = useAppSelector(selectStatusBarVisible);
   const layout = useAppSelector(selectLayout);
   const { transientLayout } = useTransientLayout();
-  const { activeLayoutIdx, openLayoutContextMenu } = useLayoutSwitcher();
   const [hoveredControl, setHoveredControl] = useState<string | null>(null);
 
   const hasMultipleLayouts = layouts.length > 1 || !!transientLayout;
@@ -143,10 +152,10 @@ export function StatusBar() {
     });
   };
 
-  const openCommandBar = (event?: StatusBarEvent) => {
+  const openChangelog = (event?: StatusBarEvent) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
+    onOpenChangelog?.(VERSION);
   };
 
   const requestDeleteLayout = useCallback(async (index: number) => {
@@ -263,6 +272,10 @@ export function StatusBar() {
 
   if (!statusBarVisible) return null;
 
+  const leftWidth = 1
+    + (hasMultipleLayouts ? layoutTabsWidth : 0)
+    + (showTidyWindows ? TIDY_WINDOWS_COLUMNS : 0);
+
   const viewProps: StatusBarViewProps = {
     activeLayoutIdx,
     activeLayoutValue,
@@ -273,19 +286,18 @@ export function StatusBar() {
     hoveredControl,
     layoutTabItems,
     layoutTabsWidth,
-    openCommandBar,
+    openChangelog: onOpenChangelog ? openChangelog : undefined,
     openLayoutContextMenu,
+    rightAvailableWidth: Math.max(0, termWidth - leftWidth - STATUS_WIDGET_COLUMNS),
     setHoveredControl,
     showTidyWindows,
   };
 
-  const openChipContextMenu = (index: number, event?: StatusBarEvent) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-    void openLayoutContextMenu(index, event ?? {});
-  };
+  if (nativePaneChrome) {
+    return <NativeStatusBar {...viewProps} />;
+  }
 
-  return { layouts, activeLayoutIdx, switchLayout, openChipContextMenu };
+  return <TerminalStatusBar {...viewProps} />;
 }
 
 function NativeStatusBar({
@@ -313,7 +325,9 @@ function NativeStatusBar({
     >
       <StatusBarLayoutControl nativePaneChrome {...props} />
       {showTidyWindows && <NativeTidyWindows {...props} />}
-      <StatusBarWidgets />
+      <Box flexGrow={1} minWidth={0} />
+      <StatusBarSummary nativePaneChrome {...props} />
+      <PluginSlot name="status:widget" />
     </Box>
   );
 }
@@ -338,7 +352,9 @@ function TerminalStatusBar({
     >
       <StatusBarLayoutControl nativePaneChrome={false} {...props} />
       {showTidyWindows && <TerminalTidyWindows {...props} />}
-      <StatusBarWidgets />
+      <Box flexGrow={1} minWidth={0} />
+      <StatusBarSummary nativePaneChrome={false} {...props} />
+      <PluginSlot name="status:widget" />
     </Box>
   );
 }
@@ -348,135 +364,96 @@ function StatusBarLayoutControl({
   handleLayoutSelect,
   handleLayoutReorder,
   hasMultipleLayouts,
-  hoveredControl,
-  setHoveredControl,
-}: {
-  hoveredControl: HoveredControl;
-  setHoveredControl: SetHoveredControl;
-}) {
-  const { layouts, activeLayoutIdx, switchLayout, openChipContextMenu } = useStatusBarLayouts();
-  if (layouts.length === 0) return null;
-
-  return (
-    <Box
-      flexShrink={0}
-      flexDirection="row"
-      alignItems="center"
-      data-gloom-role="status-layouts"
-      style={{ gap: 4 }}
-    >
-      {layouts.map((layout, index) => {
-        const active = index === activeLayoutIdx;
-        const hoverKey = `layout-${index}`;
-        const hovered = hoveredControl === hoverKey;
-        return (
-          <Box
-            key={`${layout.id ?? layout.name}-${index}`}
-            alignItems="center"
-            onMouseOver={() => setHoveredControl((current) => (current === hoverKey ? current : hoverKey))}
-            onMouseOut={() => setHoveredControl((current) => (current === hoverKey ? null : current))}
-            onMouseDown={(event: StatusBarEvent) => switchLayout(index, event)}
-            onContextMenu={(event: StatusBarEvent) => openChipContextMenu(index, event)}
-            data-gloom-role="status-layout"
-            data-gloom-interactive="true"
-            aria-label={layout.name}
-            title={layout.name}
-            role="button"
-            tabIndex={0}
-            style={{
-              cursor: "pointer",
-              borderRadius: 4,
-              paddingInline: 6,
-              paddingBlock: 1,
-              backgroundColor: active
-                ? blendHex(colors.panel, colors.header, 0.42)
-                : hovered
-                  ? blendHex(colors.panel, colors.header, 0.22)
-                  : "transparent",
-            }}
-          >
-            <Text
-              fg={active ? colors.textBright : hovered ? colors.text : colors.textDim}
-              attributes={active ? TextAttributes.BOLD : undefined}
-            >
-              {layoutChipLabel(index, layout.name)}
-            </Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
-}
-
-function TerminalLayoutChips({
-  hoveredControl,
-  setHoveredControl,
-}: {
-  hoveredControl: HoveredControl;
-  setHoveredControl: SetHoveredControl;
-}) {
-  const { layouts, activeLayoutIdx, switchLayout, openChipContextMenu } = useStatusBarLayouts();
-  if (layouts.length === 0) return null;
-
+  layoutTabItems,
+  layoutTabsWidth,
+  nativePaneChrome,
+}: Pick<
+  StatusBarViewProps,
+  | "activeLayoutValue"
+  | "handleLayoutSelect"
+  | "handleLayoutReorder"
+  | "hasMultipleLayouts"
+  | "layoutTabItems"
+  | "layoutTabsWidth"
+> & { nativePaneChrome: boolean }) {
+  if (!hasMultipleLayouts) return null;
   return (
     <Box
       paddingLeft={1}
       flexShrink={0}
       flexDirection="row"
-      alignItems="center"
-      data-gloom-role="status-layouts"
+      {...(nativePaneChrome ? { alignItems: "center", gap: 1 } : {})}
     >
-      {layouts.map((layout, index) => {
-        const active = index === activeLayoutIdx;
-        const hoverKey = `layout-${index}`;
-        const hovered = hoveredControl === hoverKey;
-        const label = layoutChipLabel(index, layout.name);
-        return (
-          <Box
-            key={`${layout.id ?? layout.name}-${index}`}
-            flexDirection="row"
-            onMouseOver={() => setHoveredControl((current) => (current === hoverKey ? current : hoverKey))}
-            onMouseDown={(event: StatusBarEvent) => switchLayout(index, event)}
-            onContextMenu={(event: StatusBarEvent) => openChipContextMenu(index, event)}
-            data-gloom-role="status-layout"
-            data-gloom-interactive="true"
-          >
-            {index > 0 ? <Box width={1} /> : null}
-            <Box backgroundColor={hovered && !active ? hoverBg() : undefined}>
-              <Text
-                fg={active ? colors.textBright : hovered ? colors.text : colors.textDim}
-                attributes={active ? TextAttributes.BOLD : undefined}
-              >
-                {label}
-              </Text>
-            </Box>
-          </Box>
-        );
-      })}
+      <Box width={layoutTabsWidth} height={1}>
+        <Tabs
+          tabs={layoutTabItems}
+          activeValue={activeLayoutValue}
+          onSelect={handleLayoutSelect}
+          onReorder={handleLayoutReorder}
+          compact
+          variant="pill"
+        />
+      </Box>
     </Box>
   );
 }
 
-function NativeTidyWindows({
-  handleTidyWindows,
+/**
+ * The version chip, dropped when the row runs out of room. Live market status
+ * lives at the header's right edge, not here, so nothing in the status bar
+ * repeats it.
+ */
+function StatusBarSummary({
   hoveredControl,
+  nativePaneChrome,
+  openChangelog,
+  rightAvailableWidth,
   setHoveredControl,
-}: {
-  handleTidyWindows: (event?: StatusBarEvent) => void;
-  hoveredControl: HoveredControl;
-  setHoveredControl: SetHoveredControl;
-}) {
-  const hovered = hoveredControl === "tidy-windows";
+}: Pick<
+  StatusBarViewProps,
+  "hoveredControl" | "openChangelog" | "rightAvailableWidth" | "setHoveredControl"
+> & { nativePaneChrome: boolean }) {
+  const versionLabel = `v${VERSION}`;
+  if (rightAvailableWidth < versionLabel.length + 1) return null;
   return (
-    <Text
-      fg={hovered ? colors.text : colors.textDim}
-      {...(!nativePaneChrome ? { bg: hovered ? hoverBg(colors) : undefined } : {})}
-      onMouseOver={() => setHoveredControl((current) => (current === "command-bar" ? current : "command-bar"))}
-      onMouseDown={openCommandBar}
-      {...(nativePaneChrome ? { "data-gloom-interactive": "true" } : {})}
-    >
-      <Span fg={colors.text}>Ctrl+P</Span> {t("command bar")}
-    </Text>
+    <VersionChip
+      hoveredControl={hoveredControl}
+      label={versionLabel}
+      nativePaneChrome={nativePaneChrome}
+      openChangelog={openChangelog}
+      setHoveredControl={setHoveredControl}
+    />
+  );
+}
+
+function VersionChip({
+  hoveredControl,
+  label,
+  nativePaneChrome,
+  openChangelog,
+  setHoveredControl,
+}: Pick<StatusBarViewProps, "hoveredControl" | "openChangelog" | "setHoveredControl"> & {
+  label: string;
+  nativePaneChrome: boolean;
+}) {
+  const colors = useThemeColors();
+  const hovered = hoveredControl === "version";
+  return (
+    <Box paddingRight={1} flexShrink={0}>
+      <Text
+        fg={hovered && openChangelog ? colors.text : colors.textDim}
+        {...(!nativePaneChrome ? { bg: hovered && openChangelog ? hoverBg(colors) : undefined } : {})}
+        title={openChangelog ? tf("Open changelog for {version}", { version: label }) : undefined}
+        aria-label={openChangelog ? tf("Open changelog for {version}", { version: label }) : undefined}
+        role={openChangelog ? "button" : undefined}
+        onMouseOver={() => setHoveredControl((current) => (current === "version" ? current : "version"))}
+        onMouseDown={openChangelog}
+        {...(nativePaneChrome && openChangelog ? { "data-gloom-interactive": "true" } : {})}
+        style={openChangelog ? { cursor: "pointer" } : undefined}
+      >
+        {label}
+      </Text>
+    </Box>
   );
 }
 
@@ -520,37 +497,5 @@ function TerminalTidyWindows({
         <Text fg={colors.headerText}> {t("Tidy Windows")} </Text>
       </Box>
     </Box>
-  );
-}
-
-function StatusBarWidgets() {
-  const { nativePaneChrome } = useUiCapabilities();
-  return (
-    <>
-      <Box flexGrow={1} />
-      {nativePaneChrome ? (
-        <Box
-          flexDirection="row"
-          alignItems="center"
-          flexShrink={0}
-          data-gloom-role="status-chip"
-          style={{
-            gap: 8,
-            paddingInline: 8,
-            borderRadius: 6,
-            overflow: "visible",
-            backgroundColor: blendHex(colors.panel, colors.header, 0.28),
-          }}
-        >
-          <StatusBarVersion nativePaneChrome />
-          <PluginSlot name="status:widget" />
-        </Box>
-      ) : (
-        <>
-          <StatusBarVersion nativePaneChrome={false} />
-          <PluginSlot name="status:widget" />
-        </>
-      )}
-    </>
   );
 }

@@ -50,10 +50,11 @@ function drawLineSeries(
   top: number,
   bottom: number,
 ) {
-  const glow = parseHex(scene.colors.lineColor, 0.2);
-  const line = parseHex(scene.colors.lineColor, 0.95);
+  const fallbackGlow = parseHex(scene.colors.lineColor, 0.2);
+  const fallbackLine = parseHex(scene.colors.lineColor, 0.95);
   const fill = parseHex(scene.colors.fillColor, 0.7);
   const yByColumn = new Float32Array(width).fill(Number.POSITIVE_INFINITY);
+  const strokeCache = new Map<string, { glow: ReturnType<typeof parseHex>; line: ReturnType<typeof parseHex> }>();
 
   for (let index = 0; index < scene.points.length - 1; index++) {
     const current = scene.points[index]!;
@@ -69,6 +70,19 @@ function drawLineSeries(
       const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
       const y = lerp(y0, y1, clamp(t, 0, 1));
       yByColumn[x] = Math.min(yByColumn[x]!, y);
+    }
+
+    const hex = scene.lineColors?.[index];
+    let glow = fallbackGlow;
+    let line = fallbackLine;
+    if (hex) {
+      let stroke = strokeCache.get(hex);
+      if (!stroke) {
+        stroke = { glow: parseHex(hex, 0.2), line: parseHex(hex, 0.95) };
+        strokeCache.set(hex, stroke);
+      }
+      glow = stroke.glow;
+      line = stroke.line;
     }
 
     if (scene.mode === "area") {
@@ -196,6 +210,11 @@ function drawIndicatorOverlays(
     drawOverlay(scene.indicators.bollinger.upper, scene.indicators.bollinger.color);
     drawOverlay(scene.indicators.bollinger.middle, scene.indicators.bollinger.color);
     drawOverlay(scene.indicators.bollinger.lower, scene.indicators.bollinger.color);
+  }
+  for (const reference of scene.indicators.referenceLines ?? []) {
+    const y = projectY(reference.value, scene.min, scene.max, top, bottom);
+    const color = parseHex(reference.color, 0.95);
+    drawLine(data, width, height, 0, y, Math.max(width - 1, 0), y, color, 1.2);
   }
 }
 

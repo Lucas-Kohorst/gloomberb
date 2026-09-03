@@ -4,12 +4,15 @@ import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
+import { yahooPlugin } from "./builtin/yahoo";
+import { coingeckoPlugin } from "./builtin/coingecko";
 import { publicPlugin } from "./broker-sync/public";
 import { robinhoodPlugin } from "./broker-sync/robinhood";
 import { simpleFinPlugin } from "./broker-sync/simplefin";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { pollsPlugin } from "./builtin/polls";
 import { alertsPlugin } from "./builtin/alerts";
+import { researchSearchPlugin } from "./builtin/research-search";
 import {
   applicationPlugin,
   brokerPlugin,
@@ -46,6 +49,11 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   simpleFinPlugin,
   applicationPlugin,
   newsPlugin,
+  adjacentPlugin,
+  buildoutPlugin,
+  congressTradesPlugin,
+  trafficPlugin,
+  satellitePlugin,
   notesPlugin,
   aiPlugin,
   predictionMarketsPlugin,
@@ -53,6 +61,7 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
+  researchSearchPlugin,
   pluginMarketPlugin,
   pluginInspectorPlugin,
   usaspendingPlugin,

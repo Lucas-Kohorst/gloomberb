@@ -60,6 +60,8 @@
     "desktop:release": "electrobun build --env=stable",
     "desktop:release:windows": "electrobun build --env=stable --targets=win-x64",
     "i18n:audit": "bun run scripts/i18n-audit.ts",
+    "plugins:manifest": "bun run scripts/generate-plugin-manifest.ts",
+    "plugins:manifest:check": "bun run scripts/generate-plugin-manifest.ts --check",
     "typecheck": "bun run typecheck:opentui && bun run typecheck:electrobun-bun && bun run typecheck:electrobun-view && bun run typecheck:browser && bun run typecheck:cloudflare && bun run typecheck:scripts",
     "typecheck:opentui": "tsc --project tsconfig.opentui.json",
     "typecheck:electrobun-bun": "tsc --project tsconfig.electrobun-bun.json",
@@ -69,6 +71,7 @@
     "typecheck:scripts": "tsc --project tsconfig.scripts.json",
     "typecheck:cloud": "bun run cloud:types && tsc --project tsconfig.cloudflare.json",
     "test": "bun test",
+    "benchmark:tui:navigation": "bun run scripts/benchmark-tui-navigation.ts",
     "test:global-upgrade": "bun run scripts/smoke-global-upgrade.ts",
     "release": "./scripts/release.sh"
   },

@@ -120,7 +120,8 @@ describe("CommandBar AI assist", () => {
         query="new chat pane"
         configurePluginRegistry={configureEarningsRegistry(created)}
       />,
-      { width: 100, height: 20 },
+      // Wide enough for the answer's label and its title to share one row.
+      { width: 120, height: 20 },
     );
 
     await testSetup.renderOnce();
@@ -131,12 +132,14 @@ describe("CommandBar AI assist", () => {
     expect(sentCommandCount).toBeGreaterThan(0);
 
     releaseResponse();
-    const answered = await waitForFrameToContain("CHAT #general — Open the general channel", ASSIST_WAIT_ATTEMPTS);
+    const answered = await waitForFrameToContain("#general · Open the general channel", ASSIST_WAIT_ATTEMPTS);
     expect(answered).not.toContain("Thinking…");
     expect(requests).toHaveLength(1);
-    // Above the local matches, and holding the selection an untouched query
-    // never moved: plain Enter runs the AI's best guess.
-    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Chat"));
+    // Above the local matches, laid out like any other row with the prefix in
+    // the badge column, and holding the selection an untouched query never
+    // moved: plain Enter runs the AI's best guess.
+    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Panes"));
+    expect(answered).toMatch(/CHAT\s+#general · Open the general channel/);
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "new-chat-pane", options: { arg: "#general" } }]);
@@ -162,7 +165,8 @@ describe("CommandBar AI assist", () => {
         query="new chat pane"
         configurePluginRegistry={configureEarningsRegistry(created)}
       />,
-      { width: 100, height: 20 },
+      // Wide enough for the answers' labels and titles to share one row.
+      { width: 120, height: 20 },
     );
 
     await testSetup.renderOnce();
@@ -170,9 +174,9 @@ describe("CommandBar AI assist", () => {
     // Down lands on the local match while a single "Thinking…" row sits above.
     await emitKeypress(testSetup, { name: "down" });
     releaseResponse();
-    await waitForFrameToContain("CHAT #random — Open the random channel", ASSIST_WAIT_ATTEMPTS);
+    await waitForFrameToContain("#random · Open the random channel", ASSIST_WAIT_ATTEMPTS);
 
-    // Two answers replaced that one row, so the chosen row moved down by one —
+    // Two answers replaced that one row, so the chosen row moved down by one;
     // Enter still runs it rather than whatever now sits at its old index.
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "new-chat-pane", options: undefined }]);
@@ -196,7 +200,7 @@ describe("CommandBar AI assist", () => {
     );
 
     await testSetup.renderOnce();
-    await waitForFrameToContain("ERN NVDA — Earnings Calendar for NVDA", ASSIST_WAIT_ATTEMPTS);
+    await waitForFrameToContain("NVDA · Earnings Calendar", ASSIST_WAIT_ATTEMPTS);
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "earnings-calendar-pane", options: undefined }]);
@@ -275,8 +279,8 @@ describe("CommandBar AI assist", () => {
     await testSetup.renderOnce();
     expect(requests).toEqual([]);
 
-    // The offer leads the list but never takes the Enter that belongs to the
-    // local match the user was already looking at.
+    // The offer sits under the list and never takes the Enter that belongs to
+    // the local match the user was already looking at.
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
     expect(created).toEqual([{ templateId: "new-chat-pane", options: undefined }]);
   });

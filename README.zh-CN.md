@@ -201,7 +201,7 @@ gloomberb
 | `GR <tickers>` | 证券关系图 |
 | `EE <ticker>` | 含 EPS 与营收预估的事件视图 |
 | `EM [tickers]` | 财报监控 |
-| `SRCH <query>` | 数据源符号搜索 |
+| `SRCH [query]` | 跨财报电话会记录、新闻与 SEC 文件的全文检索 |
 | `QQ <tickers>` | 股票行情监控 |
 | `CMP <tickers>` | 股票图表对比 |
 | `CORR <tickers>` | 股票收益率相关性 |
@@ -231,7 +231,8 @@ gloomberb
 | `TBO` | TheBuildout 基础设施情报 |
 | `CG` | 国会交易披露 |
 | `WEI` | 全球股指 |
-| `ECON` | 经济事件与数据发布 |
+| `ECO` | 经济事件与数据发布 |
+| `ECST [统计指标]` | 经济统计：通胀、就业、增长、消费、住房、利率 |
 | `GC` | 收益率曲线 |
 | `ERN` | 财报日历 |
 | `BI` / `SP` | 标普 500 板块表现 |

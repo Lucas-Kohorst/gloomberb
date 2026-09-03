@@ -35,7 +35,7 @@ The desktop app and TUI share the full command language and plugin system. The b
 
 ## Browser App
 
-[term.gloom.sh](https://term.gloom.sh) works anonymously with configuration, tickers, layouts, session state, and plugin state stored in the browser. Anonymous sessions receive rate-limited, 15-minute-delayed Gloom Cloud market data and read-only chat. Login remains optional and enables sync and chat posting; Pro accounts receive realtime market data. Cloud REST and WebSocket traffic uses the same-origin `/api` path, which the Worker forwards only to `https://api.gloom.sh`; it is not an arbitrary network proxy.
+[term.gloom.sh](https://term.gloom.sh) requires a free Gloom Cloud account. The workspace loads behind a sign-in panel that cannot be dismissed, and a session opens it; configuration, tickers, layouts, session state, and plugin state are stored in the browser. Free accounts receive rate-limited, 15-minute-delayed Gloom Cloud market data and read-only chat until the email is verified; Pro accounts receive realtime market data. Public share pages stay open to everyone with no account. Cloud REST and WebSocket traffic uses the same-origin `/api` path, which the Worker forwards only to `https://api.gloom.sh`; it is not an arbitrary network proxy.
 
 The browser build intentionally omits brokers and native integrations, filesystem notes, local AI, external plugins, updater/debug tools, application menus, native window controls, pop-out native windows, and native context menus. Modules that still depend on desktop-only or CORS-blocked feeds are also absent for now: RSS/Substack, prediction markets and polls, market halts/heatmap/movers, dividend/ownership/SEC panes, earnings/IPO, and TV. Public shares open under `/s/:id` in a separate slim bundle. Share creation and owner deletion use the signed-in Gloom Cloud session through the same fixed API path; public reads require no account.
 
@@ -258,7 +258,7 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `GR <tickers>` | Security relationship graph |
 | `EE <ticker>` | Events view with earnings and revenue estimates |
 | `EM [tickers]` | Earnings monitor |
-| `SRCH <query>` | Provider symbol search |
+| `SRCH [query]` | Full-text search across earnings call transcripts, news, and SEC filings |
 | `QQ <tickers>` | Ticker quote monitor |
 | `CMP <tickers>` | Normalized price comparison |
 | `CORR <tickers>` | Ticker return correlations |
@@ -310,12 +310,14 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `WEI` | Global equity indices |
 | `MAP` | Live world venue map with local market status and clocks |
 | `FUT` | Front-month futures across index, rates, energy, metals, grains, and FX |
-| `ECON` | Economic events and releases |
+| `ECO` | Economic events and releases |
+| `ECST [statistic]` | Economic statistics: inflation, labour, growth, consumer, housing, rates |
 | `WB` | Country and regional GDP, CPI, unemployment, and population |
 | `GC` | Yield curve |
 | `AUCT` | Treasury auction results: high rate, bid-to-cover, indirect share, and size |
 | `VIX` | VIX 30-day/3-month implied-volatility curve |
 | `CRD` | Credit spreads |
+| `VAL [indicator]` | Whole-market valuation: Buffett, CAPE, excess CAPE yield, Tobin Q, investor equity allocation, dividend yield, margin debt, cap/profits, cap/M2 |
 | `CDS [ticker]` | Single-name corporate CDS activity: most-active issuers, or one issuer's trades |
 | `ERN` | Earnings calendar |
 | `IPO` | Upcoming and recent IPOs |
@@ -358,7 +360,6 @@ The toolbar controls preset or exact date ranges, intervals from one minute thro
 | `FONT+` / `FONT-` | Increase or decrease desktop font size |
 | `CONN` | Connection health |
 | `POLL` | Prediction-market polls |
-| `ART` | Loaded article lookup |
 | `UPGRADE` | Account upgrade |
 | `CR` | Cycle chart renderer |
 | `LANG <locale>` | Change interface language (`auto`, `en`, `es`, `zh-CN`, `zh-TW`, `ja`, or `ko`) |

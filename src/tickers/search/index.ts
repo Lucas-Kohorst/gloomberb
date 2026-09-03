@@ -1,5 +1,3 @@
-import { searchUsListedUniverse } from "../../sources/us-listings/client";
-import { parseCryptoPair } from "../../sources/coingecko/ids";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
@@ -11,7 +9,6 @@ import {
   findExactTickerSearchMatch,
   normalizeSearchText,
   normalizeTickerSymbol,
-  parseTickerListingQuery,
   rankTickerSearchItems,
 } from "./ranking";
 import type {
@@ -30,7 +27,6 @@ export type {
 } from "./types";
 export {
   findExactTickerSearchMatch,
-  parseTickerListingQuery,
   rankTickerSearchItems,
 } from "./ranking";
 export { upsertTickerFromSearchResult } from "./upsert";
@@ -121,6 +117,7 @@ export async function searchTickerCandidates({
   localLimit = 6,
   totalLimit = 8,
   includeOptionContracts = true,
+  onPartial,
 }: {
   query: string;
   tickers: ReadonlyMap<string, TickerRecord>;
@@ -129,15 +126,23 @@ export async function searchTickerCandidates({
   localLimit?: number;
   totalLimit?: number;
   includeOptionContracts?: boolean;
+  /** Called when a slower, richer source improves results already returned. */
+  onPartial?: (candidates: TickerSearchCandidate[]) => void;
 }): Promise<TickerSearchCandidate[]> {
-  return buildTickerSearchCandidates({
+  const assemble = (providerResults: InstrumentSearchResult[]) => buildTickerSearchCandidates({
     query,
     tickers,
-    providerResults: await searchProviderResults(dataProvider, query, searchContext),
+    providerResults,
     localLimit,
     totalLimit,
     includeOptionContracts,
   });
+  return assemble(await searchProviderResults(
+    dataProvider,
+    query,
+    searchContext,
+    onPartial ? (results) => onPartial(assemble(results)) : undefined,
+  ));
 }
 
 export function buildTickerSearchCandidates({
@@ -188,13 +193,7 @@ export async function resolveTickerSearch({
   const symbol = normalizeTickerInput(activeTicker, query);
   if (!symbol) return null;
 
-  const listing = parseTickerListingQuery(symbol);
-  const localLookup = listing.symbol || symbol;
-  const local = (
-    listing.exchangeHints.length === 0
-      ? (tickers.get(symbol) ?? tickers.get(localLookup) ?? null)
-      : null
-  )
+  const local = tickers.get(symbol)
     ?? findExactTickerSearchMatch(createLocalTickerSearchCandidates(tickers.values()), symbol)?.ticker
     ?? null;
   if (local) {
@@ -205,7 +204,7 @@ export async function resolveTickerSearch({
     await searchProviderResults(dataProvider, symbol, searchContext),
     tickers,
   );
-  const exactMatch = findExactTickerSearchMatch(rankTickerSearchItems(providerItems, symbol), symbol);
+  const exactMatch = findExactTickerSearchMatch(providerItems, symbol);
   if (!exactMatch?.result) return null;
 
   return {
@@ -243,40 +242,43 @@ async function searchProviderResults(
   dataProvider: DataProvider,
   query: string,
   searchContext?: SearchRequestContext,
+  onPartial?: (results: InstrumentSearchResult[]) => void,
 ): Promise<InstrumentSearchResult[]> {
-  const merged: InstrumentSearchResult[] = [];
-  const seen = new Set<string>();
-  const push = (results: InstrumentSearchResult[]) => {
+  // A Map rather than a list plus a seen set, because a later source can send
+  // back a richer version of a symbol already recorded. Overwriting a key keeps
+  // its original position, so an upgrade does not reorder the list.
+  const byKey = new Map<string, InstrumentSearchResult>();
+  const add = (results: InstrumentSearchResult[], upgrade = false) => {
     for (const result of results) {
       const key = buildProviderSearchResultKey(result);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(result);
+      if (!upgrade && byKey.has(key)) continue;
+      byKey.set(key, result);
     }
   };
 
-  const listing = parseTickerListingQuery(query);
-  const providerQuery = listing.symbol || query;
-
-  // Listed-universe master (Adjacent Cloud hydrate) first. Yahoo/cloud
-  // typeahead is a supplement, not the security master.
-  try {
-    push(await searchUsListedUniverse(providerQuery));
-  } catch {
-    // listings miss must not block saved/typeahead search
-  }
-
-  for (const searchQuery of buildProviderSearchQueries(providerQuery)) {
-    let results: InstrumentSearchResult[] = [];
+  // The variants are independent lookups of the same words, so they run
+  // together. Awaited in turn they multiplied every per-source timeout by the
+  // number of spellings tried.
+  await Promise.all(buildProviderSearchQueries(query).map(async (searchQuery) => {
     try {
-      results = await dataProvider.search(searchQuery, searchContext);
+      const results = await dataProvider.search(searchQuery, {
+        ...searchContext,
+        ...(onPartial
+          ? {
+            onPartial: (upgraded: InstrumentSearchResult[]) => {
+              add(upgraded, true);
+              onPartial([...byKey.values()]);
+            },
+          }
+          : {}),
+      });
+      add(results);
     } catch {
-      results = [];
+      // One spelling failing must not lose the others.
     }
-    push(results);
-  }
+  }));
 
-  return merged;
+  return [...byKey.values()];
 }
 
 function buildProviderSearchQueries(query: string): string[] {
@@ -424,7 +426,5 @@ function buildSearchResultAliases(result: InstrumentSearchResult): string[] {
   if (result.brokerContract?.symbol) {
     for (const alias of buildSymbolAliases(result.brokerContract.symbol)) aliases.add(alias);
   }
-  const pair = parseCryptoPair(resolvedSymbol);
-  if (pair) aliases.add(pair.base);
   return [...aliases];
 }

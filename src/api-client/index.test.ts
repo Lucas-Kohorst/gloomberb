@@ -198,6 +198,44 @@ describe("apiClient auth cookies", () => {
     expect(requests).toBe(1);
   });
 
+  /**
+   * On boot a session check can leave before the persisted token is installed.
+   * Its "no session" answer must not overwrite the verified user that hydrate
+   * restored in the meantime; that exact sequence left the app authenticated
+   * for chat while every plan-gated surface reported signed out.
+   */
+  test("a session check that predates the restored token does not wipe the restored user", async () => {
+    const seen: Array<string | null> = [];
+    let releaseFirst!: () => void;
+    setCloudApiFetchTransport(async (_url, init) => {
+      const cookie = new Headers(init?.headers).get("cookie");
+      seen.push(cookie);
+      if (seen.length === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return createResponse({ user: null });
+      }
+      return createResponse({ user: verifiedUser });
+    });
+
+    // A cookie-less check goes out first.
+    const early = apiClient.getSession();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeNull();
+
+    // Hydrate installs the token and the cached user while it is in flight.
+    apiClient.setSessionToken("restored-token");
+    apiClient.restoreCachedUser(verifiedUser);
+    expect(apiClient.getCurrentUser()?.emailVerified).toBe(true);
+
+    releaseFirst();
+    await expect(early).resolves.toMatchObject({ id: verifiedUser.id });
+
+    // The stale answer was discarded and a second check went out with the real cookie.
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toContain("restored-token");
+    expect(apiClient.getCurrentUser()?.emailVerified).toBe(true);
+  });
+
   test("captures secure session cookies after login and reuses them on session refresh", async () => {
     const seenCookies: Array<string | null> = [];
 
@@ -1203,5 +1241,94 @@ describe("apiClient equity diagnostic", () => {
     await apiClient.getCloudEquityDiagnostic("AAPL");
 
     expect(JSON.parse(String(seenInit?.body))).toEqual({ symbol: "AAPL", mode: "cache-first" });
+  });
+});
+
+describe("apiClient document search", () => {
+  test("builds the search query from filters and omits empty ones", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      seenUrl = String(input);
+      return createResponse({
+        hits: [],
+        total: 0,
+        countCapped: false,
+        hasMore: false,
+        nextOffset: 0,
+        tookMs: 3,
+      });
+    });
+
+    await apiClient.searchCloudDocuments({
+      query: "  margin pressure  ",
+      tickers: [" aapl ", "msft"],
+      docTypes: ["transcript", "filing"],
+      sources: [],
+      from: "2026-01-01T00:00:00.000Z",
+      sort: "newest",
+      limit: 40,
+      offset: 0,
+    });
+
+    const url = new URL(seenUrl);
+    expect(url.pathname).toBe("/cloud/search");
+    expect(url.searchParams.get("q")).toBe("margin pressure");
+    expect(url.searchParams.get("tickers")).toBe("AAPL,MSFT");
+    expect(url.searchParams.get("docTypes")).toBe("transcript,filing");
+    expect(url.searchParams.get("from")).toBe("2026-01-01T00:00:00.000Z");
+    expect(url.searchParams.get("sort")).toBe("newest");
+    expect(url.searchParams.get("limit")).toBe("40");
+    expect(url.searchParams.has("sources")).toBe(false);
+    expect(url.searchParams.has("to")).toBe(false);
+    // Offset 0 is the first page; sending it only lengthens the cache key.
+    expect(url.searchParams.has("offset")).toBe(false);
+    // Counting is the server default, so only opting out travels.
+    expect(url.searchParams.has("count")).toBe(false);
+
+    await apiClient.searchCloudDocuments({ query: "margin", limit: 3, count: false });
+    expect(new URL(seenUrl).searchParams.get("count")).toBe("false");
+  });
+
+  test("escapes the document route segments", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      seenUrl = String(input);
+      return createResponse({ document: { chunks: [] } });
+    });
+
+    await apiClient.getCloudSearchDocument("filing", "0000320193-26-000042/a b");
+
+    expect(new URL(seenUrl).pathname).toBe(
+      "/cloud/search/documents/filing/0000320193-26-000042%2Fa%20b",
+    );
+  });
+
+  test("accepts a saved-search write with or without an envelope", async () => {
+    const record = {
+      id: "saved-1",
+      name: "margin pressure",
+      query: "margin pressure",
+      filters: {},
+      alertEnabled: true,
+      alertChannels: ["email"],
+      lastRunAt: null,
+      lastMatchAt: null,
+      matchCount: 0,
+      createdAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    globalThis.fetch = mockFetch(async () => createResponse({ search: record }));
+    expect((await apiClient.createCloudSavedSearch({
+      name: record.name,
+      query: record.query,
+    })).id).toBe("saved-1");
+
+    globalThis.fetch = mockFetch(async () => createResponse(record));
+    expect((await apiClient.updateCloudSavedSearch("saved-1", { alertEnabled: false })).id)
+      .toBe("saved-1");
+
+    globalThis.fetch = mockFetch(async () => createResponse({}));
+    await expect(apiClient.updateCloudSavedSearch("saved-1", { alertEnabled: false }))
+      .rejects.toThrow("missing a record");
   });
 });

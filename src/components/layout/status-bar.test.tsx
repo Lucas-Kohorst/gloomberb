@@ -4,9 +4,11 @@ import { AppContext, createInitialState } from "../../state/app/context";
 import { cloneLayout, createDefaultConfig, createPaneInstance, type LayoutConfig } from "../../types/config";
 import type { AppNotificationRequest } from "../../types/plugin";
 import { StatusBar } from "./status-bar";
+import { VERSION } from "../../version";
 import { getDockedPaneIds } from "../../plugins/pane-manager";
 import { setSharedRegistryForTests } from "../../plugins/registry";
-import { VERSION } from "../../version";
+import { act, useEffect, useState } from "react";
+import { TransientLayoutProvider, useTransientLayout } from "./transient-layout";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
@@ -19,28 +21,49 @@ afterEach(() => {
 });
 
 describe("StatusBar", () => {
-  test("opens the changelog pane from the version label", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-version-changelog-test");
+  function SeedTransientLayout({
+    onActivate,
+    onDeactivate,
+    onExit,
+  }: {
+    onActivate?: () => void;
+    onDeactivate?: () => void;
+    onExit?: () => void;
+  }) {
+    const { setTransientLayout } = useTransientLayout();
+    const [active, setActive] = useState(true);
+    useEffect(() => {
+      setTransientLayout({
+        id: "pane-focus",
+        label: "^F Focus",
+        active,
+        onActivate: () => {
+          onActivate?.();
+          setActive(true);
+        },
+        onDeactivate: () => {
+          onDeactivate?.();
+          setActive(false);
+        },
+        onExit,
+      });
+      return () => setTransientLayout(null);
+    }, [active, onActivate, onDeactivate, onExit, setTransientLayout]);
+    return null;
+  }
+
+  test("opens the current version changelog from the version chip", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-test");
     config.layouts = [{ name: "Home", layout: cloneLayout(config.layout) }];
     const state = {
       ...createInitialState(config),
       statusBarVisible: true,
     };
-    const created: string[] = [];
-
-    setSharedRegistryForTests({
-      panes: new Map(),
-      getLayoutFn: () => state.config.layout,
-      getTermSizeFn: () => ({ width: 120, height: 40 }),
-      updateLayoutFn: () => {},
-      notify: () => {},
-      createPaneFromTemplate: (templateId: string) => { created.push(templateId); },
-      Slot: () => null,
-    } as any);
+    let openedVersion = "";
 
     testSetup = await testRender(
       <AppContext value={{ state, dispatch: () => {} }}>
-        <StatusBar />
+        <StatusBar onOpenChangelog={(version) => { openedVersion = version; }} />
       </AppContext>,
       { width: 120, height: 1 },
     );
@@ -54,23 +77,18 @@ describe("StatusBar", () => {
     await testSetup.mockMouse.click(versionX + 1, 0);
     await testSetup.renderOnce();
 
-    expect(created).toEqual(["changelog-pane"]);
+    expect(openedVersion).toBe(VERSION);
   });
 
-  test("offers to tidy three floating windows and tiles them on click", async () => {
-    const config = createDefaultConfig("/tmp/gloomberb-tidy-test");
-    const floatingLayout: LayoutConfig = {
-      dockRoot: null,
-      instances: Array.from({ length: 3 }, (_, index) => createPaneInstance("chat", { instanceId: `chat-${index}` })),
-      floating: Array.from({ length: 3 }, (_, index) => ({
-        instanceId: `chat-${index}`,
-        x: index * 40,
-        y: 0,
-        width: 40,
-        height: 20,
-        zIndex: 50 + index,
-      })),
-      detached: [],
+  test("shows a transient focus layout tab without replacing saved layouts", async () => {
+    const config = createDefaultConfig("/tmp/gloomberb-transient-layout-test");
+    config.layouts = [
+      { name: "Default", layout: cloneLayout(config.layout) },
+      { name: "Monitor", layout: cloneLayout(config.layout) },
+    ];
+    const state = {
+      ...createInitialState(config),
+      statusBarVisible: true,
     };
     const actions: Array<{ type: string; index?: number }> = [];
     let activateCount = 0;

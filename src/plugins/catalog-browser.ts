@@ -12,7 +12,13 @@ import { connectionsModule } from "./builtin/connections";
 import { correlationModule } from "./builtin/correlation";
 import { cdsModule } from "./builtin/cds";
 import { creditConditionsModule } from "./builtin/credit-conditions";
+import { marketValuationModule } from "./builtin/market-valuation";
+import {
+  attachValuationPersistence,
+  resetValuationPersistence,
+} from "./builtin/market-valuation/cache";
 import { economicCalendarModule } from "./builtin/econ";
+import { econStatisticsModule } from "./builtin/econ-statistics";
 import { futuresModule } from "./builtin/futures";
 import { fxMatrixModule } from "./builtin/fx-matrix";
 import { helpModule } from "./builtin/help";
@@ -94,9 +100,11 @@ const browserMarketOverviewPlugin = composeBuiltinPlugin({
 const browserFredResourcesModule: PluginModule = {
   setup(ctx) {
     attachFredSeriesPersistence(ctx.persistence);
+    attachValuationPersistence(ctx.persistence);
   },
   dispose() {
     resetFredSeriesPersistence();
+    resetValuationPersistence();
   },
 };
 
@@ -109,9 +117,11 @@ const browserMacroPlugin = composeBuiltinPlugin({
   modules: [
     browserFredResourcesModule,
     economicCalendarModule,
+    econStatisticsModule,
     yieldCurveModule,
     volatilityModule,
     creditConditionsModule,
+    marketValuationModule,
     cdsModule,
     treasuryAuctionsModule,
   ],

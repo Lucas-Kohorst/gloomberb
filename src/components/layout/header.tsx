@@ -1,31 +1,44 @@
-import { Box, SpinnerMark, Text, TextAttributes, useRendererHost, useUiCapabilities } from "../../ui";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { blendHex, priceColor } from "../../theme/colors";
-import { useThemeColors } from "../../theme/theme-context";
-import { useAppActive } from "../../state/app/activity";
-import { getFocusedTickerSymbol, useAppDispatch, useAppSelector } from "../../state/app/context";
 import {
-  selectBaseCurrency,
-  selectFocusedPaneId,
+  Box,
+  Input,
+  SpinnerMark,
+  Text,
+  TextAttributes,
+  useRendererHost,
+  useUiCapabilities,
+  useUiHost,
+  type InputRenderable,
+} from "../../ui";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  blendHex,
+  commandBarBg,
+  commandBarPanelBg,
+  commandBarSubtleText,
+  commandBarText,
+} from "../../theme/colors";
+import { useThemeColors } from "../../theme/theme-context";
+import { NATIVE_COMMAND_SURFACE, nativeCommandSurfaceBorder } from "../command-bar/panel/native-surface";
+import {
+  useCommandBarPromptBinding,
+  type CommandBarPromptBinding,
+} from "../command-bar/panel/prompt-binding";
+import { useAppDispatch, useAppSelector } from "../../state/app/context";
+import {
+  selectCommandBarOpen,
   selectUpdateAvailable,
   selectUpdateCheckInProgress,
   selectUpdateNotice,
   selectUpdateProgress,
 } from "../../state/selectors-ui";
-import { findPaneInstance } from "../../types/config";
-import { getSharedMarketDataCoordinator } from "../../market-data/coordinator";
+import { useViewport } from "../../react/input";
 import { t, tf } from "../../i18n";
-import { useQuoteEntry, useResolvedEntryValue } from "../../market-data/hooks";
-import { formatPercentRaw } from "../../utils/format";
-import { formatMarketPrice } from "../../market-data/market/format";
-import { getActiveQuoteDisplay, marketStateColor, marketStateCountdown, marketStateLabel } from "../../market-data/market/status";
-import { VERSION } from "../../version";
-import { getTitlebarLeadingInset } from "./titlebar-overlay";
-import { HeaderTickerSlot } from "./header-ticker-slot";
-import { PaneSuggestions } from "./pane-suggestions";
+import { truncateToDisplayWidth } from "../../utils/format";
+import { formatCommandBarShortcut, getShortcutDisplayMode } from "../../utils/shortcut-labels";
+import { resolveMarketSummaryFit, useMarketSummary } from "./market-summary";
+import { resolveHeaderPromptGeometry } from "./shell/chrome";
 import { WindowControls, WINDOWS_CONTROL_GROUP_WIDTH_PX } from "./window-controls";
 
-const SPY_REFRESH_MS = 5 * 60_000; // 5 min
 const UPDATE_NOTICE_DURATION_MS = 5_000;
 
 type HeaderActionEvent = {
@@ -34,45 +47,198 @@ type HeaderActionEvent = {
   stopPropagation?: () => void;
 };
 
-function DesktopHeaderPill({
-  children,
-  backgroundColor,
-  borderColor,
-  onPress,
-  ariaLabel,
+/**
+ * Chooses what the prompt can say at a given width. The descriptive label earns
+ * its space before the shortcut hint does, because the prompt is what tells a
+ * first-time user the command bar exists at all.
+ */
+function resolveHeaderPromptContent(width: number, shortcutLabel: string): {
+  placeholder: string;
+  shortcut: string;
+} {
+  const textSpace = Math.max(0, width - 2 - "> ".length);
+  const full = t("Search or run a command");
+  const short = t("Search");
+  if (textSpace >= full.length + shortcutLabel.length + 2) return { placeholder: full, shortcut: shortcutLabel };
+  if (textSpace >= full.length) return { placeholder: full, shortcut: "" };
+  if (textSpace >= short.length) return { placeholder: short, shortcut: "" };
+  return { placeholder: "", shortcut: "" };
+}
+
+const PROMPT_CARET = "> ";
+
+/**
+ * The topbar's own fill in the terminal. The prompt used to be the only thing
+ * wearing it, which left the bar reading as a pale input pasted onto a darker
+ * strip; now the whole row carries it and the prompt paints nothing of its own.
+ * Desktop has real chrome to sit on and uses the header colour directly.
+ */
+function headerSurface(colors: ReturnType<typeof useThemeColors>): string {
+  return blendHex(colors.header, colors.bg, 0.55);
+}
+
+/**
+ * Desktop chrome for the prompt. Closed it draws nothing: no fill and no edge,
+ * so the caret and its placeholder sit straight on the header instead of in a
+ * pale box pasted onto it. The hover fill is the whole affordance, and the
+ * border stays in the box model as a transparent hairline so opening the bar
+ * cannot shift the text by a pixel. Open it is the top half of the command
+ * surface: same fill, same border and same shadow as the sheet, rounded only
+ * where it is not touching it, and stretched to the header's full height so the
+ * two meet with no gap. Both boxes take their left edge and width from
+ * `resolveHeaderPromptGeometry`, so the seam is invisible rather than nearly
+ * invisible.
+ */
+function nativePromptSurfaceStyle(colors: ReturnType<typeof useThemeColors>, open: boolean) {
+  if (!open) {
+    return {
+      border: "1px solid transparent",
+      borderRadius: 5,
+    };
+  }
+  const { radiusPx, shadow } = NATIVE_COMMAND_SURFACE;
+  return {
+    alignSelf: "stretch",
+    height: "100%",
+    border: `1px solid ${nativeCommandSurfaceBorder(colors)}`,
+    borderBottomWidth: 0,
+    borderRadius: `${radiusPx}px ${radiusPx}px 0 0`,
+    boxShadow: shadow,
+  };
+}
+
+/**
+ * The command bar's input while the bar is open. Gloomberb's panes are driven
+ * by bare single keys, so the input only exists while the bar is open; the idle
+ * prompt is an affordance that never takes keyboard focus.
+ */
+function HeaderPromptInput({
+  binding,
+  nativePaneChrome,
+  width,
 }: {
-  children: ReactNode;
-  backgroundColor?: string;
-  borderColor?: string;
-  onPress?: (event?: HeaderActionEvent) => void;
-  ariaLabel?: string;
+  binding: CommandBarPromptBinding;
+  nativePaneChrome: boolean;
+  width: number;
 }) {
   const colors = useThemeColors();
-  const resolvedBackgroundColor = backgroundColor ?? blendHex(colors.header, colors.bg, 0.28);
-  const resolvedBorderColor = borderColor ?? blendHex(colors.border, colors.headerText, 0.22);
+  const inputRef = useRef<InputRenderable | null>(null);
+  const { ghostSuffix, onQueryChange, placeholder, query, screenKey } = binding;
+  const textColor = commandBarText(colors);
+  const subtleColor = commandBarSubtleText(colors);
+
+  // The buffer is the source of truth while typing; only an outside change,
+  // such as Ctrl+U or a popped route restoring its query, has to be written back.
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input || input.editBuffer.getText() === query) return;
+    input.editBuffer.setText?.(query);
+    input.setCursorOffset?.(query.length);
+  }, [query, screenKey]);
+
+  const ghostLeft = Math.max(0, Math.min(query.length, width - 1));
+  return (
+    <Box width={width} height={1} position="relative" style={nativePaneChrome ? undefined : { overflow: "hidden" }}>
+      <Input
+        key={screenKey}
+        ref={inputRef}
+        value={query}
+        onInput={onQueryChange}
+        placeholder={placeholder}
+        focused
+        data-gloom-remote-scope="command-bar"
+        data-gloom-remote-surface="command-bar"
+        width={nativePaneChrome ? "100%" : width}
+        backgroundColor="transparent"
+        focusedBackgroundColor="transparent"
+        textColor={textColor}
+        focusedTextColor={textColor}
+        placeholderColor={subtleColor}
+        cursorColor={colors.textBright}
+      />
+      {ghostSuffix && (
+        <Box position="absolute" top={0} left={ghostLeft} width={Math.max(0, width - ghostLeft)} height={1}>
+          <Text fg={subtleColor}>{truncateToDisplayWidth(ghostSuffix, Math.max(0, width - ghostLeft))}</Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+function HeaderCommandPrompt({
+  nativePaneChrome,
+  onOpen,
+  open,
+  shortcutLabel,
+  width,
+}: {
+  nativePaneChrome: boolean;
+  onOpen: (event?: HeaderActionEvent) => void;
+  open: boolean;
+  shortcutLabel: string;
+  width: number;
+}) {
+  const colors = useThemeColors();
+  const binding = useCommandBarPromptBinding();
+  const { placeholder, shortcut } = resolveHeaderPromptContent(width, shortcutLabel);
+  const idleBg = headerSurface(colors);
+  // Open, the prompt takes the sheet's own surface so the two read as one
+  // control: the sheet is the prompt, expanded. Closed it fills nothing on
+  // either host; the terminal row is already this colour end to end, and on
+  // desktop the header is.
+  const backgroundColor = open
+    ? (nativePaneChrome ? commandBarPanelBg(colors) : commandBarBg(colors))
+    : undefined;
+  const caretColor = open
+    ? commandBarText(colors)
+    : blendHex(colors.headerText, colors.header, 0.15);
+  const mutedColor = blendHex(colors.headerText, colors.header, 0.42);
+  // Dimmer than the placeholder it trails: the label is what names the control,
+  // the binding is a footnote to it.
+  const shortcutColor = blendHex(colors.headerText, colors.header, 0.62);
+  // Desktop hover lifts the prompt off the header itself, which is the only
+  // thing telling the pointer this text is a control. The terminal has no
+  // chrome, so it lifts off the strip fill the whole row already wears.
+  const hoverBg = nativePaneChrome
+    ? blendHex(colors.header, colors.headerText, 0.14)
+    : blendHex(idleBg, colors.headerText, 0.16);
+  const inputWidth = Math.max(1, width - 2 - PROMPT_CARET.length);
+
   return (
     <Box
+      width={width}
       height={1}
       flexDirection="row"
       alignItems="center"
-      backgroundColor={resolvedBackgroundColor}
-      data-gloom-interactive={onPress ? "true" : undefined}
-      role={onPress ? "button" : undefined}
-      tabIndex={onPress ? 0 : undefined}
-      aria-label={ariaLabel}
-      onMouseDown={onPress}
-      onKeyDown={(event: HeaderActionEvent) => {
-        if (event.key === "Enter" || event.key === " ") onPress?.(event);
+      paddingLeft={1}
+      paddingRight={1}
+      backgroundColor={backgroundColor}
+      hoverBackgroundColor={open ? undefined : hoverBg}
+      data-gloom-role="header-command-prompt"
+      data-gloom-interactive={open ? undefined : "true"}
+      role={open ? undefined : "button"}
+      tabIndex={open ? undefined : 0}
+      aria-label={t("Search or run a command")}
+      aria-keyshortcuts={shortcutLabel}
+      onMouseDown={open ? undefined : onOpen}
+      onKeyDown={open ? undefined : (event: HeaderActionEvent) => {
+        if (event.key === "Enter" || event.key === " ") onOpen(event);
       }}
-      hoverBackgroundColor={onPress ? blendHex(resolvedBackgroundColor, colors.headerText, 0.12) : undefined}
       style={{
-        border: `1px solid ${resolvedBorderColor}`,
-        borderRadius: 6,
-        paddingInline: 6,
-        cursor: onPress ? "pointer" : undefined,
+        cursor: open ? undefined : "pointer",
+        ...(nativePaneChrome ? nativePromptSurfaceStyle(colors, open) : {}),
       }}
     >
-      {children}
+      <Text fg={caretColor} attributes={TextAttributes.BOLD}>{PROMPT_CARET}</Text>
+      {open ? (
+        binding ? <HeaderPromptInput binding={binding} nativePaneChrome={nativePaneChrome} width={inputWidth} /> : null
+      ) : (
+        <>
+          <Text fg={mutedColor}>{placeholder}</Text>
+          {shortcut ? <Text fg={shortcutColor}>{`  ${shortcut}`}</Text> : null}
+          <Box flexGrow={1} minWidth={0} />
+        </>
+      )}
     </Box>
   );
 }
@@ -157,67 +323,81 @@ function UpdateStatus() {
   return null;
 }
 
+/**
+ * Market state, SPY and the base currency at the header's right edge. It fits
+ * itself into the columns the prompt geometry reserved rather than into
+ * whatever this row has left over, so the cluster and the prompt can never
+ * both claim the same space.
+ */
+function HeaderMarketSummary({ nativePaneChrome, width }: { nativePaneChrome: boolean; width: number }) {
+  const colors = useThemeColors();
+  const summary = useMarketSummary();
+  const fit = resolveMarketSummaryFit({
+    available: width,
+    baseCurrencyWidth: summary.baseCurrency.length + 1,
+    countdownWidth: summary.marketLabel.length - summary.marketLabelShort.length,
+    spyWidth: summary.spyText.length + 1,
+    stateWidth: summary.marketLabelShort ? summary.marketLabelShort.length + 1 : 0,
+  });
+  const marketLabel = fit.showCountdown ? summary.marketLabel : summary.marketLabelShort;
+
+  return (
+    <>
+      {fit.showState && marketLabel ? (
+        <Box paddingRight={1} flexShrink={0}>
+          <Text fg={summary.marketColor} {...(nativePaneChrome ? { attributes: TextAttributes.BOLD } : {})}>
+            {marketLabel}
+          </Text>
+        </Box>
+      ) : null}
+      {fit.showSpy ? (
+        <Box paddingRight={1} flexShrink={0}>
+          <Text fg={summary.spyColor}>{summary.spyText}</Text>
+        </Box>
+      ) : null}
+      {fit.showBaseCurrency ? (
+        <Box paddingRight={1} flexShrink={0}>
+          <Text fg={blendHex(colors.headerText, colors.header, 0.42)}>{summary.baseCurrency}</Text>
+        </Box>
+      ) : null}
+    </>
+  );
+}
+
 export function Header({
   onOpenHelp,
-  onOpenChangelog,
 }: {
   onOpenHelp?: () => void;
-  onOpenChangelog?: (version: string) => void;
 }) {
   const colors = useThemeColors();
   const rendererHost = useRendererHost();
-  const baseCurrency = useAppSelector(selectBaseCurrency);
-  const appActive = useAppActive();
-  const { titleBarOverlay, nativeWindowChrome = titleBarOverlay, windowControls } = useUiCapabilities();
+  const dispatch = useAppDispatch();
+  const commandBarOpen = useAppSelector(selectCommandBarOpen);
+  const { width: termWidth } = useViewport();
+  const uiKind = useUiHost().kind;
+  const { nativePaneChrome = false, titleBarOverlay, nativeWindowChrome = titleBarOverlay, windowControls } = useUiCapabilities();
   const showWindowControls = nativeWindowChrome && windowControls === "windows";
-  const titlebarLeadingInset = titleBarOverlay && nativeWindowChrome ? getTitlebarLeadingInset() : 0;
-  const spyQuoteEntry = useQuoteEntry("SPY", null);
-  const spyQuote = useResolvedEntryValue(spyQuoteEntry);
-  const mktState = spyQuote?.marketState;
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    if (!appActive || (mktState !== "PRE" && mktState !== "REGULAR")) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(id);
-  }, [appActive, mktState]);
-
-  useEffect(() => {
-    if (!appActive) return;
-    const coordinator = getSharedMarketDataCoordinator();
-    if (!coordinator) return;
-    const fetchSpy = async () => {
-      await coordinator.loadQuote({ symbol: "SPY" }).catch(() => {});
-    };
-    fetchSpy();
-    const id = setInterval(fetchSpy, SPY_REFRESH_MS);
-    return () => { clearInterval(id); };
-  }, [appActive]);
-
-  const activeSpyQuote = getActiveQuoteDisplay(spyQuote);
-  const spyColor = activeSpyQuote ? priceColor(activeSpyQuote.change, colors) : colors.headerText;
-  const spyText = activeSpyQuote
-    ? `SPY ${formatMarketPrice(activeSpyQuote.price, { assetCategory: "ETF" })} ${formatPercentRaw(activeSpyQuote.changePercent)}`
-    : "SPY —";
+  const prompt = resolveHeaderPromptGeometry({
+    nativePaneChrome,
+    nativeWindowChrome,
+    termWidth,
+    titleBarOverlay,
+  });
+  const shortcutLabel = formatCommandBarShortcut(getShortcutDisplayMode(uiKind));
+  // Desktop has its own window chrome to sit on; the terminal has none, so the
+  // bar itself wears the prompt's fill and reads as a single strip.
+  const headerBg = nativePaneChrome ? colors.header : headerSurface(colors);
 
   const startWindowDrag = useCallback(() => {
     if (!titleBarOverlay || !nativeWindowChrome) return;
     void rendererHost.startWindowDrag?.();
   }, [nativeWindowChrome, rendererHost, titleBarOverlay]);
 
-  // Market status
-  const mktCountdown = mktState ? marketStateCountdown(mktState, now) : null;
-  const mktLabel = mktState
-    ? `${t(marketStateLabel(mktState))}${mktCountdown ? ` · ${mktCountdown}` : ""}`
-    : "";
-  const mktColor = mktState ? marketStateColor(mktState, colors) : colors.headerText;
-
-  const openChangelog = useCallback((event?: HeaderActionEvent) => {
+  const openCommandBar = useCallback((event?: HeaderActionEvent) => {
     event?.preventDefault?.();
     event?.stopPropagation?.();
-    onOpenChangelog?.(VERSION);
-  }, [onOpenChangelog]);
+    dispatch({ type: "SET_COMMAND_BAR", open: true, query: "" });
+  }, [dispatch]);
 
   const openHelp = useCallback((event?: HeaderActionEvent) => {
     event?.preventDefault?.();
@@ -225,38 +405,38 @@ export function Header({
     onOpenHelp?.();
   }, [onOpenHelp]);
 
+  const commandPrompt = (
+    <HeaderCommandPrompt
+      nativePaneChrome={nativePaneChrome}
+      onOpen={openCommandBar}
+      open={commandBarOpen}
+      shortcutLabel={shortcutLabel}
+      width={prompt.width}
+    />
+  );
+  const marketSummary = prompt.marketColumns > 0
+    ? <HeaderMarketSummary nativePaneChrome={nativePaneChrome} width={prompt.marketColumns} />
+    : null;
+
   if (titleBarOverlay) {
     return (
       <Box
         flexDirection="row"
         height={1}
         alignItems="center"
-        backgroundColor={colors.header}
+        backgroundColor={headerBg}
         data-gloom-role="app-header"
         data-titlebar-overlay="true"
         onMouseDown={startWindowDrag}
         style={{
-          boxShadow: `0 -1px 0 ${colors.header}, inset 0 1px 0 ${colors.header}`,
-          paddingLeft: 8,
-          paddingRight: showWindowControls ? 0 : 8,
-          gap: 8,
+          boxShadow: `0 -1px 0 ${headerBg}, inset 0 1px 0 ${headerBg}`,
+          paddingRight: showWindowControls ? 0 : 12,
           position: "relative",
         }}
       >
-        <Box paddingLeft={titlebarLeadingInset} flexDirection="row" alignItems="center" gap={1}>
-          <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>
-            Gloomberb
-          </Text>
-          <DesktopHeaderPill
-            backgroundColor={blendHex(colors.header, colors.headerText, 0.1)}
-            borderColor={blendHex(colors.border, colors.headerText, 0.28)}
-            onPress={onOpenChangelog ? openChangelog : undefined}
-            ariaLabel={onOpenChangelog ? `Open changelog for v${VERSION}` : undefined}
-          >
-            <Text fg={colors.headerText} style={{ fontSize: 11 }}>v{VERSION}</Text>
-          </DesktopHeaderPill>
-        </Box>
-        <Box flexGrow={1} minWidth={0}>
+        <Box width={prompt.left} />
+        {commandPrompt}
+        <Box flexGrow={1} paddingLeft={2} paddingRight={2} minWidth={0}>
           <UpdateStatus />
         </Box>
         {onOpenHelp ? (
@@ -264,10 +444,8 @@ export function Header({
             height={1}
             flexDirection="row"
             alignItems="center"
-            flexShrink={0}
             data-gloom-role="header-help-action"
             data-gloom-interactive="true"
-            className="electrobun-webkit-app-region-no-drag"
             role="button"
             tabIndex={0}
             aria-label="Open Help"
@@ -279,8 +457,9 @@ export function Header({
             hoverBackgroundColor={blendHex(colors.header, colors.headerText, 0.15)}
             style={{
               border: `1px solid ${blendHex(colors.border, colors.headerText, 0.28)}`,
-              borderRadius: 6,
-              paddingInline: 6,
+              borderRadius: 5,
+              paddingInline: 7,
+              marginRight: 8,
               backgroundColor: blendHex(colors.header, colors.headerText, 0.08),
               cursor: "pointer",
             }}
@@ -289,16 +468,7 @@ export function Header({
             <Text fg={blendHex(colors.headerText, colors.header, 0.38)} style={{ marginLeft: 6, fontSize: 10 }}>?</Text>
           </Box>
         ) : null}
-        {mktLabel ? (
-          <DesktopHeaderPill
-            backgroundColor={blendHex(colors.header, mktColor, 0.12)}
-            borderColor={blendHex(colors.border, mktColor, 0.3)}
-          >
-            <Text fg={mktColor} style={{ fontSize: 11, fontWeight: 700 }}>{mktLabel}</Text>
-          </DesktopHeaderPill>
-        ) : null}
-        <Text fg={spyColor}>{spyText}</Text>
-        <Text fg={colors.headerText}>{baseCurrency}</Text>
+        {marketSummary}
         {showWindowControls ? <Box flexShrink={0} width={`${WINDOWS_CONTROL_GROUP_WIDTH_PX}px`} /> : null}
         {showWindowControls ? <WindowControls /> : null}
       </Box>
@@ -309,44 +479,17 @@ export function Header({
     <Box
       flexDirection="row"
       height={1}
-      backgroundColor={colors.header}
+      backgroundColor={headerBg}
       data-gloom-role="app-header"
       data-titlebar-overlay={titleBarOverlay ? "true" : undefined}
       onMouseDown={startWindowDrag}
     >
-      <Box paddingLeft={titleBarOverlay ? titlebarLeadingInset : 1} flexDirection="row">
-        <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>Gloomberb </Text>
-        <Box
-          data-gloom-interactive={onOpenChangelog ? "true" : undefined}
-          role={onOpenChangelog ? "button" : undefined}
-          tabIndex={onOpenChangelog ? 0 : undefined}
-          aria-label={onOpenChangelog ? `Open changelog for v${VERSION}` : undefined}
-          onMouseDown={onOpenChangelog ? openChangelog : undefined}
-          onKeyDown={(event: HeaderActionEvent) => {
-            if (event.key === "Enter" || event.key === " ") openChangelog(event);
-          }}
-          hoverBackgroundColor={onOpenChangelog ? blendHex(colors.header, colors.headerText, 0.15) : undefined}
-          style={{ cursor: onOpenChangelog ? "pointer" : undefined }}
-        >
-          <Text attributes={TextAttributes.BOLD} fg={colors.headerText}>v{VERSION}</Text>
-        </Box>
-      </Box>
-      <Box flexGrow={1} paddingLeft={2}>
+      <Box width={prompt.left} />
+      {commandPrompt}
+      <Box flexGrow={1} minWidth={0} paddingLeft={2}>
         <UpdateStatus />
       </Box>
-      {mktLabel && (
-        <Box paddingRight={1}>
-          <Text fg={mktColor}>{mktLabel}</Text>
-        </Box>
-      )}
-      <Box paddingRight={1}>
-        <Text fg={spyColor}>{spyText}</Text>
-      </Box>
-      <Box paddingRight={1}>
-        <Text fg={colors.headerText}>
-          {baseCurrency}
-        </Text>
-      </Box>
+      {marketSummary}
       {showWindowControls ? <WindowControls /> : null}
     </Box>
   );

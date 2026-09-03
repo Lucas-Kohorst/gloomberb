@@ -1,4 +1,5 @@
 import type { ProjectedChartPoint } from "../core/data";
+import type { ResolvedChartPalette } from "../core/palette";
 import type {
   ChartColors,
   ChartIndicatorOverlays,
@@ -6,7 +7,6 @@ import type {
   ChartSessionBackgroundSpan,
   PixelBuffer,
 } from "../core/types";
-import type { ResolvedChartPalette } from "../core/palette";
 import {
   drawLine,
   fillBackgroundRect,
@@ -76,18 +76,20 @@ export function drawLineSeries(
   lineColor: string,
   min: number,
   max: number,
+  lineColors?: readonly string[] | null,
 ) {
   if (points.length === 0) return;
 
   for (let i = 0; i < points.length; i++) {
     const x = getDotX(i, points.length, buf.width, "line");
     const y = getScaledY(points[i]!.close, min, max, chartTop, chartBottom);
+    const color = lineColors?.[i] ?? lineColor;
     if (i < points.length - 1) {
       const x1 = getDotX(i + 1, points.length, buf.width, "line");
       const y1 = getScaledY(points[i + 1]!.close, min, max, chartTop, chartBottom);
-      drawLine(buf, x, y, x1, y1, lineColor, LAYER_DATA);
+      drawLine(buf, x, y, x1, y1, color, LAYER_DATA);
     } else {
-      setPixel(buf, x, y, lineColor, LAYER_DATA);
+      setPixel(buf, x, y, color, LAYER_DATA);
     }
   }
 }
@@ -266,5 +268,9 @@ export function drawIndicatorOverlays(
     drawOverlay(indicators.bollinger.upper, indicators.bollinger.color);
     drawOverlay(indicators.bollinger.middle, indicators.bollinger.color);
     drawOverlay(indicators.bollinger.lower, indicators.bollinger.color);
+  }
+  for (const reference of indicators.referenceLines ?? []) {
+    const y = getScaledY(reference.value, min, max, dotTop, dotBottom);
+    drawLine(buf, 0, y, Math.max(buf.width - 1, 0), y, reference.color, LAYER_OVERLAY);
   }
 }
