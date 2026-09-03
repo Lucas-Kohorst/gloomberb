@@ -4,6 +4,7 @@ import {
   ChartSurface,
   ScrollBox,
   Text,
+  TradingViewChart,
   useNativeRenderer,
   useUiCapabilities,
   useUiHost,
@@ -655,7 +656,7 @@ function CompositePanelSurface({
 }: CompositePanelSurfaceProps) {
   const ui = useUiHost();
   const isDesktopWeb = ui.kind === "desktop-web";
-  const TradingViewChart = ui.TradingViewChart;
+  const hasTradingViewChart = !!ui.TradingViewChart;
   const { cellHeightPx = 18, cellWidthPx = 8 } = useUiCapabilities();
   const renderer = useNativeRenderer();
   const plotRef = useRef<BoxRenderable | null>(null);
@@ -1109,7 +1110,7 @@ function CompositePanelSurface({
           <Box width={axisGap} />
         </>
       ) : null}
-      {TradingViewChart ? (
+      {hasTradingViewChart ? (
         <TradingViewChart
           width={plotWidth}
           height={panel.height}

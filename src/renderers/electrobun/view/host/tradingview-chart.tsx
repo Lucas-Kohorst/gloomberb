@@ -29,6 +29,7 @@ import {
   wheelPanRatioFromDelta,
   wheelZoomFactorFromDelta,
 } from "./tradingview-interactions";
+import { cleanDomProps } from "./style";
 import {
   tradingViewBarData,
   tradingViewCandleData,
@@ -609,7 +610,7 @@ export function WebTradingViewChart({
 
   return (
     <div
-      {...props}
+      {...cleanDomProps(props as Record<string, unknown>)}
       {...pointerHandlers}
       ref={wrapperRef}
       style={{
@@ -619,6 +620,7 @@ export function WebTradingViewChart({
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
+        flex: 1,
         cursor: measureEnabled ? "crosshair" : interactive ? "grab" : undefined,
         touchAction: interactive ? "none" : undefined,
         ...(style as CSSProperties | undefined),
