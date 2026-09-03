@@ -82,6 +82,11 @@ describe("normalizePaneId", () => {
     expect(normalizePaneId("commodities")).toBe("futures");
     expect(createPaneInstance("commodities").paneId).toBe("futures");
   });
+
+  test("folds the retired TradingView pane into the chart composer", () => {
+    expect(normalizePaneId("tradingview")).toBe("chart-composer");
+    expect(createPaneInstance("tradingview").paneId).toBe("chart-composer");
+  });
 });
 
 describe("normalizePaneLayout", () => {

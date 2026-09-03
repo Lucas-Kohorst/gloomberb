@@ -27,7 +27,7 @@ import {
   usePaneTicker,
 } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
-import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
+import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { SeriesEditorDialog } from "./editor";
 import { chartComposerSemanticMetadata } from "./semantic";
@@ -754,24 +754,6 @@ export function ChartComposerPane({ paneId, focused, width, height }: PaneProps)
       width={width}
       height={height}
       footerId={`${CHART_COMPOSER_PANE_ID}:${paneId}`}
-    />
-  );
-}
-
-export function TradingViewPane({ paneId, focused, width, height }: PaneProps) {
-  const fallbackFor = useCallback(
-    (symbol: string | null) => symbol ? buildTradingViewChartPreset(symbol) : buildEmptyChartPreset(),
-    [],
-  );
-  const { spec, setSpec } = useBoundChartSpec(fallbackFor);
-  return (
-    <ChartComposerSurface
-      spec={spec}
-      setSpec={setSpec}
-      focused={focused}
-      width={width}
-      height={height}
-      footerId={`${TRADINGVIEW_PANE_ID}:${paneId}`}
     />
   );
 }

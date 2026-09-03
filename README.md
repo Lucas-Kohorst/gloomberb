@@ -140,7 +140,6 @@ Open command mode with `Ctrl+P`, then type a command. Press `` ` `` to open tick
 |-----|-------|
 | `DES AAPL` | Security details |
 | `GP NVDA` | Price chart |
-| `TVC AAPL` | TradingView pane |
 | `G AAPL:price, MSFT:revenue` | Mixed-series chart |
 | `TOP` | Ranked market stories |
 | `HM` | Market heatmap |
@@ -250,7 +249,6 @@ Use `HELP` inside Gloomberb for the live shortcut list. The common command-bar p
 | `G <series>` | Custom chart composer |
 | `CAT [query]` | Browse and search chartable series |
 | `GP <ticker>` | Price chart |
-| `TVC <ticker>` | TradingView pane (Lightweight Charts: candles, volume, drawings) |
 | `GIP <ticker>` | Intraday price chart |
 | `HP <ticker>` | Historical OHLCV prices |
 | `GF <tickers>` | Fundamental statement graph |

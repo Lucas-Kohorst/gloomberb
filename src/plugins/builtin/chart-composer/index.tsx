@@ -3,11 +3,11 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
 } from "../../../types/plugin";
-import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
+import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
-import { ChartComposerPane, ChartComposerResearchTab, TradingViewPane } from "./pane";
+import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
 import {
   CHART_COMPOSER_TEMPLATE_ID,
@@ -33,7 +33,6 @@ import {
   buildFundamentalChartPreset,
   buildIntradayPriceChartPreset,
   buildPriceChartPreset,
-  buildTradingViewChartPreset,
   buildValuationChartPreset,
   chartSeriesLabel,
 } from "./presets";
@@ -170,7 +169,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     paneId: CHART_COMPOSER_PANE_ID,
     label: "Custom Chart",
     description: "Chart arbitrary market, fundamental, valuation, FRED, Adjacent, Kalshi, and Polymarket series together.",
-    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental", "kalshi", "polymarket", "adjacent", "prediction"],
+    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental", "kalshi", "polymarket", "adjacent", "prediction", "tradingview", "tvc"],
     shortcut: { prefix: "G", argPlaceholder: "series", argKind: "text", argOptional: true },
     wizard: [{
       key: "series",
@@ -284,39 +283,6 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     minimumSymbols: 1,
     build: (symbols) => buildPriceChartPreset(symbols[0]!),
   }),
-  {
-    id: "tradingview-pane",
-    paneId: TRADINGVIEW_PANE_ID,
-    label: "TradingView",
-    description: "Open a TradingView-style Lightweight Charts pane for a ticker: candles, volume, timeframes, log scale, crosshair, legend, and drawings.",
-    keywords: ["tradingview", "tv", "chart", "candles", "lightweight", "ohlc"],
-    shortcut: { prefix: "TVC", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
-    wizard: [{
-      key: "tickers",
-      label: "Ticker",
-      placeholder: "AAPL",
-      type: "text",
-      body: ["Enter a ticker symbol."],
-    }],
-    canCreate: () => true,
-    createInstance: (context, options) => {
-      const symbols = templateSymbols(context, options);
-      const symbol = symbols[0] ?? normalizedSymbol(context.activeTicker);
-      if (!symbol) {
-        return {
-          title: "TradingView",
-          placement: "floating" as const,
-          settings: { [CHART_SPEC_SETTING_KEY]: buildEmptyChartPreset() },
-        };
-      }
-      return {
-        title: `TVC ${symbol}`,
-        placement: "floating" as const,
-        binding: { kind: "fixed" as const, symbol },
-        settings: { [CHART_SPEC_SETTING_KEY]: buildTradingViewChartPreset(symbol) },
-      };
-    },
-  },
   securityTemplate({
     id: "graph-intraday-price-pane",
     prefix: "GIP",
@@ -361,22 +327,6 @@ export const chartComposerModule: PluginModule = {
     name: "Chart",
     icon: "G",
     component: ChartComposerPane,
-    defaultPosition: "right",
-    defaultMode: "floating",
-    defaultFloatingSize: { width: 100, height: 32 },
-    quickSettings: [LIVE_STREAMING_QUICK_SETTING],
-    settings: (context) => withLiveStreamingSetting(
-      buildChartComposerPaneSettingsDef(
-        context.settings,
-        context.activeTicker,
-      ),
-      context.settings,
-    ),
-  }, {
-    id: TRADINGVIEW_PANE_ID,
-    name: "TradingView",
-    icon: "V",
-    component: TradingViewPane,
     defaultPosition: "right",
     defaultMode: "floating",
     defaultFloatingSize: { width: 100, height: 32 },

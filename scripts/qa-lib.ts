@@ -22,9 +22,9 @@ export const PATH_RULES: PathRule[] = [
   },
   {
     match: /^src\/plugins\/builtin\/chart-composer\//,
-    panes: ["chart-composer", "tradingview"],
+    panes: ["chart-composer"],
     tests: ["src/plugins/builtin/chart-composer"],
-    fn: ["graph-price-pane AAPL", "tradingview-pane AAPL"],
+    fn: ["graph-price-pane AAPL"],
   },
   {
     match: /^src\/time-series\//,

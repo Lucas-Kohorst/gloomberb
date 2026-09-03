@@ -25,7 +25,7 @@ describe("qa path mapping", () => {
       "src/plugins/builtin/market-valuation/pane.tsx",
       "src/time-series/spec.ts",
     ]);
-    expect(plan.panes).toEqual(expect.arrayContaining(["chart-composer", "tradingview", "market-valuation"]));
+    expect(plan.panes).toEqual(expect.arrayContaining(["chart-composer", "market-valuation"]));
     expect(plan.fn).toEqual(expect.arrayContaining(["graph-price-pane AAPL", "VAL"]));
     expect(plan.tests).toContain("src/plugins/catalog-ui.test.ts");
   });

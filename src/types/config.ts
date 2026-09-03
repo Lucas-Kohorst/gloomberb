@@ -175,11 +175,15 @@ export interface AppConfig {
 export const TICKER_RESEARCH_PANE_ID = "ticker-research";
 export const LEGACY_TICKER_DETAIL_PANE_ID = "ticker-detail";
 export const CHART_COMPOSER_PANE_ID = "chart-composer";
-export const TRADINGVIEW_PANE_ID = "tradingview";
 
 export function normalizePaneId(paneId: string): string {
   if (paneId === LEGACY_TICKER_DETAIL_PANE_ID) return TICKER_RESEARCH_PANE_ID;
-  if (paneId === "comparison-chart" || paneId === "ticker-chart" || paneId === "fundamental-graph") {
+  if (
+    paneId === "comparison-chart"
+    || paneId === "ticker-chart"
+    || paneId === "fundamental-graph"
+    || paneId === "tradingview"
+  ) {
     return CHART_COMPOSER_PANE_ID;
   }
   if (paneId === "plugin-discovery" || paneId === "plugin-market") return "plugin-marketplace";

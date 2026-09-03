@@ -1074,11 +1074,6 @@ export function buildPriceChartPreset(symbol: string): ChartSpec {
   );
 }
 
-/** Candles + volume, the closest Lightweight Charts default to a TradingView chart. */
-export function buildTradingViewChartPreset(symbol: string): ChartSpec {
-  return buildPriceChartPreset(symbol);
-}
-
 export function toggleMainPanelScale(spec: ChartSpec): ChartSpec {
   const current = spec.panels.find((panel) => panel.id === "main")?.scale === "log" ? "log" : "linear";
   const next = current === "log" ? "linear" : "log";

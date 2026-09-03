@@ -1,7 +1,7 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../types/config";
+import { CHART_COMPOSER_PANE_ID } from "../../types/config";
 import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
@@ -83,7 +83,7 @@ async function collectShotStatSeries(
 }
 
 function isComposerChartPane(paneId: string): boolean {
-  return paneId === CHART_COMPOSER_PANE_ID || paneId === TRADINGVIEW_PANE_ID;
+  return paneId === CHART_COMPOSER_PANE_ID;
 }
 
 async function collectShotFredSeries(
