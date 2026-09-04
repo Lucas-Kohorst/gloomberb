@@ -509,10 +509,16 @@ export interface CloudEarningsCallPayload {
   wordCount: number | null;
   hasTranscript: boolean;
   sentiment: number | null;
+  /** The replay or event page the transcript came from. */
+  webcastUrl?: string | null;
 }
 
 export interface CloudEarningsCallListPayload {
   calls: CloudEarningsCallPayload[];
+  /** Set when asking about a company started a search that is still running. */
+  pending?: boolean;
+  /** Set when the requested symbol is not one the SEC knows. */
+  unknownTicker?: boolean;
 }
 
 export interface CloudTranscriptTurnPayload {

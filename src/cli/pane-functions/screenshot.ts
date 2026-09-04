@@ -1,12 +1,16 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import { CHART_COMPOSER_PANE_ID } from "../../types/config";
+import { CHART_COMPOSER_PANE_ID, type AppConfig } from "../../types/config";
 import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
+import { getTheme, getThemeIds } from "../../theme/themes";
+
+const DEFAULT_SHOT_DEVICE_SCALE_FACTOR = 2;
 import {
   renderDesktopPaneScreenshot,
+  type DesktopPaneShotApiProxy,
   type DesktopPaneShotPayload,
   type DesktopPaneShotRenderResult,
 } from "../desktop-pane-shot";
@@ -48,6 +52,7 @@ import { defaultStatLoader } from "../../plugins/builtin/econ-statistics/client"
 import { STATS } from "../../plugins/builtin/econ-statistics/stats";
 import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
+import { getCloudApiBaseUrl } from "../../api-client/request";
 import type { FredSeriesCacheEntry } from "../../data/fred-series";
 import type { ResolvedSeries } from "../../time-series/types";
 import { chartSeriesSourceKey, createChartSeriesResolver } from "../../capabilities";
@@ -66,6 +71,85 @@ const DESKTOP_CELL_HEIGHT_PX = 18;
 const OPTIONS_PANE_ID = "options";
 const MARKET_VALUATION_PANE_ID = "market-valuation";
 const ECON_STATISTICS_PANE_ID = "econ-statistics";
+const CLOUD_PLUGIN_ID = "gloomberb-cloud";
+const CLOUD_SESSION_KEYS = ["resume:session", "session"] as const;
+const CREDENTIAL_FIELD_NAMES = new Set([
+  "accesstoken",
+  "accessurl",
+  "apikey",
+  "apisecret",
+  "authorization",
+  "cookie",
+  "credentials",
+  "oauth",
+  "passphrase",
+  "password",
+  "privatekey",
+  "refreshtoken",
+  "secret",
+  "sessiontoken",
+  "token",
+]);
+
+interface PersistedShotCloudSession {
+  sessionToken?: unknown;
+}
+
+/**
+ * The proxy receives the desktop session out of band. Keeping this separate
+ * from DesktopPaneShotPayload prevents the token from entering the page,
+ * semantic evidence, or JSON CLI output.
+ */
+function isCredentialField(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return CREDENTIAL_FIELD_NAMES.has(normalized)
+    || normalized.endsWith("password")
+    || normalized.endsWith("passphrase")
+    || normalized.endsWith("secret")
+    || normalized.endsWith("token")
+    || normalized.endsWith("credential")
+    || normalized.endsWith("cookie")
+    || normalized.endsWith("apikey")
+    || normalized.endsWith("accesskey")
+    || normalized.endsWith("privatekey")
+    || normalized.endsWith("authorization")
+    || normalized.endsWith("accessurl");
+}
+
+/** Removes credential-shaped object fields before data enters the page or JSON output. */
+export function stripDesktopShotCredentials<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripDesktopShotCredentials(entry)) as T;
+  }
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  const clean: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (isCredentialField(key)) continue;
+    clean[key] = stripDesktopShotCredentials(entry);
+  }
+  return clean as T;
+}
+
+export function resolveDesktopShotApiProxy(
+  context: Pick<MarketContext, "persistence">,
+): DesktopPaneShotApiProxy {
+  let sessionToken: string | null = null;
+  for (const key of CLOUD_SESSION_KEYS) {
+    const value = context.persistence.pluginState.get<PersistedShotCloudSession>(
+      CLOUD_PLUGIN_ID,
+      key,
+      1,
+    )?.value;
+    if (typeof value?.sessionToken === "string" && value.sessionToken.length > 0) {
+      sessionToken = value.sessionToken;
+      break;
+    }
+  }
+  return {
+    baseUrl: getCloudApiBaseUrl(),
+    sessionToken,
+  };
+}
 
 /** Same reason as the valuation legs: the renderer cannot fill its own cache. */
 async function collectShotStatSeries(
@@ -243,6 +327,27 @@ export type PaneScreenshotDataEvidence =
   | PaneScreenshotFundamentalSeriesEvidence
   | PaneScreenshotFinancialStatementEvidence;
 
+export interface PaneScreenshotReadinessSignals {
+  rowCount: number;
+  loadingStateDetected: boolean;
+  errorStateDetected: boolean;
+  emptyStateDetected: boolean;
+  complete: boolean;
+  semanticMismatch: boolean;
+  requiresStructuredDataEvidence: boolean;
+  hasStructuredDataEvidence: boolean;
+}
+
+export function isPaneScreenshotUsable(signals: PaneScreenshotReadinessSignals): boolean {
+  return signals.rowCount > 0
+    && !signals.loadingStateDetected
+    && !signals.errorStateDetected
+    && !signals.emptyStateDetected
+    && signals.complete
+    && !signals.semanticMismatch
+    && (!signals.requiresStructuredDataEvidence || signals.hasStructuredDataEvidence);
+}
+
 export interface PaneScreenshotResult {
   kind: "pane-screenshot";
   target: string;
@@ -285,9 +390,20 @@ async function buildDesktopShotPayload(
   options: Record<string, string | true>,
   widthPx: number,
   heightPx: number,
+  theme: string | null,
+  scale: number,
+  watermark: string | null,
 ): Promise<DesktopPaneShotPayload> {
-  const widthCells = Math.max(1, Math.round(widthPx / DESKTOP_CELL_WIDTH_PX));
-  const heightCells = Math.max(1, Math.round(heightPx / DESKTOP_CELL_HEIGHT_PX));
+  // The requested size is the output size. Scale shrinks the CSS viewport and
+  // raises the device scale factor by the same factor, so a 1200px wide shot at
+  // scale 1.5 lays out 100 cells instead of 150 and every glyph is 1.5x larger.
+  // Snap to whole cells: rounding up used to make the pane a few pixels taller
+  // than the capture, which clipped the bottom axis of charts.
+  const widthCells = Math.max(1, Math.floor(widthPx / scale / DESKTOP_CELL_WIDTH_PX));
+  const heightCells = Math.max(1, Math.floor(heightPx / scale / DESKTOP_CELL_HEIGHT_PX));
+  widthPx = widthCells * DESKTOP_CELL_WIDTH_PX;
+  heightPx = heightCells * DESKTOP_CELL_HEIGHT_PX;
+  const deviceScaleFactor = DEFAULT_SHOT_DEVICE_SCALE_FACTOR * scale;
   const initialPaneState = optionPaneState(resolved.options);
   const pluginState = capabilityPluginState(resolved.capability, resolved.options);
   if (Object.keys(pluginState).length > 0) {
@@ -299,9 +415,9 @@ async function buildDesktopShotPayload(
   if (isFinancialAnalysisFunction(resolved) && !initialPaneState.activeTabId) {
     initialPaneState.activeTabId = "financials";
   }
-  const paneState: Record<string, PaneRuntimeState> = {
+  const paneState = stripDesktopShotCredentials<Record<string, PaneRuntimeState>>({
     [resolved.instance.instanceId]: initialPaneState,
-  };
+  });
   const layout = {
     dockRoot: null,
     instances: [resolved.instance],
@@ -315,8 +431,9 @@ async function buildDesktopShotPayload(
     }],
     detached: [],
   };
-  const config = {
+  const config = stripDesktopShotCredentials<AppConfig>({
     ...context.config,
+    ...(theme ? { theme: resolveShotTheme(theme) } : {}),
     layout,
     layouts: [{
       name: "CLI Shot",
@@ -327,7 +444,7 @@ async function buildDesktopShotPayload(
     }],
     activeLayoutIndex: 0,
     onboardingComplete: true,
-  };
+  });
 
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
@@ -376,6 +493,8 @@ async function buildDesktopShotPayload(
     heightCells,
     widthPx,
     heightPx,
+    deviceScaleFactor,
+    watermark,
     tickers,
     financials,
     optionsChains,
@@ -385,6 +504,17 @@ async function buildDesktopShotPayload(
     capabilitySeries,
     paneState,
   };
+}
+
+function resolveShotTheme(requested: string): string {
+  const normalized = requested.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  const ids = getThemeIds();
+  const match = ids.find((id) => id.toLowerCase() === normalized)
+    ?? ids.find((id) => getTheme(id).name.toLowerCase().replace(/[\s_]+/g, "-") === normalized);
+  if (!match) {
+    throw new Error(`Unknown theme "${requested}". Available themes: ${ids.join(", ")}`);
+  }
+  return match;
 }
 
 export function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
@@ -415,6 +545,9 @@ export async function renderDesktopShot({
   outputPath,
   width,
   height,
+  theme,
+  scale,
+  watermark,
   options,
 }: {
   resolved: ResolvedPaneFunction;
@@ -423,14 +556,41 @@ export async function renderDesktopShot({
   outputPath: string;
   width: number;
   height: number;
+  theme?: string | null;
+  scale?: number;
+  watermark?: string | null;
   options: Record<string, string | true>;
 }): Promise<PaneScreenshotResult> {
   await mkdir(dirname(outputPath), { recursive: true });
-  const payload = await buildDesktopShotPayload(resolved, context, rawArg, options, width, height);
-  const render = await renderDesktopPaneScreenshot(payload, outputPath);
+  const apiProxy = resolveDesktopShotApiProxy(context);
+  const previousSessionToken = apiClient.getSessionToken();
+  let payload: DesktopPaneShotPayload;
+  let render: DesktopPaneShotRenderResult;
+  apiClient.setSessionToken(apiProxy.sessionToken);
+  try {
+    payload = await buildDesktopShotPayload(
+      resolved,
+      context,
+      rawArg,
+      options,
+      width,
+      height,
+      theme ?? null,
+      scale ?? 1,
+      watermark ?? null,
+    );
+    render = await renderDesktopPaneScreenshot(payload, outputPath, apiProxy);
+  } finally {
+    apiClient.setSessionToken(previousSessionToken);
+  }
   const symbols = payload.financials.map(([symbol]) => symbol);
-  const rowCount = shotSemanticRowCount(resolved, payload, render.semanticUi);
-  const unavailableSymbols = shotUnavailableSymbols(resolved, payload, render.semanticUi);
+  const usesLiveDomEvidence = resolved.capability.screenshotReadiness === "live-dom";
+  const rowCount = usesLiveDomEvidence
+    ? render.rows.length
+    : shotSemanticRowCount(resolved, payload, render.semanticUi);
+  const unavailableSymbols = usesLiveDomEvidence
+    ? []
+    : shotUnavailableSymbols(resolved, payload, render.semanticUi);
   const complete = unavailableSymbols.length === 0;
   const expectedText = shotExpectedText(resolved, symbols, payload);
   const normalizedVisibleText = render.visibleText.toLowerCase();
@@ -448,12 +608,21 @@ export async function renderDesktopShot({
   const semanticMismatch = missingExpectedText.length > 0
     || missingExpectedSelections.length > 0
     || chartEvidenceMismatches.length > 0;
-  const empty = render.emptyStateDetected || rowCount === 0 || semanticMismatch;
-  const usable = resolved.capability.botSafe
-    && resolved.capability.screenshotReadiness === "ready"
-    && !empty
-    && complete
-    && (!requiresStructuredDataEvidence(resolved) || dataEvidence !== null);
+  const empty = render.loadingStateDetected
+    || render.errorStateDetected
+    || render.emptyStateDetected
+    || rowCount === 0
+    || semanticMismatch;
+  const usable = isPaneScreenshotUsable({
+    rowCount,
+    loadingStateDetected: render.loadingStateDetected,
+    errorStateDetected: render.errorStateDetected,
+    emptyStateDetected: render.emptyStateDetected,
+    complete,
+    semanticMismatch,
+    requiresStructuredDataEvidence: requiresStructuredDataEvidence(resolved),
+    hasStructuredDataEvidence: dataEvidence !== null,
+  });
   return {
     kind: "pane-screenshot",
     target: resolved.token,
@@ -465,7 +634,7 @@ export async function renderDesktopShot({
       screenshotReadiness: resolved.capability.screenshotReadiness,
     },
     symbols,
-    options: resolved.options,
+    options: stripDesktopShotCredentials(resolved.options),
     rowCount,
     empty,
     complete,
@@ -475,7 +644,7 @@ export async function renderDesktopShot({
     dataEvidence,
     outputPath,
     render: {
-      ...render,
+      ...stripDesktopShotCredentials(render),
       expectedText,
       missingExpectedText,
       expectedSelections,

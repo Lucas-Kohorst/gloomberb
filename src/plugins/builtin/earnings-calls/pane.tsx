@@ -11,10 +11,17 @@ import {
   type DataTableRootKeyContext,
   type PaneFooterSegment,
 } from "../../../components";
+import { useShortcut } from "../../../react/input";
 import { CloudAuthNotice } from "../cloud/auth-actions";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { colors } from "../../../theme/colors";
-import { Box, Text, type InputRenderable } from "../../../ui";
+import {
+  Box,
+  Text,
+  useRendererHost,
+  type InputRenderable,
+  type ScrollBoxRenderable,
+} from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
@@ -23,9 +30,15 @@ import type {
   CloudEarningsCallPayload,
   CloudEarningsTranscriptPayload,
 } from "../../../api-client";
-import { isPendingTranscript, loadEarningsCalls, loadTranscript, statusOf } from "./data";
+import {
+  callStatusLabel,
+  isPendingTranscript,
+  loadEarningsCalls,
+  loadTranscript,
+  statusOf,
+} from "./data";
 import { callTitle, formatCallDate, formatDuration, formatPeriod, formatSentiment } from "./format";
-import { TranscriptView } from "./transcript-view";
+import { TranscriptView, type ReaderTab } from "./transcript-view";
 
 export const EARNINGS_CALLS_PANE_ID = "earnings-calls";
 
@@ -41,7 +54,8 @@ function buildColumns(width: number, showTicker: boolean): CallColumn[] {
   const dateWidth = 10;
   const periodWidth = 8;
   const lengthWidth = 7;
-  const sentimentWidth = 6;
+  // Wide enough for a state such as "in progress" on calls not yet produced.
+  const sentimentWidth = 11;
   const companyWidth = Math.max(
     10,
     width - tickerWidth - dateWidth - periodWidth - lengthWidth - sentimentWidth - 8,
@@ -72,6 +86,7 @@ function renderCell(call: CloudEarningsCallPayload, column: CallColumn): DataTab
     case "length":
       return { text: formatDuration(call.durationSeconds), color: colors.textDim };
     case "sentiment": {
+      if (!call.hasTranscript) return { text: callStatusLabel(call), color: colors.textDim };
       const tone =
         call.sentiment === null
           ? colors.textDim
@@ -95,6 +110,21 @@ interface CallSort {
 }
 
 const DEFAULT_SORT: CallSort = { columnId: "date", direction: "desc" };
+
+/** "AVGO", "BRK-B", "brk.b": something worth asking the server about. */
+const TICKER_PATTERN = /^[A-Z]{1,5}(?:[.-][A-Z]{1,2})?$/;
+
+/** How often to ask again while a transcript is being produced. */
+const PRODUCE_POLL_MS = 15_000;
+/** How often to ask again while the server is still finding a company's calls. */
+const LOOKUP_POLL_MS = 20_000;
+
+interface TickerLookup {
+  ticker: string;
+  /** "none": a real company, but no reachable call. "unknown": not a listed symbol. */
+  status: "found" | "pending" | "none" | "unknown" | "error";
+  calls: CloudEarningsCallPayload[];
+}
 
 function sortValue(call: CloudEarningsCallPayload, columnId: string): string | number {
   switch (columnId) {
@@ -142,12 +172,20 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     message: string;
     status?: number;
   } | null>(null);
-  const [qaOnly, setQaOnly] = useState(false);
+  const [readerTab, setReaderTab] = useState<ReaderTab>("summary");
   const [sort, setSort] = useState<CallSort>(DEFAULT_SORT);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
+  const transcriptScrollRef = useRef<ScrollBoxRenderable | null>(null);
+
+  // Typing a symbol the shelf does not have asks the server for that company.
+  const [lookup, setLookup] = useState<TickerLookup | null>(null);
+  // Set while a call opened without a transcript is being produced.
+  const [producing, setProducing] = useState(false);
+  // The list answered "pending": the server is still searching for calls.
+  const [listPending, setListPending] = useState(false);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -165,6 +203,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
         .then((result) => {
           setCalls(result.calls);
           setStale(result.stale);
+          setListPending(result.pending === true && result.calls.length === 0);
           setListError(
             result.refreshError ? { message: result.refreshError, status: result.errorStatus } : null,
           );
@@ -185,10 +224,74 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     fetchCalls(false);
   }, [fetchCalls]);
 
+  // A research tab whose company is still being searched checks back until
+  // the calls appear.
+  useEffect(() => {
+    if (!listPending) return;
+    const timer = setTimeout(() => fetchCalls(true), LOOKUP_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [listPending, fetchCalls, calls.length]);
+
+  // On the shelf, a query that looks like a symbol we do not have becomes a
+  // request for that company's calls.
+  const lookupTicker = useMemo(() => {
+    if (ticker || detailOpen) return null;
+    const candidate = searchQuery.trim().toUpperCase();
+    if (!TICKER_PATTERN.test(candidate)) return null;
+    if (calls.some((call) => call.ticker === candidate)) return null;
+    return candidate;
+  }, [ticker, detailOpen, searchQuery, calls]);
+
+  // Answered for the current query, or still waiting on the server.
+  const lookupState: TickerLookup["status"] | "loading" | null = !lookupTicker
+    ? null
+    : lookup?.ticker === lookupTicker
+      ? lookup.status
+      : "loading";
+
+  useEffect(() => {
+    if (!lookupTicker) return;
+    const answered = lookup?.ticker === lookupTicker;
+    if (answered && lookup.status !== "pending") return;
+    let cancelled = false;
+    // Debounce typing; while the server is still searching, check back slowly.
+    const delay = answered ? LOOKUP_POLL_MS : 500;
+    const timer = setTimeout(() => {
+      loadEarningsCalls(lookupTicker, { force: true })
+        .then((result) => {
+          if (cancelled) return;
+          setLookup({
+            ticker: lookupTicker,
+            status: result.unknownTicker
+              ? "unknown"
+              : result.calls.length > 0
+                ? "found"
+                : result.pending
+                  ? "pending"
+                  : "none",
+            calls: result.calls,
+          });
+        })
+        .catch(() => {
+          if (!cancelled) setLookup({ ticker: lookupTicker, status: "error", calls: [] });
+        });
+    }, delay);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [lookupTicker, lookup]);
+
+  const allCalls = useMemo(() => {
+    if (!lookup || lookup.calls.length === 0) return calls;
+    const known = new Set(calls.map((call) => call.id));
+    return [...calls, ...lookup.calls.filter((call) => !known.has(call.id))];
+  }, [calls, lookup]);
+
   const rows = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const matched = query
-      ? calls.filter((call) =>
+      ? allCalls.filter((call) =>
           [
             call.ticker,
             call.companyName ?? "",
@@ -199,7 +302,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
             .toLowerCase()
             .includes(query),
         )
-      : calls;
+      : allCalls;
     const sorted = [...matched].sort((a, b) => {
       const left = sortValue(a, sort.columnId);
       const right = sortValue(b, sort.columnId);
@@ -208,40 +311,98 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       return sort.direction === "asc" ? order : -order;
     });
     return sorted;
-  }, [calls, sort, searchQuery]);
+  }, [allCalls, sort, searchQuery]);
 
   const selected = useMemo(
-    () => calls.find((call) => call.id === selectedId) ?? null,
-    [calls, selectedId],
+    () => allCalls.find((call) => call.id === selectedId) ?? null,
+    [allCalls, selectedId],
   );
+  const selectedCallId = selected?.id ?? null;
+  const selectedHasTranscript = selected?.hasTranscript ?? false;
 
-  // Transcripts are immutable, so this only runs once per call per device.
+  // Marks a call as transcribed in whichever list holds it, once it is.
+  const markTranscribed = useCallback((callId: string) => {
+    const update = (list: CloudEarningsCallPayload[]) =>
+      list.map((call) =>
+        call.id === callId ? { ...call, hasTranscript: true, status: "published" } : call,
+      );
+    setCalls(update);
+    setLookup((current) => (current ? { ...current, calls: update(current.calls) } : current));
+  }, []);
+
+  // A published transcript is immutable, so it loads once per call. Opening
+  // a call that has none asks the server to produce it, then checks back
+  // until it arrives.
   useEffect(() => {
-    if (!detailOpen || !selected?.hasTranscript) return;
+    if (!detailOpen || !selectedCallId) return;
     let cancelled = false;
-    setTranscriptLoading(true);
+    let timer: ReturnType<typeof setTimeout> | null = null;
     setTranscriptError(null);
-    loadTranscript(selected.id)
-      .then((result) => {
-        if (cancelled) return;
-        // A queued-on-demand call comes back as a pending marker, not content.
-        setTranscript(isPendingTranscript(result) ? null : result);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setTranscript(null);
-        setTranscriptError({
-          message: error instanceof Error ? error.message : String(error),
-          status: statusOf(error),
+
+    const attempt = (force: boolean) => {
+      setTranscriptLoading(true);
+      loadTranscript(selectedCallId, { force })
+        .then((result) => {
+          if (cancelled) return;
+          if (isPendingTranscript(result)) {
+            setTranscript(null);
+            setProducing(true);
+            timer = setTimeout(() => attempt(true), PRODUCE_POLL_MS);
+            return;
+          }
+          setTranscript(result);
+          setProducing(false);
+          if (!selectedHasTranscript) {
+            markTranscribed(selectedCallId);
+            fetchCalls(true);
+          }
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setTranscript(null);
+          setProducing(false);
+          setTranscriptError({
+            message: error instanceof Error ? error.message : String(error),
+            status: statusOf(error),
+          });
+        })
+        .finally(() => {
+          if (!cancelled) setTranscriptLoading(false);
         });
-      })
-      .finally(() => {
-        if (!cancelled) setTranscriptLoading(false);
-      });
+    };
+    attempt(!selectedHasTranscript);
+
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
+      setProducing(false);
     };
-  }, [detailOpen, selected]);
+    // The call's identity is what matters; list refreshes must not restart this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailOpen, selectedCallId]);
+
+  const scrollTranscriptBy = useCallback((delta: number) => {
+    const scrollBox = transcriptScrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
+  }, []);
+
+  // A new call or a narrowed transcript should start at the top.
+  useEffect(() => {
+    const scrollBox = transcriptScrollRef.current;
+    if (scrollBox) scrollBox.scrollTop = 0;
+  }, [selectedId, detailOpen, readerTab, searchQuery]);
+
+  // The find field filters turns, so typing in it moves off the summary.
+  useEffect(() => {
+    if (detailOpen && searchQuery.trim() && readerTab === "summary") setReaderTab("transcript");
+  }, [detailOpen, searchQuery, readerTab]);
+
+  const rendererHost = useRendererHost();
+  const openSource = useCallback(() => {
+    if (selected?.webcastUrl) void rendererHost.openExternal(selected.webcastUrl);
+  }, [rendererHost, selected]);
 
   const signInRequired = !access.signedIn || listError?.status === 401;
   const verificationRequired =
@@ -277,21 +438,62 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     [fetchCalls, focusSearch],
   );
 
+  // `q` is the app's quit key, handled ahead of pane handlers. The reader
+  // claims it first while it is open, the same way other panes take keys
+  // that clash with global ones.
+  useShortcut(
+    (event) => {
+      if (!isPlainKey(event, "q")) return;
+      stopSearchFocusNavigation(event);
+      setReaderTab("qa");
+    },
+    {
+      enabled: focused && detailOpen && !searchFocused,
+      phase: "before",
+      scope: "earnings-calls:reader",
+    },
+  );
+
   const handleDetailKey = useCallback(
     (event: DataTableKeyEvent) => {
-      if (isPlainKey(event, "q")) {
-        stopSearchFocusNavigation(event);
-        setQaOnly((current) => !current);
-        return true;
-      }
       if (isPlainKey(event, "/")) {
         stopSearchFocusNavigation(event);
         focusSearch();
         return true;
       }
+      if (isPlainKey(event, "s")) {
+        stopSearchFocusNavigation(event);
+        setReaderTab("summary");
+        return true;
+      }
+      if (isPlainKey(event, "t")) {
+        stopSearchFocusNavigation(event);
+        setReaderTab("transcript");
+        return true;
+      }
+      if (isPlainKey(event, "o")) {
+        stopSearchFocusNavigation(event);
+        openSource();
+        return true;
+      }
+      if (isPlainKey(event, "j", "down")) {
+        stopSearchFocusNavigation(event);
+        scrollTranscriptBy(1);
+        return true;
+      }
+      if (isPlainArrowUp(event) || isPlainKey(event, "k")) {
+        stopSearchFocusNavigation(event);
+        // Like the list: pressing up at the top moves into the search field.
+        if ((transcriptScrollRef.current?.scrollTop ?? 0) <= 0 && isPlainArrowUp(event)) {
+          focusSearch();
+          return true;
+        }
+        scrollTranscriptBy(-1);
+        return true;
+      }
       return false;
     },
-    [focusSearch],
+    [focusSearch, scrollTranscriptBy, openSource],
   );
 
   usePaneFooter(
@@ -301,8 +503,22 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       if (listStatus === "loading") {
         info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
       }
-      if (transcriptLoading) {
+      if (producing) {
+        info.push({ id: "producing", parts: [{ text: "producing transcript", tone: "muted" }] });
+      } else if (transcriptLoading) {
         info.push({ id: "transcribing", parts: [{ text: "loading transcript", tone: "muted" }] });
+      }
+      if (listPending) {
+        info.push({ id: "searching", parts: [{ text: "searching for calls", tone: "muted" }] });
+      }
+      if (lookupTicker && lookupState) {
+        if (lookupState === "loading" || lookupState === "pending") {
+          info.push({ id: "lookup", parts: [{ text: `looking up ${lookupTicker}`, tone: "muted" }] });
+        } else if (lookupState === "unknown" || lookupState === "none") {
+          info.push({ id: "lookup", parts: [{ text: `${lookupTicker} not found`, tone: "warning" }] });
+        } else if (lookupState === "error") {
+          info.push({ id: "lookup", parts: [{ text: `${lookupTicker} lookup failed`, tone: "warning" }] });
+        }
       }
       if (stale) {
         info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
@@ -313,9 +529,6 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       if (proRequired || transcriptProRequired) {
         info.push({ id: "pro", parts: [{ text: "pro required", tone: "warning" }] });
       }
-      if (detailOpen && qaOnly) {
-        info.push({ id: "qa", parts: [{ text: "Q&A only", tone: "muted" }] });
-      }
       if (searchQuery.trim()) {
         info.push({
           id: "filter",
@@ -325,7 +538,9 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
 
       const hints = detailOpen
         ? [
-            { id: "qa", key: "q", label: "&A only", onPress: () => setQaOnly((v) => !v) },
+            ...(selected?.webcastUrl
+              ? [{ id: "open", key: "o", label: "pen source", onPress: openSource }]
+              : []),
             { id: "find", key: "/", label: "find", onPress: focusSearch },
           ]
         : [{ id: "search", key: "/", label: "search", onPress: focusSearch }];
@@ -335,14 +550,19 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     [
       listStatus,
       transcriptLoading,
+      producing,
+      listPending,
+      lookupState,
+      lookupTicker,
       stale,
       listError,
       proRequired,
       transcriptProRequired,
       detailOpen,
-      qaOnly,
+      selected,
       searchQuery,
       focusSearch,
+      openSource,
       fetchCalls,
     ],
   );
@@ -390,11 +610,17 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     );
   }
 
-  if (calls.length === 0) {
-    return (
+  // A research tab with nothing yet: either the server is still searching
+  // for the company, or it has nothing to search for.
+  if (ticker && calls.length === 0) {
+    return listPending ? (
+      <Box flexGrow={1} alignItems="center" justifyContent="center">
+        <Spinner label={`Looking for ${ticker}'s earnings calls...`} />
+      </Box>
+    ) : (
       <EmptyState
-        title={ticker ? `No transcribed calls for ${ticker} yet.` : "No transcribed calls yet."}
-        message="Transcripts are published a few hours after each call."
+        title={`No earnings calls found for ${ticker}.`}
+        message="Calls appear here once the company's investor site or filings list a webcast."
       />
     );
   }
@@ -410,17 +636,22 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
         <Button label="Manage account" variant="secondary" onPress={openPlan} />
       </Box>
     </Box>
-  ) : selected && !selected.hasTranscript ? (
-    <Box flexGrow={1} paddingX={1}>
-      <Text fg={colors.textDim}>
-        Queued for transcription. This call is being captured now; it usually
-        takes a couple of minutes.
-      </Text>
+  ) : selected && !transcript && (producing || (!selected.hasTranscript && !transcriptError)) ? (
+    <Box flexDirection="column" flexGrow={1} paddingX={1} gap={1}>
+      <Box height={1}>
+        <Text fg={colors.textDim}>
+          {[formatCallDate(selected.callAt), formatPeriod(selected.fiscalYear, selected.fiscalQuarter)]
+            .filter(Boolean)
+            .join("  ·  ")}
+        </Text>
+      </Box>
+      <Spinner label="Producing the transcript. This usually takes two to three minutes." />
     </Box>
   ) : (
+
     // The reader gets its own search bar: a transcript runs to thousands of
     // words, so finding a topic matters as much as filtering the call list.
-    <Box flexDirection="column" flexGrow={1}>
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} flexBasis={0} minHeight={0} overflow="hidden">
       <InputSearchBar
         value={searchQuery}
         focused={focused && detailOpen}
@@ -439,9 +670,12 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
         transcript={transcript}
         loading={transcriptLoading}
         error={transcriptError?.message ?? null}
-        qaOnly={qaOnly}
+        tab={readerTab}
+        onTabChange={setReaderTab}
+        tabsFocused={focused && detailOpen && !searchFocused}
         query={searchQuery}
         width={width}
+        scrollRef={transcriptScrollRef}
       />
     </Box>
   );
@@ -452,7 +686,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       detailOpen={detailOpen && !!selected}
       onBack={() => {
         setDetailOpen(false);
-        setQaOnly(false);
+        setReaderTab("summary");
         setSearchQuery("");
         blurSearch();
       }}
@@ -488,7 +722,8 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
         setDetailOpen(true);
       }}
       rootWidth={width}
-      rootHeight={Math.max(1, height - 1)}
+      // The search bar sits inside the frame, so the frame takes the full height.
+      rootHeight={Math.max(2, height)}
       columns={columns}
       items={rows}
       sortColumnId={sort.columnId}
@@ -503,7 +738,17 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
       getItemKey={(call) => call.id}
       renderCell={renderCell}
       emptyStateTitle={
-        searchQuery.trim() ? "No matching calls." : "No transcribed calls yet."
+        lookupTicker && lookupState
+          ? lookupState === "unknown"
+            ? `${lookupTicker} is not a listed company.`
+            : lookupState === "none"
+              ? `No reachable earnings call for ${lookupTicker} yet.`
+              : lookupState === "error"
+                ? `Could not look up ${lookupTicker}.`
+                : `Looking up ${lookupTicker}...`
+          : searchQuery.trim()
+            ? "No matching calls."
+            : "No calls yet."
       }
       emptyStateHint={searchQuery.trim() ? "Clear the search to see all calls." : undefined}
     />

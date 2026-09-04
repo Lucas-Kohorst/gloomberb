@@ -5,8 +5,8 @@ import {
   StaticChartSurface,
   type DataTableColumn,
 } from "../../../components";
-import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart/surface";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart-surface";
+import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";

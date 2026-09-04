@@ -3,7 +3,7 @@ import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
 import { ErrorState, LoadingState, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import { PriceSparkline } from "../../../components/price-sparkline/view";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import type { PricePoint } from "../../../types/financials";
 import type { PaneProps } from "../../../types/plugin";

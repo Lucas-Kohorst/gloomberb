@@ -1,5 +1,32 @@
 import type { ReactNode } from "react";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
+import type { HeadlessPaneDefinition } from "./headless";
+
+export type {
+  HeadlessBundleResult,
+  HeadlessBundleSection,
+  HeadlessPaneApiClient,
+  HeadlessPaneArgumentDef,
+  HeadlessPaneArgumentKind,
+  HeadlessPaneColumn,
+  HeadlessPaneContext,
+  HeadlessPaneDefinition,
+  HeadlessPaneEntry,
+  HeadlessPaneLoadArgs,
+  HeadlessPaneOptionDef,
+  HeadlessPaneOptionType,
+  HeadlessPaneOptionValue,
+  HeadlessPaneOptionValues,
+  HeadlessPaneResult,
+  HeadlessPaneResultByShape,
+  HeadlessPaneRow,
+  HeadlessPaneShape,
+  HeadlessRowsResult,
+  HeadlessSeries,
+  HeadlessSeriesPoint,
+  HeadlessSeriesResult,
+  HeadlessSnapshotResult,
+} from "./headless";
 import type { ConnectionHealthRegistry } from "../core/connection-health";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
@@ -67,6 +94,8 @@ export interface PaneDef {
   defaultMode?: "docked" | "floating";
   /** Pane publishes its selected symbol as pane-state `cursorSymbol`, so ticker panes can follow it. */
   tickerSource?: boolean;
+  /** Renderer-neutral data model used by CLI functions, automation, and hosted tools. */
+  headless?: HeadlessPaneDefinition;
   /** Add an Excel-compatible CSV action for the pane's single active DataTable. */
   tableExport?: true;
   settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
@@ -244,6 +273,8 @@ export interface PaneTemplateDef {
   /** Command-bar / help section. Defaults to Assets, Data, Portfolio, or Workspace. */
   category?: string;
   shortcut?: PaneTemplateShortcut;
+  /** Template-specific headless model. Takes precedence over the pane-level model. */
+  headless?: HeadlessPaneDefinition;
   wizard?: WizardStep[];
   /**
    * When true, opening this template from the command bar focuses any existing

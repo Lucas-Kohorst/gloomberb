@@ -28,7 +28,7 @@ import { CompositeChart } from "./composite-chart";
 import { createDefaultConfig } from "../../../types/config";
 import { AppContext, createInitialState, PaneInstanceProvider } from "../../../state/app/context";
 import {
-  resolveCompositeMinimumSpanMs,
+  buildCompositeNavigationFrame,
   zoomCompositeViewport,
 } from "./interactions";
 import { getThemeColors, syncTheme } from "../../../theme/colors";
@@ -302,6 +302,70 @@ describe("CompositeChart", () => {
     await act(async () => testSetup!.renderOnce());
 
     expect(testSetup.captureCharFrame()).toContain("ACME Price $110 +10.65%");
+  });
+
+  test("holds a lower panel's rows while its series has no observations in view", async () => {
+    const price: ResolvedSeries = {
+      ...series("price", "main", "left", "USD", []),
+      points: [
+        point("2025-01-01", 100),
+        point("2025-01-02", 103),
+        point("2025-01-03", 101),
+        point("2025-01-04", 104),
+        point("2025-01-05", 102),
+      ],
+    };
+    const volume: ResolvedSeries = {
+      ...series("volume", "volume", "left", "shares", []),
+      label: "Volume",
+      unitGroup: "volume",
+      style: "columns",
+      points: [point("2025-01-01", 4_000), point("2025-01-02", 6_000)],
+    };
+    const panels = [{ id: "main", height: 3 }, { id: "volume", height: 1 }];
+    const renderChart = async (
+      volumeSeries: ResolvedSeries,
+      viewport?: { start: Date; end: Date },
+    ) => {
+      testSetup = await testRender(
+        <CompositeChart
+          width={78}
+          height={18}
+          series={[price, volumeSeries]}
+          panels={panels}
+          viewport={viewport}
+        />,
+        { width: 80, height: 20 },
+      );
+      await act(async () => {
+        await testSetup!.renderOnce();
+        await testSetup!.renderOnce();
+      });
+      const frame = testSetup!.captureCharFrame();
+      await act(async () => testSetup!.renderer.destroy());
+      testSetup = undefined;
+      return frame;
+    };
+    // The lowest price-axis label sits on the boundary between the two panels,
+    // so it moves down the moment the lower panel gives up its rows.
+    const priceAxisFloor = (frame: string) => frame
+      .split("\n")
+      .reduce((row, line, index) => line.includes("$") ? index : row, -1);
+
+    const loaded = await renderChart(volume);
+    // Panned to a window the upper panel covers and the lower panel has no bars in.
+    const panned = await renderChart(volume, {
+      start: new Date("2025-01-03T00:00:00.000Z"),
+      end: new Date("2025-01-05T00:00:00.000Z"),
+    });
+    // The same chart before the lower panel's data has loaded at all.
+    const loading = await renderChart({ ...volume, points: [] });
+
+    expect(priceAxisFloor(loaded)).toBeGreaterThan(0);
+    expect(priceAxisFloor(panned)).toBe(priceAxisFloor(loaded));
+    expect(priceAxisFloor(loading)).toBe(priceAxisFloor(loaded));
+    // A panel with loaded history keeps its axis while the window holds no bars.
+    expect(panned).toMatch(/\dK/);
   });
 
   test("lays out mixed panels with one shared legend and time axis", async () => {
@@ -578,7 +642,11 @@ describe("CompositeChart", () => {
     expect(cursorChanges).toEqual(["2025-01-03T00:00:00.000Z"]);
     const firstCursorFrame = testSetup.captureCharFrame();
     expect(firstCursorFrame).toContain("2025-01-03");
-    expect(firstCursorFrame).toContain("────────");
+    // A keyboard cursor knows its column, not a level: the axis reads the
+    // series value and no horizontal line crosses the plot.
+    expect(firstCursorFrame).toContain("│");
+    expect(firstCursorFrame).toContain("$101");
+    expect(firstCursorFrame).not.toContain("────────");
 
     await act(async () => chartShortcut?.(keyEvent("left")));
     await act(async () => testSetup!.renderOnce());
@@ -667,7 +735,7 @@ describe("CompositeChart", () => {
     expect(viewportInteractions.at(-1)).toBe("reset");
   });
 
-  test("clears the interaction when zoom returns to the authored viewport", async () => {
+  test("keeps ownership of the window when zoom returns to the authored range", async () => {
     const viewportChanges: Array<{ start: string; end: string } | null> = [];
     testSetup = await testRender(
       <InputHostProvider host={chartInputHost}>
@@ -700,7 +768,12 @@ describe("CompositeChart", () => {
     await act(async () => chartShortcut?.(keyEvent("-")));
     await act(async () => testSetup!.renderOnce());
 
-    expect(viewportChanges.at(-1)).toBeNull();
+    // Reporting null here would make an owner that echoes navigated ranges
+    // back as the authored viewport reload its original range instead.
+    expect(viewportChanges.at(-1)).toEqual({
+      start: "2025-01-01T00:00:00.000Z",
+      end: "2025-01-09T00:00:00.000Z",
+    });
   });
 
   test("preserves a zoomed viewport when adaptive data refreshes its buffer", async () => {
@@ -766,7 +839,7 @@ describe("CompositeChart", () => {
     expect(viewportChanges.at(-1)).toEqual(zoomedViewport);
   });
 
-  test("keeps a panned viewport when backfill moves beyond the authored range", async () => {
+  test("keeps a panned viewport exactly where it was when backfill replaces the data", async () => {
     const viewportChanges: Array<{ start: string; end: string } | null> = [];
     const viewportInteractions: string[] = [];
     let replacePoints: ((points: TimeSeriesPoint[]) => void) | null = null;
@@ -826,17 +899,18 @@ describe("CompositeChart", () => {
       end: "2025-01-04T00:00:00.000Z",
     });
 
+    const changeCount = viewportChanges.length;
     await act(async () => replacePoints?.(olderPoints));
     await act(async () => {
       await testSetup!.renderOnce();
       await testSetup!.renderOnce();
     });
 
-    expect(viewportChanges.at(-1)).toEqual({
-      start: "2024-12-31T23:59:00.000Z",
-      end: "2025-01-03T23:59:00.000Z",
-    });
-    expect(viewportInteractions.at(-1)).toBe("sync");
+    // The refreshed buffer ends a minute before the window does. The window
+    // stays put and simply shows what is loaded; nothing is echoed upward.
+    expect(viewportChanges).toHaveLength(changeCount);
+    expect(viewportChanges.at(-1)).toEqual(pannedViewport);
+    expect(viewportInteractions).not.toContain("sync");
     expect(testSetup.captureCharFrame()).not.toContain("No chart data");
     expect(testSetup.captureCharFrame()).not.toContain("Jan 9");
   });
@@ -1414,14 +1488,12 @@ describe("CompositeChart", () => {
     await act(async () => testSetup!.renderOnce());
     const pointerX = 35;
     const plotWidth = capturedSurfaceNode!.width as number;
-    const minimumSpan = resolveCompositeMinimumSpanMs([display], viewport);
+    const frame = buildCompositeNavigationFrame([display], [anchor])!;
     const expected = zoomCompositeViewport(
-      viewport,
+      frame,
       viewport,
       1 + 4 * 0.04,
       pointerX / Math.max(plotWidth - 1, 1),
-      minimumSpan,
-      [anchor],
     );
 
     await act(async () => {
@@ -1441,7 +1513,7 @@ describe("CompositeChart", () => {
     });
   });
 
-  test("clears a drag interaction when the pointer returns to the authored viewport", async () => {
+  test("returns a drag to its origin without handing the window back", async () => {
     const viewportChanges: Array<{ start: string; end: string } | null> = [];
     const interactions: string[] = [];
     testSetup = await testRender(
@@ -1484,7 +1556,10 @@ describe("CompositeChart", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(viewportChanges.at(-1)).toBeNull();
+    expect(viewportChanges.at(-1)).toEqual({
+      start: "2025-01-05T00:00:00.000Z",
+      end: "2025-01-09T00:00:00.000Z",
+    });
     expect(interactions.at(-1)).toBe("pan");
   });
 
