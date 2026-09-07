@@ -3,6 +3,7 @@ import type { PaneFooterSegment } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { MarketState, Quote } from "../../../types/financials";
 import { useAssetData } from "../../runtime";
+import { nextAutoRefreshDelayMs } from "./use-auto-refresh";
 
 export interface BoardQuoteState {
   quote: Quote | null;
@@ -55,9 +56,11 @@ export function useQuoteBoard(symbols: string[], refreshIntervalMs: number): {
 } {
   const dataProvider = useAssetData();
   const [quotes, setQuotes] = useState<BoardQuoteMap>(new Map());
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   // A manual refresh can land after an in-flight poll, so only the newest
   // request is allowed to write.
   const fetchGenRef = useRef(0);
+  const lastUpdatedRef = useRef<number | null>(null);
 
   const load = useCallback((forceRefresh: boolean) => {
     if (!dataProvider) return;
@@ -108,6 +111,9 @@ export function useQuoteBoard(symbols: string[], refreshIntervalMs: number): {
     loadQuotes().then((loaded) => {
       if (fetchGenRef.current !== gen) return;
       setQuotes((prev) => mergeQuotes(prev, loaded));
+      const stamp = Date.now();
+      lastUpdatedRef.current = stamp;
+      setLastUpdated(stamp);
     }).catch((error: unknown) => {
       if (fetchGenRef.current !== gen) return;
       const message = errorMessage(error);
@@ -116,6 +122,9 @@ export function useQuoteBoard(symbols: string[], refreshIntervalMs: number): {
         { quote: null, loading: false, error: message, stale: false },
       ]));
       setQuotes((prev) => mergeQuotes(prev, failed));
+      const stamp = Date.now();
+      lastUpdatedRef.current = stamp;
+      setLastUpdated(stamp);
     });
   }, [dataProvider, symbols]);
 
@@ -123,9 +132,36 @@ export function useQuoteBoard(symbols: string[], refreshIntervalMs: number): {
 
   useEffect(() => {
     load(false);
-    const interval = setInterval(() => load(true), refreshIntervalMs);
-    return () => clearInterval(interval);
-  }, [load, refreshIntervalMs]);
+  }, [load]);
+
+  useEffect(() => {
+    if (!(refreshIntervalMs > 0)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const delay = nextAutoRefreshDelayMs(lastUpdatedRef.current, refreshIntervalMs);
+      timer = setTimeout(tick, delay);
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      const previous = lastUpdatedRef.current;
+      if (previous && Date.now() - previous < refreshIntervalMs) {
+        schedule();
+        return;
+      }
+      load(true);
+      timer = setTimeout(tick, refreshIntervalMs);
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [lastUpdated, load, refreshIntervalMs]);
 
   return { quotes, refresh };
 }
