@@ -207,6 +207,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: CachedFinancialsTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<TickerFinancialsBatchResult[]> {
+    const results: TickerFinancialsBatchResult[] = targets.map((target) => ({ target, financials: null }));
+    if (targets.length === 0) return results;
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancialsBatch(
         targets.map((target) => ({
@@ -258,6 +260,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     options: { forceRefresh?: boolean } = {},
   ): Promise<QuoteBatchResult[]> {
+    const results: QuoteBatchResult[] = targets.map((target) => ({ target, quote: null }));
+    if (targets.length === 0) return results;
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudQuotesBatch(
         targets.map((target) => ({
@@ -382,7 +386,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    const interval = toCloudInterval(resolution);
+    const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
+    const interval = toCloudInterval(sourceResolution);
     const endDate = new Date();
     const startDate = getRangeStartDate(bufferRange, endDate);
     const includeTime = /(min|h)$/i.test(interval);
@@ -406,7 +411,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     barSize: string,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    const interval = toCloudInterval(barSize);
+    const sourceBarSize = barSize === "4h" ? "1h" : barSize;
+    const interval = toCloudInterval(sourceBarSize);
     const includeTime = /(min|h)$/i.test(interval);
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, {

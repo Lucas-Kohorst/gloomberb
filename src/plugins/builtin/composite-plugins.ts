@@ -3,6 +3,7 @@ import {
   resetFredSeriesPersistence,
 } from "../../data/fred-series";
 import { portfolioAnalyticsModule } from "./analytics";
+import { bondSearchModule } from "./bond-search";
 import { brokerManagerModule } from "./broker-manager";
 import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
@@ -118,6 +119,7 @@ export const macroPlugin = composeBuiltinPlugin({
     marketValuationModule,
     cdsModule,
     treasuryAuctionsModule,
+    bondSearchModule,
     earningsModule,
     earningsCallsModule,
     ipoCalendarModule,

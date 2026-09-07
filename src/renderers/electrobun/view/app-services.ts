@@ -19,6 +19,17 @@ import { backendRequest, getElectrobunBackendInitSnapshot } from "./backend-rpc"
 import { createCapabilityInvoker } from "./remote/capability-invoker";
 import { apiClient } from "../../../api-client";
 import { cloudNewsParams, mapCloudNewsArticle } from "../../../sources/gloomberb-cloud/news";
+import { createGloomberbCloudCapabilities, createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
+import { createGloomberbCloudSyncTransport } from "../../../plugins/builtin/cloud/plugin";
+import { AssetDataRouter } from "../../../sources/provider-router";
+import { YahooFinanceClient } from "../../../sources/yahoo-finance";
+
+declare global {
+  interface Window {
+    __GLOOM_CLOUD_HOSTED?: boolean;
+    __GLOOM_CLOUD_AUTHENTICATED?: boolean;
+  }
+}
 
 const servicesLog = debugLog.createLogger("services");
 const PLUGIN_REGISTRATION_BUDGET_MS = 5_000;

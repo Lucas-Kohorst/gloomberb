@@ -52,6 +52,7 @@ export function useInlineTickers(
   const liveQuotes = options.liveQuotes ?? true;
   const dispatch = useAppDispatch();
   const tickers = useAppSelector((state) => state.tickers);
+  const financials = useAppSelector((state) => state.financials);
   const registry = getSharedRegistry();
   const [refreshVersion, setRefreshVersion] = useState(0);
   const textsKey = texts.join("\u0000");
@@ -93,6 +94,7 @@ export function useInlineTickers(
   const quoteEntries = useQuoteEntries(liveQuotes ? instruments : []);
   const latestRef = useRef({
     tickers,
+    financials,
     dispatch,
     liveQuotes,
     registry,
@@ -101,6 +103,7 @@ export function useInlineTickers(
 
   latestRef.current = {
     tickers,
+    financials,
     dispatch,
     liveQuotes,
     registry,
@@ -111,7 +114,9 @@ export function useInlineTickers(
         const streamed = resolveEntryData(quoteEntries.get(buildQuoteKey(instrument)));
         if (streamed) return streamed;
       }
-      return inlineQuoteCache.get(symbol) ?? null;
+      // Quotes merged into app state (MERGE_QUOTE) are as fresh as the inline
+      // cache and keep badges populated where no coordinator is attached.
+      return inlineQuoteCache.get(symbol) ?? financials.get(symbol)?.quote ?? null;
     },
   };
 
@@ -252,7 +257,7 @@ export function useInlineTickers(
       entries[symbol] = { status, ticker, quote };
     }
     return entries;
-  }, [liveQuotes, quoteEntries, refreshVersion, symbols, tickers]);
+  }, [liveQuotes, quoteEntries, financials, refreshVersion, symbols, tickers]);
 
   return { catalog, openTicker };
 }

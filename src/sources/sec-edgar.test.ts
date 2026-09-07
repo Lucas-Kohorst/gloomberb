@@ -90,6 +90,68 @@ describe("parseEftsFilings", () => {
   });
 });
 
+describe("SecEdgarClient EFTS browser", () => {
+  test("loads latest filings from the EFTS search index", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({
+        hits: {
+          hits: [{
+            _id: "0000320193-26-000020:aapl-20260628.htm",
+            _source: {
+              adsh: "0000320193-26-000020",
+              form: "10-Q",
+              file_date: "2026-07-31",
+              display_names: ["Apple Inc.  (AAPL)  (CIK 0000320193)"],
+              ciks: ["0000320193"],
+            },
+          }],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const filings = await new SecEdgarClient().getLatestFilings(10);
+    expect(urls[0]).toContain("https://efts.sec.gov/LATEST/search-index");
+    expect(urls[0]).toContain("forms=");
+    expect(filings[0]?.ticker).toBe("AAPL");
+  });
+
+  test("resolves a ticker search through company submissions", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: Request | string | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("company_tickers_exchange.json")) {
+        return new Response(JSON.stringify({
+          fields: ["cik", "name", "ticker", "exchange"],
+          data: [[320193, "Apple Inc.", "AAPL", "Nasdaq"]],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        cik: "0000320193",
+        name: "Apple Inc.",
+        filings: {
+          recent: {
+            accessionNumber: ["0000320193-24-000123"],
+            form: ["8-K"],
+            filingDate: ["2024-08-01"],
+            acceptanceDateTime: ["20240801163045"],
+            primaryDocument: ["aapl-8k.htm"],
+            primaryDocDescription: ["Current report"],
+            items: ["2.02"],
+          },
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+
+    const filings = await new SecEdgarClient().searchFilings("AAPL", 5);
+    expect(urls.some((url) => url.includes("/submissions/CIK0000320193.json"))).toBe(true);
+    expect(filings[0]?.ticker).toBe("AAPL");
+    expect(filings[0]?.form).toBe("8-K");
+  });
+});
+
 describe("parseRecentFilings", () => {
   test("maps SEC columnar submissions data into filing items", () => {
     const filings = parseRecentFilings({

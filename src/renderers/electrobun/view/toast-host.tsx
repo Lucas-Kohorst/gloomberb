@@ -61,7 +61,6 @@ export function WebToastHostProvider({ children }: { children: ReactNode }) {
                 data-actionable={toast.action ? "true" : "false"}
                 onClick={toast.action ? activate : undefined}
               >
-                <span className="gloom-toast-indicator" aria-hidden="true" />
                 <div className="gloom-toast-content">
                   {(toast.title || toast.subtitle) && (
                     <div className="gloom-toast-heading">

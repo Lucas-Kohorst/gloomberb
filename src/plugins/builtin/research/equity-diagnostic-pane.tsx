@@ -18,7 +18,7 @@ import { t, tf } from "../../../i18n";
 import { useShortcut } from "../../../react/input";
 import { formatTimeAgo, truncateToDisplayWidth } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePlanAccess } from "../shared/plan-access";
+import { needsEmailVerification, usePlanAccess } from "../shared/plan-access";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { useBoundTicker } from "../shared/ticker-request";
 
@@ -467,7 +467,7 @@ export function EquityDiagnosticView({ focused, width }: {
   const openPlan = useCloudPlanAction();
   const { nativePaneChrome } = useUiCapabilities();
 
-  const requestEnabled = access.emailVerified;
+  const requestEnabled = access.hasProAccess || access.emailVerified;
   const { report, loading, loadingStep, failure, load } = useEquityDiagnostic(
     symbol,
     exchange,
@@ -475,7 +475,8 @@ export function EquityDiagnosticView({ focused, width }: {
   );
 
   const signInRequired = !access.signedIn || failure?.status === 401;
-  const verificationRequired = !signInRequired && (!access.emailVerified || failure?.status === 403);
+  const hydrating = access.signedIn && !access.accountKnown;
+  const verificationRequired = needsEmailVerification(access, failure?.status);
   const proRequired = !signInRequired && !verificationRequired && failure?.status === 402;
   const canRefresh = !!symbol && access.hasProAccess && !signInRequired && !verificationRequired && !proRequired;
 
@@ -491,8 +492,12 @@ export function EquityDiagnosticView({ focused, width }: {
 
   usePaneFooter(FOOTER_ID, () => ({
     info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(failure ? [{ id: "error", parts: [{ text: failureText(failure), tone: "warning" as const }] }] : []),
+    ],
+    // Left-side info is reserved for source/updated/error segments, so the
+    // loading and report-state chips ride on the trailing side.
+    trailingInfo: [
+      ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(report?.access === "full" && report.status === "partial"
         ? [{ id: "partial", parts: [{ text: t("partial"), tone: "warning" as const }] }]
         : []),
@@ -517,6 +522,9 @@ export function EquityDiagnosticView({ focused, width }: {
     }
     if (signInRequired) {
       return <CloudAuthNotice message={t("Sign in to run the Equity Diagnostic.")} />;
+    }
+    if (hydrating) {
+      return <DiagnosticLoading step={0} />;
     }
     if (verificationRequired) {
       return <CloudAuthNotice needsVerification message={t("Verify your email to run the Equity Diagnostic.")} />;

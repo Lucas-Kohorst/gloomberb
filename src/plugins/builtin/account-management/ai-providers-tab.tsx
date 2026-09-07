@@ -23,11 +23,12 @@ import {
   subscribeAiRuntimeCatalog,
   checkAiProviderStatus,
   connectAiRuntimeProvider,
+  disconnectAiRuntimeProvider,
 } from "../ai/runner";
 import { downloadBrowserAiModel, getBrowserAiStateSnapshot, refreshBrowserAiState } from "../ai/browser";
 import { isHostedWebClient } from "../ai/providers";
 import {
-  aiInventoryFixAction,
+  aiInventoryRowAction,
   aiInventoryStatusLabel,
   aiInventoryStatusColor,
   byokKeysConfigSelector,
@@ -49,63 +50,13 @@ export type AiColumnId = "provider" | "status" | "active" | "fix";
 
 export type AiColumn = DataTableColumn & { id: AiColumnId };
 
-interface ColumnSpec {
-  id: AiColumnId;
-  label: string;
-  min: number;
-  flex: number;
-}
-
-const PROVIDER_COL: ColumnSpec = { id: "provider", label: "Provider", min: 16, flex: 3 };
-const STATUS_COL: ColumnSpec = { id: "status", label: "Status", min: 10, flex: 2 };
-const ACTIVE_COL: ColumnSpec = { id: "active", label: "Active", min: 7, flex: 0 };
-const FIX_COL: ColumnSpec = { id: "fix", label: "Action", min: 12, flex: 2 };
-
-const COLUMN_SETS: ColumnSpec[][] = [
-  [PROVIDER_COL, STATUS_COL, ACTIVE_COL, FIX_COL],
-  [PROVIDER_COL, STATUS_COL, ACTIVE_COL],
-  [PROVIDER_COL, STATUS_COL],
-];
-
-const COLUMN_GAP = 1;
-const HORIZONTAL_PADDING = 1;
-
-function minTableWidth(specs: ColumnSpec[]): number {
-  return specs.reduce((sum, spec) => sum + spec.min, 0)
-    + specs.length * COLUMN_GAP
-    + HORIZONTAL_PADDING * 2;
-}
-
-function layoutAiColumns(specs: ColumnSpec[], width: number): AiColumn[] {
-  const extra = Math.max(0, Math.floor(width) - minTableWidth(specs));
-  const flexSum = specs.reduce((sum, spec) => sum + spec.flex, 0);
-  let assigned = 0;
-  const flexIndexes = specs.flatMap((spec, index) => spec.flex > 0 ? [index] : []);
-  const lastFlex = flexIndexes[flexIndexes.length - 1];
-
-  return specs.map((spec, index) => {
-    let grow = 0;
-    if (flexSum > 0 && spec.flex > 0) {
-      if (index === lastFlex) grow = extra - assigned;
-      else {
-        grow = Math.floor(extra * spec.flex / flexSum);
-        assigned += grow;
-      }
-    }
-    return {
-      id: spec.id,
-      label: spec.label,
-      width: spec.min + grow,
-      align: "left" as const,
-      flexGrow: spec.flex > 0 ? spec.flex : undefined,
-    };
-  });
-}
-
-function buildAiColumns(width: number): AiColumn[] {
-  const target = Math.max(20, Math.floor(width));
-  const specs = COLUMN_SETS.find((set) => minTableWidth(set) <= target) ?? COLUMN_SETS[COLUMN_SETS.length - 1]!;
-  return layoutAiColumns(specs, target);
+export function buildAiColumns(): AiColumn[] {
+  return [
+    { id: "provider", label: "Provider", width: 16, align: "left", flexGrow: 1 },
+    { id: "status", label: "Status", width: 10, align: "left" },
+    { id: "active", label: "Active", width: 8, align: "left" },
+    { id: "fix", label: "Action", width: 12, align: "left" },
+  ];
 }
 
 function statusColor(status: AiInventoryStatus): string {
@@ -129,8 +80,8 @@ function compareAiRows(
     case "active":
       return (left.isActive ? 0 : 1) - (right.isActive ? 0 : 1);
     case "fix": {
-      const leftFix = aiInventoryFixAction(left)?.label ?? "";
-      const rightFix = aiInventoryFixAction(right)?.label ?? "";
+      const leftFix = aiInventoryRowAction(left)?.label ?? "";
+      const rightFix = aiInventoryRowAction(right)?.label ?? "";
       return leftFix.localeCompare(rightFix);
     }
   }
@@ -155,10 +106,12 @@ function renderAiCell(row: AiProviderInventoryRow, column: AiColumn): DataTableC
         color: colors.positive,
       };
     case "fix": {
-      const action = aiInventoryFixAction(row);
+      const action = aiInventoryRowAction(row);
       return {
         text: action?.label ?? "—",
-        color: action ? colors.borderFocused : colors.textMuted,
+        color: action
+          ? (action.kind === "disconnect" ? colors.warning : colors.borderFocused)
+          : colors.textMuted,
       };
     }
   }
@@ -187,7 +140,7 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     columnId: "provider",
     direction: "asc",
   });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(activeProviderId);
   const [keyFormMode, setKeyFormMode] = useState<KeyFormMode>("idle");
   const [keyDraft, setKeyDraft] = useState<KeyFormDraft | null>(null);
   const [testing, setTesting] = useState(false);
@@ -210,14 +163,17 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
   );
 
   const selectedRow = useMemo(
-    () => sortedRows.find((row) => row.id === selectedId) ?? sortedRows[0] ?? null,
+    () => sortedRows.find((row) => row.id === selectedId)
+      ?? sortedRows.find((row) => row.isActive)
+      ?? sortedRows[0]
+      ?? null,
     [sortedRows, selectedId],
   );
 
   useEffect(() => {
-    if (!selectedId && sortedRows.length > 0) {
-      setSelectedId(sortedRows[0]!.id);
-    }
+    if (selectedId && sortedRows.some((row) => row.id === selectedId)) return;
+    const active = sortedRows.find((row) => row.isActive);
+    setSelectedId(active?.id ?? sortedRows[0]?.id ?? null);
   }, [sortedRows, selectedId]);
 
   // Refresh Ollama availability on mount and when the endpoint changes.
@@ -337,6 +293,18 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     }
   }, [selectedRow]);
 
+  const handleDisconnect = useCallback(async () => {
+    if (!selectedRow?.canDisconnect) return;
+    setBusyProvider(selectedRow.id);
+    try {
+      await disconnectAiRuntimeProvider(selectedRow.id);
+    } catch {
+      // The notify system handles user feedback; we just clear busy.
+    } finally {
+      setBusyProvider(null);
+    }
+  }, [selectedRow]);
+
   const handleDownloadModel = useCallback(async () => {
     setBusyProvider("browser-builtin");
     try {
@@ -351,7 +319,7 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     }
   }, [setActiveProvider]);
 
-  const columns = useMemo(() => buildAiColumns(width), [width]);
+  const columns = useMemo(() => buildAiColumns(), []);
   const editing = keyFormMode !== "idle";
   const canDownloadModel = selectedRow?.id === "browser-builtin"
     && selectedRow.status === "needs-key";
@@ -360,7 +328,11 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     && !selectedRow.isActive
     && !canDownloadModel;
   const canAddKey = selectedRow != null && selectedRow.byokServiceId != null;
-  const canDeleteKey = selectedRow != null && selectedRow.byokServiceId != null && selectedRow.hasKey;
+  const canDisconnect = selectedRow?.canDisconnect === true;
+  const canDeleteKey = !canDisconnect
+    && selectedRow != null
+    && selectedRow.byokServiceId != null
+    && selectedRow.hasKey;
   const canSignIn = selectedRow != null && selectedRow.canOAuth && !selectedRow.hasKey && selectedRow.status !== "available";
   const canRefresh = selectedRow != null;
 
@@ -369,19 +341,16 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
       ...(busyProvider ? [{ id: "busy", parts: [{ text: "checking…", tone: "muted" as const }] }] : []),
     ],
     hints: editing
-      ? [
-          { id: "save-key", key: "Enter", label: "save", onPress: handleSaveKey },
-          { id: "cancel-key", key: "Esc", label: "cancel", onPress: handleCancelKey },
-        ]
+      ? []
       : [
           ...(canDownloadModel ? [{ id: "download-model", key: "m", label: "odel", onPress: () => { void handleDownloadModel(); } }] : []),
-          ...(canActivate ? [{ id: "activate", key: "Enter", label: "activate", onPress: handleActivate }] : []),
           ...(canAddKey ? [{ id: "add-key", key: "k", label: "ey", onPress: handleAddKey }] : []),
           ...(canSignIn ? [{ id: "sign-in", key: "s", label: "ign in", onPress: () => { void handleSignIn(); } }] : []),
           ...(canRefresh ? [{ id: "refresh", key: "r", label: "efresh", onPress: () => { void handleRefresh(); } }] : []),
+          ...(canDisconnect ? [{ id: "disconnect", key: "d", label: "isconnect", onPress: () => { void handleDisconnect(); } }] : []),
           ...(canDeleteKey ? [{ id: "delete-key", key: "d", label: "elete key", onPress: handleDeleteKey }] : []),
         ],
-  }), [busyProvider, editing, canActivate, canAddKey, canSignIn, canRefresh, canDeleteKey, canDownloadModel, handleActivate, handleAddKey, handleSignIn, handleRefresh, handleDeleteKey, handleSaveKey, handleCancelKey, handleDownloadModel, selectedRow]);
+  }), [busyProvider, editing, canAddKey, canSignIn, canRefresh, canDisconnect, canDeleteKey, canDownloadModel, handleAddKey, handleSignIn, handleRefresh, handleDisconnect, handleDeleteKey, handleDownloadModel, selectedRow]);
 
   useShortcut((event) => {
     if (!focused) return;
@@ -430,6 +399,11 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
       void handleRefresh();
       return;
     }
+    if (event.name === "d" && canDisconnect) {
+      event.stopPropagation();
+      void handleDisconnect();
+      return;
+    }
     if (event.name === "d" && canDeleteKey) {
       event.stopPropagation();
       handleDeleteKey();
@@ -451,60 +425,50 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <Box height={Math.max(2, height - 2)} flexGrow={1} minHeight={2}>
-        {sortedRows.length === 0 ? (
-          <Box padding={1}>
-            <EmptyState
-              title="No AI providers available."
-              message="AI providers appear here once detected."
-            />
-          </Box>
-        ) : (
-          <DataTableView<AiProviderInventoryRow, AiColumn>
-            focused={focused}
-            rootWidth={width}
-            rootHeight={Math.max(2, height - 2)}
-            selection={{
-              kind: "id",
-              selectedId: selectedRow?.id ?? null,
-              getId: (row) => row.id,
-              onChange: (id) => setSelectedId(id),
-            }}
-            columns={columns}
-            items={sortedRows}
-            sortColumnId={sortPreference.columnId}
-            sortDirection={sortPreference.direction}
-            onHeaderClick={(columnId) => {
-              const next = columnId as AiColumnId;
-              setSortPreference((current) => nextStackSortPreference(
-                current,
-                next,
-                next === "active" ? "desc" : "asc",
-              ));
-            }}
-            getItemKey={(row) => row.id}
-            renderCell={renderAiCell}
-            onActivate={(row) => {
-              if (row.id === "browser-builtin" && row.status === "needs-key") {
-                void handleDownloadModel();
-                return;
-              }
-              if (canSelectAiProvider(row) && !row.isActive) setActiveProvider(row.id);
-            }}
-            emptyStateTitle="No AI providers available."
-            emptyStateHint="AI providers appear here once detected."
-            showHorizontalScrollbar={false}
+    <Box flexDirection="column" width={width} height={height} flexGrow={1}>
+      {sortedRows.length === 0 ? (
+        <Box padding={1}>
+          <EmptyState
+            title="No AI providers available."
+            message="AI providers appear here once detected."
           />
-        )}
-      </Box>
-      {selectedRow ? (
-        <Box height={2} flexShrink={0} paddingX={1}>
-          <Text fg={colors.textMuted} wrapMode="word" width={Math.max(12, width - 2)}>
-            {selectedRow.detail}
-          </Text>
         </Box>
-      ) : null}
+      ) : (
+        <DataTableView<AiProviderInventoryRow, AiColumn>
+          focused={focused}
+          rootWidth={width}
+          rootHeight={height}
+          selection={{
+            kind: "id",
+            selectedId: selectedRow?.id ?? null,
+            getId: (row) => row.id,
+            onChange: (id) => setSelectedId(id),
+          }}
+          columns={columns}
+          items={sortedRows}
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
+          onHeaderClick={(columnId) => {
+            const next = columnId as AiColumnId;
+            setSortPreference((current) => nextStackSortPreference(
+              current,
+              next,
+              next === "active" ? "desc" : "asc",
+            ));
+          }}
+          getItemKey={(row) => row.id}
+          renderCell={renderAiCell}
+          onActivate={(row) => {
+            if (row.id === "browser-builtin" && row.status === "needs-key") {
+              void handleDownloadModel();
+              return;
+            }
+            if (canSelectAiProvider(row) && !row.isActive) setActiveProvider(row.id);
+          }}
+          emptyStateTitle="No AI providers available."
+          emptyStateHint="AI providers appear here once detected."
+        />
+      )}
     </Box>
   );
 }

@@ -116,11 +116,16 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   );
   const equalWeight = activeCollection ? collectionUsesEqualWeight(activeCollection) : false;
   const portfolioTabs = useMemo(
-    () => portfolios.map((portfolio) => ({
-      label: describePortfolioTab(portfolio, config.brokerInstances),
-      value: portfolio.id,
-    })),
-    [config.brokerInstances, portfolios],
+    () => collections.map((collection) => {
+      const portfolio = collection.kind === "portfolio"
+        ? portfolios.find((entry) => entry.id === collection.id)
+        : undefined;
+      return {
+        label: portfolio ? describePortfolioTab(portfolio, config.brokerInstances) : collection.name,
+        value: collection.id,
+      };
+    }),
+    [collections, config.brokerInstances, portfolios],
   );
 
   const handlePortfolioSelect = useCallback((portfolioId: string) => {
@@ -262,7 +267,7 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
   const effectiveSelectedSectorId = selectedSectorId && sortedSectorRows.some((row) => row.id === selectedSectorId)
     ? selectedSectorId
     : sortedSectorRows[0]?.id ?? null;
-  const sectorColumns = useMemo(() => buildSectorColumns(width), [width]);
+  const sectorColumns = useMemo(() => buildSectorColumns(), []);
   const hasPositions = portfolioTickers.length > 0;
 
   const summaryRows = useMemo(
@@ -287,8 +292,9 @@ function PortfolioAnalyticsPane({ focused, width, height }: PaneProps) {
       beta,
       coverage: returnSeriesResult.coverage,
       missingCount: returnSeriesResult.missingCount,
+      indicative: equalWeight,
     }),
-    [beta, returnSeriesResult.coverage, returnSeriesResult.missingCount, sharpe],
+    [beta, equalWeight, returnSeriesResult.coverage, returnSeriesResult.missingCount, sharpe],
   );
   const metricsHeight = summaryRows.length + riskRows.length + 3;
   const chromeRows = 2;

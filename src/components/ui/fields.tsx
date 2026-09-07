@@ -97,6 +97,7 @@ export function TextField({
         textColor={textColor}
         placeholderColor={placeholderColor}
         onMouseDown={onMouseDown}
+        onKeyDown={onKeyDown}
       />
     );
   }

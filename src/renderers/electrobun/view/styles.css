@@ -84,9 +84,6 @@ button, [data-gloom-interactive="true"] { cursor: pointer; }
 [data-gloom-role="data-table-row"]:not([data-selected="true"]):hover > [data-gloom-role="data-table-cell"] {
   background-color: var(--gloom-hover-bg) !important;
 }
-[data-command-bar-row-selected="true"] {
-  box-shadow: inset 2px 0 0 var(--gloom-border-focused);
-}
 [data-gloom-role="data-table-row"][data-selected="true"] {
   z-index: 1;
   outline: none;
@@ -780,11 +777,11 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
 .gloom-toast {
   --gloom-toast-accent: var(--gloom-border-focused);
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: start;
   width: 100%;
-  padding: 11px 10px 11px 12px;
+  padding: 10px 10px 10px 12px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--gloom-toast-accent) 54%, var(--gloom-border));
   border-radius: 7px;
@@ -800,14 +797,6 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
   transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), border-color 120ms ease, background-color 120ms ease;
 }
 .gloom-toast[data-actionable="true"]:active { transform: scale(0.985); }
-.gloom-toast-indicator {
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--gloom-toast-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gloom-toast-accent) 14%, transparent);
-}
 .gloom-toast-content { min-width: 0; }
 .gloom-toast-heading {
   display: flex;
@@ -833,7 +822,7 @@ body.gloom-dragging [data-gloom-role="chart-surface"] {
 .gloom-toast-body {
   color: var(--gloom-text);
   line-height: 1.45;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .gloom-toast-controls {
   display: flex;

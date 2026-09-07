@@ -61,7 +61,7 @@ export function describePortfolioTab(
   return prefix ? `${prefix} ${name}` : name;
 }
 
-export function resolvePortfolioId(portfolios: Portfolio[], portfolioId: string | null | undefined): string | null {
+export function resolvePortfolioId(portfolios: { id: string }[], portfolioId: string | null | undefined): string | null {
   if (!portfolioId) return null;
   return portfolios.some((portfolio) => portfolio.id === portfolioId) ? portfolioId : null;
 }

@@ -1,39 +1,27 @@
-import { useEffect, useState } from "react";
-import { apiClient } from "../../../api-client";
+import { useState } from "react";
 import { t, tf } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
 import { useAppSelector } from "../../../state/app/context";
 import { colors, hoverBg } from "../../../theme/colors";
 import { Box, Text, useUiCapabilities } from "../../../ui";
-import { chatController, type ChatController } from "../chat/controller";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
-import { resolvePlanAccess } from "../shared/plan-access";
-
-interface CloudUpgradeStatusWidgetProps {
-  controller?: Pick<ChatController, "getSnapshot" | "subscribe">;
-}
+import { usePlanAccess } from "../shared/plan-access";
 
 /**
  * Global entitlement status: the trial countdown while Pro is on loan, or an
  * upgrade CTA for free accounts. Signed-out users already have sign-in
  * affordances next to it, and paying subscribers have nothing to report.
  */
-export function CloudUpgradeStatusWidget({ controller = chatController }: CloudUpgradeStatusWidgetProps) {
+export function CloudUpgradeStatusWidget() {
   useAppLanguage();
   const { nativePaneChrome = false } = useUiCapabilities();
   const cloudPluginDisabled = useAppSelector((state) => state.config.disabledPlugins).includes("gloomberb-cloud");
   const openUpgrade = useCloudUpgradeAction();
   const openPlan = useCloudPlanAction();
-  const [access, setAccess] = useState(() => resolvePlanAccess(apiClient.getCurrentUser()));
+  const access = usePlanAccess();
   const [hovered, setHovered] = useState(false);
 
-  useEffect(
-    // The chat widget already drives session refreshes; this only follows them.
-    () => controller.subscribe(() => setAccess(resolvePlanAccess(apiClient.getCurrentUser()))),
-    [controller],
-  );
-
-  if (cloudPluginDisabled || !access.signedIn || access.isPayingPro) return null;
+  if (cloudPluginDisabled || !access.signedIn || !access.accountKnown || access.isPayingPro) return null;
 
   const trial = access.isTrialActive;
   const tone = trial ? colors.positive : colors.warning;

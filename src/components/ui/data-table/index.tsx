@@ -26,6 +26,7 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
   const renderer = useRendererHost();
   const propsRef = useRef(props);
   propsRef.current = props;
+  const selectedHintRef = useRef(-1);
 
   useEffect(() => {
     if (!paneId || !renderer.saveTextFile) return;
@@ -82,17 +83,18 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
         props.onBodyScrollActivity();
       },
     },
+    // Rows are deliberately not projected: serializing hundreds of rows per
+    // snapshot was the cost #296 removed. The selection key comes from the
+    // caller's selectedItemKey, or a hint-cached scan when it is absent.
     getMetadata: () => ({
       paneInstanceId: paneId,
       sortColumnId: props.sortColumnId,
       sortDirection: props.sortDirection,
       columns: props.columns.map((column) => ({ id: column.id, label: column.label })),
-      rows: props.items.slice(0, 200).map((item, index) => ({
-        index,
-        key: props.getItemKey(item, index),
-        selected: props.isSelected(item, index),
-      })),
       rowCount: props.items.length,
+      selectedId: props.selectedItemKey !== undefined
+        ? props.selectedItemKey
+        : resolveRemoteSelectedId(props.items, props.isSelected, props.getItemKey, selectedHintRef),
     }),
   });
   const HostDataTable = useUiHost().DataTable as
@@ -111,4 +113,27 @@ function resolveTableIndex<T, C extends DataTableColumn>(
   return resolveRemoteItemIndex(input, props.items, {
     key: (item, index) => props.getItemKey(item, index),
   });
+}
+
+function resolveRemoteSelectedId<T>(
+  items: readonly T[],
+  isSelected: (item: T, index: number) => boolean,
+  getItemKey: (item: T, index: number) => string,
+  hintIndexRef: { current: number },
+): string | null {
+  const hintIndex = hintIndexRef.current;
+  if (
+    hintIndex >= 0
+    && hintIndex < items.length
+    && isSelected(items[hintIndex]!, hintIndex)
+  ) {
+    return getItemKey(items[hintIndex]!, hintIndex);
+  }
+  for (let index = 0; index < items.length; index += 1) {
+    if (!isSelected(items[index]!, index)) continue;
+    hintIndexRef.current = index;
+    return getItemKey(items[index]!, index);
+  }
+  hintIndexRef.current = -1;
+  return null;
 }

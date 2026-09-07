@@ -27,16 +27,19 @@ export function BrokerSetupPanel({
           </Box>
           <Box height={desktop ? 2 : 1} />
           <Box height={1}>
-            <Text fg={colors.textDim}>{t("1. Go to ")}<Underline><Span fg={colors.text}>{t("Reports > Flex Queries")}</Span></Underline></Text>
-          </Box>
-          <Box height={1} overflow="hidden">
-            <Text fg={colors.textDim}>{t("2. Create a Flex Query that includes positions data")}</Text>
-          </Box>
-          <Box height={1}>
-            <Text fg={colors.textDim}>{t("3. Note the ")}<Strong><Span fg={colors.text}>{t("Query ID")}</Span></Strong>{t(" (numeric)")}</Text>
+            <Text fg={colors.textDim}>{t("1. Go to ")}<Underline><Span fg={colors.text}>{t("Performance & Reports > Flex Queries")}</Span></Underline></Text>
           </Box>
           <Box height={desktop ? 1 : 2} overflow="hidden">
-            <Text fg={colors.textDim}>{t("4. Under ")}<Underline><Span fg={colors.text}>{t("Reports > Settings")}</Span></Underline>{t(", generate a ")}<Strong><Span fg={colors.text}>{t("Flex Web Service Token")}</Span></Strong></Text>
+            <Text fg={colors.textDim}>{t("2. Create a Flex Query with the ")}<Underline><Span fg={colors.text}>{t("Open Positions")}</Span></Underline>{t(" section")}</Text>
+          </Box>
+          <Box height={1}>
+            <Text fg={colors.textDim}>{t("3. Under ")}<Underline><Span fg={colors.text}>{t("Open Positions")}</Span></Underline>{t(", click ")}<Strong><Span fg={colors.text}>{t("Select All")}</Span></Strong></Text>
+          </Box>
+          <Box height={1}>
+            <Text fg={colors.textDim}>{t("4. Save the query and note the ")}<Strong><Span fg={colors.text}>{t("Query ID")}</Span></Strong>{t(" (numeric)")}</Text>
+          </Box>
+          <Box height={desktop ? 1 : 2} overflow="hidden">
+            <Text fg={colors.textDim}>{t("5. Go to ")}<Underline><Span fg={colors.text}>{t("Performance & Reports > Flex Queries > Flex Web Service Configuration")}</Span></Underline>{t(", then generate a ")}<Strong><Span fg={colors.text}>{t("Flex Web Service Token")}</Span></Strong></Text>
           </Box>
           <Box height={desktop ? 2 : 1} />
           <ExternalLink url="https://www.ibkrguides.com/orgportal/performanceandstatements/flex.htm" />

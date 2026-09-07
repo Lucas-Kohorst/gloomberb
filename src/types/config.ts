@@ -1,7 +1,7 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
 
-export const CURRENT_CONFIG_VERSION = 22;
+export const CURRENT_CONFIG_VERSION = 23;
 
 type ChartRendererPreference = "auto" | "kitty" | "braille";
 
@@ -162,8 +162,18 @@ export interface AppConfig {
   theme: string;
   chartPreferences: ChartPreferences;
   valueFlashingEnabled: boolean;
+  autoRefreshInterval: number;
   fontSize: number;
+  /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
+  fontFamily: string;
   recentTickers: string[];
+  /**
+   * Extra command-bar prefix that opens ticker search alongside the defaults
+   * ("DES" with the "T" alias). Omitted or empty keeps the defaults untouched.
+   * Values are trimmed, uppercased, and limited to 1-8 letters/digits; values
+   * that collide with another command or pane shortcut are ignored safely.
+   */
+  tickerSearchShortcut?: string;
   language?: LanguagePreference;
   onboardingComplete?: boolean;
   /** App version at the last launch, used to show release notes after an update. */
@@ -875,7 +885,9 @@ export function createDefaultConfig(dataDir: string): AppConfig {
       renderer: "auto",
     },
     valueFlashingEnabled: true,
+    autoRefreshInterval: 0,
     fontSize: 12,
+    fontFamily: "system-mono",
     recentTickers: [],
   };
 }

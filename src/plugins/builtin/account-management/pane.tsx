@@ -151,149 +151,77 @@ function PlanComparison({
   };
 
   if (isDesktop) {
-    const gridStyle: CSSProperties = {
-      display: "grid",
-      gridTemplateColumns: width >= 86
-        ? "minmax(220px, 1fr) minmax(120px, 0.42fr) minmax(300px, 1.05fr)"
-        : "minmax(150px, 0.95fr) minmax(86px, 0.42fr) minmax(180px, 1fr)",
-      columnGap: width >= 86 ? "clamp(30px, 5vw, 72px)" : "22px",
-      alignItems: "center",
-      width: "100%",
+    const rowStyle: CSSProperties = {
+      minHeight: 32,
+      paddingTop: 6,
+      paddingBottom: 6,
+      borderBottom: `1px solid ${blendHex(colors.panel, colors.border, 0.55)}`,
     };
-    const desktopProBg = blendHex(colors.panel, colors.selected, activePlan === "pro" ? 0.34 : 0.24);
-    const desktopProAltBg = blendHex(colors.panel, colors.selected, activePlan === "pro" ? 0.39 : 0.28);
-    const desktopText = {
-      lineHeight: "22px",
-      fontSize: "15px",
-    } satisfies CSSProperties;
+    const desktopText = { lineHeight: "20px", fontSize: "13px" } satisfies CSSProperties;
+    const cell = (node: ReactNode) => (
+      <Box flexGrow={1} flexBasis={0} minWidth={0} flexDirection="row" alignItems="center">
+        {node}
+      </Box>
+    );
     return (
-      <Box
-        flexDirection="column"
-        width="100%"
-        maxWidth={width >= 86 ? "980px" : "100%"}
-        style={{
-          marginTop: 18,
-          paddingLeft: width >= 86 ? 12 : 4,
-          paddingRight: width >= 86 ? 10 : 4,
-        }}
-      >
-        <Box
-          style={{
-            ...gridStyle,
-            marginBottom: 12,
-          }}
-        >
-          <Text fg={colors.textDim} style={{ ...desktopText, fontWeight: 650 }}>
-            {t("Capability")}
+      <Box flexDirection="column" width="100%" style={{ marginTop: 12, maxWidth: 640 }}>
+        <Box flexDirection="row" alignItems="baseline" gap={1} style={{ marginBottom: 6, flexWrap: "wrap" }}>
+          <Text fg={colors.borderFocused} attributes={TextAttributes.BOLD} style={{ ...desktopText, fontWeight: 700 }}>
+            {t("Pro")}
           </Text>
-          <Text
-            fg={activePlan === "free" ? colors.textBright : colors.textDim}
-            attributes={activePlan === "free" ? TextAttributes.BOLD : 0}
-            style={{ ...desktopText, fontWeight: activePlan === "free" ? 700 : 650 }}
-          >
-            {t("Free")}
-          </Text>
-          <Box flexDirection="column">
-            <Box flexDirection="row" alignItems="baseline" gap={1}>
-              <Text
-                fg={colors.borderFocused}
-                attributes={TextAttributes.BOLD}
-                style={{ ...desktopText, fontWeight: 750 }}
-              >
-                {t("Pro")}
-              </Text>
-              {price.anchor ? (
-                <Text
-                  fg={colors.textMuted}
-                  attributes={TextAttributes.STRIKETHROUGH}
-                  style={desktopText}
-                >
-                  {price.anchor}
-                </Text>
-              ) : null}
-              <Text fg={colors.textBright} style={desktopText}>
-                {price.price}
-              </Text>
-              {price.note ? (
-                <Text fg={colors.positive} style={desktopText}>{price.note}</Text>
-              ) : null}
-            </Box>
-            {proNote ? (
-              <Text fg={colors.textMuted} style={desktopText}>{proNote}</Text>
-            ) : null}
-          </Box>
+          {price.anchor ? (
+            <Text fg={colors.textMuted} attributes={TextAttributes.STRIKETHROUGH} style={desktopText}>
+              {price.anchor}
+            </Text>
+          ) : null}
+          <Text fg={colors.textBright} style={desktopText}>{price.price}</Text>
+          {price.note ? (
+            <Text fg={colors.positive} style={desktopText}>{price.note}</Text>
+          ) : null}
         </Box>
-        {PLAN_COMPARISON_ROWS.map((row, index) => {
-          const first = index === 0;
-          const last = index === PLAN_COMPARISON_ROWS.length - 1;
-          return (
-            <Box
-              key={row.capability}
-              style={{
-                ...gridStyle,
-                minHeight: 48,
-              }}
+        {proNote ? (
+          <Text fg={colors.textMuted} style={{ ...desktopText, marginBottom: 10 }}>{proNote}</Text>
+        ) : null}
+        <Box flexDirection="row" alignItems="center" style={{ ...rowStyle, paddingBottom: 8 }}>
+          {cell(
+            <Text fg={colors.textDim} style={{ ...desktopText, fontWeight: 650 }}>{t("Capability")}</Text>,
+          )}
+          {cell(
+            <Text
+              fg={activePlan === "free" ? colors.textBright : colors.textDim}
+              attributes={activePlan === "free" ? TextAttributes.BOLD : 0}
+              style={{ ...desktopText, fontWeight: activePlan === "free" ? 700 : 650 }}
             >
-              <Box flexDirection="row" alignItems="center" style={{ minWidth: 0 }}>
-                <Box
-                  aria-hidden="true"
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    marginRight: 18,
-                    flexShrink: 0,
-                    backgroundColor: colors.borderFocused,
-                    boxShadow: `0 0 0 2px ${blendHex(colors.bg, colors.borderFocused, 0.14)}`,
-                  }}
-                />
-                <Text fg={colors.textBright} style={{ ...desktopText, fontWeight: 520 }}>
-                  {t(row.capability)}
-                </Text>
-              </Box>
-              <Text fg={freeFg} style={desktopText}>
-                {t(row.free)}
-              </Text>
-              <Box
-                flexDirection="row"
-                alignItems="center"
-                backgroundColor={index % 2 === 0 ? desktopProBg : desktopProAltBg}
-                style={{
-                  minHeight: 48,
-                  paddingLeft: width >= 86 ? 24 : 16,
-                  paddingRight: width >= 86 ? 24 : 14,
-                  borderTopLeftRadius: first ? 2 : 0,
-                  borderTopRightRadius: first ? 2 : 0,
-                  borderBottomLeftRadius: last ? 2 : 0,
-                  borderBottomRightRadius: last ? 2 : 0,
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.025)",
-                }}
+              {t("Free")}
+            </Text>,
+          )}
+          {cell(
+            <Text
+              fg={activePlan === "pro" ? colors.textBright : colors.textDim}
+              attributes={activePlan === "pro" ? TextAttributes.BOLD : 0}
+              style={{ ...desktopText, fontWeight: activePlan === "pro" ? 700 : 650 }}
+            >
+              {t("Pro")}
+            </Text>,
+          )}
+        </Box>
+        {PLAN_COMPARISON_ROWS.map((row) => (
+          <Box key={row.capability} flexDirection="row" alignItems="center" style={rowStyle}>
+            {cell(<Text fg={colors.text} style={desktopText}>{t(row.capability)}</Text>)}
+            {cell(<Text fg={freeFg} style={desktopText}>{t(row.free)}</Text>)}
+            {cell(
+              <Text
+                fg={proValueColor(row.proTone)}
+                attributes={row.proTone === "positive" ? TextAttributes.BOLD : 0}
+                style={desktopText}
               >
-                <Text
-                  fg={proValueColor(row.proTone)}
-                  attributes={row.proTone === "positive" ? TextAttributes.BOLD : 0}
-                  style={{
-                    ...desktopText,
-                    fontWeight: row.proTone === "positive" ? 720 : 560,
-                  }}
-                >
-                  {t(row.pro)}
-                </Text>
-              </Box>
-            </Box>
-          );
-        })}
-        <Box
-          style={{
-            ...gridStyle,
-            marginTop: 14,
-          }}
-        >
-          <Box />
-          <Box />
-          <Box flexDirection="row" justifyContent="center">
-            {upgradeButton}
+                {t(row.pro)}
+              </Text>,
+            )}
           </Box>
+        ))}
+        <Box flexDirection="row" style={{ marginTop: 14 }}>
+          {upgradeButton}
         </Box>
       </Box>
     );
@@ -891,6 +819,7 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
   }, [busy, dialog]);
 
   useAccountManagementFooter({
+    activeTab,
     busy,
     hasSession,
     message,
@@ -941,8 +870,15 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
         compact
         keyboardNavigation={false}
       />
-      <ScrollBox height={Math.max(3, bodyHeight - 2)} scrollY focusable={false}>
-        <Box flexDirection="column" width={contentWidth} gap={1}>
+      {activeTab === "ai" ? (
+        <AiProvidersTab
+          focused={focused}
+          width={Math.max(1, width - 2)}
+          height={Math.max(3, height - 2)}
+        />
+      ) : (
+        <ScrollBox height={Math.max(3, bodyHeight - 2)} scrollY focusable={false}>
+          <Box flexDirection="column" width={contentWidth} gap={1}>
           {activeTab === "profile" ? (
             <>
               <FieldRow twoColumns={twoColumns}>
@@ -1170,14 +1106,6 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
             </>
           ) : null}
 
-          {activeTab === "ai" ? (
-            <AiProvidersTab
-              focused={focused && activeTab === "ai"}
-              width={contentWidth}
-              height={Math.max(5, bodyHeight - 2)}
-            />
-          ) : null}
-
           {activeTab === "pro" ? (
             <>
               <Box flexDirection="row" gap={1}>
@@ -1229,9 +1157,10 @@ export function AccountManagementPane({ focused, width, height }: PaneProps) {
               </Box>
             </>
           ) : null}
-          <Box height={1} />
-        </Box>
-      </ScrollBox>
+            <Box height={1} />
+          </Box>
+        </ScrollBox>
+      )}
     </Box>
   );
 }

@@ -230,6 +230,7 @@ export function WebTabs({
             disabled={disabled}
             draggable={false}
             aria-grabbed={reorderable && dragSourceValue === tab.value ? true : undefined}
+            aria-keyshortcuts={closeVisible ? "Delete" : undefined}
             style={tabStyle}
             onMouseEnter={() => setHoveredValue(tab.value)}
             onMouseLeave={() => setHoveredValue((current) => (current === tab.value ? null : current))}

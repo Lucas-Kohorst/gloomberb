@@ -275,6 +275,17 @@ test("renders a stale partial report with severity order, split observation, and
   expect(frame).not.toContain("luna");
 });
 
+test("does not ask a signed-in session to verify while the account is still hydrating", async () => {
+  apiClient.setSessionToken("equity-diagnostic-test-token");
+  mockDiagnosticTransport(() => jsonResponse(makeReport()));
+
+  await renderHarness();
+
+  const frame = testSetup!.captureCharFrame();
+  expect(frame).not.toContain("Verify your email");
+  expect(frame).not.toContain("Resend Verification Email");
+});
+
 test("adds data sources line by line while the diagnostic generates", async () => {
   signIn("pro");
   mockDiagnosticTransport(() => jsonResponse({ status: "generating", retryAfterMs: 5_000 }, 202));
