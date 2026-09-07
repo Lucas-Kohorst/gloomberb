@@ -77,6 +77,38 @@ export interface MarketplaceEntry {
 
 const TIER_RANK: Record<PluginTier, number> = { official: 0, verified: 1, community: 2 };
 
+function pluginLabel(id: string, name: unknown): string {
+  return typeof name === "string" && name.trim() ? name : id;
+}
+
+/** Last path segment of `owner/repo`, which is also the on-disk directory name. */
+function repoDirectoryName(repo: string | undefined): string | undefined {
+  if (!repo) return undefined;
+  const segment = repo.split("/").pop()?.replace(/\.git$/, "");
+  return segment || undefined;
+}
+
+function takeInstalled(
+  plugin: RegistryPlugin,
+  remaining: Map<string, InstalledPlugin>,
+): InstalledPlugin | undefined {
+  const byId = remaining.get(plugin.id);
+  if (byId) {
+    remaining.delete(plugin.id);
+    return byId;
+  }
+  const directory = repoDirectoryName(plugin.repo);
+  if (!directory) return undefined;
+  const byDirectory = remaining.get(directory);
+  if (!byDirectory) return undefined;
+  remaining.delete(directory);
+  return byDirectory;
+}
+
+function comparePluginNames(left: string | undefined, right: string | undefined): number {
+  return (left ?? "").localeCompare(right ?? "");
+}
+
 /**
  * Merges the remote catalog with what is actually loaded.
  *
@@ -92,16 +124,17 @@ export function mergeCatalog(options: {
   target: PluginTarget;
 }): MarketplaceEntry[] {
   const { registry, installed, target } = options;
-  const installedById = new Map(installed.map((entry) => [entry.id, entry]));
+  const remainingInstalled = new Map(installed.map((entry) => [entry.id, entry]));
   const entries: MarketplaceEntry[] = [];
 
   for (const plugin of registry) {
-    const local = installedById.get(plugin.id);
-    installedById.delete(plugin.id);
+    // Failed loads are keyed by directory name (the repo's last segment), not
+    // the plugin id the registry uses.
+    const local = takeInstalled(plugin, remainingInstalled);
 
     entries.push({
       id: plugin.id,
-      name: plugin.name,
+      name: pluginLabel(plugin.id, plugin.name),
       tagline: plugin.tagline,
       description: plugin.description,
       categories: plugin.categories,
@@ -127,10 +160,10 @@ export function mergeCatalog(options: {
 
   // Installed but unlisted: side-loaded from a git URL, or listed under a
   // different id. Still needs to be manageable.
-  for (const local of installedById.values()) {
+  for (const local of remainingInstalled.values()) {
     entries.push({
       id: local.id,
-      name: local.name,
+      name: pluginLabel(local.id, local.name),
       tagline: local.description ?? "Installed outside the registry",
       description: local.description,
       categories: ["unlisted"],
@@ -162,10 +195,15 @@ export function mergeCatalog(options: {
 export function sortEntries(entries: readonly MarketplaceEntry[]): MarketplaceEntry[] {
   return [...entries].sort((a, b) => {
     if (a.installed !== b.installed) return a.installed ? -1 : 1;
+    if (a.installed && b.installed) {
+      const aFailed = Boolean(a.loadError);
+      const bFailed = Boolean(b.loadError);
+      if (aFailed !== bFailed) return aFailed ? -1 : 1;
+    }
     if (a.featured !== b.featured) return a.featured ? -1 : 1;
     if (a.tier !== b.tier) return TIER_RANK[a.tier] - TIER_RANK[b.tier];
     if (a.stars !== b.stars) return b.stars - a.stars;
-    return a.name.localeCompare(b.name);
+    return comparePluginNames(a.name, b.name);
   });
 }
 

@@ -36,6 +36,10 @@ import type {
 } from "../../types/plugin";
 import type { TickerOpenTarget } from "../../tickers/open-target";
 
+function pluginDisplayName(plugin: { name?: string; id: string }): string {
+  return plugin.name?.trim() || plugin.id;
+}
+
 interface BindAppPanePluginRegistryOptions {
   activatePane: (paneId: string, layout?: LayoutConfig) => void;
   buildPaneInstance: (paneType: string, options?: {
@@ -197,7 +201,7 @@ export function bindAppPanePluginRegistry({
       return;
     }
 
-    focusVisiblePane(instanceId, currentLayout);
+    focusVisiblePane(instanceId);
   };
   pluginRegistry.pinTickerFn = (symbol, options) => {
     if (isDetachedWindow) return;
@@ -270,7 +274,7 @@ export function bindAppPanePluginRegistry({
         externalById.delete(plugin.id);
         installed.push({
           id: plugin.id,
-          name: plugin.name,
+          name: pluginDisplayName(plugin),
           version: plugin.version,
           ...(plugin.description ? { description: plugin.description } : {}),
           toggleable: plugin.toggleable === true,
@@ -285,7 +289,7 @@ export function bindAppPanePluginRegistry({
       for (const entry of externalById.values()) {
         installed.push({
           id: entry.plugin.id,
-          name: entry.plugin.name,
+          name: pluginDisplayName(entry.plugin),
           version: entry.plugin.version ?? "0.0.0",
           ...(entry.plugin.description ? { description: entry.plugin.description } : {}),
           toggleable: true,

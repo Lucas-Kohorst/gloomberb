@@ -1,5 +1,4 @@
 import {
-  getPaneSidebarWidth,
   PaneSidebar,
   PaneSidebarRow,
 } from "../components/layout/pane/sidebar";
@@ -7,13 +6,15 @@ import {
   MarketplaceActionRow,
   MarketplaceNote,
   MarketplaceSection,
+  marketplaceSidebarWidth,
+  useScrollMarketplaceRowIntoView,
 } from "../components/marketplace/sidebar";
 import { Button } from "../components/ui/button";
 import { TextField } from "../components/ui/fields";
 import { Spinner } from "../components/ui/loading";
 import { t, tf } from "../i18n";
 import { useThemeColors } from "../theme/theme-context";
-import { Box, ScrollBox, Text, TextAttributes, useUiCapabilities } from "../ui";
+import { Box, ScrollBox, Text, TextAttributes } from "../ui";
 import type { LayoutGalleryController } from "./gallery";
 import { MiniWorkspace } from "./mini-workspace";
 import {
@@ -59,6 +60,7 @@ function EntryRow({
           tabIndex={0}
           aria-label={tf("{name}, {panes} panes", { name: entry.name, panes: String(panes.length) })}
           aria-current={selected ? "true" : undefined}
+          data-gloom-id={entry.id}
           data-gloom-role="layout-gallery-row"
           data-gloom-interactive="true"
           onMouseOver={select}
@@ -257,12 +259,12 @@ export function LayoutGalleryDesktop({
   width?: number;
   height?: number;
 }) {
-  const { nativePaneChrome } = useUiCapabilities();
-  const sidebarWidth = getPaneSidebarWidth(width, !!nativePaneChrome);
+  const sidebarWidth = marketplaceSidebarWidth(width);
   const selected = controller.entries.find((entry) => entry.id === controller.selectedId)
     ?? controller.owned.find((entry) => entry.active)
     ?? controller.entries[0]
     ?? null;
+  useScrollMarketplaceRowIntoView(ROW_ROLE, selected?.id);
 
   return (
     <Box
@@ -272,7 +274,7 @@ export function LayoutGalleryDesktop({
       overflow="hidden"
       data-gloom-role="layout-gallery"
     >
-      <PaneSidebar width={sidebarWidth} height={height} focused={focused}>
+      <PaneSidebar width={sidebarWidth} height={height} focused={focused} keyboardFocused={focused}>
         {({ listWidth }) => (
           <>
             <Box height={2} paddingX={1} justifyContent="center" flexShrink={0}>

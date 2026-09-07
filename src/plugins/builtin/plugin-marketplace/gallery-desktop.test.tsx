@@ -1,63 +1,18 @@
 /** @jsxImportSource react */
-import { Window } from "happy-dom";
+import { createTestRendererHost, createWebUiHost, installDomGlobals } from "../../../test-support/dom";
 
-const testWindow = new Window({ url: "http://localhost" });
-const domGlobals = {
-  IS_REACT_ACT_ENVIRONMENT: true,
-  window: testWindow,
-  document: testWindow.document,
-  navigator: testWindow.navigator,
-  KeyboardEvent: testWindow.KeyboardEvent,
-  MouseEvent: testWindow.MouseEvent,
-  HTMLElement: testWindow.HTMLElement,
-  Node: testWindow.Node,
-};
+const testWindow = installDomGlobals();
 
-/** Bun shares one process across test files, so the DOM globals must not leak. */
-const priorGlobals = Object.fromEntries(
-  Object.keys(domGlobals).map((key) => [key, (globalThis as Record<string, unknown>)[key]]),
-);
-Object.assign(globalThis, domGlobals);
-
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { UiHostProvider, type RendererHost, type UiHost } from "../../../ui";
-import { WebBox } from "../../../renderers/electrobun/view/host/box";
-import { WebText, WebSpan } from "../../../renderers/electrobun/view/host/text";
-import { WebScrollBox } from "../../../renderers/electrobun/view/host/scroll-box";
-import { WebInput } from "../../../renderers/electrobun/view/host/input";
-import { WebButton, WebTextField } from "../../../renderers/electrobun/view/desktop/controls";
+import { UiHostProvider } from "../../../ui";
 import { PluginGalleryDesktop, type PluginGalleryController } from "./gallery-desktop";
 import type { MarketplaceEntry } from "./model";
 
-const renderer: RendererHost = {
-  requestExit() {},
-  async openExternal() {},
-  async copyText() {},
-  async readText() { return ""; },
-  notify() {},
-};
+const renderer = createTestRendererHost();
 
-const ui = {
-  kind: "desktop-web",
-  capabilities: { cellWidthPx: 8, cellHeightPx: 18, fractionalViewport: true },
-  Box: WebBox,
-  Text: WebText,
-  Span: WebSpan,
-  ScrollBox: WebScrollBox,
-  Button: WebButton,
-  Input: WebInput,
-  TextField: WebTextField,
-  SpinnerMark: () => null,
-} as unknown as UiHost;
-
-afterAll(() => {
-  for (const [key, value] of Object.entries(priorGlobals)) {
-    if (value === undefined) delete (globalThis as Record<string, unknown>)[key];
-    else (globalThis as Record<string, unknown>)[key] = value;
-  }
-});
+const ui = createWebUiHost();
 
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -104,6 +59,8 @@ function createController(overrides: Partial<PluginGalleryController> = {}): {
     selected: null,
     select: (id) => selections.push(id),
     status: "ready",
+    catalogError: null,
+    stale: false,
     refresh: () => {},
     install: (next) => installCalls.push(next),
     toggle: (next) => toggleCalls.push(next),
@@ -119,17 +76,21 @@ function createController(overrides: Partial<PluginGalleryController> = {}): {
   return { controller, installCalls, toggleCalls, selections };
 }
 
-async function renderGallery(controller: PluginGalleryController) {
-  const container = testWindow.document.createElement("div");
-  testWindow.document.body.appendChild(container);
-  root = createRoot(container as unknown as HTMLElement);
-  await act(async () => {
+function renderInto(controller: PluginGalleryController) {
+  return act(async () => {
     root!.render(
       <UiHostProvider ui={ui} renderer={renderer}>
         <PluginGalleryDesktop controller={controller} />
       </UiHostProvider>,
     );
   });
+}
+
+async function renderGallery(controller: PluginGalleryController) {
+  const container = testWindow.document.createElement("div");
+  testWindow.document.body.appendChild(container);
+  root = createRoot(container as unknown as HTMLElement);
+  await renderInto(controller);
   return container;
 }
 
@@ -179,6 +140,48 @@ test("sidebar rows select the preview instead of installing", async () => {
   expect(installCalls).toEqual([]);
 });
 
+test("sidebar arrow keys move focus to the next plugin", async () => {
+  const first = entry({ id: "rss", name: "RSS", installed: true, enabled: true });
+  const second = entry({ id: "hackernews", name: "Hacker News" });
+  const { controller, selections } = createController({
+    installed: [first],
+    discover: [second],
+  });
+  const container = await renderGallery(controller);
+  const sidebarRows = rows(container);
+
+  await act(async () => {
+    (sidebarRows[0] as unknown as HTMLElement).focus();
+    sidebarRows[0]!.dispatchEvent(new testWindow.KeyboardEvent("keydown", {
+      bubbles: true,
+      key: "ArrowDown",
+    }));
+  });
+
+  expect(testWindow.document.activeElement).toBe(sidebarRows[1]);
+  expect(selections.at(-1)).toBe("hackernews");
+});
+
+test("a new selection scrolls its sidebar row into view", async () => {
+  const first = entry({ id: "rss", name: "RSS", installed: true, enabled: true });
+  const second = entry({ id: "hackernews", name: "Hacker News" });
+  const scrolled: unknown[] = [];
+  const prototype = testWindow.HTMLElement.prototype as unknown as { scrollIntoView?: unknown };
+  const original = prototype.scrollIntoView;
+  prototype.scrollIntoView = function scrollIntoView(this: unknown) { scrolled.push(this); };
+  try {
+    const { controller } = createController({ installed: [first], discover: [second], selected: first });
+    const container = await renderGallery(controller);
+    scrolled.length = 0;
+
+    await renderInto({ ...controller, selected: second });
+
+    expect(scrolled.at(-1)).toBe(rows(container)[1]);
+  } finally {
+    prototype.scrollIntoView = original;
+  }
+});
+
 test("preview of an installable discover plugin installs that entry", async () => {
   const available = entry({ id: "hackernews", name: "Hacker News", tagline: "Front page" });
   const { controller, installCalls } = createController({
@@ -193,6 +196,7 @@ test("preview of an installable discover plugin installs that entry", async () =
   expect(previewText).toContain("Hacker News");
   expect(previewText).toContain("Install Plugin");
   expect(previewText).toContain("Loads after restart");
+  expect(preview.querySelector('[data-gloom-role="plugin-gallery-preview-image"] svg')).not.toBeNull();
 
   await pressButton(preview, "Install Plugin");
   expect(installCalls).toEqual([available]);
@@ -228,4 +232,16 @@ test("an empty gallery keeps a preview placeholder instead of a blank pane", asy
   const empty = container.querySelector('[data-gloom-role="plugin-gallery-preview-empty"]')!;
   expect(empty.textContent).toContain("No plugin selected.");
   expect(container.querySelector('[data-gloom-role="plugin-gallery-preview"]')).toBeNull();
+});
+
+test("shows the catalog error and retry state", async () => {
+  const { controller } = createController({
+    status: "error",
+    catalogError: "Network unavailable.",
+  });
+  const container = await renderGallery(controller);
+
+  expect(container.textContent).toContain("Plugin catalog unavailable.");
+  expect(container.textContent).toContain("Network unavailable.");
+  expect(container.textContent).toContain("Retry");
 });

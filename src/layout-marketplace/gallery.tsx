@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { useMarketplaceListNavigation } from "../components/marketplace/sidebar";
 import { ConfirmDialog } from "../components/ui/confirm-dialog";
 import { useShortcut } from "../react/input";
 import { useAppDispatch, useAppSelector } from "../state/app/context";
@@ -72,6 +73,7 @@ export function LayoutMarketplaceGallery({
   const dispatch = useAppDispatch();
   const dialog = useDialog();
   const renderer = useRendererHost();
+  const isDesktop = useUiHost().kind === "desktop-web";
   const dialogOpen = useDialogState((state) => state.isOpen);
   const layouts = useAppSelector(selectSavedLayouts);
   const activeIndex = useAppSelector(selectActiveLayoutIndex);
@@ -270,6 +272,15 @@ export function LayoutMarketplaceGallery({
     else close();
   }, { enabled: focused && !dialogOpen, phase: "before", allowEditable: true, scope: "layout-gallery" });
 
+  // The terminal table owns its own cursor; only the desktop sidebar needs this.
+  useMarketplaceListNavigation({
+    enabled: isDesktop && focused && !dialogOpen,
+    scope: "layout-gallery",
+    items: entries,
+    selectedId: selectedId ?? entries.find((entry) => entry.active)?.id ?? null,
+    select: setSelectedId,
+  });
+
   const controller: LayoutGalleryController = {
     query,
     setQuery,
@@ -302,7 +313,7 @@ export function LayoutMarketplaceGallery({
     missingPaneIds: (layout) => missingPaneIds(layout, panes),
   };
 
-  return useUiHost().kind === "desktop-web"
+  return isDesktop
     ? (
       <LayoutGalleryDesktop
         controller={controller}
