@@ -190,6 +190,9 @@ interface UseShellPointerRuntimeOptions {
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   snapGuides: ReturnType<typeof makeSnapGuides>;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
+  hiddenDockedIds?: readonly string[];
+  exitTransientFocus?: () => boolean;
   togglePaneFloating: (paneId: string) => boolean;
   updateWindowModePreviewLayout: (nextLayout: LayoutConfig, paneId?: string) => void;
   visibleFloatingPanes: VisibleFloatingPane[];
@@ -224,6 +227,9 @@ export function useShellPointerRuntime({
   setMenuState,
   snapGuides,
   transientFocusActive,
+  transientFocusPaneId,
+  hiddenDockedIds,
+  exitTransientFocus,
   togglePaneFloating,
   updateWindowModePreviewLayout,
   visibleFloatingPanes,
@@ -271,6 +277,9 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    transientFocusPaneId,
+    hiddenDockedIds,
+    exitTransientFocus,
     togglePaneFloating,
     visibleFloatingPanes,
     width,
@@ -290,6 +299,8 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    transientFocusPaneId,
+    exitTransientFocus,
     togglePaneFloating,
     windowMode,
     commandBarOpen,

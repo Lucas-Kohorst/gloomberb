@@ -5,7 +5,9 @@ import {
   addPaneToLayout,
   bringToFront,
   findDockLeaf,
+  floatPane,
   getDockedPaneIds,
+  isPaneDocked,
   isPaneInLayout,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -35,6 +37,7 @@ import type {
 } from "../../types/plugin";
 import type { DialogApi } from "../../ui/dialog";
 import {
+  isFullscreenOverlaySession,
   resolvePanelForPane,
   resolvePaneShowTarget,
   resolvePaneTarget as resolvePaneTargetInLayout,
@@ -179,8 +182,13 @@ export function useAppPaneRuntime({
     const relativePosition = options?.relativePosition ?? "right";
     let nextLayout = state.config.layout;
     const dockedPaneIds = getDockedPaneIds(nextLayout);
+    const overlaySession = isFullscreenOverlaySession(pluginRegistry);
 
-    if (options?.placement === "floating" || (options?.placement !== "docked" && paneDef.defaultMode === "floating")) {
+    if (
+      overlaySession
+      || options?.placement === "floating"
+      || (options?.placement !== "docked" && paneDef.defaultMode === "floating")
+    ) {
       nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
     } else if (relativeTo && findDockLeaf(nextLayout, relativeTo)) {
       nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo, position: relativePosition });
@@ -220,6 +228,15 @@ export function useAppPaneRuntime({
     }
 
     if (target.instance && isPaneInLayout(state.config.layout, target.instance.instanceId)) {
+      const fullscreenPaneId = pluginRegistry.getFullscreenPaneIdFn?.() ?? null;
+      if (
+        fullscreenPaneId
+        && target.instance.instanceId !== fullscreenPaneId
+        && isPaneDocked(state.config.layout, target.instance.instanceId)
+      ) {
+        const { width, height } = pluginRegistry.getTermSizeFn();
+        persistLayout(floatPane(state.config.layout, target.instance.instanceId, width, height, paneDef));
+      }
       pluginRegistry.focusPaneFn(target.instance.instanceId);
       return;
     }

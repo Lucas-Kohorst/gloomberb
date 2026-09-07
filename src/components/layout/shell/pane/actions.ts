@@ -3,8 +3,10 @@ import type { DesktopWindowBridge } from "../../../../types/desktop-window";
 import {
   dockFloatingPaneAtCurrentRect,
   floatAtRect,
+  getDockedPaneIds,
   getDockLeafLayouts,
   gridlockAllPanes,
+  isPaneDocked,
   isPaneInLayout,
   removeFloatingPanes,
   removePane,
@@ -102,12 +104,26 @@ export function useShellPaneActions({
     return true;
   }, [canExportPaneCsv, exportPaneCsv, focusedPaneId]);
 
-  const closeFocusedPane = useCallback(() => {
-    if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return false;
-    const nextLayout = removePane(visibleLayout, focusedPaneId);
+  const closePane = useCallback((paneId: string | null | undefined) => {
+    if (!paneId || !isPaneInLayout(visibleLayout, paneId)) return false;
+    const nextLayout = removePane(visibleLayout, paneId);
     persistLayout(nextLayout, removedFocusRestoreOptions(nextLayout, focusedPaneId, previousFocusedPaneId));
     return true;
   }, [focusedPaneId, persistLayout, previousFocusedPaneId, visibleLayout]);
+
+  const closeFocusedPane = useCallback(() => closePane(focusedPaneId), [closePane, focusedPaneId]);
+
+  const unfocusFocusedPane = useCallback(() => {
+    if (!focusedPaneId || isPaneDocked(visibleLayout, focusedPaneId)) return false;
+    const restoreId = previousFocusedPaneId
+      && previousFocusedPaneId !== focusedPaneId
+      && isPaneInLayout(visibleLayout, previousFocusedPaneId)
+      ? previousFocusedPaneId
+      : getDockedPaneIds(visibleLayout)[0] ?? null;
+    if (!restoreId || restoreId === focusedPaneId) return false;
+    focusPane(restoreId);
+    return true;
+  }, [focusPane, focusedPaneId, previousFocusedPaneId, visibleLayout]);
 
   const closeAllFloatingPanes = useCallback(() => {
     if (visibleLayout.floating.length === 0) return false;
@@ -166,14 +182,15 @@ export function useShellPaneActions({
   }, [contentHeight, persistLayout, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
-    const nextLayout = removePane(visibleLayout, paneId);
-    persistLayout(nextLayout, removedFocusRestoreOptions(nextLayout, focusedPaneId, previousFocusedPaneId));
-  }, [focusedPaneId, persistLayout, previousFocusedPaneId, visibleLayout]);
+    closePane(paneId);
+  }, [closePane]);
 
   return {
     canExportPaneCsv,
     closeAllFloatingPanes,
+    closePane,
     closeFocusedPane,
+    unfocusFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
     exportFocusedPaneCsv,

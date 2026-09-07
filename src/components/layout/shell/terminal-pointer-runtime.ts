@@ -11,6 +11,7 @@ import {
   constrainFloatingRectToBounds,
   pointInRect,
 } from "./drag";
+import { isFullscreenBasePane } from "./fullscreen";
 import {
   resolveTerminalPaneHeaderGeometry,
   terminalPaneHeaderControlAt,
@@ -49,6 +50,9 @@ interface UseShellTerminalPointerRuntimeOptions {
   setHoveredMenuItemId: Dispatch<SetStateAction<string | null>>;
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
+  hiddenDockedIds?: readonly string[];
+  exitTransientFocus?: () => boolean;
   togglePaneFloating: (paneId: string) => boolean;
   visibleFloatingPanes: VisibleFloatingPane[];
   width: number;
@@ -67,8 +71,16 @@ function getVisibleFloatingRect(
     : visibleRect;
 }
 
-function sortedFloatingPanes(visibleFloatingPanes: VisibleFloatingPane[]): VisibleFloatingPane[] {
-  return [...visibleFloatingPanes].sort((a, b) => (b.pane.floating?.zIndex ?? 50) - (a.pane.floating?.zIndex ?? 50));
+function sortedFloatingPanes(
+  visibleFloatingPanes: VisibleFloatingPane[],
+  transientFocusPaneId?: string | null,
+): VisibleFloatingPane[] {
+  return [...visibleFloatingPanes].sort((a, b) => {
+    const aBase = a.pane.instance.instanceId === transientFocusPaneId;
+    const bBase = b.pane.instance.instanceId === transientFocusPaneId;
+    if (aBase !== bBase) return aBase ? 1 : -1;
+    return (b.pane.floating?.zIndex ?? 50) - (a.pane.floating?.zIndex ?? 50);
+  });
 }
 
 function resolveTerminalResizeHandle(
@@ -112,6 +124,9 @@ export function useShellTerminalPointerRuntime({
   setHoveredMenuItemId,
   setMenuState,
   transientFocusActive,
+  transientFocusPaneId = null,
+  hiddenDockedIds = [],
+  exitTransientFocus,
   togglePaneFloating,
   visibleFloatingPanes,
   width,
@@ -211,9 +226,12 @@ export function useShellTerminalPointerRuntime({
         setHoveredMenuItemId(null);
       }
 
-      for (const { pane, rect: visibleRect } of sortedFloatingPanes(visibleFloatingPanes)) {
+      for (const { pane, rect: visibleRect } of sortedFloatingPanes(visibleFloatingPanes, transientFocusPaneId)) {
         const paneId = pane.instance.instanceId;
-        const rect = getVisibleFloatingRect(visibleRect, paneId, dragFloatingRect, width, contentHeight);
+        const isFullscreenBase = isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId);
+        const rect = isFullscreenBase
+          ? { x: 0, y: 0, width, height: contentHeight, zIndex: 0 }
+          : getVisibleFloatingRect(visibleRect, paneId, dragFloatingRect, width, contentHeight);
         if (!pointInRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, event.x, shellY)) continue;
         const relativeX = event.x - rect.x;
         const relativeY = shellY - rect.y;
@@ -232,6 +250,11 @@ export function useShellTerminalPointerRuntime({
           return;
         }
         if (headerControl === "close") {
+          if (isFullscreenBase && exitTransientFocus?.()) {
+            event.stopPropagation();
+            event.preventDefault();
+            return;
+          }
           handleFloatingClose(paneId);
           event.stopPropagation();
           event.preventDefault();
@@ -244,7 +267,7 @@ export function useShellTerminalPointerRuntime({
           return;
         }
         if (headerControl === "toggle") {
-          togglePaneFloating(paneId);
+          if (!isFullscreenBase) togglePaneFloating(paneId);
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -255,6 +278,11 @@ export function useShellTerminalPointerRuntime({
           && canRetargetPaneTicker(pane.instance)
         ) {
           openPaneTickerSearch?.(paneId);
+          event.stopPropagation();
+          event.preventDefault();
+          return;
+        }
+        if (isFullscreenBase) {
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -313,14 +341,27 @@ export function useShellTerminalPointerRuntime({
         return;
       }
 
-      for (const leaf of dockLeafLayouts) {
-        if (!pointInRect(leaf.rect, event.x, shellY)) continue;
+      const hitDockLeaves = transientFocusActive
+        ? [
+          ...dockLeafLayouts.filter((leaf) => (
+            leaf.instanceId !== transientFocusPaneId && !hiddenDockedIds.includes(leaf.instanceId)
+          )),
+          ...dockLeafLayouts.filter((leaf) => leaf.instanceId === transientFocusPaneId),
+        ]
+        : dockLeafLayouts;
+      for (const leaf of hitDockLeaves) {
+        if (transientFocusActive && hiddenDockedIds.includes(leaf.instanceId)) continue;
+        const isFullscreenBase = isFullscreenBasePane(transientFocusActive, transientFocusPaneId, leaf.instanceId);
+        const leafRect = isFullscreenBase
+          ? { x: 0, y: 0, width, height: contentHeight }
+          : leaf.rect;
+        if (!pointInRect(leafRect, event.x, shellY)) continue;
         const pane = paneMap.get(leaf.instanceId);
         if (!pane) continue;
-        const relativeX = event.x - leaf.rect.x;
-        const relativeY = shellY - leaf.rect.y;
+        const relativeX = event.x - leafRect.x;
+        const relativeY = shellY - leafRect.y;
         const isFocused = focusedPaneId === leaf.instanceId;
-        const headerGeometry = resolveTerminalPaneHeaderGeometry(leaf.rect.width, {
+        const headerGeometry = resolveTerminalPaneHeaderGeometry(leafRect.width, {
           floating: false,
           focused: isFocused,
           showActions: isFocused || hoveredPaneId === leaf.instanceId || menuState?.paneId === leaf.instanceId,
@@ -330,17 +371,17 @@ export function useShellTerminalPointerRuntime({
           : null;
         focusPane(leaf.instanceId);
         if (event.button === 2 && relativeY === 0) {
-          openPaneMenu(leaf.instanceId, leaf.rect, event);
+          openPaneMenu(leaf.instanceId, leafRect, event);
           return;
         }
         if (headerControl === "action") {
-          openPaneMenu(leaf.instanceId, leaf.rect, event);
+          openPaneMenu(leaf.instanceId, leafRect, event);
           event.stopPropagation();
           event.preventDefault();
           return;
         }
         if (headerControl === "toggle") {
-          togglePaneFloating(leaf.instanceId);
+          if (!isFullscreenBase) togglePaneFloating(leaf.instanceId);
           event.stopPropagation();
           event.preventDefault();
           return;
@@ -368,7 +409,7 @@ export function useShellTerminalPointerRuntime({
             mode: "docked",
             startX: preciseX,
             startY: preciseShellY,
-            origRect: { x: leaf.rect.x, y: leaf.rect.y, width: leaf.rect.width, height: leaf.rect.height },
+            origRect: { x: leafRect.x, y: leafRect.y, width: leafRect.width, height: leafRect.height },
           };
           event.stopPropagation();
           event.preventDefault();
@@ -402,6 +443,8 @@ export function useShellTerminalPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    transientFocusPaneId,
+    hiddenDockedIds,
     togglePaneFloating,
     updateDividerPreview,
     updateDockPreview,

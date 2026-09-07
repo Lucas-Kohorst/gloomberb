@@ -14,6 +14,7 @@ import {
 interface ShellPaneManagementShortcutOptions {
   cancelActiveDrag(): void;
   closeAllFloatingPanes(): boolean;
+  closePane(paneId: string): boolean;
   closeFocusedPane(): boolean;
   copyFocusedPaneScreenshot(): boolean;
   exportFocusedPaneCsv(): boolean;
@@ -29,11 +30,15 @@ interface ShellPaneManagementShortcutOptions {
   startWindowMode(paneId?: string, mode?: WindowEditMode): void;
   toggleFocusedPaneFullscreen(): boolean;
   toggleFocusedPaneFloating(): boolean;
+  transientFocusActive: boolean;
+  transientFocusPaneId: string | null;
+  unfocusFocusedPane(): boolean;
 }
 
 export function useShellPaneManagementShortcuts({
   cancelActiveDrag,
   closeAllFloatingPanes,
+  closePane,
   closeFocusedPane,
   copyFocusedPaneScreenshot,
   exportFocusedPaneCsv,
@@ -49,6 +54,9 @@ export function useShellPaneManagementShortcuts({
   startWindowMode,
   toggleFocusedPaneFullscreen,
   toggleFocusedPaneFloating,
+  transientFocusActive,
+  transientFocusPaneId,
+  unfocusFocusedPane,
 }: ShellPaneManagementShortcutOptions): void {
   const doubleEscapeCloseRef = useRef(createDoubleEscapeCloseState());
 
@@ -74,26 +82,50 @@ export function useShellPaneManagementShortcuts({
     }
 
     const isEscape = event.name === "escape" || event.name === "esc";
-    if (isEscape) {
-      const doubleEscapeState = doubleEscapeCloseRef.current;
-      if (!hasActiveDrag() && !overlayOpen) {
-        if (recordDoubleEscapeClose(doubleEscapeState, focusedPaneId, Date.now()) && closeFocusedPane()) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-      } else {
-        resetDoubleEscapeClose(doubleEscapeState);
-      }
+    if (!isEscape) return;
+    if (!hasActiveDrag()) return;
+    resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+    cancelActiveDrag();
+    event.preventDefault();
+    event.stopPropagation();
+  }, { phase: "before" });
 
-      if (!hasActiveDrag()) return;
-      cancelActiveDrag();
+  useShortcut((event) => {
+    const isEscape = event.name === "escape" || event.name === "esc";
+    if (!isEscape) {
+      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+      return;
+    }
+    if (hasActiveDrag() || overlayOpen) {
+      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+      return;
+    }
+
+    const doubleEscapeState = doubleEscapeCloseRef.current;
+    if (
+      transientFocusActive
+      && (!focusedPaneId || focusedPaneId === transientFocusPaneId)
+      && toggleFocusedPaneFullscreen()
+    ) {
+      resetDoubleEscapeClose(doubleEscapeState);
       event.preventDefault();
       event.stopPropagation();
-    } else {
-      resetDoubleEscapeClose(doubleEscapeCloseRef.current);
+      return;
     }
-  }, { phase: "before" });
+
+    const now = Date.now();
+    const pendingId = doubleEscapeState.targetId;
+    if (pendingId && recordDoubleEscapeClose(doubleEscapeState, pendingId, now) && closePane(pendingId)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (focusedPaneId) recordDoubleEscapeClose(doubleEscapeState, focusedPaneId, now);
+    if (unfocusFocusedPane()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, { phase: "after" });
 
   useShortcut((event) => {
     const shortcut = resolvePaneManagementShortcut(event);
@@ -115,7 +147,9 @@ export function useShellPaneManagementShortcuts({
         handled = toggleFocusedPaneFullscreen();
         break;
       case "toggle-floating":
-        handled = toggleFocusedPaneFloating();
+        handled = !transientFocusActive || focusedPaneId !== transientFocusPaneId
+          ? toggleFocusedPaneFloating()
+          : false;
         break;
       case "pop-out":
         handled = popOutFocusedPane();

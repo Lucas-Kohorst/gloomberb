@@ -14,6 +14,12 @@ import {
 
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 
+export function isFullscreenOverlaySession(
+  pluginRegistry: { getFullscreenPaneIdFn?: () => string | null },
+): boolean {
+  return !!pluginRegistry.getFullscreenPaneIdFn?.();
+}
+
 export function isCollectionPaneInstance(instance: PaneInstanceConfig): boolean {
   return instance.paneId === "portfolio-list";
 }

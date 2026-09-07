@@ -119,6 +119,7 @@ describe("StatusBar", () => {
     expect(frame).toContain("^1 Default");
     expect(frame).toContain("^2 Monitor");
     expect(frame).toContain("^F Focus");
+    expect(frame).toMatch(/\^F Focus\s+x/);
 
     const monitorX = frame.split("\n")[0]?.indexOf("^2 Monitor") ?? -1;
     expect(monitorX).toBeGreaterThanOrEqual(0);

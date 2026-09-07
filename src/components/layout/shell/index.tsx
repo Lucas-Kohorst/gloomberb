@@ -64,7 +64,12 @@ import {
 import { AuthDialogHost } from "../../../plugins/builtin/cloud/auth-dialog";
 import { DeviceSignInDialogHost } from "../../../plugins/builtin/cloud/device-signin-dialog";
 import { useShellPaneActions } from "./pane/actions";
-import { resolvePaneFocusSourceLayout } from "./fullscreen";
+import {
+  captureFullscreenHiddenDockedIds,
+  resolvePaneFocusSourceLayout,
+  resolveTransientFocusView,
+  retainHiddenDockedIds,
+} from "./fullscreen";
 import { useTransientLayout } from "../transient-layout";
 import {
   resolveShellCursorOcclusionRects,
@@ -91,6 +96,7 @@ interface TransientFocusLayoutState {
   layout: LayoutConfig;
   sourceLayoutIndex: number;
   active: boolean;
+  hiddenDockedIds: string[];
 }
 
 export function Shell({
@@ -219,14 +225,17 @@ export function Shell({
     visibleLayout,
     width,
   });
-  const transientFocusActive = !windowMode && transientFocusLayoutState?.active === true;
-  const interactionLayout = transientFocusActive && transientFocusLayoutState
-    ? transientFocusLayoutState.layout
-    : windowModeLayout;
+  const transientFocusView = resolveTransientFocusView(transientFocusLayoutState, !windowMode);
+  const transientFocusActive = transientFocusView.active;
+  const transientFocusPaneId = transientFocusView.paneId;
+  const hiddenDockedIds = transientFocusView.hiddenDockedIds;
+  const interactionLayout = windowModeLayout;
   const activeLayout = !windowMode && dockPreview
     ? dockPreview.layout
     : interactionLayout;
-  const transientFocusPaneId = transientFocusActive ? transientFocusLayoutState?.paneId ?? null : null;
+  // Registered inline (like getTermSizeFn below) so event-handler readers see
+  // the value from the render that derived it; an effect would lag one commit.
+  pluginRegistry.getFullscreenPaneIdFn = () => transientFocusPaneId;
 
   useEffect(() => {
     if (!windowMode || !transientFocusLayoutState) return;
@@ -251,6 +260,7 @@ export function Shell({
     nativePaneChrome,
     overlayOpen,
     transientFocusActive,
+    transientFocusPaneId,
     visibleFloatingPanes,
     width,
   }), [
@@ -259,6 +269,7 @@ export function Shell({
     nativePaneChrome,
     overlayOpen,
     transientFocusActive,
+    transientFocusPaneId,
     visibleFloatingPanes,
     width,
   ]);
@@ -270,7 +281,9 @@ export function Shell({
   const {
     canExportPaneCsv,
     closeAllFloatingPanes,
+    closePane,
     closeFocusedPane,
+    unfocusFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
     exportFocusedPaneCsv,
@@ -304,9 +317,26 @@ export function Shell({
     transientFocusLayoutStateRef.current = next;
     setTransientFocusLayoutState(next);
   }, []);
+  useEffect(() => {
+    const current = transientFocusLayoutState;
+    if (!current?.active) return;
+    const nextHidden = retainHiddenDockedIds(current.hiddenDockedIds ?? [], visibleLayout);
+    if (
+      nextHidden.length === (current.hiddenDockedIds?.length ?? 0)
+      && nextHidden.every((id, index) => id === current.hiddenDockedIds?.[index])
+    ) {
+      return;
+    }
+    setTransientFocusLayout({ ...current, hiddenDockedIds: nextHidden });
+  }, [setTransientFocusLayout, transientFocusLayoutState, visibleLayout]);
+
   const activateTransientFocusState = useCallback((current: TransientFocusLayoutState) => {
     closePaneMenu();
-    setTransientFocusLayout({ ...current, active: true });
+    setTransientFocusLayout({
+      ...current,
+      active: true,
+      hiddenDockedIds: current.hiddenDockedIds ?? captureFullscreenHiddenDockedIds(visibleLayout, current.paneId),
+    });
     const sourceLayout = config.layouts[current.sourceLayoutIndex]?.layout;
     if (
       current.sourceLayoutIndex !== config.activeLayoutIndex
@@ -316,7 +346,7 @@ export function Shell({
       dispatch({ type: "SWITCH_LAYOUT", index: current.sourceLayoutIndex });
     }
     focusPane(current.paneId);
-  }, [closePaneMenu, config.activeLayoutIndex, config.layouts, dispatch, focusPane, setTransientFocusLayout]);
+  }, [closePaneMenu, config.activeLayoutIndex, config.layouts, dispatch, focusPane, setTransientFocusLayout, visibleLayout]);
   const toggleFocusedPaneFullscreen = useCallback(() => {
     const current = transientFocusLayoutStateRef.current;
     if (current?.active) {
@@ -345,6 +375,7 @@ export function Shell({
       layout: nextLayout,
       sourceLayoutIndex: config.activeLayoutIndex,
       active: true,
+      hiddenDockedIds: captureFullscreenHiddenDockedIds(visibleLayout, focusedPaneId),
     });
     focusPane(focusedPaneId);
     return true;
@@ -498,6 +529,7 @@ export function Shell({
   useShellPaneManagementShortcuts({
     cancelActiveDrag,
     closeAllFloatingPanes,
+    closePane,
     closeFocusedPane,
     copyFocusedPaneScreenshot,
     exportFocusedPaneCsv,
@@ -513,6 +545,9 @@ export function Shell({
     startWindowMode,
     toggleFocusedPaneFullscreen,
     toggleFocusedPaneFloating,
+    transientFocusActive,
+    transientFocusPaneId,
+    unfocusFocusedPane,
   });
 
   const openPaneMenu = useCallback((paneId: string, rect: LayoutBounds, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
@@ -617,6 +652,9 @@ export function Shell({
     setMenuState,
     snapGuides,
     transientFocusActive,
+    transientFocusPaneId,
+    hiddenDockedIds,
+    exitTransientFocus: toggleFocusedPaneFullscreen,
     togglePaneFloating,
     updateWindowModePreviewLayout,
     visibleFloatingPanes,
@@ -705,6 +743,7 @@ export function Shell({
         startNativeDockedDrag={startNativeDockedDrag}
         startNativeFloatingDrag={startNativeFloatingDrag}
         startNativeFloatResize={startNativeFloatResize}
+        hiddenDockedIds={hiddenDockedIds}
         transientFocusActive={transientFocusActive}
         transientFocusPaneId={transientFocusPaneId}
         visibleFloatingPanes={visibleFloatingPanes}
