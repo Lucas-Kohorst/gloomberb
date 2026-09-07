@@ -14,8 +14,7 @@ import {
   buildSeriesCatalogSuggestions,
   buildChartSeriesAssistContext,
 } from "../src/plugins/builtin/chart-composer/series-catalog";
-import { resolveChartSpecData, type UniversalSeriesLoadResult } from "../src/time-series/resolve";
-import type { TimeSeriesPoint } from "../src/time-series/types";
+import { resolveChartSpecData, type ChartResolveSources, type UniversalSeriesLoadResult } from "../src/time-series/resolve";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 
@@ -75,7 +74,7 @@ console.log();
 console.log("=== Resolution (stub loaders) ===\n");
 
 // Simulate loaders to verify the pipeline end-to-end
-const stubSources = {
+const stubSources: ChartResolveSources = {
   dataProvider: null,
   loadFredSeries: async () => ({
     data: { observations: [], info: null },
@@ -83,40 +82,45 @@ const stubSources = {
     stale: false,
     source: "cache" as const,
   }),
-  loadAdjacentIndexSeries: async (indexId: string): Promise<UniversalSeriesLoadResult> => ({
-    points: [
-      { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 55, provenance: { providerId: "adjacent", quality: "reported" as const } },
-      { date: new Date("2024-06-01T00:00:00Z"), observedAt: new Date("2024-06-01T00:00:00Z"), value: 62, provenance: { providerId: "adjacent", quality: "reported" as const } },
-    ],
-    unit: "index",
-    unitGroup: `adjacent-index:${indexId}`,
-  }),
-  loadBenchmarkSeries: async (selector: string, metric: string): Promise<UniversalSeriesLoadResult> => ({
-    points: [
-      { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" as const } },
-    ],
-    unit: "tok/s",
-    unitGroup: `benchmark:${metric}`,
-    label: `${selector} Throughput`,
-    warning: "Point-in-time snapshot at model release date; no historical time series available.",
-  }),
-  loadPollSeries: async (subject: string, choice: string): Promise<UniversalSeriesLoadResult> => ({
-    points: [
-      { date: new Date("2024-01-05T00:00:00Z"), observedAt: new Date("2024-01-05T00:00:00Z"), value: 52, provenance: { providerId: "votehub", quality: "reported" as const } },
-      { date: new Date("2024-06-05T00:00:00Z"), observedAt: new Date("2024-06-05T00:00:00Z"), value: 48, provenance: { providerId: "votehub", quality: "reported" as const } },
-    ],
-    unit: "%",
-    unitGroup: `poll:${subject}`,
-    label: `${subject} ${choice}`,
-  }),
-  loadPredictionMarketSeries: async (venue: string, marketId: string): Promise<UniversalSeriesLoadResult> => ({
-    points: [
-      { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" as const } },
-    ],
-    unit: "%",
-    unitGroup: `prediction-market:${venue}`,
-    label: `${venue} ${marketId}`,
-  }),
+  loadUniversalSeries: async (source): Promise<UniversalSeriesLoadResult> => {
+    switch (source.kind) {
+      case "adjacent-index": return {
+        points: [
+          { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 55, provenance: { providerId: "adjacent", quality: "reported" as const } },
+          { date: new Date("2024-06-01T00:00:00Z"), observedAt: new Date("2024-06-01T00:00:00Z"), value: 62, provenance: { providerId: "adjacent", quality: "reported" as const } },
+        ],
+        unit: "index",
+        unitGroup: `adjacent-index:${source.indexId}`,
+      };
+      case "benchmark": return {
+        points: [
+          { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" as const } },
+        ],
+        unit: "tok/s",
+        unitGroup: `benchmark:${source.metric}`,
+        label: `${source.selector} Throughput`,
+        warning: "Point-in-time snapshot at model release date; no historical time series available.",
+      };
+      case "poll": return {
+        points: [
+          { date: new Date("2024-01-05T00:00:00Z"), observedAt: new Date("2024-01-05T00:00:00Z"), value: 52, provenance: { providerId: "votehub", quality: "reported" as const } },
+          { date: new Date("2024-06-05T00:00:00Z"), observedAt: new Date("2024-06-05T00:00:00Z"), value: 48, provenance: { providerId: "votehub", quality: "reported" as const } },
+        ],
+        unit: "%",
+        unitGroup: `poll:${source.subject}`,
+        label: `${source.subject} ${source.choice}`,
+      };
+      case "prediction-market": return {
+        points: [
+          { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" as const } },
+        ],
+        unit: "%",
+        unitGroup: `prediction-market:${source.venue}`,
+        label: `${source.venue} ${source.marketId}`,
+      };
+      default: throw new Error(`No verification fixture for ${source.kind}`);
+    }
+  },
 };
 
 async function verifyResolution(expr: string) {

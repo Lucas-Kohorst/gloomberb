@@ -21,6 +21,8 @@ import {
 import { BROWSER_DATA_DIR, installBrowserConfigStore } from "./config-host";
 import { browserRendererHost, browserUiHost } from "./ui-host";
 import { createBrowserDeepLinkBridge } from "./deeplink-bridge";
+import { initializeBrowserPersistenceIdentity } from "./storage";
+import { readLastHostedUserId } from "../../data/config/hosted-user-persist";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
 // app are both browser contexts but differ in what plugins may do.
@@ -37,7 +39,12 @@ async function boot(): Promise<void> {
   installBrowserConfigStore();
   installBrowserFetchTransports();
   installFocusScopeRelease();
-  await restoreBrowserCloudSession();
+  const session = await restoreBrowserCloudSession();
+  initializeBrowserPersistenceIdentity(
+    localStorage,
+    session.degraded ? readLastHostedUserId() : session.user?.id ?? null,
+    BROWSER_DATA_DIR,
+  );
   const config = await loadConfig(BROWSER_DATA_DIR);
   applyLanguageFromConfig(config);
   const deepLinkBridge = createBrowserDeepLinkBridge();

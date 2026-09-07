@@ -1,6 +1,8 @@
 import { apiClient } from "../api-client";
 import { ApiRequestError } from "../api-client/errors";
 import { parseSharePayload, type SharePayload } from "./payload";
+import { isStoredShareId } from "./routes";
+export { PUBLIC_SHARE_ORIGIN, publicShareUrl, openLiveShareUrl, parseShareId } from "./routes";
 
 declare const __GLOOMBERB_API_URL__: string | undefined;
 
@@ -10,8 +12,6 @@ export const SHARE_API_ORIGIN = bundledApiOrigin
     ? `${bundledApiOrigin}/api`
     : bundledApiOrigin
   : "https://api.gloom.sh";
-export const PUBLIC_SHARE_ORIGIN = "https://term.gloom.sh";
-const SHARE_ID = /^[a-f0-9]{32}$/;
 type ShareFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 export type ShareRecord = SharePayload & {
@@ -61,7 +61,7 @@ export async function createShare(payload: SharePayload, fetchImpl?: ShareFetch)
   }
   if (!body || typeof body !== "object") throw new Error("The share service returned an invalid response.");
   const { id, expiresAt } = body as Record<string, unknown>;
-  if (typeof id !== "string" || !SHARE_ID.test(id) || !validDate(expiresAt)) {
+  if (typeof id !== "string" || !isStoredShareId(id) || !validDate(expiresAt)) {
     throw new Error("The share service returned an invalid response.");
   }
   return { id, expiresAt };
@@ -72,7 +72,7 @@ export async function getShare(
   fetchImpl: ShareFetch = fetch,
   options?: { trackView?: boolean },
 ): Promise<ShareRecord | null> {
-  if (!SHARE_ID.test(id)) return null;
+  if (!isStoredShareId(id)) return null;
   const purpose = options?.trackView === false ? "?purpose=open" : "";
   const response = await fetchImpl(`${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}${purpose}`, {
     credentials: "include",
@@ -93,7 +93,7 @@ export async function getShare(
 }
 
 export async function deleteShare(id: string, fetchImpl: ShareFetch = fetch): Promise<void> {
-  if (!SHARE_ID.test(id)) throw new Error("Invalid share id.");
+  if (!isStoredShareId(id)) throw new Error("Invalid share id.");
   const response = await fetchImpl(`${SHARE_API_ORIGIN}/shares/${encodeURIComponent(id)}`, {
     method: "DELETE",
     credentials: "include",
@@ -102,26 +102,5 @@ export async function deleteShare(id: string, fetchImpl: ShareFetch = fetch): Pr
     throw new Error(response.status === 401 || response.status === 403
       ? "Only the signed-in owner can delete this share."
       : "Could not delete share.");
-  }
-}
-
-export function publicShareUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string {
-  if (!SHARE_ID.test(id)) throw new Error("Invalid share id.");
-  return new URL(`/s/${encodeURIComponent(id)}`, origin).toString();
-}
-
-export function openLiveShareUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string {
-  if (!SHARE_ID.test(id)) throw new Error("Invalid share id.");
-  return new URL(`/api/shares/${encodeURIComponent(id)}/open`, origin).toString();
-}
-
-export function parseShareId(pathname: string): string | null {
-  const match = /^\/s\/([^/]+)\/?$/.exec(pathname);
-  if (!match) return null;
-  try {
-    const id = decodeURIComponent(match[1] ?? "");
-    return SHARE_ID.test(id) ? id : null;
-  } catch {
-    return null;
   }
 }

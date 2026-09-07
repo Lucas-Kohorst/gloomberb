@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   normalizeAdjacentIndexPrices,
-  adjacentIndexPricesToPricePoints,
 } from "../plugins/builtin/adjacent/normalize";
 import type { AdjacentPriceSample } from "../plugins/builtin/adjacent/types";
 import {
@@ -10,8 +9,6 @@ import {
   normalizeVoteHubPoll,
 } from "../plugins/builtin/polls/normalize";
 import type { VoteHubPoll } from "../plugins/builtin/polls/types";
-import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
-import type { LlmStatsRow } from "../plugins/builtin/llm-stats/types";
 import { resolveChartSpecData, type ChartResolveSources, type UniversalSeriesLoadResult } from "./resolve";
 import { buildCustomChartPreset } from "../plugins/builtin/chart-composer/presets";
 import type { ChartSpec, TimeSeriesPoint } from "./types";
@@ -35,13 +32,7 @@ describe("adjacent index price normalisation", () => {
     expect(points[1]!.value).toBe(58.1);
   });
 
-  test("converts to PricePoint with close = value", () => {
-    const points = normalizeAdjacentIndexPrices([
-      { timestamp: "2024-01-01T00:00:00Z", price: 52 },
-    ]);
-    const pricePoints = adjacentIndexPricesToPricePoints(points);
-    expect(pricePoints).toEqual([{ date: points[0]!.date, close: 52 }]);
-  });
+
 });
 
 // ---------------------------------------------------------------------------
@@ -110,52 +101,6 @@ describe("poll trend computation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Benchmark mapping math (release-date → point)
-// ---------------------------------------------------------------------------
-
-describe("benchmark release-date mapping", () => {
-  test("maps rows with release dates to points, skipping missing dates and non-finite values", async () => {
-    // We test the mapping logic by calling the loader with a mocked fetch.
-    // Since fetchLlmStatsData hits the real API, we verify the mapping math
-    // through the loader interface with a stub.
-
-    const rows: LlmStatsRow[] = [
-      {
-        id: "gpt-4o", displayName: "GPT-4o", organization: "OpenAI", provider: "OpenAI",
-        releaseDate: "2024-05-13", contextLength: 128000, inputPrice: 5, outputPrice: 15,
-        inputModalities: [], outputModalities: [], tier: "frontier",
-        totalCalls: 1000, failedCalls: 10, failureRate: 1, avgThroughput: 85.5,
-        p5Throughput: 50, avgLatency: 1200, p95Latency: 2000, avgTtft: 500, url: "",
-      },
-      {
-        id: "gpt-4-turbo", displayName: "GPT-4 Turbo", organization: "OpenAI", provider: "OpenAI",
-        releaseDate: null, contextLength: 128000, inputPrice: 10, outputPrice: 30,
-        inputModalities: [], outputModalities: [], tier: "frontier",
-        totalCalls: 2000, failedCalls: 20, failureRate: 1, avgThroughput: 45.2,
-        p5Throughput: 20, avgLatency: 1500, p95Latency: 3000, avgTtft: 800, url: "",
-      },
-    ];
-
-    // The mapping logic: filter by org, map release_date + metric → point
-    const selectorLower = "openai";
-    const matching = rows.filter((r) => r.organization.toLowerCase() === selectorLower);
-    const points: TimeSeriesPoint[] = [];
-    for (const row of matching) {
-      if (!row.releaseDate) continue;
-      const date = new Date(row.releaseDate);
-      if (!Number.isFinite(date.getTime())) continue;
-      const value = row.avgThroughput;
-      if (typeof value !== "number" || !Number.isFinite(value)) continue;
-      points.push({ date, observedAt: date, value, provenance: { providerId: "llm-stats", quality: "reported" } });
-    }
-    // Only the model with a release date produces a point.
-    expect(points).toHaveLength(1);
-    expect(points[0]!.value).toBe(85.5);
-    expect(points[0]!.date.toISOString().slice(0, 10)).toBe("2024-05-13");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Resolution pipeline integration — new kinds resolve via injected loaders
 // ---------------------------------------------------------------------------
 
@@ -169,41 +114,46 @@ describe("universal series resolution", () => {
         stale: false,
         source: "cache",
       }),
-      loadAdjacentIndexSeries: async (indexId): Promise<UniversalSeriesLoadResult> => ({
-        points: [
-          { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 55, provenance: { providerId: "adjacent", quality: "reported" } },
-          { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 60, provenance: { providerId: "adjacent", quality: "reported" } },
-        ],
-        unit: "index",
-        unitGroup: "level",
-      }),
-      loadBenchmarkSeries: async (selector, metric): Promise<UniversalSeriesLoadResult> => ({
-        points: [
-          { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" } },
-        ],
-        unit: "tok/s",
-        unitGroup: `benchmark:${metric}`,
-        label: `${selector} Throughput`,
-        warning: "Point-in-time snapshot at model release date; no historical time series available.",
-      }),
-      loadPollSeries: async (subject, choice): Promise<UniversalSeriesLoadResult> => ({
-        points: [
-          { date: new Date("2024-01-05T00:00:00Z"), observedAt: new Date("2024-01-05T00:00:00Z"), value: 52, provenance: { providerId: "votehub", quality: "reported" } },
-          { date: new Date("2024-02-05T00:00:00Z"), observedAt: new Date("2024-02-05T00:00:00Z"), value: 48, provenance: { providerId: "votehub", quality: "reported" } },
-        ],
-        unit: "%",
-        unitGroup: "percent",
-        label: `${subject} ${choice}`,
-      }),
-      loadPredictionMarketSeries: async (venue, marketId): Promise<UniversalSeriesLoadResult> => ({
-        points: [
-          { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" } },
-          { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 48, provenance: { providerId: "adjacent", quality: "reported" } },
-        ],
-        unit: "%",
-        unitGroup: "probability",
-        label: `${venue} ${marketId}`,
-      }),
+      loadUniversalSeries: async (source): Promise<UniversalSeriesLoadResult> => {
+        switch (source.kind) {
+          case "adjacent-index": return {
+            points: [
+              { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 55, provenance: { providerId: "adjacent", quality: "reported" } },
+              { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 60, provenance: { providerId: "adjacent", quality: "reported" } },
+            ],
+            unit: "index",
+            unitGroup: "level",
+          };
+          case "benchmark": return {
+            points: [
+              { date: new Date("2024-05-13T00:00:00Z"), observedAt: new Date("2024-05-13T00:00:00Z"), value: 85.5, provenance: { providerId: "llm-stats", quality: "reported" } },
+            ],
+            unit: "tok/s",
+            unitGroup: `benchmark:${source.metric}`,
+            label: `${source.selector} Throughput`,
+            warning: "Point-in-time snapshot at model release date; no historical time series available.",
+          };
+          case "poll": return {
+            points: [
+              { date: new Date("2024-01-05T00:00:00Z"), observedAt: new Date("2024-01-05T00:00:00Z"), value: 52, provenance: { providerId: "votehub", quality: "reported" } },
+              { date: new Date("2024-02-05T00:00:00Z"), observedAt: new Date("2024-02-05T00:00:00Z"), value: 48, provenance: { providerId: "votehub", quality: "reported" } },
+            ],
+            unit: "%",
+            unitGroup: "percent",
+            label: `${source.subject} ${source.choice}`,
+          };
+          case "prediction-market": return {
+            points: [
+              { date: new Date("2024-01-01T00:00:00Z"), observedAt: new Date("2024-01-01T00:00:00Z"), value: 42, provenance: { providerId: "adjacent", quality: "reported" } },
+              { date: new Date("2024-02-01T00:00:00Z"), observedAt: new Date("2024-02-01T00:00:00Z"), value: 48, provenance: { providerId: "adjacent", quality: "reported" } },
+            ],
+            unit: "%",
+            unitGroup: "probability",
+            label: `${source.venue} ${source.marketId}`,
+          };
+          default: throw new Error(`Unexpected test source ${source.kind}`);
+        }
+      },
       ...overrides,
     };
   }
@@ -228,13 +178,29 @@ describe("universal series resolution", () => {
     expect(result.series[0]!.warning).toContain("Point-in-time");
   });
 
-  test("resolves a poll series", async () => {
-    const spec: ChartSpec = buildCustomChartPreset("POLL:Donald Trump:Approve");
-    const result = await resolveChartSpecData(spec, makeSources());
-    expect(result.errors).toHaveLength(0);
-    expect(result.series).toHaveLength(1);
-    expect(result.series[0]!.points).toHaveLength(2);
-    expect(result.series[0]!.unit).toBe("%");
+  test("deduplicates identical sources without colliding on delimiters in source fields", async () => {
+    const spec = buildCustomChartPreset("POLL:Race:Approve");
+    const base = spec.series[0]!;
+    spec.series = [
+      { ...base, id: "first", source: { kind: "poll", subject: "Race:Primary", choice: "Approve" } },
+      { ...base, id: "distinct", source: { kind: "poll", subject: "Race", choice: "Primary:Approve" } },
+      { ...base, id: "duplicate", source: { choice: "Approve", subject: "Race:Primary", kind: "poll" } },
+    ];
+    const subjects: string[] = [];
+    const result = await resolveChartSpecData(spec, makeSources({
+      loadUniversalSeries: async (source) => {
+        if (source.kind !== "poll") throw new Error("Expected a poll source");
+        subjects.push(source.subject);
+        const date = new Date("2024-01-01T00:00:00Z");
+        return {
+          unit: "%", unitGroup: "percent",
+          points: [{ date, observedAt: date, value: source.subject === "Race" ? 40 : 60 }],
+        };
+      },
+    }));
+    expect(result.errors).toEqual([]);
+    expect(subjects).toEqual(["Race:Primary", "Race"]);
+    expect(result.series.map((series) => series.points[0]?.value)).toEqual([60, 40, 60]);
   });
 
   test("resolves a prediction-market series through injected loaders", async () => {
@@ -249,7 +215,7 @@ describe("universal series resolution", () => {
 
   test("produces a loadable series when a universal loader is missing", async () => {
     const spec: ChartSpec = buildCustomChartPreset("ADJ:adjacent-djt");
-    const result = await resolveChartSpecData(spec, makeSources({ loadAdjacentIndexSeries: undefined }));
+    const result = await resolveChartSpecData(spec, makeSources({ loadUniversalSeries: undefined }));
     expect(result.series).toHaveLength(1);
     expect(result.series[0]!.points).toHaveLength(0);
     expect(result.errors.length).toBeGreaterThan(0);
@@ -259,8 +225,9 @@ describe("universal series resolution", () => {
     const spec: ChartSpec = buildCustomChartPreset("POLL:Donald Trump:Approve, KALSHI:MISSING");
     spec.series[1] = { ...spec.series[1]!, label: "   " };
     const result = await resolveChartSpecData(spec, makeSources({
-      loadPredictionMarketSeries: async () => {
-        throw new Error("Kalshi history is unavailable.");
+      loadUniversalSeries: async (source) => {
+        if (source.kind === "prediction-market") throw new Error("Kalshi history is unavailable.");
+        return makeSources().loadUniversalSeries!(source);
       },
     }));
 

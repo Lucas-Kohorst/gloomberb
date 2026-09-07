@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import { hydrateHostedWorkspaceFromCloud } from "./hosted-sync-hydrate";
-import { readHostedTickers } from "./hosted-ticker-persist";
+import { readHostedTickers, writeHostedTickers, parseIncomingTickerRecords } from "./hosted-ticker-persist";
+import { readHostedNotes, writeHostedNotes } from "./hosted-notes-persist";
 import { setHostedConfigUserId, writeHostedUserConfig, peekHostedUserConfigStamp } from "./hosted-user-persist";
 import type { SyncSnapshot } from "../../sync/types";
 
@@ -162,5 +163,22 @@ describe("hosted workspace hydrate", () => {
     });
 
     expect(peekHostedUserConfigStamp()?.updatedAt).toBe(stamp);
+  });
+
+  test("stale snapshots cannot overwrite local notes or resurrect removed tickers", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    writeHostedUserConfig(config);
+    writeHostedTickers(parseIncomingTickerRecords([{ ticker: "LOCAL" }]));
+    writeHostedNotes({ quickNotesIndex: [], quickNotes: {}, tickerNotes: { LOCAL: "Latest note" } });
+    await hydrateHostedWorkspaceFromCloud(config, {
+      pullConfig: async () => ({
+        config: null, updatedAt: "2020-01-01T00:00:00Z",
+        tickers: [{ ticker: "REMOVED" }], notes: { tickerNotes: { LOCAL: "Old note" } },
+      }),
+      pullSync: async () => ({ snapshot: snapshot({}, { tickers: [{ ticker: "REMOVED" }] }) }),
+    });
+    expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["LOCAL"]);
+    expect(readHostedNotes().tickerNotes).toEqual({ LOCAL: "Latest note" });
   });
 });

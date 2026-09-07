@@ -35,13 +35,21 @@ export function installBrowserFetchTransports(): void {
   setHttpFetchTransport((url, init) => fetch(url, init));
 }
 
-export async function restoreBrowserCloudSession(budgetMs = 5_000): Promise<void> {
+export async function restoreBrowserCloudSession(
+  budgetMs = 5_000,
+): Promise<{ user: ReturnType<typeof apiClient.getCurrentUser>; degraded: boolean }> {
+  const expired = Symbol("expired");
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), budgetMs);
+  const deadline = new Promise<typeof expired>((resolve) => {
+    timer = setTimeout(() => resolve(expired), budgetMs);
   });
   try {
-    await Promise.race([apiClient.getSession().catch(() => null), deadline]);
+    const user = await Promise.race([apiClient.getSession(), deadline]);
+    return user === expired
+      ? { user: null, degraded: true }
+      : { user, degraded: false };
+  } catch {
+    return { user: null, degraded: true };
   } finally {
     clearTimeout(timer);
   }
