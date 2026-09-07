@@ -6,6 +6,7 @@ import {
   BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
   setupBreakingNewsNotifications,
 } from "./breaking/notifications";
+import { setupTopNewsNotifications } from "./news/top-notifications";
 import {
   BREAKING_MUTED_SECTOR_OPTIONS,
   BREAKING_NEWS_MUTED_SECTORS_KEY,
@@ -86,6 +87,7 @@ const FeedPane = createNewsPresetPane({
 });
 
 let disposeBreakingNewsNotifications: (() => void) | null = null;
+let disposeTopNewsNotifications: (() => void) | null = null;
 let disposeRssConnection: (() => void) | null = null;
 let disposeJinaConnection: (() => void) | null = null;
 
@@ -353,11 +355,14 @@ export const newsWireModule: PluginModule = {
     });
 
     disposeBreakingNewsNotifications = setupBreakingNewsNotifications(ctx);
+    disposeTopNewsNotifications = setupTopNewsNotifications(ctx);
   },
   dispose() {
     cancelRssNewsWarm();
     disposeBreakingNewsNotifications?.();
     disposeBreakingNewsNotifications = null;
+    disposeTopNewsNotifications?.();
+    disposeTopNewsNotifications = null;
     disposeRssConnection?.();
     disposeRssConnection = null;
     disposeJinaConnection?.();

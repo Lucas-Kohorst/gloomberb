@@ -3,6 +3,7 @@ import type { NewsArticle } from "../../../../news/types";
 import { getSharedNewsService } from "../../../../news/hooks";
 import { scheduleOnIdle } from "../../../../utils/schedule-on-idle";
 import { NEWS_ARTICLE_READER_TEMPLATE_ID } from "../../shared/article-pop-out";
+import { searchAdjacentRelatedArticles } from "../../adjacent/news";
 import { stashNewsArticle } from "./news/article-stash";
 
 const ARTICLE_SEARCH_LIMIT = 8;
@@ -219,4 +220,75 @@ export async function loadNewsArticles(): Promise<NewsArticle[]> {
   const service = getSharedNewsService();
   if (!service) return [];
   return (await service.load(ARTICLE_SEARCH_QUERY)).articles;
+}
+
+const RELATED_NEWS_LIMIT = 40;
+
+const RELATED_GENERIC_TOKENS = new Set([
+  "index",
+  "indices",
+  "rate",
+  "rates",
+  "market",
+  "markets",
+  "team",
+  "total",
+  "win",
+  "wins",
+  "red",
+  "blue",
+  "nti",
+  "will",
+  "does",
+  "vs",
+  "versus",
+]);
+
+/**
+ * Subject lines like "HOUNTI NFL Team Index: Houston" are too AND-heavy for
+ * ART scoring. Drop tickers and generic index words so the lookup matches
+ * what a person would type in the command bar.
+ */
+export function relatedNewsSearchText(query: string): string {
+  const leading = query.trim().split(/\s+/)[0] ?? "";
+  const droppedTicker = /^[A-Z]{3,8}$/.test(leading) ? leading.toLowerCase() : "";
+  const tokens = tokenizeArticleQuery(query).filter((token) => (
+    !RELATED_GENERIC_TOKENS.has(token) && token !== droppedTicker
+  ));
+  if (tokens.length === 0) return adjacentArticleSearchText(query) ?? query.trim();
+  return tokens.slice(0, 4).join(" ");
+}
+
+/**
+ * Same lookup the command bar uses for ART: local latest headlines scored
+ * against the query, plus Adjacent market-related articles.
+ */
+export async function searchRelatedNews(
+  query: string,
+  limit = RELATED_NEWS_LIMIT,
+): Promise<NewsArticle[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const searchText = relatedNewsSearchText(trimmed) || trimmed;
+  const [local, adjacent] = await Promise.all([
+    loadNewsArticles().catch(() => [] as NewsArticle[]),
+    searchAdjacentRelatedArticles(searchText),
+  ]);
+  const merged: NewsArticle[] = [];
+  const seen = new Set<string>();
+  for (const article of [...adjacent, ...local]) {
+    const key = article.url || article.id;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(article);
+  }
+  const scored = searchNewsArticles(merged, searchText, limit);
+  if (scored.length > 0) return scored;
+  if (adjacent.length > 0) return adjacent.slice(0, limit);
+  const tokens = tokenizeArticleQuery(searchText);
+  if (tokens.length > 1) {
+    const looser = searchNewsArticles(merged, tokens[0]!, limit);
+    if (looser.length > 0) return looser;
+  }
+  return [];
 }

@@ -86,4 +86,14 @@ describe("buildArticleSearchResultItems", () => {
     items[0]?.action();
     expect(opened).toEqual(["sec:0001"]);
   });
+
+  test("searches the local wire for free text, not only ART-shaped queries", () => {
+    const items = buildArticleSearchResultItems({
+      articles: [article("Atlanta heat wave breaks records", "RSS")],
+      query: "atlanta",
+      phase: "ready",
+      onOpen: () => {},
+    });
+    expect(items.map((item) => item.label)).toEqual(["Atlanta heat wave breaks records"]);
+  });
 });

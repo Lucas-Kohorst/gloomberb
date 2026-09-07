@@ -19,6 +19,7 @@ import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
 import { changelogReleaseSharePayload, useCopyShareLink } from "../shared/article-share";
+import { usePersistedReadIds } from "../shared/read-state";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -31,6 +32,10 @@ const CHANGELOG_LIMIT = 40;
 /** GitHub can hang or be blocked outright; the pane must still reach a verdict. */
 const CHANGELOG_TIMEOUT_MS = 5_000;
 const CHANGELOG_CACHE_TTL_MS = 10 * 60 * 1000;
+const CHANGELOG_READ_ADAPTER = {
+  getIds: (state: { releaseIds: string[] }) => state.releaseIds,
+  withIds: (_state: { releaseIds: string[] }, releaseIds: string[]) => ({ releaseIds }),
+};
 
 // ponytail: process-lifetime cache, move into the updater module if other
 // surfaces start reading releases too.
@@ -49,21 +54,16 @@ function formatReleaseDate(value: string): string {
   });
 }
 
-function buildColumns(width: number, releases: ChangelogRelease[]): ChangelogColumn[] {
-  const dateWidth = 12;
+function buildColumns(releases: ChangelogRelease[]): ChangelogColumn[] {
   const versionWidth = Math.min(
     Math.max(7, ...releases.map((release) => release.version.length)),
     14,
   );
-  const titleWidth = Math.max(
-    1,
-    width - (dateWidth + 1) - (versionWidth + 1) - 3,
-  );
 
   return [
-    { id: "date", label: "Date", width: dateWidth, align: "left" },
+    { id: "date", label: "Date", width: 12, align: "left" },
     { id: "version", label: "Version", width: versionWidth, align: "left" },
-    { id: "title", label: "Title", width: titleWidth, align: "left" },
+    { id: "title", label: "Title", width: 1, align: "left", flexGrow: 1 },
   ];
 }
 
@@ -132,6 +132,12 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
   const abortRef = useRef<AbortController | null>(null);
   const copyShareLink = useCopyShareLink();
   const requestedVersionOpenedRef = useRef(false);
+  const { readIds, markRead } = usePersistedReadIds({
+    key: "read-changelog",
+    fallback: { releaseIds: [] },
+    schemaVersion: 1,
+    adapter: CHANGELOG_READ_ADAPTER,
+  });
 
   const loadReleases = useCallback(async (force = false) => {
     if (!force && cachedReleases && Date.now() - cachedReleases.fetchedAt < CHANGELOG_CACHE_TTL_MS) {
@@ -217,7 +223,8 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     requestedVersionOpenedRef.current = true;
     setSelectedReleaseId(match.id);
     setOpenReleaseId(match.id);
-  }, [releases, requestedVersion]);
+    markRead(match.id);
+  }, [markRead, releases, requestedVersion]);
 
   useEffect(() => {
     if (!openReleaseId) return;
@@ -252,7 +259,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     void loadReleases(true);
   });
 
-  const columns = useMemo(() => buildColumns(width, releases), [releases, width]);
+  const columns = useMemo(() => buildColumns(releases), [releases]);
 
   const scrollDetailBy = useCallback((delta: number) => {
     const scrollBox = detailScrollRef.current;
@@ -302,13 +309,16 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
           color: selectedColor ?? colors.textBright,
           attributes: TextAttributes.BOLD,
         };
-      case "title":
+      case "title": {
+        const read = readIds.has(release.id);
         return {
           text: release.title,
-          color: selectedColor ?? colors.text,
+          color: read ? colors.textMuted : (selectedColor ?? colors.text),
+          attributes: read ? TextAttributes.NONE : undefined,
         };
+      }
     }
-  }, []);
+  }, [readIds]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextChangelogSortPreference(current, columnId));
@@ -342,6 +352,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     source: linkRelease?.version,
     label: "release",
     info: footerInfo,
+    onOpen: linkRelease ? () => markRead(linkRelease.id) : undefined,
   });
 
   if (releases.length === 0 && (status === "loading" || status === "error")) {
@@ -375,7 +386,10 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
         getId: (release) => release.id,
         onChange: (_id, release) => selectRelease(release),
       }}
-      onActivate={(release) => setOpenReleaseId(release.id)}
+      onActivate={(release) => {
+        markRead(release.id);
+        setOpenReleaseId(release.id);
+      }}
       onDetailKeyDown={handleDetailKeyDown}
       rootWidth={width}
       rootHeight={height}
@@ -386,6 +400,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
       sortDirection={sortPreference.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(release) => release.id}
+      getRowRevision={(release) => `${release.id}:${readIds.has(release.id) ? 1 : 0}`}
       renderCell={renderCell}
       emptyStateTitle="No changelog entries."
       showHorizontalScrollbar={false}

@@ -3,6 +3,7 @@ import { TextAttributes, type ScrollBoxRenderable } from "../../../../../ui";
 import {
   DataTableStackView,
   PaneStatusBody,
+  TickerEmptyState,
   TickerBadgeList,
   sortStackItems,
   type DataTableCell,
@@ -16,6 +17,7 @@ import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import { collectNewsDisplayTickers } from "../../../../../news/ticker-symbols";
 import { newsOriginLabel } from "../../../../../news/origins";
 import { formatRelativeTime } from "../../../../../utils/datetime-format";
+import { isPlainKey } from "../../../../../utils/keyboard";
 import { truncateWithEllipsis } from "../../../../../utils/text-wrap";
 import { formatNewsCategory } from "../categories";
 import { useRecentlyArrivedIds } from "../../../../../components/data-table/use-recently-arrived-ids";
@@ -72,15 +74,20 @@ export function newsTableStatusContent({
   loading,
   error,
   subject,
+  ticker,
   emptyTitle,
   emptyMessage,
 }: {
   loading: boolean;
   error?: string | null;
   subject: string;
+  ticker?: string;
   emptyTitle: string;
   emptyMessage?: string;
 }): ReactNode {
+  if (ticker && !loading) {
+    return <TickerEmptyState kind="news" symbol={ticker} detail="news" error={error} />;
+  }
   return (
     <PaneStatusBody
       loading={loading}
@@ -295,6 +302,13 @@ export function NewsArticleStackView({
     onOpenArticle(article);
   }, [onArticleRead, onOpenArticle]);
 
+  const selectArticle = useCallback((
+    id: string,
+    _article: MarketNewsItem,
+  ) => {
+    setSelectedArticleId(id);
+  }, [setSelectedArticleId]);
+
   const getRowBackgroundColor = useCallback((
     item: MarketNewsItem,
     _index: number,
@@ -337,14 +351,14 @@ export function NewsArticleStackView({
           text: truncateWithEllipsis(item.source, column.width),
           color: selectedColor ?? colors.textMuted,
         };
-      case "title":
+      case "title": {
+        const read = readArticleIds?.has(item.id) === true;
         return {
           text: truncateWithEllipsis(titleForArticle?.(item) ?? item.title, column.width),
-          color: selectedColor ?? colors.text,
-          attributes: readArticleIds?.has(item.id)
-            ? TextAttributes.NONE
-            : TextAttributes.BOLD,
+          color: read ? colors.textMuted : (selectedColor ?? colors.text),
+          attributes: read ? TextAttributes.NONE : TextAttributes.BOLD,
         };
+      }
       case "tickers": {
         const tickers = fitTickerSymbols(collectNewsDisplayTickers(item.tickers), column.width);
         return {
@@ -408,9 +422,10 @@ export function NewsArticleStackView({
     if (!onPopOut || !isPlainKey(event, "p")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
+    if (selectedArticleId) onArticleRead?.(selectedArticleId);
     onPopOut();
     return true;
-  }, [onPopOut, onShare]);
+  }, [onArticleRead, onPopOut, onShare, selectedArticleId]);
 
   return (
     <DataTableStackView<MarketNewsItem, NewsTableColumn>
@@ -423,7 +438,7 @@ export function NewsArticleStackView({
         kind: "id",
         selectedId: selectedArticleId,
         getId: (article) => article.id,
-        onChange: (id) => setSelectedArticleId(id),
+        onChange: selectArticle,
       }}
       onActivate={openArticle}
       rootBefore={rootBefore}

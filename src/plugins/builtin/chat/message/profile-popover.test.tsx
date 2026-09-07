@@ -8,7 +8,7 @@ import { testRender } from "../../../../renderers/opentui/test-utils";
 import { Box, Text } from "../../../../ui";
 import { makeAccountProfile } from "../test-harness";
 import { useChatProfilePopover } from "../profile-popover";
-import { requestOpenChatProfile } from "../profile-request";
+import { clearPendingChatProfile, requestOpenChatProfile } from "../profile-request";
 import {
   hasPublicChatProfileInfo,
   shouldOfferChatProfileSetup,
@@ -21,6 +21,7 @@ const originalGetAccountProfile = apiClient.getAccountProfile.bind(apiClient);
 afterEach(async () => {
   apiClient.getAccountProfile = originalGetAccountProfile;
   apiClient.setSessionToken(null);
+  clearPendingChatProfile();
   if (!testSetup) return;
   await act(async () => {
     testSetup?.renderer.destroy();
@@ -36,6 +37,29 @@ function makeUser(overrides: Partial<ChatUserSummary>): ChatUserSummary {
     profilePublic: true,
     ...overrides,
   };
+}
+
+function RequestedProfileHarness() {
+  const { profilePopoverUser } = useChatProfilePopover();
+  return (
+    <Box width={50} height={1}>
+      <Text>{profilePopoverUser ? `@${profilePopoverUser.username}` : "none"}</Text>
+    </Box>
+  );
+}
+
+function VisibleProfileCardHarness({ user }: { user: ChatUserSummary }) {
+  return (
+    <Box width={50} height={12}>
+      <UserProfilePopover
+        user={user}
+        width={50}
+        onClose={() => {}}
+        onDismiss={() => {}}
+        onKeepOpen={() => {}}
+      />
+    </Box>
+  );
 }
 
 function OwnProfileHarness({ user }: { user: ChatUserSummary }) {

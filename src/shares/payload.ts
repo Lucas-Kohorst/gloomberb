@@ -2,10 +2,13 @@ import {
   parseMarketplaceLayoutPayload,
   type LayoutMarketplacePayload,
 } from "../layout-marketplace/payload";
+import type { ChartSpec, PanelScale, SeriesStyle } from "../time-series/types";
 import { safeExternalUrl } from "../utils/external-url";
 
 export const MAX_SHARE_BYTES = 128 * 1024;
 const MAX_TITLE_LENGTH = 200;
+/** Tweets are stored as the article title; 200 chars rejects a normal post. */
+const MAX_ARTICLE_TITLE_LENGTH = 4_000;
 const MAX_TEXT_LENGTH = 50_000;
 const MAX_TABLE_COLUMNS = 20;
 const MAX_TABLE_ROWS = 200;
@@ -100,6 +103,116 @@ export type SharePayload =
   | { kind: "article"; data: ArticleShareData }
   | { kind: "pane"; data: PaneShareData };
 
+/**
+ * What the slim share page renders: snapshots captured from the terminal,
+ * distinct from the terminal's envelope model above. `parseSharePayload`
+ * returns this union only for the page's `(kind, data)` calling convention.
+ */
+export type SharePagePayload =
+  | { kind: "article"; data: ArticleSharePayload }
+  | { kind: "chart"; data: ChartSharePayload }
+  | { kind: "table"; data: TableSharePayload };
+
+// ---------------------------------------------------------------------------
+// Slim share page snapshot model
+//
+// The share document (`src/renderers/share`) renders snapshots captured from
+// the terminal: a chart keeps its panels and points, a table keeps its
+// rendered cells. These types describe that stored shape; the fork's own
+// terminal sharing API additionally carries the `pane` kind above.
+// ---------------------------------------------------------------------------
+
+export const SHARE_KINDS = ["article", "chart", "table"] as const;
+
+export type ShareKind = typeof SHARE_KINDS[number];
+
+/**
+ * Keys are single letters because a chart snapshot is mostly points and the
+ * stored record has a size ceiling: `{"t":1,"v":2}` against
+ * `{"time":1,"value":2}` is a third of the bytes across thousands of points.
+ */
+export interface ChartSharePoint {
+  /** Epoch milliseconds. */
+  t: number;
+  v?: number | null;
+  o?: number;
+  h?: number;
+  l?: number;
+  c?: number;
+}
+
+export interface ChartShareSeries {
+  id: string;
+  label: string;
+  color: string;
+  style: SeriesStyle;
+  axis: "left" | "right";
+  panelId: string;
+  unit?: string;
+  points: ChartSharePoint[];
+}
+
+export interface ChartSharePanel {
+  id: string;
+  label?: string;
+  height?: number;
+  scale?: PanelScale;
+}
+
+export interface ChartSharePayload {
+  title: string;
+  subtitle?: string;
+  /** ISO timestamp the snapshot was captured at. */
+  capturedAt: string;
+  panels: ChartSharePanel[];
+  series: ChartShareSeries[];
+  /** Inclusive bounds the snapshot was captured at, as ISO strings. */
+  window?: { start: string; end: string };
+  /**
+   * The authored spec, so the terminal can reopen the chart live instead of
+   * replaying frozen points. Absent on legacy shares.
+   */
+  spec?: ChartSpec;
+}
+
+export interface TableShareColumn {
+  id: string;
+  label: string;
+  align?: "left" | "right" | "center";
+  /** Relative width hint in characters, mirroring the pane's column config. */
+  width?: number;
+}
+
+export interface TableShareCell {
+  text: string;
+  color?: string;
+}
+
+export interface TableShareRow {
+  cells: TableShareCell[];
+  /** External destination for the row, when the source pane had one. */
+  url?: string;
+}
+
+export interface TableSharePayload {
+  title: string;
+  subtitle?: string;
+  /** ISO timestamp the snapshot was captured at. */
+  capturedAt: string;
+  columns: TableShareColumn[];
+  rows: TableShareRow[];
+  /** Set when rows were capped, so the page can say the view is partial. */
+  truncatedFrom?: number;
+  /** Pane template the rows came from, so the terminal can reopen it live. */
+  paneTemplateId?: string;
+}
+
+export interface ShareEnvelope {
+  kind: ShareKind;
+  data: unknown;
+  createdAt: string;
+}
+
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -149,7 +262,7 @@ function isChartData(value: unknown): value is ChartShareData {
 
 function isArticleData(value: unknown): value is ArticleShareData {
   return record(value)
-    && shortString(value.title)
+    && shortString(value.title, MAX_ARTICLE_TITLE_LENGTH)
     && typeof value.text === "string"
     && value.text.length <= MAX_TEXT_LENGTH
     && safeOptionalUrl(value.sourceUrl);
@@ -195,8 +308,9 @@ function parsePaneData(value: unknown): PaneShareData | null {
     : null;
 }
 
-export function parseSharePayload(value: unknown): SharePayload | null {
-  if (!record(value) || !shortString(value.kind, 20) || !("data" in value)) return null;
+/** Narrow a `{ kind, data }` envelope exactly as it was stored. */
+function parseShareEnvelope(value: Record<string, unknown>): SharePayload | null {
+  if (!shortString(value.kind, 20) || !("data" in value)) return null;
   let json: string;
   try { json = JSON.stringify(value); } catch { return null; }
   if (new TextEncoder().encode(json).byteLength > MAX_SHARE_BYTES) return null;
@@ -208,6 +322,67 @@ export function parseSharePayload(value: unknown): SharePayload | null {
     if (data) return { kind: "pane", data };
   }
   return null;
+}
+
+/**
+ * The slim share page stores snapshots captured from the terminal: tables
+ * carry rendered cells and charts carry panels plus series. Those are trusted
+ * enough to render by their presence — title and the two arrays — since the
+ * page draws only what it can address.
+ */
+export function parseTableSharePayload(value: unknown): TableSharePayload | null {
+  if (!record(value)) return null;
+  if (!Array.isArray(value.columns) || !Array.isArray(value.rows)) return null;
+  if (!shortString(value.title)) return null;
+  return value as unknown as TableSharePayload;
+}
+
+export function parseChartSharePayload(value: unknown): ChartSharePayload | null {
+  if (!record(value)) return null;
+  if (!Array.isArray(value.series) || !Array.isArray(value.panels)) return null;
+  if (!shortString(value.title)) return null;
+  return value as unknown as ChartSharePayload;
+}
+
+/** Narrow an untrusted `(kind, data)` pair the slim share page renders. */
+function parseShareByKind(kind: unknown, data: unknown): SharePagePayload | null {
+  if (kind === "article") {
+    const parsed = parseArticleSharePayload(data);
+    return parsed ? { kind: "article", data: parsed } : null;
+  }
+  if (kind === "table") {
+    const parsed = parseTableSharePayload(data);
+    return parsed ? { kind: "table", data: parsed } : null;
+  }
+  if (kind === "chart") {
+    const parsed = parseChartSharePayload(data);
+    return parsed ? { kind: "chart", data: parsed } : null;
+  }
+  return null;
+}
+
+/**
+ * Two calling conventions are live in this codebase: the terminal sharing API
+ * passes the whole `{ kind, data }` envelope, while the slim share page hands
+ * the pair separately. Accept both so neither drift breaks the other.
+ */
+export function parseSharePayload(envelope: unknown): SharePayload | null;
+export function parseSharePayload(kind: unknown, data: unknown): SharePagePayload | null;
+export function parseSharePayload(kindOrEnvelope: unknown, data?: unknown): SharePayload | SharePagePayload | null {
+  if (record(kindOrEnvelope) && "kind" in kindOrEnvelope && "data" in kindOrEnvelope) {
+    return parseShareEnvelope(kindOrEnvelope);
+  }
+  return parseShareByKind(kindOrEnvelope, data);
+}
+
+/**
+ * A chart share predating snapshots stored only a spec, which needs the
+ * market-data stack to draw; a snapshot carries rendered series instead.
+ * True when the envelope holds a spec but no top-level series.
+ */
+export function isSpecOnlyChartShare(data: unknown): boolean {
+  if (!record(data)) return false;
+  return record(data.spec) && !Array.isArray(data.series);
 }
 
 export function base64urlEncode(data: string): string {

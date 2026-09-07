@@ -26,6 +26,12 @@ const shareId = "0123456789abcdef0123456789abcdef";
 describe("share API client", () => {
   test("validates strict payloads and http(s)-only source URLs", () => {
     expect(parseSharePayload(article)).toEqual(article);
+    const tweetTitle = "The newest AI weather model from Google DeepMind not only forecasts how hard the wind blows at turbine height and how much sunlight reaches a solar farm, but refreshes those projections every hour from satellite images.";
+    expect(tweetTitle.length).toBeGreaterThan(200);
+    expect(parseSharePayload({
+      kind: "article",
+      data: { title: tweetTitle, text: tweetTitle, sourceUrl: "https://t.co/qGVJ2Gscxq" },
+    })).not.toBeNull();
     expect(parseSharePayload({ ...article, data: { ...article.data, sourceUrl: "javascript:alert(1)" } })).toBeNull();
     expect(parseSharePayload({ kind: "table", data: { title: "x", columns: [], rows: [] } })).toBeNull();
     expect(parseSharePayload({

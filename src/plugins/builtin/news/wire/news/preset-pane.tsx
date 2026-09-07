@@ -1,9 +1,9 @@
-import { useMemo } from "react";
+import { useCallback } from "react";
 import { Box } from "../../../../../ui";
 import type { NewsQuery } from "../../../../../news/types";
-import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
+import { useDebouncedPluginPaneState } from "../../../../runtime";
 import { NewsDetailView, useNewsArticleDetail } from "./detail-view";
 import {
   NewsArticleStackView,
@@ -73,12 +73,22 @@ export function NewsPresetPane({
     ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
 
+  const refresh = useCallback(() => {
+    void getSharedNewsService()?.load(query);
+  }, [query]);
+
   useNewsArticleFooter({
     registrationId: `news-wire:${paneKey}`,
     focused,
-    article: detailArticle,
+    article: readableArticle,
     loading: loading && articles.length > 0,
     error,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRefresh: refresh,
+    onShare: shareArticle,
+    onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    updatedAt: newsState.updatedAt,
+    showPoll: !detailArticle,
   });
 
   const detailContent = detailArticle ? (
@@ -121,6 +131,8 @@ export function NewsPresetPane({
       emptyStateHint={emptyStateHint}
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

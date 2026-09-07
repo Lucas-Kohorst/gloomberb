@@ -15,7 +15,7 @@ import {
   isSpecOnlyChartShare,
   parseSharePayload,
   type ArticleSharePayload,
-  type SharePayload,
+  type SharePagePayload,
 } from "../../shares/payload";
 import {
   buildTerminalArticleUrl,
@@ -54,7 +54,7 @@ function SharePayloadView({
   payload,
   openInTerminalHref,
 }: {
-  payload: SharePayload;
+  payload: SharePagePayload;
   openInTerminalHref: string | null;
 }) {
   if (payload.kind === "article") {
@@ -77,7 +77,7 @@ function SharePayloadView({
 
 type StoredState =
   | { status: "loading" }
-  | { status: "ready"; payload: SharePayload }
+  | { status: "ready"; payload: SharePagePayload }
   | { status: "missing" }
   | { status: "error"; message: string };
 

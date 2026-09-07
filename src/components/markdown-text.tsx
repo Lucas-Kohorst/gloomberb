@@ -21,6 +21,7 @@ export interface StyledSegment {
   dim?: boolean;
   code?: boolean;
   underline?: boolean;
+  strikethrough?: boolean;
   color?: string;
   /** Set for `[label](href)` and `<autolink>` segments; the href is not rendered. */
   link?: string;
@@ -32,18 +33,28 @@ export interface ParsedLine {
   indent?: number;
 }
 
-// Order matters: images before links, `**` before `*`, and autolinks before the
-// HTML branch so `<https://x>` is not mistaken for a tag.
+// Order matters: images before links, paired redline tags before the HTML
+// branch, `***` before `**` before `*`, and autolinks before tags so
+// `<https://x>` is not mistaken for markup.
 const INLINE_RE = new RegExp([
   /!\[(?<imageAlt>[^\]]*)\]\((?<imageHref>[^)]*)\)/.source,
   /\[(?<linkText>[^\]]*)\]\((?<linkHref>[^)]*)\)/.source,
   /<(?<autolink>(?:https?:\/\/|mailto:)[^>\s]+)>/.source,
-  /<\/?(?<htmlTag>[A-Za-z][A-Za-z0-9-]*)(?:\s[^>]*)?>/.source,
+  /(?<bareUrl>https?:\/\/[^\s<]+)/.source,
+  /<(?<redlineTag>del|ins|strike|s)(?:\s[^>]*)?>(?<redlineInner>[\s\S]*?)<\/\k<redlineTag>\s*>/.source,
+  /<\/?(?<htmlTag>[A-Za-z][A-Za-z0-9-]*)(?:\s[^>]*)?\s*\/?>/.source,
+  /\*\*\*(?<boldItalic>[^*]+)\*\*\*/.source,
   /\*\*(?<bold>[^*]+)\*\*/.source,
   /(?<!\*)\*(?!\*)(?<italic>[^*]+)\*(?!\*)/.source,
   /`(?<code>[^`]+)`/.source,
   /~~(?<strike>[^~]+)~~/.source,
 ].join("|"), "g");
+
+/** Strip these (keep inner text). CFTC placeholders like `<area>` stay visible. */
+const DROPPED_HTML_TAGS = new Set([
+  "u", "br", "span", "div", "p", "html", "body", "head", "font", "center",
+  "small", "big", "sup", "sub", "wbr", "hr",
+]);
 
 function linkSegment(label: string, href: string): StyledSegment {
   return {
@@ -52,6 +63,29 @@ function linkSegment(label: string, href: string): StyledSegment {
     color: colors.borderFocused,
     underline: true,
   };
+}
+
+function isWordChar(value: string | undefined): boolean {
+  return !!value && /[\p{L}\p{N}]/u.test(value);
+}
+
+function shouldInsertSpaceAfterDroppedTag(before: string, after: string | undefined): boolean {
+  if (!after) return false;
+  if (isWordChar(before) && isWordChar(after)) return true;
+  return /[,.;:]/.test(before) && isWordChar(after);
+}
+
+/** PDF markdown often glues the next sentence onto a URL: `jacksonhole.com.These`. */
+function splitGluedUrl(raw: string): { href: string; rest: string } {
+  const glued = raw.match(/^(https?:\/\/\S+?\.(?:com|org|net|gov|io|edu|us|uk|co))(\.[A-Za-z][\s\S]*)$/i);
+  if (glued) return { href: glued[1]!, rest: `. ${glued[2]!.slice(1)}` };
+  return { href: raw.replace(/[.,;:]+$/, "") || raw, rest: "" };
+}
+
+function pushUrlSegment(segments: StyledSegment[], raw: string): void {
+  const split = splitGluedUrl(raw);
+  segments.push(linkSegment(split.href, split.href));
+  if (split.rest) segments.push({ text: split.rest });
 }
 
 function parseInlineMarkdown(text: string): StyledSegment[] {
@@ -73,10 +107,40 @@ function parseInlineMarkdown(text: string): StyledSegment[] {
     } else if (groups.linkText != null) {
       segments.push(linkSegment(groups.linkText, groups.linkHref ?? ""));
     } else if (groups.autolink != null) {
-      segments.push(linkSegment(groups.autolink, groups.autolink));
+      pushUrlSegment(segments, groups.autolink);
+    } else if (groups.bareUrl != null) {
+      pushUrlSegment(segments, groups.bareUrl);
+    } else if (groups.redlineTag != null) {
+      // Adjacent turns Word track-changes into `<s>` / `<del>` deletions and
+      // (when present) `<ins>` insertions. Keep that distinction instead of
+      // flattening both into unstyled prose.
+      const inner = groups.redlineInner ?? "";
+      if (inner) {
+        if (groups.redlineTag.toLowerCase() === "ins") {
+          segments.push({ text: inner, underline: true, color: colors.negative });
+        } else {
+          segments.push({ text: inner, strikethrough: true, dim: true });
+        }
+      }
+      const after = text[match.index + match[0].length];
+      const before = inner.slice(-1);
+      if (shouldInsertSpaceAfterDroppedTag(before, after)) {
+        segments.push({ text: " " });
+      }
     } else if (groups.htmlTag != null) {
-      // Filings and scraped pages carry stray tags such as `<u>` around
-      // headings. Drop the tag and keep the text it wraps.
+      // Filings wrap headings in `<u>` and PDF extracts insert `<br>` with no
+      // surrounding spaces. Drop known chrome; keep placeholders like `<area>`.
+      if (!DROPPED_HTML_TAGS.has(groups.htmlTag.toLowerCase())) {
+        segments.push({ text: match[0] });
+      } else {
+        const after = text[match.index + match[0].length];
+        const before = match.index > 0 ? text[match.index - 1] : "";
+        if (shouldInsertSpaceAfterDroppedTag(before ?? "", after)) {
+          segments.push({ text: " " });
+        }
+      }
+    } else if (groups.boldItalic != null) {
+      segments.push({ text: groups.boldItalic, bold: true, italic: true });
     } else if (groups.bold != null) {
       segments.push({ text: groups.bold, bold: true });
     } else if (groups.italic != null) {
@@ -84,7 +148,7 @@ function parseInlineMarkdown(text: string): StyledSegment[] {
     } else if (groups.code != null) {
       segments.push({ text: groups.code, code: true });
     } else if (groups.strike != null) {
-      segments.push({ text: groups.strike, dim: true });
+      segments.push({ text: groups.strike, strikethrough: true, dim: true });
     }
     cursor = match.index + match[0].length;
   }
@@ -264,7 +328,8 @@ function SegmentSpan({ segment, wrap = false }: { segment: StyledSegment; wrap?:
     (segment.bold ? TextAttributes.BOLD : 0) |
     (segment.italic ? TextAttributes.ITALIC : 0) |
     (segment.dim ? TextAttributes.DIM : 0) |
-    (segment.underline ? TextAttributes.UNDERLINE : 0);
+    (segment.underline ? TextAttributes.UNDERLINE : 0) |
+    (segment.strikethrough ? TextAttributes.STRIKETHROUGH : 0);
   return (
     <Span
       fg={segment.color ?? undefined}

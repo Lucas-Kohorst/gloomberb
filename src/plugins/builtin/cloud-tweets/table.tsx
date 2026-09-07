@@ -16,7 +16,7 @@ import { usePluginAppActions } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { encodeSortPreference } from "../../../components/data-table/sort-settings";
 import { getTwitterFeedPaneSettings } from "./settings";
-import type { CloudTweetSearchResponse } from "../../../api-client";
+import type { CloudTweetPayload, CloudTweetSearchResponse } from "../../../api-client";
 import { formatTimeAgo } from "../../../utils/format";
 import { colors } from "../../../theme/colors";
 import { CloudAuthNotice } from "../cloud/auth-actions";
@@ -47,6 +47,7 @@ import { useFeedPollInterval } from "../shared/feed-poll-interval";
 import { getSharedNewsService } from "../../../news/hooks";
 import { normalizeXMarketsTweet } from "./news-capability";
 import { usePopOutTweet } from "./pop-out";
+import { useTweetReadState } from "./read-state";
 import { TweetDetail } from "./tweet-detail";
 
 function isAuthError(error: string | null): boolean {
@@ -74,57 +75,6 @@ function cacheTweetResult(requestKey: string, data: CloudTweetSearchResponse): v
 
 function cachedTweetResult(requestKey: string): { data: CloudTweetSearchResponse; fetchedAt: number } | undefined {
   return TWEET_RESULT_CACHE.get(requestKey);
-}
-
-function TweetDetail({
-  tweet,
-  width,
-  onOpenUsername,
-}: {
-  tweet: CloudTweetPayload;
-  width: number;
-  onOpenUsername: (username: string) => void;
-}) {
-  const lineWidth = Math.max(1, width - 2);
-  const tweetText = normalizeTweetDisplayText(tweet.text);
-  const imageUrls = tweetImageUrls(tweet);
-  const imageWidth = Math.min(lineWidth, 72);
-  const imageHeight = Math.max(6, Math.min(14, Math.floor(imageWidth * 0.35)));
-  const { catalog, openTicker } = useInlineTickers([tweetText]);
-
-  return (
-    <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
-      <Box flexDirection="column" width={lineWidth} gap={1}>
-        <TickerBadgeText
-          text={tweetText}
-          lineWidth={lineWidth}
-          catalog={catalog}
-          textColor={colors.text}
-          openTicker={openTicker}
-          openUsername={onOpenUsername}
-        />
-        {imageUrls.length > 0 ? (
-          <Box flexDirection="column" gap={1}>
-            {imageUrls.slice(0, 4).map((url, index) => (
-              <RemoteImage
-                key={url}
-                src={url}
-                alt={`Tweet image ${index + 1}`}
-                width={imageWidth}
-                height={imageHeight}
-                label={imageUrls.length > 1 ? `image ${index + 1}` : "image"}
-              />
-            ))}
-          </Box>
-        ) : null}
-        <Box flexDirection="row" height={1}>
-          <Text fg={colors.textDim}>
-            {`likes ${formatMetric(tweet.metrics.likes)}  reposts ${formatMetric(tweet.metrics.retweets)}  replies ${formatMetric(tweet.metrics.replies)}  views ${formatMetric(tweet.metrics.views)}`}
-          </Text>
-        </Box>
-      </Box>
-    </ScrollBox>
-  );
 }
 
 function useTweetSearchData(
@@ -245,6 +195,7 @@ export function TweetSearchTable({
   useAutoRefresh(lastUpdated, reload, poll.intervalMinutes);
   const [selectedTweetId, setSelectedTweetId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const { readTweetIds, markTweetRead } = useTweetReadState();
   const [columnIds] = usePaneSettingValue<unknown>("columnIds", undefined);
   const [sortValue, setSortValue] = usePaneSettingValue<unknown>("sort", encodeSortPreference(DEFAULT_TWEET_SORT));
   const [density] = usePaneSettingValue<"comfortable" | "compact">("density", "comfortable");
@@ -260,7 +211,11 @@ export function TweetSearchTable({
   const activeIndex = selectedIndex >= 0 ? selectedIndex : rows.length > 0 ? 0 : -1;
   const selectedTweet = rows[activeIndex] ?? null;
   const closeDetail = useCallback(() => setDetailOpen(false), []);
-  const popOutSelectedTweet = usePopOutTweet(closeDetail);
+  const popOutTweet = usePopOutTweet(closeDetail);
+  const popOutSelectedTweet = useCallback((tweet: CloudTweetPayload) => {
+    markTweetRead(tweet.id);
+    popOutTweet(tweet);
+  }, [markTweetRead, popOutTweet]);
   const copyShareLink = useCopyShareLink();
   const shareSelectedTweet = selectedTweet
     ? () => copyShareLink(tweetSharePayload(selectedTweet))
@@ -296,7 +251,14 @@ export function TweetSearchTable({
       paneRefreshHint(reload),
     ],
     trailingHints,
+    onOpen: () => {
+      if (selectedTweet) markTweetRead(selectedTweet.id);
+    },
   });
+  const openSelectedTweetAndMarkRead = useCallback(() => {
+    if (selectedTweet) markTweetRead(selectedTweet.id);
+    openSelectedTweet();
+  }, [markTweetRead, openSelectedTweet, selectedTweet]);
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -349,7 +311,7 @@ export function TweetSearchTable({
     if (isPlainKey(event, "o") && selectedTweet?.url) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      openSelectedTweet();
+      openSelectedTweetAndMarkRead();
       return true;
     }
     if (isPlainKey(event, "y") && shareSelectedTweet) {
@@ -369,7 +331,7 @@ export function TweetSearchTable({
     event.stopPropagation?.();
     reload(true);
     return true;
-  }, [onFocusSearch, openSelectedTweet, popOutSelectedTweet, reload, selectedTweet, shareSelectedTweet]);
+  }, [onFocusSearch, openSelectedTweetAndMarkRead, popOutSelectedTweet, reload, selectedTweet, shareSelectedTweet]);
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (isPlainKey(event, "y") && shareSelectedTweet) {
@@ -387,9 +349,9 @@ export function TweetSearchTable({
     if (!isPlainKey(event, "o")) return false;
     event.preventDefault?.();
     event.stopPropagation?.();
-    openSelectedTweet();
+    openSelectedTweetAndMarkRead();
     return true;
-  }, [openSelectedTweet, popOutSelectedTweet, selectedTweet, shareSelectedTweet]);
+  }, [openSelectedTweetAndMarkRead, popOutSelectedTweet, selectedTweet, shareSelectedTweet]);
 
   const renderCell = useCallback((
     tweet: CloudTweetPayload,
@@ -398,17 +360,21 @@ export function TweetSearchTable({
     rowState: { selected: boolean },
   ): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
+    const read = readTweetIds.has(tweet.id);
     switch (column.id) {
       case "time":
         return { text: formatRelativeShort(tweet.createdAt), color: selectedColor ?? colors.textDim };
       case "author":
         return {
           text: `@${tweet.author.userName || tweet.author.name}`,
-          color: selectedColor ?? colors.textBright,
-          attributes: TextAttributes.BOLD,
+          color: read ? colors.textMuted : (selectedColor ?? colors.textBright),
+          attributes: read ? TextAttributes.NONE : TextAttributes.BOLD,
         };
       case "text":
-        return { text: formatTweetCellText(tweet.text), color: selectedColor ?? colors.text };
+        return {
+          text: formatTweetCellText(tweet.text),
+          color: read ? colors.textMuted : (selectedColor ?? colors.text),
+        };
       case "tickers": {
         const tickers = tweetTickers(tweet);
         return {
@@ -429,7 +395,11 @@ export function TweetSearchTable({
       case "views":
         return { text: formatMetric(tweet.metrics.views), color: selectedColor ?? colors.textDim };
     }
-  }, []);
+  }, [readTweetIds]);
+
+  const getRowRevision = useCallback((tweet: CloudTweetPayload) => {
+    return `${tweet.id}:${readTweetIds.has(tweet.id) ? 1 : 0}`;
+  }, [readTweetIds]);
 
   // Owns the whole empty body so loading, failure, and "nothing found" each get
   // their own rows instead of the table's single run-on empty line.
@@ -457,10 +427,13 @@ export function TweetSearchTable({
         kind: "id",
         selectedId: selectedTweetId,
         getId: (tweet) => tweet.id,
-        onChange: (id) => setSelectedTweetId(id),
+        onChange: (id: string) => {
+          setSelectedTweetId(id);
+        },
       }}
       onActivate={(tweet) => {
         setSelectedTweetId(tweet.id);
+        markTweetRead(tweet.id);
         setDetailOpen(true);
       }}
       onRootKeyDown={handleRootKeyDown}
@@ -475,6 +448,7 @@ export function TweetSearchTable({
       sortDirection={paneSettings.sort.direction}
       onHeaderClick={handleHeaderClick}
       getItemKey={(tweet) => tweet.id}
+      getRowRevision={getRowRevision}
       renderCell={renderCell}
       emptyContent={emptyContent}
       emptyStateTitle={emptyStateTitle ?? "No tweets"}

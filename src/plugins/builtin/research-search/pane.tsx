@@ -31,7 +31,7 @@ import type {
 } from "../../../api-client";
 import { CloudAuthNotice } from "../cloud/auth-actions";
 import { useCloudPlanAction } from "../shared/cloud-upgrade";
-import { usePlanAccess } from "../shared/plan-access";
+import { canUseCloudSearch, needsEmailVerification, usePlanAccess } from "../shared/plan-access";
 import {
   createSavedSearch,
   deleteSavedSearch,
@@ -64,10 +64,15 @@ import {
   type SearchFilters,
 } from "./model";
 import { parseMarkedSnippet, snippetPlainText, truncateSegments } from "./snippet";
+import { usePersistedReadIds } from "../shared/read-state";
 import { SnippetText } from "./snippet-text";
 
 const QUERY_DEBOUNCE_MS = 300;
 const TICKER_FIELD_WIDTH = 22;
+const RESEARCH_READ_ADAPTER = {
+  getIds: (state: { hitIds: string[] }) => state.hitIds,
+  withIds: (_state: { hitIds: string[] }, hitIds: string[]) => ({ hitIds }),
+};
 
 type PaneMode = "results" | "saved";
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
@@ -117,6 +122,12 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   const moreAbortRef = useRef<AbortController | null>(null);
 
   const trimmedQuery = query.trim();
+  const { readIds, markRead } = usePersistedReadIds({
+    key: "read-research-search",
+    fallback: { hitIds: [] },
+    schemaVersion: 1,
+    adapter: RESEARCH_READ_ADAPTER,
+  });
 
   const focusField = useCallback((field: Exclude<ActiveField, null>) => {
     setActiveField(field);
@@ -127,7 +138,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   const runSearch = useCallback(() => {
     searchAbortRef.current?.abort();
     moreAbortRef.current?.abort();
-    if (!trimmedQuery || !access.emailVerified) {
+    if (!trimmedQuery || !canUseCloudSearch(access)) {
       searchAbortRef.current = null;
       setHits([]);
       setStatus("idle");
@@ -156,7 +167,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         setFailure({ message: errorMessage(error), status: statusOf(error) });
         setStatus("error");
       });
-  }, [access.emailVerified, filters, trimmedQuery]);
+  }, [access.emailVerified, access.hasProAccess, filters, trimmedQuery]);
 
   useEffect(() => {
     runSearch();
@@ -225,7 +236,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   }, [openHit]);
 
   const refreshSaved = useCallback(() => {
-    if (!access.emailVerified) return;
+    if (!canUseCloudSearch(access)) return;
     setSavedStatus((current) => (current === "loaded" ? current : "loading"));
     setSavedFailure(null);
     void loadSavedSearches()
@@ -243,7 +254,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         setSavedFailure({ message: errorMessage(error), status: statusOf(error) });
         setSavedStatus("error");
       });
-  }, [access.emailVerified]);
+  }, [access.emailVerified, access.hasProAccess]);
 
   useEffect(() => {
     if (mode !== "saved") return;
@@ -326,7 +337,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     setMode("results");
   }, [setFilters, setMode, setQuery]);
 
-  const columns = useMemo(() => buildResultColumns(width), [width]);
+  const columns = useMemo(() => buildResultColumns(), []);
 
   const renderCell = useCallback((
     hit: CloudSearchHit,
@@ -353,8 +364,10 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         return { text: hitTypeLabel(hit), color: selectedColor ?? colors.textMuted };
       case "date":
         return { text: formatHitDate(hit.publishedAt), color: selectedColor ?? colors.textDim };
-      case "title":
-        return { text: hit.title, color: selectedColor ?? colors.text };
+      case "title": {
+        const read = readIds.has(hit.id);
+        return { text: hit.title, color: read ? colors.textMuted : (selectedColor ?? colors.text) };
+      }
       case "match": {
         // The count leads so collapsing chunks into one row stays visible even
         // where the snippet behind it is cut off.
@@ -375,7 +388,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         };
       }
     }
-  }, []);
+  }, [readIds]);
 
   const closeDetail = useCallback(() => setOpenHit(null), []);
 
@@ -417,8 +430,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
   // appears if the server itself refuses the query.
   const proRequired = failure?.status === 402;
   const signInRequired = !access.signedIn || failure?.status === 401 || savedFailure?.status === 401;
-  const verificationRequired = !signInRequired
-    && (!access.emailVerified || failure?.status === 403);
+  const verificationRequired = needsEmailVerification(access, failure?.status);
 
   const footerInfo = useMemo<PaneFooterSegment[]>(() => {
     const info: PaneFooterSegment[] = [];
@@ -498,6 +510,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
     info: footerInfo,
     hints: footerHints,
     showHint: !!openHit?.url,
+    onOpen: openHit ? () => markRead(openHit.id) : undefined,
   });
 
   if (signInRequired) {
@@ -652,6 +665,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
         }}
         onActivate={(hit) => {
           blurField();
+          markRead(hit.id);
           setOpenHit(hit);
         }}
         sortColumnId={filters.sort === "relevance" ? "match" : "date"}
@@ -665,6 +679,7 @@ export function ResearchSearchPane({ focused, paneId, width, height }: PaneProps
           setFilters({ ...filters, sort: filters.sort === "newest" ? "oldest" : "newest" });
         }}
         getItemKey={(hit) => hit.id}
+        getRowRevision={(hit) => `${hit.id}:${readIds.has(hit.id) ? 1 : 0}`}
         renderCell={renderCell}
         showHorizontalScrollbar={false}
         emptyContent={status === "loading" && hits.length === 0

@@ -19,6 +19,7 @@ import { registerConnectionSource } from "../connections/register";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { useNewsReadState } from "../news/wire/read-state";
 import { FederalRegisterClient } from "./client";
 import {
   FEDERAL_REGISTER_CONNECTION_ID,
@@ -144,9 +145,14 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     return () => { cancelled = true; clearTimeout(id); };
   }, [activeDoc, client]);
 
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const focusSearch = useCallback(() => { setSearchFocused(true); setFocusToken((token) => token + 1); }, []);
   const popOut = usePopOutNewsArticle(() => setOpenId(null));
-  const popOutSelected = useCallback(() => { if (activeDoc) popOut(toArticle(activeDoc, detail)); }, [activeDoc, detail, popOut]);
+  const popOutSelected = useCallback(() => {
+    if (!activeDoc) return;
+    markArticleRead(activeDoc.documentNumber);
+    popOut(toArticle(activeDoc, detail));
+  }, [activeDoc, detail, markArticleRead, popOut]);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), 15);
   const items = useMemo(() => itemsFor(docs, selectedIdx, detail, detailLoading), [docs, selectedIdx, detail, detailLoading]);
@@ -161,6 +167,7 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
     source: "Federal Register", label: "document", loading: status === "loading" && docs.length === 0, error,
     info: updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : [],
     showOpenHint: !error && !!(detail?.sourceUrl ?? activeDoc?.htmlUrl),
+    onOpen: () => { if (activeDoc) markArticleRead(activeDoc.documentNumber); },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
@@ -176,6 +183,8 @@ function FederalRegisterPane({ width, height, focused }: PaneProps) {
   if (error && docs.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><Text fg={colors.textDim}>Error: {error}</Text></Box></Box>;
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused} rootBefore={rootBefore}
     items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx}
+    isItemRead={(item) => readArticleIds.has(item.id)}
+    onItemRead={(item) => markArticleRead(item.id)}
     onOpenItemIdChange={setOpenId} markdown onRootKeyDown={(event, context) => {
       if (context.selectedIndex <= 0 && isPlainArrowUp(event)) { stopSearchFocusNavigation(event); focusSearch(); return true; }
       if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); focusSearch(); return true; }
