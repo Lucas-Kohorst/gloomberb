@@ -5,7 +5,7 @@ import type { AppAction, AppState } from "../state/app/context";
 import type { PaneRuntimeState } from "../core/state/app/state";
 import { setPaneSettings } from "../pane-settings";
 import { listConnectionSources } from "../plugins/builtin/connections/register";
-import type { LayoutConfig } from "../types/config";
+import { createBlankLayout, type LayoutConfig } from "../types/config";
 import type {
   PaneDef,
   PaneSettingField,
@@ -58,7 +58,7 @@ function resolvePaneTypeSettings(pane: PaneDef): {
   }
   const emptyContext = {
     config: {} as PaneSettingsContext["config"],
-    layout: { instances: [] } as PaneSettingsContext["layout"],
+    layout: createBlankLayout(),
     paneId: pane.id,
     paneType: pane.id,
     pane: { instanceId: pane.id, paneId: pane.id, binding: { kind: "none" } },

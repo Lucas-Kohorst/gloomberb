@@ -11,11 +11,10 @@ import {
 } from "../../utils/cli-output";
 import { fail } from "../errors";
 
-const PLUGINS_DIR = getPluginsDir();
-
 function ensurePluginsDir() {
-  if (!existsSync(PLUGINS_DIR)) {
-    mkdirSync(PLUGINS_DIR, { recursive: true });
+  const dir = getPluginsDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -67,7 +66,7 @@ export async function installPlugin(ref: string, options: InstallPluginOptions =
   };
   ensurePluginsDir();
   const { url, name } = parseGitHubRef(ref);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
 
   if (existsSync(targetDir)) {
     fail(`Plugin "${name}" already exists.`, `Use "gloomberb update ${name}" to refresh it.`);
@@ -136,9 +135,9 @@ export async function installPlugin(ref: string, options: InstallPluginOptions =
 }
 
 export async function removePlugin(name: string) {
-  const targetDir = join(PLUGINS_DIR, validatePluginDirectoryName(name));
+  const targetDir = join(getPluginsDir(), validatePluginDirectoryName(name));
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
   rmSync(targetDir, { recursive: true, force: true });
   console.log(cliStyles.success(`Removed plugin "${name}".`));
@@ -148,7 +147,7 @@ export async function updatePlugins(name?: string) {
   ensurePluginsDir();
   const dirs = name
     ? [validatePluginDirectoryName(name)]
-    : readdirSync(PLUGINS_DIR, { withFileTypes: true })
+    : readdirSync(getPluginsDir(), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
@@ -158,7 +157,7 @@ export async function updatePlugins(name?: string) {
   }
 
   for (const dir of dirs) {
-    const targetDir = join(PLUGINS_DIR, dir);
+    const targetDir = join(getPluginsDir(), dir);
     if (!existsSync(join(targetDir, ".git"))) {
       console.log(cliStyles.warning(`Skipping ${dir} (not a git repo)`));
       continue;
@@ -179,7 +178,7 @@ export async function updatePlugins(name?: string) {
 
 export function listPlugins() {
   ensurePluginsDir();
-  const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const entries = readdirSync(getPluginsDir(), { withFileTypes: true }).filter((entry) => entry.isDirectory());
 
   if (entries.length === 0) {
     console.log(cliStyles.muted("No plugins installed."));
@@ -188,7 +187,7 @@ export function listPlugins() {
   }
 
   const rows = entries.map((entry) => {
-    const dir = join(PLUGINS_DIR, entry.name);
+    const dir = join(getPluginsDir(), entry.name);
     let version = "—";
     let description = "—";
     const pkgPath = join(dir, "package.json");
@@ -214,7 +213,7 @@ export function listPlugins() {
     rows,
   ));
   console.log("");
-  console.log(renderStat("Directory", PLUGINS_DIR));
+  console.log(renderStat("Directory", getPluginsDir()));
 }
 
 export async function searchPlugins(query: string) {
@@ -344,10 +343,10 @@ export function buildPluginPackageJson(name: string): string {
 export function scaffoldPlugin(name: string) {
   validatePluginDirectoryName(name);
   ensurePluginsDir();
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
 
   if (existsSync(targetDir)) {
-    fail(`Plugin "${name}" already exists.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" already exists.`, getPluginsDir());
   }
 
   mkdirSync(targetDir, { recursive: true });
@@ -363,9 +362,9 @@ export function scaffoldPlugin(name: string) {
 
 export async function validatePlugin(name: string) {
   validatePluginDirectoryName(name);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
 
   let entryFile: string | null = null;

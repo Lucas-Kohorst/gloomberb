@@ -503,12 +503,21 @@ interface TickerResearchTabVisibilityContext {
   hasOptionsChain: boolean;
 }
 
+export interface TickerResearchTabPrefetchContext {
+  config: AppConfig;
+  dataProvider: DataProvider | null;
+  ticker: TickerRecord;
+  financials: TickerFinancials | null | undefined;
+  hasOptionsChain: boolean;
+}
+
 export interface TickerResearchTabDef {
   id: string;
   name: string;
   order: number;
   component: (props: TickerResearchTabProps) => ReactNode;
   isVisible?: (context: TickerResearchTabVisibilityContext) => boolean;
+  prefetch?: (context: TickerResearchTabPrefetchContext) => void | Promise<void>;
 }
 
 export interface KeyboardShortcut {

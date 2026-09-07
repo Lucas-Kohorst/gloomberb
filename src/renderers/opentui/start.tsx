@@ -2,6 +2,7 @@ import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { App } from "../../app";
 import { dispatchCli } from "../../cli/index";
+import { applyDataDirFromArgs } from "../../cli/options";
 import { getDataDir, initDataDir, setConfigStoreHost } from "../../data/config/store";
 import { applyLanguageFromConfig } from "../../i18n";
 import * as nodeConfigStoreHost from "../../data/config/store/node";
@@ -47,6 +48,13 @@ export interface StartOpenTuiAppOptions {
 export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Promise<void> {
   setConfigStoreHost(nodeConfigStoreHost);
   debugLog.interceptConsole();
+
+  // Apply --data-dir / --data-dir=<path> before any plugin or config loading
+  // so lazy resolvers (getPluginsDir, getDataDir, getAiRunsDir) honor it.
+  // When called from src/index.tsx (direct TUI launch) this is the only
+  // chance to parse CLI args; when called from entry.ts it is redundant but
+  // harmless (applyDataDirFromArgs is idempotent).
+  applyDataDirFromArgs(options.cliArgs ?? process.argv.slice(2));
 
   const appLog = debugLog.createLogger("app");
   appLog.info("Gloomberb starting");

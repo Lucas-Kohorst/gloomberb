@@ -1,5 +1,5 @@
 import type { MarketState } from "../../../types/financials";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import type { BoardQuoteMap } from "../shared/use-quote-board";
 import { REGION_ORDER, type IndexEntry } from "./indices";
 

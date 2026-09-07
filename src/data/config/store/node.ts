@@ -32,6 +32,10 @@ function expandHomePath(filePath: string): string {
 }
 
 export async function getDataDir(): Promise<string | null> {
+  // GLOOMBERB_DATA_DIR overrides everything — no need to read the global
+  // config or redirect HOME for test/CI isolation.
+  const envDir = process.env.GLOOMBERB_DATA_DIR;
+  if (envDir) return envDir;
   try {
     const raw = await readFile(getGlobalConfigFile(), "utf-8");
     const config = JSON.parse(raw) as { dataDir?: string };
