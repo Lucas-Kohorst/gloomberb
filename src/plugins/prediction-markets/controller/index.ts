@@ -1,3 +1,4 @@
+import { createPredictionWatchlistState, restorePredictionWatchlistSnapshots, type PredictionWatchlistState } from "../watchlist-sync";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import { useViewport } from "../../../react/input";
@@ -7,11 +8,13 @@ import {
   applyWatchlistSnapshots,
   hydrateWatchlistSnapshots,
   persistPredictionStarsToDefaultWatchlist,
+  resolvePredictionWatchlistKeys,
 } from "../collection-watchlist";
 import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
   usePluginState,
+  usePluginConfigState,
 } from "../../runtime";
 import {
   DEFAULT_PREDICTION_CATALOG_POLL_INTERVAL_MINUTES,
@@ -63,13 +66,24 @@ export function usePredictionMarketsController({
   );
   const initialParams = paneInstance?.params;
 
-  const [watchlist, setWatchlist] = usePluginState<string[]>(
-    "watchlist:v1",
-    [],
+  const [legacyWatchlist] = usePluginState<string[]>("watchlist:v1", []);
+  const [legacySnapshots] = usePluginState<PredictionMarketSummary[]>("watchlistSnapshots:v1", []);
+  const [syncedWatchlist, setSyncedWatchlist] = usePluginConfigState<PredictionWatchlistState | null>("watchlist:v2", null);
+  const watchlist = useMemo(
+    () => syncedWatchlist?.keys ?? (legacyWatchlist.length > 0
+      ? legacyWatchlist
+      : resolvePredictionWatchlistKeys(tickersBySymbol, config)),
+    [syncedWatchlist, legacyWatchlist, tickersBySymbol, config.watchlists],
   );
-  const [watchlistSnapshots, setWatchlistSnapshots] = usePluginState<
-    PredictionMarketSummary[]
-  >("watchlistSnapshots:v1", []);
+  const watchlistSnapshots = useMemo(
+    () => hydrateWatchlistSnapshots(syncedWatchlist ? restorePredictionWatchlistSnapshots(syncedWatchlist) : legacySnapshots, watchlist, tickersBySymbol),
+    [syncedWatchlist, legacySnapshots, watchlist, tickersBySymbol],
+  );
+  useEffect(() => {
+    if (!syncedWatchlist && legacyWatchlist.length > 0) {
+      setSyncedWatchlist(createPredictionWatchlistState(legacyWatchlist, legacySnapshots));
+    }
+  }, [syncedWatchlist, legacyWatchlist, legacySnapshots, setSyncedWatchlist]);
   const [lastVenueScope, setLastVenueScope] =
     usePluginState<PredictionVenueScope>("lastVenueScope:v1", "all");
 
@@ -212,12 +226,6 @@ export function usePredictionMarketsController({
     );
   }, [defaultSortPreference, setSortPreference]);
 
-  useEffect(() => {
-    setWatchlistSnapshots((current) =>
-      hydrateWatchlistSnapshots(current, watchlist, tickersBySymbol),
-    );
-  }, [setWatchlistSnapshots, tickersBySymbol, watchlist]);
-
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
   }, []);
@@ -232,25 +240,32 @@ export function usePredictionMarketsController({
       const allWatched = rowMarketKeys.every((marketKey) =>
         watchlist.includes(marketKey),
       );
-      setWatchlist((current) => {
-        if (allWatched) {
-          return current.filter((entry) => !rowMarketKeys.includes(entry));
-        }
-        return [...new Set([...current, ...rowMarketKeys])];
-      });
       const summaries = row.markets.length > 0 ? row.markets : [row.representative];
-      setWatchlistSnapshots((current) =>
-        applyWatchlistSnapshots(current, summaries, !allWatched),
+      const nextWatchlist = createPredictionWatchlistState(
+        allWatched
+          ? watchlist.filter((entry) => !rowMarketKeys.includes(entry))
+          : [...new Set([...watchlist, ...rowMarketKeys])],
+        applyWatchlistSnapshots(watchlistSnapshots, summaries, !allWatched),
       );
+      setSyncedWatchlist(nextWatchlist);
       void persistPredictionStarsToDefaultWatchlist({
         summaries,
         starred: !allWatched,
-        config,
+        config: {
+          ...config,
+          pluginConfig: {
+            ...config.pluginConfig,
+            "prediction-markets": {
+              ...config.pluginConfig["prediction-markets"],
+              "watchlist:v2": nextWatchlist,
+            },
+          },
+        },
         tickers: tickersBySymbol,
         dispatch,
       });
     },
-    [config, dispatch, setWatchlist, setWatchlistSnapshots, tickersBySymbol, watchlist],
+    [config, dispatch, setSyncedWatchlist, tickersBySymbol, watchlist, watchlistSnapshots],
   );
 
   const setBrowseSelection = useCallback(
