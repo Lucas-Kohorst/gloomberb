@@ -2,17 +2,25 @@ import { mkdirSync, writeFileSync, appendFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-const DEFAULT_RUNS_DIR = join(homedir(), ".gloomberb", "ai-runs");
 const PREVIEW_CHARS = 4_000;
 
 let runsDirOverride: string | null = null;
+let defaultRunsDir: string | null = null;
+
+function resolveDefaultRunsDir(): string {
+  defaultRunsDir ??= process.env.GLOOMBERB_DATA_DIR
+    ? join(process.env.GLOOMBERB_DATA_DIR, "ai-runs")
+    : join(homedir(), ".gloomberb", "ai-runs");
+  return defaultRunsDir;
+}
 
 export function getAiRunsDir(): string {
-  return runsDirOverride ?? DEFAULT_RUNS_DIR;
+  return runsDirOverride ?? resolveDefaultRunsDir();
 }
 
 export function setAiRunsDirForTests(dir: string | null): void {
   runsDirOverride = dir;
+  defaultRunsDir = null;
 }
 
 export function estimateTokens(text: string): number {

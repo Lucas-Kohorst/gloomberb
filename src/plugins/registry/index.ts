@@ -207,6 +207,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
   getLayoutFn: (() => LayoutConfig) = () => ({ dockRoot: null, instances: [], floating: [], detached: [] });
   updateLayoutFn: ((layout: LayoutConfig) => void) = () => {};
   getTermSizeFn: (() => { width: number; height: number }) = () => ({ width: 120, height: 40 });
+  getFullscreenPaneIdFn: (() => string | null) = () => null;
 
   registerNewsCapabilityFn: ((capability: NewsCapability) => () => void) = () => () => {};
   watchNewsQueryFn: ((

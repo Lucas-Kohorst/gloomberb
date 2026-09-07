@@ -15,9 +15,11 @@ import {
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
 import { isLanguagePreference } from "../../../i18n/languages";
+import { sanitizeFontFamily } from "../../../theme/font-family";
 import { clampFontSize } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig } from "./migrations";
+import { normalizeTickerSearchShortcut } from "../ticker-search-shortcut";
 
 export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
@@ -59,8 +61,11 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,
     chartPreferences: sanitizeChartPreferences(candidate.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: typeof candidate.valueFlashingEnabled === "boolean" ? candidate.valueFlashingEnabled : defaults.valueFlashingEnabled,
+    autoRefreshInterval: typeof candidate.autoRefreshInterval === "number" ? candidate.autoRefreshInterval : defaults.autoRefreshInterval,
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
+    fontFamily: sanitizeFontFamily(candidate.fontFamily),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
+    tickerSearchShortcut: normalizeTickerSearchShortcut(candidate.tickerSearchShortcut),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
     onboardingProgress,
@@ -84,6 +89,7 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     || !isPluginConfigMap(candidate.pluginConfig)
     || !isChartPreferences(candidate.chartPreferences)
     || (candidate.language !== undefined && !isLanguagePreference(candidate.language))
+    || (candidate.tickerSearchShortcut !== undefined && !normalizeTickerSearchShortcut(candidate.tickerSearchShortcut))
     || (candidate.onboardingProgress !== undefined && !sanitizeOnboardingProgress(candidate.onboardingProgress))
     || (isPlainRecord(candidate.onboardingProgress) && candidate.onboardingProgress.stage === "open-security")
     || (!!onboardingProgress && candidate.onboardingComplete !== false)
@@ -120,8 +126,11 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
+    autoRefreshInterval: config.autoRefreshInterval,
     fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
+    fontFamily: sanitizeFontFamily(config.fontFamily),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
+    tickerSearchShortcut: normalizeTickerSearchShortcut(config.tickerSearchShortcut),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
   };

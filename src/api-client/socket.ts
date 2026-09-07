@@ -53,6 +53,8 @@ function mergeQuoteStreamSubscriptions(
 type CloudApiSocketDelegate = {
   getBaseUrl: () => string;
   getSocketAuthToken: () => string | null;
+  /** Hosted web client: authenticate via the same-origin session cookie, not a token query param. */
+  isCookieAuthenticated: () => boolean;
   hasSessionCredential: () => boolean;
   hasVerifiedUser: () => boolean;
   isUsingWebSocketToken: () => boolean;

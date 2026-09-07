@@ -1,6 +1,5 @@
 import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, cpSync } from "fs";
-import { homedir } from "os";
 import type { GloomPlugin } from "../../../types/plugin";
 import type { PluginRegistry } from "../../registry";
 import { resolvePluginEntryFile, getPluginsDir } from "../../loader";
@@ -74,10 +73,6 @@ export function parseToolCalls(response: string): ParsedToolCall[] {
   return calls;
 }
 
-function getPluginsRoot(): string {
-  return process.env.HOME ? join(process.env.HOME, ".gloomberb", "plugins") : join(homedir(), ".gloomberb", "plugins");
-}
-
 /**
  * Create the set of plugin tools the AI agent can invoke.
  */
@@ -96,7 +91,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         if (!relPath) return { success: false, output: "Missing required parameter: path" };
         if (!content && content !== "") return { success: false, output: "Missing required parameter: content" };
 
-        const pluginsRoot = getPluginsRoot();
+        const pluginsRoot = getPluginsDir();
         const fullPath = join(pluginsRoot, relPath);
 
         // Prevent path traversal outside the plugins directory.
@@ -124,7 +119,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         const relPath = String(args.path ?? "");
         if (!relPath) return { success: false, output: "Missing required parameter: path" };
 
-        const pluginsRoot = getPluginsRoot();
+        const pluginsRoot = getPluginsDir();
         const appRoot = process.cwd();
         let fullPath: string;
         if (relPath.startsWith("/")) {
@@ -203,7 +198,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
           return { success: false, output: `Built-in plugin source not found: ${sourcePluginId}` };
         }
 
-        const pluginsRoot = getPluginsRoot();
+        const pluginsRoot = getPluginsDir();
         const targetDir = join(pluginsRoot, newId);
         if (existsSync(targetDir)) {
           return { success: false, output: `Target directory already exists: ${newId}` };
@@ -231,7 +226,7 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         const path = String(args.path ?? "");
         if (!path) return { success: false, output: "Missing required parameter: path" };
 
-        const pluginsRoot = getPluginsRoot();
+        const pluginsRoot = getPluginsDir();
         let entryFile: string | null = null;
 
         if (path.endsWith(".ts") || path.endsWith(".tsx") || path.endsWith(".js")) {

@@ -32,8 +32,8 @@ function Registration({
     return {
       info: [
         {
-          id: "status",
-          parts: [{ text: "loading", tone: "muted" }],
+          id: "updated",
+          parts: [{ text: "Updated 2m", tone: "muted" }],
         },
       ],
       hints: [
@@ -46,7 +46,7 @@ function Registration({
 
 function PollTrailingRegistration({ onGraph }: { onGraph?: () => void }) {
   usePaneFooter("poll-trailing", () => ({
-    info: [{ id: "status", parts: [{ text: "loading", tone: "muted" }] }],
+    info: [{ id: "updated", parts: [{ text: "Updated just now", tone: "muted" }] }],
     trailingInfo: [{ id: "poll-interval", parts: [{ text: "poll 1m", tone: "muted" }] }],
     hints: [
       { id: "graph", key: "g", label: "raph", onPress: onGraph },
@@ -68,7 +68,7 @@ function ExternalLinkRegistration() {
 
 function TranslatedRegistration() {
   usePaneFooter("translated", () => ({
-    info: [{ id: "state", parts: [{ text: t("Open"), tone: "value" }] }],
+    info: [{ id: "updated", parts: [{ text: t("Open"), tone: "value" }] }],
   }), []);
   return null;
 }
@@ -251,7 +251,7 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Rows 12");
+    expect(frame).toContain("Updated 2m");
     expect(frame).not.toContain("[o]pen");
   });
 
@@ -263,12 +263,12 @@ describe("PaneFooterBar", () => {
     });
 
     const line = testSetup.captureCharFrame().split("\n")[0] ?? "";
-    const loadingIdx = line.indexOf("loading");
+    const updatedIdx = line.indexOf("Updated just now");
     const graphIdx = line.indexOf("[g]raph");
     const refreshIdx = line.indexOf("[r]efresh");
     const pollIdx = line.indexOf("poll 1m");
-    expect(loadingIdx).toBeGreaterThanOrEqual(0);
-    expect(graphIdx).toBeGreaterThan(loadingIdx);
+    expect(updatedIdx).toBeGreaterThanOrEqual(0);
+    expect(graphIdx).toBeGreaterThan(updatedIdx);
     expect(refreshIdx).toBeGreaterThan(graphIdx);
     expect(pollIdx).toBeGreaterThan(refreshIdx);
   });
@@ -281,7 +281,7 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("loading");
+    expect(frame).toContain("Updated just now");
     expect(frame).toContain("poll 1m");
     expect(frame).not.toContain("[g]raph");
   });
@@ -332,7 +332,7 @@ describe("PaneFooterBar", () => {
     });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Rows 12");
+    expect(frame).toContain("Updated 2m");
     expect(frame).not.toContain("[o]pen");
   });
 

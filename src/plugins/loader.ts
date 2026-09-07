@@ -24,7 +24,12 @@ export interface LoadedExternalPlugin {
 }
 
 export function getPluginsDir(): string {
-  pluginsDir ??= join(process.env.HOME || homedir(), ".gloomberb", "plugins");
+  // GLOOMBERB_DATA_DIR has to cover external plugins too, or an "isolated"
+  // session still loads whatever the developer has installed under $HOME and a
+  // locally installed plugin can collide with a built-in module id.
+  pluginsDir ??= process.env.GLOOMBERB_DATA_DIR
+    ? join(process.env.GLOOMBERB_DATA_DIR, "plugins")
+    : join(process.env.HOME || homedir(), ".gloomberb", "plugins");
   return pluginsDir;
 }
 
