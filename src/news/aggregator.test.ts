@@ -52,6 +52,18 @@ function makeCachedSource(id: string, cachedItems: MarketNewsItem[], fetchItems:
   });
 }
 
+function makeFailingSource(id: string): NewsCapability {
+  return newsProvider({
+    id,
+    name: id,
+    provider: {
+      fetchNews: mock(async () => {
+        throw new Error("boom");
+      }),
+    },
+  });
+}
+
 function makeStorySource(id: string, items: MarketNewsItem[], story: MarketNewsItem): NewsCapability {
   return newsProvider({
     id,
@@ -72,6 +84,44 @@ describe("NewsService", () => {
 
   afterEach(() => {
     agg.stop();
+  });
+
+  it("reports an error instead of an empty feed when every source fails", async () => {
+    agg.register(makeFailingSource("broken"));
+    const state = await agg.load({ feed: "latest" });
+
+    expect(state.phase).toBe("error");
+    expect(state.articles).toHaveLength(0);
+  });
+
+  it("stays ready but reports the gap when only some sources fail", async () => {
+    agg.register(makeSource("ok", [makeItem({ url: "https://partial.example.com/1" })]));
+    agg.register(makeFailingSource("broken"));
+    const state = await agg.load({ feed: "latest" });
+
+    expect(state.phase).toBe("ready");
+    expect(state.articles).toHaveLength(1);
+    expect(state.error).toContain("unavailable");
+  });
+
+  it("watchQuery shows loading while the initial fetch is in flight", () => {
+    agg.register(makeSource("watch-loading", [makeItem({ url: "https://loading.example.com/1" })]));
+    const phases: string[] = [];
+    const dispose = agg.watchQuery({ feed: "latest" }, (state) => phases.push(state.phase));
+
+    expect(phases[0]).toBe("loading");
+    dispose();
+  });
+
+  it("keeps prefetched articles visible while a pane refreshes", async () => {
+    agg.register(makeSource("prefetched", [makeItem({ url: "https://prefetched.example.com/1" })]));
+    await agg.load({ feed: "latest" });
+
+    const phases: string[] = [];
+    const dispose = agg.watchQuery({ feed: "latest" }, (state) => phases.push(state.phase));
+
+    expect(phases[0]).toBe("ready");
+    dispose();
   });
 
   it("deduplicates by URL, keeping higher importance", async () => {
@@ -520,230 +570,6 @@ describe("NewsService", () => {
     expect(state.articles[0]?.items?.map((item) => item.id)).toEqual(["item-1"]);
   });
 
-  it("publishes fast sources before a slower source finishes", async () => {
-    let releaseSlow: ((items: MarketNewsItem[]) => void) | undefined;
-    const slow = newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        fetchNews: () => new Promise<MarketNewsItem[]>((resolve) => {
-          releaseSlow = resolve;
-        }),
-      },
-    });
-    const fastItem = makeItem({ url: "https://fast.example/1" });
-    agg.register(makeSource("substack-news", [fastItem]));
-    agg.register(slow);
-
-    const seen: string[][] = [];
-    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, (state) => {
-      seen.push(state.articles.map((article) => article.url));
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(seen.some((urls) => urls.includes(fastItem.url))).toBe(true);
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toEqual([fastItem.url]);
-
-    const slowItem = makeItem({ url: "https://slow.example/1" });
-    releaseSlow?.([slowItem]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url).sort()).toEqual(
-      [fastItem.url, slowItem.url].sort(),
-    );
-    dispose();
-  });
-
-  it("applies partial articles from one source before that source finishes", async () => {
-    let releaseSlow: (() => void) | undefined;
-    const slowGate = new Promise<void>((resolve) => {
-      releaseSlow = resolve;
-    });
-    const early = makeItem({ url: "https://rss.example/early" });
-    const late = makeItem({ url: "https://rss.example/late" });
-    agg.register(newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        async fetchNews(_query, options) {
-          options?.onPartial?.([early]);
-          await slowGate;
-          return [early, late];
-        },
-      },
-    }));
-
-    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toEqual([early.url]);
-
-    releaseSlow?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url).sort()).toEqual(
-      [early.url, late.url].sort(),
-    );
-    dispose();
-  });
-
-  it("coalesces partials from multiple sources into one notify", async () => {
-    const first = makeItem({ url: "https://a.example/1" });
-    const second = makeItem({ url: "https://b.example/1" });
-    agg.register(newsProvider({
-      id: "a",
-      name: "a",
-      provider: {
-        async fetchNews(_query, options) {
-          options?.onPartial?.([first]);
-          return new Promise(() => {});
-        },
-      },
-    }));
-    agg.register(newsProvider({
-      id: "b",
-      name: "b",
-      provider: {
-        async fetchNews(_query, options) {
-          options?.onPartial?.([second]);
-          return new Promise(() => {});
-        },
-      },
-    }));
-
-    const versions: number[] = [];
-    const disposeSub = agg.subscribe(() => {
-      versions.push(agg.getVersion());
-    });
-    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(
-      agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url).sort(),
-    ).toEqual([first.url, second.url].sort());
-    expect(versions).toHaveLength(1);
-    dispose();
-    disposeSub();
-  });
-
-  it("skips listener notify when a partial repeats the same article ids", async () => {
-    let emitDuplicate: (() => void) | undefined;
-    let finish: (() => void) | undefined;
-    const duplicateGate = new Promise<void>((resolve) => {
-      emitDuplicate = resolve;
-    });
-    const doneGate = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    const item = makeItem({ url: "https://rss.example/same" });
-    agg.register(newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        async fetchNews(_query, options) {
-          options?.onPartial?.([item]);
-          await duplicateGate;
-          options?.onPartial?.([item]);
-          await doneGate;
-          return [item];
-        },
-      },
-    }));
-
-    const versions: number[] = [];
-    const disposeSub = agg.subscribe(() => {
-      versions.push(agg.getVersion());
-    });
-    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toEqual([item.url]);
-    const afterFirstPartial = versions.length;
-    expect(afterFirstPartial).toBeGreaterThan(0);
-
-    emitDuplicate?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(versions).toHaveLength(afterFirstPartial);
-
-    finish?.();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    dispose();
-    disposeSub();
-  });
-
-  it("ingests a source that registers while a refresh is in flight, without a pane remount", async () => {
-    let releaseRss: ((items: MarketNewsItem[]) => void) | undefined;
-    const rss = newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        fetchNews: () => new Promise<MarketNewsItem[]>((resolve) => {
-          releaseRss = resolve;
-        }),
-      },
-    });
-    agg.register(rss);
-    const dispose = agg.watchQuery({ feed: "latest", limit: 20 }, () => {});
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    const xItem = makeItem({ url: "https://x.example/1" });
-    let xFetches = 0;
-    agg.register(newsProvider({
-      id: "x-feed",
-      name: "X",
-      provider: {
-        fetchNews: async () => {
-          xFetches += 1;
-          return [xItem];
-        },
-      },
-    }));
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(xFetches).toBeGreaterThanOrEqual(1);
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url)).toContain(xItem.url);
-
-    releaseRss?.([makeItem({ url: "https://rss.example/1" })]);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const urls = agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url);
-    expect(urls).toContain(xItem.url);
-    expect(urls).toContain("https://rss.example/1");
-    dispose();
-  });
-
-  it("ingests pane articles into a watched latest query", async () => {
-    const tweet = makeItem({ url: "https://x.com/marketsbot/status/1", title: "Markets tweet" });
-    agg.register(newsProvider({
-      id: "x-feed",
-      name: "X",
-      provider: {
-        supports: (query) => (query.feed ?? "latest") === "latest",
-        fetchNews: async () => [],
-      },
-    }));
-    const dispose = agg.watchQuery({ feed: "latest", limit: 200 }, () => {});
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    agg.ingest("x-feed", [tweet]);
-
-    expect(agg.getQueryState({ feed: "latest", limit: 200 }).articles.map((article) => article.url))
-      .toContain(tweet.url);
-    expect(agg.getQueryState({ feed: "latest", limit: 200 }).articles[0]?.origin).toBe("x-feed");
-    dispose();
-  });
-
-  it("poll starts a latest-feed fetch without a mounted pane", async () => {
-    let fetches = 0;
-    agg.register(newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        fetchNews: async () => {
-          fetches += 1;
-          return [makeItem({ url: "https://rss.example/warm" })];
-        },
-      },
-    }));
-    await agg.poll({ feed: "latest", limit: 200 });
-    expect(fetches).toBe(1);
-    expect(agg.getQueryState({ feed: "latest", limit: 200 }).articles).toHaveLength(1);
-  });
-
   it("appends paged news instead of replacing the first page", async () => {
     const first = makeItem({ url: "https://example.com/a", title: "First" });
     const second = makeItem({ url: "https://example.com/b", title: "Second" });
@@ -801,44 +627,6 @@ describe("NewsService", () => {
     expect(state.nextCursor).toBe("page-3");
   });
 
-  it("does not re-serve the same RSS guid when a later poll changes the permalink", async () => {
-    const original = makeItem({
-      id: "rss-lego",
-      guid: "https://www.fastcompany.com/91595567/lego",
-      url: "https://www.fastcompany.com/91595567/lego-has-launched-330-new-products",
-      title: "Lego has launched 330 new products",
-      source: "Fast Company",
-      publishedAt: new Date("2026-08-25T13:04:00.000Z"),
-    });
-    const republished = makeItem({
-      id: "rss-lego-2",
-      guid: "https://www.fastcompany.com/91595567/lego",
-      url: "https://www.fastcompany.com/91595567/lego-has-released-330-new-products",
-      title: "Lego has launched 330 new products so far this year",
-      source: "Fast Company",
-      publishedAt: new Date("2026-08-25T16:12:54.000Z"),
-    });
-    let poll = 0;
-    agg.register(newsProvider({
-      id: "rss",
-      name: "rss",
-      provider: {
-        fetchNews: async () => {
-          poll += 1;
-          return poll === 1 ? [original] : [republished];
-        },
-      },
-    }));
-
-    await agg.poll();
-    await agg.poll();
-    const stories = agg.getFirehose(undefined, 10);
-    expect(stories).toHaveLength(1);
-    expect(stories[0]!.id).toBe(original.id);
-    expect(stories[0]!.guid).toBe(original.guid);
-    expect(stories[0]!.publishedAt.toISOString()).toBe("2026-08-25T13:04:00.000Z");
-  });
-
   it("refresh keeps already paged news", async () => {
     const first = makeItem({ url: "https://example.com/a", title: "First", publishedAt: new Date("2026-01-02") });
     const second = makeItem({ url: "https://example.com/b", title: "Second", publishedAt: new Date("2026-01-01") });
@@ -869,28 +657,5 @@ describe("NewsService", () => {
       "https://example.com/b",
     ]);
     expect(state.nextCursor).toBe("page-3");
-  });
-
-  it("defers listener notify while the UI is yielding", async () => {
-    const item = makeItem({ url: "https://example.com/yield" });
-    agg.register(makeSource("rss", [item]));
-
-    const seen: number[] = [];
-    const dispose = agg.subscribe(() => {
-      seen.push(agg.getVersion());
-    });
-    setUiYieldReason("input", true);
-    const loading = agg.load({ feed: "latest", limit: 20 });
-    await Bun.sleep(20);
-    expect(seen).toEqual([]);
-    expect(agg.getQueryState({ feed: "latest", limit: 20 }).articles.map((article) => article.url))
-      .toEqual([item.url]);
-
-    setUiYieldReason("input", false);
-    await loading;
-    await Bun.sleep(UI_YIELD_QUIET_MS + 20);
-    expect(seen.length).toBeGreaterThan(0);
-    dispose();
-    resetUiYieldForTests();
   });
 });

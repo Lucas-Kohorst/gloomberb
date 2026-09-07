@@ -10,17 +10,14 @@ export type TrafficSort = SortPreference<TrafficColumnId>;
 export const DEFAULT_TRAFFIC_SORT: TrafficSort = { columnId: "callsign", direction: "asc" };
 export const TRAFFIC_ROW_CAP = 400;
 
-export function buildTrafficColumns(width: number, kind: TrafficKind): TrafficColumn[] {
-  const callsignWidth = Math.max(10, Math.min(16, Math.floor(width * 0.22)));
-  const countryWidth = Math.max(8, Math.min(16, Math.floor(width * 0.22)));
-  const numWidth = 8;
+export function buildTrafficColumns(kind: TrafficKind): TrafficColumn[] {
   return [
-    { id: "callsign", label: kind === "ship" ? "NAME" : "CALL", width: callsignWidth, align: "left" },
-    { id: "country", label: "COUNTRY", width: countryWidth, align: "left" },
-    { id: "lat", label: "LAT", width: numWidth, align: "right" },
-    { id: "lon", label: "LON", width: numWidth, align: "right" },
-    { id: "alt", label: kind === "ship" ? "HDG" : "ALT", width: numWidth, align: "right" },
-    { id: "speed", label: "SPD", width: numWidth, align: "right" },
+    { id: "callsign", label: kind === "ship" ? "NAME" : "CALL", width: 10, align: "left", flexGrow: 1 },
+    { id: "country", label: "COUNTRY", width: 8, align: "left" },
+    { id: "lat", label: "LAT", width: 8, align: "right" },
+    { id: "lon", label: "LON", width: 8, align: "right" },
+    { id: "alt", label: kind === "ship" ? "HDG" : "ALT", width: 8, align: "right" },
+    { id: "speed", label: "SPD", width: 8, align: "right" },
   ];
 }
 

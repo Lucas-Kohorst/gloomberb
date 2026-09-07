@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { GloomPlugin } from "../../../types/plugin";
-import { PLUGIN_MARKET_TEMPLATE_ID } from "../../../plugins/builtin/plugin-market/types";
+import { PLUGIN_MARKETPLACE_TEMPLATE_ID } from "../../../plugins/builtin/plugin-marketplace";
 import { buildPluginToggleItems } from "./plugin-items";
 
 function plugin(id: string, name: string, toggleable = true): GloomPlugin {
@@ -30,7 +30,7 @@ function fakeRegistry(plugins: GloomPlugin[]): PluginRegistry {
 }
 
 describe("buildPluginToggleItems", () => {
-  test("keeps PL as a toggle list and appends a marketplace jump when unfiltered", () => {
+  test("keeps PL as a toggle list and appends a marketplace jump when unfiltered", async () => {
     const registry = fakeRegistry([
       plugin("notes", "Notes"),
       plugin("plugin-market", "Plugin Marketplace", false),
@@ -51,10 +51,10 @@ describe("buildPluginToggleItems", () => {
     expect(items.map((item) => item.id)).toEqual(["plugin:notes", "plugin-market-open"]);
     expect(items[0]?.kind).toBe("plugin");
     expect(items[1]?.right).toBe("PLUGINS");
-    items[0]?.pluginToggle?.();
+    await items[0]?.action();
     expect(persisted).toEqual([{ disabledPlugins: ["notes"] }]);
     items[1]?.action();
-    expect((registry as unknown as { created: string[] }).created).toEqual([PLUGIN_MARKET_TEMPLATE_ID]);
+    expect((registry as unknown as { created: string[] }).created).toEqual([PLUGIN_MARKETPLACE_TEMPLATE_ID]);
   });
 
   test("filters toggles and surfaces the marketplace jump for discovery queries", () => {

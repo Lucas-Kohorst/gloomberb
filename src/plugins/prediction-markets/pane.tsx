@@ -23,7 +23,11 @@ import { PredictionMarketDetailPane } from "./detail/pane";
 import { resolvePredictionDetailTitle } from "./detail/shared";
 import { createPredictionColumns } from "./columns";
 import { getPredictionColumnValue } from "./metrics";
-import { buildPredictionListRowRevision } from "./rows";
+import {
+  buildPredictionListRowRevision,
+  predictionChartExpression,
+  resolvePredictionGraphMarket,
+} from "./rows";
 import { PREDICTION_FILTER_TABS, VENUE_TABS, resolvePredictionFilterId } from "./navigation";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../utils/search-focus-navigation";
 import { paneDelayedStatus, paneLiveStatus } from "../builtin/shared/pane-footer";
@@ -59,7 +63,7 @@ function predictionCellVersion(
     column.id,
     watchlisted ? 1 : 0,
     column.id === "ends" || column.id === "updated" ? relativeTimeBucket : 0,
-    column.id === "yes" ? flash : "",
+    column.id === "yes" ? `${row.focusYesPrice ?? ""}:${flash}` : "",
   ].join("|");
 }
 
@@ -117,12 +121,10 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
   }, [marketUrl]);
   const popOutChart = useGraphChartPopOut();
   const graphExpression = useMemo(() => {
-    const summary = controller.selectedSummary ?? controller.selectedRow?.representative;
-    if (!summary) return null;
-    return summary.venue === "kalshi"
-      ? `KALSHI:${summary.marketId}`
-      : `POLY:${summary.marketId}`;
-  }, [controller.selectedRow?.representative, controller.selectedSummary]);
+    const summary = controller.selectedSummary
+      ?? resolvePredictionGraphMarket(controller.selectedRow);
+    return predictionChartExpression(summary);
+  }, [controller.selectedRow, controller.selectedSummary]);
   const graphSelected = useCallback(() => {
     popOutChart(graphExpression);
   }, [graphExpression, popOutChart]);
@@ -200,12 +202,13 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
     updatedAgo,
   ]);
 
+  const venueTabItems = useMemo(
+    () => VENUE_TABS.map((tab) => ({ label: tab.label, value: tab.value })),
+    [],
+  );
   const venueTabs = !controller.paneSettings.hideTabs ? (
     <Tabs
-      tabs={VENUE_TABS.map((tab) => ({
-        label: tab.label,
-        value: tab.value,
-      }))}
+      tabs={venueTabItems}
       activeValue={controller.effectiveVenueScope}
       onSelect={controller.actions.setVenue}
       compact
@@ -369,7 +372,6 @@ export function PredictionMarketsPane({ focused, width, height }: PaneProps) {
           historyRange={controller.historyRange}
           onDetailTabChange={controller.actions.setDetailTab}
           onHistoryRangeChange={controller.actions.setHistoryRange}
-          onPreviewOrder={controller.actions.previewOrder}
           onSelectMarket={controller.actions.selectMarket}
           scrollRef={controller.detailScrollRef}
           selectedRow={controller.selectedDetailRow}

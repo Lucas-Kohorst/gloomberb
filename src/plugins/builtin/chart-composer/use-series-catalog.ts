@@ -5,6 +5,7 @@ import {
 } from "../../../tickers/search";
 import { useOptionalAppSelector } from "../../../state/app/context";
 import type { TickerRecord } from "../../../types/ticker";
+import { searchChartSeriesCapabilities } from "../../../capabilities";
 import { getSharedRegistry } from "../../registry";
 import { getSharedAdjacentClient } from "../adjacent/client";
 import { loadKalshiCatalog } from "../../prediction-markets/services/kalshi/adapter";
@@ -12,6 +13,7 @@ import { loadPolymarketCatalog } from "../../prediction-markets/services/polymar
 import type { PredictionMarketSummary } from "../../prediction-markets/types";
 import {
   analyzeSeriesSearchQuery,
+  buildCapabilitySeriesSuggestions,
   buildSeriesCatalogSuggestions,
   looksLikeOwidSeriesQuery,
   type SeriesCatalogInstrument,
@@ -82,7 +84,6 @@ function candidateToInstrument(candidate: {
   };
 }
 
-/** Watchlist + option-aware ticker search used by the Data Catalog universe. */
 export function useCatalogUniverse(query: string): {
   instruments: SeriesCatalogInstrument[];
   loading: boolean;
@@ -111,7 +112,11 @@ export function useCatalogUniverse(query: string): {
   useEffect(() => {
     const instrumentQuery = query.trim();
     if (!instrumentQuery || instrumentQuery.includes(":")) {
-      setSearch({ query: "", instruments: [], loading: false });
+      setSearch((current) => (
+        current.query === "" && current.instruments.length === 0 && !current.loading
+          ? current
+          : { query: "", instruments: [], loading: false }
+      ));
       return;
     }
 
@@ -177,113 +182,16 @@ export function useCatalogUniverse(query: string): {
   };
 }
 
-function hitsFromVenueSummaries(
-  summaries: readonly PredictionMarketSummary[],
-): PredictionMarketSearchHit[] {
-  return summaries.flatMap((summary) => {
-    const marketId = summary.marketId.trim();
-    if (!marketId) return [];
-    return [{
-      venue: summary.venue,
-      marketId,
-      title: summary.title.trim() || summary.marketLabel.trim() || marketId,
-      ...(summary.eventLabel.trim() ? { eventLabel: summary.eventLabel } : {}),
-      ...(summary.marketLabel.trim() ? { marketLabel: summary.marketLabel } : {}),
-      ...(summary.url.trim() ? { url: summary.url } : {}),
-    }];
-  });
-}
-
-let catalogPredictionHitsCache: PredictionMarketSearchHit[] | null = null;
-let catalogPredictionHitsInflight: Promise<PredictionMarketSearchHit[]> | null = null;
-let catalogPredictionHitsError: string | null = null;
-
-export function peekCatalogPredictionHitsError(): string | null {
-  return catalogPredictionHitsError;
-}
-
-export function resetCatalogPredictionHitsCache(): void {
-  catalogPredictionHitsCache = null;
-  catalogPredictionHitsInflight = null;
-  catalogPredictionHitsError = null;
-}
-
-export function loadCatalogPredictionHits(loaders?: {
-  loadKalshi?: typeof loadKalshiCatalog;
-  loadPolymarket?: typeof loadPolymarketCatalog;
-}): Promise<PredictionMarketSearchHit[]> {
-  if (catalogPredictionHitsCache) return Promise.resolve(catalogPredictionHitsCache);
-  if (catalogPredictionHitsInflight) return catalogPredictionHitsInflight;
-  const loadKalshi = loaders?.loadKalshi ?? loadKalshiCatalog;
-  const loadPolymarket = loaders?.loadPolymarket ?? loadPolymarketCatalog;
-  catalogPredictionHitsInflight = Promise.allSettled([
-    loadKalshi("", "all", "top"),
-    loadPolymarket("", "all", "top"),
-  ]).then((results) => {
-    const markets = results.flatMap((result) => (
-      result.status === "fulfilled" ? hitsFromVenueSummaries(result.value) : []
-    ));
-    const venuesFailed = results.every((result) => result.status === "rejected")
-      || (markets.length === 0 && results.some((result) => result.status === "rejected"));
-    if (markets.length > 0) {
-      catalogPredictionHitsCache = markets;
-      catalogPredictionHitsError = null;
-    } else if (venuesFailed) {
-      catalogPredictionHitsError = "couldn't load prediction markets";
-    } else {
-      catalogPredictionHitsError = null;
-    }
-    return markets;
-  }).finally(() => {
-    catalogPredictionHitsInflight = null;
-  });
-  return catalogPredictionHitsInflight;
-}
-
-export function usePredictionMarketHits(
-  enabled: boolean,
-  refreshNonce = 0,
-): { markets: PredictionMarketSearchHit[]; loading: boolean; error: string | null } {
-  const [markets, setMarkets] = useState<PredictionMarketSearchHit[]>(
-    catalogPredictionHitsCache ?? [],
-  );
-  const [loading, setLoading] = useState(enabled && catalogPredictionHitsCache == null);
-  const [error, setError] = useState<string | null>(catalogPredictionHitsError);
-
-  useEffect(() => {
-    if (!enabled) return;
-    if (catalogPredictionHitsCache) {
-      setMarkets(catalogPredictionHitsCache);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    void loadCatalogPredictionHits().then((hits) => {
-      if (cancelled) return;
-      setMarkets(hits);
-      setLoading(false);
-      setError(catalogPredictionHitsError);
-    }).catch(() => {
-      if (!cancelled) {
-        setLoading(false);
-        setError(catalogPredictionHitsError ?? "couldn't load prediction markets");
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, refreshNonce]);
-
-  return { markets, loading, error };
-}
-
 export interface SeriesCatalogSearchResult {
   suggestions: SeriesCatalogSuggestion[];
   instruments: SeriesCatalogInstrument[];
   loading: boolean;
+  /** Set when a lookup failed, so an outage is never reported as zero matches. */
+  error: string | null;
+}
+
+function searchFailureMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : "Series search failed.";
 }
 
 /** Shared smart-series search used by both inline quick-add and the full editor. */
@@ -298,11 +206,18 @@ export function useSeriesCatalogSuggestions({
 }): SeriesCatalogSearchResult {
   const tickers = useOptionalAppSelector((state) => state.tickers, EMPTY_TICKERS);
   const analysis = useMemo(() => analyzeSeriesSearchQuery(query), [query]);
+  const [providerSearch, setProviderSearch] = useState<{
+    query: string;
+    suggestions: SeriesCatalogSuggestion[];
+    loading: boolean;
+    error: string | null;
+  }>({ query: "", suggestions: [], loading: false, error: null });
   const [search, setSearch] = useState<{
     query: string;
     instruments: SeriesCatalogInstrument[];
     loading: boolean;
-  }>({ query: "", instruments: [], loading: false });
+    error: string | null;
+  }>({ query: "", instruments: [], loading: false, error: null });
   const [marketSearch, setMarketSearch] = useState<{
     query: string;
     markets: PredictionMarketSearchHit[];
@@ -315,44 +230,55 @@ export function useSeriesCatalogSuggestions({
   }>({ query: "", suggestions: [], loading: false });
 
   useEffect(() => {
+    const normalizedQuery = query.trim();
+    const registry = getSharedRegistry();
+    if (!enabled || !normalizedQuery || !registry) {
+      setProviderSearch({ query: "", suggestions: [], loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setProviderSearch({ query: normalizedQuery, suggestions: [], loading: true, error: null });
+    const timer = setTimeout(() => {
+      void searchChartSeriesCapabilities(registry, normalizedQuery, 8, controller.signal).then((items) => {
+        if (!cancelled) setProviderSearch({
+          query: normalizedQuery,
+          suggestions: buildCapabilitySeriesSuggestions(items),
+          loading: false,
+          error: null,
+        });
+      }).catch((error: unknown) => {
+        if (controller.signal.aborted || cancelled) return;
+        setProviderSearch({
+          query: normalizedQuery,
+          suggestions: [],
+          loading: false,
+          error: searchFailureMessage(error),
+        });
+      });
+    }, 250);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [enabled, query]);
+
+  useEffect(() => {
     const instrumentQuery = analysis.instrumentQuery.trim();
-    if (!enabled || !instrumentQuery || analysis.directInstrument || looksLikePredictionMarketQuery(query)) {
-      setSearch({ query: "", instruments: [], loading: false });
+    if (!enabled || !instrumentQuery || analysis.directInstrument) {
+      setSearch({ query: "", instruments: [], loading: false, error: null });
       return;
     }
 
     const registry = getSharedRegistry();
     if (!registry) {
-      // The registry is installed after the app state is created in some
-      // hosted/test render paths. Local tickers are still enough to resolve
-      // a company name, so do not leave the catalog permanently empty while
-      // waiting for the provider registry.
-      const candidates = buildTickerSearchCandidates({
-        query: instrumentQuery,
-        tickers,
-        providerResults: [],
-        totalLimit: 4,
-        localLimit: 3,
-        includeOptionContracts: false,
-      });
-      setSearch({
-        query: instrumentQuery,
-        instruments: candidates.map((candidate) => ({
-          symbol: candidate.symbol,
-          ...(candidate.ticker?.metadata.exchange
-            ? { exchange: candidate.ticker.metadata.exchange }
-            : {}),
-          ...(candidate.ticker?.metadata.name
-            ? { name: candidate.ticker.metadata.name }
-            : {}),
-        })),
-        loading: false,
-      });
+      setSearch({ query: instrumentQuery, instruments: [], loading: false, error: null });
       return;
     }
 
     let cancelled = false;
-    setSearch({ query: instrumentQuery, instruments: [], loading: true });
+    setSearch({ query: instrumentQuery, instruments: [], loading: true, error: null });
     const timer = setTimeout(() => {
       void searchTickerCandidates({
         query: instrumentQuery,
@@ -365,21 +291,19 @@ export function useSeriesCatalogSuggestions({
         if (cancelled) return;
         setSearch({
           query: instrumentQuery,
-          instruments: candidates.map((candidate) => ({
-            symbol: candidate.symbol,
-            ...(candidate.ticker?.metadata.exchange
-              ? { exchange: candidate.ticker.metadata.exchange }
-              : candidate.result?.primaryExchange || candidate.result?.exchange
-                ? { exchange: candidate.result?.primaryExchange || candidate.result?.exchange }
-                : {}),
-            ...(candidate.ticker?.metadata.name || candidate.result?.name
-              ? { name: candidate.ticker?.metadata.name || candidate.result?.name }
-              : {}),
-          })),
+          instruments: candidates.map(candidateToInstrument),
           loading: false,
+          error: null,
         });
-      }).catch(() => {
-        if (!cancelled) setSearch({ query: instrumentQuery, instruments: [], loading: false });
+      }).catch((error: unknown) => {
+        if (!cancelled) {
+          setSearch({
+            query: instrumentQuery,
+            instruments: [],
+            loading: false,
+            error: searchFailureMessage(error),
+          });
+        }
       });
     }, 80);
 
@@ -450,17 +374,28 @@ export function useSeriesCatalogSuggestions({
     : [];
   const markets = marketSearch.query === query.trim() ? marketSearch.markets : [];
   const owidSuggestions = owidSearch.query === query.trim() ? owidSearch.suggestions : [];
-  const suggestions = useMemo(
-    () => buildSeriesCatalogSuggestions(query, defaultInstrument, instruments, 8, markets, owidSuggestions),
-    [defaultInstrument, instruments, markets, owidSuggestions, query],
-  );
+  const suggestions = useMemo(() => {
+    const builtIn = buildSeriesCatalogSuggestions(
+      query,
+      defaultInstrument,
+      instruments,
+      8,
+      markets,
+      owidSuggestions,
+    );
+    const provider = providerSearch.query === query.trim() ? providerSearch.suggestions : [];
+    return [...provider, ...builtIn.filter((entry) => !provider.some((candidate) => candidate.id === entry.id))].slice(0, 8);
+  }, [defaultInstrument, instruments, markets, owidSuggestions, providerSearch, query]);
 
   return {
     suggestions,
     instruments,
     loading: (search.loading && search.query === analysis.instrumentQuery)
+      || (providerSearch.loading && providerSearch.query === query.trim())
       || (marketSearch.loading && marketSearch.query === query.trim())
       || (owidSearch.loading && owidSearch.query === query.trim()),
+    error: (search.query === analysis.instrumentQuery ? search.error : null)
+      ?? (providerSearch.query === query.trim() ? providerSearch.error : null),
   };
 }
 

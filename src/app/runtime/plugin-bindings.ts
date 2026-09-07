@@ -105,7 +105,7 @@ export function bindPluginRegistryRuntimeAccess({
   importBrokerPositions,
   marketData,
   pluginRegistry,
-  state,
+  stateRef,
   tickerRepository,
 }: {
   dataProvider: DataProvider;
@@ -113,31 +113,32 @@ export function bindPluginRegistryRuntimeAccess({
   importBrokerPositions: (instanceId: string) => Promise<unknown>;
   marketData: MarketDataCoordinator;
   pluginRegistry: PluginRegistry;
-  state: AppState;
+  stateRef: { current: AppState };
   tickerRepository: AppTickerRepositoryPort;
 }) {
-  pluginRegistry.getTickerFn = (symbol) => state.tickers.get(symbol) ?? null;
+  pluginRegistry.getTickerFn = (symbol) => stateRef.current.tickers.get(symbol) ?? null;
   pluginRegistry.getDataFn = (symbol) => {
-    const ticker = state.tickers.get(symbol) ?? null;
+    const ticker = stateRef.current.tickers.get(symbol) ?? null;
     const instrument = instrumentFromTicker(ticker, symbol);
     return instrument ? marketData.getTickerFinancialsSync(instrument) : null;
   };
-  pluginRegistry.getConfigFn = () => state.config;
-  pluginRegistry.getPaneRuntimeStateFn = (paneId) => state.paneState[paneId] ?? null;
+  pluginRegistry.getConfigFn = () => stateRef.current.config;
+  pluginRegistry.getPaneRuntimeStateFn = (paneId) => stateRef.current.paneState[paneId] ?? null;
   pluginRegistry.updatePaneRuntimeStateFn = (paneId, patch) => {
     dispatch({ type: "UPDATE_PANE_STATE", paneId, patch });
   };
   pluginRegistry.getPluginConfigValueFn = (pluginId, key) => (
-    (state.config.pluginConfig[pluginId]?.[key] as any) ?? null
+    (stateRef.current.config.pluginConfig[pluginId]?.[key] as any) ?? null
   );
 
   const setPluginConfigValues = async (pluginId: string, values: Record<string, unknown>) => {
+    const currentConfig = stateRef.current.config;
     const nextConfig = {
-      ...state.config,
+      ...currentConfig,
       pluginConfig: {
-        ...state.config.pluginConfig,
+        ...currentConfig.pluginConfig,
         [pluginId]: {
-          ...(state.config.pluginConfig[pluginId] ?? {}),
+          ...(currentConfig.pluginConfig[pluginId] ?? {}),
           ...values,
         },
       },
@@ -152,13 +153,14 @@ export function bindPluginRegistryRuntimeAccess({
   };
   pluginRegistry.setPluginConfigValuesFn = setPluginConfigValues;
   pluginRegistry.deletePluginConfigValueFn = async (pluginId, key) => {
-    const currentPluginConfig = state.config.pluginConfig[pluginId];
+    const currentConfig = stateRef.current.config;
+    const currentPluginConfig = currentConfig.pluginConfig[pluginId];
     if (!currentPluginConfig || !(key in currentPluginConfig)) return;
 
     const nextPluginConfig = { ...currentPluginConfig };
     delete nextPluginConfig[key];
 
-    const nextAllPluginConfig = { ...state.config.pluginConfig };
+    const nextAllPluginConfig = { ...currentConfig.pluginConfig };
     if (Object.keys(nextPluginConfig).length === 0) {
       delete nextAllPluginConfig[pluginId];
     } else {
@@ -166,7 +168,7 @@ export function bindPluginRegistryRuntimeAccess({
     }
 
     const nextConfig = {
-      ...state.config,
+      ...currentConfig,
       pluginConfig: nextAllPluginConfig,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
@@ -178,14 +180,14 @@ export function bindPluginRegistryRuntimeAccess({
     setConfigAccessor?: (accessor: () => AppConfig) => void;
   };
   if (typeof configurableProvider.setConfigAccessor === "function") {
-    configurableProvider.setConfigAccessor(() => state.config);
+    configurableProvider.setConfigAccessor(() => stateRef.current.config);
   }
 
   pluginRegistry.createBrokerInstanceFn = async (brokerType, label, values) => {
     const instanceId = createBrokerInstanceId(
       brokerType,
       label,
-      state.config.brokerInstances.map((instance) => instance.id),
+      stateRef.current.config.brokerInstances.map((instance) => instance.id),
     );
     const instance: BrokerInstanceConfig = {
       id: instanceId,
@@ -196,8 +198,8 @@ export function bindPluginRegistryRuntimeAccess({
       enabled: true,
     };
     const nextConfig = {
-      ...state.config,
-      brokerInstances: [...state.config.brokerInstances, instance],
+      ...stateRef.current.config,
+      brokerInstances: [...stateRef.current.config.brokerInstances, instance],
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
     await saveConfigImmediately(nextConfig);
@@ -206,7 +208,7 @@ export function bindPluginRegistryRuntimeAccess({
   };
 
   pluginRegistry.connectBrokerInstanceFn = async (instanceId) => {
-    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
+    const instance = getBrokerInstance(stateRef.current.config.brokerInstances, instanceId);
     if (!instance) throw new Error("Broker profile not found.");
     if (instance.enabled === false) throw new Error(`Broker profile "${instance.label}" is disabled.`);
 
@@ -223,8 +225,8 @@ export function bindPluginRegistryRuntimeAccess({
   };
 
   pluginRegistry.updateBrokerInstanceFn = async (instanceId, values, options = {}) => {
-    const currentInstance = state.config.brokerInstances.find((instance) => instance.id === instanceId);
-    const nextInstances = state.config.brokerInstances.map((instance) =>
+    const currentInstance = stateRef.current.config.brokerInstances.find((instance) => instance.id === instanceId);
+    const nextInstances = stateRef.current.config.brokerInstances.map((instance) =>
       instance.id === instanceId
         ? (() => {
           const nextValues = options.replaceConfig ? values : { ...instance.config, ...values };
@@ -248,7 +250,7 @@ export function bindPluginRegistryRuntimeAccess({
       clearPersistedBrokerAccounts(pluginRegistry.persistence.resources, currentInstance);
     }
     const nextConfig = {
-      ...state.config,
+      ...stateRef.current.config,
       brokerInstances: nextInstances,
     };
     dispatch({ type: "SET_CONFIG", config: nextConfig });
@@ -261,29 +263,29 @@ export function bindPluginRegistryRuntimeAccess({
   };
 
   pluginRegistry.removeBrokerInstanceFn = async (instanceId) => {
-    const instance = getBrokerInstance(state.config.brokerInstances, instanceId);
+    const instance = getBrokerInstance(stateRef.current.config.brokerInstances, instanceId);
     if (!instance) return;
 
     clearPersistedBrokerAccounts(pluginRegistry.persistence.resources, instance);
 
     const broker = pluginRegistry.brokers.get(instance.brokerType);
     const removedPortfolioIds = new Set(
-      state.config.portfolios
+      stateRef.current.config.portfolios
         .filter((portfolio) => portfolio.brokerInstanceId === instanceId)
         .map((portfolio) => portfolio.id),
     );
 
-    const nextPortfolios = state.config.portfolios.filter((portfolio) => !removedPortfolioIds.has(portfolio.id));
+    const nextPortfolios = stateRef.current.config.portfolios.filter((portfolio) => !removedPortfolioIds.has(portfolio.id));
     const { nextTickers, removedSymbols, changedTickers } = applyBrokerInstanceRemovalToTickers(
-      state.tickers.values(),
+      stateRef.current.tickers.values(),
       instanceId,
       removedPortfolioIds,
     );
     await persistRemovedBrokerTickers(tickerRepository, nextTickers, removedSymbols, changedTickers);
 
     const nextConfig = {
-      ...state.config,
-      brokerInstances: state.config.brokerInstances.filter((entry) => entry.id !== instanceId),
+      ...stateRef.current.config,
+      brokerInstances: stateRef.current.config.brokerInstances.filter((entry) => entry.id !== instanceId),
       portfolios: nextPortfolios,
     };
 

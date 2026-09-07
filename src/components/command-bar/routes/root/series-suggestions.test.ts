@@ -63,5 +63,16 @@ describe("chart series command-bar autocomplete", () => {
     ))).toBe(true);
     expect(looksLikeCatalogSeriesQuery("cpi fred")).toBe(true);
     expect(looksLikeCatalogSeriesQuery("AAPL revenue")).toBe(false);
+    expect(looksLikeCatalogSeriesQuery("atlanta temp")).toBe(true);
+    expect(looksLikeCatalogSeriesQuery("alanta temp")).toBe(true);
+  });
+
+  test("ranks Atlanta temperature series for a city + temp query", () => {
+    const aapl = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
+    const suggestions = buildSeriesCatalogSuggestions("atlanta temp", aapl, [], 12);
+    expect(suggestions.some((entry) => (
+      entry.expression.kind === "weather"
+      && entry.expression.stationId === "ATL"
+    ))).toBe(true);
   });
 });

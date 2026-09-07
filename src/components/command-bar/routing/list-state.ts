@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { PluginRegistry } from "../../../plugins/registry";
 import {
   getEmptyState,
+  type CommandBarCategoryPriorities,
   type CommandBarMode,
   type CommandBarSectionOrder,
 } from "../view-model";
@@ -33,13 +34,13 @@ interface BuildRouteListStateOptions {
     query: string,
     options?: { keepRouteOpen?: boolean },
   ) => ResultItem[];
-  buildPluginItems: (query: string) => ResultItem[];
   currentRoute: CommandBarRoute | null;
   orderedRootResults: ResultItem[];
   pluginRegistry: Pick<PluginRegistry, "resolvePaneSettings">;
   rootHoveredIdx: number | null;
   rootModeKind: CommandBarMode;
   rootQuery: string;
+  rootCategoryPriorities?: CommandBarCategoryPriorities;
   rootSearching: boolean;
   rootSectionOrder: CommandBarSectionOrder;
   rootSelectedIdx: number;
@@ -53,12 +54,12 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
     adaptTickerSearchRouteResult,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     currentRoute,
     orderedRootResults,
     pluginRegistry,
     rootHoveredIdx,
     rootModeKind,
+    rootCategoryPriorities,
     rootQuery,
     rootSearching,
     rootSectionOrder,
@@ -86,28 +87,12 @@ function buildRouteListState(options: BuildRouteListStateOptions): ListScreenSta
       footerLeft: getScreenFooterLeft(null),
       footerRight: getScreenFooterRight(null),
       sectionOrder: rootSectionOrder,
+      categoryPriorities: rootCategoryPriorities,
     };
   }
 
   if (currentRoute.kind === "mode") {
     switch (currentRoute.screen) {
-      case "plugins": {
-        const results = buildPluginItems(currentRoute.query);
-        return {
-          kind: "mode",
-          title: "Manage Plugins",
-          subtitle: "Toggle plugins here, or open Plugin Marketplace to search GitHub and install.",
-          query: currentRoute.query,
-          selectedIdx: currentRoute.selectedIdx,
-          hoveredIdx: currentRoute.hoveredIdx,
-          results: orderListResults(results),
-          searching: false,
-          emptyLabel: getEmptyState("plugins", currentRoute.query).label,
-          emptyDetail: getEmptyState("plugins", currentRoute.query).detail,
-          footerLeft: getScreenFooterLeft(currentRoute),
-          footerRight: getScreenFooterRight(currentRoute),
-        };
-      }
       case "layout": {
         const results = buildLayoutItems(currentRoute.query);
         return {
@@ -210,10 +195,10 @@ export function useRouteListState(options: BuildRouteListStateOptions): ListScre
     adaptTickerSearchRouteResult,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     currentRoute,
     orderedRootResults,
     pluginRegistry,
+    rootCategoryPriorities,
     rootHoveredIdx,
     rootModeKind,
     rootQuery,
@@ -229,10 +214,10 @@ export function useRouteListState(options: BuildRouteListStateOptions): ListScre
     adaptTickerSearchRouteResult,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     currentRoute,
     orderedRootResults,
     pluginRegistry,
+    rootCategoryPriorities,
     rootHoveredIdx,
     rootModeKind,
     rootQuery,

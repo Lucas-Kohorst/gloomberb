@@ -437,6 +437,14 @@ describe("CommandBar portfolio commands", () => {
     );
 
     await testSetup.renderOnce();
+    // Related pane shortcuts ("PF Portfolio", "Watchlist") and the assist
+    // offer lead the list for this query; walk down to the Delete Portfolio row.
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        testSetup!.mockInput.pressArrow("down");
+        await testSetup!.renderOnce();
+      });
+    }
     await act(async () => {
       testSetup!.mockInput.pressEnter();
       await testSetup!.renderOnce();

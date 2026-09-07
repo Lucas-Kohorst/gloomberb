@@ -1,30 +1,27 @@
 import { useCallback, useMemo, useState } from "react";
 import { Box, TextAttributes } from "../../../ui";
 import {
-  Button,
   DataTableView,
+  SelectButton,
   type DataTableCell,
   type DataTableColumn,
+  type SelectButtonOption,
 } from "../../../components";
 import { ScannerWaitingState } from "./waiting";
 import { useAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
-import {
-  applySortPreference,
-  nextSortPreference,
-  type SortPreference,
-} from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerFlowEvent } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePluginAppActions, usePluginPaneActions, usePluginTickerActions } from "../../runtime";
+import { usePluginPaneActions, usePluginTickerActions } from "../../runtime";
 import { ScannerDeniedState } from "./denied";
 import { useFlowFeed, useScannerStatusFooter } from "./feed";
 import {
   DEFAULT_FLOW_FILTERS,
   FLOW_FILTER_OPTIONS,
   filterFlowEvents,
+  flowEmptyState,
   formatFlowExpiry,
   formatFlowPremium,
   formatFlowSide,
@@ -40,28 +37,33 @@ import {
   type FlowVolOi,
 } from "./flow-model";
 
-/** Cycles a select-style pane setting, so every filter is reachable without the settings dialog. */
-function FilterChip<T extends string>({
+/** Every filter is reachable from the pane body, not just the settings dialog. */
+function FlowFilter<T extends string>({
+  id,
   label,
   value,
   options,
+  defaultValue,
   onChange,
 }: {
+  id: string;
   label: string;
   value: T;
-  options: readonly { value: T; label: string; short: string }[];
+  options: readonly SelectButtonOption<T>[];
+  defaultValue: T;
   onChange: (value: T) => void;
 }) {
-  const current = options.find((option) => option.value === value) ?? options[0]!;
   return (
-    <Button
-      label={`${label} ${current.short}`}
-      variant="ghost"
-      onPress={() => {
-        const index = options.findIndex((option) => option.value === value);
-        onChange(options[(index + 1 + options.length) % options.length]!.value);
-      }}
-    />
+    <Box marginRight={2}>
+      <SelectButton
+        label={label}
+        value={value}
+        options={options}
+        emphasized={value !== defaultValue}
+        onChange={onChange}
+        idPrefix={`flow-filter-${id}`}
+      />
+    </Box>
   );
 }
 
@@ -126,7 +128,6 @@ function FlowPane({ focused, width, height }: PaneProps) {
   const feed = useFlowFeed();
   const { selectTicker } = usePluginPaneActions();
   const { pinTicker } = usePluginTickerActions();
-  const { createPaneFromTemplate } = usePluginAppActions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const [minPremium, setMinPremium] = usePaneSettingValue<FlowMinPremium>("minPremium", DEFAULT_FLOW_FILTERS.minPremium);
@@ -146,41 +147,17 @@ function FlowPane({ focused, width, height }: PaneProps) {
     () => ({ minPremium, side, kind, volOi, expiry, universe }),
     [expiry, kind, minPremium, side, universe, volOi],
   );
-  const [sortPreference, setSortPreference] = useState<SortPreference>({
-    columnId: null,
-    direction: "desc",
-  });
   const events = useMemo(
-    () => applySortPreference(
-      filterFlowEvents(feed.payload?.events, filters, watchlist),
-      sortPreference,
-      (event, columnId) => {
-        switch (columnId) {
-          case "time": return event.at;
-          case "ticker": return event.underlying;
-          case "type": return event.kind;
-          case "strike": return event.strike;
-          case "expiry": return event.expiry;
-          case "side": return event.side;
-          case "size": return event.size;
-          case "premium": return event.premium;
-          case "volOi": return event.volOi ?? null;
-          default: return null;
-        }
-      },
-    ),
-    [feed.payload?.events, filters, sortPreference, watchlist],
+    () => filterFlowEvents(feed.payload?.events, filters, watchlist),
+    [feed.payload?.events, filters, watchlist],
   );
 
-  const selectedEvent = events.find((event) => event.id === selectedId) ?? events[0] ?? null;
-  const chartSelected = useCallback(() => {
-    if (!selectedEvent) return;
-    createPaneFromTemplate("chart-composer-pane", { arg: selectedEvent.underlying });
-  }, [createPaneFromTemplate, selectedEvent]);
+  const emptyState = useMemo(
+    () => flowEmptyState(feed.payload?.events.length ?? 0, events.length, feed.payload?.status),
+    [events.length, feed.payload?.events.length, feed.payload?.status],
+  );
 
-  useScannerStatusFooter("flow", feed, focused, [
-    { id: "graph", key: "g", label: "raph", onPress: chartSelected, disabled: !selectedEvent },
-  ]);
+  useScannerStatusFooter("flow", feed, focused);
 
   const columns = useMemo(() => buildColumns(width), [width]);
 
@@ -195,13 +172,57 @@ function FlowPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} flexDirection="row" overflow="hidden">
-        <FilterChip label="Prem" value={minPremium} options={FLOW_FILTER_OPTIONS.minPremium} onChange={setMinPremium} />
-        <FilterChip label="Side" value={side} options={FLOW_FILTER_OPTIONS.side} onChange={setSide} />
-        <FilterChip label="Kind" value={kind} options={FLOW_FILTER_OPTIONS.kind} onChange={setKind} />
-        <FilterChip label="V/OI" value={volOi} options={FLOW_FILTER_OPTIONS.volOi} onChange={setVolOi} />
-        <FilterChip label="Exp" value={expiry} options={FLOW_FILTER_OPTIONS.expiry} onChange={setExpiry} />
-        <FilterChip label="Univ" value={universe} options={FLOW_FILTER_OPTIONS.universe} onChange={setUniverse} />
+      {/* paddingLeft matches the table's own left inset, so the filter row and
+          the TIME column start on the same cell. */}
+      <Box height={1} flexDirection="row" overflow="hidden" paddingLeft={1}>
+        <FlowFilter
+          id="premium"
+          label="Prem"
+          value={minPremium}
+          options={FLOW_FILTER_OPTIONS.minPremium}
+          defaultValue={DEFAULT_FLOW_FILTERS.minPremium}
+          onChange={setMinPremium}
+        />
+        <FlowFilter
+          id="side"
+          label="Side"
+          value={side}
+          options={FLOW_FILTER_OPTIONS.side}
+          defaultValue={DEFAULT_FLOW_FILTERS.side}
+          onChange={setSide}
+        />
+        <FlowFilter
+          id="kind"
+          label="Kind"
+          value={kind}
+          options={FLOW_FILTER_OPTIONS.kind}
+          defaultValue={DEFAULT_FLOW_FILTERS.kind}
+          onChange={setKind}
+        />
+        <FlowFilter
+          id="voloi"
+          label="V/OI"
+          value={volOi}
+          options={FLOW_FILTER_OPTIONS.volOi}
+          defaultValue={DEFAULT_FLOW_FILTERS.volOi}
+          onChange={setVolOi}
+        />
+        <FlowFilter
+          id="expiry"
+          label="Exp"
+          value={expiry}
+          options={FLOW_FILTER_OPTIONS.expiry}
+          defaultValue={DEFAULT_FLOW_FILTERS.expiry}
+          onChange={setExpiry}
+        />
+        <FlowFilter
+          id="universe"
+          label="Univ"
+          value={universe}
+          options={FLOW_FILTER_OPTIONS.universe}
+          defaultValue={DEFAULT_FLOW_FILTERS.universe}
+          onChange={setUniverse}
+        />
       </Box>
       <DataTableView<ScannerFlowEvent>
         focused={focused}
@@ -215,25 +236,15 @@ function FlowPane({ focused, width, height }: PaneProps) {
         rootHeight={Math.max(2, height - 1)}
         columns={columns}
         items={events}
-        sortColumnId={sortPreference.columnId}
-        sortDirection={sortPreference.direction}
-        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(current, columnId, {
-          defaultDirection: columnId === "ticker" || columnId === "type" || columnId === "side" ? "asc" : "desc",
-        }))}
+        sortColumnId={null}
+        sortDirection="desc"
+        onHeaderClick={() => {}}
         getItemKey={(event) => event.id}
-        getRowRevision={(event) => event.id}
-        onRootKeyDown={(event) => {
-          if (event.name !== "g") return false;
-          event.preventDefault?.();
-          event.stopPropagation?.();
-          chartSelected();
-          return true;
-        }}
         onActivate={(event) => pinTicker(event.underlying, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
         renderCell={(event, column, _index, rowState) => renderCell(event, column, rowState)}
         emptyContent={feed.payload ? undefined : <ScannerWaitingState />}
-        emptyStateTitle="No prints match these filters."
-        emptyStateHint="Loosen the premium, expiry, or universe filter."
+        emptyStateTitle={emptyState.title}
+        emptyStateHint={emptyState.hint}
       />
     </Box>
   );

@@ -1,16 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { ConnectionHealthRegistry } from "../../../core/connection-health";
 import type { PluginPersistence } from "../../../types/plugin";
 import {
   attachTreasuryAuctionsPersistence,
   loadTreasuryAuctions,
   resetTreasuryAuctionsPersistence,
+  TREASURY_FISCAL_DATA_CONNECTION_ID,
 } from "./cache";
 import type { TreasuryAuction } from "./types";
 
 function auctionFixture(id: string): TreasuryAuction {
   return {
     id,
-    cusip: null,
     secType: "Note",
     securityTerm: "10-Year",
     auctionDate: "2026-08-12",
@@ -29,6 +30,7 @@ function auctionFixture(id: string): TreasuryAuction {
   };
 }
 
+/** Minimal stand-in for the resource cache: one slot, explicit stale/expiry. */
 function fakePersistence(seed?: { value: TreasuryAuction[]; stale: boolean; expired: boolean }) {
   const writes: TreasuryAuction[][] = [];
   let stored = seed ? { value: seed.value, fetchedAt: 1_000, stale: seed.stale, expired: seed.expired } : null;
@@ -114,6 +116,7 @@ describe("loadTreasuryAuctions", () => {
     const { persistence, writes } = fakePersistence();
     attachTreasuryAuctionsPersistence(persistence);
 
+    // Nothing to fall back on: an empty window is a failure, not "no auctions".
     await expect(loadTreasuryAuctions(true, async () => [])).rejects.toThrow(/no auctions/);
     expect(writes).toHaveLength(0);
 
@@ -142,6 +145,25 @@ describe("loadTreasuryAuctions", () => {
     expect(calls).toBe(1);
     expect(first.auctions[0]!.id).toBe("network");
     expect(second.auctions[0]!.id).toBe("network");
+  });
+
+  test("reports real Fiscal Data requests through Connections", async () => {
+    const { persistence } = fakePersistence();
+    const health = new ConnectionHealthRegistry();
+    health.registerSource({
+      id: TREASURY_FISCAL_DATA_CONNECTION_ID,
+      name: "Treasury Fiscal Data",
+      kind: "api",
+    });
+    attachTreasuryAuctionsPersistence(persistence, health);
+
+    await loadTreasuryAuctions(true, async () => [auctionFixture("network")]);
+
+    expect(health.getSnapshot().sources[0]).toMatchObject({
+      id: TREASURY_FISCAL_DATA_CONNECTION_ID,
+      status: "connected",
+      lastOperation: "fetchAuctions",
+    });
   });
 
   test("works with no persistence attached at all", async () => {

@@ -27,6 +27,8 @@ export interface VoteHubPoll {
 export interface PollRow {
   id: string;
   subject: string;
+  /** Race/geography label VoteHub assigns (e.g. "2026 Michigan"), else null. */
+  seatName: string | null;
   pollType: string;
   pollTypeLabel: string;
   pollster: string;
@@ -43,8 +45,6 @@ export interface PollRow {
   partisan: string | null;
   internal: boolean;
   answers: VoteHubPollAnswer[];
-  /** VoteHub seat label when present; otherwise the race is `subject`. */
-  seatName: string | null;
 }
 
 export type PollTabId =
@@ -57,8 +57,6 @@ export type PollTabId =
   | "us-representative";
 
 export type PollDetailTab = "overview" | "trend" | "pollsters";
-export type PollAnalysisGroup = "house" | "race";
-export type PollAnalysisView = "overlay" | "scatter";
 
 export interface PollTrendPoint {
   date: string;
@@ -66,6 +64,7 @@ export interface PollTrendPoint {
   pollster: string;
 }
 
+/** One pollster's trend points within a race, for overlay series. */
 export interface PollsterSeries {
   pollster: string;
   points: PollTrendPoint[];

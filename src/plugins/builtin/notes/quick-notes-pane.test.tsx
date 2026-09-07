@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, useState } from "react";
 import { PaneFooterProvider } from "../../../components/layout/pane/footer";
 import { TestDialogProvider, testRender } from "../../../renderers/opentui/test-utils";
+import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { Box, Text } from "../../../ui";
+import { PluginRenderProvider } from "../../runtime";
 import { createQuickNotesPane } from "./quick-notes-pane";
 import type { NotesFiles } from "./files";
 import type { QuickNoteEntry } from "./model";
@@ -56,16 +58,18 @@ function QuickNotesHarness({
 
   return (
     <TestDialogProvider>
-      <Box flexDirection="column" width={80} height={24}>
-        <PaneFooterProvider>
-          {() => (
-            <>
-              <QuickNotesPane focused={focused} width={78} height={20} />
-              <Text onMouseDown={() => setFocused(false)}>blur-pane</Text>
-            </>
-          )}
-        </PaneFooterProvider>
-      </Box>
+      <PluginRenderProvider pluginId="notes" runtime={createTestPluginRuntime()}>
+        <Box flexDirection="column" width={80} height={24}>
+          <PaneFooterProvider>
+            {() => (
+              <>
+                <QuickNotesPane focused={focused} width={78} height={20} />
+                <Text onMouseDown={() => setFocused(false)}>blur-pane</Text>
+              </>
+            )}
+          </PaneFooterProvider>
+        </Box>
+      </PluginRenderProvider>
     </TestDialogProvider>
   );
 }
@@ -131,5 +135,48 @@ describe("createQuickNotesPane", () => {
     });
 
     expect(notesFiles.saves).toEqual([{ key: TAB_A, text: "alpha-note" }]);
+  });
+
+  test("never presents an unreadable note as an empty editable one", async () => {
+    const notesFiles = createMockNotesFiles();
+    const failing = {
+      ...notesFiles,
+      async load() {
+        throw new Error("EACCES: permission denied");
+      },
+    } as unknown as NotesFiles & { saves: Array<{ key: string; text: string }> };
+    const QuickNotesPane = createQuickNotesPane(failing);
+
+    testSetup = await testRender(
+      <QuickNotesHarness QuickNotesPane={QuickNotesPane} />,
+      { width: 80, height: 24 },
+    );
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await testSetup!.renderOnce();
+      });
+      if (testSetup.captureCharFrame().includes("could not be read")) break;
+    }
+
+    const frame = testSetup.captureCharFrame();
+    expect(frame).toContain("could not be read");
+    expect(frame).not.toContain("Write notes");
+
+    // Clicking the body must not open an editor over content we failed to read.
+    const errorRow = frame.split("\n").findIndex((line) => line.includes("could not be read"));
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, errorRow);
+      await testSetup!.mockInput.typeText("clobber");
+      await testSetup!.renderOnce();
+    });
+
+    const blurRow = testSetup.captureCharFrame().split("\n").findIndex((line) => line.includes("blur-pane"));
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, blurRow);
+      await testSetup!.renderOnce();
+    });
+
+    expect(notesFiles.saves).toEqual([]);
   });
 });

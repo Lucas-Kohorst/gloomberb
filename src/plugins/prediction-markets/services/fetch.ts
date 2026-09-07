@@ -146,35 +146,24 @@ function describeBlockedRequest(url: string, error: unknown): Error | null {
   return new Error(`Request blocked by the browser (${BLOCKED_REQUEST_MARKER}) for ${url}`);
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
+export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const connectionId = connectionIdForPredictionUrl(url);
-  const run = async (): Promise<T> => {
-    let response: Response;
-    try {
-      response = await PREDICTION_FETCH.fetch(url);
-    } catch (error) {
-      throw describeBlockedRequest(url, error) ?? error;
-    }
-    if (connectionId === "kalshi") {
-      noteKalshiProxyHeaders(response.headers);
-    }
+  const request = async (): Promise<Response> => {
+    const response = await PREDICTION_FETCH.fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`Request failed (${response.status}) for ${url}`);
     }
-    const body = await response.text();
-    return measurePerf(
-      "prediction.fetch.parse-json",
-      () => JSON.parse(body) as T,
-      {
-        sizeBytes: body.length,
-        url: summarizePredictionFetchUrl(url),
-      },
-    );
+    noteKalshiProxyHeaders(response.headers);
+    return response;
   };
-  if (connectionId) {
-    return withConnectionRequest(connectionId, "fetch", run);
-  }
-  return run();
+  const response = await (connectionId
+    ? withConnectionRequest(
+      connectionId,
+      new URL(url).pathname,
+      request,
+    )
+    : request());
+  return response.json() as Promise<T>;
 }
 
 export function getCachedPredictionResource<T>(
@@ -213,6 +202,7 @@ export async function loadCachedPredictionResource<T>(
   options?: { force?: boolean },
 ): Promise<T> {
   const sourceKey = DEFAULT_SOURCE_KEY;
+  const inflightKey = predictionResourceInflightKey(kind, key, sourceKey);
   const cached = predictionMarketsPersistence?.getResource<T>(kind, key, {
     sourceKey,
   });
@@ -224,25 +214,28 @@ export async function loadCachedPredictionResource<T>(
   ) {
     return cached.value;
   }
+  const existing = predictionResourceInflight.get(inflightKey) as Promise<T> | undefined;
+  if (existing) return existing;
 
-  const inflightKey = predictionResourceInflightKey(kind, key, sourceKey);
-  const pending = predictionResourceInflight.get(inflightKey);
-  if (pending) return pending as Promise<T>;
-
-  const work = (async () => {
+  const request = (async () => {
     try {
       const nextValue = await fetcher();
-      setCachedPredictionResource(kind, key, nextValue, cachePolicy, sourceKey);
+      setCachedPredictionResource(kind, key, nextValue, cachePolicy);
       return nextValue;
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
       if (cached) return cached.value;
       throw error;
     }
-  })().finally(() => {
-    predictionResourceInflight.delete(inflightKey);
-  });
-  predictionResourceInflight.set(inflightKey, work);
-  return work;
+  })();
+  predictionResourceInflight.set(inflightKey, request);
+  try {
+    return await request;
+  } finally {
+    if (predictionResourceInflight.get(inflightKey) === request) {
+      predictionResourceInflight.delete(inflightKey);
+    }
+  }
 }
 
 function summarizePredictionFetchUrl(url: string): string {

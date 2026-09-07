@@ -104,7 +104,7 @@ export function buildCurrentLayoutItems({
     },
     {
       id: "layout-gridlock",
-      label: "Gridlock All Windows",
+      label: "Tidy Windows",
       detail: currentLayout.floating.length > 0
         ? "Infer a tiled layout from the current window positions"
         : "Retile all panes from their current arrangement",

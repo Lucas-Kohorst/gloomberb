@@ -55,7 +55,8 @@ import {
   loadQuoteBatchEntries,
   loadQuoteEntry,
   QuoteSubscriptionManager,
-  type QuoteSubscriptionPriority,
+  type QuoteSubscriptionHandle,
+  type QuoteSubscriptionRequest,
 } from "./quotes";
 
 export class MarketDataCoordinator {
@@ -361,8 +362,18 @@ export class MarketDataCoordinator {
     });
   }
 
-  subscribeQuotes(targets: Array<{ instrument: InstrumentRef; priority?: QuoteSubscriptionPriority }>): () => void {
+  subscribeQuotes(targets: QuoteSubscriptionRequest[]): QuoteSubscriptionHandle {
     return this.quoteSubscriptionManager.subscribe(targets);
+  }
+
+  /**
+   * Push a quote into the coordinator store from an external source (e.g.
+   * prediction-market live odds bridged into the watchlist).  Bypasses the
+   * normal provider router so non-standard symbols (POLY:, KALSHI:) can tick
+   * without a registered DataProvider.
+   */
+  pushQuote(instrument: InstrumentRef, quote: Quote): void {
+    this.applyStreamQuote(instrument, quote);
   }
 
   private applyStreamQuote(instrument: InstrumentRef, quote: Quote): void {

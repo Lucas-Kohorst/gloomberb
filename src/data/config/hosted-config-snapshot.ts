@@ -3,7 +3,7 @@ import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../../plugins/builtin/byok/types";
 import { withConnectionRequest } from "../../plugins/builtin/connections/register";
-import { attachHostedUserWorkspaceExtras } from "./hosted-user-persist";
+import { attachHostedUserWorkspaceExtras, captureHostedPersistenceIdentity } from "./hosted-user-persist";
 import { readHostedTickers } from "./hosted-ticker-persist";
 import { hasHostedNotes, readHostedNotes } from "./hosted-notes-persist";
 
@@ -152,18 +152,28 @@ export function createHostedConfigSnapshotPusher(): {
   cancel: () => void;
 } {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pendingConfig: AppConfig | null = null;
-  let lastConfig: AppConfig | null = null;
+  type PendingSnapshot = { config: AppConfig; identity: ReturnType<typeof captureHostedPersistenceIdentity> };
+  let pendingConfig: PendingSnapshot | null = null;
+  let lastConfig: PendingSnapshot | null = null;
   let inFlight: Promise<void> = Promise.resolve();
 
-  async function push(config: AppConfig, force = false): Promise<void> {
+  function belongsToCurrentAccount(snapshot: PendingSnapshot): boolean {
+    const current = captureHostedPersistenceIdentity();
+    return snapshot.identity.userId !== null
+      && current.userId === snapshot.identity.userId
+      && current.generation === snapshot.identity.generation;
+  }
+
+  async function push(snapshot: PendingSnapshot, force = false): Promise<void> {
+    if (!belongsToCurrentAccount(snapshot)) return;
+    const { config, identity } = snapshot;
     if (!force && !shouldPushHostedSnapshot(config)) return;
     const stripped = stripByokKeysForSnapshot(config);
     const persisted = normalizeConfigForSave(stripped);
     const updatedAt = new Date().toISOString();
-    const tickers = readHostedTickers();
-    const notes = readHostedNotes(undefined, config.dataDir);
-    attachHostedUserWorkspaceExtras({ tickers, notes });
+    const tickers = readHostedTickers(identity.userId);
+    const notes = readHostedNotes(identity.userId, config.dataDir);
+    attachHostedUserWorkspaceExtras({ tickers, notes }, identity.userId);
     const body = JSON.stringify({
       config: persisted as unknown as Record<string, unknown>,
       updatedAt,
@@ -193,8 +203,8 @@ export function createHostedConfigSnapshotPusher(): {
   }
 
   function schedule(config: AppConfig): void {
-    lastConfig = config;
-    pendingConfig = config;
+    lastConfig = { config, identity: captureHostedPersistenceIdentity() };
+    pendingConfig = lastConfig;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => { timer = null; void drain(); }, SNAPSHOT_PUSH_DEBOUNCE_MS);
   }
@@ -202,21 +212,23 @@ export function createHostedConfigSnapshotPusher(): {
   return {
     schedule,
     scheduleFromLast(): void {
-      if (lastConfig) schedule(lastConfig);
+      if (lastConfig && belongsToCurrentAccount(lastConfig)) schedule(lastConfig.config);
     },
     flush(): Promise<void> {
       return drain();
     },
     flushForced(config: AppConfig): Promise<void> {
-      lastConfig = config;
+      const snapshot = { config, identity: captureHostedPersistenceIdentity() };
+      lastConfig = snapshot;
       if (timer) { clearTimeout(timer); timer = null; }
       pendingConfig = null;
-      inFlight = inFlight.then(() => push(config, true).catch(() => {}));
+      inFlight = inFlight.then(() => push(snapshot, true).catch(() => {}));
       return inFlight;
     },
     cancel(): void {
       if (timer) { clearTimeout(timer); timer = null; }
       pendingConfig = null;
+      lastConfig = null;
     },
   };
 }

@@ -7,6 +7,14 @@ import type {
 const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
 const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
 const EQUITY_TYPES = new Set(["STK", "STOCK", "EQUITY", "COMMONSTOCK", "COMMON STOCK", "ADR", "ORDINARYSHARES", "ORDINARY SHARES"]);
+const PREDICTION_TYPES = new Set([
+  "KALSHI",
+  "POLYMARKET",
+  "PREDICTION",
+  "PREDICTIONMARKET",
+  "EVENT",
+  "EVENTCONTRACT",
+]);
 const COMPANY_NAME_SUFFIXES = new Set([
   "AG",
   "CO",
@@ -252,6 +260,15 @@ export function rankTickerSearchItems<T extends Pick<TickerSearchRankableItem, "
         && a.normalizedSymbol === b.normalizedSymbol
       )
     ) {
+      // Letters mixed with digits (4NVDA, NVDC34, 0R1I) mark a leveraged
+      // product, a depositary receipt or a secondary venue's code filed under
+      // the issuer's name, never its primary listing. All-digit symbols are
+      // Tokyo, Shanghai and Hong Kong primaries and must not be touched.
+      // Provider order is trusted for real listings of one issuer, but it put
+      // a Milan 4x product above NVDA, so mixed codes yield first.
+      const aSynthetic = isMixedCode(a.item.label);
+      const bSynthetic = isMixedCode(b.item.label);
+      if (aSynthetic !== bSynthetic) return aSynthetic ? 1 : -1;
       const aProviderRank = a.item.providerRank ?? Number.POSITIVE_INFINITY;
       const bProviderRank = b.item.providerRank ?? Number.POSITIVE_INFINITY;
       if (aProviderRank !== bProviderRank) return aProviderRank - bProviderRank;
@@ -307,9 +324,13 @@ export function classifyInstrumentKind(rawType?: string): TickerSearchInstrument
   if (FUND_TYPES.has(normalizedType)) return "fund";
   if (DERIVATIVE_TYPES.has(normalizedType)) return "derivative";
   if (EQUITY_TYPES.has(normalizedType)) return "equity";
+  if (PREDICTION_TYPES.has(normalizedType)) return "prediction";
   if (normalizedType.includes("ETF") || normalizedType.includes("FUND")) return "fund";
   if (normalizedType.includes("OPT") || normalizedType.includes("FUT") || normalizedType.includes("WARRANT")) return "derivative";
   if (normalizedType.includes("EQUITY") || normalizedType.includes("STOCK") || normalizedType.includes("STK")) return "equity";
+  if (normalizedType.includes("KALSHI") || normalizedType.includes("POLYMARKET") || normalizedType.includes("PREDICTION")) {
+    return "prediction";
+  }
   return "other";
 }
 
@@ -535,6 +556,11 @@ function scoreExchangePreference(
   if (intent.exchangeHints.length === 0) return 0;
   if (collectExchangeTexts(item).length === 0) return -400;
   return itemMatchesExchangeHints(item, intent.exchangeHints) ? 2_000 : -800;
+}
+
+function isMixedCode(label: string): boolean {
+  const symbol = label.split(".")[0] ?? label;
+  return /\d/.test(symbol) && /[A-Za-z]/.test(symbol);
 }
 
 function scoreListingPriority(item: Pick<TickerSearchRankableItem, "label"> & Partial<TickerSearchRankableItem>): number {

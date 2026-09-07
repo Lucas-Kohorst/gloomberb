@@ -6,6 +6,7 @@ import type {
   LayoutBounds,
 } from "../../../../plugins/pane-manager";
 import type { ActionMenuState } from "../action-menu-overlay";
+import { isFullscreenBasePane } from "../fullscreen";
 import type { ShellDragRuntimeState, ShellMouseEvent } from "../drag/runtime";
 import type { WindowEditState } from "../../window-edit/mode";
 
@@ -26,8 +27,11 @@ interface UseShellNativePointerRuntimeOptions {
   setHoveredMenuItemId: Dispatch<SetStateAction<string | null>>;
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
+  exitTransientFocus?: () => boolean;
   togglePaneFloating: (paneId: string) => boolean;
   windowMode: WindowEditState | null;
+  commandBarOpen?: boolean;
 }
 
 export function useShellNativePointerRuntime({
@@ -43,8 +47,11 @@ export function useShellNativePointerRuntime({
   setHoveredMenuItemId,
   setMenuState,
   transientFocusActive,
+  transientFocusPaneId = null,
+  exitTransientFocus,
   togglePaneFloating,
   windowMode,
+  commandBarOpen = false,
 }: UseShellNativePointerRuntimeOptions) {
   const {
     dragRef,
@@ -67,6 +74,11 @@ export function useShellNativePointerRuntime({
   }, [focusPane, menuState, setHoveredMenuItemId, setMenuState]);
 
   const handleNativePaneMouseDown = useCallback((paneId: string, event: ShellMouseEvent) => {
+    if (commandBarOpen) {
+      event.stopPropagation();
+      event.preventDefault();
+      return;
+    }
     if (windowMode) {
       selectWindowModePane(paneId);
       event.stopPropagation();
@@ -77,12 +89,13 @@ export function useShellNativePointerRuntime({
       if (event.isDefaultPrevented?.()) return;
       focusNativePane(paneId);
     });
-  }, [focusNativePane, selectWindowModePane, windowMode]);
+  }, [commandBarOpen, focusNativePane, selectWindowModePane, windowMode]);
 
   const startNativeFloatingDrag = useCallback((paneId: string, rect: FloatingRect, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (commandBarOpen) return;
     if (windowMode) return;
-    if (transientFocusActive) return;
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId)) return;
     if (event.button === 2) return;
 
     const pointer = getShellPointer(event);
@@ -98,10 +111,11 @@ export function useShellNativePointerRuntime({
     };
     updateDragFloatingRect({ paneId, rect: { ...rect } });
     event.preventDefault();
-  }, [dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, updateDockPreview, updateDragFloatingRect, windowMode]);
+  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, transientFocusPaneId, updateDragFloatingRect, windowMode]);
 
   const startNativeDockedDrag = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (commandBarOpen) return;
     if (windowMode) return;
     if (transientFocusActive) return;
     if (event.button === 2) return;
@@ -118,7 +132,7 @@ export function useShellNativePointerRuntime({
       origRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     };
     event.preventDefault();
-  }, [dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, updateDockPreview, windowMode]);
+  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, windowMode]);
 
   const startNativeFloatResize = useCallback((
     paneId: string,
@@ -127,7 +141,8 @@ export function useShellNativePointerRuntime({
     event: ShellMouseEvent,
   ) => {
     if (!nativePaneChrome) return;
-    if (transientFocusActive) return;
+    if (commandBarOpen) return;
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId)) return;
 
     const pointer = getShellPointer(event);
     if (windowMode) {
@@ -146,10 +161,11 @@ export function useShellNativePointerRuntime({
     updateDragFloatingRect({ paneId, rect: { ...rect } });
     event.stopPropagation();
     event.preventDefault();
-  }, [dragRef, focusNativePane, getShellPointer, nativePaneChrome, selectWindowModePane, transientFocusActive, updateDragFloatingRect, windowMode]);
+  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, selectWindowModePane, transientFocusActive, transientFocusPaneId, updateDragFloatingRect, windowMode]);
 
   const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
+    if (commandBarOpen) return;
     if (transientFocusActive) return;
 
     const pointer = getShellPointer(event);
@@ -173,27 +189,31 @@ export function useShellNativePointerRuntime({
     });
     event.stopPropagation();
     event.preventDefault();
-  }, [dragRef, getShellPointer, menuState, nativePaneChrome, setHoveredMenuItemId, setMenuState, transientFocusActive, updateDividerPreview]);
+  }, [commandBarOpen, dragRef, getShellPointer, menuState, nativePaneChrome, setHoveredMenuItemId, setMenuState, transientFocusActive, updateDividerPreview]);
 
   const handlePaneAction = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (commandBarOpen) return;
     if (windowMode) return;
     if (event.button === 2) return;
     event.stopPropagation();
     event.preventDefault();
     openPaneMenu(paneId, rect, event);
-  }, [openPaneMenu, windowMode]);
+  }, [commandBarOpen, openPaneMenu, windowMode]);
 
   const handleNativePaneContextMenu = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
+    if (commandBarOpen) return;
     if (windowMode) return;
     openPaneMenu(paneId, rect, event);
-  }, [openPaneMenu, windowMode]);
+  }, [commandBarOpen, openPaneMenu, windowMode]);
 
   const handleFloatingCloseMouseDown = useCallback((paneId: string, event: ShellMouseEvent) => {
+    if (commandBarOpen) return;
     if (windowMode) return;
     event.stopPropagation();
     event.preventDefault();
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId) && exitTransientFocus?.()) return;
     handleFloatingClose(paneId);
-  }, [handleFloatingClose, windowMode]);
+  }, [commandBarOpen, exitTransientFocus, handleFloatingClose, transientFocusActive, transientFocusPaneId, windowMode]);
 
   const handlePaneFloatToggle = useCallback((paneId: string, event: ShellMouseEvent) => {
     event.stopPropagation();

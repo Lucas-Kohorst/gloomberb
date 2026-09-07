@@ -1,4 +1,5 @@
 import type { NewsCapability } from "../capabilities";
+import type { ConnectionHealthRegistry } from "../core/connection-health";
 import { whenStartupBackground } from "../utils/startup-interaction";
 import { isUiYieldEnabled, shouldYieldToUi, whenUiQuiet } from "../utils/ui-yield";
 import { MIN_NEWS_POLL_INTERVAL_MS } from "./poll-interval";
@@ -25,6 +26,7 @@ export interface NewsServiceOptions {
   inactiveQueryTtlMs?: number;
   maxInactiveQueries?: number;
   now?: () => number;
+  connectionHealth?: ConnectionHealthRegistry;
 }
 
 export type NewsQueryListener = (state: NewsQueryState) => void;
@@ -129,6 +131,7 @@ export class NewsService {
   private readonly inactiveQueryTtlMs: number;
   private readonly maxInactiveQueries: number;
   private readonly now: () => number;
+  private readonly connectionHealth?: ConnectionHealthRegistry;
 
   constructor(options: NewsServiceOptions = {}) {
     const pollInterval = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -136,6 +139,7 @@ export class NewsService {
     this.inactiveQueryTtlMs = Math.max(1, options.inactiveQueryTtlMs ?? DEFAULT_INACTIVE_QUERY_TTL_MS);
     this.maxInactiveQueries = Math.max(1, Math.floor(options.maxInactiveQueries ?? DEFAULT_MAX_INACTIVE_QUERIES));
     this.now = options.now ?? Date.now;
+    this.connectionHealth = options.connectionHealth;
   }
 
   register(source: NewsCapability): () => void {
@@ -207,6 +211,9 @@ export class NewsService {
 
     const emit = () => listener(this.queries.get(key)?.state ?? createIdleNewsQueryState());
     const unsubscribe = this.subscribe(emit);
+    // Show loading before emitting: the fetch below starts immediately, and an
+    // idle first frame paints an empty pane instead of a loading one.
+    void this.refreshQuery(normalized, entry.state.phase === "idle" || entry.state.phase === "error");
     emit();
     let disposed = false;
     void whenStartupBackground().then(() => {
@@ -317,7 +324,11 @@ export class NewsService {
 
     for (const source of sources) {
       try {
-        const article = await source.provider.fetchNewsStory?.(storyId);
+        const article = await this.trackSourceRequest(
+          source,
+          "fetchNewsStory",
+          () => source.provider.fetchNewsStory?.(storyId) ?? Promise.resolve(null),
+        );
         if (!article) continue;
         this.mergeStoryDetail(article);
         return article;
@@ -513,25 +524,43 @@ export class NewsService {
     entry: NewsQueryEntry | null,
   ): Promise<{ articles: NewsArticle[]; nextCursor: string | null }> {
     if (source.provider.fetchNewsPage) {
-      const page = await source.provider.fetchNewsPage(query);
+      const page = await this.trackSourceRequest(
+        source,
+        "fetchNewsPage",
+        () => source.provider.fetchNewsPage!(query),
+      );
       return {
         articles: page.articles.map((article) => attributeArticle(source, article)),
         nextCursor: page.nextCursor ?? null,
       };
     }
-    const articles = (await source.provider.fetchNews(query, {
-      onPartial: entry && !query.cursor
-        ? (partial) => {
-          this.applySourceArticles(
-            entry,
-            newsCapabilitySourceId(source),
-            partial.map((article) => attributeArticle(source, article)),
-            { retainExisting: true },
-          );
-        }
-        : undefined,
-    })).map((article) => attributeArticle(source, article));
+    const articles = (await this.trackSourceRequest(
+      source,
+      "fetchNews",
+      () => source.provider.fetchNews(query, {
+        onPartial: entry && !query.cursor
+          ? (partial) => {
+            this.applySourceArticles(
+              entry,
+              newsCapabilitySourceId(source),
+              partial.map((article) => attributeArticle(source, article)),
+              { retainExisting: true },
+            );
+          }
+          : undefined,
+      }),
+    )).map((article) => attributeArticle(source, article));
     return { articles, nextCursor: null };
+  }
+
+  private trackSourceRequest<T>(
+    source: NewsCapability,
+    operation: string,
+    request: () => Promise<T>,
+  ): Promise<T> {
+    return this.connectionHealth?.hasSource(source.id)
+      ? this.connectionHealth.track(source.id, operation, request)
+      : request();
   }
 
   private async fetchTickerNews(

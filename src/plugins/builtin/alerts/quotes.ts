@@ -22,7 +22,7 @@ export async function resolveAlertQuote(
 ): Promise<Quote> {
   const quote = await marketData.getQuote(symbol, exchange);
   const display = getActiveQuoteDisplay(quote);
-  if (!quote || !display || !Number.isFinite(display.price)) {
+  if (!display || !Number.isFinite(display.price)) {
     throw new Error(`No quote found for "${symbol}".`);
   }
   return {

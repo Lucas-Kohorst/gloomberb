@@ -8,6 +8,7 @@ import {
 } from "./hosted-ticker-persist";
 import { restoreHostedLocalWorkspaceExtras } from "./hosted-sync-hydrate";
 import {
+  readLastHostedUserId,
   rememberHostedUserId,
   setHostedConfigUserId,
   writeHostedUserConfig,
@@ -123,9 +124,9 @@ describe("hosted ticker persist", () => {
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker).sort()).toEqual(["AAPL", "NVDA"]);
   });
 
-  test("writes tickers using the remembered user when the active id was cleared", () => {
+  test("writes tickers using the remembered user during a degraded session check", () => {
     rememberHostedUserId("user-1");
-    setHostedConfigUserId(null);
+    setHostedConfigUserId(readLastHostedUserId());
     writeHostedTickers([record("ETH-USD")]);
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["ETH-USD"]);
     setHostedConfigUserId("user-1");

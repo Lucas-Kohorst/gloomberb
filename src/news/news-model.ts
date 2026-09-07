@@ -366,5 +366,6 @@ export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuer
   if (feed === "top") {
     return sortTopNewsArticles(filtered).slice(0, MAX_ARTICLES);
   }
+  // Page size is a fetch hint. Accumulated load-more results keep MAX_ARTICLES.
   return filtered.slice(0, MAX_ARTICLES);
 }

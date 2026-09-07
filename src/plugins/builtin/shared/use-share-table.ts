@@ -1,8 +1,7 @@
 import { useCallback } from "react";
 import { useRendererHost } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
-import { createShare } from "../../../sources/share-service";
-import { buildShortShareUrl } from "../../../shares/routes";
+import { publishShare, tableSnapshotSharePayload } from "../../../shares/publish";
 import { buildTableSharePayload, type TableSnapshotInput } from "../../../shares/table-snapshot";
 
 /**
@@ -22,8 +21,8 @@ export function useShareTable(): <T>(input: TableSnapshotInput<T>) => Promise<vo
       return;
     }
     try {
-      const { id } = await createShare({ kind: "table", data: buildTableSharePayload(input) });
-      await rendererHost.copyText(buildShortShareUrl(id));
+      const payload = tableSnapshotSharePayload(buildTableSharePayload(input));
+      await rendererHost.copyText(await publishShare(payload));
       notify({ body: "Share link copied to clipboard", type: "success" });
     } catch (error) {
       notify({

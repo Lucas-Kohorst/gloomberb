@@ -1,10 +1,11 @@
 import type { Dispatch } from "react";
 import type { PluginRegistry } from "../plugins/registry";
+import { apiClient } from "../api-client";
 import type { AppAction, AppState } from "../state/app/context";
 import type { PaneRuntimeState } from "../core/state/app/state";
 import { setPaneSettings } from "../pane-settings";
 import { listConnectionSources } from "../plugins/builtin/connections/register";
-import type { LayoutConfig } from "../types/config";
+import { createBlankLayout, type LayoutConfig } from "../types/config";
 import type {
   PaneDef,
   PaneSettingField,
@@ -57,7 +58,7 @@ function resolvePaneTypeSettings(pane: PaneDef): {
   }
   const emptyContext = {
     config: {} as PaneSettingsContext["config"],
-    layout: { instances: [] } as PaneSettingsContext["layout"],
+    layout: createBlankLayout(),
     paneId: pane.id,
     paneType: pane.id,
     pane: { instanceId: pane.id, paneId: pane.id, binding: { kind: "none" } },
@@ -192,6 +193,7 @@ export function createRemoteResources({
     if (resource === "app://command-bar") return commandBarSnapshot(state, uiNodes);
     if (resource === "app://command-bar/results") return commandBarResultsFromNodes(uiNodes);
     if (resource === "app://capabilities") return pluginRegistry.capabilities.manifests();
+    if (resource === "app://auth") return apiClient.describeAuthState();
     if (resource === "app://remote/help") return REMOTE_AGENT_HELP;
     if (resource === "ui://tree") return uiNodes;
     throw new Error(`Unknown remote resource "${resource}".`);

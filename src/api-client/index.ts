@@ -3,12 +3,15 @@ import type { InstrumentSearchResult } from "../types/instrument";
 import { CloudAuthApi } from "./auth";
 import { CloudChatApi } from "./chat";
 import { CloudDataApi } from "./data";
+import { ApiRequestError } from "./errors";
 import { CloudApiRequestTransport } from "./request";
 import { CloudApiSocket } from "./socket";
 import type {
   CloudCdsParams,
   CloudCongressHouseParams,
+  CloudEarningsCallsParams,
   CloudFredSeriesParams,
+  CloudSearchParams,
   CloudSecFilingParams,
   CloudSecFilingsParams,
   CloudHistoryParams,
@@ -39,6 +42,7 @@ import type {
   CloudFundamentals,
   CloudHoldersPayload,
   CloudAnalystResearchPayload,
+  CloudShortInterestPayload,
   CloudBrowserHandoffResponse,
   CloudCorporateActionsPayload,
   CloudPricePointPayload,
@@ -47,9 +51,19 @@ import type {
   CloudEquityDiagnosticResult,
   CloudCdsResponse,
   CloudFredSeriesPayload,
+  CloudShillerPayload,
   CloudYieldPointPayload,
   CloudCongressHousePayload,
+  CloudEarningsCallListPayload,
+  CloudEarningsTranscriptPayload,
   CloudNewsPayload,
+  CloudSavedSearch,
+  CloudSavedSearchInput,
+  CloudSearchDocType,
+  CloudSearchDocument,
+  CloudSearchDocumentResponse,
+  CloudSearchHit,
+  CloudSearchResponse,
   CloudSecContentResponse,
   CloudSecDocumentsResponse,
   CloudSecFilingsResponse,
@@ -60,6 +74,7 @@ import type {
   CloudMarketBatchPayload,
   CloudMarketScreenerCategory,
   CloudMarketScreenerPayload,
+  CloudWorldVenueMapPayload,
   CloudVerificationResponse,
   DeviceAuthStartResponse,
   DeviceAuthTokenResponse,
@@ -71,6 +86,13 @@ import type {
   ScannerKind,
 } from "./types";
 import type { SyncSettings, SyncSnapshot } from "../sync/types";
+import {
+  isMarketplaceLayoutId,
+  parseMarketplaceLayoutEntry,
+  parseMarketplaceLayoutList,
+  type LayoutMarketplaceEntry,
+  type LayoutMarketplacePayload,
+} from "../layout-marketplace/payload";
 
 export type * from "./types";
 export { setCloudApiFetchTransport } from "./request";
@@ -84,6 +106,8 @@ const ASSIST_REQUEST_TIMEOUT_MS = 6_000;
 class GloomApiClient {
   private currentUser: AuthUser | null = null;
   private sessionChecked = false;
+  /** Last few session transitions, content-free, for app://auth. */
+  private authTrace: Array<{ at: number; event: string; token: boolean; user: string }> = [];
   private sessionRequest: Promise<AuthUser | null> | null = null;
   private readonly currentUserListeners = new Set<() => void>();
   private readonly transport = new CloudApiRequestTransport();
@@ -96,6 +120,7 @@ class GloomApiClient {
     this.auth = new CloudAuthApi({
       getCurrentUser: () => this.currentUser,
       getSessionToken: () => this.transport.getSessionToken(),
+      hasSessionCredential: () => this.transport.hasSessionCredential(),
       request: (path, options) => this.request(path, options),
       requireCapturedSession: (message) => this.requireCapturedSession(message),
       setCurrentUser: (user) => this.setCurrentUser(user),
@@ -105,8 +130,9 @@ class GloomApiClient {
     this.socket = new CloudApiSocket({
       getBaseUrl: () => this.transport.getSocketBaseUrl(),
       getSocketAuthToken: () => this.getSocketAuthToken(),
-      isCookieAuthenticated: () => this.transport.isHostedSocket(),
+      hasSessionCredential: () => this.transport.hasSessionCredential(),
       hasVerifiedUser: () => this.currentUser?.emailVerified === true,
+      isCookieAuthenticated: () => this.transport.isHostedSocket(),
       isUsingWebSocketToken: () => !!this.transport.getWebSocketToken(),
       clearWebSocketTokenForFallback: () => this.transport.clearWebSocketTokenForFallback(),
       markCurrentUserUnverified: () => {
@@ -136,10 +162,16 @@ class GloomApiClient {
     return this.transport.getWebSocketToken();
   }
 
+  setCookieSessionMode(enabled: boolean): void {
+    this.sessionChecked = false;
+    this.transport.setCookieSessionMode(enabled);
+  }
+
   setSessionToken(token: string | null): void {
     const changed = this.transport.getSessionToken() !== token;
     this.sessionChecked = false;
     this.transport.setSessionToken(token);
+    this.traceAuth(changed ? "setSessionToken:changed" : "setSessionToken:same");
     if (!token) {
       this.currentUser = null;
       this.emitCurrentUserChange();
@@ -167,6 +199,15 @@ class GloomApiClient {
     return this.currentUser;
   }
 
+  /**
+   * Whether a signed-in session exists on this surface. Browser builds keep the
+   * session in an HttpOnly cookie, so the raw token is deliberately null there
+   * and the restored user is the only signal.
+   */
+  isSignedIn(): boolean {
+    return !!this.transport.getSessionToken() || !!this.currentUser;
+  }
+
   /** Notifies when the signed-in user changes, including plan and trial entitlement. */
   subscribeCurrentUser(listener: () => void): () => void {
     this.currentUserListeners.add(listener);
@@ -180,11 +221,61 @@ class GloomApiClient {
   }
 
   isVerified(): boolean {
-    return !!this.transport.getSessionToken() && !!this.currentUser?.emailVerified;
+    return this.transport.hasSessionCredential() && !!this.currentUser?.emailVerified;
+  }
+
+  /**
+   * What this client currently believes about its session, with no secrets.
+   * Exposed over remote control so a "shows my username but not my
+   * subscription" report can be answered from the running app instead of
+   * from guesses about it.
+   */
+  describeAuthState(): {
+    hasSessionCredential: boolean;
+    hasSessionToken: boolean;
+    sessionChecked: boolean;
+    sessionRequestInFlight: boolean;
+    trace: Array<{ at: number; event: string; token: boolean; user: string }>;
+    currentUser: {
+      id: string;
+      emailVerified: boolean;
+      plan: string | null;
+      effectivePlan: string | null;
+      trialEndsAt: string | null;
+    } | null;
+  } {
+    const user = this.currentUser;
+    return {
+      hasSessionCredential: this.transport.hasSessionCredential(),
+      hasSessionToken: !!this.transport.getSessionToken(),
+      sessionChecked: this.sessionChecked,
+      sessionRequestInFlight: !!this.sessionRequest,
+      trace: [...this.authTrace],
+      currentUser: user
+        ? {
+          id: user.id,
+          emailVerified: user.emailVerified === true,
+          plan: user.plan ?? null,
+          effectivePlan: user.effectivePlan ?? null,
+          trialEndsAt: user.trialEndsAt ?? null,
+        }
+        : null,
+    };
+  }
+
+  private traceAuth(event: string, user: AuthUser | null = this.currentUser): void {
+    this.authTrace.push({
+      at: Date.now(),
+      event,
+      token: !!this.transport.getSessionToken(),
+      user: user ? (user.emailVerified ? "verified" : "unverified") : "none",
+    });
+    if (this.authTrace.length > 24) this.authTrace.shift();
   }
 
   private setCurrentUser(user: AuthUser | null): void {
     const changed = this.socketEntitlementKey(this.currentUser) !== this.socketEntitlementKey(user);
+    this.traceAuth("setCurrentUser", user);
     this.currentUser = user;
     this.socket.syncAuthState({ reconnect: changed });
     this.emitCurrentUserChange();
@@ -211,7 +302,7 @@ class GloomApiClient {
   }
 
   private requireCapturedSession(message: string): void {
-    if (this.transport.getSessionToken()) return;
+    if (this.transport.hasSessionCredential()) return;
     this.transport.setWebSocketToken(null);
     this.setCurrentUser(null);
     throw new Error(message);
@@ -226,7 +317,7 @@ class GloomApiClient {
   }
 
   async ensureVerifiedSession(): Promise<AuthUser | null> {
-    if (!this.transport.getSessionToken()) return null;
+    if (!this.transport.hasSessionCredential()) return null;
     if (!this.currentUser && !this.sessionChecked) await this.getSession();
     return this.currentUser?.emailVerified ? this.currentUser : null;
   }
@@ -252,12 +343,20 @@ class GloomApiClient {
   }
 
   async getSession(): Promise<AuthUser | null> {
-    if (this.sessionRequest) return this.sessionRequest;
+    if (this.sessionRequest) {
+      this.traceAuth("getSession:joined-inflight");
+      return this.sessionRequest;
+    }
+    this.traceAuth("getSession:start");
     this.sessionRequest = this.auth.getSession();
     try {
       const user = await this.sessionRequest;
       this.sessionChecked = true;
+      this.traceAuth("getSession:done", user);
       return user;
+    } catch (error) {
+      this.traceAuth(`getSession:error:${error instanceof Error ? error.message.slice(0, 60) : "unknown"}`);
+      throw error;
     } finally {
       this.sessionRequest = null;
     }
@@ -267,8 +366,30 @@ class GloomApiClient {
     return this.auth.sendVerification();
   }
 
+  async requestPasswordReset(email: string): Promise<void> {
+    return this.auth.requestPasswordReset(email);
+  }
+
   async createBrowserHandoff(): Promise<CloudBrowserHandoffResponse> {
     return this.auth.createBrowserHandoff();
+  }
+
+  /** Creates a Stripe checkout session for Cloud Pro; the URL opens in a browser. */
+  async createCloudCheckout(): Promise<{ url: string }> {
+    return this.request<{ url: string }>("/stripe/checkout", { method: "POST", body: JSON.stringify({}) });
+  }
+
+  /** Stores a verified user's public terminal snapshot or pane handoff. */
+  async createTerminalShare(payload: unknown): Promise<{ id: string; expiresAt: string }> {
+    return this.request<{ id: string; expiresAt: string }>("/shares", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** Stripe billing portal for an account that already has a subscription. */
+  async createBillingPortal(): Promise<{ url: string }> {
+    return this.request<{ url: string }>("/stripe/portal", { method: "POST", body: JSON.stringify({}) });
   }
 
   async getAccountProfile(): Promise<AccountProfile> {
@@ -303,6 +424,45 @@ class GloomApiClient {
         baseRevision: options?.baseRevision ?? null,
       }),
     });
+  }
+
+  async getMarketplaceLayout(
+    id: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<LayoutMarketplaceEntry | null> {
+    if (!isMarketplaceLayoutId(id)) return null;
+    try {
+      return parseMarketplaceLayoutEntry(await this.request<unknown>(`/layouts/${encodeURIComponent(id)}`, {
+        method: "GET",
+        signal: options?.signal,
+      }));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async listMarketplaceLayouts(options?: { signal?: AbortSignal }): Promise<LayoutMarketplaceEntry[]> {
+    const items = parseMarketplaceLayoutList(await this.request<unknown>("/layouts", {
+      method: "GET",
+      signal: options?.signal,
+    }));
+    if (!items) throw new Error("The layout marketplace returned invalid data.");
+    return items;
+  }
+
+  async publishMarketplaceLayout(
+    name: string,
+    payload: LayoutMarketplacePayload,
+    options?: { signal?: AbortSignal },
+  ): Promise<LayoutMarketplaceEntry> {
+    const item = parseMarketplaceLayoutEntry(await this.request<unknown>("/layouts", {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim(), ...payload }),
+      signal: options?.signal,
+    }));
+    if (!item) throw new Error("The layout marketplace returned invalid data.");
+    return item;
   }
 
   async updateSyncSettings(update: Partial<SyncSettings>): Promise<SyncSettings> {
@@ -472,6 +632,10 @@ class GloomApiClient {
     return this.data.getCloudQuotesBatch(targets, mode);
   }
 
+  async getCloudWorldVenues(): Promise<CloudMarketResponse<CloudWorldVenueMapPayload>> {
+    return this.data.getCloudWorldVenues();
+  }
+
   async getCloudMarketScreener(
     category: CloudMarketScreenerCategory,
     count = 25,
@@ -509,6 +673,10 @@ class GloomApiClient {
 
   async getCloudHolders(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudHoldersPayload>> {
     return this.data.getCloudHolders(symbol, exchange);
+  }
+
+  async getCloudShortInterest(symbol: string, years?: number): Promise<CloudMarketResponse<CloudShortInterestPayload>> {
+    return this.data.getCloudShortInterest(symbol, years);
   }
 
   async getCloudAnalystResearch(symbol: string, exchange?: string): Promise<CloudMarketResponse<CloudAnalystResearchPayload>> {
@@ -558,6 +726,10 @@ class GloomApiClient {
     return this.data.getCloudFredSeries(seriesId, params);
   }
 
+  async getCloudShiller(): Promise<CloudShillerPayload> {
+    return this.data.getCloudShiller();
+  }
+
   async getCloudYieldCurve(): Promise<CloudYieldPointPayload[]> {
     return this.data.getCloudYieldCurve();
   }
@@ -568,6 +740,16 @@ class GloomApiClient {
 
   async getCloudCongressHouse(params: CloudCongressHouseParams = {}): Promise<CloudCongressHousePayload> {
     return this.data.getCloudCongressHouse(params);
+  }
+
+  async getCloudEarningsCalls(
+    params: CloudEarningsCallsParams = {},
+  ): Promise<CloudEarningsCallListPayload> {
+    return this.data.getCloudEarningsCalls(params);
+  }
+
+  async getCloudEarningsTranscript(id: string): Promise<CloudEarningsTranscriptPayload> {
+    return this.data.getCloudEarningsTranscript(id);
   }
 
   async getCloudSecFilings(params: CloudSecFilingsParams): Promise<CloudSecFilingsResponse> {
@@ -584,6 +766,47 @@ class GloomApiClient {
 
   async getCloudSec13F(path: string, params: Record<string, string | number | undefined> = {}): Promise<unknown> {
     return this.data.getCloudSec13F(path, params);
+  }
+
+  async searchCloudDocuments(
+    params: CloudSearchParams,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchResponse> {
+    return this.data.searchCloudDocuments(params, options);
+  }
+
+  async getCloudSearchDocument(
+    docType: CloudSearchDocType,
+    sourceId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchDocument> {
+    return this.data.getCloudSearchDocument(docType, sourceId, options);
+  }
+
+  async getCloudSavedSearches(options?: { signal?: AbortSignal }): Promise<CloudSavedSearch[]> {
+    return this.data.getCloudSavedSearches(options);
+  }
+
+  async createCloudSavedSearch(input: CloudSavedSearchInput): Promise<CloudSavedSearch> {
+    return this.data.createCloudSavedSearch(input);
+  }
+
+  async updateCloudSavedSearch(
+    id: string,
+    update: Partial<CloudSavedSearchInput>,
+  ): Promise<CloudSavedSearch> {
+    return this.data.updateCloudSavedSearch(id, update);
+  }
+
+  async deleteCloudSavedSearch(id: string): Promise<void> {
+    return this.data.deleteCloudSavedSearch(id);
+  }
+
+  async getCloudSavedSearchHits(
+    id: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<CloudSearchHit[]> {
+    return this.data.getCloudSavedSearchHits(id, options);
   }
 
   async getCloudNews(params: CloudNewsParams = {}): Promise<CloudNewsListResponse> {

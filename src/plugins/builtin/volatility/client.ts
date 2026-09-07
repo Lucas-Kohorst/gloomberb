@@ -1,79 +1,87 @@
-import { loadFredSeriesPayload } from "../../../data/fred-load";
+import { apiClient } from "../../../api-client";
 import {
   getCachedFredSeries,
   loadCachedFredSeries,
+  type FredSeriesLoadResult,
   type FredSeriesRequest,
 } from "../../../data/fred-series";
-import { withConnectionRequest } from "../connections/register";
-import { buildVolData } from "./model";
-import type { VolData } from "./types";
+import {
+  buildVolatilityData,
+  VOLATILITY_SERIES,
+  type VolatilityData,
+  type VolatilitySeriesId,
+  type VolatilitySeriesInput,
+} from "./model";
 
-export const VOL_SERIES_IDS = ["VIXCLS", "VXVCLS", "VXMTCLS"] as const;
-export type VolSeriesId = (typeof VOL_SERIES_IDS)[number];
-
-const CONNECTION_SOURCE_ID = "fred-volatility";
-
-/** Start date for sparkline history — ~60 trading days back. */
-function startDateMonthsAgo(months: number): string {
-  const d = new Date();
-  d.setMonth(d.getMonth() - months);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export interface VolatilityLoadResult {
+  data: VolatilityData;
+  stale: boolean;
+  errors: string[];
 }
 
-function seriesRequest(seriesId: string): FredSeriesRequest {
+const HISTORY_LIMIT = 120;
+
+function requestFor(seriesId: VolatilitySeriesId): FredSeriesRequest {
+  return { seriesId, limit: HISTORY_LIMIT, sortOrder: "desc" };
+}
+
+function toInput(result: Pick<FredSeriesLoadResult, "data">): VolatilitySeriesInput {
   return {
-    seriesId,
-    startDate: startDateMonthsAgo(3),
-    sortOrder: "asc",
+    ...result.data,
+    observations: result.data.observations.slice(0, HISTORY_LIMIT),
   };
 }
 
-/** Get instant cached data for all three series (for initial render). */
-export function getCachedVolData(): VolData | null {
-  const observations = VOL_SERIES_IDS.map((id) => {
-    const cached = getCachedFredSeries(seriesRequest(id));
-    return cached?.data.observations ?? null;
+export function getCachedVolatilityData(): VolatilityLoadResult | null {
+  const entries = VOLATILITY_SERIES.flatMap(({ seriesId }) => {
+    const cached = getCachedFredSeries(requestFor(seriesId), { allowExpired: true });
+    return cached ? [[seriesId, cached] as const] : [];
+  });
+  if (entries.length === 0) return null;
+  return {
+    data: buildVolatilityData(Object.fromEntries(entries.map(([id, entry]) => [id, toInput(entry)]))),
+    stale: entries.some(([, entry]) => entry.stale),
+    errors: [],
+  };
+}
+
+async function loadSeries(
+  seriesId: VolatilitySeriesId,
+  force: boolean,
+): Promise<FredSeriesLoadResult> {
+  const request = requestFor(seriesId);
+  return loadCachedFredSeries(
+    request,
+    async () => toInput({ data: await apiClient.getCloudFredSeries(seriesId, {
+      limit: request.limit,
+      sortOrder: request.sortOrder,
+    }) }),
+    { force },
+  );
+}
+
+export async function loadVolatilityData(force = false): Promise<VolatilityLoadResult> {
+  const settled = await Promise.allSettled(
+    VOLATILITY_SERIES.map(({ seriesId }) => loadSeries(seriesId, force)),
+  );
+  const inputs: Partial<Record<VolatilitySeriesId, VolatilitySeriesInput>> = {};
+  const errors: string[] = [];
+  let stale = false;
+
+  settled.forEach((result, index) => {
+    const seriesId = VOLATILITY_SERIES[index]!.seriesId;
+    if (result.status === "rejected") {
+      errors.push(`${seriesId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+      return;
+    }
+    inputs[seriesId] = toInput(result.value);
+    stale ||= result.value.stale;
+    if (result.value.refreshError) errors.push(`${seriesId}: ${result.value.refreshError}`);
   });
 
-  if (!observations.some((obs) => obs != null && obs.length > 0)) return null;
-  return buildVolData(observations[0] ?? [], observations[1] ?? [], observations[2] ?? []);
-}
-
-async function fetchSeries(seriesId: string, force: boolean) {
-  const request = seriesRequest(seriesId);
-  const result = await withConnectionRequest(
-    CONNECTION_SOURCE_ID,
-    `FRED ${seriesId}`,
-    () =>
-      loadCachedFredSeries(
-        request,
-        () => loadFredSeriesPayload(request.seriesId, {
-          startDate: request.startDate,
-          sortOrder: request.sortOrder,
-        }),
-        { force },
-      ),
-  );
-  return result.data.observations;
-}
-
-/**
- * Fetch VIX, VXV, and VXMT from FRED via the cached series system.
- * Falls back gracefully if VXMTCLS is unavailable.
- */
-export async function loadVolData(force = false): Promise<VolData> {
-  const observations = await Promise.all(
-    VOL_SERIES_IDS.map((id) =>
-      fetchSeries(id, force).catch((err) => {
-        // VXMTCLS may have limited history; don't let it fail the whole pane
-        if (id === "VXMTCLS") {
-          console.warn(`[volatility] ${id} unavailable:`, err);
-          return [] as Awaited<ReturnType<typeof fetchSeries>>;
-        }
-        throw err;
-      }),
-    ),
-  );
-
-  return buildVolData(observations[0]!, observations[1]!, observations[2]!);
+  const data = buildVolatilityData(inputs);
+  if (data.metrics.every((metric) => metric.value == null)) {
+    throw new Error(errors.join("; ") || "Volatility data unavailable");
+  }
+  return { data, stale, errors };
 }

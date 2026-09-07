@@ -2,6 +2,7 @@ import { join } from "path";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { execFileSync } from "child_process";
 import { getPluginsDir } from "../../plugins/loader";
+import { linkHostPackages } from "../../plugins/host-link";
 import {
   cliStyles,
   renderSection,
@@ -10,11 +11,10 @@ import {
 } from "../../utils/cli-output";
 import { fail } from "../errors";
 
-const PLUGINS_DIR = getPluginsDir();
-
 function ensurePluginsDir() {
-  if (!existsSync(PLUGINS_DIR)) {
-    mkdirSync(PLUGINS_DIR, { recursive: true });
+  const dir = getPluginsDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -50,20 +50,33 @@ function parseGitHubRef(rawRef: string): { url: string; name: string } {
   throw new Error(`Invalid plugin reference: ${ref}. Use user/repo or a GitHub URL.`);
 }
 
-export async function installPlugin(ref: string) {
+export interface InstallPluginOptions {
+  /**
+   * Suppress child-process output and progress logging. The marketplace pane
+   * installs while the terminal UI owns the screen, and git and bun writing to
+   * stdout corrupts the rendered frame.
+   */
+  quiet?: boolean;
+}
+
+export async function installPlugin(ref: string, options: InstallPluginOptions = {}) {
+  const stdio = options.quiet ? "pipe" : "inherit";
+  const say = (message: string) => {
+    if (!options.quiet) console.log(message);
+  };
   ensurePluginsDir();
   const { url, name } = parseGitHubRef(ref);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
 
   if (existsSync(targetDir)) {
     fail(`Plugin "${name}" already exists.`, `Use "gloomberb update ${name}" to refresh it.`);
   }
 
-  console.log(cliStyles.accent(`Installing ${name}`));
-  console.log(cliStyles.muted(url));
+  say(cliStyles.accent(`Installing ${name}`));
+  say(cliStyles.muted(url));
 
   try {
-    execFileSync("git", ["clone", "--depth", "1", url, targetDir], { stdio: "inherit" });
+    execFileSync("git", ["clone", "--depth", "1", url, targetDir], { stdio });
   } catch {
     rmSync(targetDir, { recursive: true, force: true });
     fail(`Failed to clone ${url}.`);
@@ -71,11 +84,24 @@ export async function installPlugin(ref: string) {
 
   const pkgPath = join(targetDir, "package.json");
   if (existsSync(pkgPath)) {
-    console.log(cliStyles.muted("Installing plugin dependencies..."));
+    say(cliStyles.muted("Installing plugin dependencies..."));
     try {
-      execFileSync("bun", ["install"], { cwd: targetDir, stdio: "inherit" });
+      // --production: plugin repos depend on `gloomberb` as a devDependency so
+      // their own CI can typecheck against the real API. At runtime the host is
+      // symlinked in instead, and pulling a second full copy here would both
+      // waste a lot of disk and risk a duplicate React.
+      execFileSync("bun", ["install", "--production"], { cwd: targetDir, stdio });
     } catch {
-      console.error(cliStyles.warning("Warning: failed to install plugin dependencies."));
+      if (!options.quiet) console.error(cliStyles.warning("Warning: failed to install plugin dependencies."));
+    }
+  }
+
+  // After `bun install`, which prunes links it does not know about.
+  const link = linkHostPackages(targetDir);
+  if (link.error) {
+    if (!options.quiet) {
+      console.error(cliStyles.warning(`Warning: could not link the Gloomberb runtime (${link.error}).`));
+      console.error(cliStyles.muted("The plugin's \"gloomberb/*\" imports will not resolve."));
     }
   }
 
@@ -98,20 +124,20 @@ export async function installPlugin(ref: string) {
       const mod = await import(entryFile);
       const plugin = mod.default ?? mod.plugin;
       if (plugin?.id && plugin?.name) {
-        console.log(cliStyles.success(`Installed ${plugin.name} v${plugin.version || "0.0.0"}`));
+        say(cliStyles.success(`Installed ${plugin.name} v${plugin.version || "0.0.0"}`));
         return;
       }
     }
-    console.log(cliStyles.warning("Installed files, but no valid GloomPlugin export was found."));
+    say(cliStyles.warning("Installed files, but no valid GloomPlugin export was found."));
   } catch (err) {
-    console.log(cliStyles.warning(`Plugin validation failed: ${err}`));
+    say(cliStyles.warning(`Plugin validation failed: ${err}`));
   }
 }
 
 export async function removePlugin(name: string) {
-  const targetDir = join(PLUGINS_DIR, validatePluginDirectoryName(name));
+  const targetDir = join(getPluginsDir(), validatePluginDirectoryName(name));
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
   rmSync(targetDir, { recursive: true, force: true });
   console.log(cliStyles.success(`Removed plugin "${name}".`));
@@ -121,7 +147,7 @@ export async function updatePlugins(name?: string) {
   ensurePluginsDir();
   const dirs = name
     ? [validatePluginDirectoryName(name)]
-    : readdirSync(PLUGINS_DIR, { withFileTypes: true })
+    : readdirSync(getPluginsDir(), { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
@@ -131,7 +157,7 @@ export async function updatePlugins(name?: string) {
   }
 
   for (const dir of dirs) {
-    const targetDir = join(PLUGINS_DIR, dir);
+    const targetDir = join(getPluginsDir(), dir);
     if (!existsSync(join(targetDir, ".git"))) {
       console.log(cliStyles.warning(`Skipping ${dir} (not a git repo)`));
       continue;
@@ -141,8 +167,9 @@ export async function updatePlugins(name?: string) {
       execFileSync("git", ["pull", "--ff-only"], { cwd: targetDir, stdio: "inherit" });
       const pkgPath = join(targetDir, "package.json");
       if (existsSync(pkgPath)) {
-        execFileSync("bun", ["install"], { cwd: targetDir, stdio: "inherit" });
+        execFileSync("bun", ["install", "--production"], { cwd: targetDir, stdio: "inherit" });
       }
+      linkHostPackages(targetDir);
     } catch {
       console.error(cliStyles.danger(`Failed to update ${dir}.`));
     }
@@ -151,7 +178,7 @@ export async function updatePlugins(name?: string) {
 
 export function listPlugins() {
   ensurePluginsDir();
-  const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const entries = readdirSync(getPluginsDir(), { withFileTypes: true }).filter((entry) => entry.isDirectory());
 
   if (entries.length === 0) {
     console.log(cliStyles.muted("No plugins installed."));
@@ -160,7 +187,7 @@ export function listPlugins() {
   }
 
   const rows = entries.map((entry) => {
-    const dir = join(PLUGINS_DIR, entry.name);
+    const dir = join(getPluginsDir(), entry.name);
     let version = "—";
     let description = "—";
     const pkgPath = join(dir, "package.json");
@@ -186,7 +213,7 @@ export function listPlugins() {
     rows,
   ));
   console.log("");
-  console.log(renderStat("Directory", PLUGINS_DIR));
+  console.log(renderStat("Directory", getPluginsDir()));
 }
 
 export async function searchPlugins(query: string) {
@@ -293,8 +320,6 @@ export const ${varName}: GloomPlugin = {
     ctx.registerAgentPromptFragment(
       "${displayName}: pane.createFromTemplate ${name}-pane (${shortcut}).",
     );
-    // Unique data the remote inventory does not already cover:
-    // ctx.registerAgentTool({ name: "${name.replace(/-/g, "_")}_lookup", ... });
   },
 };
 
@@ -317,14 +342,11 @@ export function buildPluginPackageJson(name: string): string {
 
 export function scaffoldPlugin(name: string) {
   validatePluginDirectoryName(name);
-  const pluginsDir = getPluginsDir();
-  if (!existsSync(pluginsDir)) {
-    mkdirSync(pluginsDir, { recursive: true });
-  }
-  const targetDir = join(pluginsDir, name);
+  ensurePluginsDir();
+  const targetDir = join(getPluginsDir(), name);
 
   if (existsSync(targetDir)) {
-    fail(`Plugin "${name}" already exists.`, pluginsDir);
+    fail(`Plugin "${name}" already exists.`, getPluginsDir());
   }
 
   mkdirSync(targetDir, { recursive: true });
@@ -340,9 +362,9 @@ export function scaffoldPlugin(name: string) {
 
 export async function validatePlugin(name: string) {
   validatePluginDirectoryName(name);
-  const targetDir = join(PLUGINS_DIR, name);
+  const targetDir = join(getPluginsDir(), name);
   if (!existsSync(targetDir)) {
-    fail(`Plugin "${name}" was not found.`, PLUGINS_DIR);
+    fail(`Plugin "${name}" was not found.`, getPluginsDir());
   }
 
   let entryFile: string | null = null;

@@ -1,4 +1,3 @@
-import type { ScrollBoxRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
 import type { SecFilingItem } from "../../../types/data-provider";
@@ -8,16 +7,8 @@ import {
 } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
-import {
-  EmptyState,
-  ErrorState,
-  FeedDataTableStackView,
-  Spinner,
-  TickerEmptyState,
-  useExternalLinkFooter,
-  useTableLoadMore,
-  type FeedDataTableItem,
-} from "../../../components";
+import type { ScrollBoxRenderable } from "../../../ui";
+import { EmptyState, FeedDataTableStackView, Spinner, TickerEmptyState, useExternalLinkFooter, useTableLoadMore, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";
@@ -33,9 +24,9 @@ import {
 import { useSecFilingContentCache } from "../sec/filing-content";
 
 const FORM4_PAGE_SIZE = 20;
-// Stay inside the recent EDGAR dump. Scanning older archives for 20k mixed
-// forms blocked first paint before any Form 4 row could render.
-const SEC_FILING_SCAN_LIMIT = 1_000;
+// Recent EDGAR dumps cap at 1,000 mixed forms. Older archives are fetched
+// until this many filings or company history ends.
+const SEC_FILING_SCAN_LIMIT = 20_000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface ParsedFiling {
@@ -44,7 +35,9 @@ interface ParsedFiling {
   isLoading: boolean;
 }
 
-function buildSummary(parsed: ParsedFiling[]): string {
+/** Null while filings are still parsing, so the pane never claims "no activity" early. */
+function buildSummary(parsed: ParsedFiling[]): string | null {
+  if (parsed.some(({ isLoading }) => isLoading)) return null;
   const cutoff = new Date(Date.now() - NINETY_DAYS_MS);
   let buyShares = 0;
   let sellShares = 0;
@@ -202,7 +195,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
   const selectedFilterName = selectedTransaction?.reportedName ?? null;
   const pendingLabel = pendingCount > 0 ? `loading ${pendingCount}...` : "";
   const footerInfo = useMemo(() => [
-    { id: "summary", parts: [{ text: truncateText(summary, Math.max(24, width - 20)), tone: "muted" as const }] },
+    ...(summary ? [{ id: "summary", parts: [{ text: truncateText(summary, Math.max(24, width - 20)), tone: "muted" as const }] }] : []),
     ...(nameFilter ? [{ id: "filter", parts: [{ text: `filter: ${truncateText(nameFilter, 24)}`, tone: "warning" as const }] }] : []),
     ...(pendingLabel ? [{ id: "pending", parts: [{ text: pendingLabel, tone: "muted" as const }] }] : []),
   ], [nameFilter, pendingLabel, summary, width]);
@@ -229,7 +222,9 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     label: "filing",
   });
 
-  if (!ticker) return <TickerEmptyState kind="insider" symbol={null} detail="Form 4 filings" />;
+  if (!ticker) {
+    return <EmptyState title="No ticker selected." message="Select a ticker to view insider activity." />;
+  }
   if (!eligibleTicker) {
     return (
       <EmptyState
@@ -239,7 +234,7 @@ function InsiderView({ width, height, focused }: { width: number; height: number
     );
   }
   if (loading && allFilings.length === 0) return <Spinner label="Loading insider filings..." />;
-  if (error) return <ErrorState kind="insider" error={error} />;
+  if (error) return <EmptyState title="Insider filings unavailable." message={error} />;
   if (!loading && form4Filings.length === 0) {
     return <TickerEmptyState kind="insider" symbol={ticker.metadata.ticker} detail="Form 4 filings" />;
   }
@@ -277,6 +272,7 @@ export const insiderModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 100, height: 30 },
+      tableExport: true,
     },
   ],
 

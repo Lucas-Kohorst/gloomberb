@@ -16,21 +16,25 @@ import { buildWhoCommandResults } from "../chat/profile-search";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
 import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
+import { CongressTradesPane, CONGRESS_TRADES_PANE_ID } from "../congress-trades/pane";
 import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
+import { createPublicPaneShare } from "../shared/public-pane";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import type { SyncTransport } from "../../../sync/types";
 
 interface GloomberbCloudPluginComponents {
   ChatPane: (props: PaneProps) => ReactNode;
   ChatStatusWidget: ComponentType;
+  extraModules?: readonly PluginModule[];
 }
 
 function createCloudDataModule(): PluginModule {
   let disposeConfigConnection: (() => void) | null = null;
+  let disposeOllamaConnection: (() => void) | null = null;
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
     setup(ctx) {
@@ -43,9 +47,18 @@ function createCloudDataModule(): PluginModule {
         priority: 100,
         authRequired: true,
       });
+      disposeOllamaConnection = registerConnectionSource({
+        id: "ollama",
+        name: "Ollama (local)",
+        kind: "api",
+        pluginId: "gloomberb-cloud",
+        authRequired: false,
+      });
     },
     dispose() {
       disposeConfigConnection?.();
+      disposeOllamaConnection?.();
+      disposeOllamaConnection = null;
       apiClient.dispose();
     },
   };
@@ -80,6 +93,9 @@ function createChatModule(
       defaultMode: "floating",
       defaultFloatingSize: { width: 80, height: 30 },
       settings: (context) => buildChatPaneSettingsDef(context.settings),
+      portableShare: {
+        private: { title: true, params: true, settings: true, state: true },
+      },
     }, {
       id: UNREAD_INBOX_PANE_ID,
       name: "Unread",
@@ -93,7 +109,7 @@ function createChatModule(
       id: "new-chat-pane",
       paneId: "chat",
       label: "New Chat Pane",
-      description: "Open the floating chat window",
+      description: "Open the floating chat window for a channel",
       keywords: ["new", "chat", "pane", "message"],
       shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
       singleton: true,
@@ -107,6 +123,12 @@ function createChatModule(
         const targetMessageId = options?.values?.messageId?.trim() || null;
         return {
           placement: "floating",
+          // One pane per channel: re-opening the same channel focuses the pane
+          // that already holds it, even though its channelId setting drifts as
+          // the user switches channels inside the pane. A jump to a specific
+          // message stays unkeyed so it never lands on a pane that already
+          // scrolled past the target.
+          ...(targetMessageId ? {} : { instanceId: `chat:${channelId}` }),
           title: formatChatPaneTitle(channel, channelId),
           settings: {
             channelId,
@@ -129,7 +151,9 @@ function createChatModule(
     },
     setup(ctx) {
       chatController.attachPersistence(ctx.persistence, ctx.resume);
-      chatController.setNotifier(ctx.notify);
+      chatController.setNotifier(ctx.notify, (channelId, messageId) => {
+        ctx.createPaneFromTemplate("new-chat-pane", { arg: channelId, values: { messageId } });
+      });
       ctx.registerCommand({
         id: "direct-message",
         label: "DM",
@@ -193,7 +217,10 @@ const accountModule: PluginModule = {
     component: AccountManagementPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 72, height: 36 },
+    defaultFloatingSize: { width: 84, height: 40 },
+    portableShare: {
+      private: { title: true, params: true, settings: true, state: true },
+    },
   }],
   paneTemplates: [{
     id: "account-management-pane",
@@ -213,6 +240,29 @@ const accountModule: PluginModule = {
   },
 };
 
+const congressTradesModule: PluginModule = {
+  panes: [{
+    id: CONGRESS_TRADES_PANE_ID,
+    name: "Congress",
+    icon: "G",
+    component: CongressTradesPane,
+    defaultPosition: "right",
+    defaultMode: "floating",
+    defaultFloatingSize: { width: 112, height: 30 },
+    tableExport: true,
+  }],
+  paneTemplates: [{
+    id: "congress-trades-pane",
+    paneId: CONGRESS_TRADES_PANE_ID,
+    label: "Congress Trades",
+    description: "Track newly disclosed House periodic transaction reports.",
+    keywords: ["congress", "house", "trades", "ptr", "stock", "disclosures"],
+    shortcut: { prefix: "CG" },
+    createInstance: () => ({ placement: "floating" }),
+    publicShare: createPublicPaneShare("Congress Trades"),
+  }],
+};
+
 const twitterModule: PluginModule = {
   setup: registerTwitterFeedFeature,
   dispose: disposeTwitterFeedFeature,
@@ -221,6 +271,7 @@ const twitterModule: PluginModule = {
 export function createGloomberbCloudPlugin({
   ChatPane,
   ChatStatusWidget,
+  extraModules = [],
 }: GloomberbCloudPluginComponents): GloomPlugin {
   return composeBuiltinPlugin({
     id: "gloomberb-cloud",
@@ -233,6 +284,8 @@ export function createGloomberbCloudPlugin({
       createCloudDataModule(),
       createChatModule(ChatPane, ChatStatusWidget),
       accountModule,
+      ...extraModules,
+      congressTradesModule,
       twitterModule,
     ],
   });

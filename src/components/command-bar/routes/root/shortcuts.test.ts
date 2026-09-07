@@ -15,7 +15,6 @@ function tickerTemplate(id: string, prefix: string): PaneTemplateDef {
 const paneTemplates: PaneTemplateDef[] = [
   tickerTemplate("financial-analysis-pane", "FA"),
   tickerTemplate("graph-price-pane", "GP"),
-  tickerTemplate("tradingview-pane", "TVC"),
   tickerTemplate("graph-intraday-price-pane", "GIP"),
   tickerTemplate("historical-prices-pane", "HP"),
   {
@@ -41,25 +40,18 @@ const paneTemplates: PaneTemplateDef[] = [
   },
   tickerTemplate("earnings-estimates-pane", "EE"),
   {
-    id: "provider-search-pane",
-    paneId: "provider-search-results",
-    label: "Provider Search",
-    description: "Search provider instruments",
-    shortcut: { prefix: "SRCH", argPlaceholder: "query", argKind: "text" },
+    id: "research-search-pane",
+    paneId: "research-search",
+    label: "Research Search",
+    description: "Full-text document search",
+    shortcut: { prefix: "SRCH", argPlaceholder: "query", argKind: "text", argOptional: true },
   },
   {
-    id: "sec-pane",
-    paneId: "sec",
-    label: "SEC",
-    description: "Browse recent SEC filings",
-    shortcut: { prefix: "SEC", argPlaceholder: "ticker or company", argKind: "text", argOptional: true },
-  },
-  {
-    id: "new-chat-pane",
-    paneId: "chat",
-    label: "Chat",
-    description: "Open the floating chat window",
-    shortcut: { prefix: "CHAT", argPlaceholder: "channel", argKind: "text", argOptional: true },
+    id: "cds-pane",
+    paneId: "cds",
+    label: "Single-Name CDS",
+    description: "CDS shortcut",
+    shortcut: { prefix: "CDS", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
   },
 ];
 
@@ -87,7 +79,6 @@ describe("ticker data root shortcuts", () => {
   test.each([
     ["FA AAPL", "financial-analysis-pane"],
     ["GP AAPL", "graph-price-pane"],
-    ["TVC AAPL", "tradingview-pane"],
     ["GIP AAPL", "graph-intraday-price-pane"],
     ["HP AAPL", "historical-prices-pane"],
     ["GF AAPL", "fundamental-graph-pane"],
@@ -134,65 +125,33 @@ describe("ticker data root shortcuts", () => {
     if (intent.kind === "none") throw new Error("Expected shortcut intent");
     expect(intent.source).toBe("pane-template");
     if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("provider-search-pane");
+      expect(intent.template.id).toBe("research-search-pane");
       expect(intent.argText).toBe("apple inc");
       expect(intent.completionQuery).toBeNull();
     }
   });
 
-  test("SRCH without a query remains a provider search shortcut", () => {
+  test("SRCH without a query remains a document search shortcut", () => {
     const intent = parse("SRCH");
     expect(intent.kind).toBe("partial");
     if (intent.kind === "none") throw new Error("Expected shortcut intent");
     expect(intent.source).toBe("pane-template");
     if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("provider-search-pane");
+      expect(intent.template.id).toBe("research-search-pane");
       expect(intent.argText).toBe("");
     }
   });
 
-  test("SEC without a ticker opens the broad filings browser", () => {
-    const intent = parse("SEC");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("sec-pane");
-      expect(intent.argText).toBe("");
-    }
-  });
+  test("optional ticker shortcuts do not infer the active ticker", () => {
+    const bare = parse("CDS", "MSFT");
+    expect(bare.kind).toBe("partial");
+    if (bare.kind === "none") throw new Error("Expected shortcut intent");
+    expect(bare.completionQuery).toBeNull();
 
-  test("CHAT without a channel opens the pane instead of staying partial", () => {
-    const intent = parse("CHAT");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("new-chat-pane");
-      expect(intent.argText).toBe("");
-    }
-  });
-
-  test("CHAT with a channel keeps the retarget arg", () => {
-    const intent = parse("CHAT #general");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("new-chat-pane");
-      expect(intent.argText).toBe("#general");
-    }
-  });
-
-  test("SEC with a ticker keeps the browser query", () => {
-    const intent = parse("SEC AAPL");
-    expect(intent.kind).toBe("complete");
-    if (intent.kind === "none") throw new Error("Expected shortcut intent");
-    expect(intent.source).toBe("pane-template");
-    if (intent.source === "pane-template") {
-      expect(intent.template.id).toBe("sec-pane");
-      expect(intent.argText).toBe("AAPL");
-    }
+    const scoped = parse("CDS ORCL", "MSFT");
+    expect(scoped.kind).toBe("complete");
+    if (scoped.kind === "none") throw new Error("Expected shortcut intent");
+    expect(scoped.argText).toBe("ORCL");
   });
 
   test("EM accepts optional text tickers without active ticker inference", () => {
@@ -207,5 +166,31 @@ describe("ticker data root shortcuts", () => {
     if (scoped.kind === "none") throw new Error("Expected shortcut intent");
     expect(scoped.source).toBe("plugin-command");
     expect(scoped.argText).toBe("AAPL,MSFT");
+  });
+
+  test("pane shortcut aliases resolve to the same template", () => {
+    const templates: PaneTemplateDef[] = [{
+      id: "plugin-marketplace-pane",
+      paneId: "plugin-marketplace",
+      label: "Plugin Marketplace",
+      description: "Search installed and GitHub plugins",
+      shortcut: { prefix: "PLUGINS", aliases: ["PLUG", "PL"] },
+    }];
+    const parseAlias = (query: string) => parseRootShortcutIntent({
+      query,
+      commands: [],
+      pluginCommands: [],
+      paneTemplates: templates,
+      activeTicker: null,
+    });
+    for (const query of ["PLUGINS", "PLUG", "PL"]) {
+      const intent = parseAlias(query);
+      expect(intent.kind).toBe("partial");
+      if (intent.kind === "none") throw new Error("Expected shortcut intent");
+      expect(intent.source).toBe("pane-template");
+      if (intent.source === "pane-template") {
+        expect(intent.template.id).toBe("plugin-marketplace-pane");
+      }
+    }
   });
 });

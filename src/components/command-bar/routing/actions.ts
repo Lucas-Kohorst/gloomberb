@@ -27,7 +27,7 @@ import type {
 type CloseAll = (options?: { revertThemePreview?: boolean }) => void;
 type Notify = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
 type OpenModeRoute = (
-  screen: "ticker-search" | "plugins" | "layout",
+  screen: "ticker-search" | "layout",
   initialQuery?: string,
   payload?: Record<string, unknown>,
 ) => void;
@@ -81,15 +81,6 @@ export function useCommandBarRouteActions({
   stateRef,
   updateTopRoute,
 }: UseCommandBarRouteActionsOptions) {
-  const buildPluginItems = useCallback((query: string): ResultItem[] => buildPluginToggleItems({
-    disabledPlugins: state.config.disabledPlugins || [],
-    dispatch,
-    getConfig: () => stateRef.current.config,
-    persistConfig,
-    pluginRegistry,
-    query,
-  }), [dispatch, persistConfig, pluginRegistry, state.config.disabledPlugins, stateRef]);
-
   const buildWindowModeItems = useCallback((arg: string): ResultItem[] => buildWindowModeResultItems({
     arg,
     closeAll,
@@ -236,10 +227,10 @@ export function useCommandBarRouteActions({
     activatePaneSettingField,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     buildWindowModeItems,
     executeCollectionCommand,
     openPaneSettingsRoute,
     tickerActionItems,
   };
 }
+

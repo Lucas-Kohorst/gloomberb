@@ -1,16 +1,11 @@
 import type { PaneSettingsDef } from "../../../types/plugin";
-import { registerConnectionSource } from "../connections/register";
 import type { PluginModule } from "../plugin-module";
 import { DEFAULT_FLOW_FILTERS, FLOW_FILTER_OPTIONS } from "./flow-model";
 import FlowPane from "./flow-pane";
 import HiloPane from "./hilo-pane";
 
-const SCANNER_CONNECTION_ID = "gloom-cloud-scanner";
-
-let disposeScannerConnection: (() => void) | null = null;
-
-const HILO_PANE_ID = "scanner-hilo";
-const FLOW_PANE_ID = "scanner-flow";
+export const HILO_PANE_ID = "scanner-hilo";
+export const FLOW_PANE_ID = "scanner-flow";
 
 function hiloSettings(): PaneSettingsDef {
   return {
@@ -77,6 +72,7 @@ export const scannerModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 76, height: 26 },
+      tableExport: true,
       settings: hiloSettings(),
     },
     {
@@ -87,6 +83,7 @@ export const scannerModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 88, height: 28 },
+      tableExport: true,
       settings: flowSettings(),
     },
   ],
@@ -111,20 +108,4 @@ export const scannerModule: PluginModule = {
       createInstance: () => ({ settings: { ...DEFAULT_FLOW_FILTERS } }),
     },
   ],
-
-  setup() {
-    disposeScannerConnection = registerConnectionSource({
-      id: SCANNER_CONNECTION_ID,
-      name: "Gloom Cloud Scanners",
-      kind: "websocket",
-      pluginId: "market-overview",
-      authRequired: true,
-      isWebSocket: true,
-    });
-  },
-
-  dispose() {
-    disposeScannerConnection?.();
-    disposeScannerConnection = null;
-  },
 };

@@ -1,4 +1,6 @@
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
+import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { AnalystResearchView } from "./analyst-pane";
@@ -6,8 +8,24 @@ import { CorporateActionsView } from "./corporate-actions-pane";
 import { EquityDiagnosticView } from "./equity-diagnostic-pane";
 import { RelativeValuationPane } from "./relative-valuation-pane";
 
-function EarningsEstimatesAliasPane(props: { focused: boolean; width: number; height: number }) {
-  return <CorporateActionsView {...props} footerPaneId="earnings-estimates" />;
+function EarningsEstimatesPane(props: { focused: boolean; width: number; height: number }) {
+  return (
+    <CorporateActionsView
+      {...props}
+      footerPaneId="earnings-estimates"
+      variant="earnings-estimates"
+    />
+  );
+}
+
+function prefetchAnalystResearch({ ticker, dataProvider }: TickerResearchTabPrefetchContext): void {
+  if (!dataProvider?.getAnalystResearch) return;
+  void dataProvider.getAnalystResearch(ticker.metadata.ticker, ticker.metadata.exchange).catch(() => {});
+}
+
+function prefetchCorporateActions({ ticker, dataProvider }: TickerResearchTabPrefetchContext): void {
+  if (!dataProvider?.getCorporateActions) return;
+  void dataProvider.getCorporateActions(ticker.metadata.ticker, ticker.metadata.exchange).catch(() => {});
 }
 
 export const researchModule: PluginModule = {
@@ -17,21 +35,23 @@ export const researchModule: PluginModule = {
       name: "Analyst",
       order: 32,
       component: AnalystResearchView,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
+      prefetch: prefetchAnalystResearch,
     });
     ctx.registerTickerResearchTab({
       id: "equity-diagnostic",
       name: "Diagnostic",
       order: 33,
       component: EquityDiagnosticView,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
     });
     ctx.registerTickerResearchTab({
       id: "corporate-actions",
       name: "Events",
       order: 34,
       component: CorporateActionsView,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
+      prefetch: prefetchCorporateActions,
     });
   },
 
@@ -44,6 +64,7 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 90, height: 28 },
+      tableExport: true,
     },
     {
       id: "equity-diagnostic",
@@ -62,6 +83,7 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 24 },
+      tableExport: true,
     },
     {
       id: "relative-valuation",
@@ -71,15 +93,17 @@ export const researchModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 24 },
+      tableExport: true,
     },
     {
       id: "earnings-estimates",
       name: "Earnings Estimates",
       icon: "E",
-      component: EarningsEstimatesAliasPane,
+      component: EarningsEstimatesPane,
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 104, height: 22 },
+      tableExport: true,
     },
   ],
 
@@ -91,6 +115,7 @@ export const researchModule: PluginModule = {
       description: "Price targets, recommendations, and recent analyst actions.",
       keywords: ["analyst", "research", "ratings", "target", "anr"],
       shortcut: "ANR",
+      publicShare: true,
     }),
     createTickerSurfacePaneTemplate({
       id: "equity-diagnostic-pane",
@@ -99,6 +124,7 @@ export const researchModule: PluginModule = {
       description: "Red flags, anomalies, green flags, and watch items for one company, with cited evidence.",
       keywords: ["diagnostic", "diag", "red flags", "anomalies", "green flags", "review", "evidence"],
       shortcut: "DIAG",
+      publicShare: true,
     }),
     createTickerSurfacePaneTemplate({
       id: "corporate-actions-pane",
@@ -107,14 +133,16 @@ export const researchModule: PluginModule = {
       description: "Dividends, splits, reported earnings, and analyst estimates.",
       keywords: ["events", "corporate", "actions", "dividend", "split", "earnings", "estimate", "revenue", "evt"],
       shortcut: "EVT",
+      publicShare: true,
     }),
     createTickerSurfacePaneTemplate({
       id: "earnings-estimates-pane",
-      paneId: "corporate-actions",
+      paneId: "earnings-estimates",
       label: "Earnings Estimates",
-      description: "Open the Events view with EPS and revenue estimates.",
+      description: "EPS and revenue estimates with reported earnings.",
       keywords: ["earnings", "estimates", "ee", "analyst", "eps", "revenue", "events"],
       shortcut: "EE",
+      publicShare: true,
     }),
     {
       id: "relative-valuation-pane",

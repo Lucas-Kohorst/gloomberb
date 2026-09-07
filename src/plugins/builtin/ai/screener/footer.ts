@@ -30,7 +30,15 @@ export function useAiScreenerFooter({
 }: UseAiScreenerFooterOptions) {
   const language = useAppLanguage();
   usePaneFooter("ai-screener", () => ({
-    info: isRunningActiveTab && runState
+    info: activeTab?.lastError
+      ? [{
+          id: "error",
+          parts: [{ text: activeTab.lastError, tone: "warning" as const }],
+        }]
+      : [],
+    // Left-side info is reserved for source/updated/error segments; run state
+    // and warnings ride on the trailing side so they stay visible.
+    trailingInfo: isRunningActiveTab && runState
       ? [{
           id: "running",
           parts: [{
@@ -38,17 +46,12 @@ export function useAiScreenerFooter({
             tone: "muted" as const,
           }],
         }]
-      : activeTab?.lastError
+      : activeTab?.lastWarning && !activeTab?.lastError
         ? [{
-            id: "error",
-            parts: [{ text: activeTab.lastError, tone: "warning" as const }],
+            id: "warning",
+            parts: [{ text: activeTab.lastWarning, tone: "warning" as const }],
           }]
-        : activeTab?.lastWarning
-          ? [{
-              id: "warning",
-              parts: [{ text: activeTab.lastWarning, tone: "warning" as const }],
-            }]
-          : [],
+        : [],
     hints: editorState
       ? [
           {
@@ -58,34 +61,20 @@ export function useAiScreenerFooter({
             onPress: onSaveEditor,
           },
           {
-            id: "cancel-edit",
+            id: "cancel",
             key: "Esc",
             label: t("cancel"),
             onPress: onCloseEditor,
           },
         ]
       : isRunningActiveTab
-        ? [
-            {
-              id: "stop",
-              key: "Esc",
-              label: t("stop"),
-              onPress: onCancelRun,
-            },
-          ]
+        ? []
         : [
             {
               id: "new",
               key: "t",
               label: t("new"),
               onPress: onAddTab,
-            },
-            {
-              id: "refresh",
-              key: "r",
-              label: t("efresh"),
-              onPress: onRefresh,
-              disabled: !activeTab,
             },
             {
               id: "edit",

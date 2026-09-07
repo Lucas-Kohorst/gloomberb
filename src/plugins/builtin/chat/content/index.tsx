@@ -138,6 +138,7 @@ export function ChatContent({
     loadFailed,
     loadingOlderMessages,
     messages,
+    messagesError,
     onlineCount,
     onlineUserIds,
     onlineUsernames,
@@ -222,6 +223,17 @@ export function ChatContent({
   const userByUsername = useMemo(() => buildChatUserByUsername(channels, messages), [channels, messages]);
   const activeChannel = useMemo(() => channels.find((channel) => channel.id === channelId), [channelId, channels]);
   const activeChannelTitle = useMemo(() => formatChatPaneTitle(activeChannel, channelId), [activeChannel, channelId]);
+  const presence = useMemo(() => ({
+    onlineUserIds,
+    onlineUsernames,
+    selfUserId: user?.id,
+    selfUsername: user?.username,
+  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
+  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
+  const channelMembers = useMemo(
+    () => listChannelMembers(activeChannel),
+    [activeChannel],
+  );
   const recentMentionSuggestions = useMemo(() => buildRecentMentionSuggestions({
     activeChannel,
     currentUserId: user?.id,
@@ -266,22 +278,11 @@ export function ChatContent({
   const {
     cancelProfilePopoverClose,
     closeProfilePopover,
+    ownProfileConfigured,
     profilePopoverUser,
     scheduleProfilePopoverClose,
     showProfilePopover,
-  } = useChatProfilePopover(user?.id);
-
-  const presence = useMemo(() => ({
-    onlineUserIds,
-    onlineUsernames,
-    selfUserId: user?.id,
-    selfUsername: user?.username,
-  }), [onlineUserIds, onlineUsernames, user?.id, user?.username]);
-  const channelOnline = isSidebarChannelOnline(activeChannel, presence);
-  const channelMembers = useMemo(
-    () => listChannelMembers(activeChannel),
-    [activeChannel],
-  );
+  } = useChatProfilePopover(focused ? user?.id : undefined);
 
   const showUserProfilePopover = useCallback((targetUser: Parameters<typeof showProfilePopover>[0]) => {
     showProfilePopover(targetUser, { ownProfile: targetUser.id === user?.id });
@@ -702,6 +703,8 @@ export function ChatContent({
       canManageNotifications={!!user?.emailVerified}
       canCreateConversation={!!user?.emailVerified}
       directExpanded={directExpanded}
+      needsProfileSetup={!!user?.id && ownProfileConfigured === false}
+      onOpenProfile={openProfileSetup}
       onSelect={stackedNav ? selectChannelFromList : selectSidebarChannel}
       onFocusRequest={() => setSidebarFocused(true)}
       onCreateConversation={openNewDmDialog}
@@ -769,6 +772,8 @@ export function ChatContent({
         jumpToMessage={jumpToMessage}
         loading={loading}
         loadingOlderMessages={loadingOlderMessages}
+        messagesError={messagesError}
+        onRetryMessages={retryMessages}
         messageAreaHeight={messageAreaHeight}
         messageBodyWidth={messageBodyWidth}
         messages={visibleMessages}

@@ -1,136 +1,114 @@
+import type { ConnectionHealthRegistry } from "../../../core/connection-health";
+import { decodeHtmlEntities } from "../../../utils/html-entities";
 import { httpFetch } from "../../../utils/http-transport";
-import { withConnectionRequest } from "../connections/register";
-import { computeStatus, haltCodeDescription } from "./model";
-import type { MarketHalt } from "./types";
+import { describeHaltReason, parseEtDateTime, type HaltRecord } from "./model";
+
+export const NASDAQ_HALTS_CONNECTION_ID = "nasdaq-trade-halts";
 
 const HALTS_FEED_URL = "https://www.nasdaqtrader.com/rss.aspx?feed=tradehalts";
-const HALTS_CONNECTION_ID = "nasdaq-trader-halts";
-const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const FETCH_TIMEOUT_MS = 15_000;
 
-function isDomRuntime(): boolean {
-  return typeof (globalThis as { document?: unknown }).document !== "undefined";
-}
+const healthRegistrations = new WeakMap<
+  ConnectionHealthRegistry,
+  { references: number; dispose: () => void }
+>();
 
-function haltsFetchHeaders(): HeadersInit {
-  const headers: Record<string, string> = {
-    Accept: "application/rss+xml,application/xml,text/xml,*/*",
+export function acquireMarketHaltsHealth(health: ConnectionHealthRegistry): () => void {
+  const current = healthRegistrations.get(health);
+  if (current) {
+    current.references += 1;
+  } else {
+    healthRegistrations.set(health, {
+      references: 1,
+      dispose: health.registerSource({
+        id: NASDAQ_HALTS_CONNECTION_ID,
+        name: "Nasdaq Trader",
+        kind: "api",
+        ownerId: "market-overview",
+        detail: "nasdaqtrader.com",
+        priority: 300,
+      }),
+    });
+  }
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const registration = healthRegistrations.get(health);
+    if (!registration) return;
+    registration.references -= 1;
+    if (registration.references > 0) return;
+    registration.dispose();
+    healthRegistrations.delete(health);
   };
+}
 
-  if (!isDomRuntime()) {
-    headers["User-Agent"] = USER_AGENT;
+function fieldValue(item: string, tag: string): string {
+  const match = item.match(new RegExp(`<ndaq:${tag}[^>]*>([\\s\\S]*?)</ndaq:${tag}>`, "i"));
+  return match ? decodeHtmlEntities(match[1]!).trim() : "";
+}
+
+export interface HaltFeedParseResult {
+  records: HaltRecord[];
+  /** `<item>` blocks seen, so an unparseable feed is not mistaken for a quiet day. */
+  itemCount: number;
+}
+
+export function parseHaltFeed(xml: string): HaltFeedParseResult {
+  const items = xml.match(/<item>[\s\S]*?<\/item>/gi) ?? [];
+  const records: HaltRecord[] = [];
+
+  for (const item of items) {
+    const symbol = fieldValue(item, "IssueSymbol").toUpperCase();
+    const haltDate = fieldValue(item, "HaltDate");
+    const haltTime = fieldValue(item, "HaltTime");
+    const haltedAt = parseEtDateTime(haltDate, haltTime);
+    if (!symbol || haltedAt == null) continue;
+
+    const resumptionDate = fieldValue(item, "ResumptionDate");
+    const reasonCode = fieldValue(item, "ReasonCode").toUpperCase();
+    records.push({
+      id: `${symbol}|${haltDate}|${haltTime}|${reasonCode}`,
+      symbol,
+      company: fieldValue(item, "IssueName"),
+      market: fieldValue(item, "Market"),
+      reasonCode,
+      reason: describeHaltReason(reasonCode),
+      haltedAt,
+      quoteResumeAt: parseEtDateTime(resumptionDate, fieldValue(item, "ResumptionQuoteTime")),
+      tradeResumeAt: parseEtDateTime(resumptionDate, fieldValue(item, "ResumptionTradeTime")),
+    });
   }
 
-  return headers;
+  return { records, itemCount: items.length };
 }
 
-function getTagContent(xml: string, tag: string): string | null {
-  const m = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return m ? m[1]!.trim() : null;
-}
-
-function getTagValue(xml: string, tag: string): string | null {
-  // Slash is required so <ndaq:IssueSymbol> is not treated as empty.
-  const selfClosing = xml.match(new RegExp(`<${tag}\\s*/>`, "i"));
-  if (selfClosing) return null;
-
-  const content = getTagContent(xml, tag);
-  return content;
-}
-
-function parseNasdaqDate(dateStr: string, timeStr: string): Date | null {
-  if (!dateStr || !timeStr) return null;
-  // dateStr: "08/18/2026", timeStr: "13:25:32.636" or "13:25:32"
-  const [month, day, year] = dateStr.split("/").map(Number);
-  if (!month || !day || !year) return null;
-  const timeParts = timeStr.split(":").map(Number);
-  const hours = timeParts[0] ?? 0;
-  const minutes = timeParts[1] ?? 0;
-  const seconds = timeParts[2] ?? 0;
-  // Nasdaq times are Eastern Time. We store as UTC-4 (EDT) approximation.
-  // The Date is constructed in local time; we shift to approximate ET.
-  const utcApprox = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
-  // Shift from UTC to ET (UTC-4 during EDT, UTC-5 during EST)
-  // Use a fixed -4 offset as approximation (EDT is in effect during market hours)
-  utcApprox.setUTCHours(utcApprox.getUTCHours() + 4);
-  return utcApprox;
-}
-
-export function parseHaltsXml(xml: string): MarketHalt[] {
-  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
-  const halts: MarketHalt[] = [];
-  let match: RegExpExecArray | null;
-
-  while ((match = itemRe.exec(xml)) !== null) {
-    const block = match[1]!;
-
-    const ticker = getTagValue(block, "ndaq:IssueSymbol");
-    if (!ticker) continue;
-
-    const name = getTagValue(block, "ndaq:IssueName");
-    const exchange = getTagValue(block, "ndaq:Market") ?? "";
-    const haltCode = getTagValue(block, "ndaq:ReasonCode") ?? "";
-    const haltDate = getTagValue(block, "ndaq:HaltDate");
-    const haltTimeStr = getTagValue(block, "ndaq:HaltTime");
-    const resumeDate = getTagValue(block, "ndaq:ResumptionDate");
-    const resumeQuoteTimeStr = getTagValue(block, "ndaq:ResumptionQuoteTime");
-    const resumeTradeTimeStr = getTagValue(block, "ndaq:ResumptionTradeTime");
-
-    const haltTime = haltDate && haltTimeStr
-      ? parseNasdaqDate(haltDate, haltTimeStr)
-      : null;
-    if (!haltTime) continue;
-
-    const quoteResumeTime = resumeDate && resumeQuoteTimeStr
-      ? parseNasdaqDate(resumeDate, resumeQuoteTimeStr)
-      : null;
-    const resumeTime = resumeDate && resumeTradeTimeStr
-      ? parseNasdaqDate(resumeDate, resumeTradeTimeStr)
-      : null;
-
-    const halt: MarketHalt = {
-      ticker,
-      exchange,
-      name,
-      haltCode,
-      haltCodeDesc: haltCodeDescription(haltCode),
-      haltTime,
-      quoteResumeTime,
-      resumeTime,
-      status: computeStatus({ quoteResumeTime, resumeTime }),
-    };
-
-    halts.push(halt);
+async function loadHaltFeed(): Promise<HaltRecord[]> {
+  const response = await httpFetch(HALTS_FEED_URL, {
+    headers: { Accept: "application/rss+xml, application/xml;q=0.9, */*;q=0.8" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`Nasdaq halt feed request failed (${response.status})`);
   }
 
-  return halts;
+  const xml = await response.text();
+  if (!/<rss\b/i.test(xml) || !/<channel\b/i.test(xml) || !/xmlns:ndaq=/i.test(xml)) {
+    throw new Error("Nasdaq halt feed response was not RSS");
+  }
+
+  const { records, itemCount } = parseHaltFeed(xml);
+  // Nasdaq publishes an empty channel on quiet days; items we cannot read mean
+  // the format moved, which must not render as "no halts today".
+  if (records.length === 0 && itemCount > 0) {
+    throw new Error("Nasdaq halt feed format was not recognized");
+  }
+  return records;
 }
 
-export async function fetchMarketHalts(options: {
-  forceRefresh?: boolean;
-} = {}): Promise<MarketHalt[]> {
-  return withConnectionRequest(
-    HALTS_CONNECTION_ID,
-    "fetch-halts",
-    async () => {
-      const response = await httpFetch(HALTS_FEED_URL, {
-        headers: haltsFetchHeaders(),
-        cache: options.forceRefresh ? "no-store" : "default",
-      });
-
-      const body = await response.text();
-      if (!response.ok) {
-        throw new Error(`Nasdaq Trader halts request failed (${response.status}): ${body.slice(0, 120)}`);
-      }
-
-      const halts = parseHaltsXml(body);
-      if (halts.length === 0) {
-        // Could be no halts today or a parse failure; check if we got items
-        const hasItems = /<item>/i.test(body);
-        if (!hasItems) return [];
-        // Items exist but none parsed — return empty (feed may have only non-halt items)
-      }
-
-      return halts;
-    },
-  );
+export async function fetchMarketHalts(health?: ConnectionHealthRegistry): Promise<HaltRecord[]> {
+  return health?.hasSource(NASDAQ_HALTS_CONNECTION_ID)
+    ? health.track(NASDAQ_HALTS_CONNECTION_ID, "fetchTradeHalts", loadHaltFeed)
+    : loadHaltFeed();
 }

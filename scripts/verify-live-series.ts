@@ -6,11 +6,9 @@ import { normalizeAdjacentIndexPrices } from "../src/plugins/builtin/adjacent/no
 import { fetchLlmStatsData } from "../src/plugins/builtin/llm-stats/client";
 import { fetchVoteHubPolls } from "../src/plugins/builtin/polls/client";
 import { computePollTrend, normalizeVoteHubPoll } from "../src/plugins/builtin/polls/normalize";
-import {
-  loadAdjacentIndexSeries,
-  loadBenchmarkSeries,
-  loadPollSeries,
-} from "../src/time-series/hooks";
+import { loadAdjacentChartSeries } from "../src/plugins/builtin/adjacent/series";
+import { loadBenchmarkSeries } from "../src/plugins/builtin/llm-stats/chart-series";
+import { loadPollSeries } from "../src/plugins/builtin/polls/chart-series";
 
 console.log("=== Live API Verification ===\n");
 
@@ -32,7 +30,7 @@ try {
       console.log(`    Last:  ${pricePoints.at(-1)!.date.toISOString().slice(0,10)} = ${pricePoints.at(-1)!.value}`);
     }
     // Test the loader function
-    const loaded = await loadAdjacentIndexSeries(first.index_id);
+    const loaded = await loadAdjacentChartSeries(client, first.index_id);
     console.log(`  Loader result: ${loaded.points.length} points, unit="${loaded.unit}"`);
   }
 } catch (err) {

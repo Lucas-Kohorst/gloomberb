@@ -14,6 +14,12 @@ import {
 
 const PANEL_RESOLUTION_BOUNDS = { x: 0, y: 0, width: 120, height: 40 };
 
+export function isFullscreenOverlaySession(
+  pluginRegistry: { getFullscreenPaneIdFn?: () => string | null },
+): boolean {
+  return !!pluginRegistry.getFullscreenPaneIdFn?.();
+}
+
 export function isCollectionPaneInstance(instance: PaneInstanceConfig): boolean {
   return instance.paneId === "portfolio-list";
 }
@@ -26,6 +32,19 @@ export function resolvePaneTarget(layout: LayoutConfig, paneId: string): string 
   return resolvePaneInstance(layout, normalizePaneId(paneId))?.instanceId
     ?? resolvePaneInstance(layout, paneId)?.instanceId
     ?? null;
+}
+
+/** Resolve an instance id before looking up its registered pane type. */
+export function resolvePaneShowTarget(
+  layout: LayoutConfig,
+  paneId: string,
+): { paneType: string; instance: PaneInstanceConfig | null } {
+  const instanceId = resolvePaneTarget(layout, paneId);
+  const instance = instanceId ? findPaneInstance(layout, instanceId) ?? null : null;
+  return {
+    paneType: normalizePaneId(instance?.paneId ?? paneId),
+    instance,
+  };
 }
 
 export function resolvePanelForPane({

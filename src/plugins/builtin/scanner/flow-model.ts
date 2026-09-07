@@ -1,5 +1,4 @@
-import type { ScannerFlowEvent } from "../../../api-client";
-import { formatMoneyCompact } from "../../../utils/format";
+import type { ScannerFlowEvent, ScannerStatus } from "../../../api-client";
 
 export type FlowMinPremium = "50000" | "250000" | "1000000";
 export type FlowSide = "calls" | "puts" | "both";
@@ -76,40 +75,65 @@ function expiryDaysFromNow(expiry: string, now: number): number | null {
  * The shared feed is published once for everyone, so every user preference is a
  * local predicate over the same events. Never push these upstream.
  */
-export const FLOW_PAINTED_HEAD_LIMIT = 200;
-
 export function filterFlowEvents(
   events: readonly ScannerFlowEvent[] | undefined,
   filters: FlowFilters,
   watchlist: ReadonlySet<string>,
   now = Date.now(),
-  limit = FLOW_PAINTED_HEAD_LIMIT,
 ): ScannerFlowEvent[] {
   const minPremium = Number(filters.minPremium);
   const minVolOi = filters.volOi === "off" ? null : Number(filters.volOi);
   const maxExpiryDays = filters.expiry === "all" ? null : Number(filters.expiry);
 
-  const matched: ScannerFlowEvent[] = [];
-  for (const event of events ?? []) {
-    if (!(event.premium >= minPremium)) continue;
-    if (filters.side === "calls" && event.right !== "C") continue;
-    if (filters.side === "puts" && event.right !== "P") continue;
-    if (filters.kind === "sweeps" && event.kind !== "sweep") continue;
-    if (filters.kind === "blocks" && event.kind !== "block") continue;
-    if (minVolOi != null && !(typeof event.volOi === "number" && event.volOi >= minVolOi)) continue;
+  return (events ?? []).filter((event) => {
+    if (!(event.premium >= minPremium)) return false;
+    if (filters.side === "calls" && event.right !== "C") return false;
+    if (filters.side === "puts" && event.right !== "P") return false;
+    if (filters.kind === "sweeps" && event.kind !== "sweep") return false;
+    if (filters.kind === "blocks" && event.kind !== "block") return false;
+    if (minVolOi != null && !(typeof event.volOi === "number" && event.volOi >= minVolOi)) return false;
     if (maxExpiryDays != null) {
       const days = expiryDaysFromNow(event.expiry, now);
-      if (days == null || days > maxExpiryDays || days < -1) continue;
+      if (days == null || days > maxExpiryDays || days < -1) return false;
     }
-    if (filters.universe === "watchlist" && !watchlist.has(event.underlying.toUpperCase())) continue;
-    matched.push(event);
-    if (matched.length >= limit) break;
+    if (filters.universe === "watchlist" && !watchlist.has(event.underlying.toUpperCase())) return false;
+    return true;
+  });
+}
+
+/**
+ * An empty table has two unrelated causes, and blaming the filters for a tape
+ * the server never sent sends people to tune filters that were never the
+ * problem. Say which one happened.
+ */
+export function flowEmptyState(
+  received: number,
+  visible: number,
+  status: ScannerStatus | undefined,
+): { title: string; hint: string } {
+  if (received > visible) {
+    return {
+      title: `${received - visible} ${received - visible === 1 ? "print" : "prints"} hidden by filters.`,
+      hint: "Loosen the premium, expiry, or universe filter.",
+    };
   }
-  return matched;
+  if (status === "closed") {
+    return {
+      title: "No prints on the tape.",
+      hint: "Options are closed; the tape fills again at the next session.",
+    };
+  }
+  return {
+    title: "No prints on the tape yet.",
+    hint: "Large sweeps, blocks, and premium prints appear here as they cross.",
+  };
 }
 
 export function formatFlowPremium(premium: number): string {
-  return formatMoneyCompact(premium);
+  if (premium >= 1e9) return `$${(premium / 1e9).toFixed(1)}B`;
+  if (premium >= 1e6) return `$${(premium / 1e6).toFixed(1)}M`;
+  if (premium >= 1e3) return `$${Math.round(premium / 1e3)}K`;
+  return `$${Math.round(premium)}`;
 }
 
 export function formatFlowType(event: ScannerFlowEvent): string {

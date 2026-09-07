@@ -142,6 +142,23 @@ function registerOptionalTextPane(pluginRegistry: MutablePaneRegistry): void {
   });
 }
 
+function registerOptionalTickerPane(pluginRegistry: MutablePaneRegistry): void {
+  mutableRegistryMap(pluginRegistry.panes).set("optional-ticker", {
+    id: "optional-ticker",
+    name: "Optional Ticker",
+    component: () => null,
+    defaultPosition: "right",
+    defaultMode: "floating",
+  });
+  mutableRegistryMap(pluginRegistry.paneTemplates).set("optional-ticker-pane", {
+    id: "optional-ticker-pane",
+    paneId: "optional-ticker",
+    label: "Optional Ticker",
+    description: "Open market-wide or for one ticker.",
+    shortcut: { prefix: "OT", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
+  });
+}
+
 function registerQueryOnlyPane(pluginRegistry: MutablePaneRegistry): void {
   mutableRegistryMap(pluginRegistry.panes).set("prediction-markets", {
     id: "prediction-markets",
@@ -204,7 +221,7 @@ describe("CommandBar pane and layout routes", () => {
 
   test("renders layout mode with focused pane actions", async () => {
     testSetup = await testRender(<CommandBarHarness
-      query="LAY "
+      query="LMA "
       configureConfig={layoutModeConfig}
       configureState={layoutModeState}
     />, {
@@ -247,9 +264,29 @@ describe("CommandBar pane and layout routes", () => {
     expect(actions.some((action) => action.type === "UNDO_LAYOUT")).toBe(true);
   });
 
+  test("opens Layouts as a normal pane from LAY", async () => {
+    const opened: string[] = [];
+    testSetup = await testRender(
+      <CommandBarHarness
+        query="LAY"
+        live
+        configurePluginRegistry={(pluginRegistry) => {
+          pluginRegistry.showPane = (paneId) => opened.push(paneId);
+        }}
+      />,
+      { width: 90, height: 18 },
+    );
+    await testSetup.renderOnce();
+    expect(testSetup.captureCharFrame()).toContain("Layouts");
+
+    await clickFrameText("Layouts");
+
+    expect(opened).toEqual(["layout-marketplace"]);
+  });
+
   test("renders filtered saved layouts with textual previews", async () => {
     testSetup = await testRender(<CommandBarHarness
-      query="LAY Research"
+      query="LMA Research"
       configureConfig={layoutModeConfig}
       configureState={layoutModeState}
     />, {
@@ -280,10 +317,18 @@ describe("CommandBar pane and layout routes", () => {
   test("shows pane shortcuts in the default browse results", async () => {
     testSetup = await testRender(<CommandBarHarness query="" selectedTicker="AAPL" />, {
       width: 100,
-      height: 24,
+      height: 40,
     });
 
     await testSetup.renderOnce();
+    // The Config section leads the browse list, so pane shortcuts sit below
+    // the initial window; scroll down to them.
+    for (let i = 0; i < 24; i++) {
+      await act(async () => {
+        testSetup!.mockInput.pressArrow("down");
+        await testSetup!.renderOnce();
+      });
+    }
 
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Assets");
@@ -350,6 +395,33 @@ describe("CommandBar pane and layout routes", () => {
 
     expect(created).toEqual([{ templateId: "optional-search-pane", options: undefined }]);
     expect(testSetup.captureCharFrame()).not.toContain("Create Pane");
+  });
+
+  test("keeps an optional ticker shortcut market-wide when a ticker is active", async () => {
+    const created: CreatedPaneCall[] = [];
+
+    testSetup = await testRender(<CommandBarHarness
+      query="OT"
+      selectedTicker="AAPL"
+      live
+      configurePluginRegistry={(pluginRegistry) => {
+        registerOptionalTickerPane(pluginRegistry);
+        recordPaneCreations(pluginRegistry, created);
+      }}
+    />, {
+      width: 100,
+      height: 18,
+    });
+
+    await testSetup.renderOnce();
+
+    await act(async () => {
+      testSetup!.mockInput.pressEnter();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+
+    expect(created).toEqual([{ templateId: "optional-ticker-pane", options: undefined }]);
   });
 
   for (const scenario of [

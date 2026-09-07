@@ -1,18 +1,26 @@
-import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, InputSearchBar, Spinner, type DataTableCell, type DataTableKeyEvent } from "../../../components";
-import type { PaneProps } from "../../../types/plugin";
-import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { usePluginTickerActions } from "../../runtime";
-import { colors, priceColor } from "../../../theme/colors";
-import { openUrl } from "../../../components/ui/external-link";
-import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { useShortcut } from "../../../react/input";
-import { isPlainKey } from "../../../utils/keyboard";
-import { fetchIpoCalendar } from "./client";
-import type { IPORecord, LoadStatus } from "./types";
 import {
+  Button,
+  DataTableView,
+  EmptyState,
+  InputSearchBar,
+  Spinner,
+  useExternalLinkFooter,
+  type DataTableCell,
+  type DataTableKeyEvent,
+} from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { colors, priceColor } from "../../../theme/colors";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import type { PaneProps } from "../../../types/plugin";
+import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { isPlainKey } from "../../../utils/keyboard";
+import { usePluginTickerActions } from "../../runtime";
+import { useAutoRefresh } from "../shared/auto-refresh";
+import { loadingErrorFooterInfo } from "../shared/table-pane";
+import { getCachedIpoCalendar, loadIpoCalendar } from "./cache";
+import {
+  DEFAULT_SORT_PREFERENCE,
   buildColumns,
   formatDate,
   formatOfferSize,
@@ -23,41 +31,45 @@ import {
   nextSortPreference,
   sortRows,
   statusColor,
-  statusLabel,
+  stockAnalysisUrl,
   type IPOColumn,
   type IPOSortPreference,
-  DEFAULT_SORT_PREFERENCE,
 } from "./model";
+import { IPO_CALENDAR_PANE_ID, type IPORecord, type LoadStatus } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
 export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const [records, setRecords] = useState<IPORecord[]>([]);
-  const [status, setStatus] = useState<LoadStatus>("idle");
+  const [initialCache] = useState(getCachedIpoCalendar);
+  const [records, setRecords] = useState<IPORecord[]>(initialCache?.records ?? []);
+  // "idle" would render the empty state for one frame before the first load.
+  const [status, setStatus] = useState<LoadStatus>(initialCache ? "loaded" : "loading");
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(initialCache?.stale ?? false);
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<IPOSortPreference>(DEFAULT_SORT_PREFERENCE);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(initialCache?.fetchedAt ?? null);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const fetchGenRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
-    setStatus("loading");
+    setStatus((current) => (current === "loaded" ? current : "loading"));
     setError(null);
 
     try {
-      const data = await fetchIpoCalendar();
+      const result = await loadIpoCalendar(force);
       if (fetchGenRef.current !== gen) return;
-      setRecords(data);
+      setRecords(result.records);
+      setStale(result.stale);
+      setError(result.errors[0] ?? null);
       setStatus("loaded");
-      setLastUpdated(Date.now());
-      if (force) setSelectedTicker(null);
+      setLastUpdated(result.fetchedAt);
     } catch (err) {
       if (fetchGenRef.current !== gen) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -66,13 +78,16 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
-  useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(true));
+  // The cache decides whether a tick becomes a scrape; only [r] forces it.
+  useAutoRefresh(status === "loaded" && !stale ? lastUpdated : null, () => {
+    void load();
+  });
 
   const filtered = useMemo(
-    () => records.filter((r) => matchesSearch(r, searchQuery)),
+    () => records.filter((record) => matchesSearch(record, searchQuery)),
     [records, searchQuery],
   );
 
@@ -81,23 +96,23 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
     [filtered, sortPreference],
   );
 
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(), []);
 
   useEffect(() => {
-    if (selectedTicker && sorted.some((r) => r.ticker === selectedTicker)) return;
+    if (selectedTicker && sorted.some((record) => record.ticker === selectedTicker)) return;
     const first = sorted[0];
     if (first) {
       setSelectedTicker(first.ticker);
     } else if (selectedTicker !== null) {
       setSelectedTicker(null);
     }
-  }, [sorted, selectedTicker]);
+  }, [selectedTicker, sorted]);
 
   const loading = status === "loading" && records.length === 0;
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
-    setSearchFocusToken((t) => t + 1);
+    setSearchFocusToken((token) => token + 1);
   }, []);
 
   const blurSearch = useCallback(() => {
@@ -118,13 +133,13 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "r") {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
       return true;
     }
-    if (event.name === "/" || event.name === "s") {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -134,17 +149,13 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   }, [focusSearch, refresh]);
 
   const handleActivate = useCallback((record: IPORecord) => {
-    if (record.secUrl) {
-      openUrl(record.secUrl);
-    } else {
-      pinTicker(record.ticker, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
-    }
+    pinTicker(record.ticker, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
   useShortcut((event) => {
     if (!focused || searchFocused) return;
     if (event.targetEditable) return;
-    if (isPlainKey(event, "/") || isPlainKey(event, "s")) {
+    if (isPlainKey(event, "/")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       focusSearch();
@@ -156,26 +167,36 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   }, { allowEditable: true, enabled: focused });
 
   const selectedRecord = useMemo(
-    () => sorted.find((r) => r.ticker === selectedTicker) ?? null,
-    [sorted, selectedTicker],
+    () => sorted.find((record) => record.ticker === selectedTicker) ?? null,
+    [selectedTicker, sorted],
   );
 
-  usePaneStatusLinkFooter({
-    registrationId: "ipo-calendar",
+  const footerInfo = useMemo(() => [
+    ...loadingErrorFooterInfo(status === "loading", records.length === 0 ? error : null),
+    // One endpoint failed while the other returned rows: say so without
+    // spilling a scrape URL into the footer.
+    ...(error && records.length > 0
+      ? [{ id: "partial", parts: [{ text: "PARTIAL", tone: "warning" as const, bold: true }] }]
+      : []),
+    ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
+    ...(searchQuery ? [{
+      id: "search",
+      parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }],
+    }] : []),
+  ], [error, records.length, searchQuery, stale, status]);
+
+  const footerHints = useMemo(
+    () => [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
+    [focusSearch],
+  );
+
+  useExternalLinkFooter({
+    registrationId: IPO_CALENDAR_PANE_ID,
     focused,
-    url: status === "error" ? null : selectedRecord?.secUrl,
-    source: "S-1",
-    label: "filing",
-    loading,
-    error: status === "error" ? error : null,
-    info: [
-      ...(searchQuery ? [{ id: "search", parts: [{ text: `filter: ${searchQuery}`, tone: "value" as const }] }] : []),
-    ],
-    hints: [
-      paneSearchHint(focusSearch),
-      paneRefreshHint(refresh),
-    ],
-    showOpenHint: !error && !!selectedRecord?.secUrl,
+    url: selectedRecord ? stockAnalysisUrl(selectedRecord.ticker) : null,
+    source: "stockanalysis.com",
+    info: footerInfo,
+    hints: footerHints,
   });
 
   const renderCell = useCallback(
@@ -189,6 +210,11 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
             color: selectedColor ?? colors.textBright,
             attributes: TextAttributes.BOLD,
           };
+        case "company":
+          return {
+            text: row.companyName,
+            color: selectedColor ?? colors.text,
+          };
         case "date":
           return {
             text: formatDate(row.date),
@@ -196,7 +222,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
           };
         case "status":
           return {
-            text: statusLabel(row.status),
+            text: row.status,
             color: selectedColor ?? statusColor(row.status),
           };
         case "exchange":
@@ -239,7 +265,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       inputRef={searchInputRef}
       placeholder="ticker, company, or exchange"
       debounceMs={SEARCH_DEBOUNCE_MS}
-      normalizeValue={(v) => v.trim()}
+      normalizeValue={(value) => value.trim()}
       onFocus={focusSearch}
       onBlur={blurSearch}
       onNavigateDown={blurSearch}
@@ -262,41 +288,41 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Text fg={colors.negative}>Error: {error}</Text>
+        <Box padding={1} flexDirection="column" gap={1}>
+          <EmptyState title="IPO calendar unavailable." message={error ?? undefined} />
         </Box>
       </Box>
     );
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <DataTableView<IPORecord, IPOColumn>
-        focused={focused && !searchFocused}
-        rootBefore={rootBefore}
-        selection={{
-          kind: "id",
-          selectedId: selectedTicker,
-          getId: (row) => row.ticker,
-          onChange: (ticker) => setSelectedTicker(ticker),
-        }}
-        onRootKeyDown={handleTableKeyDown}
-        columns={columns}
-        items={sorted}
-        sortColumnId={sortPreference.columnId}
-        sortDirection={sortPreference.direction}
-        onHeaderClick={handleHeaderClick}
-        getItemKey={(row) => row.ticker}
-        onActivate={handleActivate}
-        renderCell={renderCell}
-        emptyStateTitle={
-          searchQuery
-            ? `No IPOs matching "${searchQuery}"`
-            : status === "error"
-              ? "Failed to load IPO data"
-              : "No IPO data"
-        }
-      />
-    </Box>
+    <DataTableView<IPORecord, IPOColumn>
+      focused={focused && !searchFocused}
+      rootBefore={rootBefore}
+      rootWidth={width}
+      rootHeight={height}
+      selection={{
+        kind: "id",
+        selectedId: selectedTicker,
+        getId: (row) => row.ticker,
+        onChange: (ticker) => setSelectedTicker(ticker),
+      }}
+      onRootKeyDown={handleTableKeyDown}
+      columns={columns}
+      items={sorted}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
+      getItemKey={(row) => row.ticker}
+      onActivate={handleActivate}
+      renderCell={renderCell}
+      emptyStateTitle={
+        searchQuery
+          ? `No IPOs matching "${searchQuery}"`
+          : status === "error"
+            ? "Failed to load IPO data"
+            : "No IPO data"
+      }
+    />
   );
 }

@@ -40,6 +40,7 @@ const PLUGIN_PANE_SECTIONS: Record<string, PaneSection> = {
   alerts: PANE_SECTION.workspace,
   "plugin-discovery": PANE_SECTION.workspace,
   "plugin-market": PANE_SECTION.workspace,
+  "plugin-marketplace": PANE_SECTION.workspace,
   debug: PANE_SECTION.workspace,
 };
 

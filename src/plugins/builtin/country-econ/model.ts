@@ -19,18 +19,13 @@ export function nextKindFilter(current: KindFilter): KindFilter {
   return KIND_CYCLE[(index + 1) % KIND_CYCLE.length]!;
 }
 
-export function buildCountryEconColumns(width: number): CountryEconColumn[] {
-  const isoWidth = 5;
-  const kindWidth = 8;
-  const yearWidth = 6;
-  const valueWidth = 14;
-  const nameWidth = Math.max(12, width - 2 - 5 - isoWidth - kindWidth - yearWidth - valueWidth);
+export function buildCountryEconColumns(): CountryEconColumn[] {
   return [
-    { id: "iso3", label: "ISO", width: isoWidth, align: "left" },
-    { id: "name", label: "NAME", width: nameWidth, align: "left" },
-    { id: "kind", label: "KIND", width: kindWidth, align: "left" },
-    { id: "year", label: "YEAR", width: yearWidth, align: "right" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
+    { id: "iso3", label: "ISO", width: 5, align: "left" },
+    { id: "name", label: "NAME", width: 12, align: "left", flexGrow: 1 },
+    { id: "kind", label: "KIND", width: 8, align: "left" },
+    { id: "year", label: "YEAR", width: 6, align: "right" },
+    { id: "value", label: "VALUE", width: 14, align: "right" },
   ];
 }
 

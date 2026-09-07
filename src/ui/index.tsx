@@ -16,6 +16,7 @@ export {
   StyledText,
   TextAttributes,
   UiHostProvider,
+  useCommandBarShortcut,
   useNativeRenderer,
   useRendererHost,
   useSyntaxStyleFactory,
@@ -36,6 +37,7 @@ export type {
   BitmapSurface,
   BoxRenderable,
   ChartSurfaceProps,
+  TradingViewChartProps,
   HostCheckboxProps,
   HostPopoverProps,
   Highlight,
@@ -279,6 +281,23 @@ export const ChartSurface = forwardRef<any, ComponentProps<UiHost["ChartSurface"
   return createElement(HostChartSurface as any, { ...props, ref: setSurfaceRef, "data-gloom-remote-node-id": remoteNodeId ?? undefined });
 });
 ChartSurface.displayName = "ChartSurface";
+
+export function TradingViewChart(props: ComponentProps<NonNullable<UiHost["TradingViewChart"]>>) {
+  const { TradingViewChart: HostTradingViewChart } = useUiHost();
+  const rawProps = props as Record<string, unknown>;
+  const remoteNodeId = useRemoteUiNode(HostTradingViewChart ? {
+    role: remotePropRole(rawProps, "tradingview-chart"),
+    label: remotePropLabel(rawProps) ?? "TradingView chart",
+    metadata: {
+      ...remoteMetadataFromProps(rawProps),
+      width: rawProps.width,
+      height: rawProps.height,
+      interactive: rawProps.interactive === true,
+    },
+  } : null);
+  if (!HostTradingViewChart) return null;
+  return createElement(HostTradingViewChart as any, { ...props, "data-gloom-remote-node-id": remoteNodeId ?? undefined });
+}
 
 export const ImageSurface = forwardRef<any, ComponentProps<UiHost["ImageSurface"]>>((props, ref) => {
   const { ImageSurface: HostImageSurface } = useUiHost();

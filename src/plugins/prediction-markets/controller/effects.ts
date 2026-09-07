@@ -246,7 +246,7 @@ export function usePredictionControllerEffects({
 
   useEffect(() => {
     if (selectedRowKey != null || !firstVisibleRowKey) return;
-    setSelectedRowKey(firstVisibleRowKey, { immediate: true });
+    setSelectedRowKey((current) => current ?? firstVisibleRowKey, { immediate: true });
   }, [firstVisibleRowKey, selectedRowKey, setSelectedRowKey]);
 
   useEffect(() => {

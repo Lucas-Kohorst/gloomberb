@@ -1,4 +1,6 @@
-export type IPOStatus = "upcoming" | "priced" | "trading" | "withdrawn";
+export const IPO_CALENDAR_PANE_ID = "ipo-calendar";
+
+export type IPOStatus = "upcoming" | "priced" | "trading";
 
 export interface IPORecord {
   ticker: string;
@@ -12,7 +14,6 @@ export interface IPORecord {
   shares: number | null;
   closePrice: number | null;
   change1D: number | null;
-  secUrl: string | null;
 }
 
 export type LoadStatus = "idle" | "loading" | "loaded" | "error";

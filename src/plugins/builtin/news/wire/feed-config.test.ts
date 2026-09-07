@@ -7,7 +7,6 @@ import {
   getEnabledNewsFeeds,
   loadNewsFeedSettings,
   removeUserNewsFeed,
-  saveNewsFeedSettings,
   setDefaultNewsFeedEnabled,
   updateUserNewsFeed,
 } from "./feed-config";
@@ -33,7 +32,7 @@ class MemoryConfigState implements PluginConfigState {
 }
 
 describe("news feed config", () => {
-  test("normalizes legacy JSON feed storage and ignores removed default feed names", async () => {
+  test("normalizes legacy JSON feed storage and ignores removed default feed names", () => {
     const config = new MemoryConfigState();
     config.values.set("feeds", JSON.stringify([
       { url: "https://example.com/rss.xml", name: "Example", authority: 120 },
@@ -43,23 +42,10 @@ describe("news feed config", () => {
 
     const settings = loadNewsFeedSettings(config);
 
-    expect(settings.needsMigration).toBe(true);
     expect(settings.userFeeds).toHaveLength(1);
     expect(settings.userFeeds[0]!.id).toMatch(/^user-/);
     expect(settings.userFeeds[0]!.authority).toBe(100);
     expect(settings.disabledDefaultFeedIds).toEqual([]);
-
-    await saveNewsFeedSettings(config, settings);
-    expect(loadNewsFeedSettings(config).needsMigration).toBe(false);
-  });
-
-  test("does not rewrite canonical feed settings", async () => {
-    const config = new MemoryConfigState();
-    await addUserNewsFeed(config, {
-      url: "https://example.com/feed",
-      name: "Example",
-    });
-    expect(loadNewsFeedSettings(config).needsMigration).toBe(false);
   });
 
   test("adds, updates, and removes user feeds through typed helpers", async () => {

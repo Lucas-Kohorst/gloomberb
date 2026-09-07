@@ -88,11 +88,12 @@ function buildApplicationMenu(): ApplicationMenuItemConfig[] {
     {
       label: "Layout",
       submenu: [
-        openCommandBar("Layout Actions...", "LAY ", { accelerator: "CmdOrCtrl+Shift+L" }),
+        commandItem("Layouts...", { type: "open-layout-gallery" }, { accelerator: "CmdOrCtrl+Shift+L" }),
+        openCommandBar("Layout Actions...", "LMA "),
         { type: "divider" },
         commandItem("Undo Layout Change", { type: "layout-undo" }),
         commandItem("Redo Layout Change", { type: "layout-redo" }),
-        commandItem("Gridlock All Windows", { type: "layout-gridlock" }, { accelerator: "CmdOrCtrl+Shift+G" }),
+        commandItem("Tidy Windows", { type: "layout-gridlock" }, { accelerator: "CmdOrCtrl+Shift+G" }),
         { type: "divider" },
         commandItem("New Layout...", { type: "open-plugin-workflow", commandId: "new-layout" }),
         commandItem("Rename Current Layout...", { type: "open-plugin-workflow", commandId: "rename-layout" }),

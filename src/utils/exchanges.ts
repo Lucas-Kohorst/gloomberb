@@ -82,6 +82,7 @@ export const CANONICAL_EXCHANGE_ALIASES: Record<string, string> = {
   ICEX: "ICEX",
   XICE: "ICEX",
   WSE: "WSE",
+  GPW: "WSE",
   XWAR: "WSE",
   PRA: "PSE",
   XPRA: "PSE",

@@ -41,7 +41,6 @@ import type {
   PredictionHistoryRange,
   PredictionListRow,
   PredictionMarketSummary,
-  PredictionOrderPreviewIntent,
   PredictionSortPreference,
   PredictionVenueScope,
 } from "../types";
@@ -121,12 +120,6 @@ export function usePredictionMarketsController({
       "sortPreference",
       defaultSortPreference,
     );
-  const [, setOrderPreviewIntent] =
-    usePluginPaneState<PredictionOrderPreviewIntent | null>(
-      "orderPreviewIntent",
-      null,
-    );
-
   const [detailOpen, setDetailOpen] = useState(false);
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(
     () => new Set(),
@@ -375,13 +368,6 @@ export function usePredictionMarketsController({
     [setSortPreference],
   );
 
-  const previewOrder = useCallback(
-    (intent: PredictionOrderPreviewIntent) => {
-      setOrderPreviewIntent(intent);
-    },
-    [setOrderPreviewIntent],
-  );
-
   usePredictionControllerKeyboard({
     browseTab,
     categoryId,
@@ -414,12 +400,11 @@ export function usePredictionMarketsController({
     browseTab,
     categoryId,
     catalogHasMore: data.catalogHasMore,
-    catalogLive: data.catalogLive,
     catalogLastRefreshAt: data.catalogLastRefreshAt,
+    catalogLive: data.catalogLive,
     catalogLoadCount: data.catalogLoadCount,
     catalogLoadingMore: data.catalogLoadingMore,
     catalogStatus: data.catalogStatus,
-    kalshiFeed: data.kalshiFeed,
     detail: data.detail,
     detailError: data.detailError,
     detailLoadCount: data.detailLoadCount,
@@ -429,6 +414,7 @@ export function usePredictionMarketsController({
     effectiveVenueScope,
     headerScrollRef,
     historyRange,
+    kalshiFeed: data.kalshiFeed,
     lastRefreshAt: data.lastRefreshAt,
     scrollRef,
     searchFocused,
@@ -448,11 +434,10 @@ export function usePredictionMarketsController({
       blurSearch,
       closeDetail,
       loadMoreCatalog: data.loadMoreCatalog,
+      refreshCatalog: data.actions.refreshCatalog,
       focusSearch,
       handleSortHeaderClick,
       openSelectedRow,
-      previewOrder,
-      refreshCatalog: data.actions.refreshCatalog,
       selectBrowseTab,
       selectCategory,
       selectFilter,

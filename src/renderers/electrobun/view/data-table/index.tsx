@@ -27,6 +27,7 @@ import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "../input-host";
 import { useScrollbarActivity } from "../scrollbar-activity";
 import {
   CSS_BG,
+  CSS_TEXT_BRIGHT,
   CSS_TEXT_DIM,
   cellTextStyle,
   toCellX,
@@ -146,11 +147,13 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
   const scheduleBodyScrollActivity = useRafCallback(handleBodyScrollActivity);
   const scheduleVisibleRangeMeasure = useRafCallback(emitVisibleRange);
   const lastAppliedScrollRequestRef = useRef<string | null>(null);
+  const getScrollElement = useCallback(() => bodyElementRef.current, []);
+  const estimateSize = useCallback(() => rowHeightPx, [rowHeightPx]);
 
   const rowVirtualizer = useVirtualizer({
     count: items.length,
-    getScrollElement: () => bodyElementRef.current,
-    estimateSize: () => rowHeightPx,
+    getScrollElement,
+    estimateSize,
     overscan,
     paddingStart: WEB_CELL_HEIGHT,
     scrollPaddingStart: WEB_CELL_HEIGHT,
@@ -205,6 +208,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     scheduleVisibleRangeMeasure();
   }, [items.length, scheduleVisibleRangeMeasure, visibleRangeKey]);
 
+  // Rows sit on a whole-cell grid, so the offset is computed in rows and only
+  // then converted to pixels. Letting the virtualizer scroll by pixels landed
+  // mid-row and clipped the first and last visible rows into slivers.
   useEffect(() => {
     if (scrollToIndex == null || items.length === 0) {
       lastAppliedScrollRequestRef.current = null;
@@ -213,15 +219,6 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     const scrollRequestKey = `${scrollToIndex}:${scrollToIndexVersion}:${scrollToIndexAlign}`;
     if (lastAppliedScrollRequestRef.current === scrollRequestKey) return;
     const targetIndex = Math.max(0, Math.min(scrollToIndex, items.length - 1));
-    if (virtualize) {
-      rowVirtualizer.scrollToIndex(targetIndex, {
-        align: scrollToIndexAlign === "center" ? "center" : "auto",
-      });
-      lastAppliedScrollRequestRef.current = scrollRequestKey;
-      scheduleBodyScrollActivity();
-      scheduleVisibleRangeMeasure();
-      return;
-    }
     const element = bodyElementRef.current;
     if (!element) return;
     const viewportRows = Math.max(1, Math.floor(element.clientHeight / rowHeightPx) - 1);
@@ -235,21 +232,18 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
       nextTop = targetIndex - viewportRows + 1;
     }
     if (nextTop !== currentTop) {
-      element.scrollTop = nextTop * rowHeightPx;
+      element.scrollTop = nextTop * WEB_CELL_HEIGHT;
       scheduleBodyScrollActivity();
     }
     lastAppliedScrollRequestRef.current = scrollRequestKey;
     scheduleVisibleRangeMeasure();
   }, [
     items.length,
-    rowVirtualizer,
     scrollToIndex,
     scrollToIndexAlign,
     scrollToIndexVersion,
     scheduleBodyScrollActivity,
     scheduleVisibleRangeMeasure,
-    rowHeightPx,
-    virtualize,
   ]);
 
   useScrollBoxHandle(
@@ -293,6 +287,9 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
     overflowX: horizontalScrollEnabled ? "auto" : "hidden",
     overflowY: "scroll",
     backgroundColor: CSS_BG,
+    // Trim the viewport to whole rows so the bottom row is never a sliver.
+    // Browsers without CSS round() drop this and keep the previous behavior.
+    maxHeight: "round(down, 100%, var(--cell-h))",
   };
 
   return (
@@ -356,16 +353,13 @@ export function WebDataTable<T, C extends DataTableColumn = DataTableColumn>({
                   fontFamily: "inherit",
                 }}
               >
-                <div style={cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE)}>
+                {/* cellTextStyle is inline-block for real cells, so the title and
+                    hint would share one line and read as a single run-on string. */}
+                <div style={{ ...cellTextStyle(CSS_TEXT_BRIGHT, TextAttributes.BOLD), display: "block" }}>
                   {emptyStateTitle}
                 </div>
-                {emptyStateMessage ? (
-                  <div style={cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE)}>
-                    {emptyStateMessage}
-                  </div>
-                ) : null}
                 {emptyStateHint ? (
-                  <div style={{ ...cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE), color: "var(--gloom-text-muted)" }}>
+                  <div style={{ ...cellTextStyle(CSS_TEXT_DIM, TextAttributes.NONE), display: "block" }}>
                     {emptyStateHint}
                   </div>
                 ) : null}

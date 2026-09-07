@@ -58,6 +58,8 @@ const CIK_RE = /^\d{6,10}$/;
 export function inferBrowserTabFromQuery(query: string): ThirteenFBrowserTab {
   const trimmed = query.trim();
   if (!trimmed) return "performance";
+  // The recent-filings feed has no tab of its own; this keyword is how it is reached.
+  if (/^(latest|recent)$/i.test(trimmed)) return "latest";
   if (!/[a-z]/.test(trimmed) && TICKER_LIKE_RE.test(trimmed.replace(/^\$/, "").toUpperCase())) return "byTicker";
   return "funds";
 }
@@ -520,87 +522,53 @@ export function nextSortPreference<TColumn extends string>(
   return nextSharedSortPreference(current, columnId, { defaultDirection }) as FundSortPreference<TColumn>;
 }
 
-export function buildBrowserColumns(width: number): FundBrowserColumn[] {
-  const cikWidth = 12;
-  const periodWidth = 10;
-  const filedWidth = 9;
-  const valueWidth = 11;
-  const rowsWidth = 6;
-  const retWidth = 9;
-  const fixedWidth = cikWidth + periodWidth + filedWidth + valueWidth + rowsWidth + retWidth;
-  const separators = 7;
-  const fundWidth = Math.max(18, width - fixedWidth - separators - 2);
+export function buildBrowserColumns(): FundBrowserColumn[] {
   return [
-    { id: "fund", label: "FUND", width: fundWidth, align: "left" },
-    { id: "cik", label: "CIK", width: cikWidth, align: "left" },
-    { id: "period", label: "PERIOD", width: periodWidth, align: "left" },
-    ...(retWidth > 0 ? [{ id: "estQuarterReturn" as const, label: "EST 13F", width: retWidth, align: "right" as const }] : []),
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "rows", label: "ROWS", width: rowsWidth, align: "right" },
-    { id: "filed", label: "FILED", width: filedWidth, align: "left" },
+    { id: "fund", label: "FUND", width: 18, align: "left", flexGrow: 1 },
+    { id: "cik", label: "CIK", width: 12, align: "left" },
+    { id: "period", label: "PERIOD", width: 10, align: "left" },
+    { id: "estQuarterReturn", label: "EST 13F", width: 9, align: "right" },
+    { id: "value", label: "VALUE", width: 11, align: "right" },
+    { id: "rows", label: "ROWS", width: 6, align: "right" },
+    { id: "filed", label: "FILED", width: 9, align: "left" },
   ];
 }
 
-export function buildFilingPositionColumns(width: number): FilingPositionColumn[] {
-  const tickerWidth = 9;
-  const typeWidth = 8;
-  const valueWidth = 12;
-  const weightWidth = 8;
-  const sharesWidth = 11;
-  const cusipWidth = 10;
-  const discretionWidth = 8;
-  const fixedWidth = tickerWidth + typeWidth + valueWidth + weightWidth + sharesWidth + cusipWidth + discretionWidth;
-  const issuerWidth = Math.max(16, width - fixedWidth - 10);
+export function buildFilingPositionColumns(): FilingPositionColumn[] {
   return [
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "type", label: "TYPE", width: typeWidth, align: "left" },
-    { id: "issuer", label: "ISSUER", width: issuerWidth, align: "left" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "weight", label: "WEIGHT", width: weightWidth, align: "right" },
-    { id: "shares", label: "SHARES", width: sharesWidth, align: "right" },
-    { id: "cusip", label: "CUSIP", width: cusipWidth, align: "left" },
-    { id: "discretion", label: "DISCR", width: discretionWidth, align: "left" },
+    { id: "ticker", label: "TICKER", width: 9, align: "left" },
+    { id: "type", label: "TYPE", width: 8, align: "left" },
+    { id: "issuer", label: "ISSUER", width: 16, align: "left", flexGrow: 1 },
+    { id: "value", label: "VALUE", width: 12, align: "right" },
+    { id: "weight", label: "WEIGHT", width: 8, align: "right" },
+    { id: "shares", label: "SHARES", width: 11, align: "right" },
+    { id: "cusip", label: "CUSIP", width: 10, align: "left" },
+    { id: "discretion", label: "DISCR", width: 8, align: "left" },
   ];
 }
 
-export function buildHoldingColumns(width: number): FundHoldingColumn[] {
-  const tickerWidth = 9;
-  const typeWidth = 8;
-  const valueWidth = 12;
-  const pnlWidth = 12;
-  const weightWidth = 8;
-  const sharesWidth = 11;
-  const changeWidth = 11;
-  const actionWidth = 7;
-  const fixedWidth = tickerWidth + typeWidth + valueWidth + pnlWidth + weightWidth + sharesWidth + changeWidth + actionWidth;
-  const issuerWidth = Math.max(18, width - fixedWidth - 11);
+export function buildHoldingColumns(): FundHoldingColumn[] {
   return [
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "type", label: "TYPE", width: typeWidth, align: "left" },
-    { id: "issuer", label: "ISSUER", width: issuerWidth, align: "left" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "estimatedPnl", label: "EST P&L", width: pnlWidth, align: "right" },
-    { id: "weight", label: "WEIGHT", width: weightWidth, align: "right" },
-    { id: "shares", label: "SHARES", width: sharesWidth, align: "right" },
-    { id: "sharesChange", label: "QOQ", width: changeWidth, align: "right" },
-    { id: "action", label: "ACTION", width: actionWidth, align: "left" },
+    { id: "ticker", label: "TICKER", width: 9, align: "left" },
+    { id: "type", label: "TYPE", width: 8, align: "left" },
+    { id: "issuer", label: "ISSUER", width: 18, align: "left", flexGrow: 1 },
+    { id: "value", label: "VALUE", width: 12, align: "right" },
+    { id: "estimatedPnl", label: "EST P&L", width: 12, align: "right" },
+    { id: "weight", label: "WEIGHT", width: 8, align: "right" },
+    { id: "shares", label: "SHARES", width: 11, align: "right" },
+    { id: "sharesChange", label: "QOQ", width: 11, align: "right" },
+    { id: "action", label: "ACTION", width: 7, align: "left" },
   ];
 }
 
-export function buildTimelineColumns(width: number): FundTimelineColumn[] {
-  const periodWidth = 10;
-  const filedWidth = 9;
-  const valueWidth = 12;
-  const rowsWidth = 6;
-  const changeWidth = 9;
-  const formWidth = Math.max(10, width - periodWidth - filedWidth - valueWidth - rowsWidth - changeWidth - 7);
+export function buildTimelineColumns(): FundTimelineColumn[] {
   return [
-    { id: "period", label: "PERIOD", width: periodWidth, align: "left" },
-    { id: "filed", label: "FILED", width: filedWidth, align: "left" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "rows", label: "ROWS", width: rowsWidth, align: "right" },
-    { id: "valueChange", label: "VALUE%", width: changeWidth, align: "right" },
-    { id: "form", label: "FORM", width: formWidth, align: "left" },
+    { id: "period", label: "PERIOD", width: 10, align: "left" },
+    { id: "filed", label: "FILED", width: 9, align: "left" },
+    { id: "value", label: "VALUE", width: 12, align: "right" },
+    { id: "rows", label: "ROWS", width: 6, align: "right" },
+    { id: "valueChange", label: "VALUE%", width: 9, align: "right" },
+    { id: "form", label: "FORM", width: 10, align: "left", flexGrow: 1 },
   ];
 }
 

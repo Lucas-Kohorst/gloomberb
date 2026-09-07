@@ -95,9 +95,6 @@ export const WebBox = forwardRef<HTMLDivElement, Record<string, unknown> & { chi
       document.body.classList.remove("gloom-dragging");
     }, []);
 
-    // React's onWheel is a passive listener, so preventDefault() inside the
-    // handler is ignored and a chart zoom also scrolls the page. Bind wheel
-    // natively with passive: false so the handler can actually cancel it.
     const handlesWheel = typeof props.onMouseScroll === "function";
     useEffect(() => {
       const element = elementRef.current;

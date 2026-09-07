@@ -18,6 +18,11 @@ import { isHostedWebClient } from "../shared/hosted-api";
 import { debugLog } from "../utils/debug-log";
 import { canonicalExchange, normalizeSymbol } from "../utils/exchanges";
 import { mergeQuoteSubscriptionTargets } from "../market-data/quote-subscription-target";
+import {
+  connectionHealth,
+  GLOOM_CLOUD_SOCKET_CONNECTION_ID,
+  type ConnectionHealthRegistry,
+} from "../core/connection-health";
 
 const QUOTE_SUBSCRIPTION_FLUSH_MS = 25;
 const cloudApiLog = debugLog.createLogger("cloud-api");
@@ -50,6 +55,7 @@ type CloudApiSocketDelegate = {
   getSocketAuthToken: () => string | null;
   /** Hosted web client: authenticate via the same-origin session cookie, not a token query param. */
   isCookieAuthenticated: () => boolean;
+  hasSessionCredential: () => boolean;
   hasVerifiedUser: () => boolean;
   isUsingWebSocketToken: () => boolean;
   clearWebSocketTokenForFallback: () => boolean;
@@ -99,9 +105,13 @@ export class CloudApiSocket {
   private readonly pendingQuoteUnsubscribes = new Map<string, QuoteStreamTarget>();
   private quoteSubscriptionFlushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly scannerListeners = new Map<ScannerKind, Set<ScannerListener>>();
+  /** Latest fan-out payload, so a pane opened mid-stream does not wait for the next tick. */
   private readonly scannerSnapshots = new Map<ScannerKind, ScannerFeedEvent>();
 
-  constructor(private readonly delegate: CloudApiSocketDelegate) {}
+  constructor(
+    private readonly delegate: CloudApiSocketDelegate,
+    private readonly health: ConnectionHealthRegistry = connectionHealth,
+  ) {}
 
   syncAuthState(options: { reconnect?: boolean } = {}): void {
     if (!this.shouldKeepSocketOpen()) {
@@ -123,6 +133,7 @@ export class CloudApiSocket {
     this.ws = null;
     if (ws) {
       cloudApiLog.info("teardown websocket");
+      this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "idle", "Socket closed locally");
     }
     try {
       ws?.close();
@@ -441,7 +452,7 @@ export class CloudApiSocket {
 
   private shouldKeepSocketOpen(): boolean {
     if (this.quoteTargets.size > 0 || this.scannerListeners.size > 0) return true;
-    return !!this.delegate.getSocketAuthToken()
+    return this.delegate.hasSessionCredential()
       && this.delegate.hasVerifiedUser()
       && this.channelListeners.size > 0;
   }
@@ -466,12 +477,24 @@ export class CloudApiSocket {
       quoteTargets: this.quoteTargets.size,
       channelTargets: this.channelListeners.size,
     });
-    const ws = new WebSocket(url);
+    this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "connecting", this.getWebSocketBaseUrl());
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch (error) {
+      this.health.reportSocketState(
+        GLOOM_CLOUD_SOCKET_CONNECTION_ID,
+        "error",
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
     this.ws = ws;
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
       cloudApiLog.info("websocket open");
+      this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "open", this.getWebSocketBaseUrl());
       this.reconnectDelayMs = 1000;
       this.flushSubscriptions();
     };
@@ -494,6 +517,11 @@ export class CloudApiSocket {
         tokenSource: usingWebSocketToken ? "websocket" : "session",
       });
       if (!activeSocket) return;
+      this.health.reportSocketState(
+        GLOOM_CLOUD_SOCKET_CONNECTION_ID,
+        "closed",
+        closeEvent?.reason || (closeEvent?.code ? `Closed (${closeEvent.code})` : "Socket closed"),
+      );
       if (usingWebSocketToken && this.delegate.clearWebSocketTokenForFallback()) {
         this.reconnectDelayMs = 1000;
         cloudApiLog.warn("cleared websocket token after socket close; falling back to session token");
@@ -503,7 +531,9 @@ export class CloudApiSocket {
     };
 
     ws.onerror = () => {
-      // reconnect is handled by onclose
+      if (this.ws !== ws) return;
+      this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "error", "WebSocket error");
+      // Reconnect is handled by onclose.
     };
   }
 

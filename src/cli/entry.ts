@@ -1,6 +1,7 @@
 import { dispatchCli } from "./index";
 import { fail, inferCliErrorOptions, printCliError } from "./errors";
 import { loadExternalPlugins } from "../plugins/loader";
+import { applyDataDirFromArgs } from "./options";
 import type { CliLaunchRequest } from "../types/plugin";
 import {
   OPEN_TUI_NATIVE_SMOKE_COMMAND,
@@ -24,6 +25,10 @@ async function launchOpenTuiApp(options: {
 }
 
 export async function runCliEntrypoint(rawArgs = process.argv.slice(2)): Promise<void> {
+  // Apply --data-dir / --data-dir=<path> before any plugin or config loading
+  // so lazy resolvers (getPluginsDir, getDataDir, getAiRunsDir) honor it.
+  applyDataDirFromArgs(rawArgs);
+
   const command = rawArgs[0];
 
   if (command === OPEN_TUI_NATIVE_SMOKE_COMMAND) {

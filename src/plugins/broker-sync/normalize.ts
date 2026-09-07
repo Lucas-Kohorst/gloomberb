@@ -86,7 +86,24 @@ function uniqueSnapshot(accounts: BrokerAccount[], positions: BrokerPosition[]):
       currency: position.currency,
     });
   }
-  return { accounts: uniqueAccounts, positions: mergeIdenticalPositions(positions) };
+  return { accounts: uniqueAccounts, positions: mergeIdenticalPositions(positions.map(withCanonicalShares)) };
+}
+
+/**
+ * Canonicalize broker positions so `shares` is a positive magnitude and `side`
+ * carries the direction. Some broker feeds report short shares as negative
+ * while also tagging `side: "short"`; leaving shares negative double-signs every
+ * downstream consumer that derives direction from `side`.
+ */
+function withCanonicalShares(position: BrokerPosition): BrokerPosition {
+  const side = position.side ?? (position.shares < 0 ? "short" : "long");
+  const shares = Math.abs(position.shares);
+  if (shares === position.shares && side === position.side) return position;
+  return { ...position, shares, side };
+}
+
+function signedBrokerShares(position: BrokerPosition): number {
+  return Math.abs(position.shares) * (position.side === "short" ? -1 : 1);
 }
 
 function mergeIdenticalPositions(positions: BrokerPosition[]): BrokerPosition[] {
@@ -104,13 +121,18 @@ function mergeIdenticalPositions(positions: BrokerPosition[]): BrokerPosition[] 
       merged.set(key, position);
       continue;
     }
-    const shares = existing.shares + position.shares;
-    const existingCost = (existing.avgCost ?? 0) * existing.shares;
-    const nextCost = (position.avgCost ?? 0) * position.shares;
+    // The key ignores side, so opposing legs of one contract land here and must
+    // still net out. That needs signed magnitudes now that `shares` is canonical.
+    const existingShares = signedBrokerShares(existing);
+    const nextShares = signedBrokerShares(position);
+    const shares = existingShares + nextShares;
+    const existingCost = (existing.avgCost ?? 0) * existingShares;
+    const nextCost = (position.avgCost ?? 0) * nextShares;
     merged.set(key, {
       ...existing,
-      shares,
-      avgCost: shares > 0 ? (existingCost + nextCost) / shares : existing.avgCost,
+      shares: Math.abs(shares),
+      side: shares < 0 ? "short" : "long",
+      avgCost: shares !== 0 ? (existingCost + nextCost) / shares : existing.avgCost,
       marketValue: sumOptional(existing.marketValue, position.marketValue),
       unrealizedPnl: sumOptional(existing.unrealizedPnl, position.unrealizedPnl),
     });
@@ -211,5 +233,115 @@ export function normalizeRobinhoodSnapshot(
     }];
   }));
 
+  return uniqueSnapshot(accounts, positions);
+}
+
+export function normalizePublicSnapshot(accountsPayload: unknown, portfolioPayloads: unknown[]): BrokerPortfolioSnapshot {
+  const accountRecords = record(accountsPayload)?.accounts;
+  const accounts = (Array.isArray(accountRecords) ? accountRecords : []).flatMap((value): BrokerAccount[] => {
+    const item = record(value);
+    if (!item) return [];
+    const id = accountId(item);
+    if (!id) return [];
+    const type = text(item.accountType, item.account_type);
+    return [{ accountId: id, name: type ? `Public ${titleCase(type)}` : `Public ${id}`, currency: "USD" }];
+  });
+
+  const positions: BrokerPosition[] = [];
+  for (const value of portfolioPayloads) {
+    const portfolio = record(value);
+    if (!portfolio) continue;
+    const id = accountId(portfolio);
+    const knownAccount = accounts.find((account) => account.accountId === id);
+    if (knownAccount) {
+      knownAccount.netLiquidation = numberValue(portfolio.totalAccountValue, portfolio.total_account_value);
+      knownAccount.totalCashValue = numberValue(portfolio.cash);
+      knownAccount.buyingPower = numberValue(nested(portfolio, "buyingPower").buyingPower);
+    }
+    const rawPositions = Array.isArray(portfolio.positions) ? portfolio.positions : [];
+    for (const rawPosition of rawPositions) {
+      const item = record(rawPosition);
+      if (!item) continue;
+      const instrument = nested(item, "instrument");
+      const lastPrice = nested(item, "lastPrice");
+      const costBasis = nested(item, "costBasis");
+      const symbol = text(instrument.symbol, item.symbol).toUpperCase();
+      const shares = numberValue(item.quantity);
+      if (!symbol || shares == null || shares === 0) continue;
+      positions.push({
+        ticker: symbol,
+        exchange: "SMART",
+        shares,
+        avgCost: numberValue(costBasis.unitCost, costBasis.unit_cost),
+        currency: "USD",
+        accountId: id || undefined,
+        name: text(instrument.name, symbol),
+        assetCategory: text(instrument.type, "STK").toUpperCase() === "EQUITY" ? "STK" : text(instrument.type, "STK").toUpperCase(),
+        markPrice: numberValue(lastPrice.lastPrice, lastPrice.last_price),
+        marketValue: numberValue(item.currentValue, item.current_value),
+        unrealizedPnl: numberValue(costBasis.gainValue, costBasis.gain_value),
+        percentOfNav: numberValue(item.percentOfPortfolio, item.percent_of_portfolio),
+        dateAcquired: text(item.openedAt, item.opened_at) || undefined,
+        side: shares < 0 ? "short" : "long",
+      });
+    }
+  }
+  return uniqueSnapshot(accounts, positions);
+}
+
+export function normalizeSimpleFinSnapshot(payload: unknown): BrokerPortfolioSnapshot {
+  const root = record(payload);
+  const rawAccounts = Array.isArray(root?.accounts) ? root.accounts : [];
+  const accounts: BrokerAccount[] = [];
+  const positions: BrokerPosition[] = [];
+  for (const rawAccount of rawAccounts) {
+    const account = record(rawAccount);
+    if (!account) continue;
+    const id = text(account.id);
+    const holdings = Array.isArray(account.holdings) ? account.holdings : [];
+    if (!id || holdings.length === 0) continue;
+    const currency = text(account.currency, "USD").toUpperCase();
+    accounts.push({
+      accountId: `${text(account.conn_id)}:${id}`,
+      name: text(account.name, id),
+      currency,
+      netLiquidation: numberValue(account.balance),
+      updatedAt: (numberValue(account["balance-date"]) ?? 0) * 1000 || undefined,
+    });
+    const normalizedAccountId = accounts.at(-1)!.accountId;
+    for (const rawHolding of holdings) {
+      const holding = record(rawHolding);
+      if (!holding) continue;
+      const symbol = text(holding.symbol, holding.ticker, holding.code).toUpperCase();
+      const shares = numberValue(holding.shares, holding.quantity, holding.units);
+      const marketValue = numberValue(holding.market_value, holding.marketValue, holding.value);
+      if (!symbol || shares == null || shares === 0) continue;
+      const costBasis = numberValue(holding.cost_basis, holding.costBasis);
+      const avgCost = numberValue(
+        holding.purchase_price,
+        holding.average_price,
+        holding.average_cost,
+        costBasis != null ? costBasis / Math.abs(shares) : undefined,
+      );
+      positions.push({
+        ticker: symbol,
+        exchange: text(holding.exchange, "SMART").toUpperCase(),
+        shares,
+        avgCost,
+        currency: text(holding.currency, currency).toUpperCase(),
+        accountId: normalizedAccountId,
+        name: text(holding.description, holding.name, symbol),
+        assetCategory: text(holding.type, holding.asset_type, "STK").toUpperCase(),
+        markPrice: numberValue(
+          holding.price,
+          holding.current_price,
+          holding.market_price,
+          marketValue != null ? marketValue / Math.abs(shares) : undefined,
+        ),
+        marketValue,
+        side: shares < 0 ? "short" : "long",
+      });
+    }
+  }
   return uniqueSnapshot(accounts, positions);
 }

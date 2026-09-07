@@ -3,8 +3,15 @@ import type { FredSeriesData, FredSeriesLoadResult } from "../data/fred-series";
 import { createTestDataProvider } from "../test-support/data-provider";
 import type { TickerFinancials } from "../types/financials";
 import { CHART_SPEC_VERSION, type ChartSpec } from "./types";
-import { ChartResolveCache, mergePriceHistoryWindows, resolveChartSpecData } from "./resolve";
+import {
+  ChartResolveCache,
+  mergePriceHistoryWindows,
+  resolveChartSpecData,
+  seedChartResolutionResult,
+} from "./resolve";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
+import { chartSeriesSourceKey } from "../capabilities";
+import { buildCustomChartPreset } from "../plugins/builtin/chart-composer/presets";
 
 const emptyFinancials = (): TickerFinancials => ({
   annualStatements: [],
@@ -24,6 +31,255 @@ const fredLoad = (
 });
 
 describe("resolveChartSpecData", () => {
+  test("seeds study series so their panels survive the wait for real data", async () => {
+    const date = new Date("2026-01-05T00:00:00.000Z");
+    const seeded = seedChartResolutionResult(
+      {
+        version: CHART_SPEC_VERSION,
+        viewport: { range: "1M", resolution: "auto" },
+        panels: [{ id: "main" }, { id: "volume" }],
+        series: [{
+          id: "price",
+          source: {
+            kind: "security",
+            instrument: { symbol: "TEST", exchange: "NASDAQ" },
+            fieldId: "market.ohlcv",
+          },
+          style: "candles",
+          transform: "raw",
+          axis: "left",
+          panelId: "main",
+          interpolation: "none",
+        }],
+        studies: [{
+          id: "volume",
+          kind: "volume",
+          inputSeriesIds: ["price"],
+          parameters: {},
+          panelId: "volume",
+          axis: "left",
+        }],
+      },
+      new Map([[
+        chartQuoteOverrideKeyForSource({
+          kind: "security",
+          instrument: { symbol: "TEST", exchange: "NASDAQ" },
+          fieldId: "market.ohlcv",
+        }),
+        [{ date, open: 10, high: 12, low: 9, close: 11, volume: 5_000 }],
+      ]]),
+    );
+
+    const volume = seeded?.series.find((entry) => entry.panelId === "volume");
+    expect(volume?.points.map((point) => point.value)).toEqual([5_000]);
+    expect(seeded?.bufferedSeries).toBe(seeded?.series);
+  });
+
+  test("keeps study output over the whole buffered history its base series carries", async () => {
+    const history = Array.from({ length: 900 }, (_, day) => {
+      const date = new Date(Date.UTC(2024, 0, 1) + day * 86_400_000);
+      return date.getUTCDay() === 0 || date.getUTCDay() === 6
+        ? null
+        : { date, open: 100, high: 101, low: 99, close: 100 + (day % 7), volume: 1_000 + day };
+    }).filter((point): point is NonNullable<typeof point> => point !== null);
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => emptyFinancials(),
+      getChartResolutionSupport: () => [{ resolution: "1d", maxRange: "ALL" }],
+      getPriceHistoryForResolution: async () => history,
+      getDetailedPriceHistory: async () => history,
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1Y", resolution: "1d" },
+      panels: [{ id: "main" }, { id: "volume", label: "Volume", height: 0.24 }],
+      series: [{
+        id: "price",
+        source: {
+          kind: "security",
+          instrument: { symbol: "TEST", exchange: "NASDAQ" },
+          fieldId: "market.close",
+        },
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [{
+        id: "volume",
+        kind: "volume",
+        inputSeriesIds: ["price"],
+        parameters: {},
+        panelId: "volume",
+        axis: "left",
+      }],
+    };
+    const sources = {
+      dataProvider: provider,
+      now: new Date("2026-06-15T00:00:00.000Z"),
+      loadFredSeries: async () => fredLoad(),
+    };
+    const cache = new ChartResolveCache();
+
+    await resolveChartSpecData(spec, sources, cache);
+    // Panning back accumulates older bars into the buffer. The study has to
+    // follow, or it empties out wherever the base series has already been.
+    const panned = await resolveChartSpecData(spec, sources, cache, {
+      requestViewport: {
+        start: new Date("2024-02-01T00:00:00.000Z"),
+        end: new Date("2024-08-01T00:00:00.000Z"),
+      },
+    });
+
+    const span = (id: string) => {
+      const entry = panned.bufferedSeries?.find((candidate) => candidate.id === id);
+      return entry && entry.points.length > 0
+        ? {
+            first: entry.points[0]!.date.toISOString(),
+            last: entry.points.at(-1)!.date.toISOString(),
+          }
+        : null;
+    };
+    expect(span("volume")).toEqual(span("price"));
+  });
+
+  test("routes futures and Treasury aliases through the existing market and FRED pipelines", async () => {
+    const marketRequests: string[] = [];
+    const fredRequests: string[] = [];
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => emptyFinancials(),
+      getPriceHistoryForResolution: async (symbol) => {
+        marketRequests.push(symbol);
+        return [{ date: new Date("2026-02-01T00:00:00Z"), close: 6_100 }];
+      },
+    });
+
+    const result = await resolveChartSpecData(
+      buildCustomChartPreset("FUT:ES, UST:10Y"),
+      {
+        dataProvider: provider,
+        now: new Date("2026-03-01T00:00:00Z"),
+        loadFredSeries: async ({ seriesId }) => {
+          fredRequests.push(seriesId);
+          return fredLoad({
+            observations: [{ date: "2026-02-01", value: 4.25 }],
+            info: null,
+          });
+        },
+      },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(marketRequests).toEqual(["ES=F"]);
+    expect(fredRequests).toEqual(["DGS10"]);
+    expect(result.series.map((series) => series.points[0]?.value ?? series.points[0]?.close))
+      .toEqual([6_100, 4.25]);
+  });
+
+  test("keeps missing capability series visible with a useful error and resolves them through the injected boundary", async () => {
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1M", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "plugin-series",
+        source: { kind: "capability", capabilityId: "charts.test", seriesId: "one" },
+        style: "area",
+        transform: "raw",
+        axis: "auto",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+    const sources = { dataProvider: null, loadFredSeries: async () => fredLoad(), now: new Date("2026-02-01") };
+    const missing = await resolveChartSpecData(spec, sources);
+    expect(missing.series).toHaveLength(1);
+    expect(missing.series[0]?.points).toEqual([]);
+    expect(missing.errors[0]).toContain('Chart series capability "charts.test" is unavailable');
+
+    const resolved = await resolveChartSpecData(spec, {
+      ...sources,
+      resolveCapabilitySeries: async () => ({
+        id: "provider-id",
+        label: "Provider Label",
+        color: "#fff",
+        unit: "value",
+        unitGroup: "value",
+        nativeFrequency: "daily",
+        dataShape: "scalar",
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "provider",
+        interpolation: "none",
+        points: [{ date: new Date("2026-01-15"), observedAt: new Date("2026-01-15"), value: 42 }],
+      }),
+    });
+    expect(resolved.errors).toEqual([]);
+    expect(resolved.series[0]).toMatchObject({ id: "plugin-series", style: "area", panelId: "main" });
+    expect(resolved.series[0]?.points[0]?.value).toBe(42);
+  });
+
+  test("resolves capability coverage for each effective panned viewport and caches by structured bounds", async () => {
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1M", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "plugin-series",
+        source: { kind: "capability", capabilityId: "charts.test", seriesId: "provider/series" },
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+    const requested: ChartSpec["viewport"][] = [];
+    const cache = new ChartResolveCache();
+    const sources = {
+      dataProvider: null,
+      loadFredSeries: async () => fredLoad(),
+      now: new Date("2026-03-01T00:00:00.000Z"),
+      resolveCapabilitySeries: async (_source: any, viewport: ChartSpec["viewport"]) => {
+        requested.push(viewport);
+        const date = new Date(viewport.dateWindow!.start);
+        return {
+          id: "provider",
+          label: "Provider",
+          color: "#ffffff",
+          unit: "value",
+          unitGroup: "value",
+          nativeFrequency: "daily" as const,
+          dataShape: "scalar" as const,
+          style: "line" as const,
+          transform: "raw" as const,
+          axis: "left" as const,
+          panelId: "main",
+          interpolation: "none" as const,
+          points: [{ date, observedAt: date, value: 1 }],
+        };
+      },
+    };
+    const firstViewport = { start: new Date("2026-01-01T00:00:00.000Z"), end: new Date("2026-01-08T00:00:00.000Z") };
+    const secondViewport = { start: new Date("2026-02-01T00:00:00.000Z"), end: new Date("2026-02-08T00:00:00.000Z") };
+
+    await resolveChartSpecData(spec, sources, cache, { requestViewport: firstViewport });
+    const panned = await resolveChartSpecData(spec, sources, cache, { requestViewport: secondViewport });
+    await resolveChartSpecData(spec, sources, cache, { requestViewport: firstViewport });
+
+    expect(panned.series[0]?.points[0]?.date.toISOString()).toBe(secondViewport.start.toISOString());
+    expect(panned.viewport).toEqual(secondViewport);
+    expect(requested.map((viewport) => viewport.dateWindow)).toEqual([
+      { start: firstViewport.start.toISOString(), end: firstViewport.end.toISOString() },
+      { start: secondViewport.start.toISOString(), end: secondViewport.end.toISOString() },
+    ]);
+    expect(chartSeriesSourceKey({ kind: "capability", capabilityId: "a", seriesId: "b:c" }))
+      .not.toBe(chartSeriesSourceKey({ kind: "capability", capabilityId: "a-b", seriesId: "c" }));
+  });
+
   test("derives Auto fetch resolution from the finest explicit market period", async () => {
     const cases = [
       { range: "ALL" as const, periods: ["daily", "monthly"] as const, expected: "1d" },
@@ -70,6 +326,62 @@ describe("resolveChartSpecData", () => {
       expect(result.errors).toEqual([]);
       expect(new Set(requestedResolutions)).toEqual(new Set([scenario.expected]));
     }
+  });
+
+  test("skips financials and broker resolution support for ohlcv charts with an exchange", async () => {
+    let financialCalls = 0;
+    let resolveSupport: (() => void) | null = null;
+    const supportGate = new Promise<void>((resolve) => {
+      resolveSupport = resolve;
+    });
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => {
+        financialCalls += 1;
+        return emptyFinancials();
+      },
+      getChartResolutionSupport: async () => {
+        await supportGate;
+        return [{ resolution: "1d" as const, maxRange: "5Y" as const }];
+      },
+      getPriceHistoryForResolution: async () => [
+        { date: new Date("2025-01-07T16:00:00Z"), close: 100 },
+      ],
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "5Y", resolution: "auto" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "price",
+        source: {
+          kind: "security",
+          instrument: { symbol: "TEST", exchange: "NASDAQ" },
+          fieldId: "market.ohlcv",
+        },
+        style: "candles",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+
+    const result = await Promise.race([
+      resolveChartSpecData(spec, {
+        dataProvider: provider,
+        now: new Date("2025-01-08T00:00:00Z"),
+        loadFredSeries: async () => fredLoad(),
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("hung waiting for broker resolution support")), 200);
+      }),
+    ]);
+
+    expect(financialCalls).toBe(0);
+    expect(result.errors).toEqual([]);
+    expect(result.series[0]?.points).toHaveLength(1);
+    resolveSupport?.();
   });
 
   test("does not relabel provider-default history as a manually requested resolution", async () => {
@@ -452,8 +764,8 @@ describe("resolveChartSpecData", () => {
     expect(detailedRequests).toHaveLength(1);
     expect(detailedRequests[0]?.resolution).toBe("15m");
     expect(detailedRequests[0]?.end).toBe("2025-01-17T00:00:00.001Z");
-    expect(result.viewport?.start.toISOString()).toBe("2025-01-01T00:00:00.000Z");
-    expect(result.viewport?.end.toISOString()).toBe("2025-04-01T00:00:00.000Z");
+    expect(result.viewport?.start.toISOString()).toBe("2025-01-10T00:00:00.000Z");
+    expect(result.viewport?.end.toISOString()).toBe("2025-01-17T00:00:00.000Z");
     expect(result.series[0]?.timeBasis).toMatchObject({
       kind: "market",
       timeZone: "America/New_York",
@@ -540,6 +852,70 @@ describe("resolveChartSpecData", () => {
     ]);
     expect(bufferedDates(revisitedCurrent)).toEqual(bufferedDates(historical));
     expect(revisitedCurrent.bufferedSeries?.[0]?.points.at(-1)?.value).toBe(120);
+  });
+
+  test("keeps one daily bar per session when windows come from sources that stamp bars differently", async () => {
+    // The trailing window is stamped at the opening bell, the panned window at
+    // local midnight, so the same sessions arrive with timestamps hours apart.
+    const currentHistory = [
+      { date: new Date("2026-07-28T13:30:00.000Z"), close: 110 },
+      { date: new Date("2026-07-29T13:30:00.000Z"), close: 115 },
+      { date: new Date("2026-07-30T13:30:00.000Z"), close: 120 },
+    ];
+    const historicalHistory = [
+      { date: new Date("2026-07-23T22:00:00.000Z"), close: 100 },
+      { date: new Date("2026-07-27T22:00:00.000Z"), close: 111 },
+      { date: new Date("2026-07-28T22:00:00.000Z"), close: 116 },
+      { date: new Date("2026-07-29T22:00:00.000Z"), close: 121 },
+    ];
+    const provider = createTestDataProvider({
+      getTickerFinancials: async () => emptyFinancials(),
+      getChartResolutionSupport: () => [{ resolution: "1d", maxRange: "ALL" }],
+      getPriceHistoryForResolution: async () => currentHistory,
+      getDetailedPriceHistory: async () => historicalHistory,
+    });
+    const spec: ChartSpec = {
+      version: CHART_SPEC_VERSION,
+      viewport: { range: "1Y", resolution: "1d" },
+      panels: [{ id: "main" }],
+      series: [{
+        id: "price",
+        source: {
+          kind: "security",
+          instrument: { symbol: "TEST", exchange: "NASDAQ" },
+          fieldId: "market.close",
+        },
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [],
+    };
+    const sources = {
+      dataProvider: provider,
+      now: new Date("2026-07-30T16:00:00.000Z"),
+      loadFredSeries: async () => fredLoad(),
+    };
+    const cache = new ChartResolveCache();
+
+    await resolveChartSpecData(spec, sources, cache);
+    const panned = await resolveChartSpecData(spec, sources, cache, {
+      requestViewport: {
+        start: new Date("2026-07-20T00:00:00.000Z"),
+        end: new Date("2026-07-30T16:00:00.000Z"),
+      },
+    });
+
+    const points = panned.bufferedSeries?.[0]?.points ?? [];
+    expect(points.map((point) => point.date.toISOString())).toEqual([
+      "2026-07-23T22:00:00.000Z",
+      "2026-07-28T13:30:00.000Z",
+      "2026-07-29T13:30:00.000Z",
+      "2026-07-30T13:30:00.000Z",
+    ]);
+    expect(points.map((point) => point.value)).toEqual([100, 110, 115, 120]);
   });
 
   test("keeps percent transforms and studies defined in a panned history window", async () => {
@@ -1308,6 +1684,26 @@ describe("resolveChartSpecData", () => {
     const result = await resolveChartSpecData(spec, {
       dataProvider: provider,
       now: new Date(now),
+      quoteOverrides: new Map([[
+        chartQuoteOverrideKeyForSource({
+          kind: "security",
+          instrument: { symbol: "FRESH", exchange: "XNAS" },
+          fieldId: "market.ohlcv",
+        }),
+        {
+          symbol: "FRESH",
+          price: 130,
+          currency: "USD",
+          change: 30,
+          changePercent: 30,
+          lastUpdated: quoteTime,
+          listingExchangeName: "XNAS",
+          marketState: "POST",
+          postMarketPrice: 129,
+          postMarketChange: -1,
+          postMarketChangePercent: -0.77,
+        },
+      ]]),
       loadFredSeries: async () => fredLoad(),
     });
 
@@ -1775,61 +2171,51 @@ describe("resolveChartSpecData", () => {
 });
 
 describe("mergePriceHistoryWindows", () => {
-  const pp = (date: string, close: number) => ({ date: new Date(date), close });
+  const legacyMerge = (
+    current: TickerFinancials["priceHistory"],
+    incoming: TickerFinancials["priceHistory"],
+    resolution: "1h" | "1d",
+  ) => {
+    const byTimestamp = new Map<number, TickerFinancials["priceHistory"][number]>();
+    for (const point of [...current, ...incoming]) {
+      const timestamp = point.date.getTime();
+      if (Number.isFinite(timestamp)) byTimestamp.set(timestamp, point);
+    }
+    const sorted = [...byTimestamp.values()].sort((left, right) => left.date.getTime() - right.date.getTime());
+    if (resolution === "1h") return sorted;
+    const plotted = new Set(current.map((point) => point.date.getTime()));
+    const merged: TickerFinancials["priceHistory"] = [];
+    for (const point of sorted) {
+      const previous = merged.at(-1);
+      if (!previous || point.date.getTime() - previous.date.getTime() >= 86_400_000 * 0.8) {
+        merged.push(point);
+      } else if (!plotted.has(previous.date.getTime()) && plotted.has(point.date.getTime())) {
+        merged[merged.length - 1] = point;
+      }
+    }
+    return merged;
+  };
 
-  test("merges two non-overlapping sorted windows in order", () => {
-    const current = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-03T00:00:00Z", 102)];
-    const incoming = [pp("2025-01-02T00:00:00Z", 101), pp("2025-01-04T00:00:00Z", 103)];
-    const merged = mergePriceHistoryWindows(current, incoming);
-    expect(merged.map((p) => p.date.getTime())).toEqual([
-      Date.parse("2025-01-01T00:00:00Z"),
-      Date.parse("2025-01-02T00:00:00Z"),
-      Date.parse("2025-01-03T00:00:00Z"),
-      Date.parse("2025-01-04T00:00:00Z"),
-    ]);
-  });
-
-  test("incoming overrides current for overlapping timestamps", () => {
-    const current = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-02T00:00:00Z", 200)];
-    const incoming = [pp("2025-01-02T00:00:00Z", 101), pp("2025-01-03T00:00:00Z", 103)];
-    const merged = mergePriceHistoryWindows(current, incoming);
-    expect(merged).toHaveLength(3);
-    expect(merged.find((p) => p.date.getTime() === Date.parse("2025-01-02T00:00:00Z"))?.close).toBe(101);
-  });
-
-  test("creates a Date instance for points missing one", () => {
-    const current = [{ date: "2025-01-01T00:00:00Z" as unknown as Date, close: 100 }];
-    const incoming: TickerFinancials["priceHistory"] = [];
-    const merged = mergePriceHistoryWindows(current, incoming);
-    expect(merged).toHaveLength(1);
-    expect(merged[0]!.date).toBeInstanceOf(Date);
-    expect(merged[0]!.date.getTime()).toBe(Date.parse("2025-01-01T00:00:00Z"));
-  });
-
-  test("drops points with non-finite timestamps", () => {
-    const current = [
-      { date: new Date(Number.NaN), close: 100 },
-      pp("2025-01-02T00:00:00Z", 102),
+  test("linear merge matches the prior merge for overlaps, duplicates, and unsorted fallback", () => {
+    const point = (date: string, close: number) => ({ date: new Date(date), close });
+    const sortedCurrent = [
+      point("2026-07-28T13:30:00Z", 110),
+      point("2026-07-29T13:30:00Z", 115),
+      point("2026-07-29T13:30:00Z", 116),
+      point("2026-07-30T13:30:00Z", 120),
     ];
-    const incoming = [pp("2025-01-01T00:00:00Z", 101)];
-    const merged = mergePriceHistoryWindows(current, incoming);
-    expect(merged).toHaveLength(2);
-    expect(merged.map((p) => p.date.getTime())).toEqual([
-      Date.parse("2025-01-01T00:00:00Z"),
-      Date.parse("2025-01-02T00:00:00Z"),
-    ]);
-  });
+    const incoming = [
+      point("2026-07-27T22:00:00Z", 111),
+      point("2026-07-29T13:30:00Z", 999),
+      point("2026-07-29T22:00:00Z", 121),
+    ];
 
-  test("merges empty current with non-empty incoming", () => {
-    const incoming = [pp("2025-01-01T00:00:00Z", 100), pp("2025-01-02T00:00:00Z", 101)];
-    const merged = mergePriceHistoryWindows([], incoming);
-    expect(merged.map((p) => p.date.getTime())).toEqual([
-      Date.parse("2025-01-01T00:00:00Z"),
-      Date.parse("2025-01-02T00:00:00Z"),
-    ]);
-  });
-
-  test("returns empty for two empty arrays", () => {
-    expect(mergePriceHistoryWindows([], [])).toEqual([]);
+    for (const current of [sortedCurrent, [...sortedCurrent].reverse()]) {
+      for (const resolution of ["1h", "1d"] as const) {
+        expect(mergePriceHistoryWindows(current, incoming, resolution)).toEqual(
+          legacyMerge(current, incoming, resolution),
+        );
+      }
+    }
   });
 });

@@ -10,6 +10,7 @@ import {
   cloneLayout,
   createDefaultConfig,
   CURRENT_CONFIG_VERSION,
+  getPlacedPaneInstanceIds,
   withAdjacentDefaultWorkspace,
 } from "../../../types/config";
 import type { Portfolio, Watchlist } from "../../../types/ticker";
@@ -18,6 +19,7 @@ import { sanitizeFontFamily } from "../../../theme/font-family";
 import { clampFontSize } from "../../../theme/font-scale";
 import { isLayoutConfig, sanitizeLayout } from "../layout";
 import { migrateSavedConfig } from "./migrations";
+import { normalizeTickerSearchShortcut } from "../ticker-search-shortcut";
 
 export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: string): { config: AppConfig; needsSave: boolean } {
   const defaults = createDefaultConfig(dataDir);
@@ -41,19 +43,19 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
       ? candidate.onboardingComplete
       : defaults.onboardingComplete;
 
-  const watchlists = sanitizeWatchlists(candidate.watchlists, defaults.watchlists);
-  const config = withAdjacentDefaultWorkspace({
+  const config: AppConfig = {
     dataDir,
     configVersion: CURRENT_CONFIG_VERSION,
     baseCurrency: typeof candidate.baseCurrency === "string" ? candidate.baseCurrency : defaults.baseCurrency,
     refreshIntervalMinutes: typeof candidate.refreshIntervalMinutes === "number" ? candidate.refreshIntervalMinutes : defaults.refreshIntervalMinutes,
     portfolios: sanitizePortfolios(candidate.portfolios, defaults.portfolios),
-    watchlists,
+    watchlists: sanitizeWatchlists(candidate.watchlists, defaults.watchlists),
     layout,
     layouts: syncedLayouts,
     activeLayoutIndex,
     brokerInstances: sanitizeBrokerInstances(candidate.brokerInstances),
     disabledPlugins,
+    seededPlugins: sanitizeUniqueStringList(candidate.seededPlugins ?? defaults.seededPlugins),
     disabledSources: sanitizeUniqueStringList(candidate.disabledSources ?? defaults.disabledSources),
     pluginConfig: sanitizePluginConfig(candidate.pluginConfig),
     theme: typeof candidate.theme === "string" ? candidate.theme : defaults.theme,
@@ -63,15 +65,17 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     fontSize: sanitizeFontSize(candidate.fontSize, defaults.fontSize),
     fontFamily: sanitizeFontFamily(candidate.fontFamily),
     recentTickers: sanitizeStringArray(candidate.recentTickers, defaults.recentTickers),
+    tickerSearchShortcut: normalizeTickerSearchShortcut(candidate.tickerSearchShortcut),
     language: isLanguagePreference(candidate.language) ? candidate.language : undefined,
     onboardingComplete,
     onboardingProgress,
     lastLaunchedVersion: typeof candidate.lastLaunchedVersion === "string" ? candidate.lastLaunchedVersion : undefined,
-  });
+  };
 
+  const restored = withAdjacentDefaultWorkspace(config);
   const adjacentRestored =
-    config.layouts.length !== syncedLayouts.length
-    || config.watchlists.length !== watchlists.length;
+    restored.layouts.length !== config.layouts.length
+    || restored.watchlists.length !== config.watchlists.length;
 
   const needsSave =
     migration.migrated
@@ -85,13 +89,14 @@ export function normalizeLoadedConfig(saved: Record<string, unknown>, dataDir: s
     || !isPluginConfigMap(candidate.pluginConfig)
     || !isChartPreferences(candidate.chartPreferences)
     || (candidate.language !== undefined && !isLanguagePreference(candidate.language))
+    || (candidate.tickerSearchShortcut !== undefined && !normalizeTickerSearchShortcut(candidate.tickerSearchShortcut))
     || (candidate.onboardingProgress !== undefined && !sanitizeOnboardingProgress(candidate.onboardingProgress))
     || (isPlainRecord(candidate.onboardingProgress) && candidate.onboardingProgress.stage === "open-security")
     || (!!onboardingProgress && candidate.onboardingComplete !== false)
     || typeof candidate.valueFlashingEnabled !== "boolean"
     || typeof candidate.activeLayoutIndex !== "number";
 
-  return { config, needsSave };
+  return { config: restored, needsSave };
 }
 
 export function normalizeConfigForSave(config: AppConfig): AppConfig {
@@ -121,9 +126,11 @@ export function normalizeConfigForSave(config: AppConfig): AppConfig {
     pluginConfig: sanitizePluginConfig(config.pluginConfig),
     chartPreferences: sanitizeChartPreferences(config.chartPreferences, defaults.chartPreferences),
     valueFlashingEnabled: config.valueFlashingEnabled !== false,
+    autoRefreshInterval: config.autoRefreshInterval,
     fontSize: sanitizeFontSize(config.fontSize, defaults.fontSize),
     fontFamily: sanitizeFontFamily(config.fontFamily),
     recentTickers: sanitizeStringArray(config.recentTickers, []),
+    tickerSearchShortcut: normalizeTickerSearchShortcut(config.tickerSearchShortcut),
     onboardingComplete: onboardingProgress ? false : config.onboardingComplete,
     onboardingProgress,
   };
@@ -316,15 +323,16 @@ function sanitizeSavedLayouts(
     )
     .map((entry) => {
       const layout = sanitizeLayout(entry.layout, fallbackLayout);
+      const placedPaneIds = new Set(getPlacedPaneInstanceIds(layout));
       const paneState = sanitizeSavedPaneState((entry as { paneState?: unknown }).paneState, layout);
       return {
         id: typeof entry.id === "string" ? entry.id : undefined,
         name: entry.name,
         layout,
         paneState,
-        focusedPaneId: typeof entry.focusedPaneId === "string" || entry.focusedPaneId === null
-          ? entry.focusedPaneId
-          : undefined,
+        focusedPaneId: typeof entry.focusedPaneId === "string"
+          ? placedPaneIds.has(entry.focusedPaneId) ? entry.focusedPaneId : null
+          : entry.focusedPaneId === null ? null : undefined,
         activePanel: entry.activePanel === "right" || entry.activePanel === "left"
           ? entry.activePanel
           : undefined,

@@ -1,4 +1,8 @@
 import { join } from "path";
+import {
+  connectionHealth,
+  registerGloomCloudConnectionSources,
+} from "./connection-health";
 import { AppPersistence } from "../data/app-persistence";
 import { TickerRepository } from "../data/ticker-repository";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../market-data/coordinator";
@@ -11,7 +15,7 @@ import { assetDataProvider, newsProvider } from "../capabilities";
 import type { DataProvider } from "../types/data-provider";
 import { debugLog } from "../utils/debug-log";
 import { measurePerf, measurePerfAsync } from "../utils/perf-marks";
-import { setIbkrPortfolioPerformanceResourceStore } from "../plugins/ibkr/portfolio-performance";
+import { setPluginResourceStore } from "../public/broker";
 import type { AppRuntimeServices, AppServicesFactoryOptions } from "./app-service-ports";
 
 const servicesLog = debugLog.createLogger("services");
@@ -39,15 +43,18 @@ export function createAppServices({
   });
   const dbPath = join(config.dataDir, ".gloomberb-cache.db");
   const persistence = measurePerf("startup.services.persistence", () => new AppPersistence(dbPath));
-  setIbkrPortfolioPerformanceResourceStore(persistence.resources);
+  setPluginResourceStore(persistence.resources);
   const tickerRepository = measurePerf("startup.services.ticker-repository", () => new TickerRepository(persistence.tickers));
-  const providerRouter = measurePerf("startup.services.asset-data-router", () => new AssetDataRouter(null, [], persistence.resources));
+  const disposeCloudConnectionSources = registerGloomCloudConnectionSources(connectionHealth);
+  const providerRouter = measurePerf("startup.services.asset-data-router", () => (
+    new AssetDataRouter(null, [], persistence.resources, connectionHealth)
+  ));
   const dataProvider: DataProvider = providerRouter;
   const marketData = new MarketDataCoordinator(dataProvider);
-  const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence);
-  pluginRegistry.getConfigFn = () => config;
+  const pluginRegistry = new PluginRegistry(dataProvider, tickerRepository, persistence, { connectionHealth });
   const newsService = new NewsService({
-    pollIntervalMs: () => newsPollIntervalMsFromMinutes(pluginRegistry.getConfigFn().refreshIntervalMinutes),
+    connectionHealth,
+    pollIntervalMs: () => Math.max(1, config.refreshIntervalMinutes) * 60 * 1000,
   });
   pluginRegistry.capabilities.register("core", assetDataProvider(providerRouter));
   pluginRegistry.capabilities.register("core", {
@@ -66,6 +73,7 @@ export function createAppServices({
   });
 
   providerRouter.attachRegistry(pluginRegistry);
+  pluginRegistry.getConfigFn = () => config;
   pluginRegistry.getLayoutFn = () => config.layout;
   pluginRegistry.registerNewsCapabilityFn = (capability) => newsService.register(capability);
   pluginRegistry.watchNewsQueryFn = (query, listener) => newsService.watchQuery(query, listener);
@@ -80,7 +88,12 @@ export function createAppServices({
       entryFile
         ? pluginRegistry.registerExternalPlugin(plugin, entryFile)
         : pluginRegistry.register(plugin)
-    ), { pluginId: plugin.id }));
+    ), { pluginId: plugin.id }).catch((error: unknown) => {
+      servicesLog.error("plugin register failed", {
+        pluginId: plugin.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }));
   }
   measurePerf("startup.services.news-start", () => {
     newsService.start();
@@ -101,7 +114,8 @@ export function createAppServices({
       setSharedNewsService(null);
       newsService.stop();
       pluginRegistry.destroy();
-      setIbkrPortfolioPerformanceResourceStore(null);
+      disposeCloudConnectionSources();
+      setPluginResourceStore(null);
       persistence.close();
     },
   };

@@ -17,6 +17,7 @@ import { DetachedPaneShell } from "./components/layout/detached-pane-shell";
 import { TransientLayoutProvider } from "./components/layout/transient-layout";
 import { CommandBar } from "./components/command-bar/surface";
 import { OnboardingWizard } from "./components/onboarding/onboarding-wizard";
+import { SignInGate } from "./components/sign-in-gate";
 import { useDialog } from "./ui/dialog";
 import { PluginRegistry } from "./plugins/registry";
 import type { LoadedExternalPlugin } from "./plugins/loader";
@@ -24,7 +25,7 @@ import type { AppServicesFactory, AppTickerRepositoryPort } from "./core/app-ser
 import { useThemeColors } from "./theme/theme-context";
 import type { AppConfig } from "./types/config";
 import type { DesktopDeepLinkBridge } from "./types/desktop-deeplink";
-import type { CliLaunchRequest } from "./types/plugin";
+import type { CliLaunchRequest, GloomPlugin } from "./types/plugin";
 import type { DataProvider } from "./types/data-provider";
 import type { DesktopDockPreviewState, DesktopSharedStateSnapshot, DesktopThemePreviewState, DesktopWindowBridge } from "./types/desktop-window";
 import type { DesktopApplicationMenuBridge } from "./types/desktop-menu";
@@ -32,7 +33,6 @@ import type { LayoutBounds } from "./plugins/pane-manager";
 import type { AppSessionSnapshot } from "./core/state/session-persistence";
 import type { MarketDataCoordinator } from "./market-data/coordinator";
 import { createAppNotifier } from "./notifications/app-notifier";
-import { getLoadablePlugins } from "./plugins/catalog";
 import { useBrokerImportRuntime } from "./app/runtime/broker-import";
 import { useDesktopDeepLinkRuntime } from "./app/runtime/desktop-deeplink";
 import { useDesktopApplicationMenuRuntime } from "./app/runtime/desktop-menu";
@@ -56,11 +56,14 @@ import { scheduleConfigSave } from "./state/config-save-scheduler";
 import { measurePerf } from "./utils/perf-marks";
 import { useAppLanguage } from "./i18n/react";
 import { AppLanguageConfigObserver } from "./app/language-observer";
-import { isPublicShareLocation, isShareTerminalHandoff } from "./plugins/builtin/shared/share-link";
+import { isPaneShareHandoff } from "./shares/location";
+import { apiClient } from "./api-client";
+import { isPublicShareLocation } from "./plugins/builtin/shared/share-link";
 
 const EMPTY_EXTERNAL_PLUGINS: LoadedExternalPlugin[] = [];
 
 interface AppInnerProps {
+  externalPlugins: readonly LoadedExternalPlugin[];
   pluginRegistry: PluginRegistry;
   tickerRepository: AppTickerRepositoryPort;
   dataProvider: DataProvider;
@@ -70,9 +73,12 @@ interface AppInnerProps {
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
   desktopDeepLinkBridge?: DesktopDeepLinkBridge;
   remoteControlAdapter?: RemoteControlAdapter;
+  updatesEnabled?: boolean;
   onboardingActive?: boolean;
   requireAccount?: boolean;
   onOnboardingComplete?: (config: AppConfig) => void | Promise<void>;
+  /** Hosted browser terminal: nothing is reachable until a session exists. */
+  signInGateActive?: boolean;
 }
 
 function ThemedAppRoot({ children }: { children: ReactNode }) {
@@ -94,6 +100,7 @@ function ThemedAppRoot({ children }: { children: ReactNode }) {
 }
 
 function AppInner({
+  externalPlugins,
   pluginRegistry,
   tickerRepository,
   dataProvider,
@@ -103,9 +110,11 @@ function AppInner({
   desktopApplicationMenuBridge,
   desktopDeepLinkBridge,
   remoteControlAdapter,
+  updatesEnabled = true,
   onboardingActive = false,
   requireAccount = false,
   onOnboardingComplete,
+  signInGateActive = false,
 }: AppInnerProps) {
   const dispatch = useAppDispatch();
   const stateRef = useAppStateRef();
@@ -161,18 +170,27 @@ function AppInner({
     renderToast: (notification) => {
       const type = notification.type ?? "info";
       let toastId: string | number | undefined;
+      const dismissAfter = (run: () => void) => () => {
+        try {
+          run();
+        } finally {
+          if (toastId != null) toast.dismiss(toastId);
+        }
+      };
       const options = {
-        duration: notification.duration,
+        title: notification.title,
+        subtitle: notification.subtitle,
+        duration: notification.persistent ? 0 : notification.duration,
         action: notification.action
           ? {
             label: notification.action.label,
-            onClick: () => {
-              try {
-                notification.action?.onClick();
-              } finally {
-                if (toastId != null) toast.dismiss(toastId);
-              }
-            },
+            onClick: dismissAfter(() => notification.action?.onClick()),
+          }
+          : undefined,
+        secondaryAction: notification.secondaryAction
+          ? {
+            label: notification.secondaryAction.label,
+            onClick: dismissAfter(() => notification.secondaryAction?.onClick()),
           }
           : undefined,
       };
@@ -226,6 +244,7 @@ function AppInner({
   });
 
   const { runUpdateCheck, startUpdate } = useAppUpdateRuntime({
+    enabled: updatesEnabled,
     dispatch,
     isDetachedWindow,
     pluginRegistry,
@@ -249,6 +268,10 @@ function AppInner({
     desktopDeepLinkBridge,
     desktopWindowKind: desktopWindowBridge?.kind,
     dispatch,
+    // The browser bridge re-emits from the URL on subscribe and nothing rewrites
+    // it, so a `?layout=` / `?share=` intent survives the gate and lands once a
+    // session exists. Running it earlier would only 401 behind the scrim.
+    initialized: state.initialized && !signInGateActive,
     pluginRegistry,
     stateRef,
   });
@@ -314,7 +337,7 @@ function AppInner({
     importBrokerPositions,
     marketData,
     pluginRegistry,
-    state,
+    stateRef,
     tickerRepository,
   });
 
@@ -329,16 +352,23 @@ function AppInner({
     // onboarding finishes, the normal pull-before-push sync starts immediately.
     initialized: state.initialized
       && desktopWindowBridge?.kind !== "detached"
-      && !onboardingActive,
+      && !onboardingActive
+      && !signInGateActive,
   });
+
+  const persistConfig = useCallback((nextConfig: AppState["config"]) => {
+    scheduleConfigSave(nextConfig);
+  }, []);
 
   useAppPaneRuntime({
     dataProvider,
     detachedPaneId,
     dialog,
     dispatch,
+    externalPlugins,
     isDetachedWindow,
     notify,
+    persistConfig,
     pluginRegistry,
     state,
     stateRef,
@@ -429,7 +459,13 @@ function AppInner({
                 desktopDockPreview={desktopDockPreview}
                 commandBarNativeOccluder={commandBarNativeOccluder}
               />
-              <StatusBar />
+              <StatusBar
+                onOpenChangelog={(version) => {
+                  void pluginRegistry.createPaneFromTemplateAsyncFn("changelog-pane", {
+                    values: { version },
+                  }).catch(() => {});
+                }}
+              />
             </Box>
           </TransientLayoutProvider>
           {onboardingActive && onOnboardingComplete ? (
@@ -440,13 +476,14 @@ function AppInner({
               onComplete={onOnboardingComplete}
             />
           ) : null}
+          {signInGateActive ? <SignInGate /> : null}
           {state.commandBarOpen && (
             <CommandBar
               dataProvider={dataProvider}
               tickerRepository={tickerRepository}
               pluginRegistry={pluginRegistry}
               quitApp={() => rendererHost.requestExit()}
-              onCheckForUpdates={() => runUpdateCheck(true)}
+              onCheckForUpdates={updatesEnabled ? () => runUpdateCheck(true) : undefined}
               onNativeOccluderChange={setCommandBarNativeOccluder}
             />
           )}
@@ -461,6 +498,7 @@ interface AppProps {
   config: AppConfig;
   servicesFactory: AppServicesFactory;
   externalPlugins?: LoadedExternalPlugin[];
+  plugins: readonly GloomPlugin[];
   cliLaunchRequest?: CliLaunchRequest | null;
   desktopWindowBridge?: DesktopWindowBridge;
   desktopApplicationMenuBridge?: DesktopApplicationMenuBridge;
@@ -468,14 +506,19 @@ interface AppProps {
   desktopSnapshot?: DesktopSharedStateSnapshot | null;
   desktopThemePreview?: DesktopThemePreviewState | null;
   remoteControlAdapter?: RemoteControlAdapter;
-  /** Force the user to create/sign in to an account before the workspace opens. */
-  requireAccount?: boolean;
+  updatesEnabled?: boolean;
+  /**
+   * Requires a Gloom Cloud session before the app is usable. The hosted browser
+   * terminal sets this; desktop and the TUI keep sign-in optional.
+   */
+  requireSignIn?: boolean;
 }
 
 export function App({
   config: initialConfig,
   servicesFactory,
   externalPlugins: providedExternalPlugins,
+  plugins,
   cliLaunchRequest = null,
   desktopWindowBridge,
   desktopApplicationMenuBridge,
@@ -483,7 +526,8 @@ export function App({
   desktopSnapshot = null,
   desktopThemePreview = null,
   remoteControlAdapter,
-  requireAccount: requireAccountProp = false,
+  updatesEnabled = true,
+  requireSignIn = false,
 }: AppProps) {
   useAppLanguage();
   const externalPlugins = providedExternalPlugins ?? EMPTY_EXTERNAL_PLUGINS;
@@ -508,11 +552,20 @@ export function App({
   const [config, setConfig] = useState(() => {
     return initialCliLaunch.config;
   });
-  const publicShare = isPublicShareLocation();
-  const shareHandoff = isShareTerminalHandoff();
+  // Only the surfaces that require a session subscribe, so desktop and the
+  // terminal keep their current render profile.
+  const [signedIn, setSignedIn] = useState(() => !requireSignIn || apiClient.isSignedIn());
+  useEffect(() => {
+    if (!requireSignIn) return;
+    const sync = () => setSignedIn(apiClient.isSignedIn());
+    sync();
+    return apiClient.subscribeCurrentUser(sync);
+  }, [requireSignIn]);
+  const signInGateActive = requireSignIn && !signedIn;
+  const shareHandoff = isPaneShareHandoff();
   const [showOnboarding, setShowOnboarding] = useState(() => (
     desktopWindowBridge?.kind !== "detached"
-    && !publicShare
+    && !shareHandoff
     && (!effectiveInitialConfig.onboardingComplete || !!effectiveInitialConfig.onboardingProgress)
   ));
 
@@ -532,7 +585,7 @@ export function App({
     return measurePerf("startup.app.create-services", () => (
       servicesFactory({
         config,
-        plugins: getLoadablePlugins(externalPlugins),
+        plugins,
         externalPluginPaths,
       })
     ), {
@@ -540,7 +593,7 @@ export function App({
       disabledPluginCount: config.disabledPlugins.length,
       brokerInstanceCount: config.brokerInstances.length,
     });
-  }, [config.dataDir, externalPlugins, externalPluginPaths, servicesFactory]);
+  }, [config.dataDir, externalPlugins, externalPluginPaths, plugins, servicesFactory]);
 
   useEffect(() => {
     return () => services.destroy();
@@ -569,6 +622,7 @@ export function App({
       >
         <AppLanguageConfigObserver />
         <AppInner
+          externalPlugins={externalPlugins}
           pluginRegistry={services.pluginRegistry}
           tickerRepository={services.tickerRepository}
           dataProvider={services.dataProvider}
@@ -578,8 +632,10 @@ export function App({
           desktopApplicationMenuBridge={desktopApplicationMenuBridge}
           desktopDeepLinkBridge={desktopDeepLinkBridge}
           remoteControlAdapter={remoteControlAdapter}
+          updatesEnabled={updatesEnabled}
           onboardingActive={showOnboarding}
-          requireAccount={shareHandoff || requireAccountProp}
+          requireAccount={shareHandoff}
+          signInGateActive={signInGateActive}
           onOnboardingComplete={(updatedConfig) => {
             setConfig(updatedConfig);
             setShowOnboarding(false);

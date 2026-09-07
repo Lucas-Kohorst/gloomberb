@@ -10,12 +10,6 @@ import { createDefaultConfig } from "../../types/config";
 import { Box, Text } from "../../ui";
 import { DataTableView } from "./view";
 import type { DataTableCell, DataTableColumn } from "../ui";
-import {
-  getActivePaneCsvSnapshot,
-  PANE_CSV_MAX_ROWS,
-  resetPaneCsvSnapshots,
-  serializePaneCsv,
-} from "./csv-export";
 
 type Row =
   | { type: "section"; id: string; title: string }
@@ -42,9 +36,6 @@ const columns: Column[] = [
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
 
 afterEach(async () => {
-  resetPaneCsvSnapshots();
-  setCsvItems = null;
-  csvCellWalks = 0;
   if (!testSetup) return;
   await act(async () => {
     testSetup!.renderer.destroy();
@@ -52,7 +43,7 @@ afterEach(async () => {
   testSetup = undefined;
 });
 
-function Harness() {
+function Harness({ onCursor = () => {} }: { onCursor?: () => void }) {
   const [selectedIndex, setSelectedIndex] = useState(1);
   const [cursorIndex, setCursorIndex] = useState(1);
   const [activatedTitle, setActivatedTitle] = useState("");
@@ -73,7 +64,10 @@ function Harness() {
             selectedIndex,
             onChange: (index) => setSelectedIndex(index),
           }}
-          onCursorChange={(_row, index) => setCursorIndex(index)}
+          onCursorChange={(_row, index) => {
+            onCursor();
+            setCursorIndex(index);
+          }}
           onActivate={(row) => {
             if (row.type === "row") setActivatedTitle(row.title);
           }}
@@ -81,7 +75,7 @@ function Harness() {
           items={rows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => undefined}
+          onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
           renderSectionHeader={(row) => row.type === "section"
             ? { text: row.title }
@@ -95,47 +89,6 @@ function Harness() {
               <Text>{`cursor=${cursorTitle} selected=${selectedTitle} activated=${activatedTitle}`}</Text>
             </Box>
           }
-        />
-      </PaneInstanceProvider>
-    </AppContext>
-  );
-}
-
-let setCsvItems: ((items: Row[]) => void) | null = null;
-let csvCellWalks = 0;
-
-function CsvExportHarness({
-  initialItems,
-}: {
-  initialItems: Row[];
-}) {
-  const [items, setItems] = useState(initialItems);
-  setCsvItems = setItems;
-  const state = createInitialState(
-    createDefaultConfig("/tmp/gloomberb-data-table-csv-test"),
-  );
-
-  return (
-    <AppContext value={{ state, dispatch: () => {} }}>
-      <PaneInstanceProvider paneId="data-table-csv-test">
-        <DataTableView<Row, Column>
-          focused
-          selection={{
-            kind: "index",
-            selectedIndex: 0,
-            onChange: () => {},
-          }}
-          columns={columns}
-          items={items}
-          sortColumnId={null}
-          sortDirection="asc"
-          onHeaderClick={() => undefined}
-          getItemKey={(row) => row.id}
-          renderCell={(row): DataTableCell => {
-            csvCellWalks += 1;
-            return { text: row.title };
-          }}
-          emptyStateTitle="No rows"
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -165,13 +118,14 @@ function LargeSelectionHarness({
           items={largeRows}
           sortColumnId={null}
           sortDirection="asc"
-          onHeaderClick={() => undefined}
+          onHeaderClick={() => {}}
           getItemKey={(row) => row.id}
           renderCell={(row, _column, index): DataTableCell => {
             onIsSelected();
             return { text: row.title + (index === 500 ? "" : "") };
           }}
           emptyStateTitle="No rows"
+          scrollToIndex={500}
         />
       </PaneInstanceProvider>
     </AppContext>
@@ -182,7 +136,6 @@ async function renderSettled() {
   await act(async () => {
     await testSetup!.renderOnce();
     await testSetup!.renderOnce();
-    await new Promise<void>((resolve) => queueMicrotask(resolve));
   });
 }
 
@@ -279,6 +232,20 @@ describe("DataTableView", () => {
     expect(testSetup.captureCharFrame()).toContain("cursor=Second row selected=First row activated=First row");
   });
 
+  test("does no cursor or scroll work when navigation is already at an edge", async () => {
+    let cursorChanges = 0;
+    testSetup = await testRender(
+      <Harness onCursor={() => { cursorChanges += 1; }} />,
+      { width: 60, height: 12 },
+    );
+
+    await renderSettled();
+    await emitKeypress({ name: "up", sequence: "\u001B[A" });
+    await renderSettled();
+
+    expect(cursorChanges).toBe(0);
+  });
+
   test("keeps selection current across repeated keypresses before the next render", async () => {
     testSetup = await testRender(<Harness />, { width: 60, height: 12 });
 
@@ -293,82 +260,40 @@ describe("DataTableView", () => {
     expect(testSetup.captureCharFrame()).toContain("selected=Third row activated=Third row");
   });
 
-  test("keeps CSV export on demand across item identity changes", async () => {
-    csvCellWalks = 0;
-    const firstItems = largeRows.map((row) => ({ ...row, title: `${row.title}-v1` }));
+  test("keeps the immediate cursor visible while a controlled selection is deferred", async () => {
     testSetup = await testRender(
-      <CsvExportHarness initialItems={firstItems} />,
+      <LargeSelectionHarness onIsSelected={() => {}} />,
       { width: 60, height: 12 },
     );
 
     await renderSettled();
-    const snapshot = getActivePaneCsvSnapshot();
-    const afterRenderWalks = csvCellWalks;
-    expect(snapshot).not.toBeNull();
-    expect(afterRenderWalks).toBeLessThan(150);
-
-    for (let tick = 0; tick < 8; tick += 1) {
-      const nextItems = firstItems.map((row) => ({
-        ...row,
-        title: `${row.id}-v${tick + 2}`,
-      }));
-      await act(async () => {
-        setCsvItems?.(nextItems);
-        await testSetup!.renderOnce();
-      });
-    }
-
-    expect(getActivePaneCsvSnapshot()).toBe(snapshot);
-    expect(csvCellWalks - afterRenderWalks).toBeLessThan(firstItems.length);
-
-    const beforeSerialize = csvCellWalks;
-    const csv = serializePaneCsv(snapshot!);
-    expect(csvCellWalks - beforeSerialize).toBe(firstItems.length);
-    expect(csv.startsWith("Title\n")).toBe(true);
-    expect(csv).toContain("row-0-v9");
-    expect(csv).toContain("row-999-v9");
-    expect(csv).not.toContain("Row 0-v1");
-  });
-
-  test("caps CSV serialization so a fat table does not walk every row", async () => {
-    csvCellWalks = 0;
-    const overCapRows: Row[] = Array.from({ length: PANE_CSV_MAX_ROWS + 40 }, (_, index) => ({
-      type: "row",
-      id: `row-${index}`,
-      title: `Row ${index}`,
-    }));
-    testSetup = await testRender(
-      <CsvExportHarness initialItems={overCapRows} />,
-      { width: 60, height: 12 },
-    );
-
+    await emitKeypressBatch(Array.from({ length: 30 }, () => ({
+      name: "down",
+      sequence: "\u001B[B",
+    })));
     await renderSettled();
-    const snapshot = getActivePaneCsvSnapshot();
-    expect(snapshot).not.toBeNull();
-    const afterRenderWalks = csvCellWalks;
-    expect(afterRenderWalks).toBeLessThan(150);
 
-    const beforeSerialize = csvCellWalks;
-    const csv = serializePaneCsv(snapshot!);
-    expect(csvCellWalks - beforeSerialize).toBe(PANE_CSV_MAX_ROWS);
-    expect(csv).toContain("Row 0");
-    expect(csv).toContain(`Row ${PANE_CSV_MAX_ROWS - 1}`);
-    expect(csv).not.toContain(`Row ${PANE_CSV_MAX_ROWS}`);
+    expect(testSetup.captureCharFrame()).toContain("Row 530");
   });
 
-  test("does not scan every row when the selected index is explicit", async () => {
-    let isSelectedCalls = 0;
+  test("renders only the visible rows and the rows changed by navigation", async () => {
+    let renderedCells = 0;
     testSetup = await testRender(
       <LargeSelectionHarness
         onIsSelected={() => {
-          isSelectedCalls += 1;
+          renderedCells += 1;
         }}
       />,
       { width: 60, height: 12 },
     );
 
     await renderSettled();
+    expect(renderedCells).toBeLessThan(150);
 
-    expect(isSelectedCalls).toBeLessThan(150);
+    const beforeNavigation = renderedCells;
+    await emitKeypress({ name: "down", sequence: "\u001B[B" });
+    await renderSettled();
+
+    expect(renderedCells - beforeNavigation).toBeLessThanOrEqual(4);
   });
 });

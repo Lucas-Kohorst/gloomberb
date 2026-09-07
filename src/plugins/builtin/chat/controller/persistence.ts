@@ -57,14 +57,12 @@ export function hydratePersistedChannelState({
   persistence,
   resume,
   userId,
-  sessionToken,
 }: {
   channelId: string;
   channel: ChannelRuntimeState;
   persistence: PluginPersistence | null;
   resume: PluginResumeState | null;
   userId: string | null;
-  sessionToken: string | null;
 }): void {
   if (channel.hydrated || !persistence) return;
   channel.hydrated = true;
@@ -84,7 +82,6 @@ export function hydratePersistedChannelState({
     messages: transcript?.value.messages ?? [],
     persistedChannel,
     userId,
-    sessionToken,
   });
 }
 

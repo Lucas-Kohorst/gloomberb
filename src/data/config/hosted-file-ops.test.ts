@@ -78,6 +78,7 @@ describe("hosted config file ops", () => {
     writeHostedUserConfig(config);
     globalThis.localStorage.setItem("gloomberb:hosted-user-id", "user-1");
     globalThis.localStorage.setItem("gloomberb:hosted-tickers:user-1", "[]");
+    globalThis.localStorage.setItem("gloomberb:hosted-tickers:user-2", "[]");
     globalThis.localStorage.setItem("gloomberb:notes:cloud://users/user-1/AAPL.md", "hi");
 
     clearHostedBrowserWorkspace();
@@ -85,6 +86,7 @@ describe("hosted config file ops", () => {
     expect(globalThis.localStorage.getItem("gloomberb:hosted-user-id")).toBe("user-1");
     expect(globalThis.localStorage.getItem("gloomberb:hosted-user-config:user-1")).toBeNull();
     expect(globalThis.localStorage.getItem("gloomberb:hosted-tickers:user-1")).toBeNull();
+    expect(globalThis.localStorage.getItem("gloomberb:hosted-tickers:user-2")).toBe("[]");
     expect(globalThis.localStorage.getItem("gloomberb:notes:cloud://users/user-1/AAPL.md")).toBeNull();
   });
 });

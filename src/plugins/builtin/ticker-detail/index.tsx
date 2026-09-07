@@ -1,16 +1,11 @@
 import type { PluginModule } from "../plugin-module";
-import type { TickerFinancials } from "../../../types/financials";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { normalizeTickerInput } from "../../../tickers/search";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
-import { FinancialAnalysisPane, FinancialsResearchTab } from "./financials/pane";
+import { FinancialAnalysisPane } from "./financials/pane";
 import { HistoricalPricesPane } from "./data-panes/historical-prices";
-import {
-  createProviderSearchPaneTemplate,
-  ProviderSearchPane,
-} from "./data-panes/provider-search";
 import { TickerResearchPane } from "./pane";
-import { OverviewResearchTab } from "./overview/pane";
+import { TICKER_RESEARCH_BUILTIN_TABS } from "./research-tabs";
 import { QuoteMonitorPane } from "./quote-monitor";
 import {
   buildQuoteMonitorSettingsDef,
@@ -24,26 +19,11 @@ import {
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
 
-function hasStatementFinancials(financials: TickerFinancials | null | undefined): boolean {
-  return (financials?.annualStatements.length ?? 0) > 0 || (financials?.quarterlyStatements.length ?? 0) > 0;
-}
-
 export const tickerDetailModule: PluginModule = {
   setup(ctx) {
-    ctx.registerTickerResearchTab({
-      id: "overview",
-      name: "Overview",
-      order: 10,
-      component: OverviewResearchTab,
-      isVisible: ({ ticker }) => !!ticker,
-    });
-    ctx.registerTickerResearchTab({
-      id: "financials",
-      name: "Financials",
-      order: 20,
-      component: FinancialsResearchTab,
-      isVisible: ({ financials }) => hasStatementFinancials(financials),
-    });
+    for (const tab of TICKER_RESEARCH_BUILTIN_TABS) {
+      ctx.registerTickerResearchTab(tab);
+    }
   },
 
   panes: [
@@ -68,6 +48,7 @@ export const tickerDetailModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 98, height: 30 },
+      tableExport: true,
     },
     {
       id: "quote-monitor",
@@ -88,15 +69,7 @@ export const tickerDetailModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 92, height: 26 },
-    },
-    {
-      id: "provider-search-results",
-      name: "Provider Search",
-      icon: "S",
-      component: ProviderSearchPane,
-      defaultPosition: "right",
-      defaultMode: "floating",
-      defaultFloatingSize: { width: 86, height: 24 },
+      tableExport: true,
     },
   ],
   paneTemplates: [
@@ -116,6 +89,14 @@ export const tickerDetailModule: PluginModule = {
           }
           : {}
       ),
+      publicShare: {
+        serialize: ({ pane }) => pane.binding?.kind === "fixed" && pane.binding.symbol.trim()
+          ? { title: pane.title?.trim() || pane.binding.symbol, data: { symbol: pane.binding.symbol.trim().toUpperCase() } }
+          : null,
+        restore: (data) => Object.keys(data).length === 1 && typeof data.symbol === "string" && data.symbol.trim()
+          ? { symbol: data.symbol.trim().toUpperCase() }
+          : null,
+      },
     },
     {
       id: "quote-monitor-pane",
@@ -163,8 +144,8 @@ export const tickerDetailModule: PluginModule = {
       description: "Open a historical OHLCV table for a ticker.",
       keywords: ["historical", "prices", "hp", "ohlc", "volume"],
       shortcut: "HP",
+      publicShare: true,
     }),
-    createProviderSearchPaneTemplate(),
     createTickerSurfacePaneTemplate({
       id: "financial-analysis-pane",
       paneId: "financial-analysis",
@@ -172,6 +153,7 @@ export const tickerDetailModule: PluginModule = {
       description: "Open financial statements for a ticker.",
       keywords: ["fa", "financial", "analysis", "statements"],
       shortcut: "FA",
+      publicShare: true,
       titlePrefix: "FA",
     }),
   ],

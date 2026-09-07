@@ -24,6 +24,12 @@ export interface ParsedPaneFunctionArgs {
   outputPath: string | null;
   width: number;
   height: number;
+  /** Theme id override for screenshots; null keeps the configured theme. */
+  theme: string | null;
+  /** Render scale: 1.5 renders two thirds as many cells at 1.5x size, so text reads larger at the same pixel size. */
+  scale: number;
+  /** Small label drawn in the pane title bar, e.g. a domain; null draws nothing. */
+  watermark: string | null;
   requireBotSafe: boolean;
 }
 
@@ -63,6 +69,9 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
   let outputPath: string | null = null;
   let width = DEFAULT_SHOT_WIDTH;
   let height = DEFAULT_SHOT_HEIGHT;
+  let theme: string | null = null;
+  let scale = 1;
+  let watermark: string | null = null;
   let requireBotSafe = false;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -99,6 +108,12 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
       if (Number.isFinite(parsedHeight)) {
         height = Math.max(MIN_SHOT_HEIGHT, Math.min(MAX_SHOT_HEIGHT, Math.round(parsedHeight)));
       }
+    } else if (normalizedKey === "theme" && value !== true) {
+      theme = value.trim() || null;
+    } else if (normalizedKey === "scale" && value !== true) {
+      scale = parseScale(value);
+    } else if (normalizedKey === "watermark" && value !== true) {
+      watermark = value.trim() || null;
     } else if (normalizedKey === "arguments" && value !== true) {
       Object.assign(options, parseArgumentsOption(value));
     } else {
@@ -108,7 +123,7 @@ export function parsePaneFunctionArgs(args: string[]): ParsedPaneFunctionArgs {
 
   const target = positionals[0]?.trim() ?? "";
   const arg = positionals.slice(1).join(" ").trim();
-  return { target, arg, options, outputPath, width, height, requireBotSafe };
+  return { target, arg, options, outputPath, width, height, theme, scale, watermark, requireBotSafe };
 }
 
 export function parsePaneCatalogArgs(args: string[]): ParsedPaneCatalogArgs {
@@ -166,7 +181,17 @@ export function optionString(options: PaneOptionValues, key: string): string | u
   return value === true || value === undefined ? undefined : String(value);
 }
 
-const RESERVED_OPTION_KEYS = new Set(["output", "out", "o", "width", "height", "arguments", "state"]);
+const RESERVED_OPTION_KEYS = new Set([
+  "output", "out", "o", "width", "height", "theme", "scale", "watermark", "arguments", "state",
+]);
+
+function parseScale(value: string): number {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed < 0.5 || parsed > 4) {
+    throw new Error(`--scale must be a number between 0.5 and 4, got "${value}".`);
+  }
+  return parsed;
+}
 
 export function optionSettings(options: Record<string, string | true>): Record<string, unknown> {
   const settings: Record<string, unknown> = {};

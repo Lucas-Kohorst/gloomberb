@@ -89,9 +89,13 @@ export function writeHostedPluginState(
   try {
     const snapshot = sanitizePluginStateMap(state);
     const json = Object.keys(snapshot).length === 0 ? "" : JSON.stringify(snapshot);
-    if (lastWritten?.userId === userId && lastWritten.json === json) return;
-    lastWritten = { userId, json };
     const key = hostedPluginStateStorageKey(userId);
+    if (
+      lastWritten?.userId === userId
+      && lastWritten.json === json
+      && (backend.getItem(key) ?? "") === json
+    ) return;
+    lastWritten = { userId, json };
     if (!json) backend.removeItem(key);
     else backend.setItem(key, json);
   } catch {

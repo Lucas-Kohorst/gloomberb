@@ -84,16 +84,39 @@ export function getRelatedTickers(eventTitle: string, country: string): string[]
   return resolveFredMapping(eventTitle, country)?.relatedTickers ?? [];
 }
 
-export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
-  const seen = new Set<string>();
-  const rows: Array<{ seriesId: string; label: string }> = [];
-  for (const [eventTitle, mapping] of Object.entries(SERIES_MAP)) {
-    if (seen.has(mapping.seriesId)) continue;
-    seen.add(mapping.seriesId);
-    rows.push({
-      seriesId: mapping.seriesId,
-      label: eventTitle.replace(/\b\w/g, (char) => char.toUpperCase()),
-    });
+const FRED_CATALOG_SERIES: ReadonlyArray<{ seriesId: string; label: string }> = (() => {
+  const labels = new Map<string, string>();
+  for (const [key, mapping] of Object.entries(SERIES_MAP)) {
+    const existing = labels.get(mapping.seriesId);
+    if (existing == null || key.length < existing.length) {
+      labels.set(mapping.seriesId, key);
+    }
   }
-  return rows;
+  return [...labels.entries()].map(([seriesId, key]) => ({
+    seriesId,
+    label: key.replace(/\b\w/g, (char) => char.toUpperCase()),
+  }));
+})();
+
+/**
+ * Macro series the catalog should offer that are not economic-calendar releases, so
+ * they have no natural home in SERIES_MAP above.
+ */
+const EXTRA_CATALOG_SERIES: ReadonlyArray<{ seriesId: string; label: string }> = [
+  { seriesId: "M2SL", label: "M2 Money Stock" },
+  { seriesId: "DFII10", label: "10Y TIPS Real Yield" },
+  { seriesId: "NCBEILQ027S", label: "Corporate Equities, Z.1" },
+  { seriesId: "TNWMVBSNNCB", label: "Corporate Net Worth, Z.1" },
+];
+
+export function listFredCatalogSeries(): ReadonlyArray<{ seriesId: string; label: string }> {
+  const known = new Set(FRED_CATALOG_SERIES.map((entry) => entry.seriesId));
+  return [
+    ...FRED_CATALOG_SERIES,
+    ...EXTRA_CATALOG_SERIES.filter((entry) => !known.has(entry.seriesId)),
+  ];
+}
+
+export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
+  return [...FRED_CATALOG_SERIES];
 }

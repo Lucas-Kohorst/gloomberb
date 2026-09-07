@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, useReducer, useState } from "react";
+import { act, useEffect, useReducer, useState } from "react";
 import { TestDialogProvider, testRender } from "../../../../renderers/opentui/test-utils";
 import { PaneFooterBar, PaneFooterProvider } from "../../../../components/layout/pane/footer";
-import { AppContext, PaneInstanceProvider, appReducer, createInitialState } from "../../../../state/app/context";
+import {
+  AppContext,
+  PaneInstanceProvider,
+  appReducer,
+  createInitialState,
+  type PaneRuntimeState,
+} from "../../../../state/app/context";
 import { createDefaultConfig } from "../../../../types/config";
 import type { Quote, TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
@@ -11,7 +17,8 @@ import { createStatefulTestPluginRuntime } from "../../../../test-support/plugin
 import { Box } from "../../../../ui";
 import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../runtime";
 import { getSharedMarketData, setSharedMarketDataForTests, setSharedRegistryForTests } from "../../../registry";
-import { AiScreenerPane } from "./pane";
+import { AI_SCREENER_PANE_STATE_KEY, AiScreenerPane } from "./pane";
+import { createScreenerTab, EMPTY_PANE_STATE } from "./model";
 import { setDetectedProviders, type AiProvider } from "../providers";
 import { setAiRunHost, setAiRuntimeCatalog, type AiRunHost } from "../runner";
 
@@ -99,10 +106,14 @@ function ScreenerHarness({
   prompt,
   providerId,
   settings,
+  runtime: runtimeOverride,
+  onPaneState,
 }: {
   prompt: string;
   providerId: string;
   settings?: Record<string, unknown>;
+  runtime?: PluginRuntimeAccess;
+  onPaneState?: (state: PaneRuntimeState | undefined) => void;
 }) {
   const config = createDefaultConfig("/tmp/gloomberb-ai-screener");
   config.layout.instances.push({
@@ -129,7 +140,11 @@ function ScreenerHarness({
     ]);
     return initial;
   });
-  const [runtime] = useState(() => makeRuntime());
+  const [runtime] = useState(() => runtimeOverride ?? makeRuntime());
+
+  useEffect(() => {
+    onPaneState?.(state.paneState[PANE_ID]);
+  }, [onPaneState, state.paneState]);
 
   return (
     <AppContext value={{ state, dispatch }}>
@@ -185,6 +200,34 @@ afterEach(() => {
 });
 
 describe("AiScreenerPane", () => {
+  test("migrates legacy global tabs into pane-local state", async () => {
+    const runtime = makeRuntime();
+    const legacyState = {
+      tabs: [createScreenerTab("Find legacy candidates.", "anthropic")],
+    };
+    runtime.setResumeState("ai", `screener-pane:${PANE_ID}`, legacyState, 1);
+    setDetectedProviders([makeProvider("anthropic", "Claude")]);
+    let paneState: PaneRuntimeState | undefined;
+
+    testSetup = await testRender(
+      <ScreenerHarness
+        prompt=""
+        providerId="anthropic"
+        runtime={runtime}
+        onPaneState={(state) => { paneState = state; }}
+      />,
+      { width: 96, height: 18 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await Bun.sleep(0);
+      await testSetup!.renderOnce();
+    });
+    expect(paneState?.pluginState?.ai?.[AI_SCREENER_PANE_STATE_KEY]).toEqual(legacyState);
+    expect(runtime.getResumeState("ai", `screener-pane:${PANE_ID}`, 1)).toEqual(EMPTY_PANE_STATE);
+  });
+
   test("shows the account connection message before trying to run", async () => {
     const provider = makeProvider("anthropic", "Claude");
     setDetectedProviders([provider]);
@@ -242,7 +285,8 @@ describe("AiScreenerPane", () => {
     expect(frame).toContain("Initial pass");
     expect(frame).toContain("Strong cash flow durability");
     expect(frame.match(/Strong cash flow durability/g)?.length).toBe(1);
-    expect(frame).toContain("[r]efresh");
+    // `r` refreshes every pane, so it is never advertised per pane.
+    expect(frame).not.toContain("[r]efresh");
     expect(frame).not.toContain("[Shift+R]");
     const lines = frame.split("\n");
     const tabLine = lines.findIndex((line) => line.includes("Compounders"));
@@ -360,9 +404,9 @@ describe("AiScreenerPane", () => {
       await testSetup!.renderOnce();
     });
 
-    const frame = await waitForFrameToContain("[Ctrl+S]save");
-    expect(frame).toContain("[Ctrl+S]save");
-    expect(frame).toContain("[Esc]cancel");
+    const frame = await waitForFrameToContain("[Ctrl+S] save");
+    expect(frame).toContain("[Ctrl+S] save");
+    expect(frame).toContain("[Esc] cancel");
     expect(frame).toContain("Find quality compounders.");
   });
 

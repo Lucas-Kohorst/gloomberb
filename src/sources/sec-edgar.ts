@@ -833,13 +833,12 @@ export class SecEdgarClient {
 
     const payload = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/CIK${entry.cik}.json`);
     const filings = parseRecentFilings(payload, count);
-    if (filings.length < count) {
-      const company = submissionCompany(payload, entry.cik);
-      for (const name of parseSubmissionArchiveNames(payload)) {
-        if (filings.length >= count) break;
-        const older = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/${name}`);
-        filings.push(...parseFilingColumns(asRecord(older), company, count - filings.length));
-      }
+    if (filings.length >= count) return filings;
+    const company = submissionCompany(payload, entry.cik);
+    for (const name of parseSubmissionArchiveNames(payload)) {
+      if (filings.length >= count) break;
+      const older = await this.fetchJson<unknown>(`${SUBMISSIONS_URL}/${name}`);
+      filings.push(...parseFilingColumns(asRecord(older), company, count - filings.length));
     }
     return filings.map((filing) => ({
       ...filing,

@@ -1,3 +1,5 @@
+export const YOUTUBE_CONNECTION_ID = "youtube";
+
 export const TV_CHANNELS = [
   {
     id: "bloomberg",

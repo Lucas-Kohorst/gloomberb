@@ -7,6 +7,7 @@ export const TWC_KALSHI_URL = "https://weather.com/kalshi";
 export const TWC_KALSHI_ORIGIN = "https://weather.com";
 
 export type WeatherPrintProvider = "twc-kalshi" | "nws-cli" | "nws-observations";
+export type WeatherObservationSource = WeatherPrintProvider | "kalshi-index";
 export type WeatherMetric = "high" | "low" | "precip" | "hourly";
 export type WeatherReportStatus = "official" | "preliminary" | "pending" | "no_report" | "unknown";
 export type WeatherScope = "domestic" | "international";
@@ -73,4 +74,30 @@ export interface WeatherMarketSettlement {
   seriesTicker: string | null;
   settlementUrl: string;
   cliProduct: string;
+}
+
+/** Unified live reading used by the polling hook and degree-day math. */
+export interface WeatherObservation {
+  stationId: string;
+  source: WeatherObservationSource;
+  timestamp: number;
+  tempF?: number;
+  dewpointF?: number;
+  humidityPct?: number;
+  precipIn?: number;
+  status: "final" | "pending" | "preliminary";
+  metric: WeatherMetric;
+}
+
+export interface DegreeDayReading {
+  date: string;
+  stationId: string;
+  highF: number | null;
+  lowF: number | null;
+  avgF: number | null;
+  hdd: number;
+  cdd: number;
+  monthlyCumulativeHdd: number;
+  monthlyCumulativeCdd: number;
+  dayCount: number;
 }

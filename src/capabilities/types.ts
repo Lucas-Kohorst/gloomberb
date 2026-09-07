@@ -1,6 +1,13 @@
 import type { CachePolicyMap } from "../types/persistence";
+import type { ConnectionHealthRegistry } from "../core/connection-health";
 import type { AssetDataProvider } from "../types/data-provider";
 import type { NewsDataProvider } from "../types/capability-route-source";
+import type {
+  ChartViewportSpec,
+  ResolvedSeries,
+  SeriesStyle,
+  SeriesTransform,
+} from "../time-series/types";
 
 type CapabilityOperationKind = "read" | "query" | "action" | "stream";
 type CapabilitySideEffectLevel = "none" | "local-write" | "network-write" | "external-trade" | "external-side-effect";
@@ -8,6 +15,7 @@ type CapabilitySideEffectLevel = "none" | "local-write" | "network-write" | "ext
 type CapabilityKind =
   | "asset-data"
   | "news"
+  | "chart-series"
   | "plugin-service";
 
 export interface CapabilitySchema<T = unknown> {
@@ -17,6 +25,7 @@ export interface CapabilitySchema<T = unknown> {
 interface CapabilityHandlerContext {
   capability: PluginCapability;
   operationId: string;
+  signal?: AbortSignal;
 }
 
 type CapabilityStreamEmit<T = unknown> = (event: T) => void;
@@ -65,6 +74,38 @@ export interface NewsCapability extends PluginCapability {
   readonly provider: NewsDataProvider;
 }
 
+export interface ChartSeriesCatalogItem {
+  seriesId: string;
+  label: string;
+  description?: string;
+  detail?: string;
+  style?: SeriesStyle;
+  transform?: SeriesTransform;
+}
+
+export interface ChartSeriesCatalogRequest {
+  query?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+export interface ChartSeriesResolveRequest {
+  seriesId: string;
+  viewport: ChartViewportSpec;
+  signal?: AbortSignal;
+}
+
+export interface ChartSeriesProvider {
+  catalog?(request: ChartSeriesCatalogRequest): Promise<ChartSeriesCatalogItem[]> | ChartSeriesCatalogItem[];
+  search?(request: ChartSeriesCatalogRequest): Promise<ChartSeriesCatalogItem[]> | ChartSeriesCatalogItem[];
+  resolve(request: ChartSeriesResolveRequest): Promise<ResolvedSeries> | ResolvedSeries;
+}
+
+export interface ChartSeriesCapability extends PluginCapability {
+  readonly kind: "chart-series";
+  readonly provider: ChartSeriesProvider;
+}
+
 export interface CapabilityOperationManifest {
   id: string;
   kind: CapabilityOperationKind;
@@ -92,6 +133,17 @@ export interface CapabilityManifest {
 export interface CapabilityRegistryOptions {
   isPluginEnabled?(pluginId: string): boolean;
   isCapabilityEnabled?(capability: PluginCapability, pluginId: string): boolean;
+  connectionHealth?: ConnectionHealthRegistry;
+}
+
+export interface CapabilityInvoker {
+  capabilityManifests(kind?: string): CapabilityManifest[];
+  invokeCapability<T = unknown>(
+    capabilityId: string,
+    operationId: string,
+    payload: unknown,
+    options?: { signal?: AbortSignal },
+  ): Promise<T>;
 }
 
 export interface RegisteredCapability {

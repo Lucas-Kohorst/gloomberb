@@ -1,9 +1,9 @@
 import type {
   PollAverageSummary,
   PollRow,
+  PollsterSeries,
   PollTrendPoint,
   PollsterAverage,
-  PollsterSeries,
   VoteHubPoll,
   VoteHubPollAnswer,
 } from "./types";
@@ -21,10 +21,11 @@ const POLL_TYPE_LABELS: Record<string, string> = {
   "proposition-50": "Prop",
 };
 
+/** Readable sample populations; "A"/"RV"/"LV" meant nothing without a legend. */
 const POPULATION_LABELS: Record<string, string> = {
-  a: "A",
-  rv: "RV",
-  lv: "LV",
+  a: "Adults",
+  rv: "Reg",
+  lv: "Likely",
 };
 
 export function pollTypeLabel(pollType: string): string {
@@ -80,7 +81,7 @@ export function summarizeAnswers(answers: VoteHubPollAnswer[] | undefined): {
   if (!first) return { result: "—", lead: null, leadChoice: null };
   if (!second) {
     return {
-      result: `${first.choice} ${formatPct(first.pct)}`,
+      result: `${shortChoice(first.choice)} ${formatPct(first.pct)}`,
       lead: first.pct,
       leadChoice: first.choice,
     };
@@ -109,6 +110,7 @@ export function normalizeVoteHubPoll(poll: VoteHubPoll): PollRow {
   return {
     id: poll.id,
     subject: poll.subject,
+    seatName: poll.seat_name,
     pollType: poll.poll_type,
     pollTypeLabel: pollTypeLabel(poll.poll_type),
     pollster: poll.pollster,
@@ -125,17 +127,7 @@ export function normalizeVoteHubPoll(poll: VoteHubPoll): PollRow {
     partisan: typeof poll.partisan === "string" ? poll.partisan : null,
     internal: poll.internal === true,
     answers: sortedAnswers(poll.answers),
-    seatName: typeof poll.seat_name === "string" && poll.seat_name.trim() ? poll.seat_name.trim() : null,
   };
-}
-
-/** Race/geography key: VoteHub `seat_name` when present, otherwise `subject`. */
-export function pollRaceKey(row: Pick<PollRow, "subject" | "seatName">): string {
-  return row.seatName?.trim() || row.subject;
-}
-
-export function rowMatchesRace(row: PollRow, raceKey: string): boolean {
-  return pollRaceKey(row) === raceKey || row.subject === raceKey;
 }
 
 export type PollSortColumnId = "date" | "subject" | "pollster" | "pop" | "result";
@@ -184,6 +176,11 @@ function dateValue(value: string | null): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+/** Race/geography key: VoteHub `seat_name` when present, otherwise `subject`. */
+export function pollRaceKey(row: Pick<PollRow, "subject" | "seatName">): string {
+  return row.seatName?.trim() || row.subject;
+}
+
 /**
  * Case-insensitive substring filter across subject, pollster, and seat name.
  * Returns the original array when the query is empty.
@@ -194,8 +191,7 @@ export function filterPollRows(rows: PollRow[], query: string): PollRow[] {
   return rows.filter((row) =>
     row.subject.toLowerCase().includes(trimmed) ||
     row.pollster.toLowerCase().includes(trimmed) ||
-    row.pollTypeLabel.toLowerCase().includes(trimmed) ||
-    (row.seatName?.toLowerCase().includes(trimmed) ?? false),
+    row.pollTypeLabel.toLowerCase().includes(trimmed),
   );
 }
 
@@ -205,16 +201,13 @@ export function filterPollRows(rows: PollRow[], query: string): PollRow[] {
  */
 export function computePollTrend(
   rows: PollRow[],
-  raceKey: string,
+  subject: string,
   choice: string,
-  pollster?: string,
 ): PollTrendPoint[] {
   const target = choice.toLowerCase();
-  const house = pollster?.trim();
   const points: PollTrendPoint[] = [];
   for (const row of rows) {
-    if (!rowMatchesRace(row, raceKey)) continue;
-    if (house && row.pollster !== house) continue;
+    if (row.subject !== subject) continue;
     const answer = row.answers.find((a) => a.choice.toLowerCase() === target);
     if (!answer) continue;
     const date = row.endDate ?? row.startDate;
@@ -224,13 +217,18 @@ export function computePollTrend(
   return points.sort((a, b) => dateValue(a.date) - dateValue(b.date));
 }
 
+/**
+ * The trend line for one pollster in a race, so a "house" overlay can pin a
+ * single pollster against the prediction-market line.
+ */
 export function computePollsterHouseSeries(
   rows: PollRow[],
   raceKey: string,
   pollster: string,
   choice: string,
 ): PollTrendPoint[] {
-  return computePollTrend(rows, raceKey, choice, pollster);
+  return computePollTrend(rows, raceKey, choice)
+    .filter((point) => point.pollster === pollster);
 }
 
 /**
@@ -289,7 +287,7 @@ export function computePollsterAverages(
   const target = choice?.toLowerCase();
   const byPollster = new Map<string, { sum: number; weight: number; count: number; lastDate: string | null }>();
   for (const row of rows) {
-    if (!rowMatchesRace(row, subject)) continue;
+    if (row.subject !== subject) continue;
     const answer = target
       ? row.answers.find((a) => a.choice.toLowerCase() === target)
       : row.answers[0];
@@ -335,7 +333,7 @@ export function computePollAverages(
   recentCount: number,
 ): PollAverageSummary[] {
   const matching = rows
-    .filter((row) => rowMatchesRace(row, subject))
+    .filter((row) => row.subject === subject)
     .sort((a, b) => dateValue(b.endDate ?? b.startDate) - dateValue(a.endDate ?? a.startDate))
     .slice(0, Math.max(1, recentCount));
 

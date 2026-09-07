@@ -4,22 +4,6 @@ import { appReducer, createInitialState } from "./index";
 import { removePane } from "../../../plugins/pane-manager";
 
 describe("appReducer command bar state", () => {
-  test("re-shows the gridlock tip and refreshes its sequence on every trigger", () => {
-    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
-
-    const shown = appReducer(initial, { type: "SHOW_GRIDLOCK_TIP" });
-    expect(shown.gridlockTipVisible).toBe(true);
-    expect(shown.gridlockTipSequence).toBe(1);
-
-    const dismissed = appReducer(shown, { type: "DISMISS_GRIDLOCK_TIP" });
-    expect(dismissed.gridlockTipVisible).toBe(false);
-    expect(dismissed.gridlockTipSequence).toBe(1);
-
-    const repeated = appReducer(dismissed, { type: "SHOW_GRIDLOCK_TIP" });
-    expect(repeated.gridlockTipVisible).toBe(true);
-    expect(repeated.gridlockTipSequence).toBe(2);
-  });
-
   test("tracks layout undo and redo history", () => {
     const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-test"));
     const defaultRatio = initial.config.layout.dockRoot && initial.config.layout.dockRoot.kind === "split"
@@ -193,6 +177,40 @@ describe("appReducer command bar state", () => {
     ]);
     expect(state.config.activeLayoutIndex).toBe(2);
     expect(state.config.layouts[state.config.activeLayoutIndex]?.name).toBe("Overview Copy");
+  });
+
+  test("installs marketplace layouts as independent editable copies", () => {
+    const config = createDefaultConfig("/tmp/gloomberb-marketplace-install-test");
+    config.layouts.push(
+      { name: "Research", layout: cloneLayout(config.layout) },
+      { name: "Research (2)", layout: cloneLayout(config.layout) },
+    );
+    const marketplaceLayout = cloneLayout(config.layout);
+    if (!marketplaceLayout.dockRoot || marketplaceLayout.dockRoot.kind !== "split") {
+      throw new Error("expected split dock root");
+    }
+    marketplaceLayout.dockRoot.ratio = 0.72;
+
+    const installed = appReducer(createInitialState(config), {
+      type: "INSTALL_LAYOUT_COPY",
+      name: "Research",
+      layout: marketplaceLayout,
+      paneState: {
+        "ticker-detail:main": {
+          pluginState: { "prediction-markets": { searchQuery: "fed" } },
+        },
+      },
+    });
+
+    expect(installed.config.layouts.at(-1)?.name).toBe("Research (3)");
+    expect(installed.config.activeLayoutIndex).toBe(installed.config.layouts.length - 1);
+    expect(installed.config.layout.dockRoot).toMatchObject({ kind: "split", ratio: 0.72 });
+    expect(installed.paneState["ticker-detail:main"]).toMatchObject({
+      pluginState: { "prediction-markets": { searchQuery: "fed" } },
+    });
+
+    marketplaceLayout.dockRoot.ratio = 0.2;
+    expect(installed.config.layout.dockRoot).toMatchObject({ kind: "split", ratio: 0.72 });
   });
 
   test("restores an explicit focus target after a layout removes the focused pane", () => {

@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  classifyWheelGesture,
   panVisibleTimeRange,
+  sameVisibleTimeRange,
   scaleVisibleTimeRange,
+  visibleRangeInteraction,
+  wheelDeltaPixels,
   wheelPanRatioFromDelta,
   wheelZoomFactorFromDelta,
 } from "./tradingview-interactions";
@@ -41,5 +45,45 @@ describe("tradingview trackpad interactions", () => {
     expect(wheelPanRatioFromDelta(50, 200)).toBeGreaterThan(0);
     expect(wheelPanRatioFromDelta(-50, 200)).toBe(-wheelPanRatioFromDelta(50, 200));
     expect(wheelPanRatioFromDelta(50, 0)).toBe(0);
+  });
+
+  test("locks a swipe to pan or zoom so diagonal trackpad events cannot flip", () => {
+    expect(classifyWheelGesture({ deltaX: 40, deltaY: 4 })).toBe("pan");
+    expect(classifyWheelGesture({ deltaX: 4, deltaY: 40 })).toBe("zoom");
+    expect(classifyWheelGesture({ deltaX: 30, deltaY: 40 }, "pan")).toBe("pan");
+    expect(classifyWheelGesture({ deltaX: 40, deltaY: 4, ctrlKey: true })).toBe("zoom");
+  });
+
+  test("converts line-mode wheel deltas into pixels", () => {
+    expect(wheelDeltaPixels(2, 1, 400)).toBe(32);
+    expect(wheelDeltaPixels(1, 2, 400)).toBe(400);
+    expect(wheelDeltaPixels(20, 0, 400)).toBe(20);
+  });
+
+  test("treats nearby time ranges as the same so parent echoes cannot fight a pan", () => {
+    expect(sameVisibleTimeRange(
+      { start: 1_000_000, end: 2_000_000 },
+      { start: 1_000_400, end: 2_000_400 },
+    )).toBe(true);
+    expect(sameVisibleTimeRange(
+      { start: 1_000_000, end: 2_000_000 },
+      { start: 1_010_000, end: 2_010_000 },
+    )).toBe(true);
+    expect(sameVisibleTimeRange(
+      { start: 1_000_000, end: 2_000_000 },
+      { start: 1_200_000, end: 2_200_000 },
+    )).toBe(false);
+  });
+
+  test("classifies a span-preserving shift as pan and a span change as zoom", () => {
+    expect(visibleRangeInteraction(
+      { start: 1_000_000, end: 2_000_000 },
+      { start: 1_200_000, end: 2_200_000 },
+    )).toBe("pan");
+    expect(visibleRangeInteraction(
+      { start: 1_000_000, end: 2_000_000 },
+      { start: 1_250_000, end: 1_750_000 },
+    )).toBe("zoom");
+    expect(visibleRangeInteraction(null, RANGE)).toBe("zoom");
   });
 });

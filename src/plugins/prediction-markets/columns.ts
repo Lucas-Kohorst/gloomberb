@@ -54,8 +54,10 @@ export const PREDICTION_COLUMN_DEFS: PredictionColumnDef[] = [
   },
   {
     id: "open_interest",
+    // One cell wider than the value needs: OI is right aligned and ENDS is left
+    // aligned, so without the slack the two headers read as one "OI ENDS" word.
     label: "OI",
-    width: 10,
+    width: 11,
     align: "right",
     description: "Open interest in dollars.",
   },
@@ -134,30 +136,11 @@ export const DEFAULT_PREDICTION_COLUMN_IDS = [
   "vol_24h",
   "open_interest",
   "ends",
-  "status",
 ];
 
 export const PREDICTION_COLUMNS_BY_ID = new Map(
   PREDICTION_COLUMN_DEFS.map((column) => [column.id, column]),
 );
-
-const PREDICTION_COLUMN_MIN_WIDTH: Record<string, number> = {
-  watch: 0,
-  market: 0,
-  yes: 0,
-  spread: 0,
-  vol_24h: 88,
-  open_interest: 116,
-  ends: 124,
-  status: 132,
-  // Ticker/venue steal MARKET's flex space on hosted tables (fixed max-width
-  // tracks). Hide them until odds + spread + volume already fit.
-  market_id: 140,
-  venue: 148,
-};
-
-const DEFAULT_OPTIONAL_COLUMN_MIN_WIDTH = 140;
-const MARKET_MIN_WIDTH = 18;
 
 function resolveRequestedPredictionColumns(
   columnIds: readonly string[],
@@ -172,28 +155,10 @@ function resolveRequestedPredictionColumns(
 }
 
 export function createPredictionColumns(
-  width: number,
+  _width: number,
   columnIds: readonly string[] = DEFAULT_PREDICTION_COLUMN_IDS,
 ): PredictionColumnDef[] {
-  const selected = resolveRequestedPredictionColumns(columnIds);
-  const visible = selected.filter((column) => {
-    const minWidth =
-      PREDICTION_COLUMN_MIN_WIDTH[column.id] ?? DEFAULT_OPTIONAL_COLUMN_MIN_WIDTH;
-    return width >= minWidth;
-  });
-  const marketIndex = visible.findIndex((column) => column.id === "market");
-  const tableChromeWidth = visible.length + 2;
-  const fixedWidth = visible.reduce((sum, column, index) => {
-    return index === marketIndex ? sum : sum + column.width;
-  }, 0);
-  const marketWidth =
-    marketIndex >= 0
-      ? Math.max(MARKET_MIN_WIDTH, width - fixedWidth - tableChromeWidth)
-      : MARKET_MIN_WIDTH;
-
-  return visible.map((column) =>
-    column.id === "market"
-      ? { ...column, width: marketWidth, flexGrow: 1 }
-      : column,
+  return resolveRequestedPredictionColumns(columnIds).map((column) =>
+    column.id === "market" ? { ...column, flexGrow: 1 } : column,
   );
 }

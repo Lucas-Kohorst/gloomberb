@@ -1,44 +1,48 @@
 import { usePaneFooter, type PaneFooterSegment } from "../../../components";
-import { openUrl } from "../../../components/ui/external-link";
+import { isPlainKey } from "../../../utils/keyboard";
+import { useShortcut } from "../../../react/input";
 import {
-  countFailedQuotes,
-  countLoadingQuotes,
-  latestQuoteTimestamp,
+  quoteBoardFooterInfo,
+  quoteBoardStatus,
   type BoardQuoteMap,
 } from "../shared/use-quote-board";
 
-export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void, selectedSymbol: string | null) {
-  const loadingCount = countLoadingQuotes(quotes);
-  const failedCount = countFailedQuotes(quotes);
-  const latestQuoteTs = latestQuoteTimestamp(quotes);
-  const indexUrl = selectedSymbol ? `https://finance.yahoo.com/quote/${encodeURIComponent(selectedSymbol)}` : null;
+const ERROR_MESSAGE_MAX_LENGTH = 48;
 
-  usePaneFooter("world-indices", () => {
-    const info: PaneFooterSegment[] = [];
-    if (loadingCount > 0) {
-      info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
-    }
-    if (failedCount > 0) {
-      info.push({
-        id: "error",
-        parts: [{ text: `${failedCount} failed`, tone: "warning" }],
-      });
-    }
-    if (latestQuoteTs > 0) {
-      info.push({
-        id: "fresh",
-        parts: [{
-          text: new Date(latestQuoteTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          tone: "muted",
-        }],
-      });
-    }
-    return {
-      info,
-      hints: [
-        ...(indexUrl ? [{ id: "open", key: "o", label: "pen", onPress: () => openUrl(indexUrl) }] : []),
-        { id: "refresh", key: "r", label: "efresh", onPress: onRefresh },
-      ],
-    };
-  }, [failedCount, indexUrl, latestQuoteTs, loadingCount, onRefresh]);
+/** The reason a board is empty, taken from the per-symbol errors the board records. */
+export function boardErrorMessage(quotes: BoardQuoteMap): string | null {
+  let total = 0;
+  let unavailable = 0;
+  let message: string | null = null;
+  for (const state of quotes.values()) {
+    total += 1;
+    if (state.quote || state.loading) continue;
+    unavailable += 1;
+    message ??= state.error;
+  }
+  if (total === 0 || unavailable < total || !message) return null;
+  return message.length > ERROR_MESSAGE_MAX_LENGTH
+    ? `${message.slice(0, ERROR_MESSAGE_MAX_LENGTH - 1)}…`
+    : message;
+}
+
+export function useWorldIndicesFooter(quotes: BoardQuoteMap, onRefresh: () => void, focused: boolean) {
+  const status = quoteBoardStatus(quotes);
+  const errorMessage = boardErrorMessage(quotes);
+
+  useShortcut((event) => {
+    if (!focused || !isPlainKey(event, "r")) return;
+    event.preventDefault?.();
+    onRefresh();
+  }, { enabled: focused });
+
+  usePaneFooter(
+    "world-indices",
+    () => {
+      const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);
+      if (errorMessage) info.push({ id: "reason", parts: [{ text: errorMessage, tone: "warning" }] });
+      return { info };
+    },
+    [errorMessage, focused, onRefresh, status.latestTs, status.loading, status.stale, status.unavailable],
+  );
 }

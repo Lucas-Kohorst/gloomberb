@@ -22,6 +22,11 @@ export async function upsertTickerFromSearchResult(
   tickerRepository: AppTickerRepositoryPort,
   result: InstrumentSearchResult,
 ): Promise<{ ticker: TickerRecord; created: boolean }> {
+  // The provider contract (InstrumentSearchResult) has no ISIN field, so a
+  // provider search cannot persist a returned ISIN here. An ISIN already
+  // stored in local metadata is preserved — mergeTickerMetadataFromSearchResult
+  // never touches metadata.isin. If a provider later adds ISIN to its result
+  // type, wire it into the merge below.
   const canonical = cryptoMetadataFromSearchResult(result);
   const symbol = canonical?.symbol ?? getSearchResultSymbol(result);
   const exchange = canonical?.exchange ?? result.exchange;
@@ -90,7 +95,6 @@ function mergeTickerMetadataFromSearchResult(
   } else if (
     nextExchange
     && metadata.exchange
-    && !canonical
     && canonicalExchange(nextExchange) !== canonicalExchange(metadata.exchange)
   ) {
     metadata.exchange = nextExchange;

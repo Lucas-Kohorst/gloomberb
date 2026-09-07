@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
+import { Box, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   EmptyState,
-  footerErrorChip,
   Spinner,
   StaticChartSurface,
-  TickerEmptyState,
+  unavailableText,
   usePaneFooter,
   usePaneTicker,
   type DataTableCell,
   type DataTableKeyEvent,
 } from "../../../components";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors, blendHex } from "../../../theme/colors";
 import { useShortcut } from "../../../react/input";
@@ -72,24 +71,32 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
 
   const rows = useMemo(() => buildRows(records), [records]);
   const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(), []);
   const chartPoints = useMemo(() => recordsToChartPoints(records), [records]);
 
   const boundedSelectedIdx = sortedRows.length > 0
     ? Math.min(selectedIdx, sortedRows.length - 1)
     : -1;
 
-  const loadData = useCallback(async (forceRefresh: boolean) => {
+  const skipNonUs = !!(ticker && hasClassifiableUsEquityMetadata(ticker) && !isUsEquityTicker(ticker));
+
+  const loadData = useCallback(async () => {
     if (!symbol) {
       setRecords([]);
       setStatus("idle");
       setError(null);
       return;
     }
+    if (skipNonUs) {
+      setRecords([]);
+      setStatus("loaded");
+      setError(null);
+      return;
+    }
 
     fetchGenRef.current += 1;
     const gen = fetchGenRef.current;
-    setStatus("loading");
+    setStatus((current) => (current === "loaded" ? current : "loading"));
     setError(null);
 
     try {
@@ -104,14 +111,14 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
       setRecords([]);
       setStatus("error");
     }
-  }, [symbol]);
+  }, [skipNonUs, symbol]);
 
   useEffect(() => {
-    void loadData(false);
+    void loadData();
   }, [loadData]);
 
   const refresh = useCallback(() => {
-    void loadData(true);
+    void loadData();
   }, [loadData]);
 
   const handleHeaderClick = useCallback((columnId: string) => {
@@ -158,22 +165,15 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
     }
   }, []);
 
-  usePaneFooter("short-interest", () => {
-    const errorChip = footerErrorChip(status === "error" ? error : null);
-    return {
-      info: [
-        ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-        ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
-        ...(status === "loaded" && records.length > 0
-          ? [{ id: "latest", parts: [{ text: `latest ${formatCompact(records[records.length - 1]!.sharesShort)}`, tone: "muted" as const }] }]
-          : []),
-      ],
-      hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-    };
-  }, [error, records, refresh, status]);
+  usePaneFooter("short-interest", () => ({
+    info: [
+      ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(status === "error" && error ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }] : []),
+    ],
+  }), [error, status]);
 
   if (!ticker || !symbol) {
-    return <TickerEmptyState kind="short interest" symbol={null} detail="short interest" />;
+    return <EmptyState title="No ticker selected." message="Select a ticker to view short interest." />;
   }
 
   if ((status === "idle" || status === "loading") && records.length === 0) {
@@ -181,23 +181,23 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }
 
   if (status === "error" && records.length === 0) {
-    return <TickerEmptyState kind="short interest" symbol={symbol} detail="short interest" error={error} />;
+    return <EmptyState title={unavailableText("Short interest")} message={error ?? undefined} />;
   }
 
   if (status === "loaded" && records.length === 0) {
     const usEquitiesOnly = hasClassifiableUsEquityMetadata(ticker) && !isUsEquityTicker(ticker);
-    if (usEquitiesOnly) {
-      return (
-        <EmptyState
-          title="US equities only"
-          message="Short interest data is available for US equities."
-        />
-      );
-    }
-    return <TickerEmptyState kind="short interest" symbol={symbol} detail="short interest" />;
+    return (
+      <EmptyState
+        title={usEquitiesOnly ? "US equities only" : "No short interest data"}
+        message={usEquitiesOnly
+          ? "Short interest data is available for US equities."
+          : `No short interest found for ${symbol}.`}
+      />
+    );
   }
 
-  const chartHeight = Math.max(1, Math.floor((height - 1) * 0.35));
+  const showChart = chartPoints.length >= 2;
+  const chartHeight = showChart ? Math.max(1, Math.floor((height - 1) * 0.35)) : 0;
   const tableHeight = Math.max(1, height - chartHeight - 1 - (nativePaneChrome ? 1 : 0));
   const chartWidth = Math.max(24, width - 2);
   const palette = {
@@ -209,27 +209,19 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {chartPoints.length >= 2 ? (
+      {showChart ? (
         <Box flexDirection="column" marginTop={1} paddingX={1} flexShrink={0}>
-          <Box flexDirection="row" height={1}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>SHORT INTEREST</Text>
-            <Box flexGrow={1} />
-            <Text fg={colors.warning}>● </Text>
-            <Text fg={colors.textDim}>Shares Short</Text>
-          </Box>
-          <Box marginTop={1}>
-            <StaticChartSurface
-              points={chartPoints}
-              width={chartWidth}
-              height={chartHeight}
-              mode="line"
-              colors={palette}
-              showTimeAxis
-              timeAxisColor={colors.textDim}
-              yAxisColor={colors.textDim}
-              formatYAxisValue={(value: number) => formatCompact(value)}
-            />
-          </Box>
+          <StaticChartSurface
+            points={chartPoints}
+            width={chartWidth}
+            height={chartHeight}
+            mode="line"
+            colors={palette}
+            showTimeAxis
+            timeAxisColor={colors.textDim}
+            yAxisColor={colors.textDim}
+            formatYAxisValue={(value: number) => formatCompact(value)}
+          />
         </Box>
       ) : null}
       <Box flexGrow={1} marginTop={chartPoints.length >= 2 ? 1 : 0}>
@@ -250,8 +242,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
           onHeaderClick={handleHeaderClick}
           getItemKey={(row) => row.key}
           renderCell={renderCell}
-          emptyStateTitle={status === "loading" ? "Loading..." : "No short interest data"}
-          emptyStateMessage={symbol ? `${symbol} has no short interest.` : undefined}
+          emptyStateTitle={status === "loading" ? "Loading..." : "No data"}
         />
       </Box>
     </Box>

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAssistResultItems,
+  formatAssistCandidateLabel,
   shouldAutoAskAssist,
   shouldShowAssistRow,
   type AssistRequestState,
@@ -48,8 +49,19 @@ describe("shouldShowAssistRow", () => {
 });
 
 describe("buildAssistResultItems", () => {
-  test("routes signed-out users to sign up instead of the request", () => {
-    expect(labels({ status: "idle" }, { enabled: false })).toEqual(["Ask AI — sign up to enable"]);
+  test("routes signed-out users to sign in instead of the request", () => {
+    expect(labels({ status: "idle" }, { enabled: false })).toEqual(["Ask AI — sign in to enable"]);
+  });
+
+  test("routes an unverified session to verify, not sign up", () => {
+    expect(buildAssistResultItems({
+      ...handlers,
+      query: "chart nvidia vs amd",
+      enabled: false,
+      signedIn: true,
+      auto: true,
+      state: { status: "idle" },
+    }).map((item) => item.label)).toEqual(["Ask AI — verify email to enable"]);
   });
 
   test("renders each state of the request", () => {
@@ -84,7 +96,20 @@ describe("buildAssistResultItems", () => {
       .toEqual(["Rate limited — try again in a minute"]);
   });
 
-  test("shows candidates input-first and runs the exact command-bar text", () => {
+  test("lays a candidate out like any other row: prefix in the badge, argument leading the label", () => {
+    expect(formatAssistCandidateLabel({ input: "DES NVDA", prefix: "DES", title: "Open security details for NVDA" }))
+      .toBe("NVDA \u00b7 Open security details");
+    expect(formatAssistCandidateLabel({ input: "G NVDA AMD", prefix: "G", title: "Chart NVDA vs AMD" }))
+      .toBe("NVDA AMD \u00b7 Chart NVDA vs AMD");
+    // No argument: the title stands alone rather than a stray separator.
+    expect(formatAssistCandidateLabel({ input: "ERN", prefix: "ERN", title: "Earnings Calendar" }))
+      .toBe("Earnings Calendar");
+    // A prefix the input does not start with is not stripped out of it.
+    expect(formatAssistCandidateLabel({ input: "show earnings", prefix: "ERN", title: "Earnings" }))
+      .toBe("show earnings \u00b7 Earnings");
+  });
+
+  test("shows candidates with the prefix as badge and runs the exact command-bar text", () => {
     const runs: Array<[string, string | undefined]> = [];
     const items = buildAssistResultItems({
       ...handlers,
@@ -100,7 +125,8 @@ describe("buildAssistResultItems", () => {
       },
     });
 
-    expect(items[0]?.label).toBe("G NVDA AMD — Chart NVDA vs AMD");
+    expect(items[0]?.label).toBe("NVDA AMD \u00b7 Chart NVDA vs AMD");
+    expect(items[0]?.badge).toBe("G");
     // The marker rides the trailing column instead of shifting the label.
     expect(items[0]?.right).toBe("✦");
     expect(items[0]?.accent).toBe(true);

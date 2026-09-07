@@ -11,14 +11,16 @@ import { colors } from "../../../theme/colors";
 import { TextAttributes } from "../../../ui";
 import { useDialog, type AlertContext } from "../../../ui/dialog";
 import type { PaneProps } from "../../../types/plugin";
-import { useMarketData, usePluginAppActions, usePluginConfigState } from "../../runtime";
+import { usePluginAppActions, usePluginConfigState } from "../../runtime";
 import {
   deserializeAlerts,
   editAlert,
+  rearmAlert as rebuildAlert,
+  readAlertsStoreError,
   serializeAlerts,
 } from "./alert-engine";
 import { parseAlertCommandValues } from "./command";
-import { ALERTS_KEY, PANE_QUOTE_REFRESH_MS } from "./constants";
+import { ALERTS_KEY } from "./constants";
 import {
   conditionLabel,
   formatAlertDistance,
@@ -27,12 +29,6 @@ import {
   formatQuoteChecked,
   relativeTime,
 } from "./format";
-import {
-  createQuoteErrorMessage,
-  quoteAlertFields,
-  quoteErrorAlertFields,
-  resolveAlertQuote,
-} from "./quotes";
 import type { AlertRule } from "./types";
 import { isPriceAlertCondition } from "./types";
 import {
@@ -73,7 +69,6 @@ const ALERT_TABLE_CONTENT_WIDTH = ALERT_COLUMNS.reduce(
 
 export function AlertsPane({ focused, width, height, close }: PaneProps) {
   const [alertsJson, setAlertsJson] = usePluginConfigState<string>(ALERTS_KEY, "[]");
-  const marketData = useMarketData();
   const { openPluginCommandWorkflow } = usePluginAppActions();
   const dialog = useDialog();
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -81,10 +76,10 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     columnId: null,
     direction: "asc",
   });
-  const marketDataId = marketData?.id ?? null;
   const showHorizontalScrollbar = ALERT_TABLE_CONTENT_WIDTH > width;
+  const storeError = useMemo(() => readAlertsStoreError(alertsJson), [alertsJson]);
 
-  const { alerts, rows, activeCount, triggeredCount } = useMemo(() => {
+  const { alerts, rows, quoteError } = useMemo(() => {
     const parsed = deserializeAlerts(alertsJson);
     const activeAlerts = parsed.filter((a) => a.status === "active");
     const triggeredAlerts = parsed
@@ -94,8 +89,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     return {
       alerts: parsed,
       rows: [...activeAlerts, ...triggeredAlerts],
-      activeCount: activeAlerts.length,
-      triggeredCount: triggeredAlerts.length,
+      quoteError: parsed.find((alert) => alert.lastCheckError)?.lastCheckError ?? null,
     };
   }, [alertsJson]);
 
@@ -137,14 +131,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
 
   const rearmAlert = useCallback((id: string) => {
     savePaneAlerts(
-      alerts.map((a) =>
-        a.id === id ? {
-          ...a,
-          status: "active" as const,
-          triggeredAt: undefined,
-          lastCheckError: undefined,
-        } : a,
-      ),
+      alerts.map((a) => (a.id === id ? rebuildAlert(a) : a)),
     );
   }, [alerts, savePaneAlerts]);
 
@@ -190,60 +177,25 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
     });
   }, [dialog, rows, savePaneAlerts, selectedIdx]);
 
-  useEffect(() => {
-    if (!marketData || rows.length === 0) return;
-    const now = Date.now();
-    const dueAlerts = rows.filter((alert) => (
-      isPriceAlertCondition(alert.condition)
-      && (!alert.lastCheckedAt || now - alert.lastCheckedAt > PANE_QUOTE_REFRESH_MS)
-    ));
-    if (dueAlerts.length === 0) return;
-
-    let cancelled = false;
-    void Promise.all(dueAlerts.map(async (alert) => {
-      try {
-        const quote = await resolveAlertQuote(marketData, alert.symbol, alert.exchange);
-        return { id: alert.id, patch: quoteAlertFields(quote) };
-      } catch (error) {
-        return {
-          id: alert.id,
-          patch: quoteErrorAlertFields(createQuoteErrorMessage(alert.symbol, error)),
-        };
-      }
-    })).then((updates) => {
-      if (cancelled || updates.length === 0) return;
-      const patches = new Map(updates.map((update) => [update.id, update.patch]));
-      savePaneAlerts((current) => current.map((alert) => {
-        const patch = patches.get(alert.id);
-        return patch ? { ...alert, ...patch } : alert;
-      }));
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [marketDataId, rows, savePaneAlerts]);
+  // Quotes come from the plugin's single background poll, which writes into the
+  // same persisted store, so the pane never fetches on its own.
 
   usePaneFooter("alerts", () => ({
-    info: [
-      {
-        id: "active",
-        parts: [
-          { text: String(activeCount), tone: "value", bold: true },
-          { text: "active", tone: "label" },
-        ],
-      },
-      ...(triggeredCount > 0 ? [{
-        id: "triggered",
-        parts: [
-          { text: String(triggeredCount), tone: "warning" as const, bold: true },
-          { text: "triggered", tone: "label" as const },
-        ],
-      }] : []),
-    ],
+    info: storeError
+      ? [{ id: "store-error", parts: [{ text: storeError, tone: "warning" as const }] }]
+      : quoteError
+        ? [{ id: "quote-error", parts: [{ text: quoteError, tone: "warning" as const }] }]
+        : [],
     hints: [
       { id: "add", key: "a", label: "dd alert", onPress: startAddAlert },
       { id: "weather", key: "w", label: "eather", onPress: startAddWeatherAlert },
+      {
+        id: "edit",
+        key: "e",
+        label: "dit",
+        onPress: editSelectedAlert,
+        disabled: rows.length === 0,
+      },
       {
         id: "edit",
         key: "e",
@@ -260,13 +212,12 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       },
     ],
   }), [
-    activeCount,
     deleteSelectedAlert,
     editSelectedAlert,
+    quoteError,
     rows.length,
     startAddAlert,
-    startAddWeatherAlert,
-    triggeredCount,
+    storeError,
   ]);
 
   useEffect(() => {
@@ -406,8 +357,8 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         if (alert.status === "triggered") rearmAlert(alert.id);
       }}
       renderCell={renderCell}
-      emptyStateTitle="No alerts"
-      emptyStateHint="Use the action bar to create one."
+      emptyStateTitle={storeError ? "Saved alerts could not be read." : "No alerts"}
+      emptyStateHint={storeError ?? "Press a to add a price alert."}
       showHorizontalScrollbar={showHorizontalScrollbar}
     />
   );

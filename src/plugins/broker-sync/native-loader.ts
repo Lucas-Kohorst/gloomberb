@@ -1,12 +1,10 @@
-import type { BrokerAdapter } from "../../types/broker";
-import type { BrokerInstanceConfig } from "../../types/config";
-import type { BrokerPortfolioSnapshot } from "./normalize";
-
-export type RobinhoodNativeModule = {
-  loadRobinhoodPortfolio(instance: BrokerInstanceConfig): Promise<BrokerPortfolioSnapshot>;
-  robinhoodBroker: BrokerAdapter;
-};
+export type RobinhoodNativeModule = typeof import("./robinhood-native");
+export type SimpleFinNativeModule = typeof import("./simplefin-native");
 
 export function loadRobinhoodNativeModule(): Promise<RobinhoodNativeModule> {
   return import("./robinhood-native");
+}
+
+export function loadSimpleFinNativeModule(): Promise<SimpleFinNativeModule> {
+  return import("./simplefin-native");
 }

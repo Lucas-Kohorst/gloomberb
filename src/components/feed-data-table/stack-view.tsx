@@ -65,6 +65,7 @@ interface FeedDataTableStackViewProps {
   emptyStateMessage?: string;
   emptyStateHint?: string;
   isItemRead?: (item: FeedDataTableItem) => boolean;
+  onItemRead?: (item: FeedDataTableItem) => void;
   onOpenItem?: (item: FeedDataTableItem, index: number) => void;
   onOpenItemIdChange?: (itemId: string | null) => void;
   openItemId?: string | null;
@@ -155,6 +156,7 @@ export function FeedDataTableStackView({
   emptyStateMessage,
   emptyStateHint,
   isItemRead,
+  onItemRead,
   onOpenItem,
   onOpenItemIdChange,
   openItemId: controlledOpenItemId,
@@ -215,9 +217,15 @@ export function FeedDataTableStackView({
 
   const openRow = useCallback((row: DetailRow | undefined) => {
     if (!row) return;
+    onItemRead?.(row.item);
     onOpenItem?.(row.item, row.itemIndex);
     setOpenItemId(row.item.id);
-  }, [onOpenItem, setOpenItemId]);
+  }, [onItemRead, onOpenItem, setOpenItemId]);
+
+  const popOutItem = useCallback((item: FeedDataTableItem) => {
+    onItemRead?.(item);
+    onPopOut?.(item);
+  }, [onItemRead, onPopOut]);
 
   useEffect(() => {
     if (openItemId && !openItem) {
@@ -255,19 +263,29 @@ export function FeedDataTableStackView({
           text: row.item.eyebrow ?? "",
           color: selectedColor ?? colors.textMuted,
         };
-      case "title":
+      case "title": {
+        const read = isItemRead?.(row.item) === true;
         return {
           text: row.item.title,
-          color: selectedColor ?? colors.text,
+          color: read ? colors.textMuted : (selectedColor ?? colors.text),
           attributes: isItemRead
-            ? isItemRead(row.item)
-              ? TextAttributes.NONE
-              : TextAttributes.BOLD
+            ? (read ? TextAttributes.NONE : TextAttributes.BOLD)
             : rowState.selected
               ? TextAttributes.BOLD
               : TextAttributes.NONE,
         };
+      }
     }
+  }, [isItemRead]);
+
+  const getRowRevision = useCallback((row: DetailRow) => {
+    return [
+      row.item.id,
+      row.item.title,
+      row.item.eyebrow ?? "",
+      timestampValue(row.item),
+      isItemRead?.(row.item) ? 1 : 0,
+    ].join(":");
   }, [isItemRead]);
 
   const getRowBackgroundColor = useCallback((
@@ -303,11 +321,11 @@ export function FeedDataTableStackView({
     if (onPopOut && openItem && isPlainKey(event, "p")) {
       event.stopPropagation?.();
       event.preventDefault?.();
-      onPopOut(openItem);
+      popOutItem(openItem);
       return true;
     }
     return false;
-  }, [onPopOut, openItem, scrollDetailBy]);
+  }, [onPopOut, openItem, popOutItem, scrollDetailBy]);
 
   const detailContent = openItem ? (
     <Box
@@ -386,7 +404,9 @@ export function FeedDataTableStackView({
       selection={{
         kind: "index",
         selectedIndex: activeRowIndex,
-        onChange: (_index, row) => onSelect(row.itemIndex),
+        onChange: (_index, row) => {
+          onSelect(row.itemIndex);
+        },
       }}
       onActivate={(row) => openRow(row)}
       rootBefore={rootBefore}
@@ -404,6 +424,7 @@ export function FeedDataTableStackView({
           nextSortPreference(current, columnId as DetailColumnId)
         )}
       getItemKey={(row) => row.item.id}
+      getRowRevision={getRowRevision}
       getRowBackgroundColor={getRowBackgroundColor}
       isRowArriving={isRowArriving}
       renderCell={renderCell}

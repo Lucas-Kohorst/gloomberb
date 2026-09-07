@@ -1,8 +1,8 @@
 import type { ChartResolution, TimeRange } from "./range";
-import type { ChartResolutionSupport } from "./resolution";
+import type { ChartResolutionSupport, ManualChartResolution } from "./resolution";
 import type { InstrumentRef } from "../market-data/request-types";
 
-export const CHART_SPEC_VERSION = 1 as const;
+export const CHART_SPEC_VERSION = 2 as const;
 
 export type SeriesPeriod = "auto" | "daily" | "weekly" | "monthly" | "quarterly" | "annual" | "ttm";
 export type SeriesStyle = "line" | "area" | "step" | "columns" | "points" | "candles" | "ohlc" | "hlc";
@@ -23,6 +23,13 @@ export interface SecuritySeriesSource {
 export interface EconomicSeriesSource {
   kind: "economic";
   provider: "fred";
+  seriesId: string;
+}
+
+/** Persisted provider-owned source. The opaque series ID includes provider lookup identity. */
+export interface CapabilitySeriesSource {
+  kind: "capability";
+  capabilityId: string;
   seriesId: string;
 }
 
@@ -69,15 +76,19 @@ export interface ConstantSeriesSource {
   value: number;
 }
 
-export type ChartSeriesSource =
-  | SecuritySeriesSource
-  | EconomicSeriesSource
+export type UniversalSeriesSource =
   | AdjacentIndexSeriesSource
   | BenchmarkSeriesSource
   | PollSeriesSource
   | WeatherSeriesSource
   | OwidSeriesSource
-  | PredictionMarketSeriesSource
+  | PredictionMarketSeriesSource;
+
+export type ChartSeriesSource =
+  | SecuritySeriesSource
+  | EconomicSeriesSource
+  | CapabilitySeriesSource
+  | UniversalSeriesSource
   | ConstantSeriesSource;
 
 export interface ChartSeriesSpec {
@@ -101,6 +112,9 @@ export type ChartStudyKind =
   | "rsi"
   | "macd"
   | "vwap"
+  | "drawdown"
+  | "volatility"
+  | "distance"
   | "atr"
   | "stochastic"
   | "adx"
@@ -231,4 +245,6 @@ export interface ChartResolutionResult {
   warnings: string[];
   /** Effective inclusive bounds used to clip the resolved chart data. */
   viewport?: { start: Date; end: Date };
+  /** Bar resolution the loaded market history was fetched at. */
+  resolution?: ManualChartResolution;
 }

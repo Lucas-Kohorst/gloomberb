@@ -6,6 +6,13 @@ import {
   BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
   setupBreakingNewsNotifications,
 } from "./breaking/notifications";
+import { setupTopNewsNotifications } from "./news/top-notifications";
+import {
+  BREAKING_MUTED_SECTOR_OPTIONS,
+  BREAKING_NEWS_MUTED_SECTORS_KEY,
+  BREAKING_NEWS_SCOPE_KEY,
+  BREAKING_SCOPE_OPTIONS,
+} from "./breaking/filters";
 import {
   addUserNewsFeed,
   getEnabledNewsFeeds,
@@ -60,26 +67,27 @@ function createNewsPresetPane(config: NewsPresetPaneConfig) {
 }
 
 const TopPane = createNewsPresetPane({
-  paneKey: "top",
+  paneKey: "top:curated",
   title: "Top News",
   query: NEWS_QUERY_PRESETS.top,
-  columns: ["time", "title", "tickers", "importance"],
+  columns: ["time", "source", "title", "tickers", "categories", "importance"],
   defaultSort: { columnId: "importance", direction: "desc" },
   emptyStateTitle: "No top stories yet",
-  emptyStateHint: "Try refreshing later as wire stories arrive.",
+  emptyStateHint: "Top stories appear when curated market sources publish them.",
 });
 
 const FeedPane = createNewsPresetPane({
   paneKey: "feed",
   title: "News Feed",
   query: NEWS_QUERY_PRESETS.feed,
-  columns: ["time", "source", "title", "tickers", "categories"],
+  columns: ["time", "source", "title", "tickers", "categories", "sentiment"],
   defaultSort: { columnId: "time", direction: "desc" },
   emptyStateTitle: "No feed stories yet",
-  emptyStateHint: "Try refreshing later as wire stories arrive.",
+  emptyStateHint: "Run the Add News Feed command to wire up another source.",
 });
 
 let disposeBreakingNewsNotifications: (() => void) | null = null;
+let disposeTopNewsNotifications: (() => void) | null = null;
 let disposeRssConnection: (() => void) | null = null;
 let disposeJinaConnection: (() => void) | null = null;
 
@@ -143,13 +151,31 @@ export const newsWireModule: PluginModule = {
       defaultFloatingSize: { width: 85, height: 20 },
       settings: {
         title: "Breaking News Settings",
-        fields: [{
-          key: BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
-          label: "Notifications",
-          description: "Notify when new breaking stories arrive, even while this pane is closed.",
-          type: "toggle",
-          storage: "plugin",
-        }],
+        fields: [
+          {
+            key: BREAKING_NEWS_NOTIFICATIONS_ENABLED_KEY,
+            label: "Notifications",
+            description: "Notify when new breaking stories arrive, even while this pane is closed.",
+            type: "toggle",
+            storage: "plugin",
+          },
+          {
+            key: BREAKING_NEWS_SCOPE_KEY,
+            label: "Notify About",
+            description: "Which breaking stories are worth interrupting you for.",
+            type: "select",
+            storage: "plugin",
+            options: BREAKING_SCOPE_OPTIONS,
+          },
+          {
+            key: BREAKING_NEWS_MUTED_SECTORS_KEY,
+            label: "Muted Sectors",
+            description: "Never notify about stories confined to these sectors.",
+            type: "multi-select",
+            storage: "plugin",
+            options: BREAKING_MUTED_SECTOR_OPTIONS,
+          },
+        ],
       },
     },
     {
@@ -329,11 +355,14 @@ export const newsWireModule: PluginModule = {
     });
 
     disposeBreakingNewsNotifications = setupBreakingNewsNotifications(ctx);
+    disposeTopNewsNotifications = setupTopNewsNotifications(ctx);
   },
   dispose() {
     cancelRssNewsWarm();
     disposeBreakingNewsNotifications?.();
     disposeBreakingNewsNotifications = null;
+    disposeTopNewsNotifications?.();
+    disposeTopNewsNotifications = null;
     disposeRssConnection?.();
     disposeRssConnection = null;
     disposeJinaConnection?.();

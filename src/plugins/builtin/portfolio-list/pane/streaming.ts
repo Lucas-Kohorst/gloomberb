@@ -22,6 +22,7 @@ import {
   warmupQuoteWithSnapshot,
   type VisibleWarmupRequirements,
 } from "./data";
+import { isPredictionMarketTicker } from "../../../prediction-markets/collection-watchlist";
 
 export function usePortfolioPaneStreaming({
   appActive,
@@ -133,6 +134,7 @@ export function usePortfolioPaneStreaming({
       )
       : [];
     for (const ticker of quoteWarmupTickers) {
+      if (isPredictionMarketTicker(ticker)) continue;
       const financials = latestFinancialsMap.get(ticker.metadata.ticker);
       const quoteKey = visibleWarmupKey("quote", ticker);
       const warmupWithSnapshot = warmupQuoteWithSnapshot(ticker, liveStreaming, activeSort);
@@ -152,6 +154,7 @@ export function usePortfolioPaneStreaming({
     }
 
     for (const ticker of visibleFinancialTickers) {
+      if (isPredictionMarketTicker(ticker)) continue;
       const financials = latestFinancialsMap.get(ticker.metadata.ticker);
       if (snapshotQueueSymbols.has(ticker.metadata.ticker)) continue;
       const snapshotKey = visibleWarmupKey("snapshot", ticker);
@@ -242,7 +245,8 @@ export function usePortfolioPaneStreaming({
         const financials = latestFinancialsMap.get(ticker.metadata.ticker);
         const key = visibleWarmupKey("quote", ticker);
         if (
-          !needsVisibleQuoteWatchdogRefresh(financials, nowTimestamp)
+          isPredictionMarketTicker(ticker)
+          || !needsVisibleQuoteWatchdogRefresh(financials, nowTimestamp)
           || warmupInFlightRef.current.has(key)
           || nowTimestamp - (warmupAttemptRef.current.get(key) ?? 0) < VISIBLE_QUOTE_REFRESH_COOLDOWN_MS
         ) {

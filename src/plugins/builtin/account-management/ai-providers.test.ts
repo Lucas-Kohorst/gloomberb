@@ -5,6 +5,7 @@ import type { AiRuntimeCatalog } from "../ai/runner";
 import type { BrowserAiState } from "../ai/browser";
 import {
   aiInventoryFixAction,
+  aiInventoryRowAction,
   aiInventoryStatusLabel,
   aiInventoryStatusColor,
   byokKeysConfigSelector,
@@ -226,6 +227,8 @@ describe("AI provider inventory status resolution", () => {
     expect(anthropic.status).toBe("available");
     expect(anthropic.isActive).toBe(true);
     expect(anthropic.canOAuth).toBe(false); // no oauth authMethod in the mock
+    expect(anthropic.canDisconnect).toBe(true);
+    expect(aiInventoryRowAction(anthropic)?.kind).toBe("disconnect");
   });
 
   test("Pi provider shows available when a BYOK key exists", () => {
@@ -239,6 +242,7 @@ describe("AI provider inventory status resolution", () => {
     const openai = snapshot.rows.find((r) => r.id === "openai")!;
     expect(openai.status).toBe("available");
     expect(openai.hasKey).toBe(true);
+    expect(openai.canDisconnect).toBe(false);
   });
 
   test("Pi provider shows needs-key when no key and not connected", () => {
@@ -289,7 +293,7 @@ describe("AI provider active-provider selection", () => {
   test("canSelectAiProvider returns true for available providers and providers with keys", () => {
     const available: AiProviderInventoryRow = {
       id: "anthropic", name: "Claude", status: "available", detail: "",
-      isActive: false, preferred: false, hasKey: false, canOAuth: true, isLocal: false, byokServiceId: "anthropic",
+      isActive: false, preferred: false, hasKey: false, canOAuth: true, canDisconnect: false, isLocal: false, byokServiceId: "anthropic",
     };
     const withKey: AiProviderInventoryRow = { ...available, status: "needs-key", hasKey: true };
     const noKey: AiProviderInventoryRow = { ...available, status: "needs-key", hasKey: false, canOAuth: false };
@@ -300,7 +304,7 @@ describe("AI provider active-provider selection", () => {
     expect(canSelectAiProvider(unavailable)).toBe(false);
     const browserDownloadable: AiProviderInventoryRow = {
       id: "browser-builtin", name: "Browser", status: "needs-key", detail: "",
-      isActive: false, preferred: true, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: null,
+      isActive: false, preferred: true, hasKey: false, canOAuth: false, canDisconnect: false, isLocal: true, byokServiceId: null,
     };
     expect(canSelectAiProvider(browserDownloadable)).toBe(true);
   });
@@ -335,15 +339,16 @@ describe("AI provider fix actions", () => {
   test("available providers have no fix action", () => {
     const row: AiProviderInventoryRow = {
       id: "anthropic", name: "Claude", status: "available", detail: "",
-      isActive: true, preferred: false, hasKey: true, canOAuth: false, isLocal: false, byokServiceId: "anthropic",
+      isActive: true, preferred: false, hasKey: true, canOAuth: false, canDisconnect: false, isLocal: false, byokServiceId: "anthropic",
     };
     expect(aiInventoryFixAction(row)).toBe(null);
+    expect(aiInventoryRowAction(row)).toBe(null);
   });
 
   test("Ollama fix action is start-ollama", () => {
     const row: AiProviderInventoryRow = {
       id: "ollama", name: "Ollama", status: "unavailable", detail: "",
-      isActive: false, preferred: false, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: "ollama",
+      isActive: false, preferred: false, hasKey: false, canOAuth: false, canDisconnect: false, isLocal: true, byokServiceId: "ollama",
     };
     expect(aiInventoryFixAction(row)?.kind).toBe("start-ollama");
   });
@@ -351,7 +356,7 @@ describe("AI provider fix actions", () => {
   test("Chrome downloadable fix action is download-model", () => {
     const row: AiProviderInventoryRow = {
       id: "browser-builtin", name: "Browser", status: "needs-key", detail: "",
-      isActive: false, preferred: true, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: null,
+      isActive: false, preferred: true, hasKey: false, canOAuth: false, canDisconnect: false, isLocal: true, byokServiceId: null,
     };
     expect(aiInventoryFixAction(row)?.kind).toBe("download-model");
   });
@@ -359,7 +364,7 @@ describe("AI provider fix actions", () => {
   test("Chrome unavailable has no fake action", () => {
     const row: AiProviderInventoryRow = {
       id: "browser-builtin", name: "Browser", status: "unavailable", detail: "",
-      isActive: false, preferred: true, hasKey: false, canOAuth: false, isLocal: true, byokServiceId: null,
+      isActive: false, preferred: true, hasKey: false, canOAuth: false, canDisconnect: false, isLocal: true, byokServiceId: null,
     };
     expect(aiInventoryFixAction(row)).toBe(null);
   });
@@ -367,9 +372,18 @@ describe("AI provider fix actions", () => {
   test("Pi provider without key fix action is add-key", () => {
     const row: AiProviderInventoryRow = {
       id: "openai", name: "OpenAI", status: "needs-key", detail: "",
-      isActive: false, preferred: false, hasKey: false, canOAuth: false, isLocal: false, byokServiceId: "openai",
+      isActive: false, preferred: false, hasKey: false, canOAuth: false, canDisconnect: false, isLocal: false, byokServiceId: "openai",
     };
     expect(aiInventoryFixAction(row)?.kind).toBe("add-key");
+  });
+
+  test("OAuth-connected provider offers disconnect instead of a fix", () => {
+    const row: AiProviderInventoryRow = {
+      id: "anthropic", name: "Claude", status: "available", detail: "Connected.",
+      isActive: true, preferred: false, hasKey: false, canOAuth: true, canDisconnect: true, isLocal: false, byokServiceId: "anthropic",
+    };
+    expect(aiInventoryFixAction(row)).toBe(null);
+    expect(aiInventoryRowAction(row)).toEqual({ label: "Disconnect", kind: "disconnect" });
   });
 });
 

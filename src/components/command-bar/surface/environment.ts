@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useUiCapabilities, type ScrollBoxRenderable } from "../../../ui";
 import { useViewport } from "../../../react/input";
+import type { PluginRegistry } from "../../../plugins/registry";
+import { getPaneShortcutPrefixes } from "../pane-templates/items";
 import {
   getFocusedCollectionId,
   syncConfigActiveLayoutState,
@@ -10,7 +12,7 @@ import {
   type AppState,
 } from "../../../state/app/context";
 import { scheduleConfigSave } from "../../../state/config-save-scheduler";
-import { commands } from "../commands/registry";
+import { applyTickerSearchShortcutConfig, commands } from "../commands/registry";
 import type { ThemePickerHandle } from "../theme-picker";
 import type { ListScreenState } from "../list/model";
 
@@ -66,7 +68,7 @@ function useCommandBarAppState(): AppState {
   ]);
 }
 
-export function useCommandBarEnvironment() {
+export function useCommandBarEnvironment(pluginRegistry: PluginRegistry) {
   const dispatch = useAppDispatch();
   const state = useCommandBarAppState();
   const stateRef = useRef(state);
@@ -82,14 +84,30 @@ export function useCommandBarEnvironment() {
   }, []);
   const { symbol: activeTickerSymbol, ticker: activeTickerData, financials: activeFinancials } = useFocusedTicker();
   const { width: termWidth, height: termHeight } = useViewport();
-  const { nativePaneChrome: nativePaneChromeCapability, cellWidthPx = 8, cellHeightPx = 18, titleBarOverlay } = useUiCapabilities();
+  const {
+    nativePaneChrome: nativePaneChromeCapability,
+    cellWidthPx = 8,
+    cellHeightPx = 18,
+    nativeWindowChrome,
+    titleBarOverlay,
+  } = useUiCapabilities();
   const nativePaneChrome = nativePaneChromeCapability === true;
-  const availableCommands = useMemo(
-    () => nativePaneChrome
-      ? commands.filter((command) => command.id !== "cycle-chart-renderer")
-      : commands,
-    [nativePaneChrome],
-  );
+  const availableCommands = useMemo(() => {
+    const reservedPrefixes = [
+      ...[...pluginRegistry.commands.values()]
+        .map((command) => command.shortcut)
+        .filter((shortcut): shortcut is string => Boolean(shortcut)),
+      ...[...pluginRegistry.paneTemplates.values()].flatMap(getPaneShortcutPrefixes),
+    ];
+    const configuredCommands = applyTickerSearchShortcutConfig(
+      commands,
+      state.config.tickerSearchShortcut,
+      { reservedPrefixes },
+    );
+    return nativePaneChrome
+      ? configuredCommands.filter((command) => command.id !== "cycle-chart-renderer")
+      : configuredCommands;
+  }, [nativePaneChrome, pluginRegistry, state.config.tickerSearchShortcut]);
   const skipTickerSearchDebounceRef = useRef(false);
   const nativeListScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const themePickerRef = useRef<ThemePickerHandle | null>(null);
@@ -111,6 +129,7 @@ export function useCommandBarEnvironment() {
     getCommittedThemeId,
     nativeListScrollRef,
     nativePaneChrome,
+    nativeWindowChrome,
     persistConfig,
     skipTickerSearchDebounceRef,
     state,

@@ -81,10 +81,74 @@ function mutablePaneRegistryMap(map: ReadonlyMap<string, unknown>): Map<string, 
 }
 
 describe("CommandBar", () => {
-  test("keeps generic command filtering separate from ticker search", async () => {
+  test("runs symbol search for plain text and folds the hits under the local matches", async () => {
     const searchQueries: string[] = [];
     testSetup = await testRender(<CommandBarHarness
-      query="MSFT"
+      query="msf"
+      dataProvider={makeDataProvider(async (query) => {
+        searchQueries.push(query);
+        return [
+          { providerId: "yahoo", symbol: "MSFT", name: "Microsoft Corp", exchange: "NASDAQ", type: "EQUITY" },
+          { providerId: "yahoo", symbol: "MSF", name: "MFS Municipal Fund", exchange: "NYSE", type: "ETF" },
+        ];
+      })}
+    />, {
+      width: 80,
+      height: 24,
+    });
+
+    await testSetup.renderOnce();
+    const frame = await waitForFrameToContain("Instruments");
+    expect(searchQueries.length).toBeGreaterThan(0);
+    // The listing split of the DES route is collapsed into one section, with
+    // one row per symbol, and a symbol the query spells out is promoted.
+    expect(frame).not.toContain("Other Listings");
+    // Rows lead with a class badge, so the symbol is the second token, not the line start.
+    expect(frame.split("\n").filter((line) => /^\s*\S+\s+MSFT\b/.test(line))).toHaveLength(1);
+    expect(frame).toContain("Exact Match");
+    expect(frame.indexOf("Exact Match")).toBeLessThan(frame.indexOf("Instruments"));
+    // Signed out, the AI section is a sign-up offer, which sits under the answers.
+    expect(frame.indexOf("Instruments")).toBeLessThan(frame.indexOf("Ask AI"));
+  });
+
+  test("keeps the row the user picked when an exact symbol lands above it", async () => {
+    const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
+    let releaseSearch = () => {};
+    const held = new Promise<void>((resolve) => { releaseSearch = resolve; });
+    testSetup = await testRender(<CommandBarHarness
+      query="list"
+      configurePluginRegistry={(pluginRegistry) => {
+        pluginRegistry.createPaneFromTemplateAsyncFn = async (templateId, options) => {
+          created.push({ templateId, options });
+        };
+      }}
+      dataProvider={makeDataProvider(async () => {
+        await held;
+        return [{ providerId: "yahoo", symbol: "LIST", name: "List Corp", exchange: "NYSE", type: "EQUITY" }];
+      })}
+    />, {
+      width: 100,
+      height: 20,
+    });
+
+    await testSetup.renderOnce();
+    const before = testSetup.captureCharFrame();
+    expect(before).not.toContain("Exact Match");
+    // Down moves off the first pane match onto the second one.
+    await emitKeypress(testSetup, { name: "down" });
+    releaseSearch();
+    await waitForFrameToContain("Exact Match");
+
+    // The symbol row renumbered everything under it; Enter still runs the
+    // pane the user had picked, not whatever now sits at its old index.
+    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
+    expect(created).toEqual([{ templateId: "new-watchlist-pane", options: undefined }]);
+  });
+
+  test("keeps symbol search out of a query a prefix claims", async () => {
+    const searchQueries: string[] = [];
+    testSetup = await testRender(<CommandBarHarness
+      query="PF"
       dataProvider={makeDataProvider(async (query) => {
         searchQueries.push(query);
         return [];
@@ -98,9 +162,7 @@ describe("CommandBar", () => {
     await Bun.sleep(260);
     await testSetup.renderOnce();
 
-    const frame = testSetup.captureCharFrame();
-    expect(frame).not.toContain("Tickers");
-    expect(frame).not.toContain("Microsoft Corp.");
+    expect(testSetup.captureCharFrame()).toContain("Shortcut: Portfolio");
     expect(searchQueries).toEqual([]);
   });
 
@@ -120,7 +182,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     expect(calls).toHaveLength(1);
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).toContain("Search or run a command");
   });
 
   test("shows one account management result when searching profile", async () => {
@@ -158,8 +220,9 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     const frame = await waitForFrameToContain("Account Management");
     expect(frame).not.toMatch(/\n\s*Profile\s*(?:\n|$)/);
-    expect(frame.indexOf("Account Management")).toBeLessThan(frame.indexOf("Add Broker Account"));
 
+    // The Config section leads the list, so walk down to the pane row.
+    await emitKeypress(testSetup, { name: "down" });
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
 
     expect(created).toEqual([{ templateId: "account-management-pane", options: undefined }]);
@@ -179,17 +242,17 @@ describe("CommandBar", () => {
     expect(testSetup.captureCharFrame()).not.toContain("GitHub Light");
   });
 
-  test("runs plugin command shortcuts from the root query", async () => {
+  test("finds the tidy windows command by its snap alias", async () => {
     const calls: string[] = [];
 
     testSetup = await testRender(<CommandBarHarness
-      query="GL"
+      query="snap"
       configurePluginRegistry={(pluginRegistry) => {
         (pluginRegistry.commands as Map<string, any>).set("gridlock-all", {
           id: "gridlock-all",
-          label: "Gridlock All Windows",
-          description: "Arrange all visible panes into a tiled grid",
-          keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
+          label: "Tidy Windows",
+          description: "Arrange every window into one tiled layout",
+          keywords: ["tidy", "snap", "grid", "gridlock", "tile", "arrange", "organize", "organise", "cleanup", "dock", "floating", "windows", "layout"],
           shortcut: "GL",
           category: "config",
           execute: async () => {
@@ -215,7 +278,7 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Gridlock All Windows");
+    expect(frame).toContain("Tidy Windows");
     expect(frame).toContain("GL");
 
     await act(async () => {
@@ -267,52 +330,6 @@ describe("CommandBar", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Add Alert");
     expect(frame).toContain("SA");
-  });
-
-  test("treats plugin route trigger words as an empty plugin filter", async () => {
-    testSetup = await testRender(<CommandBarHarness query="PL plugins" />, {
-      width: 80,
-      height: 18,
-    });
-
-    await testSetup.renderOnce();
-
-    const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("News");
-    expect(frame).toContain("Notes");
-    expect(frame).not.toContain("No plugins match");
-  });
-
-  test("finds grouped plugins through their owned feature terms", async () => {
-    testSetup = await testRender(<CommandBarHarness
-      query="PL kelly"
-      configurePluginRegistry={(pluginRegistry) => {
-        (pluginRegistry.allPlugins as Map<string, any>).set("portfolio", {
-          id: "portfolio",
-          name: "Portfolio",
-          version: "1.0.0",
-          description: "Portfolio management",
-          toggleable: true,
-        });
-        (pluginRegistry.panes as Map<string, any>).set("kelly-sizer", {
-          id: "kelly-sizer",
-          name: "Position Sizer",
-          component: () => null,
-          defaultPosition: "right",
-        });
-        const getPluginPaneIds = pluginRegistry.getPluginPaneIds;
-        pluginRegistry.getPluginPaneIds = (pluginId: string) => (
-          pluginId === "portfolio" ? ["kelly-sizer"] : getPluginPaneIds(pluginId)
-        );
-      }}
-    />, {
-      width: 80,
-      height: 18,
-    });
-
-    await testSetup.renderOnce();
-
-    expect(testSetup.captureCharFrame()).toContain("Portfolio");
   });
 
   test("opens plugin command shortcut arguments in the wizard for confirmation", async () => {
@@ -543,7 +560,9 @@ describe("CommandBar", () => {
     const frame = await waitForFrameToContain("Security Description");
     expectSingleBackControl(frame);
     expect(frame).toContain("BRK.B");
-    expect(frame).toContain("Equity NYSE");
+    // The class moved into the left badge; the trailing text carries only the venue.
+    expect(frame).toMatch(/EQ\s+BRK\.B.*NYSE/);
+    expect(frame).not.toContain("Equity NYSE");
   });
 
   test("opens ticker search when activating the Ticker Research pane item without a ticker", async () => {
@@ -557,7 +576,8 @@ describe("CommandBar", () => {
     const tickerResearchRow = rootFrame
       .split("\n")
       .find((line) => line.includes("Ticker Research"));
-    expect(tickerResearchRow).toMatch(/\bT\s*$/);
+    // The shortcut sits in the badge column left of the label, not on the right.
+    expect(tickerResearchRow).toMatch(/^\s*T\s+Ticker Research\s*$/);
 
     await act(async () => {
       testSetup!.mockInput.pressEnter();
@@ -579,7 +599,6 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
 
     let frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
     expect(frame).toContain("DES");
     expect(frame).toContain("Type a ticker symbol");
     expect(frame).not.toContain("Back");
@@ -753,14 +772,10 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     expect(testSetup.captureCharFrame()).toContain("DES AMD");
 
-    await act(async () => {
-      testSetup!.mockInput.pressKey("backspace", { meta: true });
-      await testSetup!.renderOnce();
-    });
+    await emitKeypress(testSetup, { name: "backspace", meta: true });
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Commands");
-    expect(frame).toContain("Search");
+    expect(frame).toContain("Type a ticker symbol");
     expect(frame).not.toContain("DES AMD");
   });
 
@@ -777,7 +792,7 @@ describe("CommandBar", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).toContain("Search or run a command");
   });
 
   test("DES MSFT opens an exact ticker directly", async () => {
@@ -886,13 +901,15 @@ describe("CommandBar", () => {
 
     await testSetup.renderOnce();
 
+    // Below the sheet; the header row above it hosts the input and is not
+    // click-away territory.
     await act(async () => {
-      await testSetup!.mockMouse.click(0, 0);
+      await testSetup!.mockMouse.click(0, 22);
       await testSetup!.renderOnce();
     });
     await testSetup.renderOnce();
 
-    expect(testSetup.captureCharFrame()).not.toContain("Commands");
+    expect(testSetup.captureCharFrame()).toContain("Search or run a command");
   });
 
   test("groups ticker search sections and keeps saved matches above looser provider results", async () => {
@@ -917,8 +934,8 @@ describe("CommandBar", () => {
     const rows = frame.split("\n");
     const savedHeadings = frame.split("\n").filter((line) => line.trim() === "Saved");
     const otherListingsHeadings = frame.split("\n").filter((line) => line.trim() === "Other Listings");
-    const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL"));
-    const appRow = rows.findIndex((line) => line.trimStart().startsWith("APP"));
+    const aaplRow = rows.findIndex((line) => /^\s*\S+\s+AAPL\b/.test(line));
+    const appRow = rows.findIndex((line) => /^\s*\S+\s+APP\b/.test(line));
     expect(savedHeadings).toHaveLength(1);
     expect(otherListingsHeadings).toHaveLength(1);
     expect(aaplRow).toBeGreaterThanOrEqual(0);
@@ -983,8 +1000,8 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     const frame = await waitForFrameToContain("APLY");
     const rows = frame.split("\n");
-    const aaplRow = rows.findIndex((line) => line.trimStart().startsWith("AAPL"));
-    const apcRow = rows.findIndex((line) => line.trimStart().startsWith("APC"));
+    const aaplRow = rows.findIndex((line) => /^\s*\S+\s+AAPL\b/.test(line));
+    const apcRow = rows.findIndex((line) => /^\s*\S+\s+APC\b/.test(line));
 
     expect(aaplRow).toBeGreaterThanOrEqual(0);
     expect(apcRow).toBeGreaterThanOrEqual(0);

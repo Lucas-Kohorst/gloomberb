@@ -58,12 +58,9 @@ describe("groupEarningsByRelativeDate", () => {
         symbol: "AAPL",
         name: "Apple",
         earningsDate: new Date("2026-05-13T00:00:00.000Z"),
-        epsEstimate: null,
         epsActual: null,
-        revenueEstimate: null,
         revenueActual: null,
         surprise: null,
-        timing: "",
       },
     ], new Date("2026-05-13T21:00:00.000Z"));
 

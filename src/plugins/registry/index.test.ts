@@ -207,6 +207,7 @@ describe("built-in composite plugin ownership", () => {
     expect(registry.getPluginPaneIds("application")).toEqual(expect.arrayContaining([
       "help",
       "changelog",
+      "connections",
     ]));
     expect(registry.getPluginPaneIds("macro")).toEqual(expect.arrayContaining([
       "econ-calendar",
@@ -217,6 +218,7 @@ describe("built-in composite plugin ownership", () => {
     expect(registry.getPaneTemplatePluginId("macro-tv-pane")).toBe("macro");
     expect(registry.getPanePluginId("analytics")).toBe("portfolio");
     expect(registry.getPanePluginId("help")).toBe("application");
+    expect(registry.getPanePluginId("connections")).toBe("application");
     expect(registry.getPanePluginId("macro-tv")).toBe("macro");
     expect(registry.getCommandPluginId("earnings-monitor-shortcut")).toBe("macro");
     expect(registry.getCommandPluginId("gridlock-all")).toBe("application");
@@ -390,6 +392,31 @@ describe("PluginRegistry ticker research tabs", () => {
 
     registry.unregister("ticker-research");
     expect(registry.getTickerResearchTabPluginId("sec")).toBeUndefined();
+  });
+});
+
+describe("PluginRegistry command bar search providers", () => {
+  test("withdraws providers on dispose and on plugin unregister", async () => {
+    const registry = createRegistry();
+    const provider = (id: string) => ({
+      id,
+      category: "Documents",
+      provide: async () => [],
+    });
+    let disposeSelfRegistered: (() => void) | null = null;
+
+    await registry.register(plugin("research-search", (ctx) => {
+      ctx.registerCommandBarSearchProvider(provider("documents"));
+      disposeSelfRegistered = ctx.registerCommandBarSearchProvider(provider("self-withdrawn"));
+    }));
+
+    expect(registry.getCommandBarSearchProviderPluginId("documents")).toBe("research-search");
+    disposeSelfRegistered!();
+    expect(registry.commandBarSearchProviders.has("self-withdrawn")).toBe(false);
+
+    registry.unregister("research-search");
+    expect(registry.commandBarSearchProviders.size).toBe(0);
+    expect(registry.getCommandBarSearchProviderPluginId("documents")).toBeUndefined();
   });
 });
 

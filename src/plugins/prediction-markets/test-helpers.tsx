@@ -610,7 +610,6 @@ export function GroupedDetailHarness({
           historyRange="1M"
           onDetailTabChange={() => {}}
           onHistoryRangeChange={() => {}}
-          onPreviewOrder={() => {}}
           onSelectMarket={() => {}}
           scrollRef={scrollRef}
           selectedRow={selectedRow!}

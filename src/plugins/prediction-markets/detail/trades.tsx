@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { DataTableView, type DataTableColumn } from "../../../components";
 import { colors } from "../../../theme/colors";
 import { formatNumber } from "../../../utils/format";
@@ -30,33 +30,18 @@ export function PredictionMarketTradesView({
   trades: PredictionTrade[];
   width: number;
 }) {
-  const [sortPreference, setSortPreference] = useState<SortPreference<TradeColumnId>>({
-    columnId: null,
-    direction: "desc",
-  });
-  const rows = useMemo(
-    () => applySortPreference(trades.slice(0, 30), sortPreference, (trade, columnId) => {
-      switch (columnId) {
-        case "time": return trade.timestamp;
-        case "side": return trade.side;
-        case "outcome": return trade.outcome;
-        case "price": return trade.price;
-        case "size": return trade.size;
-      }
-    }),
-    [sortPreference, trades],
-  );
+  const visibleTrades = trades.slice(0, 30);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(() =>
-    rows.length > 0 ? 0 : null,
+    visibleTrades.length > 0 ? 0 : null,
   );
 
   useEffect(() => {
     setSelectedIndex((current) => {
-      if (rows.length === 0) return null;
-      if (current == null || current >= rows.length) return 0;
+      if (visibleTrades.length === 0) return null;
+      if (current == null || current >= visibleTrades.length) return 0;
       return current;
     });
-  }, [rows.length]);
+  }, [visibleTrades.length]);
 
   return (
     <DataTableView<PredictionTrade, TradeColumn>
@@ -70,14 +55,10 @@ export function PredictionMarketTradesView({
         onChange: (index) => setSelectedIndex(index),
       }}
       columns={TRADE_COLUMNS}
-      items={rows}
-      sortColumnId={sortPreference.columnId}
-      sortDirection={sortPreference.direction}
-      onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
-        current,
-        columnId as TradeColumnId,
-        { defaultDirection: columnId === "side" || columnId === "outcome" ? "asc" : "desc" },
-      ))}
+      items={visibleTrades}
+      sortColumnId={null}
+      sortDirection="asc"
+      onHeaderClick={() => {}}
       getItemKey={(trade) => trade.id}
       onRowMouseDown={(_trade, index, event) => {
         event.preventDefault();

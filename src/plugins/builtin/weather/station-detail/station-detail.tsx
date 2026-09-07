@@ -203,8 +203,6 @@ function ObservationTable({ observations, timeZone, width }: {
   timeZone?: string;
   width: number;
 }) {
-  const compact = width < 70;
-  const narrow = width < 52;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sort, setSort] = useState<SortPreference<StationObservationColumnId>>({
     columnId: "local",
@@ -224,15 +222,13 @@ function ObservationTable({ observations, timeZone, width }: {
   const columns = useMemo<StationObservationColumn[]>(() => [
     { id: "local", label: `LOCAL (${timeZoneLabel(timeZone)})`, width: 12, align: "left" },
     { id: "temp", label: "TEMP", width: 6, align: "right" },
-    ...(!narrow ? [{ id: "dew" as const, label: "DEW", width: 6, align: "right" as const }] : []),
+    { id: "dew", label: "DEW", width: 6, align: "right" },
     { id: "humidity", label: "RH", width: 5, align: "right" },
-    { id: "wind", label: "WIND", width: compact ? 11 : 13, align: "left" },
-    ...(!compact ? [
-      { id: "visibility" as const, label: "VIS", width: 6, align: "right" as const },
-      { id: "pressure" as const, label: "PRES", width: 7, align: "right" as const },
-    ] : []),
-    { id: "status", label: "SKY / STATUS", width: Math.max(12, width - (compact ? 43 : 57)), align: "left" },
-  ], [compact, narrow, width]);
+    { id: "wind", label: "WIND", width: 13, align: "left" },
+    { id: "visibility", label: "VIS", width: 6, align: "right" },
+    { id: "pressure", label: "PRES", width: 7, align: "right" },
+    { id: "status", label: "SKY / STATUS", width: 12, align: "left", flexGrow: 1 },
+  ], [timeZone]);
 
   return (
     <DataTableView<StationObservationRow, StationObservationColumn>

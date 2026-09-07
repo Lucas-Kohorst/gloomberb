@@ -31,16 +31,16 @@ export function useOptionsAccessFooter({
   chain,
   error,
   focused,
+  hints,
   loading,
   quoteCoverage,
-  hints,
 }: {
   chain: OptionsChain | null | undefined;
   error?: string | null;
   focused: boolean;
+  hints?: PaneHint[];
   loading?: boolean;
   quoteCoverage: Pick<OptionQuoteCoverage, "status">;
-  hints?: PaneHint[];
 }): void {
   const { access, segment } = useCloudAccessFooter({
     delayLabel: resolveOptionsDelayLabel(chain),

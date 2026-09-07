@@ -101,12 +101,28 @@ async function renderHarness(
   });
 }
 
-async function emitKeypress(event: { name?: string; ctrl?: boolean; meta?: boolean; super?: boolean; shift?: boolean; alt?: boolean; option?: boolean }) {
+/** The OpenTUI input host derives `targetEditable` from the focused editor. */
+function focusEditor() {
+  Object.defineProperty(testSetup!.renderer, "currentFocusedEditor", {
+    configurable: true,
+    get: () => ({}),
+  });
+}
+
+async function emitKeypress(event: {
+  name?: string;
+  ctrl?: boolean;
+  meta?: boolean;
+  super?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+}) {
   const keyEvent = {
     ctrl: false,
     meta: false,
     super: false,
     option: false,
+    alt: false,
     shift: false,
     eventType: "press",
     repeated: false,
@@ -169,17 +185,20 @@ describe("useAppGlobalShortcuts", () => {
     expect(event.propagationStopped).toBe(true);
   });
 
-  test("switches saved layouts with Ctrl-number and consumes the shortcut", async () => {
-    const actions: AppAction[] = [];
-    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts");
+  function layoutState(suffix: string, options: { commandBarOpen?: boolean } = {}) {
+    const config = createDefaultConfig(`/tmp/gloomberb-global-shortcuts-${suffix}`);
     config.layouts = [
       { name: "One", layout: cloneLayout(config.layout) },
       { name: "Two", layout: cloneLayout(config.layout) },
       { name: "Three", layout: cloneLayout(config.layout) },
     ];
     config.activeLayoutIndex = 0;
-    const state = createInitialState(config);
-    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+    return { ...createInitialState(config), ...options };
+  }
+
+  test("switches saved layouts with Ctrl-number and consumes the shortcut", async () => {
+    const actions: AppAction[] = [];
+    await renderHarness(layoutState("layouts"), createRegistry(), (action) => actions.push(action));
 
     const event = await emitKeypress({ name: "2", ctrl: true });
 
@@ -188,97 +207,70 @@ describe("useAppGlobalShortcuts", () => {
     expect(event.propagationStopped).toBe(true);
   });
 
-  test("switches saved layouts with Meta-number (Cmd on macOS) and consumes the shortcut", async () => {
+  // Browsers and the desktop webview report Cmd as meta; the OpenTUI host maps
+  // the kitty `super` modifier onto the same field.
+  test("switches saved layouts with the Cmd-number reported by web and kitty hosts", async () => {
     const actions: AppAction[] = [];
-    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-meta");
-    config.layouts = [
-      { name: "One", layout: cloneLayout(config.layout) },
-      { name: "Two", layout: cloneLayout(config.layout) },
-    ];
-    config.activeLayoutIndex = 0;
-    const state = createInitialState(config);
-    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+    await renderHarness(layoutState("layouts-meta"), createRegistry(), (action) => actions.push(action));
 
-    const event = await emitKeypress({ name: "2", super: true });
+    const event = await emitKeypress({ name: "3", super: true });
 
-    expect(actions).toEqual([{ type: "SWITCH_LAYOUT", index: 1 }]);
+    expect(actions).toEqual([{ type: "SWITCH_LAYOUT", index: 2 }]);
     expect(event.defaultPrevented).toBe(true);
     expect(event.propagationStopped).toBe(true);
   });
 
-  test("does not switch saved layouts with Option-number in the terminal", async () => {
+  // Alt-digit keeps its terminal meaning; only the primary modifier switches.
+  test("ignores Alt-number", async () => {
     const actions: AppAction[] = [];
-    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-tui-option");
-    config.layouts = [
-      { name: "One", layout: cloneLayout(config.layout) },
-      { name: "Two", layout: cloneLayout(config.layout) },
-    ];
-    config.activeLayoutIndex = 0;
-    const state = createInitialState(config);
-    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+    await renderHarness(layoutState("layouts-alt"), createRegistry(), (action) => actions.push(action));
 
     const event = await emitKeypress({ name: "2", alt: true });
 
     expect(actions).toEqual([]);
     expect(event.defaultPrevented).toBe(false);
-    expect(event.propagationStopped).toBe(false);
   });
 
-  test("switches saved layouts with Option-number on desktop-web and ignores Command-number", async () => {
-    const previousKind = openTuiUiHost.kind;
-    const previousCapabilities = openTuiUiHost.capabilities;
-    openTuiUiHost.kind = "desktop-web";
-    openTuiUiHost.capabilities = {
-      ...previousCapabilities,
-      nativePaneChrome: true,
-    };
-
-    try {
-      const actions: AppAction[] = [];
-      const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-option");
-      config.layouts = [
-        { name: "Home", layout: cloneLayout(config.layout) },
-        { name: "Monitor", layout: cloneLayout(config.layout) },
-        { name: "Adjacent", layout: cloneLayout(config.layout) },
-      ];
-      config.activeLayoutIndex = 1;
-      const state = createInitialState(config);
-      await renderHarness(state, createRegistry(), (action) => actions.push(action));
-
-      const commandEvent = await emitKeypress({ name: "1", super: true });
-      expect(actions).toEqual([]);
-      expect(commandEvent.defaultPrevented).toBe(false);
-
-      const ctrlEvent = await emitKeypress({ name: "1", ctrl: true });
-      expect(actions).toEqual([]);
-      expect(ctrlEvent.defaultPrevented).toBe(false);
-
-      const optionEvent = await emitKeypress({ name: "1", alt: true });
-      expect(actions).toEqual([{ type: "SWITCH_LAYOUT", index: 0 }]);
-      expect(optionEvent.defaultPrevented).toBe(true);
-      expect(optionEvent.propagationStopped).toBe(true);
-    } finally {
-      openTuiUiHost.kind = previousKind;
-      openTuiUiHost.capabilities = previousCapabilities;
-    }
-  });
-
-  test("does not switch layouts with Ctrl-number while the command bar is open", async () => {
+  // Leaving the digit unclaimed lets the desktop webview treat Cmd-digit as its
+  // own browser tab shortcut, which navigates the app away.
+  test("consumes layout numbers while the command bar is open without switching", async () => {
     const actions: AppAction[] = [];
-    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-layouts-cmdbar");
-    config.layouts = [
-      { name: "One", layout: cloneLayout(config.layout) },
-      { name: "Two", layout: cloneLayout(config.layout) },
-    ];
-    config.activeLayoutIndex = 0;
-    const state = { ...createInitialState(config), commandBarOpen: true };
-    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+    await renderHarness(
+      layoutState("layouts-command-bar", { commandBarOpen: true }),
+      createRegistry(),
+      (action) => actions.push(action),
+    );
 
     const event = await emitKeypress({ name: "2", ctrl: true });
 
     expect(actions).toEqual([]);
-    expect(event.defaultPrevented).toBe(false);
-    expect(event.propagationStopped).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
+  test("consumes primary-modifier numbers with only one layout", async () => {
+    const actions: AppAction[] = [];
+    const config = createDefaultConfig("/tmp/gloomberb-global-shortcuts-one-layout");
+    const state = { ...createInitialState(config), commandBarOpen: true };
+    await renderHarness(state, createRegistry(), (action) => actions.push(action));
+
+    const event = await emitKeypress({ name: "1", super: true });
+
+    expect(actions).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
+  });
+
+  test("consumes layout numbers while an editable field owns the keyboard", async () => {
+    const actions: AppAction[] = [];
+    await renderHarness(layoutState("layouts-editable"), createRegistry(), (action) => actions.push(action));
+    focusEditor();
+
+    const event = await emitKeypress({ name: "2", super: true });
+
+    expect(actions).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+    expect(event.propagationStopped).toBe(true);
   });
 
   test("does not run plain plugin shortcuts while input is captured", async () => {

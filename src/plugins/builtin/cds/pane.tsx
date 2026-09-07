@@ -14,8 +14,8 @@ import type { PaneProps } from "../../../types/plugin";
 import { Box, Text, TextAttributes } from "../../../ui";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { paneDelayedStatus, paneRefreshHint, usePaneStatusFooter } from "../shared/pane-footer";
+import { useAutoRefresh } from "../shared/auto-refresh";
+import { usePaneStatusFooter } from "../shared/pane-footer";
 import { loadCdsActivity, type CdsActivity, type CdsActivityLoader } from "./client";
 import {
   buildIssuerColumns,
@@ -120,7 +120,7 @@ function CdsTradeTable({
   onKeyDown: (event: DataTableKeyEvent) => boolean;
   before?: ReactNode;
 }) {
-  const columns = useMemo(() => buildTradeColumns(width), [width]);
+  const columns = useMemo(() => buildTradeColumns(), []);
   return (
     <DataTableView<CdsTrade, TradeColumn>
       focused={focused}
@@ -257,15 +257,13 @@ export function CdsPane({
   const asOfLabel = formatAsOf(activity?.asOf ?? null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(asOfLabel ? [{ id: "as-of", parts: [{ text: `as of ${asOfLabel}`, tone: "muted" as const }] }] : []),
-    ...(activity ? [paneDelayedStatus()] : []),
+    ...(activity ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
   ], [activity, asOfLabel]);
   usePaneStatusFooter({
     registrationId: paneId,
-    focused,
     loading: status === "loading",
     error,
     info: footerInfo,
-    hints: [paneRefreshHint(load, { disabled: status === "loading" && !activity })],
   });
 
   if (status === "loading" && !activity) {
@@ -311,7 +309,7 @@ export function CdsPane({
     );
   }
 
-  const issuerColumns = buildIssuerColumns(width);
+  const issuerColumns = buildIssuerColumns();
   return (
     <DataTableStackView<CdsIssuerSummary, IssuerColumn>
       focused={focused}

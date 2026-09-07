@@ -14,12 +14,11 @@
  */
 import { dirname, join } from "path";
 import { pathToFileURL } from "url";
-import { readdir } from "fs/promises";
 import { Window } from "happy-dom";
 import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
-const HASHED_WEB_MAIN_SRC = /src="(\/web-main\.[A-Za-z0-9_-]+\.js)"/;
-const UNHASHED_WEB_MAIN_SRC = /src="\/web-main\.js"/;
+const SCRIPT_SRCS = /<script[^>]*\bsrc="(\/[^"]+\.js)"[^>]*>/g;
+const HASHED_SCRIPT_SRC = /^\/[\w/.-]*-[\w-]{8,}\.js$/;
 const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/youtubei.js/",
   "node_modules/hls.js/",
@@ -28,7 +27,7 @@ const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/@opentui/",
 ] as const;
 
-const outdir = process.argv[2] ? dirname(process.argv[2]) : join("dist", "web-client");
+const outdir = process.argv[2] ? dirname(process.argv[2]) : join("dist", "web");
 
 const testWindow = new Window({ url: "https://terminal.kohor.st/" });
 testWindow.document.body.innerHTML = '<div id="root"></div>';
@@ -61,9 +60,11 @@ for (const [name, value] of Object.entries(globals)) {
 // Same failure mode as a module-scope Node global: nested routes serve these
 // documents, relative assets resolve under the route, SPA fallback returns HTML.
 // share.html is served for `/s/{id}`, so it is the one that fails most visibly.
-// After a deploy, unhashed /web-main.js 404s (or worse, SPA-falls-back to HTML)
-// while hashed chunks have already been replaced.
-let hashedWebMainHref: string | null = null;
+// After a deploy, an unhashed bundle URL keeps serving whatever the CDN cached
+// while its hashed siblings are gone, so every script a page references must
+// carry its content hash in the file name.
+let hostedEntryHref: string | null = null;
+let shareEntryHref: string | null = null;
 for (const document of ["index.html", "share.html"]) {
   const htmlPath = join(outdir, document);
   const html = Bun.file(htmlPath);
@@ -81,29 +82,22 @@ for (const document of ["index.html", "share.html"]) {
     );
     process.exit(1);
   }
-  if (document === "index.html") {
-    const hashed = htmlText.match(HASHED_WEB_MAIN_SRC);
-    if (UNHASHED_WEB_MAIN_SRC.test(htmlText) || !hashed?.[1]) {
-      console.error(
-        "index.html must reference hashed root-absolute /web-main.<hash>.js, not /web-main.js."
-        + "\n\nUnhashed /web-main.js is a stable URL. After a deploy the old hashed chunks"
-        + "\nare gone and the SPA fallback serves HTML 200 for missing JS modules.",
-      );
-      process.exit(1);
-    }
-    hashedWebMainHref = hashed[1];
-    if (!htmlText.includes("__GLOOM_ROBINHOOD_BROWSER_SRC")) {
-      console.error(
-        "index.html must set window.__GLOOM_ROBINHOOD_BROWSER_SRC to the unsplit"
-        + "\nrobinhood-browser.<hash>.js bundle. Split MCP/Zod chunks throw minified"
-        + "\nReferenceErrors (`Y0 is not defined`) on Connect Broker.",
-      );
-      process.exit(1);
-    }
+  const scripts = [...htmlText.matchAll(SCRIPT_SRCS)].map((match) => match[1]!);
+  const unhashed = scripts.filter((src) => !HASHED_SCRIPT_SRC.test(src));
+  if (scripts.length === 0 || unhashed.length > 0) {
+    console.error(
+      `${document} must reference hashed root-absolute bundles (name-<hash>.js);`
+      + ` found: ${scripts.join(", ") || "(none)"}.`
+      + "\n\nAn unhashed bundle URL is stable across deploys. After a deploy the old files"
+      + "\nare gone and the SPA fallback serves HTML 200 for missing JS modules.",
+    );
+    process.exit(1);
   }
+  if (document === "index.html") hostedEntryHref = scripts[0]!;
+  else shareEntryHref = scripts[0]!;
 }
 
-const bundlePath = process.argv[2] ?? join(outdir, hashedWebMainHref!.slice(1));
+const bundlePath = process.argv[2] ?? join(outdir, hostedEntryHref!.slice(1));
 const bundle = Bun.file(bundlePath);
 if (!await bundle.exists()) {
   console.error(`No bundle at ${bundlePath}. Run \`bun run cloud:build\` first.`);
@@ -123,13 +117,11 @@ try {
   process.exit(1);
 }
 
-const names = await readdir(outdir);
-const shareFiles = names.filter((name) => /^share-main(\.[A-Za-z0-9_-]+)?\.js$/.test(name));
-if (shareFiles.length === 0) {
-  console.error(`No share bundle at ${join(outdir, "share-main*.js")}. Run \`bun run cloud:build\` first.`);
+const shareBundle = Bun.file(join(outdir, shareEntryHref!.slice(1)));
+if (!await shareBundle.exists()) {
+  console.error(`No share bundle at ${shareEntryHref}. Run \`bun run cloud:build\` first.`);
   process.exit(1);
 }
-const shareBundle = Bun.file(join(outdir, shareFiles[0]!));
 const shareBytes = shareBundle.size;
 const terminalGraphBytes = await reachableBundleBytes(bundlePath);
 if (shareBytes > terminalGraphBytes / 4) {
@@ -174,25 +166,18 @@ for (const specifier of dynamicChunks) {
   }
 }
 
-const robinhoodFiles = names.filter((name) => /^robinhood-browser\.[A-Za-z0-9_-]+\.js$/.test(name));
-if (robinhoodFiles.length !== 1) {
-  console.error(
-    `Expected one hashed robinhood-browser.<hash>.js in ${outdir}, found ${robinhoodFiles.length}.`,
-  );
-  process.exit(1);
-}
 try {
-  await import(`${pathToFileURL(join(outdir, robinhoodFiles[0]!)).href}?bundle-check=${Date.now()}`);
+  await evaluateHostedEntry(join(outdir, shareEntryHref!.slice(1)), await shareBundle.text());
 } catch (error) {
   const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  console.error(`Unsplit Robinhood browser bundle failed to evaluate: ${robinhoodFiles[0]}\n${detail}`);
+  console.error(`Share bundle failed to evaluate in a browser-like environment.\n${detail}`);
   process.exit(1);
 }
 
 console.log(`Hosted bundle evaluates cleanly without \`process\` (${bundlePath}).`);
-console.log(`Unsplit Robinhood browser bundle evaluates (${robinhoodFiles[0]}).`);
+console.log(`Share bundle evaluates cleanly without \`process\` (${shareEntryHref}).`);
 console.log("Hosted pages reference only root-absolute asset URLs (index.html, share.html).");
-console.log(`index.html references hashed ${hashedWebMainHref}.`);
+console.log(`index.html references hashed ${hostedEntryHref}.`);
 console.log(
   `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB`
   + ` (${((shareBytes / terminalGraphBytes) * 100).toFixed(1)}% of the terminal graph).`,
@@ -203,12 +188,14 @@ console.log(
 );
 process.exit(0);
 
-function hasStaticEsmImports(source: string): boolean {
-  return /(?:^|[;\n])\s*import\s*(?!\s*\()(?:[\w*{]|["'])/.test(source);
+function needsModuleEvaluation(source: string): boolean {
+  // import.meta only parses in module scope, so even a bundle with no static
+  // imports must load through import() when it uses it.
+  return /(?:^|[;\n])\s*import\s*(?!\s*\()(?:[\w*{]|["'])/.test(source) || source.includes("import.meta");
 }
 
 async function evaluateHostedEntry(path: string, source: string): Promise<void> {
-  if (!hasStaticEsmImports(source)) {
+  if (!needsModuleEvaluation(source)) {
     // Shadowing `process` and `global` as parameters makes any bare reference
     // inside the bundle resolve to undefined, exactly as it does in a browser.
     new Function("process", "global", source)(undefined, undefined);
@@ -230,7 +217,7 @@ async function evaluateHostedEntry(path: string, source: string): Promise<void> 
 }
 
 function referencedRelativeModules(source: string): string[] {
-  const matches = source.matchAll(/["'](\.\/(?:chunk|web-main|share-main)[^"']+\.js)["']/g);
+  const matches = source.matchAll(/["'](\.\/[\w.-]+\.js)["']/g);
   return [...matches].flatMap((match) => match[1] ? [match[1]] : []);
 }
 

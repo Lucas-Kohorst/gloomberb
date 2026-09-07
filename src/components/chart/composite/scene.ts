@@ -17,7 +17,6 @@ import type {
 import {
   buildCompositeTimeScale,
   projectCompositeTimestamp,
-  unprojectCompositeTimestamp,
 } from "./time-scale";
 import type { CompositeTimeScale } from "./types";
 
@@ -50,12 +49,31 @@ function pointTimestampForScale(
     : timestamp;
 }
 
-function normalizedSourcePoints(series: ResolvedSeries, timeScale?: CompositeTimeScale): Array<{
+interface NormalizedSourcePoint {
   point: TimeSeriesPoint;
   timestamp: number;
   value: number | null;
-}> {
-  const bySourceTimestamp = new Map<number, { point: TimeSeriesPoint; timestamp: number; value: number | null }>();
+}
+
+interface NormalizedPointsCache {
+  points: readonly TimeSeriesPoint[];
+  pointCount: number;
+  last: TimeSeriesPoint | undefined;
+  lastTimestamp: number | null;
+  lastValue: number | null;
+  byPlacement: Map<boolean, NormalizedSourcePoint[]>;
+}
+
+// Every scene build normalises each series several times over; a viewport
+// change must not re-sort thousands of unchanged points. Live ticks mutate
+// the last point in place, so the cache also keys on its time and value.
+const normalizedPointsCache = new WeakMap<ResolvedSeries, NormalizedPointsCache>();
+
+function computeNormalizedSourcePoints(
+  series: ResolvedSeries,
+  timeScale?: CompositeTimeScale,
+): NormalizedSourcePoint[] {
+  const bySourceTimestamp = new Map<number, NormalizedSourcePoint>();
   for (const point of series.points) {
     const sourceTimestamp = pointTime(point);
     const timestamp = pointTimestampForScale(series, point, timeScale);
@@ -70,6 +88,41 @@ function normalizedSourcePoints(series: ResolvedSeries, timeScale?: CompositeTim
     left.timestamp - right.timestamp
     || left.point.date.getTime() - right.point.date.getTime()
   ));
+}
+
+function normalizedSourcePoints(
+  series: ResolvedSeries,
+  timeScale?: CompositeTimeScale,
+): NormalizedSourcePoint[] {
+  const effectiveTimes = timeScale?.kind === "market" && !series.timeBasis;
+  const last = series.points[series.points.length - 1];
+  const lastTimestamp = last ? pointTime(last) : null;
+  const lastValue = last ? resolveTimeSeriesPointValue(last) : null;
+  let cached = normalizedPointsCache.get(series);
+  if (
+    !cached
+    || cached.points !== series.points
+    || cached.pointCount !== series.points.length
+    || cached.last !== last
+    || cached.lastTimestamp !== lastTimestamp
+    || cached.lastValue !== lastValue
+  ) {
+    cached = {
+      points: series.points,
+      pointCount: series.points.length,
+      last,
+      lastTimestamp,
+      lastValue,
+      byPlacement: new Map(),
+    };
+    normalizedPointsCache.set(series, cached);
+  }
+  let normalized = cached.byPlacement.get(effectiveTimes);
+  if (!normalized) {
+    normalized = computeNormalizedSourcePoints(series, timeScale);
+    cached.byPlacement.set(effectiveTimes, normalized);
+  }
+  return normalized;
 }
 
 function normalizedPoints(series: ResolvedSeries): Array<{
@@ -471,22 +524,24 @@ export function buildCompositeChartScene(
   const cursorXRatio = cursorDate
     ? projectCompositeTimestamp(timeScale, cursorDate.getTime())?.ratio ?? null
     : null;
-  const orderedPanels = panelSpecsForSeries(usableSeries, panels);
+  // Panels belong to the authored series, not to whichever of them happen to
+  // hold observations right now. A panel that disappears while its data loads
+  // reflows every other panel, and the chart jumps again when it comes back.
+  const orderedPanels = panelSpecsForSeries(series, panels);
   const panelHeights = allocateCompositePanelHeights(orderedPanels, options.height);
 
-  const panelScenes: CompositePanelScene[] = orderedPanels.flatMap((panel) => {
+  const panelScenes: CompositePanelScene[] = orderedPanels.map((panel) => {
     const panelSeries = usableSeries.filter((entry) => entry.panelId === panel.id);
-    if (panelSeries.length === 0) return [];
     const scale = panel.scale ?? "linear";
-    // An empty range has no in-view values, so scale its axes to the loaded
-    // history rather than the meaningless 0..1 fallback.
-    const domainSeries = emptyRange
+    // With no in-view values, scale the axes to the loaded history rather than
+    // the meaningless 0..1 fallback, so the panel keeps its gutter and grid.
+    const domainSeries = emptyRange || panelSeries.length === 0
       ? dataSeries.filter((entry) => entry.panelId === panel.id)
       : panelSeries;
     const left = buildAxisDomain("left", domainSeries, scale);
     const right = buildAxisDomain("right", domainSeries, scale);
     const axes: Partial<Record<CompositeAxisSide, CompositeAxisDomain>> = { left, right };
-    return [{
+    return {
       id: panel.id,
       label: panel.label,
       height: panelHeights.get(panel.id) ?? 1,
@@ -498,7 +553,7 @@ export function buildCompositeChartScene(
           ? [{ source: entry, points: projectSeries(entry, domain, startTime, endTime, timeScale) }]
           : [];
       }),
-    }];
+    };
   });
 
   return {
@@ -531,26 +586,6 @@ export function resolveCompositeCursorDate(scene: CompositeChartScene, localX: n
     }
   });
   return scene.dates[nearestIndex] ?? null;
-}
-
-export function resolveCompositeTimeAxisDate(
-  scene: CompositeChartScene,
-  ratio: number,
-): Date {
-  const safeRatio = Math.max(0, Math.min(1, ratio));
-  if (scene.timeScale.kind === "market" && scene.dates.length > 0) {
-    let nearestIndex = 0;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    scene.dateRatios.forEach((candidate, index) => {
-      const distance = Math.abs(candidate - safeRatio);
-      if (distance < nearestDistance) {
-        nearestIndex = index;
-        nearestDistance = distance;
-      }
-    });
-    return scene.dates[nearestIndex] ?? new Date(scene.startTime);
-  }
-  return new Date(unprojectCompositeTimestamp(scene.timeScale, safeRatio));
 }
 
 export function resolveAdjacentCompositeCursorDate(

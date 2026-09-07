@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import type { SortDirection } from "../../../utils/sort-values";
 import { AUCTION_HISTORY_DAYS } from "./client";
 import type { TreasuryAuction } from "./types";
 
@@ -71,7 +71,6 @@ function matchesAuctionQuery(auction: TreasuryAuction, query: string): boolean {
     auction.secType.toLowerCase().includes(normalized)
     || auction.securityTerm.toLowerCase().includes(normalized)
     || auction.auctionDate.includes(normalized)
-    || (auction.cusip?.toLowerCase().includes(normalized) ?? false)
   );
 }
 
@@ -123,15 +122,15 @@ export function auctionSize(auction: TreasuryAuction): number | null {
   return auction.totalAccepted ?? auction.offeringAmount;
 }
 
-function sortValue(auction: TreasuryAuction, columnId: AuctionColumnId): string | number | null {
+function sortValue(auction: TreasuryAuction, columnId: AuctionColumnId): number | string {
   switch (columnId) {
     case "date": return auctionDateValue(auction.auctionDate);
     case "type": return auction.secType;
     case "term": return termLengthDays(auction.securityTerm);
-    case "rate": return rateValue(auction);
-    case "btc": return auction.bidToCoverRatio ?? null;
-    case "indirect": return indirectPct(auction);
-    case "size": return auctionSize(auction);
+    case "rate": return rateValue(auction) ?? Number.NEGATIVE_INFINITY;
+    case "btc": return auction.bidToCoverRatio ?? Number.NEGATIVE_INFINITY;
+    case "indirect": return indirectPct(auction) ?? Number.NEGATIVE_INFINITY;
+    case "size": return auctionSize(auction) ?? Number.NEGATIVE_INFINITY;
   }
 }
 
@@ -139,15 +138,16 @@ export function visibleAuctions(
   auctions: readonly TreasuryAuction[],
   options: { filter: AuctionFilter; query: string; sort: AuctionSortPreference },
 ): TreasuryAuction[] {
+  const direction = options.sort.direction === "asc" ? 1 : -1;
   return auctions
     .filter((auction) => matchesFilter(auction, options.filter) && matchesAuctionQuery(auction, options.query))
     .sort((left, right) => {
-      const comparison = compareSortValues(
-        sortValue(left, options.sort.columnId),
-        sortValue(right, options.sort.columnId),
-        options.sort.direction,
-      );
-      if (comparison !== 0) return comparison;
+      const leftValue = sortValue(left, options.sort.columnId);
+      const rightValue = sortValue(right, options.sort.columnId);
+      const comparison = typeof leftValue === "string" && typeof rightValue === "string"
+        ? leftValue.localeCompare(rightValue, "en-US", { sensitivity: "base" })
+        : Number(leftValue) - Number(rightValue);
+      if (comparison !== 0) return comparison * direction;
       // Ties keep the newest auction on top regardless of sort direction.
       return auctionDateValue(right.auctionDate) - auctionDateValue(left.auctionDate);
     });
@@ -165,24 +165,14 @@ export function nextAuctionSort(
   return { columnId, direction: columnId === "type" || columnId === "term" ? "asc" : "desc" };
 }
 
-export function buildAuctionColumns(width: number): AuctionColumn[] {
-  const dateWidth = 8;
-  const typeWidth = 6;
-  const rateWidth = 8;
-  const btcWidth = 6;
-  const indirectWidth = 9;
-  const sizeWidth = 8;
-  const termWidth = Math.max(
-    10,
-    width - dateWidth - typeWidth - rateWidth - btcWidth - indirectWidth - sizeWidth - 8,
-  );
+export function buildAuctionColumns(): AuctionColumn[] {
   return [
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "type", label: "TYPE", width: typeWidth, align: "left" },
-    { id: "term", label: "TERM", width: termWidth, align: "left" },
-    { id: "rate", label: "RATE", width: rateWidth, align: "right" },
-    { id: "btc", label: "B/C", width: btcWidth, align: "right" },
-    { id: "indirect", label: "INDIRECT", width: indirectWidth, align: "right" },
-    { id: "size", label: "SIZE", width: sizeWidth, align: "right" },
+    { id: "date", label: "DATE", width: 8, align: "left" },
+    { id: "type", label: "TYPE", width: 6, align: "left" },
+    { id: "term", label: "TERM", width: 10, align: "left", flexGrow: 1 },
+    { id: "rate", label: "RATE", width: 8, align: "right" },
+    { id: "btc", label: "B/C", width: 6, align: "right" },
+    { id: "indirect", label: "INDIRECT", width: 9, align: "right" },
+    { id: "size", label: "SIZE", width: 8, align: "right" },
   ];
 }

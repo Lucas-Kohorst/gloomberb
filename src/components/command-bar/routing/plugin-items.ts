@@ -1,7 +1,5 @@
 import type { Dispatch } from "react";
-import {
-  PLUGIN_MARKET_TEMPLATE_ID,
-} from "../../../plugins/builtin/plugin-market/types";
+import { PLUGIN_MARKETPLACE_TEMPLATE_ID } from "../../../plugins/builtin/plugin-marketplace";
 import { nextDisabledPluginIds } from "../../../plugins/builtin/plugin-market/rows";
 import type { PluginRegistry } from "../../../plugins/registry";
 import type { AppAction, AppState } from "../../../state/app/context";
@@ -30,7 +28,7 @@ export function buildMarketplaceJumpItem(pluginRegistry: PluginRegistry): Result
     shortcutQuery: "PLUGINS",
     defaultSelectable: false,
     action: () => {
-      pluginRegistry.createPaneFromTemplate(PLUGIN_MARKET_TEMPLATE_ID);
+      pluginRegistry.createPaneFromTemplate(PLUGIN_MARKETPLACE_TEMPLATE_ID);
     },
   };
 }
@@ -104,7 +102,6 @@ export function buildPluginToggleItems({
       category: "Plugins",
       kind: "plugin",
       checked: enabled,
-      pluginToggle: toggleAction,
       action: toggleAction,
     };
   });

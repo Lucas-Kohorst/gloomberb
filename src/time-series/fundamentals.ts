@@ -88,6 +88,8 @@ const VALUATION_IDS = new Set([
   "evSales",
   "evEbitda",
   "priceFcf",
+  "earningsYield",
+  "dividendYield",
 ]);
 
 const QUOTE_DERIVED_VALUATION_IDS = new Set([
@@ -96,6 +98,7 @@ const QUOTE_DERIVED_VALUATION_IDS = new Set([
   "evSales",
   "evEbitda",
   "priceFcf",
+  "earningsYield",
 ]);
 
 function finiteNumber(value: unknown): value is number {
@@ -243,8 +246,7 @@ function mergeStatementsByPeriod(
     const lastGroup = groups.at(-1);
     if (lastGroup && areNearbyFinancialPeriodEnds(lastGroup[0]!.date, statement.date)) {
       lastGroup.push(statement as InternalStatement);
-    }
-    else groups.push([statement as InternalStatement]);
+    } else groups.push([statement as InternalStatement]);
   }
   return groups
     .map(mergeStatementPeriodGroup)
@@ -508,6 +510,7 @@ function metricDependencies(metric: string, statement: FinancialStatement): Nume
       : ["operatingCashFlow", "capitalExpenditure"];
   }
   if (metric === "trailingPE") return selectedEps(statement)?.dependencies ?? ["eps"];
+  if (metric === "earningsYield") return selectedEps(statement)?.dependencies ?? ["eps"];
   if (metric === "priceSales") {
     return uniqueDependencies(["totalRevenue", selectedShares(statement)?.field]);
   }
@@ -601,12 +604,22 @@ function pointForStatement(
   };
 }
 
+/**
+ * `PricePoint.date` is typed as a `Date`, but history that has crossed a JSON
+ * boundary (persisted caches, the screenshot payload) arrives as a string. Read
+ * it defensively so a serialized round trip cannot crash valuation history.
+ */
+function pointTime(point: PricePoint): number {
+  const date = point.date;
+  return date instanceof Date ? date.getTime() : Date.parse(date as unknown as string);
+}
+
 function priceAtOrBefore(priceHistory: readonly PricePoint[], date: string): number | null {
   const target = Date.parse(date);
   if (!Number.isFinite(target)) return null;
   let closest: { time: number; close: number } | undefined;
   for (const point of priceHistory) {
-    const time = point.date.getTime();
+    const time = pointTime(point);
     if (!Number.isFinite(time) || time > target || !finiteNumber(point.close) || point.close <= 0) continue;
     if (!closest || time > closest.time) closest = { time, close: point.close };
   }
@@ -639,6 +652,10 @@ function valuationAtPrice(
     const eps = selectedEps(statement)?.value;
     return eps && eps > 0 ? price / eps : null;
   }
+  if (metric === "earningsYield") {
+    const eps = selectedEps(statement)?.value;
+    return eps && eps > 0 ? (eps / price) * 100 : null;
+  }
   if (metric === "priceSales") return ratio(marketCap, statement.totalRevenue);
   if (metric === "evSales") return ratio(enterpriseValue, statement.totalRevenue);
   if (metric === "evEbitda") return ratio(enterpriseValue, statement.ebitda);
@@ -650,11 +667,17 @@ function providerCurrentValuationPoint(
   financials: TickerFinancials,
   metric: string,
 ): TimeSeriesPoint | null {
-  const value = metric === "forwardPE"
-    ? financials.fundamentals?.forwardPE
-    : metric === "pegRatio"
-      ? financials.fundamentals?.pegRatio
-      : undefined;
+  let value: number | undefined;
+  if (metric === "forwardPE") {
+    value = financials.fundamentals?.forwardPE;
+  } else if (metric === "pegRatio") {
+    value = financials.fundamentals?.pegRatio;
+  } else if (metric === "dividendYield") {
+    // Providers report the trailing dividend yield as a decimal fraction;
+    // chart fields store percent-form values (5% -> 5), matching margins.
+    const providerYield = financials.fundamentals?.dividendYield;
+    value = finiteNumber(providerYield) ? providerYield * 100 : undefined;
+  }
   if (!finiteNumber(value)) return null;
   const quoteTime = financials.quote?.lastUpdated;
   const date = validDate(finiteNumber(quoteTime) && quoteTime > 0 ? quoteTime : null);
@@ -770,8 +793,7 @@ function dedupeFundamentalPeriods(points: readonly TimeSeriesPoint[]): TimeSerie
     const lastGroup = groups.at(-1);
     if (lastGroup && areNearbyFinancialPeriodEnds(lastGroup[0]!.observedAt, point.observedAt)) {
       lastGroup.push(point);
-    }
-    else groups.push([point]);
+    } else groups.push([point]);
   }
   return groups
     .map((group) => group.slice(1).reduce(preferredPeriodPoint, group[0]!))
@@ -808,7 +830,7 @@ export function extractFundamentalSeries(
   }
 
   if (namespace !== "valuation" || !VALUATION_IDS.has(metric)) return [];
-  if (metric === "forwardPE" || metric === "pegRatio") {
+  if (metric === "forwardPE" || metric === "pegRatio" || metric === "dividendYield") {
     const current = providerCurrentValuationPoint(financials, metric);
     return current ? [current] : [];
   }

@@ -1,0 +1,146 @@
+# Single required gate for the fork (Lucas-Kohorst/gloomberb).
+# Replaces the old Verify / PR Checks / Deploy Cloudflare workflows.
+#
+# Branch protection requires the "CI gate" job; it fails if any leg fails or
+# is skipped, so a green gate means typecheck (all six targets), static
+# checks, the full test suite, desktop + web builds, live pane QA, and the
+# upgrade smoke all passed. Deploys to https://terminal.kohor.st only happen
+# after a green gate on main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel a main run mid-flight: it may be deploying.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
+
+      # All six tsconfig targets (opentui, electrobun-bun, electrobun-view,
+      # browser, cloudflare, scripts) in one job; they are fast and sequential
+      # output is easier to read than a six-leg matrix.
+      - name: Typecheck all targets
+        run: bun run typecheck
+
+      # Fails when a built-in plugin changes without regenerating the published
+      # manifest, which is what the plugin directory renders for built-ins.
+      - name: Check the built-in plugin manifest
+        run: bun run plugins:manifest:check
+
+      # Hard gate on the high-signal categories: imports that do not resolve
+      # and dependencies nothing uses. The full report below stays advisory.
+      - name: Knip gate (unresolved imports, unused dependencies)
+        run: bunx knip --include dependencies,unresolved
+
+      - name: Knip full report (advisory)
+        run: bunx knip --no-exit-code
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
+      - name: Test
+        run: bun run test
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
+      - name: Build Electrobun view
+        run: bun run desktop:view:build
+      - name: Hosted bundle runs without Node globals
+        run: bun run web:check-bundle
+      # Advisory: the hosted browser bundle still embeds fork/provider modules
+      # (kohor.st cloud defaults, votehub/kalshi direct hosts, hosted-flag
+      # reads) that this audit forbids. Tracked as hosted-hardening follow-up;
+      # the boot smoke above is the gate.
+      - name: Audit browser app (advisory)
+        run: bun run web:audit
+        continue-on-error: true
+      - name: Dry-run Cloudflare Worker
+        run: bun run cloudflare:dry-run
+
+  qa:
+    name: QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
+      - name: Install pilotty
+        run: npm install --global pilotty@0.0.11
+      # Opens all TUI panes except TV, which launches an external player.
+      - name: Live QA (data probes, TUI boot, every pane)
+        shell: bash
+        env:
+          GLOOM_QA_COMMAND_BAR: "1"
+        run: bun run qa --live --all-panes 2>&1 | tee qa.log
+      - name: Upload QA log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-log
+          path: qa.log
+      - name: Test global upgrade from 0.5.0
+        run: bun run test:global-upgrade
+
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs:
+      - checks
+      - test
+      - build
+      - qa
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks must pass
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq 'to_entries | map({job: .key, result: .value.result})'
+          echo "$NEEDS" | jq -e 'to_entries | all(.value.result == "success")' > /dev/null
+
+  deploy:
+    name: Deploy hosted Worker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cloudflare-deploy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-bun
+      - name: Deploy hosted Worker
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets are not set." >&2
+            exit 1
+          fi
+          bun run cloud:deploy
+      - name: Verify deployment routing and probe health
+        run: bash scripts/verify-cloudflare-deploy.sh

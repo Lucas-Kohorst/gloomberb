@@ -196,14 +196,14 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
   const { catalog, openTicker } = useInlineTickers(tickerTexts);
   const [hoveredTicker, setHoveredTicker] = useState<string | null>(null);
   const timelineItems = useMemo(() => sortStoryItems(item.items), [item.items]);
+  const categoryLabels = useMemo(
+    () => (item.categories ?? []).map(formatNewsCategoryLabel).filter(Boolean).join(" · "),
+    [item.categories],
+  );
   const lastUpdatedAt = timelineItems[0]?.publishedAt ?? item.publishedAt;
   const lastUpdatedStr = formatDetailDate(storyItemDate(lastUpdatedAt));
   const metaLine = [newsOriginLabel(item.origin), item.source, lastUpdatedStr]
     .filter((part) => part && part !== "—")
-    .join(" · ");
-  const categoryLabels = (item.categories ?? [])
-    .map(formatNewsCategoryLabel)
-    .filter(Boolean)
     .join(" · ");
 
   const scrollBy = useCallback((delta: number) => {
@@ -249,7 +249,9 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
             </Box>
           )}
           <Box height={1} flexDirection="row">
-            <Text fg={colors.textDim}>{metaLine}</Text>
+            <Text fg={colors.textDim}>
+              {`${item.source} · last updated at ${lastUpdatedStr} · score ${item.importance}/100`}
+            </Text>
           </Box>
           {item.body?.trim() ? (
             <MarkdownText text={item.body} lineWidth={innerW} textColor={colors.text} />
@@ -292,9 +294,7 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
               <TextLines text={categoryLabels} width={innerW} color={colors.textMuted} nativePaneChrome />
             ) : (
               <Box height={1} flexDirection="row">
-                <Text fg={colors.textMuted}>
-                  {categoryLabels}
-                </Text>
+                <Text fg={colors.textMuted}>{categoryLabels}</Text>
               </Box>
             )
           )}

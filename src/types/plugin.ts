@@ -1,5 +1,33 @@
 import type { ReactNode } from "react";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
+import type { HeadlessPaneDefinition } from "./headless";
+
+export type {
+  HeadlessBundleResult,
+  HeadlessBundleSection,
+  HeadlessPaneApiClient,
+  HeadlessPaneArgumentDef,
+  HeadlessPaneArgumentKind,
+  HeadlessPaneColumn,
+  HeadlessPaneContext,
+  HeadlessPaneDefinition,
+  HeadlessPaneEntry,
+  HeadlessPaneLoadArgs,
+  HeadlessPaneOptionDef,
+  HeadlessPaneOptionType,
+  HeadlessPaneOptionValue,
+  HeadlessPaneOptionValues,
+  HeadlessPaneResult,
+  HeadlessPaneResultByShape,
+  HeadlessPaneRow,
+  HeadlessPaneShape,
+  HeadlessRowsResult,
+  HeadlessSeries,
+  HeadlessSeriesPoint,
+  HeadlessSeriesResult,
+  HeadlessSnapshotResult,
+} from "./headless";
+import type { ConnectionHealthRegistry } from "../core/connection-health";
 import type { PluginEvents } from "../plugins/event-bus";
 import type { PluginLogger } from "../utils/debug-log";
 import type { BrokerAdapter } from "./broker";
@@ -43,6 +71,18 @@ export interface PaneProps {
   close?: () => void;
 }
 
+export type PaneSharePrivateFields = true | readonly string[];
+
+export interface PanePortableShareDef {
+  /** Fields excluded before pane configuration or state leaves the device. */
+  private?: {
+    title?: boolean;
+    params?: PaneSharePrivateFields;
+    settings?: PaneSharePrivateFields;
+    state?: PaneSharePrivateFields;
+  };
+}
+
 export interface PaneDef {
   id: string;
   name: string;
@@ -54,7 +94,13 @@ export interface PaneDef {
   defaultMode?: "docked" | "floating";
   /** Pane publishes its selected symbol as pane-state `cursorSymbol`, so ticker panes can follow it. */
   tickerSource?: boolean;
+  /** Renderer-neutral data model used by CLI functions, automation, and hosted tools. */
+  headless?: HeadlessPaneDefinition;
+  /** Add an Excel-compatible CSV action for the pane's single active DataTable. */
+  tableExport?: true;
   settings?: PaneSettingsDef | ((context: PaneSettingsContext) => PaneSettingsDef | null);
+  /** Portable sharing is public by default; list the few pane-owned fields that must remain local. */
+  portableShare?: PanePortableShareDef;
   /** Compact controls surfaced next to the pane title. Toggle keys reference toggle fields in settings. */
   quickSettings?: readonly PaneQuickSettingDef[];
 }
@@ -173,6 +219,8 @@ export interface PaneTemplateContext {
 
 interface PaneTemplateShortcut {
   prefix: string;
+  /** Extra prefixes that open this same template without extra command-bar rows. */
+  aliases?: string[];
   argPlaceholder?: string;
   argKind?: "text" | "ticker" | "ticker-list";
   argOptional?: boolean;
@@ -185,6 +233,8 @@ export interface PaneTemplateCreateOptions {
   symbols?: string[] | null;
   ticker?: TickerRecord | null;
   searchResult?: InstrumentSearchResult | null;
+  /** Template-owned, validated data restored from a public pane share. */
+  shareData?: unknown;
 }
 
 export interface PaneTemplateInstanceConfig {
@@ -198,6 +248,22 @@ export interface PaneTemplateInstanceConfig {
   relativePosition?: "left" | "right" | "above" | "below";
 }
 
+export interface PaneTemplatePublicShareContext {
+  pane: PaneInstanceConfig;
+  paneState: Record<string, unknown>;
+}
+
+export interface PaneTemplatePublicShareSnapshot {
+  title: string;
+  description?: string;
+  data: Record<string, unknown>;
+}
+
+export interface PaneTemplatePublicShareDef {
+  serialize(context: PaneTemplatePublicShareContext): PaneTemplatePublicShareSnapshot | null;
+  restore(data: Record<string, unknown>): PaneTemplateCreateOptions | null;
+}
+
 export interface PaneTemplateDef {
   id: string;
   paneId: string;
@@ -207,6 +273,8 @@ export interface PaneTemplateDef {
   /** Command-bar / help section. Defaults to Assets, Data, Portfolio, or Workspace. */
   category?: string;
   shortcut?: PaneTemplateShortcut;
+  /** Template-specific headless model. Takes precedence over the pane-level model. */
+  headless?: HeadlessPaneDefinition;
   wizard?: WizardStep[];
   /**
    * When true, opening this template from the command bar focuses any existing
@@ -221,6 +289,8 @@ export interface PaneTemplateDef {
     context: PaneTemplateContext,
     options?: PaneTemplateCreateOptions,
   ) => PaneTemplateInstanceConfig | null | Promise<PaneTemplateInstanceConfig | null>;
+  /** Legacy v1 restoration or an explicit transformed snapshot; normal pane shares use portableShare. */
+  publicShare?: PaneTemplatePublicShareDef;
 }
 
 export interface WizardStep {
@@ -260,6 +330,52 @@ export interface CommandResultDef {
   current?: boolean;
   disabled?: boolean;
   execute: () => void | Promise<void>;
+}
+
+export interface CommandBarResultLineSegment {
+  text: string;
+  emphasis?: "match" | "muted";
+}
+
+export interface CommandBarResultLine {
+  segments: CommandBarResultLineSegment[];
+}
+
+export interface CommandBarResultDef {
+  id: string;
+  label: string;
+  detail?: string;
+  /** Rendered under the label. Each entry is one additional row. */
+  lines?: CommandBarResultLine[];
+  category?: string;
+  /** Short tag drawn left of the label, e.g. a document type. Six characters at most. */
+  badge?: string;
+  right?: string;
+  keywords?: string[];
+  disabled?: boolean;
+  execute: () => void | Promise<void>;
+}
+
+export interface CommandBarSearchContext {
+  activeTicker: string | null;
+  activeCollectionId: string | null;
+}
+
+export interface CommandBarSearchProvider {
+  id: string;
+  /** Section heading for these rows, e.g. "Documents". */
+  category: string;
+  /** Sort position of the section. Higher sinks. Navigation sections are negative; use a positive value to sit below them. */
+  priority?: number;
+  /** Skip provide() below this length. Default 3. */
+  minQueryLength?: number;
+  /** Default 300. */
+  debounceMs?: number;
+  provide(
+    query: string,
+    context: CommandBarSearchContext,
+    signal: AbortSignal,
+  ): Promise<CommandBarResultDef[]>;
 }
 
 interface CliHelpColumn {
@@ -338,25 +454,6 @@ export interface CliCommandDef {
   execute(args: string[], ctx: CliCommandContext): void | CliDispatchResult | Promise<void | CliDispatchResult>;
 }
 
-export interface PluginCliCommandDescriptor {
-  name: string;
-  aliases?: string[];
-  summary: string;
-  inputShape?: string;
-  outputShape?: string;
-  examples?: string[];
-  sideEffectLevel?: "none" | "local-write" | "network-write" | "external-trade" | "external-side-effect";
-  requirements?: string[];
-  batch?: boolean;
-  formats?: Array<"text" | "json" | "csv" | "ndjson">;
-  safety?: string[];
-  execute?: CliCommandDef["execute"];
-}
-
-export interface PluginCliDescriptor {
-  commands?: PluginCliCommandDescriptor[];
-}
-
 export interface CommandDef {
   id: string;
   label: string;
@@ -406,12 +503,21 @@ interface TickerResearchTabVisibilityContext {
   hasOptionsChain: boolean;
 }
 
+export interface TickerResearchTabPrefetchContext {
+  config: AppConfig;
+  dataProvider: DataProvider | null;
+  ticker: TickerRecord;
+  financials: TickerFinancials | null | undefined;
+  hasOptionsChain: boolean;
+}
+
 export interface TickerResearchTabDef {
   id: string;
   name: string;
   order: number;
   component: (props: TickerResearchTabProps) => ReactNode;
   isVisible?: (context: TickerResearchTabVisibilityContext) => boolean;
+  prefetch?: (context: TickerResearchTabPrefetchContext) => void | Promise<void>;
 }
 
 export interface KeyboardShortcut {
@@ -507,6 +613,11 @@ export interface AppNotificationRequest {
     label: string;
     onClick: () => void;
   };
+  /** Rendered next to `action`. Use for a dismissing counterpart such as snooze. */
+  secondaryAction?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 export interface BrokerInstanceUpdateOptions {
@@ -527,6 +638,7 @@ export interface GloomPluginContext {
   registerPaneType(pane: PluginPaneRegistration): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
+  registerCommandBarSearchProvider(provider: CommandBarSearchProvider): () => void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerCapability(capability: PluginCapability): void;
@@ -567,6 +679,7 @@ export interface GloomPluginContext {
   getApiKey(serviceId: string): string | undefined;
 
   readonly marketData: DataProvider;
+  readonly connectionHealth: ConnectionHealthRegistry;
   readonly tickerRepository: AppTickerRepositoryPort;
   readonly persistence: PluginPersistence;
   readonly log: PluginLogger;
@@ -597,6 +710,21 @@ export interface GloomPluginContext {
   notify(notification: AppNotificationRequest): AppNotificationDelivery | void;
 }
 
+/**
+ * Where a plugin can actually run.
+ *
+ * `cli` and `tui` run in Bun and may use Node APIs. `desktop` runs in the
+ * Electrobun view. `web` runs in the browser at term.gloom.sh, which rules out
+ * Node builtins entirely — a plugin opening a TCP socket (IBKR Gateway) can
+ * never be web-capable, no matter what it declares.
+ *
+ * Plugins may declare this, but the registry derives it from a static import
+ * scan and overwrites the declaration. Treat an author-supplied value as a hint.
+ */
+export type PluginTarget = "cli" | "tui" | "desktop" | "web";
+
+export const ALL_PLUGIN_TARGETS: readonly PluginTarget[] = ["cli", "tui", "desktop", "web"];
+
 export interface GloomPlugin {
   id: string;
   name: string;
@@ -605,7 +733,10 @@ export interface GloomPlugin {
   toggleable?: boolean;
   order?: number;
   cliCommands?: CliCommandDef[];
-  cli?: PluginCliDescriptor;
+  /** Defaults to every target when omitted. */
+  targets?: readonly PluginTarget[];
+  /** Shown in the marketplace pane and on the website. */
+  homepage?: string;
 
   setup?(ctx: GloomPluginContext): void | Promise<void>;
   dispose?(): void;

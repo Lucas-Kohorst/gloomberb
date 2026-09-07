@@ -34,7 +34,9 @@ export function menuForPane(
   openPaneSettings: (paneId: string) => void,
   desktopWindowBridge?: DesktopWindowBridge,
   copyPaneScreenshot?: (paneId: string) => void | Promise<void>,
+  sharePane?: () => void | Promise<void>,
   linkItems: ContextMenuItem[] = [],
+  exportPaneCsv?: (paneId: string) => void | Promise<void>,
 ): ContextMenuItem[] {
   const baseActions: ContextMenuItem[] = [];
   if (pluginRegistry.hasPaneSettings(pane.instance.instanceId)) {
@@ -45,12 +47,28 @@ export function menuForPane(
       onSelect: () => openPaneSettings(pane.instance.instanceId),
     });
   }
+  if (sharePane) {
+    baseActions.push({
+      id: "share-pane",
+      label: "Share Pane",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.share,
+      onSelect: sharePane,
+    });
+  }
   if (copyPaneScreenshot) {
     baseActions.push({
       id: "copy-screenshot",
       label: "Copy Screenshot",
       accelerator: PANE_MANAGEMENT_ACCELERATORS.copyScreenshot,
       onSelect: () => copyPaneScreenshot(pane.instance.instanceId),
+    });
+  }
+  if (exportPaneCsv) {
+    baseActions.push({
+      id: "export-csv",
+      label: "Export CSV",
+      accelerator: PANE_MANAGEMENT_ACCELERATORS.exportCsv,
+      onSelect: () => exportPaneCsv(pane.instance.instanceId),
     });
   }
 

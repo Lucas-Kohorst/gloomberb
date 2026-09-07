@@ -141,12 +141,6 @@ export function usePredictionControllerKeyboard({
       }
 
       if (detailOpen) {
-        if (
-          (detailTab === "data" || detailTab === "news")
-          && (command === "move-down" || command === "move-up")
-        ) {
-          return;
-        }
         if (detailTab === "overview" && sortedOutcomeMarkets.length > 0) {
           if (command === "move-down" || command === "move-up") {
             event.stopPropagation?.();

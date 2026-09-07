@@ -50,6 +50,9 @@ const EMPTY_STATUS_INFO: PaneFooterSegment[] = [];
 const EMPTY_TRAILING_INFO: PaneFooterSegment[] = [];
 const EMPTY_HINTS: PaneHint[] = [];
 
+// `r` refreshes every pane, so it is global product knowledge and deliberately
+// has no per-pane footer hint. Do not reintroduce one. See PR #589.
+
 function buildPaneStatusInfo({
   loading = false,
   error,
@@ -150,6 +153,7 @@ export function usePaneStatusLinkFooter({
   hints,
   trailingHints,
   showOpenHint = false,
+  onOpen,
 }: {
   registrationId: string;
   focused: boolean;
@@ -163,6 +167,7 @@ export function usePaneStatusLinkFooter({
   hints?: PaneHint[];
   trailingHints?: PaneHint[];
   showOpenHint?: boolean;
+  onOpen?: () => void;
 }) {
   const statusInfo = useMemo(
     () => buildPaneStatusInfo({ loading, error, info }),
@@ -188,5 +193,6 @@ export function usePaneStatusLinkFooter({
     hints,
     trailingHints,
     showHint: showOpenHint,
+    onOpen,
   });
 }

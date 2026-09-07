@@ -92,27 +92,16 @@ function SummaryTable({ rows, width, focused }: { rows: LlmStatsBenchmarkRow[]; 
   );
 }
 
-function createColumns(width: number): BenchColumn[] {
-  const showCalls = width >= 44;
-  const showTtft = width >= 56;
-  const showP95 = width >= 38;
-  const showFail = width >= 50;
-  const orgWidth = Math.min(12, Math.max(6, Math.floor(width * 0.18)));
-  const tpsWidth = 6;
-  const p95Width = 6;
-  const failWidth = 6;
-  const callsWidth = 6;
-  const ttftWidth = 6;
-  const fixed: BenchColumn[] = [
-    { id: "model", label: "MODEL", width: 0, align: "left", flexGrow: 1 },
-    { id: "org", label: "ORG", width: orgWidth, align: "left" },
-    { id: "tps", label: "TPS", width: tpsWidth, align: "right" },
+function createColumns(): BenchColumn[] {
+  return [
+    { id: "model", label: "MODEL", width: 16, align: "left", flexGrow: 1 },
+    { id: "org", label: "ORG", width: 10, align: "left" },
+    { id: "tps", label: "TPS", width: 6, align: "right" },
+    { id: "p95", label: "P95", width: 6, align: "right" },
+    { id: "fail", label: "FAIL", width: 6, align: "right" },
+    { id: "calls", label: "CALLS", width: 6, align: "right" },
+    { id: "ttft", label: "TTFT", width: 6, align: "right" },
   ];
-  if (showP95) fixed.push({ id: "p95", label: "P95", width: p95Width, align: "right" });
-  if (showFail) fixed.push({ id: "fail", label: "FAIL", width: failWidth, align: "right" });
-  if (showCalls) fixed.push({ id: "calls", label: "CALLS", width: callsWidth, align: "right" });
-  if (showTtft) fixed.push({ id: "ttft", label: "TTFT", width: ttftWidth, align: "right" });
-  return fixed;
 }
 
 function formatThroughput(value: number): string {
@@ -310,7 +299,7 @@ export function LlmStatsPane({ focused, width, height }: PaneProps) {
     setSearchFocused(false);
   }, []);
 
-  const columns = useMemo(() => createColumns(width), [width]);
+  const columns = useMemo(() => createColumns(), []);
   const visibleRows = useMemo(() => {
     const filtered = filterLlmStatsRows(rows, searchQuery);
     if (activeTab === "frontier") {

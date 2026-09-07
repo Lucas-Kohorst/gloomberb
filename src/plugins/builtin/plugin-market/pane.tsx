@@ -74,7 +74,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   const disabledPlugins = useAppSelector((state) => state.config.disabledPlugins);
   const managementAvailable = isPluginManagementAvailable();
 
-  const columns = useMemo(() => buildPluginColumns(width), [width]);
+  const columns = useMemo(() => buildPluginColumns(), []);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -595,7 +595,6 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         )}
         emptyStateTitle={emptyTitle}
         emptyStateHint={emptyHint}
-        showHorizontalScrollbar={false}
       />
     </Box>
   );

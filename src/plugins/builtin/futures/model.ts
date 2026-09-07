@@ -6,7 +6,16 @@ export type FuturesTableRow =
   | { type: "header"; sector: FuturesSector }
   | { type: "row"; contract: FuturesContract };
 
-export type FuturesColumnId = "status" | "code" | "name" | "price" | "change" | "changePercent";
+export type FuturesColumnId =
+  | "status"
+  | "code"
+  | "name"
+  | "price"
+  | "change"
+  | "changePercent"
+  | "volume"
+  | "prevClose"
+  | "time";
 
 export interface FuturesSortPreference {
   columnId: FuturesColumnId | null;
@@ -17,6 +26,20 @@ export const DEFAULT_FUTURES_SORT: FuturesSortPreference = {
   columnId: null,
   direction: "asc",
 };
+
+export function futuresRowId(row: FuturesTableRow): string {
+  return row.type === "header" ? `header-${row.sector}` : row.contract.symbol;
+}
+
+function matchesFuturesSearch(contract: FuturesContract, query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    contract.code.toLowerCase().includes(normalized)
+    || contract.name.toLowerCase().includes(normalized)
+    || contract.symbol.toLowerCase().includes(normalized)
+  );
+}
 
 function getSortValue(
   columnId: FuturesColumnId,
@@ -37,6 +60,12 @@ function getSortValue(
       return quote?.change ?? null;
     case "changePercent":
       return quote?.changePercent ?? null;
+    case "volume":
+      return quote?.volume ?? null;
+    case "prevClose":
+      return quote?.previousClose ?? null;
+    case "time":
+      return quote?.lastUpdated ?? null;
   }
 }
 
@@ -55,10 +84,25 @@ function sortContracts(
 }
 
 export interface BuildFuturesRowsOptions {
-  /** Keep only contracts that match the predicate. */
-  filter?: (contract: FuturesContract) => boolean;
-  /** Sectors whose contracts are hidden under the header. */
+  /** Free-text query matched against contract code, symbol, and name. */
+  query?: string;
+  /** Sectors whose contracts are hidden under their header. */
   collapsed?: ReadonlySet<FuturesSector>;
+}
+
+const NO_COLLAPSED_SECTORS: ReadonlySet<FuturesSector> = new Set();
+
+/**
+ * A search that hides its own matches is useless, so a live query outranks
+ * collapsed sectors. The pane draws its carets from this too, otherwise a
+ * sector would show ▶ above the rows it is supposedly hiding.
+ */
+export function effectiveCollapsedSectors(
+  collapsed: ReadonlySet<FuturesSector> | undefined,
+  query: string | undefined,
+): ReadonlySet<FuturesSector> {
+  if (query?.trim()) return NO_COLLAPSED_SECTORS;
+  return collapsed ?? NO_COLLAPSED_SECTORS;
 }
 
 export function buildFuturesRows(
@@ -68,14 +112,15 @@ export function buildFuturesRows(
   options?: BuildFuturesRowsOptions,
 ): FuturesTableRow[] {
   const rows: FuturesTableRow[] = [];
+  const query = options?.query ?? "";
+  const collapsed = effectiveCollapsedSectors(options?.collapsed, query);
   for (const sector of FUTURES_SECTOR_ORDER) {
-    const contracts = sortContracts(contractsBySector.get(sector) ?? [], sortPreference, quotes);
-    const visibleContracts = options?.filter ? contracts.filter(options.filter) : contracts;
-    if (visibleContracts.length === 0) continue;
+    const contracts = sortContracts(contractsBySector.get(sector) ?? [], sortPreference, quotes)
+      .filter((contract) => matchesFuturesSearch(contract, query));
+    if (contracts.length === 0) continue;
     rows.push({ type: "header", sector });
-    if (!options?.collapsed?.has(sector)) {
-      for (const contract of visibleContracts) rows.push({ type: "row", contract });
-    }
+    if (collapsed.has(sector)) continue;
+    for (const contract of contracts) rows.push({ type: "row", contract });
   }
   return rows;
 }

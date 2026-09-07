@@ -85,6 +85,7 @@ interface ShortcutEntry {
   allowEditableRef: { current: boolean };
   interceptNativeRef: { current: NonNullable<ShortcutOptions["interceptNative"]> | false };
   phase: NonNullable<ShortcutOptions["phase"]>;
+  scope?: string;
   order: number;
 }
 
@@ -124,12 +125,21 @@ function dispatchShortcutEntries(
       .map((entry) => ({
         entry,
         interceptsNative: shouldInterceptNative(entry, shortcutEvent),
-      }))
-      .sort((left, right) => (
-        phase === "before" && left.interceptsNative !== right.interceptsNative
-          ? Number(right.interceptsNative) - Number(left.interceptsNative)
-          : left.entry.order - right.entry.order
-      ));
+      }));
+    const scopePriority = new Map<string, number>();
+    for (const { entry } of phaseEntries) {
+      if (!entry.scope) continue;
+      scopePriority.set(entry.scope, Math.max(scopePriority.get(entry.scope) ?? 0, entry.order));
+    }
+    phaseEntries.sort((left, right) => {
+      if (phase === "before" && left.interceptsNative !== right.interceptsNative) {
+        return Number(right.interceptsNative) - Number(left.interceptsNative);
+      }
+      if (left.entry.scope === right.entry.scope) return left.entry.order - right.entry.order;
+      if (!left.entry.scope) return 1;
+      if (!right.entry.scope) return -1;
+      return (scopePriority.get(right.entry.scope) ?? 0) - (scopePriority.get(left.entry.scope) ?? 0);
+    });
     for (const { entry, interceptsNative } of phaseEntries) {
       if (!entry.enabledRef.current) continue;
       if (nativeInterceptionOnly && (phase !== "before" || !interceptsNative)) continue;
@@ -219,6 +229,7 @@ export function WebInputHostProvider({ children }: { children: ReactNode }) {
           allowEditableRef,
           interceptNativeRef,
           phase: options?.phase ?? "normal",
+          scope: options?.scope?.trim() || undefined,
           order: nextShortcutOrder++,
         };
         shortcutsRef.current = [...shortcutsRef.current, entry].sort((a, b) => a.order - b.order);

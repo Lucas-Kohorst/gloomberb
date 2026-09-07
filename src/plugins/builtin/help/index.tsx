@@ -1,7 +1,7 @@
 import { Box, ScrollBox, Text, useUiHost } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { useState } from "react";
-import { Tabs } from "../../../components";
+import { Button, Tabs } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -11,7 +11,6 @@ import { getSharedRegistry } from "../../registry";
 import { usePluginAppActions } from "../../runtime";
 import { detectShortcutPlatform, formatPrimaryShortcut, getShortcutDisplayMode } from "../../../utils/shortcut-labels";
 import {
-  ActionButton,
   HelpSection,
   ShortcutGroup,
   ShortcutRow,
@@ -37,7 +36,6 @@ function HelpPane({ focused, width, height }: PaneProps) {
   const registry = getSharedRegistry();
   const { openCommandBar, showPane } = usePluginAppActions();
   const [activeTabId, setActiveTabId] = useState<HelpTabId>("basics");
-  const [hoveredAction, setHoveredAction] = useState<string | null>(null);
   const commandShortcuts = resolveCommandShortcuts(registry);
   const pluginShortcuts = resolvePluginShortcuts(registry);
   const windowTemplates = resolveWindowTemplates(registry);
@@ -62,7 +60,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
   };
 
   const openLayoutActions = () => {
-    openCommandBar("LAY ");
+    openCommandBar("LMA ");
   };
 
   const openPluginManager = () => {
@@ -75,13 +73,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
         return (
           <>
             <Box flexDirection="row" gap={1}>
-              <ActionButton
-                id="plugins"
-                label="Manage Plugins"
-                hovered={hoveredAction === "plugins"}
-                onHover={setHoveredAction}
-                onPress={openPluginManager}
-              />
+              <Button label="Manage Plugins" onPress={openPluginManager} />
             </Box>
 
             <HelpSection title="Command Prefixes">
@@ -248,12 +240,16 @@ function HelpPane({ focused, width, height }: PaneProps) {
                 />
               )}
               <ShortcutRow
+                badges={[platformShortcut(["Shift", "E"])]}
+                description="Export the focused pane's table as CSV."
+              />
+              <ShortcutRow
                 badges={[platformShortcut(["Shift", "L"])]}
                 description="Open layout actions."
               />
               <ShortcutRow
                 badges={[platformShortcut(["Shift", "G"])]}
-                description="Gridlock all windows."
+                description="Tidy Windows"
               />
               <ShortcutRow
                 badges={[platformShortcut(["Shift", "M"])]}
@@ -265,7 +261,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
               />
               <ShortcutRow
                 badges={["Esc"]}
-                description="Cancel an active pane drag."
+                description="Exit pane focus, unfocus a floating pane, or cancel an active pane drag."
               />
               <ShortcutRow
                 badges={["Esc", "Esc"]}
@@ -306,13 +302,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
         return (
           <>
             <Box flexDirection="row" gap={1}>
-              <ActionButton
-                id="debug"
-                label="Open Debug Log"
-                hovered={hoveredAction === "debug"}
-                onHover={setHoveredAction}
-                onPress={openDebugLog}
-              />
+              <Button label="Open Debug Log" onPress={openDebugLog} />
               <ExternalLinkText
                 url={GLOOMBERB_ISSUES_URL}
                 label={t("GitHub Issues")}
@@ -339,13 +329,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
             </Box>
 
             <Box flexDirection="row" gap={1}>
-              <ActionButton
-                id="layout"
-                label="Layout Actions"
-                hovered={hoveredAction === "layout"}
-                onHover={setHoveredAction}
-                onPress={openLayoutActions}
-              />
+              <Button label="Layout Actions" onPress={openLayoutActions} />
             </Box>
 
             <HelpSection title="Command Bar">

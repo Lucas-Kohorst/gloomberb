@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { setCurrentPluginTarget } from "../../../plugins/current-target";
 import { createRoot } from "react-dom/client";
 import { App } from "../../../app";
 import { applyLanguageFromConfig } from "../../../i18n";
@@ -8,7 +9,6 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import {
   backendRequest,
   initElectrobunBackend,
-  onExternalPluginsChanged,
   setElectrobunRemoteRequestHandler,
 } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
@@ -32,14 +32,14 @@ import { createDesktopDeepLinkBridge } from "./desktop-deeplink-bridge";
 import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
-import { installGloomPluginRuntime } from "../../../plugins/desktop-runtime/view-runtime";
-import {
-  applyExternalPluginBundles,
-  instantiateExternalPluginBundles,
-  rememberLoadedExternalPluginIds,
-  shouldLoadDesktopExternalPlugins,
-} from "./external-plugins";
+import { getRendererPlugins } from "../../../plugins/catalog-ui";
+import { loadDesktopExternalPlugins } from "./external-plugins";
+import { setPluginInstaller } from "../../../plugins/builtin/plugin-marketplace/store";
 import { enableUiYield } from "../../../utils/ui-yield";
+
+// Declared here rather than sniffed: the desktop view and the hosted browser
+// app are both browser contexts but differ in what plugins may do.
+setCurrentPluginTarget("desktop");
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -103,14 +103,6 @@ async function boot() {
   installElectrobunCloudApiFetchTransport();
   installElectrobunUpdateHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
-  installGloomPluginRuntime();
-  const externalPlugins = shouldLoadDesktopExternalPlugins()
-    ? await instantiateExternalPluginBundles(init.externalPlugins)
-    : [];
-  rememberLoadedExternalPluginIds(externalPlugins.filter((entry) => !entry.error).map((entry) => entry.plugin.id));
-  onExternalPluginsChanged((bundles) => {
-    void applyExternalPluginBundles(bundles);
-  });
   installElectrobunAiHost();
   installFocusScopeRelease();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot
@@ -122,6 +114,23 @@ async function boot() {
   const desktopApplicationMenuBridge = createApplicationMenuBridge();
   const desktopDeepLinkBridge = createDesktopDeepLinkBridge();
   const webUiHost = createWebUiHost(init.desktopPlatform);
+  // Compiled by the Bun process, which owns the filesystem. A failure here must
+  // not stop the app from starting: the marketplace reports broken plugins, and
+  // the built-in catalog is enough to run on.
+  const externalPlugins = await measurePerfAsync(
+    "startup.electrobun.load-external-plugins",
+    async () => {
+      try {
+        return await loadDesktopExternalPlugins(await backendRequest("plugins.listExternal"));
+      } catch (error) {
+        debugLog.createLogger("desktop-plugins").error(`External plugin load failed: ${error}`);
+        return [];
+      }
+    },
+  );
+
+  setPluginInstaller((ref) => backendRequest("plugins.install", { ref }));
+
   const remoteControlAdapter = init.windowKind === "main"
     ? { registerHandler: setElectrobunRemoteRequestHandler }
     : undefined;
@@ -137,6 +146,7 @@ async function boot() {
                   config={config}
                   servicesFactory={createElectrobunAppServices}
                   externalPlugins={externalPlugins}
+                  plugins={getRendererPlugins(externalPlugins)}
                   desktopWindowBridge={desktopWindowBridge}
                   desktopApplicationMenuBridge={desktopApplicationMenuBridge}
                   desktopDeepLinkBridge={desktopDeepLinkBridge}

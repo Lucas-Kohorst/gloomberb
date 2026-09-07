@@ -1,242 +1,256 @@
-import { Box } from "../../../ui";
-import { TextAttributes } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DataTableView, Tabs, type DataTableCell, type DataTableKeyEvent } from "../../../components";
-import type { PaneProps } from "../../../types/plugin";
-import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
-import { colors } from "../../../theme/colors";
-import { usePluginTickerActions } from "../../runtime";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
-import { usePaneStatusFooter } from "../shared/pane-footer";
-import { fetchMarketHalts } from "./client";
 import {
+  DataTableView,
+  EmptyState,
+  Spinner,
+  Tabs,
+  type DataTableCell,
+  type DataTableKeyEvent,
+} from "../../../components";
+import { useShortcut } from "../../../react/input";
+import { colors } from "../../../theme/colors";
+import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
+import type { PaneProps } from "../../../types/plugin";
+import { Box, TextAttributes } from "../../../ui";
+import { isPlainKey } from "../../../utils/keyboard";
+import { cycleSortPreference } from "../../../utils/sort-values";
+import { useConnectionHealth, usePluginTickerActions } from "../../runtime";
+import { useAutoRefresh } from "../shared/auto-refresh";
+import { usePaneStatusFooter } from "../shared/pane-footer";
+import { acquireMarketHaltsHealth, fetchMarketHalts } from "./client";
+import {
+  DEFAULT_HALT_SORT,
+  HALT_FILTERS,
+  HALT_SORT_COLUMN_IDS,
+  MARKET_HALTS_PANE_ID,
   buildHaltColumns,
   filterHalts,
-  HALT_FILTER_TABS,
-  nextSortPreference,
+  formatEtDate,
+  formatEtResumption,
+  formatEtTime,
+  haltStatusColor,
+  haltStatusLabel,
+  nextHaltFilter,
+  nextHaltSort,
+  resolveHaltStatus,
   sortHalts,
-  DEFAULT_SORT_PREFERENCE,
   type HaltColumn,
+  type HaltFilter,
+  type HaltRecord,
   type HaltSortPreference,
 } from "./model";
-import type { HaltFilter } from "./types";
-import type { HaltStatus, MarketHalt } from "./types";
 
-function formatHaltTime(date: Date | null): string {
-  if (!date) return "—";
-  const h = String(date.getHours()).padStart(2, "0");
-  const m = String(date.getMinutes()).padStart(2, "0");
-  const s = String(date.getSeconds()).padStart(2, "0");
-  return `${h}:${m}:${s}`;
-}
+/** Halted rows flip to resumed on the clock alone, so the pane re-reads it. */
+const STATUS_TICK_MS = 15_000;
 
-function statusColor(status: HaltStatus): string | undefined {
-  switch (status) {
-    case "active":
-      return colors.negative;
-    case "quote_resumed":
-      return colors.warning;
-    case "resumed":
-      return undefined;
-  }
-}
-
-function MarketHaltsPane({ focused, width, height }: PaneProps) {
+export function MarketHaltsPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
-  const [halts, setHalts] = useState<MarketHalt[]>([]);
-  const [loading, setLoading] = useState(false);
+  const connectionHealth = useConnectionHealth();
+  const [records, setRecords] = useState<HaltRecord[]>([]);
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [activeFilter, setActiveFilter] = useState<HaltFilter>("all");
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [sortPreference, setSortPreference] = useState<HaltSortPreference>(DEFAULT_SORT_PREFERENCE);
-
+  const [fetchedAt, setFetchedAt] = useState<number | null>(null);
+  const [filter, setFilter] = useState<HaltFilter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<HaltSortPreference>(DEFAULT_HALT_SORT);
+  const [now, setNow] = useState(() => Date.now());
   const fetchGenRef = useRef(0);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(() => {
     fetchGenRef.current += 1;
-    const gen = fetchGenRef.current;
-    setLoading(true);
+    const generation = fetchGenRef.current;
+    setStatus((current) => (current === "loaded" ? "loaded" : "loading"));
     setError(null);
+    fetchMarketHalts(connectionHealth)
+      .then((next) => {
+        if (fetchGenRef.current !== generation) return;
+        setRecords(next);
+        setError(null);
+        setStatus("loaded");
+        setFetchedAt(Date.now());
+        setNow(Date.now());
+      })
+      .catch((loadError: unknown) => {
+        if (fetchGenRef.current !== generation) return;
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setStatus("error");
+      });
+  }, [connectionHealth]);
 
-    try {
-      const data = await fetchMarketHalts({ forceRefresh: force });
-      if (fetchGenRef.current !== gen) return;
-      setHalts(data);
-      setLastUpdated(Date.now());
-      setSelectedTicker(null);
-    } catch (err) {
-      if (fetchGenRef.current !== gen) return;
-      setError(err instanceof Error ? err.message : "Failed to load market halts");
-    } finally {
-      if (fetchGenRef.current === gen) setLoading(false);
-    }
-  }, []);
+  useEffect(() => acquireMarketHaltsHealth(connectionHealth), [connectionHealth]);
+  useEffect(() => { load(); }, [load]);
+  useAutoRefresh(fetchedAt, load);
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useAutoRefresh(lastUpdated, () => load(true));
-
-  const columns = useMemo(() => buildHaltColumns(width), [width]);
-
-  const filtered = useMemo(
-    () => filterHalts(halts, activeFilter),
-    [activeFilter, halts],
-  );
+    const timer = setInterval(() => setNow(Date.now()), STATUS_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   const rows = useMemo(
-    () => sortHalts(filtered, sortPreference),
-    [filtered, sortPreference],
+    () => sortHalts(filterHalts(records, filter, now), sortPreference, now),
+    [filter, now, records, sortPreference],
   );
 
-  const selectedIdx = selectedTicker
-    ? rows.findIndex((row) => row.ticker === selectedTicker)
-    : -1;
-
   useEffect(() => {
-    if (selectedTicker && selectedIdx >= 0) return;
-    const firstRow = rows[0];
-    if (firstRow) {
-      setSelectedTicker(firstRow.ticker);
-    } else if (selectedTicker !== null) {
-      setSelectedTicker(null);
-    }
-  }, [rows, selectedIdx, selectedTicker]);
+    if (selectedId && rows.some((row) => row.id === selectedId)) return;
+    setSelectedId(rows[0]?.id ?? null);
+  }, [rows, selectedId]);
 
-  const openTicker = useCallback((symbol: string) => {
-    pinTicker(symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
+  const refresh = useCallback(() => load(), [load]);
+  const cycleFilter = useCallback(() => setFilter((current) => nextHaltFilter(current)), []);
+  const cycleSort = useCallback((step: 1 | -1) => {
+    setSortPreference((current) => cycleSortPreference(HALT_SORT_COLUMN_IDS, current, step));
+  }, []);
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextHaltSort(current, columnId));
+  }, []);
+  const openTicker = useCallback((record: HaltRecord) => {
+    pinTicker(record.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID });
   }, [pinTicker]);
 
-  const handleHeaderClick = useCallback((columnId: string) => {
-    setSortPreference((current) => nextSortPreference(current, columnId));
-  }, []);
-
-  const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "r") {
+  const handlePaneKey = useCallback((event: DataTableKeyEvent): boolean => {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
-      load(true);
+      refresh();
+      return true;
+    }
+    if (isPlainKey(event, "f")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      cycleFilter();
+      return true;
+    }
+    if (isPlainKey(event, "]", "[")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      cycleSort(event.name === "]" ? 1 : -1);
       return true;
     }
     return false;
-  }, [load]);
+  }, [cycleFilter, cycleSort, refresh]);
 
-  const refresh = useCallback(() => {
-    void load(true);
-  }, [load]);
+  useShortcut((event) => {
+    if (event.targetEditable || event.defaultPrevented || event.propagationStopped) return;
+    handlePaneKey(event as DataTableKeyEvent);
+  }, { enabled: focused });
 
-  const activeCount = useMemo(
-    () => halts.filter((h) => h.status === "active").length,
-    [halts],
-  );
+  const columns = useMemo(() => buildHaltColumns(), []);
+
+  usePaneStatusFooter({
+    registrationId: MARKET_HALTS_PANE_ID,
+    loading: status === "loading",
+    error,
+    hints: [{ id: "filter", key: "f", label: "ilter", onPress: cycleFilter }],
+  });
 
   const renderCell = useCallback((
-    row: MarketHalt,
+    row: HaltRecord,
     column: HaltColumn,
     _index: number,
     rowState: { selected: boolean },
   ): DataTableCell => {
     const selectedColor = rowState.selected ? colors.selectedText : undefined;
-    const statusCol = statusColor(row.status);
-
     switch (column.id) {
-      case "ticker":
+      case "symbol":
         return {
-          text: row.ticker,
-          color: selectedColor ?? statusCol ?? colors.textBright,
+          text: row.symbol,
+          color: selectedColor ?? colors.textBright,
           attributes: TextAttributes.BOLD,
         };
-      case "exchange":
-        return { text: row.exchange, color: selectedColor ?? colors.textDim };
-      case "name":
-        return { text: row.name ?? "", color: selectedColor ?? colors.text };
-      case "haltCode":
+      case "market":
+        return { text: row.market, color: selectedColor ?? colors.textDim };
+      case "company":
+        return { text: row.company, color: selectedColor ?? colors.text };
+      case "code":
+        return { text: row.reasonCode || "—", color: selectedColor ?? colors.textDim };
+      case "reason":
+        return { text: row.reason, color: selectedColor ?? colors.text };
+      case "date":
+        return { text: formatEtDate(row.haltedAt), color: selectedColor ?? colors.textMuted };
+      case "halted":
+        return { text: formatEtTime(row.haltedAt), color: selectedColor ?? colors.textMuted };
+      case "quote":
         return {
-          text: row.haltCode,
-          color: selectedColor ?? statusCol ?? colors.text,
-        };
-      case "haltTime":
-        return {
-          text: formatHaltTime(row.haltTime),
+          text: formatEtResumption(row.quoteResumeAt, row.haltedAt),
           color: selectedColor ?? colors.textDim,
         };
-      case "quoteResume":
+      case "trade":
         return {
-          text: formatHaltTime(row.quoteResumeTime),
+          text: formatEtResumption(row.tradeResumeAt, row.haltedAt),
           color: selectedColor ?? colors.textDim,
         };
-      case "resumeTime":
+      case "status": {
+        const rowStatus = resolveHaltStatus(row, now);
         return {
-          text: formatHaltTime(row.resumeTime),
-          color: selectedColor ?? colors.textDim,
+          text: haltStatusLabel(rowStatus),
+          color: selectedColor ?? haltStatusColor(rowStatus),
+          attributes: TextAttributes.BOLD,
         };
+      }
     }
-  }, []);
+  }, [now]);
 
-  const footerInfo = useMemo(() => {
-    const info: Array<{ id: string; parts: Array<{ text: string; tone?: "label" | "value" | "muted" | "warning"; color?: string; bold?: boolean }> }> = [];
-    if (activeCount > 0) {
-      info.push({
-        id: "active",
-        parts: [{ text: `${activeCount} active`, tone: "warning", bold: true }],
-      });
-    }
-    info.push({
-      id: "total",
-      parts: [{ text: `${halts.length} total`, tone: "muted" }],
-    });
-    return info;
-  }, [activeCount, halts.length]);
+  const tabs = (
+    <Box height={1} flexShrink={0} overflow="hidden">
+      <Tabs
+        tabs={HALT_FILTERS.map((entry) => ({ label: entry.label, value: entry.value }))}
+        activeValue={filter}
+        onSelect={(value) => setFilter(value as HaltFilter)}
+        compact
+        variant="bare"
+        focused={focused}
+        keyboardNavigation={false}
+      />
+    </Box>
+  );
 
-  usePaneStatusFooter({
-    registrationId: "market-halts",
-    loading,
-    error,
-    info: footerInfo,
-    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: refresh }],
-  });
+  if (status === "loading" && records.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label="Loading trading halts..." />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (status === "error" && records.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <Box padding={1}>
+          <EmptyState title="Trading halts unavailable." message={error ?? undefined} />
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} paddingX={1}>
-        <Tabs
-          tabs={HALT_FILTER_TABS.map((tab) => ({ label: tab.label, value: tab.id }))}
-          activeValue={activeFilter}
-          onSelect={(value) => {
-            setActiveFilter(value as HaltFilter);
-            setSelectedTicker(null);
-          }}
-          compact
-          variant="bare"
-          focused={focused}
-        />
-      </Box>
-
-      <DataTableView<MarketHalt, HaltColumn>
+      {tabs}
+      <DataTableView<HaltRecord, HaltColumn>
         focused={focused}
+        rootWidth={width}
+        rootHeight={Math.max(1, height - 1)}
         selection={{
           kind: "id",
-          selectedId: selectedTicker,
-          getId: (row) => row.ticker,
-          onChange: (ticker) => setSelectedTicker(ticker),
+          selectedId,
+          getId: (row) => row.id,
+          onChange: (id) => setSelectedId(id),
         }}
-        onRootKeyDown={handleTableKeyDown}
-        resetScrollKey={activeFilter}
+        onRootKeyDown={handlePaneKey}
         columns={columns}
         items={rows}
         sortColumnId={sortPreference.columnId}
         sortDirection={sortPreference.direction}
         onHeaderClick={handleHeaderClick}
-        getItemKey={(row) => `${row.ticker}-${row.haltTime.getTime()}`}
-        onActivate={(row) => openTicker(row.ticker)}
+        getItemKey={(row) => row.id}
+        onActivate={openTicker}
         renderCell={renderCell}
-        emptyStateTitle={loading ? "Loading halts..." : error ?? "No halts today"}
-        emptyStateHint={error ? "Nasdaq Trader feed unavailable." : "No active or recent trading halts."}
+        emptyStateTitle={filter === "all" ? "No trading halts reported." : "No halts match this filter."}
       />
     </Box>
   );
 }
-
-export { MarketHaltsPane };

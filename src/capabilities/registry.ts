@@ -12,6 +12,15 @@ interface SubscriptionEntry {
   dispose: () => void;
 }
 
+const LOCAL_READ_OPERATIONS = new Set([
+  "canProvide",
+  "supports",
+  "getCachedFinancialsForTargets",
+  "getCachedNews",
+  "getChartResolutionSupport",
+  "getChartResolutionCapabilities",
+]);
+
 export class CapabilityRegistry {
   private readonly capabilities = new Map<string, RegisteredCapability>();
   private readonly subscriptions = new Map<string, SubscriptionEntry>();
@@ -57,8 +66,17 @@ export class CapabilityRegistry {
       ));
   }
 
-  manifests({ rendererOnly = false }: { rendererOnly?: boolean } = {}): CapabilityManifest[] {
-    return this.list().map(({ capability }) => {
+  manifests({
+    rendererOnly = false,
+    includeDisabled = false,
+  }: { rendererOnly?: boolean; includeDisabled?: boolean } = {}): CapabilityManifest[] {
+    const entries = includeDisabled
+      ? [...this.capabilities.values()].sort((left, right) => (
+          (left.capability.priority ?? 1000) - (right.capability.priority ?? 1000)
+          || left.capability.id.localeCompare(right.capability.id)
+        ))
+      : this.list();
+    return entries.map(({ capability }) => {
       const operations: CapabilityOperationManifest[] = Object.entries(capability.operations)
         .filter(([, operation]) => !rendererOnly || operation.rendererSafe === true)
         .map(([id, operation]) => ({
@@ -82,12 +100,21 @@ export class CapabilityRegistry {
     capabilityId: string,
     operationId: string,
     payload: unknown,
-    options: { renderer?: boolean } = {},
+    options: { renderer?: boolean; signal?: AbortSignal } = {},
   ): Promise<T> {
     const { capability, operation } = this.resolveOperation(capabilityId, operationId, options);
     if (!operation.handler) throw new Error(`Capability operation "${capabilityId}.${operationId}" is not invokable.`);
+    options.signal?.throwIfAborted();
     const input = (operation.input ?? recordSchema).parse(payload);
-    const result = await operation.handler(input, { capability, operationId });
+    const invoke = () => Promise.resolve(operation.handler!(input, {
+      capability,
+      operationId,
+      signal: options.signal,
+    }));
+    const health = this.options.connectionHealth;
+    const result = health?.hasSource(capabilityId) && !LOCAL_READ_OPERATIONS.has(operationId)
+      ? await health.track(capabilityId, operationId, invoke)
+      : await invoke();
     return (operation.output ? operation.output.parse(result) : result) as T;
   }
 

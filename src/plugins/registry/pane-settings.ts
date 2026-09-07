@@ -13,6 +13,10 @@ import type {
   PaneSettingsContext,
   PaneSettingsDef,
 } from "../../types/plugin";
+import {
+  exportPaneTableCsv,
+  hasPaneTableExporter,
+} from "../../state/pane-table-export-registry";
 
 export interface ResolvedRegistryPaneSettings {
   paneId: string;
@@ -77,7 +81,7 @@ export function resolveRegistryPaneSettings({
   if (!pane) return null;
 
   const paneDef = paneDefs.get(pane.paneId);
-  if (!paneDef) return null;
+  if (!paneDef || (!paneDef.settings && !paneDef.tableExport)) return null;
 
   const pluginId = paneOwners.get(pane.paneId);
   const paneSettings = getPaneSettings(pane);
@@ -100,17 +104,32 @@ export function resolveRegistryPaneSettings({
     activeTicker: resolveTickerForPane(stateView, targetPaneId),
     activeCollectionId: resolveCollectionForPane(stateView, targetPaneId),
   };
-  let settingsDef = typeof paneDef.settings === "function"
+  const baseSettingsDef = typeof paneDef.settings === "function"
     ? paneDef.settings(context)
     : paneDef.settings;
-  if (!settingsDef && !canRetargetPaneTicker(pane)) return null;
-  settingsDef = settingsDef ?? { fields: [] };
-  if (canRetargetPaneTicker(pane)) {
-    settingsDef = withTickerFollowSetting(settingsDef, pane, layout, (instance) => {
-      const def = paneDefs.get(instance.paneId);
-      return instance.title || def?.name || instance.paneId;
-    });
-  }
+  if (!baseSettingsDef && !paneDef.tableExport) return null;
+  const settingsDef: PaneSettingsDef = paneDef.tableExport
+    ? {
+      ...(baseSettingsDef ?? {}),
+      fields: [
+        ...(baseSettingsDef?.fields ?? []),
+        {
+          key: "tableExport.csv",
+          label: "Export CSV",
+          description: "Export the current table as an Excel-compatible CSV file.",
+          type: "action",
+          actionId: "table.export-csv",
+          actionLabel: "Export",
+          disabled: !hasPaneTableExporter(targetPaneId),
+          action: (actionContext) => exportPaneTableCsv(
+            targetPaneId,
+            pane.title ?? paneDef.name,
+            actionContext.notify,
+          ),
+        },
+      ],
+    }
+    : baseSettingsDef!;
 
   const rawSettings = { ...paneSettings };
   const resolvedSettings = {

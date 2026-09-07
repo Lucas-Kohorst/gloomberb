@@ -14,7 +14,6 @@ import type { TreasuryAuction } from "./types";
 function auction(overrides: Partial<TreasuryAuction> & { secType: string; securityTerm: string }): TreasuryAuction {
   return {
     id: `${overrides.secType}|${overrides.auctionDate ?? "2026-08-12"}|${overrides.securityTerm}`,
-    cusip: null,
     auctionDate: "2026-08-12",
     highInvestmentRate: null,
     highYield: null,
@@ -60,6 +59,7 @@ const AUCTIONS: TreasuryAuction[] = [
   }),
 ];
 
+/** Fresh cache so the pane renders without touching the Treasury endpoint. */
 function seedCache(): void {
   attachTreasuryAuctionsPersistence({
     getResource: () => ({ value: AUCTIONS, fetchedAt: Date.now(), stale: false }),
@@ -80,7 +80,6 @@ afterEach(async () => {
 
 function Harness() {
   const state = createInitialState(createDefaultConfig("/tmp/gloomberb-auctions-pane-test"));
-  state.focusedPaneId = "treasury-auctions";
   return (
     <AppContext value={{ state, dispatch: () => {} }}>
       <PaneInstanceProvider paneId="treasury-auctions">
@@ -105,8 +104,6 @@ async function renderSettled() {
 
 async function emitKeypress(event: { name?: string; sequence?: string }) {
   await act(async () => {
-    let defaultPrevented = false;
-    let propagationStopped = false;
     testSetup!.renderer.keyInput.emit("keypress", {
       ctrl: false,
       meta: false,
@@ -114,19 +111,11 @@ async function emitKeypress(event: { name?: string; sequence?: string }) {
       shift: false,
       eventType: "press",
       repeated: false,
+      defaultPrevented: false,
+      propagationStopped: false,
+      preventDefault: () => {},
+      stopPropagation: () => {},
       ...event,
-      get defaultPrevented() {
-        return defaultPrevented;
-      },
-      get propagationStopped() {
-        return propagationStopped;
-      },
-      preventDefault: () => {
-        defaultPrevented = true;
-      },
-      stopPropagation: () => {
-        propagationStopped = true;
-      },
     } as never);
     await testSetup!.renderOnce();
   });
@@ -142,7 +131,10 @@ describe("TreasuryAuctionsPane", () => {
     expect(frame).toContain("13-Week");
     expect(frame).toContain("3.802%");
     expect(frame).toContain("2.86");
+    // Indirect share is derived, not reported.
     expect(frame).toContain("48.6%");
+    // The 20-Year is announced but unpublished: every metric cell reads the
+    // same placeholder the reported-but-missing cells use.
     expect(frame).toContain("20-Year");
     expect(frame).not.toContain("pending");
   });
@@ -167,6 +159,7 @@ describe("TreasuryAuctionsPane", () => {
     testSetup = await testRender(<Harness />, { width: 92, height: 20 });
     await renderSettled();
 
+    // all -> bills
     await emitKeypress({ name: "f", sequence: "f" });
     await renderSettled();
 

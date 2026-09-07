@@ -1,174 +1,254 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Text, TextAttributes } from "../../../ui";
-import { DataTableStackView, nextStackSortPreference } from "../../../components";
-import type { PaneProps } from "../../../types/plugin";
-import { colors } from "../../../theme/colors";
-import { t, tf } from "../../../i18n";
-import { ConnectionTracker } from "./tracker";
-import type { ConnectionState } from "./types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import {
-  buildConnectionColumns,
-  connectionRowRevision,
-  renderConnectionCell,
-  sortConnections,
-  type ConnectionColumn,
-  type ConnectionSortPreference,
-} from "./table";
-import { ConnectionDetailContent } from "./detail";
-import { useConnectionsFooter } from "./footer";
-import { useConnectionsKeyboard } from "./keyboard";
-import { useAppActive } from "../../../state/app/activity";
+  DataTableStackView,
+  Spinner,
+  type DataTableCell,
+  type DataTableColumn,
+  usePaneFooter,
+} from "../../../components";
+import { useConnectionHealth } from "../../runtime";
+import { useShortcut } from "../../../react/input";
+import type { PaneProps } from "../../../types/plugin";
+import type {
+  ConnectionHealthState,
+  ConnectionHealthStatus,
+} from "../../../core/connection-health";
+import { colors } from "../../../theme/colors";
+import { formatRelativeAge } from "../../../utils/relative-time";
+import { truncateToDisplayWidth } from "../../../utils/format";
 
-let sharedTracker: ConnectionTracker | null = null;
+export function setSharedConnectionTracker(_tracker: unknown): void {}
 
-export function setSharedConnectionTracker(tracker: ConnectionTracker | null): void {
-  sharedTracker = tracker;
+interface ConnectionColumn extends DataTableColumn {
+  id: "service" | "status" | "request" | "latency" | "last";
+}
+
+const SORT_COLUMNS: ConnectionColumn["id"][] = ["status", "service", "request", "latency", "last"];
+
+const STATUS_ORDER: Record<ConnectionHealthStatus, number> = {
+  error: 0,
+  disconnected: 1,
+  connecting: 2,
+  connected: 3,
+  idle: 4,
+};
+
+function statusLabel(status: ConnectionHealthStatus): string {
+  if (status === "connected") return "Connected";
+  if (status === "connecting") return "Connecting";
+  if (status === "disconnected") return "Disconnected";
+  if (status === "error") return "Error";
+  return "Idle";
+}
+
+function statusColor(status: ConnectionHealthStatus): string {
+  if (status === "connected") return colors.positive;
+  if (status === "connecting") return colors.warning;
+  if (status === "disconnected" || status === "error") return colors.negative;
+  return colors.textMuted;
+}
+
+function formatLatency(latencyMs: number | null): string {
+  if (latencyMs == null) return "-";
+  return latencyMs < 1000 ? `${Math.round(latencyMs)}ms` : `${(latencyMs / 1000).toFixed(1)}s`;
+}
+
+function buildConnectionColumns(): ConnectionColumn[] {
+  return [
+    { id: "service", label: "SERVICE", width: 10, align: "left", flexGrow: 1 },
+    { id: "status", label: "STATUS", width: 13, align: "left" },
+    { id: "request", label: "REQUEST", width: 18, align: "left" },
+    { id: "latency", label: "LATENCY", width: 8, align: "right" },
+    { id: "last", label: "LAST", width: 9, align: "right" },
+  ];
+}
+
+function DetailLine({ label, value, color = colors.text }: { label: string; value: string; color?: string }) {
+  return (
+    <Box height={1} flexDirection="row">
+      <Box width={16}><Text fg={colors.textDim}>{label}</Text></Box>
+      <Text fg={color}>{value}</Text>
+    </Box>
+  );
+}
+
+function ConnectionDetail({ source, width, now }: { source: ConnectionHealthState; width: number; now: number }) {
+  const lineWidth = Math.max(24, width - 2);
+  return (
+    <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
+      <Box flexDirection="column" width={lineWidth}>
+        <DetailLine label="Status" value={statusLabel(source.status)} color={statusColor(source.status)} />
+        <DetailLine label="Type" value={source.kind} color={colors.textDim} />
+        {source.ownerId ? <DetailLine label="Owner" value={source.ownerId} color={colors.textDim} /> : null}
+        {source.socketState ? <DetailLine label="Socket" value={source.socketState} color={statusColor(source.status)} /> : null}
+        {source.lastTransitionAt ? (
+          <DetailLine label="Transition" value={formatRelativeAge(source.lastTransitionAt, now)} color={colors.textMuted} />
+        ) : null}
+        <DetailLine label="Last request" value={source.lastRequestAt ? formatRelativeAge(source.lastRequestAt, now) : "never"} color={colors.textMuted} />
+        <DetailLine label="Operation" value={source.lastOperation ?? "-"} color={colors.textDim} />
+        <DetailLine label="Latency" value={formatLatency(source.lastLatencyMs)} color={colors.textMuted} />
+        {source.currentDetail ? (
+          <DetailLine label="Detail" value={truncateToDisplayWidth(source.currentDetail, Math.max(8, lineWidth - 16))} color={source.status === "error" ? colors.negative : colors.textDim} />
+        ) : null}
+        {source.lastSuccess ? (
+          <DetailLine
+            label="Last success"
+            value={`${formatRelativeAge(source.lastSuccess.at, now)} · ${formatLatency(source.lastSuccess.latencyMs)} · ${source.lastSuccess.operation}`}
+            color={colors.positive}
+          />
+        ) : null}
+        {source.lastError ? (
+          <DetailLine
+            label="Last error"
+            value={`${formatRelativeAge(source.lastError.at, now)} · ${source.lastError.error ?? source.lastError.operation}`}
+            color={colors.negative}
+          />
+        ) : null}
+        {source.recentRequests.length > 0 ? (
+          <>
+            <Box height={1} />
+            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Recent requests</Text>
+            {source.recentRequests.slice(0, 8).map((request, index) => (
+              <Box key={`${request.at}:${index}`} height={1} flexDirection="row">
+                <Box width={7}><Text fg={request.success ? colors.positive : colors.negative}>{request.success ? "ok" : "error"}</Text></Box>
+                <Box width={9}><Text fg={colors.textMuted}>{formatLatency(request.latencyMs)}</Text></Box>
+                <Box width={10}><Text fg={colors.textMuted}>{formatRelativeAge(request.at, now)}</Text></Box>
+                <Text fg={colors.textDim}>{truncateToDisplayWidth(request.error ?? request.operation, Math.max(8, lineWidth - 26))}</Text>
+              </Box>
+            ))}
+          </>
+        ) : null}
+      </Box>
+    </ScrollBox>
+  );
 }
 
 export function ConnectionsPane({ focused, width, height }: PaneProps) {
-  const [connections, setConnections] = useState<ConnectionState[]>([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const health = useConnectionHealth();
+  const [snapshot, setSnapshot] = useState(() => health.getSnapshot());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const appActive = useAppActive();
-  const [sortPreference, setSortPreference] = useState<ConnectionSortPreference>({
+  const [sort, setSort] = useState<{ columnId: ConnectionColumn["id"]; direction: "asc" | "desc" }>({
     columnId: "status",
     direction: "asc",
   });
-  const versionRef = useRef(0);
+  const [now, setNow] = useState(Date.now());
+  // Sources register asynchronously at boot, so an empty first snapshot is a load,
+  // not an answer.
+  const [settled, setSettled] = useState(() => health.getSnapshot().sources.length > 0);
 
   useEffect(() => {
-    if (!sharedTracker) return;
-    const dispose = sharedTracker.subscribe((snapshot) => {
-      versionRef.current = snapshot.version;
-      setConnections(snapshot.connections);
+    if (settled) return;
+    const timer = setTimeout(() => setSettled(true), 2000);
+    return () => clearTimeout(timer);
+  }, [settled]);
+
+  useEffect(() => health.subscribe(() => {
+    setSnapshot(health.getSnapshot());
+    setSettled(true);
+  }), [health]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      setSnapshot(health.getSnapshot());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [health]);
+
+  const sources = useMemo(() => [...snapshot.sources].sort((left, right) => {
+    let comparison = 0;
+    if (sort.columnId === "status") comparison = STATUS_ORDER[left.status] - STATUS_ORDER[right.status];
+    else if (sort.columnId === "service") comparison = left.name.localeCompare(right.name);
+    else if (sort.columnId === "request") comparison = (left.lastOperation ?? "").localeCompare(right.lastOperation ?? "");
+    else if (sort.columnId === "latency") comparison = (left.lastLatencyMs ?? Number.POSITIVE_INFINITY) - (right.lastLatencyMs ?? Number.POSITIVE_INFINITY);
+    else comparison = (left.lastRequestAt ?? 0) - (right.lastRequestAt ?? 0);
+    return (sort.direction === "asc" ? comparison : -comparison)
+      || (left.priority ?? 1000) - (right.priority ?? 1000)
+      || left.name.localeCompare(right.name);
+  }), [snapshot, sort]);
+  const selected = sources.find((source) => source.id === selectedId) ?? sources[0] ?? null;
+  const issues = sources.filter((source) => source.status === "error" || source.status === "disconnected").length;
+  const connecting = sources.filter((source) => source.status === "connecting").length;
+
+  useEffect(() => {
+    if (!selectedId && sources[0]) setSelectedId(sources[0].id);
+    if (selectedId && !sources.some((source) => source.id === selectedId)) {
+      setSelectedId(sources[0]?.id ?? null);
+      setDetailOpen(false);
+    }
+  }, [selectedId, sources]);
+
+  const cycleSort = useCallback(() => {
+    setSort((current) => {
+      const currentIndex = SORT_COLUMNS.indexOf(current.columnId);
+      return current.direction === "asc"
+        ? { ...current, direction: "desc" }
+        : { columnId: SORT_COLUMNS[(currentIndex + 1) % SORT_COLUMNS.length]!, direction: "asc" };
     });
-    return dispose;
   }, []);
 
-  useEffect(() => {
-    if (!appActive) return;
-    const interval = setInterval(() => setNow(Date.now()), 5000);
-    return () => clearInterval(interval);
-  }, [appActive]);
-
-  const sortedConnections = useMemo(
-    () => sortConnections(connections, sortPreference),
-    [connections, sortPreference],
-  );
-
-  useEffect(() => {
-    setSelectedIndex((current) => Math.max(0, Math.min(current, sortedConnections.length - 1)));
-  }, [sortedConnections.length]);
-
-  useEffect(() => {
-    if (connections.length === 0) setDetailOpen(false);
-  }, [connections.length]);
-
-  const selectedRow = sortedConnections[Math.min(selectedIndex, sortedConnections.length - 1)] ?? null;
-
-  const handleRefresh = useCallback(() => {
-    sharedTracker?.refresh();
-  }, []);
-
-  const handleOpenDetail = useCallback(() => {
-    if (selectedRow) setDetailOpen(true);
-  }, [selectedRow]);
-
-  const handleBack = useCallback(() => {
-    setDetailOpen(false);
-  }, []);
-
-  useConnectionsFooter({ onRefresh: handleRefresh });
-  useConnectionsKeyboard({
-    focused,
-    detailOpen,
-    hasSelection: !!selectedRow,
-    onRefresh: handleRefresh,
-    onOpenDetail: handleOpenDetail,
-    onBack: handleBack,
+  useShortcut((event) => {
+    if (!focused || detailOpen || event.name !== "s") return;
+    event.stopPropagation();
+    cycleSort();
   });
 
-  const connectedCount = connections.filter((c) => c.status === "connected").length;
-  const errorCount = connections.filter((c) => c.status === "error" || c.status === "disconnected").length;
-  const idleCount = connections.filter((c) => c.status === "idle").length;
-  const bodyHeight = Math.max(5, height - 4);
-  const tableWidth = Math.max(24, width - 2);
-  const columns = useMemo(() => buildConnectionColumns(tableWidth), [tableWidth]);
+  usePaneFooter("connections", () => ({
+    info: [
+      ...(issues > 0 ? [{ id: "issues", parts: [{ text: `${issues} issue${issues === 1 ? "" : "s"}`, tone: "warning" as const }] }] : []),
+      ...(connecting > 0 ? [{ id: "connecting", parts: [{ text: `${connecting} connecting`, tone: "muted" as const }] }] : []),
+    ],
+    hints: detailOpen ? [] : [{ id: "sort", key: "s", label: "ort", onPress: cycleSort }],
+  }), [connecting, cycleSort, detailOpen, issues]);
 
-  const getRowRevision = useCallback((row: ConnectionState) => (
-    connectionRowRevision(row, now)
-  ), [now]);
-
-  const selectRow = useCallback((index: number, _row: ConnectionState) => {
-    setSelectedIndex(index);
-  }, []);
-
-  const openDetail = useCallback((index: number, _row: ConnectionState) => {
-    setSelectedIndex(index);
-    setDetailOpen(true);
-  }, []);
-
-  const detailContentWidth = Math.max(24, tableWidth - 2);
-  const detailContent = (
-    <ConnectionDetailContent row={selectedRow} width={detailContentWidth} />
-  );
+  const renderCell = useCallback((source: ConnectionHealthState, column: ConnectionColumn): DataTableCell => {
+    if (column.id === "service") return { text: truncateToDisplayWidth(source.name, column.width), color: colors.text };
+    if (column.id === "status") return { text: statusLabel(source.status), color: statusColor(source.status) };
+    if (column.id === "request") return { text: truncateToDisplayWidth(source.lastOperation ?? "-", column.width), color: colors.textDim };
+    if (column.id === "latency") return { text: formatLatency(source.lastLatencyMs), color: source.status === "error" ? colors.negative : colors.textMuted };
+    return { text: source.lastRequestAt ? formatRelativeAge(source.lastRequestAt, now) : "-", color: colors.textMuted };
+  }, [now]);
 
   return (
-    <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      <Box height={1} flexDirection="row">
-        <Box flexGrow={1} flexDirection="row">
-          <Box width={12}>
-            <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>{t("Connections")}</Text>
+    <Box flexDirection="column" width={width} height={height} overflow="hidden">
+      <DataTableStackView<ConnectionHealthState, ConnectionColumn>
+        focused={focused}
+        detailOpen={detailOpen && !!selected}
+        onBack={() => setDetailOpen(false)}
+        detailTitle={selected?.name}
+        detailContent={selected ? <ConnectionDetail source={selected} width={width} now={now} /> : <Box />}
+        rootWidth={width}
+        rootHeight={height}
+        selection={{
+          kind: "id",
+          selectedId: selected?.id ?? null,
+          getId: (source) => source.id,
+          onChange: (id) => setSelectedId(id),
+        }}
+        onActivate={(source) => {
+          setSelectedId(source.id);
+          setDetailOpen(true);
+        }}
+        columns={buildConnectionColumns()}
+        items={sources}
+        sortColumnId={sort.columnId}
+        sortDirection={sort.direction}
+        onHeaderClick={(columnId) => {
+          setSort((current) => current.columnId === columnId
+            ? { ...current, direction: current.direction === "asc" ? "desc" : "asc" }
+            : { columnId: columnId as ConnectionColumn["id"], direction: "asc" });
+        }}
+        getItemKey={(source) => source.id}
+        renderCell={renderCell}
+        emptyContent={settled ? undefined : (
+          <Box paddingX={1} paddingY={1}>
+            <Spinner label="Waiting for services to register..." />
           </Box>
-          <Text fg={colors.textDim}>{
-            tf("{total} services · {connected} live · {idle} idle · {issues} issues",
-              { total: connections.length, connected: connectedCount, idle: idleCount, issues: errorCount })
-          }</Text>
-        </Box>
-      </Box>
-      <Box height={1}>
-        <Text fg={colors.textDim}>{t("API connections, data providers, and streaming health.")}</Text>
-      </Box>
-      <Box height={1}>
-        <Text fg={colors.border}>{"\u2500".repeat(Math.max(1, width - 2))}</Text>
-      </Box>
-
-      <Box height={bodyHeight} overflow="hidden">
-        <DataTableStackView<ConnectionState, ConnectionColumn>
-          focused={focused}
-          detailOpen={detailOpen && !!selectedRow}
-          onBack={handleBack}
-          detailContent={detailContent}
-          detailTitle={selectedRow?.name}
-          rootWidth={tableWidth}
-          rootHeight={bodyHeight}
-          selection={{
-            kind: "index",
-            selectedIndex: Math.min(selectedIndex, Math.max(0, sortedConnections.length - 1)),
-            onChange: (index, row) => selectRow(index, row),
-          }}
-          onActivate={(row, index) => openDetail(index, row)}
-          columns={columns}
-          items={sortedConnections}
-          sortColumnId={sortPreference.columnId}
-          sortDirection={sortPreference.direction}
-          onHeaderClick={(columnId) => {
-            const next = columnId as ConnectionSortPreference["columnId"];
-            setSortPreference((current) => nextStackSortPreference(
-              current,
-              next,
-              next === "service" || next === "type" || next === "status" ? "asc" : "desc",
-            ));
-          }}
-          getItemKey={(row) => row.id}
-          getRowRevision={getRowRevision}
-          renderCell={renderConnectionCell}
-          emptyStateTitle={t("No connections registered.")}
-          emptyStateHint={t("Connections appear when data providers are registered.")}
-          showHorizontalScrollbar={false}
-        />
-      </Box>
+        )}
+        emptyStateTitle="No connection activity yet."
+        emptyStateHint="Sources appear when providers and services register."
+      />
     </Box>
   );
 }

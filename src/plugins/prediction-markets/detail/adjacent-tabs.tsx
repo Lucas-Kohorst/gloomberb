@@ -4,7 +4,7 @@ import { EmptyState, Spinner } from "../../../components";
 import { getSharedNewsService, useLoadNewsStory, useNewsArticles } from "../../../news/hooks";
 import type { NewsArticle, NewsQuery } from "../../../news/types";
 import type { AdjacentClient } from "../../builtin/adjacent/client";
-import type { AdjacentSimilarMarket } from "../../builtin/adjacent/types";
+import type { AdjacentNewsArticle, AdjacentSimilarMarket } from "../../builtin/adjacent/types";
 import { SimilarMarketsView } from "../../builtin/adjacent/prediction-integration";
 import { normalizeAdjacentNewsArticle } from "../../builtin/adjacent/normalize";
 import { NewsDetailView, useNewsArticleDetail } from "../../builtin/news/wire/news/detail-view";
@@ -22,6 +22,7 @@ import {
   type AdjacentMarketLookup,
 } from "./adjacent-match";
 import { buildPredictionNewsQuery } from "./news-query";
+import { searchRelatedNews } from "../../builtin/news/wire/article-search";
 
 function matchHint(triedIds: string[], subject: string): string {
   if (triedIds.length > 0) {
@@ -30,6 +31,22 @@ function matchHint(triedIds: string[], subject: string): string {
     return `Tried Adjacent ids ${shown}${extra}. Title search is last-resort (all-words AND).`;
   }
   return `Could not find this market on Adjacent to load ${subject}.`;
+}
+
+function mergeNewsArticles(
+  sources: ReadonlyArray<ReadonlyArray<NewsArticle>>,
+): NewsArticle[] {
+  const seen = new Set<string>();
+  const merged: NewsArticle[] = [];
+  for (const source of sources) {
+    for (const article of source) {
+      const key = article.url || article.id;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(article);
+    }
+  }
+  return merged;
 }
 
 function AdjacentMarketTab({
@@ -119,6 +136,7 @@ function PredictionNewsStack({
   onRefresh,
   emptyStateTitle,
   emptyStateHint,
+  updatedAt,
 }: {
   articles: NewsArticle[];
   loading: boolean;
@@ -129,6 +147,7 @@ function PredictionNewsStack({
   onRefresh?: () => void;
   emptyStateTitle: string;
   emptyStateHint: string;
+  updatedAt?: number | null;
 }) {
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [sortPreference, setSortPreference] = useState<NewsSortPreference>(NEWS_SORT);
@@ -152,7 +171,9 @@ function PredictionNewsStack({
     onPopOut: () => popOutArticle(readableArticle),
     onRefresh,
     onShare: shareArticle,
+    onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
     showPoll: !detailArticle,
+    updatedAt,
   });
 
   const detailContent = detailArticle ? (
@@ -196,48 +217,17 @@ function PredictionNewsStack({
   );
 }
 
-function TickerNewsStack({
-  query,
-  focused,
-  width,
-  height,
-}: {
-  query: NewsQuery;
-  focused: boolean;
-  width: number;
-  height: number;
-}) {
-  const newsState = useNewsArticles(query);
-  const loading = newsState.phase === "loading"
-    || (newsState.phase === "refreshing" && newsState.articles.length === 0);
-  const error = newsState.phase === "error" ? newsState.error : null;
-
-  return (
-    <PredictionNewsStack
-      articles={newsState.articles}
-      loading={loading}
-      error={error}
-      focused={focused}
-      width={width}
-      height={height}
-      onRefresh={() => {
-        void getSharedNewsService()?.load(query);
-      }}
-      emptyStateTitle="No ticker news."
-      emptyStateHint="No articles for these tickers."
-    />
-  );
-}
-
 function AdjacentMarketNewsStack({
   client,
   marketId,
+  topic,
   focused,
   width,
   height,
 }: {
   client: AdjacentClient;
   marketId: string;
+  topic?: string | null;
   focused: boolean;
   width: number;
   height: number;
@@ -245,20 +235,27 @@ function AdjacentMarketNewsStack({
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
   const loadNews = useCallback(() => {
     setLoading(true);
     setError(null);
-    return client.getMarketNews(marketId, { limit: 20 })
-      .then((response) => {
-        setArticles((response.news ?? []).map(normalizeAdjacentNewsArticle));
+    const query = topic?.trim() || marketId;
+    return Promise.all([
+      client.getMarketNews(marketId, { limit: 20 }).catch(() => ({ news: [] })),
+      searchRelatedNews(query),
+    ])
+      .then(([response, related]) => {
+        const fromMarket = (response.news ?? []).map(normalizeAdjacentNewsArticle);
+        setArticles(mergeNewsArticles([related, fromMarket]));
+        setUpdatedAt(Date.now());
         setLoading(false);
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : String(err));
         setLoading(false);
       });
-  }, [client, marketId]);
+  }, [client, marketId, topic]);
 
   useEffect(() => {
     setArticles([]);
@@ -277,7 +274,140 @@ function AdjacentMarketNewsStack({
         void loadNews();
       }}
       emptyStateTitle="No related news."
-      emptyStateHint="Adjacent did not return news for this market."
+      emptyStateHint="No matching headlines for this market."
+      updatedAt={updatedAt}
+    />
+  );
+}
+
+function RelatedNewsOnlyStack({
+  topic,
+  focused,
+  width,
+  height,
+}: {
+  topic: string;
+  focused: boolean;
+  width: number;
+  height: number;
+}) {
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+
+  const loadNews = useCallback(() => {
+    if (!topic.trim()) {
+      setArticles([]);
+      setLoading(false);
+      return Promise.resolve();
+    }
+    setLoading(true);
+    setError(null);
+    return searchRelatedNews(topic)
+      .then((related) => {
+        setArticles(related);
+        setUpdatedAt(Date.now());
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+  }, [topic]);
+
+  useEffect(() => {
+    setArticles([]);
+    void loadNews();
+  }, [loadNews]);
+
+  return (
+    <PredictionNewsStack
+      articles={articles}
+      loading={loading}
+      error={error}
+      focused={focused}
+      width={width}
+      height={height}
+      onRefresh={() => {
+        void loadNews();
+      }}
+      emptyStateTitle="No related news."
+      emptyStateHint="No matching headlines for this market."
+      updatedAt={updatedAt}
+    />
+  );
+}
+
+function MergedRelatedNewsStack({
+  topic,
+  tickerQuery,
+  client,
+  marketId,
+  focused,
+  width,
+  height,
+}: {
+  topic: string;
+  tickerQuery: NewsQuery;
+  client: AdjacentClient | null;
+  marketId: string | null;
+  focused: boolean;
+  width: number;
+  height: number;
+}) {
+  const tickerNews = useNewsArticles(tickerQuery);
+  const [related, setRelated] = useState<NewsArticle[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(true);
+  const [relatedError, setRelatedError] = useState<string | null>(null);
+
+  const loadRelated = useCallback(() => {
+    setRelatedLoading(true);
+    setRelatedError(null);
+    const marketNews = client && marketId
+      ? client.getMarketNews(marketId, { limit: 20 }).catch(() => ({ news: [] }))
+      : Promise.resolve({ news: [] as AdjacentNewsArticle[] });
+    return Promise.all([searchRelatedNews(topic), marketNews])
+      .then(([found, response]) => {
+        const fromMarket = (response.news ?? []).map(normalizeAdjacentNewsArticle);
+        setRelated(mergeNewsArticles([found, fromMarket]));
+        setRelatedLoading(false);
+      })
+      .catch((err) => {
+        setRelatedError(err instanceof Error ? err.message : String(err));
+        setRelatedLoading(false);
+      });
+  }, [client, marketId, topic]);
+
+  useEffect(() => {
+    setRelated([]);
+    void loadRelated();
+  }, [loadRelated]);
+
+  const articles = useMemo(() => {
+    return mergeNewsArticles([related, tickerNews.articles]);
+  }, [related, tickerNews.articles]);
+
+  const loading = relatedLoading
+    || tickerNews.phase === "loading"
+    || (tickerNews.phase === "refreshing" && articles.length === 0);
+  const error = relatedError ?? (tickerNews.phase === "error" ? tickerNews.error : null);
+
+  return (
+    <PredictionNewsStack
+      articles={articles}
+      loading={loading}
+      error={error}
+      focused={focused}
+      width={width}
+      height={height}
+      onRefresh={() => {
+        void loadRelated();
+        void getSharedNewsService()?.load(tickerQuery);
+      }}
+      emptyStateTitle="No related news."
+      emptyStateHint="No matching headlines for this market."
+      updatedAt={tickerNews.updatedAt}
     />
   );
 }
@@ -312,15 +442,39 @@ export function PredictionNewsTab({
   width: number;
   height: number;
 }) {
-  const query = useMemo(
+  const topic = summary?.title
+    ?? summary?.marketLabel
+    ?? lookup.title
+    ?? lookup.marketId
+    ?? "";
+  const tickerQuery = useMemo(
     () => summary ? buildPredictionNewsQuery(summary) : null,
     [summary],
   );
+  const marketId = lookup.marketId
+    ? (lookup.marketId.includes(":") ? lookup.marketId : `${lookup.venue ?? "kalshi"}:${lookup.marketId}`)
+    : null;
 
-  if (query) {
+  if (tickerQuery) {
     return (
-      <TickerNewsStack
-        query={query}
+      <MergedRelatedNewsStack
+        topic={topic}
+        tickerQuery={tickerQuery}
+        client={client}
+        marketId={marketId}
+        focused={focused}
+        width={width}
+        height={height}
+      />
+    );
+  }
+
+  if (client && marketId) {
+    return (
+      <AdjacentMarketNewsStack
+        client={client}
+        marketId={marketId}
+        topic={topic}
         focused={focused}
         width={width}
         height={height}
@@ -329,19 +483,11 @@ export function PredictionNewsTab({
   }
 
   return (
-    <AdjacentMarketTab
-      client={client}
-      lookup={lookup}
-      subject="related news"
-      render={(adjacentClient, adjacentMarketId) => (
-        <AdjacentMarketNewsStack
-          client={adjacentClient}
-          marketId={adjacentMarketId}
-          focused={focused}
-          width={width}
-          height={height}
-        />
-      )}
+    <RelatedNewsOnlyStack
+      topic={topic}
+      focused={focused}
+      width={width}
+      height={height}
     />
   );
 }

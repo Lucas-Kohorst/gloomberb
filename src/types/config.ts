@@ -1,7 +1,7 @@
 import type { Portfolio, Watchlist } from "./ticker";
 import type { LanguagePreference } from "../i18n/languages";
 
-export const CURRENT_CONFIG_VERSION = 22;
+export const CURRENT_CONFIG_VERSION = 23;
 
 type ChartRendererPreference = "auto" | "kitty" | "braille";
 
@@ -150,6 +150,13 @@ export interface AppConfig {
   activeLayoutIndex: number;
   brokerInstances: BrokerInstanceConfig[];
   disabledPlugins: string[];
+  /**
+   * Plugins that used to ship inside Gloomberb and have since moved to their own
+   * repositories. Recorded once installed, so an upgrade restores them without
+   * re-installing on every launch, and so a user who removes one on purpose is
+   * not fought with.
+   */
+  seededPlugins?: string[];
   disabledSources: string[];
   pluginConfig: Record<string, Record<string, unknown>>;
   theme: string;
@@ -160,6 +167,13 @@ export interface AppConfig {
   /** Legacy web/desktop face id. Always remapped to the original system mono stack. */
   fontFamily: string;
   recentTickers: string[];
+  /**
+   * Extra command-bar prefix that opens ticker search alongside the defaults
+   * ("DES" with the "T" alias). Omitted or empty keeps the defaults untouched.
+   * Values are trimmed, uppercased, and limited to 1-8 letters/digits; values
+   * that collide with another command or pane shortcut are ignored safely.
+   */
+  tickerSearchShortcut?: string;
   language?: LanguagePreference;
   onboardingComplete?: boolean;
   /** App version at the last launch, used to show release notes after an update. */
@@ -171,14 +185,18 @@ export interface AppConfig {
 export const TICKER_RESEARCH_PANE_ID = "ticker-research";
 export const LEGACY_TICKER_DETAIL_PANE_ID = "ticker-detail";
 export const CHART_COMPOSER_PANE_ID = "chart-composer";
-export const TRADINGVIEW_PANE_ID = "tradingview";
 
 export function normalizePaneId(paneId: string): string {
   if (paneId === LEGACY_TICKER_DETAIL_PANE_ID) return TICKER_RESEARCH_PANE_ID;
-  if (paneId === "comparison-chart" || paneId === "ticker-chart" || paneId === "fundamental-graph") {
+  if (
+    paneId === "comparison-chart"
+    || paneId === "ticker-chart"
+    || paneId === "fundamental-graph"
+    || paneId === "tradingview"
+  ) {
     return CHART_COMPOSER_PANE_ID;
   }
-  if (paneId === "plugin-discovery") return "plugin-market";
+  if (paneId === "plugin-discovery" || paneId === "plugin-market") return "plugin-marketplace";
   if (paneId === "commodities") return "futures";
   return paneId;
 }
@@ -275,6 +293,71 @@ const DEFAULT_HOME_LAYOUT: LayoutConfig = {
       settings: {
         hideTabs: false,
       },
+      binding: { kind: "none" },
+    },
+  ],
+  floating: [],
+  detached: [],
+};
+
+/**
+ * One screen for "where are we": valuation and the economy in the wide slots,
+ * with the faster sentiment, volatility and credit reads beside them. These stay
+ * separate panes because each measures a different thing on a different horizon;
+ * the layout is what puts them on one screen.
+ */
+const DEFAULT_MACRO_LAYOUT: LayoutConfig = {
+  dockRoot: {
+    kind: "split",
+    axis: "vertical",
+    ratio: 0.54,
+    first: {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.58,
+      first: { kind: "pane", instanceId: "market-valuation:macro" },
+      second: { kind: "pane", instanceId: "fear-greed:macro" },
+    },
+    second: {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.58,
+      first: { kind: "pane", instanceId: "econ-statistics:macro" },
+      second: {
+        kind: "split",
+        axis: "vertical",
+        ratio: 0.5,
+        first: { kind: "pane", instanceId: "volatility-term-structure:macro" },
+        second: { kind: "pane", instanceId: "credit-conditions:macro" },
+      },
+    },
+  },
+  instances: [
+    {
+      instanceId: "market-valuation:macro",
+      paneId: "market-valuation",
+      binding: { kind: "none" },
+      settings: { indicator: "buffett", range: "25Y" },
+    },
+    {
+      instanceId: "econ-statistics:macro",
+      paneId: "econ-statistics",
+      binding: { kind: "none" },
+      settings: { stat: "cpi-yoy", range: "20Y" },
+    },
+    {
+      instanceId: "fear-greed:macro",
+      paneId: "fear-greed",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "volatility-term-structure:macro",
+      paneId: "volatility-term-structure",
+      binding: { kind: "none" },
+    },
+    {
+      instanceId: "credit-conditions:macro",
+      paneId: "credit-conditions",
       binding: { kind: "none" },
     },
   ],
@@ -456,6 +539,14 @@ function getDockedPaneIdsFromNode(node: DockLayoutNode | null, result: string[] 
   return result;
 }
 
+export function getPlacedPaneInstanceIds(layout: LayoutConfig): string[] {
+  return [...new Set([
+    ...getDockedPaneIdsFromNode(layout.dockRoot),
+    ...layout.floating.map((entry) => entry.instanceId),
+    ...(layout.detached ?? []).map((entry) => entry.instanceId),
+  ])];
+}
+
 export function createPaneInstanceId(paneId: string): string {
   nextPaneInstanceSeq += 1;
   return `${paneId}:${Date.now().toString(36)}${nextPaneInstanceSeq.toString(36)}`;
@@ -559,8 +650,24 @@ export function removePaneInstances(layout: LayoutConfig, instanceIds: Iterable<
   const removedIds = new Set(instanceIds);
   if (removedIds.size === 0) return layout;
 
-  const instances = layout.instances.filter((instance) => !removedIds.has(instance.instanceId));
-  const validInstanceIds = new Set(instances.map((instance) => instance.instanceId));
+  const retainedInstances = layout.instances.filter((instance) => !removedIds.has(instance.instanceId));
+  const validInstanceIds = new Set(retainedInstances.map((instance) => instance.instanceId));
+  const instances = retainedInstances
+    .map((instance) => {
+      const memory = clonePlacementMemory(instance.placementMemory);
+      if (!memory?.docked?.anchorInstanceId || validInstanceIds.has(memory.docked.anchorInstanceId)) {
+        return instance;
+      }
+      const docked = {
+        ...memory.docked,
+        anchorInstanceId: undefined,
+      };
+      const nextDocked = docked.path || docked.position ? docked : undefined;
+      const placementMemory = nextDocked || memory.floating || memory.detached
+        ? { ...memory, docked: nextDocked }
+        : undefined;
+      return { ...instance, placementMemory };
+    });
   const dockRoot = normalizeDockNode(layout.dockRoot, validInstanceIds, new Set<string>());
   const dockedPaneIds = new Set(getDockedPaneIdsFromNode(dockRoot));
   const detached = layout.detached ?? [];
@@ -571,6 +678,28 @@ export function removePaneInstances(layout: LayoutConfig, instanceIds: Iterable<
     floating: layout.floating.filter((entry) => !removedIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId)),
     detached: detached.filter((entry) => !removedIds.has(entry.instanceId) && !dockedPaneIds.has(entry.instanceId)),
   };
+}
+
+export function removeUnreachablePaneInstances(layout: LayoutConfig): LayoutConfig {
+  const instancesById = new Map(layout.instances.map((instance) => [instance.instanceId, instance] as const));
+  const reachableIds = new Set(getPlacedPaneInstanceIds(layout));
+  const pendingIds = [...reachableIds];
+
+  for (let index = 0; index < pendingIds.length; index += 1) {
+    const instance = instancesById.get(pendingIds[index]!);
+    if (instance?.binding?.kind !== "follow") continue;
+    const sourceId = instance.binding.sourceInstanceId;
+    if (!instancesById.has(sourceId) || reachableIds.has(sourceId)) continue;
+    reachableIds.add(sourceId);
+    pendingIds.push(sourceId);
+  }
+
+  return removePaneInstances(
+    layout,
+    layout.instances
+      .filter((instance) => !reachableIds.has(instance.instanceId))
+      .map((instance) => instance.instanceId),
+  );
 }
 
 export function normalizePaneLayout(
@@ -742,11 +871,13 @@ export function createDefaultConfig(dataDir: string): AppConfig {
     layouts: [
       { name: "Home", layout: cloneLayout(layout), paneState: {} },
       { name: "Monitor", layout: cloneLayout(DEFAULT_MONITOR_LAYOUT), paneState: {} },
+      { name: "Macro", layout: cloneLayout(DEFAULT_MACRO_LAYOUT), paneState: {} },
       { name: "Adjacent", layout: cloneLayout(DEFAULT_ADJACENT_LAYOUT), paneState: {} },
     ],
     activeLayoutIndex: 0,
     brokerInstances: [],
     disabledPlugins: [],
+    seededPlugins: [],
     disabledSources: [],
     pluginConfig: {},
     theme: "adjacent",

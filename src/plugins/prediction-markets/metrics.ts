@@ -7,6 +7,7 @@ import type {
   PredictionCategoryId,
   PredictionColumnDef,
   PredictionListRow,
+  PredictionMarketSummary,
   PredictionSortPreference,
   PredictionVenue,
   PredictionVenueScope,
@@ -14,6 +15,13 @@ import type {
 } from "./types";
 import { matchesPredictionCategory } from "./categories";
 import { extractPolymarketSlug } from "./services/polymarket/normalize";
+
+function focusMarketForRow(
+  row: Pick<PredictionListRow, "kind" | "markets" | "focusMarketKey">,
+): PredictionMarketSummary | null {
+  return row.markets.find((entry) => entry.key === row.focusMarketKey)
+    ?? (row.kind === "group" ? row.markets[0] ?? null : null);
+}
 
 const TEXT_SORT_COLUMNS = new Set([
   "market",
@@ -77,11 +85,14 @@ export function formatPredictionPercent(
   return `${formatNumber(percent, 1)}%`;
 }
 
+/** Coin-flip band: 40–60% stays uncolored so only a real lean reads green/red. */
+const PREDICTION_NEUTRAL_ODDS_BAND = 0.1;
+
 export function getPredictionProbabilityColor(
   value: number | null | undefined,
 ): string | undefined {
   if (value == null) return undefined;
-  if (Math.abs(value - 0.5) < 0.005) return colors.neutral;
+  if (Math.abs(value - 0.5) <= PREDICTION_NEUTRAL_ODDS_BAND) return undefined;
   return value > 0.5 ? colors.positive : colors.negative;
 }
 
@@ -99,27 +110,38 @@ export function formatPredictionMetric(
   return formatCompactSigned(value ?? null, unit);
 }
 
+/**
+ * One shape per row: a signed countdown inside a week, an absolute date beyond
+ * it. A market whose stated close has passed while the venue still reports it
+ * open is labelled as such rather than as an age, because "22h ago" next to
+ * status OPEN reads as a bug.
+ */
 export function formatPredictionEndsAt(
   value: string | null | undefined,
+  status?: string,
+  now = Date.now(),
 ): string {
   if (!value) return "—";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "—";
-  const delta = date.getTime() - Date.now();
-  if (Math.abs(delta) < 24 * 60 * 60_000) {
-    const absMinutes = Math.round(Math.abs(delta) / 60_000);
-    if (absMinutes < 60)
-      return delta >= 0 ? `${absMinutes}m left` : `${absMinutes}m ago`;
-    const hours = Math.floor(absMinutes / 60);
-    const minutes = absMinutes % 60;
-    return delta >= 0 ? `${hours}h ${minutes}m` : `${hours}h ago`;
+  const delta = date.getTime() - now;
+  const absMinutes = Math.round(Math.abs(delta) / 60_000);
+
+  if (delta < 0 && status === "open") return "past due";
+
+  if (absMinutes < 7 * 24 * 60) {
+    const magnitude = absMinutes < 60
+      ? `${absMinutes}m`
+      : absMinutes < 24 * 60
+        ? `${Math.floor(absMinutes / 60)}h`
+        : `${Math.floor(absMinutes / (24 * 60))}d`;
+    return delta >= 0 ? `${magnitude} left` : `${magnitude} ago`;
   }
-  return date.toLocaleString("en-US", {
-    month: "numeric",
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
+    year: date.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric",
   });
 }
 
@@ -291,14 +313,18 @@ export function getPredictionColumnValue(
       return { text: market.focusMarketLabel };
     case "venue":
       return { text: market.venue === "polymarket" ? "Polymkt" : "Kalshi" };
-    case "yes":
+    case "yes": {
+      // Always percentage then outcome label, so the cell never changes shape
+      // between grouped and single rows. Read the live member, not a copied
+      // focusYesPrice that can lag the expanded children.
+      const focusMarket = focusMarketForRow(market);
+      const yesPrice = focusMarket?.yesPrice ?? market.focusYesPrice;
+      const label = focusMarket?.marketLabel ?? market.focusMarketLabel;
       return {
-        text:
-          market.kind === "group"
-            ? `${formatPredictionPercent(market.focusYesPrice)} ${market.focusMarketLabel}`
-            : formatPredictionPercent(market.focusYesPrice),
-        color: getPredictionProbabilityColor(market.focusYesPrice),
+        text: `${formatPredictionPercent(yesPrice)} ${label}`.trim(),
+        color: getPredictionProbabilityColor(yesPrice),
       };
+    }
     case "spread":
       return {
         text:
@@ -318,7 +344,7 @@ export function getPredictionColumnValue(
         ),
       };
     case "ends":
-      return { text: formatPredictionEndsAt(market.endsAt) };
+      return { text: formatPredictionEndsAt(market.endsAt, market.status) };
     case "status":
       return {
         text: market.status.toUpperCase(),

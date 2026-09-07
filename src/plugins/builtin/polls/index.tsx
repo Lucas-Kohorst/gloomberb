@@ -1,9 +1,30 @@
+import type { GloomPlugin } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import { PollsPane } from "./pane";
-import { POLLS_PANE_ID } from "./types";
+import { POLLS_PANE_ID, POLLS_PLUGIN_ID } from "./types";
 import { buildPollsPaneSettingsDef } from "./settings";
+import { createPollChartSeriesCapability } from "./chart-series";
+
+let disposeVoteHubConnection: (() => void) | null = null;
 
 export const pollsModule: PluginModule = {
+  capabilities: [createPollChartSeriesCapability()],
+  setup() {
+    disposeVoteHubConnection = registerConnectionSource({
+      id: "votehub",
+      name: "VoteHub",
+      kind: "api",
+      pluginId: POLLS_PLUGIN_ID,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeVoteHubConnection?.();
+    disposeVoteHubConnection = null;
+  },
+
   panes: [
     {
       id: POLLS_PANE_ID,
@@ -22,11 +43,19 @@ export const pollsModule: PluginModule = {
       id: "polls-pane",
       paneId: POLLS_PANE_ID,
       label: "Polls",
-      description: "Browse VoteHub political polls with pollster house series, race overlays, scatter, and a prediction-market series on the same chart.",
+      description: "Browse VoteHub political polls — all types by default, or filter to approval, favorability, generic ballot, Senate, governor, House — with trend charts, pollster breakdowns, search, and source links.",
       keywords: ["polls", "votehub", "all", "approval", "favorability", "generic", "ballot", "senate", "governor"],
-      category: "Data",
       shortcut: { prefix: "POLL" },
       createInstance: () => ({ placement: "floating" }),
     },
   ],
+};
+
+export const pollsPlugin: GloomPlugin = {
+  id: POLLS_PLUGIN_ID,
+  name: "Polls",
+  version: "1.0.0",
+  description: "Political polls from VoteHub (CC BY 4.0)",
+  toggleable: true,
+  ...pollsModule,
 };

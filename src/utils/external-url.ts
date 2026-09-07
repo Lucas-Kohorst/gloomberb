@@ -1,5 +1,3 @@
-import { parseHttpUrl } from "./url";
-
 /**
  * Scheme validation for links handed to the operating system.
  *
@@ -13,6 +11,13 @@ import { parseHttpUrl } from "./url";
  * spawn the parsed form rather than the raw input.
  */
 export function safeExternalUrl(value: string): string | null {
-  const parsed = parseHttpUrl(value);
-  return parsed ? parsed.toString() : null;
+  if (!value.trim()) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return parsed.toString();
 }

@@ -39,7 +39,7 @@ export function filingToArticle(
 }
 
 export function looksLikeFilingQuery(query: string): boolean {
-  return /\b(10-?k|10-?q|filing|filings|edgar)\b/i.test(query);
+  return /\b(10-?k|10-?q|filing|filings|edgar|cftc|dcm|dco)\b/i.test(query);
 }
 
 /** Strip ART / form tokens so EDGAR search gets a ticker or company name. */

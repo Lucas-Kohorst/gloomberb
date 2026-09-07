@@ -3,7 +3,6 @@ import { Box, ScrollBox, Text, TextAttributes, useUiCapabilities } from "../../.
 import { Button, EmptyState, Spinner, usePaneFooter } from "../../../components";
 import { ExternalLinkText } from "../../../components/ui";
 import { CloudAuthNotice } from "../cloud/auth-actions";
-import { withConnectionRequest } from "../connections/register";
 import { apiClient } from "../../../api-client";
 import type {
   CloudEquityDiagnosticCoverage,
@@ -19,7 +18,7 @@ import { t, tf } from "../../../i18n";
 import { useShortcut } from "../../../react/input";
 import { formatTimeAgo, truncateToDisplayWidth } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
-import { usePlanAccess } from "../shared/plan-access";
+import { needsEmailVerification, usePlanAccess } from "../shared/plan-access";
 import { useCloudPlanAction, useCloudUpgradeAction } from "../shared/cloud-upgrade";
 import { useBoundTicker } from "../shared/ticker-request";
 
@@ -82,9 +81,7 @@ function useEquityDiagnostic(symbol: string | null, exchange: string, enabled: b
     setState((current) => ({ ...current, loading: true, loadingStep: 1, failure: null }));
 
     const request = (nextMode: CloudEquityDiagnosticMode) => {
-      withConnectionRequest("gloom-cloud", "equity-diagnostic", () =>
-        apiClient.getCloudEquityDiagnostic(symbol, exchange || undefined, nextMode),
-      )
+      apiClient.getCloudEquityDiagnostic(symbol, exchange || undefined, nextMode)
         .then((result) => {
           if (generationRef.current !== generation) return;
           if (result.status === "generating") {
@@ -393,7 +390,7 @@ function ReportView({ report, width, failure, onRetry }: {
       )}
 
       {report.status === "insufficient_data"
-        ? <EmptyState fill={false} title="Not enough coverage to review this company yet." message={report.summary} />
+        ? <EmptyState title="Not enough coverage to review this company yet." message={report.summary} />
         : <Paragraph text={report.summary} width={width} color={colors.text} />}
 
       <FindingSection heading="RED FLAGS" findings={byKind("red_flag")} evidenceById={evidenceById} width={width} />
@@ -470,7 +467,7 @@ export function EquityDiagnosticView({ focused, width }: {
   const openPlan = useCloudPlanAction();
   const { nativePaneChrome } = useUiCapabilities();
 
-  const requestEnabled = access.emailVerified;
+  const requestEnabled = access.hasProAccess || access.emailVerified;
   const { report, loading, loadingStep, failure, load } = useEquityDiagnostic(
     symbol,
     exchange,
@@ -478,7 +475,8 @@ export function EquityDiagnosticView({ focused, width }: {
   );
 
   const signInRequired = !access.signedIn || failure?.status === 401;
-  const verificationRequired = !signInRequired && (!access.emailVerified || failure?.status === 403);
+  const hydrating = access.signedIn && !access.accountKnown;
+  const verificationRequired = needsEmailVerification(access, failure?.status);
   const proRequired = !signInRequired && !verificationRequired && failure?.status === 402;
   const canRefresh = !!symbol && access.hasProAccess && !signInRequired && !verificationRequired && !proRequired;
 
@@ -494,8 +492,12 @@ export function EquityDiagnosticView({ focused, width }: {
 
   usePaneFooter(FOOTER_ID, () => ({
     info: [
-      ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(failure ? [{ id: "error", parts: [{ text: failureText(failure), tone: "warning" as const }] }] : []),
+    ],
+    // Left-side info is reserved for source/updated/error segments, so the
+    // loading and report-state chips ride on the trailing side.
+    trailingInfo: [
+      ...(loading ? [{ id: "loading", parts: [{ text: t("scanning"), tone: "muted" as const }] }] : []),
       ...(report?.access === "full" && report.status === "partial"
         ? [{ id: "partial", parts: [{ text: t("partial"), tone: "warning" as const }] }]
         : []),
@@ -521,6 +523,9 @@ export function EquityDiagnosticView({ focused, width }: {
     if (signInRequired) {
       return <CloudAuthNotice message={t("Sign in to run the Equity Diagnostic.")} />;
     }
+    if (hydrating) {
+      return <DiagnosticLoading step={0} />;
+    }
     if (verificationRequired) {
       return <CloudAuthNotice needsVerification message={t("Verify your email to run the Equity Diagnostic.")} />;
     }
@@ -528,7 +533,6 @@ export function EquityDiagnosticView({ focused, width }: {
       return (
         <Box flexDirection="column">
           <EmptyState
-            fill={false}
             title="The Equity Diagnostic is part of Gloom Cloud Pro."
             message="An on-demand review of one company's filings, financials, ownership, and news, with red flags, anomalies, and green flags cited back to their source."
           />
@@ -546,7 +550,6 @@ export function EquityDiagnosticView({ focused, width }: {
       return (
         <Box flexDirection="column">
           <EmptyState
-            fill={false}
             title={failure ? failureText(failure) : t("No diagnostic available yet.")}
           />
           <Box flexDirection="row" marginTop={1}>

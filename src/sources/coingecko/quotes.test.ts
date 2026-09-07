@@ -27,7 +27,7 @@ describe("CoinGecko quote adapter", () => {
       exchangeName: "CCC",
       listingExchangeName: "CCC",
       marketState: "REGULAR",
-      dataSource: "delayed",
+      dataSource: "live",
     });
     expect(quote.previousClose).toBeCloseTo(90_909.0909, 3);
     expect(quote.change).toBeCloseTo(9_090.909, 3);

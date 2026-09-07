@@ -18,6 +18,7 @@ interface UseExternalLinkFooterOptions {
   trailingHints?: PaneHint[];
   label?: string;
   showHint?: boolean;
+  onOpen?: () => void;
 }
 
 const EMPTY_INFO: PaneFooterSegment[] = [];
@@ -41,6 +42,7 @@ export function useExternalLinkFooter({
   trailingHints = EMPTY_TRAILING_HINTS,
   label = "link",
   showHint = true,
+  onOpen,
 }: UseExternalLinkFooterOptions) {
   const rendererHost = useRendererHost();
   const url = normalizeUrl(rawUrl);
@@ -48,8 +50,9 @@ export function useExternalLinkFooter({
 
   const openUrl = useCallback(() => {
     if (!url) return;
+    onOpen?.();
     void rendererHost.openExternal(url);
-  }, [rendererHost, url]);
+  }, [onOpen, rendererHost, url]);
 
   useShortcut((event) => {
     const key = (event.name ?? event.key ?? "").toLowerCase();

@@ -40,40 +40,21 @@ export function filterScreenerRows(rows: ScreenerResult[], query: string): Scree
   return fuzzyFilter(rows, query, (row) => `${row.symbol} ${row.name} ${row.sector ?? ""}`);
 }
 
-export function buildScreenerColumns(width: number): ScreenerColumn[] {
-  const symbolWidth = 7;
-  const sectorWidth = 10;
-  const priceWidth = 10;
-  const mcapWidth = 9;
-  const peWidth = 7;
-  const pbWidth = 7;
-  const deWidth = 7;
-  const growthWidth = 7;
-  const grossMarginWidth = 7;
-  const netMarginWidth = 7;
-  const divWidth = 7;
-  const exchangeWidth = 8;
-
-  const fixedWidth =
-    symbolWidth + sectorWidth + priceWidth + mcapWidth + peWidth
-    + pbWidth + deWidth + growthWidth + grossMarginWidth + netMarginWidth
-    + divWidth + exchangeWidth;
-  const nameWidth = Math.max(8, width - 2 - 12 - fixedWidth);
-
+export function buildScreenerColumns(): ScreenerColumn[] {
   return [
-    { id: "symbol", label: "TICKER", width: symbolWidth, align: "left" },
-    { id: "name", label: "NAME", width: nameWidth, align: "left" },
-    { id: "sector", label: "SECTOR", width: sectorWidth, align: "left" },
-    { id: "exchange", label: "EXCH", width: exchangeWidth, align: "left" },
-    { id: "price", label: "PRICE", width: priceWidth, align: "right" },
-    { id: "marketCap", label: "MCAP", width: mcapWidth, align: "right" },
-    { id: "peRatio", label: "P/E", width: peWidth, align: "right" },
-    { id: "pbRatio", label: "P/B", width: pbWidth, align: "right" },
-    { id: "debtToEquity", label: "D/E", width: deWidth, align: "right" },
-    { id: "revenueGrowth", label: "REV GR", width: growthWidth, align: "right" },
-    { id: "grossMargin", label: "GR MGN", width: grossMarginWidth, align: "right" },
-    { id: "netMargin", label: "NET MGN", width: netMarginWidth, align: "right" },
-    { id: "dividendYield", label: "DIV YLD", width: divWidth, align: "right" },
+    { id: "symbol", label: "TICKER", width: 7, align: "left" },
+    { id: "name", label: "NAME", width: 8, align: "left", flexGrow: 1 },
+    { id: "sector", label: "SECTOR", width: 10, align: "left" },
+    { id: "exchange", label: "EXCH", width: 8, align: "left" },
+    { id: "price", label: "PRICE", width: 10, align: "right" },
+    { id: "marketCap", label: "MCAP", width: 9, align: "right" },
+    { id: "peRatio", label: "P/E", width: 7, align: "right" },
+    { id: "pbRatio", label: "P/B", width: 7, align: "right" },
+    { id: "debtToEquity", label: "D/E", width: 7, align: "right" },
+    { id: "revenueGrowth", label: "REV GR", width: 7, align: "right" },
+    { id: "grossMargin", label: "GR MGN", width: 7, align: "right" },
+    { id: "netMargin", label: "NET MGN", width: 7, align: "right" },
+    { id: "dividendYield", label: "DIV YLD", width: 7, align: "right" },
   ];
 }
 

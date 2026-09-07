@@ -14,9 +14,7 @@ import {
 } from "react";
 import type { AppSessionStorePort } from "../../../core/app-service-ports";
 import { ThemeProvider } from "../../../theme/theme-context";
-import { syncFontFamily } from "../../../theme/font-family";
 import { syncFontScale } from "../../../theme/font-scale";
-import { getBrowserWindow } from "../../../utils/browser-location";
 import {
   findPaneInstance,
   materializeDetachedPanesAsFloating,
@@ -289,6 +287,7 @@ export function usePaneStateValue<T>(key: string, fallback: T, paneId?: string):
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
+    if (Object.is(currentValue, resolved)) return;
     dispatch({ type: "UPDATE_PANE_STATE", paneId: scopedPaneId, patch: { [key]: resolved } });
   }, [dispatch, key, scopedPaneId, stateRef]);
   return [value, setValue];
@@ -311,6 +310,7 @@ export function usePaneSettingValue<T>(
     const resolved = typeof nextValue === "function"
       ? (nextValue as (previousValue: T) => T)(currentValue)
       : nextValue;
+    if (Object.is(currentValue, resolved)) return;
     const layout = setPaneSetting(currentState.config.layout, scopedPaneId, key, resolved);
     const nextConfig = syncConfigActiveLayoutState(
       { ...currentState.config, layout },
@@ -508,14 +508,10 @@ export function AppProvider({
     // The DOM renderer measures everything in grid cells, so resizing the cell
     // is what actually scales panes and windows. A resize notification makes
     // viewport-derived measurements re-read the new grid immediately.
-    if (syncFontScale(state.config.fontSize)) {
-      getBrowserWindow()?.dispatchEvent(new Event("resize"));
+    if (syncFontScale(state.config.fontSize) && typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new Event("resize"));
     }
   }, [state.config.fontSize]);
-
-  useLayoutEffect(() => {
-    syncFontFamily(state.config.fontFamily);
-  }, [state.config.fontFamily]);
 
   useLayoutEffect(() => {
     stateRef.current = state;

@@ -18,6 +18,14 @@
  * - `WX:station:metric`     — Weather Company Kalshi climate / hourly (LAX, high)
  * - `NWS:icao:metric`       — NWS Daily Climate Report first-final print (KNYC, high)
  * - `OWID:slug:entity`      — Our World in Data grapher series (life-expectancy, USA)
+ *
+ * Study expressions (built by {@link parseStudyExpression} / correlation):
+ * - `DD:<source>`           — drawdown from the rolling peak (DD:SPY:price)
+ * - `VOL:<source>`          — 20-day realized volatility (VOL:SPY:price)
+ * - `VOL:<period>:<source>` — realized volatility with an explicit window
+ * - `DIST:<source>`         — % distance from the 20-day SMA (DIST:AAPL:price)
+ * - `DIST:<period>:<source>`— distance from an SMA with an explicit window
+ * - `CORR(<a>, <b>)`        — 20-day rolling return correlation study
  */
 
 export const SERIES_PREFIX = {
@@ -33,6 +41,10 @@ export const SERIES_PREFIX = {
   nwsCli: "NWS",
   owid: "OWID",
   indicator: "IND",
+  drawdown: "DD",
+  volatility: "VOL",
+  distance: "DIST",
+  correlation: "CORR",
 } as const;
 
 export type PredictionMarketVenue = "kalshi" | "polymarket";
@@ -199,26 +211,8 @@ export const CREDIT_SPREAD_CATALOG: readonly CorporateYieldCatalogEntry[] = [
 // AI benchmark metrics — maps a short metric code to a display label + unit.
 // ---------------------------------------------------------------------------
 
-export interface BenchmarkMetricEntry {
-  code: string;
-  label: string;
-  unit: string;
-  unitGroup: string;
-}
-
-export const BENCHMARK_METRICS: readonly BenchmarkMetricEntry[] = [
-  { code: "tps", label: "Throughput", unit: "tok/s", unitGroup: "throughput" },
-  { code: "p95", label: "P95 Latency", unit: "ms", unitGroup: "latency" },
-  { code: "ttft", label: "Time to First Token", unit: "ms", unitGroup: "latency" },
-  { code: "latency", label: "Avg Latency", unit: "ms", unitGroup: "latency" },
-  { code: "fail", label: "Failure Rate", unit: "%", unitGroup: "percent" },
-  { code: "calls", label: "Total Calls", unit: "calls", unitGroup: "calls" },
-];
-
-export function findBenchmarkMetric(token: string): BenchmarkMetricEntry | undefined {
-  const lower = token.trim().toLowerCase();
-  return BENCHMARK_METRICS.find((entry) => entry.code === lower);
-}
+export { BENCHMARK_METRICS, findBenchmarkMetric } from "../llm-stats/metrics";
+export type { BenchmarkMetricEntry } from "../llm-stats/metrics";
 
 /** Well-known organizations for benchmark suggestion discoverability. */
 export const BENCHMARK_ORGS: readonly string[] = [

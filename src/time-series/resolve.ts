@@ -7,11 +7,14 @@ import {
 import {
   CHART_RESOLUTION_STEP_MS,
   clampTimeRangeToMaxRange,
+  DEFAULT_CHART_RESOLUTION_SUPPORT,
   getBestSupportedResolutionForVisibleWindow,
   getNextBufferRange,
   getPresetResolution,
   getSupportMaxRange,
   intersectChartResolutionSupport,
+  isIntradayResolution,
+  normalizeChartResolutionSupport,
   TIME_RANGE_ORDER,
   type ChartResolutionSupport,
   type ManualChartResolution,
@@ -26,6 +29,7 @@ import {
   isDividendFieldId,
   isFundamentalFieldId,
   isMarketFieldId,
+  isPriceOnlyMarketFieldId,
 } from "./field-catalog";
 import { extractDividendSeries } from "./dividends";
 import {
@@ -42,8 +46,13 @@ import { defaultChartSeriesPresentation, isOhlcSeriesStyle } from "./spec";
 import { applyResolvedSeriesTransform } from "./transforms";
 import { clipSeriesToWindow } from "./alignment";
 import { chartQuoteOverrideKeyForSource } from "./live-quotes";
+import { chartSeriesSourceKey } from "../capabilities/chart-series";
 import { resolutionForExplicitMarketPeriods } from "./market-resolution";
 import { seriesSpecLabel } from "./series-label";
+import {
+  rememberParsedPriceHistory,
+  parsedPriceHistoryKey,
+} from "./parsed-history-cache";
 import {
   canonicalExchange,
   publicTickerKey,
@@ -56,13 +65,8 @@ import type {
   ChartSpec,
   ResolvedSeries,
   TimeSeriesPoint,
+  UniversalSeriesSource,
 } from "./types";
-
-// ---------------------------------------------------------------------------
-// Universal series loader interfaces — implementations are wired in hooks.ts
-// using each plugin's existing client/normalize code so the resolver stays
-// independent of plugin internals.
-// ---------------------------------------------------------------------------
 
 export interface UniversalSeriesLoadResult {
   points: TimeSeriesPoint[];
@@ -75,28 +79,16 @@ export interface UniversalSeriesLoadResult {
 export interface ChartResolveSources {
   dataProvider: DataProvider | null;
   loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
-  /** Loads an Adjacent prediction-market index price history. */
-  loadAdjacentIndexSeries?: (indexId: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads AI benchmark data as point-in-time observations at model release dates. */
-  loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a VoteHub poll time series for a subject/choice pair. */
-  loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a TWC or NWS CLI weather print series keyed by station / ICAO. */
-  loadWeatherSeries?: (
-    provider: "twc-kalshi" | "nws-cli",
-    stationId: string,
-    metric: "high" | "low" | "precip" | "hourly",
-  ) => Promise<UniversalSeriesLoadResult>;
-  /** Loads an Our World in Data grapher series keyed by slug + entity code. */
-  loadOwidSeries?: (slug: string, entity: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a Kalshi/Polymarket yes-price history. */
-  loadPredictionMarketSeries?: (
-    venue: "kalshi" | "polymarket",
-    marketId: string,
-  ) => Promise<UniversalSeriesLoadResult>;
+  loadUniversalSeries?: (source: UniversalSeriesSource) => Promise<UniversalSeriesLoadResult>;
   now?: Date;
   /** Latest streamed quote per security identity, layered over snapshot data. */
   quoteOverrides?: ReadonlyMap<string, Quote>;
+  /** Provider-neutral boundary for plugin-owned chart series. */
+  resolveCapabilitySeries?: (
+    source: Extract<ChartSeriesSpec["source"], { kind: "capability" }>,
+    viewport: ChartSpec["viewport"],
+    spec: ChartSeriesSpec,
+  ) => Promise<ResolvedSeries>;
 }
 
 const SERIES_COLORS = [
@@ -119,6 +111,8 @@ export interface ChartResolveOptions {
   requestViewport?: { start: Date; end: Date } | null;
   /** Approximate number of horizontal observations the current surface can use. */
   targetPointCount?: number;
+  /** Resolution currently on screen, kept through small Auto zooms. */
+  currentResolution?: ManualChartResolution | null;
 }
 
 /** Raw source data retained while live quotes recompute the chart tail. */
@@ -129,6 +123,7 @@ export class ChartResolveCache {
   readonly accumulatedPriceHistory = new Map<string, TickerFinancials["priceHistory"]>();
   readonly resolutionSupportByInstrument = new Map<string, Promise<ChartResolutionSupport[]>>();
   readonly fredSeriesByRequest = new Map<string, Promise<FredSeriesLoadResult>>();
+  readonly capabilitySeriesByRequest = new Map<string, Promise<ResolvedSeries>>();
   readonly universalSeriesByKey = new Map<string, Promise<UniversalSeriesLoadResult>>();
 }
 
@@ -331,6 +326,7 @@ function requestResolution(
         { start: new Date(runtimeBounds.start), end: new Date(runtimeBounds.end) },
         sharedSupport,
         options.targetPointCount ?? 120,
+        options.currentResolution,
       )
     : null;
   const preferred = adaptive
@@ -408,62 +404,150 @@ function emptyFinancials(priceHistory: TickerFinancials["priceHistory"] = []): T
   return { annualStatements: [], quarterlyStatements: [], priceHistory };
 }
 
+export function seedChartResolutionResult(
+  spec: ChartSpec,
+  historyByInstrument: ReadonlyMap<string, TickerFinancials["priceHistory"]>,
+): ChartResolutionResult | null {
+  const series: ResolvedSeries[] = [];
+  spec.series.forEach((seriesSpec, index) => {
+    if (seriesSpec.visible === false || seriesSpec.source.kind !== "security") return;
+    if (!isMarketFieldId(seriesSpec.source.fieldId)) return;
+    const history = historyByInstrument.get(instrumentKey(seriesSpec.source));
+    if (!history?.length) return;
+    const resolved = baseSecuritySeries(seriesSpec, emptyFinancials(history), index);
+    if (resolved?.points.length) series.push(resolved);
+  });
+  if (series.length === 0) return null;
+  // Studies ride along with the seed. Without them the chart briefly drops to
+  // base series alone whenever it falls back here, and every panel a study
+  // owns loses its rows until the first real resolve lands.
+  const seeded = spec.studies.length > 0
+    ? [...series, ...resolveStudies(series, spec.studies).series]
+    : series;
+  return {
+    series: seeded,
+    legendSeries: seeded,
+    bufferedSeries: seeded,
+    loading: false,
+    errors: [],
+    warnings: [],
+    resolution: spec.viewport.resolution === "auto"
+      ? getPresetResolution(spec.viewport.range)
+      : spec.viewport.resolution,
+  };
+}
+
+function isThenable<T>(value: unknown): value is Promise<T> {
+  return typeof value === "object" && value !== null && "then" in value;
+}
+
+function readImmediateResolutionSupport(
+  provider: DataProvider,
+  source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+): ChartResolutionSupport[] {
+  if (!provider.getChartResolutionSupport) return DEFAULT_CHART_RESOLUTION_SUPPORT;
+  const result = provider.getChartResolutionSupport(
+    source.instrument.symbol,
+    source.instrument.exchange ?? "",
+    requestContext(source),
+  );
+  if (Array.isArray(result)) return normalizeChartResolutionSupport(result);
+  if (isThenable(result)) return DEFAULT_CHART_RESOLUTION_SUPPORT;
+  return DEFAULT_CHART_RESOLUTION_SUPPORT;
+}
+
+function chartIsPriceOnly(spec: ChartSpec, calculationSeriesIds: ReadonlySet<string>): boolean {
+  return spec.series.every((entry) => {
+    if (!calculationSeriesIds.has(entry.id) || entry.source.kind !== "security") return true;
+    return isPriceOnlyMarketFieldId(entry.source.fieldId);
+  });
+}
+
+function isSortedPriceHistory(points: TickerFinancials["priceHistory"]): boolean {
+  let previous = Number.NEGATIVE_INFINITY;
+  for (const point of points) {
+    const timestamp = getPricePointTimestamp(point);
+    if (!Number.isFinite(timestamp)) continue;
+    if (timestamp < previous) return false;
+    previous = timestamp;
+  }
+  return true;
+}
+
 export function mergePriceHistoryWindows(
   current: TickerFinancials["priceHistory"],
   incoming: TickerFinancials["priceHistory"],
+  resolution: ManualChartResolution,
 ): TickerFinancials["priceHistory"] {
-  const result: TickerFinancials["priceHistory"] = [];
-  let ci = 0;
-  let ii = 0;
+  let sorted: TickerFinancials["priceHistory"];
+  if (!isSortedPriceHistory(current) || !isSortedPriceHistory(incoming)) {
+    const byTimestamp = new Map<number, TickerFinancials["priceHistory"][number]>();
+    for (const point of [...current, ...incoming]) {
+      const timestamp = getPricePointTimestamp(point);
+      if (Number.isFinite(timestamp)) {
+        byTimestamp.set(
+          timestamp,
+          point.date instanceof Date ? point : { ...point, date: new Date(timestamp) },
+        );
+      }
+    }
+    sorted = [...byTimestamp.values()].sort(
+      (left, right) => getPricePointTimestamp(left) - getPricePointTimestamp(right),
+    );
+  } else {
+    sorted = [];
+    let currentIndex = 0;
+    let incomingIndex = 0;
+    const append = (
+      point: TickerFinancials["priceHistory"][number],
+      timestamp: number,
+    ) => {
+      const normalized = point.date instanceof Date ? point : { ...point, date: new Date(timestamp) };
+      const previous = sorted.at(-1);
+      if (previous && getPricePointTimestamp(previous) === timestamp) sorted[sorted.length - 1] = normalized;
+      else sorted.push(normalized);
+    };
 
-  const normalize = (
-    point: TickerFinancials["priceHistory"][number],
-    timestamp: number,
-  ): TickerFinancials["priceHistory"][number] => {
-    if (point.date instanceof Date) return point;
-    return { ...point, date: new Date(timestamp) };
-  };
+    while (currentIndex < current.length || incomingIndex < incoming.length) {
+      const currentPoint = current[currentIndex];
+      const incomingPoint = incoming[incomingIndex];
+      const currentTimestamp = currentPoint ? getPricePointTimestamp(currentPoint) : Number.POSITIVE_INFINITY;
+      const incomingTimestamp = incomingPoint ? getPricePointTimestamp(incomingPoint) : Number.POSITIVE_INFINITY;
+      if (currentPoint && !Number.isFinite(currentTimestamp)) {
+        currentIndex += 1;
+      } else if (incomingPoint && !Number.isFinite(incomingTimestamp)) {
+        incomingIndex += 1;
+      } else if (currentPoint && currentTimestamp <= incomingTimestamp) {
+        append(currentPoint, currentTimestamp);
+        currentIndex += 1;
+      } else if (incomingPoint) {
+        append(incomingPoint, incomingTimestamp);
+        incomingIndex += 1;
+      }
+    }
+  }
 
-  while (ci < current.length && ii < incoming.length) {
-    const currentTs = getPricePointTimestamp(current[ci]!);
-    const incomingTs = getPricePointTimestamp(incoming[ii]!);
-
-    if (!Number.isFinite(currentTs)) {
-      ci++;
+  if (isIntradayResolution(resolution)) return sorted;
+  // Windows can be served by different sources, and they stamp the same session
+  // differently: local midnight, UTC midnight, or the opening bell. Keying on the
+  // exact timestamp keeps both copies, so the chart draws every bar twice and
+  // carries twice the points through every pan. Daily and slower bars are never
+  // closer than one step apart, so anything closer is the same session; keep the
+  // copy already plotted to leave existing bars where they are.
+  const minimumGapMs = CHART_RESOLUTION_STEP_MS[resolution] * 0.8;
+  const plotted = new Set(current.map(getPricePointTimestamp));
+  const merged: TickerFinancials["priceHistory"] = [];
+  for (const point of sorted) {
+    const previous = merged.at(-1);
+    if (!previous || getPricePointTimestamp(point) - getPricePointTimestamp(previous) >= minimumGapMs) {
+      merged.push(point);
       continue;
     }
-    if (!Number.isFinite(incomingTs)) {
-      ii++;
-      continue;
-    }
-
-    if (currentTs < incomingTs) {
-      result.push(normalize(current[ci]!, currentTs));
-      ci++;
-    } else if (incomingTs < currentTs) {
-      result.push(normalize(incoming[ii]!, incomingTs));
-      ii++;
-    } else {
-      // Equal timestamps: incoming overrides current (dedup).
-      result.push(normalize(incoming[ii]!, incomingTs));
-      ci++;
-      ii++;
+    if (!plotted.has(getPricePointTimestamp(previous)) && plotted.has(getPricePointTimestamp(point))) {
+      merged[merged.length - 1] = point;
     }
   }
-
-  while (ci < current.length) {
-    const ts = getPricePointTimestamp(current[ci]!);
-    if (Number.isFinite(ts)) result.push(normalize(current[ci]!, ts));
-    ci++;
-  }
-
-  while (ii < incoming.length) {
-    const ts = getPricePointTimestamp(incoming[ii]!);
-    if (Number.isFinite(ts)) result.push(normalize(incoming[ii]!, ts));
-    ii++;
-  }
-
-  return result;
+  return merged;
 }
 
 function historyIntersectsBounds(
@@ -549,6 +633,15 @@ async function loadPriceHistory(
         resolved.length > 0
         && (!request.explicitWindow || historyIntersectsBounds(resolved, request.visibleBounds))
       ) {
+        rememberParsedPriceHistory(
+          parsedPriceHistoryKey(
+            source.instrument.symbol,
+            source.instrument.exchange ?? "",
+            request.fallbackRange,
+            request.resolution,
+          ),
+          resolved,
+        );
         return resolved;
       }
     } catch {
@@ -704,6 +797,31 @@ function baseEconomicSeries(
   };
 }
 
+function baseCapabilitySeries(
+  spec: ChartSeriesSpec,
+  loaded: ResolvedSeries,
+  index: number,
+): ResolvedSeries {
+  const points = loaded.points.flatMap((point) => {
+    const date = finiteDate(point.date as unknown as string | Date | undefined);
+    const observedAt = finiteDate(point.observedAt as unknown as string | Date | undefined) ?? date;
+    const availableAt = finiteDate(point.availableAt as unknown as string | Date | undefined) ?? undefined;
+    return date && observedAt ? [{ ...point, date, observedAt, ...(availableAt ? { availableAt } : {}) }] : [];
+  });
+  return {
+    ...loaded,
+    id: spec.id,
+    label: spec.label?.trim() || loaded.label || (spec.source.kind === "capability" ? spec.source.seriesId : spec.id),
+    color: spec.color ?? loaded.color ?? SERIES_COLORS[index % SERIES_COLORS.length]!,
+    style: spec.style,
+    transform: spec.transform,
+    axis: spec.axis === "right" ? "right" : spec.axis === "left" ? "left" : loaded.axis,
+    panelId: spec.panelId,
+    interpolation: spec.interpolation,
+    points,
+  };
+}
+
 function staleFredWarning(loaded: FredSeriesLoadResult): string | null {
   if (!loaded.stale) return null;
   return `FRED refresh failed${loaded.refreshError ? ` (${loaded.refreshError})` : ""}; showing cached data fetched ${new Date(loaded.fetchedAt).toISOString().slice(0, 10)}.`;
@@ -820,13 +938,6 @@ function prepareBaseSeriesForStudies(
   );
 }
 
-function rawCalculationSeries(series: ResolvedSeries, bounds: DateBounds): ResolvedSeries {
-  if (bounds.start !== null && bounds.end !== null) {
-    return clipSeriesToWindow(series, new Date(bounds.start), new Date(bounds.end));
-  }
-  return { ...series, points: filterPoints(series.points, bounds) };
-}
-
 function scalarBaseline(series: ResolvedSeries, bounds: DateBounds): number | null {
   const points = filterPoints(series.points, bounds);
   for (const point of points) {
@@ -929,17 +1040,20 @@ export async function resolveChartSpecData(
   };
   const loadResolutionSupport = (
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
+    immediate: boolean,
   ) => {
     const provider = sources.dataProvider!;
     if (!provider.getChartResolutionSupport) return Promise.resolve([]);
-    const key = `${provider.id}|${instrumentKey(source)}`;
+    const key = `${provider.id}|${instrumentKey(source)}|${immediate ? "immediate" : "live"}`;
     let pending = cache.resolutionSupportByInstrument.get(key);
     if (!pending) {
-      pending = Promise.resolve(provider.getChartResolutionSupport(
-        source.instrument.symbol,
-        source.instrument.exchange ?? "",
-        requestContext(source),
-      )).catch(() => []);
+      pending = immediate
+        ? Promise.resolve().then(() => readImmediateResolutionSupport(provider, source))
+        : Promise.resolve(provider.getChartResolutionSupport(
+          source.instrument.symbol,
+          source.instrument.exchange ?? "",
+          requestContext(source),
+        )).catch(() => []);
       cache.resolutionSupportByInstrument.set(key, pending);
     }
     return pending;
@@ -963,13 +1077,14 @@ export async function resolveChartSpecData(
   const requestBounds = runtimeRequestBounds(options) ?? adaptiveBounds;
   const activeMarketSources = sources.dataProvider
     ? [...new Map(spec.series.flatMap((entry) => (
-      calculationSeriesIds.has(entry.id)
-        && entry.source.kind === "security"
-        && isMarketFieldId(entry.source.fieldId)
-        ? [[instrumentKey(entry.source), entry.source] as const]
-        : []
-    ))).values()]
+        calculationSeriesIds.has(entry.id)
+          && entry.source.kind === "security"
+          && isMarketFieldId(entry.source.fieldId)
+          ? [[instrumentKey(entry.source), entry.source] as const]
+          : []
+      ))).values()]
     : [];
+  const priceOnly = chartIsPriceOnly(spec, calculationSeriesIds);
   const resolutionSupportSources = await Promise.all(activeMarketSources.map(async (source) => (
     source.instrument.exchange?.trim()
       ? source
@@ -977,7 +1092,7 @@ export async function resolveChartSpecData(
   )));
   const sharedSupport = activeMarketSources.length > 0
     ? intersectChartResolutionSupport(await Promise.all(
-        resolutionSupportSources.map((source) => loadResolutionSupport(source)),
+        resolutionSupportSources.map((source) => loadResolutionSupport(source, priceOnly)),
       ))
     : [];
   const initialResolution = requestResolution(
@@ -1008,7 +1123,7 @@ export async function resolveChartSpecData(
     source: Extract<ChartSeriesSpec["source"], { kind: "security" }>,
     all = false,
   ) => {
-    const support = await loadResolutionSupport(source);
+    const support = await loadResolutionSupport(source, priceOnly);
     const maxRange = getSupportMaxRange(support, initialResolution);
     const historyBounds = clampHistoryBoundsToSupport(initialCalculationBounds, maxRange);
     const requestedFallbackRange = all
@@ -1053,6 +1168,7 @@ export async function resolveChartSpecData(
     const accumulated = mergePriceHistoryWindows(
       previousHistory,
       history,
+      request.resolution,
     );
     cache.accumulatedPriceHistory.set(accumulationKey, accumulated);
     return accumulated;
@@ -1068,15 +1184,14 @@ export async function resolveChartSpecData(
     return pending;
   };
 
-  const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "owid" | "prediction-market",
-    key: string,
-    loader: () => Promise<UniversalSeriesLoadResult>,
-  ): Promise<UniversalSeriesLoadResult> => {
-    const cacheKey = `${kind}:${key}`;
+  const loadUniversalSeries = (source: UniversalSeriesSource): Promise<UniversalSeriesLoadResult> => {
+    if (!sources.loadUniversalSeries) {
+      throw new Error(`Chart data source "${source.kind}" is not available.`);
+    }
+    const cacheKey = JSON.stringify(Object.entries(source).sort(([left], [right]) => left.localeCompare(right)));
     let pending = cache.universalSeriesByKey.get(cacheKey);
     if (!pending) {
-      pending = loader();
+      pending = sources.loadUniversalSeries(source);
       cache.universalSeriesByKey.set(cacheKey, pending);
     }
     return pending;
@@ -1090,10 +1205,29 @@ export async function resolveChartSpecData(
       if (seriesSpec.source.kind === "security" && !sources.dataProvider) {
         throw new Error("Market data is unavailable.");
       }
-      if (seriesSpec.source.kind === "constant") {
-        return baseConstantSeries(seriesSpec, index);
+      if (seriesSpec.source.kind === "capability") {
+        if (!sources.resolveCapabilitySeries) {
+          throw new Error(`Chart series capability "${seriesSpec.source.capabilityId}" is unavailable. Enable its plugin or provider.`);
+        }
+        const capabilityViewport: ChartSpec["viewport"] = {
+          ...spec.viewport,
+          ...(requestVisibleBounds.start !== null && requestVisibleBounds.end !== null
+            ? {
+                dateWindow: {
+                  start: new Date(requestVisibleBounds.start).toISOString(),
+                  end: new Date(requestVisibleBounds.end).toISOString(),
+                },
+              }
+            : {}),
+        };
+        const key = chartSeriesSourceKey(seriesSpec.source, capabilityViewport);
+        let pending = cache.capabilitySeriesByRequest.get(key);
+        if (!pending) {
+          pending = sources.resolveCapabilitySeries(seriesSpec.source, capabilityViewport, seriesSpec);
+          cache.capabilitySeriesByRequest.set(key, pending);
+        }
+        return baseCapabilitySeries(seriesSpec, await pending, index);
       }
-
       if (seriesSpec.source.kind === "economic") {
         const request: FredSeriesRequest = {
           seriesId: seriesSpec.source.seriesId,
@@ -1109,82 +1243,12 @@ export async function resolveChartSpecData(
         return result;
       }
 
-      if (seriesSpec.source.kind === "adjacent-index") {
-        if (!sources.loadAdjacentIndexSeries) {
-          throw new Error("Adjacent index data source is not available.");
-        }
-        const { indexId } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "adjacent-index",
-          indexId,
-          () => sources.loadAdjacentIndexSeries!(indexId),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
+      if (seriesSpec.source.kind !== "security" && seriesSpec.source.kind !== "constant") {
+        return baseUniversalSeries(seriesSpec, await loadUniversalSeries(seriesSpec.source), index);
       }
 
-      if (seriesSpec.source.kind === "benchmark") {
-        if (!sources.loadBenchmarkSeries) {
-          throw new Error("AI benchmark data source is not available.");
-        }
-        const { selector, metric } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "benchmark",
-          `${selector}:${metric}`,
-          () => sources.loadBenchmarkSeries!(selector, metric),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "poll") {
-        if (!sources.loadPollSeries) {
-          throw new Error("Poll data source is not available.");
-        }
-        const { subject, choice } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "poll",
-          `${subject}:${choice}`,
-          () => sources.loadPollSeries!(subject, choice),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "weather") {
-        if (!sources.loadWeatherSeries) {
-          throw new Error("Weather data source is not available.");
-        }
-        const { provider, stationId, metric } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "weather",
-          `${provider}:${stationId}:${metric}`,
-          () => sources.loadWeatherSeries!(provider, stationId, metric),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "owid") {
-        if (!sources.loadOwidSeries) {
-          throw new Error("OWID data source is not available.");
-        }
-        const { slug, entity } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "owid",
-          `${slug}:${entity}`,
-          () => sources.loadOwidSeries!(slug, entity),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "prediction-market") {
-        if (!sources.loadPredictionMarketSeries) {
-          throw new Error("Prediction market data source is not available.");
-        }
-        const { venue, marketId } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "prediction-market",
-          `${venue}:${marketId}`,
-          () => sources.loadPredictionMarketSeries!(venue, marketId),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
+      if (seriesSpec.source.kind === "constant") {
+        return baseConstantSeries(seriesSpec, index);
       }
 
       const source = seriesSpec.source;
@@ -1201,10 +1265,12 @@ export async function resolveChartSpecData(
       const marketField = isMarketFieldId(source.fieldId);
       const quoteDerivedValuation = valuationSeriesUsesLiveQuote(source.fieldId);
       const needsHistory = marketField || quoteDerivedValuation;
+      const needsFinancials = !isPriceOnlyMarketFieldId(source.fieldId)
+        || !source.instrument.exchange?.trim();
       const quoteOverride = marketField || quoteDerivedValuation
         ? sources.quoteOverrides?.get(chartQuoteOverrideKeyForSource(source))
         : undefined;
-      const financialsPromise = loadFinancials(source);
+      const financialsPromise = needsFinancials ? loadFinancials(source) : Promise.resolve(null);
       let resolvedSource = source;
       let financials: TickerFinancials | null;
       let history: TickerFinancials["priceHistory"] | null;
@@ -1288,18 +1354,17 @@ export async function resolveChartSpecData(
   // untouched market viewport by the same amount instead of clipping its tail.
   // Explicit and user-created windows stay fixed through hasExplicitWindow.
   const bounds = hasExplicitWindow
-    ? initialVisibleBounds
+    ? requestVisibleBounds
     : followLatestMarketObservation(initialVisibleBounds, rawSeries);
   const resolution = initialResolution;
-  const studyBounds = bounds.end !== null
-      && initialCalculationBounds.end !== null
-      && bounds.end > initialCalculationBounds.end
-    ? { ...initialCalculationBounds, end: bounds.end }
-    : initialCalculationBounds;
   const baseSeries = rawSeries
     .filter((entry) => visibleSeriesIds.has(entry.id))
     .map((entry) => prepareBaseSeriesForStudies(entry, bounds, false, requestVisibleBounds));
-  const calculationSeries = rawSeries.map((entry) => rawCalculationSeries(entry, studyBounds));
+  // Studies run over the same loaded history their base series carries. Clipping
+  // them to the requested window instead left a study with no observations
+  // wherever the accumulated buffer had already been panned past, so a study's
+  // panel emptied out mid-pan and only refilled once the next fetch landed.
+  const calculationSeries = rawSeries;
   let resolved = baseSeries;
 
   // Study outputs are appended by the pure engine before the final viewport clip.
@@ -1375,5 +1440,6 @@ export async function resolveChartSpecData(
     errors,
     warnings: [...new Set([...priorityWarnings, ...warnings])],
     viewport,
+    resolution,
   };
 }

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useRef, type RefObject } from "react";
+import { useRef, type KeyboardEvent, type RefObject } from "react";
 import { Box, Input, Text, Textarea, editableTextContextMenuItems, useRendererHost, useUiCapabilities } from "../../../../ui";
 import { TextAttributes, type InputRenderable } from "../../../../ui";
 import { useShortcut } from "../../../../react/input";
@@ -216,11 +216,13 @@ export function WebTextField({
   onBlur,
   hint,
   type = "text",
+  autoComplete,
   variant = "default",
   backgroundColor,
   textColor,
   placeholderColor,
   onMouseDown,
+  onKeyDown,
 }: TextFieldProps) {
   const colors = useThemeColors();
   const resolvedBackgroundColor = backgroundColor ?? colors.bg;
@@ -273,6 +275,7 @@ export function WebTextField({
           width="100%"
           value={value}
           type={type}
+          autoComplete={autoComplete}
           placeholder={placeholder}
           focused={focused}
           textColor={resolvedTextColor}
@@ -288,6 +291,7 @@ export function WebTextField({
           }}
           onInput={onChange}
           onChange={onChange}
+          onKeyDown={onKeyDown}
           onSubmit={(nextValue?: string) => onSubmit?.(
             typeof nextValue === "string" ? nextValue : resolvedInputRef.current?.editBuffer.getText() ?? value ?? "",
           )}
@@ -383,10 +387,18 @@ export function WebSegmentedControl({
   onChange,
 }: SegmentedControlProps) {
   const colors = useThemeColors();
+  const enabled = options.filter((option) => !option.disabled);
+  const selectAdjacent = (direction: -1 | 1) => {
+    const index = enabled.findIndex((option) => option.value === value);
+    const next = enabled[index < 0 ? 0 : (index + direction + enabled.length) % enabled.length];
+    if (next) onChange?.(next.value);
+  };
+
   return (
     <Box
       flexDirection="row"
       backgroundColor={panelFill(colors)}
+      role="radiogroup"
       style={{
         border: `1px solid ${panelBorder(colors)}`,
         borderRadius: CONTROL_RADIUS,
@@ -407,6 +419,22 @@ export function WebSegmentedControl({
               if (!option.disabled) onChange?.(option.value);
             }}
             data-gloom-interactive={option.disabled ? undefined : "true"}
+            role="radio"
+            aria-checked={active}
+            aria-disabled={option.disabled || undefined}
+            tabIndex={option.disabled ? -1 : 0}
+            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+              if (option.disabled) return;
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                event.stopPropagation();
+                selectAdjacent(event.key === "ArrowLeft" ? -1 : 1);
+              } else if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                onChange?.(option.value);
+              }
+            }}
             style={{
               borderRadius: CONTROL_RADIUS - 2,
               paddingInline: 10,

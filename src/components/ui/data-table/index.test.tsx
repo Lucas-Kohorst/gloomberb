@@ -107,6 +107,7 @@ describe("DataTable remote metadata", () => {
 
     const tableNode = remoteRegistry?.snapshot().find((node) => node.role === "table");
     expect(tableNode?.metadata).toEqual({
+      paneInstanceId: "data-table-remote-test",
       sortColumnId: "title",
       sortDirection: "desc",
       columns: [{ id: "title", label: "Title" }],

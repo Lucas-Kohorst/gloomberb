@@ -172,7 +172,7 @@ async function boot(): Promise<void> {
                 desktopWindowBridge={desktopWindowBridge}
                 desktopDeepLinkBridge={desktopDeepLinkBridge}
                 desktopSnapshot={init.desktopSnapshot}
-                requireAccount={isHosted}
+                requireSignIn={isHosted}
               />
             </WebDialogHostProvider>
           </WebToastHostProvider>

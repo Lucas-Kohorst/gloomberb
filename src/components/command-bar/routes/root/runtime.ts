@@ -8,7 +8,9 @@ import type { TickerSearchCandidate } from "../../../../tickers/search";
 import type { AssistRowHandlers } from "../../assist/model";
 import { matchPrefix, type Command } from "../../commands/registry";
 import type { ResultItem } from "../../list/model";
+import type { CommandBarCategoryPriorities } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
+import { normalizeCommandTickerSearchText } from "../ticker-search/results";
 import { useTickerSearchRouteResults } from "../ticker-search/route";
 import { buildRootResultModel, type RootResultModel } from "./results";
 import { useRootProviderSearch } from "./provider-search";
@@ -33,7 +35,6 @@ interface UseCommandBarRootRuntimeOptions {
   availableCommands: Command[];
   buildLayoutItems(query: string, options?: { confirmDangerousActions?: boolean }): ResultItem[];
   buildPaneSettingItems(paneId: string | null, query: string): ResultItem[];
-  buildPluginItems(query: string): ResultItem[];
   buildTickerSearchResultItems(candidates: TickerSearchCandidate[], query: string): ResultItem[];
   buildWindowModeItems(arg: string): ResultItem[];
   createPaneTemplateItem(template: PaneTemplateDef, options?: {
@@ -55,7 +56,7 @@ interface UseCommandBarRootRuntimeOptions {
   localTickerSearchResultItems(query?: string, options?: { category?: string; limit?: number }): ResultItem[];
   nativeListScrollRef: RefObject<ScrollBoxRenderable | null>;
   nonShortcutPaneTemplateItems(filterQuery?: string): ResultItem[];
-  openModeRoute(screen: "ticker-search" | "plugins" | "layout", initialQuery?: string): void;
+  openModeRoute(screen: "ticker-search" | "layout", initialQuery?: string): void;
   paneShortcutItems(options?: {
     filterQuery?: string;
     createOptions?: PaneTemplateCreateOptions;
@@ -63,9 +64,9 @@ interface UseCommandBarRootRuntimeOptions {
   }): ResultItem[];
   pluginCommandItems(): ResultItem[];
   pluginCommandResultItems(command: CommandDef, shortcutArg: string): ResultItem[];
-  articleResultItems?: ResultItem[];
-  /** Local autocomplete rows for the custom chart (`G`) command. */
-  chartSeriesItems?: ResultItem[];
+  providerResultItems?: ResultItem[];
+  providerCategoryPriorities?: CommandBarCategoryPriorities;
+  providerSearching?: boolean;
   readTickerSearchCache(
     query: string,
     brokerId?: string | null,
@@ -82,6 +83,7 @@ interface UseCommandBarRootRuntimeOptions {
   skipTickerSearchDebounceRef: RefObject<boolean>;
   state: AppState;
   tickerActionItems(): ResultItem[];
+  onOpenPluginMarketplace?: () => void;
   writeTickerSearchCache(
     query: string,
     candidates: TickerSearchCandidate[],
@@ -99,7 +101,6 @@ export function useCommandBarRootRuntime({
   availableCommands,
   buildLayoutItems,
   buildPaneSettingItems,
-  buildPluginItems,
   buildTickerSearchResultItems,
   buildWindowModeItems,
   createPaneTemplateItem,
@@ -117,8 +118,9 @@ export function useCommandBarRootRuntime({
   paneShortcutItems,
   pluginCommandItems,
   pluginCommandResultItems,
-  articleResultItems = [],
-  chartSeriesItems = [],
+  providerResultItems = [],
+  providerCategoryPriorities,
+  providerSearching = false,
   readTickerSearchCache,
   rootModeKind,
   rootQuery,
@@ -131,6 +133,7 @@ export function useCommandBarRootRuntime({
   skipTickerSearchDebounceRef,
   state,
   tickerActionItems,
+  onOpenPluginMarketplace,
   writeTickerSearchCache,
 }: UseCommandBarRootRuntimeOptions): {
   activeMatch: ReturnType<typeof matchPrefix>;
@@ -176,7 +179,6 @@ export function useCommandBarRootRuntime({
     availableCommands,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     buildWindowModeItems,
     createPaneTemplateItem,
     createPluginCommandItem,
@@ -192,12 +194,12 @@ export function useCommandBarRootRuntime({
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
-    articleResultItems,
-    chartSeriesItems,
+    providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
+    onOpenPluginMarketplace,
   }), [
     activeCollectionId,
     activeTickerData,
@@ -206,7 +208,6 @@ export function useCommandBarRootRuntime({
     availableCommands,
     buildLayoutItems,
     buildPaneSettingItems,
-    buildPluginItems,
     buildWindowModeItems,
     createPaneTemplateItem,
     createPluginCommandItem,
@@ -222,39 +223,55 @@ export function useCommandBarRootRuntime({
     pluginCommandResultItems,
     rootQuery,
     rootShortcutIntent,
-    articleResultItems,
-    chartSeriesItems,
+    providerResultItems,
     runDirectCommand,
     runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
+    onOpenPluginMarketplace,
   ]);
 
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1
     ? activeMatch.arg
     : null;
-  const rootTickerSearchArg = rootSecurityDescriptionArg;
+  // Free text that no prefix claims also goes to symbol search, so "nvidia"
+  // finds NVDA without the backtick. Skipped when a local row already carries
+  // that exact name, since an "Exact Match" symbol would otherwise outrank it.
+  const rootPlainTickerSearchArg = useMemo(() => {
+    if (currentRoute || activeMatch || rootShortcutIntent.kind !== "none") return null;
+    const trimmed = rootQuery.trim();
+    if (trimmed.length < 2) return null;
+    const normalizedQuery = normalizeCommandTickerSearchText(trimmed);
+    const hasExactLocalRow = rootResultModel.items.some((item) => (
+      item.kind !== "ticker"
+      && item.kind !== "search"
+      && normalizeCommandTickerSearchText(item.label) === normalizedQuery
+    ));
+    return hasExactLocalRow ? null : trimmed;
+  }, [activeMatch, currentRoute, rootQuery, rootResultModel.items, rootShortcutIntent.kind]);
+  const rootTickerSearchArg = rootSecurityDescriptionArg ?? rootPlainTickerSearchArg;
 
   const {
     activeRootProviderResultsKey,
     orderedRootResults,
-    rootSearching,
+    rootSearching: tickerSearching,
     rootSectionOrder,
   } = useRootProviderSearch({
     activeCollectionId,
     buildTickerSearchResultItems,
+    categoryPriorities: providerCategoryPriorities,
     currentRoute,
     dataProvider,
     localTickerSearchResultItems,
     portfolios: state.config.portfolios,
     readTickerSearchCache,
-    rootPlainTickerSearchArg: null,
-    rootQuery,
+    rootPlainTickerSearchArg,
     rootResultItems: rootResultModel.items,
     rootTickerSearchArg,
     tickers: state.tickers,
     writeTickerSearchCache,
   });
+  const rootSearching = tickerSearching || providerSearching;
 
   useLayoutEffect(() => {
     if (currentRoute) return;
@@ -269,23 +286,21 @@ export function useCommandBarRootRuntime({
       previousRootSelectionContextRef.current?.query !== rootQuery
       || previousRootSelectionContextRef.current?.mode !== rootModeKind;
     previousRootSelectionContextRef.current = { query: rootQuery, mode: rootModeKind };
-    // Filtering the plugin list is not meant to move the row being toggled.
-    const keepSelectionAcrossQueries = activeMatch?.command.id === "plugins";
-    if (selectionContextChanged && !keepSelectionAcrossQueries) {
+    if (selectionContextChanged) {
       rootSelectionNavigatedRef.current = false;
     }
 
     setRootSelectedIdx((current) => {
-      if (rootSelectionNavigatedRef.current || keepSelectionAcrossQueries) {
-        // The user picked this row: rows arriving above it — an AI answer, a
-        // provider result — may renumber it, never take the highlight from it.
+      if (rootSelectionNavigatedRef.current) {
+        // The user picked this row. Async sections append below it, but an
+        // exact symbol match still lands above, so the row is tracked by id
+        // rather than by index.
         const selectedId = previousResultIds[current];
         const shiftedIdx = selectedId ? resultIds.indexOf(selectedId) : -1;
         if (shiftedIdx >= 0) return shiftedIdx;
         return clampSelectedIdx(current, resultIds.length);
       }
-      // Untouched, the selection follows the best row on offer, which is what
-      // an AI answer becomes the moment it lands at the top of the list.
+      // Untouched, the selection follows the best row on offer.
       const defaultIdx = orderedRootResults.findIndex(isDefaultSelectable);
       return clampSelectedIdx(Math.max(rootResultModel.initialIdx, defaultIdx), resultIds.length);
     });

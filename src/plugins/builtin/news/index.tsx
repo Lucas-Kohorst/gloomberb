@@ -1,69 +1,91 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { Box } from "../../../ui";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { usePaneTicker } from "../../../state/app/context";
-import type { NewsArticle } from "../../../types/news-source";
+import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { useArticleSummary, useResolvedEntryValue } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
-import { useDebouncedPluginPaneState } from "../../runtime";
-import { usePopOutNewsArticle } from "./wire/news/pop-out";
-import { FeedDataTableStackView, LoadingState, TickerEmptyState, useUpdatedAgo, type FeedDataTableItem } from "../../../components";
-import { shouldSkipJinaForKnownBody } from "../shared/jina-article-text";
-import { useJinaArticle } from "../shared/jina-reader";
-import { getSharedNewsService, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
+import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { EmptyState } from "../../../components";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../news/hooks";
+import type { NewsArticle } from "../../../news/types";
 import { newsWireModule } from "./wire";
 import { firehoseModule } from "./wire/firehose";
+import { NewsDetailView, useNewsArticleDetail } from "./wire/news/detail-view";
+import { usePopOutNewsArticle } from "./wire/news/pop-out";
+import {
+  NewsArticleStackView,
+  newsTableStatusContent,
+  type NewsSortPreference,
+} from "./wire/news/table";
 import { useNewsArticleFooter } from "./wire/news/footer";
 import { usePersistedNewsArticles } from "./wire/persisted-articles";
 import { useNewsReadState } from "./wire/read-state";
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { loadRelatedNews } from "./wire/related-news-cache";
 
 const NEWS_ITEM_LIMIT = 50;
+const DEFAULT_SORT: NewsSortPreference = { columnId: "time", direction: "desc" };
 
-function getFeedItems(
-  news: NewsArticle[],
-  selectedUrl: string | undefined,
-  summaryCache: Map<string, string>,
-  loadingSummary: boolean,
-  selectedJinaContent: string | null,
-): FeedDataTableItem[] {
-  return news.map((item) => {
-    const preview = summaryCache.get(item.url) ?? item.summary ?? undefined;
-    const isSelected = item.url === selectedUrl;
-    const fallbackBody = preview ?? (loadingSummary ? "Loading preview..." : "No preview available.");
-    return {
-      id: item.id,
-      eyebrow: item.source,
-      title: item.title,
-      timestamp: item.publishedAt,
-      detailTitle: item.title,
-      detailMeta: [
-        item.source,
-        item.publishedAt
-          ? `Published ${item.publishedAt.toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}`
-          : "",
-      ].filter(Boolean),
-      detailBody: isSelected
-        ? selectedJinaContent ?? fallbackBody
-        : preview ?? "",
-      detailNote: item.url,
-    };
-  });
+async function prefetchTickerNews({ ticker }: TickerResearchTabPrefetchContext): Promise<void> {
+  if (isEquityResearchTicker(ticker)) {
+    const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+    if (!instrument) return;
+    await getSharedNewsService()?.load({
+      feed: "ticker",
+      ticker: instrument.symbol,
+      exchange: instrument.exchange,
+      tickerTier: "primary",
+      limit: NEWS_ITEM_LIMIT,
+    });
+    return;
+  }
+  const relatedQuery = ticker.metadata.name.trim() || ticker.metadata.ticker;
+  await loadRelatedNews(relatedQuery);
 }
 
 function TickerNewsView({ width, height, focused }: { width: number; height: number; focused: boolean }) {
   const { ticker } = usePaneTicker();
-  const selectionKey = `selectedIdx:${ticker?.metadata.ticker ?? "none"}`;
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>(selectionKey, 0);
-  const [summaryCache, setSummaryCache] = useState<Map<string, string>>(new Map());
-  const summaryFetchRef = useRef(0);
+  const equityNews = isEquityResearchTicker(ticker);
+  const symbol = ticker?.metadata.ticker ?? "none";
+  const [relatedArticles, setRelatedArticles] = useState<NewsArticle[]>([]);
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const relatedQuery = !equityNews && ticker
+    ? (ticker.metadata.name.trim() || ticker.metadata.ticker)
+    : null;
+
+  useEffect(() => {
+    if (!relatedQuery) {
+      setRelatedArticles([]);
+      return;
+    }
+    let cancelled = false;
+    setRelatedLoading(true);
+    void loadRelatedNews(relatedQuery).then((articles) => {
+      if (cancelled) return;
+      setRelatedArticles(articles);
+      setLastUpdated(Date.now());
+      setRelatedLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setRelatedLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [relatedQuery]);
+  const [selectedArticleId, setSelectedArticleId] = useDebouncedPluginPaneState<string | null>(
+    `selectedArticleId:${symbol}`,
+    null,
+  );
+  const [sortPreference, setSortPreference] = usePluginPaneState<NewsSortPreference>(
+    "ticker-news:sort",
+    DEFAULT_SORT,
+  );
   const instrument = instrumentFromTicker(ticker, ticker?.metadata.ticker ?? null);
-  const newsQuery = instrument ? {
+  const newsQuery = equityNews && instrument ? {
     feed: "ticker" as const,
     ticker: instrument.symbol,
     exchange: instrument.exchange,
@@ -71,74 +93,52 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
     limit: NEWS_ITEM_LIMIT,
   } : null;
   const newsState = useNewsArticles(newsQuery);
-  const liveNews = newsState.articles;
-  const news = usePersistedNewsArticles(
+  const tickerNews = usePersistedNewsArticles(
     `articles:${instrument?.symbol ?? "none"}:${instrument?.exchange ?? ""}`,
-    liveNews,
+    newsState.articles,
   );
+  const news = equityNews ? tickerNews : relatedArticles;
   const { readArticleIds, markArticleRead } = useNewsReadState();
-  const [openItemId, setOpenItemId] = useState<string | null>(null);
-  const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
-  const loading = newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0);
-  const error = newsState.phase === "error" ? newsState.error ?? "Failed to load news" : null;
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const updatedAgo = useUpdatedAgo(lastUpdated);
   const { scrollRef, onBodyScrollActivity } = useNewsTableLoadMore(newsQuery, newsState);
+  const loadNewsStory = useLoadNewsStory();
+  const { detailArticle, openArticle, closeDetail } = useNewsArticleDetail(news, loadNewsStory);
+  const loading = equityNews
+    ? newsState.phase === "loading" || (newsState.phase === "refreshing" && news.length === 0)
+    : relatedLoading && news.length === 0;
+  const error = equityNews ? newsState.error : null;
+  const popOutArticle = usePopOutNewsArticle();
 
   useEffect(() => {
     if (newsState.phase === "ready" || newsState.phase === "refreshing") {
       setLastUpdated(Date.now());
     }
-  }, [liveNews.length, newsState.phase]);
+  }, [news.length, newsState.phase]);
 
-  useEffect(() => {
-    summaryFetchRef.current += 1;
-    setSummaryCache(new Map());
-  }, [ticker?.metadata.ticker]);
-
-  const selected = news[selectedIdx];
-  const openArticle = openItemId
-    ? news.find((article) => article.id === openItemId) ?? null
-    : null;
-  const cachedSelectedSummary = selected ? summaryCache.get(selected.url) : undefined;
   const articleSummaryEntry = useArticleSummary(
-    selected && !selected.summary && !cachedSelectedSummary ? selected.url : null,
+    detailArticle && !detailArticle.summary ? detailArticle.url : null,
   );
-  const selectedSummary = useResolvedEntryValue(articleSummaryEntry);
-  const loadingSummary = articleSummaryEntry?.phase === "loading" || articleSummaryEntry?.phase === "refreshing";
-  const skipJina = shouldSkipJinaForKnownBody(selected?.body);
-  const jina = useJinaArticle(selected?.url ?? "", !!selected?.url && !skipJina);
-
-  useEffect(() => {
-    if (!selected?.summary) return;
-    const summary = selected.summary;
-    setSummaryCache((prev) => prev.has(selected.url) ? prev : new Map(prev).set(selected.url, summary));
-  }, [selected?.summary, selected?.url]);
-
-  useEffect(() => {
-    if (!selected?.url || !selectedSummary) return;
-    setSummaryCache((prev) => new Map(prev).set(selected.url, selectedSummary));
-  }, [selected?.url, selectedSummary]);
-
-  useEffect(() => {
-    if (news.length > 0 && selectedIdx >= news.length) {
-      setSelectedIdx(Math.max(0, news.length - 1));
-    }
-  }, [news.length, selectedIdx, setSelectedIdx]);
+  const fetchedSummary = useResolvedEntryValue(articleSummaryEntry);
+  const loadingSummary = articleSummaryEntry?.phase === "loading"
+    || articleSummaryEntry?.phase === "refreshing";
+  const detailWithSummary = detailArticle && !detailArticle.summary && fetchedSummary
+    ? { ...detailArticle, summary: fetchedSummary }
+    : detailArticle;
+  const selectedArticle = news.find((article) => article.id === selectedArticleId) ?? null;
+  const readableArticle = detailWithSummary ?? selectedArticle;
 
   useNewsArticleFooter({
     registrationId: "news",
     focused,
-    article: openArticle ?? selected,
-    loading,
+    article: readableArticle,
+    loading: loading && news.length > 0,
     error,
     info: [
-      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(loadingSummary ? [{ id: "summary", parts: [{ text: "summary loading", tone: "muted" as const }] }] : []),
-      ...(jina.loading ? [{ id: "rendering", parts: [{ text: "rendering article", tone: "muted" as const }] }] : []),
     ],
-    onPopOut: () => popOutArticle(openArticle ?? selected),
-    onRefresh: instrument
+    updatedAt: equityNews ? newsState.updatedAt : lastUpdated,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    onRefresh: equityNews && instrument
       ? () => {
         void getSharedNewsService()?.load({
           feed: "ticker",
@@ -148,53 +148,71 @@ function TickerNewsView({ width, height, focused }: { width: number; height: num
           limit: NEWS_ITEM_LIMIT,
         });
       }
-      : undefined,
-    showPoll: !openItemId,
+      : relatedQuery
+        ? () => {
+          setRelatedLoading(true);
+          void loadRelatedNews(relatedQuery, true).then((articles) => {
+            setRelatedArticles(articles);
+            setRelatedLoading(false);
+          }).catch(() => setRelatedLoading(false));
+        }
+        : undefined,
+    showPoll: !detailWithSummary,
   });
 
-  if (!ticker) return <TickerEmptyState kind="news" symbol={null} detail="news" />;
-  if (loading && news.length === 0) return <LoadingState title="Loading news..." />;
-  if (error && news.length === 0) {
+  if (!ticker) {
     return (
-      <TickerEmptyState
-        kind="news"
-        symbol={ticker.metadata.ticker}
-        detail="news"
-        error={error}
-      />
+      <Box paddingX={1} paddingY={1}>
+        <EmptyState title="No ticker selected." message="Pick a ticker to load its news." />
+      </Box>
     );
   }
-  if (news.length === 0) {
-    return <TickerEmptyState kind="news" symbol={ticker.metadata.ticker} detail="news" />;
-  }
-
-  const items = getFeedItems(news, selected?.url, summaryCache, loadingSummary, jina.content);
 
   return (
-    <FeedDataTableStackView
-      width={width}
-      height={height}
+    <NewsArticleStackView
+      articles={news}
       focused={focused}
-      items={items}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
-      isItemRead={(item) => readArticleIds.has(item.id)}
-      onOpenItem={(item) => markArticleRead(item.id)}
-      openItemId={openItemId}
-      onOpenItemIdChange={setOpenItemId}
-      onPopOut={(item) => popOutArticle(news.find((article) => article.id === item.id) ?? openArticle ?? selected)}
-      sourceLabel="Source"
-      titleLabel="Headline"
-      emptyStateTitle="No news data"
-      emptyStateMessage={ticker.metadata.ticker ? `${ticker.metadata.ticker} has no news.` : undefined}
-      markdown
+      width={width}
+      rootHeight={height}
+      readArticleIds={readArticleIds}
+      selectedArticleId={selectedArticleId}
+      setSelectedArticleId={setSelectedArticleId}
+      sortPreference={sortPreference}
+      setSortPreference={setSortPreference}
+      onOpenArticle={openArticle}
+      onArticleRead={markArticleRead}
+      detailOpen={!!detailWithSummary}
+      onBack={closeDetail}
+      detailContent={detailWithSummary ? (
+        <NewsDetailView
+          item={detailWithSummary}
+          focused={focused}
+          width={width}
+          showTitle={false}
+        />
+      ) : (
+        <Box flexGrow={1} />
+      )}
+      detailTitle={detailWithSummary?.title}
+      columns={["time", "source", "title", "categories", "sentiment"]}
+      emptyContent={newsTableStatusContent({
+        loading,
+        error,
+        subject: "News",
+        ticker: ticker.metadata.ticker,
+        emptyTitle: `No news for ${ticker.metadata.ticker}`,
+        emptyMessage: "Stories appear as sources publish them.",
+      })}
+      emptyStateTitle={`No news for ${ticker.metadata.ticker}`}
+      emptyStateHint="Stories appear as sources publish them."
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
+      onPopOut={() => popOutArticle(readableArticle)}
     />
   );
 }
 
-const tickerNewsModule: PluginModule = {
+export const tickerNewsModule: PluginModule = {
   panes: [
     {
       id: "ticker-news",
@@ -215,6 +233,7 @@ const tickerNewsModule: PluginModule = {
       description: "Company news for the selected ticker.",
       keywords: ["company", "ticker", "news", "headlines", "cn"],
       shortcut: "CN",
+      publicShare: true,
     }),
   ],
 
@@ -224,6 +243,7 @@ const tickerNewsModule: PluginModule = {
       name: "News",
       order: 40,
       component: TickerNewsView,
+      prefetch: prefetchTickerNews,
     });
   },
 };

@@ -58,7 +58,10 @@ export function ChartSeriesWorkflowSuggestions({
       id: suggestion.id,
       label: suggestion.label,
       run: () => onApplyExpression(
-        completeExpression(prefix, formatParsedSeriesExpression(suggestion.expression)),
+        completeExpression(
+          prefix,
+          suggestion.expressionText ?? formatParsedSeriesExpression(suggestion.expression),
+        ),
       ),
     }));
     rows.push({

@@ -2,7 +2,6 @@ import { ImageSurface, Text, useUiCapabilities } from "../ui";
 import { cloudLogoPath, type CloudLogoKind } from "../api-client/paths";
 import { getCloudApiBaseUrl } from "../api-client/request";
 import { resolveAssetDisplayKind } from "../market-data/market/format";
-import { isHostedWebClient } from "../shared/hosted-api";
 import { colors } from "../theme/colors";
 
 export function resolveCompanyLogoSrc(input: {
@@ -12,12 +11,7 @@ export function resolveCompanyLogoSrc(input: {
   const kind = logoKindForAsset(input.assetCategory);
   if (!kind) return null;
   const path = cloudLogoPath(kind, input.symbol);
-  if (!path) return null;
-  // Hosted img tags do not go through the API fetch transport, so they must
-  // stay same-origin. The Worker maps `/cloud/logos/...` onto api.gloom.sh
-  // and attaches the HttpOnly session cookie.
-  if (isHostedWebClient()) return path;
-  return `${getCloudApiBaseUrl()}${path}`;
+  return path ? `${getCloudApiBaseUrl()}${path}` : null;
 }
 
 export function CompanyLogo({

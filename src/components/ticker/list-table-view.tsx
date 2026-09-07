@@ -9,13 +9,14 @@ import {
 import {
   TextAttributes,
   tickerContextMenuItems,
+  useCommandBarShortcut,
   useContextMenu,
   useRendererHost,
   useUiCapabilities,
   type ScrollBoxRenderable,
 } from "../../ui";
 import { colors } from "../../theme/colors";
-import { t } from "../../i18n";
+import { t, tf } from "../../i18n";
 import { getSharedRegistry } from "../../plugins/registry";
 import type { ColumnConfig } from "../../types/config";
 import type { TickerFinancials, PricePoint } from "../../types/financials";
@@ -170,11 +171,13 @@ export function TickerListTableView({
   onHeaderClick,
   onRowActivate,
   emptyTitle = t("No tickers."),
-  emptyHint = t("Press Ctrl+P to add one."),
+  emptyHint,
   revisionScope,
   virtualize = true,
   overscan = 4,
 }: TickerListTableViewProps) {
+  const commandBarShortcut = useCommandBarShortcut();
+  const resolvedEmptyHint = emptyHint ?? tf("Press {shortcut} to add one.", { shortcut: commandBarShortcut });
   const renderer = useRendererHost();
   const { showContextMenu } = useContextMenu();
   const { nativeContextMenu } = useUiCapabilities();
@@ -311,7 +314,7 @@ export function TickerListTableView({
       renderCell={renderCell}
       getRowRevision={getRowRevision}
       emptyStateTitle={emptyTitle}
-      emptyStateHint={emptyHint}
+      emptyStateHint={resolvedEmptyHint}
       virtualize={virtualize}
       overscan={overscan}
       rootBefore={rootBefore}

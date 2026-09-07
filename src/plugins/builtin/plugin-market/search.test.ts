@@ -43,6 +43,9 @@ describe("searchCommunityPlugins", () => {
     });
 
     const reports: Array<{ ok: boolean; operation?: string }> = [];
+    // Other files' network work buffers reports while no reporter is installed;
+    // installing one flushes that backlog into our list, so drain it first.
+    clearPendingConnectionReports();
     setConnectionRequestReporter((_id, report) => {
       reports.push({ ok: report.success, operation: report.operation });
     });

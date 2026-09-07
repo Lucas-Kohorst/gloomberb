@@ -5,8 +5,8 @@ import {
   StaticChartSurface,
   type DataTableColumn,
 } from "../../../components";
-import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart/surface";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
+import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart-surface";
+import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatNumber, formatPercentRaw } from "../../../utils/format";
@@ -62,10 +62,9 @@ interface FactorColumn extends DataTableColumn {
   id: "factor" | "beta" | "exposure";
 }
 
-function buildFactorColumns(width: number): FactorColumn[] {
-  const factorWidth = Math.max(10, Math.min(16, Math.floor(width * 0.22)));
+function buildFactorColumns(): FactorColumn[] {
   return [
-    { id: "factor", label: "FACTOR", width: factorWidth, align: "left" },
+    { id: "factor", label: "FACTOR", width: 10, align: "left", flexGrow: 1 },
     { id: "beta", label: "BETA", width: 10, align: "right" },
     { id: "exposure", label: "EXPOSURE", width: 14, align: "right" },
   ];
@@ -84,10 +83,9 @@ interface ContributorColumn extends DataTableColumn {
   id: "symbol" | "weight" | "return" | "contrib" | "dollar";
 }
 
-function buildContributorColumns(width: number): ContributorColumn[] {
-  const symbolWidth = Math.max(8, Math.min(14, Math.floor(width * 0.2)));
+function buildContributorColumns(): ContributorColumn[] {
   return [
-    { id: "symbol", label: "SYMBOL", width: symbolWidth, align: "left" },
+    { id: "symbol", label: "SYMBOL", width: 8, align: "left", flexGrow: 1 },
     { id: "weight", label: "WEIGHT", width: 9, align: "right" },
     { id: "return", label: "RETURN", width: 9, align: "right" },
     { id: "contrib", label: "CONTRIB", width: 10, align: "right" },
@@ -159,7 +157,7 @@ export function PortfolioRiskView({
     beta: entry.beta,
     exposure: entry.exposure,
   }));
-  const factorColumns = buildFactorColumns(width);
+  const factorColumns = buildFactorColumns();
   const [factorSort, setFactorSort] = useState<SortPreference<FactorColumn["id"]>>({
     columnId: null,
     direction: "desc",
@@ -181,12 +179,12 @@ export function PortfolioRiskView({
   const { best: bestContrib, worst: worstContrib } = splitBestWorst(byReturn, 5);
   const largestPositions = computeContributors(contributors, 5).byPosition;
   const contributorColWidth = Math.max(0, Math.floor(width / 2) - 2);
-  const contributorColumns = buildContributorColumns(contributorColWidth);
+  const contributorColumns = buildContributorColumns();
   const bestRows = toContributorRows(bestContrib);
   const worstRows = toContributorRows(worstContrib);
   const largestRows = toContributorRows(largestPositions);
 
-  const sectorColumns = buildSectorColumns(width);
+  const sectorColumns = buildSectorColumns();
 
   const chartHeight = showChart ? Math.min(8, Math.max(5, Math.floor(height * 0.22))) : 0;
   const lastCumulative = chartPoints.at(-1)?.close ?? 0;

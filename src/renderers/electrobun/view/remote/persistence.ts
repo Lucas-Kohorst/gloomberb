@@ -142,7 +142,6 @@ class RemotePluginStateStore {
     if (!this.state.has(pluginId)) this.state.set(pluginId, new Map());
     this.state.get(pluginId)!.set(key, value);
     this.getScheduler(pluginId, key).schedule({ pluginId, key, value, schemaVersion });
-    this.persistLocalState();
     // Closing the window tears down the RPC before a debounced save can land.
     // Auth has to reach SQLite immediately or the next launch is signed out.
     if (key === "session" || key === "resume:session") {

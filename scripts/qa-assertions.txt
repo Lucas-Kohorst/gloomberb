@@ -1,0 +1,14 @@
+Pane ".+" crashed:
+undefined is not an object
+Can't find variable:
+ReferenceError:
+TypeError:
+SyntaxError:
+failed to start
+Gloomberb crashed
+Gloomberb failed to start
+Duplicate plugin
+is not defined
+Maximum update depth
+Invalid hook
+\bundefined\b

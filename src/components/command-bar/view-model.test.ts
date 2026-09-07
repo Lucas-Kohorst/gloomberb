@@ -26,8 +26,8 @@ describe("command bar view model helpers", () => {
     expect(resolveCommandBarMode("DES NVDA")).toMatchObject({ kind: "search", badge: "DES" });
     expect(resolveCommandBarMode("T NVDA")).toMatchObject({ kind: "search", badge: "T" });
     expect(resolveCommandBarMode("TH ")).toMatchObject({ kind: "themes", badge: "THEMES" });
-    expect(resolveCommandBarMode("PL notes")).toMatchObject({ kind: "plugins", badge: "PLUGINS" });
-    expect(resolveCommandBarMode("LAY ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
+    expect(resolveCommandBarMode("LAY")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
+    expect(resolveCommandBarMode("LMA ")).toMatchObject({ kind: "layout", badge: "LAYOUT" });
     expect(resolveCommandBarMode("NP ")).toMatchObject({ kind: "default", badge: "FILTER" });
     expect(resolveCommandBarMode("PS")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
     expect(resolveCommandBarMode("AW")).toMatchObject({ kind: "direct-command", badge: "COMMAND" });
@@ -58,6 +58,83 @@ describe("command bar view model helpers", () => {
     ]);
 
     expect(sections.map((section) => section.category)).toEqual(["Config", "Tickers", "Danger", "Debug"]);
+  });
+
+  test("drops an offer-only section below real matches whatever its category priority", () => {
+    const sections = buildSections([
+      { id: "exact", category: "Exact Match", disabled: true, defaultSelectable: false },
+      { id: "holders", category: "Panes" },
+    ]);
+
+    expect(sections.map((section) => section.category)).toEqual(["Panes", "Exact Match"]);
+    expect(sections[0]?.items[0]?.id).toBe("holders");
+  });
+
+  test("leads with an exact symbol, then the AI, then the async sections in arrival order", () => {
+    // An exactly matching symbol is the most certain answer available, so it
+    // outranks the AI's reading of the same query. Below it the AI leads even
+    // though it answers last, since it turns the typed sentence into commands;
+    // its placeholder holds the rows meanwhile. Symbol search and documents
+    // arrive in that order under the local matches, so each only pushes rows
+    // below itself. Documents come from a provider, which contributes its own
+    // priority.
+    const items = [
+      { id: "doc", category: "Documents" },
+      { id: "nvda-mx", category: "Instruments" },
+      { id: "nvda", category: "Exact Match" },
+      { id: "holders", category: "Panes" },
+      { id: "help", category: "Commands" },
+      { id: "quit", category: "Application" },
+      { id: "plugin-row", category: "Portfolio" },
+      { id: "assist:candidate:0", category: "Ask AI" },
+    ];
+    const categoryPriorities = new Map([["Documents", 200]]);
+
+    for (const sectionOrder of ["default", "app-first"] as const) {
+      const sections = buildSections(items, { sectionOrder, categoryPriorities });
+      expect(sections.map((section) => section.category)).toEqual([
+        "Exact Match",
+        "Ask AI",
+        "Panes",
+        "Commands",
+        "Application",
+        "Portfolio",
+        "Instruments",
+        "Documents",
+      ]);
+    }
+  });
+
+  test("puts instrument matches above the data catalog offer", () => {
+    const sections = buildSections([
+      { id: "catalog", category: "Data Catalog" },
+      { id: "instrument", category: "Instruments" },
+    ], { sectionOrder: "ranked" });
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Instruments",
+      "Data Catalog",
+    ]);
+  });
+
+  test("drops the AI's sign-up offer under the async sections", () => {
+    const sections = buildSections([
+      { id: "assist:sign-up", category: "Ask AI", defaultSelectable: false },
+      { id: "doc", category: "Documents" },
+      { id: "nvda-mx", category: "Instruments" },
+      { id: "holders", category: "Panes" },
+    ], { categoryPriorities: new Map([["Documents", 200]]) });
+
+    expect(sections.map((section) => section.category)).toEqual(["Panes", "Instruments", "Documents", "Ask AI"]);
+  });
+
+  test("lets a provider's contributed priority override the built-in band", () => {
+    const sections = buildSections([
+      { id: "nvda-mx", category: "Instruments" },
+      { id: "doc", category: "Documents" },
+    ], { categoryPriorities: new Map([["Documents", -200]]) });
+
+    expect(sections.map((section) => section.category)).toEqual(["Documents", "Instruments"]);
   });
 
   test("keeps non-exact ticker suggestions behind app sections in app-first order", () => {

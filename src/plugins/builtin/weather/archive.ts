@@ -160,36 +160,39 @@ export function mergeWeatherArchive(
   for (const observation of input.observations ?? []) {
     const stationId = canonicalWeatherStationId(observation.stationId) ?? observation.stationId;
     if (!stationId || !observation.date) continue;
-    const hasHigh = observation.high != null;
-    const hasLow = observation.low != null;
-    const hasPrecip = observation.precip != null;
+    const high = observation.high ?? null;
+    const low = observation.low ?? null;
+    const precip = observation.precip ?? null;
+    const hasHigh = high !== null;
+    const hasLow = low !== null;
+    const hasPrecip = precip !== null;
     if (!hasHigh && !hasLow && !hasPrecip) continue;
     const key = recordKey(stationId, observation.date);
     const current = byKey.get(key) ?? emptyRecord(stationId, observation.date);
     if (observation.official) {
       if (hasHigh && current.settlementHigh == null) {
-        current.settlementHigh = observation.high;
+        current.settlementHigh = high;
         current.settledAt = now;
       }
       if (hasLow && current.settlementLow == null) {
-        current.settlementLow = observation.low;
+        current.settlementLow = low;
         current.settledAt = now;
       }
       if (hasPrecip && current.settlementPrecip == null) {
-        current.settlementPrecip = observation.precip;
+        current.settlementPrecip = precip;
         current.settledAt = now;
       }
     } else {
       if (hasHigh && current.forecastHigh == null) {
-        current.forecastHigh = observation.high;
+        current.forecastHigh = high;
         current.forecastCapturedAt = now;
       }
       if (hasLow && current.forecastLow == null) {
-        current.forecastLow = observation.low;
+        current.forecastLow = low;
         current.forecastCapturedAt = now;
       }
       if (hasPrecip && current.forecastPrecip == null) {
-        current.forecastPrecip = observation.precip;
+        current.forecastPrecip = precip;
         current.forecastCapturedAt = now;
       }
     }

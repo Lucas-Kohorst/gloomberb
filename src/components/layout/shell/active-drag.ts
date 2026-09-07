@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch } from "react";
+import { useCallback } from "react";
 import {
   floatAtRect,
   getRememberedFloatingRect,
@@ -9,7 +9,6 @@ import {
   type LayoutBounds,
   type ResolvedPane,
 } from "../../../plugins/pane-manager";
-import type { AppAction } from "../../../state/app/context";
 import type { LayoutConfig } from "../../../types/config";
 import {
   createCompactedDropPreview,
@@ -34,7 +33,6 @@ interface UseShellActiveDragOptions {
   appHeaderHeight: number;
   bounds: LayoutBounds;
   contentHeight: number;
-  dispatch: Dispatch<AppAction>;
   dockGeometryOptions: DockGeometryOptions;
   dockLeafLayouts: DockLeafLayout[];
   dragRuntime: ShellDragRuntimeState;
@@ -54,7 +52,6 @@ export function useShellActiveDrag({
   appHeaderHeight,
   bounds,
   contentHeight,
-  dispatch,
   dockGeometryOptions,
   dockLeafLayouts,
   dragRuntime,
@@ -190,16 +187,13 @@ export function useShellActiveDrag({
             ? getRememberedFloatingRect(baseLayout, drag.paneId, width, contentHeight, pane?.def)
             : drag.origRect;
           const releaseRect = resolvePaneDragFloatingRect(drag, baseRect, preciseX, preciseShellY, width, contentHeight);
-          const releaseResult = finalizePaneDragRelease(baseLayout, drag.paneId, releaseRect, dockPreviewRef.current);
+          const nextLayout = finalizePaneDragRelease(baseLayout, drag.paneId, releaseRect, dockPreviewRef.current);
           if (windowMode) {
-            updateWindowModePreviewLayout(releaseResult.nextLayout, drag.paneId);
+            updateWindowModePreviewLayout(nextLayout, drag.paneId);
           } else {
-            persistLayout(releaseResult.nextLayout);
+            persistLayout(nextLayout);
           }
           focusPane(drag.paneId);
-          if (!windowMode && releaseResult.shouldShowGridlockTip) {
-            dispatch({ type: "SHOW_GRIDLOCK_TIP" });
-          }
           updateDockPreview(null);
           setDragCursor(null);
           updateDragFloatingRect(null);
@@ -223,7 +217,6 @@ export function useShellActiveDrag({
     appHeaderHeight,
     bounds,
     contentHeight,
-    dispatch,
     dockGeometryOptions,
     dividerPreviewRef,
     dockLeafLayouts,
