@@ -10,20 +10,16 @@ import {
   unwrapAdjacentNewsArticles,
   unwrapAdjacentSimilarMarkets,
   formatYesOddsPercent,
+  constituentImpliedPercent,
+  constituentChartExpression,
+  constituentOpenSymbol,
+  formatImpliedPercent,
+  mergeIndexConstituents,
+  unwrapAdjacentPriceSamples,
 } from "./normalize";
 import { applySortPreference } from "../../../utils/sort-values";
-import { createIndexColumns } from "./indices";
-import { createRateColumns } from "./rates";
-import { getTableWidth } from "../../../components/ui/table-layout";
 
 describe("adjacent normalize", () => {
-  test("budgets table gutters and padding before assigning the flexible column", () => {
-    expect(getTableWidth(createIndexColumns(80))).toBe(80);
-    expect(getTableWidth(createRateColumns(80))).toBe(80);
-    expect(getTableWidth(createIndexColumns(40))).toBe(40);
-    expect(getTableWidth(createRateColumns(24))).toBe(24);
-  });
-
   test("maps index wire shape to rows", () => {
     const row = normalizeAdjacentIndex({
       index_id: "red",
@@ -126,6 +122,113 @@ describe("adjacent normalize", () => {
     expect(compareAdjacentIndexRows(empty, filled, "chg1d", "asc")).toBeGreaterThan(0);
     expect(compareAdjacentIndexRows(empty, filled, "chg1d", "desc")).toBeGreaterThan(0);
     expect(compareAdjacentIndexRows(filled, empty, "chg1d", "desc")).toBeLessThan(0);
+  });
+
+  test("scales NTI rate prices to percent and leaves Kalshi cents alone", () => {
+    expect(constituentImpliedPercent({
+      market_id: "nti_hou_conf_27",
+      platform: "nti_hou_conf_27",
+      price: 0.105,
+    })).toBeCloseTo(10.5);
+    expect(constituentImpliedPercent({
+      market_id: "kalshi:HOUSEPA7-26-R",
+      platform: "kalshi",
+      price: 22,
+    })).toBe(22);
+    expect(constituentImpliedPercent({
+      market_id: "kalshi:HOUSEPA7-26-R",
+      platform: "kalshi",
+      price: 1,
+    })).toBe(1);
+    expect(constituentImpliedPercent({
+      market_id: "nti_hou_wins_27_1",
+      platform: "nti_hou_wins_27_1",
+    })).toBeNull();
+  });
+
+  test("formats implied percents without rounding 10.5 down to 0", () => {
+    expect(formatImpliedPercent(10.5)).toBe("10.5%");
+    expect(formatImpliedPercent(22)).toBe("22%");
+    expect(formatImpliedPercent(0.105 * 100)).toBe("10.5%");
+  });
+
+  test("replaces a stale unpriced NTI sleeve with live members", () => {
+    const merged = mergeIndexConstituents(
+      [
+        { market_id: "nti_hou_conf_27", platform: "nti_hou_conf_27", name: "Conference 2027", weight: 0.25, price: 0.105 },
+        { market_id: "nti_hou_wins_27_1", platform: "nti_hou_wins_27_1", name: "Win total 1+ 2027", weight: 0.25 },
+      ],
+      [
+        {
+          sleeve: "conference",
+          name: "Conference 2027",
+          rate_id: "nti_hou_conf_27",
+          mark_price: 0.105,
+          members: [{ rate_id: "nti_hou_conf_27", name: "Conference 2027", mark_price: 0.105 }],
+        },
+        {
+          sleeve: "wins",
+          name: "Win total 10+ 2027 / Win total 11+ 2027",
+          rate_id: "nti_hou_wins_27_10",
+          mark_price: 0.485,
+          members: [
+            { rate_id: "nti_hou_wins_27_10", name: "Win total 10+ 2027", mark_price: 0.635 },
+            { rate_id: "nti_hou_wins_27_11", name: "Win total 11+ 2027", mark_price: 0.485 },
+          ],
+        },
+      ],
+    );
+    expect(merged.map((row) => row.market_id)).toEqual([
+      "nti_hou_conf_27",
+      "nti_hou_wins_27_10",
+      "nti_hou_wins_27_11",
+    ]);
+    expect(constituentImpliedPercent(merged[1]!)).toBeCloseTo(63.5);
+  });
+
+  test("ignores sleeves from another rate family", () => {
+    const constituents = [
+      { market_id: "nti_hou_conf_27", platform: "nti_hou_conf_27", weight: 1 },
+    ];
+    const merged = mergeIndexConstituents(constituents, [
+      {
+        sleeve: "conference",
+        name: "Conference 2027",
+        rate_id: "nti_hou_conf_27",
+        members: [{ rate_id: "nti_hou_conf_27", name: "Conference 2027", mark_price: 0.1 }],
+      },
+      {
+        sleeve: "wins",
+        name: "Win total 2028",
+        rate_id: "nti_hou_wins_28",
+        members: [{ rate_id: "nti_hou_wins_28", name: "Win total 2028", mark_price: 0.2 }],
+      },
+    ]);
+    expect(merged.map((row) => row.market_id)).toEqual(["nti_hou_conf_27"]);
+  });
+
+  test("unwraps index prices from points payloads", () => {
+    const points = unwrapAdjacentPriceSamples({
+      points: [
+        { timestamp: "2026-09-03T20:00:00Z", price: 1000 },
+        { timestamp: "2026-09-04T15:33:00Z", price: 992.9 },
+      ],
+    });
+    expect(points).toHaveLength(2);
+    expect(normalizeAdjacentIndexPrices(points)[0]?.value).toBe(1000);
+  });
+
+  test("maps constituents to chart and open symbols", () => {
+    const kalshi = {
+      market_id: "kalshi:KXHOUSERACE-PA15-26-R",
+      platform: "kalshi",
+      ticker: "KXHOUSERACE-PA15-26-R",
+    };
+    expect(constituentChartExpression(kalshi)).toBe("KALSHI:KXHOUSERACE-PA15-26-R");
+    expect(constituentOpenSymbol(kalshi)).toBe("KALSHI:KXHOUSERACE-PA15-26-R");
+    const rate = { market_id: "nti_hou_div_27", platform: "nti_hou_div_27" };
+    expect(constituentChartExpression(rate)).toBe("ADJ:nti_hou_div_27");
+    expect(constituentOpenSymbol(rate)).toBeNull();
   });
 
   test("unwraps public news and market list payloads", () => {

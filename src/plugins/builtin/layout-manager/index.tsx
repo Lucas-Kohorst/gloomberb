@@ -2,6 +2,7 @@ import { findPaneInstance, type LayoutConfig } from "../../../types/config";
 import type { AppNotificationRequest, GloomPluginContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import type { AppAction } from "../../../state/app/context";
+import { LayoutMarketplacePane } from "../../../layout-marketplace/pane";
 import { notifyGridlockComplete } from "../../gridlock-notification";
 import {
   dockFloatingPaneAtCurrentRect,
@@ -42,6 +43,18 @@ function getFocusedPane(layout: LayoutConfig, focusedPaneId: string | null) {
 }
 
 export const layoutManagerModule: PluginModule = {
+  panes: [
+    {
+      id: "layout-marketplace",
+      name: "Layouts",
+      icon: "L",
+      component: LayoutMarketplacePane,
+      defaultPosition: "right",
+      defaultMode: "floating",
+      defaultFloatingSize: { width: 118, height: 34 },
+    },
+  ],
+
   setup(ctx) {
     const notify = (body: string, options?: Omit<AppNotificationRequest, "body">) => {
       ctx.notify({ body, ...options });
@@ -103,9 +116,9 @@ export const layoutManagerModule: PluginModule = {
 
     ctx.registerCommand({
       id: "gridlock-all",
-      label: "Gridlock All Windows",
-      description: "Arrange all visible panes into a tiled grid",
-      keywords: ["grid", "gridlock", "tile", "arrange", "windows", "layout"],
+      label: "Tidy Windows",
+      description: "Arrange every window into one tiled layout",
+      keywords: ["tidy", "snap", "grid", "gridlock", "tile", "arrange", "organize", "organise", "cleanup", "dock", "floating", "windows", "layout"],
       shortcut: "GL",
       category: "config",
       execute: async () => {
@@ -245,7 +258,7 @@ export const layoutManagerModule: PluginModule = {
           return;
         }
 
-        ctx.openCommandBar("LAY ");
+        ctx.openCommandBar("LMA ");
         notify("Choose a swap target from layout mode", { type: "info" });
       },
     });

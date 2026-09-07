@@ -1,31 +1,20 @@
-import { isDividendFieldId, isMarketFieldId, isPriceOnlyMarketFieldId, listTimeSeriesFields } from "../../../time-series/field-catalog";
+import { resolveAssetDisplayKind } from "../../../market-data/market/format";
+import {
+  getTimeSeriesField,
+  isMarketFieldId,
+  listTimeSeriesFields,
+} from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
-import { listKnownFredSeries } from "../econ/fred-series-map";
+import { listFredCatalogSeries } from "../econ/fred-series-map";
+import {
+  FUTURES_CONTRACTS,
+  FUTURES_SECTOR_LABELS,
+} from "../futures/contracts";
 import { LLM_STATS_SITE_BASE, type LlmStatsRow } from "../llm-stats/types";
+import { INDICATORS as VALUATION_INDICATORS } from "../market-valuation/indicators";
+import { MARKET_VALUATION_CAPABILITY_ID } from "../market-valuation/chart-series";
+import { TREASURY_MATURITIES } from "../yield-curve/treasury-data";
 import type { PollTabId } from "../polls/types";
-import {
-  type SeriesCatalogInstrument,
-} from "./series-catalog";
-import {
-  formatPredictionSeriesExpression,
-  type PredictionMarketSearchHit,
-} from "./prediction-series";
-import { shortChartFieldToken } from "./presets";
-import {
-  ADJACENT_INDEX_CATALOG,
-  BENCHMARK_METRICS,
-  BENCHMARK_ORGS,
-  CORPORATE_YIELD_CATALOG,
-  CREDIT_SPREAD_CATALOG,
-  FUTURES_CATALOG,
-  POLL_SUBJECTS,
-  TREASURY_CATALOG,
-  VOL_CATALOG,
-  type PollSubjectEntry,
-} from "./universal-series";
-import { TWC_KALSHI_URL, type WeatherMetric } from "../weather/types";
-import { WEATHER_STATIONS } from "../weather/stations";
-import { weatherMetricLabel } from "../weather/mapping";
 import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
 import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
 import {
@@ -37,30 +26,42 @@ import {
   owidSeriesLabel,
   type OwidCatalogEntry,
 } from "../owid/catalog";
+import { fieldCategory, type SeriesCatalogInstrument } from "./series-catalog";
 
+export const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
+
+export const VOTEHUB_POLL_TYPES: readonly PollTabId[] = [
+  "approval",
+  "favorability",
+  "generic-ballot",
+  "us-senator",
+  "governor",
+  "us-representative",
+];
 
 export type CatalogSourceId =
   | "security"
   | "option"
   | "crypto"
-  | "fx"
   | "fred"
-  | "adjacent"
-  | "kalshi"
-  | "polymarket"
   | "futures"
   | "treasury"
+  | "valuation"
+  | "owid"
   | "poll"
-  | "benchmark"
-  | "weather"
-  | "owid";
+  | "benchmark";
 
 export type CatalogFilterId =
   | "all"
-  | "assets"
-  | "data";
+  | "securities"
+  | "options"
+  | "crypto"
+  | "fred"
+  | "futures"
+  | "valuation"
+  | "owid";
 
 export interface CatalogSeriesRow {
   id: string;
@@ -77,49 +78,33 @@ export interface CatalogSeriesRow {
   owidSlug?: string;
 }
 
+export interface CatalogPollSubject {
+  subject: string;
+  choices: string[];
+  url?: string;
+}
+
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
   { id: "all", label: "All" },
-  { id: "assets", label: "Assets" },
-  { id: "data", label: "Data" },
+  { id: "securities", label: "Securities" },
+  { id: "options", label: "Options" },
+  { id: "crypto", label: "Crypto" },
+  { id: "fred", label: "FRED" },
+  { id: "futures", label: "Futures" },
+  { id: "valuation", label: "Valuation" },
+  { id: "owid", label: "OWID" },
 ];
-
-/** Securities, crypto, FX, futures, options, and venue contracts. */
-export const CATALOG_ASSET_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
-  "security",
-  "option",
-  "crypto",
-  "fx",
-  "futures",
-  "kalshi",
-  "polymarket",
-]);
-
-/** FRED, treasuries, Adjacent indices/rates, polls, AI benchmarks, weather, OWID. */
-export const CATALOG_DATA_SOURCES: ReadonlySet<CatalogSourceId> = new Set([
-  "fred",
-  "treasury",
-  "adjacent",
-  "poll",
-  "benchmark",
-  "weather",
-  "owid",
-]);
 
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
   all: null,
-  assets: CATALOG_ASSET_SOURCES,
-  data: CATALOG_DATA_SOURCES,
+  securities: new Set(["security"]),
+  options: new Set(["option"]),
+  crypto: new Set(["crypto"]),
+  fred: new Set(["fred", "treasury"]),
+  futures: new Set(["futures"]),
+  valuation: new Set(["valuation"]),
+  owid: new Set(["owid"]),
 };
-
-const FX_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
-  { symbol: "EURUSD=X", name: "Euro / US Dollar" },
-  { symbol: "GBPUSD=X", name: "Pound / US Dollar" },
-  { symbol: "USDJPY=X", name: "US Dollar / Yen" },
-  { symbol: "USDCHF=X", name: "US Dollar / Swiss Franc" },
-  { symbol: "USDCAD=X", name: "US Dollar / Canadian Dollar" },
-  { symbol: "AUDUSD=X", name: "Aussie / US Dollar" },
-  { symbol: "NZDUSD=X", name: "Kiwi / US Dollar" },
-];
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "BTC-USD", name: "Bitcoin" },
@@ -142,52 +127,14 @@ const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "SHIB-USD", name: "Shiba Inu" },
 ];
 
-/** Same VoteHub tabs the Polls pane loads — keep CAT inside that rate budget. */
-export const VOTEHUB_POLL_TYPES: readonly PollTabId[] = [
-  "approval",
-  "favorability",
-  "generic-ballot",
-  "us-senator",
-  "governor",
-  "us-representative",
-];
-
-type CatalogPollSubject = PollSubjectEntry & { url?: string };
-
 function isOptionInstrument(instrument: SeriesCatalogInstrument): boolean {
   const category = instrument.assetCategory?.trim().toUpperCase();
   return category === "OPT" || parseOptionSymbol(instrument.symbol) != null;
 }
 
-const MARKET_ONLY_CATEGORIES = new Set([
-  "INDEX",
-  "IND",
-  "ETF",
-  "FUT",
-  "FUTURE",
-  "BOND",
-  "CMDTY",
-  "COMMODITY",
-  "CURRENCY",
-  "CASH",
-  "CCY",
-  "FOREX",
-  "MUTUALFUND",
-]);
-
-function isMarketOnlyInstrument(instrument: SeriesCatalogInstrument): boolean {
-  const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
-  if (MARKET_ONLY_CATEGORIES.has(category)) return true;
-  const symbol = instrument.symbol.trim();
-  return symbol.startsWith("^") || /=F$/i.test(symbol);
-}
-
-function fieldKind(fieldId: string, option = false): string {
-  if (option) return "Options";
-  if (isDividendFieldId(fieldId)) return "Dividends";
-  if (fieldId.startsWith("market.")) return "Market";
-  if (fieldId.startsWith("valuation.")) return "Valuation";
-  return "Fundamentals";
+function chartFieldToken(fieldId: string): string {
+  if (fieldId === "market.ohlcv") return "price";
+  return fieldId.split(".").at(-1) ?? fieldId;
 }
 
 function row(entry: {
@@ -218,203 +165,6 @@ function row(entry: {
   };
 }
 
-export function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
-  if (isOptionInstrument(instrument) || isCatalogFxInstrument(instrument)) return false;
-  const exchange = instrument.exchange?.trim().toUpperCase();
-  if (exchange === "CCC") return true;
-  const category = instrument.assetCategory?.trim().toUpperCase() ?? "";
-  if (category.includes("CRYPTO") || category === "COIN" || category === "TOKEN") return true;
-  return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
-}
-
-const FX_CATEGORIES = new Set(["FX", "FOREX", "CCY", "CURRENCY", "CURRENCYPAIR"]);
-
-export function isCatalogFxInstrument(instrument: SeriesCatalogInstrument): boolean {
-  if (isOptionInstrument(instrument)) return false;
-  const exchange = instrument.exchange?.trim().toUpperCase();
-  if (exchange === "CCC") return false;
-  if (exchange === "CCY") return true;
-  const category = instrument.assetCategory?.trim().toUpperCase().replace(/[\s_-]+/g, "") ?? "";
-  if (FX_CATEGORIES.has(category)) return true;
-  return /=X$/i.test(instrument.symbol.trim());
-}
-
-const COMPACT_OCC_RE = /^([A-Z]{1,6})(\d{6}[CP]\d{8})$/;
-
-function compactOccSymbol(value: string): string | null {
-  const upper = value.trim().toUpperCase();
-  const compact = COMPACT_OCC_RE.exec(upper.replace(/\s+/g, ""));
-  if (compact) return `${compact[1]}${compact[2]}`;
-  const spaced = parseOptionSymbol(upper);
-  if (!spaced) return null;
-  const expiry = new Date(spaced.expTs * 1000);
-  const yy = String(expiry.getUTCFullYear()).slice(2);
-  const mm = String(expiry.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(expiry.getUTCDate()).padStart(2, "0");
-  const strike = String(Math.round(spaced.strike * 1000)).padStart(8, "0");
-  return `${spaced.underlying}${yy}${mm}${dd}${spaced.side}${strike}`;
-}
-
-export function catalogTickerFromInput(value: string): string | null {
-  const option = compactOccSymbol(value);
-  if (option) return option;
-  const symbol = value.trim().toUpperCase();
-  return /^[A-Z0-9^][A-Z0-9.^_/=-]{0,31}$/.test(symbol) ? symbol : null;
-}
-
-function isCatalogFieldNameQuery(query: string): boolean {
-  const lower = query.trim().toLowerCase();
-  if (!lower) return false;
-  return listTimeSeriesFields().some((field) => (
-    field.label.toLowerCase() === lower
-    || field.shortLabel.toLowerCase() === lower
-    || (field.id.split(".").at(-1)?.toLowerCase() === lower)
-  ));
-}
-
-/** True when CAT search should resolve a ticker without refetching live catalogs. */
-export function looksLikeCatalogTickerQuery(query: string): boolean {
-  const trimmed = query.trim();
-  if (!trimmed || /\s/.test(trimmed) || trimmed.includes(":")) return false;
-  const symbol = catalogTickerFromInput(trimmed);
-  if (!symbol) return false;
-  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^_/=]/.test(symbol)) return true;
-  if (isCatalogFieldNameQuery(trimmed)) return false;
-  return symbol.length <= 6;
-}
-
-export function catalogInstrumentMatchesQuery(
-  instrument: SeriesCatalogInstrument,
-  query: string,
-): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return false;
-  if (instrument.symbol.toLowerCase().includes(needle)) return true;
-  return (instrument.name ?? "").toLowerCase().includes(needle);
-}
-
-export function catalogRowsForResolvedInstruments(
-  instruments: readonly SeriesCatalogInstrument[],
-): CatalogSeriesRow[] {
-  return instruments.flatMap((instrument) => {
-    if (isCatalogCryptoInstrument(instrument)) {
-      return [cryptoPairRow(catalogSecuritySymbol(instrument), instrument.name)];
-    }
-    if (isCatalogFxInstrument(instrument)) {
-      return [fxPairRow(catalogSecuritySymbol(instrument), instrument.name)];
-    }
-    if (isOptionInstrument(instrument)) {
-      const symbol = compactOccSymbol(instrument.symbol)
-        ?? catalogTickerFromInput(instrument.symbol);
-      if (!symbol) return [];
-      return listTimeSeriesFields().flatMap((field) => {
-        if (!isMarketFieldId(field.id)) return [];
-        const token = shortChartFieldToken(field.id);
-        return [row({
-          id: `option:${symbol}:${field.id}`,
-          label: `${symbol} · ${field.label}`,
-          source: "Yahoo",
-          sourceId: "option",
-          kind: "Options",
-          expression: `${symbol}:${token}`,
-          searchExtra: [instrument.name, "option", field.shortLabel].filter(Boolean).join(" "),
-        })];
-      });
-    }
-    const symbol = catalogTickerFromInput(instrument.symbol);
-    if (!symbol) return [];
-    const marketOnly = isMarketOnlyInstrument(instrument);
-    return listTimeSeriesFields().flatMap((field) => {
-      if (marketOnly && !isPriceOnlyMarketFieldId(field.id)) return [];
-      const token = shortChartFieldToken(field.id);
-      return [row({
-        id: `ticker:${symbol}:${field.id}`,
-        label: `${symbol} · ${field.label}`,
-        source: "Yahoo",
-        sourceId: "security",
-        kind: fieldKind(field.id),
-        expression: `${symbol}:${token}`,
-        searchExtra: [instrument.name, field.shortLabel].filter(Boolean).join(" "),
-      })];
-    });
-  });
-}
-
-export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
-  if (entry.needsEntity) {
-    const slug = entry.owidSlug?.trim();
-    const entity = ticker ? normalizeOwidEntityCode(ticker) : null;
-    if (!slug || !entity) return null;
-    return `OWID:${slug}:${entity}`;
-  }
-  if (!entry.needsTicker) return entry.expression;
-  const symbol = ticker ? catalogTickerFromInput(ticker) : null;
-  if (!symbol || !entry.fieldToken) return null;
-  return `${symbol}:${entry.fieldToken}`;
-}
-
-function catalogSecuritySymbol(instrument: SeriesCatalogInstrument): string {
-  return instrument.symbol.trim();
-}
-
-export function catalogRowUrl(row: CatalogSeriesRow): string | null {
-  return row.url ?? null;
-}
-
-function isPlaceholderPredictionLabel(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) return true;
-  return /^-?no qualifying event-?$/i.test(trimmed);
-}
-
-function catalogPredictionPrimaryTitle(hit: PredictionMarketSearchHit): string {
-  const title = hit.title.trim();
-  const event = hit.eventLabel?.trim() ?? "";
-  if (!isPlaceholderPredictionLabel(event) && event) {
-    if (!title || isPlaceholderPredictionLabel(title)) return event;
-    if (event.toLowerCase().includes(title.toLowerCase())) return event;
-    if (title.toLowerCase().includes(event.toLowerCase())) return title;
-    return event.length >= title.length ? event : title;
-  }
-  return title || event || hit.marketId;
-}
-
-export function catalogPredictionSeriesLabel(hit: PredictionMarketSearchHit): string {
-  const primary = catalogPredictionPrimaryTitle(hit);
-  const outcome = hit.marketLabel?.trim() ?? "";
-  if (!outcome || isPlaceholderPredictionLabel(outcome)) return primary;
-  if (primary.toLowerCase().includes(outcome.toLowerCase())) return primary;
-  if (/^(yes|no)$/i.test(outcome)) return primary;
-  return `${primary} · ${outcome}`;
-}
-
-export function catalogRowsFromPredictionHits(
-  hits: readonly PredictionMarketSearchHit[],
-): CatalogSeriesRow[] {
-  return hits.flatMap((hit) => {
-    const expression = formatPredictionSeriesExpression({
-      kind: "prediction-market",
-      venue: hit.venue,
-      marketId: hit.marketId,
-      label: hit.title,
-    });
-    const label = catalogPredictionSeriesLabel(hit);
-    if (isPlaceholderPredictionLabel(label)) return [];
-    return [row({
-      id: `pm:${hit.venue}:${hit.marketId}`,
-      label,
-      source: hit.venue === "kalshi" ? "Kalshi" : "Polymarket",
-      sourceId: hit.venue,
-      kind: "Prediction",
-      expression,
-      url: hit.url ?? (hit.venue === "kalshi"
-        ? `https://kalshi.com/markets/${hit.marketId}`
-        : `https://polymarket.com/event/${hit.marketId}`),
-      searchExtra: [hit.title, hit.eventLabel, hit.marketLabel].filter(Boolean).join(" "),
-    })];
-  });
-}
-
 function llmStatsMetricValue(model: LlmStatsRow, code: string): number | null {
   const value = (() => {
     switch (code) {
@@ -437,7 +187,18 @@ function llmStatsMetricValue(model: LlmStatsRow, code: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-export function catalogRowsFromLlmStatsRows(models: readonly LlmStatsRow[]): CatalogSeriesRow[] {
+const BENCHMARK_METRICS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: "tps", label: "Throughput" },
+  { code: "p95", label: "P95 Latency" },
+  { code: "ttft", label: "Time to First Token" },
+  { code: "latency", label: "Average Latency" },
+  { code: "fail", label: "Failure Rate" },
+  { code: "calls", label: "Calls" },
+];
+
+export function catalogRowsFromLlmStatsRows(
+  models: readonly LlmStatsRow[],
+): CatalogSeriesRow[] {
   return models.flatMap((model) => (
     BENCHMARK_METRICS.flatMap((metric) => {
       if (llmStatsMetricValue(model, metric.code) == null) return [];
@@ -455,7 +216,255 @@ export function catalogRowsFromLlmStatsRows(models: readonly LlmStatsRow[]): Cat
   ));
 }
 
-/** CAT discovery query for OWID search. Null skips the live origin (empty + ticker lookups). */
+function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
+  if (isOptionInstrument(instrument)) return false;
+  const exchange = instrument.exchange?.trim().toUpperCase();
+  if (exchange === "CCC") return true;
+  if (resolveAssetDisplayKind({ assetCategory: instrument.assetCategory }) === "crypto") return true;
+  return /^[A-Z0-9]{2,10}[-/]USD$/i.test(instrument.symbol.trim());
+}
+
+const COMPACT_OCC_RE = /^([A-Z]{1,6})(\d{6}[CP]\d{8})$/;
+
+function compactOccSymbol(value: string): string | null {
+  const upper = value.trim().toUpperCase();
+  const compact = COMPACT_OCC_RE.exec(upper.replace(/\s+/g, ""));
+  if (compact) return `${compact[1]}${compact[2]}`;
+  const spaced = parseOptionSymbol(upper);
+  if (!spaced) return null;
+  const expiry = new Date(spaced.expTs * 1000);
+  const yy = String(expiry.getUTCFullYear()).slice(2);
+  const mm = String(expiry.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(expiry.getUTCDate()).padStart(2, "0");
+  const strike = String(Math.round(spaced.strike * 1000)).padStart(8, "0");
+  return `${spaced.underlying}${yy}${mm}${dd}${spaced.side}${strike}`;
+}
+
+function catalogTickerFromInput(value: string): string | null {
+  const option = compactOccSymbol(value);
+  if (option) return option;
+  const symbol = value.trim().toUpperCase();
+  return /^[A-Z0-9^][A-Z0-9.^_/-]{0,31}$/.test(symbol) ? symbol : null;
+}
+
+function isCatalogFieldNameQuery(query: string): boolean {
+  const lower = query.trim().toLowerCase();
+  if (!lower) return false;
+  if (getTimeSeriesField(lower)) return true;
+  return listTimeSeriesFields().some((field) => (
+    field.label.toLowerCase() === lower
+    || field.shortLabel.toLowerCase() === lower
+  ));
+}
+
+export function looksLikeCatalogTickerQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed || /\s/.test(trimmed) || trimmed.includes(":")) return false;
+  const symbol = catalogTickerFromInput(trimmed);
+  if (!symbol) return false;
+  if (compactOccSymbol(trimmed) || /\d/.test(symbol) || /[-.^/_]/.test(symbol)) return true;
+  if (isCatalogFieldNameQuery(trimmed)) return false;
+  return symbol.length <= 6;
+}
+
+export function catalogInstrumentMatchesQuery(
+  instrument: SeriesCatalogInstrument,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return false;
+  if (instrument.symbol.toLowerCase().includes(needle)) return true;
+  return (instrument.name ?? "").toLowerCase().includes(needle);
+}
+
+export function catalogRowsForResolvedInstruments(
+  instruments: readonly SeriesCatalogInstrument[],
+): CatalogSeriesRow[] {
+  const fields = listTimeSeriesFields();
+  const marketFields = fields.filter((field) => isMarketFieldId(field.id));
+  return instruments.flatMap((instrument) => {
+    if (isCatalogCryptoInstrument(instrument)) {
+      return [cryptoPairRow(catalogSecuritySymbol(instrument), instrument.name)];
+    }
+    if (isOptionInstrument(instrument)) {
+      const symbol = compactOccSymbol(instrument.symbol)
+        ?? catalogTickerFromInput(instrument.symbol);
+      if (!symbol) return [];
+      return marketFields.map((field) => {
+        const token = chartFieldToken(field.id);
+        return row({
+          id: `option:${symbol}:${field.id}`,
+          label: `${symbol} · ${field.label}`,
+          source: "Yahoo",
+          sourceId: "option",
+          kind: "Options",
+          expression: `${symbol}:${token}`,
+          searchExtra: [instrument.name, "option", field.shortLabel].filter(Boolean).join(" "),
+        });
+      });
+    }
+    const symbol = catalogTickerFromInput(instrument.symbol);
+    if (!symbol) return [];
+    return fields.map((field) => {
+      const token = chartFieldToken(field.id);
+      return row({
+        id: `ticker:${symbol}:${field.id}`,
+        label: `${symbol} · ${field.label}`,
+        source: "Yahoo",
+        sourceId: "security",
+        kind: fieldCategory(field),
+        expression: `${symbol}:${token}`,
+        searchExtra: [instrument.name, field.shortLabel].filter(Boolean).join(" "),
+      });
+    });
+  });
+}
+
+export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
+  if (entry.needsEntity) {
+    const slug = entry.owidSlug?.trim();
+    const entity = ticker ? normalizeOwidEntityCode(ticker) : null;
+    if (!slug || !entity) return null;
+    return `OWID:${slug}:${entity}`;
+  }
+  if (!entry.needsTicker) return entry.expression;
+  const symbol = ticker ? catalogTickerFromInput(ticker) : null;
+  if (!symbol || !entry.fieldToken) return null;
+  return `${symbol}:${entry.fieldToken}`;
+}
+
+function catalogSecuritySymbol(instrument: SeriesCatalogInstrument): string {
+  return instrument.symbol.trim();
+}
+
+function securityFieldRows(): CatalogSeriesRow[] {
+  return listTimeSeriesFields().map((field) => {
+    const token = chartFieldToken(field.id);
+    return row({
+      id: `field:${field.id}`,
+      label: field.label,
+      source: "Yahoo",
+      sourceId: "security",
+      kind: fieldCategory(field),
+      expression: `TICKER:${token}`,
+      needsTicker: true,
+      fieldToken: token,
+      searchExtra: field.shortLabel,
+    });
+  });
+}
+
+function optionFieldRows(): CatalogSeriesRow[] {
+  return listTimeSeriesFields().flatMap((field) => {
+    if (!isMarketFieldId(field.id)) return [];
+    const token = chartFieldToken(field.id);
+    return [row({
+      id: `option:${field.id}`,
+      label: field.label,
+      source: "Yahoo",
+      sourceId: "option",
+      kind: "Options",
+      expression: `TICKER:${token}`,
+      needsTicker: true,
+      fieldToken: token,
+      searchExtra: `option ${field.shortLabel}`,
+    })];
+  });
+}
+
+function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
+  return row({
+    id: `crypto:${symbol.toUpperCase()}`,
+    label: name ? `${symbol} · ${name}` : symbol,
+    source: "Yahoo",
+    sourceId: "crypto",
+    kind: "Crypto",
+    expression: `${symbol}:price`,
+    searchExtra: name,
+  });
+}
+
+function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
+  const seen = new Set<string>();
+  const rows: CatalogSeriesRow[] = [];
+  const add = (symbol: string, name?: string) => {
+    const key = symbol.trim().toUpperCase().replace("/", "-");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rows.push(cryptoPairRow(key, name));
+  };
+  for (const instrument of instruments) {
+    if (!isCatalogCryptoInstrument(instrument)) continue;
+    add(catalogSecuritySymbol(instrument), instrument.name);
+  }
+  for (const entry of CRYPTO_CATALOG) add(entry.symbol, entry.name);
+  return rows;
+}
+
+const STATIC_CATALOG_INVENTORY: readonly CatalogSeriesRow[] = [
+  ...securityFieldRows(),
+  ...optionFieldRows(),
+  ...catalogRowsFromOwidCatalog(),
+  ...listFredCatalogSeries().map((entry) => row({
+    id: `fred:${entry.seriesId}`,
+    label: entry.label,
+    source: "FRED",
+    sourceId: "fred",
+    kind: "Economic",
+    expression: `FRED:${entry.seriesId}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+  })),
+  ...TREASURY_MATURITIES.map((entry) => row({
+    id: `ust:${entry.maturity}`,
+    label: `${entry.maturity} Treasury Yield`,
+    source: "FRED",
+    sourceId: "treasury",
+    kind: "Treasury",
+    expression: `UST:${entry.maturity}`,
+    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
+  })),
+  ...VALUATION_INDICATORS.map((entry) => row({
+    id: `valuation:${entry.id}`,
+    label: entry.label,
+    source: "Gloom Cloud",
+    sourceId: "valuation",
+    kind: "Valuation",
+    expression: `CAP:${MARKET_VALUATION_CAPABILITY_ID}:${entry.id}`,
+  })),
+  ...FUTURES_CONTRACTS.map((entry) => row({
+    id: `fut:${entry.code}`,
+    label: `${entry.name} (${entry.code})`,
+    source: "Yahoo",
+    sourceId: "futures",
+    kind: FUTURES_SECTOR_LABELS[entry.sector],
+    expression: `FUT:${entry.code}`,
+  })),
+];
+
+export function listStaticCatalogInventory(
+  instruments: readonly SeriesCatalogInstrument[] = [],
+): CatalogSeriesRow[] {
+  return [...STATIC_CATALOG_INVENTORY, ...cryptoRows(instruments)];
+}
+
+function matchesCatalogQuery(entry: CatalogSeriesRow, query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized.split(/\s+/).every((token) => entry.searchText.includes(token));
+}
+
+export function filterCatalogRows(
+  rows: readonly CatalogSeriesRow[],
+  filter: CatalogFilterId,
+  query: string,
+): CatalogSeriesRow[] {
+  const sources = FILTER_SOURCES[filter];
+  return rows.filter((entry) => (
+    (sources ? sources.has(entry.sourceId) : true)
+    && matchesCatalogQuery(entry, query)
+  ));
+}
+
 export function catalogOwidDiscoveryQuery(query: string): string | null {
   const trimmed = query.trim();
   if (!trimmed) return null;
@@ -521,7 +530,7 @@ export function catalogRowsFromOwidHits(
     const needsEntity = !entity;
     const title = metadata?.title || hit.title || catalog?.title || hit.slug;
     const entityName = entity
-      ? metadata?.entities.find((row) => row.code === entity)?.name
+      ? metadata?.entities.find((entry) => entry.code === entity)?.name
         ?? catalog?.defaultEntityName
       : undefined;
     const expression = entity ? `OWID:${hit.slug}:${entity}` : `OWID:${hit.slug}`;
@@ -539,118 +548,6 @@ export function catalogRowsFromOwidHits(
         ...hit.availableEntities.slice(0, 12),
         ...(metadata?.entities ?? []).slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
       ].filter(Boolean).join(" "),
-    })];
-  });
-}
-
-function securityFieldRows(): CatalogSeriesRow[] {
-  return listTimeSeriesFields().map((field) => {
-    const token = shortChartFieldToken(field.id);
-    return row({
-      id: `field:${field.id}`,
-      label: field.label,
-      source: "Yahoo",
-      sourceId: "security",
-      kind: fieldKind(field.id),
-      expression: `TICKER:${token}`,
-      needsTicker: true,
-      fieldToken: token,
-      searchExtra: field.shortLabel,
-    });
-  });
-}
-
-function optionFieldRows(): CatalogSeriesRow[] {
-  return listTimeSeriesFields().flatMap((field) => {
-    if (!isMarketFieldId(field.id)) return [];
-    const token = shortChartFieldToken(field.id);
-    return [row({
-      id: `option:${field.id}`,
-      label: field.label,
-      source: "Yahoo",
-      sourceId: "option",
-      kind: "Options",
-      expression: `TICKER:${token}`,
-      needsTicker: true,
-      fieldToken: token,
-      searchExtra: `option ${field.shortLabel}`,
-    })];
-  });
-}
-
-function cryptoPairRow(symbol: string, name?: string): CatalogSeriesRow {
-  return row({
-    id: `crypto:${symbol.toUpperCase()}`,
-    label: name ? `${symbol} · ${name}` : symbol,
-    source: "Yahoo",
-    sourceId: "crypto",
-    kind: "Crypto",
-    expression: `${symbol}:price`,
-    searchExtra: name,
-  });
-}
-
-function fxPairRow(symbol: string, name?: string): CatalogSeriesRow {
-  return row({
-    id: `fx:${symbol.toUpperCase()}`,
-    label: name ? `${symbol} · ${name}` : symbol,
-    source: "Yahoo",
-    sourceId: "fx",
-    kind: "FX",
-    expression: `${symbol}:price`,
-    searchExtra: [name, "fx", "forex", "currency"].filter(Boolean).join(" "),
-  });
-}
-
-function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
-  const seen = new Set<string>();
-  const rows: CatalogSeriesRow[] = [];
-  const add = (symbol: string, name?: string) => {
-    const key = symbol.trim().toUpperCase().replace("/", "-");
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    rows.push(cryptoPairRow(key, name));
-  };
-  for (const instrument of instruments) {
-    if (!isCatalogCryptoInstrument(instrument)) continue;
-    add(catalogSecuritySymbol(instrument), instrument.name);
-  }
-  for (const entry of CRYPTO_CATALOG) add(entry.symbol, entry.name);
-  return rows;
-}
-
-function fxRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSeriesRow[] {
-  const seen = new Set<string>();
-  const rows: CatalogSeriesRow[] = [];
-  const add = (symbol: string, name?: string) => {
-    const key = symbol.trim().toUpperCase();
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    rows.push(fxPairRow(key, name));
-  };
-  for (const instrument of instruments) {
-    if (!isCatalogFxInstrument(instrument)) continue;
-    add(catalogSecuritySymbol(instrument), instrument.name);
-  }
-  for (const entry of FX_CATALOG) add(entry.symbol, entry.name);
-  return rows;
-}
-
-export function catalogRowsFromAdjacentIndices(
-  indices: readonly { indexId: string; name: string; ticker?: string }[],
-): CatalogSeriesRow[] {
-  return indices.flatMap((index) => {
-    const indexId = index.indexId.trim();
-    if (!indexId) return [];
-    return [row({
-      id: `adj:${indexId}`,
-      label: index.name.trim() || index.ticker?.trim() || indexId,
-      source: "Adjacent",
-      sourceId: "adjacent",
-      kind: "Index",
-      expression: `ADJ:${indexId}`,
-      url: "https://adjacent.markets",
-      searchExtra: index.ticker,
     })];
   });
 }
@@ -705,184 +602,11 @@ export function catalogRowsFromPollSubjects(
   ));
 }
 
-export function listStaticCatalogInventory(
-  instruments: readonly SeriesCatalogInstrument[] = [],
-  options?: {
-    pollSubjects?: readonly PollSubjectEntry[];
-    adjacentIndices?: readonly { indexId: string; name: string; ticker?: string }[];
-  },
-): CatalogSeriesRow[] {
-  const securities = securityFieldRows();
-  const optionFields = optionFieldRows();
-  const crypto = cryptoRows(instruments);
-  const fx = fxRows(instruments);
-
-  const fred = listKnownFredSeries().map((entry) => row({
-    id: `fred:${entry.seriesId}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "fred",
-    kind: "Economic",
-    expression: `FRED:${entry.seriesId}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-  }));
-
-  const treasuries = TREASURY_CATALOG.map((entry) => row({
-    id: `ust:${entry.maturity}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "treasury",
-    kind: "Treasury",
-    expression: `UST:${entry.maturity}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-    searchExtra: "bond bonds ust yield treasury tnx",
-  }));
-
-  const corporates = CORPORATE_YIELD_CATALOG.map((entry) => row({
-    id: `fred:${entry.seriesId}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "fred",
-    kind: "Bond",
-    expression: `FRED:${entry.seriesId}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-    searchExtra: "bond bonds corporate credit yield ice bofa",
-  }));
-
-  const creditSpreads = CREDIT_SPREAD_CATALOG.map((entry) => row({
-    id: `fred:${entry.seriesId}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "fred",
-    kind: "Credit",
-    expression: `FRED:${entry.seriesId}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-    searchExtra: "bond bonds credit oas spread ice bofa",
-  }));
-
-  const volatility = VOL_CATALOG.map((entry) => row({
-    id: `fred:${entry.seriesId}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "fred",
-    kind: "Volatility",
-    expression: `FRED:${entry.seriesId}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-    searchExtra: "vix volatility vxv sentiment",
-  }));
-
-  const futures = FUTURES_CATALOG.map((entry) => row({
-    id: `fut:${entry.code}`,
-    label: `${entry.name} (${entry.code})`,
-    source: "Yahoo",
-    sourceId: "futures",
-    kind: entry.sectorLabel,
-    expression: `FUT:${entry.code}`,
-  }));
-
-  const liveAdjacent = catalogRowsFromAdjacentIndices(options?.adjacentIndices ?? []);
-  const adjacent = liveAdjacent.length > 0
-    ? liveAdjacent
-    : ADJACENT_INDEX_CATALOG.map((entry) => row({
-      id: `adj:${entry.indexId}`,
-      label: entry.name,
-      source: "Adjacent",
-      sourceId: "adjacent",
-      kind: "Index",
-      expression: `ADJ:${entry.indexId}`,
-      url: "https://adjacent.markets",
-    }));
-
-  const polls = catalogRowsFromPollSubjects(options?.pollSubjects ?? POLL_SUBJECTS);
-
-  const weatherMetrics: WeatherMetric[] = ["high", "low", "hourly"];
-  const weather = WEATHER_STATIONS.flatMap((station) => (
-    weatherMetrics.map((metric) => row({
-      id: `wx:${station.id}:${metric}`,
-      label: `${station.city} · ${weatherMetricLabel(metric)}`,
-      source: "Weather Company",
-      sourceId: "weather",
-      kind: metric === "hourly" ? "Hourly" : "Climate",
-      expression: `WX:${station.id}:${metric}`,
-      url: TWC_KALSHI_URL,
-      searchExtra: [station.icao, `CLI${station.id}`, station.country, "kalshi", "twc", metric].join(" "),
-    }))
-  ));
-
-  const owid = catalogRowsFromOwidCatalog();
-
-  const nwsMetrics: WeatherMetric[] = ["high", "low"];
-  const nws = WEATHER_STATIONS.filter((station) => station.scope === "domestic").flatMap((station) => (
-    nwsMetrics.map((metric) => row({
-      id: `nws:${station.icao}:${metric}`,
-      label: `${station.city} · NWS ${weatherMetricLabel(metric)}`,
-      source: "NWS",
-      sourceId: "weather",
-      kind: "Climate",
-      expression: `NWS:${station.icao}:${metric}`,
-      url: "https://www.weather.gov",
-      searchExtra: [station.icao, station.id, "nws", "cli", metric].join(" "),
-    }))
-  ));
-
-  const benchmarks = BENCHMARK_ORGS.flatMap((org) => (
-    BENCHMARK_METRICS.map((metric) => row({
-      id: `bench:${org}:${metric.code}`,
-      label: `${org} · ${metric.label}`,
-      source: "llm-stats.com",
-      sourceId: "benchmark",
-      kind: "Benchmark",
-      expression: `BENCH:${org}:${metric.code}`,
-      url: LLM_STATS_SITE_BASE,
-      searchExtra: "llm-stats aibench",
-    }))
-  ));
-
-  return [
-    ...securities,
-    ...optionFields,
-    ...crypto,
-    ...fx,
-    ...fred,
-    ...treasuries,
-    ...corporates,
-    ...creditSpreads,
-    ...volatility,
-    ...futures,
-    ...adjacent,
-    ...polls,
-    ...weather,
-    ...nws,
-    ...benchmarks,
-    ...owid,
-  ];
-}
-
-export function matchesCatalogQuery(entry: CatalogSeriesRow, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  return normalized.split(/\s+/).every((token) => entry.searchText.includes(token));
-}
-
-export function filterCatalogRows(
-  rows: readonly CatalogSeriesRow[],
-  filter: CatalogFilterId,
-  query: string,
-): CatalogSeriesRow[] {
-  const sources = FILTER_SOURCES[filter];
-  return rows.filter((entry) => (
-    (sources ? sources.has(entry.sourceId) : true)
-    && matchesCatalogQuery(entry, query)
-  ));
-}
-
 export function catalogEmptyCopy(
   loading: boolean,
   searchQuery: string,
-  error?: string | null,
 ): { title: string; hint?: string } {
   if (loading) return { title: "Loading catalog…" };
-  if (error) return { title: error, hint: "Press r to retry." };
   const query = searchQuery.trim();
   if (query) return { title: `No series matching "${query}"`, hint: "Press / to search." };
   return { title: "No series", hint: "Press / to search." };

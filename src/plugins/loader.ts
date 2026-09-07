@@ -2,8 +2,9 @@ import { readdir } from "fs/promises";
 import { join } from "path";
 import { existsSync, readFileSync, watch, type FSWatcher } from "fs";
 import { homedir } from "os";
-import type { GloomPlugin } from "../types/plugin";
+import type { GloomPlugin, PluginTarget } from "../types/plugin";
 import { debugLog } from "../utils/debug-log";
+import { linkHostPackages } from "./host-link";
 
 const loaderLog = debugLog.createLogger("plugin-loader");
 
@@ -18,10 +19,17 @@ export interface LoadedExternalPlugin {
   path: string;
   entryFile?: string;
   error?: string;
+  /** Set when the plugin loaded but does not support the running renderer. */
+  unsupportedTarget?: PluginTarget;
 }
 
 export function getPluginsDir(): string {
-  pluginsDir ??= join(process.env.HOME || homedir(), ".gloomberb", "plugins");
+  // GLOOMBERB_DATA_DIR has to cover external plugins too, or an "isolated"
+  // session still loads whatever the developer has installed under $HOME and a
+  // locally installed plugin can collide with a built-in module id.
+  pluginsDir ??= process.env.GLOOMBERB_DATA_DIR
+    ? join(process.env.GLOOMBERB_DATA_DIR, "plugins")
+    : join(process.env.HOME || homedir(), ".gloomberb", "plugins");
   return pluginsDir;
 }
 
@@ -77,23 +85,63 @@ export async function listExternalPluginEntries(
   return plugins;
 }
 
-export async function loadExternalPlugins(): Promise<LoadedExternalPlugin[]> {
-  const results: LoadedExternalPlugin[] = [];
-  const entries = await listExternalPluginEntries();
+/** Resolves a plugin directory's entry file the way `bun install` would. */
+export async function resolvePluginEntry(pluginDir: string): Promise<string | null> {
+  const pkgPath = join(pluginDir, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(await Bun.file(pkgPath).text());
+      if (pkg.main) {
+        const main = join(pluginDir, pkg.main);
+        if (existsSync(main)) return main;
+      }
+    } catch {
+      // Malformed package.json falls through to the index candidates.
+    }
+  }
+  for (const candidate of ["index.ts", "index.tsx", "index.js"]) {
+    const path = join(pluginDir, candidate);
+    if (existsSync(path)) return path;
+  }
+  return null;
+}
 
-  for (const { dirName, pluginDir, entryFile } of entries) {
+export function pluginSupportsTarget(plugin: GloomPlugin, target: PluginTarget): boolean {
+  // No declaration means "everywhere"; the registry fills this in for listed plugins.
+  return !plugin.targets || plugin.targets.length === 0 || plugin.targets.includes(target);
+}
+
+export async function loadExternalPlugins(target: PluginTarget = "cli"): Promise<LoadedExternalPlugin[]> {
+  const rootDir = getPluginsDir();
+  if (!existsSync(rootDir)) return [];
+
+  const results: LoadedExternalPlugin[] = [];
+  const entries = await listExternalPluginEntries(rootDir);
+
+  for (const entry of entries) {
+    const pluginDir = entry.pluginDir;
+    const entryFile = entry.entryFile;
+
+    // Repairs `gloomberb`/`react` links for plugins copied in by hand or left
+    // behind by a `bun install` that pruned them.
+    linkHostPackages(pluginDir);
 
     try {
       const mod = await import(entryFile);
       const plugin: GloomPlugin = mod.default ?? mod.plugin;
       if (plugin && plugin.id && plugin.name) {
+        if (!pluginSupportsTarget(plugin, target)) {
+          loaderLog.info(`Skipped ${plugin.id}: does not support "${target}"`);
+          results.push({ plugin, path: pluginDir, unsupportedTarget: target });
+          continue;
+        }
         loaderLog.info(`Loaded external plugin: ${plugin.id} v${plugin.version ?? "0.0.0"}`);
         results.push({ plugin, path: pluginDir, entryFile });
       }
     } catch (err) {
       loaderLog.error(`Failed to load plugin from ${pluginDir}: ${err}`);
       results.push({
-        plugin: { id: dirName, name: dirName, version: "0.0.0" } as GloomPlugin,
+        plugin: { id: entry.dirName, name: entry.dirName, version: "0.0.0" } as GloomPlugin,
         path: pluginDir,
         error: String(err),
       });

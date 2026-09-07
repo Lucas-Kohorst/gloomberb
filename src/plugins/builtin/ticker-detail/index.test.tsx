@@ -163,7 +163,7 @@ function setOptionsProvider(provider: DataProvider | undefined): void {
   setSharedMarketDataCoordinator(sharedCoordinator);
 }
 
-function makeRegistry(): PluginRegistry {
+function makeRegistry(extraTabs: TickerResearchTabDef[] = []): PluginRegistry {
   const stubTab = (_props: { width: number; height: number; focused: boolean; onCapture: (capturing: boolean) => void }) => (
     <text>stub</text>
   );
@@ -188,6 +188,9 @@ function makeRegistry(): PluginRegistry {
     ["ai-chat", { id: "ai-chat", name: "Ask AI", order: 60, component: stubTab }],
   ] as Array<[string, TickerResearchTabDef]>) {
     tickerResearchTabs.set(tab[0], tab[1]);
+  }
+  for (const tab of extraTabs) {
+    tickerResearchTabs.set(tab.id, tab);
   }
   return { tickerResearchTabs } as unknown as PluginRegistry;
 }
@@ -470,6 +473,34 @@ describe("FinancialsTab", () => {
 });
 
 describe("TickerResearchPane", () => {
+  test("prefetches registered tab data once for the selected ticker", async () => {
+    const prefetchedSymbols: string[] = [];
+    setSharedRegistryForTests(makeRegistry([{
+      id: "prefetch-test",
+      name: "Prefetch",
+      order: 61,
+      component: () => null,
+      prefetch: ({ ticker }) => {
+        prefetchedSymbols.push(ticker.metadata.ticker);
+      },
+    }]));
+    setOptionsProvider(createProvider(false));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("AAPL")}
+        ticker={makeTicker("AAPL")}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    await flushFrame();
+
+    expect(prefetchedSymbols).toEqual(["AAPL"]);
+  });
+
   test("shows core and lightweight plugin tabs without waiting on options preflight", async () => {
     setSharedRegistryForTests(makeRegistry());
     setOptionsProvider(createProvider(false));
@@ -569,6 +600,27 @@ describe("TickerResearchPane", () => {
     await flushFrame();
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Trade");
+  });
+
+  test("hides Options for prediction-market tickers", async () => {
+    setSharedRegistryForTests(makeRegistry());
+    setOptionsProvider(createProvider(true));
+
+    testSetup = await testRender(
+      <DetailHarness
+        config={createDetailConfig("POLY:lindsay-clancy-convicted-of-murder")}
+        ticker={makeTicker("POLY:lindsay-clancy-convicted-of-murder", "Lindsay Clancy convicted of murder?", {
+          exchange: "POLYMARKET",
+          assetCategory: "POLYMARKET",
+        })}
+        financials={null}
+      />,
+      { width: 90, height: 24 },
+    );
+
+    await flushFrame();
+    const frame = testSetup.captureCharFrame();
+    expect(frame).not.toContain("Options");
   });
 
   test("shows Options for option-capable tickers without a preflight round trip", async () => {

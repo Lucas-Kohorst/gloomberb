@@ -1,4 +1,5 @@
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
+import { CHART_RESOLUTIONS, TIME_RANGES as CHART_RANGES } from "../../../time-series/range";
 import type {
   PaneSettingField,
   PaneSettingOption,
@@ -17,7 +18,7 @@ import {
   applySeriesStyle,
   buildCustomChartPreset,
   buildEmptyChartPreset,
-  buildPriceChartPreset,
+  buildBoundChartPreset,
   chartSeriesLabel,
   formatSeriesExpression,
   getCompatibleSeriesStyles,
@@ -33,20 +34,7 @@ import {
   parseChartSpecOr,
 } from "./chart-spec";
 
-export const CHART_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
-export const CHART_RESOLUTIONS: ChartResolution[] = [
-  "auto",
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "45m",
-  "1h",
-  "4h",
-  "1d",
-  "1wk",
-  "1mo",
-];
+export { CHART_RANGES, CHART_RESOLUTIONS };
 
 export const CHART_STUDY_OPTIONS: Array<PaneSettingOption & { value: BuiltinStudySelection }> = [
   { value: "volume", label: "Volume", description: "Volume columns in a lower panel." },
@@ -78,7 +66,7 @@ export const CHART_SETTING_KEYS = {
 } as const;
 
 function fallbackSpec(symbol: string | null | undefined): ChartSpec {
-  return symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset();
+  return symbol ? buildBoundChartPreset(symbol) : buildEmptyChartPreset();
 }
 
 function sourceKey(series: ChartSeriesSpec): string {

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { AuthUser } from "./index";
 import { apiClient, setCloudApiFetchTransport } from "./index";
+import { publishableMarketplaceLayout } from "../layout-marketplace/payload";
+import { createDefaultConfig } from "../types/config";
+import type { PaneDef } from "../types/plugin";
 
 const originalFetch = globalThis.fetch;
 const originalWebSocket = globalThis.WebSocket;
@@ -104,11 +107,135 @@ afterEach(() => {
   setCloudApiFetchTransport(null);
   apiClient.setSessionToken(null);
   apiClient.setWebSocketToken(null);
-  apiClient.setHostedSocketBaseUrl(null);
+  apiClient.setCookieSessionMode(false);
   jest.useRealTimers();
 });
 
+describe("apiClient layout marketplace", () => {
+  test("lists and publishes validated layouts through authenticated transport", async () => {
+    const config = createDefaultConfig("/tmp/api-layout-marketplace-test");
+    const panes = new Map(config.layout.instances.map((instance) => [instance.paneId, {
+      id: instance.paneId,
+      name: instance.paneId,
+      component: () => null,
+      defaultPosition: "right" as const,
+    } satisfies PaneDef]));
+    const payload = publishableMarketplaceLayout(config.layout, {}, panes);
+    const entry = {
+      id: "0123456789abcdef0123456789abcdef",
+      name: "Research Desk",
+      ...payload,
+      author: { username: "analyst", displayName: "Analyst" },
+      publishedAt: "2026-08-26T00:00:00.000Z",
+    };
+    const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+    apiClient.setSessionToken("marketplace-session");
+    setCloudApiFetchTransport(async (url, init) => {
+      calls.push({
+        url,
+        method: init?.method ?? "GET",
+        ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}),
+      });
+      const path = new URL(url).pathname;
+      return createResponse(path === `/layouts/${entry.id}` || init?.method === "POST"
+        ? entry
+        : { items: [entry] });
+    });
+
+    await expect(apiClient.listMarketplaceLayouts()).resolves.toEqual([entry]);
+    await expect(apiClient.getMarketplaceLayout(entry.id)).resolves.toEqual(entry);
+    await expect(apiClient.publishMarketplaceLayout(entry.name, payload)).resolves.toEqual(entry);
+
+    expect(calls.map((call) => [new URL(call.url).pathname, call.method])).toEqual([
+      ["/layouts", "GET"],
+      [`/layouts/${entry.id}`, "GET"],
+      ["/layouts", "POST"],
+    ]);
+    expect(calls[2]?.body).toMatchObject({ name: "Research Desk", schemaVersion: 2, paneState: {} });
+  });
+});
+
 describe("apiClient auth cookies", () => {
+  test("accepts a browser-managed api.gloom.sh cookie without exposing its value", async () => {
+    apiClient.setCookieSessionMode(true);
+    setCloudApiFetchTransport(mockFetch(() => createResponse({ user: verifiedUser })));
+
+    await expect(apiClient.signIn("test@example.com", "password")).resolves.toEqual(verifiedUser);
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.isVerified()).toBe(true);
+  });
+
+  test("reports signed-in from the restored user when the cookie hides the raw token", async () => {
+    apiClient.setCookieSessionMode(true);
+    setCloudApiFetchTransport(mockFetch(() => createResponse({ user: verifiedUser })));
+
+    expect(apiClient.isSignedIn()).toBe(false);
+    await apiClient.signIn("test@example.com", "password");
+    expect(apiClient.getSessionToken()).toBeNull();
+    expect(apiClient.isSignedIn()).toBe(true);
+  });
+
+  test("coalesces anonymous browser session checks and remembers the result", async () => {
+    apiClient.setCookieSessionMode(true);
+    let requests = 0;
+    let finishRequest!: () => void;
+    setCloudApiFetchTransport(async () => {
+      requests += 1;
+      await new Promise<void>((resolve) => { finishRequest = resolve; });
+      return createResponse({ user: null });
+    });
+
+    const checks = [
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+      apiClient.ensureVerifiedSession(),
+    ];
+    expect(requests).toBe(1);
+    finishRequest();
+
+    await expect(Promise.all(checks)).resolves.toEqual([null, null, null]);
+    await expect(apiClient.ensureVerifiedSession()).resolves.toBeNull();
+    expect(requests).toBe(1);
+  });
+
+  /**
+   * On boot a session check can leave before the persisted token is installed.
+   * Its "no session" answer must not overwrite the verified user that hydrate
+   * restored in the meantime; that exact sequence left the app authenticated
+   * for chat while every plan-gated surface reported signed out.
+   */
+  test("a session check that predates the restored token does not wipe the restored user", async () => {
+    const seen: Array<string | null> = [];
+    let releaseFirst!: () => void;
+    setCloudApiFetchTransport(async (_url, init) => {
+      const cookie = new Headers(init?.headers).get("cookie");
+      seen.push(cookie);
+      if (seen.length === 1) {
+        await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return createResponse({ user: null });
+      }
+      return createResponse({ user: verifiedUser });
+    });
+
+    // A cookie-less check goes out first.
+    const early = apiClient.getSession();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeNull();
+
+    // Hydrate installs the token and the cached user while it is in flight.
+    apiClient.setSessionToken("restored-token");
+    apiClient.restoreCachedUser(verifiedUser);
+    expect(apiClient.getCurrentUser()?.emailVerified).toBe(true);
+
+    releaseFirst();
+    await expect(early).resolves.toMatchObject({ id: verifiedUser.id });
+
+    // The stale answer was discarded and a second check went out with the real cookie.
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toContain("restored-token");
+    expect(apiClient.getCurrentUser()?.emailVerified).toBe(true);
+  });
+
   test("captures secure session cookies after login and reuses them on session refresh", async () => {
     const seenCookies: Array<string | null> = [];
 
@@ -649,7 +776,9 @@ describe("apiClient scanner subscriptions", () => {
     };
     socket.receive({ type: "scanner.hilo", ...payload });
 
-    const subscribeCount = () => socket.sent.filter((message: { type?: string }) => message.type === "scanner.subscribe").length;
+    // A second pane must not open a second upstream subscription, and must not
+    // wait a tick for its first frame.
+    const subscribeCount = () => socket.sent.filter((message: any) => message.type === "scanner.subscribe").length;
     const before = subscribeCount();
     const unsubscribeSecond = apiClient.subscribeScanner("hilo", (event) => second.push(event));
     expect(subscribeCount()).toBe(before);
@@ -683,33 +812,6 @@ describe("apiClient scanner subscriptions", () => {
     expect(reconnected.sent).toContainEqual({ type: "scanner.subscribe", scanner: "flow" });
 
     unsubscribe();
-  });
-});
-
-describe("apiClient hosted socket", () => {
-  test("connects same-origin to the Worker without a token query param", () => {
-    const sockets = installTestWebSocket();
-    // Hosted holds only the opaque hosted-session sentinel and authenticates
-    // the socket through the same-origin cookie, so no token may hit the URL.
-    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
-    apiClient.setSessionToken("hosted-session");
-    apiClient.restoreCachedUser(verifiedUser);
-
-    const channel = apiClient.connectChannel("everyone", () => {});
-
-    expect(sockets).toHaveLength(1);
-    expect(sockets[0]!.url).toBe("wss://terminal.kohor.st/cloud/ws");
-
-    channel.close();
-  });
-
-  test("never captures a raw upstream token from a response body in hosted mode", async () => {
-    apiClient.setHostedSocketBaseUrl("https://terminal.kohor.st");
-    globalThis.fetch = mockFetch(async () => createResponse({ token: "raw-upstream-token", onlineCount: 0 }));
-
-    await apiClient.getChatPresence();
-
-    expect(apiClient.getWebSocketToken()).toBeNull();
   });
 });
 
@@ -1142,20 +1244,91 @@ describe("apiClient equity diagnostic", () => {
   });
 });
 
-describe("apiClient CDS", () => {
-  test("asks Gloom Cloud for /cloud/credit/cds with issuer and window", async () => {
+describe("apiClient document search", () => {
+  test("builds the search query from filters and omits empty ones", async () => {
     let seenUrl = "";
-    globalThis.fetch = mockFetch(async (input) => {
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
       seenUrl = String(input);
-      return createResponse({ source: "DTCC PPD", asOf: null, trades: [] });
+      return createResponse({
+        hits: [],
+        total: 0,
+        countCapped: false,
+        hasMore: false,
+        nextOffset: 0,
+        tookMs: 3,
+      });
     });
 
-    await apiClient.getCloudCds({ issuer: "Oracle Corporation", days: 5, limit: 500 });
+    await apiClient.searchCloudDocuments({
+      query: "  margin pressure  ",
+      tickers: [" aapl ", "msft"],
+      docTypes: ["transcript", "filing"],
+      sources: [],
+      from: "2026-01-01T00:00:00.000Z",
+      sort: "newest",
+      limit: 40,
+      offset: 0,
+    });
 
     const url = new URL(seenUrl);
-    expect(url.pathname).toBe("/cloud/credit/cds");
-    expect(url.searchParams.get("issuer")).toBe("Oracle Corporation");
-    expect(url.searchParams.get("days")).toBe("5");
-    expect(url.searchParams.get("limit")).toBe("500");
+    expect(url.pathname).toBe("/cloud/search");
+    expect(url.searchParams.get("q")).toBe("margin pressure");
+    expect(url.searchParams.get("tickers")).toBe("AAPL,MSFT");
+    expect(url.searchParams.get("docTypes")).toBe("transcript,filing");
+    expect(url.searchParams.get("from")).toBe("2026-01-01T00:00:00.000Z");
+    expect(url.searchParams.get("sort")).toBe("newest");
+    expect(url.searchParams.get("limit")).toBe("40");
+    expect(url.searchParams.has("sources")).toBe(false);
+    expect(url.searchParams.has("to")).toBe(false);
+    // Offset 0 is the first page; sending it only lengthens the cache key.
+    expect(url.searchParams.has("offset")).toBe(false);
+    // Counting is the server default, so only opting out travels.
+    expect(url.searchParams.has("count")).toBe(false);
+
+    await apiClient.searchCloudDocuments({ query: "margin", limit: 3, count: false });
+    expect(new URL(seenUrl).searchParams.get("count")).toBe("false");
+  });
+
+  test("escapes the document route segments", async () => {
+    let seenUrl = "";
+    globalThis.fetch = mockFetch(async (input: Request | string | URL) => {
+      seenUrl = String(input);
+      return createResponse({ document: { chunks: [] } });
+    });
+
+    await apiClient.getCloudSearchDocument("filing", "0000320193-26-000042/a b");
+
+    expect(new URL(seenUrl).pathname).toBe(
+      "/cloud/search/documents/filing/0000320193-26-000042%2Fa%20b",
+    );
+  });
+
+  test("accepts a saved-search write with or without an envelope", async () => {
+    const record = {
+      id: "saved-1",
+      name: "margin pressure",
+      query: "margin pressure",
+      filters: {},
+      alertEnabled: true,
+      alertChannels: ["email"],
+      lastRunAt: null,
+      lastMatchAt: null,
+      matchCount: 0,
+      createdAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    globalThis.fetch = mockFetch(async () => createResponse({ search: record }));
+    expect((await apiClient.createCloudSavedSearch({
+      name: record.name,
+      query: record.query,
+    })).id).toBe("saved-1");
+
+    globalThis.fetch = mockFetch(async () => createResponse(record));
+    expect((await apiClient.updateCloudSavedSearch("saved-1", { alertEnabled: false })).id)
+      .toBe("saved-1");
+
+    globalThis.fetch = mockFetch(async () => createResponse({}));
+    await expect(apiClient.updateCloudSavedSearch("saved-1", { alertEnabled: false }))
+      .rejects.toThrow("missing a record");
   });
 });

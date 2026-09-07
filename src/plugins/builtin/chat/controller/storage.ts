@@ -22,7 +22,6 @@ import {
 
 interface ChatControllerStorageOptions {
   emit: (channelId?: string) => void;
-  getSessionToken: () => string | null;
   getUser: () => ChatSessionUser | null;
 }
 
@@ -120,7 +119,6 @@ export class ChatControllerStorage {
       persistence: this.persistence,
       resume: this.resume,
       userId: this.options.getUser()?.id ?? null,
-      sessionToken: this.options.getSessionToken(),
     });
   }
 

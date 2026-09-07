@@ -1,30 +1,21 @@
-import type { PaneDef, PaneTemplateDef } from "../../types/plugin";
+import { CHART_RESOLUTIONS } from "../../time-series/range";
+import type {
+  HeadlessPaneArgumentDef,
+  HeadlessPaneDefinition,
+  HeadlessPaneOptionDef,
+  HeadlessPaneOptionType,
+  HeadlessPaneOptionValue,
+  PaneDef,
+  PaneTemplateDef,
+} from "../../types/plugin";
 
 export type PaneFunctionReadiness = "ready" | "partial" | "unsupported";
+export type PaneFunctionScreenshotReadiness = PaneFunctionReadiness | "live-dom";
 export type PaneFunctionTickerCardinality = "none" | "one" | "one-or-more" | "two-or-more" | "one-or-two";
-export type PaneFunctionOptionType = "enum" | "integer" | "string" | "boolean";
+export type PaneFunctionOptionType = HeadlessPaneOptionType;
+export type PaneFunctionOptionValue = HeadlessPaneOptionValue;
+export type PaneFunctionOptionDef = HeadlessPaneOptionDef;
 export type NormalizedPaneFunctionOptions = Record<string, string | number | boolean>;
-
-export interface PaneFunctionOptionValue {
-  value: string;
-  aliases?: string[];
-}
-
-export interface PaneFunctionOptionDef {
-  key: string;
-  description: string;
-  type: PaneFunctionOptionType;
-  aliases?: string[];
-  values?: PaneFunctionOptionValue[];
-  defaultValue?: string | number | boolean;
-  minimum?: number;
-  maximum?: number;
-  settingKey?: string;
-  pluginState?: {
-    pluginId: string;
-    key?: string;
-  };
-}
 
 export interface PaneFunctionCapability {
   id: string;
@@ -34,7 +25,7 @@ export interface PaneFunctionCapability {
   intents: string[];
   outputKind: string;
   reportReadiness: PaneFunctionReadiness;
-  screenshotReadiness: PaneFunctionReadiness;
+  screenshotReadiness: PaneFunctionScreenshotReadiness;
   dataRequirements: string[];
   limitations: string[];
   options: PaneFunctionOptionDef[];
@@ -128,8 +119,7 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
         description: "Market-price sampling resolution.",
         type: "enum",
         aliases: ["resolution"],
-        values: ["auto", "1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk", "1mo"]
-          .map((value) => ({ value })),
+        values: CHART_RESOLUTIONS.map((value) => ({ value })),
       },
     ],
   },
@@ -251,7 +241,7 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
         description: "Price sampling resolution.",
         type: "enum",
         aliases: ["resolution"],
-        values: ["1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk", "1mo"].map((value) => ({ value })),
+        values: CHART_RESOLUTIONS.filter((value) => value !== "auto").map((value) => ({ value })),
         defaultValue: "1d",
       },
     ],
@@ -361,37 +351,13 @@ const CAPABILITIES: Record<string, PaneFunctionCapability> = {
     id: "price-chart",
     botSafe: true,
     tickerCardinality: "one",
-    aliases: ["price chart", "stock chart", "historical chart"],
-    intents: ["chart a security price over time"],
+    aliases: ["price chart", "stock chart", "historical chart", "tradingview", "tv chart", "candlestick chart", "lightweight charts"],
+    intents: ["chart a security price over time", "open a tradingview style price chart"],
     outputKind: "price-history",
     reportReadiness: "ready",
     screenshotReadiness: "ready",
     dataRequirements: ["price history"],
     limitations: [],
-    options: [{
-      key: "rangePreset",
-      settingKey: "chartRangePreset",
-      description: "Chart history window.",
-      type: "enum",
-      aliases: ["range"],
-      values: RANGE_VALUES,
-      defaultValue: "5Y",
-    }],
-  },
-  "tradingview-pane": {
-    id: "tradingview-chart",
-    botSafe: true,
-    tickerCardinality: "one",
-    aliases: ["tradingview", "tv chart", "candlestick chart", "lightweight charts"],
-    intents: ["open a tradingview style price chart"],
-    outputKind: "price-history",
-    reportReadiness: "ready",
-    screenshotReadiness: "ready",
-    dataRequirements: ["price history"],
-    limitations: [
-      "Desktop and hosted web use TradingView Lightweight Charts, not the licensed Charting Library.",
-      "Pine scripts, broker orders, replay, and the full TV drawing/indicator catalog are not available.",
-    ],
     options: [{
       key: "rangePreset",
       settingKey: "chartRangePreset",
@@ -425,9 +391,11 @@ const UNSUPPORTED_CAPABILITY: PaneFunctionCapability = {
   intents: [],
   outputKind: "pane",
   reportReadiness: "unsupported",
-  screenshotReadiness: "unsupported",
+  screenshotReadiness: "live-dom",
   dataRequirements: [],
-  limitations: ["This UI pane has not been verified as a deterministic CLI or bot capability."],
+  limitations: [
+    "Reports are not verified for automation. Screenshots render live and derive evidence from visible DOM rows.",
+  ],
   options: [],
 };
 
@@ -435,11 +403,49 @@ function optionToken(value: string): string {
   return value.trim().toLowerCase().replace(/[\s_.-]+/g, "");
 }
 
+function headlessTickerCardinality(argument: HeadlessPaneArgumentDef): PaneFunctionTickerCardinality {
+  switch (argument.kind) {
+    case "ticker":
+      return "one";
+    case "tickers":
+    case "symbol-list":
+      return (argument.minimum ?? 1) >= 2 ? "two-or-more" : "one-or-more";
+    case "none":
+    case "free-text":
+      return "none";
+    default: {
+      const _exhaustive: never = argument.kind;
+      return _exhaustive;
+    }
+  }
+}
+
+export function getHeadlessPaneDefinition(
+  template: PaneTemplateDef | undefined,
+  pane: PaneDef,
+): HeadlessPaneDefinition | undefined {
+  return template?.headless ?? pane.headless;
+}
+
 export function getPaneFunctionCapability(
   template: PaneTemplateDef | undefined,
-  _pane: PaneDef,
+  pane: PaneDef,
 ): PaneFunctionCapability {
-  return template ? CAPABILITIES[template.id] ?? UNSUPPORTED_CAPABILITY : UNSUPPORTED_CAPABILITY;
+  const existing = template ? CAPABILITIES[template.id] ?? UNSUPPORTED_CAPABILITY : UNSUPPORTED_CAPABILITY;
+  const headless = getHeadlessPaneDefinition(template, pane);
+  if (!headless) return existing;
+
+  const hasExistingCapability = existing !== UNSUPPORTED_CAPABILITY;
+  return {
+    ...(hasExistingCapability ? existing : UNSUPPORTED_CAPABILITY),
+    id: hasExistingCapability ? existing.id : template?.id ?? pane.id,
+    botSafe: true,
+    tickerCardinality: headlessTickerCardinality(headless.argument),
+    outputKind: headless.shape,
+    reportReadiness: "ready",
+    options: [...headless.options],
+    ...(hasExistingCapability ? {} : { limitations: [] }),
+  };
 }
 
 function resolveOptionDef(

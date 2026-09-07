@@ -9,6 +9,7 @@ const DESKTOP_PANE_SIDEBAR_MAX_WIDTH = 19;
 const DESKTOP_PANE_SIDEBAR_WIDTH_RATIO = 0.192;
 const PANE_SIDEBAR_BREAKPOINT = 72;
 const PANE_SIDEBAR_MOUSE_HANDLED = "__gloomberbPaneSidebarHandled";
+const PANE_SIDEBAR_INTERACTIVE = '[data-gloom-interactive="true"]';
 
 export function shouldShowPaneSidebar(
   itemCount: number,
@@ -70,6 +71,39 @@ export function PaneSidebar({
   const sidebarLayoutHeight = nativePaneChrome ? "100%" : height;
   const nativeFillStyle = nativePaneChrome ? { minHeight: 0 } : undefined;
   const renderState = { backgroundColor, listWidth };
+  const handleKeyDown = (event: any) => {
+    const key = event?.key ?? event?.name;
+    const isDown = key === "ArrowDown" || key === "down";
+    const isUp = key === "ArrowUp" || key === "up";
+    if ((!isDown && !isUp) || event?.ctrlKey || event?.metaKey || event?.shiftKey
+      || event?.altKey || event?.ctrl || event?.meta || event?.shift || event?.alt) {
+      return;
+    }
+
+    const root = event?.currentTarget as {
+      querySelectorAll?: (selector: string) => ArrayLike<HTMLElement>;
+    } | undefined;
+    const target = event?.target as {
+      closest?: (selector: string) => HTMLElement | null;
+    } | undefined;
+    const current = target?.closest?.(PANE_SIDEBAR_INTERACTIVE);
+    const rows = root?.querySelectorAll?.(PANE_SIDEBAR_INTERACTIVE);
+    if (!current || !rows || rows.length === 0) return;
+
+    const currentIndex = Array.from(rows).indexOf(current);
+    if (currentIndex < 0) return;
+    const nextIndex = Math.max(
+      0,
+      Math.min(currentIndex + (isDown ? 1 : -1), rows.length - 1),
+    );
+    const next = rows[nextIndex];
+    if (!next || next === current) return;
+
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    next.focus?.();
+    next.scrollIntoView?.({ block: "nearest" });
+  };
 
   return (
     <PaneSidebarContext.Provider value={{ ...renderState, activeBackgroundColor, keyboardFocused }}>
@@ -80,6 +114,7 @@ export function PaneSidebar({
         position="relative"
         style={nativeFillStyle}
         data-gloom-role="pane-sidebar"
+        onKeyDown={handleKeyDown}
       >
         <Box
           width={listWidth}
@@ -175,6 +210,10 @@ export function PaneSidebarRow({
       event.stopPropagation?.();
       if (event[PANE_SIDEBAR_MOUSE_HANDLED]) return;
       event[PANE_SIDEBAR_MOUSE_HANDLED] = true;
+      const focusTarget = event.currentTarget?.closest?.(PANE_SIDEBAR_INTERACTIVE)
+        ?? event.target?.closest?.(PANE_SIDEBAR_INTERACTIVE);
+      focusTarget?.focus?.();
+      if (focusTarget && focusTarget.ownerDocument?.activeElement === focusTarget) return;
     }
     onSelect?.(event);
   };

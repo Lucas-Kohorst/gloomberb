@@ -7,14 +7,9 @@ import {
   type DataTableKeyEvent,
   type TickerListVisibleRange,
 } from "../../../../components";
-import { usePluginAppActions, usePluginTickerActions } from "../../../runtime";
+import { usePluginAppActions } from "../../../runtime";
 import { useTickerSourceActivate } from "../../shared/ticker-source";
-import {
-  copyOnWriteTickerFinancialsMap,
-  mergeTickerFinancials,
-  useFxRatesMap,
-  useTickerFinancialsMap,
-} from "../../../../market-data/hooks";
+import { copyOnWriteTickerFinancialsMap, mergeTickerFinancials, useFxRatesMap, useTickerFinancialsMap } from "../../../../market-data/hooks";
 import { useAppActive } from "../../../../state/app/activity";
 import {
   useAppDispatch,
@@ -30,7 +25,6 @@ import { isPlainKey } from "../../../../utils/keyboard";
 import type { TickerFinancials } from "../../../../types/financials";
 import type { TickerRecord } from "../../../../types/ticker";
 import type { PaneProps } from "../../../../types/plugin";
-import { TICKER_RESEARCH_PANE_ID } from "../../../../types/config";
 import { tf } from "../../../../i18n";
 import { getSharedRegistry } from "../../../registry";
 import {
@@ -67,6 +61,7 @@ import {
   sortTickers,
 } from "./data";
 import { usePortfolioPaneStreaming } from "./streaming";
+import { usePredictionWatchlistQuotes } from "../../../prediction-markets/watchlist-quotes";
 import { usePortfolioSupplementalData } from "./supplemental";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
 import { CHART_COMPOSER_TEMPLATE_ID } from "../../shared/graph-pop-out";
@@ -74,7 +69,6 @@ import { useThrottledTickerOrder } from "../use-throttled-ticker-order";
 import { paneSearchHint } from "../../shared/pane-footer";
 
 export function PortfolioListPane({ focused, width, height }: PaneProps) {
-  const { pinTicker } = usePluginTickerActions();
   const { notify, createPaneFromTemplate } = usePluginAppActions();
   const activateTicker = useTickerSourceActivate();
   const dispatch = useAppDispatch();
@@ -153,7 +147,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   const flashSymbols = useQuoteFlashMap(financialsMap, valueFlashingEnabled);
 
   const accountStateInput = useMemo(() => ({ brokerAccounts, config }), [brokerAccounts, config]);
-  const accountState = usePortfolioAccountState(currentPortfolio, accountStateInput);
+  const { accountState, accountsError } = usePortfolioAccountState(currentPortfolio, accountStateInput);
   const columns = useMemo(
     () => resolveVisibleColumns(paneSettings.columnIds, isPortfolioTab),
     [isPortfolioTab, paneSettings.columnIds],
@@ -416,8 +410,6 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   }, [
     canMutateCollection,
     cashDrawerExpanded,
-    chartSelectedTicker,
-    deleteSelectedTicker,
     flushCursorSymbol,
     focused,
     isPortfolioTab,
@@ -445,8 +437,9 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
   );
 
   useEffect(() => {
-    if (!appActive || !clockNeeded) return;
-    const timerId = setInterval(() => setNow(Date.now()), 1000);
+    if (!appActive) return;
+    // Only ages relative labels (quote age, days held), so the shared 30s cadence is enough.
+    const timerId = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timerId);
   }, [appActive, clockNeeded]);
 
@@ -484,9 +477,13 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     liveStreaming,
   });
 
+  usePredictionWatchlistQuotes(tickers, { enabled: appActive });
+
   const summaryFooterInfo = useMemo(() => buildPortfolioFooterSegments({
     accountState: accountState ? { account: accountState.account, sourceLabel: accountState.sourceLabel } : null,
-    accountStatusText: isPortfolioTab && currentPortfolio?.brokerInstanceId && !accountState ? "Acct missing" : undefined,
+    accountStatusText: accountsError
+      ? `Accounts unavailable: ${accountsError}`
+      : isPortfolioTab && currentPortfolio?.brokerInstanceId && !accountState ? "Acct missing" : undefined,
     activeCollectionId,
     baseCurrency: config.baseCurrency,
     exchangeRates: effectiveExchangeRates,
@@ -498,6 +495,7 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
     width,
   }), [
     accountState,
+    accountsError,
     activeCollectionId,
     currentPortfolio?.brokerInstanceId,
     effectiveExchangeRates,
@@ -636,6 +634,8 @@ export function PortfolioListPane({ focused, width, height }: PaneProps) {
             onToggle={() => setCashDrawerExpanded(!cashDrawerExpanded)}
             width={Math.max(0, width - 2)}
             height={drawerHeight}
+            baseCurrency={config.baseCurrency}
+            exchangeRates={effectiveExchangeRates}
           />
         </Box>
       )}

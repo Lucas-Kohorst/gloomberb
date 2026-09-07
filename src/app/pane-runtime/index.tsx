@@ -5,10 +5,13 @@ import {
   addPaneToLayout,
   bringToFront,
   findDockLeaf,
+  floatPane,
   getDockedPaneIds,
+  isPaneDocked,
   isPaneInLayout,
 } from "../../plugins/pane-manager";
 import type { PluginRegistry } from "../../plugins/registry";
+import type { LoadedExternalPlugin } from "../../plugins/loader";
 import {
   getFocusedCollectionId,
   resolveTickerForPane,
@@ -19,7 +22,6 @@ import {
 import { scheduleConfigSave } from "../../state/config-save-scheduler";
 import {
   createPaneInstance,
-  findPaneInstance,
   isTickerPaneId,
   normalizePaneId,
   normalizePaneLayout,
@@ -35,7 +37,9 @@ import type {
 } from "../../types/plugin";
 import type { DialogApi } from "../../ui/dialog";
 import {
+  isFullscreenOverlaySession,
   resolvePanelForPane,
+  resolvePaneShowTarget,
   resolvePaneTarget as resolvePaneTargetInLayout,
   selectEdgeAnchor,
 } from "./layout-placement";
@@ -50,8 +54,10 @@ interface AppPaneRuntimeArgs {
   detachedPaneId: string | null;
   dialog: DialogApi;
   dispatch: Dispatch<AppAction>;
+  externalPlugins: readonly LoadedExternalPlugin[];
   isDetachedWindow: boolean;
   notify: (body: string, options?: { type?: "info" | "success" | "error" }) => void;
+  persistConfig: (nextConfig: AppState["config"]) => void;
   pluginRegistry: PluginRegistry;
   state: AppState;
   stateRef: { current: AppState };
@@ -63,8 +69,10 @@ export function useAppPaneRuntime({
   detachedPaneId,
   dialog,
   dispatch,
+  externalPlugins,
   isDetachedWindow,
   notify,
+  persistConfig,
   pluginRegistry,
   state,
   stateRef,
@@ -174,8 +182,13 @@ export function useAppPaneRuntime({
     const relativePosition = options?.relativePosition ?? "right";
     let nextLayout = state.config.layout;
     const dockedPaneIds = getDockedPaneIds(nextLayout);
+    const overlaySession = isFullscreenOverlaySession(pluginRegistry);
 
-    if (options?.placement === "floating" || (options?.placement !== "docked" && paneDef.defaultMode === "floating")) {
+    if (
+      overlaySession
+      || options?.placement === "floating"
+      || (options?.placement !== "docked" && paneDef.defaultMode === "floating")
+    ) {
       nextLayout = addPaneFloating(nextLayout, instance, width, height, paneDef);
     } else if (relativeTo && findDockLeaf(nextLayout, relativeTo)) {
       nextLayout = addPaneToLayout(nextLayout, instance, { relativeTo, position: relativePosition });
@@ -205,26 +218,32 @@ export function useAppPaneRuntime({
   ]);
 
   const showPane = useCallback((paneId: string) => {
-    const normalizedPaneId = normalizePaneId(paneId);
-    const paneDef = pluginRegistry.panes.get(normalizedPaneId);
+    const target = resolvePaneShowTarget(state.config.layout, paneId);
+    const paneDef = pluginRegistry.panes.get(target.paneType);
     if (!paneDef) return;
 
-    if (normalizedPaneId === TICKER_RESEARCH_PANE_ID) {
+    if (target.paneType === TICKER_RESEARCH_PANE_ID) {
       showTickerResearchPane();
       return;
     }
 
-    const existingInstanceId = resolvePaneTarget(normalizedPaneId);
-    if (existingInstanceId && isPaneInLayout(state.config.layout, existingInstanceId)) {
-      pluginRegistry.focusPaneFn(existingInstanceId);
+    if (target.instance && isPaneInLayout(state.config.layout, target.instance.instanceId)) {
+      const fullscreenPaneId = pluginRegistry.getFullscreenPaneIdFn?.() ?? null;
+      if (
+        fullscreenPaneId
+        && target.instance.instanceId !== fullscreenPaneId
+        && isPaneDocked(state.config.layout, target.instance.instanceId)
+      ) {
+        const { width, height } = pluginRegistry.getTermSizeFn();
+        persistLayout(floatPane(state.config.layout, target.instance.instanceId, width, height, paneDef));
+      }
+      pluginRegistry.focusPaneFn(target.instance.instanceId);
       return;
     }
 
-    const instance = existingInstanceId
-      ? findPaneInstance(state.config.layout, existingInstanceId)
-      : buildPaneInstance(normalizedPaneId);
+    const instance = target.instance ?? buildPaneInstance(target.paneType);
     if (!instance) {
-      if (isTickerPaneId(paneId)) {
+      if (isTickerPaneId(target.paneType)) {
         notify("Open a ticker or collection context first.");
       }
       return;
@@ -235,7 +254,6 @@ export function useAppPaneRuntime({
     notify,
     placePaneInstance,
     pluginRegistry,
-    resolvePaneTarget,
     showTickerResearchPane,
     state.config.layout,
   ]);
@@ -289,10 +307,12 @@ export function useAppPaneRuntime({
     dataProvider,
     detachedPaneId,
     dispatch,
+    externalPlugins,
     focusVisiblePane,
     isDetachedWindow,
     openPaneSettings,
     openPinnedTicker,
+    persistConfig,
     persistLayout,
     placePaneInstance,
     placePinnedTickerTarget,

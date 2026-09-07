@@ -1,6 +1,6 @@
 import type { CommandDef, PaneTemplateDef } from "../../../../types/plugin";
 import { getCommandPrefixes, type Command } from "../../commands/registry";
-import { getPaneTemplateDisplayLabel } from "../../pane-templates/items";
+import { getPaneShortcutPrefixes, getPaneTemplateDisplayLabel } from "../../pane-templates/items";
 
 export type RootShortcutArgKind = "text" | "ticker" | "ticker-list";
 type ShortcutIntentKind = "none" | "complete" | "inferred-complete" | "partial" | "ambiguous";
@@ -109,15 +109,15 @@ function buildShortcutCandidates(
       })),
     ...paneTemplates
       .filter((template) => template.shortcut?.prefix)
-      .map((template) => ({
-        prefix: normalizeShortcutPrefix(template.shortcut!.prefix),
+      .flatMap((template) => getPaneShortcutPrefixes(template).map((prefix) => ({
+        prefix,
         label: getPaneTemplateDisplayLabel(template),
         description: template.description,
         argKind: getPaneShortcutArgKind(template),
         argPlaceholder: template.shortcut?.argPlaceholder,
         source: "pane-template" as const,
         template,
-      })),
+      }))),
   ].sort((a, b) => b.prefix.length - a.prefix.length);
 }
 
@@ -145,7 +145,9 @@ export function parseRootShortcutIntent({
   if (!match) return { kind: "none" };
 
   const argText = trimmed.slice(match.prefix.length).trim();
-  const inferredArg = inferShortcutArg(match.argKind, activeTicker);
+  const inferredArg = match.source === "pane-template" && match.template?.shortcut?.argOptional
+    ? null
+    : inferShortcutArg(match.argKind, activeTicker);
   const completionQuery = inferredArg ? `${match.prefix} ${inferredArg}` : null;
 
   let kind: Exclude<ShortcutIntentKind, "none">;
@@ -153,8 +155,6 @@ export function parseRootShortcutIntent({
     kind = match.argKind === "ticker-list" && /[,\n]\s*$/.test(trimmed) ? "partial" : "complete";
   } else if (completionQuery) {
     kind = "inferred-complete";
-  } else if (match.source === "pane-template" && match.template?.shortcut?.argOptional) {
-    kind = "complete";
   } else {
     kind = "partial";
   }

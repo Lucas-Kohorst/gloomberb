@@ -1,4 +1,4 @@
-import type { CloudTweetQueryType } from "./types";
+import type { CloudSearchDocType, CloudSearchSort, CloudTweetQueryType } from "./types";
 import { normalizeSymbol, publicTickerKey } from "../utils/exchanges";
 
 export type CloudHistoryParams = {
@@ -32,6 +32,14 @@ export type CloudCongressHouseParams = {
   member?: string;
   ticker?: string;
   refresh?: boolean;
+};
+
+export type CloudEarningsCallsParams = {
+  ticker?: string;
+  limit?: number;
+  offset?: number;
+  /** Include calls still working through the transcription pipeline. */
+  includePending?: boolean;
 };
 
 export type CloudNewsParams = {
@@ -131,6 +139,10 @@ export function cloudHistoryPath(symbol: string, exchange: string, params: Cloud
   return appendQuery("/market/history", search);
 }
 
+export function cloudShillerPath(): string {
+  return "/cloud/econ/shiller";
+}
+
 export function cloudExchangeRatePath(fromCurrency: string): string {
   return appendQuery("/market/exchange-rate", new URLSearchParams({ fromCurrency }));
 }
@@ -181,6 +193,19 @@ export function cloudCongressHousePath(params: CloudCongressHouseParams = {}): s
   return appendQuery("/cloud/congress/house", search);
 }
 
+export function cloudEarningsCallsPath(params: CloudEarningsCallsParams = {}): string {
+  const search = new URLSearchParams();
+  if (params.ticker) search.set("ticker", params.ticker);
+  if (params.limit != null) search.set("limit", String(params.limit));
+  if (params.offset != null) search.set("offset", String(params.offset));
+  if (params.includePending) search.set("includePending", "true");
+  return appendQuery("/cloud/transcripts", search);
+}
+
+export function cloudEarningsTranscriptPath(id: string): string {
+  return `/cloud/transcripts/${encodeURIComponent(id)}`;
+}
+
 export function cloudSecFilingsPath(params: CloudSecFilingsParams): string {
   const search = new URLSearchParams({ ticker: params.ticker });
   if (params.limit != null) search.set("limit", String(params.limit));
@@ -216,6 +241,65 @@ export function cloudSec13FPath(path: string, params: Record<string, string | nu
   }
   const normalized = path.startsWith("/") ? path.slice(1) : path;
   return appendQuery(`/cloud/sec/13f/${normalized}`, search);
+}
+
+export type CloudSearchParams = {
+  query: string;
+  tickers?: readonly string[];
+  docTypes?: readonly CloudSearchDocType[];
+  sources?: readonly string[];
+  /** Inclusive ISO date or timestamp bounds on `publishedAt`. */
+  from?: string;
+  to?: string;
+  sort?: CloudSearchSort;
+  limit?: number;
+  offset?: number;
+  /** Set false to skip the total-count pass when only the top hits are shown. */
+  count?: boolean;
+  /** One row per source document instead of one per matching chunk. */
+  distinct?: boolean;
+};
+
+function csvParam(values: readonly string[] | undefined): string | null {
+  if (!values) return null;
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  return cleaned.length > 0 ? cleaned.join(",") : null;
+}
+
+export function cloudSearchPath(params: CloudSearchParams): string {
+  const search = new URLSearchParams({ q: params.query.trim() });
+  const tickers = csvParam(params.tickers?.map(normalizeSymbol));
+  if (tickers) search.set("tickers", tickers);
+  const docTypes = csvParam(params.docTypes);
+  if (docTypes) search.set("docTypes", docTypes);
+  const sources = csvParam(params.sources);
+  if (sources) search.set("sources", sources);
+  if (params.from) search.set("from", params.from);
+  if (params.to) search.set("to", params.to);
+  if (params.sort) search.set("sort", params.sort);
+  if (params.limit != null) search.set("limit", String(params.limit));
+  // Offset 0 is the default page, so sending it only lengthens the cache key.
+  if (params.offset) search.set("offset", String(params.offset));
+  // Counting is the server default, so only opting out is worth a parameter.
+  if (params.count === false) search.set("count", "false");
+  if (params.distinct) search.set("distinct", "true");
+  return appendQuery("/cloud/search", search);
+}
+
+export function cloudSearchDocumentPath(docType: CloudSearchDocType, sourceId: string): string {
+  return `/cloud/search/documents/${encodeURIComponent(docType)}/${encodeURIComponent(sourceId)}`;
+}
+
+export function cloudSavedSearchesPath(): string {
+  return "/cloud/search/saved";
+}
+
+export function cloudSavedSearchPath(id: string): string {
+  return `/cloud/search/saved/${encodeURIComponent(id)}`;
+}
+
+export function cloudSavedSearchHitsPath(id: string): string {
+  return `${cloudSavedSearchPath(id)}/hits`;
 }
 
 export function cloudNewsPath(params: CloudNewsParams = {}): string {

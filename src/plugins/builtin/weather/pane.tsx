@@ -56,6 +56,17 @@ import {
 } from "./report";
 import { WEATHER_STATIONS, cliProductForStation } from "./stations";
 import { TWC_KALSHI_URL, WEATHER_PANE_ID, type WeatherDailyObservation, type WeatherDailySnapshot, type WeatherHourlyObservation, type WeatherReportStatus, type WeatherScope } from "./types";
+import {
+  loadKalshiWeatherCalibrationsForStation,
+  type KalshiWeatherCalibrationTimeline,
+} from "./kalshi-calibrations";
+import {
+  latestCompleteKalshiWeatherPoint,
+  loadKalshiWeatherIndexForStation,
+  type KalshiWeatherIndex,
+} from "./kalshi-index";
+import { NWS_OBSERVATIONS_DEFAULT_LIMIT } from "./nws-observations";
+import { useWeatherPolling } from "./polling";
 import { loadSettlementRecord, type WeatherSettlementRecord } from "./settlement-sources";
 import { StationDetail, type StationObservation } from "./station-detail";
 import { loadNwsStationObservations, type NwsStationObservation } from "../../../sources/nws-observations";
@@ -111,29 +122,17 @@ function statusColor(status: WeatherReportStatus, selected: boolean): string {
   return colors.textMuted;
 }
 
-function createColumns(width: number): WeatherColumn[] {
-  const stationWidth = 5;
-  const highWidth = 5;
-  const impliedWidth = width >= 44 ? 5 : 0;
-  const yForecastWidth = width >= 62 ? 5 : 0;
-  const ySettlementWidth = width >= 54 ? 5 : 0;
-  const lowWidth = width >= 72 ? 5 : 0;
-  const nowWidth = width >= 80 ? 5 : 0;
-  const statusWidth = width >= 90 ? 8 : 0;
-  const cityWidth = Math.max(
-    10,
-    width - stationWidth - highWidth - impliedWidth - yForecastWidth - ySettlementWidth - lowWidth - nowWidth - statusWidth - 8,
-  );
+function createColumns(): WeatherColumn[] {
   return [
-    { id: "city", label: "CITY", width: cityWidth, align: "left" },
-    { id: "station", label: "STN", width: stationWidth, align: "left" },
-    { id: "high", label: "HIGH", width: highWidth, align: "right" },
-    ...(impliedWidth ? [{ id: "implied" as const, label: "IMPL", width: impliedWidth, align: "right" as const }] : []),
-    ...(yForecastWidth ? [{ id: "yForecast" as const, label: "Y.FC", width: yForecastWidth, align: "right" as const }] : []),
-    ...(ySettlementWidth ? [{ id: "ySettlement" as const, label: "Y.ST", width: ySettlementWidth, align: "right" as const }] : []),
-    ...(lowWidth ? [{ id: "low" as const, label: "LOW", width: lowWidth, align: "right" as const }] : []),
-    ...(nowWidth ? [{ id: "now" as const, label: "NOW", width: nowWidth, align: "right" as const }] : []),
-    ...(statusWidth ? [{ id: "status" as const, label: "PRINT", width: statusWidth, align: "left" as const }] : []),
+    { id: "city", label: "CITY", width: 10, align: "left", flexGrow: 1 },
+    { id: "station", label: "STN", width: 5, align: "left" },
+    { id: "high", label: "HIGH", width: 5, align: "right" },
+    { id: "implied", label: "IMPL", width: 5, align: "right" },
+    { id: "yForecast", label: "Y.FC", width: 5, align: "right" },
+    { id: "ySettlement", label: "Y.ST", width: 5, align: "right" },
+    { id: "low", label: "LOW", width: 5, align: "right" },
+    { id: "now", label: "NOW", width: 5, align: "right" },
+    { id: "status", label: "PRINT", width: 8, align: "left" },
   ];
 }
 
@@ -201,14 +200,34 @@ function WeatherDetail({
   hourly,
   settlement,
   nwsObservations,
+  kalshiIndex,
+  kalshiCalibrations,
   width,
 }: {
   row: WeatherRow;
   hourly: WeatherHourlyObservation[];
   settlement: WeatherSettlementRecord | null;
   nwsObservations: NwsStationObservation[];
+  kalshiIndex: KalshiWeatherIndex | null;
+  kalshiCalibrations: KalshiWeatherCalibrationTimeline | null;
   width: number;
 }) {
+  const { degreeDays } = useWeatherPolling(row.stationId);
+  const indexPoint = latestCompleteKalshiWeatherPoint(kalshiIndex);
+  const calibration = kalshiCalibrations?.calibrations.at(-1) ?? null;
+  const degreeDaysLine = degreeDays ? (
+    <Text fg={colors.textMuted}>
+      HDD {degreeDays.hdd.toFixed(1)} · CDD {degreeDays.cdd.toFixed(1)}
+      {` · month ${degreeDays.monthlyCumulativeHdd.toFixed(1)} / ${degreeDays.monthlyCumulativeCdd.toFixed(1)} (${degreeDays.dayCount}d)`}
+    </Text>
+  ) : null;
+  const indexSummary = kalshiIndex
+    ? indexPoint
+      ? `Kalshi index ${indexPoint.valueF?.toFixed(2)}°F · ${indexPoint.timestampMs ? new Date(indexPoint.timestampMs).toISOString().slice(11, 16) : "—"}Z`
+      : kalshiIndex.points.length > 0
+        ? "Kalshi index pending quorum"
+        : "Kalshi index no points"
+    : null;
   const stationObservations: StationObservation[] = nwsObservations.map((observation) => ({
     timestamp: observation.timestamp,
     temperatureF: observation.temperatureF,
@@ -236,6 +255,15 @@ function WeatherDetail({
               {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
             </Text>
           )}
+          {indexSummary && <Text fg={indexPoint ? colors.positive : colors.warning}>{indexSummary}</Text>}
+          {kalshiIndex?.configVersion && <Text fg={colors.textMuted}>Index config {kalshiIndex.configVersion}</Text>}
+          {calibration && (
+            <Text fg={colors.textMuted}>
+              Calibration {calibration.configVersion} · {calibration.stations.length} stations
+              {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
+            </Text>
+          )}
+          {degreeDaysLine}
         </Box>
         <StationDetail
           observations={stationObservations}
@@ -267,6 +295,15 @@ function WeatherDetail({
             {settlement.meta.status ? ` · ${settlement.meta.status}` : ""}
           </Text>
         )}
+        {indexSummary && <Text fg={indexPoint ? colors.positive : colors.warning}>{indexSummary}</Text>}
+        {kalshiIndex?.configVersion && <Text fg={colors.textMuted}>Index config {kalshiIndex.configVersion}</Text>}
+        {calibration && (
+          <Text fg={colors.textMuted}>
+            Calibration {calibration.configVersion} · {calibration.stations.length} stations
+            {calibration.changeReason ? ` · ${calibration.changeReason}` : ""}
+          </Text>
+        )}
+        {degreeDaysLine}
         {(row.yForecast != null || row.ySettlement != null) && (
           <Text fg={colors.textMuted}>
             Yesterday forecast {formatTemp(row.yForecast, 1)}°F
@@ -307,18 +344,13 @@ interface ReportColumn extends DataTableColumn {
   id: ReportSortColumnId;
 }
 
-function createReportColumns(width: number): ReportColumn[] {
-  const hitWidth = 6;
-  const maeWidth = 5;
-  const biasWidth = 6;
-  const samplesWidth = width >= 48 ? 4 : 0;
-  const cityWidth = Math.max(10, width - hitWidth - maeWidth - biasWidth - samplesWidth - 6);
+function createReportColumns(): ReportColumn[] {
   return [
-    { id: "city", label: "CITY", width: cityWidth, align: "left" },
-    { id: "hit", label: "HIT", width: hitWidth, align: "right" },
-    { id: "mae", label: "MAE", width: maeWidth, align: "right" },
-    { id: "bias", label: "BIAS", width: biasWidth, align: "right" },
-    ...(samplesWidth ? [{ id: "samples" as const, label: "N", width: samplesWidth, align: "right" as const }] : []),
+    { id: "city", label: "CITY", width: 10, align: "left", flexGrow: 1 },
+    { id: "hit", label: "HIT", width: 6, align: "right" },
+    { id: "mae", label: "MAE", width: 5, align: "right" },
+    { id: "bias", label: "BIAS", width: 6, align: "right" },
+    { id: "samples", label: "N", width: 4, align: "right" },
   ];
 }
 
@@ -437,6 +469,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
   const [hourlyByStation, setHourlyByStation] = useState<Record<string, WeatherHourlyObservation[]>>({});
   const [settlementByStation, setSettlementByStation] = useState<Record<string, WeatherSettlementRecord | null>>({});
   const [nwsByStation, setNwsByStation] = useState<Record<string, NwsStationObservation[]>>({});
+  const [kalshiIndexByStation, setKalshiIndexByStation] = useState<Record<string, KalshiWeatherIndex | null>>({});
+  const [kalshiCalibrationsByStation, setKalshiCalibrationsByStation] = useState<Record<string, KalshiWeatherCalibrationTimeline | null>>({});
   const [backfillPending, setBackfillPending] = useState(false);
   const [archiveReady, setArchiveReady] = useState(false);
   const searchInputRef = useRef<InputRenderable | null>(null);
@@ -683,7 +717,7 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
             })
             .catch(() => undefined)
         : Promise.resolve(),
-      loadNwsStationObservations({ icao: selected.icao, limit: 96 })
+      loadNwsStationObservations({ icao: selected.icao, limit: NWS_OBSERVATIONS_DEFAULT_LIMIT })
         .then((snapshot) => {
           if (cancelled) return;
           setNwsByStation((current) => ({ ...current, [selected.stationId]: snapshot.observations }));
@@ -691,6 +725,24 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         .catch(() => {
           if (cancelled) return;
           setNwsByStation((current) => ({ ...current, [selected.stationId]: [] }));
+        }),
+      loadKalshiWeatherIndexForStation(selected.stationId, { detailed: true })
+        .then((index) => {
+          if (cancelled) return;
+          setKalshiIndexByStation((current) => ({ ...current, [selected.stationId]: index }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setKalshiIndexByStation((current) => ({ ...current, [selected.stationId]: null }));
+        }),
+      loadKalshiWeatherCalibrationsForStation(selected.stationId)
+        .then((calibrations) => {
+          if (cancelled) return;
+          setKalshiCalibrationsByStation((current) => ({ ...current, [selected.stationId]: calibrations }));
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setKalshiCalibrationsByStation((current) => ({ ...current, [selected.stationId]: null }));
         }),
     ]).catch(() => undefined);
     return () => {
@@ -785,8 +837,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     return false;
   }, [graphSelected, load, openSelected, scope, selected]);
 
-  const columns = useMemo(() => createColumns(width), [width]);
-  const reportColumns = useMemo(() => createReportColumns(width), [width]);
+  const columns = useMemo(() => createColumns(), []);
+  const reportColumns = useMemo(() => createReportColumns(), []);
   const filteredReportRows = useMemo(
     () => {
       const needle = searchQuery.trim().toLowerCase();
@@ -955,12 +1007,14 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
         detailOpen={detailOpen && !!selected}
         onBack={() => setDetailOpen(false)}
         detailContent={
-          selected ? (
+          selected && detailOpen ? (
             <WeatherDetail
               row={selected}
               hourly={hourlyByStation[selected.stationId] ?? []}
               settlement={settlementByStation[selected.stationId] ?? null}
               nwsObservations={nwsByStation[selected.stationId] ?? []}
+              kalshiIndex={kalshiIndexByStation[selected.stationId] ?? null}
+              kalshiCalibrations={kalshiCalibrationsByStation[selected.stationId] ?? null}
               width={width}
             />
           ) : null

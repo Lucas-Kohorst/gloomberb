@@ -1,8 +1,10 @@
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import type {
+  AdjacentConstituent,
   AdjacentIndex,
   AdjacentIndexRow,
   AdjacentIndexPricePoint,
+  AdjacentIndexSleeve,
   AdjacentNewsArticle,
   AdjacentPlatform,
   AdjacentPriceHistoryPoint,
@@ -139,6 +141,28 @@ export function adjacentPriceHistoryToPredictionPoints(
   }));
 }
 
+export function unwrapAdjacentPriceSamples(raw: unknown): AdjacentPriceSample[] {
+  const rows = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? Array.isArray((raw as { data?: unknown }).data)
+        ? (raw as { data: unknown[] }).data
+        : Array.isArray((raw as { points?: unknown }).points)
+          ? (raw as { points: unknown[] }).points
+          : []
+      : [];
+  const samples: AdjacentPriceSample[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Record<string, unknown>;
+    const timestamp = stringField(item, "timestamp", "time", "date");
+    const price = numberField(item, "price", "close", "value");
+    if (!timestamp || price == null) continue;
+    samples.push({ timestamp, price });
+  }
+  return samples;
+}
+
 export function normalizeAdjacentIndexPrices(
   prices: AdjacentPriceSample[],
 ): AdjacentIndexPricePoint[] {
@@ -253,6 +277,125 @@ export function unwrapAdjacentSimilarMarkets(raw: unknown): AdjacentSimilarMarke
   return rows
     .map(parseAdjacentSimilarMarket)
     .filter((market): market is AdjacentSimilarMarket => market !== null);
+}
+
+function venueFromConstituent(row: {
+  platform?: string;
+  market_id: string;
+}): "kalshi" | "polymarket" | null {
+  const platform = (row.platform ?? "").toLowerCase();
+  const id = row.market_id.toLowerCase();
+  if (platform === "kalshi" || id.startsWith("kalshi:")) return "kalshi";
+  if (platform === "polymarket" || id.startsWith("polymarket:") || id.startsWith("poly:")) {
+    return "polymarket";
+  }
+  return null;
+}
+
+/** NTI/rate sleeves are 0-1; Kalshi/Polymarket constituents are 0-100 cents. */
+export function constituentImpliedPercent(row: {
+  price?: number | null;
+  platform?: string;
+  market_id: string;
+}): number | null {
+  if (row.price == null || !Number.isFinite(row.price) || row.price < 0) return null;
+  const venue = venueFromConstituent(row);
+  if (!venue && row.price <= 1) return row.price * 100;
+  return row.price;
+}
+
+export function constituentChartExpression(row: {
+  platform?: string;
+  market_id: string;
+  ticker?: string;
+  display_ticker?: string;
+}): string | null {
+  const venue = venueFromConstituent(row);
+  const raw = (row.ticker ?? row.display_ticker ?? "").trim()
+    || row.market_id.replace(/^(kalshi|polymarket|poly):/i, "").trim();
+  if (!raw) return null;
+  if (venue === "kalshi") return `KALSHI:${raw}`;
+  if (venue === "polymarket") return `POLY:${raw}`;
+  return `ADJ:${row.market_id}`;
+}
+
+export function constituentOpenSymbol(row: {
+  platform?: string;
+  market_id: string;
+  ticker?: string;
+  display_ticker?: string;
+}): string | null {
+  const expression = constituentChartExpression(row);
+  if (!expression || expression.startsWith("ADJ:")) return null;
+  return expression;
+}
+
+export function formatImpliedPercent(prob: number): string {
+  const rounded = Math.round(prob * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
+}
+
+function rateFamily(value: string): string {
+  return value.trim().toLowerCase().replace(/_\d+$/, "");
+}
+
+/** Prefer live NTI sleeves when the constituents list still has a stale unpriced row. */
+export function mergeIndexConstituents(
+  constituents: AdjacentConstituent[],
+  sleeves: AdjacentIndexSleeve[] | null | undefined,
+): AdjacentConstituent[] {
+  if (!sleeves?.length) return constituents;
+  const weightByRate = new Map(constituents.map((row) => [row.market_id, row.weight]));
+  const constituentFamilies = new Set(
+    constituents.flatMap((row) => {
+      const family = rateFamily(row.market_id);
+      return family ? [family] : [];
+    }),
+  );
+  const relevantSleeves = sleeves.filter((sleeve) => {
+    const members = sleeve.members?.length
+      ? sleeve.members
+      : sleeve.rate_id
+        ? [{ rate_id: sleeve.rate_id, name: sleeve.name, mark_price: sleeve.mark_price }]
+        : [];
+    return members.some((member) => (
+      weightByRate.has(member.rate_id) || constituentFamilies.has(rateFamily(member.rate_id))
+    ));
+  });
+  if (relevantSleeves.length === 0) return constituents;
+  const rows: AdjacentConstituent[] = [];
+  const seen = new Set<string>();
+  for (const sleeve of relevantSleeves) {
+    const members = sleeve.members?.length
+      ? sleeve.members
+      : sleeve.rate_id
+        ? [{ rate_id: sleeve.rate_id, name: sleeve.name, mark_price: sleeve.mark_price }]
+        : [];
+    if (members.length === 0) continue;
+    const sleeveWeight = members.reduce((sum, member) => (
+      sum + (weightByRate.get(member.rate_id) ?? 0)
+    ), 0) || (weightByRate.get(sleeve.rate_id ?? "") ?? (1 / relevantSleeves.length));
+    const share = sleeveWeight / members.length;
+    for (const member of members) {
+      if (!member.rate_id || seen.has(member.rate_id)) continue;
+      seen.add(member.rate_id);
+      rows.push({
+        kind: "market",
+        market_id: member.rate_id,
+        platform: member.rate_id,
+        name: member.name,
+        weight: share,
+        price: member.mark_price ?? null,
+      });
+    }
+  }
+  for (const row of constituents) {
+    if (seen.has(row.market_id)) continue;
+    if (!venueFromConstituent(row)) continue;
+    seen.add(row.market_id);
+    rows.push(row);
+  }
+  return rows.length > 0 ? rows : constituents;
 }
 
 export function unwrapAdjacentMarketIds(raw: unknown): string[] {

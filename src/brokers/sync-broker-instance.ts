@@ -278,9 +278,7 @@ export async function syncBrokerInstance({
     if (committed) return;
     throwIfBrokerImportCancelled(signal);
     if (resources) {
-      try {
-        persistBrokerAccounts(resources, instance, broker, brokerAccounts);
-      } catch {}
+      persistBrokerAccounts(resources, instance, broker, brokerAccounts);
     }
     await Promise.all([...addedTickers.values(), ...updatedTickers.values()].map((ticker) => (
       tickerRepository.saveTicker(ticker)

@@ -1,5 +1,5 @@
-import { type ComponentType, useMemo, useRef } from "react";
-import { useUiHost } from "../../../ui";
+import { type ComponentType, useEffect, useRef } from "react";
+import { useRendererHost, useUiHost } from "../../../ui";
 import { OpenTuiDataTable } from "./opentui";
 import type {
   DataTableColumn,
@@ -7,6 +7,9 @@ import type {
 } from "./types";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { remoteNumberValue, resolveRemoteItemIndex } from "../../../remote/semantic-helpers";
+import { useOptionalPaneInstanceId } from "../../../state/app/context";
+import { registerPaneTableExporter } from "../../../state/pane-table-export-registry";
+import { createDataTableCsv } from "../../data-table/export";
 
 export type {
   DataTableCell,
@@ -19,62 +22,56 @@ export type {
 export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
   props: DataTableProps<T, C>,
 ) {
-  const livePropsRef = useRef(props);
-  livePropsRef.current = props;
+  const paneId = useOptionalPaneInstanceId();
+  const renderer = useRendererHost();
+  const propsRef = useRef(props);
+  propsRef.current = props;
   const selectedHintRef = useRef(-1);
-  const selectedId = props.selectedItemKey !== undefined
-    ? props.selectedItemKey
-    : resolveRemoteSelectedId(
-      props.items,
-      props.isSelected,
-      props.getItemKey,
-      selectedHintRef,
-    );
-  const columnsMeta = useMemo(
-    () => props.columns.map((column) => ({ id: column.id, label: column.label })),
-    [props.columns],
-  );
-  const rowCount = props.items.length;
-  const registration = useMemo(() => ({
-    role: "table" as const,
+
+  useEffect(() => {
+    if (!paneId || !renderer.saveTextFile) return;
+    return registerPaneTableExporter(paneId, (filename) => renderer.saveTextFile!({
+      name: filename,
+      text: createDataTableCsv(propsRef.current),
+      mimeType: "text/csv;charset=utf-8",
+    }));
+  }, [paneId, renderer]);
+
+  useRemoteUiNode({
+    role: "table",
     label: "Data table",
     actions: {
-      selectRow: (input: unknown) => {
-        const current = livePropsRef.current;
-        const index = resolveTableIndex(input, current);
-        const item = index >= 0 ? current.items[index] : undefined;
-        if (item) current.onSelect(item, index);
+      selectRow: (input) => {
+        const index = resolveTableIndex(input, props);
+        const item = index >= 0 ? props.items[index] : undefined;
+        if (item) props.onSelect(item, index);
       },
-      activateRow: (input: unknown) => {
-        const current = livePropsRef.current;
-        const index = resolveTableIndex(input, current);
-        const item = index >= 0 ? current.items[index] : undefined;
+      activateRow: (input) => {
+        const index = resolveTableIndex(input, props);
+        const item = index >= 0 ? props.items[index] : undefined;
         if (item) {
-          current.onSelect(item, index);
-          current.onActivate?.(item, index);
+          props.onSelect(item, index);
+          props.onActivate?.(item, index);
         }
       },
-      sort: (input: unknown) => {
-        const current = livePropsRef.current;
+      sort: (input) => {
         const columnId = typeof input === "string"
           ? input
           : input && typeof input === "object" && typeof (input as { columnId?: unknown }).columnId === "string"
             ? (input as { columnId: string }).columnId
             : null;
-        if (columnId && current.columns.some((column) => column.id === columnId)) {
-          current.onHeaderClick(columnId);
+        if (columnId && props.columns.some((column) => column.id === columnId)) {
+          props.onHeaderClick(columnId);
         }
       },
-      scrollTo: (input: unknown) => {
-        const current = livePropsRef.current;
-        const box = current.scrollRef.current;
+      scrollTo: (input) => {
+        const box = props.scrollRef.current;
         if (!box) return;
         box.scrollTo(Math.max(0, Math.round(remoteNumberValue(input, ["top", "index"]))));
-        current.onBodyScrollActivity();
+        props.onBodyScrollActivity();
       },
-      scrollBy: (input: unknown) => {
-        const current = livePropsRef.current;
-        const box = current.scrollRef.current;
+      scrollBy: (input) => {
+        const box = props.scrollRef.current;
         if (!box) return;
         const direction = input && typeof input === "object"
           ? (input as { direction?: unknown }).direction
@@ -83,24 +80,23 @@ export function DataTable<T, C extends DataTableColumn = DataTableColumn>(
           ? remoteNumberValue(input, ["delta"], -1)
           : remoteNumberValue(input, ["delta"], 1);
         box.scrollTo(Math.max(0, Math.round((box.scrollTop ?? 0) + delta)));
-        current.onBodyScrollActivity();
+        props.onBodyScrollActivity();
       },
     },
-    metadata: {
+    // Rows are deliberately not projected: serializing hundreds of rows per
+    // snapshot was the cost #296 removed. The selection key comes from the
+    // caller's selectedItemKey, or a hint-cached scan when it is absent.
+    getMetadata: () => ({
+      paneInstanceId: paneId,
       sortColumnId: props.sortColumnId,
       sortDirection: props.sortDirection,
-      columns: columnsMeta,
-      rowCount,
-      selectedId,
-    },
-  }), [
-    columnsMeta,
-    props.sortColumnId,
-    props.sortDirection,
-    rowCount,
-    selectedId,
-  ]);
-  useRemoteUiNode(registration);
+      columns: props.columns.map((column) => ({ id: column.id, label: column.label })),
+      rowCount: props.items.length,
+      selectedId: props.selectedItemKey !== undefined
+        ? props.selectedItemKey
+        : resolveRemoteSelectedId(props.items, props.isSelected, props.getItemKey, selectedHintRef),
+    }),
+  });
   const HostDataTable = useUiHost().DataTable as
     | ComponentType<DataTableProps<T, C>>
     | undefined;

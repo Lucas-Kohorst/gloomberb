@@ -5,6 +5,7 @@ import { esgModule } from "./esg";
 import { holdersModule } from "./holders";
 import { insiderModule } from "./insider";
 import { optionsModule } from "./options";
+import { optionsCalculatorModule } from "./options-calculator";
 import { composeBuiltinPlugin } from "./plugin-module";
 import { researchModule } from "./research";
 import { secModule } from "./sec";
@@ -22,14 +23,15 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     tickerDetailModule,
     chartComposerModule,
     optionsModule,
+    optionsCalculatorModule,
     researchModule,
+    dividendYieldModule,
     holdersModule,
+    shortInterestModule,
     thirteenFModule,
     secModule,
     earningsTranscriptsModule,
     insiderModule,
-    shortInterestModule,
-    dividendYieldModule,
     esgModule,
   ],
 });

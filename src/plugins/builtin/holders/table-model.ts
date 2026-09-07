@@ -20,25 +20,15 @@ export function buildRows(data: HolderData | null): HolderRow[] {
   }));
 }
 
-export function buildColumns(width: number): HolderColumn[] {
-  const valueWidth = 10;
-  const sharesWidth = 10;
-  const changeWidth = 10;
-  const changePercentWidth = 8;
-  const heldWidth = 7;
-  const dateWidth = 10;
-  const columnCount = 7;
-  const fixedWidth = valueWidth + sharesWidth + changeWidth + changePercentWidth + heldWidth + dateWidth;
-  const holderWidth = Math.max(16, width - 2 - columnCount - fixedWidth);
-
+export function buildColumns(): HolderColumn[] {
   return [
-    { id: "holder", label: "HOLDER", width: holderWidth, align: "left" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "shares", label: "AMOUNT", width: sharesWidth, align: "right" },
-    { id: "changeShares", label: "CHG", width: changeWidth, align: "right" },
-    { id: "changePercent", label: "CHG%", width: changePercentWidth, align: "right" },
-    { id: "percentHeld", label: "HELD", width: heldWidth, align: "right" },
-    { id: "reportDate", label: "DATE", width: dateWidth, align: "right" },
+    { id: "holder", label: "HOLDER", width: 16, align: "left", flexGrow: 1 },
+    { id: "value", label: "VALUE", width: 10, align: "right" },
+    { id: "shares", label: "AMOUNT", width: 10, align: "right" },
+    { id: "changeShares", label: "CHG", width: 10, align: "right" },
+    { id: "changePercent", label: "CHG%", width: 8, align: "right" },
+    { id: "percentHeld", label: "HELD", width: 7, align: "right" },
+    { id: "reportDate", label: "DATE", width: 10, align: "right" },
   ];
 }
 

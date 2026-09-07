@@ -262,6 +262,30 @@ export interface CloudQuotePayload extends Quote {
   dataSource: "live" | "delayed";
 }
 
+export interface CloudWorldVenuePayload {
+  mic: string;
+  name: string;
+  title: string;
+  country: string;
+  countryCode: string;
+  city: string;
+  timezone: string;
+  latitude: number;
+  longitude: number;
+  isOpen: boolean;
+  timeAfterOpenSeconds?: number;
+  timeToOpenSeconds?: number;
+  timeToCloseSeconds?: number;
+}
+
+export interface CloudWorldVenueMapPayload {
+  providerId: "gloomberb-cloud";
+  checkedAt: number;
+  refreshAt: number;
+  stale?: boolean;
+  venues: CloudWorldVenuePayload[];
+}
+
 export interface CloudOptionsChainPayload extends OptionsChain {
   providerId: "gloomberb-cloud";
 }
@@ -331,6 +355,28 @@ export interface CloudFredSeriesPayload {
   info: CloudFredSeriesInfoPayload | null;
 }
 
+/**
+ * One month of Robert Shiller's dataset. FRED carries no long-run S&P earnings,
+ * so this is what every earnings-based valuation ratio is built from.
+ */
+export interface CloudShillerObservationPayload {
+  date: string;
+  price: number | null;
+  dividend: number | null;
+  earnings: number | null;
+  cpi: number | null;
+  longRate: number | null;
+  cape: number | null;
+  /** CAPE earnings yield over the real 10-year rate; Shiller's equity risk premium. */
+  excessCapeYield: number | null;
+}
+
+export interface CloudShillerPayload {
+  observations: CloudShillerObservationPayload[];
+  sourceUrl: string;
+  fetchedAt: string;
+}
+
 /** One publicly disseminated single-name CDS transaction report. */
 export interface CloudCdsTradePayload {
   disseminationId: string;
@@ -365,10 +411,28 @@ export interface CloudCdsResponse {
   trades: CloudCdsTradePayload[];
 }
 
+export interface CloudShortInterestPointPayload {
+  settlementDate: string;
+  sharesShort: number;
+  previousSharesShort: number | null;
+  averageDailyVolume: number | null;
+  daysToCover: number | null;
+  changePercent: number | null;
+  revised: boolean;
+}
+
+export interface CloudShortInterestPayload {
+  symbol: string;
+  issueName: string | null;
+  points: CloudShortInterestPointPayload[];
+}
+
 export interface CloudYieldPointPayload {
   maturity: string;
   maturityYears: number;
   yield: number | null;
+  /** FRED observation date. Absent on servers older than the field. */
+  asOf?: string | null;
 }
 
 type CloudCongressTradeSide = "BUY" | "SELL" | "EXCHANGE" | "OTHER";
@@ -431,6 +495,180 @@ export interface CloudCongressHousePayload {
   nextFilingOffset?: number;
   trades: CloudCongressTradePayload[];
   members: CloudCongressMemberPayload[];
+}
+
+export interface CloudEarningsCallPayload {
+  id: string;
+  ticker: string;
+  companyName: string | null;
+  fiscalYear: number | null;
+  fiscalQuarter: number | null;
+  callAt: string | null;
+  status: string;
+  durationSeconds: number | null;
+  wordCount: number | null;
+  hasTranscript: boolean;
+  sentiment: number | null;
+  /** The replay or event page the transcript came from. */
+  webcastUrl?: string | null;
+}
+
+export interface CloudEarningsCallListPayload {
+  calls: CloudEarningsCallPayload[];
+  /** Set when asking about a company started a search that is still running. */
+  pending?: boolean;
+  /** Set when the requested symbol is not one the SEC knows. */
+  unknownTicker?: boolean;
+}
+
+export interface CloudTranscriptTurnPayload {
+  speaker: string;
+  role?: string;
+  company?: string;
+  text: string;
+  isQa: boolean;
+  startSeconds: number;
+}
+
+export interface CloudTranscriptParticipantPayload {
+  name: string;
+  role?: string;
+  company?: string;
+}
+
+export interface CloudEarningsTranscriptPayload {
+  id: string;
+  ticker: string;
+  companyName: string | null;
+  fiscalYear: number | null;
+  fiscalQuarter: number | null;
+  callAt: string | null;
+  timing: string | null;
+  webcastUrl: string | null;
+  durationSeconds: number | null;
+  status: string;
+  fullText: string;
+  turns: CloudTranscriptTurnPayload[];
+  participants: CloudTranscriptParticipantPayload[];
+  summary: string | null;
+  guidance: string | null;
+  riskFactors: string | null;
+  analystFocus: string | null;
+  notable: string | null;
+  sentiment: number | null;
+  sentimentRationale: string | null;
+  qaStartTurn: number | null;
+  wordCount: number | null;
+  asrModel: string | null;
+  updatedAt: string | null;
+}
+
+export type CloudSearchDocType = "transcript" | "news" | "filing";
+
+export type CloudSearchSort = "relevance" | "newest" | "oldest";
+
+/**
+ * Per-chunk provenance. Which keys are present depends on `docType`: transcripts
+ * carry speaker attribution, news carries the wire source, filings carry the
+ * form and section. Kept as one optional-key record so an unknown docType from a
+ * newer server still renders instead of failing to parse.
+ */
+export interface CloudSearchChunkMetadata {
+  speaker?: string;
+  role?: string;
+  company?: string;
+  isQa?: boolean;
+  startSeconds?: number;
+  turnIndex?: number;
+  source?: string;
+  summary?: string;
+  form?: string;
+  accession?: string;
+  section?: string;
+}
+
+export interface CloudSearchHit {
+  id: string;
+  docType: CloudSearchDocType;
+  sourceId: string;
+  chunkIndex: number;
+  ticker: string;
+  publishedAt: string;
+  title: string;
+  url: string;
+  /** Matched terms wrapped in `<mark>`, fragments joined by an ellipsis. */
+  snippet: string;
+  score: number;
+  metadata: CloudSearchChunkMetadata;
+  /**
+   * Chunks of this document that matched. Only sent for a distinct search,
+   * where the row stands for the document rather than for one chunk.
+   */
+  matchCount?: number;
+}
+
+export interface CloudSearchResponse {
+  hits: CloudSearchHit[];
+  total: number;
+  /** The server stopped counting past its cap, so `total` is a lower bound. */
+  countCapped: boolean;
+  hasMore: boolean;
+  nextOffset: number;
+  tookMs: number;
+}
+
+export interface CloudSearchDocumentChunk {
+  id: string;
+  chunkIndex: number;
+  body: string;
+  metadata: CloudSearchChunkMetadata;
+}
+
+export interface CloudSearchDocument {
+  docType: CloudSearchDocType;
+  sourceId: string;
+  ticker: string;
+  title: string;
+  url: string;
+  publishedAt: string;
+  chunks: CloudSearchDocumentChunk[];
+}
+
+export interface CloudSearchDocumentResponse {
+  document: CloudSearchDocument;
+}
+
+export interface CloudSavedSearchFilters {
+  tickers?: string[];
+  docTypes?: CloudSearchDocType[];
+  sources?: string[];
+  from?: string;
+  to?: string;
+}
+
+export interface CloudSavedSearch {
+  id: string;
+  name: string;
+  query: string;
+  filters: CloudSavedSearchFilters;
+  alertEnabled: boolean;
+  alertChannels: string[];
+  lastRunAt: string | null;
+  lastMatchAt: string | null;
+  matchCount: number;
+  createdAt: string;
+}
+
+export interface CloudSavedSearchListResponse {
+  searches: CloudSavedSearch[];
+}
+
+export interface CloudSavedSearchInput {
+  name: string;
+  query: string;
+  filters?: CloudSavedSearchFilters;
+  alertEnabled?: boolean;
+  alertChannels?: string[];
 }
 
 export interface CloudSecFilingPayload {

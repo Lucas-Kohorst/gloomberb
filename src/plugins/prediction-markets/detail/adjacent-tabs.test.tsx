@@ -132,8 +132,8 @@ describe("PredictionNewsTab", () => {
     await flushFrames(testSetup, 8);
 
     const frame = testSetup.captureCharFrame();
-    expect(frame).toContain("Headline");
-    expect(frame).toContain("Source");
+    expect(frame.toUpperCase()).toContain("HEADLINE");
+    expect(frame.toUpperCase()).toContain("SOURCE");
     expect(frame).toContain("Iran");
     expect(frame).toContain("[o]");
     expect(frame).toContain("[p]");

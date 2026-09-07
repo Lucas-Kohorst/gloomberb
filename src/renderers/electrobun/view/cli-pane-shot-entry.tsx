@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import { createRoot } from "react-dom/client";
-import { useEffect, type ComponentType, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AppProvider, useAppDispatch } from "../../../state/app/context";
+import { createCliPaneShotConnectionHealth } from "./cli-pane-shot-health";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { UiHostProvider, type RendererHost } from "../../../ui/host";
@@ -11,8 +12,7 @@ import { webNativeRenderer } from "./native-renderer";
 import { WebToastHostProvider } from "./toast-host";
 import { webUiHost } from "./ui-host";
 import { getLoadablePlugins } from "../../../plugins/catalog";
-import { setSharedMarketDataForTests } from "../../../plugins/registry";
-import { PluginRenderProvider, type PluginRuntimeAccess } from "../../../plugins/runtime";
+import { PluginRegistry, setSharedMarketDataForTests } from "../../../plugins/registry";
 import {
   RemoteUiRegistryProvider,
   useRemoteUiRegistry,
@@ -29,6 +29,11 @@ import {
 } from "../../../time-series/resolution";
 import type { TimeRange } from "../../../components/chart/core/types";
 import type { AppConfig } from "../../../types/config";
+import type {
+  AppPersistencePort,
+  AppTickerRepositoryPort,
+} from "../../../core/app-service-ports";
+import type { CachedResourceRecord, ResourceCacheKey, SetResourceOptions } from "../../../data/resource-store";
 import type { CachedFinancialsTarget, DataProvider, QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { OptionsChain, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
@@ -36,7 +41,14 @@ import type { AppState, PaneRuntimeState } from "../../../core/state/app/state";
 import type { PaneDef } from "../../../types/plugin";
 import { canonicalTickerKey, parsePublicTickerKey } from "../../../utils/exchanges";
 import { hydrateFredSeries, type FredSeriesCacheEntry } from "../../../data/fred-series";
+import { hydrateValuationSeries } from "../../../plugins/builtin/market-valuation/cache";
+import { statsCache } from "../../../plugins/builtin/econ-statistics/cache";
+import type { DatedObservation } from "../../../plugins/builtin/market-valuation/series";
 import { clipPriceHistoryToRange } from "../../../time-series/history-window";
+import type { ResolvedSeries } from "../../../time-series/types";
+import { chartSeriesSourceKey } from "../../../capabilities";
+import { apiClient, setCloudApiFetchTransport } from "../../../api-client";
+import { createGloomberbCloudProvider } from "../../../sources/gloomberb-cloud";
 
 interface CliPaneShotPayload {
   config: AppConfig;
@@ -47,6 +59,9 @@ interface CliPaneShotPayload {
   financials: Array<[string, TickerFinancials]>;
   optionsChains: Array<[string, OptionsChain]>;
   fredSeries: Array<[string, FredSeriesCacheEntry]>;
+  valuationSeries: Array<[string, DatedObservation[]]>;
+  statSeries: Array<[string, DatedObservation[]]>;
+  capabilitySeries: Array<[string, ResolvedSeries]>;
   paneState: Record<string, PaneRuntimeState>;
 }
 
@@ -64,7 +79,12 @@ declare global {
 // frames can capture the shell before those requests register, leaving a
 // loading chart or stale performance table in an otherwise valid PNG.
 const SHOT_READY_STABLE_FRAMES = 10;
-const SHOT_LOADING_TEXT_PATTERN = /\b(Loading|Rendering pane)\b/i;
+// Loading is detected from an explicit marker rendered by Spinner and
+// PaneStatusBody. Matching on body text instead made any pane whose real
+// content contains the word "loading" (a changelog release note, a news
+// headline) wait forever and time out.
+const SHOT_LOADING_SELECTOR = "[data-gloom-status=\"loading\"]";
+const SHOT_API_PROXY_PREFIX = "/__gloom_cli_api__";
 const TRACKED_RESPONSE_METHODS = new Set<PropertyKey>([
   "arrayBuffer",
   "blob",
@@ -76,6 +96,7 @@ const TRACKED_RESPONSE_METHODS = new Set<PropertyKey>([
 let pendingShotWork = 0;
 let didInstallShotFetchTracker = false;
 let shotDataProvider: DataProvider | null = null;
+let shotRegistry: PluginRegistry | null = null;
 const SHOT_CHART_RESOLUTION_SUPPORT = normalizeChartResolutionSupport(
   TIME_RANGE_ORDER.map((maxRange) => ({
     resolution: getPresetResolution(maxRange),
@@ -128,12 +149,51 @@ function installShotFetchTracker(): void {
   )) as typeof fetch;
 }
 
+function installShotCloudApiTransport(): void {
+  apiClient.setCookieSessionMode(true);
+  setCloudApiFetchTransport((url, init = {}) => {
+    const upstream = new URL(url);
+    const proxyUrl = new URL(`${SHOT_API_PROXY_PREFIX}${upstream.pathname}`, window.location.origin);
+    proxyUrl.search = upstream.search;
+    const headers = new Headers(init.headers);
+    // Bun owns the real session cookie. The browser only talks to the local
+    // same-origin proxy and never receives or serializes the credential.
+    headers.delete("Cookie");
+    headers.delete("Origin");
+    return window.fetch(proxyUrl, {
+      ...init,
+      headers,
+      credentials: "same-origin",
+    });
+  });
+}
+
+async function restoreShotCloudSession(): Promise<void> {
+  await apiClient.getSession().catch(() => null);
+}
+
 function resolveShotWork<T>(value: T): Promise<T> {
   return trackShotWork(Promise.resolve(value));
 }
 
 function isShotLoadingTextVisible(): boolean {
-  return SHOT_LOADING_TEXT_PATTERN.test(document.body.textContent ?? "");
+  return document.querySelector(SHOT_LOADING_SELECTOR) !== null;
+}
+
+/**
+ * The payload crosses into the webview as JSON, so every `Date` arrives as a
+ * string while the types still claim `Date`. Anything calling `date.getTime()`
+ * then throws, which is what made the valuation graph preset fail while the
+ * price presets passed.
+ */
+function revivePayloadDates(payload: CliPaneShotPayload): void {
+  for (const [, data] of payload.financials) {
+    const history = data.priceHistory;
+    if (!Array.isArray(history)) continue;
+    for (const point of history) {
+      if (!(point.date instanceof Date)) point.date = new Date(point.date as unknown as string);
+    }
+  }
 }
 
 function hasUnresolvedChartData(): boolean {
@@ -220,7 +280,7 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
     return data;
   };
 
-  return {
+  const injectedProvider: DataProvider = {
     id: "cli-shot",
     name: "CLI screenshot data",
     getTickerFinancials(ticker, exchange) {
@@ -248,8 +308,17 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
           ?? financials.get(normalizeSymbol(target.symbol)))?.quote ?? null,
       })));
     },
-    getExchangeRate() {
-      return resolveShotWork(1);
+    getExchangeRate(fromCurrency: string) {
+      // Returning 1 for every currency used to render the FX matrix as a grid
+      // of 1.0000, which reads as real data. Only the identity conversion is
+      // known offline; anything else has to fail so the pane reports it as
+      // unavailable instead of inventing a parity rate.
+      if (normalizeSymbol(fromCurrency) === normalizeSymbol(payload.config.baseCurrency)) {
+        return resolveShotWork(1);
+      }
+      return trackShotWork(Promise.reject(
+        new Error(`No screenshot exchange rate available for ${fromCurrency}.`),
+      ));
     },
     getOptionsChain(ticker, exchange) {
       return trackShotWork(Promise.resolve().then(() => {
@@ -292,6 +361,19 @@ function createShotDataProvider(payload: CliPaneShotPayload): DataProvider {
       return () => {};
     },
   };
+
+  // Keep deterministic payload data for the mapped screenshot capabilities,
+  // then fall through to the authenticated cloud provider for operations such
+  // as SEC filings that live panes request through market-data hooks.
+  const cloudProvider = createGloomberbCloudProvider();
+  return new Proxy(injectedProvider, {
+    get(target, property, receiver) {
+      const local = Reflect.get(target, property, receiver);
+      if (local !== undefined) return local;
+      const cloud = Reflect.get(cloudProvider, property, cloudProvider);
+      return typeof cloud === "function" ? cloud.bind(cloudProvider) : cloud;
+    },
+  });
 }
 
 function installShotMarketData(payload: CliPaneShotPayload): void {
@@ -313,58 +395,147 @@ function installShotMarketData(payload: CliPaneShotPayload): void {
   setSharedMarketDataCoordinator(coordinator);
 }
 
-function createRuntime(payload: CliPaneShotPayload): PluginRuntimeAccess {
-  const resumeState = new Map<string, unknown>();
-  function getResumeState<T = unknown>(_pluginId: string, key: string): T | null {
-    return (resumeState.get(key) as T | undefined) ?? null;
-  }
-  function getConfigState<T = unknown>(pluginId: string, key: string): T | null {
-    return (payload.config.pluginConfig[pluginId]?.[key] as T | undefined) ?? null;
-  }
+/**
+ * The screenshot renderer has no database and no Electrobun backend. Plugins
+ * still need somewhere to read and write state while the render runs, so state
+ * lives in memory for the lifetime of the page and the resource cache always
+ * reports a miss instead of pretending something was persisted.
+ */
+function createShotPersistence(): AppPersistencePort {
+  const pluginState = new Map<string, { value: unknown; schemaVersion: number; updatedAt: number }>();
+  const stateKey = (pluginId: string, key: string) => `${pluginId}:${key}`;
   return {
-    getMarketData: () => shotDataProvider,
-    getCapability: () => null,
-    getBrokerAdapter: () => null,
-    connectBrokerInstance: async () => {},
-    updateBrokerInstance: async () => {},
-    syncBrokerInstance: async () => {},
-    removeBrokerInstance: async () => {},
-    pinTicker: () => {},
-    navigateTicker: () => {},
-    selectTicker: () => {},
-    switchTab: () => {},
-    switchPanel: () => {},
-    openCommandBar: () => {},
-    showPane: () => {},
-    createPaneFromTemplate: () => {},
-    hidePane: () => {},
-    focusPane: () => {},
-    openPaneSettings: () => {},
-    openPluginCommandWorkflow: () => {},
-    notify: () => {},
-    subscribeResumeState: () => () => {},
-    getResumeState,
-    setResumeState: (_pluginId, key, value) => {
-      resumeState.set(key, value);
+    pluginState: {
+      get: <T,>(pluginId: string, key: string, schemaVersion = 1) => {
+        const record = pluginState.get(stateKey(pluginId, key));
+        if (!record || record.schemaVersion !== schemaVersion) return null;
+        return { value: record.value as T, schemaVersion: record.schemaVersion, updatedAt: record.updatedAt };
+      },
+      set: (pluginId: string, key: string, value: unknown, schemaVersion = 1) => {
+        pluginState.set(stateKey(pluginId, key), { value, schemaVersion, updatedAt: Date.now() });
+      },
+      delete: (pluginId: string, key: string) => {
+        pluginState.delete(stateKey(pluginId, key));
+      },
+      keys: (pluginId: string) => [...pluginState.keys()]
+        .filter((entry) => entry.startsWith(`${pluginId}:`))
+        .map((entry) => entry.slice(pluginId.length + 1))
+        .sort(),
+      clear: (pluginId: string) => {
+        for (const entry of [...pluginState.keys()]) {
+          if (entry.startsWith(`${pluginId}:`)) pluginState.delete(entry);
+        }
+      },
     },
-    deleteResumeState: (_pluginId, key) => {
-      resumeState.delete(key);
+    resources: {
+      get: () => null,
+      list: () => [],
+      set: <T,>(key: ResourceCacheKey, value: T, options: SetResourceOptions): CachedResourceRecord<T> => {
+        const fetchedAt = options.fetchedAt ?? Date.now();
+        return {
+          namespace: key.namespace,
+          kind: key.kind,
+          entityKey: key.entityKey,
+          variantKey: key.variantKey ?? "",
+          sourceKey: key.sourceKey ?? "",
+          value,
+          fetchedAt,
+          staleAt: fetchedAt + options.cachePolicy.staleMs,
+          expiresAt: fetchedAt + options.cachePolicy.expireMs,
+          schemaVersion: options.schemaVersion ?? 1,
+          provenance: options.provenance ?? null,
+          lastAccessedAt: fetchedAt,
+          sizeBytes: 0,
+        };
+      },
+      delete: () => {},
     },
-    getConfigState,
-    setConfigState: async () => {},
-    setConfigStates: async () => {},
-    deleteConfigState: async () => {},
-    getConfigStateKeys: (pluginId) => Object.keys(payload.config.pluginConfig[pluginId] ?? {}),
+    sessions: {
+      get: () => null,
+      set: () => {},
+      delete: () => {},
+    },
+    close() {},
   };
 }
 
-function findPaneDef(paneId: string): { pluginId: string; pane: PaneDef } | null {
+function createShotTickerRepository(tickers: TickerRecord[]): AppTickerRepositoryPort {
+  const bySymbol = new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
+  return {
+    loadAllTickers: async () => [...bySymbol.values()],
+    loadTicker: async (symbol) => bySymbol.get(normalizeSymbol(symbol)) ?? bySymbol.get(symbol) ?? null,
+    saveTicker: async () => {},
+    createTicker: async (metadata) => ({ metadata }),
+    deleteTicker: async () => {},
+  };
+}
+
+/**
+ * Screenshots render the same tree the desktop app renders, so they need the
+ * same registry: plugin-contributed tabs, slots, shortcuts, context menus and
+ * setup-registered panes all resolve through it. Only the capability surface is
+ * replaced, because the offline render can answer chart series from the payload
+ * but cannot reach a backend.
+ */
+async function installShotPluginRegistry(payload: CliPaneShotPayload): Promise<PluginRegistry> {
+  const capabilitySeries = new Map(payload.capabilitySeries ?? []);
+  const capabilityIds = [...new Set(payload.config.layout.instances.flatMap((instance) => {
+    const chartSpec = instance.settings?.chartSpec;
+    if (!chartSpec || typeof chartSpec !== "object" || !Array.isArray((chartSpec as any).series)) return [];
+    return (chartSpec as any).series.flatMap((series: any) => (
+      series?.source?.kind === "capability" && typeof series.source.capabilityId === "string"
+        ? [series.source.capabilityId]
+        : []
+    ));
+  }))];
+
+  const registry = new PluginRegistry(
+    shotDataProvider!,
+    createShotTickerRepository(payload.tickers),
+    createShotPersistence(),
+    {
+      enableCapabilityHandlers: false,
+      connectionHealth: createCliPaneShotConnectionHealth(),
+      remoteCapabilityManifests: () => capabilityIds.map((id) => ({
+        id,
+        kind: "chart-series",
+        name: id,
+        operations: [{ id: "resolve", kind: "query", rendererSafe: true }],
+      })),
+      remoteCapabilityInvoke: async <T,>(capabilityId: string, operationId: string, input: unknown) => {
+        if (operationId !== "resolve" || !input || typeof input !== "object") {
+          throw new Error(`Screenshot capability operation ${capabilityId}.${operationId} is unavailable.`);
+        }
+        const request = input as { seriesId?: string };
+        const value = capabilitySeries.get(chartSeriesSourceKey({
+          kind: "capability",
+          capabilityId,
+          seriesId: request.seriesId ?? "",
+        }));
+        if (!value) throw new Error(`No screenshot chart series data is available for ${request.seriesId ?? capabilityId}.`);
+        return value as T;
+      },
+    },
+  );
+  registry.getConfigFn = () => payload.config;
+  registry.getLayoutFn = () => payload.config.layout;
+  registry.getPaneRuntimeStateFn = (paneId) => payload.paneState[paneId] ?? null;
+
   for (const plugin of getLoadablePlugins()) {
-    for (const pane of plugin.panes ?? []) {
-      if (pane.id === paneId) return { pluginId: plugin.id, pane };
+    try {
+      await registry.register(plugin);
+    } catch (error) {
+      // One failing plugin must not cost the screenshot every other pane.
+      console.error(`[shot] Plugin ${plugin.id} failed to register:`, error);
     }
   }
-  return null;
+  shotRegistry = registry;
+  return registry;
+}
+
+function findPaneDef(paneId: string): { pluginId: string; pane: PaneDef } | null {
+  const pane = shotRegistry?.panes.get(paneId);
+  return pane ? { pluginId: shotRegistry?.getPanePluginId(paneId) ?? "", pane } : null;
 }
 
 function HydratePayload({
@@ -413,16 +584,8 @@ function ShotPane({ payload }: { payload: CliPaneShotPayload }) {
   const found = findPaneDef(instance.paneId);
   if (!found) throw new Error(`Pane ${instance.paneId} is not registered in the desktop renderer.`);
 
-  const runtime = createRuntime(payload);
-  const PaneComponent = found.pane.component as ComponentType<any>;
-  const pane: PaneDef = {
-    ...found.pane,
-    component: (props) => (
-      <PluginRenderProvider pluginId={found.pluginId} runtime={runtime}>
-        <PaneComponent {...props} />
-      </PluginRenderProvider>
-    ),
-  };
+  // The registry already bound its runtime to this pane component.
+  const pane = found.pane;
   const titleState = {
     config: payload.config,
     paneState: payload.paneState,
@@ -462,12 +625,22 @@ function ShotPane({ payload }: { payload: CliPaneShotPayload }) {
   );
 }
 
-function render() {
+async function render() {
   const payload = window.__GLOOM_CLI_SHOT_PAYLOAD__;
   if (!payload) throw new Error("Missing CLI pane screenshot payload.");
+  revivePayloadDates(payload);
   installShotFetchTracker();
+  installShotCloudApiTransport();
   hydrateFredSeries(payload.fredSeries ?? []);
+  hydrateValuationSeries(payload.valuationSeries ?? []);
+  statsCache.hydrate(payload.statSeries ?? []);
   installShotMarketData(payload);
+  // Panes contributed from an async setup() only exist once every plugin has
+  // finished registering, so the tree cannot mount before that resolves.
+  await installShotPluginRegistry(payload);
+  // Plugin setup hydrates its in-memory persistence and may reset apiClient.
+  // Restore the proxied cloud session only after registration is complete.
+  await restoreShotCloudSession();
 
   const rootElement = document.getElementById("root");
   if (!rootElement) throw new Error("Missing root element.");
@@ -498,9 +671,7 @@ function render() {
   );
 }
 
-try {
-  render();
-} catch (error) {
+render().catch((error) => {
   window.__GLOOM_CLI_SHOT_ERROR__ = error instanceof Error ? error.stack ?? error.message : String(error);
   throw error;
-}
+});

@@ -75,8 +75,16 @@ export function DesktopPaneButton({
   return (
     <button
       type="button"
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={onActivate}
+      onMouseDown={(event) => {
+        event.stopPropagation?.();
+        if (event.button != null && event.button !== 0) return;
+        onActivate?.(event);
+      }}
+      onClick={(event) => {
+        event.stopPropagation?.();
+        if (typeof event.detail === "number" && event.detail > 0) return;
+        onActivate?.(event);
+      }}
       data-gloom-role={role}
       data-gloom-interactive={onActivate ? "true" : undefined}
       aria-label={label}
@@ -222,16 +230,23 @@ export function PaneHeader({
             cursor: "grab",
           }}
         >
-          <Span style={{ display: "inline-flex", width: 10, height: 16, color: "inherit" }}>
-            <svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" aria-hidden="true">
-              <circle cx="3" cy="2.5" r="1.15" />
-              <circle cx="7" cy="2.5" r="1.15" />
-              <circle cx="3" cy="8" r="1.15" />
-              <circle cx="7" cy="8" r="1.15" />
-              <circle cx="3" cy="13.5" r="1.15" />
-              <circle cx="7" cy="13.5" r="1.15" />
-            </svg>
-          </Span>
+          {uiKind === "opentui" ? (
+            // The terminal renderer has no SVG host elements; fall back to the cell grip.
+            <Text fg={visuallyFocused ? colors.borderFocused : colors.textMuted} selectable={false}>
+              {PANE_HEADER_GRIP}
+            </Text>
+          ) : (
+            <Span style={{ display: "inline-flex", width: 10, height: 16, color: "inherit" }}>
+              <svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="2.5" r="1.15" />
+                <circle cx="7" cy="2.5" r="1.15" />
+                <circle cx="3" cy="8" r="1.15" />
+                <circle cx="7" cy="8" r="1.15" />
+                <circle cx="3" cy="13.5" r="1.15" />
+                <circle cx="7" cy="13.5" r="1.15" />
+              </svg>
+            </Span>
+          )}
         </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden" flexDirection="row" alignItems="center">
           <Text

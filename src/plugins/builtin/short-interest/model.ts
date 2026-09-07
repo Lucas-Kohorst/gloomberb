@@ -1,7 +1,7 @@
 import type { DataTableColumn } from "../../../components";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import { compareSortValues } from "../../../utils/sort-values";
 import type { ShortInterestRecord } from "./types";
-import { nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 
 export type ShortInterestColumnId =
   | "settlementDate"
@@ -33,9 +33,9 @@ export const DEFAULT_SORT: SortPreference = {
 };
 
 function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -63,59 +63,46 @@ export function buildRows(records: ShortInterestRecord[]): ShortInterestRow[] {
   }));
 }
 
+function sortValue(row: ShortInterestRow, columnId: ShortInterestColumnId): string | number | null {
+  switch (columnId) {
+    case "settlementDate":
+      return row.record.settlementDate.getTime();
+    case "sharesShort":
+      return row.record.sharesShort;
+    case "shortRatio":
+      return row.record.shortRatio;
+    case "averageDailyVolume":
+      return row.record.averageDailyVolume;
+    case "shortPercentFloat":
+      return row.record.shortPercentFloat;
+  }
+}
+
 export function sortRows(rows: ShortInterestRow[], preference: SortPreference): ShortInterestRow[] {
-  const { columnId, direction } = preference;
-  const sorted = [...rows].sort((a, b) => {
-    let cmp = 0;
-    switch (columnId) {
-      case "settlementDate":
-        cmp = a.record.settlementDate.getTime() - b.record.settlementDate.getTime();
-        break;
-      case "sharesShort":
-        cmp = a.record.sharesShort - b.record.sharesShort;
-        break;
-      case "shortRatio": {
-        const av = a.record.shortRatio ?? -Infinity;
-        const bv = b.record.shortRatio ?? -Infinity;
-        cmp = av - bv;
-        break;
-      }
-      case "averageDailyVolume": {
-        const av = a.record.averageDailyVolume ?? -Infinity;
-        const bv = b.record.averageDailyVolume ?? -Infinity;
-        cmp = av - bv;
-        break;
-      }
-      case "shortPercentFloat": {
-        const av = a.record.shortPercentFloat ?? -Infinity;
-        const bv = b.record.shortPercentFloat ?? -Infinity;
-        cmp = av - bv;
-        break;
-      }
-    }
-    return direction === "asc" ? cmp : -cmp;
-  });
-  return sorted;
+  return [...rows].sort((a, b) =>
+    compareSortValues(sortValue(a, preference.columnId), sortValue(b, preference.columnId), preference.direction),
+  );
 }
 
 export function nextSortPreference(
   current: SortPreference,
   columnId: string,
 ): SortPreference {
-  return nextSharedSortPreference(current, columnId as ShortInterestColumnId) as SortPreference;
+  if (current.columnId === columnId) {
+    return {
+      columnId: columnId as ShortInterestColumnId,
+      direction: current.direction === "asc" ? "desc" : "asc",
+    };
+  }
+  return { columnId: columnId as ShortInterestColumnId, direction: "desc" };
 }
 
-export function buildColumns(width: number): ShortInterestColumn[] {
-  const dateWidth = 12;
-  const sharesWidth = 12;
-  const ratioWidth = 12;
-  const advWidth = Math.max(12, width - 2 - dateWidth - sharesWidth - ratioWidth - 12);
-  const percentWidth = 10;
+export function buildColumns(): ShortInterestColumn[] {
   return [
-    { id: "settlementDate", label: "DATE", width: dateWidth, align: "left" },
-    { id: "sharesShort", label: "SHARES SHORT", width: sharesWidth, align: "right" },
-    { id: "shortRatio", label: "DAYS TO COVER", width: ratioWidth, align: "right" },
-    { id: "averageDailyVolume", label: "AVG DAILY VOL", width: advWidth, align: "right" },
-    { id: "shortPercentFloat", label: "% FLOAT", width: percentWidth, align: "right" },
+    { id: "settlementDate", label: "DATE", width: 12, align: "left" },
+    { id: "sharesShort", label: "SHARES SHORT", width: 12, align: "right" },
+    { id: "shortRatio", label: "DAYS TO COVER", width: 12, align: "right" },
+    { id: "averageDailyVolume", label: "AVG DAILY VOL", width: 12, align: "right", flexGrow: 1 },
+    { id: "shortPercentFloat", label: "% FLOAT", width: 10, align: "right" },
   ];
 }

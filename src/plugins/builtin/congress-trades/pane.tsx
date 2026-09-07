@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, useRendererHost, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
 import {
   DataTableStackView,
-  EmptyState,
   InputSearchBar,
-  Spinner,
+  PaneStatusBody,
   Tabs,
   useTableLoadMore,
 } from "../../../components";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { useAutoRefresh } from "../shared/auto-refresh";
 import { useInlineTickerOpener } from "../../../state/hooks/inline-tickers";
 import {
   apiClient,
@@ -57,7 +57,7 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const [payload, setPayload] = useState<CloudCongressHousePayload | null>(null);
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const tradeScrollRef = useRef<ScrollBoxRenderable | null>(null);
   const [activeTab, setActiveTab] = usePluginPaneState<CongressTab>("activeTab", "trades");
@@ -85,19 +85,18 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     setStatus((current) => (current === "loaded" && !refresh ? "loaded" : "loading"));
     setError(null);
     setLoadingMore(false);
-    withConnectionRequest(CONGRESS_CONNECTION_ID, "house-trades", () =>
-      apiClient.getCloudCongressHouse({
-        limit: CONGRESS_TRADE_LIMIT,
-        filingLimit: CONGRESS_FILING_LIMIT,
-        refresh,
-      }))
+    apiClient.getCloudCongressHouse({
+      limit: CONGRESS_TRADE_LIMIT,
+      filingLimit: CONGRESS_FILING_LIMIT,
+      refresh,
+    })
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => (
           refresh && current ? mergeCongressPages(nextPayload, current) : nextPayload
         ));
         setStatus("loaded");
-        setLastUpdated(Date.now());
+        setLastLoadedAt(Date.now());
       })
       .catch((loadError) => {
         if (fetchGenRef.current !== gen) return;
@@ -112,12 +111,11 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    withConnectionRequest(CONGRESS_CONNECTION_ID, "house-trades-page", () =>
-      apiClient.getCloudCongressHouse({
-        ...nextRequest,
-        limit: CONGRESS_TRADE_LIMIT,
-        filingLimit: CONGRESS_FILING_LIMIT,
-      }))
+    apiClient.getCloudCongressHouse({
+      ...nextRequest,
+      limit: CONGRESS_TRADE_LIMIT,
+      filingLimit: CONGRESS_FILING_LIMIT,
+    })
       .then((nextPayload) => {
         if (fetchGenRef.current !== gen) return;
         setPayload((current) => {
@@ -148,13 +146,19 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     load(false);
   }, [load]);
 
+  // Filings would otherwise age indefinitely in an open pane.
+  const refresh = useCallback(() => {
+    load(true);
+  }, [load]);
+  useAutoRefresh(lastLoadedAt, refresh);
+
   const trades = payload?.trades ?? [];
   const members = payload?.members ?? [];
   const query = searchQuery.trim().toLowerCase();
   const tradeRows = useMemo(() => sortedTrades(trades.filter((trade) => !query || `${trade.ticker ?? ""} ${trade.memberName} ${trade.filingDate}`.toLowerCase().includes(query)), tradeSort), [query, trades, tradeSort]);
   const memberRows = useMemo(() => sortedMembers(members.filter((member) => !query || `${member.memberName} ${member.id}`.toLowerCase().includes(query)), memberSort), [query, members, memberSort]);
-  const tradeColumns = useMemo(() => buildTradeColumns(width), [width]);
-  const memberColumns = useMemo(() => buildMemberColumns(width), [width]);
+  const tradeColumns = useMemo(() => buildTradeColumns(), []);
+  const memberColumns = useMemo(() => buildMemberColumns(), []);
   const selectedTradeIndex = selectedIndexById(tradeRows, selectedTradeId);
   const selectedMemberIndex = selectedIndexById(memberRows, selectedMemberId);
   const selectedTrade = tradeRows[selectedTradeIndex] ?? null;
@@ -243,14 +247,13 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     detailMode,
     detailTrade,
     error,
-    load,
     openSelectedTicker,
     openSelectedTradeMember,
     openSelectedTradeSource,
     payload,
     selectedTrade,
     status,
-    lastUpdated,
+    lastUpdated: lastLoadedAt,
     focusSearch,
   });
 
@@ -287,24 +290,11 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
     </Box>
   );
 
-  if (status === "loading" && !payload) {
+  if (!payload && (status === "loading" || error)) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
-        <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <Spinner label="Loading House PTRs..." />
-        </Box>
-      </Box>
-    );
-  }
-
-  if (error && !payload) {
-    return (
-      <Box flexDirection="column" width={width} height={height}>
-        {tabs}
-        <Box padding={1}>
-          <EmptyState title="Congress trades unavailable." message={error} hint="Press r to retry." />
-        </Box>
+        <PaneStatusBody loading={status === "loading"} error={error} subject="House PTR filings" />
       </Box>
     );
   }
@@ -342,7 +332,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           getItemKey={(trade) => trade.id}
           renderCell={renderCongressTradeCell}
           emptyStateTitle="No House PTR trades."
-          emptyStateHint="Press r to refresh."
           scrollRef={tradeScrollRef}
           onBodyScrollActivity={onTradeScroll}
         />
@@ -375,7 +364,6 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
           getItemKey={(member) => member.id}
           renderCell={renderCongressMemberCell}
           emptyStateTitle="No House PTR members."
-          emptyStateHint="Press r to refresh."
         />
       )}
     </Box>

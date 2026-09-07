@@ -1,20 +1,35 @@
 import { Box, Text } from "../../../ui";
 import { TextAttributes } from "../../../ui";
 import { colors } from "../../../theme/colors";
+import { PredictionMarketChart } from "../chart";
 import type {
+  PredictionHistoryRange,
   PredictionListRow,
+  PredictionMarketDetail,
   PredictionMarketSummary,
 } from "../types";
 import { PredictionMarketOutcomesView } from "./outcomes";
 import { SummaryLink } from "./shared";
 
 export function PredictionMarketOverviewView({
+  detail,
   detailWidth,
+  focused,
+  height,
+  historyRange,
+  loading,
+  onHistoryRangeChange,
   onSelectMarket,
   selectedRow,
   summary,
 }: {
+  detail: PredictionMarketDetail | null;
   detailWidth: number;
+  focused: boolean;
+  height: number;
+  historyRange: PredictionHistoryRange;
+  loading: boolean;
+  onHistoryRangeChange: (range: PredictionHistoryRange) => void;
   onSelectMarket: (marketKey: string) => void;
   selectedRow: PredictionListRow | null;
   summary: PredictionMarketSummary;
@@ -31,6 +46,15 @@ export function PredictionMarketOverviewView({
           selectedRow={selectedRow}
         />
       )}
+      <PredictionMarketChart
+        history={detail?.history ?? []}
+        width={detailWidth}
+        height={Math.max(Math.floor(height * 0.36), 10)}
+        loading={loading}
+        focused={focused}
+        range={historyRange}
+        onRangeSelect={onHistoryRangeChange}
+      />
       <SummaryLink
         url={summary.url}
         maxLength={Math.max(detailWidth - 8, 12)}

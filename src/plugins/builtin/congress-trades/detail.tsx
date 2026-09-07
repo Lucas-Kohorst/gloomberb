@@ -78,9 +78,9 @@ export function TradeDetail({
   return (
     <ScrollBox scrollY focusable={false} flexGrow={1} paddingX={1}>
       <Box flexDirection="column" width={lineWidth}>
-        <DetailLine label="member" value={`${trade.memberName} ${trade.stateDistrict}`} tone="value" bold />
+        {/* The detail title already carries the member and ticker. */}
+        <DetailLine label="district" value={trade.stateDistrict || "--"} tone="muted" />
         <DetailLine label="side" value={trade.transactionType} tone={trade.side === "BUY" ? "positive" : trade.side === "SELL" ? "negative" : "warning"} />
-        <DetailLine label="ticker" value={trade.ticker ?? "--"} tone={trade.ticker ? "positive" : "muted"} bold={!!trade.ticker} />
         <DetailLine label="asset" value={truncate(trade.assetName, Math.max(10, lineWidth - 16))} />
         <DetailLine label="amount" value={trade.amount} tone="value" />
         <DetailLine label="owner" value={trade.owner} />
@@ -165,13 +165,12 @@ export function MemberTradesDetail({
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    withConnectionRequest(CONGRESS_CONNECTION_ID, "member-trades-page", () =>
-      apiClient.getCloudCongressHouse({
-        ...nextRequest,
-        member: member.memberName,
-        limit: CONGRESS_MEMBER_TRADE_LIMIT,
-        filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
-      }))
+    apiClient.getCloudCongressHouse({
+      ...nextRequest,
+      member: member.memberName,
+      limit: CONGRESS_MEMBER_TRADE_LIMIT,
+      filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
+    })
       .then((payload) => {
         if (fetchGenRef.current !== gen) return;
         const merged = detailPayload ? mergeCongressPages(detailPayload, payload) : payload;
@@ -208,7 +207,7 @@ export function MemberTradesDetail({
   }, [load]);
 
   const sortedRows = useMemo(() => sortedTrades(trades, sortPreference), [sortPreference, trades]);
-  const columns = useMemo(() => buildMemberTradeColumns(width), [width]);
+  const columns = useMemo(() => buildMemberTradeColumns(), []);
   const selectedTrade = useMemo(() => (
     sortedRows.find((trade) => trade.id === selectedTradeId) ?? sortedRows[0] ?? null
   ), [selectedTradeId, sortedRows]);
@@ -270,7 +269,6 @@ export function MemberTradesDetail({
       ...(maybeTruncated ? [{ id: "member-truncated", parts: [{ text: `limited to ${CONGRESS_MEMBER_TRADE_LIMIT} trades`, tone: "warning" as const }] }] : []),
     ],
     hints: [
-      { id: "member-refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "member-ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !selectedTrade?.ticker },
       { id: "member-open", key: "o", label: "pen", onPress: openSelectedSource, disabled: !selectedTrade?.sourceUrl },
     ],
@@ -279,7 +277,6 @@ export function MemberTradesDetail({
     maybeTruncated,
     openSelectedSource,
     openSelectedTicker,
-    refresh,
     selectedTrade?.sourceUrl,
     selectedTrade?.ticker,
     status,

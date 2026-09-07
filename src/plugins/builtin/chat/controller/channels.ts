@@ -30,6 +30,7 @@ export class ChatControllerChannels {
   private presence = emptyChatPresence();
   private channelsLoading = false;
   private channelsPromise: Promise<void> | null = null;
+  private presencePromise: Promise<void> | null = null;
 
   constructor(private readonly options: ChatControllerChannelsOptions) {}
 
@@ -80,7 +81,13 @@ export class ChatControllerChannels {
 
     const request = apiClient.getChannels()
       .then((channels) => {
-        this.channels = mergePublicChannelCatalog(this.channels, channels);
+        const publicChannels = normalizeChannels(channels);
+        this.channels = this.options.canLoadPrivateState()
+          ? normalizeChannels([
+            ...publicChannels,
+            ...this.channels.filter((channel) => channel.kind === "direct" || channel.kind === "group"),
+          ])
+          : publicChannels;
       })
       .catch(() => {
         // Keep the last backend-provided list if the refresh fails.
@@ -95,9 +102,19 @@ export class ChatControllerChannels {
     return request;
   }
 
+  /** Single-flight: every open chat pane calls this on mount. */
   async refreshPresence(): Promise<void> {
-    this.applyPresence(await apiClient.getChatPresence());
-    this.options.emit();
+    if (this.presencePromise) return this.presencePromise;
+    const request = apiClient.getChatPresence()
+      .then((presence) => {
+        this.applyPresence(presence);
+        this.options.emit();
+      })
+      .finally(() => {
+        this.presencePromise = null;
+      });
+    this.presencePromise = request;
+    return request;
   }
 
   async refreshChatState(): Promise<void> {

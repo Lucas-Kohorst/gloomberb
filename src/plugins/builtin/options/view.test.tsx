@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import { testRender } from "../../../renderers/opentui/test-utils";
+import { takeSavedTextFile, testRender } from "../../../renderers/opentui/test-utils";
+import { exportPaneTable, hasPaneTableExporter } from "../../../state/pane-table-export-registry";
 import { MarketDataCoordinator, setSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { AppContext, PaneInstanceProvider, createInitialState } from "../../../state/app/context";
 import { createTestDataProvider } from "../../../test-support/data-provider";
@@ -10,13 +11,14 @@ import type { QuoteSubscriptionTarget } from "../../../types/data-provider";
 import type { OptionContract, OptionsChain, Quote, TickerFinancials } from "../../../types/financials";
 import type { TickerRecord } from "../../../types/ticker";
 import { formatExpDate } from "../../../utils/options";
-import { PluginRenderProvider } from "../../runtime";
 import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
+import { PluginRenderProvider } from "../../runtime";
 import { OptionsView } from "./view";
 
 const TEST_PANE_ID = "ticker-detail:options-test";
 
 let testSetup: Awaited<ReturnType<typeof testRender>> | undefined;
+let setOptionsQuotePrice: ((price: number) => void) | null = null;
 
 function makeTicker(symbol: string): TickerRecord {
   return {
@@ -125,6 +127,12 @@ function OptionsHarness({
   );
 }
 
+function RealtimeOptionsHarness({ ticker }: { ticker: TickerRecord }) {
+  const [quotePrice, setQuotePrice] = useState(120.2);
+  setOptionsQuotePrice = setQuotePrice;
+  return <OptionsHarness ticker={ticker} quotePrice={quotePrice} />;
+}
+
 async function renderSettled() {
   for (let i = 0; i < 4; i += 1) {
     await act(async () => {
@@ -141,7 +149,35 @@ afterEach(async () => {
     });
     testSetup = undefined;
   }
+  setOptionsQuotePrice = null;
   setSharedMarketDataCoordinator(null);
+});
+
+test("exposes exactly one exportable table so CSV export stays wired up", async () => {
+  const provider = createTestDataProvider({
+    getOptionsChain: async () => makeChain([100, 101], 101),
+  });
+  setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
+
+  await act(async () => {
+    testSetup = await testRender(
+      <OptionsHarness ticker={makeTicker("AAPL")} quotePrice={101} />,
+      { width: 124, height: 12 },
+    );
+  });
+  await renderSettled();
+
+  // `tableExport: true` on the options pane only works when the pane mounts a single
+  // DataTable; a second concurrent table would silently disable the export action.
+  expect(hasPaneTableExporter(TEST_PANE_ID)).toBe(true);
+
+  const location = await exportPaneTable(TEST_PANE_ID, "options.csv");
+  expect(location).toBe("~/Downloads/options.csv");
+
+  const saved = takeSavedTextFile();
+  expect(saved?.name).toBe("options.csv");
+  expect(saved?.text.split("\n")[0]).toContain("STRIKE");
+  expect(saved?.text).toContain("101");
 });
 
 test("defaults the table around the nearest strike to the current quote", async () => {
@@ -168,7 +204,31 @@ test("defaults the table around the nearest strike to the current quote", async 
   expect(frame).not.toContain(" 50 ");
 });
 
-test("streams every visible option row and overlays live contract quotes", async () => {
+test("shows volatility statistics and mirrored default Greeks", async () => {
+  const provider = createTestDataProvider({
+    getOptionsChain: async () => makeChain([100, 101], 101),
+  });
+  setSharedMarketDataCoordinator(new MarketDataCoordinator(provider));
+
+  await act(async () => {
+    testSetup = await testRender(
+      <OptionsHarness ticker={makeTicker("AAPL")} quotePrice={101} />,
+      { width: 124, height: 16 },
+    );
+  });
+  await renderSettled();
+
+  const frame = testSetup!.captureCharFrame();
+  expect(frame).toContain("ATM IV 20.0%");
+  expect(frame).toContain("HV30 —");
+  expect(frame).toContain("EXP VOL");
+  expect(frame).toContain("C Δ");
+  expect(frame).toContain("C Γ");
+  expect(frame).toContain("P Γ");
+  expect(frame).toContain("P Δ");
+});
+
+test("streams live quotes without resetting manual scroll", async () => {
   const strikes = Array.from({ length: 100 }, (_, index) => 50 + index);
   const subscriptions: QuoteSubscriptionTarget[][] = [];
   let emitQuote:
@@ -187,7 +247,7 @@ test("streams every visible option row and overlays live contract quotes", async
 
   await act(async () => {
     testSetup = await testRender(
-      <OptionsHarness ticker={makeTicker("AAPL")} quotePrice={120.2} />,
+      <RealtimeOptionsHarness ticker={makeTicker("AAPL")} />,
       {
         width: 124,
         height: 16,
@@ -238,6 +298,20 @@ test("streams every visible option row and overlays live contract quotes", async
     }).data?.mark,
   ).toBe(99.99);
   expect(testSetup!.captureCharFrame()).toContain("99.99");
+
+  const bodyScroll = testSetup!.renderer.root.findDescendantById("options-table-body-scroll") as ScrollBoxRenderable;
+  await act(async () => {
+    bodyScroll.scrollTo(0);
+    await testSetup!.renderOnce();
+  });
+  await renderSettled();
+
+  await act(async () => {
+    setOptionsQuotePrice?.(120.3);
+    await testSetup!.renderOnce();
+  });
+  await renderSettled();
+  expect(bodyScroll.scrollTop).toBe(0);
 });
 
 test("lets the expiration tab row use the full available width", async () => {

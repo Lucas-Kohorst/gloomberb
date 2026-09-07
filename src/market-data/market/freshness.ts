@@ -184,7 +184,12 @@ function isTimestampStaleForExchangeSessionUnsafe(
   if (!timestampDate || !currentDate || timestampDate === currentDate) return false;
   if (marketState === "REGULAR" && !isBeforeKnownRegularOpen(canonical, now)) return true;
 
-  if (isUsExtendedHoursExchange(canonical)) {
+  // When the provider reports the market as closed (weekend, holiday, or
+  // overnight), skip the clock-based session check: the wall clock says
+  // PRE/REGULAR/POST on a holiday Monday too, and discarding Friday's close
+  // there leaves no usable quote at all. The weekday-distance rules below
+  // still bound how long a closed quote stays usable.
+  if (isUsExtendedHoursExchange(canonical) && marketState !== "CLOSED") {
     const session = usSessionState(now);
     if (session === "PRE" || session === "REGULAR" || session === "POST") {
       return true;

@@ -8,6 +8,7 @@ import {
   PaneInstanceProvider,
   createInitialState,
 } from "../../../../../state/app/context";
+import { colors } from "../../../../../theme/colors";
 import { createDefaultConfig } from "../../../../../types/config";
 import { formatNewsCategoryLabel } from "../../../../../news/news-model";
 import type { MarketNewsItem } from "../../../../../types/news-source";
@@ -15,6 +16,7 @@ import {
   buildNewsArticleRowRevision,
   NEWS_TABLE_MAX_ROWS,
   NewsArticleStackView,
+  newsTableStatusContent,
   takeNewsTableHead,
   type NewsSortPreference,
 } from "./table";
@@ -71,7 +73,7 @@ function Harness() {
           width={90}
           rootHeight={10}
           readArticleIds={new Set(["read"])}
-          selectedArticleId="unread"
+          selectedArticleId="read"
           setSelectedArticleId={() => {}}
           sortPreference={sortPreference}
           setSortPreference={() => {}}
@@ -159,8 +161,13 @@ describe("buildNewsArticleRowRevision", () => {
   });
 });
 
+function rgba(hex: string): string {
+  const value = hex.slice(1);
+  return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16)).concat(255).join(",");
+}
+
 describe("NewsArticleStackView", () => {
-  test("renders unopened stories bold and opened stories normal weight", async () => {
+  test("renders unopened stories bold and opened stories muted", async () => {
     testSetup = await testRender(<Harness />, { width: 90, height: 10 });
 
     await act(async () => {
@@ -168,14 +175,121 @@ describe("NewsArticleStackView", () => {
       await testSetup!.renderOnce();
     });
 
-    const boldText = testSetup.captureSpans().lines
-      .flatMap((line) => line.spans)
-      .filter((span) => (span.attributes & TextAttributes.BOLD) !== 0)
-      .map((span) => span.text)
-      .join("");
+    const spans = testSetup.captureSpans().lines.flatMap((line) => line.spans);
+    const unreadSpan = spans.find((span) => span.text.includes("Unread story"));
+    const readSpan = spans.find((span) => span.text.includes("Read story"));
 
-    expect(boldText).toContain("Unread story");
-    expect(boldText).not.toContain("Read story");
+    expect((unreadSpan?.attributes ?? 0) & TextAttributes.BOLD).toBe(TextAttributes.BOLD);
+    expect(unreadSpan?.fg.toInts().join(",")).toBe(rgba(colors.text));
+    expect((readSpan?.attributes ?? 0) & TextAttributes.BOLD).toBe(0);
+    expect(readSpan?.fg.toInts().join(",")).toBe(rgba(colors.textMuted));
+  });
+
+  test("uses the shared ticker empty and error states", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-status-test"),
+    );
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        {newsTableStatusContent({
+          loading: false,
+          error: null,
+          subject: "News",
+          ticker: "HDD",
+          emptyTitle: "Legacy custom title",
+          emptyMessage: "Legacy custom message",
+        })}
+      </AppContext>,
+      { width: 80, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    const emptyFrame = testSetup.captureCharFrame();
+    expect(emptyFrame).toContain("No news data");
+    expect(emptyFrame).toContain("HDD has no news.");
+    expect(emptyFrame).not.toContain("Legacy custom title");
+  });
+
+  test("uses the shared ticker error state", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-error-status-test"),
+    );
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        {newsTableStatusContent({
+          loading: false,
+          error: "UPSTREAM_ERROR",
+          subject: "News",
+          ticker: "HDD",
+          emptyTitle: "Legacy custom title",
+        })}
+      </AppContext>,
+      { width: 80, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    const errorFrame = testSetup.captureCharFrame();
+    expect(errorFrame).toContain("News data unavailable");
+    expect(errorFrame).toContain("The data source is unavailable.");
+  });
+
+  test("keeps the last column and human labels inside the pane width", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-layout-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-top:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({
+                id: "macro",
+                title: "Fed officials signal caution on further rate cuts as inflation stays sticky",
+                source: "globenewswire-releases",
+                categories: ["macro_politics"],
+                importance: 87,
+              }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            selectedArticleId="macro"
+            setSelectedArticleId={() => {}}
+            sortPreference={{ columnId: "importance", direction: "desc" }}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "source", "title", "tickers", "categories", "importance"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const lines = testSetup.captureCharFrame().split("\n");
+    // The sorted column and its indicator must survive the layout arithmetic.
+    expect(lines[0]).toContain("SCORE");
+    expect(lines[0]).toContain("\u25bc");
+    expect(lines[0]!.length).toBeLessThanOrEqual(90);
+    expect(lines[1]).toContain("87");
+    // Snake_case ids and mid-word clipping never reach the user.
+    expect(lines[1]).toContain("Politics");
+    expect(lines[1]).not.toContain("macro_politics");
+    expect(lines[1]).toContain("globenews...");
   });
 
   test("dedupes exchange-qualified ticker aliases in table cells", async () => {
@@ -271,5 +385,53 @@ describe("NewsArticleStackView", () => {
     const frame = testSetup.captureCharFrame();
     expect(frame).toContain("Tech");
     expect(frame).not.toMatch(/\btech\b/);
+  });
+
+  test("paints ORIGIN for the firehose origin column instead of undefined", async () => {
+    const state = createInitialState(
+      createDefaultConfig("/tmp/gloomberb-news-table-origin-test"),
+    );
+
+    testSetup = await testRender(
+      <AppContext value={{ state, dispatch: () => {} }}>
+        <PaneInstanceProvider paneId="news-firehose:main">
+          <NewsArticleStackView
+            articles={[
+              makeArticle({
+                id: "wire",
+                title: "Treasury yields jump after payrolls",
+                origin: "gloomberb-cloud",
+              }),
+            ]}
+            focused
+            width={90}
+            rootHeight={10}
+            selectedArticleId="wire"
+            setSelectedArticleId={() => {}}
+            sortPreference={sortPreference}
+            setSortPreference={() => {}}
+            onOpenArticle={() => {}}
+            detailOpen={false}
+            onBack={() => {}}
+            detailContent={<Box />}
+            columns={["time", "origin", "source", "title", "tickers", "categories"]}
+            emptyStateTitle="No stories"
+          />
+        </PaneInstanceProvider>
+      </AppContext>,
+      { width: 90, height: 10 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+      await testSetup!.renderOnce();
+    });
+
+    const frame = testSetup.captureCharFrame();
+    const header = frame.split("\n")[0] ?? "";
+    expect(header).toContain("ORIGIN");
+    expect(header).not.toMatch(/\bundefined\b/);
+    expect(frame).toContain("Treasury yields");
+    expect(frame).toContain("Wire");
   });
 });

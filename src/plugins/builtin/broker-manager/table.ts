@@ -39,26 +39,14 @@ export function isBrokerErrorMessage(message: string | null | undefined): boolea
   return normalized.includes("failed") || normalized.includes("required");
 }
 
-export function buildBrokerColumns(width: number): BrokerColumn[] {
-  const usableWidth = Math.max(48, width - 4);
-  const statusWidth = 13;
-  const modeWidth = 11;
-  const accountWidth = 14;
-  const updatedWidth = 9;
-  const brokerWidth = usableWidth >= 84 ? 22 : 18;
-  const separators = 6;
-  const profileWidth = Math.max(
-    16,
-    usableWidth - statusWidth - modeWidth - accountWidth - updatedWidth - brokerWidth - separators,
-  );
-
+export function buildBrokerColumns(): BrokerColumn[] {
   return [
-    { id: "profile", label: t("PROFILE"), width: profileWidth, align: "left" },
-    { id: "status", label: t("STATUS"), width: statusWidth, align: "left" },
-    { id: "broker", label: t("BROKER"), width: brokerWidth, align: "left" },
-    { id: "mode", label: t("MODE"), width: modeWidth, align: "left" },
-    { id: "accounts", label: t("ACCOUNTS"), width: accountWidth, align: "right" },
-    { id: "updated", label: t("SYNCED"), width: updatedWidth, align: "right" },
+    { id: "profile", label: t("PROFILE"), width: 16, align: "left", flexGrow: 1 },
+    { id: "status", label: t("STATUS"), width: 13, align: "left" },
+    { id: "broker", label: t("BROKER"), width: 18, align: "left" },
+    { id: "mode", label: t("MODE"), width: 11, align: "left" },
+    { id: "accounts", label: t("ACCOUNTS"), width: 14, align: "right" },
+    { id: "updated", label: t("SYNCED"), width: 9, align: "right" },
   ];
 }
 

@@ -1,0 +1,5 @@
+ts	phase	decision	why	evidence	result
+2026-09-01T14:33:15Z	frame	routed to figure-it-out then how explorers	ambitious multi-part WX build-out, not a single-unit Feature	pstack/skills/figure-it-out/SKILL.md	open
+2026-09-01T14:42:09Z	frame	WX book vs NWS prints is a station-day document plus cutoff fold, not a CORR extension	existing implied is midnight expected temp; user wants highest-priced strike at a local clock vs print; NWS 5-min only lasts ~7d so day overlay and month stats are different grains	live probes KXHIGHLAX 1m candles + NWS KLAX start/end	open
+2026-09-01T14:48:04Z	probe	1-minute bid/ask carry-forward is the cutoff sampler; 60-minute last-price picked 1c tails	Aug 23 11am 60m said T77 at 1c miss; 1m bid/ask said T84 at 99.5c hit. Kalshi 429s under fan-out. NWS 5-min ~7d only.	live KXHIGHLAX-26AUG23/29/31 + weather.gov KLAX	VERIFIED
+2026-09-01T14:51:41Z	architect	base is independent series plus join; graft exclusive strike intervals and hit null when pending	cutoff is a query param so changing 11am to 2pm must not refetch NWS; 1m bid/ask carry-forward is required	/tmp/arena-wx-book/candidate-2/RATIONALE.md	open

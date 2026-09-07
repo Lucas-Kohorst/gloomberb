@@ -155,11 +155,26 @@ export interface AdjacentIndex {
   change_7d?: number | null;
   change_30d?: number | null;
   updated_at?: string | null;
+  sleeves?: AdjacentIndexSleeve[] | null;
 }
 
 export interface AdjacentIndicesResponse {
   data?: AdjacentIndex[];
   meta?: AdjacentMeta;
+}
+
+export interface AdjacentIndexSleeveMember {
+  rate_id: string;
+  name: string;
+  mark_price?: number | null;
+}
+
+export interface AdjacentIndexSleeve {
+  sleeve: string;
+  name: string;
+  rate_id?: string;
+  mark_price?: number | null;
+  members?: AdjacentIndexSleeveMember[];
 }
 
 export interface AdjacentConstituent {
@@ -368,4 +383,6 @@ export interface CftcFilingsQuery {
   search?: string;
   page?: number;
   perPage?: number;
+  sort?: "status_date" | "received" | "first_seen" | "last_seen" | "org";
+  sortDir?: "asc" | "desc";
 }

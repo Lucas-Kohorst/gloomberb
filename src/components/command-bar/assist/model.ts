@@ -5,7 +5,7 @@ import type { ResultItem } from "../list/model";
 /** Marker shown on every AI-resolved row, matching the AI plugin's iconography. */
 const ASSIST_GLYPH = "✦";
 
-/** Category heading the assist rows group under; sorted first by the view model. */
+/** Category heading the assist rows group under; the view model sorts it first. */
 const ASSIST_CATEGORY = "Ask AI";
 
 /** Shorter queries are almost always a half-typed prefix, not a question. */
@@ -25,6 +25,9 @@ export type AssistRequestState =
 export interface AssistRowHandlers {
   /** Signed in with a verified email, i.e. `/assist/command` will answer. */
   enabled: boolean;
+  /** Session exists (token or user). Distinct from verified — a paying sub can
+   *  look unverified while the profile is still hydrating. */
+  signedIn?: boolean;
   /** The query qualifies for a background ask, so the section is expected. */
   auto: boolean;
   state: AssistRequestState;
@@ -77,6 +80,7 @@ function assistRow(options: {
   id: string;
   label: string;
   kind: ResultItem["kind"];
+  badge?: string;
   action?: () => void;
   defaultSelectable?: boolean;
 }): ResultItem {
@@ -86,6 +90,7 @@ function assistRow(options: {
     detail: "",
     category: ASSIST_CATEGORY,
     kind: options.kind,
+    badge: options.badge,
     // Right-aligned like a shortcut, so the glyph never crowds the answer.
     right: ASSIST_GLYPH,
     accent: true,
@@ -96,13 +101,40 @@ function assistRow(options: {
 }
 
 /**
+ * Label for a resolved command, read like every other row: the argument leads
+ * and the description follows, while the prefix moves to the badge column.
+ * "DES NVDA" titled "Open security details for NVDA" reads
+ * "NVDA · Open security details".
+ */
+export function formatAssistCandidateLabel(candidate: Pick<AssistCommandCandidate, "input" | "prefix" | "title">): string {
+  const input = candidate.input.trim();
+  const prefix = candidate.prefix.trim();
+  const argument = prefix && input.toUpperCase().startsWith(`${prefix.toUpperCase()} `)
+    ? input.slice(prefix.length).trim()
+    : prefix && input.toUpperCase() === prefix.toUpperCase()
+      ? ""
+      : input;
+  // The title usually ends by naming the argument again ("... for NVDA").
+  let title = candidate.title.trim();
+  for (const connective of ["for", "of"]) {
+    const suffix = ` ${connective} ${argument}`.toLowerCase();
+    if (argument && title.toLowerCase().endsWith(suffix)) {
+      title = title.slice(0, -suffix.length).trim();
+      break;
+    }
+  }
+  return [argument, title].filter(Boolean).join(" \u00b7 ");
+}
+
+/**
  * Rows for the assist section. They always land in their own category, which
- * sorts to the top of the list, so the answer to what the user typed leads the
- * results and plain Enter runs the AI's best guess.
+ * sorts to the top of the list: the AI turns the sentence the user typed into
+ * commands, so its answer leads the results.
  */
 export function buildAssistResultItems({
   query,
   enabled,
+  signedIn = false,
   auto,
   state,
   onAsk,
@@ -114,11 +146,14 @@ export function buildAssistResultItems({
   if (!trimmed) return [];
 
   if (!enabled) {
-    // An offer, not an answer: it leads the list without ever taking the Enter
-    // that belongs to the local match the user is looking at.
+    // An offer, not an answer: it never takes the Enter that belongs to the
+    // local match the user is looking at. Paying accounts already exist —
+    // send them to sign-in, not sign-up.
     return [assistRow({
-      id: "assist:sign-up",
-      label: t("Ask AI — sign up to enable"),
+      id: signedIn ? "assist:verify" : "assist:sign-in",
+      label: signedIn
+        ? t("Ask AI — verify email to enable")
+        : t("Ask AI — sign in to enable"),
       kind: "action",
       action: onSignUp,
       defaultSelectable: false,
@@ -135,8 +170,8 @@ export function buildAssistResultItems({
   }
 
   if (active.status === "loading") {
-    // Selected by default while it leads the list, so Enter has to mean
-    // something: it claims the answer that is already on the wire.
+    // Selectable so that Enter on it means something: it claims the answer
+    // that is already on the wire.
     return [assistRow({ id: "assist:loading", label: t("Thinking…"), kind: "info", action: onAsk })];
   }
 
@@ -163,10 +198,13 @@ export function buildAssistResultItems({
     })];
   }
 
-  // Input first: the row doubles as a lesson in the prefix language.
+  // The prefix in the badge column and the argument leading the label: the
+  // row doubles as a lesson in the prefix language, laid out like every
+  // other row.
   return active.candidates.map((candidate, index) => assistRow({
     id: `assist:candidate:${index}:${candidate.input}`,
-    label: `${candidate.input} — ${candidate.title}`,
+    label: formatAssistCandidateLabel(candidate),
+    badge: candidate.prefix.trim() || undefined,
     kind: "action",
     action: () => onRunCandidate(candidate.input, candidate.prefix),
   }));

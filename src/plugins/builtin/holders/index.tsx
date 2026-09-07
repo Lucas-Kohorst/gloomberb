@@ -1,6 +1,13 @@
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
+import type { TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { HoldersView } from "./pane";
+
+function prefetchHolders({ ticker, dataProvider }: TickerResearchTabPrefetchContext): void {
+  if (!dataProvider?.getHolders) return;
+  void dataProvider.getHolders(ticker.metadata.ticker, ticker.metadata.exchange).catch(() => {});
+}
 
 export const holdersModule: PluginModule = {
   setup(ctx) {
@@ -9,7 +16,8 @@ export const holdersModule: PluginModule = {
       name: "Holders",
       order: 42,
       component: HoldersView,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
+      prefetch: prefetchHolders,
     });
   },
 
@@ -22,6 +30,7 @@ export const holdersModule: PluginModule = {
       defaultPosition: "right",
       defaultMode: "floating",
       defaultFloatingSize: { width: 105, height: 34 },
+      tableExport: true,
     },
   ],
 

@@ -18,6 +18,7 @@ type CloudApiRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 interface CloudAuthApiOptions {
   getCurrentUser(): AuthUser | null;
   getSessionToken(): string | null;
+  hasSessionCredential(): boolean;
   request: CloudApiRequest;
   requireCapturedSession(message: string): void;
   setCurrentUser(user: AuthUser | null): void;
@@ -29,7 +30,7 @@ export class CloudAuthApi {
   constructor(private readonly options: CloudAuthApiOptions) {}
 
   restoreCachedUser(user: PersistedAuthUser | null): void {
-    if (!this.options.getSessionToken() || !user?.id) {
+    if (!this.options.hasSessionCredential() || !user?.id) {
       this.options.setCurrentUser(null);
       return;
     }
@@ -109,20 +110,42 @@ export class CloudAuthApi {
   }
 
   async getSession(): Promise<AuthUser | null> {
+    // The answer describes whichever credential was on the wire when the
+    // request left. On boot a check can go out before the persisted token is
+    // installed; by the time "no session" comes back, the token and the cached
+    // user are in place, and applying that answer wiped them. Re-check with the
+    // credential that exists now instead of trusting an answer about one that
+    // no longer does.
+    const credential = this.options.getSessionToken();
+    const credentialChanged = () => this.options.getSessionToken() !== credential;
     try {
       const result = await this.options.request<{ user: AuthUser }>("/auth/get-session", {
         method: "GET",
       });
+      if (credentialChanged()) return this.getSession();
       const user = result?.user ?? null;
       this.options.setCurrentUser(user);
       return user;
     } catch (error) {
+      if (credentialChanged()) return this.getSession();
       if (error instanceof ApiRequestError && isHardSessionInvalidMessage(error.message)) {
         this.options.setSessionToken(null);
         return null;
       }
       throw error;
     }
+  }
+
+  /**
+   * Emails a password reset link. The reset itself completes on the gloom.sh
+   * site, so the app only ever sends the email. The server answers the same
+   * way whether or not the address exists.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    await this.options.request("/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
   }
 
   async sendVerification(): Promise<CloudVerificationResponse> {

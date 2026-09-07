@@ -1,8 +1,8 @@
+import { useMemo } from "react";
 import { Box, Text, TextAttributes, useUiHost } from "../../../ui";
-import { StaticChartSurface } from "../../../components";
+import { StaticChartSurface, type StaticChartOverlay } from "../../../components/chart/static";
 import { colors, blendHex } from "../../../theme/colors";
-import { resolveChartPalette } from "../../../components/chart/core/renderer";
-import type { ChartIndicatorOverlays } from "../../../components/chart/core/types";
+import { resolveChartPalette } from "../../../components/chart/core/palette";
 import type {
   FearGreedData,
   FearGreedIndicator,
@@ -81,19 +81,9 @@ export function PreviousScoreGrid({ data, width, layout = "grid" }: { data: Fear
   );
 }
 
-function chartOverlay(indicator: FearGreedIndicator): ChartIndicatorOverlays | null {
-  if (indicator.secondaryPoints.length === 0) return null;
-  return {
-    smaLines: [{
-      period: 0,
-      points: indicator.secondaryPoints,
-      color: colors.warning,
-    }],
-    emaLines: [],
-    bollinger: null,
-    rsi: null,
-    macd: null,
-  };
+function chartOverlay(indicator: FearGreedIndicator): StaticChartOverlay[] | undefined {
+  if (indicator.secondaryPoints.length === 0) return undefined;
+  return [{ id: "secondary", color: colors.warning, points: indicator.secondaryPoints }];
 }
 
 function SentimentChart({
@@ -119,20 +109,22 @@ function SentimentChart({
   primaryLabel: string;
   secondaryLabel?: string;
   secondaryValue?: number | null;
-  overlays?: ChartIndicatorOverlays | null;
+  overlays?: StaticChartOverlay[];
 }) {
   const isDesktopWeb = useUiHost().kind === "desktop-web";
   const stackMeta = width < CHART_META_STACK_WIDTH;
   const chartWidth = Math.max(24, width - 2);
   const chartHeight = width >= 96 ? 12 : 10;
   const color = ratingColor(rating);
-  const basePalette = resolveChartPalette(colors, ratingTrend(rating));
-  const palette = {
-    ...basePalette,
-    lineColor: color,
-    fillColor: blendHex(colors.bg, color, 0.18),
-    gridColor: blendHex(colors.bg, colors.border, 0.55),
-  };
+  const palette = useMemo(() => {
+    const basePalette = resolveChartPalette(colors, ratingTrend(rating));
+    return {
+      ...basePalette,
+      lineColor: color,
+      fillColor: blendHex(colors.bg, color, 0.18),
+      gridColor: blendHex(colors.bg, colors.border, 0.55),
+    };
+  }, [color, rating]);
   const latest = points.length > 0 ? points[points.length - 1]!.close : null;
 
   return (
@@ -180,7 +172,7 @@ function SentimentChart({
             height={chartHeight}
             mode="line"
             colors={palette}
-            indicators={overlays}
+            overlays={overlays}
             showTimeAxis
             timeAxisColor={colors.textDim}
             yAxisColor={colors.textDim}
@@ -237,12 +229,19 @@ function ChartStats({
   secondaryValue?: number | null;
   valueFormat: FearGreedValueFormat;
 }) {
+  // The index history charts the score itself, so its "latest" repeats the score.
+  const latestText = formatIndicatorValue(latest, valueFormat);
+  const showLatest = latestText !== formatScore(score);
   return (
     <>
       <Text fg={colors.textDim}>score </Text>
       <Text fg={color} attributes={TextAttributes.BOLD}>{formatScore(score)}</Text>
-      <Text fg={colors.textDim}>  latest </Text>
-      <Text fg={colors.text}>{formatIndicatorValue(latest, valueFormat)}</Text>
+      {showLatest ? (
+        <>
+          <Text fg={colors.textDim}>  latest </Text>
+          <Text fg={colors.text}>{latestText}</Text>
+        </>
+      ) : null}
       {secondaryLabel && secondaryValue != null ? (
         <>
           <Text fg={colors.textDim}>  avg </Text>
@@ -287,6 +286,7 @@ export function IndexHistoryChart({ data, width }: { data: FearGreedData; width:
 }
 
 export function IndicatorChart({ indicator, width }: { indicator: FearGreedIndicator; width: number }) {
+  const overlays = useMemo(() => chartOverlay(indicator), [indicator.secondaryPoints]);
   return (
     <SentimentChart
       title={indicator.definition.title}
@@ -299,7 +299,7 @@ export function IndicatorChart({ indicator, width }: { indicator: FearGreedIndic
       primaryLabel={indicator.definition.primaryLabel}
       secondaryLabel={indicator.definition.secondaryLabel}
       secondaryValue={indicator.latestSecondaryValue}
-      overlays={chartOverlay(indicator)}
+      overlays={overlays}
     />
   );
 }

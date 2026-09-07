@@ -16,9 +16,11 @@ import { useOptionalPaneInstanceId } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { ChartSpec } from "../../../time-series/types";
 import { getSharedRegistry } from "../../registry";
-import { MAX_CHART_COMPOSER_SERIES } from "./chart-spec";
-import { appendChartSeries } from "./presets";
-import type { SeriesCatalogInstrument, SeriesCatalogSuggestion } from "./series-catalog";
+import { armCommitLock, resolveCatalogSuggestion } from "./catalog-commit";
+import {
+  type SeriesCatalogInstrument,
+  type SeriesCatalogSuggestion,
+} from "./series-catalog";
 import { useSeriesCatalogSuggestions } from "./use-series-catalog";
 
 const MAX_VISIBLE_SUGGESTIONS = 4;
@@ -119,7 +121,7 @@ export function ChartSeriesQuickAdd({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const defaultInstrument = useMemo(() => defaultCatalogInstrument(spec), [spec]);
-  const { suggestions, loading } = useSeriesCatalogSuggestions({
+  const { suggestions, loading, error: searchError } = useSeriesCatalogSuggestions({
     query,
     defaultInstrument,
     enabled: active,
@@ -129,10 +131,13 @@ export function ChartSeriesQuickAdd({
     : Math.max(8, Math.min(IDLE_QUICK_ADD_WIDTH, width));
   const drawerStatus = error
     ?? (loading && suggestions.length === 0
-      ? "Searching instruments…"
-      : active && query.trim().length > 0 && suggestions.length === 0
-        ? "No matching security or metric."
-        : null);
+      ? "Searching instruments..."
+      // A failed lookup is not zero matches, so it keeps its own message.
+      : searchError && suggestions.length === 0
+        ? searchError
+        : active && query.trim().length > 0 && suggestions.length === 0
+          ? "No matching security or metric."
+          : null);
   const maximumDrawerHeight = Math.max(
     0,
     Math.min(
@@ -257,15 +262,14 @@ export function ChartSeriesQuickAdd({
   const commitSuggestion = useCallback((suggestion: SeriesCatalogSuggestion | undefined) => {
     if (!suggestion || commitLockRef.current) return;
     cancelPendingBlur();
-    if (spec.series.length >= MAX_CHART_COMPOSER_SERIES) {
-      setError(`Charts support up to ${MAX_CHART_COMPOSER_SERIES} base series.`);
+    const result = resolveCatalogSuggestion(suggestion, spec);
+    if (!result) return;
+    if (result.kind === "limit") {
+      setError(result.message);
       return;
     }
-    commitLockRef.current = true;
-    queueMicrotask(() => {
-      commitLockRef.current = false;
-    });
-    setSpec(appendChartSeries(spec, suggestion.expression).spec);
+    armCommitLock(commitLockRef);
+    setSpec(result.spec);
     clearInput();
     setSelectedIndex(0);
     setError(null);

@@ -27,6 +27,10 @@ export interface KalshiMarketRecord {
   cap_strike?: number | string;
   custom_strike?: unknown;
   is_provisional?: boolean;
+  /** Settlement result ("yes", "no", "void") once the market is resolved. */
+  result?: string;
+  /** Settlement value (e.g. the verified daily-high temperature). */
+  expiration_value?: string | number;
 }
 
 export interface KalshiEventRecord {
@@ -77,6 +81,20 @@ export interface KalshiOrderbookResponse {
   orderbook_fp?: {
     yes_dollars?: Array<[string, string]>;
     no_dollars?: Array<[string, string]>;
+  };
+}
+
+export interface KalshiSettlementSource {
+  name?: string;
+  url?: string;
+}
+
+export interface KalshiSeriesResponse {
+  series?: {
+    ticker?: string;
+    title?: string;
+    category?: string;
+    settlement_sources?: KalshiSettlementSource[];
   };
 }
 

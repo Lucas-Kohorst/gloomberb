@@ -2,11 +2,16 @@ import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { App } from "../../app";
 import { dispatchCli } from "../../cli/index";
+import { applyDataDirFromArgs } from "../../cli/options";
 import { getDataDir, initDataDir, setConfigStoreHost } from "../../data/config/store";
 import { applyLanguageFromConfig } from "../../i18n";
 import * as nodeConfigStoreHost from "../../data/config/store/node";
 import { loadExternalPlugins, watchPluginsDir } from "../../plugins/loader";
 import { getSharedRegistry } from "../../plugins/registry";
+import { restoreExtractedPlugins } from "../../cli/restore-plugins";
+import { setPluginInstaller } from "../../plugins/builtin/plugin-marketplace/store";
+import { setCurrentPluginTarget } from "../../plugins/current-target";
+import { getLoadablePlugins } from "../../plugins/catalog";
 import { OpenTuiInputHostProvider } from "./input-host";
 import { debugLog } from "../../utils/debug-log";
 import { UiHostProvider } from "../../ui/host";
@@ -27,6 +32,10 @@ import {
 } from "../../plugins/builtin/ai/runner";
 import { createAppServices } from "../../core/app-services";
 
+// Declared here rather than sniffed: the desktop view and the hosted browser
+// app are both browser contexts but differ in what plugins may do.
+setCurrentPluginTarget("tui");
+
 const AI_STARTUP_READINESS_TIMEOUT_MS = 5_000;
 
 export interface StartOpenTuiAppOptions {
@@ -39,6 +48,13 @@ export interface StartOpenTuiAppOptions {
 export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Promise<void> {
   setConfigStoreHost(nodeConfigStoreHost);
   debugLog.interceptConsole();
+
+  // Apply --data-dir / --data-dir=<path> before any plugin or config loading
+  // so lazy resolvers (getPluginsDir, getDataDir, getAiRunsDir) honor it.
+  // When called from src/index.tsx (direct TUI launch) this is the only
+  // chance to parse CLI args; when called from entry.ts it is redundant but
+  // harmless (applyDataDirFromArgs is idempotent).
+  applyDataDirFromArgs(options.cliArgs ?? process.argv.slice(2));
 
   const appLog = debugLog.createLogger("app");
   appLog.info("Gloomberb starting");
@@ -73,7 +89,25 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
   };
 
   const cliArgs = options.cliArgs ?? process.argv.slice(2);
-  const externalPlugins = options.externalPlugins ?? await measurePerfAsync("startup.opentui.load-external-plugins", () => loadExternalPlugins());
+  // Before the catalog is read, so a plugin that moved out of this repository is
+  // available in the same session rather than only after a restart. Placed here
+  // rather than in the CLI entry because `src/index.tsx` starts the app directly
+  // and would otherwise skip it.
+  if (!options.externalPlugins) {
+    await measurePerfAsync("startup.opentui.restore-plugins", restoreExtractedPlugins);
+  }
+
+  setPluginInstaller(async (ref) => {
+    try {
+      const { installPlugin } = await import("../../cli/commands/plugins");
+      await installPlugin(ref, { quiet: true });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  const externalPlugins = options.externalPlugins ?? await measurePerfAsync("startup.opentui.load-external-plugins", () => loadExternalPlugins("tui"));
   let cliLaunchRequest = options.cliLaunchRequest ?? null;
   if (!options.skipCliDispatch && cliArgs.length > 0) {
     const dispatchResult = await dispatchCli(cliArgs, { externalPlugins });
@@ -144,6 +178,7 @@ export async function startOpenTuiApp(options: StartOpenTuiAppOptions = {}): Pro
                 config={config}
                 servicesFactory={createAppServices}
                 externalPlugins={externalPlugins}
+                plugins={getLoadablePlugins(externalPlugins)}
                 cliLaunchRequest={cliLaunchRequest}
                 remoteControlAdapter={remoteControlAdapter}
               />

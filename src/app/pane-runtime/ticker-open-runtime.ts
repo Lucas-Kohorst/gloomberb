@@ -6,6 +6,7 @@ import {
   getDockedPaneIds,
   isPaneInLayout,
 } from "../../plugins/pane-manager";
+import { isFullscreenOverlaySession } from "./layout-placement";
 import type { PluginRegistry } from "../../plugins/registry";
 import { findFixedTickerPaneForSymbol } from "../../plugins/ticker-navigation";
 import type { AppAction, AppState } from "../../state/app/context";
@@ -104,7 +105,7 @@ export function useAppTickerOpenRuntime({
     if (!instance) return;
 
     const { width, height } = pluginRegistry.getTermSizeFn();
-    const shouldFloat = options?.floating ?? true;
+    const shouldFloat = isFullscreenOverlaySession(pluginRegistry) || (options?.floating ?? true);
     const nextLayout = shouldFloat
       ? addPaneFloating(currentLayout, instance, width, height, paneDef)
       : addPaneToLayout(

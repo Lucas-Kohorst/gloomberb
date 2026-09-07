@@ -8,6 +8,7 @@ export interface CliGlobalOptions {
   refresh: boolean;
   dryRun: boolean;
   yes: boolean;
+  dataDir?: string;
 }
 
 export interface ParsedCliArgs {
@@ -31,6 +32,33 @@ function parseLimit(value: string | undefined): number {
     throw new Error("--limit must be a positive integer.");
   }
   return parsed;
+}
+
+/**
+ * Early, pre-plugin/config parser for `--data-dir` / `--data-dir=<path>`.
+ *
+ * Runs before external plugins or the global config are loaded so that
+ * `GLOOMBERB_DATA_DIR` is set in time for lazy resolvers (`getPluginsDir`,
+ * `getDataDir`, `getAiRunsDir`). Intentionally silent on missing or
+ * flag-like values — the full parser `parseCliGlobalArgs` will throw a
+ * helpful "Missing value for --data-dir." error later.
+ */
+export function applyDataDirFromArgs(rawArgs: readonly string[]): void {
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === "--data-dir") {
+      const value = rawArgs[index + 1];
+      if (value && !value.startsWith("-")) {
+        process.env.GLOOMBERB_DATA_DIR = value;
+      }
+      return;
+    }
+    if (arg?.startsWith("--data-dir=")) {
+      const value = arg.slice("--data-dir=".length);
+      if (value) process.env.GLOOMBERB_DATA_DIR = value;
+      return;
+    }
+  }
 }
 
 export function parseCliGlobalArgs(rawArgs: string[]): ParsedCliArgs {
@@ -86,6 +114,21 @@ export function parseCliGlobalArgs(rawArgs: string[]): ParsedCliArgs {
     }
     if (arg.startsWith("--limit=")) {
       options.limit = parseLimit(arg.slice("--limit=".length));
+      continue;
+    }
+    if (arg === "--data-dir") {
+      index += 1;
+      const value = rawArgs[index];
+      if (!value) throw new Error("Missing value for --data-dir.");
+      options.dataDir = value;
+      process.env.GLOOMBERB_DATA_DIR = value;
+      continue;
+    }
+    if (arg.startsWith("--data-dir=")) {
+      const value = arg.slice("--data-dir=".length);
+      if (!value) throw new Error("Missing value for --data-dir.");
+      options.dataDir = value;
+      process.env.GLOOMBERB_DATA_DIR = value;
       continue;
     }
     args.push(arg);

@@ -158,11 +158,11 @@ export function createAgentCliTool(): AgentTool<typeof CliArgsSchema, unknown> {
     ].join(" "),
     parameters: CliArgsSchema,
     executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, signal?) {
       if (signal?.aborted) throw new AiRunCancelledError();
       resolveAgentCliCommand(params.args);
       const output = await captureDispatch(params.args);
-      return { content: [{ type: "text", text: output }] };
+      return { content: [{ type: "text", text: output }], details: undefined };
     },
   };
 }
@@ -201,7 +201,7 @@ export function createAgentShowTool(sendRequest: (
     ].join(" "),
     parameters: ShowPaneSchema,
     executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
+    async execute(_toolCallId, params, signal?) {
       if (signal?.aborted) throw new AiRunCancelledError();
       const request = buildAgentShowRequest(params);
       const response = await sendRequest(request, {

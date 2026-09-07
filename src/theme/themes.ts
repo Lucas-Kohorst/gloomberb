@@ -1,4 +1,11 @@
-import { blendForContrast, blendForContrastOnSurfaces, blendHex, contrastRatio, higherContrast } from "./color-utils";
+import {
+  blendForContrast,
+  blendForContrastOnSurfaces,
+  blendHex,
+  contrastRatio,
+  higherContrast,
+  relativeLuminance,
+} from "./color-utils";
 
 export interface Theme {
   name: string;
@@ -661,6 +668,17 @@ export const DEFAULT_THEME = "adjacent";
 
 export function getThemeIds(): string[] {
   return Object.keys(themes);
+}
+
+/**
+ * A theme is dark when its text sits lighter than its background. That is the
+ * definition, and it beats thresholding the background on its own, which
+ * mislabels the mid-tone palettes sitting near whatever cutoff you pick.
+ */
+export function isDarkTheme(themeId: string): boolean {
+  const theme = themes[themeId];
+  if (!theme) return true;
+  return relativeLuminance(theme.text) > relativeLuminance(theme.bg);
 }
 
 export function getTheme(id: string): Theme {

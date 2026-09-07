@@ -126,15 +126,48 @@ describe("collectPredictionCatalogLiveTargets", () => {
       liveTargetSignature(collectPredictionCatalogLiveTargets([row(second), row(first)])),
     );
   });
+
+  test("subscribes to a group's displayed outcome, then the other members", () => {
+    const leader = summary({
+      key: "polymarket:no-change",
+      venue: "polymarket",
+      marketId: "no-change",
+      yesTokenId: "yes-leader",
+      marketLabel: "No change",
+      yesPrice: 0.69,
+    });
+    const other = summary({
+      key: "polymarket:hike",
+      venue: "polymarket",
+      marketId: "hike",
+      yesTokenId: "yes-other",
+      marketLabel: "25 bps increase",
+      yesPrice: 0.28,
+    });
+    const grouped: PredictionListRow = {
+      ...row(other),
+      kind: "group",
+      key: "group:polymarket:event:fed",
+      representative: other,
+      focusMarketKey: leader.key,
+      focusMarketLabel: leader.marketLabel,
+      focusYesPrice: leader.yesPrice,
+      markets: [other, leader],
+    };
+    expect(collectPredictionCatalogLiveTargets([grouped]).map((target) => target.yesTokenId)).toEqual([
+      "yes-leader",
+      "yes-other",
+    ]);
+  });
 });
 
 describe("quoteFromBbo", () => {
-  test("updates the book without rewriting last-trade yes odds", () => {
+  test("moves displayed yes odds to the bid/ask mid so the list can flash", () => {
     const quote = quoteFromBbo(true, 0.54, 0.56, 0.02);
     expect(quote.yesBid).toBe(0.54);
     expect(quote.yesAsk).toBe(0.56);
     expect(quote.spread).toBe(0.02);
-    expect(quote.yesPrice).toBeUndefined();
+    expect(quote.yesPrice).toBeCloseTo(0.55);
     expect(quote.lastTradePrice).toBeUndefined();
   });
 });

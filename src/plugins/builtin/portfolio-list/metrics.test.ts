@@ -199,7 +199,7 @@ describe("portfolio-metrics", () => {
 
     expect(totals.totalMktValue).toBeCloseTo(58803.06, 2);
     expect(totals.totalCostBasis).toBeCloseTo(50950.7295, 4);
-    expect(totals.unrealizedPnl).toBeCloseTo(7852.3305, 4);
+    expect(totals.unrealizedPnl).toBeCloseTo(7852.33, 4);
     expect(totals.hasPositions).toBe(true);
   });
 
@@ -277,6 +277,36 @@ describe("portfolio-metrics", () => {
     });
   });
 
+  test("signs short unrealized P&L from a live quote", () => {
+    const ticker = createTicker({
+      positions: [{ portfolio: "main", shares: 10, avgCost: 100, broker: "ibkr", side: "short" }],
+    });
+    const financials = createFinancials({
+      quote: { price: 80, change: -20, changePercent: -20, previousClose: 100 },
+    });
+    const dayPnlColumn: ColumnConfig = { id: "day_pnl", label: "DAY", width: 10, align: "right", format: "compact" };
+    const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
+
+    expect(getSortValue(dayPnlColumn, ticker, financials, defaultColumnContext)).toBe(200);
+    expect(getSortValue(pnlColumn, ticker, financials, defaultColumnContext)).toBe(200);
+    expect(getColumnValue(pnlColumn, ticker, financials, defaultColumnContext)).toEqual({
+      text: "+200",
+      color: expect.any(String),
+    });
+    expect(calculatePortfolioSummaryTotals(
+      [ticker],
+      new Map([["AAPL", financials]]),
+      "USD",
+      new Map([["USD", 1]]),
+      true,
+      "main",
+    )).toMatchObject({
+      totalMktValue: 800,
+      dailyPnl: 200,
+      unrealizedPnl: 200,
+    });
+  });
+
   test("formats derived quote and position columns", () => {
     const ticker = createTicker({
       sector: "Technology",
@@ -344,6 +374,59 @@ describe("portfolio-metrics", () => {
 
     expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+8.00%");
     expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(8);
+  });
+
+  test("falls back to one-year price history for 52W% when return1Y is missing", () => {
+    const ticker = createTicker({ ticker: "ETH-USD", exchange: "CCC", name: "Ethereum USD", assetCategory: "CRYPTO" });
+    const financials = createFinancials({
+      quote: { symbol: "ETH-USD", price: 4_400, high52w: 4_800, low52w: 2_100 },
+      priceHistory: [
+        { date: new Date("2025-01-01T00:00:00Z"), close: 2_200 },
+        { date: new Date("2026-01-01T00:00:00Z"), close: 4_400 },
+      ],
+    });
+    const column: ColumnConfig = { id: "range_52w", label: "52W%", width: 7, align: "right" };
+    expect(getColumnValue(column, ticker, financials, defaultColumnContext).text).toBe("+100.00%");
+    expect(getSortValue(column, ticker, financials, defaultColumnContext)).toBe(100);
+  });
+
+  test("short profits when price falls below cost (negative shares + side 'short')", () => {
+    const ticker = createTicker({
+      positions: [{ portfolio: "main", shares: -10, avgCost: 100, broker: "robinhood", side: "short" }],
+    });
+    const financials = createFinancials({
+      quote: { price: 80, change: -20, changePercent: -20, previousClose: 100 },
+    });
+    const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
+
+    // cost = 10 * 100 = 1000, marketValue = 10 * 80 = 800; short P&L = cost - marketValue = +200
+    expect(getSortValue(pnlColumn, ticker, financials, defaultColumnContext)).toBe(200);
+    expect(getColumnValue(pnlColumn, ticker, financials, defaultColumnContext).text).toBe("+200");
+
+    const totals = calculatePortfolioSummaryTotals(
+      [ticker],
+      new Map([["AAPL", financials]]),
+      "USD",
+      new Map([["USD", 1]]),
+      true,
+      "main",
+    );
+    expect(totals.unrealizedPnl).toBe(200);
+    // price fell 100 -> 80 today; a short gains 10 * 20 = 200
+    expect(totals.dailyPnl).toBe(200);
+  });
+
+  test("short loses when price rises above cost", () => {
+    const ticker = createTicker({
+      positions: [{ portfolio: "main", shares: -10, avgCost: 100, broker: "robinhood", side: "short" }],
+    });
+    const financials = createFinancials({
+      quote: { price: 120, change: 20, changePercent: 20, previousClose: 100 },
+    });
+    const pnlColumn: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right", format: "compact" };
+
+    // cost = 1000, marketValue = 10 * 120 = 1200; short P&L = cost - marketValue = -200
+    expect(getSortValue(pnlColumn, ticker, financials, defaultColumnContext)).toBe(-200);
   });
 
   test("formats supplemental analyst and corporate action columns", () => {

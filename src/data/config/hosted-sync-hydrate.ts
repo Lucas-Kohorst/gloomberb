@@ -8,19 +8,53 @@ import {
   shouldKeepNewerHostedLocalConfig,
   type HostedConfigSnapshotResponse,
 } from "./hosted-config-snapshot";
-import { peekHostedUserConfigStamp, readHostedUserConfigRecord, writeHostedUserConfig } from "./hosted-user-persist";
-import { mergeHostedTickers, parseIncomingTickerRecords, readHostedTickers } from "./hosted-ticker-persist";
-import { applyHostedNotesPayload } from "./hosted-notes-persist";
-import { hydrateHostedByokConfig } from "../../plugins/builtin/byok/hosted-persist";
+import {
+  captureHostedPersistenceIdentity,
+  isHostedPersistenceIdentityCurrent,
+  peekHostedUserConfigStamp,
+  readHostedUserConfigRecord,
+  writeHostedUserConfig,
+  type HostedPersistenceIdentity,
+} from "./hosted-user-persist";
+import {
+  mergeTickerRecords,
+  parseIncomingTickerRecords,
+  readHostedTickers,
+  writeHostedTickers,
+} from "./hosted-ticker-persist";
+import {
+  applyHostedNotesPayload,
+  mergeHostedNotesPayload,
+  readHostedNotes,
+  writeHostedNotes,
+} from "./hosted-notes-persist";
+import {
+  hydrateHostedByokConfig,
+  writeHostedByokKeys,
+} from "../../plugins/builtin/byok/hosted-persist";
 import { isRecord } from "../../utils/is-record";
+import type { NotesSyncPayload } from "../../plugins/builtin/notes/files";
 
 export interface HostedSyncPull {
   snapshot: SyncSnapshot | null;
   updatedAt?: string | null;
 }
 
+export interface HostedWorkspaceHydration {
+  config: AppConfig;
+  tickers: TickerRecord[];
+  notes: NotesSyncPayload;
+  identity: HostedPersistenceIdentity;
+  localUpdatedAt: string | null;
+  localRevision: number | null;
+}
+
 function contributorPayload(snapshot: SyncSnapshot | null, id: string): unknown {
   return snapshot?.contributors[id]?.payload;
+}
+
+function isOlderThanLocal(remoteDate: string | null | undefined, localDate: string | null): boolean {
+  return !!remoteDate && !!localDate && Date.parse(remoteDate) < Date.parse(localDate);
 }
 
 /** Restores tickers/notes stored beside the per-user config blob. */
@@ -28,18 +62,40 @@ export function restoreHostedLocalWorkspaceExtras(): void {
   const record = readHostedUserConfigRecord();
   if (!record) return;
   const fromRecord = parseIncomingTickerRecords(record.tickers);
-  if (fromRecord.length > 0) mergeHostedTickers(fromRecord);
-  if (record.notes) applyHostedNotesPayload(record.notes);
+  if (fromRecord.length > 0 && readHostedTickers(record.userId).length === 0) {
+    writeHostedTickers(fromRecord, record.userId, false);
+  }
+  if (record.notes) applyHostedNotesPayload(record.notes, record.userId, false);
+}
+
+export function isHostedWorkspaceHydrationCurrent(
+  hydration: Pick<HostedWorkspaceHydration, "identity" | "localRevision">,
+): boolean {
+  if (!isHostedPersistenceIdentityCurrent(hydration.identity)) return false;
+  return (peekHostedUserConfigStamp(hydration.identity.userId)?.revision ?? null)
+    === hydration.localRevision;
+}
+
+export function persistHostedWorkspaceHydration(
+  hydration: HostedWorkspaceHydration,
+): boolean {
+  if (!isHostedWorkspaceHydrationCurrent(hydration)) return false;
+  const userId = hydration.identity.userId;
+  writeHostedUserConfig(hydration.config, userId);
+  writeHostedTickers(hydration.tickers, userId);
+  writeHostedNotes(hydration.notes, userId);
+  writeHostedByokKeys(hydration.config, userId);
+  return true;
 }
 
 function overlayCoreConfigFromSnapshot(
   config: AppConfig,
   snapshot: SyncSnapshot | null,
+  localUpdatedAt: string | null,
 ): AppConfig {
   const payload = contributorPayload(snapshot, "core.config");
   if (!payload) return config;
-  const localStamp = peekHostedUserConfigStamp();
-  if (shouldKeepNewerHostedLocalConfig(config, localStamp?.updatedAt, snapshot?.createdAt)) {
+  if (shouldKeepNewerHostedLocalConfig(config, localUpdatedAt, snapshot?.createdAt)) {
     return config;
   }
   return overlayCoreConfigPayload(config, payload, config) ?? config;
@@ -60,8 +116,21 @@ export async function hydrateHostedWorkspaceFromCloud(
      */
     persist?: boolean;
   } = {},
-): Promise<{ config: AppConfig; tickers: TickerRecord[] }> {
-  restoreHostedLocalWorkspaceExtras();
+): Promise<HostedWorkspaceHydration> {
+  const userId = captureHostedPersistenceIdentity().userId;
+  const record = readHostedUserConfigRecord(userId);
+  let tickers = mergeTickerRecords(
+    readHostedTickers(userId),
+    parseIncomingTickerRecords(record?.tickers),
+  );
+  let notes = mergeHostedNotesPayload(
+    readHostedNotes(userId, config.dataDir),
+    record?.notes,
+  );
+  const identity = captureHostedPersistenceIdentity();
+  const localStamp = peekHostedUserConfigStamp(userId);
+  const localUpdatedAt = localStamp?.updatedAt ?? null;
+  const localRevision = localStamp?.revision ?? null;
   const pullConfig = pull.pullConfig ?? fetchHostedConfigSnapshot;
   let remote: HostedConfigSnapshotResponse | null = null;
   try {
@@ -69,11 +138,15 @@ export async function hydrateHostedWorkspaceFromCloud(
     const merged = mergeRemoteConfigSnapshot(
       config,
       remote,
-      peekHostedUserConfigStamp()?.updatedAt ?? null,
+      localUpdatedAt,
     );
     if (merged) Object.assign(config, merged, { dataDir: config.dataDir });
-    if (remote.tickers) mergeHostedTickers(parseIncomingTickerRecords(remote.tickers));
-    if (remote.notes) applyHostedNotesPayload(remote.notes);
+    if (remote.tickers && !isOlderThanLocal(remote.updatedAt, localUpdatedAt)) {
+      tickers = mergeTickerRecords(tickers, parseIncomingTickerRecords(remote.tickers));
+    }
+    if (remote.notes && !isOlderThanLocal(remote.updatedAt, localUpdatedAt)) {
+      notes = mergeHostedNotesPayload(notes, remote.notes);
+    }
   } catch {
     // Network or parse failure — continue with local hydration.
   }
@@ -87,13 +160,13 @@ export async function hydrateHostedWorkspaceFromCloud(
     }
   }
 
-  const overlaid = overlayCoreConfigFromSnapshot(config, snapshot);
+  const overlaid = overlayCoreConfigFromSnapshot(config, snapshot, localUpdatedAt);
   Object.assign(config, overlaid, { dataDir: config.dataDir });
 
   const collectionsPayload = contributorPayload(snapshot, "core.collections");
   const keepLocal = shouldKeepNewerHostedLocalConfig(
     config,
-    peekHostedUserConfigStamp()?.updatedAt ?? null,
+    localUpdatedAt,
     snapshot?.createdAt,
   );
   if (isRecord(collectionsPayload) && !keepLocal) {
@@ -110,11 +183,13 @@ export async function hydrateHostedWorkspaceFromCloud(
     }
   }
   const incoming = parseIncomingTickerRecords(collectionsPayload);
-  if (incoming.length > 0) mergeHostedTickers(incoming);
-  const tickers = readHostedTickers();
-  if (pull.persist !== false) writeHostedUserConfig(config);
-  hydrateHostedByokConfig(config);
-  return { config, tickers };
+  if (incoming.length > 0 && !isOlderThanLocal(snapshot?.createdAt, localUpdatedAt)) {
+    tickers = mergeTickerRecords(tickers, incoming);
+  }
+  hydrateHostedByokConfig(config, userId, false);
+  const hydration = { config, tickers, notes, identity, localUpdatedAt, localRevision };
+  if (pull.persist !== false) persistHostedWorkspaceHydration(hydration);
+  return hydration;
 }
 
 /** Shallow copy so a background overlay cannot mutate live React state. */

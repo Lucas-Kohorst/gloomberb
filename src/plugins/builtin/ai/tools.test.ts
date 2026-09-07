@@ -4,6 +4,7 @@ import { mkdtemp } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { parseToolCalls, createPluginTools, executeToolCall, getToolDefinitions } from "./tools";
+import { setPluginsDirForTests } from "../../loader";
 import { PluginRegistry } from "../../registry";
 import { AppPersistence } from "../../../data/app-persistence";
 import { TickerRepository } from "../../../data/ticker-repository";
@@ -92,19 +93,21 @@ describe("tool execution", () => {
 
   test("write_file writes content under plugins dir", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "gloomberb-tools-test"));
-    const pluginsDir = join(tempDir, ".gloomberb", "plugins");
+    const pluginsDir = join(tempDir, "plugins");
     mkdirSync(pluginsDir, { recursive: true });
 
-    // Override HOME so getPluginsRoot uses our temp dir.
-    const origHome = process.env.HOME;
-    process.env.HOME = tempDir;
+    // Override GLOOMBERB_DATA_DIR so getPluginsDir uses our temp dir.
+    const origDataDir = process.env.GLOOMBERB_DATA_DIR;
+    process.env.GLOOMBERB_DATA_DIR = tempDir;
+    setPluginsDirForTests(null);
     try {
       const tools = createPluginTools(undefined);
       const result = await executeToolCall(tools, { tool: "write_file", args: { path: "my-plugin/index.ts", content: "export default { id: 'test' }" } });
       expect(result.success).toBe(true);
       expect(existsSync(join(pluginsDir, "my-plugin", "index.ts"))).toBe(true);
     } finally {
-      process.env.HOME = origHome;
+      process.env.GLOOMBERB_DATA_DIR = origDataDir;
+      setPluginsDirForTests(null);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });

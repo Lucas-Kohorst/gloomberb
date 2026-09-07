@@ -3,11 +3,15 @@ import type { RemoteUiNodeSnapshot } from "../../remote/types";
 import {
   chartSeriesEvidenceWithinRange,
   chartEvidenceMismatchesFor,
+  isPaneScreenshotUsable,
   missingActiveTabSelections,
+  resolveDesktopShotApiProxy,
   shotDataEvidenceFor,
+  shotExpectedText,
   shotPriceHistoryRange,
   shotSemanticRowCount,
   shotUnavailableSymbols,
+  stripDesktopShotCredentials,
   type PaneScreenshotExpectedChartEvidence,
   type PaneScreenshotExpectedSelection,
 } from "./screenshot";
@@ -16,6 +20,79 @@ import type { DesktopPaneShotPayload } from "../desktop-pane-shot";
 import type { ResolvedPaneFunction } from "./resolver";
 import { buildCustomChartPreset } from "../../plugins/builtin/chart-composer/presets";
 import { CHART_COMPOSER_PANE_ID } from "../../types/config";
+
+describe("pane screenshot rendered readiness", () => {
+  const rendered = {
+    rowCount: 2,
+    loadingStateDetected: false,
+    errorStateDetected: false,
+    emptyStateDetected: false,
+    complete: true,
+    semanticMismatch: false,
+    requiresStructuredDataEvidence: false,
+    hasStructuredDataEvidence: false,
+  };
+
+  test("requires rows without loading, error, or empty states", () => {
+    expect(isPaneScreenshotUsable(rendered)).toBe(true);
+    expect(isPaneScreenshotUsable({ ...rendered, rowCount: 0 })).toBe(false);
+    expect(isPaneScreenshotUsable({ ...rendered, loadingStateDetected: true })).toBe(false);
+    expect(isPaneScreenshotUsable({ ...rendered, errorStateDetected: true })).toBe(false);
+    expect(isPaneScreenshotUsable({ ...rendered, emptyStateDetected: true })).toBe(false);
+  });
+
+  test("preserves mapped capability completeness and evidence checks", () => {
+    expect(isPaneScreenshotUsable({ ...rendered, complete: false })).toBe(false);
+    expect(isPaneScreenshotUsable({ ...rendered, semanticMismatch: true })).toBe(false);
+    expect(isPaneScreenshotUsable({
+      ...rendered,
+      requiresStructuredDataEvidence: true,
+    })).toBe(false);
+    expect(isPaneScreenshotUsable({
+      ...rendered,
+      requiresStructuredDataEvidence: true,
+      hasStructuredDataEvidence: true,
+    })).toBe(true);
+  });
+});
+
+describe("pane screenshot payload credentials", () => {
+  test("keeps the restored session in the proxy and strips credential fields from page data", () => {
+    const sessionToken = "private-shot-session";
+    const proxy = resolveDesktopShotApiProxy({
+      persistence: {
+        pluginState: {
+          get: (_pluginId: string, key: string) => key === "resume:session"
+            ? { value: { sessionToken }, schemaVersion: 1, updatedAt: 1 }
+            : null,
+        },
+      },
+    } as any);
+    const payload = stripDesktopShotCredentials({
+      config: {
+        theme: "tokyo",
+        pluginConfig: {
+          service: { apiKey: "private-api-key", display: "compact" },
+        },
+        brokerInstances: [{ config: { password: "private-password", region: "US" } }],
+      },
+      paneState: {
+        pane: { pluginState: { service: { accessToken: "private-access", tab: "latest" } } },
+      },
+    });
+
+    expect(proxy.sessionToken).toBe(sessionToken);
+    expect(payload).toEqual({
+      config: {
+        theme: "tokyo",
+        pluginConfig: { service: { display: "compact" } },
+        brokerInstances: [{ config: { region: "US" } }],
+      },
+      paneState: { pane: { pluginState: { service: { tab: "latest" } } } },
+    });
+    expect(JSON.stringify(payload)).not.toContain("private-");
+  });
+});
 
 describe("pane screenshot active-state verification", () => {
   const expected: PaneScreenshotExpectedSelection[] = [
@@ -130,6 +207,18 @@ describe("pane screenshot chart-data verification", () => {
           panelId: "macro",
           visible: true,
         },
+        {
+          id: "prediction",
+          sourceKind: "capability",
+          capabilityId: "prediction-markets.series",
+          providerSeriesId: "polymarket/event-1/market-1",
+          first: { date: "2026-01-01T00:00:00.000Z", value: 0.4 },
+          last: { date: "2026-01-02T00:00:00.000Z", value: 0.6 },
+          style: "area",
+          transform: "raw",
+          panelId: "prediction",
+          visible: true,
+        },
       ],
     };
     const metadata = {
@@ -137,12 +226,18 @@ describe("pane screenshot chart-data verification", () => {
       projectedPointCount: 42,
       baseSeries: expectedComposer.baseSeries?.map((series) => ({ ...series, pointCount: 12 })),
     };
-    expect(chartEvidenceMismatchesFor([{
+    const semanticUi = [{
       id: "chart-composer-data",
-      role: "chart-data",
+      role: "chart-data" as const,
       actions: [],
       metadata,
-    }], expectedComposer)).toEqual([]);
+    }];
+    expect(chartEvidenceMismatchesFor(semanticUi, expectedComposer)).toEqual([]);
+
+    const wrong = structuredClone(semanticUi);
+    (wrong[0]!.metadata.baseSeries![3]!.last as { value: number }).value = 0.7;
+    expect(chartEvidenceMismatchesFor(wrong, expectedComposer))
+      .toContain("rendered chart series prediction does not match");
   });
 });
 
@@ -176,6 +271,40 @@ describe("pane screenshot chart-composer inputs", () => {
 
     expect(shotSemanticRowCount(composer, payload([]), semanticUi)).toBe(12);
     expect(shotUnavailableSymbols(composer, payload([]), semanticUi)).toEqual([]);
+  });
+
+  test("accepts capability-backed composer evidence and reports an empty provider series", () => {
+    const composer = resolved("chart-composer", {});
+    const populated: RemoteUiNodeSnapshot[] = [{
+      id: "chart-composer-data",
+      role: "chart-data",
+      actions: [],
+      metadata: {
+        kind: "chart-composer",
+        baseSeries: [{
+          sourceKind: "capability",
+          capabilityId: "prediction-markets.series",
+          providerSeriesId: "polymarket:one",
+          pointCount: 5,
+        }],
+      },
+    }];
+    expect(shotSemanticRowCount(composer, payload([]), populated)).toBe(5);
+    expect(shotUnavailableSymbols(composer, payload([]), populated)).toEqual([]);
+
+    const empty = structuredClone(populated);
+    (empty[0]!.metadata as any).baseSeries[0].pointCount = 0;
+    expect(shotUnavailableSymbols(composer, payload([]), empty))
+      .toEqual(["CAP:prediction-markets.series:polymarket:one"]);
+  });
+
+  test("expects the composer legend short label, not the catalog metric label", () => {
+    const valuation = {
+      ...resolved("valuation-series", { metric: "priceSales", period: "annual" }),
+      pane: { id: CHART_COMPOSER_PANE_ID },
+    } as unknown as ResolvedPaneFunction;
+
+    expect(shotExpectedText(valuation, ["AAPL"], payload([]))).toEqual(["AAPL", "P/S"]);
   });
 
   test("reports an empty FRED composer source as unavailable", () => {

@@ -1,4 +1,4 @@
-import type { ChartResolution, TimeRange } from "./range";
+import { CHART_RESOLUTIONS, TIME_RANGES, type ChartResolution, type TimeRange } from "./range";
 import { getChartResolutionLabel } from "./resolution";
 import {
   canonicalTimeSeriesFieldId,
@@ -26,9 +26,13 @@ import {
   type SeriesTransform,
   type SecuritySeriesSource,
 } from "./types";
+import {
+  isValidChartCapabilityId,
+  isValidChartSeriesId,
+} from "../capabilities/chart-series";
 
-const TIME_RANGES = new Set<TimeRange>(["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"]);
-const RESOLUTIONS = new Set<ChartResolution>(["auto", "1m", "5m", "15m", "30m", "45m", "1h", "4h", "1d", "1wk", "1mo"]);
+const RANGE_SET = new Set<TimeRange>(TIME_RANGES);
+const RESOLUTIONS = new Set<ChartResolution>(CHART_RESOLUTIONS);
 const PERIODS = new Set<SeriesPeriod>(["auto", "daily", "weekly", "monthly", "quarterly", "annual", "ttm"]);
 const STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points", "candles", "ohlc", "hlc"]);
 const ECONOMIC_STYLES = new Set<SeriesStyle>(["line", "area", "step", "columns", "points"]);
@@ -43,6 +47,9 @@ const STUDIES = new Set<ChartStudyKind>([
   "rsi",
   "macd",
   "vwap",
+  "drawdown",
+  "volatility",
+  "distance",
   "atr",
   "stochastic",
   "adx",
@@ -94,6 +101,8 @@ export function defaultChartSeriesPresentation(source: ChartSeriesSource): Chart
     }
     case "economic":
       return { style: "step", transform: "raw", unit: "level", unitGroup: "level" };
+    case "capability":
+      return { style: "line", transform: "raw", unit: "", unitGroup: `capability:${source.capabilityId}` };
     case "adjacent-index":
       return { style: "line", transform: "raw", unit: "index", unitGroup: "level" };
     case "benchmark":
@@ -198,6 +207,14 @@ function normalizeSource(value: unknown): ChartSeriesSource | null {
     const seriesId = nonEmptyString(source.seriesId);
     if (!seriesId || source.provider !== "fred") return null;
     return { kind: "economic", provider: "fred", seriesId };
+  }
+  if (source.kind === "capability") {
+    const capabilityId = nonEmptyString(source.capabilityId);
+    const seriesId = nonEmptyString(source.seriesId);
+    if (!capabilityId || !seriesId
+      || !isValidChartCapabilityId(capabilityId)
+      || !isValidChartSeriesId(seriesId)) return null;
+    return { kind: "capability", capabilityId, seriesId };
   }
   if (source.kind === "adjacent-index") {
     const indexId = nonEmptyString(source.indexId);
@@ -406,7 +423,7 @@ export function normalizeChartSpec(value: unknown, fallback: ChartSpec = DEFAULT
   return {
     version: CHART_SPEC_VERSION,
     viewport: {
-      range: TIME_RANGES.has(viewport?.range as TimeRange)
+      range: RANGE_SET.has(viewport?.range as TimeRange)
         ? viewport!.range as TimeRange
         : fallbackCopy.viewport.range,
       resolution: RESOLUTIONS.has(viewport?.resolution as ChartResolution)
@@ -440,7 +457,7 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
   if (spec.version !== CHART_SPEC_VERSION) {
     errors.push(issue("version", "unsupported-version", `Unsupported chart spec version ${String(spec.version)}.`));
   }
-  if (!TIME_RANGES.has(spec.viewport.range)) errors.push(issue("viewport.range", "invalid-range", "Invalid date range."));
+  if (!RANGE_SET.has(spec.viewport.range)) errors.push(issue("viewport.range", "invalid-range", "Invalid date range."));
   if (!RESOLUTIONS.has(spec.viewport.resolution)) {
     errors.push(issue("viewport.resolution", "invalid-resolution", "Invalid chart resolution."));
   }
@@ -543,6 +560,13 @@ export function validateChartSpec(spec: ChartSpec): ChartSpecValidationResult {
       }
       if (!ECONOMIC_STYLES.has(entry.style)) {
         errors.push(issue(`${path}.style`, "unsupported-style", `${entry.style} is not valid for an economic scalar series.`));
+      }
+    } else if (entry.source.kind === "capability") {
+      if (!isValidChartCapabilityId(entry.source.capabilityId)) {
+        errors.push(issue(`${path}.source.capabilityId`, "invalid-capability", "Chart series capability ID is invalid."));
+      }
+      if (!isValidChartSeriesId(entry.source.seriesId)) {
+        errors.push(issue(`${path}.source.seriesId`, "invalid-series", "Provider series ID is invalid."));
       }
     } else if (entry.source.kind === "adjacent-index") {
       if (!entry.source.indexId.trim()) {

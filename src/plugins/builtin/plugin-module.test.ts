@@ -19,8 +19,7 @@ describe("composeBuiltinPlugin", () => {
   test("combines every declarative contribution under the parent plugin", async () => {
     const registeredBrokers: string[] = [];
     const first: PluginModule = {
-      cliCommands: [{ name: "legacy", description: "Legacy", execute: () => {} }],
-      cli: { commands: [{ name: "typed", summary: "Typed" }] },
+      cliCommands: [{ name: "example", description: "Example", execute: () => {} }],
       panes: [{ id: "one", name: "One", component: () => null, defaultPosition: "right" }],
       paneTemplates: [{ id: "one-pane", paneId: "one", label: "One", description: "One" }],
       capabilities: [{ id: "capability-one" } as never],
@@ -40,8 +39,7 @@ describe("composeBuiltinPlugin", () => {
       modules: [first, second],
     });
 
-    expect(plugin.cliCommands?.map((command) => command.name)).toEqual(["legacy"]);
-    expect(plugin.cli?.commands?.map((command) => command.name)).toEqual(["typed"]);
+    expect(plugin.cliCommands?.map((command) => command.name)).toEqual(["example"]);
     expect(plugin.panes?.map((pane) => pane.id)).toEqual(["one", "two"]);
     expect(plugin.paneTemplates?.map((template) => template.id)).toEqual(["one-pane"]);
     expect(plugin.capabilities?.map((capability) => capability.id)).toEqual(["capability-one"]);
@@ -55,8 +53,10 @@ describe("composeBuiltinPlugin", () => {
     plugin.dispose?.();
   });
 
-  test("isolates a failing module's setup and still disposes all modules in reverse order", async () => {
+  test("isolates setup failures and disposes every started module in reverse order", async () => {
     const lifecycle: string[] = [];
+    const errors: unknown[][] = [];
+    const originalError = console.error;
     const plugin = composeBuiltinPlugin({
       id: "parent",
       name: "Parent",
@@ -80,11 +80,15 @@ describe("composeBuiltinPlugin", () => {
       ],
     });
 
-    // setup must resolve (not reject) — a sibling module's failure must not
-    // kill the composite plugin or prevent the registry from registering it.
-    await plugin.setup?.(context());
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    try {
+      await plugin.setup?.(context());
+    } finally {
+      console.error = originalError;
+    }
     plugin.dispose?.();
 
+    expect(errors[0]?.[0]).toBe('[plugins] Module setup failed in plugin "parent":');
     expect(lifecycle).toEqual([
       "setup:first",
       "setup:second",

@@ -13,6 +13,7 @@ import {
   hydrateWatchlistSnapshots,
   persistPredictionStarsToDefaultWatchlist,
   predictionCollectionSymbol,
+  predictionTickerRecord,
   resolveWatchlistMarkets,
 } from "./collection-watchlist";
 import { normalizeKalshiMarket } from "./services/kalshi/normalize";
@@ -73,6 +74,15 @@ describe("prediction market PF watchlist membership", () => {
   test("maps Kalshi tickers and Polymarket slugs onto collection symbols", () => {
     expect(predictionCollectionSymbol(kalshi)).toBe("KALSHI:KXPRESPERSON");
     expect(predictionCollectionSymbol(polymarket)).toBe("POLY:inflation-fall");
+  });
+
+  test("builds a research ticker from a catalog hit without starring it", () => {
+    const ticker = predictionTickerRecord(kalshi);
+    expect(ticker.metadata.ticker).toBe("KALSHI:KXPRESPERSON");
+    expect(ticker.metadata.assetCategory).toBe("KALSHI");
+    expect(ticker.metadata.watchlists).toEqual([]);
+    expect(ticker.metadata.custom.predictionMarketId).toBe(kalshi.marketId);
+    expect(ticker.metadata.custom.predictionEventTicker).toBe(kalshi.eventTicker);
   });
 
   test("stars and unstars into the default watchlist without inventing lots", () => {

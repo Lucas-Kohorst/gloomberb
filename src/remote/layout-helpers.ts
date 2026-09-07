@@ -1,8 +1,11 @@
 import {
-  getDockedPaneIds,
-} from "../plugins/pane-manager";
-import { createBlankLayout, createPaneInstance } from "../types/config";
-import type { DockLayoutNode, LayoutConfig, PaneInstanceConfig } from "../types/config";
+  createBlankLayout,
+  createPaneInstance,
+  getPlacedPaneInstanceIds,
+  type DockLayoutNode,
+  type LayoutConfig,
+  type PaneInstanceConfig,
+} from "../types/config";
 import type { PaneTemplateDef } from "../types/plugin";
 
 export function requirePaneInstance(layout: LayoutConfig, paneId: string): PaneInstanceConfig {
@@ -29,7 +32,7 @@ export function buildGridDockRoot(paneIds: string[], columns?: number): DockLayo
 }
 
 export function buildSeededLayout(
-  ids: string[],
+  ids: unknown[],
   panes: ReadonlyMap<string, unknown>,
   paneTemplates: ReadonlyMap<string, PaneTemplateDef>,
 ): LayoutConfig {
@@ -64,11 +67,7 @@ export function buildSeededLayout(
 }
 
 export function visiblePaneIds(layout: LayoutConfig): string[] {
-  const ids = new Set<string>();
-  getDockedPaneIds(layout).forEach((id) => ids.add(id));
-  layout.floating.forEach((entry) => ids.add(entry.instanceId));
-  (layout.detached ?? []).forEach((entry) => ids.add(entry.instanceId));
-  return [...ids];
+  return getPlacedPaneInstanceIds(layout);
 }
 
 export function regionToDockPosition(region: string): "left" | "right" | "above" | "below" {

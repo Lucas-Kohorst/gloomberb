@@ -3,7 +3,16 @@ import { isPriceAlertCondition } from "./types";
 
 export type { AlertRule };
 
-const KNOWN_CONDITIONS = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div", "weather"]);
+/** Conditions a stored alert may carry; anything else is corrupt or from a future release. */
+const KNOWN_CONDITIONS = new Set<AlertCondition>([
+  "above",
+  "below",
+  "crosses",
+  "halted",
+  "short_float",
+  "ex_div",
+  "weather",
+]);
 
 export function createAlert(
   symbol: string,
@@ -23,10 +32,8 @@ export function createAlert(
 }
 
 /**
- * Rebuilt from a whitelist rather than spread so every trigger and quote
- * lifecycle field is dropped. A re-armed `crosses` alert has to compare against
- * a fresh baseline instead of the reading that fired it, and a retargeted alert
- * must not keep the stale price, source, or error from its previous symbol.
+ * Rebuilt from a whitelist rather than spread so every trigger/quote lifecycle
+ * field is dropped: a re-armed `crosses` alert must start from a fresh baseline.
  */
 export function editAlert(
   alert: AlertRule,
@@ -38,7 +45,6 @@ export function editAlert(
   return {
     id: alert.id,
     symbol: nextSymbol,
-    // A different listing invalidates whichever exchange was resolved before.
     exchange: nextSymbol === alert.symbol.trim().toUpperCase() ? alert.exchange : undefined,
     condition,
     targetPrice,
@@ -46,6 +52,10 @@ export function editAlert(
     status: "active",
     message: alert.message,
   };
+}
+
+export function rearmAlert(alert: AlertRule): AlertRule {
+  return editAlert(alert, alert.symbol, alert.condition, alert.targetPrice);
 }
 
 export function evaluateAlert(alert: AlertRule, currentPrice: number): boolean {
@@ -115,6 +125,19 @@ export function formatAlertDescription(alert: AlertRule): string {
 
 export function serializeAlerts(alerts: AlertRule[]): string {
   return JSON.stringify(alerts);
+}
+
+/**
+ * Non-null when the stored blob is not valid alert JSON. Without this a corrupt
+ * store deserializes to `[]` and the pane claims the user has no alerts.
+ */
+export function readAlertsStoreError(json: string): string | null {
+  if (!json.trim()) return null;
+  try {
+    return Array.isArray(JSON.parse(json)) ? null : "Saved alerts are not a list.";
+  } catch (error) {
+    return error instanceof Error ? error.message : "Saved alerts could not be read.";
+  }
 }
 
 export function deserializeAlerts(json: string): AlertRule[] {

@@ -1,19 +1,24 @@
+import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import { httpFetch } from "../../../utils/http-transport";
-import { parseEftsFilings } from "../../../sources/sec-edgar";
-import { withConnectionRequest } from "../connections/register";
 import type { IPORecord, IPOStatus } from "./types";
+
+export const STOCKANALYSIS_IPO_CONNECTION_ID = "stockanalysis-ipo";
 
 const SA_RECENT_URL = "https://stockanalysis.com/ipos/__data.json";
 const SA_CALENDAR_URL = "https://stockanalysis.com/ipos/calendar/__data.json";
-const SEC_EFTS_URL = "https://efts.sec.gov/LATEST/search-index";
 const FETCH_TIMEOUT_MS = 15_000;
 
 const SA_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-function getSecUserAgent(): string {
-  const env = typeof process !== "undefined" ? process.env : undefined;
-  return env?.SEC_USER_AGENT?.trim() ?? "Gloomberb research@gloomberb.com";
+let connectionHealth: ConnectionHealthRegistry | null = null;
+
+export function attachIpoCalendarHealth(health?: ConnectionHealthRegistry): void {
+  connectionHealth = health ?? null;
+}
+
+export function resetIpoCalendarHealth(): void {
+  connectionHealth = null;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -151,7 +156,6 @@ function recordFromRecent(flat: unknown[], record: Record<string, unknown>): IPO
     shares: null,
     closePrice,
     change1D,
-    secUrl: null,
   };
 }
 
@@ -180,7 +184,6 @@ function recordFromCalendar(flat: unknown[], record: Record<string, unknown>): I
     shares,
     closePrice: null,
     change1D: null,
-    secUrl: null,
   };
 }
 
@@ -204,17 +207,18 @@ function fetchJson(url: string, headers: Record<string, string>): Promise<unknow
   });
 }
 
-function fetchStockAnalysis(url: string): Promise<unknown> {
-  return withConnectionRequest("stockanalysis-ipo", "fetch", () =>
-    fetchJson(url, {
-      "User-Agent": SA_USER_AGENT,
-      Accept: "application/json",
-    }),
-  );
+function fetchStockAnalysis(url: string, operation: string): Promise<unknown> {
+  const request = () => fetchJson(url, {
+    "User-Agent": SA_USER_AGENT,
+    Accept: "application/json",
+  });
+  return connectionHealth?.hasSource(STOCKANALYSIS_IPO_CONNECTION_ID)
+    ? connectionHealth.track(STOCKANALYSIS_IPO_CONNECTION_ID, operation, request)
+    : request();
 }
 
 async function fetchRecentIpos(): Promise<IPORecord[]> {
-  const payload = await fetchStockAnalysis(SA_RECENT_URL);
+  const payload = await fetchStockAnalysis(SA_RECENT_URL, "fetchRecent");
   const flat = getFlatData(payload);
   if (!flat) return [];
   const records = findRecordObjects(flat);
@@ -223,72 +227,38 @@ async function fetchRecentIpos(): Promise<IPORecord[]> {
     .filter((record): record is IPORecord => record !== null);
 }
 
-async function fetchUpcomingIpos(): Promise<IPORecord[]> {
-  const payload = await fetchStockAnalysis(SA_CALENDAR_URL);
-  const flat = getFlatData(payload);
-  if (!flat) return [];
+function parseCalendarRecords(flat: unknown[]): IPORecord[] {
   const root = isObject(flat[0]) ? flat[0] : null;
-  if (!root) return [];
-
-  const sections = ["thisWeekData", "nextWeekData", "laterData"];
-  const results: IPORecord[] = [];
-  for (const field of sections) {
-    const indices = getCalendarSectionIndices(flat, root, field);
-    for (const idx of indices) {
-      const record = isObject(flat[idx]) ? flat[idx] as Record<string, unknown> : null;
-      if (!record) continue;
-      const parsed = recordFromCalendar(flat, record);
-      if (parsed) results.push(parsed);
-    }
-  }
-  return results;
-}
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
-}
-
-async function fetchSecS1Filings(): Promise<Map<string, string>> {
-  const url = new URL(SEC_EFTS_URL);
-  url.searchParams.set("forms", "S-1,S-1/A");
-  url.searchParams.set("dateRange", "custom");
-  url.searchParams.set("startdt", isoDateDaysAgo(90));
-  url.searchParams.set("enddt", isoDateDaysAgo(0));
-  url.searchParams.set("from", "0");
-  url.searchParams.set("size", "100");
-
-  const payload = await withConnectionRequest("sec-edgar-ipo", "fetch", () =>
-    fetchJson(url.toString(), {
-      "User-Agent": getSecUserAgent(),
-      Accept: "application/json",
-    }),
-  );
-
-  const filings = parseEftsFilings(payload, 100);
-  const tickerToUrl = new Map<string, string>();
-  for (const filing of filings) {
-    if (filing.ticker && filing.filingUrl) {
-      const normalized = filing.ticker.toUpperCase();
-      if (!tickerToUrl.has(normalized)) {
-        tickerToUrl.set(normalized, filing.filingUrl);
+  if (root) {
+    const sections = ["thisWeekData", "nextWeekData", "laterData"];
+    const results: IPORecord[] = [];
+    for (const field of sections) {
+      const indices = getCalendarSectionIndices(flat, root, field);
+      for (const idx of indices) {
+        const record = isObject(flat[idx]) ? flat[idx] as Record<string, unknown> : null;
+        if (!record) continue;
+        const parsed = recordFromCalendar(flat, record);
+        if (parsed) results.push(parsed);
       }
     }
+    if (results.length > 0) return results;
   }
-  return tickerToUrl;
+
+  return findRecordObjects(flat)
+    .map((record) => recordFromCalendar(flat, record))
+    .filter((record): record is IPORecord => record !== null);
 }
 
-function enrichWithSecUrls(records: IPORecord[], secMap: Map<string, string>): IPORecord[] {
-  return records.map((record) => ({
-    ...record,
-    secUrl: secMap.get(record.ticker.toUpperCase()) ?? record.secUrl,
-  }));
+async function fetchUpcomingIpos(): Promise<IPORecord[]> {
+  const payload = await fetchStockAnalysis(SA_CALENDAR_URL, "fetchUpcoming");
+  const flat = getFlatData(payload);
+  if (!flat) return [];
+  return parseCalendarRecords(flat);
 }
 
 function dedupeAndSort(records: IPORecord[]): IPORecord[] {
   const byTicker = new Map<string, IPORecord>();
-  const statusOrder: Record<IPOStatus, number> = { upcoming: 0, priced: 1, trading: 2, withdrawn: 3 };
+  const statusOrder: Record<IPOStatus, number> = { upcoming: 0, priced: 1, trading: 2 };
   for (const record of records) {
     const key = record.ticker.toUpperCase();
     const existing = byTicker.get(key);
@@ -299,26 +269,28 @@ function dedupeAndSort(records: IPORecord[]): IPORecord[] {
   return [...byTicker.values()].sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
-export async function fetchIpoCalendar(): Promise<IPORecord[]> {
-  const [recentResult, upcomingResult, secResult] = await Promise.allSettled([
+export interface IpoCalendarFetchResult {
+  records: IPORecord[];
+  /** One entry per endpoint that failed, so a half board is never shown as whole. */
+  errors: string[];
+}
+
+export async function fetchIpoCalendar(): Promise<IpoCalendarFetchResult> {
+  const [recentResult, upcomingResult] = await Promise.allSettled([
     fetchRecentIpos(),
     fetchUpcomingIpos(),
-    fetchSecS1Filings(),
   ]);
 
   const records: IPORecord[] = [];
+  const errors: string[] = [];
   if (recentResult.status === "fulfilled") records.push(...recentResult.value);
+  else errors.push(`recent: ${recentResult.reason}`);
   if (upcomingResult.status === "fulfilled") records.push(...upcomingResult.value);
+  else errors.push(`upcoming: ${upcomingResult.reason}`);
 
-  const secMap = secResult.status === "fulfilled" ? secResult.value : new Map<string, string>();
-  const enriched = enrichWithSecUrls(records, secMap);
-
-  if (records.length === 0) {
-    const errors: string[] = [];
-    if (recentResult.status === "rejected") errors.push(`recent: ${recentResult.reason}`);
-    if (upcomingResult.status === "rejected") errors.push(`upcoming: ${upcomingResult.reason}`);
-    if (errors.length > 0) throw new Error(`IPO data unavailable (${errors.join("; ")})`);
+  if (records.length === 0 && errors.length > 0) {
+    throw new Error(`IPO data unavailable (${errors.join("; ")})`);
   }
 
-  return dedupeAndSort(enriched);
+  return { records: dedupeAndSort(records), errors };
 }

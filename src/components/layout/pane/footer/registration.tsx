@@ -38,16 +38,17 @@ export function PaneFooterProvider({
 
   const register = useCallback((registrationId: string, registration: PaneFooterRegistration | null) => {
     setRegistrations((current) => {
-      const next = new Map(current);
-      if (registration && (
+      const hasContent = !!registration && (
         (registration.info?.length ?? 0) > 0
         || (registration.trailingInfo?.length ?? 0) > 0
         || (registration.hints?.length ?? 0) > 0
-      )) {
-        next.set(registrationId, registration);
-      } else {
-        next.delete(registrationId);
-      }
+      );
+      const previous = current.get(registrationId) ?? null;
+      const nextRegistration = hasContent ? registration : null;
+      if (samePaneFooterRegistration(previous, nextRegistration)) return current;
+      const next = new Map(current);
+      if (nextRegistration) next.set(registrationId, nextRegistration);
+      else next.delete(registrationId);
       return next;
     });
   }, []);

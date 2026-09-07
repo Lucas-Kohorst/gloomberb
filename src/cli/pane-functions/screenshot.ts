@@ -1,12 +1,16 @@
 import { dirname, resolve } from "path";
 import { mkdir } from "fs/promises";
 import type { PaneRuntimeState } from "../../core/state/app/state";
-import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../types/config";
+import { CHART_COMPOSER_PANE_ID, type AppConfig } from "../../types/config";
 import type { OptionsChain, PricePoint, TickerFinancials } from "../../types/financials";
 import type { TickerRecord } from "../../types/ticker";
 import { slugifyName } from "../../utils/slugify";
+import { getTheme, getThemeIds } from "../../theme/themes";
+
+const DEFAULT_SHOT_DEVICE_SCALE_FACTOR = 2;
 import {
   renderDesktopPaneScreenshot,
+  type DesktopPaneShotApiProxy,
   type DesktopPaneShotPayload,
   type DesktopPaneShotRenderResult,
 } from "../desktop-pane-shot";
@@ -20,6 +24,7 @@ import {
   limitGraphRowsBySymbol,
   metricDef,
 } from "../../time-series/reporting";
+import { getTimeSeriesField } from "../../time-series/field-catalog";
 import {
   buildFinancialTableModel,
   formatFinancialHeader,
@@ -31,15 +36,32 @@ import type {
 } from "../../time-series/reporting";
 import type { TimeRange } from "../../time-series/range";
 import { appendLiveQuotePoint } from "../../time-series/chart-data";
+import { applyResolvedSeriesTransform } from "../../time-series/transforms";
 import { subtractTimeRange } from "../../time-series/date-window";
 import {
   buildPresetDateWindow,
   getVisibleWindowForDateRange,
 } from "../../components/chart/core/date-window";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
+import {
+  defaultValuationSeriesLoader,
+  requiredSeries as valuationRequiredSeries,
+} from "../../plugins/builtin/market-valuation/client";
+import type { DatedObservation } from "../../plugins/builtin/market-valuation/series";
+import { defaultStatLoader } from "../../plugins/builtin/econ-statistics/client";
+import { STATS } from "../../plugins/builtin/econ-statistics/stats";
 import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
+import { getCloudApiBaseUrl } from "../../api-client/request";
 import type { FredSeriesCacheEntry } from "../../data/fred-series";
+import type {
+  CapabilitySeriesSource,
+  ChartSeriesSource,
+  ResolvedSeries,
+  SeriesTransform,
+} from "../../time-series/types";
+import { chartSeriesSourceKey, createChartSeriesResolver } from "../../capabilities";
+import { getSharedRegistry } from "../../plugins/registry";
 import {
   collectShotSymbols,
   clipPriceHistoryToRange,
@@ -52,9 +74,105 @@ import {
 const DESKTOP_CELL_WIDTH_PX = 8;
 const DESKTOP_CELL_HEIGHT_PX = 18;
 const OPTIONS_PANE_ID = "options";
+const MARKET_VALUATION_PANE_ID = "market-valuation";
+const ECON_STATISTICS_PANE_ID = "econ-statistics";
+const CLOUD_PLUGIN_ID = "gloomberb-cloud";
+const CLOUD_SESSION_KEYS = ["resume:session", "session"] as const;
+const CREDENTIAL_FIELD_NAMES = new Set([
+  "accesstoken",
+  "accessurl",
+  "apikey",
+  "apisecret",
+  "authorization",
+  "cookie",
+  "credentials",
+  "oauth",
+  "passphrase",
+  "password",
+  "privatekey",
+  "refreshtoken",
+  "secret",
+  "sessiontoken",
+  "token",
+]);
+
+interface PersistedShotCloudSession {
+  sessionToken?: unknown;
+}
+
+/**
+ * The proxy receives the desktop session out of band. Keeping this separate
+ * from DesktopPaneShotPayload prevents the token from entering the page,
+ * semantic evidence, or JSON CLI output.
+ */
+function isCredentialField(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return CREDENTIAL_FIELD_NAMES.has(normalized)
+    || normalized.endsWith("password")
+    || normalized.endsWith("passphrase")
+    || normalized.endsWith("secret")
+    || normalized.endsWith("token")
+    || normalized.endsWith("credential")
+    || normalized.endsWith("cookie")
+    || normalized.endsWith("apikey")
+    || normalized.endsWith("accesskey")
+    || normalized.endsWith("privatekey")
+    || normalized.endsWith("authorization")
+    || normalized.endsWith("accessurl");
+}
+
+/** Removes credential-shaped object fields before data enters the page or JSON output. */
+export function stripDesktopShotCredentials<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stripDesktopShotCredentials(entry)) as T;
+  }
+  if (!value || typeof value !== "object" || value instanceof Date) return value;
+  const clean: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (isCredentialField(key)) continue;
+    clean[key] = stripDesktopShotCredentials(entry);
+  }
+  return clean as T;
+}
+
+export function resolveDesktopShotApiProxy(
+  context: Pick<MarketContext, "persistence">,
+): DesktopPaneShotApiProxy {
+  let sessionToken: string | null = null;
+  for (const key of CLOUD_SESSION_KEYS) {
+    const value = context.persistence.pluginState.get<PersistedShotCloudSession>(
+      CLOUD_PLUGIN_ID,
+      key,
+      1,
+    )?.value;
+    if (typeof value?.sessionToken === "string" && value.sessionToken.length > 0) {
+      sessionToken = value.sessionToken;
+      break;
+    }
+  }
+  return {
+    baseUrl: getCloudApiBaseUrl(),
+    sessionToken,
+  };
+}
+
+/** Same reason as the valuation legs: the renderer cannot fill its own cache. */
+async function collectShotStatSeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, DatedObservation[]]>> {
+  if (resolved.pane.id !== ECON_STATISTICS_PANE_ID) return [];
+  const loaded = await Promise.all(STATS.map(async (def) => {
+    try {
+      return [def.seriesId, await defaultStatLoader(def)] as [string, DatedObservation[]];
+    } catch {
+      return null;
+    }
+  }));
+  return loaded.filter((entry): entry is [string, DatedObservation[]] => !!entry);
+}
 
 function isComposerChartPane(paneId: string): boolean {
-  return paneId === CHART_COMPOSER_PANE_ID || paneId === TRADINGVIEW_PANE_ID;
+  return paneId === CHART_COMPOSER_PANE_ID;
 }
 
 async function collectShotFredSeries(
@@ -78,6 +196,42 @@ async function collectShotFredSeries(
     }
   }));
   return loaded.filter((entry): entry is [string, FredSeriesCacheEntry] => !!entry);
+}
+
+/**
+ * The pane reads its legs from a client cache the shot renderer cannot fill itself,
+ * so fetch them here on the Bun side and hand them over with the payload.
+ */
+async function collectShotValuationSeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, DatedObservation[]]>> {
+  if (resolved.pane.id !== MARKET_VALUATION_PANE_ID) return [];
+  const loaded = await Promise.all(valuationRequiredSeries().map(async (def) => {
+    try {
+      const series = await defaultValuationSeriesLoader(def);
+      return [def.key, series.observations] as [string, DatedObservation[]];
+    } catch {
+      return null;
+    }
+  }));
+  return loaded.filter((entry): entry is [string, DatedObservation[]] => !!entry);
+}
+
+async function collectShotCapabilitySeries(
+  resolved: ResolvedPaneFunction,
+): Promise<Array<[string, ResolvedSeries]>> {
+  if (resolved.pane.id !== CHART_COMPOSER_PANE_ID) return [];
+  const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
+  const invoker = getSharedRegistry();
+  if (!spec || !invoker) return [];
+  const resolveSeries = createChartSeriesResolver(invoker);
+  return (await Promise.all(spec.series.flatMap((series) => {
+    if (series.source.kind !== "capability") return [];
+    const source = series.source;
+    return [resolveSeries(source, spec.viewport, series)
+      .then((value) => [chartSeriesSourceKey(source), value] as [string, ResolvedSeries])
+      .catch(() => null)];
+  }))).filter((entry): entry is [string, ResolvedSeries] => entry !== null);
 }
 
 export interface PaneScreenshotExpectedSelection {
@@ -110,10 +264,14 @@ export interface PaneScreenshotExpectedChartEvidence {
   sourceSeries?: PaneScreenshotChartSeriesEvidence[];
   baseSeries?: Array<{
     id: string;
-    sourceKind: string;
+    sourceKind: ChartSeriesSource["kind"];
     symbol?: string;
     fieldId?: string;
     economicSeriesId?: string;
+    capabilityId?: string;
+    providerSeriesId?: string;
+    first?: { date: string; value: number | null } | null;
+    last?: { date: string; value: number | null } | null;
     style: string;
     transform: string;
     panelId: string;
@@ -174,6 +332,27 @@ export type PaneScreenshotDataEvidence =
   | PaneScreenshotFundamentalSeriesEvidence
   | PaneScreenshotFinancialStatementEvidence;
 
+export interface PaneScreenshotReadinessSignals {
+  rowCount: number;
+  loadingStateDetected: boolean;
+  errorStateDetected: boolean;
+  emptyStateDetected: boolean;
+  complete: boolean;
+  semanticMismatch: boolean;
+  requiresStructuredDataEvidence: boolean;
+  hasStructuredDataEvidence: boolean;
+}
+
+export function isPaneScreenshotUsable(signals: PaneScreenshotReadinessSignals): boolean {
+  return signals.rowCount > 0
+    && !signals.loadingStateDetected
+    && !signals.errorStateDetected
+    && !signals.emptyStateDetected
+    && signals.complete
+    && !signals.semanticMismatch
+    && (!signals.requiresStructuredDataEvidence || signals.hasStructuredDataEvidence);
+}
+
 export interface PaneScreenshotResult {
   kind: "pane-screenshot";
   target: string;
@@ -216,9 +395,20 @@ async function buildDesktopShotPayload(
   options: Record<string, string | true>,
   widthPx: number,
   heightPx: number,
+  theme: string | null,
+  scale: number,
+  watermark: string | null,
 ): Promise<DesktopPaneShotPayload> {
-  const widthCells = Math.max(1, Math.round(widthPx / DESKTOP_CELL_WIDTH_PX));
-  const heightCells = Math.max(1, Math.round(heightPx / DESKTOP_CELL_HEIGHT_PX));
+  // The requested size is the output size. Scale shrinks the CSS viewport and
+  // raises the device scale factor by the same factor, so a 1200px wide shot at
+  // scale 1.5 lays out 100 cells instead of 150 and every glyph is 1.5x larger.
+  // Snap to whole cells: rounding up used to make the pane a few pixels taller
+  // than the capture, which clipped the bottom axis of charts.
+  const widthCells = Math.max(1, Math.floor(widthPx / scale / DESKTOP_CELL_WIDTH_PX));
+  const heightCells = Math.max(1, Math.floor(heightPx / scale / DESKTOP_CELL_HEIGHT_PX));
+  widthPx = widthCells * DESKTOP_CELL_WIDTH_PX;
+  heightPx = heightCells * DESKTOP_CELL_HEIGHT_PX;
+  const deviceScaleFactor = DEFAULT_SHOT_DEVICE_SCALE_FACTOR * scale;
   const initialPaneState = optionPaneState(resolved.options);
   const pluginState = capabilityPluginState(resolved.capability, resolved.options);
   if (Object.keys(pluginState).length > 0) {
@@ -230,9 +420,9 @@ async function buildDesktopShotPayload(
   if (isFinancialAnalysisFunction(resolved) && !initialPaneState.activeTabId) {
     initialPaneState.activeTabId = "financials";
   }
-  const paneState: Record<string, PaneRuntimeState> = {
+  const paneState = stripDesktopShotCredentials<Record<string, PaneRuntimeState>>({
     [resolved.instance.instanceId]: initialPaneState,
-  };
+  });
   const layout = {
     dockRoot: null,
     instances: [resolved.instance],
@@ -246,8 +436,9 @@ async function buildDesktopShotPayload(
     }],
     detached: [],
   };
-  const config = {
+  const config = stripDesktopShotCredentials<AppConfig>({
     ...context.config,
+    ...(theme ? { theme: resolveShotTheme(theme) } : {}),
     layout,
     layouts: [{
       name: "CLI Shot",
@@ -258,12 +449,17 @@ async function buildDesktopShotPayload(
     }],
     activeLayoutIndex: 0,
     onboardingComplete: true,
-  };
+  });
 
   const tickers: TickerRecord[] = [];
   const financials: Array<[string, TickerFinancials]> = [];
   const optionsChains: Array<[string, OptionsChain]> = [];
-  const fredSeries = await collectShotFredSeries(resolved);
+  const [fredSeries, capabilitySeries, valuationSeries, statSeries] = await Promise.all([
+    collectShotFredSeries(resolved),
+    collectShotCapabilitySeries(resolved),
+    collectShotValuationSeries(resolved),
+    collectShotStatSeries(resolved),
+  ]);
   const includeOptionsChains = resolved.pane.id === OPTIONS_PANE_ID || resolved.template?.paneId === OPTIONS_PANE_ID;
   for (const symbol of collectShotSymbols(resolved, rawArg)) {
     const entry = await fetchTickerFinancials(context, symbol);
@@ -302,12 +498,28 @@ async function buildDesktopShotPayload(
     heightCells,
     widthPx,
     heightPx,
+    deviceScaleFactor,
+    watermark,
     tickers,
     financials,
     optionsChains,
     fredSeries,
+    valuationSeries,
+    statSeries,
+    capabilitySeries,
     paneState,
   };
+}
+
+function resolveShotTheme(requested: string): string {
+  const normalized = requested.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  const ids = getThemeIds();
+  const match = ids.find((id) => id.toLowerCase() === normalized)
+    ?? ids.find((id) => getTheme(id).name.toLowerCase().replace(/[\s_]+/g, "-") === normalized);
+  if (!match) {
+    throw new Error(`Unknown theme "${requested}". Available themes: ${ids.join(", ")}`);
+  }
+  return match;
 }
 
 export function shotPriceHistoryRange(resolved: ResolvedPaneFunction): TimeRange | null {
@@ -338,6 +550,9 @@ export async function renderDesktopShot({
   outputPath,
   width,
   height,
+  theme,
+  scale,
+  watermark,
   options,
 }: {
   resolved: ResolvedPaneFunction;
@@ -346,14 +561,41 @@ export async function renderDesktopShot({
   outputPath: string;
   width: number;
   height: number;
+  theme?: string | null;
+  scale?: number;
+  watermark?: string | null;
   options: Record<string, string | true>;
 }): Promise<PaneScreenshotResult> {
   await mkdir(dirname(outputPath), { recursive: true });
-  const payload = await buildDesktopShotPayload(resolved, context, rawArg, options, width, height);
-  const render = await renderDesktopPaneScreenshot(payload, outputPath);
+  const apiProxy = resolveDesktopShotApiProxy(context);
+  const previousSessionToken = apiClient.getSessionToken();
+  let payload: DesktopPaneShotPayload;
+  let render: DesktopPaneShotRenderResult;
+  apiClient.setSessionToken(apiProxy.sessionToken);
+  try {
+    payload = await buildDesktopShotPayload(
+      resolved,
+      context,
+      rawArg,
+      options,
+      width,
+      height,
+      theme ?? null,
+      scale ?? 1,
+      watermark ?? null,
+    );
+    render = await renderDesktopPaneScreenshot(payload, outputPath, apiProxy);
+  } finally {
+    apiClient.setSessionToken(previousSessionToken);
+  }
   const symbols = payload.financials.map(([symbol]) => symbol);
-  const rowCount = shotSemanticRowCount(resolved, payload, render.semanticUi);
-  const unavailableSymbols = shotUnavailableSymbols(resolved, payload, render.semanticUi);
+  const usesLiveDomEvidence = resolved.capability.screenshotReadiness === "live-dom";
+  const rowCount = usesLiveDomEvidence
+    ? render.rows.length
+    : shotSemanticRowCount(resolved, payload, render.semanticUi);
+  const unavailableSymbols = usesLiveDomEvidence
+    ? []
+    : shotUnavailableSymbols(resolved, payload, render.semanticUi);
   const complete = unavailableSymbols.length === 0;
   const expectedText = shotExpectedText(resolved, symbols, payload);
   const normalizedVisibleText = render.visibleText.toLowerCase();
@@ -371,12 +613,21 @@ export async function renderDesktopShot({
   const semanticMismatch = missingExpectedText.length > 0
     || missingExpectedSelections.length > 0
     || chartEvidenceMismatches.length > 0;
-  const empty = render.emptyStateDetected || rowCount === 0 || semanticMismatch;
-  const usable = resolved.capability.botSafe
-    && resolved.capability.screenshotReadiness === "ready"
-    && !empty
-    && complete
-    && (!requiresStructuredDataEvidence(resolved) || dataEvidence !== null);
+  const empty = render.loadingStateDetected
+    || render.errorStateDetected
+    || render.emptyStateDetected
+    || rowCount === 0
+    || semanticMismatch;
+  const usable = isPaneScreenshotUsable({
+    rowCount,
+    loadingStateDetected: render.loadingStateDetected,
+    errorStateDetected: render.errorStateDetected,
+    emptyStateDetected: render.emptyStateDetected,
+    complete,
+    semanticMismatch,
+    requiresStructuredDataEvidence: requiresStructuredDataEvidence(resolved),
+    hasStructuredDataEvidence: dataEvidence !== null,
+  });
   return {
     kind: "pane-screenshot",
     target: resolved.token,
@@ -388,7 +639,7 @@ export async function renderDesktopShot({
       screenshotReadiness: resolved.capability.screenshotReadiness,
     },
     symbols,
-    options: resolved.options,
+    options: stripDesktopShotCredentials(resolved.options),
     rowCount,
     empty,
     complete,
@@ -398,7 +649,7 @@ export async function renderDesktopShot({
     dataEvidence,
     outputPath,
     render: {
-      ...render,
+      ...stripDesktopShotCredentials(render),
       expectedText,
       missingExpectedText,
       expectedSelections,
@@ -616,6 +867,23 @@ function shotExpectedChart(
   if (isComposerChartPane(resolved.pane.id)) {
     const spec = parseChartSpec(resolved.instance.settings?.chartSpec);
     if (!spec) return null;
+    const capabilitySeries = new Map(payload.capabilitySeries);
+    const capabilityPoint = (point: ResolvedSeries["points"][number] | undefined) => point
+      ? {
+          date: point.date.toISOString(),
+          value: typeof (point.value ?? point.close) === "number" ? point.value ?? point.close ?? null : null,
+        }
+      : null;
+    const capabilityEvidence = (source: CapabilitySeriesSource, transform: SeriesTransform) => {
+      const loaded = capabilitySeries.get(chartSeriesSourceKey(source));
+      const resolvedSeries = loaded ? applyResolvedSeriesTransform(loaded, transform) : undefined;
+      return {
+        capabilityId: source.capabilityId,
+        providerSeriesId: source.seriesId,
+        first: capabilityPoint(resolvedSeries?.points[0]),
+        last: capabilityPoint(resolvedSeries?.points.at(-1)),
+      };
+    };
     return {
       kind: "chart-composer",
       symbols: [...new Set(spec.series.flatMap((series) => (
@@ -635,7 +903,9 @@ function shotExpectedChart(
           }
           : series.source.kind === "economic"
             ? { economicSeriesId: series.source.seriesId }
-            : {}),
+            : series.source.kind === "capability"
+              ? capabilityEvidence(series.source, series.transform)
+              : {}),
         style: series.style,
         transform: series.transform,
         panelId: series.panelId,
@@ -786,6 +1056,12 @@ export function chartEvidenceMismatchesFor(
           || actual.symbol !== series.symbol
           || actual.fieldId !== series.fieldId
           || actual.economicSeriesId !== series.economicSeriesId
+          || actual.capabilityId !== series.capabilityId
+          || actual.providerSeriesId !== series.providerSeriesId
+          || (series.sourceKind === "capability" && (
+            JSON.stringify(actual.first) !== JSON.stringify(series.first)
+            || JSON.stringify(actual.last) !== JSON.stringify(series.last)
+          ))
           || actual.style !== series.style
           || actual.transform !== series.transform
           || actual.panelId !== series.panelId
@@ -892,6 +1168,9 @@ export function shotUnavailableSymbols(
       if (entry.sourceKind === "economic" && typeof entry.economicSeriesId === "string") {
         return [`FRED:${entry.economicSeriesId}`];
       }
+      if (entry.sourceKind === "capability" && typeof entry.capabilityId === "string" && typeof entry.providerSeriesId === "string") {
+        return [`CAP:${entry.capabilityId}:${entry.providerSeriesId}`];
+      }
       return [];
     });
   }
@@ -972,7 +1251,7 @@ export function shotSemanticRowCount(
   return payload.financials.filter(([, financials]) => !!financials.quote).length;
 }
 
-function shotExpectedText(
+export function shotExpectedText(
   resolved: ResolvedPaneFunction,
   symbols: string[],
   payload: DesktopPaneShotPayload,
@@ -984,8 +1263,14 @@ function shotExpectedText(
     const definition = metricDef(graphKind, metric);
     const period = resolved.options.period as FundamentalPeriod;
     const periodCount = resolved.options.periods == null ? null : Number(resolved.options.periods);
+    if (resolved.pane.id === CHART_COMPOSER_PANE_ID) {
+      // Chart series are labelled with the field short label ("P/S"), not the
+      // catalog label ("Price / Sales").
+      const field = getTimeSeriesField(`${graphKind}.${metric}`);
+      expected.push(field?.shortLabel ?? definition.label);
+      return expected.filter(Boolean);
+    }
     expected.push(definition.label);
-    if (isComposerChartPane(resolved.pane.id)) return expected.filter(Boolean);
     for (const [symbol, financials] of payload.financials) {
       const latestRow = limitGraphRowsBySymbol(
         graphRowsForFinancials(financials, graphKind, metric, period, symbol),

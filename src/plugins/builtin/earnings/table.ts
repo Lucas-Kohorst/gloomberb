@@ -92,40 +92,22 @@ function estimateColor(value: number | null | undefined, selectedColor: string |
   return value >= 0 ? colors.positive : colors.negative;
 }
 
-export function buildEarningsColumns(width: number): EarningsColumn[] {
-  const dateWidth = 8;
-  const whenWidth = 8;
-  const statusWidth = 4;
-  const symbolWidth = 8;
-  const epsWidth = 8;
-  const epsRangeWidth = 11;
-  const growthWidth = 8;
-  const trendWidth = 8;
-  const revisionsWidth = 7;
-  const revenueWidth = 9;
-  const revenueRangeWidth = 13;
-  const analystsWidth = 7;
-  const columnCount = 14;
-  const fixedWidth = dateWidth + whenWidth + statusWidth + symbolWidth + epsWidth
-    + epsRangeWidth + growthWidth + trendWidth + revisionsWidth + revenueWidth
-    + revenueRangeWidth + growthWidth + analystsWidth;
-  const nameWidth = Math.max(14, width - 2 - columnCount - fixedWidth);
-
+export function buildEarningsColumns(): EarningsColumn[] {
   return [
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "when", label: "WHEN", width: whenWidth, align: "left" },
-    { id: "status", label: "ST", width: statusWidth, align: "left" },
-    { id: "symbol", label: "TICKER", width: symbolWidth, align: "left" },
-    { id: "name", label: "NAME", width: nameWidth, align: "left" },
-    { id: "epsEstimate", label: "EPS", width: epsWidth, align: "right" },
-    { id: "epsRange", label: "EPS RNG", width: epsRangeWidth, align: "right" },
-    { id: "epsGrowth", label: "EPS YOY", width: growthWidth, align: "right" },
-    { id: "epsTrend", label: "EPS 30D", width: trendWidth, align: "right" },
-    { id: "epsRevisions", label: "REV", width: revisionsWidth, align: "right" },
-    { id: "revenueEstimate", label: "SALES", width: revenueWidth, align: "right" },
-    { id: "revenueRange", label: "SALES RNG", width: revenueRangeWidth, align: "right" },
-    { id: "revenueGrowth", label: "SALES YOY", width: growthWidth, align: "right" },
-    { id: "analysts", label: "ANL", width: analystsWidth, align: "right" },
+    { id: "date", label: "DATE", width: 8, align: "left" },
+    { id: "when", label: "WHEN", width: 8, align: "left" },
+    { id: "status", label: "ST", width: 4, align: "left" },
+    { id: "symbol", label: "TICKER", width: 8, align: "left" },
+    { id: "name", label: "NAME", width: 14, align: "left", flexGrow: 1 },
+    { id: "epsEstimate", label: "EPS", width: 8, align: "right" },
+    { id: "epsRange", label: "EPS RNG", width: 11, align: "right" },
+    { id: "epsGrowth", label: "EPS YOY", width: 8, align: "right" },
+    { id: "epsTrend", label: "EPS 30D", width: 8, align: "right" },
+    { id: "epsRevisions", label: "REV", width: 7, align: "right" },
+    { id: "revenueEstimate", label: "SALES", width: 9, align: "right" },
+    { id: "revenueRange", label: "SALES RNG", width: 13, align: "right" },
+    { id: "revenueGrowth", label: "SALES YOY", width: 8, align: "right" },
+    { id: "analysts", label: "ANL", width: 7, align: "right" },
   ];
 }
 

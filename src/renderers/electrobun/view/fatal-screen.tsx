@@ -22,8 +22,10 @@ interface ElectrobunErrorBoundaryState {
 }
 
 function formatFatalError(error: unknown, details?: string): string {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  return [message, details].filter((value): value is string => Boolean(value)).join("\n");
+  if (!(error instanceof Error)) {
+    return [String(error), details].filter((value): value is string => Boolean(value)).join("\n");
+  }
+  return [...new Set([error.message, error.stack, details].filter((value): value is string => Boolean(value)))].join("\n");
 }
 
 export function DesktopFatalScreen({

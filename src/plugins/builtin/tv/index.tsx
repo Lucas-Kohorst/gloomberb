@@ -1,5 +1,6 @@
 import type { PluginModule } from "../plugin-module";
 import { registerConnectionSource } from "../connections/register";
+import { YOUTUBE_CONNECTION_ID } from "./channels";
 import { TvPane } from "./pane";
 
 let disposeTvConnection: (() => void) | null = null;
@@ -54,7 +55,7 @@ export const tvModule: PluginModule = {
   }],
   setup() {
     disposeTvConnection = registerConnectionSource({
-      id: "youtube",
+      id: YOUTUBE_CONNECTION_ID,
       name: "YouTube TV",
       kind: "api",
       pluginId: "macro",

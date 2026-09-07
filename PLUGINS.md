@@ -97,7 +97,113 @@ For external plugins, create a directory in `~/.gloomberb/plugins/`:
 
 ## What plugins can do
 
-Use `setup()` for interactive runtime registration, `capabilities` for reusable headless services, and `cli.commands` for root-level CLI commands that should be discoverable without rendering panes. The older `cliCommands` array still works, but new plugins should prefer the typed `cli.commands` descriptor because it exposes summaries, input/output shape, formats, safety notes, and side-effect level to `gloomberb help`, `gloomberb catalog --json`, and `gloomberb api list`.
+Use `setup()` for interactive runtime registration, `capabilities` for reusable headless services, and `cliCommands` for root-level CLI commands that should be discoverable without rendering panes. Capability operations can still declare `cli` manifests (`summary`, input/output shape, formats, safety notes, side-effect level) for `gloomberb api list`.
+
+## Headless pane models
+
+A data pane should expose the renderer-neutral model that sits behind its component. Add a `headless` definition to the `PaneDef` and export the definition from the plugin module so server processes can invoke the same loader later. If one pane has multiple templates with different data contracts, put `headless` on each `PaneTemplateDef` instead. A template-level definition takes precedence over the pane-level definition.
+
+```typescript
+import type {
+  GloomPlugin,
+  HeadlessPaneDefinition,
+} from "gloomberb/types/plugin";
+
+export const statsHeadless = {
+  shape: "bundle",
+  argument: {
+    kind: "free-text",
+    placeholder: "statistic",
+    optional: true,
+    description: "Optional statistic id or label.",
+  },
+  options: [{
+    key: "range",
+    description: "History window.",
+    type: "enum",
+    values: [{ value: "5Y" }, { value: "20Y" }, { value: "ALL" }],
+    defaultValue: "20Y",
+  }],
+  describe: (args) => `Statistics | ${String(args.options.range)}`,
+  async load(args, ctx) {
+    const bundle = await loadStatsBundle(ctx.apiClient, ctx.signal);
+    return projectStatsView(bundle, args.argument, args.options.range);
+  },
+} satisfies HeadlessPaneDefinition<"bundle">;
+
+export default {
+  id: "stats",
+  name: "Statistics",
+  version: "1.0.0",
+  panes: [{
+    id: "stats",
+    name: "Statistics",
+    component: StatisticsPane,
+    defaultPosition: "right",
+    headless: statsHeadless,
+  }],
+} satisfies GloomPlugin;
+```
+
+A pane with `headless` automatically gets:
+
+- `gloomberb fn <TOKEN>` text output with shared aligned tables and section headings
+- `gloomberb fn <TOKEN> --json` through the normal `{ ok, data }` result envelope
+- `reportReadiness: "ready"` plus its declared options in `gloomberb catalog`
+- strict option validation for `fn`, including allowed enum values and numeric bounds
+
+If a pane still has an entry in the legacy pane capability map, `headless` wins for reports. Its old report builder and screenshot behavior stay available until they are migrated separately.
+
+### Definition contract
+
+```typescript
+interface HeadlessPaneDefinition<Shape extends HeadlessPaneShape> {
+  shape: Shape;
+  argument: HeadlessPaneArgumentDef;
+  options: HeadlessPaneOptionDef[];
+  columns?: HeadlessPaneColumn[];
+  describe?: string | ((args: HeadlessPaneLoadArgs) => string);
+  load(
+    args: HeadlessPaneLoadArgs,
+    ctx: HeadlessPaneContext,
+  ): HeadlessPaneResultByShape[Shape] | Promise<HeadlessPaneResultByShape[Shape]>;
+}
+```
+
+`argument.kind` is one of `none`, `ticker`, `tickers`, `symbol-list`, or `free-text`. Use `optional`, `minimum`, and `maximum` to describe cardinality. The adapter normalizes ticker arguments and supplies both `args.argument` and `args.symbols`.
+
+Options use the existing pane-function schema: `key`, `type`, `description`, optional aliases, enum `values`, `defaultValue`, and optional integer bounds. Keep option names aligned with pane settings when possible so the same flag can drive a later screenshot model without translation.
+
+`ctx` contains:
+
+- `marketData`: the active plugin-aware market data provider
+- `apiClient`: the Gloom Cloud client
+- `config`: the loaded app configuration
+- `signal`: the abort signal for this invocation
+
+Headless loaders must stay isomorphic. Do not import React, DOM APIs, Electrobun, OpenTUI, or renderer state. Pass dependencies through `ctx` and keep fetching in `client.ts`.
+
+### Result shapes
+
+The four supported shapes cover the pane catalog:
+
+- `rows`: `{ columns?, rows }` for one table
+- `bundle`: `{ sections: [{ title, columns?, rows } | { title, entries }] }` for dashboards such as VAL and ECST
+- `series`: `{ series: [{ id, label, points }], stats? }` for charts and derived statistics
+- `snapshot`: `{ asOf, items }` for a point-in-time view of a stream
+
+All shapes may include `errors` and `metadata`. Rows and items should contain raw structured values. Put display formatting in column `format` callbacks, or use an entry's `formatted` field, so JSON keeps the raw value while text stays readable.
+
+### Migration checklist
+
+For a pane that currently fetches inside its component:
+
+1. Move API calls and cache access into `client.ts`. Accept injected clients or providers where practical.
+2. Move filtering, grouping, derived values, and row construction into pure functions in `view.ts` or `model.ts`.
+3. Make the React pane call those same client and projection functions.
+4. Export a typed `headless` definition and attach it to the pane registration, or to each template when one pane has multiple contracts.
+5. Declare every supported argument and option. Do not read pane or renderer state from `load`.
+6. Verify text, JSON, option errors, and catalog readiness with `gloomberb fn` and `gloomberb catalog`.
 
 ## Renderer-neutral UI
 
@@ -113,6 +219,7 @@ The `setup()` function receives a context object with these capabilities:
 |--------|-------------|
 | `ctx.registerTickerResearchTab(tab)` | Add a tab to the Ticker Research pane |
 | `ctx.registerCommand(cmd)` | Add a command to the command bar |
+| `ctx.registerCommandBarSearchProvider(provider)` | Add asynchronous result rows to the command bar (see [Command-bar search providers](#command-bar-search-providers)) |
 | `ctx.registerColumn(col)` | Add a custom column to the ticker list |
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
 | `ctx.registerPaneTemplate(template)` | Add a reusable pane template (see [Pane templates](#pane-templates)) |
@@ -165,9 +272,47 @@ Available context kinds are `pane`, `ticker`, `link`, `editable-text`, `selected
 
 Commands registered with `ctx.registerCommand({ shortcut, shortcutArg })` and pane templates registered with `shortcut` are picked up by the in-app Help pane automatically. Use those fields for user-facing command-bar prefixes instead of adding separate Help text. When a built-in command or pane shortcut is added or renamed, also update the README command tables so the public docs match the live registry.
 
+### Command-bar search providers
+
+`registerCommand` covers actions the user can name. A search provider covers everything else the user might type: it is asked for rows whenever free text stays in the command bar, and answers over the network.
+
+```typescript
+setup(ctx) {
+  ctx.registerCommandBarSearchProvider({
+    id: "my-plugin:documents",
+    category: "Documents",   // section heading
+    priority: 50,            // higher sinks; navigation sections are negative
+    minQueryLength: 3,
+    debounceMs: 350,
+    async provide(query, context, signal) {
+      const hits = await fetchDocuments(query, context.activeTicker, signal);
+      return hits.map((hit) => ({
+        id: hit.id,
+        label: hit.title,
+        right: hit.ticker,
+        detail: hit.source,
+        // Extra rows under the label; matched runs are highlighted.
+        lines: [{
+          segments: [
+            { text: "…margin " },
+            { text: "pressure", emphasis: "match" },
+            { text: " eased in Q3…", emphasis: "muted" },
+          ],
+        }],
+        execute: () => openDocument(hit),
+      }));
+    },
+  });
+}
+```
+
+The command bar debounces each provider separately, aborts the request through `signal` as soon as the query moves on, and memoizes answers for as long as the bar is open. Provider rows are added below what the command bar already resolved, so a slow, failing, or empty provider never disturbs the local matches — return an empty array rather than an error row. Rows are capped at two extra lines and truncated to the panel width, and `emphasis` is styled by the theme, so never put markup in `text`.
+
+The returned function withdraws the provider; otherwise it is removed with the plugin.
+
 ### CLI commands
 
-Plugins can declare root CLI commands directly on the plugin object. Prefer `cli.commands` for new commands; keep `cliCommands` only for compatibility with older plugins.
+Plugins can declare root CLI commands directly on the plugin object with `cliCommands`.
 
 ```typescript
 import type { GloomPlugin } from "gloomberb/types/plugin";
@@ -176,44 +321,40 @@ export const myPlugin: GloomPlugin = {
   id: "my-plugin",
   name: "My Plugin",
   version: "1.0.0",
-  cli: {
-    commands: [
-      {
-        name: "my-plugin",
-        aliases: ["mp"],
-        summary: "Run a plugin-owned CLI command",
-        inputShape: "my-plugin run [--limit N]",
-        outputShape: "rows: [{ id, label }]",
-        formats: ["text", "json", "csv", "ndjson"],
-        sideEffectLevel: "none",
-        examples: ["gloomberb my-plugin run --json"],
-        async execute(args, ctx) {
-          if (args[0] !== "run") {
-            ctx.fail("Usage: gloomberb my-plugin run");
-          }
-
-          const services = await ctx.initServices();
-          try {
-            ctx.printResult(
-              {
-                data: [
-                  { id: "demo", label: `Using data dir ${services.config.dataDir}` },
-                ],
-              },
-              {
-                columns: [
-                  { key: "id", header: "ID" },
-                  { key: "label", header: "Label" },
-                ],
-              },
-            );
-          } finally {
-            services.close();
-          }
-        },
+  cliCommands: [
+    {
+      name: "my-plugin",
+      aliases: ["mp"],
+      description: "Run a plugin-owned CLI command",
+      help: {
+        usage: ["my-plugin run [--limit N]"],
       },
-    ],
-  },
+      async execute(args, ctx) {
+        if (args[0] !== "run") {
+          ctx.fail("Usage: gloomberb my-plugin run");
+        }
+
+        const services = await ctx.initServices();
+        try {
+          ctx.printResult(
+            {
+              data: [
+                { id: "demo", label: `Using data dir ${services.config.dataDir}` },
+              ],
+            },
+            {
+              columns: [
+                { key: "id", header: "ID" },
+                { key: "label", header: "Label" },
+              ],
+            },
+          );
+        } finally {
+          services.close();
+        }
+      },
+    },
+  ],
 };
 ```
 
@@ -265,6 +406,7 @@ Plugins contribute data and services through capabilities. A capability declares
 
 - `asset-data` for quotes, financials, search, FX, price history, options, filings, holders, analyst research, corporate actions, earnings calendars, article summaries, and quote streams.
 - `news` for ticker and global news feeds.
+- `chart-series` for searchable provider-owned time series that resolve into normal chart data.
 - `plugin-service` for narrow renderer-safe service escape hatches.
 
 Capability operations can also include CLI manifest metadata. This is what makes the operation understandable to automation without plugin-specific documentation:
@@ -354,19 +496,19 @@ const summary = ctx.persistence.getResource<string>("summary", "AAPL", {
 ctx.persistence.deleteResource("summary", "AAPL", { sourceKey: "provider" });
 ```
 
-### Resume state (session-only)
+### Resume state
 
-Transient state that is cleared on app restart. Useful for ephemeral UI state you don't want to persist:
+Plugin-global resume state persists locally across restarts and is shared by every pane instance. Use it for plugin-wide user data, shared defaults, or transient handoffs that you explicitly delete:
 
 ```typescript
-ctx.resume.setState("scroll-pos", 42);
-ctx.resume.getState<number>("scroll-pos"); // 42 (gone after restart)
-ctx.resume.deleteState("scroll-pos");
+ctx.resume.setState("last-provider", "example");
+ctx.resume.getState<string>("last-provider");
+ctx.resume.deleteState("last-provider");
 
-// Per-pane session state
-ctx.resume.setPaneState("my-pane:main", "expanded", true);
-ctx.resume.getPaneState<boolean>("my-pane:main", "expanded");
-ctx.resume.deletePaneState("my-pane:main", "expanded");
+// Per-pane state belongs to the active layout and can travel with a shared layout.
+ctx.resume.setPaneState("my-pane:main", "selectedTab", "news");
+ctx.resume.getPaneState<string>("my-pane:main", "selectedTab");
+ctx.resume.deletePaneState("my-pane:main", "selectedTab");
 ```
 
 ### Config state (persistent)
@@ -415,12 +557,15 @@ await ctx.removeBrokerInstance(instance.id);
 
 Panes can expose per-instance settings that persist with the layout. These settings are part of the pane definition, can be edited from the pane header or command bar, and are available to both first-party and external plugins.
 
+Table panes built with the shared `DataTable` can opt into an Excel-compatible CSV action with `tableExport: true`. The action exports the current sorted, filtered rows and visible columns. It is available when the pane has one active table.
+
 ```typescript
 ctx.registerPane({
   id: "my-pane",
   name: "My Pane",
   component: MyPane,
   defaultPosition: "right",
+  tableExport: true,
   settings: {
     title: "My Pane Settings",
     fields: [
@@ -511,6 +656,28 @@ function MyPane() {
   // ...
 }
 ```
+
+### Portable pane sharing
+
+Published layouts copy a pane's title, params, settings, and per-layout pane state by default. Credentials, account and portfolio identifiers, local paths, and other sensitive key names are rejected automatically. Declare the remaining pane-specific private fields beside the pane definition:
+
+```typescript
+ctx.registerPane({
+  id: "portfolio-risk",
+  name: "Portfolio Risk",
+  component: PortfolioRiskPane,
+  defaultPosition: "right",
+  portableShare: {
+    private: {
+      params: ["portfolioId"],
+      settings: ["accountId"],
+      state: ["bankroll", "positions"],
+    },
+  },
+});
+```
+
+Use `true` instead of an array to keep a whole scope local. Set `title: true` when the title can identify a private channel or account. Plugin-global resume/config/resource state is never copied. State that should travel with a layout or pane share belongs in `usePluginPaneState()` or `usePaneSettingValue()`, not `usePluginState()`. Share Pane applies this projection automatically; `PaneTemplateDef.publicShare` remains only for old v1 links or deliberate transformed snapshots.
 
 ### Pane quick settings
 

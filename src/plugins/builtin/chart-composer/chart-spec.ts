@@ -8,7 +8,38 @@ import {
 } from "../../../time-series/spec";
 
 export const CHART_SPEC_SETTING_KEY = "chartSpec";
+export const CHART_INTERACTION_VIEWPORT_SETTING_KEY = "chartInteractionViewport";
 export const MAX_CHART_COMPOSER_SERIES = MAX_CHART_SERIES;
+
+export interface ChartInteractionViewport {
+  authoredViewportKey: string;
+  start: string;
+  end: string;
+  adaptive: boolean;
+}
+
+export function parseChartInteractionViewport(value: unknown): ChartInteractionViewport | null {
+  if (!isRecord(value)) return null;
+  if (!Object.keys(value).every((key) => ["authoredViewportKey", "start", "end", "adaptive"].includes(key))) return null;
+  if (
+    typeof value.authoredViewportKey !== "string"
+    || value.authoredViewportKey.length === 0
+    || value.authoredViewportKey.length > 16_384
+    || typeof value.start !== "string"
+    || typeof value.end !== "string"
+    || typeof value.adaptive !== "boolean"
+  ) return null;
+  const start = Date.parse(value.start);
+  const end = Date.parse(value.end);
+  return Number.isFinite(start) && Number.isFinite(end) && start < end
+    ? {
+        authoredViewportKey: value.authoredViewportKey,
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        adaptive: value.adaptive,
+      }
+    : null;
+}
 
 export function canToggleChartSeries(spec: ChartSpec, seriesId: string): boolean {
   const target = spec.series.find((series) => series.id === seriesId);
@@ -66,16 +97,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function canMigrateV1(decoded: Record<string, unknown>): boolean {
+  return !Array.isArray(decoded.series) || decoded.series.every((entry) => {
+    const source = isRecord(entry) && isRecord(entry.source) ? entry.source : null;
+    return source?.kind === "security" || source?.kind === "economic";
+  });
+}
+
 /** Parse, migrate, normalize, and semantically validate a persisted chart spec. */
 export function parseChartSpec(value: unknown): ChartSpec | null {
   const decoded = decodeSpec(value);
   if (!isRecord(decoded)) return null;
-  if (decoded.version !== undefined && decoded.version !== CHART_SPEC_VERSION) return null;
+  const version = decoded.version;
+  if (version !== CHART_SPEC_VERSION && !((version === 1 || version === undefined) && canMigrateV1(decoded))) {
+    return null;
+  }
   const spec = normalizeChartSpec(decoded, DEFAULT_CHART_SPEC);
   return validateChartSpec(spec).valid ? spec : null;
 }
 
 export function parseChartSpecOr(value: unknown, fallback: ChartSpec): ChartSpec {
+  if (
+    isRecord(value)
+    && value.version === CHART_SPEC_VERSION
+    && Array.isArray(value.series)
+    && Array.isArray(value.panels)
+    && Array.isArray(value.studies)
+  ) {
+    const spec = value as unknown as ChartSpec;
+    if (validateChartSpec(spec).valid) return spec;
+  }
   return parseChartSpec(value) ?? normalizeChartSpec(fallback, DEFAULT_CHART_SPEC);
 }
 

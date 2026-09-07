@@ -1,13 +1,18 @@
 import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard, useTerminalDimensions } from "@opentui/react";
-import type { ReactNode } from "react";
+import { Profiler, type ReactNode } from "react";
 import { resetTerminalInputState } from "../../utils/terminal-input-reset";
 import type { KeyEventLike } from "../../react/input";
 import type { NativeRendererHost, PixelResolution, RendererHost } from "../../ui/host";
 import { colors } from "../../theme/colors";
 import { safeExternalUrl } from "../../utils/external-url";
+import { createTerminalMediaReaper, terminalMediaStateFile } from "./terminal-media";
+import { saveTextFileToDownloads } from "../../utils/save-text-file";
+import { installInteractionPerformanceRecorder } from "./interaction-performance";
 
 export { useKeyboard, useTerminalDimensions };
+
+const terminalMedia = createTerminalMediaReaper({ stateFile: terminalMediaStateFile() });
 
 export interface OpenTuiHost {
   renderer: CliRenderer;
@@ -93,6 +98,8 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
   });
   const root = createRoot(renderer);
   installResolutionEventBridge(renderer);
+  const stopInteractionPerformanceRecorder = installInteractionPerformanceRecorder(renderer);
+  renderer.once("destroy", stopInteractionPerformanceRecorder);
 
   const rendererHost: RendererHost = {
     requestExit: () => renderer.destroy(),
@@ -131,6 +138,9 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
       });
       return await new Response(proc.stdout).text();
     },
+    async saveTextFile({ name, text }) {
+      return saveTextFileToDownloads(name, text);
+    },
     notify() {
       // The app-level notifier still owns toast/desktop notification behavior.
     },
@@ -140,6 +150,9 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
         throw new Error("mpv is required for terminal TV playback. Install mpv and try again.");
       }
 
+      // A player stranded by a previous run keeps decoding video, so clear it
+      // before adding another one.
+      terminalMedia.reapStale();
       renderer.suspend();
       try {
         const proc = Bun.spawn([
@@ -161,6 +174,7 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
           stdout: "inherit",
           stderr: "pipe",
         });
+        terminalMedia.track(proc);
         const stderrPromise = new Response(proc.stderr).text();
         const exitCode = await proc.exited;
         const stderr = await stderrPromise;
@@ -169,9 +183,13 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
           throw new Error(detail || `mpv exited with status ${exitCode}`);
         }
       } finally {
+        terminalMedia.stopActive();
         renderer.resume();
         renderer.requestRender();
       }
+    },
+    stopTerminalMedia() {
+      terminalMedia.stopActive();
     },
   };
 
@@ -230,7 +248,18 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     renderer,
     rendererHost,
     nativeRenderer,
-    render: (node) => root.render(node),
+    render: (node) => root.render(
+      stopInteractionPerformanceRecorder.enabled
+        ? (
+            <Profiler
+              id="interaction-performance"
+              onRender={stopInteractionPerformanceRecorder.markCommit}
+            >
+              {node}
+            </Profiler>
+          )
+        : node,
+    ),
     destroy: () => renderer.destroy(),
   };
 }

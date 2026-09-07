@@ -5,7 +5,7 @@ import type {
   ScannerHiloPayload,
   ScannerPayload,
 } from "../../../api-client";
-import type { PaneFooterSegment, PaneHint } from "../../../components";
+import type { PaneFooterSegment } from "../../../components";
 import { tf } from "../../../i18n";
 import { useCloudAccessFooter } from "../shared/cloud-upgrade";
 import { usePaneStatusFooter } from "../shared/pane-footer";
@@ -19,54 +19,17 @@ export interface ScannerFeedState<T extends ScannerPayload> {
 }
 
 const INITIAL_STATE = { payload: null, denied: false, deniedReason: null } as const;
-export const SCANNER_PAINT_THROTTLE_MS = 250;
 
 function useScannerFeed<T extends ScannerPayload>(scanner: "hilo" | "flow"): ScannerFeedState<T> {
   const [state, setState] = useState<ScannerFeedState<T>>(INITIAL_STATE);
 
   useEffect(() => {
     setState(INITIAL_STATE);
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let pending: ScannerFeedState<T> | null = null;
-    let lastAsOf = Number.NaN;
-
-    const flush = () => {
-      timer = null;
-      if (!cancelled && pending) setState(pending);
-    };
-
-    const commit = (next: ScannerFeedState<T>, immediate = false) => {
-      pending = next;
-      if (immediate) {
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        if (!cancelled) setState(next);
-        return;
-      }
-      if (timer != null) return;
-      timer = setTimeout(flush, SCANNER_PAINT_THROTTLE_MS);
-    };
-
-    const unsubscribe = apiClient.subscribeScanner(scanner, (event) => {
-      if (event.type === "denied") {
-        lastAsOf = Number.NaN;
-        commit({ payload: null, denied: true, deniedReason: event.reason }, true);
-        return;
-      }
-      const payload = event.payload as unknown as T;
-      if (payload.asOf === lastAsOf) return;
-      lastAsOf = payload.asOf;
-      commit({ payload, denied: false, deniedReason: null });
+    return apiClient.subscribeScanner(scanner, (event) => {
+      setState(event.type === "denied"
+        ? { payload: null, denied: true, deniedReason: event.reason }
+        : { payload: event.payload as unknown as T, denied: false, deniedReason: null });
     });
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      unsubscribe();
-    };
   }, [scanner]);
 
   return state;
@@ -90,7 +53,6 @@ export function useScannerStatusFooter(
   registrationId: string,
   state: ScannerFeedState<ScannerPayload>,
   focused: boolean,
-  hints?: PaneHint[],
 ): void {
   const { segment } = useCloudAccessFooter({
     delayLabel: tf("{count}m", { count: state.payload?.delayMinutes || CLOUD_QUOTE_DELAY_MINUTES }),
@@ -128,5 +90,5 @@ export function useScannerStatusFooter(
     [segment, status],
   );
 
-  usePaneStatusFooter({ registrationId, info, hints });
+  usePaneStatusFooter({ registrationId, info });
 }

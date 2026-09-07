@@ -35,7 +35,7 @@ import {
 type CloseAllFn = (options?: { revertThemePreview?: boolean }) => void;
 type NotifyFn = (body: string, options?: { type?: "info" | "success" | "error" }) => void;
 type OpenModeRouteFn = (
-  screen: "ticker-search" | "plugins" | "layout",
+  screen: "ticker-search" | "layout",
   initialQuery?: string,
   payload?: Record<string, unknown>,
 ) => void;
@@ -112,6 +112,10 @@ export function useCommandBarPaneTemplateActions({
     const trimmedArg = rawArg?.trim() || "";
     const argKind = template.shortcut?.argKind ?? template.shortcut?.argPlaceholder;
     if (argKind === "ticker") {
+      if (!trimmedArg && template.shortcut?.argOptional) {
+        await openPaneTemplateDirect(template);
+        return;
+      }
       const resolvedTicker = await resolveTickerInput(
         trimmedArg || undefined,
         activeTickerSymbol,

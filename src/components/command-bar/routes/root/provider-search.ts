@@ -9,12 +9,13 @@ import {
   QUICK_LOOK_TICKER_SEARCH_OPTIONS,
 } from "../ticker-search/results";
 import { orderListResults, type ResultItem } from "../../list/model";
-import type { CommandBarSectionOrder } from "../../view-model";
+import type { CommandBarCategoryPriorities, CommandBarSectionOrder } from "../../view-model";
 import type { CommandBarRoute } from "../../workflow/types";
 
 export function useRootProviderSearch(options: {
   activeCollectionId: string | null;
   buildTickerSearchResultItems: (candidates: TickerSearchCandidate[], query: string) => ResultItem[];
+  categoryPriorities?: CommandBarCategoryPriorities;
   currentRoute: CommandBarRoute | null;
   dataProvider: DataProvider;
   localTickerSearchResultItems: (query?: string, options?: { category?: string; limit?: number }) => ResultItem[];
@@ -25,7 +26,6 @@ export function useRootProviderSearch(options: {
     brokerInstanceId?: string | null,
   ) => TickerSearchCandidate[] | null;
   rootPlainTickerSearchArg: string | null;
-  rootQuery?: string;
   rootResultItems: ResultItem[];
   rootTickerSearchArg: string | null;
   tickers: AppState["tickers"];
@@ -44,13 +44,13 @@ export function useRootProviderSearch(options: {
   const {
     activeCollectionId,
     buildTickerSearchResultItems,
+    categoryPriorities,
     currentRoute,
     dataProvider,
     localTickerSearchResultItems,
     portfolios,
     readTickerSearchCache,
     rootPlainTickerSearchArg,
-    rootQuery,
     rootResultItems,
     rootTickerSearchArg,
     tickers,
@@ -85,10 +85,13 @@ export function useRootProviderSearch(options: {
     }
 
     const searchQuery = rootTickerSearchArg;
-    if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
+    // A re-run for the same query (a quote refresh changed `tickers`, say) must
+    // leave the pending debounce alone, or the search is lost and the spinner
+    // never clears. Only a new query cancels it.
     if (rootLastSearchedQueryRef.current === searchQuery) {
       return;
     }
+    if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
 
     rootLastSearchedQueryRef.current = searchQuery;
     setRootSearching(true);
@@ -107,14 +110,29 @@ export function useRootProviderSearch(options: {
     const requestId = ++rootSearchRequestIdRef.current;
     rootSearchTimerRef.current = setTimeout(async () => {
       try {
+        const publish = (candidates: TickerSearchCandidate[]) => {
+          setRootProviderResults(mergeTickerSearchResultItems(
+            searchQuery,
+            buildTickerSearchResultItems(candidates, searchQuery),
+            localTickerSearchResultItems(searchQuery, { limit: 6 }),
+          ));
+          setRootProviderResultsQuery(searchQuery);
+        };
         const combined = await searchTickerCandidates({
           query: searchQuery,
           tickers,
           dataProvider,
           searchContext: {
             preferBroker: true,
+            interactive: true,
             brokerId: activeSearchPortfolio?.brokerId,
             brokerInstanceId: activeSearchPortfolio?.brokerInstanceId,
+          },
+          // A broker that answers after the cloud upgrades the rows in place
+          // rather than being dropped because the list was already drawn.
+          onPartial: (candidates) => {
+            if (requestId !== rootSearchRequestIdRef.current) return;
+            publish(candidates);
           },
           ...QUICK_LOOK_TICKER_SEARCH_OPTIONS,
         });
@@ -125,12 +143,7 @@ export function useRootProviderSearch(options: {
           activeSearchPortfolio?.brokerId,
           activeSearchPortfolio?.brokerInstanceId,
         );
-        setRootProviderResults(mergeTickerSearchResultItems(
-          searchQuery,
-          buildTickerSearchResultItems(combined, searchQuery),
-          localTickerSearchResultItems(searchQuery, { limit: 6 }),
-        ));
-        setRootProviderResultsQuery(searchQuery);
+        publish(combined);
       } catch {
         if (requestId !== rootSearchRequestIdRef.current) return;
         setRootProviderResults([{
@@ -148,10 +161,6 @@ export function useRootProviderSearch(options: {
         }
       }
     }, 200);
-
-    return () => {
-      if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
-    };
   }, [
     activeCollectionId,
     buildTickerSearchResultItems,
@@ -164,6 +173,10 @@ export function useRootProviderSearch(options: {
     tickers,
     writeTickerSearchCache,
   ]);
+
+  useEffect(() => () => {
+    if (rootSearchTimerRef.current) clearTimeout(rootSearchTimerRef.current);
+  }, []);
 
   const rootResults = useMemo(() => {
     if (rootTickerSearchArg && rootProviderResultsQuery === rootTickerSearchArg && rootProviderResults) {
@@ -182,20 +195,24 @@ export function useRootProviderSearch(options: {
   ]);
   const rootSectionOrder: CommandBarSectionOrder = rootPlainTickerSearchArg
     ? "app-first"
-    : rootTickerSearchArg || rootQuery?.trim()
+    : rootTickerSearchArg
       ? "ranked"
       : "default";
   const orderedRootResults = useMemo(
-    () => orderListResults(rootResults, { sectionOrder: rootSectionOrder }),
-    [rootResults, rootSectionOrder],
+    () => orderListResults(rootResults, { sectionOrder: rootSectionOrder, categoryPriorities }),
+    [categoryPriorities, rootResults, rootSectionOrder],
   );
+  // Only the DES route replaces the list wholesale and so wants the selection
+  // reset when the answer lands; a plain query's instruments append below the
+  // local matches, and the row the user is on must stay put.
   const activeRootProviderResultsKey = useMemo(() => {
+    if (rootPlainTickerSearchArg) return null;
     if (!rootTickerSearchArg || rootProviderResultsQuery !== rootTickerSearchArg || !rootProviderResults) return null;
     return [
       rootTickerSearchArg,
       ...rootProviderResults.map((item) => `${item.id}:${item.category}:${item.label}:${item.right || ""}`),
     ].join("\n");
-  }, [rootProviderResults, rootProviderResultsQuery, rootTickerSearchArg]);
+  }, [rootPlainTickerSearchArg, rootProviderResults, rootProviderResultsQuery, rootTickerSearchArg]);
 
   return {
     activeRootProviderResultsKey,

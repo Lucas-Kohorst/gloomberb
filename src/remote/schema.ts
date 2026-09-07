@@ -15,6 +15,7 @@ export const REMOTE_RESOURCES: RemoteResourceSchema[] = [
   { uri: "app://command-bar", description: "Current command-bar state and semantic result rows." },
   { uri: "app://command-bar/results", description: "Current semantic command-bar result rows." },
   { uri: "app://capabilities", description: "Registered plugin capability manifests." },
+  { uri: "app://auth", description: "What the client believes about its cloud session: credential present, checked, cached user plan and verification. No secrets." },
   { uri: "app://remote/help", description: "Agent-oriented remote usage guide with efficient recipes and caveats." },
   { uri: "ui://tree", description: "Live semantic UI node tree populated by shared controls and interactive primitives." },
 ];
@@ -45,7 +46,7 @@ export const REMOTE_OPERATIONS: RemoteOperationSchema[] = [
   op("layout.delete", "Delete a layout.", "{ index: number }", "local-write"),
   op("layout.undo", "Undo last layout change.", "{}", "local-write"),
   op("layout.redo", "Redo last layout change.", "{}", "local-write"),
-  op("layout.gridlock", "Gridlock all visible panes into a dense layout.", "{}", "local-write"),
+  op("layout.gridlock", "Tidy all panes into a dense layout.", "{}", "local-write"),
   op("layout.closeFloating", "Close all floating panes in the active layout.", "{}", "local-write"),
   op("layout.placePane", "Move a pane to a layout region.", "{ paneId: string, region: 'left' | 'right' | 'top' | 'bottom' | 'floating', relativeTo?: string }", "local-write"),
   op("layout.focusRegion", "Focus a pane by visual layout region.", "{ region: 'left' | 'right' | 'top' | 'bottom' | 'center' }", "local-write"),

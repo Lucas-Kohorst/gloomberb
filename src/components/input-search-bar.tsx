@@ -14,6 +14,7 @@ export function InputSearchBar({
   inputRef,
   placeholder,
   debounceMs,
+  glyph = "/",
   normalizeValue = identity,
   onNavigateDown,
   onFocus,
@@ -28,6 +29,8 @@ export function InputSearchBar({
   inputRef: RefObject<InputRenderable | null>;
   placeholder: string;
   debounceMs: number;
+  /** Leading marker; override when a pane shows more than one field. */
+  glyph?: string;
   normalizeValue?: (value: string) => string;
   onNavigateDown?: () => void;
   onFocus: () => void;
@@ -44,6 +47,20 @@ export function InputSearchBar({
   }, {
     allowEditable: true,
     enabled: focused && active && !!onNavigateDown,
+    phase: "before",
+  });
+
+  // A focused input consumes every key, so Escape has to be intercepted before
+  // it reaches the field. Without this there is no way back out of a search.
+  useShortcut((event) => {
+    if (event.name !== "escape") return;
+    stopSearchFocusNavigation(event);
+    setDraft("");
+    onQueryChange("");
+    onBlur();
+  }, {
+    allowEditable: true,
+    enabled: focused && active,
     phase: "before",
   });
 
@@ -81,7 +98,7 @@ export function InputSearchBar({
         inputRef.current?.focus?.();
       }}
     >
-      <Text fg={active ? colors.textBright : colors.textDim}>/</Text>
+      <Text fg={active ? colors.textBright : colors.textDim}>{glyph}</Text>
       <Box width={1} />
       <Input
         ref={inputRef}

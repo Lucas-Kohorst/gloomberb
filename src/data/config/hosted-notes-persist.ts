@@ -1,13 +1,21 @@
 import { tryLocalStorage } from "../../utils/browser-storage";
 import { isRecord } from "../../utils/is-record";
 import type { NotesSyncPayload, QuickNoteEntry } from "../../plugins/builtin/notes/files";
-import { resolveHostedPersistUserId } from "./hosted-user-persist";
+import {
+  attachHostedUserWorkspaceExtras,
+  markHostedWorkspaceChanged,
+  resolveHostedPersistUserId,
+} from "./hosted-user-persist";
 
 const STORAGE_PREFIX = "gloomberb:hosted-notes:";
 const LEGACY_NOTES_PREFIX = "gloomberb:notes:";
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
+}
+
+export function hostedNotesStorageKey(userId: string): string {
+  return storageKey(userId);
 }
 
 function emptyPayload(): NotesSyncPayload {
@@ -108,12 +116,20 @@ export function readHostedNotes(
   return migrated;
 }
 
-export function writeHostedNotes(payload: NotesSyncPayload, userId = resolveHostedPersistUserId()): void {
+export function writeHostedNotes(
+  payload: NotesSyncPayload,
+  userId = resolveHostedPersistUserId(),
+  trackWorkspaceChange = true,
+): void {
   if (!userId) return;
   const backend = tryLocalStorage();
   if (!backend) return;
   try {
     backend.setItem(storageKey(userId), JSON.stringify(payload));
+    if (trackWorkspaceChange) {
+      markHostedWorkspaceChanged(userId);
+      attachHostedUserWorkspaceExtras({ notes: payload }, userId);
+    }
   } catch {
     // Ignore quota or security errors.
   }
@@ -129,17 +145,25 @@ export function hasHostedNotes(userId = resolveHostedPersistUserId()): boolean {
 export function applyHostedNotesPayload(
   incoming: unknown,
   userId = resolveHostedPersistUserId(),
+  trackWorkspaceChange = true,
 ): NotesSyncPayload {
   const current = readHostedNotes(userId);
+  const merged = mergeHostedNotesPayload(current, incoming);
+  writeHostedNotes(merged, userId, trackWorkspaceChange);
+  return merged;
+}
+
+export function mergeHostedNotesPayload(
+  current: NotesSyncPayload,
+  incoming: unknown,
+): NotesSyncPayload {
   if (!isRecord(incoming)) return current;
   const parsed = parsePayload(JSON.stringify(incoming)) ?? emptyPayload();
-  const merged: NotesSyncPayload = {
+  return {
     quickNotesIndex: parsed.quickNotesIndex.length > 0 ? parsed.quickNotesIndex : current.quickNotesIndex,
     quickNotes: { ...current.quickNotes, ...parsed.quickNotes },
     tickerNotes: { ...current.tickerNotes, ...parsed.tickerNotes },
   };
-  writeHostedNotes(merged, userId);
-  return merged;
 }
 
 export function hostedNotesUserIdFromDataDir(dataDir: string): string | null {

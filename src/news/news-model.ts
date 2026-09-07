@@ -384,5 +384,6 @@ export function filterNewsArticlesForQuery(items: NewsArticle[], query: NewsQuer
     const limit = Math.min(MAX_ARTICLES, query.limit ?? MAX_ARTICLES);
     return rankTopNewsArticles(filtered).slice(0, limit);
   }
+  // Page size is a fetch hint. Accumulated load-more results keep MAX_ARTICLES.
   return filtered.slice(0, MAX_ARTICLES);
 }

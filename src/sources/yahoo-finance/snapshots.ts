@@ -62,11 +62,13 @@ interface YahooSnapshotLoaders {
 
 export interface YahooQuoteLoaders {
   fetchQuotes: (symbols: string[]) => Promise<YahooQuoteApiResult[]>;
+  fetchChart: (symbol: string, range: string, interval?: string) => Promise<YahooChartSnapshot>;
   fetchExtendedHoursData: (
     symbol: string,
     meta: NonNullable<ChartResult["meta"]>,
     regularClose?: number,
   ) => Promise<ExtendedHoursData>;
+  fetchQuoteSupplement: (symbol: string, currencyDivisor?: number) => Promise<YahooQuoteSupplement>;
   providerId: string;
 }
 

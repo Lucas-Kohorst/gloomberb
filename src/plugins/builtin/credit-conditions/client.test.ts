@@ -7,12 +7,6 @@ import { MemoryPluginPersistence } from "../../../test-support/plugin-persistenc
 import { loadCreditConditions } from "./client";
 import { CREDIT_SERIES, type CreditSeriesId } from "./model";
 
-function historyStartDate(nowMs = Date.now()): string {
-  const when = new Date(nowMs);
-  when.setUTCDate(when.getUTCDate() - 45);
-  return when.toISOString().slice(0, 10);
-}
-
 function payload(seriesId: CreditSeriesId, count = 3) {
   return {
     observations: Array.from({ length: count }, (_, index) => ({
@@ -51,27 +45,27 @@ describe("loadCreditConditions", () => {
     })).rejects.toThrow("offline");
   });
 
-  test("reuses bounded persisted history for the same request", async () => {
+  test("reuses bounded persisted history across midnight", async () => {
     const persistence = new MemoryPluginPersistence();
     attachFredSeriesPersistence(persistence);
     const originalNow = Date.now;
-    const frozen = Date.UTC(2026, 7, 18, 12, 0);
     let calls = 0;
 
     try {
-      Date.now = () => frozen;
+      Date.now = () => Date.UTC(2026, 7, 18, 23, 58);
       await loadCreditConditions(false, async (seriesId) => {
         calls += 1;
         return payload(seriesId, 60);
       });
       expect(persistence.getResource<{ observations: unknown[] }>(
         "fred-series",
-        `${CREDIT_SERIES[0].seriesId}:start=${historyStartDate(frozen)}:sort=desc`,
+        `${CREDIT_SERIES[0].seriesId}:limit=45:sort=desc`,
         { sourceKey: "gloomberb-cloud", schemaVersion: 1 },
       )?.value.observations).toHaveLength(45);
 
       resetFredSeriesPersistence();
       attachFredSeriesPersistence(persistence);
+      Date.now = () => Date.UTC(2026, 7, 19, 0, 2);
       const cached = await loadCreditConditions(false, async () => {
         calls += 1;
         throw new Error("cache miss");

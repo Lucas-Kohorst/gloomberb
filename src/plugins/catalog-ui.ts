@@ -1,15 +1,17 @@
 import type { GloomPlugin } from "../types/plugin";
+import type { LoadedExternalPlugin } from "./loader";
 import { newsPlugin } from "./builtin/news";
 import { notesPlugin } from "./builtin/notes";
-import { substackPlugin } from "./builtin/substack";
 import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
-import { ibkrPlugin } from "./ibkr";
+import { publicPlugin } from "./broker-sync/public";
 import { robinhoodPlugin } from "./broker-sync/robinhood";
+import { simpleFinPlugin } from "./broker-sync/simplefin";
 import { predictionMarketsPlugin } from "./prediction-markets";
 import { alertsPlugin } from "./builtin/alerts";
+import { researchSearchPlugin } from "./builtin/research-search";
 import {
   applicationPlugin,
   brokerPlugin,
@@ -18,9 +20,6 @@ import {
   portfolioPlugin,
 } from "./builtin/composite-plugins";
 import { adjacentPlugin } from "./builtin/adjacent";
-import { buildoutPlugin } from "./builtin/buildout";
-import { congressTradesPlugin } from "./builtin/congress-trades";
-import { pluginMarketPlugin } from "./builtin/plugin-market";
 import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
 import { trafficPlugin } from "./builtin/traffic";
@@ -41,25 +40,21 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   portfolioPlugin,
   tickerResearchPlugin,
   brokerPlugin,
-  ibkrPlugin,
+  publicPlugin,
   robinhoodPlugin,
+  simpleFinPlugin,
   applicationPlugin,
   newsPlugin,
-  // Adjacent Cloud owns Polls, AI Benchmarks, and Weather. Other alt-data
-  // panes stay independently toggleable product areas.
   adjacentPlugin,
-  predictionMarketsPlugin,
-  congressTradesPlugin,
-  buildoutPlugin,
   trafficPlugin,
   satellitePlugin,
-  substackPlugin,
   notesPlugin,
   aiPlugin,
+  predictionMarketsPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
-  pluginMarketPlugin,
+  researchSearchPlugin,
   pluginInspectorPlugin,
   usaspendingPlugin,
   openskyPlugin,
@@ -73,4 +68,21 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {
   return uiBuiltinPlugins;
+}
+
+/**
+ * The plugin list for a UI renderer: the built-ins it ships with, plus any
+ * external plugins that loaded and support this renderer.
+ *
+ * Deliberately not `getLoadablePlugins`, which is the CLI catalog and also
+ * carries the Yahoo fallback provider and the debug plugin. Routing the desktop
+ * through it would quietly change which plugins the app runs.
+ */
+export function getRendererPlugins(externalPlugins: readonly LoadedExternalPlugin[] = []): GloomPlugin[] {
+  return [
+    ...uiBuiltinPlugins,
+    ...externalPlugins
+      .filter((entry) => !entry.error && !entry.unsupportedTarget)
+      .map((entry) => entry.plugin),
+  ];
 }

@@ -2,8 +2,10 @@ import { Box, Text, TextAttributes, useUiCapabilities } from "../../../ui";
 import {
   DataTableView,
   StaticChartSurface,
+  loadingText,
+  unavailableText,
 } from "../../../components";
-import type { StaticChartSurfaceProps } from "../../../components/chart/static/chart/surface";
+import type { StaticChartSurfaceProps } from "../../../components/chart/static";
 import type { ProjectedChartPoint } from "../../../components/chart/core/data";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatCompact, formatPercentRaw } from "../../../utils/format";
@@ -206,15 +208,15 @@ export function PortfolioHistorySection({
   if (loading) {
     return (
       <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim}>Loading IBKR history...</Text>
+        <Text fg={colors.textDim}>{loadingText("IBKR history")}</Text>
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Box height={1} paddingX={1}>
-        <Text fg={colors.textDim}>IBKR history unavailable</Text>
+      <Box height={1} paddingX={1} overflow="hidden">
+        <Text fg={colors.warning}>{`${unavailableText("IBKR history")} ${error}`}</Text>
       </Box>
     );
   }

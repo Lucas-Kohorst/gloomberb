@@ -85,7 +85,7 @@ describe("chart composer series editor", () => {
       await testSetup!.renderOnce();
     });
 
-    expect(await waitForFrameToContain("MSFT · Revenue")).toContain("MSFT · Revenue");
+    expect(await waitForFrameToContain("MSFT — Revenue")).toContain("MSFT — Revenue");
 
     await emitKey("enter", "\r");
     await emitKey("a", "a");
@@ -95,10 +95,63 @@ describe("chart composer series editor", () => {
       await testSetup!.renderOnce();
     });
 
-    const secondAddFrame = await waitForFrameToContain("AAPL · Free Cash Flow");
+    const secondAddFrame = await waitForFrameToContain("AAPL — Free Cash Flow");
     expect(secondAddFrame).toContain("AAPL free cash flow");
-    expect(secondAddFrame).toContain("AAPL · Free Cash Flow");
+    expect(secondAddFrame).toContain("AAPL — Free Cash Flow");
     expect(secondAddFrame).not.toContain("MSFT revenueAAPL");
+  });
+
+  test("adds an idea expression as a study with its source series", async () => {
+    let resolved: ReturnType<typeof buildPriceChartPreset> | null | undefined;
+    testSetup = await testRender(
+      <SeriesEditorDialog
+        dialogId="series-editor-idea-test"
+        initialSpec={buildPriceChartPreset("AAPL")}
+        dismiss={() => {}}
+        resolve={(next) => {
+          resolved = next;
+        }}
+      />,
+      { width: 92, height: 42 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+    await act(async () => {
+      await testSetup!.mockInput.typeText("MSFT drawdown");
+      await testSetup!.renderOnce();
+    });
+    expect(await waitForFrameToContain("MSFT — Drawdown")).toContain("MSFT — Drawdown");
+
+    await emitKey("enter", "\r");
+    await emitKey("a", "a");
+    await act(async () => {
+      await Bun.sleep(80);
+      await testSetup!.renderOnce();
+    });
+
+    // Idea rows merge through applyChartIdeaToSpec, so the source is appended
+    // and the drawdown study lands in its own lower panel.
+    const rows = testSetup.captureCharFrame().split("\n");
+    const actionRow = rows.findIndex((line) => line.includes("Remove") && line.includes("Save"));
+    const saveColumn = rows[actionRow]?.indexOf("Save") ?? -1;
+    expect(actionRow).toBeGreaterThan(0);
+    expect(saveColumn).toBeGreaterThan(0);
+    await act(async () => {
+      await testSetup!.mockMouse.click(saveColumn + 1, actionRow);
+      await testSetup!.renderOnce();
+    });
+
+    expect(resolved?.series.map((series) => series.source)).toMatchObject([
+      { kind: "security", instrument: { symbol: "AAPL" } },
+      { kind: "security", instrument: { symbol: "MSFT" } },
+    ]);
+    expect(resolved?.studies.find((study) => study.kind === "drawdown")).toMatchObject({
+      kind: "drawdown",
+      panelId: "drawdown",
+      inputSeriesIds: ["msft-market-ohlcv-1"],
+    });
   });
 
   test("keeps the final series when removal is requested", async () => {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { footerErrorChip, type DataTableKeyEvent, type PaneFooterSegment, type PaneHint } from "../../../components";
+import { footerErrorChip, type DataTableKeyEvent, type PaneFooterSegment } from "../../../components";
 
 export function loadingErrorFooterInfo(loading: boolean, error: string | null | undefined): PaneFooterSegment[] {
   const errorChip = footerErrorChip(error);
@@ -7,10 +7,6 @@ export function loadingErrorFooterInfo(loading: boolean, error: string | null | 
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(errorChip ? [{ id: "error", parts: [errorChip] }] : []),
   ];
-}
-
-export function refreshFooterHint(reload: () => void): PaneHint {
-  return { id: "refresh", key: "r", label: "efresh", onPress: reload };
 }
 
 export function handleRefreshKey(event: DataTableKeyEvent, reload: () => void, options: { stopPropagation?: boolean } = {}): boolean {

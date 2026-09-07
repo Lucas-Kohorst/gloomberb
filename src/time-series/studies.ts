@@ -160,7 +160,9 @@ function studyWarmupPoints(spec: ChartStudySpec): number {
   if (spec.kind === "sma" || spec.kind === "ema" || spec.kind === "bollinger") {
     return studyPeriod(spec, 20) - 1;
   }
+  if (spec.kind === "distance") return studyPeriod(spec, 20) - 1;
   if (spec.kind === "rsi") return studyPeriod(spec, 14);
+  if (spec.kind === "volatility") return studyPeriod(spec, 20);
   if (spec.kind === "macd") {
     const slow = positiveInteger(spec.parameters.slow, 26);
     const signal = positiveInteger(spec.parameters.signal, 9);
@@ -349,6 +351,93 @@ function resolveVwap(spec: ChartStudySpec, input: ResolvedSeries, color: string)
     label: `VWAP ${input.label}`,
     points,
     color,
+  })];
+}
+
+function percentDifference(value: number, baseline: number): number | null {
+  return baseline === 0 ? null : ((value - baseline) / Math.abs(baseline)) * 100;
+}
+
+function resolveDrawdown(spec: ChartStudySpec, input: ResolvedSeries, color: string): ResolvedSeries[] {
+  let peak: number | null = null;
+  const points = samplesFor(input).map((sample) => {
+    peak = peak === null ? sample.value : Math.max(peak, sample.value);
+    return derivedPoint(sample, peak === null ? null : percentDifference(sample.value, peak));
+  });
+  return [outputSeries(spec, input, {
+    label: `Drawdown ${input.label}`,
+    points,
+    color,
+    unit: "%",
+    unitGroup: "percent",
+    axis: "left",
+  })];
+}
+
+function resolveRollingVolatility(
+  spec: ChartStudySpec,
+  input: ResolvedSeries,
+  color: string,
+): ResolvedSeries[] {
+  const period = studyPeriod(spec, 20);
+  const samples = samplesFor(input);
+  const returns = samples.slice(1).flatMap((sample, index) => {
+    const previous = samples[index]!;
+    const value = previous.value > 0 && sample.value > 0
+      ? Math.log(sample.value / previous.value) * 100
+      : percentDifference(sample.value, previous.value);
+    return value === null ? [] : [{ sample, value }];
+  });
+  const annualizationFactor = input.nativeFrequency === "weekly"
+    ? Math.sqrt(52)
+    : input.nativeFrequency === "monthly"
+      ? Math.sqrt(12)
+      : input.nativeFrequency === "quarterly"
+        ? Math.sqrt(4)
+        : 1;
+  const dailyAnnualizationFactor = input.nativeFrequency === "daily" || input.nativeFrequency === "auto"
+    ? Math.sqrt(252)
+    : annualizationFactor;
+  const points: TimeSeriesPoint[] = [];
+  for (let index = period - 1; index < returns.length; index += 1) {
+    const window = returns.slice(index - period + 1, index + 1);
+    const mean = window.reduce((sum, entry) => sum + entry.value, 0) / period;
+    const variance = window.reduce((sum, entry) => sum + (entry.value - mean) ** 2, 0)
+      / Math.max(1, window.length - 1);
+    points.push(derivedPoint(
+      returns[index]!.sample,
+      Math.sqrt(variance) * dailyAnnualizationFactor,
+    ));
+  }
+  return [outputSeries(spec, input, {
+    label: `Realized Volatility (${period}D annualized) — ${input.label}`,
+    points,
+    color,
+    unit: "%",
+    unitGroup: "percent",
+    axis: "left",
+  })];
+}
+
+function resolveDistanceFromMovingAverage(
+  spec: ChartStudySpec,
+  input: ResolvedSeries,
+  color: string,
+): ResolvedSeries[] {
+  const period = studyPeriod(spec, 20);
+  const samples = samplesFor(input);
+  const averages = sma(samples.map(({ value }) => value), period);
+  const points = averages.map(({ index, value }) => {
+    const sample = samples[index]!;
+    return derivedPoint(sample, percentDifference(sample.value, value));
+  });
+  return [outputSeries(spec, input, {
+    label: `Distance from SMA(${period}) ${input.label}`,
+    points,
+    color,
+    unit: "%",
+    unitGroup: "percent",
+    axis: "left",
   })];
 }
 
@@ -582,6 +671,9 @@ export function resolveStudies(
     else if (spec.kind === "macd") outputs = resolveMacd(spec, input, color);
     else if (spec.kind === "volume") outputs = resolveVolume(spec, input, color);
     else if (spec.kind === "vwap") outputs = resolveVwap(spec, input, color);
+    else if (spec.kind === "drawdown") outputs = resolveDrawdown(spec, input, color);
+    else if (spec.kind === "volatility") outputs = resolveRollingVolatility(spec, input, color);
+    else if (spec.kind === "distance") outputs = resolveDistanceFromMovingAverage(spec, input, color);
     else if (spec.kind === "atr" || spec.kind === "stochastic" || spec.kind === "adx") {
       errors.push(`${spec.id}: ${spec.kind} study is not yet implemented.`);
       return;

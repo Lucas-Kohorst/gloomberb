@@ -142,12 +142,6 @@ export function createRootCommandItemBuilder({
         return command.description;
       case "toggle-value-flashing":
         return state.config.valueFlashingEnabled ? "Currently on" : "Currently off";
-      case "set-refresh-interval":
-        return `Currently ${state.config.refreshIntervalMinutes} min`;
-      case "set-auto-refresh": {
-        const m = state.config.autoRefreshInterval;
-        return m === 0 ? "Currently off" : `Currently ${m} min`;
-      }
       case "font-size-increase":
       case "font-size-decrease":
         return `Currently ${state.config.fontSize ?? 12}px`;

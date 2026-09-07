@@ -19,6 +19,7 @@ interface ResolveShellCursorOcclusionRectsOptions {
   nativePaneChrome: boolean;
   overlayOpen: boolean;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
   visibleFloatingPanes: readonly VisibleFloatingPane[];
   width: number;
 }
@@ -31,14 +32,19 @@ export function resolveShellCursorOcclusionRects({
   nativePaneChrome,
   overlayOpen,
   transientFocusActive,
+  transientFocusPaneId = null,
   visibleFloatingPanes,
   width,
 }: ResolveShellCursorOcclusionRectsOptions): ShellCursorOcclusionRect[] {
-  if (nativePaneChrome || overlayOpen || transientFocusActive || visibleFloatingPanes.length === 0) {
+  if (nativePaneChrome || overlayOpen || visibleFloatingPanes.length === 0) {
     return [];
   }
+  const occlusionPanes = transientFocusActive
+    ? visibleFloatingPanes.filter(({ pane }) => pane.instance.instanceId !== transientFocusPaneId)
+    : visibleFloatingPanes;
+  if (occlusionPanes.length === 0) return [];
 
-  return visibleFloatingPanes.map(({ pane, rect }) => {
+  return occlusionPanes.map(({ pane, rect }) => {
     const paneId = pane.instance.instanceId;
     const visibleRect = dragFloatingRect?.paneId === paneId
       ? constrainFloatingRectToBounds(dragFloatingRect.rect, width, contentHeight)

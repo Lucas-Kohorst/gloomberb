@@ -6,6 +6,26 @@
  */
 
 export const SHARE_HOSTED_ORIGIN = "https://terminal.kohor.st";
+export const PUBLIC_SHARE_ORIGIN = SHARE_HOSTED_ORIGIN;
+
+export function isStoredShareId(id: string): boolean {
+  return /^[a-f0-9]{32}$/.test(id);
+}
+
+export function parseShareId(pathname: string): string | null {
+  const id = parseShortShareId(pathname);
+  return id && isStoredShareId(id) ? id : null;
+}
+
+export function publicShareUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string {
+  if (!isStoredShareId(id)) throw new Error("Invalid share id.");
+  return new URL(`/s/${id}`, origin).toString();
+}
+
+export function openLiveShareUrl(id: string, origin = PUBLIC_SHARE_ORIGIN): string {
+  if (!isStoredShareId(id)) throw new Error("Invalid share id.");
+  return new URL(`/api/shares/${id}/open`, origin).toString();
+}
 
 /**
  * Short-ID share: `/s/{id}`.
@@ -16,12 +36,13 @@ export const SHARE_HOSTED_ORIGIN = "https://terminal.kohor.st";
  * they would have to work out for themselves that the link was the problem.
  */
 export function parseShortShareId(pathname: string): string | null {
-  const match = pathname.match(/^\/s\/([A-Za-z0-9_-]+)$/);
+  const match = pathname.match(/^\/s\/([A-Za-z0-9_-]+)\/?$/);
   return match?.[1] ?? null;
 }
 
 export function buildShortShareUrl(shortId: string): string {
-  return `${SHARE_HOSTED_ORIGIN}/s/${shortId}`;
+  if (!parseShortShareId(`/s/${shortId}`) || shortId.includes("/")) throw new Error("Invalid share id.");
+  return new URL(`/s/${shortId}`, SHARE_HOSTED_ORIGIN).toString();
 }
 
 export function buildInlineArticleShareUrl(encodedPayload: string): string {

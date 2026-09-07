@@ -16,7 +16,7 @@ interface ChatControllerViewOptions {
   getChannelStateSnapshots: () => ChatChannelState[];
   isChannelsLoading: () => boolean;
   isSessionChecked: () => boolean;
-  hasSessionToken: () => boolean;
+  hasSession: () => boolean;
   getOnlineCount: () => number;
   getOnlineUserIds: () => string[];
   getOnlineUsernames: () => string[];
@@ -68,9 +68,10 @@ export class ChatControllerView {
       channelStates: this.options.getChannelStateSnapshots(),
       channelsLoading: this.options.isChannelsLoading(),
       loading: !this.options.isSessionChecked() || channel.messagesLoading,
+      messagesError: channel.messagesError,
       loadingOlderMessages: channel.olderMessagesLoading,
       hasOlderMessages: channel.messages.length > 0 && !channel.reachedOldestMessage,
-      hasSavedSession: this.options.hasSessionToken(),
+      hasSavedSession: this.options.hasSession(),
       onlineCount: this.options.getOnlineCount(),
       onlineUserIds: this.options.getOnlineUserIds(),
       onlineUsernames: this.options.getOnlineUsernames(),
@@ -79,7 +80,7 @@ export class ChatControllerView {
       // Only surface a load failure to signed-in users. A signed-out visitor
       // hitting an auth-gated channel is the expected read-only case, not a
       // broken chat, and already shows the read-only footer.
-      loadFailed: channel.loadFailed && this.options.hasSessionToken(),
+      loadFailed: channel.loadFailed && this.options.hasSession(),
       draft: channel.draft,
       replyToId: channel.replyToId,
       unreadMentionCount: this.options.getUnreadMentionCount(normalizedChannelId),

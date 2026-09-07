@@ -38,6 +38,16 @@ describe("parseMarkdownLine links", () => {
     expect(parsed.segments[0]!.link).toBe("https://example.com/a");
   });
 
+  test("does not let a URL swallow the next sentence", () => {
+    const parsed = parseMarkdownLine(
+      "found at: https://www.jacksonhole.com.These instructions",
+    );
+    expect(parsed.segments[0]!.text).toContain("found at:");
+    const link = parsed.segments.find((segment) => segment.link);
+    expect(link?.link).toBe("https://www.jacksonhole.com");
+    expect(parsed.segments.map((segment) => segment.text).join("")).toContain("These instructions");
+  });
+
   test("drops image markup but keeps meaningful alt text", () => {
     expect(rendered("![](https://cdn.example.com/pixel.gif)")).toBe("");
     expect(rendered("![Chart of yields](https://cdn.example.com/c.png)")).toBe("Chart of yields");
@@ -86,9 +96,57 @@ describe("inline HTML", () => {
     expect(rendered('text <span class="x">inner</span>')).toBe("text inner");
   });
 
+  test("keeps a space when a tag sat between words with no surrounding spaces", () => {
+    expect(rendered("Jackson<br>Hole<br>Mountain")).toBe("Jackson Hole Mountain");
+    expect(rendered("a<br/>b")).toBe("a b");
+    expect(rendered("if<br>any,<br>in<br>on")).toBe("if any, in on");
+  });
+
   test("an autolink is still a link, not a tag", () => {
     const parsed = parseMarkdownLine("<https://example.com/a>");
     expect(parsed.segments[0]!.link).toBe("https://example.com/a");
+  });
+});
+
+describe("redlines", () => {
+  test("renders <s> deletions as strikethrough instead of flattening them", () => {
+    const parsed = parseMarkdownLine(
+      "snowfall in <area> <s>during</s> <time period><s>asmeasuredandreportedbytheNationalWeatherService</s>.",
+    );
+    const strikes = parsed.segments.filter((segment) => segment.strikethrough);
+    expect(strikes.map((segment) => segment.text)).toEqual([
+      "during",
+      "asmeasuredandreportedbytheNationalWeatherService",
+    ]);
+    expect(parsed.segments.some((segment) => segment.text === "<area>")).toBe(true);
+    expect(parsed.segments.some((segment) => segment.text === "<time period>")).toBe(true);
+  });
+
+  test("inserts a space when a closing strike tag sits against the next word", () => {
+    expect(rendered("<s>Weather Service</s>Source Agency"))
+      .toBe("Weather Service Source Agency");
+  });
+
+  test("renders <ins> as a distinct insertion", () => {
+    const parsed = parseMarkdownLine("<s>The Source Agency is</s> <ins>The Source Agencies are</ins>");
+    const deleted = parsed.segments.find((segment) => segment.strikethrough);
+    const inserted = parsed.segments.find((segment) => segment.underline);
+    expect(deleted?.text).toBe("The Source Agency is");
+    expect(inserted?.text).toBe("The Source Agencies are");
+    expect(inserted?.color).toBeTruthy();
+    expect(inserted?.strikethrough).toBeUndefined();
+  });
+
+  test("~~strike~~ is strikethrough, not only dim", () => {
+    const parsed = parseMarkdownLine("keep ~~gone~~ rest");
+    expect(parsed.segments.find((segment) => segment.strikethrough)?.text).toBe("gone");
+  });
+
+  test("triple asterisks are bold italic, not leftover stars", () => {
+    const parsed = parseMarkdownLine("***KalshiEX LLC***");
+    expect(rendered("***KalshiEX LLC***")).toBe("KalshiEX LLC");
+    expect(parsed.segments[0]!.bold).toBe(true);
+    expect(parsed.segments[0]!.italic).toBe(true);
   });
 });
 

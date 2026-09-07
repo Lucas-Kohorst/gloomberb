@@ -2,7 +2,12 @@ import type { TickerRecord } from "../../types/ticker";
 import { hydrateTickerMetadata } from "../../tickers/metadata";
 import { tryLocalStorage } from "../../utils/browser-storage";
 import { isRecord } from "../../utils/is-record";
-import { attachHostedUserWorkspaceExtras, readLastHostedUserId, resolveHostedPersistUserId } from "./hosted-user-persist";
+import {
+  attachHostedUserWorkspaceExtras,
+  markHostedWorkspaceChanged,
+  readLastHostedUserId,
+  resolveHostedPersistUserId,
+} from "./hosted-user-persist";
 
 const STORAGE_PREFIX = "gloomberb:hosted-tickers:";
 const LEGACY_STORAGE_KEY = "gloomberb:hosted-tickers";
@@ -47,12 +52,15 @@ function parseTickerList(raw: string | null): TickerRecord[] {
   }
 }
 
-function writeTickers(userId: string, tickers: TickerRecord[]): void {
+function writeTickers(userId: string, tickers: TickerRecord[], trackWorkspaceChange = true): void {
   const backend = tryLocalStorage();
   if (!backend) return;
   try {
     backend.setItem(storageKey(userId), JSON.stringify(tickers));
-    attachHostedUserWorkspaceExtras({ tickers }, userId);
+    if (trackWorkspaceChange) {
+      markHostedWorkspaceChanged(userId);
+      attachHostedUserWorkspaceExtras({ tickers }, userId);
+    }
   } catch {
     // Ignore quota or security errors.
   }
@@ -91,9 +99,13 @@ export function readHostedTickers(userId = resolveHostedPersistUserId()): Ticker
 }
 
 /** Replaces the signed-in user's hosted ticker book. */
-export function writeHostedTickers(tickers: TickerRecord[], userId = resolveHostedPersistUserId()): void {
+export function writeHostedTickers(
+  tickers: TickerRecord[],
+  userId = resolveHostedPersistUserId(),
+  trackWorkspaceChange = true,
+): void {
   if (!userId) return;
-  writeTickers(userId, tickers);
+  writeTickers(userId, tickers, trackWorkspaceChange);
 }
 
 /**
@@ -104,9 +116,18 @@ export function mergeHostedTickers(
   incoming: Iterable<TickerRecord>,
   userId = resolveHostedPersistUserId(),
 ): TickerRecord[] {
-  if (!userId) return [...incoming];
+  const next = mergeTickerRecords(readHostedTickers(userId), incoming);
+  if (!userId) return next;
+  writeTickers(userId, next);
+  return next;
+}
+
+export function mergeTickerRecords(
+  current: Iterable<TickerRecord>,
+  incoming: Iterable<TickerRecord>,
+): TickerRecord[] {
   const merged = new Map<string, TickerRecord>();
-  for (const ticker of readHostedTickers(userId)) {
+  for (const ticker of current) {
     merged.set(ticker.metadata.ticker, ticker);
   }
   for (const ticker of incoming) {
@@ -114,9 +135,7 @@ export function mergeHostedTickers(
     if (!symbol) continue;
     merged.set(symbol, ticker);
   }
-  const next = [...merged.values()];
-  writeTickers(userId, next);
-  return next;
+  return [...merged.values()];
 }
 
 export function parseIncomingTickerRecord(entry: unknown): TickerRecord | null {

@@ -5,11 +5,10 @@ import { truncateToDisplayWidth } from "../../utils/format";
 export { rankTickerSearchItems } from "../../tickers/search";
 
 /**
- * Remove items that share an id, keeping the first occurrence. The command
- * bar assembles suggestions from several sources (pane shortcuts, built-in
- * commands, plugin commands, ticker actions, layout items) that can overlap.
- * Items are pushed in priority order, so the first occurrence is the one that
- * best fits and subsequent duplicates are dropped.
+ * Drop repeats of an id, keeping the first. The root list is assembled from
+ * overlapping sources (pane shortcuts, commands, plugin commands, ticker
+ * actions, layout items) in priority order, so the first hit is the one whose
+ * category and detail fit best.
  */
 export function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -22,7 +21,7 @@ export function dedupeById<T extends { id: string }>(items: T[]): T[] {
   return result;
 }
 
-export type CommandBarMode = "default" | "search" | "themes" | "plugins" | "layout" | "direct-command";
+export type CommandBarMode = "default" | "search" | "themes" | "layout" | "direct-command";
 
 export interface CommandBarModeInfo {
   kind: CommandBarMode;
@@ -36,6 +35,14 @@ export interface CommandBarSection<T> {
 }
 
 export type CommandBarSectionOrder = "default" | "app-first" | "ranked";
+
+/** Sort positions contributed by plugin search providers, keyed by section heading. */
+export type CommandBarCategoryPriorities = ReadonlyMap<string, number>;
+
+export interface CommandBarSectionOptions {
+  sectionOrder?: CommandBarSectionOrder;
+  categoryPriorities?: CommandBarCategoryPriorities;
+}
 
 export interface CommandBarItemView {
   id: string;
@@ -75,8 +82,6 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
       return { kind: "search", badge: match.prefix, hint: t("Open security details for a ticker") };
     case "theme":
       return { kind: "themes", badge: "THEMES", hint: t("Preview with arrows, Enter to save, Esc to revert") };
-    case "plugins":
-      return { kind: "plugins", badge: "PLUGINS", hint: t("Toggle plugins, or open the Plugin Marketplace") };
     case "layout":
       return { kind: "layout", badge: "LAYOUT", hint: t("Organize panes, history, and saved layouts") };
     default:
@@ -84,9 +89,27 @@ export function resolveCommandBarMode(query: string, commandList?: Command[]): C
   }
 }
 
-export function buildSections<T extends { category: string }>(
+/**
+ * A section whose every row is disabled or unselectable is an offer, not an
+ * answer, so it sorts below real matches however its category is prioritized:
+ * past the async bands (100 to 200) and the AI's lead, short of danger (900).
+ */
+const OFFER_SECTION_DEMOTION = 500;
+
+interface SectionSortableItem {
+  category: string;
+  disabled?: boolean;
+  defaultSelectable?: boolean;
+}
+
+function isOfferOnlySection<T extends SectionSortableItem>(items: T[]): boolean {
+  return items.length > 0
+    && items.every((item) => item.disabled === true || item.defaultSelectable === false);
+}
+
+export function buildSections<T extends SectionSortableItem>(
   items: T[],
-  options?: { sectionOrder?: CommandBarSectionOrder },
+  options?: CommandBarSectionOptions,
 ): Array<CommandBarSection<T>> {
   const sections: Array<CommandBarSection<T>> = [];
   for (const item of items) {
@@ -100,8 +123,10 @@ export function buildSections<T extends { category: string }>(
   return sections
     .map((section, index) => ({ section, index }))
     .sort((a, b) => {
-      const leftPriority = getCategoryPriority(a.section.category, options?.sectionOrder);
-      const rightPriority = getCategoryPriority(b.section.category, options?.sectionOrder);
+      const leftPriority = getCategoryPriority(a.section.category, options)
+        + (isOfferOnlySection(a.section.items) ? OFFER_SECTION_DEMOTION : 0);
+      const rightPriority = getCategoryPriority(b.section.category, options)
+        + (isOfferOnlySection(b.section.items) ? OFFER_SECTION_DEMOTION : 0);
       const priorityDiff = leftPriority - rightPriority;
       return priorityDiff !== 0 ? priorityDiff : a.index - b.index;
     })
@@ -115,8 +140,6 @@ export function getEmptyState(mode: CommandBarMode, query: string, searchQuery?:
         return { label: t("Type a ticker symbol"), detail: t("Open security details after resolving a ticker") };
       }
       return { label: tf('No matches for "{query}"', { query: searchQuery }), detail: t("Try a symbol, company name, or exchange variant") };
-    case "plugins":
-      return { label: t("No plugins match"), detail: query.trim() || t("Toggleable plugins will appear here") };
     case "themes":
       return { label: t("No themes match"), detail: query.trim() || t("Installed themes will appear here") };
     case "layout":
@@ -154,42 +177,54 @@ export function truncateText(text: string, width: number): string {
   return truncateToDisplayWidth(text, width);
 }
 
-function getCategoryPriority(category: string, sectionOrder: CommandBarSectionOrder = "default"): number {
+/**
+ * An exactly matching symbol is the most certain answer the terminal has, so
+ * nothing outranks it. Typing "sive" put the AI's "DES SIVE" above the SIVE row
+ * it was derived from, which is a guess sitting above the fact behind it.
+ */
+const EXACT_MATCH_SECTION_PRIORITY = -150;
+/**
+ * The AI leads the rest even though it is the slowest source (~600ms+): it
+ * translates the sentence the user typed into commands, which is the answer to
+ * what they asked when no symbol matched outright. Its Thinking placeholder
+ * reserves the rows from the start, so the arrival replaces a row instead of
+ * shifting the list.
+ */
+const ASSIST_SECTION_PRIORITY = -100;
+/**
+ * The other async sections sit below the local matches in arrival order, so
+ * each answer only ever pushes rows below itself: instruments at 100, then news
+ * at 190 and the rest of the corpus at 200 (both contributed by their provider).
+ */
+const INSTRUMENTS_SECTION_PRIORITY = 100;
+const DATA_CATALOG_SECTION_PRIORITY = INSTRUMENTS_SECTION_PRIORITY + 100;
+
+function getCategoryPriority(category: string, options?: CommandBarSectionOptions): number {
+  const contributed = options?.categoryPriorities?.get(category);
+  if (contributed !== undefined) return contributed;
+  const sectionOrder = options?.sectionOrder ?? "default";
   const normalized = category.trim().toLowerCase();
-  // In ranked mode every category shares equal priority so results sort purely
-  // by relevance score (see #541).
-  if (sectionOrder === "ranked") return 0;
-  const priorities: Record<string, number> = {
-    // Query-specific results lead the command list.
-    "ask ai": -100,
-    articles: -90,
-    "exact match": -80,
-    saved: -70,
-    "primary listing": -60,
-    "other listings": -50,
-    "funds & derivatives": -40,
-    // General command-bar sections follow a stable, task-oriented order.
-    search: 0,
-    navigation: 10,
-    assets: 20,
-    panes: 20,
-    portfolio: 30,
-    data: 40,
-    workspace: 45,
-    actions: 50,
-    config: 60,
-    create: 70,
-  };
-  if (sectionOrder === "app-first") {
-    const appFirstPriorities: Record<string, number> = {
-      saved: 100,
-      "primary listing": 110,
-      "other listings": 120,
-      "funds & derivatives": 130,
-    };
-    if (normalized in appFirstPriorities) return appFirstPriorities[normalized] ?? 80;
+  if (sectionOrder === "ranked") {
+    if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
+    if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;
+    return 0;
   }
+  if (normalized === "ask ai") return ASSIST_SECTION_PRIORITY;
+  if (normalized === "exact match") return EXACT_MATCH_SECTION_PRIORITY;
+  if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
+  if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;
+  if (sectionOrder === "app-first") {
+    if (normalized === "saved") return 100;
+    if (normalized === "primary listing") return 110;
+    if (normalized === "other listings") return 120;
+    if (normalized === "funds & derivatives") return 130;
+  }
+  if (normalized === "saved") return -40;
+  if (normalized === "primary listing") return -30;
+  if (normalized === "other listings") return -20;
+  if (normalized === "funds & derivatives") return -10;
+  if (normalized === "config") return -1;
   if (normalized.includes("danger")) return 900;
   if (normalized.includes("debug")) return 910;
-  return priorities[normalized] ?? 80;
+  return 0;
 }

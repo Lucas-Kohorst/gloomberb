@@ -16,7 +16,6 @@ import {
   type LayoutBounds,
   type ResolvedPane,
 } from "../../../../plugins/pane-manager";
-import type { AppAction } from "../../../../state/app/context";
 import type { LayoutConfig } from "../../../../types/config";
 import {
   constrainFloatingRectToBounds,
@@ -167,7 +166,6 @@ interface UseShellPointerRuntimeOptions {
   bounds: LayoutBounds;
   closePaneMenu: () => void;
   contentHeight: number;
-  dispatch: Dispatch<AppAction>;
   dockGeometryOptions: DockGeometryOptions;
   dockDividerLayouts: DockDividerLayout[];
   dockLeafLayouts: DockLeafLayout[];
@@ -192,12 +190,16 @@ interface UseShellPointerRuntimeOptions {
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   snapGuides: ReturnType<typeof makeSnapGuides>;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
+  hiddenDockedIds?: readonly string[];
+  exitTransientFocus?: () => boolean;
   togglePaneFloating: (paneId: string) => boolean;
   updateWindowModePreviewLayout: (nextLayout: LayoutConfig, paneId?: string) => void;
   visibleFloatingPanes: VisibleFloatingPane[];
   visibleLayout: LayoutConfig;
   width: number;
   windowMode: WindowEditState | null;
+  commandBarOpen: boolean;
 }
 
 export function useShellPointerRuntime({
@@ -205,7 +207,6 @@ export function useShellPointerRuntime({
   bounds,
   closePaneMenu,
   contentHeight,
-  dispatch,
   dockGeometryOptions,
   dockDividerLayouts,
   dockLeafLayouts,
@@ -226,18 +227,21 @@ export function useShellPointerRuntime({
   setMenuState,
   snapGuides,
   transientFocusActive,
+  transientFocusPaneId,
+  hiddenDockedIds,
+  exitTransientFocus,
   togglePaneFloating,
   updateWindowModePreviewLayout,
   visibleFloatingPanes,
   visibleLayout,
   width,
   windowMode,
+  commandBarOpen,
 }: UseShellPointerRuntimeOptions) {
   const handleActiveDrag = useShellActiveDrag({
     appHeaderHeight,
     bounds,
     contentHeight,
-    dispatch,
     dockGeometryOptions,
     dockLeafLayouts,
     focusPane,
@@ -273,6 +277,9 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    transientFocusPaneId,
+    hiddenDockedIds,
+    exitTransientFocus,
     togglePaneFloating,
     visibleFloatingPanes,
     width,
@@ -292,8 +299,11 @@ export function useShellPointerRuntime({
     setHoveredMenuItemId,
     setMenuState,
     transientFocusActive,
+    transientFocusPaneId,
+    exitTransientFocus,
     togglePaneFloating,
     windowMode,
+    commandBarOpen,
   });
 
   return {

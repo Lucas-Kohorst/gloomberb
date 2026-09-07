@@ -14,6 +14,7 @@ import {
   TickerEmptyState,
   type FeedDataTableItem,
 } from "../../../components";
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { registerConnectionSource } from "../connections/register";
 import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { fetchEarningsTranscriptContent, fetchEarningsTranscripts } from "./client";
@@ -449,7 +450,7 @@ export const earningsTranscriptsModule: PluginModule = {
       name: "Transcripts",
       order: 46,
       component: EarningsTranscriptsTab,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
     });
   },
 

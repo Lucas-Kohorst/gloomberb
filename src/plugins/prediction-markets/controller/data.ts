@@ -217,15 +217,15 @@ export function usePredictionMarketsDataState({
     setCatalogCache,
   });
   const catalogLive = usePredictionCatalogLiveQuotes({
-    enabled: focused && !detailOpen,
+    enabled: !detailOpen,
     rows: visibleRows,
     setCatalogCache,
   });
 
   return {
     catalogHasMore,
-    catalogLive,
     catalogLastRefreshAt,
+    catalogLive,
     catalogLoadCount,
     catalogLoadingMore,
     catalogStatus,

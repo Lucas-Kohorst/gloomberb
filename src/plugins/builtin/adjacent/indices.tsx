@@ -2,14 +2,14 @@ import { runAfterStartupBackground } from "../../../utils/startup-interaction";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
-  ScrollBox,
   Text,
   TextAttributes,
-  type ScrollBoxRenderable,
 } from "../../../ui";
 import {
   DataTableStackView,
+  DataTableView,
   EmptyState,
+  FeedDataTableStackView,
   InputSearchBar,
   Spinner,
   Tabs,
@@ -18,26 +18,46 @@ import {
   useUpdatedAgo,
   type DataTableColumn,
   type DataTableCell,
+  type FeedDataTableItem,
   type StackSortPreference,
 } from "../../../components";
 import { colors, priceColor } from "../../../theme/colors";
 import { formatPercentRaw } from "../../../utils/format";
-import { applySortPreference } from "../../../utils/sort-values";
+import { CompositeChart, pricePointsToResolvedSeries } from "../../../components/chart/composite";
+import { usePluginAppActions, usePluginTickerActions } from "../../runtime";
+import { searchRelatedNews } from "../news/wire/article-search";
+import type { NewsArticle } from "../../../news/types";
+import { useAppDispatch, usePaneInstance } from "../../../state/app/context";
+import { getSharedRegistry } from "../../registry";
+import { predictionTickerRecord } from "../../prediction-markets/collection-watchlist";
+import { openUrl } from "../../../components/ui/external-link";
+import { usePaneFooterHintBindings } from "../shared/pane-footer";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import type { PaneProps } from "../../../types/plugin";
 
 import { useShareTable } from "../shared/use-share-table";
 import type { TableShareColumn } from "../../../shares/payload";
+import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { useNewsReadState } from "../news/wire/read-state";
 import type { AdjacentClient } from "./client";
 import type {
   AdjacentConstituent,
   AdjacentIndexPricePoint,
   AdjacentIndexRow,
-  AdjacentNewsArticle,
 } from "./types";
 import {
   adjacentIndexSortValue,
+  constituentChartExpression,
+  constituentImpliedPercent,
+  constituentOpenSymbol,
+  formatImpliedPercent,
+  mergeIndexConstituents,
   normalizeAdjacentIndex,
   normalizeAdjacentIndexPrices,
   adjacentIndexPricesToPricePoints,
@@ -54,45 +74,23 @@ export type IndexDetailTab = "overview" | "chart" | "news";
 type LoadStatus = "idle" | "loading" | "loaded" | "error";
 
 interface IndexColumn extends DataTableColumn {
-  id: "ticker" | "name" | "value" | "prob" | "chg1d" | "chg7d";
+  id: "ticker" | "name" | "value" | "chg1d" | "chg7d";
 }
 
-export function createIndexColumns(width: number): IndexColumn[] {
-  const tickerWidth = width >= 40 ? 8 : 6;
-  const valueWidth = 8;
-  const probWidth = 7;
-  const chg1dWidth = 7;
-  const chg7dWidth = 7;
-  const showValue = width >= 28;
-  const showChg1d = width >= 38;
-  const showChg7d = width >= 64;
-  const showProb = width >= 56;
-  const fixedColumns = [
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    ...(showValue ? [{ id: "value" as const, label: "VALUE", width: valueWidth, align: "right" as const }] : []),
-    ...(showProb ? [{ id: "prob" as const, label: "PROB%", width: probWidth, align: "right" as const }] : []),
-    ...(showChg1d ? [{ id: "chg1d" as const, label: "1D", width: chg1dWidth, align: "right" as const }] : []),
-    ...(showChg7d ? [{ id: "chg7d" as const, label: "7D", width: chg7dWidth, align: "right" as const }] : []),
-  ] satisfies IndexColumn[];
-  const tableChromeWidth = fixedColumns.length + 1 + 2;
-  const fixedWidth = fixedColumns.reduce((sum, column) => sum + column.width, 0);
+export function createIndexColumns(): IndexColumn[] {
   return [
-    fixedColumns[0]!,
-    { id: "name", label: "NAME", width: Math.max(1, width - fixedWidth - tableChromeWidth), align: "left", flexGrow: 1 },
-    ...fixedColumns.slice(1),
+    { id: "ticker", label: "TICKER", width: 8, align: "left" },
+    { id: "name", label: "NAME", width: 10, align: "left", flexGrow: 1 },
+    { id: "value", label: "VALUE", width: 8, align: "right" },
+    { id: "chg1d", label: "1D", width: 7, align: "right" },
+    { id: "chg7d", label: "7D", width: 7, align: "right" },
   ];
 }
 
-/**
- * Fixed for shares, unlike the on-screen columns which drop out as the pane
- * narrows: a link created from a half-width pane should still carry the whole
- * table.
- */
 const INDEX_SHARE_COLUMNS: TableShareColumn[] = [
   { id: "ticker", label: "Ticker" },
   { id: "name", label: "Name" },
   { id: "value", label: "Value", align: "right" },
-  { id: "prob", label: "Prob %", align: "right" },
   { id: "chg1d", label: "1D", align: "right" },
   { id: "chg7d", label: "7D", align: "right" },
 ];
@@ -111,17 +109,71 @@ function renderIndexCell(
     case "value":
       if (row.value == null) return { text: "—", color: sel ?? colors.textDim };
       return { text: row.value.toFixed(1), color: sel };
-    case "prob": {
-      if (row.probabilityPct == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: `${row.probabilityPct.toFixed(1)}`, color: sel ?? priceColor(row.probabilityPct) };
-    }
     case "chg1d":
       if (row.change1d == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.change1d), color: sel ?? priceColor(row.change1d) };
+      return { text: formatPercentRaw(row.change1d), color: priceColor(row.change1d) };
     case "chg7d":
       if (row.change7d == null) return { text: "—", color: sel ?? colors.textDim };
-      return { text: formatPercentRaw(row.change7d), color: sel ?? priceColor(row.change7d) };
+      return { text: formatPercentRaw(row.change7d), color: priceColor(row.change7d) };
   }
+}
+
+type ConstituentColumnId = "weight" | "kind" | "name" | "prob";
+interface ConstituentColumn extends DataTableColumn {
+  id: ConstituentColumnId;
+}
+
+const CONSTITUENT_COLUMNS: ConstituentColumn[] = [
+  { id: "weight", label: "WEIGHT", width: 6, align: "right" },
+  { id: "kind", label: "KIND", width: 6, align: "left" },
+  { id: "name", label: "NAME", width: 10, align: "left", flexGrow: 1 },
+  { id: "prob", label: "PROB", width: 6, align: "right" },
+];
+
+function constituentKind(row: AdjacentConstituent): string {
+  if (row.kind === "index") return "IDX";
+  const expression = constituentChartExpression(row);
+  if (expression?.startsWith("KALSHI:")) return "K";
+  if (expression?.startsWith("POLY:")) return "P";
+  return "R";
+}
+
+function constituentName(row: AdjacentConstituent): string {
+  return row.name ?? row.display_ticker ?? row.market_id;
+}
+
+function constituentProb(row: AdjacentConstituent): number | null {
+  if (row.kind === "index") {
+    return row.price == null ? null : row.price;
+  }
+  return constituentImpliedPercent(row);
+}
+
+function constituentSortValue(row: AdjacentConstituent, columnId: ConstituentColumnId) {
+  switch (columnId) {
+    case "weight": return row.weight;
+    case "kind": return constituentKind(row);
+    case "name": return constituentName(row);
+    case "prob": return constituentProb(row);
+  }
+}
+
+function toIndexNewsItems(articles: NewsArticle[]): FeedDataTableItem[] {
+  return articles.map((article) => {
+    const published = article.publishedAt
+      ? article.publishedAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      : "";
+    return {
+      id: article.id,
+      eyebrow: article.source,
+      title: article.title,
+      timestamp: article.publishedAt,
+      detailTitle: article.title,
+      detailMeta: [[article.source, published].filter(Boolean).join(" · ")],
+      detailBody: article.summary || article.body || article.title,
+      detailNote: article.url,
+    };
+  });
 }
 
 function IndexDetail({
@@ -129,22 +181,38 @@ function IndexDetail({
   index,
   width,
   height,
+  focused,
   detailTab,
   onDetailTabChange,
+  onOpenIndex,
 }: {
   client: AdjacentClient;
   index: AdjacentIndexRow;
   width: number;
   height: number;
+  focused: boolean;
   detailTab: IndexDetailTab;
   onDetailTabChange: (tab: IndexDetailTab) => void;
+  onOpenIndex: () => void;
 }) {
   const [constituents, setConstituents] = useState<AdjacentConstituent[]>([]);
   const [prices, setPrices] = useState<AdjacentIndexPricePoint[]>([]);
-  const [news, setNews] = useState<AdjacentNewsArticle[]>([]);
+  const [news, setNews] = useState<NewsArticle[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedConstituentId, setSelectedConstituentId] = useState<string | null>(null);
+  const [constituentSort, setConstituentSort] = useState<SortPreference<ConstituentColumnId>>({
+    columnId: "weight",
+    direction: "desc",
+  });
+  const [selectedNewsIdx, setSelectedNewsIdx] = useState(0);
+  const [newsQuery, setNewsQuery] = useState("");
+  const [newsSearchFocused, setNewsSearchFocused] = useState(false);
+  const [newsFocusToken, setNewsFocusToken] = useState(0);
+  const newsSearchRef = useRef<import("../../../ui").InputRenderable | null>(null);
   const genRef = useRef(0);
+  const popOutArticle = usePopOutNewsArticle();
+  const { readArticleIds, markArticleRead } = useNewsReadState();
 
   useEffect(() => {
     genRef.current += 1;
@@ -153,36 +221,137 @@ function IndexDetail({
     setError(null);
 
     const load = async () => {
-      try {
-        const tasks: Promise<unknown>[] = [];
-        if (detailTab === "overview") {
-          tasks.push(
-            client.getIndexConstituents(index.id).then((r) => setConstituents(r.data ?? [])),
-          );
-        }
-        if (detailTab === "chart") {
-          tasks.push(
-            client.getIndexPrices(index.id).then((r) => {
-              setPrices(normalizeAdjacentIndexPrices(r.data ?? []));
-            }),
-          );
-        }
-        if (detailTab === "news") {
-          tasks.push(
-            client.getIndexNews(index.id).then((r) => setNews(r.news ?? [])),
-          );
-        }
-        await Promise.allSettled(tasks);
+      const constituentsTask = Promise.all([
+        client.getIndexConstituents(index.id),
+        client.getIndex(index.id).catch(() => null),
+      ]).then(([constituents, detail]) => {
         if (genRef.current !== gen) return;
-        setLoading(false);
-      } catch (err) {
+        setConstituents(mergeIndexConstituents(constituents.data ?? [], detail?.sleeves));
+      });
+      const pricesTask = client.getIndexPrices(index.id).then((response) => {
         if (genRef.current !== gen) return;
-        setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      }
+        setPrices(normalizeAdjacentIndexPrices(response.data ?? []));
+      });
+      const newsTask = searchRelatedNews(index.name).then((articles) => {
+        if (genRef.current !== gen) return;
+        setNews(articles);
+      });
+
+      await Promise.allSettled([constituentsTask, pricesTask, newsTask]);
+      if (genRef.current === gen) setLoading(false);
     };
     void load();
-  }, [client, index.id, detailTab]);
+  }, [client, index.id, index.name]);
+
+  const sortedConstituents = useMemo(
+    () => applySortPreference(constituents, constituentSort, constituentSortValue),
+    [constituents, constituentSort],
+  );
+  const visibleNews = useMemo(() => {
+    const query = newsQuery.trim().toLowerCase();
+    if (!query) return news;
+    return news.filter((article) => `${article.title} ${article.source}`.toLowerCase().includes(query));
+  }, [news, newsQuery]);
+  const newsItems = useMemo(() => toIndexNewsItems(visibleNews), [visibleNews]);
+  const selectedConstituent = sortedConstituents.find((row) => row.market_id === selectedConstituentId) ?? null;
+  const popOutChart = useGraphChartPopOut();
+  const { navigateTicker } = usePluginTickerActions();
+  const dispatch = useAppDispatch();
+  const graphExpression = detailTab === "overview"
+    ? (selectedConstituent ? constituentChartExpression(selectedConstituent) : `ADJ:${index.id}`)
+    : `ADJ:${index.id}`;
+  const openSymbol = detailTab === "overview" && selectedConstituent
+    ? constituentOpenSymbol(selectedConstituent)
+    : null;
+  const graphTarget = useCallback(() => {
+    popOutChart(graphExpression);
+  }, [graphExpression, popOutChart]);
+  const openPredictionConstituent = useCallback((row: AdjacentConstituent) => {
+    const symbol = constituentOpenSymbol(row);
+    if (!symbol) {
+      popOutChart(constituentChartExpression(row));
+      return;
+    }
+    const venue = symbol.startsWith("KALSHI:") ? "kalshi" as const : "polymarket" as const;
+    const marketId = symbol.replace(/^(KALSHI|POLY):/i, "");
+    const registry = getSharedRegistry();
+    void (async () => {
+      const saved = registry ? await registry.tickerRepository.loadTicker(symbol).catch(() => null) : null;
+      const ticker = predictionTickerRecord({
+        venue,
+        marketId,
+        title: constituentName(row),
+        url: "",
+        key: `${venue}:${marketId}`,
+      }, saved);
+      if (registry) await registry.tickerRepository.saveTicker(ticker);
+      dispatch({ type: "UPDATE_TICKER", ticker });
+      registry?.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
+      navigateTicker(symbol);
+    })();
+  }, [dispatch, navigateTicker, popOutChart]);
+  const openTarget = useCallback(() => {
+    if (selectedConstituent && openSymbol) {
+      openPredictionConstituent(selectedConstituent);
+      return;
+    }
+    onOpenIndex();
+  }, [onOpenIndex, openPredictionConstituent, openSymbol, selectedConstituent]);
+
+  const selectedArticle = visibleNews[selectedNewsIdx] ?? null;
+  const detailHints = useMemo(() => {
+    if (detailTab === "news") {
+      return [
+        ...(selectedArticle?.url
+          ? [{
+            id: "open",
+            key: "o",
+            label: "pen",
+            onPress: () => {
+              markArticleRead(selectedArticle.id);
+              void openUrl(selectedArticle.url);
+            },
+          }]
+          : []),
+        { id: "refresh", key: "r", label: "efresh", onPress: () => {
+          setLoading(true);
+          void searchRelatedNews(index.name).then((articles) => {
+            setNews(articles);
+            setLoading(false);
+          }).catch(() => setLoading(false));
+        } },
+        ...(selectedArticle
+          ? [{
+            id: "pop-out",
+            key: "p",
+            label: "op out",
+            onPress: () => {
+              markArticleRead(selectedArticle.id);
+              popOutArticle(selectedArticle);
+            },
+          }]
+          : []),
+      ];
+    }
+    return [
+      { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
+      { id: "open", key: "o", label: "pen", onPress: openTarget },
+    ];
+  }, [detailTab, graphExpression, graphTarget, index.name, markArticleRead, openTarget, popOutArticle, selectedArticle]);
+  usePaneFooter("adjacent-indices-detail", () => ({
+    hints: detailHints,
+  }), [detailHints]);
+  usePaneFooterHintBindings(focused, detailHints);
+
+  useEffect(() => {
+    if (sortedConstituents.length === 0) {
+      setSelectedConstituentId(null);
+      return;
+    }
+    if (!selectedConstituentId || !sortedConstituents.some((row) => row.market_id === selectedConstituentId)) {
+      setSelectedConstituentId(sortedConstituents[0]!.market_id);
+    }
+  }, [selectedConstituentId, sortedConstituents]);
 
   const tabs = (
     <Box paddingBottom={1}>
@@ -221,96 +390,126 @@ function IndexDetail({
     );
   }
 
+  const contentHeight = Math.max(4, height - 2);
+
   return (
     <Box flexDirection="column" width={width} height={height}>
       {tabs}
       {detailTab === "overview" && (
-        <ScrollBox flexGrow={1} scrollY>
-          <Box flexDirection="column" paddingX={1} gap={1}>
-            <Box flexDirection="row" height={1} gap={4}>
-              <Box flexDirection="row" gap={1}>
-                <Text fg={colors.textDim}>Value:</Text>
-                <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-                  {index.value?.toFixed(1) ?? "—"}
-                </Text>
-              </Box>
-              <Box flexDirection="row" gap={1}>
-                <Text fg={colors.textDim}>Prob:</Text>
-                <Text fg={index.probabilityPct != null ? priceColor(index.probabilityPct) : colors.textDim}>
-                  {index.probabilityPct != null ? `${index.probabilityPct.toFixed(1)}%` : "—"}
-                </Text>
-              </Box>
-              {index.change1d != null && (
-                <Box flexDirection="row" gap={1}>
-                  <Text fg={colors.textDim}>1D:</Text>
-                  <Text fg={priceColor(index.change1d)}>{formatPercentRaw(index.change1d)}</Text>
-                </Box>
-              )}
-              {index.change7d != null && (
-                <Box flexDirection="row" gap={1}>
-                  <Text fg={colors.textDim}>7D:</Text>
-                  <Text fg={priceColor(index.change7d)}>{formatPercentRaw(index.change7d)}</Text>
-                </Box>
-              )}
-            </Box>
-            <Box height={1}>
+        <Box flexDirection="column" flexGrow={1} minHeight={0}>
+          <Box flexDirection="row" height={1} gap={4} paddingX={1}>
+            <Box flexDirection="row" gap={1}>
+              <Text fg={colors.textDim}>Value:</Text>
               <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-                Constituents
+                {index.value?.toFixed(1) ?? "—"}
               </Text>
             </Box>
-            {constituents.length === 0 ? (
-              <Text fg={colors.textDim}>No constituent data.</Text>
-            ) : (
-              constituents.map((c) => {
-                const label = c.name ?? c.display_ticker ?? c.market_id;
-                const prob = c.price != null
-                  ? (c.kind === "index" ? c.price - 50 : c.price)
-                  : null;
-                return (
-                  <Box key={c.market_id} flexDirection="row" height={1} gap={2}>
-                    <Box width={6}>
-                      <Text fg={colors.textDim}>{(c.weight * 100).toFixed(0)}%</Text>
-                    </Box>
-                    <Box width={6}>
-                      <Text fg={colors.textDim}>
-                        {c.kind === "index" ? "IDX" : c.platform === "kalshi" ? "K" : "P"}
-                      </Text>
-                    </Box>
-                    <Box flexGrow={1}>
-                      <Text fg={colors.text} wrapMode="ellipsis">
-                        {label}
-                      </Text>
-                    </Box>
-                    <Box width={6}>
-                      <Text fg={prob != null ? priceColor(prob - 50) : colors.textDim}>
-                        {prob != null ? `${prob.toFixed(0)}%` : "—"}
-                      </Text>
-                    </Box>
-                  </Box>
-                );
-              })
+            {index.change1d != null && (
+              <Box flexDirection="row" gap={1}>
+                <Text fg={colors.textDim}>1D:</Text>
+                <Text fg={priceColor(index.change1d)}>{formatPercentRaw(index.change1d)}</Text>
+              </Box>
+            )}
+            {index.change7d != null && (
+              <Box flexDirection="row" gap={1}>
+                <Text fg={colors.textDim}>7D:</Text>
+                <Text fg={priceColor(index.change7d)}>{formatPercentRaw(index.change7d)}</Text>
+              </Box>
             )}
           </Box>
-        </ScrollBox>
+          <DataTableView<AdjacentConstituent, ConstituentColumn>
+            focused={focused}
+            rootWidth={width}
+            rootHeight={Math.max(4, contentHeight - 1)}
+            selection={{
+              kind: "id",
+              selectedId: selectedConstituentId,
+              getId: (row) => row.market_id,
+              onChange: (id) => setSelectedConstituentId(id),
+            }}
+            columns={CONSTITUENT_COLUMNS}
+            items={sortedConstituents}
+            sortColumnId={constituentSort.columnId}
+            sortDirection={constituentSort.direction}
+            onHeaderClick={(columnId) => {
+              const next = columnId as ConstituentColumnId;
+              setConstituentSort((current) => nextSortPreference(current, next, {
+                defaultDirection: next === "name" || next === "kind" ? "asc" : "desc",
+              }));
+            }}
+            getItemKey={(row) => row.market_id}
+            onActivate={(row) => openPredictionConstituent(row)}
+            renderCell={(row, column, _index, rowState) => {
+              const sel = rowState.selected ? colors.selectedText : undefined;
+              const prob = constituentProb(row);
+              switch (column.id) {
+                case "weight":
+                  return { text: `${(row.weight * 100).toFixed(0)}%`, color: sel ?? colors.textDim };
+                case "kind":
+                  return { text: constituentKind(row), color: sel ?? colors.textDim };
+                case "name":
+                  return { text: constituentName(row), color: sel ?? colors.text };
+                case "prob":
+                  return {
+                    text: prob != null ? formatImpliedPercent(prob) : "—",
+                    color: prob != null ? priceColor(prob - 50) : (sel ?? colors.textDim),
+                  };
+              }
+            }}
+            emptyStateTitle="No constituent data."
+          />
+        </Box>
       )}
-      {detailTab === "chart" && <IndexChart prices={prices} width={width} height={Math.max(height - 2, 4)} />}
+      {detailTab === "chart" && (
+        <IndexChart
+          prices={prices}
+          ticker={index.ticker}
+          indexId={index.id}
+          width={width}
+          height={contentHeight}
+          focused={focused}
+        />
+      )}
       {detailTab === "news" && (
-        <ScrollBox flexGrow={1} scrollY>
-          <Box flexDirection="column" paddingX={1} gap={1}>
-            {news.length === 0 ? (
-              <Text fg={colors.textDim}>No related news.</Text>
-            ) : (
-              news.map((article) => (
-                <Box key={article.id} flexDirection="column" height={2}>
-                  <Text fg={colors.text} wrapMode="ellipsis">{article.title}</Text>
-                  <Text fg={colors.textDim}>
-                    {article.source} · {new Date(article.published_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </Text>
-                </Box>
-              ))
-            )}
-          </Box>
-        </ScrollBox>
+        <FeedDataTableStackView
+          width={width}
+          height={contentHeight}
+          focused={focused && !newsSearchFocused}
+          items={newsItems}
+          selectedIdx={selectedNewsIdx}
+          onSelect={setSelectedNewsIdx}
+          isItemRead={(item) => readArticleIds.has(item.id)}
+          onItemRead={(item) => markArticleRead(item.id)}
+          onPopOut={(item) => {
+            const article = visibleNews.find((entry) => entry.id === item.id);
+            if (article) popOutArticle(article);
+          }}
+          rootBefore={(
+            <InputSearchBar
+              value={newsQuery}
+              focused={focused}
+              active={newsSearchFocused}
+              width={width}
+              focusToken={newsFocusToken}
+              inputRef={newsSearchRef}
+              placeholder="headline or source"
+              debounceMs={80}
+              onFocus={() => setNewsSearchFocused(true)}
+              onBlur={() => setNewsSearchFocused(false)}
+              onNavigateDown={() => setNewsSearchFocused(false)}
+              onQueryChange={setNewsQuery}
+            />
+          )}
+          onRootKeyDown={(event) => {
+            if (!isPlainKey(event, "/")) return false;
+            event.preventDefault?.();
+            event.stopPropagation?.();
+            setNewsSearchFocused(true);
+            setNewsFocusToken((value) => value + 1);
+            return true;
+          }}
+          emptyStateTitle={newsQuery.trim() ? "No matching articles." : "No related news."}
+        />
       )}
     </Box>
   );
@@ -318,22 +517,44 @@ function IndexDetail({
 
 function IndexChart({
   prices,
+  ticker,
+  indexId,
   width,
   height,
+  focused,
 }: {
   prices: AdjacentIndexPricePoint[];
+  ticker: string;
+  indexId: string;
   width: number;
   height: number;
+  focused: boolean;
 }) {
   const pricePoints = useMemo(
     () => adjacentIndexPricesToPricePoints(prices),
     [prices],
   );
+  const series = useMemo(
+    () => pricePointsToResolvedSeries(pricePoints, {
+      id: `ADJ:${indexId}`,
+      label: ticker,
+      color: colors.borderFocused,
+      unit: "index",
+      unitGroup: "level",
+      style: "area",
+      panelId: "price",
+      providerId: "adjacent",
+    }),
+    [indexId, pricePoints, ticker],
+  );
 
   if (pricePoints.length === 0) {
     return (
       <Box flexGrow={1} justifyContent="center">
-        <EmptyState title="No price history." hint="No index price data available." />
+        <EmptyState
+          title="No price history yet."
+          hint="New indices may only have a day of prints. Press [g] to open the chart pop-out."
+        />
       </Box>
     );
   }
@@ -342,10 +563,11 @@ function IndexChart({
   const last = pricePoints[pricePoints.length - 1]!;
   const delta = last.close - first.close;
   const deltaPct = first.close ? (delta / first.close) * 100 : 0;
+  const chartHeight = Math.max(6, height - 1);
 
   return (
     <Box flexDirection="column" height={height}>
-      <Box flexDirection="row" height={1}>
+      <Box flexDirection="row" height={1} paddingX={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
           {last.close.toFixed(1)}
         </Text>
@@ -354,9 +576,16 @@ function IndexChart({
           {formatPercentRaw(deltaPct)}
         </Text>
       </Box>
-      <Box flexGrow={1} justifyContent="center">
-        <EmptyState title="Graph this index." hint="Press [g] to open the chart pop-out." />
-      </Box>
+      <CompositeChart
+        width={width}
+        height={chartHeight}
+        focused={focused}
+        interactive
+        series={[series]}
+        panels={[{ id: "price" }]}
+        axisWidth={8}
+        showLegend={false}
+      />
     </Box>
   );
 }
@@ -380,11 +609,15 @@ export function AdjacentIndicesPane({
     direction: "desc",
   });
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const { createPaneFromTemplate } = usePluginAppActions();
+  const paneInstance = usePaneInstance();
+  const seedQuery = typeof paneInstance?.params?.query === "string" ? paneInstance.params.query.trim() : "";
+  const [searchQuery, setSearchQuery] = useState(seedQuery);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<import("../../../ui").InputRenderable | null>(null);
   const genRef = useRef(0);
+  const seededRef = useRef(false);
 
   const load = useCallback(() => {
     genRef.current += 1;
@@ -413,7 +646,7 @@ export function AdjacentIndicesPane({
     });
   }, [load]);
 
-  const columns = useMemo(() => createIndexColumns(width), [width]);
+  const columns = useMemo(() => createIndexColumns(), []);
   const visibleIndices = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return applySortPreference(indices.filter((row) => !query || `${row.ticker} ${row.name}`.toLowerCase().includes(query)), sortPreference, adjacentIndexSortValue);
@@ -430,6 +663,21 @@ export function AdjacentIndicesPane({
       setSelectedId(visibleIndices[0]!.id);
     }
   }, [selectedId, visibleIndices]);
+
+  useEffect(() => {
+    if (seededRef.current || !seedQuery || indices.length === 0) return;
+    const query = seedQuery.toLowerCase();
+    const match = indices.find((row) => (
+      row.ticker.toLowerCase() === query
+      || row.id.toLowerCase() === query
+      || row.name.toLowerCase().includes(query)
+    )) ?? indices.find((row) => `${row.ticker} ${row.name}`.toLowerCase().includes(query));
+    if (!match) return;
+    seededRef.current = true;
+    setSelectedId(match.id);
+    setSearchQuery(match.ticker);
+    setDetailOpen(true);
+  }, [indices, seedQuery]);
 
   const renderCell = useCallback(
     (row: AdjacentIndexRow, column: IndexColumn, _index: number, rowState: { selected: boolean }) =>
@@ -495,12 +743,14 @@ export function AdjacentIndicesPane({
     ],
     trailingInfo: [poll.segment],
     hints: [
-      { id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow },
+      ...(!detailOpen
+        ? [{ id: "graph", key: "g", label: "raph", onPress: graphSelected, disabled: !selectedIndexRow }]
+        : []),
       { id: "refresh", key: "r", label: "efresh", onPress: load },
       { id: "share", key: "y", label: "share", onPress: shareIndices },
       paneSearchHint(focusSearch),
     ],
-  }), [error, focusSearch, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
+  }), [detailOpen, error, focusSearch, graphSelected, load, poll.segment, selectedIndexRow, shareIndices, status, updatedAgo]);
 
   if (status === "loading" && indices.length === 0) {
     return (
@@ -528,8 +778,10 @@ export function AdjacentIndicesPane({
       index={selectedIndexRow}
       width={width}
       height={Math.max(height - 1, 1)}
+      focused={focused}
       detailTab={detailTab}
       onDetailTabChange={setDetailTab}
+      onOpenIndex={() => createPaneFromTemplate("adjacent-indices-pane", { arg: selectedIndexRow.ticker })}
     />
   ) : null;
   const detailTitle = selectedIndexRow

@@ -29,11 +29,10 @@ import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { resolveChartSpecData } from "../../time-series/resolve";
-import {
-  loadAdjacentIndexSeries,
-  loadPredictionMarketSeries,
-} from "../../time-series/hooks";
+import { createResolvedChartSources } from "../../plugins/chart-sources";
 import { buildCorrelationChartSpec } from "../../plugins/builtin/correlation/symbols";
+import { createChartSeriesResolver } from "../../capabilities";
+import { getSharedRegistry } from "../../plugins/registry";
 import { formatTimestamp } from "../helpers";
 import { buildTickerReport } from "../commands/ticker";
 import { createBaseConverter } from "../base-converter";
@@ -47,6 +46,7 @@ import {
   withShotPriceHistory,
 } from "./data";
 import type { ResolvedPaneFunction } from "./resolver";
+import { buildHeadlessFunctionReport } from "./headless";
 
 export interface PaneFunctionReportData {
   kind: string;
@@ -231,18 +231,11 @@ async function buildChartComposerReport(
         : series;
     })),
   };
-  const result = await resolveChartSpecData(spec, {
-    dataProvider: context.dataProvider,
-    loadFredSeries: async (request) => ({
-      data: await apiClient.getCloudFredSeries(request.seriesId, {
-        startDate: request.startDate,
-        sortOrder: request.sortOrder,
-      }),
-      fetchedAt: Date.now(),
-      stale: false,
-      source: "network",
-    }),
-  });
+  const capabilityInvoker = getSharedRegistry();
+  const result = await resolveChartSpecData(spec, createResolvedChartSources(
+    context.dataProvider,
+    capabilityInvoker ? createChartSeriesResolver(capabilityInvoker) : undefined,
+  ));
   const baseIds = new Set(spec.series.map((series) => series.id));
   const series = result.series.map((entry) => ({
     id: entry.id,
@@ -266,7 +259,11 @@ async function buildChartComposerReport(
     if (output?.points.length) return [];
     return [entry.source.kind === "security"
       ? publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange)
-      : entry.label ?? entry.id];
+      : entry.source.kind === "economic"
+        ? `FRED:${entry.source.seriesId}`
+        : entry.source.kind === "capability"
+          ? `CAP:${entry.source.capabilityId}:${entry.source.seriesId}`
+          : entry.label ?? entry.id];
   });
   const rowCount = series.reduce((count, entry) => count + entry.observations.length, 0);
   const tableRows = series.map((entry) => {
@@ -645,20 +642,11 @@ async function buildCorrelationReport(
   const symbols = resolvedSymbols(resolved);
   const range = resolvedPriceRange(resolved);
   const spec = buildCorrelationChartSpec(symbols, range);
-  const result = await resolveChartSpecData(spec, {
-    dataProvider: context.dataProvider,
-    loadFredSeries: async (request) => ({
-      data: await apiClient.getCloudFredSeries(request.seriesId, {
-        startDate: request.startDate,
-        sortOrder: request.sortOrder,
-      }),
-      fetchedAt: Date.now(),
-      stale: false,
-      source: "network",
-    }),
-    loadAdjacentIndexSeries,
-    loadPredictionMarketSeries,
-  });
+  const capabilityInvoker = getSharedRegistry();
+  const result = await resolveChartSpecData(spec, createResolvedChartSources(
+    context.dataProvider,
+    capabilityInvoker ? createChartSeriesResolver(capabilityInvoker) : undefined,
+  ));
   const resolvedById = new Map(result.series.map((series) => [series.id, series] as const));
   const series = symbols.map((symbol, index): CorrelationSeries => {
     const specSeries = spec.series[index];
@@ -761,6 +749,9 @@ export async function buildFunctionReport(
   context: MarketContext,
   rawArg: string,
 ): Promise<PaneFunctionReport> {
+  if (resolved.headless) {
+    return buildHeadlessFunctionReport(resolved, context, rawArg);
+  }
   if (isFinancialAnalysisFunction(resolved)) {
     return buildFinancialStatementReport(resolved, context, rawArg);
   }

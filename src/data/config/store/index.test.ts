@@ -52,6 +52,50 @@ async function writeConfigJson(dataDir: string, config: Record<string, unknown>)
 }
 
 describe("sanitizeLayout", () => {
+  test("preserves an intentionally blank layout", () => {
+    expect(sanitizeLayout({
+      dockRoot: null,
+      instances: [],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT)).toEqual({
+      dockRoot: null,
+      instances: [],
+      floating: [],
+      detached: [],
+    });
+  });
+
+  test("prunes abandoned panes while retaining a hidden follow source", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "ticker-research:visible" },
+      instances: [
+        {
+          instanceId: "portfolio-list:source",
+          paneId: "portfolio-list",
+          binding: { kind: "none" },
+        },
+        {
+          instanceId: "ticker-research:visible",
+          paneId: "ticker-research",
+          binding: { kind: "follow", sourceInstanceId: "portfolio-list:source" },
+        },
+        {
+          instanceId: "ticker-research:closed",
+          paneId: "ticker-research",
+          binding: { kind: "fixed", symbol: "NVDA" },
+        },
+      ],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT);
+
+    expect(layout.instances.map((instance) => instance.instanceId)).toEqual([
+      "portfolio-list:source",
+      "ticker-research:visible",
+    ]);
+  });
+
   test("ships a focused Home layout with portfolio, chat, and following research", () => {
     expect(DEFAULT_LAYOUT.instances.map((instance) => instance.instanceId)).toEqual([
       "portfolio-list:main",
@@ -79,7 +123,7 @@ describe("sanitizeLayout", () => {
 
   test("ships an Adjacent layout with firehose, indices, a dedicated collection, and polls", () => {
     const config = createDefaultConfig("/tmp/gloomberb-adjacent-layout");
-    expect(config.layouts.map((entry) => entry.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(config.layouts.map((entry) => entry.name)).toEqual(["Home", "Monitor", "Macro", "Adjacent"]);
     expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
 
     expect(DEFAULT_ADJACENT_LAYOUT.instances.map((instance) => instance.instanceId)).toEqual([
@@ -246,7 +290,7 @@ describe("sanitizeLayout", () => {
         fixedGeometry: true,
       }],
       detached: [],
-    }, DEFAULT_LAYOUT, { migrateLegacy: true });
+    }, DEFAULT_LAYOUT);
 
     expect(layout.floating).toEqual([{
       instanceId: "portfolio-list:main",
@@ -257,6 +301,88 @@ describe("sanitizeLayout", () => {
       fixedGeometry: true,
       zIndex: undefined,
     }]);
+  });
+
+  test("converts retired chart panes into composer specs", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "comparison-chart:main" },
+      instances: [{
+        instanceId: "comparison-chart:main",
+        paneId: "comparison-chart",
+        binding: { kind: "none" },
+        settings: {
+          symbols: ["AAPL", "MSFT"],
+          axisMode: "percent",
+          rangePreset: "1Y",
+          chartResolution: "1d",
+        },
+      }],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT, { migrateLegacy: true });
+
+    const pane = findPaneInstance(layout, "comparison-chart:main");
+    expect(pane?.paneId).toBe("chart-composer");
+    expect(pane?.settings).toEqual({
+      chartSpec: expect.objectContaining({
+        version: 2,
+        viewport: { range: "1Y", resolution: "1d" },
+        series: [
+          expect.objectContaining({
+            transform: "percent",
+            interpolation: "none",
+            source: expect.objectContaining({ fieldId: "market.close" }),
+          }),
+          expect.objectContaining({
+            transform: "percent",
+            interpolation: "none",
+            source: expect.objectContaining({ fieldId: "market.close" }),
+          }),
+        ],
+      }),
+    });
+  });
+
+  test("migrates ticker research chart settings into one composer spec", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "ticker-detail:aapl" },
+      instances: [{
+        instanceId: "ticker-detail:aapl",
+        paneId: "ticker-research",
+        binding: { kind: "fixed", symbol: "AAPL" },
+        settings: {
+          hideTabs: true,
+          lockedTabId: "fundamental-graphs",
+          chartAxisMode: "percent",
+          chartRangePreset: "1Y",
+          chartResolution: "1wk",
+        },
+      }],
+      floating: [],
+      detached: [],
+    }, DEFAULT_LAYOUT, { migrateLegacy: true });
+
+    const settings = findPaneInstance(layout, "ticker-detail:aapl")?.settings;
+    expect(settings).toEqual({
+      hideTabs: true,
+      lockedTabId: "chart",
+      chartSpec: expect.objectContaining({
+        version: 2,
+        viewport: { range: "1Y", resolution: "1wk" },
+        series: [expect.objectContaining({
+          transform: "percent",
+          interpolation: "none",
+          source: expect.objectContaining({
+            kind: "security",
+            instrument: { symbol: "AAPL" },
+            fieldId: "market.ohlcv",
+          }),
+        })],
+      }),
+    });
+    expect(settings).not.toHaveProperty("chartAxisMode");
+    expect(settings).not.toHaveProperty("chartRangePreset");
+    expect(settings).not.toHaveProperty("chartResolution");
   });
 
   test("does not convert legacy chart settings during ordinary sanitization", () => {
@@ -301,6 +427,237 @@ describe("sanitizeLayout", () => {
 });
 
 describe("loadConfig", () => {
+  test("keeps seededPlugins so extracted plugins are not reinstalled on every launch", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      seededPlugins: ["substack", "ibkr"],
+    }));
+    const config = await loadConfig(dataDir);
+    expect(config.seededPlugins).toEqual(["substack", "ibkr"]);
+  });
+
+  test("migrates unreachable pane instances and their saved state", async () => {
+    const dataDir = await createTempConfigDir();
+    const hiddenPaneId = "ticker-research:closed";
+    const legacyLayout = {
+      ...DEFAULT_LAYOUT,
+      instances: [
+        ...DEFAULT_LAYOUT.instances.map((instance) => instance.instanceId === "chat:main"
+          ? {
+            ...instance,
+            placementMemory: {
+              docked: {
+                anchorInstanceId: hiddenPaneId,
+                position: "right" as const,
+              },
+            },
+          }
+          : instance),
+        {
+          instanceId: hiddenPaneId,
+          paneId: "ticker-research",
+          binding: { kind: "fixed" as const, symbol: "NVDA" },
+          placementMemory: { floating: { x: 12, y: 4, width: 90, height: 30 } },
+        },
+      ],
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 21,
+      layout: legacyLayout,
+      layouts: [{
+        name: "Default",
+        layout: legacyLayout,
+        paneState: {
+          "chat:main": { draft: "keep" },
+          [hiddenPaneId]: { activeTabId: "overview" },
+        },
+        focusedPaneId: hiddenPaneId,
+      }],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.configVersion).toBe(CURRENT_CONFIG_VERSION);
+    expect(config.layout.instances.some((instance) => instance.instanceId === hiddenPaneId)).toBe(false);
+    expect(config.layouts[0]?.layout.instances.some((instance) => instance.instanceId === hiddenPaneId)).toBe(false);
+    expect(config.layouts[0]?.paneState).toEqual({ "chat:main": { draft: "keep" } });
+    expect(config.layouts[0]?.focusedPaneId).toBeNull();
+    expect(findPaneInstance(config.layout, "chat:main")?.placementMemory?.docked).toEqual({
+      anchorInstanceId: undefined,
+      path: undefined,
+      position: "right",
+    });
+  });
+
+  test("folds saved graph plugin state into composer specs and removes only chart-owned state", async () => {
+    const dataDir = await createTempConfigDir();
+    const legacyLayout = {
+      dockRoot: {
+        kind: "split" as const,
+        axis: "horizontal" as const,
+        ratio: 0.5,
+        first: { kind: "pane" as const, instanceId: "fundamental-graph:pair" },
+        second: { kind: "pane" as const, instanceId: "ticker-detail:nvda" },
+      },
+      instances: [
+        {
+          instanceId: "fundamental-graph:pair",
+          paneId: "fundamental-graph",
+          binding: { kind: "fixed" as const, symbol: "AAPL" },
+          settings: {
+            chartKind: "fundamental",
+            metric: "totalRevenue",
+            period: "quarterly",
+            periods: 8,
+            symbols: ["AAPL", "MSFT"],
+            symbolsText: "AAPL, MSFT",
+          },
+        },
+        {
+          instanceId: "ticker-detail:nvda",
+          paneId: "ticker-research",
+          binding: { kind: "fixed" as const, symbol: "NVDA" },
+          settings: {
+            hideTabs: true,
+            lockedTabId: "fundamental-graphs",
+            chartRangePreset: "1Y",
+            chartResolution: "1wk",
+          },
+        },
+      ],
+      floating: [],
+      detached: [],
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      layout: legacyLayout,
+      layouts: [{
+        name: "Graphs",
+        layout: legacyLayout,
+        paneState: {
+          "fundamental-graph:pair": {
+            cursorSymbol: "AAPL",
+            pluginState: {
+              "ticker-detail": {
+                period: "annual",
+                chartKind: "valuation",
+                metric: "evSales",
+                periods: 3,
+                selectedIdx: 4,
+                hiddenSeriesIds: ["MSFT"],
+                retainedPreference: "keep",
+              },
+            },
+          },
+          "ticker-detail:nvda": {
+            activeTabId: "fundamental-graphs",
+            financialSubTab: "cashflow",
+            pluginState: {
+              "ticker-detail": {
+                detailPeriod: "annual",
+                detailChartKind: "fundamental",
+                detailMetric: "grossProfit",
+                selectedIdx: 2,
+                hiddenSeriesIds: [],
+                retainedPreference: "keep-too",
+              },
+            },
+          },
+        },
+      }],
+      activeLayoutIndex: 0,
+    }));
+
+    const config = await loadConfig(dataDir);
+    const standalone = findPaneInstance(config.layout, "fundamental-graph:pair");
+    const standaloneSpec = standalone?.settings?.chartSpec as any;
+    expect(standalone?.paneId).toBe("chart-composer");
+    expect(standalone?.settings).toEqual({ chartSpec: expect.any(Object) });
+    expect(standaloneSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: 3 });
+    expect(standaloneSpec.series.map((series: any) => ({
+      symbol: series.source.instrument.symbol,
+      fieldId: series.source.fieldId,
+      period: series.source.period,
+      visible: series.visible,
+    }))).toEqual([
+      { symbol: "AAPL", fieldId: "valuation.evSales", period: "annual", visible: true },
+      { symbol: "MSFT", fieldId: "valuation.evSales", period: "annual", visible: false },
+    ]);
+
+    const research = findPaneInstance(config.layout, "ticker-detail:nvda");
+    const researchSpec = research?.settings?.chartSpec as any;
+    expect(research?.settings?.lockedTabId).toBe("chart");
+    expect(researchSpec.viewport).toEqual({ range: "ALL", resolution: "auto", maxPoints: undefined });
+    expect(researchSpec.series[0]).toEqual(expect.objectContaining({
+      style: "columns",
+      source: expect.objectContaining({
+        fieldId: "fundamental.grossProfit",
+        period: "annual",
+      }),
+    }));
+
+    expect(config.layouts[0]?.paneState).toEqual({
+      "fundamental-graph:pair": {
+        cursorSymbol: "AAPL",
+        pluginState: { "ticker-research": { retainedPreference: "keep" } },
+      },
+      "ticker-detail:nvda": {
+        activeTabId: "chart",
+        financialSubTab: "cashflow",
+        pluginState: { "ticker-research": { retainedPreference: "keep-too" } },
+      },
+    });
+  });
+
+  test("migrates global indicator selection and render mode without retaining plugin keys", async () => {
+    const dataDir = await createTempConfigDir();
+    const legacyLayout = {
+      dockRoot: { kind: "pane" as const, instanceId: "ticker-chart:aapl" },
+      instances: [{
+        instanceId: "ticker-chart:aapl",
+        paneId: "ticker-chart",
+        binding: { kind: "fixed" as const, symbol: "AAPL" },
+        settings: {
+          chartAxisMode: "percent",
+          chartRangePreset: "6M",
+          chartResolution: "1d",
+          chartRenderMode: "candles",
+        },
+      }],
+      floating: [],
+      detached: [],
+    };
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      layout: legacyLayout,
+      layouts: [{ name: "Price", layout: legacyLayout }],
+      activeLayoutIndex: 0,
+      chartPreferences: { renderer: "kitty", defaultRenderMode: "line" },
+      pluginConfig: {
+        "ticker-detail": {
+          chartIndicators: ["sma50", "bollinger20"],
+          chartIndicatorsVersion: 2,
+          retainedPreference: "keep",
+        },
+      },
+    }));
+
+    const config = await loadConfig(dataDir);
+    const pane = findPaneInstance(config.layout, "ticker-chart:aapl");
+    const spec = pane?.settings?.chartSpec as any;
+    expect(pane?.paneId).toBe("chart-composer");
+    expect(spec.viewport).toEqual({ range: "6M", resolution: "1d" });
+    expect(spec.series[0]).toEqual(expect.objectContaining({ style: "candles", transform: "raw" }));
+    expect(spec.studies.map((study: any) => ({ kind: study.kind, parameters: study.parameters }))).toEqual([
+      { kind: "sma", parameters: { period: 50 } },
+      { kind: "bollinger", parameters: { period: 20, stdDev: 2 } },
+    ]);
+    expect(config.pluginConfig).toEqual({
+      "ticker-research": { retainedPreference: "keep" },
+    });
+    expect(config.chartPreferences).toEqual({ renderer: "kitty" });
+  });
+
   test("defaults detached layouts to an empty list for older configs", async () => {
     const dataDir = await createTempConfigDir();
     const layoutWithoutDetached = {
@@ -308,7 +665,7 @@ describe("loadConfig", () => {
       detached: undefined,
     };
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: CURRENT_CONFIG_VERSION - 1,
+      configVersion: 19,
       layout: layoutWithoutDetached,
       layouts: [{ name: "Default", layout: layoutWithoutDetached }],
     }));
@@ -354,6 +711,19 @@ describe("loadConfig", () => {
 
     const invalidConfig = await loadConfig(invalidDir);
     expect(invalidConfig.onboardingProgress).toBeUndefined();
+  });
+
+  test("marks pre-onboarding configs complete so existing users skip the wizard", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 20,
+      onboardingProgress: { version: 1, stage: "ready" },
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.onboardingComplete).toBe(true);
+    expect(config.onboardingProgress).toBeUndefined();
   });
 
   test("fills in missing chart preferences for older configs", async () => {
@@ -463,19 +833,39 @@ describe("loadConfig", () => {
   test("migrates disabled built-in feature plugins to grouped plugin ids", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
-      disabledPlugins: ["options", "sec", "world-indices", "earnings-calendar", "ibkr", "broker-manager", "options"],
+      configVersion: 19,
+      disabledPlugins: [
+        "options",
+        "sec",
+        "thirteenf",
+        "world-indices",
+        "market-heatmap",
+        "fear-greed",
+        "chart-composer",
+        "comparison-chart",
+        "earnings-calendar",
+        "macro-tv",
+        "ibkr",
+        "broker-manager",
+        "analytics",
+        "kelly-sizer",
+        "portfolio-list",
+        "changelog",
+        "help",
+        "layout-manager",
+        "application",
+      ],
     }));
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
+    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker", "portfolio"]);
   });
 
   test("migrates grouped built-in plugin config keys", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
-      configVersion: PRE_BUILTIN_OWNERSHIP_VERSION,
+      configVersion: 19,
       pluginConfig: {
         options: {
           selectedExpiration: "2026-06-19",
@@ -494,6 +884,18 @@ describe("loadConfig", () => {
         preferredTab: "analyst-research",
       },
     });
+  });
+
+  test("does not repeat the legacy Cloud-to-Macro disable migration", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
+      disabledPlugins: ["gloomberb-cloud"],
+    }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.disabledPlugins).toEqual(["gloomberb-cloud"]);
   });
 
   test("enables Gloom Cloud when migrating older default configs", async () => {
@@ -539,6 +941,7 @@ describe("loadConfig", () => {
   test("preserves saved layout pane state and focus metadata", async () => {
     const dataDir = await createTempConfigDir();
     await writeConfigJson(dataDir, createSavedConfig({
+      configVersion: 19,
       layouts: [{
         name: "Chart",
         layout: DEFAULT_LAYOUT,
@@ -726,6 +1129,65 @@ describe("config backup files", () => {
       expect(imported.dataDir).toBe(importDataDir);
     } finally {
       process.env.HOME = originalHome;
+    }
+  });
+});
+
+describe("tickerSearchShortcut normalization", () => {
+  test("keeps the default untouched when the field is missing", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({}));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBeUndefined();
+  });
+
+  test("preserves a valid custom shortcut across load and save", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "TS" }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.tickerSearchShortcut).toBe("TS");
+
+    await saveConfig(config);
+    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
+      tickerSearchShortcut?: string;
+    };
+    expect(persisted.tickerSearchShortcut).toBe("TS");
+  });
+
+  test("normalizes case and surrounding whitespace on load", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "  ts " }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBe("TS");
+  });
+
+  test("drops invalid values and rewrites them away on the next save", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "T CLASH" }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.tickerSearchShortcut).toBeUndefined();
+
+    await saveConfig(config);
+    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
+      tickerSearchShortcut?: string;
+    };
+    expect(persisted.tickerSearchShortcut).toBeUndefined();
+  });
+
+  test("treats non-string and oversized values as unset", async () => {
+    for (const invalid of [123, ["TS"], "ABCDEFGHI"]) {
+      const dataDir = await createTempConfigDir();
+      await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: invalid }));
+
+      const config = await loadConfig(dataDir);
+
+      expect(config.tickerSearchShortcut).toBeUndefined();
     }
   });
 });

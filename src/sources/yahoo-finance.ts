@@ -173,9 +173,12 @@ export class YahooFinanceClient implements DataProvider {
   private quoteLoaders(): YahooQuoteLoaders {
     return {
       fetchQuotes: (symbols) => this.fetchQuotes(symbols),
+      fetchChart: (symbol, range, interval) => this.fetchChart(symbol, range, interval),
       fetchExtendedHoursData: (symbol, meta, regularClose) => (
         this.fetchExtendedHoursData(symbol, meta, regularClose)
       ),
+      fetchQuoteSupplement: (symbol, currencyDivisor) =>
+        this.fetchQuoteSupplement(symbol, currencyDivisor),
       providerId: this.id,
     };
   }
@@ -229,7 +232,16 @@ export class YahooFinanceClient implements DataProvider {
 
     for (const symbol of symbolsToTry) {
       try {
-        return await loadYahooQuote(symbol, this.quoteLoaders());
+        return await loadYahooQuote(symbol, {
+          fetchQuotes: (symbols) => this.fetchQuotes(symbols),
+          fetchChart: (targetSymbol, range, interval) => this.fetchChart(targetSymbol, range, interval),
+          fetchExtendedHoursData: (targetSymbol, meta, regularClose) => (
+            this.fetchExtendedHoursData(targetSymbol, meta, regularClose)
+          ),
+          fetchQuoteSupplement: (targetSymbol, currencyDivisor) =>
+            this.fetchQuoteSupplement(targetSymbol, currencyDivisor),
+          providerId: this.id,
+        });
       } catch (err) {
         lastError = err;
       }

@@ -2,6 +2,7 @@ import { createContext, useContext, type ComponentType, type ReactNode, type Ref
 import type { ContextMenuItem } from "../types/context-menu";
 import type { AppNotificationRequest } from "../types/plugin";
 import type { LiveStreamResolveRequest, ResolvedLiveStream } from "../types/media";
+import { formatCommandBarShortcut, getShortcutDisplayMode } from "../utils/shortcut-labels";
 import type { AsciiFontName } from "./ascii-font";
 import type { CompositeChartColors, CompositePanelScene } from "../components/chart/composite/types";
 import type { ChartToolKind } from "../components/chart/composite/tools";
@@ -58,7 +59,8 @@ export interface BitmapSurface {
 
 export interface ChartCrosshairOverlay {
   pixelX: number;
-  pixelY: number;
+  /** Level line and focus dot; null when only the column is known, as with a keyboard cursor. */
+  pixelY: number | null;
   color: string;
   /** Per-series dots on the cursor column, in bitmap pixels. */
   markers?: readonly { pixelY: number; color: string }[];
@@ -245,12 +247,18 @@ export interface TradingViewChartProps extends BoxProps {
   colors: CompositeChartColors;
   viewport?: { start: Date; end: Date } | null;
   interactive?: boolean;
-  onViewportChange?: (range: { start: Date; end: Date }) => void;
+  onViewportChange?: (
+    range: { start: Date; end: Date },
+    interaction?: TrackpadGestureKind,
+  ) => void;
   /** Drawings and tool drags to overlay, in plot ratios. */
   vectors?: readonly ChartVectorShape[] | null;
   /** Keyboard-armed tool; the chart owns interaction for armed tools. */
   armedTool?: ChartToolKind | null;
 }
+
+/** The trackpad gesture that produced a viewport change. */
+export type TrackpadGestureKind = "pan" | "zoom";
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;
@@ -361,12 +369,10 @@ export interface UiHost {
   capabilities?: {
     nativePaneChrome?: boolean;
     titleBarOverlay?: boolean;
-    /**
-     * True only when the OS paints window traffic lights over the top-left of
-     * our own header, which is the sole reason to reserve leading inset there.
-     * A browser tab has no traffic lights even though it overlays the titlebar.
-     */
-    nativeTrafficLights?: boolean;
+    /** Native drag regions and traffic-light/window-control spacing. */
+    nativeWindowChrome?: boolean;
+    /** Enables public snapshot sharing controls for this host. */
+    publicSharing?: boolean;
     precisePointer?: boolean;
     fractionalViewport?: boolean;
     cellWidthPx?: number;
@@ -406,6 +412,12 @@ export interface UiHost {
   colorFromHex?(hex: string): unknown;
 }
 
+export interface SaveTextFileRequest {
+  name: string;
+  text: string;
+  mimeType: string;
+}
+
 export interface RendererHost {
   requestExit(): void;
   startWindowDrag?(): Promise<void> | void;
@@ -414,10 +426,13 @@ export interface RendererHost {
   copyText(text: string): Promise<void>;
   copyPngImage?(pngBase64: string): Promise<void>;
   readText(): Promise<string>;
+  saveTextFile?(request: SaveTextFileRequest): Promise<string>;
   supportsNativeDesktopNotifications?: boolean;
   notify(notification: AppNotificationRequest): void;
   showContextMenu?(items: ContextMenuItem[]): Promise<boolean>;
   playTerminalMedia?(url: string, title?: string, options?: { muted?: boolean }): Promise<void>;
+  /** Stop terminal playback started by `playTerminalMedia`. */
+  stopTerminalMedia?(): void;
   resolveLiveStream?(request: LiveStreamResolveRequest): Promise<ResolvedLiveStream>;
 }
 
@@ -468,6 +483,15 @@ export function useUiHost(): UiHost {
 
 export function useUiCapabilities(): NonNullable<UiHost["capabilities"]> {
   return useUiHost().capabilities ?? {};
+}
+
+/**
+ * The binding this host advertises for the command bar, for any copy that has
+ * to name it. Read from the host rather than hardcoded so a hint never quotes a
+ * key the header does not.
+ */
+export function useCommandBarShortcut(): string {
+  return formatCommandBarShortcut(getShortcutDisplayMode(useUiHost().kind));
 }
 
 export function useRendererHost(): RendererHost {

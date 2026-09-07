@@ -48,13 +48,14 @@ export function hydrateChatControllerSession({
   session.hydrated = true;
 
   const storedSession = storage.readSessionState();
+  const restoredUser = apiClient.getCurrentUser() ?? storedSession?.user ?? null;
   session.sessionToken = storedSession?.sessionToken ?? null;
   apiClient.setSessionToken(session.sessionToken);
   // WebSocket tokens are short-lived connection credentials. Reusing a persisted
   // one can trap reconnects on an expired token even while the session cookie is valid.
   apiClient.setWebSocketToken(null);
-  apiClient.restoreCachedUser(storedSession?.user ?? null);
-  session.user = normalizeSessionUser(storedSession?.user);
+  apiClient.restoreCachedUser(restoredUser);
+  session.user = normalizeSessionUser(restoredUser);
   session.sessionChecked = true;
   storage.ensureChannelState(DEFAULT_CHAT_CHANNEL_ID);
   syncVerificationPolling();
@@ -120,13 +121,7 @@ export async function refreshChatControllerSession({
   stopVerificationPolling,
   syncVerificationPolling,
 }: RefreshChatControllerSessionOptions): Promise<void> {
-  const token = apiClient.getSessionToken();
-  session.sessionToken = token;
-  if (!token) {
-    applySignedOut();
-    return;
-  }
-
+  session.sessionToken = apiClient.getSessionToken();
   const apiSession = await apiClient.getSession();
   if (!apiSession) {
     const persistedToken = apiClient.getSessionToken() || session.sessionToken;

@@ -3,8 +3,10 @@ import type { DesktopWindowBridge } from "../../../../types/desktop-window";
 import {
   dockFloatingPaneAtCurrentRect,
   floatAtRect,
+  getDockedPaneIds,
   getDockLeafLayouts,
   gridlockAllPanes,
+  isPaneDocked,
   isPaneInLayout,
   removeFloatingPanes,
   removePane,
@@ -14,6 +16,10 @@ import type { PluginRegistry } from "../../../../plugins/registry";
 import type { LayoutConfig } from "../../../../types/config";
 import type { RendererHost } from "../../../../ui";
 import { capturePaneScreenshotPngBase64 } from "../../../../utils/dom-screenshot";
+import {
+  exportPaneTableCsv,
+  hasPaneTableExporter,
+} from "../../../../state/pane-table-export-registry";
 
 function removedFocusRestoreOptions(
   layout: LayoutConfig,
@@ -55,10 +61,6 @@ export function useShellPaneActions({
   visibleLayout,
   width,
 }: UseShellPaneActionsOptions) {
-  const openLayoutMenu = useCallback(() => {
-    pluginRegistry.openCommandBar("LAY ");
-  }, [pluginRegistry]);
-
   const openPaneSettings = useCallback((paneId: string) => {
     pluginRegistry.openPaneSettingsFn(paneId);
     closePaneMenu();
@@ -80,12 +82,48 @@ export function useShellPaneActions({
     }
   }, [closePaneMenu, pluginRegistry, rendererHost]);
 
-  const closeFocusedPane = useCallback(() => {
-    if (!focusedPaneId || !isPaneInLayout(visibleLayout, focusedPaneId)) return false;
-    const nextLayout = removePane(visibleLayout, focusedPaneId);
+  const canExportPaneCsv = useCallback((paneId: string) => {
+    const pane = paneMap.get(paneId);
+    return pane?.def.tableExport === true && hasPaneTableExporter(paneId);
+  }, [paneMap]);
+
+  const exportPaneCsv = useCallback(async (paneId: string) => {
+    closePaneMenu();
+    const pane = paneMap.get(paneId);
+    if (!pane) return;
+    await exportPaneTableCsv(
+      paneId,
+      pane.instance.title ?? pane.def.name,
+      pluginRegistry.notify,
+    );
+  }, [closePaneMenu, paneMap, pluginRegistry]);
+
+  const exportFocusedPaneCsv = useCallback(() => {
+    if (!focusedPaneId || !canExportPaneCsv(focusedPaneId)) return false;
+    void exportPaneCsv(focusedPaneId);
+    return true;
+  }, [canExportPaneCsv, exportPaneCsv, focusedPaneId]);
+
+  const closePane = useCallback((paneId: string | null | undefined) => {
+    if (!paneId || !isPaneInLayout(visibleLayout, paneId)) return false;
+    const nextLayout = removePane(visibleLayout, paneId);
     persistLayout(nextLayout, removedFocusRestoreOptions(nextLayout, focusedPaneId, previousFocusedPaneId));
     return true;
   }, [focusedPaneId, persistLayout, previousFocusedPaneId, visibleLayout]);
+
+  const closeFocusedPane = useCallback(() => closePane(focusedPaneId), [closePane, focusedPaneId]);
+
+  const unfocusFocusedPane = useCallback(() => {
+    if (!focusedPaneId || isPaneDocked(visibleLayout, focusedPaneId)) return false;
+    const restoreId = previousFocusedPaneId
+      && previousFocusedPaneId !== focusedPaneId
+      && isPaneInLayout(visibleLayout, previousFocusedPaneId)
+      ? previousFocusedPaneId
+      : getDockedPaneIds(visibleLayout)[0] ?? null;
+    if (!restoreId || restoreId === focusedPaneId) return false;
+    focusPane(restoreId);
+    return true;
+  }, [focusPane, focusedPaneId, previousFocusedPaneId, visibleLayout]);
 
   const closeAllFloatingPanes = useCallback(() => {
     if (visibleLayout.floating.length === 0) return false;
@@ -144,19 +182,22 @@ export function useShellPaneActions({
   }, [contentHeight, persistLayout, visibleLayout, width]);
 
   const handleFloatingClose = useCallback((paneId: string) => {
-    const nextLayout = removePane(visibleLayout, paneId);
-    persistLayout(nextLayout, removedFocusRestoreOptions(nextLayout, focusedPaneId, previousFocusedPaneId));
-  }, [focusedPaneId, persistLayout, previousFocusedPaneId, visibleLayout]);
+    closePane(paneId);
+  }, [closePane]);
 
   return {
+    canExportPaneCsv,
     closeAllFloatingPanes,
+    closePane,
     closeFocusedPane,
+    unfocusFocusedPane,
     copyFocusedPaneScreenshot,
     copyPaneScreenshot,
+    exportFocusedPaneCsv,
+    exportPaneCsv,
     gridlockVisiblePanes,
     handleFloatingClose,
     openFocusedPaneSettings,
-    openLayoutMenu,
     openPaneSettings,
     popOutFocusedPane,
     toggleFocusedPaneFloating,

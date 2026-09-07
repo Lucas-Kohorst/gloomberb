@@ -25,8 +25,7 @@ import {
   paneIdFromDetachedRpcKey,
 } from "../window/focus";
 import type { DesktopBackendRequestPayload, ElectrobunBackendInit } from "../../shared/protocol";
-import { compileExternalPlugins } from "../../../../plugins/desktop-runtime/compile";
-import { getPluginsDir } from "../../../../plugins/loader";
+import type { CapabilityRegistry } from "../../../../capabilities";
 
 interface DesktopWindowTarget {
   kind: "main" | "detached";
@@ -83,25 +82,26 @@ function normalizeInitWindowTarget<TRpc>(
   };
 }
 
-async function buildInitializationPayload(
+export function desktopRendererCapabilityManifests(registry: CapabilityRegistry) {
+  return registry.manifests({ rendererOnly: true, includeDisabled: true });
+}
+
+function buildInitializationPayload(
   config: AppConfig,
   services: AppServices,
   windowTarget: DesktopWindowTarget,
   options: InitializationPayloadOptions,
-): Promise<ElectrobunBackendInit> {
-  mkdirSync(getPluginsDir(), { recursive: true });
-  const externalPlugins = await compileExternalPlugins().catch(() => []);
+): ElectrobunBackendInit {
   return {
     config,
     sessionSnapshot: options.getSessionSnapshot(),
     desktopSnapshot: options.getDesktopSnapshot(),
     desktopThemePreview: options.desktopThemePreview,
     pluginState: loadDesktopPluginState(services.pluginRegistry),
-    capabilityManifests: services.pluginRegistry.capabilities.manifests({ rendererOnly: true }),
+    capabilityManifests: desktopRendererCapabilityManifests(services.pluginRegistry.capabilities),
     desktopPlatform: process.platform,
     windowKind: windowTarget.kind,
     paneId: windowTarget.paneId,
-    externalPlugins,
   };
 }
 
@@ -126,7 +126,7 @@ export async function initializeDesktopBackend<TRpc>(
       options.setDesktopWorkspace(createDesktopWorkspace(currentConfig, options.getSessionSnapshot()));
       options.reconcileDetachedWindows();
     }
-    return await buildInitializationPayload(currentConfig, currentServices, windowTarget, {
+    return buildInitializationPayload(currentConfig, currentServices, windowTarget, {
       getDesktopSnapshot: options.getDesktopSnapshot,
       getSessionSnapshot: options.getSessionSnapshot,
       desktopThemePreview: options.getThemePreview(),
@@ -148,7 +148,7 @@ export async function initializeDesktopBackend<TRpc>(
   options.setDesktopWorkspace(createDesktopWorkspace(config, options.getSessionSnapshot()));
   options.reconcileDetachedWindows();
 
-  return await buildInitializationPayload(config, services, windowTarget, {
+  return buildInitializationPayload(config, services, windowTarget, {
     getDesktopSnapshot: options.getDesktopSnapshot,
     getSessionSnapshot: options.getSessionSnapshot,
     desktopThemePreview: options.getThemePreview(),

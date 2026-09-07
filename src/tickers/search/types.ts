@@ -1,7 +1,7 @@
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 
-export type TickerSearchInstrumentClass = "equity" | "fund" | "derivative" | "other";
+export type TickerSearchInstrumentClass = "equity" | "fund" | "derivative" | "prediction" | "other";
 type TickerSearchCategory = "Saved" | "Primary Listing" | "Other Listings" | "Funds & Derivatives";
 
 export interface TickerSearchRankableItem {

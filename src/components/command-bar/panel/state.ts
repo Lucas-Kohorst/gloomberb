@@ -1,12 +1,15 @@
-import { useEffect, useMemo, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import {
   buildListRows,
   buildNativeListRows,
+  getListRowsHeight,
+  resolveSelectedScrollLine,
   type ListScreenState,
 } from "../list/model";
 import {
   resolveCommandBarPanelLayout,
 } from "./layout";
+import { matchThemeOptions } from "../theme-picker";
 import type { CommandBarRoute } from "../workflow/types";
 
 type RefLike<T> = { current: T };
@@ -16,12 +19,15 @@ interface UseCommandBarPanelStateOptions {
   cellWidthPx: number;
   currentRoute: CommandBarRoute | null;
   nativePaneChrome: boolean;
+  nativeWindowChrome?: boolean;
+  rootShortcutFeedback: string | null;
   routeListState: ListScreenState | null;
   setRootSelectedIdx: Dispatch<SetStateAction<number>>;
   showCustomMultiSelectPicker: boolean;
   termHeight: number;
   termWidth: number;
   themePickerActive: boolean;
+  themePickerFilter: string;
   titleBarOverlay: boolean | undefined;
   updateTopRoute: (updater: (route: CommandBarRoute) => CommandBarRoute) => void;
   visibleListStateRef: RefLike<ListScreenState | null>;
@@ -32,12 +38,15 @@ export function useCommandBarPanelState({
   cellWidthPx,
   currentRoute,
   nativePaneChrome,
+  nativeWindowChrome,
+  rootShortcutFeedback,
   routeListState,
   setRootSelectedIdx,
   showCustomMultiSelectPicker,
   termHeight,
   termWidth,
   themePickerActive,
+  themePickerFilter,
   titleBarOverlay,
   updateTopRoute,
   visibleListStateRef,
@@ -84,41 +93,67 @@ export function useCommandBarPanelState({
   );
   const listRowIndexByGlobalIndex = useMemo(() => {
     const indexByGlobalIndex = new Map<number, number>();
-    listRows.forEach((row, index) => {
+    nativeListRows.forEach((row, index) => {
       if (row.kind === "item") {
         indexByGlobalIndex.set(row.globalIdx, index);
       }
     });
     return indexByGlobalIndex;
-  }, [listRows]);
+  }, [nativeListRows]);
+
+  const hasRootFeedback = visibleListState?.kind === "root" && rootShortcutFeedback !== null;
+  // One row per matching theme, or the one row the empty message occupies.
+  const themePickerRowCount = useMemo(
+    () => (themePickerActive ? Math.max(1, matchThemeOptions(themePickerFilter).length) : 0),
+    [themePickerActive, themePickerFilter],
+  );
   const panelLayout = useMemo(() => resolveCommandBarPanelLayout({
     cellHeightPx,
     cellWidthPx,
     currentRoute,
+    hasRootFeedback,
     hasVisibleListState,
-    nativeListRowCount: nativeListRows.length,
+    nativeListRowCount: getListRowsHeight(nativeListRows),
     nativePaneChrome,
+    nativeWindowChrome,
     showCustomMultiSelectPicker,
     termHeight,
     termWidth,
     themePickerActive,
+    themePickerRowCount,
     titleBarOverlay,
   }), [
     cellHeightPx,
     cellWidthPx,
     currentRoute,
+    hasRootFeedback,
     hasVisibleListState,
-    nativeListRows.length,
+    nativeListRows,
     nativePaneChrome,
+    nativeWindowChrome,
     showCustomMultiSelectPicker,
     termHeight,
     termWidth,
     themePickerActive,
+    themePickerRowCount,
     titleBarOverlay,
   ]);
   const selectedListRowIndex = visibleListState
     ? listRowIndexByGlobalIndex.get(visibleListState.selectedIdx) ?? -1
     : -1;
+  const selectedIdx = visibleListState?.selectedIdx ?? 0;
+  const selectionMoveRef = useRef({ selectedIdx, movedDown: false });
+  if (selectionMoveRef.current.selectedIdx !== selectedIdx) {
+    selectionMoveRef.current = {
+      selectedIdx,
+      movedDown: selectedIdx > selectionMoveRef.current.selectedIdx,
+    };
+  }
+  const selectedScrollLineIndex = resolveSelectedScrollLine(
+    nativeListRows,
+    selectedListRowIndex,
+    selectionMoveRef.current.movedDown,
+  );
   const bodySlotKey = showCustomMultiSelectPicker
     ? "picker:field-multi-select"
     : themePickerActive
@@ -129,10 +164,9 @@ export function useCommandBarPanelState({
 
   return {
     bodySlotKey,
-    listRows,
     nativeListRows,
     panelLayout,
-    selectedScrollRowIndex: selectedListRowIndex,
+    selectedScrollRowIndex: selectedScrollLineIndex,
     visibleListState,
   };
 }

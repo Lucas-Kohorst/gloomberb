@@ -67,7 +67,7 @@ export function mapCoinGeckoSimpleQuote(input: {
     listingExchangeName: COINGECKO_EXCHANGE,
     marketState: "REGULAR",
     sessionConfidence: "derived",
-    dataSource: "delayed",
+    dataSource: "live",
   };
 }
 
@@ -104,6 +104,6 @@ export function mapCoinGeckoCoinQuote(input: {
     listingExchangeName: COINGECKO_EXCHANGE,
     marketState: "REGULAR",
     sessionConfidence: "derived",
-    dataSource: "delayed",
+    dataSource: "live",
   };
 }

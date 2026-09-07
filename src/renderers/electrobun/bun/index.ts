@@ -25,7 +25,6 @@ import type { DesktopWorkspace } from "./desktop/workspace";
 import { buildDesktopApplicationMenu } from "./application-menu";
 import { applicationMenuCommand } from "./application-menu/click";
 import { registerElectrobunCoreCapabilities } from "./core-capabilities";
-import { setNativeIbkrGatewayModuleLoader } from "../../../plugins/ibkr/gateway/service";
 import {
   runElectrobunDesktopUpdate,
 } from "./desktop/update";
@@ -37,6 +36,7 @@ import {
 } from "./window/frame";
 import { MAIN_WINDOW_RPC_KEY } from "./window/focus";
 import { handleHttpFetch } from "./desktop/http-fetch";
+import { collectExternalPluginBundles, installExternalPlugin } from "./external-plugins";
 import { handleDesktopPluginStateRequest } from "./desktop/plugin-state";
 import { scheduleDesktopRelaunch } from "./desktop/relaunch";
 import {
@@ -54,7 +54,6 @@ import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { resolveDesktopLiveStream } from "./desktop/media";
 import { initializeDesktopBackend } from "./desktop/initialization";
-import { compileExternalPlugins } from "../../../plugins/desktop-runtime/compile";
 import { getPluginsDir, watchPluginsDir } from "../../../plugins/loader";
 import { mkdirSync } from "fs";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
@@ -75,7 +74,6 @@ console.info = (...args) => console.error(...args);
 console.warn = (...args) => console.error(...args);
 
 setConfigStoreHost(nodeConfigStoreHost);
-setNativeIbkrGatewayModuleLoader(() => import("../../../plugins/ibkr/gateway/service/native"));
 
 let currentConfig: AppConfig | null = null;
 let services: AppServices | null = null;
@@ -433,7 +431,7 @@ async function initialize(
 }
 
 async function broadcastExternalPlugins(): Promise<void> {
-  const bundles = await compileExternalPlugins();
+  const bundles = await collectExternalPluginBundles();
   windowRpcRegistry.forEachReadyWindowRpc((rpc) => {
     try {
       rpc.send["plugins.externalChanged"]({
@@ -471,9 +469,8 @@ async function handleBackendRequest(
       return resolveDesktopLiveStream(request.payload);
     case "remote.forward":
       return forwardRemoteControlRequest(request.payload.request);
-    case "plugins.listExternal":
-      return compileExternalPlugins();
     case "capability.invoke":
+    case "capability.cancel":
     case "capability.subscribe":
     case "capability.unsubscribe":
       return capabilityBridge.handle(rpc, request);
@@ -500,6 +497,10 @@ async function handleBackendRequest(
     case "pluginState.setMany":
     case "pluginState.delete":
       return handleDesktopPluginStateRequest(requireServices().persistence.pluginState, request);
+    case "plugins.listExternal":
+      return collectExternalPluginBundles();
+    case "plugins.install":
+      return installExternalPlugin(request.payload.ref);
     case "host.restart":
     case "host.exit":
     case "host.windowControl":
@@ -508,6 +509,7 @@ async function handleBackendRequest(
     case "host.focusWindow":
     case "host.copyPngImage":
     case "host.readText":
+    case "host.saveTextFile":
     case "host.notify":
     case "host.showContextMenu":
       return handleDesktopHostRequest({

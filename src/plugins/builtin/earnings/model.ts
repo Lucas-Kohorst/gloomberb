@@ -70,6 +70,7 @@ export function groupEarningsByRelativeDate(
   const dayMs = 24 * 60 * 60 * 1000;
   const today = startOfUtcDay(now);
   const tomorrow = today + dayMs;
+  const dayAfterTomorrow = today + 2 * dayMs;
   const endOfWeek = today + (7 - new Date(today).getUTCDay()) * dayMs;
   const endOfNextWeek = endOfWeek + 7 * dayMs;
 

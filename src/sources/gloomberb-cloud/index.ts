@@ -186,12 +186,11 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     return CLOUD_RESOLUTION_SUPPORT.map((entry) => entry.resolution);
   }
 
-  async canProvide(_ticker?: string, _exchange?: string): Promise<boolean> {
-    return !!(await apiClient.ensureVerifiedSession());
+  async canProvide(): Promise<boolean> {
+    return true;
   }
 
   async getTickerFinancials(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<TickerFinancials> {
-    await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancials(ticker, exchange);
       if (isStaleCloudResponse(response)) {
@@ -210,7 +209,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   ): Promise<TickerFinancialsBatchResult[]> {
     const results: TickerFinancialsBatchResult[] = targets.map((target) => ({ target, financials: null }));
     if (targets.length === 0) return results;
-    await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudFinancialsBatch(
         targets.map((target) => ({
@@ -243,7 +241,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getQuote(ticker: string, exchange = "", _context?: MarketDataRequestContext): Promise<Quote> {
-    await requireVerifiedSession();
     return withCloudFallback(
       async () => {
         const response = await apiClient.getCloudQuote(ticker, exchange);
@@ -265,7 +262,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   ): Promise<QuoteBatchResult[]> {
     const results: QuoteBatchResult[] = targets.map((target) => ({ target, quote: null }));
     if (targets.length === 0) return results;
-    await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudQuotesBatch(
         targets.map((target) => ({
@@ -298,13 +294,11 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getExchangeRate(fromCurrency: string): Promise<number> {
-    await requireVerifiedSession();
     const response = await apiClient.getCloudExchangeRate(fromCurrency);
     return unwrapRequiredCloudResponse(response, `Cloud exchange rate is unavailable for ${fromCurrency}`).rate;
   }
 
   async search(query: string, _context?: SearchRequestContext): Promise<InstrumentSearchResult[]> {
-    await requireVerifiedSession();
     return withCloudFallback(
       () => apiClient.searchInstruments(query, 10),
       "Cloud search is unavailable",
@@ -377,7 +371,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getPriceHistory(ticker: string, exchange: string, range: TimeRange, _context?: MarketDataRequestContext): Promise<PricePoint[]> {
-    await requireVerifiedSession();
     const request = toHistoryRequest(range);
     const response = await withCloudFallback(
       () => apiClient.getCloudHistory(ticker, exchange, request),
@@ -393,7 +386,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     resolution: ManualChartResolution,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    await requireVerifiedSession();
     const sourceResolution: ManualChartResolution = resolution === "4h" ? "1h" : resolution;
     const interval = toCloudInterval(sourceResolution);
     const endDate = new Date();
@@ -419,7 +411,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     barSize: string,
     _context?: MarketDataRequestContext,
   ): Promise<PricePoint[]> {
-    await requireVerifiedSession();
     const sourceBarSize = barSize === "4h" ? "1h" : barSize;
     const interval = toCloudInterval(sourceBarSize);
     const includeTime = /(min|h)$/i.test(interval);
@@ -436,7 +427,6 @@ export class GloomberbCloudProvider implements AssetDataProvider {
   }
 
   async getOptionsChain(ticker: string, exchange?: string, expirationDate?: number, _context?: MarketDataRequestContext): Promise<OptionsChain> {
-    await requireVerifiedSession();
     return withCloudFallback(async () => {
       const response = await apiClient.getCloudOptionsChain(ticker, exchange, expirationDate);
       const chain = unwrapRequiredCloudResponse(
@@ -451,9 +441,8 @@ export class GloomberbCloudProvider implements AssetDataProvider {
     targets: QuoteSubscriptionTarget[],
     onQuote: (target: QuoteSubscriptionTarget, quote: Quote) => void,
   ): () => void {
-    if (apiClient.getSessionToken()) {
-      void apiClient.ensureVerifiedSession().catch(() => {});
-    }
+    // No-op without a session credential; covers browser cookie sessions too.
+    void apiClient.ensureVerifiedSession().catch(() => {});
     const targetMap = new Map<string, QuoteSubscriptionTarget[]>();
     if (targets.length === 0) return () => {};
     for (const target of targets) {

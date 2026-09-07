@@ -6,7 +6,8 @@ import { colors } from "../../../theme/colors";
 import type { PredictionMarketSummary } from "../../prediction-markets/types";
 import { loadKalshiImpliedHigh } from "./kalshi-forecast";
 import { loadWeatherHourly, loadWeatherObservation } from "./client";
-import { resolveWeatherSettlement, weatherMetricLabel } from "./mapping";
+import { weatherMetricLabel } from "./metrics";
+import { resolveWeatherSettlement } from "./settlement";
 import { findWeatherStation } from "./stations";
 import type { WeatherDailyObservation, WeatherHourlyObservation } from "./types";
 

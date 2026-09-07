@@ -3,7 +3,7 @@ import type { PredictionCategoryId } from "./categories";
 
 export type PredictionVenue = "polymarket" | "kalshi";
 export type PredictionVenueScope = "all" | PredictionVenue;
-export type PredictionBrowseTab = "top" | "ending" | "new";
+export type PredictionBrowseTab = "top" | "ending" | "new" | "watchlist";
 export type PredictionDetailTab =
   | "overview"
   | "chart"
@@ -108,6 +108,8 @@ export interface PredictionBookSnapshot {
   noBids: PredictionBookLevel[];
   noAsks: PredictionBookLevel[];
   lastTradePrice: number | null;
+  /** Set when the venue book request failed, so empty depth is never reported as "no depth". */
+  error?: string | null;
 }
 
 export interface PredictionTrade {
@@ -126,14 +128,6 @@ export interface PredictionMarketDetail {
   history: PredictionHistoryPoint[];
   book: PredictionBookSnapshot;
   trades: PredictionTrade[];
-}
-
-export interface PredictionOrderPreviewIntent {
-  marketKey: string;
-  outcome: "yes" | "no";
-  side: "buy" | "sell";
-  price: number;
-  size: number;
 }
 
 export interface PredictionColumnDef extends ColumnConfig {

@@ -8,12 +8,13 @@ import type {
 } from "../types";
 
 export function truncatePredictionText(
-  value: string,
+  value: string | null | undefined,
   maxLength: number,
 ): string {
-  if (value.length <= maxLength) return value;
-  if (maxLength <= 3) return value.slice(0, maxLength);
-  return `${value.slice(0, maxLength - 3)}...`;
+  const text = value ?? "";
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 3) return text.slice(0, maxLength);
+  return `${text.slice(0, maxLength - 3)}...`;
 }
 
 export function resolvePredictionDetailTitle({
@@ -34,14 +35,15 @@ export function SummaryLink({
   url,
   maxLength,
 }: {
-  url: string;
+  url: string | null | undefined;
   maxLength: number;
 }) {
+  const safeUrl = url ?? "";
   return (
     <Box height={1}>
       <ExternalLinkText
-        url={url}
-        label={truncatePredictionText(url, maxLength)}
+        url={safeUrl}
+        label={truncatePredictionText(safeUrl, maxLength)}
         color={colors.textBright}
       />
     </Box>

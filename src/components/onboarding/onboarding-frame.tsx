@@ -5,29 +5,10 @@ import { blendHex } from "../../theme/colors";
 import { useThemeColors } from "../../theme/theme-context";
 import { t } from "../../i18n";
 import { Button, ListView, type ListViewItem } from "../ui";
+import { modalSurfaceStyle } from "../ui/frame";
 import type { ButtonProps } from "../ui/button";
 import { Tabs } from "../ui/tabs";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../layout/titlebar-overlay";
-
-function desktopSurfaceStyle(
-  borderColor: string,
-  backgroundColor: string,
-  shadowColor: string,
-  highlightColor: string,
-) {
-  return {
-    width: "min(540px, 100%)",
-    height: "auto",
-    maxHeight: "calc(100vh - 88px)",
-    padding: 14,
-    backgroundColor,
-    border: `1px solid ${borderColor}`,
-    borderRadius: 6,
-    boxShadow: `0 18px 48px color-mix(in srgb, ${shadowColor} 46%, transparent), inset 0 1px 0 color-mix(in srgb, ${highlightColor} 5%, transparent)`,
-    boxSizing: "border-box" as const,
-    overflowY: "auto" as const,
-  };
-}
 
 export function OnboardingModal({
   children,
@@ -61,12 +42,7 @@ export function OnboardingModal({
       >
         <Box
           flexDirection="column"
-          style={desktopSurfaceStyle(
-            blendHex(colors.border, colors.borderFocused, 0.18),
-            blendHex(colors.panel, colors.bg, 0.12),
-            colors.bg,
-            colors.textBright,
-          )}
+          style={modalSurfaceStyle(colors)}
           data-gloom-role="onboarding-modal"
         >
           {children}

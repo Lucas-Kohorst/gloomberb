@@ -2,16 +2,14 @@ import { useCallback, useMemo, useState } from "react";
 import { TextAttributes } from "../../../../ui";
 import {
   DataTableView,
-  dataErrorMessage,
-  isNoDataError,
-  noDataMessage,
-  unavailableTitle,
+  loadingText,
+  unavailableText,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
 } from "../../../../components";
-import type { TimeRange } from "../../../../components/chart/core/types";
+import { TIME_RANGES, type TimeRange } from "../../../../time-series/range";
 import type { PaneProps } from "../../../../types/plugin";
 import type { PricePoint } from "../../../../types/financials";
 import { colors, priceColor } from "../../../../theme/colors";
@@ -26,7 +24,7 @@ import {
   useDebouncedPluginPaneState,
   usePluginPaneState,
 } from "../../../runtime";
-import { loadingErrorFooterInfo, refreshFooterHint, useClampSelectedIndex } from "../../shared/table-pane";
+import { loadingErrorFooterInfo, useClampSelectedIndex } from "../../shared/table-pane";
 import { formatDateTime, useBoundTicker, useTickerRequest } from "../../shared/ticker-request";
 
 type HistoryColumnId = "date" | "open" | "high" | "low" | "close" | "change" | "changePercent" | "volume";
@@ -39,8 +37,6 @@ export type HistoricalPriceRow = {
   change: number | null;
   changePercent: number | null;
 };
-
-const HISTORY_RANGES: TimeRange[] = ["1D", "1W", "1M", "3M", "6M", "1Y", "5Y", "ALL"];
 
 function pricePointDate(point: PricePoint): Date | null {
   const value = point.date as Date | string | number;
@@ -81,27 +77,22 @@ export function buildHistoricalPriceRows(points: PricePoint[]): HistoricalPriceR
   }).reverse();
 }
 
-function buildHistoryColumns(width: number): HistoryColumn[] {
-  const dateWidth = 16;
-  const priceWidth = 10;
-  const changeWidth = 10;
-  const percentWidth = 9;
-  const volumeWidth = Math.max(9, width - 2 - dateWidth - priceWidth * 4 - changeWidth - percentWidth - 7);
+function buildHistoryColumns(): HistoryColumn[] {
   return [
-    { id: "date", label: "DATE/TIME", width: dateWidth, align: "left" },
-    { id: "open", label: "OPEN", width: priceWidth, align: "right" },
-    { id: "high", label: "HIGH", width: priceWidth, align: "right" },
-    { id: "low", label: "LOW", width: priceWidth, align: "right" },
-    { id: "close", label: "CLOSE", width: priceWidth, align: "right" },
-    { id: "change", label: "CHG", width: changeWidth, align: "right" },
-    { id: "changePercent", label: "CHG %", width: percentWidth, align: "right" },
-    { id: "volume", label: "VOLUME", width: volumeWidth, align: "right" },
+    { id: "date", label: "DATE/TIME", width: 16, align: "left" },
+    { id: "open", label: "OPEN", width: 10, align: "right" },
+    { id: "high", label: "HIGH", width: 10, align: "right" },
+    { id: "low", label: "LOW", width: 10, align: "right" },
+    { id: "close", label: "CLOSE", width: 10, align: "right" },
+    { id: "change", label: "CHG", width: 10, align: "right" },
+    { id: "changePercent", label: "CHG %", width: 9, align: "right" },
+    { id: "volume", label: "VOLUME", width: 9, align: "right", flexGrow: 1 },
   ];
 }
 
 function nextHistoryRange(current: TimeRange): TimeRange {
-  const index = HISTORY_RANGES.indexOf(current);
-  return HISTORY_RANGES[(index + 1) % HISTORY_RANGES.length] ?? "1Y";
+  const index = TIME_RANGES.indexOf(current);
+  return TIME_RANGES[(index + 1) % TIME_RANGES.length] ?? "1Y";
 }
 
 export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
@@ -139,7 +130,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       }
     },
   ), [data, sortPreference]);
-  const columns = useMemo(() => buildHistoryColumns(width), [width]);
+  const columns = useMemo(() => buildHistoryColumns(), []);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
 
@@ -193,9 +184,8 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
     ],
     hints: [
       { id: "range", key: "t", label: "oggle range", onPress: cycleRange },
-      refreshFooterHint(reload),
     ],
-  }), [cycleRange, error, loading, range, reload]);
+  }), [cycleRange, error, loading, range]);
 
   return (
     <DataTableView<HistoricalPriceRow, HistoryColumn>
@@ -220,18 +210,12 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       getItemKey={(row) => row.key}
       getRowRevision={(row) => `${row.key}:${row.point.close}:${row.point.volume ?? ""}:${row.change ?? ""}`}
       renderCell={renderCell}
-      emptyStateTitle={loading
-        ? "Loading historical prices..."
-        : error && !isNoDataError(error)
-          ? unavailableTitle("historical")
-          : "No historical data"}
-      emptyStateMessage={loading
-        ? undefined
-        : error && !isNoDataError(error)
-          ? dataErrorMessage(error)
-          : symbol
-            ? noDataMessage(symbol, "historical prices")
-            : undefined}
+      emptyStateTitle={error
+        ? unavailableText("Historical prices")
+        : loading
+          ? loadingText("historical prices")
+          : "No historical prices"}
+      emptyStateHint={error ?? undefined}
     />
   );
 }

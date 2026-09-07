@@ -7,7 +7,7 @@ import { colors } from "../../../theme/colors";
 import type { BrokerConnectionStatus } from "../../../types/broker";
 import type { Portfolio } from "../../../types/ticker";
 import type { BrokerAccount } from "../../../types/trading";
-import { formatCompact, padTo } from "../../../utils/format";
+import { convertCurrency, formatCompact, padTo } from "../../../utils/format";
 import { formatMarketQuantity } from "../../../market-data/market/format";
 import { getBrokerInstance } from "../../../utils/broker-instances";
 import { usePluginBrokerActions } from "../../runtime";
@@ -27,10 +27,16 @@ export function shouldToggleCashMarginDrawer(key: string | undefined, showCashDr
   return key === "c" && showCashDrawer;
 }
 
+export interface PortfolioAccountStateResult {
+  accountState: ResolvedPortfolioAccountState | null;
+  /** Set when the broker refused to list accounts, so "no cash" is not mistaken for a clean empty. */
+  accountsError: string | null;
+}
+
 export function usePortfolioAccountState(
   portfolio: Portfolio | null,
   state: Pick<AppState, "config" | "brokerAccounts">,
-): ResolvedPortfolioAccountState | null {
+): PortfolioAccountStateResult {
   const instanceId = portfolio?.brokerInstanceId;
   const brokerInstance = useMemo(
     () => instanceId ? getBrokerInstance(state.config.brokerInstances, instanceId) : null,
@@ -48,16 +54,20 @@ export function usePortfolioAccountState(
     });
   }, [broker, brokerInstance]);
   const [liveAccounts, setLiveAccounts] = useState<BrokerAccount[]>([]);
+  const [accountsError, setAccountsError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setLiveAccounts([]);
+    setAccountsError(null);
     if (!brokerInstance || !broker?.listAccounts || liveStatus?.state !== "connected") return;
     broker.listAccounts(brokerInstance)
       .then((accounts) => {
         if (!cancelled) setLiveAccounts(accounts);
       })
-      .catch(() => {
-        if (!cancelled) setLiveAccounts([]);
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setLiveAccounts([]);
+        setAccountsError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       cancelled = true;
@@ -67,10 +77,11 @@ export function usePortfolioAccountState(
     () => ({ status: liveStatus, accounts: liveAccounts }),
     [liveAccounts, liveStatus],
   );
-  return useMemo(
+  const accountState = useMemo(
     () => resolvePortfolioAccountState(portfolio, state, snapshot),
     [portfolio, snapshot, state.brokerAccounts, state.config],
   );
+  return useMemo(() => ({ accountState, accountsError }), [accountState, accountsError]);
 }
 
 export function PortfolioCashMarginDrawer({
@@ -79,14 +90,24 @@ export function PortfolioCashMarginDrawer({
   onToggle,
   width,
   height,
+  baseCurrency,
+  exchangeRates,
 }: {
   accountState: ResolvedPortfolioAccountState;
   expanded: boolean;
   onToggle: () => void;
   width: number;
   height: number;
+  baseCurrency: string;
+  exchangeRates: Map<string, number>;
 }) {
-  const previewText = `${accountState.visibleCashBalances.length} ccy · Cash ${formatCompact(accountState.account.totalCashValue)} · ${accountState.sourceLabel}`;
+  const convertAccountValue = (value: number) => convertCurrency(
+    value,
+    accountState.account.currency || baseCurrency,
+    baseCurrency,
+    exchangeRates,
+  );
+  const previewText = `${accountState.visibleCashBalances.length} ccy · Cash ${formatCompact(convertAccountValue(accountState.account.totalCashValue ?? 0))} · ${accountState.sourceLabel}`;
   const drawerHeight = Math.max(1, height);
 
   if (!expanded) {
@@ -113,7 +134,7 @@ export function PortfolioCashMarginDrawer({
     );
   }
 
-  const metricSegments = buildDrawerMetricSegments(accountState.account, width);
+  const metricSegments = buildDrawerMetricSegments(accountState.account, width, convertAccountValue);
   const currencyRowsHeight = Math.max(1, drawerHeight - 2);
 
   return (

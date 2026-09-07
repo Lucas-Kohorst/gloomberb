@@ -1,0 +1,569 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "adjacent",
+      "name": "Adjacent Cloud",
+      "description": "Shared reference data cached at the edge: Adjacent indices, rates, and CFTC filings, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "adjacent-indices",
+          "adjacent-rates",
+          "cftc-filings",
+          "llm-stats",
+          "owid",
+          "polls",
+          "weather"
+        ],
+        "capabilities": [
+          "poll-trends"
+        ],
+        "broker": false
+      }
+    },
+    {
+      "id": "ai",
+      "name": "AI",
+      "description": "Use AI providers with your financial data.",
+      "categories": [
+        "ai"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "alerts",
+      "name": "Alerts",
+      "description": "Price, halt, short-interest, and ex-div alerts with desktop notifications",
+      "categories": [
+        "alerts"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "application",
+      "name": "Application",
+      "description": "Core layout, help, and release information.",
+      "categories": [
+        "core"
+      ],
+      "toggleable": false,
+      "contributes": {
+        "panes": [
+          "changelog",
+          "connections",
+          "help",
+          "layout-marketplace",
+          "plugin-marketplace"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "broker",
+      "name": "Broker",
+      "description": "Broker profiles, account sync, and connection status.",
+      "categories": [
+        "broker"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "brokers"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "coingecko",
+      "name": "CoinGecko",
+      "description": "Retired quote source. Crypto prices come from Yahoo.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": false,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "crt-sh",
+      "name": "crt.sh",
+      "description": "Search Certificate Transparency logs for domains, subdomains, and certificate history.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "crt-sh"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "debug",
+      "name": "Debug",
+      "description": "View and export debug logs",
+      "categories": [
+        "developer"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "federal-register",
+      "name": "Federal Register",
+      "description": "Search Federal Register documents: proposed rules, final rules, and agency notices.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "federal-register"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "gloomberb-cloud",
+      "name": "Gloom Cloud",
+      "description": "Gloom Cloud auth, chat, sync, and Twitter feeds. Chat requires signup.",
+      "categories": [
+        "data",
+        "cloud"
+      ],
+      "toggleable": true,
+      "featured": true,
+      "contributes": {
+        "panes": [
+          "account-management",
+          "buildout",
+          "chat",
+          "congress-trades",
+          "unread-inbox"
+        ],
+        "capabilities": [
+          "asset-data.gloomberb-cloud",
+          "news.gloomberb-cloud"
+        ],
+        "broker": false
+      }
+    },
+    {
+      "id": "macro",
+      "name": "Macro",
+      "description": "Economic calendar, rates, volatility, credit spreads, single-name CDS, Treasury auctions, earnings, IPOs, and live financial TV.",
+      "categories": [
+        "macro"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "bond-search",
+          "cds",
+          "country-econ",
+          "credit-conditions",
+          "earnings-calendar",
+          "earnings-calls",
+          "econ-calendar",
+          "econ-statistics",
+          "ipo-calendar",
+          "macro-tv",
+          "market-valuation",
+          "treasury-auctions",
+          "volatility-term-structure",
+          "yield-curve"
+        ],
+        "capabilities": [
+          "market-valuation"
+        ],
+        "broker": false
+      }
+    },
+    {
+      "id": "market-overview",
+      "name": "Market Overview",
+      "description": "Global indices, movers, scanners, sectors, FX, futures, sentiment, and correlations.",
+      "categories": [
+        "markets"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "correlation",
+          "fear-greed",
+          "futures",
+          "fx-matrix",
+          "market-halts",
+          "market-heatmap",
+          "market-movers",
+          "relationship-graph",
+          "scanner-flow",
+          "scanner-hilo",
+          "sectors",
+          "world-indices",
+          "world-venue-map"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "nasa-firms",
+      "name": "NASA FIRMS",
+      "description": "Near-real-time active fire detection from NASA MODIS and VIIRS satellites.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "fire-detection"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "news",
+      "name": "News",
+      "description": "View latest news for each ticker",
+      "categories": [
+        "news"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "news-article",
+          "news-breaking",
+          "news-feed",
+          "news-firehose",
+          "news-industry",
+          "news-rss",
+          "news-top",
+          "ticker-news"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "notes",
+      "name": "Notes",
+      "description": "Add markdown notes to your tickers.",
+      "categories": [
+        "productivity"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "ofac-sanctions",
+      "name": "OFAC Sanctions",
+      "description": "Search the US Consolidated Screening List. Screen people, companies, and entities against OFAC and other sanctions lists.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "sanctions"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "opensky",
+      "name": "OpenSky Network",
+      "description": "Live global aircraft positions from OpenSky Network. Track flights by callsign.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "aircraft"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "plugin-inspector",
+      "name": "Plugin Inspector",
+      "description": "Inspect all loaded plugins — source, status, registered panes, commands, capabilities, and shortcuts.",
+      "categories": [
+        "developer"
+      ],
+      "toggleable": false,
+      "contributes": {
+        "panes": [
+          "plugin-inspector"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "portfolio",
+      "name": "Portfolio",
+      "description": "Portfolio and watchlist management, analytics, and position sizing.",
+      "categories": [
+        "portfolio"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "analytics",
+          "kelly-sizer",
+          "options-calc",
+          "portfolio-list"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "prediction-markets",
+      "name": "Prediction Markets",
+      "description": "Browse prediction markets (Polymarket and Kalshi).",
+      "categories": [
+        "markets"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "prediction-markets"
+        ],
+        "capabilities": [
+          "prediction-markets.series"
+        ],
+        "broker": false
+      }
+    },
+    {
+      "id": "public",
+      "name": "Public",
+      "description": "Read-only account and position sync for Public.",
+      "categories": [
+        "broker"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": true
+      }
+    },
+    {
+      "id": "research-search",
+      "name": "Research Search",
+      "description": "Full-text search across earnings call transcripts, news wires, and SEC filings, with saved searches and keyword alerts.",
+      "categories": [
+        "research",
+        "news"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "research-search"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "robinhood",
+      "name": "Robinhood",
+      "description": "Read every Robinhood account; trade only the Agentic account.",
+      "categories": [
+        "broker"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": true
+      }
+    },
+    {
+      "id": "satellite",
+      "name": "Satellite",
+      "description": "NASA FIRMS fire hotspots and NASA GIBS / HLS imagery, a public substitute for Copernicus Browser.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "satellite"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "simplefin",
+      "name": "SimpleFIN",
+      "description": "Read-only investment position sync through SimpleFIN Bridge.",
+      "categories": [
+        "broker"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [],
+        "capabilities": [],
+        "broker": true
+      }
+    },
+    {
+      "id": "space-weather",
+      "name": "Space Weather",
+      "description": "Real-time space weather from NOAA SWPC. K-index, solar wind, and X-ray flare data.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "space-weather"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "ticker-research",
+      "name": "Ticker Research",
+      "description": "Company research workspace: overview, charts, financials, filings, ownership, options, analyst research, and events.",
+      "categories": [
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "analyst-research",
+          "chart-composer",
+          "corporate-actions",
+          "data-catalog",
+          "dividend-yield",
+          "earnings-estimates",
+          "earnings-transcripts",
+          "equity-diagnostic",
+          "esg",
+          "financial-analysis",
+          "historical-prices",
+          "holders",
+          "insider",
+          "options",
+          "options-calculator",
+          "options-vol-surface",
+          "quote-monitor",
+          "relative-valuation",
+          "sec",
+          "short-interest",
+          "thirteenf-funds",
+          "ticker-research"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "traffic",
+      "name": "Air & Sea Traffic",
+      "description": "Delayed OpenSky aircraft and public Digitraffic AIS ship positions for research overlays. Not Flightradar24 or MarineTraffic.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "traffic"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "usaspending",
+      "name": "USAspending",
+      "description": "Search federal contract awards by recipient, agency, or keyword.",
+      "categories": [
+        "data",
+        "research"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "usaspending"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "usgs-earthquakes",
+      "name": "USGS Earthquakes",
+      "description": "Real-time global earthquake data from USGS. Filter by magnitude and search by location.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": true,
+      "contributes": {
+        "panes": [
+          "earthquakes"
+        ],
+        "capabilities": [],
+        "broker": false
+      }
+    },
+    {
+      "id": "yahoo",
+      "name": "Yahoo Fallback",
+      "description": "Built-in delayed fallback for quotes, fundamentals, charts, and unsupported cloud data.",
+      "categories": [
+        "data"
+      ],
+      "toggleable": false,
+      "contributes": {
+        "panes": [],
+        "capabilities": [
+          "asset-data.yahoo",
+          "news.yahoo"
+        ],
+        "broker": false
+      }
+    }
+  ]
+}

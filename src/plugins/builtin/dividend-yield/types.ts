@@ -20,5 +20,3 @@ export interface DividendMetrics {
   exDividendDate: Date | null;
   nextPayDate: Date | null;
 }
-
-export type LoadStatus = "idle" | "loading" | "loaded" | "error";

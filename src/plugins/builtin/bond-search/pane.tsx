@@ -192,8 +192,8 @@ export function BondSearchPane({ focused, width, height }: PaneProps) {
   }, [activeTab, runSearch, searchQuery]);
 
   const rows = useMemo(() => sortedYields(entries, sort), [entries, sort]);
-  const columns = useMemo<YieldColumnDef[]>(() => buildYieldColumns(width), [width]);
-  const searchColumns = useMemo(() => buildSearchColumns(width), [width]);
+  const columns = useMemo<YieldColumnDef[]>(() => buildYieldColumns(), []);
+  const searchColumns = useMemo(() => buildSearchColumns(), []);
   const visibleSearchHits = useMemo(
     () => (searchSort ? sortedSearchHits(searchHits, searchSort) : searchHits),
     [searchHits, searchSort],

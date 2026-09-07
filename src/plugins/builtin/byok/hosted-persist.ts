@@ -1,12 +1,20 @@
 import type { AppConfig } from "../../../types/config";
 import { tryLocalStorage } from "../../../utils/browser-storage";
-import { readLastHostedUserId, resolveHostedPersistUserId } from "../../../data/config/hosted-user-persist";
+import {
+  markHostedWorkspaceChanged,
+  readLastHostedUserId,
+  resolveHostedPersistUserId,
+} from "../../../data/config/hosted-user-persist";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "./types";
 
 export const HOSTED_BYOK_STORAGE_KEY = "gloomberb:hosted-byok-keys";
 
 function storageKey(userId: string): string {
   return `${HOSTED_BYOK_STORAGE_KEY}:${userId}`;
+}
+
+export function hostedByokStorageKey(userId: string): string {
+  return storageKey(userId);
 }
 
 function isStoredConfig(value: unknown): value is ByokStoredConfig {
@@ -26,11 +34,15 @@ function parseStored(raw: string | null): ByokStoredConfig | null {
 }
 
 /** Reads BYOK keys persisted locally on the hosted client. */
-export function readHostedByokKeys(userId = resolveHostedPersistUserId()): ByokStoredConfig | null {
+export function readHostedByokKeys(
+  userId = resolveHostedPersistUserId(),
+  migrateLegacy = true,
+): ByokStoredConfig | null {
   const storage = tryLocalStorage();
   if (!storage || !userId) return null;
   const stored = parseStored(storage.getItem(storageKey(userId)));
   if (stored) return stored;
+  if (!migrateLegacy) return null;
   if (readLastHostedUserId() !== userId) return null;
   const legacy = parseStored(storage.getItem(HOSTED_BYOK_STORAGE_KEY));
   if (!legacy) return null;
@@ -51,17 +63,23 @@ export function writeHostedByokKeys(config: AppConfig, userId = resolveHostedPer
   try {
     if (!isStoredConfig(stored) || stored.keys.length === 0) {
       storage.removeItem(storageKey(userId));
+      markHostedWorkspaceChanged(userId);
       return;
     }
     storage.setItem(storageKey(userId), JSON.stringify(stored));
+    markHostedWorkspaceChanged(userId);
   } catch {
     // Ignore quota or security errors.
   }
 }
 
 /** Merges hosted-local BYOK keys into a boot config. Mutates and returns `config`. */
-export function hydrateHostedByokConfig(config: AppConfig): AppConfig {
-  const stored = readHostedByokKeys();
+export function hydrateHostedByokConfig(
+  config: AppConfig,
+  userId = resolveHostedPersistUserId(),
+  migrateLegacy = true,
+): AppConfig {
+  const stored = readHostedByokKeys(userId, migrateLegacy);
   if (!stored) return config;
   const pluginConfig = config.pluginConfig[BYOK_PLUGIN_ID] ?? {};
   config.pluginConfig = {

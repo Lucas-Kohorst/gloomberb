@@ -3,23 +3,36 @@ import type {
   PaneTemplateCreateOptions,
   PaneTemplateDef,
 } from "../../../types/plugin";
-import { CHART_COMPOSER_PANE_ID, TRADINGVIEW_PANE_ID } from "../../../types/config";
-import { attachFredSeriesPersistence } from "../../../data/fred-series";
+import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { parseTickerListInput } from "../../../tickers/list";
 import { publicTickerKey } from "../../../utils/exchanges";
 import type { ChartSpec } from "../../../time-series/types";
-import { ChartComposerPane, ChartComposerResearchTab, TradingViewPane } from "./pane";
+import { ChartComposerPane, ChartComposerResearchTab } from "./pane";
 import { DataCatalogPane } from "./data-catalog-pane";
-import { DATA_CATALOG_PANE_ID, DATA_CATALOG_TEMPLATE_ID } from "./catalog-inventory";
-import { CHART_SPEC_SETTING_KEY } from "./chart-spec";
+import {
+  CHART_COMPOSER_TEMPLATE_ID,
+  DATA_CATALOG_PANE_ID,
+  DATA_CATALOG_TEMPLATE_ID,
+} from "./catalog-inventory";
+import {
+  CHART_INTERACTION_VIEWPORT_SETTING_KEY,
+  CHART_SPEC_SETTING_KEY,
+  parseChartInteractionViewport,
+  parseChartSpec,
+  type ChartInteractionViewport,
+} from "./chart-spec";
+import {
+  CHART_DRAWINGS_SETTING_KEY,
+  parseChartDrawings,
+  type ChartDrawing,
+} from "../../../components/chart/composite/tools";
 import {
   buildEmptyChartPreset,
   buildComparisonChartPreset,
   buildCustomChartPreset,
   buildFundamentalChartPreset,
   buildIntradayPriceChartPreset,
-  buildPriceChartPreset,
-  buildTradingViewChartPreset,
+  buildBoundChartPreset,
   buildValuationChartPreset,
   chartSeriesLabel,
 } from "./presets";
@@ -31,8 +44,6 @@ import {
   LIVE_STREAMING_QUICK_SETTING,
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
-
-const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
 
 function normalizedSymbol(value: string | null | undefined): string | null {
   const symbol = value?.trim().toUpperCase() ?? "";
@@ -68,18 +79,22 @@ function primarySecuritySymbol(spec: ChartSpec): string | null {
 }
 
 function chartTitle(spec: ChartSpec, prefix = "G"): string {
-  const labels = spec.series.slice(0, 3).map((series) => {
-    if (series.source.kind === "security") {
-      return publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange);
-    }
-    return chartSeriesLabel(series);
-  });
+  const labels = spec.series.slice(0, 3).map((series) => chartSeriesLabel(series));
   if (labels.length === 0) return "Custom Chart";
   const remaining = spec.series.length - labels.length;
   return `${prefix} ${labels.join(" · ")}${remaining > 0 ? ` +${remaining}` : ""}`;
 }
 
-function instanceFor(spec: ChartSpec, prefix: string) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+interface SharedChartState {
+  drawings?: ChartDrawing[];
+  viewport?: ChartInteractionViewport;
+}
+
+function instanceFor(spec: ChartSpec, prefix: string, shared: SharedChartState = {}) {
   const symbol = primarySecuritySymbol(spec);
   return {
     title: chartTitle(spec, prefix),
@@ -87,6 +102,12 @@ function instanceFor(spec: ChartSpec, prefix: string) {
     ...(symbol ? { binding: { kind: "fixed" as const, symbol } } : {}),
     settings: {
       [CHART_SPEC_SETTING_KEY]: spec,
+      ...(shared.drawings?.length
+        ? { [CHART_DRAWINGS_SETTING_KEY]: shared.drawings }
+        : {}),
+      ...(shared.viewport
+        ? { [CHART_INTERACTION_VIEWPORT_SETTING_KEY]: shared.viewport }
+        : {}),
     },
   };
 }
@@ -140,7 +161,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     paneId: CHART_COMPOSER_PANE_ID,
     label: "Custom Chart",
     description: "Chart arbitrary market, fundamental, valuation, FRED, Adjacent, Kalshi, and Polymarket series together.",
-    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental", "kalshi", "polymarket", "adjacent", "prediction"],
+    keywords: ["chart", "graph", "custom", "series", "fred", "fundamental", "kalshi", "polymarket", "adjacent", "prediction", "tradingview", "tvc"],
     shortcut: { prefix: "G", argPlaceholder: "series", argKind: "text", argOptional: true },
     wizard: [{
       key: "series",
@@ -153,50 +174,76 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     }],
     canCreate: () => true,
     createInstance: (context, options) => {
-      const arg = options?.arg?.trim() ?? "";
-      // Shared charts arrive with a stash key (e.g. "share:abc123") that
-      // resolves to a full ChartSpec. Use it directly instead of parsing
-      // the key as a series expression.
-      if (arg.startsWith("share:")) {
-        const stashed = getStashedChartSpec(arg);
-        if (stashed) return instanceFor(stashed, "G");
+      const sharedData = isRecord(options?.shareData) ? options.shareData : null;
+      const sharedSpec = parseChartSpec(sharedData?.chartSpec ?? options?.shareData);
+      if (sharedSpec) {
+        const drawings = parseChartDrawings(sharedData?.chartDrawings);
+        const viewport = parseChartInteractionViewport(sharedData?.chartInteractionViewport);
+        return instanceFor(sharedSpec, "G", {
+          ...(drawings.length > 0 ? { drawings } : {}),
+          ...(viewport ? { viewport } : {}),
+        });
       }
-      const expression = arg || options?.values?.series?.trim() || context.activeTicker || "";
+      const expression = options?.arg?.trim() || options?.values?.series?.trim() || context.activeTicker || "";
       return instanceFor(buildCustomChartPreset(expression, context.activeTicker), "G");
+    },
+    publicShare: {
+      serialize: ({ pane }) => {
+        const spec = parseChartSpec(pane.settings?.[CHART_SPEC_SETTING_KEY]);
+        if (!spec) return null;
+        const drawings = parseChartDrawings(pane.settings?.[CHART_DRAWINGS_SETTING_KEY]);
+        const viewport = parseChartInteractionViewport(
+          pane.settings?.[CHART_INTERACTION_VIEWPORT_SETTING_KEY],
+        );
+        return {
+          title: pane.title?.trim() || chartTitle(spec),
+          data: {
+            chartSpec: spec,
+            ...(drawings.length > 0 ? { chartDrawings: drawings } : {}),
+            ...(viewport ? { chartInteractionViewport: viewport } : {}),
+          },
+        };
+      },
+      restore: (data) => {
+        if (!Object.keys(data).every((key) => [
+          "chartSpec",
+          "chartDrawings",
+          "chartInteractionViewport",
+        ].includes(key))) return null;
+        const spec = parseChartSpec(data.chartSpec);
+        if (!spec) return null;
+        const drawings = parseChartDrawings(data.chartDrawings);
+        if (data.chartDrawings !== undefined && (!Array.isArray(data.chartDrawings) || (data.chartDrawings.length > 0 && drawings.length === 0))) return null;
+        const viewport = data.chartInteractionViewport === undefined
+          ? null
+          : parseChartInteractionViewport(data.chartInteractionViewport);
+        if (data.chartInteractionViewport !== undefined && !viewport) return null;
+        return {
+          shareData: {
+            chartSpec: spec,
+            ...(drawings.length > 0 ? { chartDrawings: drawings } : {}),
+            ...(viewport ? { chartInteractionViewport: viewport } : {}),
+          },
+        };
+      },
     },
   },
   {
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Browse Assets (securities, crypto, FX, futures, prediction contracts) vs Data (FRED, treasuries, Adjacent, polls, AI benchmarks, weather, OWID).",
+    description: "Browse and search the series Custom Chart already knows: securities, options, crypto, FRED, treasuries, and futures.",
     keywords: [
       "catalog",
       "series",
       "data",
-      "assets",
       "chart",
       "fred",
-      "kalshi",
-      "polymarket",
-      "adjacent",
-      "prediction",
       "futures",
-      "fx",
-      "forex",
       "treasury",
-      "polls",
-      "dividends",
-      "dvd",
       "crypto",
       "options",
       "option",
-      "llm-stats",
-      "benchmark",
-      "weather",
-      "nws",
-      "owid",
-      "our world in data",
     ],
     shortcut: { prefix: "CAT", argPlaceholder: "query", argKind: "text", argOptional: true },
     canCreate: () => true,
@@ -208,6 +255,16 @@ const chartComposerTemplates: PaneTemplateDef[] = [
         ...(query ? { settings: { query } } : {}),
       };
     },
+    publicShare: {
+      serialize: ({ pane }) => {
+        const query = typeof pane.settings?.query === "string" ? pane.settings.query.trim() : "";
+        return { title: pane.title?.trim() || "Data Catalog", data: query ? { query } : {} };
+      },
+      restore: (data) => Object.keys(data).every((key) => key === "query")
+        && (data.query === undefined || typeof data.query === "string")
+        ? { arg: typeof data.query === "string" ? data.query : "" }
+        : null,
+    },
   },
   securityTemplate({
     id: "graph-price-pane",
@@ -216,41 +273,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     description: "Open a price chart for a ticker.",
     argKind: "ticker",
     minimumSymbols: 1,
-    build: (symbols) => buildPriceChartPreset(symbols[0]!),
+    build: (symbols) => buildBoundChartPreset(symbols[0]!),
   }),
-  {
-    id: "tradingview-pane",
-    paneId: TRADINGVIEW_PANE_ID,
-    label: "TradingView",
-    description: "Open a TradingView-style Lightweight Charts pane for a ticker: candles, volume, timeframes, log scale, crosshair, legend, and drawings.",
-    keywords: ["tradingview", "tv", "chart", "candles", "lightweight", "ohlc"],
-    shortcut: { prefix: "TVC", argPlaceholder: "ticker", argKind: "ticker", argOptional: true },
-    wizard: [{
-      key: "tickers",
-      label: "Ticker",
-      placeholder: "AAPL",
-      type: "text",
-      body: ["Enter a ticker symbol."],
-    }],
-    canCreate: () => true,
-    createInstance: (context, options) => {
-      const symbols = templateSymbols(context, options);
-      const symbol = symbols[0] ?? normalizedSymbol(context.activeTicker);
-      if (!symbol) {
-        return {
-          title: "TradingView",
-          placement: "floating" as const,
-          settings: { [CHART_SPEC_SETTING_KEY]: buildEmptyChartPreset() },
-        };
-      }
-      return {
-        title: `TVC ${symbol}`,
-        placement: "floating" as const,
-        binding: { kind: "fixed" as const, symbol },
-        settings: { [CHART_SPEC_SETTING_KEY]: buildTradingViewChartPreset(symbol) },
-      };
-    },
-  },
   securityTemplate({
     id: "graph-intraday-price-pane",
     prefix: "GIP",
@@ -307,22 +331,6 @@ export const chartComposerModule: PluginModule = {
       context.settings,
     ),
   }, {
-    id: TRADINGVIEW_PANE_ID,
-    name: "TradingView",
-    icon: "V",
-    component: TradingViewPane,
-    defaultPosition: "right",
-    defaultMode: "floating",
-    defaultFloatingSize: { width: 100, height: 32 },
-    quickSettings: [LIVE_STREAMING_QUICK_SETTING],
-    settings: (context) => withLiveStreamingSetting(
-      buildChartComposerPaneSettingsDef(
-        context.settings,
-        context.activeTicker,
-      ),
-      context.settings,
-    ),
-  }, {
     id: DATA_CATALOG_PANE_ID,
     name: "Data Catalog",
     icon: "C",
@@ -334,7 +342,6 @@ export const chartComposerModule: PluginModule = {
   }],
   paneTemplates: chartComposerTemplates,
   setup(ctx) {
-    attachFredSeriesPersistence(ctx.persistence);
     ctx.registerTickerResearchTab({
       id: "chart",
       name: "Chart",

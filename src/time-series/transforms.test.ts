@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { alignTimeSeries } from "./alignment";
+import { alignTimeSeries, effectiveTimeSeriesPointTime } from "./alignment";
 import { extractPriceSeries } from "./market";
 import { applySeriesTransform } from "./transforms";
 import type { ResolvedSeries, TimeSeriesPoint } from "./types";
@@ -62,77 +62,49 @@ describe("series transformations", () => {
     expect(values[2]).toBeCloseTo(1, 12);
   });
 
-  test("yoy returns null for every point when no observation is near the 12-month target", () => {
-    const points = [
-      point("2024-01-01", 100),
-      point("2024-02-01", 110),
-      point("2024-03-01", 120),
-    ];
-    expect(applySeriesTransform(points, "yoy").map(({ value }) => value)).toEqual(
-      [null, null, null],
-    );
-  });
-
-  test("yoy finds a reference at the exact 12-month boundary", () => {
-    const points = [
-      point("2023-01-01", 100),
-      point("2023-02-01", 110),
-      point("2023-03-01", 120),
-      point("2023-04-01", 130),
-      point("2023-05-01", 140),
-      point("2023-06-01", 150),
-      point("2023-07-01", 160),
-      point("2023-08-01", 170),
-      point("2023-09-01", 180),
-      point("2023-10-01", 190),
-      point("2023-11-01", 200),
-      point("2023-12-01", 210),
-      point("2024-01-01", 220),
-    ];
-    const values = applySeriesTransform(points, "yoy").map(({ value }) => value);
-    expect(values[0]).toBeNull();
-    expect(values[12]).toBeCloseTo(120, 10);
-  });
-
-  test("yoy handles 1000 daily points without timing out", () => {
-    const start = new Date("2004-01-01T00:00:00Z");
-    const points = Array.from({ length: 1000 }, (_, i) => {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + i);
-      const iso = d.toISOString().slice(0, 10);
-      return point(iso, 100 + Math.sin(i / 10) * 10);
+  test("binary reference lookup matches the prior linear scan", () => {
+    const start = Date.parse("2021-01-01T00:00:00Z");
+    const points = Array.from({ length: 800 }, (_, index) => (
+      point(new Date(start + index * 3 * 86_400_000).toISOString().slice(0, 10), index + 10)
+    ));
+    const expected = points.map((current, currentIndex) => {
+      const target = new Date(current.observedAt);
+      const originalDay = target.getUTCDate();
+      target.setUTCDate(1);
+      target.setUTCMonth(target.getUTCMonth() - 12);
+      target.setUTCDate(Math.min(originalDay, new Date(Date.UTC(
+        target.getUTCFullYear(),
+        target.getUTCMonth() + 1,
+        0,
+      )).getUTCDate()));
+      const reference = points.slice(0, currentIndex)
+        .map((candidate, index) => ({
+          candidate,
+          index,
+          distance: Math.abs(candidate.observedAt.getTime() - target.getTime()),
+        }))
+        .filter(({ candidate, distance }) => (
+          candidate.observedAt < current.observedAt && distance <= 62 * 86_400_000
+        ))
+        .sort((left, right) => (
+          left.distance - right.distance
+          || right.candidate.observedAt.getTime() - left.candidate.observedAt.getTime()
+          || left.index - right.index
+        ))[0]?.candidate;
+      return reference ? ((current.value! - reference.value!) / Math.abs(reference.value!)) * 100 : null;
     });
-    const result = applySeriesTransform(points, "yoy");
-    expect(result).toHaveLength(1000);
-    expect(result[999]!.value).not.toBeNull();
+
+    expect(applySeriesTransform(points, "yoy").map(({ value }) => value)).toEqual(expected);
   });
 
-  test("yoy tie-breaks duplicate timestamps by preferring the later date", () => {
+  test("preserves point-in-time lookup when publication order differs from observation order", () => {
     const points = [
-      point("2023-06-15", 100),
-      point("2024-06-15", 180),
-      point("2023-06-15", 120),
-      point("2024-06-15", 200),
+      { ...point("2023-01-01", 100), date: new Date("2023-03-01T00:00:00Z") },
+      { ...point("2020-01-01", 50), date: new Date("2023-04-01T00:00:00Z") },
+      { ...point("2024-01-01", 200), date: new Date("2024-03-01T00:00:00Z") },
     ];
-    const values = applySeriesTransform(points, "yoy").map(({ value }) => value);
-    const sortedPoints = [...points].sort(
-      (a, b) => a.observedAt.getTime() - b.observedAt.getTime(),
-    );
-    const reference = sortedPoints.find((p) => p.observedAt.getTime() === new Date("2023-06-15T00:00:00Z").getTime());
-    expect(reference).toBeDefined();
-    const expected = ((200 - reference!.value) / Math.abs(reference!.value)) * 100;
-    const last = values[values.length - 1];
-    expect(last).toBeCloseTo(expected, 10);
-  });
 
-  test("yoy returns null when gaps exceed the tolerance window", () => {
-    const points = [
-      point("2022-01-01", 100),
-      point("2024-06-01", 150),
-    ];
-    expect(applySeriesTransform(points, "yoy").map(({ value }) => value)).toEqual(
-      [null, null],
-    );
+    expect(applySeriesTransform(points, "yoy").at(-1)?.value).toBe(100);
   });
 });
 
@@ -162,6 +134,36 @@ describe("mixed-frequency alignment", () => {
     const rows = alignTimeSeries([sparse], { timeline: dates });
     expect(rows.map((row) => row.values.fundamental?.value ?? null)).toEqual([null, null, null, 40, 40]);
     expect(rows[3]?.values.fundamental?.carried).toBe(false);
+  });
+
+  test("moving carry pointers match a full scan when availability is out of order", () => {
+    const points = [
+      point("2024-01-01", 1, "2024-01-10"),
+      point("2024-01-02", 2, "2024-01-05"),
+      point("2024-01-03", 3),
+    ];
+    const timeline = ["2024-01-01", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-06", "2024-01-10"]
+      .map((date) => new Date(`${date}T00:00:00Z`));
+    const rows = alignTimeSeries([series("fundamental", points, "step-after")], { timeline });
+    const exact = new Map(points.map((entry) => [effectiveTimeSeriesPointTime(entry), entry]));
+    const expected = timeline.map((date) => {
+      const time = date.getTime();
+      const exactPoint = exact.get(time);
+      if (exactPoint) return [exactPoint.value, false];
+      const previous = points.reduce<TimeSeriesPoint | null>((best, candidate) => {
+        const candidateTime = effectiveTimeSeriesPointTime(candidate);
+        return candidateTime <= time
+          && (!best || candidateTime >= effectiveTimeSeriesPointTime(best))
+          ? candidate
+          : best;
+      }, null);
+      return previous ? [previous.value, true] : [null, null];
+    });
+
+    expect(rows.map((row) => {
+      const value = row.values.fundamental;
+      return value ? [value.value, value.carried] : [null, null];
+    })).toEqual(expected);
   });
 
   test("intersection keeps only timestamps where every series has a usable value", () => {

@@ -1,5 +1,15 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import type { Dispatch } from "react";
+
+// Capture the real modules before mocking so afterAll can restore them.
+// bun shares one module registry across test files in a run, so a
+// mock.module without a restore leaks into every file loaded afterwards.
+const realFredPublic = await import("../data/fred-public");
+const realPollsClient = await import("../plugins/builtin/polls/client");
+const realAdjacentClient = await import("../plugins/builtin/adjacent/client");
+const realKalshiAdapter = await import("../plugins/prediction-markets/services/kalshi/adapter");
+const realPolymarketAdapter = await import("../plugins/prediction-markets/services/polymarket/adapter");
+const realPolymarketDetail = await import("../plugins/prediction-markets/services/polymarket/detail");
 
 const fredSeriesCalls: Array<{ seriesId: string; params: unknown }> = [];
 
@@ -79,6 +89,7 @@ mock.module("../plugins/builtin/adjacent/client", () => ({
   resetAdjacentPersistence: () => {},
   AdjacentClient: class {},
   loadCftcFilings: async () => ({ filings: [], meta: { page: 1, perPage: 100 } }),
+  cftcPageHasMore: () => false,
   getAdjacentCached: () => null,
   setAdjacentCached: () => {},
   setSharedAdjacentApiKey: () => {},
@@ -152,6 +163,8 @@ mock.module("../plugins/prediction-markets/services/kalshi/adapter", () => ({
     return [{ date: new Date("2024-01-01"), close: 0.55 }];
   },
   loadKalshiDetail: async () => null,
+  resolveKalshiChartSummary: async () => null,
+  fetchKalshiMarketByTicker: async () => null,
 }));
 
 mock.module("../plugins/prediction-markets/services/polymarket/adapter", () => ({
@@ -176,7 +189,17 @@ mock.module("../plugins/prediction-markets/services/polymarket/detail", () => ({
     return [{ date: new Date("2024-01-01"), close: 0.62 }];
   },
   loadPolymarketDetail: async () => null,
+  resolvePolymarketChartSummary: async () => null,
 }));
+
+afterAll(() => {
+  mock.module("../data/fred-public", () => realFredPublic);
+  mock.module("../plugins/builtin/polls/client", () => realPollsClient);
+  mock.module("../plugins/builtin/adjacent/client", () => realAdjacentClient);
+  mock.module("../plugins/prediction-markets/services/kalshi/adapter", () => realKalshiAdapter);
+  mock.module("../plugins/prediction-markets/services/polymarket/adapter", () => realPolymarketAdapter);
+  mock.module("../plugins/prediction-markets/services/polymarket/detail", () => realPolymarketDetail);
+});
 
 const { appReducer, createInitialState } = await import("../core/state/app/state");
 const { setSharedNewsService } = await import("../news/hooks");

@@ -157,7 +157,7 @@ describe("chart series inline quick add", () => {
       await testSetup!.renderOnce();
     });
     expect(testSetup.captureCharFrame()).toContain("MSFT revenue");
-    expect(await waitForFrameToContain("MSFT · Revenue")).toContain("MSFT · Revenue");
+    expect(await waitForFrameToContain("MSFT — Revenue")).toContain("MSFT — Revenue");
     expect(renderedWidth).toBe(36);
 
     await act(async () => {
@@ -181,10 +181,114 @@ describe("chart series inline quick add", () => {
       height: 0.35,
     });
 
-    const closedFrame = await waitForFrameToExclude("MSFT · Revenue");
+    const closedFrame = await waitForFrameToExclude("MSFT — Revenue");
     expect(closedFrame).toContain("add series");
-    expect(closedFrame).not.toContain("MSFT · Revenue");
+    expect(closedFrame).not.toContain("MSFT — Revenue");
     expect(renderedWidth).toBe(14);
+  });
+
+  test("commits a drawdown idea as a study with its source series", async () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-chart-quick-add-idea"));
+    const startingSpec = buildPriceChartPreset("AAPL");
+    let updatedSpec: ChartSpec | undefined;
+
+    testSetup = await testRender(
+      <AppContext.Provider value={{ state: initial, dispatch: () => {} }}>
+        <ChartSeriesQuickAdd
+          spec={startingSpec}
+          setSpec={(next) => {
+            updatedSpec = next;
+          }}
+          focused
+          width={92}
+          height={8}
+          shortcutEnabled
+          shortcutBlocked={false}
+          onActivatePane={() => {}}
+        />
+      </AppContext.Provider>,
+      { width: 92, height: 8 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    await emitKey("n", "n");
+    await act(async () => {
+      await testSetup!.mockInput.typeText("MSFT drawdown");
+      await testSetup!.renderOnce();
+    });
+    expect(await waitForFrameToContain("MSFT — Drawdown")).toContain("MSFT — Drawdown");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+
+    // Idea rows merge through applyChartIdeaToSpec, so the source is appended
+    // and the drawdown study lands in its own lower panel.
+    expect(updatedSpec?.series.map((series) => series.source)).toMatchObject([
+      { kind: "security", instrument: { symbol: "AAPL" } },
+      { kind: "security", instrument: { symbol: "MSFT" } },
+    ]);
+    expect(updatedSpec?.studies.find((study) => study.kind === "drawdown")).toMatchObject({
+      kind: "drawdown",
+      panelId: "drawdown",
+      inputSeriesIds: ["msft-market-ohlcv-1"],
+    });
+    expect(updatedSpec?.panels.some((panel) => panel.id === "drawdown")).toBe(true);
+  });
+
+  test("commits a spread idea by reusing an already-charted leg", async () => {
+    const initial = createInitialState(createDefaultConfig("/tmp/gloomberb-chart-quick-add-spread"));
+    const startingSpec = buildPriceChartPreset("AAPL");
+    let updatedSpec: ChartSpec | undefined;
+
+    testSetup = await testRender(
+      <AppContext.Provider value={{ state: initial, dispatch: () => {} }}>
+        <ChartSeriesQuickAdd
+          spec={startingSpec}
+          setSpec={(next) => {
+            updatedSpec = next;
+          }}
+          focused
+          width={92}
+          height={8}
+          shortcutEnabled
+          shortcutBlocked={false}
+          onActivatePane={() => {}}
+        />
+      </AppContext.Provider>,
+      { width: 92, height: 8 },
+    );
+
+    await act(async () => {
+      await testSetup!.renderOnce();
+    });
+
+    await emitKey("n", "n");
+    await act(async () => {
+      await testSetup!.mockInput.typeText("AAPL vs MSFT");
+      await testSetup!.renderOnce();
+    });
+    expect(await waitForFrameToContain("AAPL / MSFT — Relative"))
+      .toContain("AAPL / MSFT — Relative");
+
+    await act(async () => {
+      await testSetup!.mockMouse.click(2, 1);
+      await testSetup!.renderOnce();
+    });
+
+    expect(updatedSpec?.studies.find((study) => study.kind === "ratio")).toMatchObject({
+      kind: "ratio",
+      inputSeriesIds: ["aapl-market-ohlcv-1", "msft-market-ohlcv-2"],
+    });
+    // the already-charted AAPL candle is not duplicated
+    expect(updatedSpec?.series.map((series) => series.id)).toEqual([
+      "aapl-market-ohlcv-1",
+      "msft-market-ohlcv-2",
+    ]);
   });
 
   test("releases focus capture when the input blurs", async () => {

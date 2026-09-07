@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import type { HostTabsProps } from "../../../../ui/host";
@@ -27,9 +28,14 @@ export function WebTabs({
   palette,
 }: HostTabsProps) {
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
+  const tabListRef = useRef<HTMLDivElement | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const dragOffsetXRef = useRef(0);
+  const dragSourceWidthRef = useRef(0);
+  const suppressClickRef = useRef(false);
   const [hoveredValue, setHoveredValue] = useState<string | null>(null);
+  const [dragSourceValue, setDragSourceValue] = useState<string | null>(null);
   const [dragTargetValue, setDragTargetValue] = useState<string | null>(null);
-  const dragSourceValueRef = useRef<string | null>(null);
   const showUnderline = variant === "underline" && !compact;
   // A tab bar occupies exactly the one row every caller reserves for it. Any
   // extra pixels here are pixels the pane's children are told they own and the
@@ -45,6 +51,60 @@ export function WebTabs({
       inline: "nearest",
     });
   }, [activeValue, tabs]);
+
+  useEffect(() => () => dragCleanupRef.current?.(), []);
+
+  const startReorder = (sourceValue: string, event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    dragCleanupRef.current?.();
+    const sourceElement = event.currentTarget;
+    const sourceBounds = sourceElement.getBoundingClientRect();
+    const startX = event.clientX;
+    const targets = [...tabListRef.current?.querySelectorAll<HTMLButtonElement>("[data-reorderable='true']") ?? []]
+      .map((button) => ({ value: button.dataset.tabValue ?? "", bounds: button.getBoundingClientRect() }));
+    const resolveTarget = (clientX: number) => targets.reduce((closest, target) => {
+      const distance = clientX < target.bounds.left
+        ? target.bounds.left - clientX
+        : clientX > target.bounds.right ? clientX - target.bounds.right : 0;
+      return distance < closest.distance ? { value: target.value, distance } : closest;
+    }, { value: "", distance: Number.POSITIVE_INFINITY }).value || null;
+    let dragged = false;
+
+    const cleanup = () => {
+      document.removeEventListener("mousemove", handleMove);
+      document.removeEventListener("mouseup", handleUp);
+      document.body.classList.remove("gloom-dragging");
+      dragCleanupRef.current = null;
+      dragOffsetXRef.current = 0;
+      dragSourceWidthRef.current = 0;
+      setDragSourceValue(null);
+      setDragTargetValue(null);
+    };
+    const handleMove = (moveEvent: MouseEvent) => {
+      const offsetX = moveEvent.clientX - startX;
+      if (!dragged && Math.abs(offsetX) < 4) return;
+      dragged = true;
+      moveEvent.preventDefault();
+      dragOffsetXRef.current = offsetX;
+      sourceElement.style.transform = `translateX(${offsetX}px) scale(1.03)`;
+      document.body.classList.add("gloom-dragging");
+      setDragTargetValue(resolveTarget(sourceBounds.left + offsetX + sourceBounds.width / 2));
+    };
+    const handleUp = (upEvent: MouseEvent) => {
+      const targetValue = resolveTarget(sourceBounds.left + upEvent.clientX - startX + sourceBounds.width / 2);
+      suppressClickRef.current = dragged;
+      cleanup();
+      if (dragged && targetValue && targetValue !== sourceValue) {
+        onReorder?.(sourceValue, targetValue);
+      }
+    };
+
+    dragSourceWidthRef.current = sourceBounds.width;
+    setDragSourceValue(sourceValue);
+    document.addEventListener("mousemove", handleMove);
+    document.addEventListener("mouseup", handleUp);
+    dragCleanupRef.current = cleanup;
+  };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     const element = event.currentTarget;
@@ -72,8 +132,13 @@ export function WebTabs({
     return palette.inactiveFg;
   };
 
+  const dragSourceIndex = tabs.findIndex((tab) => tab.value === dragSourceValue);
+  const dragTargetIndex = tabs.findIndex((tab) => tab.value === dragTargetValue);
+  const dragSlotWidth = dragSourceWidthRef.current + (dense ? 2 : 4);
+
   return (
     <div
+      ref={tabListRef}
       data-gloom-role="tab-list"
       role="tablist"
       onWheel={handleWheel}
@@ -94,13 +159,21 @@ export function WebTabs({
         boxSizing: "border-box",
       }}
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const active = tab.value === activeValue;
         const disabled = tab.disabled === true;
         const hovered = hoveredValue === tab.value && !disabled;
         const closeVisible = !!tab.onClose && (closeMode === "always" || active);
         const reorderable = !!onReorder && !disabled && tab.reorderable !== false;
-        const dragTarget = dragTargetValue === tab.value && dragSourceValueRef.current !== tab.value;
+        const dragTarget = dragTargetValue === tab.value && dragSourceValue !== tab.value;
+        const sourceDragging = dragSourceValue === tab.value && dragTargetValue !== null;
+        const dragTranslateX = dragSourceValue === tab.value
+          ? dragOffsetXRef.current
+          : dragTargetIndex >= 0 && dragSourceIndex < dragTargetIndex && index > dragSourceIndex && index <= dragTargetIndex
+            ? -dragSlotWidth
+            : dragTargetIndex >= 0 && dragSourceIndex > dragTargetIndex && index >= dragTargetIndex && index < dragSourceIndex
+              ? dragSlotWidth
+              : 0;
         const tabStyle = {
           "--tab-fg": resolveTabColor(disabled, active, hovered),
           "--tab-hover-fg": palette.hoverFg,
@@ -135,8 +208,11 @@ export function WebTabs({
           borderColor: active && focused && variant !== "pill"
             ? `color-mix(in srgb, ${palette.activeUnderline} 35%, transparent)`
             : "transparent",
-          transition: "background-color 110ms ease, border-color 110ms ease, color 110ms ease",
-          cursor: disabled ? "default" : reorderable ? "grab" : "pointer",
+          transform: `translateX(${dragTranslateX}px)${sourceDragging ? " scale(1.03)" : ""}`,
+          zIndex: dragSourceValue === tab.value ? 2 : undefined,
+          willChange: dragSourceValue ? "transform" : undefined,
+          transition: `background-color 110ms ease, border-color 110ms ease, color 110ms ease, transform ${dragSourceValue && dragSourceValue !== tab.value ? "var(--tab-reorder-duration, 160ms)" : "0ms"} cubic-bezier(0.77, 0, 0.175, 1)`,
+          cursor: disabled ? "default" : dragSourceValue ? "grabbing" : reorderable ? "grab" : "pointer",
         } satisfies CssVars;
 
         return (
@@ -145,18 +221,27 @@ export function WebTabs({
             ref={active ? activeTabRef : undefined}
             data-gloom-role="tab-button"
             data-active={active ? "true" : undefined}
+            data-reorderable={reorderable ? "true" : undefined}
+            data-tab-value={tab.value}
             type="button"
             role="tab"
             aria-selected={active}
             aria-disabled={disabled || undefined}
             disabled={disabled}
-            draggable={reorderable}
-            aria-grabbed={reorderable && dragSourceValueRef.current === tab.value ? true : undefined}
+            draggable={false}
+            aria-grabbed={reorderable && dragSourceValue === tab.value ? true : undefined}
+            aria-keyshortcuts={closeVisible ? "Delete" : undefined}
             style={tabStyle}
             onMouseEnter={() => setHoveredValue(tab.value)}
             onMouseLeave={() => setHoveredValue((current) => (current === tab.value ? null : current))}
-            aria-keyshortcuts={closeVisible ? "Delete" : undefined}
-            onClick={() => {
+            onMouseDown={reorderable ? (event) => startReorder(tab.value, event) : undefined}
+            onClick={(event) => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
               if (!disabled) onSelect(tab.value);
             }}
             onKeyDown={(event) => {
@@ -176,32 +261,6 @@ export function WebTabs({
               event.preventDefault();
               event.stopPropagation();
               tab.onContextMenu?.(tab.value, event);
-            } : undefined}
-            onDragStart={reorderable ? (event) => {
-              dragSourceValueRef.current = tab.value;
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData("text/plain", tab.value);
-            } : undefined}
-            onDragOver={reorderable ? (event) => {
-              const sourceValue = dragSourceValueRef.current;
-              if (!sourceValue || sourceValue === tab.value) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              setDragTargetValue(tab.value);
-            } : undefined}
-            onDragLeave={reorderable ? () => {
-              setDragTargetValue((current) => (current === tab.value ? null : current));
-            } : undefined}
-            onDrop={reorderable ? (event) => {
-              event.preventDefault();
-              const sourceValue = dragSourceValueRef.current ?? event.dataTransfer.getData("text/plain");
-              dragSourceValueRef.current = null;
-              setDragTargetValue(null);
-              if (sourceValue && sourceValue !== tab.value) onReorder(sourceValue, tab.value);
-            } : undefined}
-            onDragEnd={reorderable ? () => {
-              dragSourceValueRef.current = null;
-              setDragTargetValue(null);
             } : undefined}
           >
             <span

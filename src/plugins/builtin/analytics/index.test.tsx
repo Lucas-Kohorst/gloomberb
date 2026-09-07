@@ -515,7 +515,7 @@ describe("PortfolioAnalyticsPane", () => {
     const frame = testSetup!.captureCharFrame();
     expect(frame).toContain("Val           1.4k");
     expect(frame).toContain("P&L           +400  (+40.00%)");
-    expect(frame).toContain("Technology               100.0%       1.4k       +400  +40.00%");
+    expect(frame).toMatch(/Technology\s+100\.0%\s+1\.4k\s+\+400\s+\+40\.00%/);
     expect(frame).not.toContain("1.3k");
   });
 

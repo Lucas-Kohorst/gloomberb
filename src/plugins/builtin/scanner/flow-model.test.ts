@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ScannerFlowEvent } from "../../../api-client";
-import { DEFAULT_FLOW_FILTERS, filterFlowEvents, type FlowFilters } from "./flow-model";
+import { DEFAULT_FLOW_FILTERS, filterFlowEvents, flowEmptyState, type FlowFilters } from "./flow-model";
 
 const NOW = Date.parse("2026-03-02T15:00:00Z");
 
@@ -82,14 +82,14 @@ describe("client-side flow filters", () => {
     expect(filterFlowEvents(events, filters({ expiry: "7" }), watchlist, NOW).map((entry) => entry.id))
       .toEqual(["today", "in-7"]);
   });
+});
 
-  test("caps the painted head so a large shared feed cannot flatten the pane", () => {
-    const events = Array.from({ length: 250 }, (_, index) => event({
-      id: `keep-${index}`,
-      premium: 500_000,
-    }));
-    expect(filterFlowEvents(events, filters(), watchlist, NOW)).toHaveLength(200);
-    expect(filterFlowEvents(events, filters(), watchlist, NOW, 3).map((entry) => entry.id))
-      .toEqual(["keep-0", "keep-1", "keep-2"]);
+describe("flow empty state", () => {
+  test("blames the filters only when the feed actually sent prints", () => {
+    expect(flowEmptyState(12, 0, "live").title).toBe("12 prints hidden by filters.");
+    expect(flowEmptyState(1, 0, "live").title).toBe("1 print hidden by filters.");
+    // An empty tape is not a filter problem, whatever the filters are set to.
+    expect(flowEmptyState(0, 0, "live").title).toBe("No prints on the tape yet.");
+    expect(flowEmptyState(0, 0, "closed").hint).toContain("next session");
   });
 });

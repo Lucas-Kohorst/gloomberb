@@ -3,7 +3,7 @@ import { dirname, join, relative } from "path";
 import { TITLEBAR_OVERLAY_HEIGHT_PX } from "../../../components/layout/titlebar-overlay";
 import { toRootAbsoluteAssetUrl } from "./asset-urls";
 
-type AliasRule = readonly [string, string] | readonly [string, string, string];
+export type AliasRule = readonly [string, string] | readonly [string, string, string];
 type PageOptions = {
   entrypoint: string;
   outdir: string;
@@ -27,8 +27,8 @@ const COMMON_ALIAS_RULES: AliasRule[] = [
   ["./kitty/support", "components/chart/native/renderer-selection.ts", "native-stubs/chart/kitty-support.ts"],
   ["native/surface/manager", "native-stubs/chart/surface-manager.ts"],
   ["native/surface/sync", "native-stubs/chart/surface-sync.ts"],
-  ["./native-loader", "plugins/ibkr/gateway/service/index.ts", "native-stubs/ibkr-native-loader.ts"],
   ["./native-loader", "plugins/broker-sync/robinhood.ts", "native-stubs/broker-sync-native-loader.ts"],
+  ["./native-loader", "plugins/broker-sync/simplefin.ts", "native-stubs/broker-sync-native-loader.ts"],
 ];
 
 export function electrobunViewPath(...parts: string[]): string {
@@ -222,16 +222,11 @@ async function buildElectrobunViewBundle({
     minify: true,
     define: {
       "process.env.NODE_ENV": "\"production\"",
+      // The webview has no `process`, so the cloud endpoint override the terminal
+      // already reads from the environment is baked in at build time.
+      __GLOOMBERB_API_URL__: JSON.stringify(process.env.GLOOMBERB_API_URL ?? ""),
     },
-    plugins: [
-      {
-        name: pluginName,
-        setup(build) {
-          const aliasRules = [...extraAliasRules, ...COMMON_ALIAS_RULES];
-          build.onResolve({ filter: /.*/ }, (args) => resolveAlias(args, aliasRules));
-        },
-      },
-    ],
+    plugins: [electrobunViewAliasPlugin(pluginName, extraAliasRules)],
   });
 
   if (!result.success) {
@@ -275,6 +270,16 @@ ${bootstrapScript}
   </body>
 </html>
 `;
+}
+
+export function electrobunViewAliasPlugin(name: string, extraAliasRules: AliasRule[] = []) {
+  return {
+    name,
+    setup(build: { onResolve(options: { filter: RegExp }, callback: (args: { path: string; importer?: string }) => unknown): void }) {
+      const aliasRules = [...extraAliasRules, ...COMMON_ALIAS_RULES];
+      build.onResolve({ filter: /.*/ }, (args) => resolveAlias(args, aliasRules));
+    },
+  };
 }
 
 function resolveAlias(args: { path: string; importer?: string }, aliasRules: AliasRule[]) {

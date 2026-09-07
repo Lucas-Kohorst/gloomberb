@@ -1,10 +1,34 @@
 import type {
+  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionHistoryRange,
   PredictionMarketDetail,
   PredictionMarketSummary,
   PredictionVenue,
 } from "./types";
+
+export interface PredictionCatalogLoadOptions {
+  limit?: number;
+  signal?: AbortSignal;
+  force?: boolean;
+  firstPageOnly?: boolean;
+}
+
+export type PredictionCatalogBrowseOptions =
+  | PredictionBrowseTab
+  | PredictionCatalogLoadOptions;
+
+export function resolvePredictionCatalogOptions(
+  browseOrOptions: PredictionCatalogBrowseOptions = "top",
+  legacyOptions: PredictionCatalogLoadOptions = {},
+): {
+  browseTab: PredictionBrowseTab;
+  options: PredictionCatalogLoadOptions;
+} {
+  return typeof browseOrOptions === "string"
+    ? { browseTab: browseOrOptions, options: legacyOptions }
+    : { browseTab: "top", options: browseOrOptions };
+}
 
 export function buildPredictionCatalogCacheKey(
   venue: PredictionVenue,
@@ -24,6 +48,24 @@ export function buildPredictionCatalogResourceKey(
 ): string {
   const base = `${venue}:${categoryId}:${searchQuery.trim().toLowerCase() || "all"}`;
   return browseTab === "top" ? base : `${base}:${browseTab}`;
+}
+
+export function buildPredictionCatalogLoadResourceKey(
+  venue: PredictionVenue,
+  categoryId: PredictionCategoryId,
+  searchQuery: string,
+  browseTab: PredictionBrowseTab,
+  requestedLimit: number,
+  options: Pick<PredictionCatalogLoadOptions, "firstPageOnly" | "limit">,
+): string {
+  const base = buildPredictionCatalogResourceKey(
+    venue,
+    categoryId,
+    searchQuery,
+    browseTab,
+  );
+  if (options.firstPageOnly) return base;
+  return options.limit ? `${base}:limit-${requestedLimit}` : `${base}:full`;
 }
 
 export function buildPredictionDetailCacheKey(
@@ -167,9 +209,51 @@ export function samePredictionCatalogSummaries(
   return true;
 }
 
+/** WS ticks write `updatedAt` as now; keep those quotes across a Gamma poll. */
+export const LIVE_PREDICTION_QUOTE_MAX_AGE_MS = 30_000;
+
+export function overlayLivePredictionQuote(
+  snapshot: PredictionMarketSummary,
+  live: PredictionMarketSummary | undefined,
+  now = Date.now(),
+): PredictionMarketSummary {
+  if (!live || live.key !== snapshot.key) return snapshot;
+  const liveAt = live.updatedAt ? new Date(live.updatedAt).getTime() : Number.NaN;
+  if (!Number.isFinite(liveAt) || now - liveAt > LIVE_PREDICTION_QUOTE_MAX_AGE_MS) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    yesPrice: live.yesPrice,
+    noPrice: live.noPrice,
+    yesBid: live.yesBid,
+    yesAsk: live.yesAsk,
+    noBid: live.noBid,
+    noAsk: live.noAsk,
+    spread: live.spread,
+    lastTradePrice: live.lastTradePrice,
+    updatedAt: live.updatedAt,
+  };
+}
+
+export function overlayLivePredictionQuotes(
+  previous: readonly PredictionMarketSummary[] | undefined,
+  next: readonly PredictionMarketSummary[],
+  now = Date.now(),
+): PredictionMarketSummary[] {
+  if (!previous || previous.length === 0) return [...next];
+  const liveByKey = new Map(previous.map((market) => [market.key, market]));
+  return next.map((snapshot) => overlayLivePredictionQuote(
+    snapshot,
+    liveByKey.get(snapshot.key),
+    now,
+  ));
+}
+
 export function mergePredictionCatalogPage(
   current: readonly PredictionMarketSummary[] | undefined,
   page: readonly PredictionMarketSummary[],
+  now = Date.now(),
 ): PredictionMarketSummary[] {
   if (!current || current.length === 0) return [...page];
   if (page.length === 0) return [...current];
@@ -183,7 +267,7 @@ export function mergePredictionCatalogPage(
     const fresh = byKey.get(market.key);
     if (fresh) {
       used.add(market.key);
-      merged.push(fresh);
+      merged.push(overlayLivePredictionQuote(fresh, market, now));
     } else {
       merged.push(market);
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { NewsArticle, NewsQueryPhase } from "../../../../news/types";
 import { t } from "../../../../i18n";
 import { searchAdjacentRelatedArticles } from "../../../../plugins/builtin/adjacent/news";
@@ -12,10 +12,27 @@ import {
   cachedPeriodicFilingArticles,
   searchPeriodicFilingArticles,
 } from "../../../../plugins/builtin/sec/filing-search";
+import {
+  getSharedAdjacentClient,
+  loadCftcFilings,
+} from "../../../../plugins/builtin/adjacent/client";
 import type { ResultItem } from "../../list/model";
+import { useDebouncedAbortableEffect } from "./use-debounced-effect";
 
-export function looksLikeWrittenTextQuery(query: string): boolean {
-  return looksLikeArticleQuery(query) || looksLikeFilingQuery(query);
+export function looksLikeCftcQuery(query: string): boolean {
+  return /\b(cftc|dcm|dco)\b/i.test(query);
+}
+
+/**
+ * Whether the query should search the written-text corpus (articles, filings,
+ * CFTC). The broad fallback — any token of 3+ chars — means free-text queries
+ * also trigger a local wire lookup, not only ART/filing/CFTC-shaped ones.
+ */
+export function shouldSearchWrittenCorpus(query: string): boolean {
+  if (looksLikeArticleQuery(query) || looksLikeFilingQuery(query) || looksLikeCftcQuery(query)) {
+    return true;
+  }
+  return query.trim().split(/\s+/).some((token) => token.length >= 3);
 }
 
 export function useAdjacentArticleSearch(query: string): {
@@ -24,30 +41,18 @@ export function useAdjacentArticleSearch(query: string): {
 } {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [phase, setPhase] = useState<NewsQueryPhase>("idle");
+  const searchText = looksLikeArticleQuery(query) ? adjacentArticleSearchText(query) : null;
 
-  useEffect(() => {
-    const searchText = looksLikeArticleQuery(query) ? adjacentArticleSearchText(query) : null;
-    if (!searchText) {
-      setArticles([]);
-      setPhase("idle");
-      return;
-    }
-
-    let cancelled = false;
-    setPhase("loading");
-    const timer = setTimeout(() => {
-      void searchAdjacentRelatedArticles(searchText).then((found) => {
-        if (cancelled) return;
-        setArticles(found);
-        setPhase("ready");
-      });
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query]);
+  useDebouncedAbortableEffect(query, !!searchText, async (signal) => {
+    if (!searchText) return;
+    const found = await searchAdjacentRelatedArticles(searchText);
+    if (signal.aborted) return;
+    setArticles(found);
+    setPhase("ready");
+  }, {
+    onEnable: () => setPhase("loading"),
+    onDisable: () => { setArticles([]); setPhase("idle"); },
+  });
 
   return { articles, phase };
 }
@@ -59,34 +64,71 @@ export function useFilingArticleSearch(query: string): {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [phase, setPhase] = useState<NewsQueryPhase>("idle");
 
-  useEffect(() => {
-    if (!looksLikeFilingQuery(query)) {
-      setArticles([]);
-      setPhase("idle");
-      return;
+  useDebouncedAbortableEffect(query, looksLikeFilingQuery(query), async (signal) => {
+    try {
+      const found = await searchPeriodicFilingArticles(query);
+      if (signal.aborted) return;
+      setArticles(found);
+      setPhase("ready");
+    } catch {
+      if (signal.aborted) return;
+      setPhase("ready");
     }
+  }, {
+    onEnable: () => {
+      const cached = cachedPeriodicFilingArticles(query);
+      setArticles(cached);
+      setPhase(cached.length > 0 ? "ready" : "loading");
+    },
+    onDisable: () => { setArticles([]); setPhase("idle"); },
+  });
 
-    const cached = cachedPeriodicFilingArticles(query);
-    setArticles(cached);
-    setPhase(cached.length > 0 ? "ready" : "loading");
+  return { articles, phase };
+}
 
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void searchPeriodicFilingArticles(query).then((found) => {
-        if (cancelled) return;
-        setArticles(found);
+export function useCftcFilingSearch(query: string): {
+  articles: NewsArticle[];
+  phase: NewsQueryPhase;
+} {
+  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  const [phase, setPhase] = useState<NewsQueryPhase>("idle");
+
+  useDebouncedAbortableEffect(
+    query,
+    looksLikeCftcQuery(query) || looksLikeFilingQuery(query),
+    async (signal) => {
+      try {
+        const page = await loadCftcFilings(getSharedAdjacentClient(), query, 8);
+        if (signal.aborted) return;
+        setArticles(page.filings.map((filing) => ({
+          id: `cftc:${filing.id}`,
+          title: filing.title,
+          url: "",
+          source: "CFTC",
+          publishedAt: filing.statusDate,
+          summary: [filing.orgCode, filing.status, filing.feed].filter(Boolean).join(" · "),
+          topic: "filing",
+          topics: ["filing", "cftc", filing.feed],
+          sectors: [],
+          categories: ["CFTC"],
+          tickers: [],
+          scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+          isBreaking: false,
+          isDeveloping: false,
+          importance: 0,
+          origin: "cftc" as const,
+        })));
         setPhase("ready");
-      }).catch(() => {
-        if (cancelled) return;
+      } catch {
+        if (signal.aborted) return;
         setPhase("ready");
-      });
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query]);
+      }
+    },
+    {
+      onEnable: () => setPhase("loading"),
+      onDisable: () => { setArticles([]); setPhase("idle"); },
+    },
+  );
 
   return { articles, phase };
 }
@@ -98,16 +140,16 @@ export function buildArticleSearchResultItems(options: {
   onOpen: (article: NewsArticle) => void;
 }): ResultItem[] {
   const query = options.query.trim();
-  if (!query || !looksLikeWrittenTextQuery(query)) return [];
+  if (!query || !shouldSearchWrittenCorpus(query)) return [];
 
   const matches = searchNewsArticles(options.articles, query);
   const items = matches.map((article) => ({
     id: `article:${article.id}`,
     label: article.title,
     detail: article.source,
-    category: article.origin === "sec-edgar" ? "Filings" : "Articles",
+    category: article.origin === "sec-edgar" || article.origin === "cftc" ? "Filings" : "Articles",
     kind: "action" as const,
-    right: article.origin === "sec-edgar" ? "10K" : "ART",
+    right: article.origin === "sec-edgar" ? "10K" : article.origin === "cftc" ? "CFTC" : "ART",
     searchText: [
       article.title,
       article.source,
@@ -133,12 +175,9 @@ export function buildArticleSearchResultItems(options: {
       detail: "",
       category: "Articles",
       kind: "info",
-      // A placeholder that answers nothing; plain Enter must fall through to a
-      // real local match (e.g. the top-news pane template) instead of stalling.
       defaultSelectable: false,
       action: () => {},
     }];
   }
   return [];
 }
-

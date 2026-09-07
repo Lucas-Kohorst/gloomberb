@@ -1,5 +1,9 @@
 import type { AppAction } from "../../../state/app/context";
 import type { Dispatch } from "react";
+import {
+  isDefaultTickerSearchShortcut,
+  normalizeTickerSearchShortcut,
+} from "../../../data/config/ticker-search-shortcut";
 
 type CommandExecutor = (dispatch: Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
@@ -138,8 +142,15 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
-    id: "layout",
+    id: "layout-marketplace",
     prefix: "LAY",
+    label: "Layouts",
+    description: "Open the layout browser to switch, publish, or add layouts",
+    category: "Config",
+  },
+  {
+    id: "layout",
+    prefix: "LMA",
     label: "Layout Actions",
     description: "Organize panes and saved layouts",
     hasArg: true,
@@ -174,35 +185,17 @@ export const commands: Command[] = [
     category: "Config",
   },
   {
-    id: "set-refresh-interval",
-    prefix: "RI",
-    label: "Set Refresh Interval",
-    description: "Set the system-wide poll interval for news and alt-data feeds (minutes; shown in those pane footers)",
-    hasArg: true,
-    argPlaceholder: "minutes",
-    category: "Config",
-  },
-  {
-    id: "set-auto-refresh",
-    prefix: "AR",
-    label: "Set Auto-Refresh",
-    description: "Auto-refresh network panes when data is stale (off, 1, 5, 15)",
-    hasArg: true,
-    argPlaceholder: "off|1|5|15",
-    category: "Config",
-  },
-  {
     id: "font-size-increase",
     prefix: "FONT+",
     label: "Increase Font Size",
-    description: "Increase the terminal-wide font size",
+    description: "Increase the app-wide font size",
     category: "Config",
   },
   {
     id: "font-size-decrease",
     prefix: "FONT-",
     label: "Decrease Font Size",
-    description: "Decrease the terminal-wide font size",
+    description: "Decrease the app-wide font size",
     category: "Config",
   },
   {
@@ -237,19 +230,6 @@ export const commands: Command[] = [
     description: "Switch the interface language",
     hasArg: true,
     argPlaceholder: "locale",
-    category: "Config",
-  },
-
-  // Plugins — fast keyboard toggle of the same installed list as the marketplace.
-  // Discovery, install, update, and remove live in the Plugin Marketplace pane
-  // (`PLUGINS` / `PLUG`). PL can jump there; it is not a second store.
-  {
-    id: "plugins",
-    prefix: "PL",
-    label: "Manage Plugins",
-    description: "Toggle plugins, or open the Plugin Marketplace (PLUGINS)",
-    hasArg: true,
-    argPlaceholder: "plugin name",
     category: "Config",
   },
 
@@ -303,4 +283,64 @@ export function getCommandPrefixes(command: Command): string[] {
   return [command.prefix, ...(command.aliases ?? [])]
     .map((prefix) => prefix.trim().toUpperCase())
     .filter(Boolean);
+}
+
+/**
+ * True when `normalizedShortcut` (already trimmed/uppercased) is claimed by any
+ * prefix other than the ticker-search command itself, either from the command
+ * list or from `reservedPrefixes` (pane-template and plugin-command shortcuts).
+ * The ticker-search defaults (DES and T) are owned by that command, so they are
+ * not treated as conflicts.
+ */
+export function tickerSearchShortcutConflictsWith(
+  commandList: readonly Command[],
+  normalizedShortcut: string,
+  reservedPrefixes: Iterable<string> = [],
+): boolean {
+  const claimed = new Set<string>();
+  for (const prefix of reservedPrefixes) {
+    const normalized = prefix.trim().toUpperCase();
+    // T is also used by the built-in ticker-detail pane template, but it is
+    // owned by ticker search in the command bar. Do not let that existing
+    // overlap block a longer custom ticker-search prefix such as "TS".
+    if (normalized && !isDefaultTickerSearchShortcut(normalized)) claimed.add(normalized);
+  }
+  for (const command of commandList) {
+    if (command.id === "security-description") continue;
+    for (const prefix of getCommandPrefixes(command)) claimed.add(prefix);
+  }
+  return [...claimed].some((prefix) => (
+    prefix === normalizedShortcut
+    || prefix.startsWith(normalizedShortcut)
+    || normalizedShortcut.startsWith(prefix)
+  ));
+}
+
+/**
+ * Applies the optional `tickerSearchShortcut` config to a command list. The
+ * shortcut is added as an extra prefix on the security-description command
+ * (the command-bar entry that opens ticker search), leaving the existing
+ * "DES" prefix and "T" alias intact. Invalid or colliding values are ignored,
+ * so other command, pane, and plugin shortcuts never lose a prefix.
+ */
+export function applyTickerSearchShortcutConfig(
+  commandList: readonly Command[],
+  configuredShortcut: string | null | undefined,
+  options: { reservedPrefixes?: Iterable<string> } = {},
+): Command[] {
+  const normalized = normalizeTickerSearchShortcut(configuredShortcut);
+  if (!normalized) return [...commandList];
+  if (tickerSearchShortcutConflictsWith(commandList, normalized, options.reservedPrefixes)) {
+    return [...commandList];
+  }
+  return [...commandList].map((command) => {
+    if (command.id !== "security-description") return command;
+    const prefixes = [...new Set([...getCommandPrefixes(command), normalized])];
+    const primary = prefixes[0] ?? command.prefix;
+    return {
+      ...command,
+      prefix: primary,
+      aliases: prefixes.slice(1),
+    };
+  });
 }

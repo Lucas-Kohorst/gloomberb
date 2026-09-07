@@ -24,11 +24,18 @@ import { formatChartLegendValue } from "../../../../components/chart/composite/f
 import { formatMeasureSpan } from "../../../../components/chart/composite/tools";
 import type { ResolvedSeries, TimeSeriesPoint } from "../../../../time-series/types";
 import {
+  classifyWheelGesture,
   panVisibleTimeRange,
+  sameVisibleTimeRange,
   scaleVisibleTimeRange,
+  visibleRangeInteraction,
+  wheelDeltaPixels,
   wheelPanRatioFromDelta,
   wheelZoomFactorFromDelta,
+  type TrackpadGestureKind,
+  type VisibleTimeRangeMs,
 } from "./tradingview-interactions";
+import { cleanDomProps } from "./style";
 import {
   tradingViewBarData,
   tradingViewCandleData,
@@ -219,12 +226,40 @@ export function WebTradingViewChart({
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const rangeRef = useRef<string | null>(null);
+  const visibleMsRef = useRef<VisibleTimeRangeMs | null>(null);
+  const applyingRangeRef = useRef(false);
+  const gestureActiveRef = useRef(false);
+  const gestureKindRef = useRef<TrackpadGestureKind | null>(null);
+  const gestureIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gestureStartRangeRef = useRef<{ start: number; end: number } | null>(null);
   const interactiveRef = useRef(interactive);
   interactiveRef.current = interactive;
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
   const seriesRef = useRef<SeriesEntry[]>([]);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
+  const applyVisibleRangeRef = useRef<
+    (next: VisibleTimeRangeMs, report?: TrackpadGestureKind | null) => void
+  >(() => {});
+  applyVisibleRangeRef.current = (next, report = null) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const from = timestamp(next.start);
+    const to = timestamp(next.end);
+    if (to <= from) return;
+    applyingRangeRef.current = true;
+    visibleMsRef.current = { start: from * 1000, end: to * 1000 };
+    rangeRef.current = `${from}:${to}`;
+    chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
+    applyingRangeRef.current = false;
+    if (report) {
+      onViewportChangeRef.current?.(
+        { start: new Date(from * 1000), end: new Date(to * 1000) },
+        report,
+      );
+    }
+  };
   const [measure, setMeasure] = useState<MeasureState | null>(null);
   const measureDragRef = useRef<MeasureState["start"] | null>(null);
   // The chart is built once and mutated in place. Effects that write to it key
@@ -306,14 +341,21 @@ export function WebTradingViewChart({
       const end = typeof range.to === "number" ? Math.floor(range.to) : null;
       if (start === null || end === null) return;
       const key = `${start}:${end}`;
-      if (rangeRef.current === key) return;
+      const next = { start: start * 1000, end: end * 1000 };
+      const previous = visibleMsRef.current;
       rangeRef.current = key;
+      visibleMsRef.current = next;
+      // Programmatic setVisibleRange (wheel, parent viewport, setData restore)
+      // already reported or must not echo, or the parent fights the pan.
+      // Wheel/pinch also set gestureKindRef and report from applyVisibleRange.
+      if (applyingRangeRef.current || gestureKindRef.current) return;
+      if (previous && sameVisibleTimeRange(previous, next)) return;
       const report = onViewportChangeRef.current;
       if (report) {
-        report({
-          start: new Date(start * 1000),
-          end: new Date(end * 1000),
-        });
+        report(
+          { start: new Date(next.start), end: new Date(next.end) },
+          visibleRangeInteraction(previous, next),
+        );
       }
     };
     chart.timeScale().subscribeVisibleTimeRangeChange(handleVisibleRangeChange);
@@ -351,6 +393,7 @@ export function WebTradingViewChart({
       for (const entry of seriesRef.current) entry.api.setData([]);
       seriesRef.current = [];
       rangeRef.current = null;
+      visibleMsRef.current = null;
       chart.remove();
       chartRef.current = null;
     };
@@ -384,6 +427,7 @@ export function WebTradingViewChart({
     if (!chart) return;
     const byKey = new Map(seriesRef.current.map((entry) => [entry.key, entry]));
     const next: SeriesEntry[] = [];
+    let dataChanged = false;
     for (const series of seriesData) {
       const existing = byKey.get(series.id);
       // Reuse cached type when style+points are unchanged so candle series skip
@@ -406,6 +450,7 @@ export function WebTradingViewChart({
           if (existing.points !== series.points) {
             syncSeriesData(existing.api, type, series, colors);
             existing.points = series.points;
+            dataChanged = true;
           }
           existing.style = series.style;
           existing.label = series.label;
@@ -418,6 +463,7 @@ export function WebTradingViewChart({
       }
       const api = createSeries(chart, series, type, colors);
       syncSeriesData(api, type, series, colors);
+      dataChanged = true;
       next.push({
         key: series.id,
         type,
@@ -430,7 +476,10 @@ export function WebTradingViewChart({
         colorKey,
       });
     }
-    for (const [, entry] of byKey) chart.removeSeries(entry.api);
+    for (const [, entry] of byKey) {
+      chart.removeSeries(entry.api);
+      dataChanged = true;
+    }
     seriesRef.current = next;
     const usesLeft = seriesData.some((series) => series.axis === "left");
     const usesRight = seriesData.some((series) => series.axis !== "left");
@@ -447,26 +496,28 @@ export function WebTradingViewChart({
         mode: logarithmic ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
       });
     }
+    // setData resets LWC's time scale. Keep the window the user was looking at.
+    const restore = visibleMsRef.current;
+    if (dataChanged && restore) applyVisibleRangeRef.current(restore);
   }, [chartEpoch, colors, panel.id, panel.scale, seriesData]);
 
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !viewport) return;
-    const from = timestamp(viewport.start.getTime());
-    const to = timestamp(viewport.end.getTime());
-    const key = `${from}:${to}`;
-    // This is the range the chart itself just reported. Re-applying it mid-drag
-    // fights the user's own pan.
-    if (rangeRef.current === key) return;
-    rangeRef.current = key;
-    chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
+    // Parent clamp/echo during a trackpad swipe is what makes the plot jump
+    // back after a pan that already landed.
+    if (gestureActiveRef.current) return;
+    const next = { start: viewport.start.getTime(), end: viewport.end.getTime() };
+    const current = visibleMsRef.current;
+    if (current && sameVisibleTimeRange(current, next)) return;
+    applyVisibleRangeRef.current(next);
   }, [chartEpoch, viewport]);
 
   useEffect(() => {
     const node = wrapperRef.current;
     if (!node) return;
 
-    const visibleRangeMs = (): { start: number; end: number } | null => {
+    const visibleRangeMs = (): VisibleTimeRangeMs | null => {
       const range = chartRef.current?.timeScale().getVisibleRange();
       if (!range) return null;
       const start = timeToMs(range.from);
@@ -475,74 +526,149 @@ export function WebTradingViewChart({
       return { start, end };
     };
 
-    const applyRange = (next: { start: number; end: number }) => {
-      const chart = chartRef.current;
-      if (!chart) return;
-      const from = timestamp(next.start);
-      const to = timestamp(next.end);
-      if (to <= from) return;
-      const key = `${from}:${to}`;
-      rangeRef.current = key;
-      chart.timeScale().setVisibleRange({ from: from as Time, to: to as Time });
-      onViewportChangeRef.current?.({
-        start: new Date(from * 1000),
-        end: new Date(to * 1000),
-      });
-    };
-
     const pointerAnchor = (clientX: number, width: number) => (
       width > 0 ? Math.min(1, Math.max(0, (clientX - node.getBoundingClientRect().left) / width)) : 0.5
     );
+
+    const noteUserGesture = (kind?: TrackpadGestureKind) => {
+      gestureActiveRef.current = true;
+      if (kind) gestureKindRef.current = kind;
+      if (gestureIdleTimerRef.current) clearTimeout(gestureIdleTimerRef.current);
+      gestureIdleTimerRef.current = setTimeout(() => {
+        gestureActiveRef.current = false;
+        gestureKindRef.current = null;
+        gestureIdleTimerRef.current = null;
+        const pending = viewportRef.current;
+        if (!pending) return;
+        const next = { start: pending.start.getTime(), end: pending.end.getTime() };
+        const current = visibleMsRef.current;
+        if (current && sameVisibleTimeRange(current, next)) return;
+        applyVisibleRangeRef.current(next);
+      }, 160);
+    };
+
+    const pendingWheel = {
+      deltaX: 0,
+      deltaY: 0,
+      clientX: 0,
+      width: 0,
+      ctrlKey: false,
+      metaKey: false,
+    };
+    let wheelRaf = 0;
+
+    const flushWheel = () => {
+      wheelRaf = 0;
+      const { deltaX, deltaY, clientX, width, ctrlKey, metaKey } = pendingWheel;
+      pendingWheel.deltaX = 0;
+      pendingWheel.deltaY = 0;
+      const kind = classifyWheelGesture(
+        { deltaX, deltaY, ctrlKey, metaKey },
+        gestureKindRef.current,
+      );
+      if (!kind) return;
+      gestureKindRef.current = kind;
+      noteUserGesture(kind);
+      const current = visibleRangeMs();
+      if (!current || !(width > 0)) return;
+      if (kind === "pan") {
+        applyVisibleRangeRef.current(
+          panVisibleTimeRange(current, wheelPanRatioFromDelta(deltaX, width)),
+          "pan",
+        );
+        return;
+      }
+      applyVisibleRangeRef.current(
+        scaleVisibleTimeRange(
+          current,
+          wheelZoomFactorFromDelta(deltaY),
+          pointerAnchor(clientX, width),
+        ),
+        "zoom",
+      );
+    };
 
     const onWheel = (event: WheelEvent) => {
       if (!interactiveRef.current) return;
       event.preventDefault();
       event.stopPropagation();
-      const current = visibleRangeMs();
-      const width = node.getBoundingClientRect().width;
-      if (!current || !(width > 0)) return;
-      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-        applyRange(panVisibleTimeRange(current, wheelPanRatioFromDelta(event.deltaX, width)));
-        return;
-      }
-      applyRange(scaleVisibleTimeRange(
-        current,
-        wheelZoomFactorFromDelta(event.deltaY),
-        pointerAnchor(event.clientX, width),
-      ));
+      const rect = node.getBoundingClientRect();
+      if (!(rect.width > 0)) return;
+      const kind = classifyWheelGesture(event, gestureKindRef.current);
+      if (kind) gestureKindRef.current = kind;
+      noteUserGesture(kind ?? undefined);
+      pendingWheel.deltaX += wheelDeltaPixels(event.deltaX, event.deltaMode, rect.width);
+      pendingWheel.deltaY += wheelDeltaPixels(event.deltaY, event.deltaMode, rect.height);
+      pendingWheel.clientX = event.clientX;
+      pendingWheel.width = rect.width;
+      pendingWheel.ctrlKey = event.ctrlKey;
+      pendingWheel.metaKey = event.metaKey;
+      if (!wheelRaf) wheelRaf = requestAnimationFrame(flushWheel);
     };
 
     const onGestureStart = (event: Event) => {
       if (!interactiveRef.current) return;
       event.preventDefault();
+      noteUserGesture("zoom");
       gestureStartRangeRef.current = visibleRangeMs();
     };
     const onGestureChange = (event: Event) => {
       if (!interactiveRef.current) return;
       event.preventDefault();
+      noteUserGesture("zoom");
       const start = gestureStartRangeRef.current;
       const gesture = event as Event & { scale?: number; clientX?: number };
       if (!start || typeof gesture.scale !== "number" || !(gesture.scale > 0)) return;
       const width = node.getBoundingClientRect().width;
-      applyRange(scaleVisibleTimeRange(
-        start,
-        gesture.scale,
-        pointerAnchor(typeof gesture.clientX === "number" ? gesture.clientX : 0, width),
-      ));
+      applyVisibleRangeRef.current(
+        scaleVisibleTimeRange(
+          start,
+          gesture.scale,
+          pointerAnchor(typeof gesture.clientX === "number" ? gesture.clientX : 0, width),
+        ),
+        "zoom",
+      );
     };
     const onGestureEnd = () => {
       gestureStartRangeRef.current = null;
+      noteUserGesture("zoom");
+    };
+
+    const onPointerDown = () => {
+      if (!interactiveRef.current) return;
+      gestureActiveRef.current = true;
+      if (gestureIdleTimerRef.current) {
+        clearTimeout(gestureIdleTimerRef.current);
+        gestureIdleTimerRef.current = null;
+      }
+    };
+    const onPointerUp = () => {
+      if (!gestureActiveRef.current) return;
+      noteUserGesture();
     };
 
     node.addEventListener("wheel", onWheel, { passive: false });
     node.addEventListener("gesturestart", onGestureStart, { passive: false });
     node.addEventListener("gesturechange", onGestureChange, { passive: false });
     node.addEventListener("gestureend", onGestureEnd);
+    node.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     return () => {
+      if (wheelRaf) cancelAnimationFrame(wheelRaf);
+      if (gestureIdleTimerRef.current) {
+        clearTimeout(gestureIdleTimerRef.current);
+        gestureIdleTimerRef.current = null;
+      }
+      gestureActiveRef.current = false;
+      gestureKindRef.current = null;
       node.removeEventListener("wheel", onWheel);
       node.removeEventListener("gesturestart", onGestureStart);
       node.removeEventListener("gesturechange", onGestureChange);
       node.removeEventListener("gestureend", onGestureEnd);
+      node.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
     };
   }, []);
 
@@ -609,7 +735,7 @@ export function WebTradingViewChart({
 
   return (
     <div
-      {...props}
+      {...cleanDomProps(props as Record<string, unknown>)}
       {...pointerHandlers}
       ref={wrapperRef}
       style={{
@@ -619,6 +745,7 @@ export function WebTradingViewChart({
         minWidth: 0,
         minHeight: 0,
         overflow: "hidden",
+        flex: 1,
         cursor: measureEnabled ? "crosshair" : interactive ? "grab" : undefined,
         touchAction: interactive ? "none" : undefined,
         ...(style as CSSProperties | undefined),

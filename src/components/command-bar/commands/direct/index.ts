@@ -47,7 +47,7 @@ export function runDirectCommandAction(options: {
   onCheckForUpdates?: () => void | Promise<void>;
   openBuiltInWorkflow: (actionId: string) => void;
   openInlineConfirm: OpenInlineConfirm;
-  openModeRoute: (screen: "ticker-search" | "plugins" | "layout", initialQuery?: string) => void;
+  openModeRoute: (screen: "ticker-search" | "layout", initialQuery?: string) => void;
   openPaneSettingsRoute: (paneId: string) => void;
   pluginRegistry: PluginRegistry;
   persistConfig: (nextConfig: AppState["config"]) => void;
@@ -88,6 +88,10 @@ export function runDirectCommandAction(options: {
     case "help":
       closeAll({ revertThemePreview: false });
       pluginRegistry.showPane("help");
+      return;
+    case "layout-marketplace":
+      closeAll({ revertThemePreview: false });
+      pluginRegistry.showPane("layout-marketplace");
       return;
     case "pane-settings":
       if (state.focusedPaneId) openPaneSettingsRoute(state.focusedPaneId);
@@ -280,41 +284,6 @@ export function runDirectCommandAction(options: {
       };
       dispatch({ type: "SET_CONFIG", config: nextConfig });
       persistConfig(nextConfig);
-      closeAll({ revertThemePreview: false });
-      return;
-    }
-    case "set-refresh-interval": {
-      const minutes = parseInt(arg, 10);
-      if (!Number.isFinite(minutes) || minutes < 1) {
-        notify("Enter a valid number of minutes (1 or more).", { type: "error" });
-        return;
-      }
-      const nextConfig = {
-        ...state.config,
-        refreshIntervalMinutes: minutes,
-      };
-      dispatch({ type: "SET_CONFIG", config: nextConfig });
-      persistConfig(nextConfig);
-      notify(`Refresh interval set to ${minutes} min`, { type: "success" });
-      closeAll({ revertThemePreview: false });
-      return;
-    }
-    case "set-auto-refresh": {
-      const normalized = arg.trim().toLowerCase();
-      const minutes = normalized === "off" || normalized === "0"
-        ? 0
-        : parseInt(normalized, 10);
-      if (!Number.isFinite(minutes) || ![0, 1, 5, 15].includes(minutes)) {
-        notify("Enter off, 1, 5, or 15.", { type: "error" });
-        return;
-      }
-      const nextConfig = {
-        ...state.config,
-        autoRefreshInterval: minutes,
-      };
-      dispatch({ type: "SET_CONFIG", config: nextConfig });
-      persistConfig(nextConfig);
-      notify(minutes === 0 ? "Auto-refresh off" : `Auto-refresh every ${minutes} min`, { type: "success" });
       closeAll({ revertThemePreview: false });
       return;
     }

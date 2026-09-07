@@ -26,6 +26,7 @@ export interface DataTableSectionHeader {
   color?: string;
   backgroundColor?: string;
   attributes?: number;
+  /** Makes the header itself clickable, e.g. to collapse its group. */
   onMouseDown?: (event: any) => void;
 }
 
