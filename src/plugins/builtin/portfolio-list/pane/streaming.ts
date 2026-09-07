@@ -18,6 +18,7 @@ import {
   selectQuoteWarmupTickers,
   selectStreamTickers,
   visibleWarmupKey,
+  visibleWarmupSignature,
   warmupQuoteWithSnapshot,
   type VisibleWarmupRequirements,
 } from "./data";
@@ -95,6 +96,10 @@ export function usePortfolioPaneStreaming({
     () => sortedTickers.slice(streamWindow.start, streamWindow.end),
     [sortedTickers, streamWindow.end, streamWindow.start],
   );
+  const warmupSignature = useMemo(
+    () => visibleWarmupSignature(visibleFinancialTickers, financialsMap, visibleWarmupRequirements),
+    [financialsMap, visibleFinancialTickers, visibleWarmupRequirements],
+  );
   const watchdogInputsRef = useRef<{
     financialsMap: Map<string, TickerFinancials>;
     instrumentOptions: typeof instrumentOptions;
@@ -114,6 +119,7 @@ export function usePortfolioPaneStreaming({
     if (!sharedCoordinator) return;
 
     const nowTimestamp = Date.now();
+    const latestFinancialsMap = watchdogInputsRef.current.financialsMap;
     const quoteQueue: TickerRecord[] = [];
     const quoteSnapshotQueue: TickerRecord[] = [];
     const snapshotQueue: TickerRecord[] = [];
@@ -122,14 +128,14 @@ export function usePortfolioPaneStreaming({
       ? selectQuoteWarmupTickers(
         sortedTickers,
         streamWindow,
-        financialsMap,
+        latestFinancialsMap,
         activeSort,
         nowTimestamp,
       )
       : [];
     for (const ticker of quoteWarmupTickers) {
       if (isPredictionMarketTicker(ticker)) continue;
-      const financials = financialsMap.get(ticker.metadata.ticker);
+      const financials = latestFinancialsMap.get(ticker.metadata.ticker);
       const quoteKey = visibleWarmupKey("quote", ticker);
       const warmupWithSnapshot = warmupQuoteWithSnapshot(ticker, liveStreaming, activeSort);
       const warmupKey = warmupWithSnapshot ? visibleWarmupKey("snapshot", ticker) : quoteKey;
@@ -149,7 +155,7 @@ export function usePortfolioPaneStreaming({
 
     for (const ticker of visibleFinancialTickers) {
       if (isPredictionMarketTicker(ticker)) continue;
-      const financials = financialsMap.get(ticker.metadata.ticker);
+      const financials = latestFinancialsMap.get(ticker.metadata.ticker);
       if (snapshotQueueSymbols.has(ticker.metadata.ticker)) continue;
       const snapshotKey = visibleWarmupKey("snapshot", ticker);
       if (
@@ -221,7 +227,7 @@ export function usePortfolioPaneStreaming({
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [activeSort, appActive, financialsMap, instrumentOptions, liveStreaming, sharedCoordinator, sortedTickers, streamWindow, visibleFinancialTickers, visibleWarmupRequirements]);
+  }, [activeSort, appActive, instrumentOptions, liveStreaming, sharedCoordinator, sortedTickers, streamWindow, visibleFinancialTickers, visibleWarmupRequirements, warmupSignature]);
 
   useEffect(() => {
     if (!liveStreaming || !appActive) return;

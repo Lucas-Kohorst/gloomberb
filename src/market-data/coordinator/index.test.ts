@@ -1076,4 +1076,134 @@ describe("MarketDataCoordinator", () => {
     expect(coordinator.getTickerFinancialsSync({ symbol: "AAPL", exchange: "NASDAQ" })?.quote?.price).toBe(150);
     expect(coordinator.getTickerFinancialsSync({ symbol: "MSFT", exchange: "NASDAQ" })?.fundamentals?.trailingPE).toBe(30);
   });
+
+  it("stamps receivedAt on HTTP quotes so AGE does not sit on delayed lastUpdated", async () => {
+    const now = 1_700_000_120_000;
+    const realDateNow = Date.now;
+    Date.now = () => now;
+    try {
+      const provider = createProvider({
+        getQuote: async () => ({
+          symbol: "ETH-USD",
+          providerId: "yahoo",
+          price: 4_200,
+          currency: "USD",
+          change: -10,
+          changePercent: -0.24,
+          lastUpdated: now - 120_000,
+        }),
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "ETH-USD", exchange: "CCC" };
+
+      await coordinator.loadQuote(instrument, { forceRefresh: true });
+
+      const quote = coordinator.getQuoteEntry(instrument).data;
+      expect(quote?.lastUpdated).toBe(now - 120_000);
+      expect(quote?.receivedAt).toBe(now);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
+  it("does not let a delayed Yahoo HTTP refresh replace a live CoinGecko ETH quote", async () => {
+    const now = 1_700_000_120_000;
+    const realDateNow = Date.now;
+    Date.now = () => now;
+    let calls = 0;
+    try {
+      const provider = createProvider({
+        getQuote: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return {
+              symbol: "ETH-USD",
+              providerId: "coingecko",
+              price: 4_210,
+              currency: "USD",
+              change: 10,
+              changePercent: 0.24,
+              marketCap: 510_000_000_000,
+              lastUpdated: now,
+            };
+          }
+          return {
+            symbol: "ETH-USD",
+            providerId: "yahoo",
+            price: 4_000,
+            currency: "USD",
+            change: -50,
+            changePercent: -1.2,
+            lastUpdated: now - 120_000,
+          };
+        },
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "ETH-USD", exchange: "CCC" };
+
+      await coordinator.loadQuote(instrument, { forceRefresh: true });
+      await coordinator.loadQuote(instrument, { forceRefresh: true });
+
+      const quote = coordinator.getQuoteEntry(instrument).data;
+      expect(calls).toBe(2);
+      expect(quote?.providerId).toBe("coingecko");
+      expect(quote?.price).toBe(4_210);
+      expect(quote?.marketCap).toBe(510_000_000_000);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
+  it("does not overwrite a fresher live quote when a snapshot lands later", async () => {
+    const now = 1_700_000_120_000;
+    const realDateNow = Date.now;
+    Date.now = () => now;
+    try {
+      const provider = createProvider({
+        getQuote: async () => ({
+          symbol: "ETH-USD",
+          providerId: "coingecko",
+          price: 4_210,
+          currency: "USD",
+          change: 10,
+          changePercent: 0.24,
+          marketCap: 510_000_000_000,
+          lastUpdated: now,
+        }),
+        getTickerFinancials: async () => ({
+          quote: {
+            symbol: "ETH-USD",
+            providerId: "yahoo",
+            price: 4_000,
+            currency: "USD",
+            change: -50,
+            changePercent: -1.2,
+            lastUpdated: now - 60_000,
+          },
+          fundamentals: { return1Y: 0.4 },
+          profile: { industry: "Crypto" },
+          annualStatements: [],
+          quarterlyStatements: [],
+          priceHistory: [
+            { date: new Date(now - 30 * 86_400_000), close: 3_800 },
+            { date: new Date(now), close: 4_000 },
+          ],
+        }),
+      });
+      const coordinator = new MarketDataCoordinator(provider);
+      const instrument = { symbol: "ETH-USD", exchange: "CCC" };
+
+      await coordinator.loadQuote(instrument, { forceRefresh: true });
+      await coordinator.loadSnapshot(instrument, { forceRefresh: true });
+
+      const financials = coordinator.getTickerFinancialsSync(instrument);
+      expect(financials?.quote?.providerId).toBe("coingecko");
+      expect(financials?.quote?.price).toBe(4_210);
+      expect(financials?.quote?.marketCap).toBe(510_000_000_000);
+      expect(financials?.fundamentals?.return1Y).toBe(0.4);
+      expect(financials?.priceHistory).toHaveLength(2);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
 });

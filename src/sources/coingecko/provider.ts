@@ -13,6 +13,7 @@ import type { PricePoint, Quote, TickerFinancials } from "../../types/financials
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TimeRange } from "../../time-series/range";
 import type { ChartResolutionSupport, ManualChartResolution } from "../../time-series/resolution";
+import { computeHistoryReturn } from "../../utils/price-history";
 import {
   fetchCoinGeckoCoin,
   fetchCoinGeckoMarketChart,
@@ -167,12 +168,15 @@ export class CoinGeckoProvider implements AssetDataProvider {
       vsCurrency: pair.vsCurrency,
       coin,
     });
+    const priceHistory = mapCoinGeckoMarketChart(chart.prices ?? [], chart.total_volumes);
+    const return1Y = computeHistoryReturn(priceHistory, 365);
     return {
       quote,
       profile: coin.description?.en ? { description: coin.description.en, industry: "Crypto" } : { industry: "Crypto" },
+      fundamentals: return1Y == null ? undefined : { return1Y },
       annualStatements: [],
       quarterlyStatements: [],
-      priceHistory: mapCoinGeckoMarketChart(chart.prices ?? [], chart.total_volumes),
+      priceHistory,
     };
   }
 

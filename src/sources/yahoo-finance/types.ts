@@ -46,6 +46,7 @@ export type YahooQuoteApiResult = {
   askSize?: number;
   fiftyTwoWeekHigh?: number;
   fiftyTwoWeekLow?: number;
+  marketCap?: number;
   exchange?: string;
   exchangeName?: string;
   fullExchangeName?: string;

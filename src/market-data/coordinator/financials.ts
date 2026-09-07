@@ -122,10 +122,18 @@ function storeFinancialsSnapshot(
   );
   if (normalized.quote) {
     const quoteKey = buildQuoteKey(instrument);
-    stores.quoteStore.set(
-      quoteKey,
-      readyEntry(stores.quoteStore.get(quoteKey), normalized.quote, normalized.quote.providerId ?? source, attempts),
-    );
+    const currentQuoteEntry = stores.quoteStore.get(quoteKey);
+    const currentQuote = currentQuoteEntry.data ?? currentQuoteEntry.lastGoodData;
+    const keepLiveQuote = currentQuote
+      && typeof currentQuote.lastUpdated === "number"
+      && typeof normalized.quote.lastUpdated === "number"
+      && currentQuote.lastUpdated >= normalized.quote.lastUpdated;
+    if (!keepLiveQuote) {
+      stores.quoteStore.set(
+        quoteKey,
+        readyEntry(currentQuoteEntry, normalized.quote, normalized.quote.providerId ?? source, attempts),
+      );
+    }
   }
   stores.profileStore.set(
     buildProfileKey(instrument),
