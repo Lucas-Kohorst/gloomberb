@@ -2,10 +2,13 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { VERSION } from "../../version";
 import { saveConfig } from "../../data/config/store";
+import { normalizeTickerSearchShortcut } from "../../data/config/ticker-search-shortcut";
 import { NotesFiles } from "../../plugins/builtin/notes/files";
 import { createAlert, deserializeAlerts, serializeAlerts } from "../../plugins/builtin/alerts/alert-engine";
 import type { AlertCondition } from "../../plugins/builtin/alerts/types";
-import type { CliCommandDef } from "../../types/plugin";
+import { getLoadablePlugins } from "../../plugins/catalog";
+import { commands, tickerSearchShortcutConflictsWith } from "../../components/command-bar/commands/registry";
+import type { CliCommandContext, CliCommandDef, GloomPlugin } from "../../types/plugin";
 import { debugLog, type LogLevel } from "../../utils/debug-log";
 import { withCliServices, withConfigData } from "../context";
 import { parsePositiveInt, requireArg, takeOption } from "./command-utils";
@@ -24,6 +27,57 @@ function commandRows(commands: CliCommandDef[]) {
 
 function parseLogLevel(value: string | undefined): LogLevel | undefined {
   return value && LOG_LEVELS.has(value as LogLevel) ? value as LogLevel : undefined;
+}
+
+const CONFIG_EDITABLE_KEYS = new Set([
+  "baseCurrency",
+  "refreshIntervalMinutes",
+  "autoRefreshInterval",
+  "theme",
+  "valueFlashingEnabled",
+  "tickerSearchShortcut",
+]);
+
+/** Parses and validates a `config set` value before it is written to disk. */
+function parseConfigSetValue(key: string, value: string, ctx: CliCommandContext): unknown {
+  if (key === "refreshIntervalMinutes" || key === "autoRefreshInterval") {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      ctx.fail(`Config key "${key}" must be a non-negative number.`);
+    }
+    return parsed;
+  }
+  if (key === "valueFlashingEnabled") {
+    if (value !== "true" && value !== "false") {
+      ctx.fail('Config key "valueFlashingEnabled" must be "true" or "false".');
+    }
+    return value === "true";
+  }
+  if (key === "tickerSearchShortcut") {
+    const normalized = normalizeTickerSearchShortcut(value);
+    if (!normalized) {
+      ctx.fail(`Invalid ticker-search shortcut "${value}". Use 1-8 letters or digits (for example "TS").`);
+    }
+    const reserved = collectLoadableShortcutPrefixes(getLoadablePlugins());
+    if (tickerSearchShortcutConflictsWith(commands, normalized, reserved)) {
+      ctx.fail(`Ticker-search shortcut "${normalized}" is already used by a command, pane, or plugin shortcut.`);
+    }
+    return normalized;
+  }
+  return value;
+}
+
+/** Prefixes claimed by loadable plugin pane shortcuts. */
+function collectLoadableShortcutPrefixes(plugins: GloomPlugin[]): string[] {
+  const reserved: string[] = [];
+  for (const plugin of plugins) {
+    for (const template of plugin.paneTemplates ?? []) {
+      const shortcut = template.shortcut;
+      if (!shortcut?.prefix) continue;
+      reserved.push(shortcut.prefix, ...(shortcut.aliases ?? []));
+    }
+  }
+  return reserved;
 }
 
 function resourceCacheStats(services: Awaited<ReturnType<Parameters<CliCommandDef["execute"]>[1]["initServices"]>>) {
@@ -106,6 +160,8 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
           refreshIntervalMinutes: context.config.refreshIntervalMinutes,
           autoRefreshInterval: context.config.autoRefreshInterval,
           theme: context.config.theme,
+          valueFlashingEnabled: context.config.valueFlashingEnabled,
+          tickerSearchShortcut: context.config.tickerSearchShortcut,
           disabledPlugins: context.config.disabledPlugins,
           disabledSources: context.config.disabledSources,
           portfolios: context.config.portfolios.length,
@@ -130,13 +186,8 @@ export function createSystemCliCommands(allCommands: () => CliCommandDef[]): Cli
         if (action === "set") {
           const key = requireArg(args[1], "Usage: gloomberb config set <key> <value>", ctx);
           const value = requireArg(args[2], "Usage: gloomberb config set <key> <value>", ctx);
-          const editable = new Set(["baseCurrency", "refreshIntervalMinutes", "autoRefreshInterval", "theme", "valueFlashingEnabled"]);
-          if (!editable.has(key)) ctx.fail(`Config key "${key}" is not editable from the CLI.`);
-          const parsedValue = key === "refreshIntervalMinutes" || key === "autoRefreshInterval"
-            ? Number(value)
-            : key === "valueFlashingEnabled"
-              ? value === "true"
-              : value;
+          if (!CONFIG_EDITABLE_KEYS.has(key)) ctx.fail(`Config key "${key}" is not editable from the CLI.`);
+          const parsedValue = parseConfigSetValue(key, value, ctx);
           const nextConfig = { ...context.config, [key]: parsedValue };
           if (!ctx.cliOptions.dryRun) await saveConfig(nextConfig);
           ctx.printResult({ data: { changed: !ctx.cliOptions.dryRun, dryRun: ctx.cliOptions.dryRun, key, value: parsedValue } });

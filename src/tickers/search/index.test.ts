@@ -6,6 +6,7 @@ import { createTestDataProvider } from "../../test-support/data-provider";
 import { setUsListingsUniverseForTests } from "../../sources/us-listings/client";
 import {
   buildTickerSearchCandidates,
+  createLocalTickerSearchCandidates,
   findExactTickerSearchMatch,
   normalizeTickerInput,
   parseTickerListingQuery,
@@ -629,7 +630,7 @@ describe("ticker-search utilities", () => {
     expect(saved).toHaveLength(1);
   });
 
-  test("exposes local ticker candidates in saved category", () => {
+  test("exposes local ticker candidates in saved category", async () => {
     expect(createLocalTickerSearchCandidates([makeTicker("TSLA", "Tesla")])).toEqual([
       expect.objectContaining({
         id: "goto:TSLA",
@@ -638,6 +639,17 @@ describe("ticker-search utilities", () => {
         kind: "ticker",
       }),
     ]);
+
+    const provider = createTestDataProvider({
+      id: "test",
+      search: async (query: string) => {
+        const q = query.toUpperCase();
+        if (q.includes("UBER")) return [makeSearchResult("UBER", "Uber Technologies", { exchange: "NYSE" })];
+        if (q.includes("BLK")) return [makeSearchResult("BLK", "BlackRock Inc", { exchange: "NYSE" })];
+        if (q.includes("GLXY")) return [makeSearchResult("GLXY.TO", "Galaxy Digital", { exchange: "Toronto" })];
+        return [];
+      },
+    });
 
     const resolve = (query: string) => resolveTickerSearch({
       query,
@@ -702,5 +714,119 @@ describe("ticker-search utilities", () => {
       dataProvider: makeDataProvider([]),
     });
     expect(resolved).toMatchObject({ kind: "provider", symbol: "ZUMZ" });
+  });
+
+  test("matches a locally saved ticker by its ISIN alias", () => {
+    const tickers = new Map<string, TickerRecord>([
+      ["AAPL", makeTicker("AAPL", "Apple Inc.", { isin: "US0378331005" })],
+    ]);
+
+    const candidates = createLocalTickerSearchCandidates(tickers.values());
+    expect(findExactTickerSearchMatch(candidates, "US0378331005")?.id).toBe("goto:AAPL");
+    expect(findExactTickerSearchMatch(candidates, "us0378331005")?.id).toBe("goto:AAPL");
+  });
+
+  test("ranks a local ISIN match first in candidate search", () => {
+    const tickers = new Map<string, TickerRecord>([
+      ["AAPL", makeTicker("AAPL", "Apple Inc.", { isin: "US0378331005" })],
+    ]);
+
+    const results = buildTickerSearchCandidates({
+      query: "US0378331005",
+      tickers,
+      providerResults: [
+        makeSearchResult("AAPL", "Apple Inc.", { exchange: "NASDAQ" }),
+      ],
+    });
+
+    expect(results[0]).toMatchObject({ id: "goto:AAPL", symbol: "AAPL", category: "Saved" });
+  });
+
+  test("passes an ISIN through to provider search and resolves the returned symbol", async () => {
+    const queries: string[] = [];
+    const provider = createTestDataProvider({
+      id: "test",
+      search: async (query: string) => {
+        queries.push(query);
+        // A provider that recognises the ISIN and returns the real instrument.
+        return query.toUpperCase() === "LU1681047236"
+          ? [makeSearchResult("AAPL", "Apple Inc.", { exchange: "NASDAQ" })]
+          : [];
+      },
+    });
+
+    const resolved = await resolveTickerSearch({
+      query: "LU1681047236",
+      activeTicker: null,
+      tickers: new Map(),
+      dataProvider: provider,
+    });
+
+    expect(queries).toContain("LU1681047236");
+    expect(resolved).toMatchObject({
+      kind: "provider",
+      symbol: "AAPL",
+      result: { name: "Apple Inc.", exchange: "NASDAQ" },
+    });
+  });
+
+  test("surfaces provider results for an ISIN query in candidate search", async () => {
+    const results = await searchTickerCandidates({
+      query: "LU1681047236",
+      tickers: new Map(),
+      dataProvider: createTestDataProvider({
+        id: "test",
+        search: async () => [
+          makeSearchResult("AAPL", "Apple Inc.", { exchange: "NASDAQ" }),
+        ],
+      }),
+      totalLimit: 5,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]).toMatchObject({ symbol: "AAPL", kind: "search" });
+  });
+
+  test("does not treat ordinary ticker symbols as ISINs", async () => {
+    const queries: string[] = [];
+    const results = await searchTickerCandidates({
+      query: "AAPL",
+      tickers: new Map(),
+      dataProvider: createTestDataProvider({
+        id: "test",
+        search: async (query: string) => {
+          queries.push(query);
+          return query === "AAPL"
+            ? [makeSearchResult("AAPL", "Apple Inc.", { exchange: "NASDAQ" })]
+            : [];
+        },
+      }),
+      totalLimit: 5,
+    });
+
+    expect(results[0]).toMatchObject({ symbol: "AAPL", category: "Primary Listing" });
+  });
+
+  test("preserves an existing ISIN when upserting from a provider search result", async () => {
+    const existing = makeTicker("AAPL", "Apple Inc.", { isin: "US0378331005" });
+    const saved: TickerRecord[] = [];
+    const repository = {
+      loadTicker: async () => existing,
+      createTicker: async (metadata: TickerRecord["metadata"]) => ({ metadata }),
+      saveTicker: async (ticker: TickerRecord) => { saved.push(ticker); },
+    };
+
+    const { ticker, created } = await upsertTickerFromSearchResult(repository as any, {
+      providerId: "test",
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      exchange: "NASDAQ",
+      type: "EQUITY",
+      currency: "USD",
+    });
+
+    expect(created).toBe(false);
+    expect(ticker.metadata.isin).toBe("US0378331005");
+    expect(saved).toHaveLength(1);
   });
 });

@@ -5,7 +5,10 @@ describe("command bar row badges", () => {
   test("lifts a shortcut out of the right column and leaves descriptions there", () => {
     expect(resolveRowBadge({ kind: "command", right: "EVT" })).toEqual({ text: "EVT", tone: "command" });
     expect(resolveRowBadge({ kind: "action", right: "10-K" })).toEqual({ text: "10-K", tone: "command" });
+    expect(resolveRowBadge({ kind: "command", right: "FONT+" })).toEqual({ text: "FONT+", tone: "command" });
+    expect(resolveRowBadge({ kind: "command", right: "FONT-" })).toEqual({ text: "FONT-", tone: "command" });
     expect(badgeConsumesRight({ kind: "command", right: "EVT" })).toBe(true);
+    expect(badgeConsumesRight({ kind: "command", right: "FONT+" })).toBe(true);
 
     for (const right of ["Equity NASDAQ", "current", "on", "WIN move", "TOOLONG", "e"]) {
       expect(resolveRowBadge({ kind: "command", right })).toBeNull();

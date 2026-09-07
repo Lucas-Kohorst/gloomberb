@@ -105,6 +105,18 @@ describe("command bar view model helpers", () => {
     }
   });
 
+  test("puts instrument matches above the data catalog offer", () => {
+    const sections = buildSections([
+      { id: "catalog", category: "Data Catalog" },
+      { id: "instrument", category: "Instruments" },
+    ], { sectionOrder: "ranked" });
+
+    expect(sections.map((section) => section.category)).toEqual([
+      "Instruments",
+      "Data Catalog",
+    ]);
+  });
+
   test("drops the AI's sign-up offer under the async sections", () => {
     const sections = buildSections([
       { id: "assist:sign-up", category: "Ask AI", defaultSelectable: false },

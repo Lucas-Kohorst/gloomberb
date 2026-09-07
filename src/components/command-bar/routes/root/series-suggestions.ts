@@ -85,7 +85,7 @@ export function useChartSeriesSuggestions({
           detail: trimmedLeg
             ? `Search “${trimmedLeg}” across every series`
             : t("Search every chartable series"),
-          category: CHART_SERIES_CATEGORY,
+          category: "Data Catalog",
           kind: "action",
           right: "CAT",
           shortcutQuery: "CAT",
@@ -128,7 +128,7 @@ function buildChartSeriesItem(options: {
   shortcutRight: string;
 }): ResultItem {
   const { suggestion, prefix, onRun, shortcutRight } = options;
-  const expressionText = formatParsedSeriesExpression(suggestion.expression);
+  const expressionText = suggestion.expressionText ?? formatParsedSeriesExpression(suggestion.expression);
   const completed = completeExpression(prefix, expressionText);
   return {
     id: `chart-series:${suggestion.id}`,

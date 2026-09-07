@@ -14,11 +14,28 @@ import {
   looksLikeArticleQuery,
   openNewsArticle,
 } from "../../../plugins/builtin/news/wire/article-search";
+import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/news/wire/feed-config";
 import {
   buildArticleSearchResultItems,
   useAdjacentArticleSearch,
+  useCftcFilingSearch,
   useFilingArticleSearch,
 } from "../routes/root/article-results";
+import {
+  buildPredictionMarketResultItems,
+  usePredictionInstrumentSearch,
+} from "../routes/root/prediction-results";
+import {
+  predictionCollectionSymbol,
+  predictionTickerRecord,
+} from "../../../plugins/prediction-markets/collection-watchlist";
+import {
+  buildRssFeedResultItems,
+  buildTwitterFeedResultItems,
+  PLUGIN_MARKETPLACE_TEMPLATE_ID,
+  twitterFeedsFromConfig,
+  twitterFeedsFromOpenPanes,
+} from "../routes/root/indexed-results";
 import {
   getAvailableCommandBarSearchProviders,
   useCommandBarSearchProviders,
@@ -84,7 +101,7 @@ export function CommandBar({
     themePickerRef,
     titleBarOverlay,
     visibleListStateRef,
-  } = useCommandBarEnvironment();
+  } = useCommandBarEnvironment(pluginRegistry);
   const availableCommands = useMemo(() => onCheckForUpdates
     ? allAvailableCommands
     : allAvailableCommands.filter((command) => command.id !== "check-for-updates"), [allAvailableCommands, onCheckForUpdates]);
@@ -213,6 +230,7 @@ export function CommandBar({
   const [warmingNewsCache, setWarmingNewsCache] = useState(false);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
   const filingNews = useFilingArticleSearch(rootQuery);
+  const cftcNews = useCftcFilingSearch(rootQuery);
   const newsState = useNewsArticles(watchNews ? ARTICLE_SEARCH_QUERY : null);
   useEffect(() => {
     if (!watchNews) {
@@ -241,7 +259,13 @@ export function CommandBar({
     const cached = cachedNewsArticles();
     const seen = new Set<string>();
     const articles = [];
-    for (const article of [...cached, ...adjacentNews.articles, ...filingNews.articles, ...newsState.articles]) {
+    for (const article of [
+      ...cached,
+      ...adjacentNews.articles,
+      ...filingNews.articles,
+      ...cftcNews.articles,
+      ...newsState.articles,
+    ]) {
       if (seen.has(article.id)) continue;
       seen.add(article.id);
       articles.push(article);
@@ -251,21 +275,28 @@ export function CommandBar({
       || newsState.phase === "loading"
       || newsState.phase === "idle"
       || (cached.length === 0 && warmingNewsCache)
-    )) || (filingNews.phase === "loading" && filingNews.articles.length === 0);
+    )) || (filingNews.phase === "loading" && filingNews.articles.length === 0)
+      || (cftcNews.phase === "loading" && cftcNews.articles.length === 0);
     return buildArticleSearchResultItems({
       articles,
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
-        openNewsArticle(article, (templateId, options) => {
-          pluginRegistry.createPaneFromTemplate(templateId, options);
-        });
+        if (article.origin === "cftc") {
+          pluginRegistry.createPaneFromTemplate("cftc-filings-pane", { arg: rootQuery });
+        } else {
+          openNewsArticle(article, (templateId, options) => {
+            pluginRegistry.createPaneFromTemplate(templateId, options);
+          });
+        }
         closeAll({ revertThemePreview: false });
       },
     });
   }, [
     adjacentNews.articles,
     adjacentNews.phase,
+    cftcNews.articles,
+    cftcNews.phase,
     closeAll,
     filingNews.articles,
     filingNews.phase,
@@ -276,6 +307,25 @@ export function CommandBar({
     rootQuery,
     warmingNewsCache,
   ]);
+  const predictionSearch = usePredictionInstrumentSearch(
+    !currentRoute && rootShortcutIntent.kind === "none" ? rootQuery : "",
+  );
+  const predictionResultItems = useMemo(() => buildPredictionMarketResultItems({
+    markets: predictionSearch.markets,
+    onOpen: (summary) => {
+      const symbol = predictionCollectionSymbol(summary);
+      const ticker = predictionTickerRecord(
+        summary,
+        state.tickers.get(symbol) ?? null,
+      );
+      void Promise.resolve(tickerRepository.saveTicker(ticker)).then(() => {
+        dispatch({ type: "UPDATE_TICKER", ticker });
+        pluginRegistry.events.emit("ticker:added", { symbol: ticker.metadata.ticker, ticker });
+        pluginRegistry.navigateTicker(ticker.metadata.ticker);
+      });
+      closeAll({ revertThemePreview: false });
+    },
+  }), [closeAll, dispatch, pluginRegistry, predictionSearch.markets, state.tickers, tickerRepository]);
   const catalogChartQuery = !currentRoute
     && rootShortcutIntent.kind === "none"
     && looksLikeCatalogSeriesQuery(rootQuery);
@@ -345,8 +395,11 @@ export function CommandBar({
   ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, state.config.pluginConfig.news]);
   // Only the root list asks on its own, and only for text the prefix parser
   // could not claim — otherwise the user is mid-command, not mid-question.
+  const assistEnabled = planAccess.emailVerified
+    || planAccess.hasProAccess
+    || (planAccess.signedIn && !planAccess.accountKnown);
   const assistAutoAsk = !currentRoute
-    && planAccess.emailVerified
+    && assistEnabled
     && shouldAutoAskAssist({ query: rootQuery, hasShortcutIntent: rootShortcutIntent.kind !== "none" });
   const { assistActive, assistState, askAssist, resetAssist } = useCommandBarAssist({
     autoAsk: assistAutoAsk,
@@ -385,25 +438,48 @@ export function CommandBar({
       candidate.prefix ? { fallbackPrefix: candidate.prefix } : undefined,
     );
   }, [assistState, rootQueryRef]);
-  const startAssistSignUp = useCallback(() => {
-    const signUpCommand = getAvailablePluginCommands().find((command) => command.id === "auth-signup");
-    if (signUpCommand?.wizard?.length) {
-      openPluginCommandWorkflow(signUpCommand);
+  const tryRunPluginCommand = useCallback((commandId: string): boolean => {
+    const command = getAvailablePluginCommands().find((c) => c.id === commandId);
+    if (command?.wizard?.length) {
+      openPluginCommandWorkflow(command);
+      return true;
+    }
+    if (command) {
+      void command.execute?.();
+      return true;
+    }
+    return false;
+  }, [getAvailablePluginCommands, openPluginCommandWorkflow]);
+  const startAuthFlow = useCallback(() => {
+    if (planAccess.signedIn && !planAccess.emailVerified) {
+      if (tryRunPluginCommand("auth-resend-verification")) return;
+      setRootQuery("Resend Verification Email");
       return;
     }
-    setRootQuery("Sign Up");
-  }, [getAvailablePluginCommands, openPluginCommandWorkflow, setRootQuery]);
+    if (tryRunPluginCommand("auth-login")) return;
+    if (tryRunPluginCommand("auth-signup")) return;
+    setRootQuery("Log In");
+  }, [planAccess.emailVerified, planAccess.signedIn, setRootQuery, tryRunPluginCommand]);
   const assist = useMemo<AssistRowHandlers>(() => ({
-    enabled: planAccess.emailVerified,
+    enabled: assistEnabled,
+    signedIn: planAccess.signedIn,
     auto: assistAutoAsk && assistActive,
     state: assistState,
     onAsk: askAssistNow,
-    onSignUp: startAssistSignUp,
+    onSignUp: startAuthFlow,
     onRunCandidate: (input: string, prefix?: string) => runRootQueryRef.current?.(
       input,
       prefix ? { fallbackPrefix: prefix } : undefined,
     ),
-  }), [askAssistNow, assistActive, assistAutoAsk, assistState, planAccess.emailVerified, startAssistSignUp]);
+  }), [
+    askAssistNow,
+    assistActive,
+    assistAutoAsk,
+    assistEnabled,
+    assistState,
+    planAccess.signedIn,
+    startAuthFlow,
+  ]);
 
   const searchProviders = useMemo(
     () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins),
@@ -425,6 +501,50 @@ export function CommandBar({
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
   });
+  const rssFeedResultItems = useMemo(() => buildRssFeedResultItems({
+    pluginConfig: state.config.pluginConfig,
+    query: rootQuery,
+    onOpen: () => {
+      pluginRegistry.createPaneFromTemplate("news-rss-pane");
+      closeAll({ revertThemePreview: false });
+    },
+  }), [closeAll, pluginRegistry, rootQuery, state.config.pluginConfig]);
+  const twitterFeedResultItems = useMemo(() => {
+    const feeds = [
+      ...twitterFeedsFromConfig(state.config.pluginConfig),
+      ...twitterFeedsFromOpenPanes(state.config.layout.instances),
+    ];
+    return buildTwitterFeedResultItems({
+      feeds,
+      query: rootQuery,
+      onOpen: (feed) => {
+        pluginRegistry.createPaneFromTemplate("twitter-feed-pane", {
+          arg: feed.query,
+          values: { query: feed.query },
+        });
+        closeAll({ revertThemePreview: false });
+      },
+    });
+  }, [closeAll, pluginRegistry, rootQuery, state.config.layout.instances, state.config.pluginConfig]);
+  const indexedResultItems = useMemo(() => [
+    ...articleResultItems,
+    ...predictionResultItems,
+    ...chartSeriesItems,
+    ...rssFeedResultItems,
+    ...twitterFeedResultItems,
+    ...providerResultItems,
+  ], [
+    articleResultItems,
+    chartSeriesItems,
+    predictionResultItems,
+    providerResultItems,
+    rssFeedResultItems,
+    twitterFeedResultItems,
+  ]);
+  const openPluginMarketplace = useCallback(() => {
+    pluginRegistry.createPaneFromTemplate(PLUGIN_MARKETPLACE_TEMPLATE_ID);
+    closeAll({ revertThemePreview: false });
+  }, [closeAll, pluginRegistry]);
   const providerCategoryPriorities = useMemo(
     () => new Map(searchProviders.map((provider) => [provider.category, provider.priority ?? 0])),
     [searchProviders],
@@ -465,9 +585,10 @@ export function CommandBar({
     paneShortcutItems,
     pluginCommandItems,
     pluginCommandResultItems,
-    providerResultItems,
+    providerResultItems: indexedResultItems,
     providerCategoryPriorities,
     providerSearching,
+    onOpenPluginMarketplace: openPluginMarketplace,
     readTickerSearchCache,
     rootModeKind: rootModeInfo.kind,
     rootQuery,

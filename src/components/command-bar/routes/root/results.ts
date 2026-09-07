@@ -19,6 +19,8 @@ import type { parseRootShortcutIntent } from "./shortcuts";
 import type { CommandBarRoute } from "../../workflow/types";
 import { createRootCommandItemBuilder } from "./command-items";
 import { buildRootShortcutItem } from "./shortcut-items";
+import { looksLikeCatalogTickerQuery } from "../../../../plugins/builtin/chart-composer/catalog-inventory";
+import { buildPluginFallbackItem, buildRelatedPaneItems } from "./indexed-results";
 
 type RootShortcutIntent = ReturnType<typeof parseRootShortcutIntent>;
 
@@ -77,6 +79,7 @@ export interface RootResultModelOptions {
   runSecurityDescriptionShortcut: (query?: string) => void | Promise<void>;
   state: AppState;
   tickerActionItems: () => ResultItem[];
+  onOpenPluginMarketplace?: () => void;
 }
 
 /** An in-flight or answered request keeps its rows even if the heuristic lapses. */
@@ -126,6 +129,7 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
+    onOpenPluginMarketplace,
   } = options;
 
   if (currentRoute) {
@@ -237,6 +241,12 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       (item) => item.label,
     );
     items.push(...matchedItems);
+    const shown = new Set(items.map((item) => item.id));
+    items.push(...buildRelatedPaneItems(
+      [...paneShortcutItems({ includePromptableTickerTemplates: true }), ...nonShortcutPaneTemplateItems()],
+      rootQuery,
+      shown,
+    ));
   }
 
   const shortcutClaimedQuery = rootShortcutIntent.kind !== "none";
@@ -247,6 +257,17 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // free-text providers stay out of the way.
   if (!shortcutClaimedQuery) {
     items.push(...providerResultItems);
+  }
+
+  if (
+    rootQuery.trim()
+    && !shortcutClaimedQuery
+    && items.length === 0
+    && providerResultItems.length === 0
+    && onOpenPluginMarketplace
+    && !looksLikeCatalogTickerQuery(rootQuery)
+  ) {
+    items.push(buildPluginFallbackItem(onOpenPluginMarketplace));
   }
 
   // Built from the local matches, then placed above them: the AI turns the
@@ -260,7 +281,11 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
       matchCount,
       shortcutClaimedQuery,
     )
-    ? buildAssistResultItems({ ...assist, query: rootQuery })
+    ? buildAssistResultItems({
+      ...assist,
+      query: rootQuery,
+      hasLocalResults: matchCount > 0 || providerResultItems.length > 0,
+    })
     : [];
 
   return { items: dedupeById([...assistItems, ...items]), initialIdx };

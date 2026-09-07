@@ -24,10 +24,10 @@ export const BADGE_COLUMN_WIDTH = 6;
 export const BADGE_GAP = 1;
 
 /**
- * A shortcut prefix: EVT, RV, 13F, 10-K. Anything with lower case, spaces, or
- * more than six characters is a description and stays on the right.
+ * A shortcut prefix: EVT, RV, 13F, 10-K, FONT+. Anything with lower case,
+ * spaces, or more than six characters is a description and stays on the right.
  */
-const SHORTCUT_PATTERN = /^[A-Z0-9][A-Z0-9-]{0,5}$/;
+const SHORTCUT_PATTERN = /^[A-Z0-9][A-Z0-9+-]{0,5}$/;
 
 type BadgeSource = Pick<ResultItem, "accent" | "badge" | "right" | "kind">;
 
