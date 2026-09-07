@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PluginModule } from "../plugin-module";
-import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
+import type {
+  PaneProps,
+  PaneTemplateCreateOptions,
+  PaneTemplateContext,
+  TickerResearchTabPrefetchContext,
+} from "../../../types/plugin";
 import type { SecFilingDocument, SecFilingItem } from "../../../types/data-provider";
 import { useResolvedEntryValue, useSecFilingDocuments, useSecFilingsQuery } from "../../../market-data/hooks";
 import { instrumentFromTicker } from "../../../market-data/request-types";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue, usePaneTicker } from "../../../state/app/context";
 import { Box, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
@@ -29,6 +35,7 @@ import { loadSecBrowserFilings } from "./client";
 import { filingToArticle, isPeriodicFiling } from "./filing-article";
 import { filingMatchesForms, parseFormsSetting } from "./forms";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { useNewsReadState } from "../news/wire/read-state";
 import { formatFilingMetaDate } from "./filing-display";
 import {
   documentContentKey,
@@ -49,6 +56,17 @@ import { useFilingSummary } from "./use-filing-summary";
 const SEC_FILING_FETCH_LIMIT = 20_000;
 const SEC_FILING_PAGE_SIZE = 50;
 const OWNERSHIP_FORMS = new Set(["3", "4", "5"]);
+
+function prefetchTickerSecFilings({ ticker }: TickerResearchTabPrefetchContext): void {
+  if (!isUsEquityTicker(ticker)) return;
+  const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker);
+  const coordinator = getSharedMarketDataCoordinator();
+  if (!instrument || !coordinator) return;
+  void coordinator.loadSecFilings({
+    instrument,
+    count: SEC_FILING_FETCH_LIMIT,
+  }).catch(() => {});
+}
 
 function getDisplayFormLabel(form: string): string {
   const trimmed = form.trim();
@@ -343,15 +361,17 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     void summary.summarize(summarizeTarget, content);
   }, [contentCache, summarizeTarget, summary]);
   const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle();
   const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
   const popOutSelected = useCallback(() => {
     if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
+    markArticleRead(summarizeTarget.accessionNumber);
     popOutArticle(filingToArticle(
       summarizeTarget,
       contentCache.get(summarizeTarget.accessionNumber),
     ));
-  }, [contentCache, popOutArticle, summarizeTarget]);
+  }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
 
   useEffect(() => {
     if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
@@ -368,6 +388,9 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
     loading,
     error,
     showOpenHint: !error && !!openFiling?.filingUrl,
+    onOpen: () => {
+      if (openFiling) markArticleRead(openFiling.accessionNumber);
+    },
   });
 
   if (!ticker) {
@@ -410,6 +433,8 @@ function SecTickerView({ width, height, focused }: { width: number; height: numb
       )}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
+      isItemRead={(item) => readArticleIds.has(item.id)}
+      onItemRead={(item) => markArticleRead(item.id)}
       onOpenItemIdChange={setOpenItemId}
       sourceLabel="Form"
       titleLabel="Filing"
@@ -538,15 +563,17 @@ function SecPane({ width, height, focused }: PaneProps) {
     void summary.summarize(summarizeTarget, content);
   }, [contentCache, summarizeTarget, summary]);
   const canSummarize = !!summarizeTarget && !!contentCache.get(summarizeTarget.accessionNumber);
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle();
   const canPopOut = !!summarizeTarget && isPeriodicFiling(summarizeTarget);
   const popOutSelected = useCallback(() => {
     if (!summarizeTarget || !isPeriodicFiling(summarizeTarget)) return;
+    markArticleRead(summarizeTarget.accessionNumber);
     popOutArticle(filingToArticle(
       summarizeTarget,
       contentCache.get(summarizeTarget.accessionNumber),
     ));
-  }, [contentCache, popOutArticle, summarizeTarget]);
+  }, [contentCache, markArticleRead, popOutArticle, summarizeTarget]);
 
   useEffect(() => {
     if (visibleFilings.length > 0 && selectedIdx >= visibleFilings.length) {
@@ -609,6 +636,9 @@ function SecPane({ width, height, focused }: PaneProps) {
       ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
       : undefined,
     showOpenHint: !error && !!openFiling?.filingUrl,
+    onOpen: () => {
+      if (openFiling) markArticleRead(openFiling.accessionNumber);
+    },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       { id: "refresh", key: "r", label: "efresh", onPress: () => load(query) },
@@ -705,6 +735,8 @@ function SecPane({ width, height, focused }: PaneProps) {
       )}
       selectedIdx={selectedIdx}
       onSelect={setSelectedIdx}
+      isItemRead={(item) => readArticleIds.has(item.id)}
+      onItemRead={(item) => markArticleRead(item.id)}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
       sourceLabel="Form"
@@ -802,6 +834,7 @@ export const secModule: PluginModule = {
       order: 45,
       component: SecTickerView,
       isVisible: ({ ticker }) => isUsEquityTicker(ticker),
+      prefetch: prefetchTickerSecFilings,
     });
   },
 

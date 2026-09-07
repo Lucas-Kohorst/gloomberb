@@ -8,6 +8,7 @@ import {
   nextStackSortPreference,
   sortStackItems,
   usePaneFooter,
+  useUpdatedAgo,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
@@ -448,13 +449,16 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   const openSelectedSource = useCallback(() => {
     if (!readableArticle?.url) return;
+    markArticleRead(readableArticle.id);
     void rendererHost.openExternal(readableArticle.url);
-  }, [readableArticle, rendererHost]);
+  }, [markArticleRead, readableArticle, rendererHost]);
 
   const popOutSelectedArticle = useCallback(() => {
+    if (readableArticle) markArticleRead(readableArticle.id);
     popOutArticle(readableArticle);
-  }, [popOutArticle, readableArticle]);
+  }, [markArticleRead, popOutArticle, readableArticle]);
   const poll = useFeedPollInterval();
+  const updatedAgo = useUpdatedAgo(newsState.updatedAt);
 
   useShortcut((event) => {
     if (!focused || !readableArticle) return;
@@ -520,6 +524,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
 
   usePaneFooter("rss-articles", () => ({
     info: [
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ],
     trailingInfo: [...pollFooterTrailingInfo(!detailArticle, poll.segment)],
@@ -532,7 +537,7 @@ function RssArticlesView({ focused, width, height, onManageFeeds }: {
       ...(archiveAction.enabled ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }] : []),
       ...(readableArticle ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelectedArticle }] : []),
     ],
-  }), [archiveAction.archive, archiveAction.enabled, detailArticle, focusSearch, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle]);
+  }), [archiveAction.archive, archiveAction.enabled, detailArticle, focusSearch, loading, onManageFeeds, openSelectedSource, poll.segment, popOutSelectedArticle, readableArticle, shareSelectedArticle, updatedAgo]);
 
   if (loading && articles.length === 0) {
     return <Spinner label="Loading RSS feeds..." />;

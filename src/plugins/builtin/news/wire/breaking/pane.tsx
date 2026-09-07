@@ -1,7 +1,7 @@
-import { useMemo } from "react";
+import { useCallback } from "react";
 import { Box } from "../../../../../ui";
 import type { PaneProps } from "../../../../../types/plugin";
-import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../../news/hooks";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../../runtime";
 import { NewsDetailView, useNewsArticleDetail } from "../news/detail-view";
 import {
@@ -39,12 +39,22 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
     ? () => copyShareLink(newsArticleSharePayload(readableArticle))
     : undefined;
 
+  const refresh = useCallback(() => {
+    void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.breaking);
+  }, []);
+
   useNewsArticleFooter({
     registrationId: "news-wire:breaking",
     focused,
-    article: detailArticle,
+    article: readableArticle,
     loading: loading && articles.length > 0,
     error,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRefresh: refresh,
+    onShare: shareArticle,
+    onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    showPoll: !detailArticle,
+    updatedAt: breakingState.updatedAt,
   });
 
   const detailContent = detailArticle ? (
@@ -87,6 +97,8 @@ export function BreakingPane({ focused, width, height }: PaneProps) {
       emptyStateHint="Breaking stories appear when high-priority headlines arrive."
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

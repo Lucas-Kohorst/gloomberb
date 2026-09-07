@@ -23,13 +23,28 @@ import { OnlinePresenceDot, PresenceSlot } from "./presence-dot";
 
 const DESKTOP_NOTIFICATION_ICON_WIDTH = 3;
 const DESKTOP_ONLINE_COUNT_PADDING_X = 1;
+const DESKTOP_CHAT_SIDEBAR_MIN_WIDTH = 22;
+const DESKTOP_CHAT_SIDEBAR_MAX_WIDTH = 32;
+const DESKTOP_CHAT_SIDEBAR_WIDTH_RATIO = 0.28;
+const DESKTOP_LABEL_ELLIPSIS = {
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  minWidth: 0,
+  width: "100%",
+} as const;
 
 export function shouldShowChannelSidebar(channelCount: number, width: number, height: number): boolean {
   return shouldShowPaneSidebar(channelCount, width, height);
 }
 
 export function getChannelSidebarWidth(width: number, nativePaneChrome: boolean): number {
-  return getPaneSidebarWidth(width, nativePaneChrome);
+  if (!nativePaneChrome) return getPaneSidebarWidth(width, false);
+  return Math.min(
+    DESKTOP_CHAT_SIDEBAR_MAX_WIDTH,
+    Math.max(DESKTOP_CHAT_SIDEBAR_MIN_WIDTH, Math.floor(width * DESKTOP_CHAT_SIDEBAR_WIDTH_RATIO)),
+  );
 }
 
 function ChannelNotificationIcon({
@@ -288,8 +303,23 @@ export function ChannelSidebar({
                       ) : (
                         <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{channelPrefix(channel, active)}</Text>
                       )}
-                      <Text fg={foregroundColor} attributes={unread ? TextAttributes.BOLD : 0} selectable={false} onMouseDown={onMouseDown}>{truncateChannelLabel(label, labelWidth)}</Text>
-                      <Box flexGrow={1} onMouseDown={onMouseDown} />
+                      <Box
+                        flexGrow={1}
+                        minWidth={0}
+                        overflow={nativePaneChrome ? "hidden" : undefined}
+                        onMouseDown={onMouseDown}
+                      >
+                        <Text
+                          fg={foregroundColor}
+                          attributes={unread ? TextAttributes.BOLD : 0}
+                          selectable={false}
+                          onMouseDown={onMouseDown}
+                          title={nativePaneChrome ? label : undefined}
+                          style={nativePaneChrome ? DESKTOP_LABEL_ELLIPSIS : undefined}
+                        >
+                          {nativePaneChrome ? label : truncateChannelLabel(label, labelWidth)}
+                        </Text>
+                      </Box>
                       {canManageNotifications && (
                         <PaneSidebarAction
                           width={notificationWidth}
@@ -308,7 +338,6 @@ export function ChannelSidebar({
               );
             })}
             </PaneSidebarList>
-            <Box flexGrow={1} />
             {needsProfileSetup && (
               <PaneSidebarRow
                 active={false}
@@ -319,8 +348,13 @@ export function ChannelSidebar({
                   <>
                     <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}> </Text>
                     <ProfileIcon color={foregroundColor} onMouseDown={onMouseDown} />
-                    <Text fg={foregroundColor} selectable={false} onMouseDown={onMouseDown}>
-                      {` ${truncateChannelLabel(t("Profile"), Math.max(listWidth - 3, 1))}`}
+                    <Text
+                      fg={foregroundColor}
+                      selectable={false}
+                      onMouseDown={onMouseDown}
+                      style={nativePaneChrome ? DESKTOP_LABEL_ELLIPSIS : undefined}
+                    >
+                      {` ${nativePaneChrome ? t("Profile") : truncateChannelLabel(t("Profile"), Math.max(listWidth - 3, 1))}`}
                     </Text>
                     <Box flexGrow={1} onMouseDown={onMouseDown} />
                   </>

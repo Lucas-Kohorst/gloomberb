@@ -113,6 +113,17 @@ describe("NewsService", () => {
     dispose();
   });
 
+  it("keeps prefetched articles visible while a pane refreshes", async () => {
+    agg.register(makeSource("prefetched", [makeItem({ url: "https://prefetched.example.com/1" })]));
+    await agg.load({ feed: "latest" });
+
+    const phases: string[] = [];
+    const dispose = agg.watchQuery({ feed: "latest" }, (state) => phases.push(state.phase));
+
+    expect(phases[0]).toBe("ready");
+    dispose();
+  });
+
   it("deduplicates by URL, keeping higher importance", async () => {
     const low = makeItem({ url: "https://example.com/1", importance: 40 });
     const high = makeItem({ url: "https://example.com/1", importance: 80 });

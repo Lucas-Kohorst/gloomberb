@@ -48,6 +48,9 @@ export class ChatControllerMessageLoading {
       },
     })
       .catch((error: unknown) => {
+        // Both the incremental and full-refresh attempts failed. Record it so
+        // the pane can tell "couldn't load" apart from "no messages yet".
+        loadFailed = true;
         channel.messagesError = error instanceof Error && error.message.trim()
           ? error.message
           : "Could not load messages.";

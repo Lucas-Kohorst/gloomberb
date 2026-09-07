@@ -153,6 +153,7 @@ export function usePaneStatusLinkFooter({
   hints,
   trailingHints,
   showOpenHint = false,
+  onOpen,
 }: {
   registrationId: string;
   focused: boolean;
@@ -166,6 +167,7 @@ export function usePaneStatusLinkFooter({
   hints?: PaneHint[];
   trailingHints?: PaneHint[];
   showOpenHint?: boolean;
+  onOpen?: () => void;
 }) {
   const statusInfo = useMemo(
     () => buildPaneStatusInfo({ loading, error, info }),
@@ -191,5 +193,6 @@ export function usePaneStatusLinkFooter({
     hints,
     trailingHints,
     showHint: showOpenHint,
+    onOpen,
   });
 }

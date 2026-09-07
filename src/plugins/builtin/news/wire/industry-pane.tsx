@@ -1,8 +1,8 @@
 import { Box } from "../../../../ui";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { PaneProps } from "../../../../types/plugin";
 import type { MarketNewsItem } from "../../../../types/news-source";
-import { useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
+import { getSharedNewsService, useLoadNewsStory, useNewsArticles, useNewsTableLoadMore } from "../../../../news/hooks";
 import { usePaneSettingValue } from "../../../../state/app/context";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../../runtime";
 import { Tabs } from "../../../../components";
@@ -23,9 +23,6 @@ import {
   type SectorNewsSelection,
   sectorNewsLabel,
 } from "./news/query-presets";
-import { getIndustryDefaultTab, getNewsPaneSettings } from "./settings";
-
-const INDUSTRY_COLUMNS = ["time", "source", "title", "tickers", "categories"] as const;
 
 const SECTOR_TABS = ["all", ...SECTOR_NEWS_SECTORS] as const;
 
@@ -100,12 +97,22 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
     setSelectedArticleId(null);
   }, [category, setSelectedArticleId]);
 
+  const refresh = useCallback(() => {
+    void getSharedNewsService()?.load(NEWS_QUERY_PRESETS.sectorAll);
+  }, []);
+
   useNewsArticleFooter({
     registrationId: "news-wire:industry",
     focused,
-    article: detailArticle,
+    article: readableArticle,
     loading: loading && allArticles.length > 0,
     error,
+    onPopOut: () => popOutArticle(readableArticle),
+    onRefresh: refresh,
+    onShare: shareArticle,
+    onRead: readableArticle ? () => markArticleRead(readableArticle.id) : undefined,
+    showPoll: !detailArticle,
+    updatedAt: newsState.updatedAt,
   });
 
   const rootBefore = (
@@ -142,7 +149,7 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       selectedArticleId={selectedArticleId}
       setSelectedArticleId={setSelectedArticleId}
       sortPreference={sortPreference}
-      setSortPreference={(preference) => setSortValue(encodeSortPreference(preference))}
+      setSortPreference={setSortPreference}
       onOpenArticle={openArticle}
       onArticleRead={markArticleRead}
       detailOpen={!!detailArticle}
@@ -162,6 +169,8 @@ export function IndustryPane({ focused, width, height }: PaneProps) {
       emptyStateHint="Try another category or wait for the next feed refresh."
       scrollRef={scrollRef}
       onBodyScrollActivity={onBodyScrollActivity}
+      onPopOut={() => popOutArticle(readableArticle)}
+      onShare={shareArticle}
     />
   );
 }

@@ -9,6 +9,7 @@ import { apiClient } from "../../../api-client";
 import { PluginRenderProvider } from "../../runtime";
 import { gloomberbCloudPlugin } from "../cloud";
 import { ChatContent } from "./content";
+import { getChannelSidebarWidth } from "./sidebar";
 import { chatController } from "./controller";
 import { useChatChannelNavigation } from "./content/channel-navigation";
 import {
@@ -73,6 +74,14 @@ function createChannelPane(
     );
   };
 }
+
+describe("chat sidebar width", () => {
+  test("gives desktop chat a wider column than the shared pane sidebar", () => {
+    expect(getChannelSidebarWidth(80, true)).toBe(22);
+    expect(getChannelSidebarWidth(120, true)).toBe(32);
+    expect(getChannelSidebarWidth(90, false)).toBe(21);
+  });
+});
 
 describe("ChatContent channel sidebar", () => {
   test("shows the channel sidebar on wide panes and hides it on narrow panes", async () => {

@@ -72,7 +72,6 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
   const closeProfilePopover = useCallback(() => {
     cancelProfilePopoverClose();
     pinnedRef.current = false;
-    setProfilePopoverPinned(false);
     setProfilePopoverUser(null);
   }, [cancelProfilePopoverClose]);
 
@@ -117,17 +116,19 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
 
   const showProfilePopover = useCallback((
     targetUser: ChatUserSummary,
-    options?: { ownProfile?: boolean },
+    options?: { ownProfile?: boolean; pin?: boolean },
   ) => {
     const ownProfile = options?.ownProfile === true;
+    const pin = options?.pin === true;
     const cachedUser = ownProfile && ownProfileRef.current?.id === targetUser.id
       ? ownProfileRef.current
       : targetUser;
-    if (!ownProfile && !hasPublicChatProfileInfo(cachedUser)) {
-      closeProfilePopover();
+    if (!ownProfile && !pin && !hasPublicChatProfileInfo(cachedUser)) {
+      if (!pinnedRef.current) closeProfilePopover();
       return;
     }
     cancelProfilePopoverClose();
+    if (pin) pinnedRef.current = true;
     setProfilePopoverUser(cachedUser);
     if (ownProfile) refreshOwnProfile(targetUser.id);
   }, [cancelProfilePopoverClose, closeProfilePopover, refreshOwnProfile]);
@@ -146,6 +147,15 @@ export function useChatProfilePopover(trackOwnProfileUserId?: string) {
     if (ownProfileRef.current?.id !== trackOwnProfileUserId) setOwnProfileConfigured(null);
     refreshOwnProfile(trackOwnProfileUserId, true);
   }, [refreshOwnProfile, trackOwnProfileUserId]);
+
+  useEffect(() => {
+    if (!pendingProfile) return;
+    showProfilePopover(pendingProfile, {
+      pin: true,
+      ownProfile: pendingProfile.id === trackOwnProfileUserId,
+    });
+    consumePendingChatProfile();
+  }, [pendingProfile, showProfilePopover, trackOwnProfileUserId]);
 
   return {
     cancelProfilePopoverClose,
