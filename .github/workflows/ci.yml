@@ -3,9 +3,9 @@
 #
 # Branch protection requires the "CI gate" job; it fails if any leg fails or
 # is skipped, so a green gate means typecheck (all six targets), static
-# checks, the full test suite, desktop + web builds, and the live TUI smoke
-# all passed. Deploys to https://terminal.kohor.st only happen after a green
-# gate on main.
+# checks, the full test suite, desktop + web builds, and the live TUI and
+# upgrade smokes all passed. Deploys to https://terminal.kohor.st only happen
+# after a green gate on main.
 name: CI
 
 on:
@@ -24,29 +24,18 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  typecheck:
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - opentui
-          - electrobun-bun
-          - electrobun-view
-          - browser
-          - cloudflare
-          - scripts
+  checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
-      - name: Typecheck ${{ matrix.target }}
-        run: bun run typecheck:${{ matrix.target }}
 
-  static:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-bun
+      # All six tsconfig targets (opentui, electrobun-bun, electrobun-view,
+      # browser, cloudflare, scripts) in one job; they are fast and sequential
+      # output is easier to read than a six-leg matrix.
+      - name: Typecheck all targets
+        run: bun run typecheck
 
       # Fails when a built-in plugin changes without regenerating the published
       # manifest, which is what the plugin directory renders for built-ins.
@@ -70,34 +59,29 @@ jobs:
       - name: Test
         run: bun run test
 
-  desktop:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
       - name: Build Electrobun view
         run: bun run desktop:view:build
-
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-bun
       - name: Hosted bundle runs without Node globals
         run: bun run web:check-bundle
       # Advisory: the hosted browser bundle still embeds fork/provider modules
       # (kohor.st cloud defaults, votehub/kalshi direct hosts, hosted-flag
       # reads) that this audit forbids. Tracked as hosted-hardening follow-up;
       # the boot smoke above is the gate.
-      - name: Build and audit browser app
+      - name: Audit browser app (advisory)
         run: bun run web:audit
         continue-on-error: true
       - name: Dry-run Cloudflare Worker
         run: bun run cloudflare:dry-run
 
-  tui:
+  smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
@@ -110,13 +94,6 @@ jobs:
         env:
           GLOOM_QA_COMMAND_BAR: "1"
         run: bun run qa:tui
-
-  upgrade-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-bun
       - name: Test global upgrade from 0.5.0
         run: bun run test:global-upgrade
 
@@ -124,13 +101,10 @@ jobs:
     name: CI gate
     if: always()
     needs:
-      - typecheck
-      - static
+      - checks
       - test
-      - desktop
-      - web
-      - tui
-      - upgrade-smoke
+      - build
+      - smoke
     runs-on: ubuntu-latest
     steps:
       - name: All checks must pass
