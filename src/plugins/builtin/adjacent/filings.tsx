@@ -1,40 +1,55 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ScrollBox, Text, TextAttributes, type InputRenderable, type ScrollBoxRenderable } from "../../../ui";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type {
   PaneProps,
   PaneTemplateCreateOptions,
 } from "../../../types/plugin";
 import type { NewsArticle } from "../../../news/types";
 import {
-  FeedDataTableStackView,
+  DataTableStackView,
   InputSearchBar,
   Spinner,
   Tabs,
+  nextStackSortPreference,
+  sortStackItems,
+  useTableLoadMore,
   useUpdatedAgo,
-  type FeedDataTableItem,
+  type DataTableCell,
+  type DataTableColumn,
+  type DataTableKeyEvent,
+  type DataTableRootKeyContext,
+  type StackSortPreference,
 } from "../../../components";
+import { MarkdownText } from "../../../components/markdown-text";
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { colors } from "../../../theme/colors";
-import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
+import { usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { pollFooterTrailingInfo, useFeedPollInterval } from "../shared/feed-poll-interval";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import { useNewsReadState } from "../news/wire/read-state";
+import { formatTimeAgo } from "../../../utils/format";
+import { wrapTextLines } from "../../../utils/text-wrap";
 import type { AdjacentClient } from "./client";
-import { loadCftcFilings, loadCftcFilingsFeed } from "./client";
+import { cftcPageHasMore, loadCftcFilings, loadCftcFilingsFeed } from "./client";
 import { CftcStackedBarChartView } from "./filings-chart";
 import { parseCftcTemplateArg, rollupCftcFilingsByOrgMonth } from "./filings-rollup";
 import {
   buildDetailBody,
   buildDetailMeta,
   feedLabel,
+  filingKindLabel,
   filingListTimestamp,
-  filingListTitle,
   stripLeadingHeading,
 } from "./filings-format";
+import {
+  renderCftcSummary,
+  useCftcFilingSummary,
+} from "./filings-summary";
 import {
   type CftcFiling,
   type CftcFilingDetail,
@@ -69,28 +84,138 @@ function cftcFilingToArticle(filing: CftcFiling, detail: CftcFilingDetail | null
   };
 }
 
-function toFeedItems(
-  filings: CftcFiling[],
-  openFilingId: number | undefined,
-  detail: CftcFilingDetail | null,
-  detailLoading: boolean,
-): FeedDataTableItem[] {
-  return filings.map((filing) => {
-    const selected = filing.id === openFilingId;
-    return {
-      id: String(filing.id),
-      eyebrow: filing.orgCode || feedLabel(filing),
-      title: filingListTitle(filing),
-      timestamp: filingListTimestamp(filing),
-      detailTitle: filing.title,
-      detailMeta: buildDetailMeta(filing),
-      detailBody: buildDetailBody(
-        filing,
-        selected ? detail : null,
-        selected && detailLoading,
-      ),
-    };
+type FilingColumnId = "time" | "org" | "type" | "status" | "filing";
+type FilingColumn = DataTableColumn & { id: FilingColumnId };
+
+const DEFAULT_FILING_SORT: StackSortPreference<FilingColumnId> = {
+  columnId: "time",
+  direction: "desc",
+};
+
+function createFilingColumns(): FilingColumn[] {
+  return [
+    { id: "time", label: "SEEN", width: 8, align: "left" },
+    { id: "org", label: "ORG", width: 8, align: "left" },
+    { id: "type", label: "TYPE", width: 13, align: "left" },
+    { id: "status", label: "STATUS", width: 14, align: "left" },
+    { id: "filing", label: "FILING", width: 16, align: "left", flexGrow: 1 },
+  ];
+}
+
+function filingSortValue(filing: CftcFiling, columnId: FilingColumnId): string | number | null {
+  switch (columnId) {
+    case "time":
+      return filingListTimestamp(filing).getTime();
+    case "org":
+      return filing.orgCode;
+    case "type":
+      return filingKindLabel(filing);
+    case "status":
+      return filing.status;
+    case "filing":
+      return filing.title;
+  }
+}
+
+function compareFilings(left: CftcFiling, right: CftcFiling, columnId: FilingColumnId): number {
+  const leftValue = filingSortValue(left, columnId);
+  const rightValue = filingSortValue(right, columnId);
+  if (typeof leftValue === "number" && typeof rightValue === "number") {
+    return leftValue - rightValue;
+  }
+  return String(leftValue ?? "").localeCompare(String(rightValue ?? ""), undefined, {
+    sensitivity: "base",
   });
+}
+
+function filingId(filing: CftcFiling): string {
+  return String(filing.id);
+}
+
+function renderFilingCell(
+  filing: CftcFiling,
+  column: FilingColumn,
+  selected: boolean,
+  read = false,
+): DataTableCell {
+  const sel = selected ? colors.selectedText : undefined;
+  switch (column.id) {
+    case "time":
+      return { text: formatTimeAgo(filingListTimestamp(filing)), color: sel ?? colors.textDim };
+    case "org":
+      return { text: filing.orgCode, color: sel ?? colors.textMuted };
+    case "type":
+      return { text: filingKindLabel(filing), color: sel ?? colors.textDim };
+    case "status":
+      return { text: filing.status.trim() || "—", color: sel ?? colors.textDim };
+    case "filing":
+      return {
+        text: filing.title,
+        color: read ? colors.textMuted : (sel ?? colors.text),
+        attributes: read ? TextAttributes.NONE : TextAttributes.BOLD,
+      };
+  }
+}
+
+function FilingDetail({
+  filing,
+  detail,
+  loading,
+  summaryMarkdown,
+  summarizing,
+  width,
+  scrollRef,
+}: {
+  filing: CftcFiling;
+  detail: CftcFilingDetail | null;
+  loading: boolean;
+  summaryMarkdown?: string | null;
+  summarizing?: boolean;
+  width: number;
+  scrollRef: RefObject<ScrollBoxRenderable | null>;
+}) {
+  const lineWidth = Math.max(width - 2, 12);
+  const meta = buildDetailMeta(filing);
+  const body = buildDetailBody(filing, detail, loading);
+  const summaryText = summarizing
+    ? "Summarizing with AI..."
+    : summaryMarkdown ?? "";
+  return (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexBasis={0}
+      minHeight={0}
+      overflow="hidden"
+      paddingX={1}
+      paddingY={1}
+    >
+      <ScrollBox
+        ref={scrollRef}
+        flexGrow={1}
+        flexBasis={0}
+        minHeight={0}
+        scrollY
+        focusable={false}
+      >
+        <Box flexDirection="column" width={lineWidth}>
+          {meta.flatMap((entry) => wrapTextLines(entry, lineWidth, 2)).map((line, index) => (
+            <Box key={`meta-${index}`} height={1}>
+              <Text fg={colors.textMuted}>{line}</Text>
+            </Box>
+          ))}
+          {summaryText ? (
+            <>
+              <Box height={1} />
+              <MarkdownText text={summaryText} lineWidth={lineWidth} textColor={colors.text} />
+            </>
+          ) : null}
+          <Box height={1} />
+          <MarkdownText text={body} lineWidth={lineWidth} textColor={colors.text} />
+        </Box>
+      </ScrollBox>
+    </Box>
+  );
 }
 
 function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
@@ -137,35 +262,98 @@ export function AdjacentFilingsPane({
   const [filings, setFilings] = useState<CftcFiling[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const [selectedIdx, setSelectedIdx] = useDebouncedPluginPaneState<number>("selectedIdx", 0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<StackSortPreference<FilingColumnId>>(DEFAULT_FILING_SORT);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [detail, setDetail] = useState<CftcFilingDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const detailCacheRef = useRef<Map<number, CftcFilingDetail>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
+  const moreAbortRef = useRef<AbortController | null>(null);
+  const tableScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const detailScrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const resetSelectionOnLoadRef = useRef(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const columns = useMemo(() => createFilingColumns(), []);
+  const sortedFilings = useMemo(
+    () => sortStackItems(filings, sortPreference, compareFilings, (left, right) => left.id - right.id),
+    [filings, sortPreference],
+  );
 
   const load = useCallback((nextQuery: string) => {
     abortRef.current?.abort();
+    moreAbortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     setStatus("loading");
     setError(null);
-    void loadCftcFilings(client, nextQuery, CFTC_PAGE_SIZE)
-      .then((page) => {
+    setLoadingMore(false);
+    setHasMore(false);
+    setPage(1);
+    void loadCftcFilings(client, nextQuery, CFTC_PAGE_SIZE, 1)
+      .then((result) => {
         if (abortRef.current !== controller) return;
-        setFilings(page.filings);
+        setFilings(result.filings);
+        setPage(result.meta.page);
+        setHasMore(cftcPageHasMore(result.meta, result.filings.length));
         setStatus("loaded");
         setLastUpdated(Date.now());
+        if (resetSelectionOnLoadRef.current) {
+          resetSelectionOnLoadRef.current = false;
+          setSelectedId(null);
+          setOpenItemId(null);
+        }
       })
       .catch((loadError) => {
         if (abortRef.current !== controller) return;
         if (loadError instanceof Error && loadError.name === "AbortError") return;
         setError(loadError instanceof Error ? loadError.message : String(loadError));
         setFilings([]);
+        setHasMore(false);
         setStatus("error");
       });
   }, [client]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore || status !== "loaded") return;
+    moreAbortRef.current?.abort();
+    const controller = new AbortController();
+    moreAbortRef.current = controller;
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    void loadCftcFilings(client, query, CFTC_PAGE_SIZE, nextPage)
+      .then((result) => {
+        if (moreAbortRef.current !== controller) return;
+        if (result.filings.length === 0) {
+          setHasMore(false);
+          return;
+        }
+        setFilings((current) => {
+          const seen = new Set(current.map((filing) => filing.id));
+          const extra = result.filings.filter((filing) => !seen.has(filing.id));
+          return extra.length === 0 ? current : [...current, ...extra];
+        });
+        setPage(result.meta.page || nextPage);
+        setHasMore(cftcPageHasMore(result.meta, result.filings.length));
+      })
+      .catch((loadError) => {
+        if (moreAbortRef.current !== controller) return;
+        if (loadError instanceof Error && loadError.name === "AbortError") return;
+        setHasMore(false);
+      })
+      .finally(() => {
+        if (moreAbortRef.current === controller) setLoadingMore(false);
+      });
+  }, [client, hasMore, loadingMore, page, query, status]);
+
+  const onFilingsScroll = useTableLoadMore(
+    tableScrollRef,
+    hasMore && !loadingMore && status === "loaded" && !openItemId,
+    loadMore,
+  );
 
   const loadChart = useCallback((nextQuery: string) => {
     abortRef.current?.abort();
@@ -206,12 +394,16 @@ export function AdjacentFilingsPane({
 
   useEffect(() => () => {
     abortRef.current?.abort();
+    moreAbortRef.current?.abort();
   }, []);
 
   const openFiling = openItemId
-    ? filings.find((filing) => String(filing.id) === openItemId) ?? null
+    ? filings.find((filing) => filingId(filing) === openItemId) ?? null
     : null;
-  const selectedFiling = filings[selectedIdx] ?? null;
+  const selectedFiling = sortedFilings.find((filing) => filingId(filing) === selectedId)
+    ?? sortedFilings[0]
+    ?? null;
+  const selectedFilingId = selectedFiling ? filingId(selectedFiling) : null;
   const detailFiling = openFiling ?? selectedFiling;
   const detailFilingId = detailFiling?.id;
 
@@ -257,17 +449,36 @@ export function AdjacentFilingsPane({
   const poll = useFeedPollInterval();
   useAutoRefresh(status === "loaded" ? lastUpdated : null, () => load(query), poll.intervalMinutes);
 
+  const { readArticleIds, markArticleRead } = useNewsReadState();
   const popOutArticle = usePopOutNewsArticle(() => setOpenItemId(null));
+  const filingSummary = useCftcFilingSummary();
+  const markFilingRead = useCallback((filing: CftcFiling) => {
+    markArticleRead(filingId(filing));
+  }, [markArticleRead]);
   const popOutSelected = useCallback(() => {
     if (!detailFiling) return;
+    markFilingRead(detailFiling);
     popOutArticle(cftcFilingToArticle(detailFiling, detail));
-  }, [detail, detailFiling, popOutArticle]);
+  }, [detail, detailFiling, markFilingRead, popOutArticle]);
+  const handleSummarize = useCallback(() => {
+    if (!openFiling || detailLoading) return;
+    void filingSummary.summarize(openFiling, buildDetailBody(openFiling, detail, false));
+  }, [detail, detailLoading, filingSummary, openFiling]);
+  const openSummary = openFiling ? filingSummary.summaries.get(openFiling.id) : undefined;
 
   useEffect(() => {
-    if (filings.length > 0 && selectedIdx >= filings.length) {
-      setSelectedIdx(Math.max(0, filings.length - 1));
-    }
-  }, [selectedIdx, setSelectedIdx, filings.length]);
+    if (selectedFilingId !== selectedId) setSelectedId(selectedFilingId);
+  }, [selectedFilingId, selectedId]);
+
+  useEffect(() => {
+    if (openItemId && !openFiling) setOpenItemId(null);
+  }, [openFiling, openItemId]);
+
+  useEffect(() => {
+    if (!openItemId) return;
+    const scrollBox = detailScrollRef.current;
+    if (scrollBox) scrollBox.scrollTop = 0;
+  }, [openItemId]);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);
@@ -277,10 +488,10 @@ export function AdjacentFilingsPane({
     setSearchFocused(false);
   }, []);
   const updateQuery = useCallback((nextQuery: string) => {
+    resetSelectionOnLoadRef.current = true;
     setQuery(nextQuery);
-    setSelectedIdx(0);
     setOpenItemId(null);
-  }, [setQuery, setSelectedIdx]);
+  }, [setQuery]);
 
   useShortcut((event) => {
     if (!focused || openItemId) return;
@@ -313,8 +524,8 @@ export function AdjacentFilingsPane({
     url: error ? null : detail?.sourceUrl || null,
     source: detailFiling ? feedLabel(detailFiling) : undefined,
     label: "filing",
-    loading,
-    error,
+    loading: loading || loadingMore || filingSummary.summarizingId != null,
+    error: error ?? filingSummary.summaryError,
     info: [
       ...(client.isPublic
         ? [{ id: "tier", parts: [{ text: "public · last 90d", tone: "muted" as const }] }]
@@ -325,6 +536,9 @@ export function AdjacentFilingsPane({
     ],
     trailingInfo: [...pollFooterTrailingInfo(!openItemId, poll.segment)],
     showOpenHint: !error && !!detail?.sourceUrl,
+    onOpen: () => {
+      if (detailFiling) markFilingRead(detailFiling);
+    },
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
       {
@@ -336,10 +550,13 @@ export function AdjacentFilingsPane({
       ...(view === "list" && detailFiling
         ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }]
         : []),
+      ...(openFiling && !detailLoading
+        ? [{ id: "summarize", key: "s", label: "ummarize", onPress: handleSummarize }]
+        : []),
     ],
   });
 
-  const handleRootKeyDown = useCallback((event: { name?: string; preventDefault?: () => void; stopPropagation?: () => void }, context: { selectedIndex: number }) => {
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent, context: DataTableRootKeyContext) => {
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusSearch();
@@ -360,6 +577,41 @@ export function AdjacentFilingsPane({
     }
     return false;
   }, [focusSearch, load, loadChart, query, view]);
+
+  const scrollDetailBy = useCallback((delta: number) => {
+    const scrollBox = detailScrollRef.current;
+    if (!scrollBox?.viewport) return;
+    const maxScrollTop = Math.max(0, scrollBox.scrollHeight - scrollBox.viewport.height);
+    scrollBox.scrollTop = Math.max(0, Math.min(maxScrollTop, scrollBox.scrollTop + delta));
+  }, []);
+
+  const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (isPlainKey(event, "j", "down")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(1);
+      return true;
+    }
+    if (isPlainKey(event, "k", "up")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      scrollDetailBy(-1);
+      return true;
+    }
+    if (isPlainKey(event, "p") && detailFiling) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      popOutSelected();
+      return true;
+    }
+    if (isPlainKey(event, "s") && openFiling && !detailLoading) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      handleSummarize();
+      return true;
+    }
+    return false;
+  }, [detailFiling, detailLoading, handleSummarize, openFiling, popOutSelected, scrollDetailBy]);
 
   const chart = useMemo(
     () => rollupCftcFilingsByOrgMonth(chartFilings, {
@@ -451,19 +703,61 @@ export function AdjacentFilingsPane({
   }
 
   return (
-    <FeedDataTableStackView
-      width={width}
-      height={height}
+    <DataTableStackView<CftcFiling, FilingColumn>
       focused={focused && !searchFocused}
-      rootBefore={rootBefore}
-      items={toFeedItems(filings, openFiling?.id, detail, detailLoading)}
-      selectedIdx={selectedIdx}
-      onSelect={setSelectedIdx}
-      onOpenItemIdChange={setOpenItemId}
+      detailOpen={!!openFiling}
+      onBack={() => setOpenItemId(null)}
+      detailContent={openFiling ? (
+        <FilingDetail
+          filing={openFiling}
+          detail={detail}
+          loading={detailLoading}
+          summaryMarkdown={openSummary ? renderCftcSummary(openSummary) : null}
+          summarizing={openFiling != null && filingSummary.summarizingId === openFiling.id}
+          width={width}
+          scrollRef={detailScrollRef}
+        />
+      ) : (
+        <Box flexGrow={1} />
+      )}
+      detailTitle={openFiling?.title}
+      onDetailKeyDown={handleDetailKeyDown}
+      selection={{
+        kind: "id",
+        selectedId: selectedFilingId,
+        getId: filingId,
+        onChange: (id) => {
+          setSelectedId(id);
+        },
+      }}
+      onActivate={(filing) => {
+        markFilingRead(filing);
+        setOpenItemId(filingId(filing));
+      }}
       onRootKeyDown={handleRootKeyDown}
-      markdown
-      sourceLabel="Org"
-      titleLabel="Filing"
+      rootBefore={rootBefore}
+      rootWidth={width}
+      rootHeight={height}
+      columns={columns}
+      items={sortedFilings}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={(columnId) => {
+        const next = columnId as FilingColumnId;
+        setSortPreference((current) => nextStackSortPreference(
+          current,
+          next,
+          next === "time" ? "desc" : "asc",
+        ));
+      }}
+      resetScrollKey={query}
+      scrollRef={tableScrollRef}
+      onBodyScrollActivity={onFilingsScroll}
+      getItemKey={filingId}
+      getRowRevision={(filing) => `${filingId(filing)}:${filing.title}:${readArticleIds.has(filingId(filing)) ? 1 : 0}`}
+      renderCell={(filing, column, _index, rowState) =>
+        renderFilingCell(filing, column, rowState.selected, readArticleIds.has(filingId(filing)))
+      }
       emptyStateTitle={
         query.trim()
           ? `No CFTC filings match ${query.trim()}.`

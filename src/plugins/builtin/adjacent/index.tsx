@@ -15,6 +15,7 @@ import { AdjacentIndicesPane } from "./indices";
 import { AdjacentRatesPane } from "./rates";
 import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
 import { createAdjacentNewsCapability } from "./news";
+import { createAdjacentCatalogSearchProvider } from "./command-bar-search";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
 import { registerPluginAgentHarness } from "../../agent-harness";
@@ -99,21 +100,54 @@ const adjacentMarketsModule: PluginModule = {
       id: "adjacent-indices-pane",
       paneId: "adjacent-indices",
       label: "Adjacent Indices",
-      description: "Browse Adjacent prediction-market indices (RED, BLUE, RED-TR). Chart one with G ADJ:red.",
-      keywords: ["adjacent", "indices", "prediction", "markets", "political", "red", "blue"],
+      description: "Browse Adjacent prediction-market indices (RED, BLUE, NTI, house). Chart one with G ADJ:red.",
+      keywords: [
+        "adjacent",
+        "indices",
+        "prediction",
+        "markets",
+        "political",
+        "red",
+        "blue",
+        "nfl",
+        "nti",
+        "house",
+      ],
       category: "Data",
-      shortcut: { prefix: "ADI" },
-      createInstance: () => ({ placement: "floating" }),
+      shortcut: {
+        prefix: "ADI",
+        argPlaceholder: "ticker or name",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        const query = (options?.arg ?? "").trim();
+        return {
+          placement: "floating",
+          ...(query ? { params: { query }, title: query } : {}),
+        };
+      },
     },
     {
       id: "adjacent-rates-pane",
       paneId: "adjacent-rates",
       label: "Adjacent Reference Rates",
-      description: "Cross-platform prediction market reference rates with source markets.",
+      description: "Cross-platform prediction market reference rates with source markets. Chart one with G ADJ:house.",
       keywords: ["adjacent", "rates", "reference", "prediction", "markets", "benchmarks"],
       category: "Data",
-      shortcut: { prefix: "ADR" },
-      createInstance: () => ({ placement: "floating" }),
+      shortcut: {
+        prefix: "ADR",
+        argPlaceholder: "rate",
+        argKind: "text",
+        argOptional: true,
+      },
+      createInstance(_context: PaneTemplateContext, options?: PaneTemplateCreateOptions) {
+        const query = (options?.arg ?? "").trim();
+        return {
+          placement: "floating",
+          ...(query ? { params: { query }, title: query } : {}),
+        };
+      },
     },
     {
       id: "cftc-filings-pane",
@@ -155,6 +189,7 @@ const adjacentMarketsModule: PluginModule = {
     setSharedAdjacentApiKey(apiKey ?? null);
 
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
+    ctx.registerCommandBarSearchProvider(createAdjacentCatalogSearchProvider(ctx));
     disposeAdjacentConnection = registerConnectionSource({
       id: ADJACENT_CLOUD_CONNECTION_ID,
       name: "Adjacent Cloud",

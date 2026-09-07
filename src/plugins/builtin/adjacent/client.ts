@@ -32,6 +32,7 @@ import type {
 import {
   unwrapAdjacentMarketIds,
   unwrapAdjacentNewsArticles,
+  unwrapAdjacentPriceSamples,
   unwrapAdjacentSimilarMarkets,
 } from "./normalize";
 import { keyedDataUrl, isHostedWebClient } from "../connections/adjacent-cloud";
@@ -138,15 +139,27 @@ function parseMeta(raw: unknown): CftcPageMeta {
   const record = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const num = (value: unknown): number | null =>
     typeof value === "number" && Number.isFinite(value) ? value : null;
+  const total = num(record.total);
+  const page = num(record.page) ?? 1;
+  const perPage = num(record.per_page) ?? DEFAULT_FILINGS_PER_PAGE;
+  const totalPages = num(record.total_pages);
   return {
-    total: num(record.total),
-    page: num(record.page) ?? 1,
-    perPage: num(record.per_page) ?? DEFAULT_FILINGS_PER_PAGE,
-    totalPages: num(record.total_pages),
-    hasNext: record.has_next === true,
+    total,
+    page,
+    perPage,
+    totalPages,
+    hasNext: record.has_next === true
+      || (totalPages != null && page < totalPages)
+      || (total != null && page * perPage < total),
     hasPrev: record.has_prev === true,
     totalCapped: record.total_capped === true ? true : undefined,
   };
+}
+
+export function cftcPageHasMore(meta: CftcPageMeta, receivedCount: number): boolean {
+  if (meta.hasNext) return true;
+  if (receivedCount <= 0) return false;
+  return receivedCount >= meta.perPage;
 }
 
 let adjacentPersistence: PluginPersistence | null = null;
@@ -463,12 +476,13 @@ export class AdjacentClient {
 
   async getIndexPrices(id: string): Promise<AdjacentIndexPricesResponse> {
     const url = buildUrl(`${this.indicesPath()}/${id}/prices`);
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-index-prices",
       id,
-      () => adjacentFetchJson<AdjacentIndexPricesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.indexPrices,
     );
+    return { data: unwrapAdjacentPriceSamples(raw) };
   }
 
   async getIndexNews(id: string): Promise<AdjacentNewsResponse> {
@@ -498,12 +512,13 @@ export class AdjacentClient {
 
   async getRatePrices(id: string): Promise<AdjacentRatePricesResponse> {
     const url = buildUrl(`${this.ratesPath()}/${id}/prices`);
-    return loadCached(
+    const raw = await loadCached(
       "adjacent-rate-prices",
       id,
-      () => adjacentFetchJson<AdjacentRatePricesResponse>(url, this.apiKey),
+      () => adjacentFetchJson<unknown>(url, this.apiKey),
       ADJACENT_CACHE_POLICIES.ratePrices,
     );
+    return { data: unwrapAdjacentPriceSamples(raw) };
   }
 
   async getNews(params?: { limit?: number; offset?: number }): Promise<AdjacentNewsResponse> {
@@ -579,6 +594,8 @@ export class AdjacentClient {
       search: query.search?.trim() || undefined,
       page: query.page && query.page > 1 ? query.page : undefined,
       per_page: Math.min(query.perPage ?? DEFAULT_FILINGS_PER_PAGE, MAX_FILINGS_PER_PAGE),
+      sort: query.sort,
+      sort_dir: query.sortDir,
     });
     const payload = await loadCached(
       "adjacent-filings",
@@ -647,9 +664,16 @@ export async function loadCftcFilings(
   client: AdjacentClient,
   query: string,
   perPage = DEFAULT_FILINGS_PER_PAGE,
+  page = 1,
 ): Promise<CftcFilingsPage> {
   const normalized = query.trim();
-  return client.listFilings(normalized ? { search: normalized, perPage } : { perPage });
+  return client.listFilings({
+    ...(normalized ? { search: normalized } : {}),
+    perPage,
+    page,
+    sort: "first_seen",
+    sortDir: "desc",
+  });
 }
 
 const MAX_CFTC_CHART_PAGES = 8;
