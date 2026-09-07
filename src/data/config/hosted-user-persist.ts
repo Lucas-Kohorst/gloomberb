@@ -9,6 +9,13 @@ const LAST_USER_KEY = "gloomberb:hosted-user-id";
 export interface HostedUserConfigStamp {
   userId: string;
   updatedAt: string;
+  revision: number;
+}
+
+export interface HostedPersistenceIdentity {
+  userId: string | null;
+  generation: number;
+  workspaceRevision: number;
 }
 
 interface HostedUserConfigRecord extends HostedUserConfigStamp {
@@ -18,6 +25,9 @@ interface HostedUserConfigRecord extends HostedUserConfigStamp {
 }
 
 let activeUserId: string | null = null;
+let activeIdentitySelected = false;
+let identityGeneration = 0;
+const workspaceRevisions = new Map<string, number>();
 
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
@@ -30,7 +40,7 @@ function storageKey(userId: string): string {
 export function resolveHostedPersistUserId(userId?: string | null): string | null {
   const explicit = userId?.trim() || "";
   if (explicit) return explicit;
-  if (activeUserId) return activeUserId;
+  if (activeIdentitySelected) return activeUserId;
   return readLastHostedUserId();
 }
 
@@ -45,6 +55,7 @@ function parseRecord(raw: string | null): HostedUserConfigRecord | null {
     return {
       userId,
       updatedAt,
+      revision: typeof parsed.revision === "number" ? parsed.revision : 0,
       config: parsed.config,
       ...(parsed.tickers !== undefined ? { tickers: parsed.tickers } : {}),
       ...(parsed.notes !== undefined ? { notes: parsed.notes } : {}),
@@ -56,11 +67,37 @@ function parseRecord(raw: string | null): HostedUserConfigRecord | null {
 
 export function setHostedConfigUserId(userId: string | null): void {
   const trimmed = userId?.trim() || null;
+  if (!activeIdentitySelected || trimmed !== activeUserId) identityGeneration += 1;
+  activeIdentitySelected = true;
   activeUserId = trimmed;
 }
 
 export function getHostedConfigUserId(): string | null {
   return activeUserId;
+}
+
+export function captureHostedPersistenceIdentity(): HostedPersistenceIdentity {
+  const userId = resolveHostedPersistUserId();
+  return {
+    userId,
+    generation: identityGeneration,
+    workspaceRevision: userId ? workspaceRevisions.get(userId) ?? 0 : 0,
+  };
+}
+
+export function isHostedPersistenceIdentityCurrent(
+  identity: HostedPersistenceIdentity,
+): boolean {
+  return identity.generation === identityGeneration
+    && identity.userId === resolveHostedPersistUserId()
+    && identity.workspaceRevision === (
+      identity.userId ? workspaceRevisions.get(identity.userId) ?? 0 : 0
+    );
+}
+
+export function markHostedWorkspaceChanged(userId = resolveHostedPersistUserId()): void {
+  if (!userId) return;
+  workspaceRevisions.set(userId, (workspaceRevisions.get(userId) ?? 0) + 1);
 }
 
 /**
@@ -110,7 +147,7 @@ export function peekHostedUserConfigStamp(userId = resolveHostedPersistUserId())
   if (!userId) return null;
   const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return null;
-  return { userId: record.userId, updatedAt: record.updatedAt };
+  return { userId: record.userId, updatedAt: record.updatedAt, revision: record.revision };
 }
 
 export function readHostedUserConfigRecord(userId = resolveHostedPersistUserId()): HostedUserConfigRecord | null {
@@ -129,11 +166,13 @@ export function writeHostedUserConfig(config: AppConfig, userId = resolveHostedP
     const record: HostedUserConfigRecord = {
       userId,
       updatedAt: new Date().toISOString(),
+      revision: (existing?.revision ?? 0) + 1,
       config: persisted as unknown as Record<string, unknown>,
       ...(existing?.tickers ? { tickers: existing.tickers } : {}),
       ...(existing?.notes ? { notes: existing.notes } : {}),
     };
     backend.setItem(storageKey(userId), JSON.stringify(record));
+    markHostedWorkspaceChanged(userId);
   } catch {
     // Ignore quota or security errors.
   }
@@ -156,10 +195,12 @@ export function attachHostedUserWorkspaceExtras(
     const record: HostedUserConfigRecord = {
       ...existing,
       updatedAt: new Date().toISOString(),
+      revision: existing.revision + 1,
       ...(extras.tickers !== undefined ? { tickers: extras.tickers } : {}),
       ...(extras.notes !== undefined ? { notes: extras.notes } : {}),
     };
     backend.setItem(storageKey(userId), JSON.stringify(record));
+    markHostedWorkspaceChanged(userId);
   } catch {
     // Ignore quota or security errors.
   }

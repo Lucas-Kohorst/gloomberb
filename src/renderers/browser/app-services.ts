@@ -13,8 +13,8 @@ export function createBrowserAppServices({
   config,
   plugins,
 }: AppServicesFactoryOptions): AppRuntimeServices {
-  const persistence = new BrowserPersistence(localStorage);
-  const tickerRepository = new BrowserTickerRepository(localStorage);
+  const persistence = new BrowserPersistence();
+  const tickerRepository = new BrowserTickerRepository();
   const cloudProvider = createGloomberbCloudProvider();
   const dataProvider = new AssetDataRouter(null, [cloudProvider]);
   const marketData = new MarketDataCoordinator(dataProvider);

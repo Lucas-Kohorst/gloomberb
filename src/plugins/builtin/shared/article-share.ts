@@ -7,7 +7,7 @@ import { useRendererHost } from "../../../ui";
 import { getBrowserLocation } from "../../../utils/browser-location";
 import { parseDisplayDate } from "../../../utils/datetime-format";
 import { usePluginAppActions } from "../../runtime";
-import { createShare } from "../../../sources/share-service";
+import { publishArticleShare } from "../../../shares/publish";
 import {
   decodeArticleSharePayload,
   encodeArticleSharePayload,
@@ -15,7 +15,6 @@ import {
 } from "../../../shares/payload";
 import {
   buildInlineArticleShareUrl,
-  buildShortShareUrl,
 } from "../../../shares/routes";
 import {
   normalizeTweetDisplayText,
@@ -260,17 +259,10 @@ export function useCopyShareLink(): (payload: ArticleSharePayload) => Promise<vo
   return useCallback(
     async (payload: ArticleSharePayload) => {
       try {
-        const { id } = await createShare({ kind: "article", data: payload });
-        await rendererHost.copyText(buildShortShareUrl(id));
+        await rendererHost.copyText(await publishArticleShare(payload));
         notify({ body: "Share link copied to clipboard", type: "success" });
       } catch {
-        try {
-          const shareUrl = buildInlineArticleShareUrl(encodeArticleSharePayload(payload));
-          await rendererHost.copyText(shareUrl);
-          notify({ body: "Share link copied to clipboard", type: "success" });
-        } catch {
-          notify({ body: "Failed to copy share link", type: "error" });
-        }
+        notify({ body: "Failed to copy share link", type: "error" });
       }
     },
     [rendererHost, notify],

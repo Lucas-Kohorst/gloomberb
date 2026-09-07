@@ -19,7 +19,9 @@
           "polls",
           "weather"
         ],
-        "capabilities": [],
+        "capabilities": [
+          "poll-trends"
+        ],
         "broker": false
       }
     },

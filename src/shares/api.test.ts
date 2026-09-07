@@ -83,6 +83,25 @@ describe("share API client", () => {
     );
   });
 
+  test("rejects legacy or incomplete creation responses before constructing a public link", async () => {
+    for (const body of [
+      { id: "Xk9mQ2nLp4Ab" },
+      { id: shareId },
+      { id: shareId, expiresAt: "invalid" },
+    ]) {
+      await expect(createShare(article, async () => Response.json(body)))
+        .rejects.toThrow("invalid response");
+    }
+    await expect(createShare(article, async () => new Response(null, { status: 401 })))
+      .rejects.toThrow("Sign in to Gloom Cloud");
+  });
+
+  test("treats expired shares as missing and rejects deletion by a non-owner", async () => {
+    await expect(getShare(shareId, async () => new Response(null, { status: 404 }))).resolves.toBeNull();
+    await expect(deleteShare(shareId, async () => new Response(null, { status: 403 })))
+      .rejects.toThrow("Only the signed-in owner");
+  });
+
   test("loads public shares with optional owner credentials and builds current-origin URLs", async () => {
     let init: RequestInit | undefined;
     const urls: string[] = [];
@@ -105,7 +124,7 @@ describe("share API client", () => {
       `${SHARE_API_ORIGIN}/shares/${shareId}`,
       `${SHARE_API_ORIGIN}/shares/${shareId}?purpose=open`,
     ]);
-    expect(publicShareUrl(shareId)).toBe(`https://term.gloom.sh/s/${shareId}`);
-    expect(openLiveShareUrl(shareId)).toBe(`https://term.gloom.sh/api/shares/${shareId}/open`);
+    expect(publicShareUrl(shareId)).toBe(`https://terminal.kohor.st/s/${shareId}`);
+    expect(openLiveShareUrl(shareId)).toBe(`https://terminal.kohor.st/api/shares/${shareId}/open`);
   });
 });

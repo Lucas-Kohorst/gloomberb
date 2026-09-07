@@ -202,7 +202,7 @@ function resolvedOutput(value: unknown): ResolvedSeries {
   const input = object(value, "resolve output");
   onlyKeys(input, "resolve output", [
     "id", "label", "color", "unit", "unitGroup", "nativeFrequency", "timestampMode", "dataShape", "style", "transform",
-    "axis", "panelId", "interpolation", "timeBasis", "latestChangePercent", "points", "warning", "hidden",
+    "axis", "panelId", "interpolation", "timeBasis", "latestChangePercent", "points", "warning", "hidden", "valueRange",
   ]);
   if (!Array.isArray(input.points)) fail("resolve output points", "expected an array.");
   if (input.points.length > MAX_CHART_SERIES_POINTS) {
@@ -212,6 +212,15 @@ function resolvedOutput(value: unknown): ResolvedSeries {
   if (timeBasis) onlyKeys(timeBasis, "resolve output time basis", ["kind", "timeZone", "cadenceMs"]);
   const kind = timeBasis?.kind === undefined ? undefined : enumValue<"market">(timeBasis.kind, "time basis kind", new Set(["market"]));
   const warning = optionalString(input.warning, "resolve output warning", 500);
+  let valueRange: ResolvedSeries["valueRange"];
+  if (input.valueRange !== undefined) {
+    const range = object(input.valueRange, "resolve output value range");
+    onlyKeys(range, "resolve output value range", ["min", "max"]);
+    const min = finiteNumber(range.min, "value range min") as number;
+    const max = finiteNumber(range.max, "value range max") as number;
+    if (min > max) fail("resolve output value range", "expected ordered bounds.");
+    valueRange = { min, max };
+  }
   return {
     id: boundedString(input.id, "resolve output ID", 160),
     label: boundedString(input.label, "resolve output label", 160),
@@ -241,6 +250,7 @@ function resolvedOutput(value: unknown): ResolvedSeries {
       ? { latestChangePercent: finiteNumber(input.latestChangePercent, "resolve output latest change") as number }
       : {}),
     points: input.points.map(point),
+    ...(valueRange ? { valueRange } : {}),
     ...(warning !== undefined ? { warning } : {}),
     ...(input.hidden !== undefined
       ? typeof input.hidden === "boolean" ? { hidden: input.hidden } : fail("resolve output hidden", "expected a boolean.")

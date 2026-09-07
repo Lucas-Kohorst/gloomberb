@@ -1,3 +1,5 @@
+import { isShareDocumentPath } from "../../shares/routes";
+
 interface StaticAssetsBinding {
   fetch(request: Request): Promise<Response>;
 }
@@ -6,7 +8,6 @@ export interface WorkerEnv {
   ASSETS: StaticAssetsBinding;
 }
 
-const SHARE_PATH = /^\/s\/[a-f0-9]{32}\/?$/;
 const LAYOUT_SHARE_PATH = /^\/l\/[a-f0-9]{32}\/?$/;
 const API_PATH = /^\/api(?:\/|$)/;
 const APPLE_APP_SITE_ASSOCIATION_PATH = "/.well-known/apple-app-site-association";
@@ -18,7 +19,7 @@ const APPLE_APP_SITE_ASSOCIATION_PATH = "/.well-known/apple-app-site-association
  * 200 with JSON content type: a redirect, an HTML error page, or a 404 all
  * silently disable universal links with no visible failure on device.
  *
- * The path list mirrors `SHARE_PATH` above. Only pane/content shares are
+ * The path list claims stored share paths. Only pane/content shares are
  * claimed. Layout permalinks stay in the browser so their page can preview the
  * workspace and hand it to the hosted terminal as an editable copy.
  *
@@ -100,7 +101,7 @@ export async function handleRequest(request: Request, env: WorkerEnv, fetchApi: 
       }),
     );
   }
-  const socialShare = SHARE_PATH.test(url.pathname) || LAYOUT_SHARE_PATH.test(url.pathname);
+  const socialShare = isShareDocumentPath(url.pathname) || LAYOUT_SHARE_PATH.test(url.pathname);
   if (socialShare) {
     const assetUrl = new URL("/share.html", url.origin);
     const assetRequest = new Request(assetUrl, { method: request.method, headers: request.headers });

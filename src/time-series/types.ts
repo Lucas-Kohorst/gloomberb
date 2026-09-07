@@ -76,16 +76,19 @@ export interface ConstantSeriesSource {
   value: number;
 }
 
-export type ChartSeriesSource =
-  | SecuritySeriesSource
-  | EconomicSeriesSource
-  | CapabilitySeriesSource
+export type UniversalSeriesSource =
   | AdjacentIndexSeriesSource
   | BenchmarkSeriesSource
   | PollSeriesSource
   | WeatherSeriesSource
   | OwidSeriesSource
-  | PredictionMarketSeriesSource
+  | PredictionMarketSeriesSource;
+
+export type ChartSeriesSource =
+  | SecuritySeriesSource
+  | EconomicSeriesSource
+  | CapabilitySeriesSource
+  | UniversalSeriesSource
   | ConstantSeriesSource;
 
 export interface ChartSeriesSpec {

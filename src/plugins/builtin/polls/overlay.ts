@@ -4,7 +4,7 @@ import {
   venueChartHitFromAdjacentMarket,
   type PredictionMarketSearchHit,
 } from "../chart-composer/prediction-series";
-import { loadPredictionMarketSeries } from "../../../time-series/hooks";
+import { loadPredictionMarketSeries } from "../../prediction-markets/chart-series";
 import type { PricePoint } from "../../../types/financials";
 import { pollRaceKey } from "./normalize";
 import type { PollRow } from "./types";

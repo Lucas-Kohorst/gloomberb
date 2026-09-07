@@ -1,17 +1,11 @@
 import { useCallback } from "react";
 import { useRendererHost } from "../../../ui";
 import { usePluginAppActions } from "../../runtime";
-import { createShare } from "../../../sources/share-service";
-import { buildShortShareUrl, type ShareKind } from "./share-link";
+import { publishShare } from "../../../shares/publish";
+import { parseSharePayload, type ShareKind } from "../../../shares/payload";
 
 /**
- * Returns a function that stores a share payload via the short-ID backend and
- * copies the resulting compact URL to the clipboard.
- *
- * Chart and table shares require a verified session on the hosted web client.
- * Article shares may be created anonymously. On the desktop client the share
- * API is unreachable from the terminal origin — use the article inline
- * fallback (`useCopyShareLink`) or expect an error notification.
+ * Publishes a supported stored snapshot and copies its public URL.
  */
 export function useShareView(): (kind: ShareKind, data: unknown) => Promise<void> {
   const rendererHost = useRendererHost();
@@ -20,8 +14,9 @@ export function useShareView(): (kind: ShareKind, data: unknown) => Promise<void
   return useCallback(
     async (kind: ShareKind, data: unknown) => {
       try {
-        const { id } = await createShare({ kind, data });
-        const url = buildShortShareUrl(id);
+        const payload = parseSharePayload({ kind, data });
+        if (!payload) throw new Error("Invalid share payload.");
+        const url = await publishShare(payload);
         await rendererHost.copyText(url);
         notify({ body: "Share link copied to clipboard", type: "success" });
       } catch (error) {

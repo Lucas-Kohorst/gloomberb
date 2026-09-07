@@ -1,8 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import type { AppSessionSnapshot } from "../../core/state/session-persistence";
+import { getHostedConfigSnapshotPusher } from "../../data/config/hosted-config-snapshot";
+import {
+  rememberHostedUserId,
+  setHostedConfigUserId,
+  writeHostedUserConfig,
+} from "../../data/config/hosted-user-persist";
 import { createDefaultConfig } from "../../types/config";
 import { createBrowserConfigStore, BROWSER_DATA_DIR } from "./config-host";
 import { BrowserPersistence } from "./persistence";
-import { BROWSER_STORAGE_KEYS, SafeJsonStorage, type StorageLike } from "./storage";
+import {
+  BROWSER_STORAGE_KEYS,
+  initializeBrowserPersistenceIdentity,
+  type StorageLike,
+} from "./storage";
 import { BrowserTickerRepository } from "./ticker-repository";
 
 class MemoryStorage implements StorageLike {
@@ -10,57 +21,170 @@ class MemoryStorage implements StorageLike {
   failWrites = false;
   getItem(key: string) { return this.values.get(key) ?? null; }
   setItem(key: string, value: string) {
-    if (this.failWrites) throw new DOMException("full", "QuotaExceededError");
+    if (this.failWrites) throw new DOMException("Storage full", "QuotaExceededError");
     this.values.set(key, value);
   }
   removeItem(key: string) { this.values.delete(key); }
+  clear() { this.values.clear(); }
+  key(index: number) { return [...this.values.keys()][index] ?? null; }
+  get length() { return this.values.size; }
+}
+
+const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+
+function installMemoryStorage(): MemoryStorage {
+  const storage = new MemoryStorage();
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
+  return storage;
+}
+
+const session: AppSessionSnapshot = {
+  paneState: { "portfolio-list:main": { cursorSymbol: "AAPL" } },
+  focusedPaneId: "portfolio-list:main",
+  activePanel: "left",
+  statusBarVisible: true,
+  openPaneIds: ["portfolio-list:main"],
+  hydrationTargets: [],
+  exchangeCurrencies: ["USD"],
+  savedAt: 1,
+};
+
+function tickerMetadata(symbol: string) {
+  return {
+    ticker: symbol,
+    exchange: "NASDAQ",
+    currency: "USD",
+    name: symbol,
+    portfolios: [],
+    watchlists: [],
+    positions: [],
+    custom: {},
+    tags: [],
+  };
 }
 
 describe("browser local persistence", () => {
-  test("falls back safely for malformed JSON and quota failures", () => {
-    const storage = new MemoryStorage();
-    storage.values.set("key", "{");
-    const data = new SafeJsonStorage(storage, "key", { count: 0 });
-    expect(data.get()).toEqual({ count: 0 });
-    storage.values.set("wrong-shape", "[]");
-    const shaped = new SafeJsonStorage(storage, "wrong-shape", { ok: true }, (value): value is { ok: boolean } => !!value && typeof value === "object" && !Array.isArray(value));
-    expect(shaped.get()).toEqual({ ok: true });
-    storage.failWrites = true;
-    data.set({ count: 2 });
-    expect(data.get()).toEqual({ count: 2 });
+  afterAll(() => {
+    if (originalLocalStorage) {
+      Object.defineProperty(globalThis, "localStorage", originalLocalStorage);
+    } else {
+      delete (globalThis as { localStorage?: Storage }).localStorage;
+    }
   });
 
-  test("normalizes config and persists tickers, plugin state, and session state", async () => {
-    const storage = new MemoryStorage();
-    storage.values.set(BROWSER_STORAGE_KEYS.config, JSON.stringify({ theme: 42 }));
-    const configStore = createBrowserConfigStore(storage);
-    const config = await configStore.loadConfig(BROWSER_DATA_DIR);
-    expect(config.theme).toBe(createDefaultConfig(BROWSER_DATA_DIR).theme);
-    expect(config.onboardingComplete).toBe(true);
-    config.baseCurrency = "EUR";
-    await configStore.saveConfig(config);
-    expect((await configStore.loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("EUR");
+  afterEach(() => {
+    getHostedConfigSnapshotPusher().cancel();
+    setHostedConfigUserId(null);
+    rememberHostedUserId(null);
+    globalThis.localStorage?.clear();
+  });
 
-    const tickers = new BrowserTickerRepository(storage);
-    await tickers.createTicker({
-      ticker: "AAPL",
-      exchange: "NASDAQ",
-      currency: "USD",
-      name: "Apple Inc.",
-      portfolios: [],
-      watchlists: [],
-      positions: [],
-      custom: {},
-      tags: [],
-    });
-    expect((await new BrowserTickerRepository(storage).loadTicker("aapl"))?.metadata.ticker).toBe("AAPL");
+  test("saves, reloads, and switches complete browser workspaces by account", async () => {
+    const storage = installMemoryStorage();
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    const configStore = createBrowserConfigStore();
+    const firstConfig = await configStore.loadConfig(BROWSER_DATA_DIR);
+    firstConfig.baseCurrency = "EUR";
+    await configStore.saveConfig(firstConfig);
 
-    const persistence = new BrowserPersistence(storage);
+    const tickers = new BrowserTickerRepository();
+    await tickers.createTicker(tickerMetadata("AAPL"));
+    const persistence = new BrowserPersistence();
     persistence.pluginState.set("alerts", "draft", { enabled: true }, 2);
-    persistence.sessions.set("app", { focusedPaneId: "portfolio-list:main" }, 1);
-    const restored = new BrowserPersistence(storage);
-    expect(restored.pluginState.get("alerts", "draft", 2)?.value).toEqual({ enabled: true });
-    expect(restored.pluginState.get("alerts", "draft", 1)).toBeNull();
-    expect(restored.sessions.get("app", 1)?.value).toEqual({ focusedPaneId: "portfolio-list:main" });
+    persistence.sessions.set("app", session, 1);
+
+    initializeBrowserPersistenceIdentity(storage, "user-2", BROWSER_DATA_DIR);
+    expect((await configStore.loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("USD");
+    expect(await tickers.loadAllTickers()).toEqual([]);
+    expect(persistence.pluginState.get("alerts", "draft", 2)).toBeNull();
+    expect(persistence.sessions.get("app", 1)).toBeNull();
+
+    const secondConfig = await configStore.loadConfig(BROWSER_DATA_DIR);
+    secondConfig.baseCurrency = "GBP";
+    await configStore.saveConfig(secondConfig);
+    await tickers.createTicker(tickerMetadata("MSFT"));
+
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("EUR");
+    expect((await new BrowserTickerRepository().loadAllTickers()).map((ticker) => ticker.metadata.ticker)).toEqual(["AAPL"]);
+    expect(new BrowserPersistence().pluginState.get("alerts", "draft", 2)?.value).toEqual({ enabled: true });
+    expect(new BrowserPersistence().sessions.get("app", 1)?.value).toEqual(session);
+  });
+
+  test("migrates legacy globals only for their remembered owner and never over newer scoped config", async () => {
+    const storage = installMemoryStorage();
+    const legacy = createDefaultConfig(BROWSER_DATA_DIR);
+    legacy.baseCurrency = "EUR";
+    storage.setItem(BROWSER_STORAGE_KEYS.config, JSON.stringify(legacy));
+    rememberHostedUserId("user-1");
+
+    initializeBrowserPersistenceIdentity(storage, "user-2", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("USD");
+    expect(storage.getItem(BROWSER_STORAGE_KEYS.config)).toBeNull();
+    initializeBrowserPersistenceIdentity(storage, "user-2", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("USD");
+
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("EUR");
+
+    const scoped = createDefaultConfig(BROWSER_DATA_DIR);
+    scoped.baseCurrency = "GBP";
+    writeHostedUserConfig(scoped, "user-1");
+    legacy.baseCurrency = "JPY";
+    storage.setItem(BROWSER_STORAGE_KEYS.config, JSON.stringify(legacy));
+    rememberHostedUserId("user-1");
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("GBP");
+    expect(storage.getItem(BROWSER_STORAGE_KEYS.config)).toBeNull();
+  });
+
+  test("does not adopt ownerless legacy globals on a later boot", async () => {
+    const storage = installMemoryStorage();
+    const legacy = createDefaultConfig(BROWSER_DATA_DIR);
+    legacy.baseCurrency = "EUR";
+    storage.setItem(BROWSER_STORAGE_KEYS.config, JSON.stringify(legacy));
+
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("USD");
+    expect(storage.getItem(BROWSER_STORAGE_KEYS.config)).toBe(JSON.stringify(legacy));
+  });
+
+  test("explicit sign-out cannot read or overwrite the previous account", async () => {
+    const storage = installMemoryStorage();
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    const configStore = createBrowserConfigStore();
+    const signedIn = await configStore.loadConfig(BROWSER_DATA_DIR);
+    signedIn.baseCurrency = "EUR";
+    await configStore.saveConfig(signedIn);
+
+    initializeBrowserPersistenceIdentity(storage, null, BROWSER_DATA_DIR);
+    const signedOut = await configStore.loadConfig(BROWSER_DATA_DIR);
+    expect(signedOut.baseCurrency).toBe("USD");
+    signedOut.baseCurrency = "JPY";
+    await configStore.saveConfig(signedOut);
+
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    expect((await configStore.loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("EUR");
+  });
+
+  test("retains legacy data and its owner when storage writes fail during migration", async () => {
+    const storage = installMemoryStorage();
+    const legacy = createDefaultConfig(BROWSER_DATA_DIR);
+    legacy.baseCurrency = "EUR";
+    storage.setItem(BROWSER_STORAGE_KEYS.config, JSON.stringify(legacy));
+    rememberHostedUserId("user-1");
+    storage.failWrites = true;
+    initializeBrowserPersistenceIdentity(storage, "user-2", BROWSER_DATA_DIR);
+    expect(storage.getItem(BROWSER_STORAGE_KEYS.config)).toBe(JSON.stringify(legacy));
+    storage.failWrites = false;
+    initializeBrowserPersistenceIdentity(storage, "user-2", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("USD");
+    initializeBrowserPersistenceIdentity(storage, "user-1", BROWSER_DATA_DIR);
+    expect((await createBrowserConfigStore().loadConfig(BROWSER_DATA_DIR)).baseCurrency).toBe("EUR");
   });
 });

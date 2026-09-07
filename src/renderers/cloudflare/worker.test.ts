@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { handleRequest, SECURITY_HEADERS, type WorkerEnv } from "./worker";
 import { REGISTRY_ORIGIN } from "../../plugins/builtin/plugin-marketplace/feed";
+import { createShare } from "../../shares/api";
+import { publicShareUrl, parseShareId } from "../../shares/routes";
 
 function fixture() {
   const requests: Request[] = [];
@@ -35,11 +37,18 @@ describe("static Cloudflare host", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  test("rewrites valid pane and layout share paths to the slim document", async () => {
+  test("routes a newly published share and legacy links to the deployed reader document", async () => {
     const id = "0123456789abcdef0123456789abcdef";
-    for (const prefix of ["s", "l"]) {
+    const created = await createShare({ kind: "article", data: { title: "Research", text: "Snapshot" } },
+      async () => Response.json({ id, expiresAt: "2026-10-01T00:00:00Z" }));
+    const published = publicShareUrl(created.id);
+    expect(parseShareId(new URL(published).pathname)).toBe(created.id);
+    for (const url of [
+      published, `${published}/`, "https://terminal.kohor.st/s/Xk9mQ2nLp4Ab",
+      "https://terminal.kohor.st/article?a=legacy", `https://terminal.kohor.st/l/${id}`,
+    ]) {
       const { env, requests } = fixture();
-      const response = await handleRequest(new Request(`https://term.example/${prefix}/${id}`), env);
+      const response = await handleRequest(new Request(url), env);
       expect(new URL(requests[0]!.url).pathname).toBe("/share.html");
       expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow, noarchive");
     }
