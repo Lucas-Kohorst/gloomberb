@@ -77,21 +77,16 @@ export function buildHistoricalPriceRows(points: PricePoint[]): HistoricalPriceR
   }).reverse();
 }
 
-function buildHistoryColumns(width: number): HistoryColumn[] {
-  const dateWidth = 16;
-  const priceWidth = 10;
-  const changeWidth = 10;
-  const percentWidth = 9;
-  const volumeWidth = Math.max(9, width - 2 - dateWidth - priceWidth * 4 - changeWidth - percentWidth - 7);
+function buildHistoryColumns(): HistoryColumn[] {
   return [
-    { id: "date", label: "DATE/TIME", width: dateWidth, align: "left" },
-    { id: "open", label: "OPEN", width: priceWidth, align: "right" },
-    { id: "high", label: "HIGH", width: priceWidth, align: "right" },
-    { id: "low", label: "LOW", width: priceWidth, align: "right" },
-    { id: "close", label: "CLOSE", width: priceWidth, align: "right" },
-    { id: "change", label: "CHG", width: changeWidth, align: "right" },
-    { id: "changePercent", label: "CHG %", width: percentWidth, align: "right" },
-    { id: "volume", label: "VOLUME", width: volumeWidth, align: "right" },
+    { id: "date", label: "DATE/TIME", width: 16, align: "left" },
+    { id: "open", label: "OPEN", width: 10, align: "right" },
+    { id: "high", label: "HIGH", width: 10, align: "right" },
+    { id: "low", label: "LOW", width: 10, align: "right" },
+    { id: "close", label: "CLOSE", width: 10, align: "right" },
+    { id: "change", label: "CHG", width: 10, align: "right" },
+    { id: "changePercent", label: "CHG %", width: 9, align: "right" },
+    { id: "volume", label: "VOLUME", width: 9, align: "right", flexGrow: 1 },
   ];
 }
 
@@ -135,7 +130,7 @@ export function HistoricalPricesPane({ focused, width, height }: PaneProps) {
       }
     },
   ), [data, sortPreference]);
-  const columns = useMemo(() => buildHistoryColumns(width), [width]);
+  const columns = useMemo(() => buildHistoryColumns(), []);
   const boundedSelectedIdx = rows.length > 0 ? Math.min(selectedIdx, rows.length - 1) : -1;
   const cycleRange = useCallback(() => setRange((current) => nextHistoryRange(current)), [setRange]);
 

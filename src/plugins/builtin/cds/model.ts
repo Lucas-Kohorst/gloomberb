@@ -291,10 +291,9 @@ export const ISSUER_SORT_COLUMN_IDS: readonly IssuerColumnId[] = ["issuer", "tra
 /** "Most active" is the reason the market-wide view exists. */
 export const DEFAULT_ISSUER_SORT: IssuerSortPreference = { columnId: "trades", direction: "desc" };
 
-export function buildIssuerColumns(width: number): IssuerColumn[] {
-  const issuerWidth = Math.max(16, width - 35);
+export function buildIssuerColumns(): IssuerColumn[] {
   return [
-    { id: "issuer", label: "ISSUER", width: issuerWidth, align: "left" },
+    { id: "issuer", label: "ISSUER", width: 16, align: "left", flexGrow: 1 },
     { id: "trades", label: "TRADES", width: 7, align: "right" },
     { id: "last", label: "LAST UTC", width: 12, align: "left" },
     { id: "spread", label: "SPREAD", width: 10, align: "right" },
@@ -345,11 +344,10 @@ export const TRADE_SORT_COLUMN_IDS: readonly TradeColumnId[] = [
 ];
 export const DEFAULT_TRADE_SORT: TradeSortPreference = { columnId: "time", direction: "desc" };
 
-export function buildTradeColumns(width: number): TradeColumn[] {
-  const maturityWidth = Math.max(10, Math.min(12, width - 55));
+export function buildTradeColumns(): TradeColumn[] {
   return [
     { id: "time", label: "TIME UTC", width: 12, align: "left" },
-    { id: "maturity", label: "MATURITY", width: maturityWidth, align: "left" },
+    { id: "maturity", label: "MATURITY", width: 10, align: "left", flexGrow: 1 },
     { id: "notional", label: "NOTIONAL", width: 11, align: "right" },
     { id: "currency", label: "CCY", width: 5, align: "left" },
     { id: "coupon", label: "COUPON", width: 9, align: "right" },

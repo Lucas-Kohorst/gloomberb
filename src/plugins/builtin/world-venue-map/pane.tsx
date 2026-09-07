@@ -28,14 +28,12 @@ export const WORLD_VENUE_MAP_PANE_ID = "world-venue-map";
 type VenueColumnId = "status" | "mic" | "name" | "time";
 type VenueColumn = DataTableColumn & { id: VenueColumnId };
 
-function venueColumns(width: number): VenueColumn[] {
-  const timeWidth = width >= 34 ? 6 : 0;
-  const fixed = 1 + 6 + timeWidth;
+function venueColumns(): VenueColumn[] {
   return [
     { id: "status", label: "", width: 1, align: "left" },
     { id: "mic", label: "MIC", width: 6, align: "left" },
-    { id: "name", label: "VENUE", width: Math.max(10, width - fixed - 6), flexGrow: 1, align: "left" },
-    ...(timeWidth ? [{ id: "time" as const, label: "LOCAL", width: timeWidth, align: "left" as const }] : []),
+    { id: "name", label: "VENUE", width: 10, flexGrow: 1, align: "left" },
+    { id: "time", label: "LOCAL", width: 6, align: "left" },
   ];
 }
 
@@ -189,7 +187,7 @@ export function WorldVenueMapPane({ focused, width, height }: PaneProps) {
   const mapSectionHeight = horizontal ? height : Math.max(8, Math.floor(height * 0.52));
   const tableHeight = horizontal ? height : Math.max(4, height - mapSectionHeight);
   const mapHeight = Math.max(2, mapSectionHeight - 2);
-  const columns = useMemo(() => venueColumns(sidebarWidth), [sidebarWidth]);
+  const columns = useMemo(() => venueColumns(), []);
 
   const renderCell = useCallback((
     venue: CloudWorldVenuePayload,

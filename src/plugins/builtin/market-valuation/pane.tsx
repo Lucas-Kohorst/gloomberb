@@ -77,20 +77,13 @@ function matchesQuery(view: IndicatorViewModel, query: string): boolean {
   return query.split(/\s+/).every((token) => haystack.includes(token));
 }
 
-/** Stacked mode keeps only what fits; the split has a whole column to work with. */
-function buildColumns(width: number, stacked: boolean): Column[] {
-  const withTrend = stacked && width >= 100;
-  // 25 for value/zone/rich, 8 more for trend, then gutters between the columns.
-  const trailing = 25 + (withTrend ? 8 : 0);
-  const name = Math.max(11, width - trailing - 6);
+function buildColumns(): Column[] {
   return [
-    { id: "name", label: "INDICATOR", width: name, align: "left" },
+    { id: "name", label: "INDICATOR", width: 16, align: "left", flexGrow: 1 },
     { id: "value", label: "VALUE", width: 8, align: "right" },
     { id: "zone", label: "ZONE", width: 11, align: "right" },
     { id: "percentile", label: "RICH", width: 6, align: "right" },
-    ...(withTrend
-      ? [{ id: "sigma" as const, label: "TREND", width: 8, align: "right" as const }]
-      : []),
+    { id: "sigma", label: "TREND", width: 8, align: "right" },
   ];
 }
 
@@ -260,7 +253,7 @@ export function MarketValuationPane({ focused, width, height }: PaneProps) {
   const split = width >= SPLIT_MIN_WIDTH;
   const listWidth = split ? Math.min(LIST_WIDTH, Math.floor(width * 0.4)) : width;
   const detailWidth = split ? width - listWidth : width;
-  const columns = buildColumns(listWidth, !split);
+  const columns = buildColumns();
   // Header plus every row, and one more line for the horizontal scrollbar.
   const tableHeight = split
     ? Math.max(3, height - 2)

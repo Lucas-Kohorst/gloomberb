@@ -100,7 +100,7 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
     [filteredRows, sortPreference],
   );
 
-  const columns = useMemo(() => buildScreenerColumns(width), [width]);
+  const columns = useMemo(() => buildScreenerColumns(), []);
 
   // Keep selection valid
   useEffect(() => {

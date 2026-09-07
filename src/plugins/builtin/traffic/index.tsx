@@ -235,7 +235,7 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
     }
   }, { enabled: focused && !searchFocused });
 
-  const columns = useMemo(() => buildTrafficColumns(width, kind), [kind, width]);
+  const columns = useMemo(() => buildTrafficColumns(kind), [kind]);
   const tabs = (
     <Box height={1}>
       <Tabs

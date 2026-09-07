@@ -152,33 +152,17 @@ export function computeTrailingReturn(
   return (endPrice / baselinePrice - 1) * 100;
 }
 
-export function buildSectorColumns(width: number): SectorColumn[] {
-  const etfWidth = 4;
-  const priceWidth = 8;
-  const changeWidth = 8;
-  const returnWidth = 8;
-  const showBar = width >= 67;
-  const compactBar = width < 82;
-  const barWidth = showBar
-    ? compactBar ? 6 : Math.max(8, Math.min(18, Math.floor(width * 0.16)))
-    : 0;
-  const columnCount = showBar ? 7 : 6;
-  const fixedWidth = etfWidth + priceWidth + changeWidth + returnWidth * 2 + barWidth;
-  const nameWidth = Math.max(10, Math.min(22, width - 2 - columnCount - fixedWidth));
-
-  const columns: SectorColumn[] = [
-    { id: "name", label: "SECTOR", width: nameWidth, align: "left", flexGrow: 1 },
-    { id: "etf", label: "ETF", width: etfWidth, align: "left" },
-    { id: "price", label: "LAST", width: priceWidth, align: "right" },
-    { id: "changePercent", label: "1D", width: changeWidth, align: "right" },
-    { id: "return1M", label: "1M", width: returnWidth, align: "right" },
-    { id: "return1Y", label: "1Y", width: returnWidth, align: "right" },
-  ];
-  if (showBar) {
+export function buildSectorColumns(): SectorColumn[] {
+  return [
+    { id: "name", label: "SECTOR", width: 10, align: "left", flexGrow: 1 },
+    { id: "etf", label: "ETF", width: 4, align: "left" },
+    { id: "price", label: "LAST", width: 8, align: "right" },
+    { id: "changePercent", label: "1D", width: 8, align: "right" },
+    { id: "return1M", label: "1M", width: 8, align: "right" },
+    { id: "return1Y", label: "1Y", width: 8, align: "right" },
     // Labelled with the window it encodes: it sits after 1Y but tracks 1D.
-    columns.push({ id: "bar", label: "1D MOVE", width: barWidth, align: "left" });
-  }
-  return columns;
+    { id: "bar", label: "1D MOVE", width: 8, align: "left" },
+  ];
 }
 
 function getSortValue(columnId: SectorColumnId, row: SectorRow): string | number | null {

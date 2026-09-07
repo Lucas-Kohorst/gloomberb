@@ -16,18 +16,13 @@ interface SavedColumn extends DataTableColumn {
   id: SavedColumnId;
 }
 
-function buildSavedColumns(width: number): SavedColumn[] {
-  const alertWidth = 6;
-  const lastWidth = 10;
-  const hitsWidth = 6;
-  const remaining = Math.max(24, width - (alertWidth + lastWidth + hitsWidth + 8));
-  const nameWidth = Math.max(12, Math.round(remaining * 0.5));
+function buildSavedColumns(): SavedColumn[] {
   return [
-    { id: "name", label: "SAVED SEARCH", width: nameWidth, align: "left" },
-    { id: "filters", label: "FILTERS", width: Math.max(10, remaining - nameWidth), align: "left" },
-    { id: "alert", label: "ALERT", width: alertWidth, align: "left" },
-    { id: "last", label: "LAST HIT", width: lastWidth, align: "left" },
-    { id: "hits", label: "HITS", width: hitsWidth, align: "right" },
+    { id: "name", label: "SAVED SEARCH", width: 12, align: "left", flexGrow: 1 },
+    { id: "filters", label: "FILTERS", width: 10, align: "left" },
+    { id: "alert", label: "ALERT", width: 6, align: "left" },
+    { id: "last", label: "LAST HIT", width: 10, align: "left" },
+    { id: "hits", label: "HITS", width: 6, align: "right" },
   ];
 }
 
@@ -75,7 +70,7 @@ export function SavedSearchesView({
   emptyTitle: string;
 }) {
   const [sort, setSort] = useState<SavedSort>({ columnId: "last", direction: "desc" });
-  const columns = useMemo(() => buildSavedColumns(width), [width]);
+  const columns = useMemo(() => buildSavedColumns(), []);
   const rows = useMemo(() => [...searches].sort((left, right) => {
     const a = sortValue(left, sort.columnId);
     const b = sortValue(right, sort.columnId);

@@ -1,8 +1,21 @@
+import { useCallback, useMemo, useState } from "react";
 import { Box, Text, TextAttributes, useUiHost } from "../../../../ui";
+import {
+  DataTableView,
+  type DataTableCell,
+  type DataTableColumn,
+} from "../../../../components";
 import { colors, priceColor } from "../../../../theme/colors";
 import { displayWidth, formatNumber, padTo } from "../../../../utils/format";
 import { formatMarketPriceWithCurrency } from "../../../../market-data/market/format";
 import { t } from "../../../../i18n";
+import { useAppLanguage } from "../../../../i18n/react";
+import {
+  applySortPreference,
+  nextSortPreference,
+  type SortComparableValue,
+  type SortPreference,
+} from "../../../../utils/sort-values";
 import type { Quote } from "../../../../types/financials";
 import type { PositionTableRow, StatField } from "./types";
 
@@ -10,17 +23,9 @@ const STAT_COLUMN_GAP = 2;
 const STAT_LABEL_WIDTH = 12;
 const BOOK_LABEL_WIDTH = 4;
 const RANGE_ENDPOINT_WIDTH = 11;
-const POSITION_COLUMN_GAP = 1;
 
-interface PositionColumn {
-  key: keyof Omit<PositionTableRow, "pnlValue">;
-  label: string;
-  width: number;
-  align?: "left" | "right";
-  color?: (row: PositionTableRow) => string;
-  /** Lowest pane width that still has room for this column. */
-  minPaneWidth?: number;
-}
+export type PositionColumnId = "account" | "qty" | "avg" | "mark" | "cost" | "value" | "pnl" | "ret";
+export type PositionColumn = DataTableColumn & { id: PositionColumnId };
 
 function RangeTrack({
   barWidth,
@@ -232,50 +237,81 @@ export function SectionHeader({ title }: { title: string }) {
   );
 }
 
-const POSITION_COLUMNS: readonly PositionColumn[] = [
-  { key: "account", label: "Account", width: 0 },
-  { key: "qty", label: "Qty", width: 8, align: "right" },
-  { key: "avg", label: "Avg", width: 9, align: "right", minPaneWidth: 70 },
-  { key: "mark", label: "Mark", width: 9, align: "right", minPaneWidth: 70 },
-  { key: "cost", label: "Cost", width: 11, align: "right", minPaneWidth: 84 },
-  { key: "value", label: "Value", width: 11, align: "right" },
-  { key: "pnl", label: "P&L", width: 12, align: "right", color: (row) => priceColor(row.pnlValue ?? 0) },
-  { key: "ret", label: "Ret", width: 7, align: "right", color: (row) => priceColor(row.pnlValue ?? 0), minPaneWidth: 84 },
-];
+function positionColumns(): PositionColumn[] {
+  return [
+    { id: "account", label: t("Account"), width: 10, align: "left", flexGrow: 1 },
+    { id: "qty", label: t("Qty"), width: 8, align: "right" },
+    { id: "avg", label: t("Avg"), width: 9, align: "right" },
+    { id: "mark", label: t("Mark"), width: 9, align: "right" },
+    { id: "cost", label: t("Cost"), width: 11, align: "right" },
+    { id: "value", label: t("Value"), width: 11, align: "right" },
+    { id: "pnl", label: t("P&L"), width: 12, align: "right" },
+    { id: "ret", label: t("Ret"), width: 7, align: "right" },
+  ];
+}
 
-function createPositionColumns(width: number): PositionColumn[] {
-  const columns = POSITION_COLUMNS.filter((column) => width >= (column.minPaneWidth ?? 0)).map((column) => ({ ...column }));
-  const fixedWidth = columns.reduce((sum, column) => sum + column.width, 0) + POSITION_COLUMN_GAP * (columns.length - 1);
-  const accountColumn = columns[0]!;
-  accountColumn.width = Math.max(8, width - fixedWidth);
-  return columns;
+function positionCellNumber(value: string): number | null {
+  const parsed = Number(value.replace(/[^0-9eE.+-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function positionSortValue(row: PositionTableRow, columnId: PositionColumnId): SortComparableValue {
+  if (columnId === "account") return row.account;
+  if (columnId === "pnl" || columnId === "ret") return row.pnlValue;
+  if (columnId === "qty") {
+    const parsed = Number.parseFloat(row.qty);
+    return Number.isFinite(parsed) ? parsed : row.qty;
+  }
+  return positionCellNumber(row[columnId]) ?? row[columnId];
 }
 
 export function PositionTable({ rows, width }: { rows: PositionTableRow[]; width: number }) {
-  const columns = createPositionColumns(width);
+  const language = useAppLanguage();
+  const columns = useMemo(() => positionColumns(), [language]);
+  const [sortPreference, setSortPreference] = useState<SortPreference<PositionColumnId>>({
+    columnId: null,
+    direction: "asc",
+  });
+  const items = useMemo(
+    () => applySortPreference(rows, sortPreference, positionSortValue),
+    [rows, sortPreference],
+  );
+  const tableHeight = 1 + Math.max(items.length, 1);
+  const renderCell = useCallback((
+    row: PositionTableRow,
+    column: PositionColumn,
+  ): DataTableCell => {
+    if (column.id === "account") {
+      return { text: row.account, color: colors.textBright };
+    }
+    if (column.id === "pnl" || column.id === "ret") {
+      return { text: row[column.id], color: priceColor(row.pnlValue ?? 0) };
+    }
+    return { text: row[column.id], color: colors.text };
+  }, []);
 
   return (
-    <Box flexDirection="column" width={width}>
-      <Box flexDirection="row" height={1}>
-        {columns.map((column, index) => (
-          <Box key={column.key} flexDirection="row">
-            {index > 0 && <Box width={POSITION_COLUMN_GAP} />}
-            <Text fg={colors.textDim}>{padTo(t(column.label), column.width, column.align)}</Text>
-          </Box>
+    <Box width={width} height={tableHeight} flexShrink={0}>
+      <DataTableView<PositionTableRow, PositionColumn>
+        focused={false}
+        keyboardNavigation={false}
+        rootWidth={width}
+        rootHeight={tableHeight}
+        selection={{ kind: "none" }}
+        columns={columns}
+        items={items}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => setSortPreference((current) => nextSortPreference(
+          current,
+          columnId as PositionColumnId,
+          { defaultDirection: columnId === "account" ? "asc" : "desc" },
         ))}
-      </Box>
-      {rows.map((row, rowIndex) => (
-        <Box key={rowIndex} flexDirection="row" height={1}>
-          {columns.map((column, index) => (
-            <Box key={column.key} flexDirection="row">
-              {index > 0 && <Box width={POSITION_COLUMN_GAP} />}
-              <Text fg={column.color?.(row) ?? (column.key === "account" ? colors.textBright : colors.text)}>
-                {padTo(row[column.key], column.width, column.align)}
-              </Text>
-            </Box>
-          ))}
-        </Box>
-      ))}
+        getItemKey={(row, index) => `${row.account}:${row.qty}:${index}`}
+        renderCell={renderCell}
+        emptyStateTitle={t("No positions")}
+        horizontalPadding={0}
+      />
     </Box>
   );
 }

@@ -39,23 +39,18 @@ function relativeSymbolsFromPane(symbol: string | null, paneSettings: Record<str
   return symbol ? [symbol] : [];
 }
 
-function buildRelativeColumns(width: number): RelativeColumn[] {
-  const symbolWidth = 8;
-  const priceWidth = 10;
-  const pctWidth = 8;
-  const capWidth = 9;
-  const metricWidth = 8;
+function buildRelativeColumns(): RelativeColumn[] {
   return [
-    { id: "symbol", label: "TICKER", width: symbolWidth, align: "left" },
-    { id: "price", label: "LAST", width: priceWidth, align: "right" },
-    { id: "change", label: "CHG%", width: pctWidth, align: "right" },
-    { id: "marketCap", label: "MCAP", width: capWidth, align: "right" },
-    { id: "pe", label: "P/E", width: metricWidth, align: "right" },
-    { id: "forwardPe", label: "FWD", width: metricWidth, align: "right" },
-    { id: "evSales", label: "EV/S", width: metricWidth, align: "right" },
-    { id: "fcfYield", label: "FCF%", width: metricWidth, align: "right" },
-    { id: "revenueGrowth", label: "REV%", width: metricWidth, align: "right" },
-    { id: "margin", label: "OP%", width: Math.max(metricWidth, width - symbolWidth - priceWidth - pctWidth - capWidth - metricWidth * 5 - 10), align: "right" },
+    { id: "symbol", label: "TICKER", width: 8, align: "left" },
+    { id: "price", label: "LAST", width: 10, align: "right" },
+    { id: "change", label: "CHG%", width: 8, align: "right" },
+    { id: "marketCap", label: "MCAP", width: 9, align: "right" },
+    { id: "pe", label: "P/E", width: 8, align: "right" },
+    { id: "forwardPe", label: "FWD", width: 8, align: "right" },
+    { id: "evSales", label: "EV/S", width: 8, align: "right" },
+    { id: "fcfYield", label: "FCF%", width: 8, align: "right" },
+    { id: "revenueGrowth", label: "REV%", width: 8, align: "right" },
+    { id: "margin", label: "OP%", width: 8, align: "right", flexGrow: 1 },
   ];
 }
 
@@ -138,7 +133,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
-  const columns = useMemo(() => buildRelativeColumns(width), [width]);
+  const columns = useMemo(() => buildRelativeColumns(), []);
   const sortedRows = useMemo(
     () => applySortPreference(rows.filter((row) => !searchQuery.trim() || `${row.symbol} ${row.financials?.quote?.name ?? ""}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), sortPreference, (row, columnId) => {
       const quote = row.financials?.quote;

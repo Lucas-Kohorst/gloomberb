@@ -69,16 +69,12 @@ function sortValue(columnId: CatalogColumnId, row: CatalogSeriesRow): string {
   }
 }
 
-function buildColumns(width: number): CatalogColumn[] {
-  const sourceWidth = 18;
-  const kindWidth = 12;
-  const expressionWidth = Math.min(28, Math.max(16, Math.floor(width * 0.28)));
-  const seriesWidth = Math.max(18, width - 2 - 4 - sourceWidth - kindWidth - expressionWidth);
+function buildColumns(): CatalogColumn[] {
   return [
-    { id: "series", label: "SERIES", width: seriesWidth, align: "left" },
-    { id: "source", label: "SOURCE", width: sourceWidth, align: "left" },
-    { id: "kind", label: "KIND", width: kindWidth, align: "left" },
-    { id: "expression", label: "G", width: expressionWidth, align: "left" },
+    { id: "series", label: "SERIES", width: 18, align: "left", flexGrow: 1 },
+    { id: "source", label: "SOURCE", width: 18, align: "left" },
+    { id: "kind", label: "KIND", width: 12, align: "left" },
+    { id: "expression", label: "G", width: 16, align: "left" },
   ];
 }
 
@@ -132,7 +128,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   );
   const selectedUrl = selectedRow?.url ?? null;
 
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(), []);
 
   const focusSearch = useCallback(() => {
     setSearchFocused(true);

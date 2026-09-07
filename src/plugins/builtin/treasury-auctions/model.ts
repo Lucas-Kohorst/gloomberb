@@ -165,24 +165,14 @@ export function nextAuctionSort(
   return { columnId, direction: columnId === "type" || columnId === "term" ? "asc" : "desc" };
 }
 
-export function buildAuctionColumns(width: number): AuctionColumn[] {
-  const dateWidth = 8;
-  const typeWidth = 6;
-  const rateWidth = 8;
-  const btcWidth = 6;
-  const indirectWidth = 9;
-  const sizeWidth = 8;
-  const termWidth = Math.max(
-    10,
-    width - dateWidth - typeWidth - rateWidth - btcWidth - indirectWidth - sizeWidth - 8,
-  );
+export function buildAuctionColumns(): AuctionColumn[] {
   return [
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "type", label: "TYPE", width: typeWidth, align: "left" },
-    { id: "term", label: "TERM", width: termWidth, align: "left" },
-    { id: "rate", label: "RATE", width: rateWidth, align: "right" },
-    { id: "btc", label: "B/C", width: btcWidth, align: "right" },
-    { id: "indirect", label: "INDIRECT", width: indirectWidth, align: "right" },
-    { id: "size", label: "SIZE", width: sizeWidth, align: "right" },
+    { id: "date", label: "DATE", width: 8, align: "left" },
+    { id: "type", label: "TYPE", width: 6, align: "left" },
+    { id: "term", label: "TERM", width: 10, align: "left", flexGrow: 1 },
+    { id: "rate", label: "RATE", width: 8, align: "right" },
+    { id: "btc", label: "B/C", width: 6, align: "right" },
+    { id: "indirect", label: "INDIRECT", width: 9, align: "right" },
+    { id: "size", label: "SIZE", width: 8, align: "right" },
   ];
 }

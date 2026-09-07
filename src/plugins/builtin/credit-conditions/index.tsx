@@ -25,8 +25,8 @@ import {
 type SortId = "label" | "oas" | "change";
 interface Column extends DataTableColumn { id: SortId }
 
-const COLUMNS: readonly Column[] = [
-  { id: "label", label: "INDEX", width: 12, align: "left" },
+const COLUMNS: Column[] = [
+  { id: "label", label: "INDEX", width: 12, align: "left", flexGrow: 1 },
   { id: "oas", label: "OAS", width: 10, align: "right" },
   { id: "change", label: "1D", width: 9, align: "right" },
 ];
@@ -107,10 +107,7 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
 
   const sorted = useMemo(() => sortRows(rows, sort.id, sort.descending), [rows, sort]);
   const selectedRow = rows.find((row) => row.seriesId === selectedId) ?? rows[0] ?? null;
-  const columns = useMemo<Column[]>(() => {
-    const labelWidth = Math.max(12, width - 23);
-    return COLUMNS.map((column) => column.id === "label" ? { ...column, width: labelWidth } : { ...column });
-  }, [width]);
+  const columns = COLUMNS;
   const renderRowCell = useCallback((
     row: CreditConditionRow,
     column: Column,

@@ -96,7 +96,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
     [filtered, sortPreference],
   );
 
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(), []);
 
   useEffect(() => {
     if (selectedTicker && sorted.some((record) => record.ticker === selectedTicker)) return;
