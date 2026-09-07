@@ -20,7 +20,6 @@ import {
   parseChartSpecOr,
 } from "../chart-spec";
 import {
-  appendChartSeries,
   applySeriesStyle,
   applySeriesTimestampMode,
   buildEmptyChartPreset,
@@ -36,8 +35,12 @@ import {
   setPairStudies,
 } from "../presets";
 import { resolveAdjacentIndexQuery } from "../prediction-series";
-import type { SeriesCatalogInstrument, SeriesCatalogSuggestion } from "../series-catalog";
+import {
+  type SeriesCatalogInstrument,
+  type SeriesCatalogSuggestion,
+} from "../series-catalog";
 import { useSeriesCatalogSuggestions } from "../use-series-catalog";
+import { armCommitLock, resolveCatalogSuggestion } from "../catalog-commit";
 import type {
   SeriesEditorFieldId,
   SeriesEditorFocus,
@@ -301,19 +304,24 @@ export function useSeriesEditorController({
 
   const addCatalogSuggestion = (suggestion: SeriesCatalogSuggestion | undefined) => {
     if (!suggestion || catalogCommitLockRef.current) return;
-    if (draft.series.length >= MAX_CHART_COMPOSER_SERIES) {
-      setError(`Charts support up to ${MAX_CHART_COMPOSER_SERIES} base series.`);
+    const result = resolveCatalogSuggestion(suggestion, draft);
+    if (!result) return;
+    if (result.kind === "limit") {
+      setError(result.message);
       return;
     }
-    catalogCommitLockRef.current = true;
-    queueMicrotask(() => {
-      catalogCommitLockRef.current = false;
-    });
-    const appended = appendChartSeries(draft, suggestion.expression);
-    setDraft(appended.spec);
-    setSelectedIndex(appended.spec.series.length - 1);
+    armCommitLock(catalogCommitLockRef);
+    setDraft(result.spec);
+    if (result.kind === "idea") {
+      const primary = result.appended[0] ?? result.appended.at(-1);
+      const primaryIndex = primary ? result.spec.series.findIndex((entry) => entry.id === primary.id) : -1;
+      setSelectedIndex(primaryIndex >= 0 ? primaryIndex : result.spec.series.length - 1);
+      setExpression(primary ? formatSeriesExpression(primary) : "");
+    } else {
+      setSelectedIndex(result.spec.series.length - 1);
+      setExpression(formatSeriesExpression(result.series));
+    }
     updateKeyboardFocus("series");
-    setExpression(formatSeriesExpression(appended.series));
     clearQuickAddInput();
     deactivateQuickAdd();
     quickAddRef.current?.blur?.();

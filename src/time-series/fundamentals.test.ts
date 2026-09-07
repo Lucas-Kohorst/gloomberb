@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { FinancialStatement, TickerFinancials } from "../types/financials";
 import { alignTimeSeries } from "./alignment";
 import { extractFredSeries } from "./economic";
-import { deriveQuarterlyStatements, extractFundamentalSeries } from "./fundamentals";
+import { deriveQuarterlyStatements, extractFundamentalSeries, valuationSeriesUsesLiveQuote } from "./fundamentals";
 import type { ResolvedSeries, SecuritySeriesSource } from "./types";
 
 const DAY = 24 * 60 * 60 * 1_000;
@@ -487,6 +487,110 @@ describe("fundamental series extraction", () => {
 
     expect(points[0]?.value).toBe(10.3);
     expect(points[0]?.date.toISOString().slice(0, 10)).toBe("2025-02-20");
+  });
+
+  test("derives historical earnings yield from trailing EPS and the prevailing price", () => {
+    const points = extractFundamentalSeries(
+      financials([], [{
+        date: "2024-12-31",
+        availableAt: "2025-04-01",
+        fieldAvailability: { eps: "2025-02-01" },
+        eps: 5,
+      }], [{ date: new Date("2024-12-31T00:00:00Z"), close: 100 }]),
+      source("valuation.earningsYield", "annual"),
+    );
+
+    expect(points).toHaveLength(1);
+    expect(points[0]?.value).toBe(5);
+    expect(points[0]?.periodLabel).toBe("FY2024");
+    expect(points[0]?.date.toISOString().slice(0, 10)).toBe("2025-02-01");
+    expect(points[0]?.provenance?.quality).toBe("derived");
+  });
+
+  test("earnings yield is the reciprocal of trailing P/E at the same price", () => {
+    const snapshot = financials([], [{
+      date: "2024-12-31",
+      availableAt: "2025-04-01",
+      eps: 5,
+    }], [{ date: new Date("2024-12-31T00:00:00Z"), close: 100 }]);
+
+    const [pe] = extractFundamentalSeries(snapshot, source("valuation.trailingPE", "annual"));
+    const [yieldPoint] = extractFundamentalSeries(snapshot, source("valuation.earningsYield", "annual"));
+    expect(pe?.value).toBe(20);
+    expect(yieldPoint?.value).toBe(5);
+  });
+
+  test("derives a current earnings yield from the live quote", () => {
+    const snapshot: TickerFinancials = {
+      ...financials([], [{
+        date: "2024-12-31",
+        availableAt: "2025-02-10",
+        eps: 5,
+      }], [{ date: new Date("2024-12-31T00:00:00Z"), close: 100 }]),
+      quote: {
+        symbol: "TEST",
+        price: 200,
+        currency: "USD",
+        change: 0,
+        changePercent: 0,
+        lastUpdated: Date.parse("2025-03-01T16:00:00Z"),
+      },
+    };
+
+    const points = extractFundamentalSeries(snapshot, source("valuation.earningsYield", "annual"));
+    expect(points.at(-1)).toMatchObject({
+      value: 2.5,
+      periodLabel: "Current",
+      provenance: { quality: "derived" },
+    });
+  });
+
+  test("omits earnings yield when trailing EPS is not positive", () => {
+    const points = extractFundamentalSeries(
+      financials([], [{
+        date: "2024-12-31",
+        availableAt: "2025-04-01",
+        eps: -2,
+      }], [{ date: new Date("2024-12-31T00:00:00Z"), close: 100 }]),
+      source("valuation.earningsYield", "annual"),
+    );
+
+    expect(points).toEqual([]);
+  });
+
+  test("emits a provider-current dividend yield as a percent", () => {
+    const snapshot: TickerFinancials = {
+      ...financials([], [], []),
+      fundamentals: { dividendYield: 0.0045 },
+      quote: {
+        symbol: "TEST",
+        price: 100,
+        currency: "USD",
+        change: 0,
+        changePercent: 0,
+        lastUpdated: Date.parse("2025-03-01T16:00:00Z"),
+      },
+    };
+
+    const [point] = extractFundamentalSeries(snapshot, source("valuation.dividendYield"));
+    expect(point?.value).toBeCloseTo(0.45, 10);
+    expect(point).toMatchObject({
+      periodLabel: "Current",
+      provenance: { quality: "estimated" },
+    });
+    expect(point?.date.toISOString()).toBe("2025-03-01T16:00:00.000Z");
+  });
+
+  test("returns no dividend yield point when the provider snapshot lacks one", () => {
+    expect(extractFundamentalSeries(
+      financials([], []),
+      source("valuation.dividendYield"),
+    )).toEqual([]);
+  });
+
+  test("marks earnings yield as quote-derived but not the provider dividend yield", () => {
+    expect(valuationSeriesUsesLiveQuote("valuation.earningsYield")).toBe(true);
+    expect(valuationSeriesUsesLiveQuote("valuation.dividendYield")).toBe(false);
   });
 });
 

@@ -38,21 +38,18 @@ describe("universal series expression parsing", () => {
     });
   });
 
-  test("parses FUT:code and resolves to the Yahoo symbol", () => {
+  test("parses FUT:code and resolves to the Yahoo security symbol", () => {
     expect(parseSeriesExpression("FUT:ES")).toEqual({
-      kind: "future",
-      code: "ES",
+      kind: "security",
       symbol: "ES=F",
-      name: "E-Mini S&P 500",
+      fieldId: "market.ohlcv",
       label: "E-Mini S&P 500",
     });
-    // also accepts the raw Yahoo symbol
-    expect(parseSeriesExpression("FUT:ES=F")).toEqual({
-      kind: "future",
-      code: "ES",
+    // the raw Yahoo symbol (no prefix) resolves to the same security
+    expect(parseSeriesExpression("ES=F")).toEqual({
+      kind: "security",
       symbol: "ES=F",
-      name: "E-Mini S&P 500",
-      label: "E-Mini S&P 500",
+      fieldId: "market.ohlcv",
     });
   });
 
@@ -60,16 +57,16 @@ describe("universal series expression parsing", () => {
     expect(parseSeriesExpression("FUT:ZZZ")).toBeNull();
   });
 
-  test("parses UST:maturity and resolves to the FRED series id", () => {
+  test("parses UST:maturity and resolves to the FRED economic series", () => {
     expect(parseSeriesExpression("UST:10Y")).toEqual({
-      kind: "treasury-yield",
-      maturity: "10Y",
+      kind: "economic",
+      provider: "fred",
       seriesId: "DGS10",
       label: "10Y Treasury Yield",
     });
     expect(parseSeriesExpression("ust:3m")).toEqual({
-      kind: "treasury-yield",
-      maturity: "3M",
+      kind: "economic",
+      provider: "fred",
       seriesId: "DGS3MO",
       label: "3M Treasury Yield",
     });
@@ -194,8 +191,8 @@ describe("universal series expression parsing", () => {
     const parsed = parseChartExpression("AAPL:price, FUT:ES, UST:10Y, BENCH:OpenAI:tps");
     expect(parsed.map((entry) => entry.kind)).toEqual([
       "security",
-      "future",
-      "treasury-yield",
+      "security",
+      "economic",
       "benchmark",
     ]);
   });
@@ -310,13 +307,29 @@ describe("universal series spec building", () => {
 });
 
 describe("universal series formatting and labels", () => {
-  test("formatParsedSeriesExpression round-trips each kind", () => {
+  test("formatParsedSeriesExpression formats resolved pipeline kinds", () => {
     expect(formatParsedSeriesExpression(parseSeriesExpression("ADJ:adjacent-djt")!))
       .toBe("ADJ:adjacent-djt");
+    // FUT:/UST: resolve to their stored pipeline kinds, so they format as the
+    // underlying security/economic expression instead of the hint prefix.
     expect(formatParsedSeriesExpression(parseSeriesExpression("FUT:ES")!))
-      .toBe("FUT:ES");
+      .toBe("ES=F:market.ohlcv");
     expect(formatParsedSeriesExpression(parseSeriesExpression("UST:10Y")!))
-      .toBe("UST:10Y");
+      .toBe("FRED:DGS10");
+    // the formatted text re-parses to the same underlying source (the hint
+    // prefix's human label is not carried through the text form)
+    expect(parseSeriesExpression(formatParsedSeriesExpression(parseSeriesExpression("FUT:ES")!)))
+      .toMatchObject({
+        kind: "security",
+        symbol: "ES=F",
+        fieldId: "market.ohlcv",
+      });
+    expect(parseSeriesExpression(formatParsedSeriesExpression(parseSeriesExpression("UST:10Y")!)))
+      .toMatchObject({
+        kind: "economic",
+        provider: "fred",
+        seriesId: "DGS10",
+      });
     expect(formatParsedSeriesExpression(parseSeriesExpression("BENCH:OpenAI:tps")!))
       .toBe("BENCH:OpenAI:tps");
     expect(formatParsedSeriesExpression(parseSeriesExpression("POLL:Donald Trump:Approve")!))
@@ -367,8 +380,13 @@ describe("universal series catalog suggestions", () => {
 
   test("suggests treasuries when the query matches a maturity or 'yield'", () => {
     const suggestions = buildSeriesCatalogSuggestions("treasury yield", AAPL);
-    const treasuries = suggestions.filter((entry) => entry.expression.kind === "treasury-yield");
+    const treasuries = suggestions.filter((entry) => (
+      entry.expression.kind === "economic"
+      && entry.description.includes("FRED")
+      && /Treasury/.test(entry.label)
+    ));
     expect(treasuries.length).toBeGreaterThan(0);
+    expect(treasuries.some((entry) => entry.label.includes("10Y"))).toBe(true);
   });
 
   test("suggests benchmarks when the query matches an org or 'benchmark'", () => {
@@ -398,9 +416,10 @@ describe("universal series catalog suggestions", () => {
 
   test("suggests Adjacent indices from natural language", () => {
     const suggestions = buildSeriesCatalogSuggestions("adjacent red index", AAPL);
+    // The RED Total Return index outranks the plain RED index for this query.
     expect(suggestions[0]?.expression).toMatchObject({
       kind: "adjacent-index",
-      indexId: "red",
+      indexId: "red-tr",
     });
   });
 
@@ -420,18 +439,19 @@ describe("universal series catalog suggestions", () => {
     expect(formatParsedSeriesExpression(suggestions[0]!.expression)).toBe("KALSHI:KXPRESPERSON");
   });
 
-  test("suggests polls when the query matches 'poll' or a subject", () => {
-    const suggestions = buildSeriesCatalogSuggestions("poll approval", AAPL, [], 12);
+  test("suggests polls when the query matches a subject", () => {
+    const suggestions = buildSeriesCatalogSuggestions("poll trump", AAPL, [], 12);
     const polls = suggestions.filter((entry) => entry.expression.kind === "poll");
     expect(polls.length).toBeGreaterThan(0);
+    expect(polls.some((entry) => entry.expression.subject === "Donald Trump")).toBe(true);
   });
 
   test("exact prefix expressions are recognized as suggestions", () => {
     expect(buildSeriesCatalogSuggestions("FUT:ES", AAPL)[0]).toMatchObject({
-      expression: { kind: "future", code: "ES" },
+      expression: { kind: "security", symbol: "ES=F", fieldId: "market.ohlcv" },
     });
     expect(buildSeriesCatalogSuggestions("UST:10Y", AAPL)[0]).toMatchObject({
-      expression: { kind: "treasury-yield", maturity: "10Y" },
+      expression: { kind: "economic", provider: "fred", seriesId: "DGS10" },
     });
     expect(buildSeriesCatalogSuggestions("ADJ:my-index", AAPL)[0]).toMatchObject({
       expression: { kind: "adjacent-index", indexId: "my-index" },

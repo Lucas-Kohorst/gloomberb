@@ -32,7 +32,7 @@ import {
   buildCustomChartPreset,
   buildFundamentalChartPreset,
   buildIntradayPriceChartPreset,
-  buildPriceChartPreset,
+  buildBoundChartPreset,
   buildValuationChartPreset,
   chartSeriesLabel,
 } from "./presets";
@@ -79,15 +79,7 @@ function primarySecuritySymbol(spec: ChartSpec): string | null {
 }
 
 function chartTitle(spec: ChartSpec, prefix = "G"): string {
-  const labels = spec.series.slice(0, 3).map((series) => (
-    series.source.kind === "security"
-      ? publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)
-      : series.source.kind === "economic"
-        ? `FRED:${series.source.seriesId}`
-        : series.source.kind === "prediction-market"
-          ? `${series.source.venue === "kalshi" ? "KALSHI" : "POLY"}:${series.source.marketId}`
-          : series.label?.trim() || series.source.seriesId
-  ));
+  const labels = spec.series.slice(0, 3).map((series) => chartSeriesLabel(series));
   if (labels.length === 0) return "Custom Chart";
   const remaining = spec.series.length - labels.length;
   return `${prefix} ${labels.join(" · ")}${remaining > 0 ? ` +${remaining}` : ""}`;
@@ -281,7 +273,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     description: "Open a price chart for a ticker.",
     argKind: "ticker",
     minimumSymbols: 1,
-    build: (symbols) => buildPriceChartPreset(symbols[0]!),
+    build: (symbols) => buildBoundChartPreset(symbols[0]!),
   }),
   securityTemplate({
     id: "graph-intraday-price-pane",

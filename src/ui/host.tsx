@@ -247,12 +247,18 @@ export interface TradingViewChartProps extends BoxProps {
   colors: CompositeChartColors;
   viewport?: { start: Date; end: Date } | null;
   interactive?: boolean;
-  onViewportChange?: (range: { start: Date; end: Date }) => void;
+  onViewportChange?: (
+    range: { start: Date; end: Date },
+    interaction?: TrackpadGestureKind,
+  ) => void;
   /** Drawings and tool drags to overlay, in plot ratios. */
   vectors?: readonly ChartVectorShape[] | null;
   /** Keyboard-armed tool; the chart owns interaction for armed tools. */
   armedTool?: ChartToolKind | null;
 }
+
+/** The trackpad gesture that produced a viewport change. */
+export type TrackpadGestureKind = "pan" | "zoom";
 export interface ImageSurfaceProps extends BoxProps {
   src?: string;
   alt?: string;

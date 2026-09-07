@@ -13,14 +13,14 @@ import {
   type UseChartResolutionOptions,
   type UseChartResolutionResult,
 } from "./use-chart-resolution";
-import type { UniversalSeriesLoadResult } from "./resolve";
+import type { ChartResolveSources, UniversalSeriesLoadResult } from "./resolve";
 import {
   getSharedAdjacentClient,
 } from "../plugins/builtin/adjacent/client";
 import {
-  normalizeAdjacentIndexPrices,
   normalizeAdjacentPriceHistory,
 } from "../plugins/builtin/adjacent/normalize";
+import { loadAdjacentChartSeries } from "../plugins/builtin/adjacent/series";
 import type { AdjacentMarket } from "../plugins/builtin/adjacent/types";
 import { loadVenuePredictionMarketSeries } from "../plugins/prediction-markets/services/series";
 import { fetchLlmStatsData } from "../plugins/builtin/llm-stats/client";
@@ -48,20 +48,7 @@ async function loadFred(request: FredSeriesRequest) {
 }
 
 export async function loadAdjacentIndexSeries(indexId: string): Promise<UniversalSeriesLoadResult> {
-  const client = getSharedAdjacentClient();
-  const response = await client.getIndexPrices(indexId);
-  const pricePoints = normalizeAdjacentIndexPrices(response.data ?? []);
-  const points: TimeSeriesPoint[] = pricePoints.map((point) => ({
-    date: point.date,
-    observedAt: point.date,
-    value: point.value,
-    provenance: { providerId: "adjacent", quality: "reported" },
-  }));
-  return {
-    points,
-    unit: "index",
-    unitGroup: "level",
-  };
+  return loadAdjacentChartSeries(getSharedAdjacentClient(), indexId);
 }
 
 function predictionYesPercent(value: number): number {
@@ -87,12 +74,12 @@ function matchingPredictionMarket(
 ): AdjacentMarket | undefined {
   const needle = marketId.trim().toLowerCase();
   const venueMarkets = markets.filter((market) => market.platform === venue);
-  const pool = venueMarkets.length > 0 ? venueMarkets : markets;
+  const pool = venueMarkets;
   return pool.find((market) => {
     const id = market.id.trim().toLowerCase();
     const slug = market.slug?.trim().toLowerCase();
     return id === needle || slug === needle;
-  }) ?? pool[0];
+  });
 }
 
 export async function loadPredictionMarketSeries(
@@ -322,11 +309,27 @@ export function useResolvedChartSpec(
     () => hydrateChartSpecInstruments(spec, tickers),
     [spec, tickers],
   );
-  const sources = useMemo(() => ({
+  const sources = useMemo(() => createResolvedChartSources(
+    dataProvider,
+    createChartSeriesResolver(capabilityInvoker),
+  ), [capabilityInvoker, dataProvider]);
+  return useChartResolution(hydratedSpec, sources, options);
+}
+
+/** Live chart loaders for every universal series kind Custom Chart can author. */
+export function createResolvedChartSources(
+  dataProvider: ChartResolveSources["dataProvider"],
+  resolveCapabilitySeries: ChartResolveSources["resolveCapabilitySeries"],
+): ChartResolveSources {
+  return {
     dataProvider,
     loadFredSeries: loadFred,
+    loadAdjacentIndexSeries,
+    loadBenchmarkSeries,
+    loadPollSeries,
+    loadWeatherSeries,
+    loadOwidSeries,
     loadPredictionMarketSeries,
-    resolveCapabilitySeries: createChartSeriesResolver(capabilityInvoker),
-  }), [capabilityInvoker, dataProvider]);
-  return useChartResolution(hydratedSpec, sources, options);
+    resolveCapabilitySeries,
+  };
 }

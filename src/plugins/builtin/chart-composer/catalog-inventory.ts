@@ -10,14 +10,36 @@ import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
 } from "../futures/contracts";
+import { LLM_STATS_SITE_BASE, type LlmStatsRow } from "../llm-stats/types";
 import { INDICATORS as VALUATION_INDICATORS } from "../market-valuation/indicators";
 import { MARKET_VALUATION_CAPABILITY_ID } from "../market-valuation/chart-series";
 import { TREASURY_MATURITIES } from "../yield-curve/treasury-data";
+import type { PollTabId } from "../polls/types";
+import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
+import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
+import {
+  OWID_CATALOG,
+  findOwidCatalogEntryBySlug,
+  owidCatalogExpression,
+  owidCatalogSearchText,
+  owidGrapherUrl,
+  owidSeriesLabel,
+  type OwidCatalogEntry,
+} from "../owid/catalog";
 import { fieldCategory, type SeriesCatalogInstrument } from "./series-catalog";
 
 export const CHART_COMPOSER_TEMPLATE_ID = "chart-composer-pane";
 export const DATA_CATALOG_PANE_ID = "data-catalog";
 export const DATA_CATALOG_TEMPLATE_ID = "data-catalog-pane";
+
+export const VOTEHUB_POLL_TYPES: readonly PollTabId[] = [
+  "approval",
+  "favorability",
+  "generic-ballot",
+  "us-senator",
+  "governor",
+  "us-representative",
+];
 
 export type CatalogSourceId =
   | "security"
@@ -27,7 +49,9 @@ export type CatalogSourceId =
   | "futures"
   | "treasury"
   | "valuation"
-  | "owid";
+  | "owid"
+  | "poll"
+  | "benchmark";
 
 export type CatalogFilterId =
   | "all"
@@ -36,7 +60,8 @@ export type CatalogFilterId =
   | "crypto"
   | "fred"
   | "futures"
-  | "valuation";
+  | "valuation"
+  | "owid";
 
 export interface CatalogSeriesRow {
   id: string;
@@ -49,6 +74,14 @@ export interface CatalogSeriesRow {
   searchText: string;
   needsTicker?: boolean;
   fieldToken?: string;
+  needsEntity?: boolean;
+  owidSlug?: string;
+}
+
+export interface CatalogPollSubject {
+  subject: string;
+  choices: string[];
+  url?: string;
 }
 
 export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string }> = [
@@ -59,6 +92,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "fred", label: "FRED" },
   { id: "futures", label: "Futures" },
   { id: "valuation", label: "Valuation" },
+  { id: "owid", label: "OWID" },
 ];
 
 const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
@@ -69,6 +103,7 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   fred: new Set(["fred", "treasury"]),
   futures: new Set(["futures"]),
   valuation: new Set(["valuation"]),
+  owid: new Set(["owid"]),
 };
 
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
@@ -113,6 +148,8 @@ function row(entry: {
   searchExtra?: string;
   needsTicker?: boolean;
   fieldToken?: string;
+  needsEntity?: boolean;
+  owidSlug?: string;
 }): CatalogSeriesRow {
   const { searchExtra, ...fields } = entry;
   return {
@@ -126,6 +163,57 @@ function row(entry: {
       searchExtra,
     ].filter(Boolean).join(" ").toLowerCase(),
   };
+}
+
+function llmStatsMetricValue(model: LlmStatsRow, code: string): number | null {
+  const value = (() => {
+    switch (code) {
+      case "tps":
+        return model.avgThroughput;
+      case "p95":
+        return model.p95Latency;
+      case "ttft":
+        return model.avgTtft;
+      case "latency":
+        return model.avgLatency;
+      case "fail":
+        return model.failureRate;
+      case "calls":
+        return model.totalCalls;
+      default:
+        return null;
+    }
+  })();
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+const BENCHMARK_METRICS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: "tps", label: "Throughput" },
+  { code: "p95", label: "P95 Latency" },
+  { code: "ttft", label: "Time to First Token" },
+  { code: "latency", label: "Average Latency" },
+  { code: "fail", label: "Failure Rate" },
+  { code: "calls", label: "Calls" },
+];
+
+export function catalogRowsFromLlmStatsRows(
+  models: readonly LlmStatsRow[],
+): CatalogSeriesRow[] {
+  return models.flatMap((model) => (
+    BENCHMARK_METRICS.flatMap((metric) => {
+      if (llmStatsMetricValue(model, metric.code) == null) return [];
+      return [row({
+        id: `bench:${model.id}:${metric.code}`,
+        label: `${model.displayName} · ${metric.label}`,
+        source: "llm-stats.com",
+        sourceId: "benchmark",
+        kind: "Benchmark",
+        expression: `BENCH:${model.id}:${metric.code}`,
+        url: model.url || LLM_STATS_SITE_BASE,
+        searchExtra: [model.organization, model.provider, "llm-stats"].join(" "),
+      })];
+    })
+  ));
 }
 
 function isCatalogCryptoInstrument(instrument: SeriesCatalogInstrument): boolean {
@@ -233,6 +321,12 @@ export function catalogRowsForResolvedInstruments(
 }
 
 export function catalogExpressionForRow(entry: CatalogSeriesRow, ticker?: string): string | null {
+  if (entry.needsEntity) {
+    const slug = entry.owidSlug?.trim();
+    const entity = ticker ? normalizeOwidEntityCode(ticker) : null;
+    if (!slug || !entity) return null;
+    return `OWID:${slug}:${entity}`;
+  }
   if (!entry.needsTicker) return entry.expression;
   const symbol = ticker ? catalogTickerFromInput(ticker) : null;
   if (!symbol || !entry.fieldToken) return null;
@@ -310,6 +404,7 @@ function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSer
 const STATIC_CATALOG_INVENTORY: readonly CatalogSeriesRow[] = [
   ...securityFieldRows(),
   ...optionFieldRows(),
+  ...catalogRowsFromOwidCatalog(),
   ...listFredCatalogSeries().map((entry) => row({
     id: `fred:${entry.seriesId}`,
     label: entry.label,
@@ -378,26 +473,133 @@ export function catalogOwidDiscoveryQuery(query: string): string | null {
   return trimmed;
 }
 
+function owidCatalogRow(entry: {
+  slug: string;
+  title: string;
+  expression: string;
+  url?: string;
+  needsEntity: boolean;
+  searchExtra?: string;
+}): CatalogSeriesRow {
+  return row({
+    id: `owid:${entry.slug}`,
+    label: entry.title,
+    source: "Our World in Data",
+    sourceId: "owid",
+    kind: "OWID",
+    expression: entry.expression,
+    url: entry.url || owidGrapherUrl(entry.slug),
+    searchExtra: [
+      entry.slug,
+      entry.slug.replaceAll("-", " "),
+      "owid",
+      "our world in data",
+      "cc by",
+      "cc by 4.0",
+      entry.searchExtra,
+    ].filter(Boolean).join(" "),
+    needsEntity: entry.needsEntity,
+    owidSlug: entry.slug,
+  });
+}
+
+export function catalogRowsFromOwidCatalog(
+  entries: readonly OwidCatalogEntry[] = OWID_CATALOG,
+): CatalogSeriesRow[] {
+  return entries.map((entry) => owidCatalogRow({
+    slug: entry.slug,
+    title: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    expression: owidCatalogExpression(entry),
+    searchExtra: owidCatalogSearchText(entry),
+    needsEntity: false,
+  }));
+}
+
 export function catalogRowsFromOwidHits(
-  hits: readonly { slug: string; title?: string; url?: string }[],
-  _metadataBySlug?: ReadonlyMap<string, { title?: string; url?: string }>,
+  hits: readonly OwidChartSearchHit[],
+  metadataBySlug: ReadonlyMap<string, OwidChartMetadataPrint>,
   blockedSlugs: ReadonlySet<string> = new Set(),
 ): CatalogSeriesRow[] {
   return hits.flatMap((hit) => {
     if (blockedSlugs.has(hit.slug)) return [];
-    const metadata = _metadataBySlug?.get(hit.slug);
-    const title = metadata?.title || hit.title || hit.slug;
-    return [row({
-      id: `owid:${hit.slug}`,
-      label: title,
-      source: "Our World in Data",
-      sourceId: "owid",
-      kind: "OWID",
-      expression: `OWID:${hit.slug}`,
+    const metadata = metadataBySlug.get(hit.slug);
+    const catalog = findOwidCatalogEntryBySlug(hit.slug);
+    const entity = pickDefaultOwidEntityCode(hit.availableEntities, metadata?.entities ?? [])
+      ?? catalog?.defaultEntity
+      ?? null;
+    const needsEntity = !entity;
+    const title = metadata?.title || hit.title || catalog?.title || hit.slug;
+    const entityName = entity
+      ? metadata?.entities.find((entry) => entry.code === entity)?.name
+        ?? catalog?.defaultEntityName
+      : undefined;
+    const expression = entity ? `OWID:${hit.slug}:${entity}` : `OWID:${hit.slug}`;
+    return [owidCatalogRow({
+      slug: hit.slug,
+      title: entity ? owidSeriesLabel(title, entity, entityName) : title,
+      expression,
       url: hit.url || metadata?.url,
-      searchExtra: [hit.slug, hit.slug.replaceAll("-", " "), "owid"].join(" "),
+      needsEntity,
+      searchExtra: [
+        hit.subtitle,
+        metadata?.citation,
+        metadata?.unit,
+        catalog ? owidCatalogSearchText(catalog) : null,
+        ...hit.availableEntities.slice(0, 12),
+        ...(metadata?.entities ?? []).slice(0, 12).map((entry) => `${entry.code} ${entry.name}`),
+      ].filter(Boolean).join(" "),
     })];
   });
+}
+
+export function catalogPollSubjectsFromPolls(
+  polls: readonly {
+    subject: string;
+    url?: string | null;
+    answers?: ReadonlyArray<{ choice: string }>;
+  }[],
+): CatalogPollSubject[] {
+  const bySubject = new Map<string, { subject: string; choices: Set<string>; url?: string }>();
+  for (const poll of polls) {
+    const subject = poll.subject.trim();
+    if (!subject) continue;
+    let entry = bySubject.get(subject.toLowerCase());
+    if (!entry) {
+      entry = { subject, choices: new Set() };
+      bySubject.set(subject.toLowerCase(), entry);
+    }
+    const pollUrl = poll.url?.trim();
+    if (!entry.url && pollUrl) entry.url = pollUrl;
+    for (const answer of poll.answers ?? []) {
+      const choice = answer.choice.trim();
+      if (choice) entry.choices.add(choice);
+    }
+  }
+  return [...bySubject.values()].flatMap((entry) => (
+    entry.choices.size === 0
+      ? []
+      : [{
+        subject: entry.subject,
+        choices: [...entry.choices],
+        ...(entry.url ? { url: entry.url } : {}),
+      }]
+  ));
+}
+
+export function catalogRowsFromPollSubjects(
+  subjects: readonly CatalogPollSubject[],
+): CatalogSeriesRow[] {
+  return subjects.flatMap((subject) => (
+    subject.choices.map((choice) => row({
+      id: `poll:${subject.subject}:${choice}`,
+      label: `${subject.subject} · ${choice}`,
+      source: "VoteHub",
+      sourceId: "poll",
+      kind: "Poll",
+      expression: `POLL:${subject.subject}:${choice}`,
+      ...(subject.url ? { url: subject.url } : {}),
+    }))
+  ));
 }
 
 export function catalogEmptyCopy(

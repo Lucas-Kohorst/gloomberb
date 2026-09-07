@@ -1098,13 +1098,15 @@ export async function resolveChartSpecData(
     ? runtimeAutoBounds(options)
     : null;
   const requestBounds = runtimeRequestBounds(options) ?? adaptiveBounds;
-  const activeMarketSources = [...new Map(spec.series.flatMap((entry) => (
-    calculationSeriesIds.has(entry.id)
-      && entry.source.kind === "security"
-      && isMarketFieldId(entry.source.fieldId)
-      ? [[instrumentKey(entry.source), entry.source] as const]
-      : []
-  ))).values()];
+  const activeMarketSources = sources.dataProvider
+    ? [...new Map(spec.series.flatMap((entry) => (
+        calculationSeriesIds.has(entry.id)
+          && entry.source.kind === "security"
+          && isMarketFieldId(entry.source.fieldId)
+          ? [[instrumentKey(entry.source), entry.source] as const]
+          : []
+      ))).values()]
+    : [];
   const priceOnly = chartIsPriceOnly(spec, calculationSeriesIds);
   const resolutionSupportSources = await Promise.all(activeMarketSources.map(async (source) => (
     source.instrument.exchange?.trim()
@@ -1224,6 +1226,9 @@ export async function resolveChartSpecData(
       return hiddenSeriesPlaceholder(seriesSpec, index);
     }
     try {
+      if (seriesSpec.source.kind === "security" && !sources.dataProvider) {
+        throw new Error("Market data is unavailable.");
+      }
       if (seriesSpec.source.kind === "capability") {
         if (!sources.resolveCapabilitySeries) {
           throw new Error(`Chart series capability "${seriesSpec.source.capabilityId}" is unavailable. Enable its plugin or provider.`);
