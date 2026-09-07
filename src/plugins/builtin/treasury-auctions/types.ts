@@ -1,4 +1,5 @@
 export const TREASURY_AUCTIONS_PANE_ID = "treasury-auctions";
+export const TREASURY_FISCAL_DATA_CONNECTION_ID = "treasury-fiscal-data";
 
 /**
  * Normalized Treasury auction record. Fiscal Data returns every field as a

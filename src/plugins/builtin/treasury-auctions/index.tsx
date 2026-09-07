@@ -1,15 +1,16 @@
 import type { PaneSettingsDef } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
 import {
   attachTreasuryAuctionsPersistence,
   resetTreasuryAuctionsPersistence,
-  TREASURY_FISCAL_DATA_CONNECTION_ID,
 } from "./cache";
 import { TreasuryAuctionsPane } from "./pane";
-import { TREASURY_AUCTIONS_PANE_ID } from "./types";
+import { TREASURY_AUCTIONS_PANE_ID, TREASURY_FISCAL_DATA_CONNECTION_ID } from "./types";
 import { createPublicPaneShare } from "../shared/public-pane";
 
 let disposeConnection: (() => void) | null = null;
+let disposeInventoryConnection: (() => void) | null = null;
 
 function treasuryAuctionsSettings(): PaneSettingsDef {
   return {
@@ -42,11 +43,24 @@ export const treasuryAuctionsModule: PluginModule = {
       priority: 300,
       detail: "fiscaldata.treasury.gov",
     });
+    // The Connections pane inventory reads register.ts, not the health
+    // registry; both registrations are needed for the source to be visible
+    // and health-tracked.
+    disposeInventoryConnection = registerConnectionSource({
+      id: TREASURY_FISCAL_DATA_CONNECTION_ID,
+      name: "Treasury Fiscal Data",
+      kind: "api",
+      pluginId: "macro",
+      priority: 300,
+      authRequired: false,
+    });
   },
 
   dispose() {
     disposeConnection?.();
     disposeConnection = null;
+    disposeInventoryConnection?.();
+    disposeInventoryConnection = null;
     resetTreasuryAuctionsPersistence();
   },
 

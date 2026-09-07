@@ -34,6 +34,7 @@ interface GloomberbCloudPluginComponents {
 
 function createCloudDataModule(): PluginModule {
   let disposeConfigConnection: (() => void) | null = null;
+  let disposeOllamaConnection: (() => void) | null = null;
   return {
     capabilities: createGloomberbCloudCapabilities(createGloomberbCloudProvider()),
     setup(ctx) {
@@ -46,9 +47,18 @@ function createCloudDataModule(): PluginModule {
         priority: 100,
         authRequired: true,
       });
+      disposeOllamaConnection = registerConnectionSource({
+        id: "ollama",
+        name: "Ollama (local)",
+        kind: "api",
+        pluginId: "gloomberb-cloud",
+        authRequired: false,
+      });
     },
     dispose() {
       disposeConfigConnection?.();
+      disposeOllamaConnection?.();
+      disposeOllamaConnection = null;
       apiClient.dispose();
     },
   };
@@ -207,7 +217,7 @@ const accountModule: PluginModule = {
     component: AccountManagementPane,
     defaultPosition: "right",
     defaultMode: "floating",
-    defaultFloatingSize: { width: 72, height: 36 },
+    defaultFloatingSize: { width: 84, height: 40 },
     portableShare: {
       private: { title: true, params: true, settings: true, state: true },
     },
