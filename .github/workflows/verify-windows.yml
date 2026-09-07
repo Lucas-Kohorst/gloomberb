@@ -1,11 +1,8 @@
 name: Verify Windows
 
 on:
-  workflow_dispatch:
   pull_request:
-  push:
-    branches:
-      - main
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: verify-windows-${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +13,7 @@ permissions:
 
 jobs:
   cli:
+    if: contains(github.event.pull_request.labels.*.name, 'windows')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +34,7 @@ jobs:
           }
 
   desktop:
-    if: github.event_name != 'pull_request'
+    if: contains(github.event.pull_request.labels.*.name, 'windows')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

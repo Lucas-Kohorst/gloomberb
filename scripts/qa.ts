@@ -254,8 +254,7 @@ async function runData(plan: QaPlan, offline: boolean): Promise<void> {
 
 async function runLive(plan: QaPlan, allPanes: boolean): Promise<void> {
   if (!which("pilotty")) {
-    console.log("qa live: skipped (pilotty not on PATH). Install with: npm i -g pilotty");
-    return;
+    throw new Error("Live QA requires pilotty on PATH. Install with: npm i -g pilotty");
   }
   console.log("qa live: TUI boot");
   const tui = await run(["bash", "scripts/qa-tui.sh"], { timeoutMs: 90_000 });

@@ -45,8 +45,10 @@ async function rpc(dataDir: string, request: RemoteControlRequest): Promise<Remo
 }
 
 async function snapshot(): Promise<string> {
+  // Live panes can keep repainting; allow rendering time without requiring a quiet screen.
+  await Bun.sleep(SETTLE_MS);
   const proc = Bun.spawn(
-    ["pilotty", "snapshot", "-s", SESSION, "--format", "text", "--settle", String(SETTLE_MS)],
+    ["pilotty", "snapshot", "-s", SESSION, "--format", "text", "--settle", "0", "--timeout", "5000", "--strict"],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [stdout, stderr, exit] = await Promise.all([
@@ -54,7 +56,7 @@ async function snapshot(): Promise<string> {
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  if (exit !== 0) throw new Error(`pilotty snapshot failed (${exit}): ${stderr.trim()}`);
+  if (exit !== 0) throw new Error(`pilotty snapshot failed (${exit}): ${stderr.trim() || stdout.trim()}`);
   return stdout;
 }
 
@@ -124,7 +126,15 @@ for (const pane of paneTypes) {
     continue;
   }
   await Bun.sleep(200);
-  const snap = await snapshot();
+  let snap: string;
+  try {
+    snap = await snapshot();
+  } catch (error) {
+    hostCrash = error instanceof Error ? error.message : String(error);
+    rpcErrors.push({ paneId: pane.id, error: hostCrash });
+    console.log(`HOST ${pane.id}: ${hostCrash}`);
+    break;
+  }
   const lines = crashLines(snap);
   if (isHostCrash(lines)) {
     hostCrash = lines.find((line) => /^(ReferenceError|TypeError|SyntaxError):/.test(line)) ?? lines[0]!;

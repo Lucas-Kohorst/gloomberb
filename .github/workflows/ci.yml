@@ -3,8 +3,8 @@
 #
 # Branch protection requires the "CI gate" job; it fails if any leg fails or
 # is skipped, so a green gate means typecheck (all six targets), static
-# checks, the full test suite, desktop + web builds, and the live TUI and
-# upgrade smokes all passed. Deploys to https://terminal.kohor.st only happen
+# checks, the full test suite, desktop + web builds, live pane QA, and the
+# upgrade smoke all passed. Deploys to https://terminal.kohor.st only happen
 # after a green gate on main.
 name: CI
 
@@ -79,21 +79,27 @@ jobs:
       - name: Dry-run Cloudflare Worker
         run: bun run cloudflare:dry-run
 
-  smoke:
+  qa:
+    name: QA
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-bun
       - name: Install pilotty
-        run: npm install --global pilotty
-      # Boot smoke in an isolated HOME: snapshot must be free of the crash
-      # assertions, and the command bar must open. Live-stream assertions
-      # (GLOOM_QA_STREAMS) stay off; they depend on third-party data.
-      - name: TUI boot smoke
+        run: npm install --global pilotty@0.0.11
+      # Opens all TUI panes except TV, which launches an external player.
+      - name: Live QA (data probes, TUI boot, every pane)
+        shell: bash
         env:
           GLOOM_QA_COMMAND_BAR: "1"
-        run: bun run qa:tui
+        run: bun run qa --live --all-panes 2>&1 | tee qa.log
+      - name: Upload QA log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-log
+          path: qa.log
       - name: Test global upgrade from 0.5.0
         run: bun run test:global-upgrade
 
@@ -104,7 +110,7 @@ jobs:
       - checks
       - test
       - build
-      - smoke
+      - qa
     runs-on: ubuntu-latest
     steps:
       - name: All checks must pass
@@ -136,18 +142,5 @@ jobs:
             exit 1
           fi
           bun run cloud:deploy
-      - name: Verify production
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Cloudflare Bot Fight Mode (error 1010) rejects curl's default user
-          # agent from runner IPs; send a browser UA for the health probe.
-          UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 15 -A "$UA" https://terminal.kohor.st/health >/dev/null; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "terminal.kohor.st did not become healthy at $GITHUB_SHA" >&2
-          exit 1
+      - name: Verify deployment routing and probe health
+        run: bash scripts/verify-cloudflare-deploy.sh
