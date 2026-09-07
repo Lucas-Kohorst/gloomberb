@@ -166,8 +166,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Cloudflare Bot Fight Mode (error 1010) rejects curl's default user
+          # agent from runner IPs; send a browser UA for the health probe.
+          UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
           for attempt in {1..12}; do
-            if curl --fail --silent --show-error --max-time 15 https://terminal.kohor.st/health >/dev/null; then
+            if curl --fail --silent --show-error --max-time 15 -A "$UA" https://terminal.kohor.st/health >/dev/null; then
               exit 0
             fi
             sleep 5
