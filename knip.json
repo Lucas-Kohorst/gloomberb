@@ -20,6 +20,7 @@
     "src/**/*.{ts,tsx}"
   ],
   "ignoreDependencies": [
+    "@types/three",
     "png-to-ico",
     "rcedit"
   ]
