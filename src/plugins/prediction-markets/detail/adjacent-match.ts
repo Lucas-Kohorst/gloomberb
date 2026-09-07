@@ -189,7 +189,7 @@ function pickFromMarkets(
   const venueMarkets = lookup.venue
     ? markets.filter((market) => market.platform === lookup.venue)
     : markets;
-  const pool = venueMarkets.length > 0 ? venueMarkets : markets;
+  const pool = venueMarkets;
   const exact = pool.find((market) => idsMatchCandidate(market.id, lookup)
     || (market.slug != null && idsMatchCandidate(market.slug, lookup)));
   if (exact) return exact.id;

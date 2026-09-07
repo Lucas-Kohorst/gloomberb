@@ -40,6 +40,7 @@ import type {
   PredictionDetailTab,
   PredictionHistoryRange,
   PredictionListRow,
+  PredictionMarketSummary,
   PredictionSortPreference,
   PredictionVenueScope,
 } from "../types";

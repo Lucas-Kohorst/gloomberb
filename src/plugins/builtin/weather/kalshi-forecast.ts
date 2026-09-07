@@ -14,7 +14,7 @@ import {
 import { kalshiEventTickerForDate, kalshiHighSeriesForStation, zonedMidnightUtcMs } from "./mapping";
 import { canonicalWeatherStationId } from "./stations";
 
-const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
+export const KALSHI_API_BASE = "https://external-api.kalshi.com/trade-api/v2";
 
 const IMPLIED_CACHE_TTL_MS = 60_000;
 const IMPLIED_CONCURRENCY = 4;
@@ -28,7 +28,7 @@ interface CacheEntry {
 
 const impliedCache = new Map<string, CacheEntry>();
 
-function kalshiEventMarkets(body: KalshiEventResponse | { event?: { markets?: KalshiMarketRecord[] }; markets?: KalshiMarketRecord[] } | null): KalshiMarketRecord[] {
+export function kalshiEventMarkets(body: KalshiEventResponse | { event?: { markets?: KalshiMarketRecord[] }; markets?: KalshiMarketRecord[] } | null): KalshiMarketRecord[] {
   if (!body) return [];
   if (Array.isArray(body.markets) && body.markets.length > 0) return body.markets;
   const nested = body.event && typeof body.event === "object"
@@ -58,7 +58,7 @@ function eventIsOpen(markets: readonly KalshiMarketRecord[]): boolean {
   return markets.some((market) => isOpenKalshiStatus(market.status));
 }
 
-async function mapPool<T, R>(items: readonly T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+export async function mapPool<T, R>(items: readonly T[], concurrency: number, worker: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let next = 0;
   async function run(): Promise<void> {

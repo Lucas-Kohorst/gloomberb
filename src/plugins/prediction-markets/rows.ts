@@ -81,6 +81,53 @@ function sortGroupMembers(
   });
 }
 
+function normalizeResolvedQuestion(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function hasQuotableContract(market: PredictionMarketSummary): boolean {
+  if (market.venue !== "polymarket") return true;
+  return Boolean(market.yesTokenId && market.noTokenId);
+}
+
+function preferDuplicateOutcome(
+  current: PredictionMarketSummary,
+  candidate: PredictionMarketSummary,
+): PredictionMarketSummary {
+  const currentQuotable = hasQuotableContract(current);
+  const candidateQuotable = hasQuotableContract(candidate);
+  if (candidateQuotable !== currentQuotable) {
+    return candidateQuotable ? candidate : current;
+  }
+  const currentUpdated = coerceTimestamp(current.updatedAt) ?? 0;
+  const candidateUpdated = coerceTimestamp(candidate.updatedAt) ?? 0;
+  if (candidateUpdated !== currentUpdated) {
+    return candidateUpdated > currentUpdated ? candidate : current;
+  }
+  return current;
+}
+
+function dedupeGroupMembers(
+  markets: PredictionMarketSummary[],
+): PredictionMarketSummary[] {
+  const deduped = new Map<string, PredictionMarketSummary>();
+  for (const market of markets) {
+    // The resolved question identifies a contract. Do not use marketLabel:
+    // venues can reuse a display label for different questions in one event.
+    const key = `${market.venue}:${normalizeResolvedQuestion(market.title)}`;
+    const current = deduped.get(key);
+    deduped.set(key, current ? preferDuplicateOutcome(current, market) : market);
+  }
+  return [...deduped.values()];
+}
+
+function resolveGroupFocusMarket(
+  markets: PredictionMarketSummary[],
+  fallback: PredictionMarketSummary,
+): PredictionMarketSummary {
+  return getPredictionTopOutcome(markets) ?? fallback;
+}
+
 function buildChildRow(
   summary: PredictionMarketSummary,
   parentKey: string,
@@ -96,6 +143,25 @@ export function resolvePredictionListActivation(
   row: Pick<PredictionListRow, "kind">,
 ): "toggle-group" | "open-detail" {
   return row.kind === "group" ? "toggle-group" : "open-detail";
+}
+
+/** Market [g] should chart. Event groups use the highest-odds outcome. */
+export function resolvePredictionGraphMarket(
+  row: PredictionListRow | null | undefined,
+): PredictionMarketSummary | null {
+  if (!row) return null;
+  return row.markets.find((market) => market.key === row.focusMarketKey)
+    ?? getPredictionTopOutcome(row.markets)
+    ?? row.representative
+    ?? null;
+}
+
+export function predictionChartExpression(
+  summary: Pick<PredictionMarketSummary, "venue" | "marketId"> | null | undefined,
+): string | null {
+  const marketId = summary?.marketId?.trim();
+  if (!summary || !marketId) return null;
+  return summary.venue === "kalshi" ? `KALSHI:${marketId}` : `POLY:${marketId}`;
 }
 
 export function buildPredictionListRowRevision(
@@ -143,7 +209,15 @@ export function flattenPredictionListRows(
       continue;
     }
     const expanded = expandedKeys.has(row.key);
-    flattened.push({ ...row, expanded });
+    const focusMarket = resolveGroupFocusMarket(row.markets, row.representative);
+    flattened.push({
+      ...row,
+      expanded,
+      focusMarketKey: focusMarket.key,
+      focusMarketLabel: focusMarket.marketLabel,
+      focusYesPrice: focusMarket.yesPrice,
+      yesPrice: focusMarket.yesPrice,
+    });
     if (!expanded) continue;
     for (const market of row.markets) {
       flattened.push(buildChildRow(market, row.key));
@@ -201,9 +275,9 @@ function buildSingleRow(summary: PredictionMarketSummary): PredictionSingleListR
 }
 
 function buildGroupedRow(markets: PredictionMarketSummary[]): PredictionGroupedListRow {
-  const sortedMarkets = sortGroupMembers(markets);
+  const sortedMarkets = sortGroupMembers(dedupeGroupMembers(markets));
   const representative = sortedMarkets[0]!;
-  const focusMarket = getPredictionTopOutcome(sortedMarkets) ?? representative;
+  const focusMarket = resolveGroupFocusMarket(sortedMarkets, representative);
   const yesValues = sortedMarkets.map((market) => market.yesPrice);
   const spreadValues = sortedMarkets.map((market) => market.spread);
   const tags = dedupeStrings(

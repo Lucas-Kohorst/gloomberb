@@ -1,6 +1,7 @@
 import type {
   PollAverageSummary,
   PollRow,
+  PollsterSeries,
   PollTrendPoint,
   PollsterAverage,
   VoteHubPoll,
@@ -109,6 +110,7 @@ export function normalizeVoteHubPoll(poll: VoteHubPoll): PollRow {
   return {
     id: poll.id,
     subject: poll.subject,
+    seatName: poll.seat_name,
     pollType: poll.poll_type,
     pollTypeLabel: pollTypeLabel(poll.poll_type),
     pollster: poll.pollster,
@@ -174,6 +176,11 @@ function dateValue(value: string | null): number {
   return Number.isFinite(time) ? time : 0;
 }
 
+/** Race/geography key: VoteHub `seat_name` when present, otherwise `subject`. */
+export function pollRaceKey(row: Pick<PollRow, "subject" | "seatName">): string {
+  return row.seatName?.trim() || row.subject;
+}
+
 /**
  * Case-insensitive substring filter across subject, pollster, and seat name.
  * Returns the original array when the query is empty.
@@ -208,6 +215,42 @@ export function computePollTrend(
     points.push({ date, value: answer.pct, pollster: row.pollster });
   }
   return points.sort((a, b) => dateValue(a.date) - dateValue(b.date));
+}
+
+/**
+ * The trend line for one pollster in a race, so a "house" overlay can pin a
+ * single pollster against the prediction-market line.
+ */
+export function computePollsterHouseSeries(
+  rows: PollRow[],
+  raceKey: string,
+  pollster: string,
+  choice: string,
+): PollTrendPoint[] {
+  return computePollTrend(rows, raceKey, choice)
+    .filter((point) => point.pollster === pollster);
+}
+
+/**
+ * One series per pollster for a race, most-polled first. Caps at `limit`
+ * so overlay legends stay readable.
+ */
+export function groupPollTrendByPollster(
+  rows: PollRow[],
+  raceKey: string,
+  choice: string,
+  limit = 8,
+): PollsterSeries[] {
+  const byPollster = new Map<string, PollTrendPoint[]>();
+  for (const point of computePollTrend(rows, raceKey, choice)) {
+    const existing = byPollster.get(point.pollster);
+    if (existing) existing.push(point);
+    else byPollster.set(point.pollster, [point]);
+  }
+  return [...byPollster.entries()]
+    .map(([pollster, points]) => ({ pollster, points }))
+    .sort((left, right) => right.points.length - left.points.length || left.pollster.localeCompare(right.pollster))
+    .slice(0, Math.max(1, limit));
 }
 
 /**

@@ -97,7 +97,14 @@ export async function resolvePolymarketChartSummary(
     `https://gamma-api.polymarket.com/events/${eventId}`,
     signal,
   );
-  const market = event.markets?.find((candidate) => candidate.id === marketId);
+  const syntheticSlug = marketId.startsWith(`${eventId}:`)
+    ? marketId.slice(eventId.length + 1)
+    : null;
+  const market = event.markets?.find((candidate) =>
+    candidate.id === marketId
+    || candidate.slug === marketId
+    || (syntheticSlug != null && candidate.slug === syntheticSlug),
+  );
   const summary = market
     ? normalizePolymarketMarket(hydratePolymarketMarket(market, event))
     : null;
@@ -113,26 +120,31 @@ async function resolvePolymarketSummary(
   event: PolymarketEventRecord | null;
   summary: PredictionMarketSummary;
 }> {
-  const event = await loadPolymarketEvent(summary.eventId);
+  let current = summary;
+  if (!current.eventId || !current.yesTokenId) {
+    const hydrated = await resolvePolymarketMarketById(current.marketId);
+    if (hydrated) current = { ...hydrated, key: summary.key };
+  }
+  const event = await loadPolymarketEvent(current.eventId);
   if (!event) {
-    return { event: null, summary };
+    return { event: null, summary: current };
   }
 
   const eventTags = resolvePolymarketEventTags(event);
-  const canonicalMarket = findCanonicalPolymarketMarket(event, summary);
+  const canonicalMarket = findCanonicalPolymarketMarket(event, current);
   if (!canonicalMarket) {
     return {
       event,
       summary: {
-        ...summary,
-        eventLabel: event.title ?? summary.eventLabel,
+        ...current,
+        eventLabel: event.title ?? current.eventLabel,
         category:
-          summary.category ?? resolvePredictionDisplayCategory(eventTags),
-        tags: summary.tags ?? eventTags,
-        description: summary.description || event.description || "",
+          current.category ?? resolvePredictionDisplayCategory(eventTags),
+        tags: current.tags ?? eventTags,
+        description: current.description || event.description || "",
         resolutionSource:
-          summary.resolutionSource || event.resolutionSource || "",
-        openInterest: event.openInterest ?? summary.openInterest,
+          current.resolutionSource || event.resolutionSource || "",
+        openInterest: event.openInterest ?? current.openInterest,
       },
     };
   }
@@ -143,7 +155,7 @@ async function resolvePolymarketSummary(
   );
   return {
     event,
-    summary: normalized ?? summary,
+    summary: normalized ?? current,
   };
 }
 

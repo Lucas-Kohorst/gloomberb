@@ -40,6 +40,7 @@ describe("periodic report forms", () => {
   test("filing queries match 10-K / 10-Q phrasing", () => {
     expect(looksLikeFilingQuery("ART 10-K AAPL")).toBe(true);
     expect(looksLikeFilingQuery("latest 10q")).toBe(true);
+    expect(looksLikeFilingQuery("cftc kalshi")).toBe(true);
     expect(looksLikeFilingQuery("nvda")).toBe(false);
   });
 

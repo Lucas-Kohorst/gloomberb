@@ -7,6 +7,14 @@ import type {
 const FUND_TYPES = new Set(["ETF", "ETN", "ETP", "FUND", "MUTUALFUND", "CEF", "CLOSEDEND"]);
 const DERIVATIVE_TYPES = new Set(["OPT", "OPTION", "OPTIONS", "FUT", "FUTURE", "FUTURES", "WARRANT", "WARRANTS", "RIGHT", "RIGHTS"]);
 const EQUITY_TYPES = new Set(["STK", "STOCK", "EQUITY", "COMMONSTOCK", "COMMON STOCK", "ADR", "ORDINARYSHARES", "ORDINARY SHARES"]);
+const PREDICTION_TYPES = new Set([
+  "KALSHI",
+  "POLYMARKET",
+  "PREDICTION",
+  "PREDICTIONMARKET",
+  "EVENT",
+  "EVENTCONTRACT",
+]);
 const COMPANY_NAME_SUFFIXES = new Set([
   "AG",
   "CO",
@@ -316,9 +324,13 @@ export function classifyInstrumentKind(rawType?: string): TickerSearchInstrument
   if (FUND_TYPES.has(normalizedType)) return "fund";
   if (DERIVATIVE_TYPES.has(normalizedType)) return "derivative";
   if (EQUITY_TYPES.has(normalizedType)) return "equity";
+  if (PREDICTION_TYPES.has(normalizedType)) return "prediction";
   if (normalizedType.includes("ETF") || normalizedType.includes("FUND")) return "fund";
   if (normalizedType.includes("OPT") || normalizedType.includes("FUT") || normalizedType.includes("WARRANT")) return "derivative";
   if (normalizedType.includes("EQUITY") || normalizedType.includes("STOCK") || normalizedType.includes("STK")) return "equity";
+  if (normalizedType.includes("KALSHI") || normalizedType.includes("POLYMARKET") || normalizedType.includes("PREDICTION")) {
+    return "prediction";
+  }
   return "other";
 }
 

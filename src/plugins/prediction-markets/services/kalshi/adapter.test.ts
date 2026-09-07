@@ -4,6 +4,10 @@ import {
   attachPredictionMarketsPersistence,
   resetPredictionMarketsPersistence,
 } from "../fetch";
+import {
+  buildPredictionCatalogLoadResourceKey,
+  resolvePredictionCatalogOptions,
+} from "../../cache";
 import { loadKalshiCatalog, resetKalshiCatalogFeed } from "./adapter";
 
 function market(ticker: string, volume24h: string) {
@@ -27,6 +31,35 @@ afterEach(() => {
 });
 
 describe("Kalshi catalog ranking", () => {
+  test("keeps browse resources separate while accepting the legacy options overload", () => {
+    const topKey = buildPredictionCatalogLoadResourceKey(
+      "kalshi",
+      "all",
+      "",
+      "top",
+      200,
+      {},
+    );
+    const endingKey = buildPredictionCatalogLoadResourceKey(
+      "kalshi",
+      "all",
+      "",
+      "ending",
+      200,
+      {},
+    );
+
+    expect(endingKey).not.toBe(topKey);
+    expect(resolvePredictionCatalogOptions("ending", { limit: 8 })).toEqual({
+      browseTab: "ending",
+      options: { limit: 8 },
+    });
+    expect(resolvePredictionCatalogOptions({ limit: 8 })).toEqual({
+      browseTab: "top",
+      options: { limit: 8 },
+    });
+  });
+
   test("reranks past the first events page instead of reusing the first-paint cache", async () => {
     attachPredictionMarketsPersistence(new MemoryPluginPersistence());
     const pagesFetched: string[] = [];

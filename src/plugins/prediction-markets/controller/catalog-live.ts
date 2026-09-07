@@ -17,6 +17,23 @@ export interface PredictionCatalogLiveTarget {
   noTokenId?: string;
 }
 
+function pushLiveTarget(
+  targets: PredictionCatalogLiveTarget[],
+  seen: Set<string>,
+  summary: PredictionListRow["representative"],
+  limit: number,
+): boolean {
+  if (summary.venue !== "polymarket" || !summary.yesTokenId) return false;
+  if (seen.has(summary.key)) return false;
+  seen.add(summary.key);
+  targets.push({
+    key: summary.key,
+    yesTokenId: summary.yesTokenId,
+    noTokenId: summary.noTokenId,
+  });
+  return targets.length >= limit;
+}
+
 export function collectPredictionCatalogLiveTargets(
   rows: readonly PredictionListRow[],
   limit = MAX_PREDICTION_CATALOG_LIVE_MARKETS,
@@ -24,16 +41,13 @@ export function collectPredictionCatalogLiveTargets(
   const targets: PredictionCatalogLiveTarget[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    const summary = row.representative;
-    if (summary.venue !== "polymarket" || !summary.yesTokenId) continue;
-    if (seen.has(summary.key)) continue;
-    seen.add(summary.key);
-    targets.push({
-      key: summary.key,
-      yesTokenId: summary.yesTokenId,
-      noTokenId: summary.noTokenId,
-    });
-    if (targets.length >= limit) break;
+    const focus = row.markets.find((market) => market.key === row.focusMarketKey) ?? row.representative;
+    if (pushLiveTarget(targets, seen, focus, limit)) return targets;
+  }
+  for (const row of rows) {
+    for (const market of row.markets) {
+      if (pushLiveTarget(targets, seen, market, limit)) return targets;
+    }
   }
   return targets;
 }
@@ -58,10 +72,14 @@ export function quoteFromBbo(
 ): PredictionCatalogQuote {
   const yesBid = isYes ? bestBid : (bestAsk == null ? null : Math.max(0, 1 - bestAsk));
   const yesAsk = isYes ? bestAsk : (bestBid == null ? null : Math.max(0, 1 - bestBid));
+  const yesPrice = yesBid != null && yesAsk != null
+    ? (yesBid + yesAsk) / 2
+    : null;
   return {
     yesBid,
     yesAsk,
     spread: spread ?? (yesBid != null && yesAsk != null ? yesAsk - yesBid : null),
+    ...(yesPrice != null ? { yesPrice } : {}),
   };
 }
 

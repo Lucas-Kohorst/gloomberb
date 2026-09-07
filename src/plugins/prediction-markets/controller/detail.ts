@@ -31,15 +31,24 @@ interface UsePredictionDetailDataOptions {
   historyRange: PredictionHistoryRange;
   pollLiveData: boolean;
   selectedSummary: PredictionMarketSummary | null;
-  setCatalogCache: PredictionCatalogCacheSetter;
+  /**
+   * Where a loaded detail's summary lands for the catalog/list view that owns
+   * the shared cache. Optional: a pane that only shows the one market's detail
+   * (e.g. the prediction-overview research tab) has no catalog to update, so it
+   * can rely on the no-op default instead of owning throwaway state.
+   */
+  setCatalogCache?: PredictionCatalogCacheSetter;
 }
+
+/** No-op default so callers without a catalog cache (research overview) can omit the setter. */
+const NOOP_CATALOG_CACHE_SETTER: PredictionCatalogCacheSetter = (current) => current;
 
 export function usePredictionDetailData({
   focused,
   historyRange,
   pollLiveData,
   selectedSummary,
-  setCatalogCache,
+  setCatalogCache = NOOP_CATALOG_CACHE_SETTER,
 }: UsePredictionDetailDataOptions) {
   const [detailCache, setDetailCache] = useState<
     Record<string, PredictionMarketDetail>

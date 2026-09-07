@@ -1,4 +1,4 @@
-import type { PaneSettingsDef } from "../../../types/plugin";
+import type { PaneSettingsDef, TickerResearchTabPrefetchContext } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { OptionsView } from "./view";
@@ -12,6 +12,25 @@ import {
   withLiveStreamingSetting,
 } from "../shared/live-streaming";
 import { OPTION_FIELD_DEFS, resolveOptionFieldIds } from "./table";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
+import { isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
+import { resolveOptionsTarget } from "../../../utils/options";
+
+function prefetchTickerOptions({ ticker }: TickerResearchTabPrefetchContext): void {
+  const target = resolveOptionsTarget(ticker);
+  if (!target) return;
+  const coordinator = getSharedMarketDataCoordinator();
+  if (!coordinator) return;
+  void coordinator.loadOptions({
+    instrument: {
+      symbol: target.effectiveTicker,
+      exchange: target.effectiveExchange,
+      brokerId: target.instrument?.brokerId,
+      brokerInstanceId: target.instrument?.brokerInstanceId,
+      instrument: target.instrument,
+    },
+  }).catch(() => {});
+}
 
 function optionsSettings(settings: Record<string, unknown>): PaneSettingsDef {
   return {
@@ -109,7 +128,10 @@ export const optionsModule: PluginModule = {
       name: "Options",
       order: 35,
       component: OptionsView,
-      isVisible: ({ hasOptionsChain }) => hasOptionsChain,
+      isVisible: ({ hasOptionsChain, ticker }) => (
+        hasOptionsChain && (!ticker || !isPredictionMarketTicker(ticker))
+      ),
+      prefetch: prefetchTickerOptions,
     });
   },
 };

@@ -1,3 +1,4 @@
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { EsgPane } from "./pane";
@@ -9,7 +10,7 @@ export const esgModule: PluginModule = {
       name: "ESG",
       order: 39,
       component: EsgPane,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
     });
   },
 
