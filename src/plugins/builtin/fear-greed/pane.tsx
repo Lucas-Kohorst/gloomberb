@@ -6,7 +6,7 @@ import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { FearGreedData } from "./data";
-import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
+import { useUpdatedAgo } from "../shared/auto-refresh";
 import { getCachedFearGreedData, loadFearGreed } from "./cache";
 import { IndicatorChart, IndexHistoryChart, PreviousScoreGrid } from "./charts";
 import {
@@ -68,8 +68,6 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   const desktopSummaryRailWidth = stackDesktopSummary ? Math.max(18, Math.min(width - 2, 42)) : 26;
   const desktopSummaryGaugeMaxWidth = Math.max(1, Math.min(width - 2, 50));
   const desktopSummaryGaugeMinWidth = Math.min(34, desktopSummaryGaugeMaxWidth);
-
-  useAutoRefresh(lastRefreshed, refresh);
 
   useShortcut((event) => {
     if (!focused) return;

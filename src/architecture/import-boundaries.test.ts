@@ -7,6 +7,21 @@ const RUNTIME_EXTENSIONS = new Set([".ts", ".tsx"]);
 const IMPORT_PATTERN = /\b(?:import|export)\s+(?:[^'"]*?\s+from\s+)?["']([^"']+)["']|import\(["']([^"']+)["']\)/g;
 const OPENTUI_JSX_PATTERN = /<\s*\/?\s*(box|text|scrollbox|input|textarea|span|strong|u)(?=[\s>/])/g;
 
+/**
+ * Blanks out regions where intrinsic-looking tags are legitimate so the
+ * boundary scan only sees real component positions:
+ * - `<svg>…</svg>` blocks: SVG has its own `<text>` element, which is the
+ *   correct primitive for chart labels (and the only one that works there).
+ * - Block and full-line comments: prose like "filings wrap headings in <u>"
+ *   is documentation, not markup.
+ */
+function blankNonComponentRegions(source: string): string {
+  return source
+    .replace(/<svg[\s\S]*?<\/svg>/g, (match) => " ".repeat(match.length))
+    .replace(/\/\*[\s\S]*?\*\//g, (match) => " ".repeat(match.length))
+    .replace(/^[ \t]*\/\/.*$/gm, (match) => " ".repeat(match.length));
+}
+
 function isRuntimeSource(path: string): boolean {
   if (path.includes(".test.")) return false;
   if (path.includes("test-helpers.")) return false;
@@ -117,7 +132,7 @@ describe("import boundaries", () => {
       const relativeFile = relative(process.cwd(), file);
       if (relativeFile.startsWith("src/renderers/")) continue;
 
-      const source = await Bun.file(file).text();
+      const source = blankNonComponentRegions(await Bun.file(file).text());
       for (const match of source.matchAll(OPENTUI_JSX_PATTERN)) {
         violations.push({ file: relativeFile, tag: match[1] ?? "" });
       }

@@ -113,10 +113,11 @@ describe("breaking news notifications", () => {
     await settle();
 
     const old = article("old", "Old headline");
+    const mid = article("mid", "Older fresh");
     const fresh = article("new", "New headline");
 
     h.emit([old]);
-    h.emit([fresh, old]);
+    h.emit([fresh, mid, old]);
 
     expect(h.notifications).toHaveLength(1);
     expect(h.notifications[0]).toMatchObject({

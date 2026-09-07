@@ -1,5 +1,5 @@
 import type { DataTableColumn } from "../../../components";
-import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
+import { compareSortValues, type SortDirection, nextSortPreference as nextSharedSortPreference } from "../../../utils/sort-values";
 import { MARKET_SUMMARY_SYMBOLS, type MarketSummaryQuote, type ScreenerCategory, type ScreenerQuote } from "./screener";
 
 export type TabId = "gainers" | "losers" | "actives" | "trending";

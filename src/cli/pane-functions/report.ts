@@ -29,6 +29,11 @@ import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { resolveChartSpecData } from "../../time-series/resolve";
+import {
+  loadAdjacentIndexSeries,
+  loadPredictionMarketSeries,
+} from "../../time-series/hooks";
+import { buildCorrelationChartSpec } from "../../plugins/builtin/correlation/symbols";
 import { createChartSeriesResolver } from "../../capabilities";
 import { getSharedRegistry } from "../../plugins/registry";
 import { formatTimestamp } from "../helpers";
@@ -268,7 +273,9 @@ async function buildChartComposerReport(
       ? publicTickerKey(entry.source.instrument.symbol, entry.source.instrument.exchange)
       : entry.source.kind === "economic"
         ? `FRED:${entry.source.seriesId}`
-        : `CAP:${entry.source.capabilityId}:${entry.source.seriesId}`];
+        : entry.source.kind === "capability"
+          ? `CAP:${entry.source.capabilityId}:${entry.source.seriesId}`
+          : entry.label ?? entry.id];
   });
   const rowCount = series.reduce((count, entry) => count + entry.observations.length, 0);
   const tableRows = series.map((entry) => {

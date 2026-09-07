@@ -81,6 +81,7 @@ describe("hosted user config persist", () => {
       settings: { chartSpec: { id: "custom-spec" } },
       binding: { kind: "none" },
     });
+    home.floating.push({ instanceId: "chart-composer:custom", x: 2, y: 2, width: 40, height: 12 });
     config.layouts[0] = { ...config.layouts[0]!, layout: home };
     config.layout = home;
     writeHostedUserConfig(config);

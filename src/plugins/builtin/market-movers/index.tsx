@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataTableView, EmptyState, Tabs, usePaneFooter, type DataTableKeyEvent } from "../../../components";
 import { resolveVisibleColumns } from "../../../components/data-table/column-settings";
 import type { PaneProps } from "../../../types/plugin";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { PluginModule } from "../plugin-module";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import { usePaneInstance } from "../../../state/app/context";

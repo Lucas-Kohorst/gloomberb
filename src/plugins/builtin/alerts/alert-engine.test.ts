@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateAlert, createAlert, editAlert, rearmAlert, serializeAlerts, deserializeAlerts } from "./alert-engine";
+import {
+  createAlert,
+  deserializeAlerts,
+  editAlert,
+  evaluateAlert,
+  evaluateExDivAlert,
+  evaluateHaltedAlert,
+  evaluateShortFloatAlert,
+  rearmAlert,
+  serializeAlerts,
+} from "./alert-engine";
+import {
+  parseAlertCommandValues,
+  parseAlertShortcutValues,
+  parseWeatherAlertCommandValues,
+} from "./command";
 
 describe("evaluateAlert", () => {
   test("above: triggers when price exceeds target", () => {

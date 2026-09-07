@@ -27,12 +27,10 @@ import {
   loadAlerts,
   saveAlerts,
 } from "./storage";
-import { fetchMarketHalts } from "../market-halts/client";
-import { fetchShortInterest } from "../short-interest/client";
-import { fetchExDividendDate } from "../dividend-yield/client";
 import { canonicalWeatherStationId } from "../weather/stations";
 import { evaluateWeatherAlert } from "./weather-alert";
 import type { WeatherAlertCondition } from "./weather";
+import { isPriceAlertCondition } from "./types";
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let pollInFlight = false;

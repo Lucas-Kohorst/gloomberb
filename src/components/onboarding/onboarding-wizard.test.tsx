@@ -731,9 +731,12 @@ describe("OnboardingWizard", () => {
     expect(testSetup.captureCharFrame()).toContain("Your workspace is ready");
 
     await emitKeypress({ name: "return", sequence: "\r" });
-    for (let index = 0; index < 20 && !completed; index += 1) {
+    // Deadline-style budget: tick-count loops with sleep(0) starve under
+    // `bun test --parallel`, where the wizard's async completion (including a
+    // real config write) competes with other workers for the loop.
+    for (let index = 0; index < 400 && !completed; index += 1) {
       await act(async () => {
-        await Bun.sleep(0);
+        await Bun.sleep(5);
         await testSetup!.renderOnce();
       });
     }
@@ -781,9 +784,9 @@ describe("OnboardingWizard", () => {
       await testSetup!.renderOnce();
     });
 
-    for (let index = 0; index < 30 && !completed; index += 1) {
+    for (let index = 0; index < 400 && !completed; index += 1) {
       await act(async () => {
-        await Bun.sleep(0);
+        await Bun.sleep(5);
         await testSetup!.renderOnce();
       });
     }

@@ -6,7 +6,6 @@ import {
   Tabs,
   useMetricTreemapLayout,
   usePaneFooter,
-  useUpdatedAgo,
   type MetricTreemapDirection,
   type MetricTreemapItem,
 } from "../../../components";
@@ -45,12 +44,6 @@ import {
   overlayScreenerQuoteEntries,
   resolveScreenerQuoteFeedStatus,
 } from "../shared/screener-live-quotes";
-
-function formatMoneyCompact(value: number | null | undefined, currency: string): string {
-  if (value == null) return "—";
-  if (currency.toUpperCase() === "USD") return `$${formatCompact(value)}`;
-  return `${formatCompact(value)} ${currency}`;
-}
 
 function sizeLabel(asset: MarketHeatmapAsset): string | null {
   if (asset.size == null) return null;
@@ -238,8 +231,6 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
     const target = findMetricTreemapNeighbor(navigationTiles, selectedSymbol, direction);
     if (target) setSelectedSymbol(target.item.data.symbol);
   }, [navigationTiles, selectedSymbol]);
-  const updatedAgo = useUpdatedAgo(lastUpdated);
-
   useShortcut((event) => {
     if (!focused) return;
     if (isPlainKey(event, "r")) {

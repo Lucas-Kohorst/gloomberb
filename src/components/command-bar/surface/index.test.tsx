@@ -220,8 +220,9 @@ describe("CommandBar", () => {
     await testSetup.renderOnce();
     const frame = await waitForFrameToContain("Account Management");
     expect(frame).not.toMatch(/\n\s*Profile\s*(?:\n|$)/);
-    expect(frame.indexOf("Account Management")).toBeLessThan(frame.indexOf("Add Broker Account"));
 
+    // The Config section leads the list, so walk down to the pane row.
+    await emitKeypress(testSetup, { name: "down" });
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
 
     expect(created).toEqual([{ templateId: "account-management-pane", options: undefined }]);

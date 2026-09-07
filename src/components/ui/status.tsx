@@ -183,12 +183,12 @@ export function PaneStatusBody({
   emptyMessage,
   children,
 }: PaneStatusBodyProps) {
-  if (error) {
+  if (error && !isNoDataError(error)) {
     return (
       <Box paddingX={1} paddingY={1} data-gloom-status="error">
         <EmptyState
-          title={subject ? unavailableText(subject) : error}
-          message={subject ? error : undefined}
+          title={subject ? unavailableText(subject) : dataErrorMessage(error)}
+          message={subject ? dataErrorMessage(error) : undefined}
         />
       </Box>
     );

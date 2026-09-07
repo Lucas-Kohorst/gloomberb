@@ -19,6 +19,7 @@ export interface NoteFileEntry {
 }
 
 const QUICK_NOTES_INDEX = "__quick-notes-index__";
+const STORAGE_PREFIX = "gloomberb:notes:";
 const LOCAL_TIMESTAMP_KEY = "gloomberb:notes:__updated-at__";
 
 function joinPath(...parts: string[]): string {
@@ -99,6 +100,11 @@ export class NotesFiles {
 
   private pathFor(symbol: string): string {
     return joinPath(this.dataDir, `${symbol}.md`);
+  }
+
+  private hostedUserId(): string | null {
+    if (!isHostedNotesDir(this.dataDir)) return null;
+    return hostedNotesUserIdFromDataDir(this.dataDir);
   }
 
   /**

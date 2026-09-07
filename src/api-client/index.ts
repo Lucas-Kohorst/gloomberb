@@ -719,14 +719,6 @@ class GloomApiClient {
     return this.data.getCloudEconomicCalendar();
   }
 
-  async getCloudEquityDiagnostic(
-    symbol: string,
-    exchange?: string,
-    mode: CloudEquityDiagnosticMode = "cache-first",
-  ): Promise<CloudEquityDiagnosticResult> {
-    return this.data.getCloudEquityDiagnostic(symbol, exchange, mode);
-  }
-
   async getCloudFredSeries(
     seriesId: string,
     params: CloudFredSeriesParams = {},

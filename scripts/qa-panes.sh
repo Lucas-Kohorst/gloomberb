@@ -33,6 +33,8 @@ if [ ! -f "$HOME_DIR/.gloomberb/config.json" ]; then
     mkdirSync(dir, { recursive: true });
     const config = createDefaultConfig(dir);
     config.onboardingComplete = true;
+    // Isolated QA homes must not clone extracted plugins from GitHub.
+    config.seededPlugins = ["substack", "ibkr", "ibkr-gateway"];
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));
   '
 fi

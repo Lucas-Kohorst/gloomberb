@@ -43,7 +43,7 @@ import {
   OnboardingTitle,
   type OnboardingSectionId,
 } from "./onboarding-frame";
-import { ACCOUNT_CHOICE_IDS } from "../../plugins/builtin/cloud/auth-model";
+import { accountChoiceIds } from "../../plugins/builtin/cloud/auth-model";
 import { useOnboardingAccount } from "./wizard-account";
 import { useOnboardingBrokerSync } from "./wizard-broker-sync";
 import {

@@ -11,6 +11,12 @@ export interface PathRule {
 
 export const ALWAYS_TESTS = [
   "src/plugins/catalog-ui.test.ts",
+  "src/plugins/builtin/plugin-marketplace/model.test.ts",
+];
+
+/** Live pane.show always opens these, even when the diff did not touch them. */
+export const ALWAYS_PANES = [
+  "plugin-marketplace",
 ];
 
 export const PATH_RULES: PathRule[] = [
@@ -65,7 +71,7 @@ export const PATH_RULES: PathRule[] = [
   {
     match: /^src\/plugins\/builtin\/plugin-marketplace\//,
     panes: ["plugin-marketplace"],
-    tests: [],
+    tests: ["src/plugins/builtin/plugin-marketplace"],
     fn: [],
   },
   {
@@ -129,7 +135,7 @@ export function resolveExistingTests(root: string, candidates: readonly string[]
 
 export function planFromFiles(root: string, files: readonly string[]): QaPlan {
   const tests = new Set<string>(ALWAYS_TESTS);
-  const panes = new Set<string>();
+  const panes = new Set<string>(ALWAYS_PANES);
   const fn = new Set<string>(ALWAYS_FN);
 
   for (const file of files) {

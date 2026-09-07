@@ -369,7 +369,7 @@ export function DataTableView<
       || previous.key !== current.key;
     const selectedRowAppeared = !previous?.resolved && current.resolved;
     if (selectionChanged || selectedRowAppeared) {
-      requestSelectionScroll(effectiveSelectedIndex);
+      requestSelectionScroll(selectedIndexFromSelection);
     }
   }, [
     clearSelectionScrollTarget,

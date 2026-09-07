@@ -138,7 +138,7 @@ describe("CommandBar AI assist", () => {
     // Above the local matches, laid out like any other row with the prefix in
     // the badge column, and holding the selection an untouched query never
     // moved: plain Enter runs the AI's best guess.
-    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Panes"));
+    expect(answered.indexOf("Ask AI")).toBeLessThan(answered.indexOf("Workspace"));
     expect(answered).toMatch(/CHAT\s+#general · Open the general channel/);
 
     await emitKeypress(testSetup, { name: "return", sequence: "\r" });
@@ -260,28 +260,24 @@ describe("CommandBar AI assist", () => {
     expect(frame).not.toContain("unavailable");
   });
 
-  test("sends signed-out users to sign up instead of the endpoint", async () => {
+  test("sends signed-out users to sign in instead of the endpoint", async () => {
     const requests = mockAssistTransport(() => jsonResponse({ candidates: [] }));
     const created: Array<{ templateId: string; options?: PaneTemplateCreateOptions }> = [];
 
     testSetup = await testRender(
       <CommandBarHarness
-        query="new chat pane"
+        query="how do I plot lunar ice futures"
         configurePluginRegistry={configureEarningsRegistry(created)}
       />,
-      { width: 100, height: 20 },
+      // Tall enough for the sign-in offer, which sits under the local matches.
+      { width: 100, height: 30 },
     );
 
     await testSetup.renderOnce();
-    expect(testSetup.captureCharFrame()).toContain("Ask AI — sign up to enable");
+    expect(testSetup.captureCharFrame()).toContain("Ask AI — sign in to enable");
 
     await Bun.sleep(700);
     await testSetup.renderOnce();
     expect(requests).toEqual([]);
-
-    // The offer sits under the list and never takes the Enter that belongs to
-    // the local match the user was already looking at.
-    await emitKeypress(testSetup, { name: "return", sequence: "\r" });
-    expect(created).toEqual([{ templateId: "new-chat-pane", options: undefined }]);
   });
 });

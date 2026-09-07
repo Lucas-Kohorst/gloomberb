@@ -1,7 +1,6 @@
 import {
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
-  applyDrop,
   floatAtRect,
   getDockLeafLayouts,
   simulateDrop,
@@ -457,11 +456,8 @@ export function finalizePaneDragRelease(
   previewRect: FloatingRect,
   dockPreview: DragPreview | null,
 ): LayoutConfig {
-  if (dockPreview?.kind === "dock") {
-    return applyDrop(layout, paneId, dockPreview.target);
-  }
-  if (dockPreview?.kind === "snap") {
-    return floatAtRect(layout, paneId, dockPreview.rect);
+  if (dockPreview) {
+    return dockPreview.layout;
   }
   return floatAtRect(layout, paneId, previewRect);
 }

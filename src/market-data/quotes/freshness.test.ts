@@ -196,6 +196,61 @@ describe("quote freshness", () => {
     ).toBe(true);
   });
 
+  test("keeps a Friday US close usable through a holiday weekend", () => {
+    // Friday 2026-09-04 close; Monday 2026-09-07 is Labor Day, so the market
+    // stays closed even though the wall clock says PRE session.
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "SPY",
+          currency: "USD",
+          price: 770.19,
+          lastUpdated: Date.parse("2026-09-04T20:00:00Z"),
+          listingExchangeName: "PCX",
+          exchangeName: "PCX",
+          marketState: "CLOSED",
+        }),
+        Date.parse("2026-09-07T10:47:00Z"),
+      ),
+    ).toBe(false);
+  });
+
+  test("treats a multi-session-old US close as stale once trading resumes", () => {
+    // Same Friday close, but now it is Tuesday: the holiday weekend has passed
+    // and the quote is two sessions behind.
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "SPY",
+          currency: "USD",
+          price: 770.19,
+          lastUpdated: Date.parse("2026-09-04T20:00:00Z"),
+          listingExchangeName: "PCX",
+          exchangeName: "PCX",
+          marketState: "CLOSED",
+        }),
+        Date.parse("2026-09-08T10:47:00Z"),
+      ),
+    ).toBe(true);
+  });
+
+  test("still rejects prior-date quotes the provider marks as an active session", () => {
+    expect(
+      isQuoteStaleForCurrentSession(
+        quote({
+          symbol: "ALAB",
+          currency: "USD",
+          lastUpdated: Date.parse("2026-09-04T20:00:00Z"),
+          listingExchangeName: "NASDAQ",
+          exchangeName: "NASDAQ",
+          marketState: "REGULAR",
+          preMarketPrice: 42,
+        }),
+        Date.parse("2026-09-08T13:00:00Z"),
+      ),
+    ).toBe(true);
+  });
+
   test("treats prior-date regular-session quotes as stale after the local exchange reopens", () => {
     expect(
       isQuoteStaleForCurrentSession(
