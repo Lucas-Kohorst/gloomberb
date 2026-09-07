@@ -31,10 +31,7 @@ export function filingKindLabel(filing: CftcFiling): string {
   return CFTC_KIND_LABELS[filingKind(filing)];
 }
 
-/**
- * List rows only show time, org, and title. Kind and a non-empty status have
- * to live in the title or two filings for the same product look identical.
- */
+/** Compact title for shares and pop-outs. The table keeps type and status as columns. */
 export function filingListTitle(filing: CftcFiling): string {
   const kind = filingKindLabel(filing);
   const status = filing.status.trim();
@@ -42,8 +39,11 @@ export function filingListTitle(filing: CftcFiling): string {
   return `${prefix} | ${filing.title}`;
 }
 
+/** When Adjacent first ingested the row, matching their SEEN column. */
 export function filingListTimestamp(filing: CftcFiling): Date {
-  return filing.firstSeenAt ?? filing.statusDate;
+  if (filing.firstSeenAt && filing.firstSeenAt.getTime() > 0) return filing.firstSeenAt;
+  if (filing.lastSeenAt && filing.lastSeenAt.getTime() > 0) return filing.lastSeenAt;
+  return filing.statusDate;
 }
 
 /**
