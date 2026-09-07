@@ -4,6 +4,7 @@ import type { TickerRecord } from "../../../../types/ticker";
 import {
   needsVisibleQuoteWarmup,
   needsVisibleQuoteWatchdogRefresh,
+  visibleWarmupSignature,
   VISIBLE_QUOTE_STREAM_MAX_AGE_MS,
   warmupQuoteWithSnapshot,
 } from "./data";
@@ -86,5 +87,49 @@ describe("portfolio visible quote warmup", () => {
 
     expect(warmupQuoteWithSnapshot(crypto, true, sort)).toBe(true);
     expect(warmupQuoteWithSnapshot(equity, true, sort)).toBe(true);
+  });
+
+  test("does not change ETH snapshot warmup identity when BTC ticks", () => {
+    const btc: TickerRecord = {
+      metadata: {
+        ticker: "BTC-USD",
+        exchange: "CCC",
+        currency: "USD",
+        name: "Bitcoin USD",
+        assetCategory: "CRYPTO",
+        positions: [],
+        portfolios: [],
+        watchlists: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    const eth: TickerRecord = {
+      metadata: {
+        ticker: "ETH-USD",
+        exchange: "CCC",
+        currency: "USD",
+        name: "Ethereum USD",
+        assetCategory: "CRYPTO",
+        positions: [],
+        portfolios: [],
+        watchlists: [],
+        custom: {},
+        tags: [],
+      },
+    };
+    const requirements = { fundamentals: true, profile: false, priceHistory: true };
+    const before = new Map<string, TickerFinancials>([
+      ["BTC-USD", financials(quote({ symbol: "BTC-USD", price: 111_000, lastUpdated: 1_700_000_000_000 }))],
+      ["ETH-USD", financials(quote({ symbol: "ETH-USD", price: 4_200, lastUpdated: 1_700_000_000_000 }))],
+    ]);
+    const after = new Map<string, TickerFinancials>([
+      ["BTC-USD", financials(quote({ symbol: "BTC-USD", price: 111_250, lastUpdated: 1_700_000_000_400 }))],
+      ["ETH-USD", financials(quote({ symbol: "ETH-USD", price: 4_200, lastUpdated: 1_700_000_000_000 }))],
+    ]);
+
+    expect(visibleWarmupSignature([btc, eth], before, requirements)).toBe(
+      visibleWarmupSignature([btc, eth], after, requirements),
+    );
   });
 });
