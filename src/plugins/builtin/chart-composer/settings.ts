@@ -18,7 +18,7 @@ import {
   applySeriesStyle,
   buildCustomChartPreset,
   buildEmptyChartPreset,
-  buildPriceChartPreset,
+  buildBoundChartPreset,
   chartSeriesLabel,
   formatSeriesExpression,
   getCompatibleSeriesStyles,
@@ -66,7 +66,7 @@ export const CHART_SETTING_KEYS = {
 } as const;
 
 function fallbackSpec(symbol: string | null | undefined): ChartSpec {
-  return symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset();
+  return symbol ? buildBoundChartPreset(symbol) : buildEmptyChartPreset();
 }
 
 function sourceKey(series: ChartSeriesSpec): string {

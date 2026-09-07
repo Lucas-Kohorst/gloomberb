@@ -277,6 +277,30 @@ describe("chart spec normalization and validation", () => {
     expect(getTimeSeriesField("income.revenue")?.id).toBe("fundamental.totalRevenue");
     expect(getTimeSeriesField("valuation.evEbitda")?.unitGroup).toBe("multiple");
   });
+
+  test("retains persisted single-input derived studies", () => {
+    const normalized = normalizeChartSpec({
+      viewport: { range: "1Y", resolution: "1d" },
+      panels: [{ id: "main" }, { id: "derived" }],
+      series: [{
+        id: "price",
+        source: { kind: "security", instrument: { symbol: "AAPL" }, fieldId: "market.close" },
+        style: "line",
+        transform: "raw",
+        axis: "left",
+        panelId: "main",
+        interpolation: "none",
+      }],
+      studies: [
+        study("drawdown", "drawdown", ["price"]),
+        study("volatility", "volatility", ["price"], { period: 20 }),
+        study("distance", "distance", ["price"], { period: 50 }),
+      ],
+    });
+
+    expect(normalized.studies.map(({ kind }) => kind)).toEqual(["drawdown", "volatility", "distance"]);
+    expect(validateChartSpec(normalized).valid).toBe(true);
+  });
 });
 
 describe("study resolution", () => {
@@ -308,6 +332,38 @@ describe("study resolution", () => {
     expect(correlations.length).toBeGreaterThan(0);
     expect(correlations.at(-1)?.value).toBeCloseTo(1, 10);
     expect(maxStudyWarmupPoints(specs)).toBe(33);
+  });
+
+  test("annualizes realized volatility from rolling log returns", () => {
+    const input = resolved("price");
+    const prices = [100, 101, 99, 102];
+    input.points = prices.map((value, index) => {
+      const date = new Date(Date.UTC(2024, 0, index + 1));
+      return {
+        date,
+        observedAt: date,
+        availableAt: date,
+        value,
+        close: value,
+      };
+    });
+
+    const result = resolveStudies([input], [
+      study("volatility", "volatility", ["price"], { period: 2 }),
+    ]);
+    const volatility = result.series[0]!;
+    const returns = [
+      Math.log(101 / 100) * 100,
+      Math.log(99 / 101) * 100,
+    ];
+    const mean = (returns[0]! + returns[1]!) / returns.length;
+    const dailyVolatility = Math.sqrt(
+      returns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (returns.length - 1),
+    );
+
+    expect(volatility.points[0]?.value).toBeCloseTo(dailyVolatility * Math.sqrt(252), 10);
+    expect(volatility.label).toBe("Realized Volatility (2D annualized) — PRICE");
+    expect(volatility.unit).toBe("%");
   });
 
   test("omits empty-volume noise while preserving analytical history warnings", () => {
@@ -455,5 +511,62 @@ describe("study resolution", () => {
     expect(result.warnings).toEqual([
       "spread: spread cannot subtract USD from USD/share; choose inputs with matching units.",
     ]);
+  });
+
+  test("resolves drawdown, rolling volatility, and distance from the moving average", () => {
+    const input = resolved("price");
+    input.points = [100, 110, 100, 110].map((value, index) => {
+      const date = new Date(Date.UTC(2025, 0, index + 1));
+      return {
+        date,
+        observedAt: date,
+        availableAt: date,
+        value,
+        close: value,
+      };
+    });
+
+    const result = resolveStudies([input], [
+      study("drawdown", "drawdown", ["price"]),
+      study("volatility", "volatility", ["price"], { period: 2 }),
+      study("distance", "distance", ["price"], { period: 2 }),
+    ]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.series.find(({ id }) => id === "drawdown")).toMatchObject({
+      unit: "%",
+      unitGroup: "percent",
+    });
+    expect(result.series.find(({ id }) => id === "drawdown")?.points.map(({ value }) => value))
+      .toEqual([0, 0, -9.090909090909092, 0]);
+    expect(result.series.find(({ id }) => id === "volatility")).toMatchObject({
+      unit: "%",
+      unitGroup: "percent",
+    });
+    expect(result.series.find(({ id }) => id === "volatility")?.points).toHaveLength(2);
+    const returns = [Math.log(110 / 100) * 100, Math.log(100 / 110) * 100];
+    const returnMean = (returns[0]! + returns[1]!) / returns.length;
+    const expectedAnnualizedVolatility = Math.sqrt(
+      returns.reduce((sum, value) => sum + (value - returnMean) ** 2, 0) / (returns.length - 1),
+    ) * Math.sqrt(252);
+    expect(result.series.find(({ id }) => id === "volatility")?.points[0]?.value)
+      .toBeCloseTo(expectedAnnualizedVolatility, 6);
+    expect(result.series.find(({ id }) => id === "volatility")?.label)
+      .toBe("Realized Volatility (2D annualized) — PRICE");
+    expect(result.series.find(({ id }) => id === "distance")).toMatchObject({
+      unit: "%",
+      unitGroup: "percent",
+    });
+    expect(result.series.find(({ id }) => id === "distance")?.points.map(({ value }) => value))
+      .toEqual([
+        4.761904761904762,
+        -4.761904761904762,
+        4.761904761904762,
+      ]);
+    expect(maxStudyWarmupPoints([
+      study("volatility", "volatility", ["price"], { period: 2 }),
+      study("distance", "distance", ["price"], { period: 2 }),
+    ])).toBe(2);
   });
 });

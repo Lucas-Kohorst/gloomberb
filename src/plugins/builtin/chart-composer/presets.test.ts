@@ -8,27 +8,34 @@ import {
 } from "./chart-spec";
 import {
   appendChartSeries,
+  applyChartIdeaToSpec,
   buildComparisonChartPreset,
   buildCustomChartPreset,
   buildFundamentalChartPreset,
   buildIntradayPriceChartPreset,
+  buildBoundChartPreset,
   buildPriceChartPreset,
   buildSeriesSpec,
   applySeriesStyle,
   applySeriesTimestampMode,
+  formatCorrelationExpression,
+  formatChartStudyExpression,
   getSelectedBuiltinStudies,
   getSelectedPairStudies,
+  isChartIdeaExpression,
   formatSeriesExpression,
   parseBinarySeriesExpression,
   parseChartExpression,
+  parseCorrelationExpression,
   parseSeriesExpression,
+  parseStudyExpression,
   rebindChartSecuritySymbol,
   resolveChartFieldAlias,
   setBuiltinStudies,
   setPairStudies,
 } from "./presets";
 import { applyChartComposerCapabilityOptions } from "./cli-options";
-import { defaultChartSeriesPresentation } from "../../../time-series/spec";
+import { defaultChartSeriesPresentation, validateChartSpec } from "../../../time-series/spec";
 
 describe("chart composer expressions", () => {
   test("round-trips bounded provider-neutral capability expressions", () => {
@@ -91,6 +98,17 @@ describe("chart composer expressions", () => {
       "aapl-market-ohlcv-3",
       "aapl-market-ohlcv-3-2",
     ]);
+  });
+
+  test("bound research charts keep POLY/KALSHI as prediction series", () => {
+    const poly = buildBoundChartPreset("POLY:clarity-act-signed-into-law-in-2026");
+    expect(poly.series[0]?.source).toMatchObject({
+      kind: "prediction-market",
+      venue: "polymarket",
+      marketId: "clarity-act-signed-into-law-in-2026",
+    });
+    const equity = buildBoundChartPreset("AAPL");
+    expect(equity.series[0]?.source).toMatchObject({ kind: "security", instrument: { symbol: "AAPL" } });
   });
 
   test("places appended financial data in a synchronized panel without rewriting authored state", () => {
@@ -415,6 +433,201 @@ describe("chart composer expressions", () => {
       style: "line",
       interpolation: "none",
     });
+  });
+});
+
+describe("chart composer study and derived expressions", () => {
+  test("parses DD:, VOL:, and DIST: study expressions", () => {
+    expect(parseStudyExpression("DD:AAPL:price")).toEqual({
+      kind: "drawdown",
+      source: { kind: "security", symbol: "AAPL", fieldId: "market.ohlcv" },
+    });
+    expect(parseStudyExpression("VOL:SPY")).toEqual({
+      kind: "volatility",
+      source: { kind: "security", symbol: "SPY", fieldId: "market.ohlcv" },
+    });
+    expect(parseStudyExpression("VOL:10:SPY")).toEqual({
+      kind: "volatility",
+      period: 10,
+      source: { kind: "security", symbol: "SPY", fieldId: "market.ohlcv" },
+    });
+    expect(parseStudyExpression("DIST:200:MSFT:price")).toEqual({
+      kind: "distance",
+      period: 200,
+      source: { kind: "security", symbol: "MSFT", fieldId: "market.ohlcv" },
+    });
+    expect(parseStudyExpression("DD:FRED:CPIAUCSL")).toEqual({
+      kind: "drawdown",
+      source: { kind: "economic", provider: "fred", seriesId: "CPIAUCSL" },
+    });
+    expect(parseStudyExpression("XYZ:AAPL")).toBeNull();
+    expect(parseStudyExpression("VOL:0:SPY")).toBeNull();
+    expect(parseStudyExpression("VOL:99999:SPY")).toBeNull();
+  });
+
+  test("builds valid study presets with the source and a study on its own panel", () => {
+    for (const [text, expectedPanel, expectedKind] of [
+      ["DD:AAPL:price", "drawdown", "drawdown"],
+      ["VOL:SPY", "volatility", "volatility"],
+      ["DIST:200:MSFT:price", "distance", "distance"],
+    ] as const) {
+      const spec = buildCustomChartPreset(text);
+      expect(spec.series).toHaveLength(1);
+      expect(spec.studies).toHaveLength(1);
+      expect(spec.studies[0]!.kind).toBe(expectedKind);
+      expect(spec.studies[0]!.panelId).toBe(expectedPanel);
+      expect(spec.studies[0]!.inputSeriesIds).toEqual([spec.series[0]!.id]);
+      expect(validateChartSpec(spec).errors).toEqual([]);
+    }
+  });
+
+  test("study presets survive a spec serialization round-trip", () => {
+    for (const text of ["DD:AAPL:price", "VOL:10:SPY", "DIST:200:MSFT:price"]) {
+      const spec = buildCustomChartPreset(text);
+      const persisted = parseChartSpec(serializeChartSpec(spec));
+      expect(persisted, text).not.toBeNull();
+      expect(persisted?.studies[0]).toMatchObject({
+        kind: spec.studies[0]!.kind,
+        panelId: spec.studies[0]!.panelId,
+        inputSeriesIds: spec.studies[0]!.inputSeriesIds,
+      });
+    }
+  });
+
+  test("study expression text round-trips through its formatter", () => {
+    expect(formatChartStudyExpression(parseStudyExpression("DD:AAPL:price")!))
+      .toBe("DD:AAPL:market.ohlcv");
+    expect(formatChartStudyExpression(parseStudyExpression("VOL:10:SPY")!))
+      .toBe("VOL:10:SPY:market.ohlcv");
+    expect(parseStudyExpression(formatChartStudyExpression(parseStudyExpression("VOL:20:SPY")!)))
+      .toEqual(parseStudyExpression("VOL:SPY"));
+  });
+
+  test("parses and formats CORR(left, right) leg pairs", () => {
+    const parsed = parseCorrelationExpression("CORR(AAPL:price, MSFT:price)");
+    expect(parsed).toEqual({
+      left: { kind: "security", symbol: "AAPL", fieldId: "market.ohlcv" },
+      right: { kind: "security", symbol: "MSFT", fieldId: "market.ohlcv" },
+    });
+    expect(parseCorrelationExpression(formatCorrelationExpression(parsed!))).toEqual(parsed);
+    expect(parseCorrelationExpression("CORR(AAPL:price, MSFT:price")).toBeNull();
+  });
+
+  test("correlation presets keep both operands hidden behind the derived study", () => {
+    const spec = buildCustomChartPreset("CORR(AAPL:price, MSFT:price)");
+    expect(spec.series).toHaveLength(2);
+    expect(spec.series.every((series) => series.visible === false)).toBe(true);
+    expect(spec.studies).toHaveLength(1);
+    expect(spec.studies[0]!.kind).toBe("correlation");
+    expect(spec.studies[0]!.inputSeriesIds).toEqual(spec.series.map((series) => series.id));
+    expect(validateChartSpec(spec).errors).toEqual([]);
+  });
+
+  test("isChartIdeaExpression flags only study and correlation text", () => {
+    expect(isChartIdeaExpression("DD:AAPL:price")).toBe(true);
+    expect(isChartIdeaExpression("VOL:20:SPY")).toBe(true);
+    expect(isChartIdeaExpression("CORR(AAPL:price, MSFT:price)")).toBe(true);
+    expect(isChartIdeaExpression("AAPL:price")).toBe(false);
+    expect(isChartIdeaExpression("AAPL:price - MSFT:price")).toBe(false);
+    expect(isChartIdeaExpression("AAPL:price / MSFT:price")).toBe(false);
+  });
+
+  test("a third transform leg parses and coerces OHLC presentation to a line", () => {
+    expect(parseSeriesExpression("AAPL:revenue:yoy")).toEqual({
+      kind: "security",
+      symbol: "AAPL",
+      fieldId: "fundamental.totalRevenue",
+      transform: "yoy",
+    });
+    // the transform guard must not eat exchange-qualified symbols
+    expect(parseSeriesExpression("AAPL:XNAS:price")).toEqual({
+      kind: "security",
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      fieldId: "market.ohlcv",
+    });
+    const spec = buildCustomChartPreset("AAPL:price:percent");
+    expect(spec.series[0]!.transform).toBe("percent");
+    expect(spec.series[0]!.style).toBe("line");
+    expect(validateChartSpec(spec).errors).toEqual([]);
+    expect(parseSeriesExpression(formatSeriesExpression(spec.series[0]!))).toEqual({
+      kind: "security",
+      symbol: "AAPL",
+      fieldId: "market.ohlcv",
+      transform: "percent",
+    });
+    expect(parseSeriesExpression("AAPL:XNAS:revenue:yoy")).toEqual({
+      kind: "security",
+      symbol: "AAPL",
+      exchange: "NASDAQ",
+      fieldId: "fundamental.totalRevenue",
+      transform: "yoy",
+    });
+  });
+});
+
+describe("chart composer idea application onto an open spec", () => {
+  test("reuses a charted source instead of appending a second candle", () => {
+    const live = buildCustomChartPreset("AAPL:price, MSFT:price");
+    const dd = applyChartIdeaToSpec(live, "DD:AAPL:price");
+    expect(dd?.appended).toEqual([]);
+    expect(dd?.spec.series.map((series) => series.id)).toEqual([
+      "aapl-market-ohlcv-1",
+      "msft-market-ohlcv-2",
+    ]);
+    expect(dd?.spec.studies[0]).toMatchObject({
+      kind: "drawdown",
+      inputSeriesIds: ["aapl-market-ohlcv-1"],
+    });
+    expect(validateChartSpec(dd!.spec).errors).toEqual([]);
+  });
+
+  test("appends only the sources the chart does not already have", () => {
+    const live = buildCustomChartPreset("AAPL:price, MSFT:price");
+    const spread = applyChartIdeaToSpec(live, "AAPL:price - SPY:price");
+    expect(spread?.appended.map((series) => series.id)).toEqual(["spy-market-ohlcv-2"]);
+    expect(spread?.spec.series).toHaveLength(3);
+    expect(spread?.spec.studies[0]).toMatchObject({
+      kind: "spread",
+      inputSeriesIds: ["aapl-market-ohlcv-1", "spy-market-ohlcv-2"],
+    });
+    const ratio = applyChartIdeaToSpec(live, "AAPL:price / MSFT:price");
+    expect(ratio?.appended).toEqual([]);
+    expect(ratio?.spec.studies[0]!.kind).toBe("ratio");
+    const correlation = applyChartIdeaToSpec(live, "CORR(AAPL:price, MSFT:price)");
+    expect(correlation?.appended).toEqual([]);
+    expect(correlation?.spec.studies[0]!.kind).toBe("correlation");
+    expect(validateChartSpec(spread!.spec).errors).toEqual([]);
+    expect(validateChartSpec(ratio!.spec).errors).toEqual([]);
+    expect(validateChartSpec(correlation!.spec).errors).toEqual([]);
+  });
+
+  test("merges fresh study/formula panels and supersedes prior pair studies", () => {
+    const live = buildCustomChartPreset("AAPL:price / MSFT:price");
+    expect(live.panels.map((panel) => panel.id)).toEqual(["main", "formula"]);
+    const spread = applyChartIdeaToSpec(live, "AAPL:price - MSFT:price");
+    expect(spread?.spec.studies.map((study) => study.kind)).toEqual(["spread"]);
+    expect(spread?.spec.panels.map((panel) => panel.id)).toEqual(["main", "formula"]);
+    const drawdown = applyChartIdeaToSpec(spread!.spec, "DD:MSFT:price");
+    expect(drawdown?.spec.studies.map((study) => study.kind)).toEqual(["spread", "drawdown"]);
+    expect(drawdown?.spec.panels.map((panel) => panel.id)).toEqual(["main", "formula", "drawdown"]);
+    expect(validateChartSpec(drawdown!.spec).errors).toEqual([]);
+  });
+
+  test("keeps collision-safe ids when merging over repeated sources", () => {
+    const live = buildCustomChartPreset("AAPL:price");
+    const merged = applyChartIdeaToSpec(
+      applyChartIdeaToSpec(live, "DD:AAPL:price")!.spec,
+      "VOL:10:AAPL:price",
+    );
+    expect(merged?.spec.series).toHaveLength(1);
+    expect(merged?.spec.studies.map((study) => study.kind)).toEqual(["drawdown", "volatility"]);
+    expect(validateChartSpec(merged!.spec).errors).toEqual([]);
+  });
+
+  test("returns null for ordinary single-series text", () => {
+    expect(applyChartIdeaToSpec(buildCustomChartPreset("AAPL:price"), "MSFT:price")).toBeNull();
+    expect(applyChartIdeaToSpec(buildCustomChartPreset("AAPL:price"), "not an idea at all")).toBeNull();
   });
 });
 

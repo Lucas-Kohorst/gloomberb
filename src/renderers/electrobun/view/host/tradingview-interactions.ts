@@ -7,6 +7,10 @@
  * actually zooms the pane.
  */
 
+import type { TrackpadGestureKind } from "../../../../ui/host";
+
+export type { TrackpadGestureKind };
+
 export interface VisibleTimeRangeMs {
   start: number;
   end: number;
@@ -58,6 +62,64 @@ export function wheelZoomFactorFromDelta(deltaY: number): number {
 export function wheelPanRatioFromDelta(deltaX: number, widthPx: number): number {
   if (!Number.isFinite(deltaX) || deltaX === 0 || !(widthPx > 0)) return 0;
   return (deltaX / widthPx) * WHEEL_PAN_DAMPING;
+}
+
+const WHEEL_LINE_PX = 16;
+const WHEEL_AXIS_LOCK_RATIO = 1.15;
+
+/** Pixel-space deltas. Trackpads report pixels; some mice report lines/pages. */
+export function wheelDeltaPixels(
+  delta: number,
+  deltaMode: number,
+  pageSizePx: number,
+): number {
+  if (!Number.isFinite(delta) || delta === 0) return 0;
+  if (deltaMode === 1) return delta * WHEEL_LINE_PX;
+  if (deltaMode === 2) return delta * Math.max(pageSizePx, 1);
+  return delta;
+}
+
+/**
+ * Lock pan vs zoom for one trackpad swipe. Diagonal flicks otherwise flip
+ * between the two every event and the window jumps.
+ */
+export function classifyWheelGesture(
+  event: { deltaX: number; deltaY: number; ctrlKey?: boolean; metaKey?: boolean },
+  locked: TrackpadGestureKind | null = null,
+): TrackpadGestureKind | null {
+  if (event.ctrlKey || event.metaKey) {
+    return Number.isFinite(event.deltaY) && event.deltaY !== 0 ? "zoom" : locked;
+  }
+  const absX = Math.abs(event.deltaX);
+  const absY = Math.abs(event.deltaY);
+  if (absX === 0 && absY === 0) return locked;
+  if (locked) return locked;
+  if (absX > absY * WHEEL_AXIS_LOCK_RATIO) return "pan";
+  if (absY > absX * WHEEL_AXIS_LOCK_RATIO) return "zoom";
+  return absX >= absY ? "pan" : "zoom";
+}
+
+export function sameVisibleTimeRange(
+  left: VisibleTimeRangeMs,
+  right: VisibleTimeRangeMs,
+  toleranceMs = 1_000,
+): boolean {
+  const span = Math.max(left.end - left.start, right.end - right.start, 1);
+  const tolerance = Math.max(toleranceMs, span * 0.02);
+  return Math.abs(left.start - right.start) <= tolerance
+    && Math.abs(left.end - right.end) <= tolerance;
+}
+
+/** Drag keeps the span; pinch/wheel-zoom changes it. */
+export function visibleRangeInteraction(
+  previous: VisibleTimeRangeMs | null,
+  next: VisibleTimeRangeMs,
+  toleranceMs = 1_000,
+): TrackpadGestureKind {
+  if (!previous) return "zoom";
+  const previousSpan = previous.end - previous.start;
+  const nextSpan = next.end - next.start;
+  return Math.abs(nextSpan - previousSpan) <= toleranceMs ? "pan" : "zoom";
 }
 
 function clamp(value: number, min: number, max: number): number {

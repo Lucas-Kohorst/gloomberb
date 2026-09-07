@@ -18,6 +18,14 @@
  * - `WX:station:metric`     — Weather Company Kalshi climate / hourly (LAX, high)
  * - `NWS:icao:metric`       — NWS Daily Climate Report first-final print (KNYC, high)
  * - `OWID:slug:entity`      — Our World in Data grapher series (life-expectancy, USA)
+ *
+ * Study expressions (built by {@link parseStudyExpression} / correlation):
+ * - `DD:<source>`           — drawdown from the rolling peak (DD:SPY:price)
+ * - `VOL:<source>`          — 20-day realized volatility (VOL:SPY:price)
+ * - `VOL:<period>:<source>` — realized volatility with an explicit window
+ * - `DIST:<source>`         — % distance from the 20-day SMA (DIST:AAPL:price)
+ * - `DIST:<period>:<source>`— distance from an SMA with an explicit window
+ * - `CORR(<a>, <b>)`        — 20-day rolling return correlation study
  */
 
 export const SERIES_PREFIX = {
@@ -33,6 +41,10 @@ export const SERIES_PREFIX = {
   nwsCli: "NWS",
   owid: "OWID",
   indicator: "IND",
+  drawdown: "DD",
+  volatility: "VOL",
+  distance: "DIST",
+  correlation: "CORR",
 } as const;
 
 export type PredictionMarketVenue = "kalshi" | "polymarket";

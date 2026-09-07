@@ -13,7 +13,7 @@ import {
 import { CompositeChart } from "../../../components/chart/composite";
 import type { PaneProps, TickerResearchTabProps } from "../../../types/plugin";
 import type { ChartResolution, TimeRange } from "../../../components/chart/core/types";
-import type { ChartSpec, ResolvedSeries } from "../../../time-series/types";
+import type { ChartSeriesSource, ChartSpec, ResolvedSeries } from "../../../time-series/types";
 import {
   getSupportedChartResolutionsForViewport,
   type ManualChartResolution,
@@ -33,6 +33,12 @@ import { colors } from "../../../theme/colors";
 import { CHART_COMPOSER_PANE_ID } from "../../../types/config";
 import { useRemoteUiNode } from "../../../remote/semantic-tree";
 import { SeriesEditorDialog } from "./editor";
+
+function authoredChartSourceKey(source: ChartSeriesSource): string {
+  return source.kind === "capability"
+    ? chartSeriesSourceKey(source)
+    : JSON.stringify(["chart-source", source]);
+}
 import { chartComposerSemanticMetadata } from "./semantic";
 import {
   canToggleChartSeries,
@@ -45,7 +51,7 @@ import {
 } from "./chart-spec";
 import {
   buildEmptyChartPreset,
-  buildPriceChartPreset,
+  buildBoundChartPreset,
   chartSeriesLabel,
   defaultFinancialTimestampMode,
   formatSeriesExpression,
@@ -169,7 +175,7 @@ function ChartComposerSurface({
         ]
       : entry.source.kind === "economic"
         ? [entry.id, entry.source.kind, entry.source.seriesId]
-        : [entry.id, entry.source.kind, chartSeriesSourceKey(entry.source)]),
+        : [entry.id, entry.source.kind, authoredChartSourceKey(entry.source)]),
   }), [spec.series, spec.viewport.dateWindow, spec.viewport.maxPoints, spec.viewport.range, spec.viewport.resolution]);
   const [storedInteractionViewport, setStoredInteractionViewport] = usePaneSettingValue<unknown>(
     CHART_INTERACTION_VIEWPORT_SETTING_KEY,
@@ -756,7 +762,7 @@ function useBoundChartSpec(fallbackFor: (symbol: string | null) => ChartSpec) {
 
 export function ChartComposerPane({ paneId, focused, width, height }: PaneProps) {
   const fallbackFor = useCallback(
-    (symbol: string | null) => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
+    (symbol: string | null) => symbol ? buildBoundChartPreset(symbol) : buildEmptyChartPreset(),
     [],
   );
   const { spec, setSpec } = useBoundChartSpec(fallbackFor);
@@ -774,7 +780,7 @@ export function ChartComposerPane({ paneId, focused, width, height }: PaneProps)
 
 export function ChartComposerResearchTab({ focused, width, height, onCapture }: TickerResearchTabProps) {
   const fallbackFor = useCallback(
-    (symbol: string | null) => symbol ? buildPriceChartPreset(symbol) : buildEmptyChartPreset(),
+    (symbol: string | null) => symbol ? buildBoundChartPreset(symbol) : buildEmptyChartPreset(),
     [],
   );
   const { spec, setSpec } = useBoundChartSpec(fallbackFor);

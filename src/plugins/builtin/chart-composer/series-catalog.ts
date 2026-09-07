@@ -7,6 +7,7 @@ import {
   type ChartSeriesCatalogItem,
 } from "../../../capabilities";
 import type { TimeSeriesFieldDefinition } from "../../../time-series/types";
+import type { SeriesTransform } from "../../../time-series/types";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
@@ -20,6 +21,13 @@ import {
 import {
   parseSeriesExpression,
   type ParsedSeriesExpression,
+  expressionSourceText,
+  parseStudyExpression,
+  parseCorrelationExpression,
+  parseBinarySeriesExpression,
+  formatChartStudyExpression,
+  type ChartStudyExpression,
+  type ParsedCorrelationExpression,
 } from "./presets";
 import {
   SERIES_PREFIX,
@@ -29,6 +37,8 @@ import {
   BENCHMARK_ORGS,
   POLL_SUBJECTS,
   ADJACENT_INDEX_CATALOG,
+  CORPORATE_YIELD_CATALOG,
+  CREDIT_SPREAD_CATALOG,
   type FuturesCatalogEntry,
   type TreasuryCatalogEntry,
 } from "./universal-series";
@@ -49,6 +59,8 @@ import {
 } from "./prediction-series";
 import { listKnownFredSeries } from "../econ/fred-series-map";
 
+const CHART_LABEL_SEPARATOR = " — ";
+
 export interface SeriesCatalogInstrument {
   symbol: string;
   exchange?: string;
@@ -62,6 +74,7 @@ export interface SeriesCatalogSuggestion {
   description: string;
   detail: string;
   expression: ParsedSeriesExpression;
+  expressionText?: string;
 }
 
 export interface SeriesSearchAnalysis {
@@ -159,6 +172,45 @@ function matchedMetricSpan(queryWords: readonly string[]): {
   return best;
 }
 
+function matchedDerivedMetricSpan(queryWords: readonly string[]): {
+  metric: "discount";
+  start: number;
+  length: number;
+} | null {
+  const start = findContiguousWords(queryWords, ["discount"]);
+  return start >= 0 ? { metric: "discount", start, length: 1 } : null;
+}
+
+function matchedIdeaMetricSpan(queryWords: readonly string[]): {
+  start: number;
+  length: number;
+} | null {
+  const phrases = [
+    ["realized", "volatility"],
+    ["realised", "volatility"],
+    ["realized", "vol"],
+    ["realised", "vol"],
+    ["draw", "down"],
+    ["drawdown"],
+    ["correlation"],
+    ["correlated"],
+    ["corr"],
+    ["vol"],
+  ];
+  let best: { start: number; length: number } | null = null;
+  for (const phrase of phrases) {
+    const start = findContiguousWords(queryWords, phrase);
+    if (start < 0) continue;
+    if (!best || phrase.length > best.length) {
+      best = { start, length: phrase.length };
+    }
+  }
+  // Keep idea-only queries in the instrument-search path. This preserves the
+  // existing behavior where searched instruments provide the first leg and the
+  // default instrument supplies the second one for generic ideas.
+  return best && best.length < queryWords.length ? best : null;
+}
+
 function explicitInstrument(value: string): SeriesCatalogInstrument | null {
   const trimmed = value.trim();
   const token = trimmed.split(/\s+/)[0] ?? "";
@@ -180,30 +232,43 @@ export function analyzeSeriesSearchQuery(query: string): SeriesSearchAnalysis {
   }
 
   const metric = matchedMetricSpan(queryWords);
-  const remaining = metric
-    ? queryWords.filter((_, index) => index < metric.start || index >= metric.start + metric.length)
+  const ideaMetric = metric ? null : matchedIdeaMetricSpan(queryWords);
+  const derivedMetric = metric || ideaMetric ? null : matchedDerivedMetricSpan(queryWords);
+  const metricSpan = metric ?? ideaMetric ?? derivedMetric;
+  const remaining = metricSpan
+    ? queryWords.filter((_, index) => index < metricSpan.start || index >= metricSpan.start + metricSpan.length)
     : queryWords;
-  const remainingRaw = metric
-    ? rawWords.filter((_, index) => index < metric.start || index >= metric.start + metric.length)
+  const remainingRaw = metricSpan
+    ? rawWords.filter((_, index) => index < metricSpan.start || index >= metricSpan.start + metricSpan.length)
     : rawWords;
-  const remainingText = remaining.join(" ");
+  const remainingText = remaining
+    .filter((word) => !(metric && /^(?:growth|growing|yoy|year[- ]over[- ]year)$/i.test(word)))
+    .join(" ");
   const directInstrument = explicitInstrument(remainingRaw.join(" "));
 
   if (directInstrument) {
     return {
       directInstrument,
       instrumentQuery: "",
-      metricQuery: metric
-        ? metric.field.label
+      metricQuery: metricSpan
+        ? metric
+          ? metric.field.label
+          : derivedMetric
+            ? "Discount"
+            : ""
         : remaining.slice(1).join(" "),
     };
   }
 
-  if (metric) {
+  if (metricSpan) {
     return {
       directInstrument: null,
       instrumentQuery: remainingText,
-      metricQuery: metric.field.label,
+      metricQuery: metric
+        ? metric.field.label
+        : derivedMetric
+          ? "Discount"
+          : "",
     };
   }
 
@@ -258,43 +323,154 @@ function uniqueInstruments(instruments: readonly SeriesCatalogInstrument[]): Ser
   });
 }
 
+function resolveInstrumentQuery(
+  query: string,
+  searchedInstruments: readonly SeriesCatalogInstrument[],
+): SeriesCatalogInstrument | null {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return null;
+  const firstToken = normalized.split(/\s+/)[0] ?? "";
+  const searched = searchedInstruments.find((instrument) => (
+    instrument.symbol.toLowerCase() === firstToken
+    || instrument.name?.toLowerCase() === normalized
+    || instrument.name?.toLowerCase().startsWith(`${normalized} `)
+  ));
+  if (searched) return searched;
+  if (
+    !/^[a-z0-9^][a-z0-9.^_=-]{0,11}$/i.test(firstToken)
+    || (firstToken.length > 4 && /^[a-z]+$/i.test(firstToken))
+    || /^(?:cpi|gdp|pce|nfp|fred|owid|weather|climate|temp|temperature|bitcoin|ethereum|crypto|futures?|treasury|ust)$/i.test(firstToken)
+  ) return null;
+  return { symbol: firstToken.toUpperCase() };
+}
+
+function resolveIdeaInstrument(
+  token: string,
+  instruments: readonly SeriesCatalogInstrument[],
+): SeriesCatalogInstrument | null {
+  const normalized = token.trim().toLowerCase();
+  if (!normalized) return null;
+  const match = instruments.find((instrument) => (
+    instrument.symbol.toLowerCase() === normalized
+    || instrument.name?.toLowerCase() === normalized
+  ));
+  if (match) return match;
+  if (!/^[a-z0-9^][a-z0-9.^_=-]{0,11}$/i.test(normalized)) return null;
+  return { symbol: normalized.toUpperCase() };
+}
+
+function parseCorrelationInstrumentPair(
+  query: string,
+  instruments: readonly SeriesCatalogInstrument[],
+): [SeriesCatalogInstrument, SeriesCatalogInstrument] | null {
+  const tokens = query
+    .replace(/\b(?:correlation|correlated|corr(?:elation)?(?:20|50|100)?)\b/gi, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length !== 2) return null;
+  const left = resolveIdeaInstrument(tokens[0]!, instruments);
+  const right = resolveIdeaInstrument(tokens[1]!, instruments);
+  return left && right ? [left, right] : null;
+}
+
 function exactExpressionSuggestion(query: string): SeriesCatalogSuggestion | null {
   if (!query.includes(":")) return null;
   const expression = parseSeriesExpression(query);
   if (!expression) return null;
-  if (expression.kind === "economic") {
-    return {
-      id: `fred:${expression.seriesId}`,
-      label: expression.label ?? `FRED · ${expression.seriesId}`,
-      description: "Economic series from FRED",
-      detail: "FRED",
-      expression,
-    };
+  switch (expression.kind) {
+    case "economic":
+      return {
+        id: `fred:${expression.seriesId}`,
+        label: expression.label ?? `FRED${CHART_LABEL_SEPARATOR}${expression.seriesId}`,
+        description: "Economic series from FRED",
+        detail: "FRED",
+        expression,
+      };
+    case "capability":
+      return {
+        id: chartSeriesSourceKey({
+          kind: "capability",
+          capabilityId: expression.capabilityId,
+          seriesId: expression.seriesId,
+        }),
+        label: expression.label ?? expression.seriesId,
+        description: `Plugin series from ${expression.capabilityId}`,
+        detail: "Plugin",
+        expression,
+      };
+    case "adjacent-index":
+      return adjacentIndexSuggestion(expression.indexId, expression.label ?? expression.indexId);
+    case "prediction-market":
+      return predictionExpressionSuggestion(expression);
+    case "owid":
+      return {
+        id: `owid:${expression.slug}:${expression.entity}`,
+        label: expression.label ?? `${expression.slug}${CHART_LABEL_SEPARATOR}${expression.entity}`,
+        description: "Our World in Data grapher series",
+        detail: "OWID",
+        expression,
+      };
+    case "benchmark":
+      return {
+        id: `bench:${expression.selector}:${expression.metric}`,
+        label: `${expression.selector}${CHART_LABEL_SEPARATOR}${expression.metric}`,
+        description: "AI benchmark (point-in-time)",
+        detail: "Bench",
+        expression,
+      };
+    case "poll":
+      return {
+        id: `poll:${expression.subject}:${expression.choice}`,
+        label: `${expression.subject}${CHART_LABEL_SEPARATOR}${expression.choice}`,
+        description: "VoteHub poll series",
+        detail: "Poll",
+        expression,
+      };
+    case "weather":
+      return {
+        id: `wx:${expression.stationId}:${expression.metric}`,
+        label: expression.label ?? `${expression.stationId}${CHART_LABEL_SEPARATOR}${expression.metric}`,
+        description: expression.provider === "nws-cli"
+          ? "NWS Daily Climate Report"
+          : "Weather Company climate",
+        detail: expression.provider === "nws-cli" ? "NWS" : "WX",
+        expression,
+      };
+    // FUT:/UST: parse to their resolved pipeline kinds (security/economic), so
+    // these branches are only reachable if the parser contract changes.
+    case "future":
+      return {
+        id: `fut:${expression.code}`,
+        label: expression.label ?? expression.name ?? expression.code,
+        description: `Futures · ${expression.name ?? expression.code}`,
+        detail: "FUT",
+        expression,
+      };
+    case "treasury-yield":
+      return {
+        id: `ust:${expression.maturity}`,
+        label: expression.label ?? `${expression.maturity} Treasury Yield`,
+        description: "US Treasury yield (FRED)",
+        detail: "UST",
+        expression,
+      };
+    default: {
+      const field = getTimeSeriesField(expression.fieldId);
+      const instrument = publicTickerKey(expression.symbol, expression.exchange);
+      const suffix = expression.transform ? `:${expression.transform}` : "";
+      return {
+        id: `${instrument}:${expression.fieldId}${suffix}`,
+        label: expression.label
+          ?? `${instrument}${CHART_LABEL_SEPARATOR}${field?.label ?? expression.fieldId}${suffix}`,
+        description: field
+          ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
+          : "Security series",
+        detail: field ? fieldFrequency(field) : "Security",
+        expression,
+      };
+    }
   }
-  if (expression.kind === "capability") {
-    return {
-      id: chartSeriesSourceKey({
-        kind: "capability",
-        capabilityId: expression.capabilityId,
-        seriesId: expression.seriesId,
-      }),
-      label: expression.label ?? expression.seriesId,
-      description: `Plugin series from ${expression.capabilityId}`,
-      detail: "Plugin",
-      expression,
-    };
-  }
-  const field = getTimeSeriesField(expression.fieldId);
-  const instrument = publicTickerKey(expression.symbol, expression.exchange);
-  return {
-    id: `${instrument}:${expression.fieldId}`,
-    label: expression.label ?? `${instrument} · ${field?.label ?? expression.fieldId}`,
-    description: field
-      ? `${fieldCategory(field)} · ${fieldFrequency(field)}`
-      : "Security series",
-    detail: field ? fieldFrequency(field) : "Security",
-    expression,
-  };
 }
 
 function matchesAliasQuery(query: string, ...values: string[]): boolean {
@@ -316,7 +492,7 @@ function coreAliasSuggestions(query: string): SeriesCatalogSuggestion[] {
     ))
     .map((contract): SeriesCatalogSuggestion => ({
       id: `${contract.symbol}:market.ohlcv`,
-      label: `FUT:${contract.code} · ${contract.name}`,
+      label: `FUT:${contract.code}${CHART_LABEL_SEPARATOR}${contract.name}`,
       description: `${FUTURES_SECTOR_LABELS[contract.sector]} futures`,
       detail: "Futures",
       expression: {
@@ -336,7 +512,7 @@ function coreAliasSuggestions(query: string): SeriesCatalogSuggestion[] {
     ))
     .map((treasury): SeriesCatalogSuggestion => ({
       id: `fred:${treasury.seriesId}`,
-      label: `UST:${treasury.maturity} · Treasury Yield`,
+      label: `UST:${treasury.maturity}${CHART_LABEL_SEPARATOR}Treasury Yield`,
       description: `U.S. Treasury ${treasury.maturity} yield · FRED ${treasury.seriesId}`,
       detail: "Treasury",
       expression: {
@@ -372,6 +548,404 @@ export function buildCapabilitySeriesSuggestions(
   }));
 }
 
+function derivedMetricSuggestion(
+  metric: "discount",
+  instrument: SeriesCatalogInstrument,
+): SeriesCatalogSuggestion {
+  const instrumentLabel = publicTickerKey(instrument.symbol, instrument.exchange);
+  const priceExpression = `${instrumentLabel}:price`;
+  return {
+    id: `derived:${metric}:${instrumentLabel}`,
+    label: `${instrumentLabel}${CHART_LABEL_SEPARATOR}Discount to par`,
+    description: "100 minus price",
+    detail: "Derived",
+    expression: {
+      kind: "security",
+      symbol: instrument.symbol,
+      ...(instrument.exchange ? { exchange: canonicalExchange(instrument.exchange) } : {}),
+      fieldId: "market.ohlcv",
+    },
+    expressionText: `100 - ${priceExpression}`,
+  };
+}
+
+function derivedMetricForQuery(query: string): "discount" | null {
+  return matchedDerivedMetricSpan(words(query))?.metric ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Idea suggestions — natural-language chart requests that expand into a study
+// expression or a binary expression the chart composer can run. Each idea row
+// carries `expressionText` (the runnable text) plus a primary `expression` for
+// single-series fallbacks, so the same row completes in the command bar and
+// commits through chart-composer quick-add.
+// ---------------------------------------------------------------------------
+
+const IDEA_RELATIVE_PERFORMANCE = /\b(relative performance|relative perf|rel perf|performance vs|outperform)\b/i;
+const IDEA_DRAWDOWN = /\b(drawdown|draw down|from (?:the )?(?:all.?time )?high)\b/i;
+const IDEA_REALIZED_VOL = /\b(realized vol|realised vol|realized volatility|realised volatility|rvol|vol(?:atility)?)\b/i;
+const IDEA_GROWTH = /\b(growth|growing|year[- ]over[- ]year|yoy)\b/i;
+const IDEA_MARGIN = /\bmargins?\b/i;
+const IDEA_SPECIFIC_MARGIN = /\b(gross|operating|net|fcf|free cash flow)\s+margin\b/i;
+const IDEA_YIELD_CURVE = /\b(yield curve|curve spread|term spread|10s2s|10s-2s|10y.*2y|bear steepen|bull steepen)\b/i;
+const IDEA_DIVIDEND_YIELD = /\b(dividend yield|div yield|dividend rate)\b/i;
+const IDEA_CORRELATION = /\b(correlation|correlated|corr(?:elation)?(?:20|50|100)?)\b/i;
+const IDEA_MA_DISTANCE = /\b(distance from|distance to|ma distance|sma distance|dma distance|vs (?:its |its )?(?:moving )?average|above.*average|below.*average)\b/i;
+
+const MARGIN_FIELDS: ReadonlyArray<{ fieldId: string; label: string }> = [
+  { fieldId: "fundamental.grossMargin", label: "Gross Margin" },
+  { fieldId: "fundamental.operatingMargin", label: "Operating Margin" },
+  { fieldId: "fundamental.netMargin", label: "Net Margin" },
+  { fieldId: "fundamental.freeCashFlowMargin", label: "FCF Margin" },
+];
+
+const GROWTH_FIELDS: ReadonlyArray<{ fieldId: string; label: string; match: RegExp }> = [
+  { fieldId: "fundamental.totalRevenue", label: "Revenue", match: /revenue|sales/i },
+  { fieldId: "fundamental.eps", label: "EPS", match: /eps|earnings per share/i },
+  { fieldId: "fundamental.freeCashFlow", label: "FCF", match: /fcf|free cash flow/i },
+  { fieldId: "fundamental.netIncome", label: "Net Income", match: /net income|profit/i },
+];
+
+function instrumentLabel(instrument: SeriesCatalogInstrument): string {
+  return publicTickerKey(instrument.symbol, instrument.exchange);
+}
+
+function securityExpression(
+  instrument: SeriesCatalogInstrument,
+  fieldId = "market.ohlcv",
+  transform?: SeriesTransform,
+): ParsedSeriesExpression {
+  return {
+    kind: "security",
+    symbol: instrument.symbol,
+    ...(instrument.exchange ? { exchange: canonicalExchange(instrument.exchange) } : {}),
+    fieldId,
+    ...(transform ? { transform } : {}),
+  };
+}
+
+function parseVsPair(query: string): { left: string; right: string } | null {
+  const match = /^([A-Z0-9.^]{1,12})\s+(?:vs\.?|versus)\s+([A-Z0-9.^]{1,12})(?:\s|$)/i.exec(query.trim());
+  if (!match) return null;
+  const left = match[1]!.toUpperCase();
+  const right = match[2]!.toUpperCase();
+  if (!/^[A-Z0-9.^]{1,12}$/.test(left) || !/^[A-Z0-9.^]{1,12}$/.test(right)) return null;
+  return { left, right };
+}
+
+function pushIdea(
+  ideas: SeriesCatalogSuggestion[],
+  suggestion: SeriesCatalogSuggestion | null,
+): void {
+  if (suggestion && !ideas.some((entry) => entry.id === suggestion.id)) ideas.push(suggestion);
+}
+
+function relativePerformanceSuggestion(
+  left: SeriesCatalogInstrument,
+  right: SeriesCatalogInstrument,
+): SeriesCatalogSuggestion {
+  const leftLabel = instrumentLabel(left);
+  const rightLabel = instrumentLabel(right);
+  return {
+    id: `idea:relative-performance:${leftLabel}:${rightLabel}`,
+    label: `${leftLabel} / ${rightLabel}${CHART_LABEL_SEPARATOR}Relative Performance`,
+    description: "Price ratio of the two series",
+    detail: "Idea",
+    expression: securityExpression(left),
+    expressionText: `${leftLabel}:price / ${rightLabel}:price`,
+  };
+}
+
+function correlationIdeaSuggestion(
+  left: SeriesCatalogInstrument,
+  right: SeriesCatalogInstrument,
+): SeriesCatalogSuggestion {
+  const leftLabel = instrumentLabel(left);
+  const rightLabel = instrumentLabel(right);
+  const leftExpression = securityExpression(left);
+  return {
+    id: `idea:correlation:${leftLabel}:${rightLabel}`,
+    label: `${leftLabel} ↔ ${rightLabel}${CHART_LABEL_SEPARATOR}Correlation`,
+    description: "20-day rolling return correlation",
+    detail: "Idea",
+    expression: leftExpression,
+    expressionText: `CORR(${leftLabel}:price, ${rightLabel}:price)`,
+  };
+}
+
+function correlationIdeaSuggestionFromPair(
+  correlation: ParsedCorrelationExpression,
+): SeriesCatalogSuggestion | null {
+  if (correlation.left.kind === "constant") return null;
+  const leftText = expressionSourceText(correlation.left);
+  const rightText = expressionSourceText(correlation.right);
+  if (leftText.includes(" ") || rightText.includes(" ")) return null;
+  return {
+    id: `idea:correlation:${leftText}:${rightText}`,
+    label: `${leftText} ↔ ${rightText}${CHART_LABEL_SEPARATOR}Correlation`,
+    description: "20-day rolling return correlation",
+    detail: "Idea",
+    expression: correlation.left,
+    expressionText: `CORR(${leftText}, ${rightText})`,
+  };
+}
+
+function drawdownSuggestion(instrument: SeriesCatalogInstrument): SeriesCatalogSuggestion {
+  const label = instrumentLabel(instrument);
+  return {
+    id: `idea:drawdown:${label}`,
+    label: `${label}${CHART_LABEL_SEPARATOR}Drawdown`,
+    description: "Percent below the rolling peak",
+    detail: "Study",
+    expression: securityExpression(instrument),
+    expressionText: `DD:${label}:price`,
+  };
+}
+
+function realizedVolatilitySuggestion(instrument: SeriesCatalogInstrument): SeriesCatalogSuggestion {
+  const label = instrumentLabel(instrument);
+  return {
+    id: `idea:realized-volatility:${label}`,
+    label: `${label}${CHART_LABEL_SEPARATOR}Realized Volatility (20D annualized)`,
+    description: "Annualized standard deviation of daily returns over 20 trading days",
+    detail: "Study",
+    expression: securityExpression(instrument),
+    expressionText: `VOL:${label}:price`,
+  };
+}
+
+function movingAverageDistanceSuggestion(
+  instrument: SeriesCatalogInstrument,
+  period: number,
+  query: string,
+): SeriesCatalogSuggestion {
+  const label = instrumentLabel(instrument);
+  const explicit = /\b200\b|\bdma\b|\b200[- ]?d\b/.test(query);
+  const window = explicit || period === 200 ? 200 : period;
+  const text = window === 200 ? `DIST:200:${label}:price` : `DIST:${label}:price`;
+  return {
+    id: `idea:ma-distance:${label}:${window}`,
+    label: `${label}${CHART_LABEL_SEPARATOR}Distance from SMA(${window})`,
+    description: `Percent distance from the ${window}-day moving average`,
+    detail: "Study",
+    expression: securityExpression(instrument),
+    expressionText: text,
+  };
+}
+
+function yieldSpreadSuggestion(leftMaturity: string, rightMaturity: string): SeriesCatalogSuggestion | null {
+  const left = parseSeriesExpression(`UST:${leftMaturity}`);
+  const right = parseSeriesExpression(`UST:${rightMaturity}`);
+  if (!left || !right) return null;
+  return {
+    id: `idea:yield-spread:${leftMaturity}:${rightMaturity}`,
+    label: `${leftMaturity} − ${rightMaturity} Treasury Spread`,
+    description: `${leftMaturity} yield minus ${rightMaturity} yield`,
+    detail: "Spread",
+    expression: left,
+    expressionText: `UST:${leftMaturity} - UST:${rightMaturity}`,
+  };
+}
+
+function predictionSpreadSuggestion(
+  left: PredictionMarketSearchHit,
+  right: PredictionMarketSearchHit,
+): SeriesCatalogSuggestion | null {
+  const leftId = normalizePredictionMarketId(left.venue, left.marketId);
+  const rightId = normalizePredictionMarketId(right.venue, right.marketId);
+  if (!leftId || !rightId) return null;
+  const leftPrefix = left.venue === "kalshi" ? "KALSHI" : "POLY";
+  const rightPrefix = right.venue === "kalshi" ? "KALSHI" : "POLY";
+  const leftExpression = parseSeriesExpression(`${leftPrefix}:${leftId}`);
+  if (!leftExpression) return null;
+  return {
+    id: `idea:pm-spread:${left.venue}:${leftId}:${rightId}`,
+    label: `${left.title} − ${right.title}${CHART_LABEL_SEPARATOR}Spread`,
+    description: "Yes-price difference between the two markets",
+    detail: "Spread",
+    expression: leftExpression,
+    expressionText: `${leftPrefix}:${leftId} - ${rightPrefix}:${rightId}`,
+  };
+}
+
+function growthSuggestion(instrument: SeriesCatalogInstrument, fieldId: string, label: string): SeriesCatalogSuggestion {
+  const instrumentKey = instrumentLabel(instrument);
+  const expression = securityExpression(instrument, fieldId, "yoy");
+  return {
+    id: `idea:growth:${instrumentKey}:${fieldId}:yoy`,
+    label: `${instrumentKey}${CHART_LABEL_SEPARATOR}${label} Growth (YoY)`,
+    description: "Year-over-year percent change",
+    detail: "Idea",
+    expression,
+  };
+}
+
+function marginSuggestion(instrument: SeriesCatalogInstrument, fieldId: string, label: string): SeriesCatalogSuggestion {
+  const instrumentKey = instrumentLabel(instrument);
+  const expression = securityExpression(instrument, fieldId);
+  return {
+    id: `idea:margin:${instrumentKey}:${fieldId}`,
+    label: `${instrumentKey}${CHART_LABEL_SEPARATOR}${label}`,
+    description: "Margin ratio, straight from fundamentals",
+    detail: "Margin",
+    expression,
+  };
+}
+
+function dividendYieldSuggestion(instrument: SeriesCatalogInstrument): SeriesCatalogSuggestion {
+  const label = instrumentLabel(instrument);
+  const expression = securityExpression(instrument, "valuation.dividendYield");
+  return {
+    id: `idea:dividend-yield:${label}`,
+    label: `${label}${CHART_LABEL_SEPARATOR}Dividend Yield`,
+    description: "Trailing dividend yield",
+    detail: "Idea",
+    expression,
+  };
+}
+
+function studyIdeaSuggestionFromExpression(
+  study: ChartStudyExpression | null,
+): SeriesCatalogSuggestion | null {
+  if (!study || study.source.kind === "constant") return null;
+  const text = expressionSourceText(study.source);
+  const detail = study.kind === "drawdown"
+    ? "Drawdown"
+    : study.kind === "volatility"
+      ? "Realized Vol"
+      : "MA Distance";
+  const title = study.kind === "drawdown"
+    ? "Drawdown"
+    : study.kind === "volatility"
+      ? `Realized Volatility (${study.period ?? 20}D annualized)`
+      : `Distance from SMA(${study.period ?? 20})`;
+  return {
+    id: `idea:study:${study.kind}:${text}`,
+    label: `${text}${CHART_LABEL_SEPARATOR}${title}`,
+    description: `${detail} study of ${text}`,
+    detail,
+    expression: study.source,
+    expressionText: formatChartStudyExpression(study),
+  };
+}
+
+function binaryIdeaSuggestion(
+  binary: NonNullable<ReturnType<typeof parseBinarySeriesExpression>>,
+): SeriesCatalogSuggestion | null {
+  const leftText = expressionSourceText(binary.left);
+  const rightText = expressionSourceText(binary.right);
+  const leftExpression = binary.left.kind === "constant" ? null : binary.left;
+  if (!leftExpression || leftText.includes(" ") || rightText.includes(" ")) return null;
+  const bothPrediction = binary.left.kind !== "constant"
+    && binary.right.kind !== "constant"
+    && binary.left.kind === "prediction-market"
+    && binary.right.kind === "prediction-market";
+  const title = binary.studyKind === "ratio" ? "Ratio" : "Spread";
+  const ideaKind = bothPrediction ? "pm-spread" : `binary-${binary.studyKind}`;
+  return {
+    id: `idea:${ideaKind}:${leftText}:${rightText}`,
+    label: `${leftText} − ${rightText}${CHART_LABEL_SEPARATOR}${bothPrediction ? "Prediction Spread" : title}`,
+    description: bothPrediction
+      ? "Yes-price difference between the two markets"
+      : `${leftText} ${binary.operator} ${rightText}`,
+    detail: "Idea",
+    expression: leftExpression,
+    expressionText: binary.studyKind === "spread"
+      ? `${leftText} - ${rightText}`
+      : `${leftText} / ${rightText}`,
+  };
+}
+
+/**
+ * Builds the chart "idea" rows the shared catalog knows: relative performance,
+ * drawdown, realized volatility, yield-curve and prediction-market spreads,
+ * growth, margins, dividend yields, correlation, and moving-average distance.
+ * Runs ahead of the plain field matrix so an idea wins for the queries that
+ * name it.
+ */
+export function buildIdeaSuggestions(
+  query: string,
+  instruments: readonly SeriesCatalogInstrument[],
+  searchedMarkets: readonly PredictionMarketSearchHit[] = [],
+): SeriesCatalogSuggestion[] {
+  const q = query.trim();
+  if (!q) return [];
+  const qLower = q.toLowerCase();
+  const ideas: SeriesCatalogSuggestion[] = [];
+  const available = instruments.length > 0 ? instruments : [{ symbol: "SPY", name: "S&P 500 ETF" }];
+  const primary = available[0]!;
+  const secondary = available[1] ?? { symbol: "SPY", name: "S&P 500 ETF" };
+
+  // Explicit study / correlation / binary expressions round-trip into a row.
+  const study = parseStudyExpression(q);
+  if (study) pushIdea(ideas, studyIdeaSuggestionFromExpression(study));
+  const correlation = !study ? parseCorrelationExpression(q) : null;
+  if (correlation) pushIdea(ideas, correlationIdeaSuggestionFromPair(correlation));
+  const binary = !study && !correlation ? parseBinarySeriesExpression(q) : null;
+  if (binary) pushIdea(ideas, binaryIdeaSuggestion(binary));
+
+  // `X vs Y` — the one grammar the catalog adds on top of the expression text.
+  const pair = parseVsPair(q);
+  if (pair) {
+    const left = { symbol: pair.left };
+    const right = { symbol: pair.right };
+    if (IDEA_CORRELATION.test(qLower)) {
+      pushIdea(ideas, correlationIdeaSuggestion(left, right));
+      return ideas;
+    }
+    pushIdea(ideas, relativePerformanceSuggestion(left, right));
+  }
+
+  if (IDEA_DRAWDOWN.test(qLower)) {
+    for (const instrument of available.slice(0, 2)) {
+      pushIdea(ideas, drawdownSuggestion(instrument));
+    }
+  }
+  if (IDEA_REALIZED_VOL.test(qLower)) {
+    for (const instrument of available.slice(0, 2)) {
+      pushIdea(ideas, realizedVolatilitySuggestion(instrument));
+    }
+  }
+  if (IDEA_MA_DISTANCE.test(qLower)) {
+    for (const instrument of available.slice(0, 2)) {
+      pushIdea(ideas, movingAverageDistanceSuggestion(instrument, 20, qLower));
+    }
+  }
+  if (IDEA_CORRELATION.test(qLower)) {
+    pushIdea(ideas, correlationIdeaSuggestion(primary, secondary));
+  }
+  if (IDEA_RELATIVE_PERFORMANCE.test(qLower) || /\bperf(?:ormance)?\s+vs\b/i.test(qLower)) {
+    pushIdea(ideas, relativePerformanceSuggestion(primary, secondary));
+  }
+  if (IDEA_GROWTH.test(qLower)) {
+    const field = GROWTH_FIELDS.find((entry) => entry.match.test(qLower))
+      ?? GROWTH_FIELDS[0]!;
+    for (const instrument of available.slice(0, 2)) {
+      pushIdea(ideas, growthSuggestion(instrument, field.fieldId, field.label));
+    }
+  }
+  if (IDEA_MARGIN.test(qLower) && !IDEA_SPECIFIC_MARGIN.test(qLower)) {
+    for (const instrument of available.slice(0, 2)) {
+      for (const margin of MARGIN_FIELDS) {
+        pushIdea(ideas, marginSuggestion(instrument, margin.fieldId, margin.label));
+      }
+    }
+  }
+  if (IDEA_DIVIDEND_YIELD.test(qLower)) {
+    for (const instrument of available.slice(0, 2)) {
+      pushIdea(ideas, dividendYieldSuggestion(instrument));
+    }
+  }
+  if (IDEA_YIELD_CURVE.test(qLower) || /\b10y\b.*\b2y\b|\b2y\b.*\b10y\b/i.test(q)) {
+    pushIdea(ideas, yieldSpreadSuggestion("10Y", "2Y"));
+    pushIdea(ideas, yieldSpreadSuggestion("10Y", "3M"));
+  }
+  if (/\bspread\b/i.test(qLower) && searchedMarkets.length >= 2) {
+    pushIdea(ideas, predictionSpreadSuggestion(searchedMarkets[0]!, searchedMarkets[1]!));
+  }
+  return ideas;
+}
+
 export function buildSeriesCatalogSuggestions(
   query: string,
   defaultInstrument: SeriesCatalogInstrument,
@@ -383,13 +957,52 @@ export function buildSeriesCatalogSuggestions(
   const exact = exactExpressionSuggestion(query.trim());
   const nl = resolvePredictionSeriesQuery(query, searchedMarkets);
   const analysis = analyzeSeriesSearchQuery(query);
+  const ideaOnlyQuery = analysis.instrumentQuery.trim().toLowerCase() === query.trim().toLowerCase()
+    && [
+      IDEA_RELATIVE_PERFORMANCE,
+      IDEA_DRAWDOWN,
+      IDEA_REALIZED_VOL,
+      IDEA_GROWTH,
+      IDEA_MARGIN,
+      IDEA_YIELD_CURVE,
+      IDEA_DIVIDEND_YIELD,
+      IDEA_CORRELATION,
+      IDEA_MA_DISTANCE,
+    ].some((pattern) => pattern.test(query));
+  const correlationPair = IDEA_CORRELATION.test(query)
+    ? parseCorrelationInstrumentPair(query, searchedInstruments)
+    : null;
+  const resolvedInstrument = analysis.directInstrument
+    ?? (!ideaOnlyQuery
+      && analysis.instrumentQuery
+      && analysis.instrumentQuery.trim().toLowerCase() !== query.trim().toLowerCase()
+      ? resolveInstrumentQuery(analysis.instrumentQuery, searchedInstruments)
+      : null);
   const instruments = uniqueInstruments(
-    analysis.directInstrument
-      ? [analysis.directInstrument]
+    correlationPair
+      ? correlationPair
+      : resolvedInstrument
+      ? [resolvedInstrument]
       : analysis.instrumentQuery
         ? searchedInstruments
         : [defaultInstrument],
   );
+  const namesAnInstrument = analysis.instrumentQuery
+    && analysis.instrumentQuery.trim().toLowerCase() !== query.trim().toLowerCase();
+  const instrumentSpecificIdea = namesAnInstrument && [
+    IDEA_RELATIVE_PERFORMANCE,
+    IDEA_DRAWDOWN,
+    IDEA_REALIZED_VOL,
+    IDEA_GROWTH,
+    IDEA_MARGIN,
+    IDEA_DIVIDEND_YIELD,
+    IDEA_CORRELATION,
+    IDEA_MA_DISTANCE,
+  ].some((pattern) => pattern.test(query));
+  if (instruments.length === 0 && (analysis.metricQuery || instrumentSpecificIdea)) {
+    return [];
+  }
+  const derivedMetric = derivedMetricForQuery(query);
 
   const rankedFields = listTimeSeriesFields()
     .map((field) => ({ field, score: fieldScore(field, analysis.metricQuery) }))
@@ -399,6 +1012,15 @@ export function buildSeriesCatalogSuggestions(
   const suggestions: SeriesCatalogSuggestion[] = exact ? [exact] : [];
   for (const suggestion of coreAliasSuggestions(query)) {
     if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
+  }
+  for (const suggestion of buildIdeaSuggestions(query, instruments, searchedMarkets)) {
+    if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
+  }
+  if (derivedMetric) {
+    for (const instrument of instruments) {
+      const suggestion = derivedMetricSuggestion(derivedMetric, instrument);
+      if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
+    }
   }
   const fieldLimit = instruments.length > 1 && !analysis.metricQuery ? 1 : rankedFields.length;
   for (const instrument of instruments) {
@@ -412,7 +1034,7 @@ export function buildSeriesCatalogSuggestions(
       };
       const suggestion: SeriesCatalogSuggestion = {
         id: `${instrumentLabel}:${field.id}`,
-        label: `${instrumentLabel} · ${field.label}`,
+        label: `${instrumentLabel}${CHART_LABEL_SEPARATOR}${field.label}`,
         description: [
           instrument.name,
           fieldCategory(field),
@@ -501,6 +1123,42 @@ function appendUniversalSuggestions(
     }
   }
 
+  // Corporate yields and credit spreads — the other "yield" series, backed by FRED.
+  for (const entry of CORPORATE_YIELD_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.label,
+      entry.seriesId,
+      "corporate",
+      "corp",
+      "yield",
+      "bond",
+      "credit",
+      "ig",
+      "junk",
+      "high yield",
+      "investment grade",
+    ]);
+    if (score >= 0) {
+      scored.push({ suggestion: corporateYieldSuggestion(entry.seriesId, entry.label), score });
+    }
+  }
+  for (const entry of CREDIT_SPREAD_CATALOG) {
+    const score = universalScore(q, qCompact, [
+      entry.label,
+      entry.seriesId,
+      "credit",
+      "spread",
+      "oas",
+      "option adjusted",
+      "corporate",
+      "junk",
+      "high yield",
+    ]);
+    if (score >= 0) {
+      scored.push({ suggestion: creditSpreadSuggestion(entry.seriesId, entry.label), score });
+    }
+  }
+
   // Benchmarks — org + metric combos
   for (const org of BENCHMARK_ORGS) {
     for (const metric of BENCHMARK_METRICS) {
@@ -576,12 +1234,15 @@ function appendUniversalSuggestions(
         "nws",
         "cli",
         "climate",
+        "temp",
+        "temperature",
+        "forecast",
       ]);
       if (score < 0) continue;
       scored.push({
         suggestion: {
           id: `wx:${station.id}:${metric}`,
-          label: `WX · ${station.city} ${metric}`,
+          label: `WX${CHART_LABEL_SEPARATOR}${station.city} ${metric}`,
           description: "Weather Company Kalshi climate",
           detail: "WX",
           expression: {
@@ -597,7 +1258,7 @@ function appendUniversalSuggestions(
       scored.push({
         suggestion: {
           id: `nws:${station.icao}:${metric}`,
-          label: `NWS · ${station.icao} ${metric}`,
+          label: `NWS${CHART_LABEL_SEPARATOR}${station.icao} ${metric}`,
           description: "NWS Daily Climate Report (first final CLI)",
           detail: "NWS",
           expression: {
@@ -621,8 +1282,7 @@ function appendUniversalSuggestions(
   }
 }
 
-function universalScore(query: string, queryCompact: string, keywords: string[]): number {
-  if (!query) return 50; // show a few when the query is empty
+function scoreQueryAgainstKeywords(query: string, queryCompact: string, keywords: string[]): number {
   for (const keyword of keywords) {
     const kw = keyword.toLowerCase();
     const kwCompact = compact(kw);
@@ -634,6 +1294,19 @@ function universalScore(query: string, queryCompact: string, keywords: string[])
     }
   }
   return -1;
+}
+
+function universalScore(query: string, queryCompact: string, keywords: string[]): number {
+  if (!query) return 50;
+  const tokens = query.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) return scoreQueryAgainstKeywords(query, queryCompact, keywords);
+  let total = 0;
+  for (const token of tokens) {
+    const score = scoreQueryAgainstKeywords(token, compact(token), keywords);
+    if (score < 0) return -1;
+    total += score;
+  }
+  return total;
 }
 
 function owidCatalogSuggestion(entry: OwidCatalogEntry): SeriesCatalogSuggestion {
@@ -683,17 +1356,37 @@ const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
 function fredSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
   return {
     id: `fred:${seriesId}`,
-    label: `FRED · ${label}`,
+    label: `FRED${CHART_LABEL_SEPARATOR}${label}`,
     description: "Economic series from FRED",
     detail: "FRED",
     expression: { kind: "economic", provider: "fred", seriesId },
   };
 }
 
+function corporateYieldSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
+  return {
+    id: `fred:${seriesId}`,
+    label: `FRED${CHART_LABEL_SEPARATOR}${label}`,
+    description: "Corporate bond yield from FRED",
+    detail: "Corp Yield",
+    expression: { kind: "economic", provider: "fred", seriesId, label },
+  };
+}
+
+function creditSpreadSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
+  return {
+    id: `fred:${seriesId}`,
+    label: `FRED${CHART_LABEL_SEPARATOR}${label}`,
+    description: "Option-adjusted credit spread from FRED",
+    detail: "Credit",
+    expression: { kind: "economic", provider: "fred", seriesId, label },
+  };
+}
+
 function cryptoSuggestion(symbol: string, name: string): SeriesCatalogSuggestion {
   return {
     id: `crypto:${symbol}`,
-    label: `${symbol} · ${name}`,
+    label: `${symbol}${CHART_LABEL_SEPARATOR}${name}`,
     description: "Crypto pair (Yahoo)",
     detail: "Crypto",
     expression: { kind: "security", symbol, fieldId: "market.ohlcv" },
@@ -723,7 +1416,7 @@ function treasurySuggestion(entry: TreasuryCatalogEntry): SeriesCatalogSuggestio
 function benchmarkSuggestion(org: string, metricCode: string, metricLabel: string): SeriesCatalogSuggestion {
   return {
     id: `bench:${org}:${metricCode}`,
-    label: `${org} · ${metricLabel}`,
+    label: `${org}${CHART_LABEL_SEPARATOR}${metricLabel}`,
     description: "AI benchmark (point-in-time)",
     detail: "Bench",
     expression: { kind: "benchmark", selector: org, metric: metricCode },
@@ -733,7 +1426,7 @@ function benchmarkSuggestion(org: string, metricCode: string, metricLabel: strin
 function pollSuggestion(subject: string, choice: string): SeriesCatalogSuggestion {
   return {
     id: `poll:${subject}:${choice}`,
-    label: `${subject} · ${choice}`,
+    label: `${subject}${CHART_LABEL_SEPARATOR}${choice}`,
     description: "VoteHub poll series",
     detail: "Poll",
     expression: { kind: "poll", subject, choice },
@@ -743,7 +1436,7 @@ function pollSuggestion(subject: string, choice: string): SeriesCatalogSuggestio
 function adjacentIndexSuggestion(indexId: string, name: string): SeriesCatalogSuggestion {
   return {
     id: `adj:${indexId}`,
-    label: `ADJ · ${name}`,
+    label: `ADJ${CHART_LABEL_SEPARATOR}${name}`,
     description: "Adjacent prediction-market index",
     detail: "Adjacent",
     expression: { kind: "adjacent-index", indexId, label: name },
@@ -758,7 +1451,7 @@ function predictionExpressionSuggestion(
   }
   return {
     id: `pm:${expression.venue}:${expression.marketId}`,
-    label: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} · ${expression.label ?? expression.marketId}`,
+    label: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"}${CHART_LABEL_SEPARATOR}${expression.label ?? expression.marketId}`,
     description: `${expression.venue === "kalshi" ? "Kalshi" : "Polymarket"} yes-price`,
     detail: expression.venue === "kalshi" ? "KALSHI" : "POLY",
     expression,
@@ -787,10 +1480,10 @@ export function formatParsedSeriesExpression(expression: ParsedSeriesExpression)
       return formatPredictionSeriesExpression(expression);
     case "capability":
       return `CAP:${expression.capabilityId}:${expression.seriesId}`;
-    case "constant":
-      return String(expression.value);
-    default:
-      return `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+    default: {
+      const base = `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+      return expression.transform ? `${base}:${expression.transform}` : base;
+    }
   }
 }
 
@@ -804,8 +1497,14 @@ const ASSIST_FIELD_NAMES = [
 export function buildChartSeriesAssistContext(): string {
   return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
     + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
-    + "A / B for a ratio, A - B for a spread, FRED:seriesId for economic data, "
-    + "ADJ:indexId for Adjacent indices (e.g. ADJ:red, ADJ:blue, ADJ:red-tr), "
+    + "SYMBOL:field:transform for transforms (e.g. AAPL:revenue:yoy for growth), "
+    + "A / B for a ratio, A - B for a spread, "
+    + "CORR(A, B) for rolling correlation (e.g. CORR(AAPL:price, MSFT:price)), "
+    + "DD:SYMBOL:price for drawdown from the rolling peak, "
+    + "VOL:SYMBOL:price for 20-day realized volatility (VOL:20:SYMBOL:price for a window), "
+    + "DIST:SYMBOL:price for % distance from the 20-day SMA (DIST:200:SYMBOL:price for 200), "
+    + "FRED:seriesId for economic data, "
+    + "ADJ:indexId for Adjacent indices and reference rates (e.g. ADJ:red, ADJ:house), "
     + "KALSHI:ticker for Kalshi yes-price (e.g. KALSHI:KXPRESPERSON), "
     + "POLY:marketId for Polymarket yes-price, "
     + "FUT:code for futures (e.g. FUT:ES), "
@@ -817,11 +1516,15 @@ export function buildChartSeriesAssistContext(): string {
     + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL), "
     + "BTC-USD:price for crypto. "
     + "Use G <expression> to chart or CAT <query> to browse the Data Catalog. "
-    + "Natural language such as 'life expectancy', 'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' maps onto those expressions.";
+    + "Natural language such as 'relative performance', 'AAPL vs MSFT', 'drawdown', "
+    + "'realized volatility', 'yield curve spread', 'revenue growth', 'gross margin', "
+    + "'dividend yield', 'correlation', 'distance from moving average', 'life expectancy', "
+    + "'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' "
+    + "maps onto those expressions.";
 }
 
-const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID):/i;
-const CATALOG_SERIES_INTENT_RE = /\b(fred|cpi|gdp|unemployment|pce|nfp|treasury|ust|owid|weather|climate|nws|votehub|polls?|bitcoin|ethereum|crypto|llm-stats|aibench|benchmarks?|futures?)\b/i;
+const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID|DD|VOL|DIST):|^CORR\s*\(/i;
+const CATALOG_SERIES_INTENT_RE = /\b(fred|cpi|gdp|unemployment|pce|nfp|treasury|ust|owid|weather|climate|nws|temp|temperature|precip|wx|votehub|polls?|bitcoin|ethereum|crypto|llm-stats|aibench|benchmarks?|futures?|discount|premium|drawdown|draw down|realized vol|realised vol|realized volatility|realised volatility|rvol|vol(?:atility)?|relative performance|relative perf|rel perf|outperform|yield curve|curve spread|term spread|spreads?|growth|growing|year[- ]over[- ]year|yoy|margins?|dividend yield|div yield|correlation|correlated|moving average|ma distance|distance from|yields?)\b/i;
 
 export function looksLikeOwidSeriesQuery(query: string): boolean {
   const trimmed = query.trim();
@@ -830,13 +1533,29 @@ export function looksLikeOwidSeriesQuery(query: string): boolean {
   return /\b(owid|our world in data)\b/i.test(trimmed);
 }
 
+function looksLikeWeatherStationQuery(query: string): boolean {
+  const compactQuery = compact(query);
+  if (compactQuery.length < 3) return false;
+  return WEATHER_STATIONS.some((station) => {
+    const city = compact(station.city);
+    const id = compact(station.id);
+    return compactQuery.includes(city)
+      || compactQuery.includes(id)
+      || city.startsWith(compactQuery)
+      || id.startsWith(compactQuery);
+  });
+}
+
 export function looksLikeCatalogSeriesQuery(query: string): boolean {
   const trimmed = query.trim();
   if (!trimmed) return false;
   if (CATALOG_SERIES_PREFIX_RE.test(trimmed)) return true;
   if (looksLikePredictionMarketQuery(trimmed)) return true;
   if (looksLikeOwidSeriesQuery(trimmed)) return true;
-  return CATALOG_SERIES_INTENT_RE.test(trimmed);
+  if (CATALOG_SERIES_INTENT_RE.test(trimmed)) return true;
+  // `AAPL vs MSFT` (and only a full pair) is unambiguous relative performance.
+  if (/^[A-Z0-9.^]{1,12}\s+(?:vs\.?|versus)\s+[A-Z0-9.^]{1,12}$/i.test(trimmed)) return true;
+  return looksLikeWeatherStationQuery(trimmed);
 }
 
 function appendPredictionMarketHits(

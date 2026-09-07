@@ -51,7 +51,7 @@ import {
   parseWeatherMetric,
   weatherMetricLabel,
 } from "../weather/mapping";
-import type { WeatherPrintProvider } from "../weather/types";
+import type { WeatherMetric, WeatherPrintProvider } from "../weather/types";
 import {
   normalizePredictionMarketId,
   resolveAdjacentIndexQuery,
@@ -85,6 +85,16 @@ const CHART_FIELD_TOKEN_ALIASES: Readonly<Record<string, string>> = Object.freez
   dividends: CHART_FIELD_IDS.dividends,
 });
 
+/** Series transforms accepted as a `SYMBOL:field:transform` expression suffix. */
+const SERIES_TRANSFORM_TOKENS: ReadonlySet<string> = new Set([
+  "raw",
+  "percent",
+  "index100",
+  "yoy",
+  "qoq",
+  "log",
+]);
+
 const SHORT_FIELD_TOKENS: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries([
     ...Object.entries(CHART_FIELD_IDS).map(([token, fieldId]) => [fieldId, token]),
@@ -97,8 +107,16 @@ export function shortChartFieldToken(fieldId: string): string {
   return SHORT_FIELD_TOKENS[fieldId] ?? fieldId.split(".").at(-1) ?? fieldId;
 }
 
+export type ConstantSeriesExpression = { kind: "constant"; value: number };
+
+/**
+ * Every chartable single series, as parsed from text by
+ * {@link parseSeriesExpression}. The security variant carries an optional
+ * `SYMBOL:field:transform` suffix so transforms (yoy, percent, …) are authored
+ * in the same text grammar as the source series.
+ */
 export type ParsedSeriesExpression =
-  | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string }
+  | { kind: "security"; symbol: string; exchange?: string; fieldId: string; label?: string; transform?: SeriesTransform }
   | { kind: "economic"; provider: "fred"; seriesId: string; label?: string }
   | {
       kind: "capability";
@@ -107,7 +125,18 @@ export type ParsedSeriesExpression =
       label?: string;
       style?: SeriesStyle;
       transform?: SeriesTransform;
-    };
+    }
+  | { kind: "adjacent-index"; indexId: string; label?: string }
+  | { kind: "future"; code: string; symbol: string; name: string; label?: string }
+  | { kind: "treasury-yield"; maturity: string; seriesId: string; label?: string }
+  | { kind: "benchmark"; selector: string; metric: string; label?: string }
+  | { kind: "poll"; subject: string; choice: string; label?: string }
+  | { kind: "weather"; provider: "twc-kalshi" | "nws-cli"; stationId: string; metric: WeatherMetric; label?: string }
+  | { kind: "owid"; slug: string; entity: string; label?: string }
+  | { kind: "prediction-market"; venue: "kalshi" | "polymarket"; marketId: string; label?: string };
+
+/** A chart series expression or a plain numeric constant (used as a binary leg). */
+export type SeriesOrConstant = ParsedSeriesExpression | ConstantSeriesExpression;
 
 function normalizeBaseSymbol(value: string): string | null {
   const symbol = value.trim().toUpperCase();
@@ -319,6 +348,7 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
 
   let instrument: { symbol: string; exchange?: string } | null = null;
   let fieldId: string = CHART_FIELD_IDS.price;
+  let transform: SeriesTransform | undefined;
   if (parts.length === 1) {
     instrument = normalizeInstrument(trimmed);
   } else if (parts.length === 2) {
@@ -331,15 +361,47 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
       instrument = normalizeInstrument(trimmed);
     }
   } else if (parts.length === 3) {
+    // `SYMBOL:field:transform` (e.g. AAPL:revenue:yoy for growth). The middle
+    // segment is a field alias and the last a series transform; this must not
+    // shadow the exchange-qualified form `SYMBOL:EXCH:field` below.
+    const fieldCandidate = resolveChartFieldAlias(parts[1]);
+    const transformToken = parts[2]?.trim().toLowerCase();
+    if (
+      getTimeSeriesField(fieldCandidate)
+      && transformToken
+      && SERIES_TRANSFORM_TOKENS.has(transformToken)
+    ) {
+      instrument = normalizeInstrument(parts[0]!);
+      fieldId = fieldCandidate;
+      transform = transformToken as SeriesTransform;
+    } else {
+      const candidateFieldId = resolveChartFieldAlias(parts[2]);
+      if (getTimeSeriesField(candidateFieldId)) {
+        instrument = normalizeInstrument(`${parts[0]}:${parts[1]}`, true);
+        fieldId = candidateFieldId;
+      }
+    }
+  } else if (parts.length === 4) {
+    // Exchange-qualified transformed fields use
+    // `SYMBOL:EXCH:field:transform`, which is the formatted form emitted for
+    // catalog suggestions whose instrument carries an exchange.
     const candidateFieldId = resolveChartFieldAlias(parts[2]);
-    if (getTimeSeriesField(candidateFieldId)) {
+    const transformToken = parts[3]?.trim().toLowerCase();
+    if (
+      getTimeSeriesField(candidateFieldId)
+      && transformToken
+      && SERIES_TRANSFORM_TOKENS.has(transformToken)
+    ) {
       instrument = normalizeInstrument(`${parts[0]}:${parts[1]}`, true);
       fieldId = candidateFieldId;
+      transform = transformToken as SeriesTransform;
     }
   }
   if (!instrument) return null;
   if (!getTimeSeriesField(fieldId)) return null;
-  return { kind: "security", ...instrument, fieldId };
+  return transform
+    ? { kind: "security", ...instrument, fieldId, transform }
+    : { kind: "security", ...instrument, fieldId };
 }
 
 /**
@@ -391,6 +453,140 @@ export function parseBinarySeriesExpression(value: string): ParsedBinarySeriesEx
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Study expressions — `DD:`, `VOL:`, `DIST:` derive a single study from one
+// source series, and `CORR(a, b)` derives a rolling correlation from two. They
+// reuse the study kinds the chart resolver already implements (drawdown,
+// volatility, distance, correlation) without new math or new spec types.
+// ---------------------------------------------------------------------------
+
+export type ChartStudyKindName = "drawdown" | "volatility" | "distance";
+
+export type ChartStudyExpression =
+  | { kind: "drawdown"; source: SeriesOrConstant }
+  | { kind: "volatility"; period?: number; source: SeriesOrConstant }
+  | { kind: "distance"; period?: number; source: SeriesOrConstant };
+
+const STUDY_PREFIX_TO_KIND: Readonly<Record<string, ChartStudyKindName>> = {
+  [SERIES_PREFIX.drawdown]: "drawdown",
+  [SERIES_PREFIX.volatility]: "volatility",
+  [SERIES_PREFIX.distance]: "distance",
+} as const;
+
+/** Default realized-volatility / SMA-distance window when the expression omits one. */
+export const DEFAULT_STUDY_PERIOD = 20;
+
+const STUDY_EXPRESSION_RE = /^(DD|VOL|DIST):(.+)$/i;
+
+function parseStudyPeriodToken(tail: string): { period: number; source: string } | null {
+  const match = /^(\d{1,3})[:\s]\s*(.+)$/.exec(tail);
+  if (!match) return null;
+  const period = Number(match[1]!);
+  if (!Number.isInteger(period) || period <= 0 || period > 500) return null;
+  return { period, source: match[2]!.trim() };
+}
+
+/**
+ * Parse a study expression:
+ * - `DD:<source>` — drawdown from the rolling peak
+ * - `VOL:<source>` / `VOL:<period>:<source>` — rolling realized volatility
+ * - `DIST:<source>` / `DIST:<period>:<source>` — % distance from the SMA
+ * The source uses the full series-expression grammar (security with optional
+ * transform, FRED, UST, KALSHI, …) or a numeric constant.
+ */
+export function parseStudyExpression(value: string): ChartStudyExpression | null {
+  const match = STUDY_EXPRESSION_RE.exec(value.trim());
+  if (!match) return null;
+  const kind = STUDY_PREFIX_TO_KIND[match[1]!.toUpperCase()];
+  if (!kind || kind === "drawdown") {
+    const source = parseSeriesOrConstant(match[2]!.trim());
+    return source ? { kind: "drawdown", source } : null;
+  }
+  const tail = match[2]!.trim();
+  const parsed = parseStudyPeriodToken(tail);
+  const source = parseSeriesOrConstant(parsed?.source ?? tail);
+  if (!source) return null;
+  return {
+    kind,
+    ...(parsed && parsed.period !== DEFAULT_STUDY_PERIOD ? { period: parsed.period } : {}),
+    source,
+  };
+}
+
+export function formatChartStudyExpression(
+  study: ChartStudyExpression,
+): string {
+  const prefix = study.kind === "drawdown"
+    ? SERIES_PREFIX.drawdown
+    : study.kind === "volatility"
+      ? SERIES_PREFIX.volatility
+      : SERIES_PREFIX.distance;
+  const head = study.kind !== "drawdown" && study.period
+    ? `${prefix}:${study.period}:`
+    : `${prefix}:`;
+  return `${head}${expressionSourceText(study.source)}`;
+}
+
+/** Formats any parseable source leg back into command-bar text. */
+export function expressionSourceText(expression: SeriesOrConstant): string {
+  if (expression.kind === "constant") return String(expression.value);
+  switch (expression.kind) {
+    case "economic":
+      return `FRED:${expression.seriesId}`;
+    case "capability":
+      return `CAP:${expression.capabilityId}:${expression.seriesId}`;
+    case "adjacent-index":
+      return `${SERIES_PREFIX.adjacentIndex}:${expression.indexId}`;
+    case "future":
+      return `${SERIES_PREFIX.future}:${expression.code}`;
+    case "treasury-yield":
+      return `${SERIES_PREFIX.treasury}:${expression.maturity}`;
+    case "benchmark":
+      return `${SERIES_PREFIX.benchmark}:${expression.selector}:${expression.metric}`;
+    case "poll":
+      return `${SERIES_PREFIX.poll}:${expression.subject}:${expression.choice}`;
+    case "weather":
+      return `${expression.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${expression.stationId}:${expression.metric}`;
+    case "owid":
+      return `${SERIES_PREFIX.owid}:${expression.slug}:${expression.entity}`;
+    case "prediction-market":
+      return `${expression.venue === "kalshi" ? "KALSHI" : "POLY"}:${expression.marketId}`;
+    case "security":
+      return formatSecurityExpressionText(expression);
+  }
+}
+
+function formatSecurityExpressionText(expression: Extract<ParsedSeriesExpression, { kind: "security" }>): string {
+  const base = `${publicTickerKey(expression.symbol, expression.exchange)}:${expression.fieldId}`;
+  return expression.transform ? `${base}:${expression.transform}` : base;
+}
+
+export interface ParsedCorrelationExpression {
+  left: SeriesOrConstant;
+  right: SeriesOrConstant;
+}
+
+/**
+ * Parse `CORR(<left>, <right>)` into the two legs. The surrounding parens make
+ * the comma unambiguous against the multi-series list separator.
+ */
+export function parseCorrelationExpression(value: string): ParsedCorrelationExpression | null {
+  const match = /^CORR\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)$/i.exec(value.trim());
+  if (!match) return null;
+  const left = parseSeriesOrConstant(match[1]!.trim());
+  const right = parseSeriesOrConstant(match[2]!.trim());
+  return left && right ? { left, right } : null;
+}
+
+export function formatCorrelationExpression(correlation: ParsedCorrelationExpression): string {
+  return `CORR(${expressionSourceText(correlation.left)}, ${expressionSourceText(correlation.right)})`;
+}
+
+export function isChartIdeaExpression(value: string): boolean {
+  const trimmed = value.trim();
+  return STUDY_EXPRESSION_RE.test(trimmed) || /^CORR\s*\(/i.test(trimmed);
+}
+
 export function parseChartExpression(value: string): ParsedSeriesExpression[] {
   if (!value.trim()) return [];
 
@@ -410,31 +606,35 @@ export function parseChartExpression(value: string): ParsedSeriesExpression[] {
 }
 
 export function formatSeriesExpression(series: ChartSeriesSpec): string {
-  if (series.source.kind === "economic") return `FRED:${series.source.seriesId}`;
-  if (series.source.kind === "capability") {
-    return `CAP:${series.source.capabilityId}:${series.source.seriesId}`;
+  const source = series.source;
+  switch (source.kind) {
+    case "economic":
+      return `FRED:${source.seriesId}`;
+    case "capability":
+      return `CAP:${source.capabilityId}:${source.seriesId}`;
+    case "prediction-market":
+      return `${source.venue === "kalshi" ? "KALSHI" : "POLY"}:${source.marketId}`;
+    case "adjacent-index":
+      return `${SERIES_PREFIX.adjacentIndex}:${source.indexId}`;
+    case "benchmark":
+      return `${SERIES_PREFIX.benchmark}:${source.selector}:${source.metric}`;
+    case "poll":
+      return `${SERIES_PREFIX.poll}:${source.subject}:${source.choice}`;
+    case "weather":
+      return `${source.provider === "nws-cli" ? SERIES_PREFIX.nwsCli : SERIES_PREFIX.weather}:${source.stationId}:${source.metric}`;
+    case "owid":
+      return `${SERIES_PREFIX.owid}:${source.slug}:${source.entity}`;
+    case "constant":
+      return String(source.value);
+    case "security": {
+      const base = `${publicTickerKey(source.instrument.symbol, source.instrument.exchange)}:${source.fieldId}`;
+      return series.transform && series.transform !== "raw" ? `${base}:${series.transform}` : base;
+    }
   }
-  if (series.source.kind === "prediction-market") {
-    const prefix = series.source.venue === "kalshi" ? "KALSHI" : "POLY";
-    return `${prefix}:${series.source.marketId}`;
-  }
-  return `${publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange)}:${series.source.fieldId}`;
 }
 
 export function chartSeriesLabel(series: ChartSeriesSpec): string {
-  if (series.label?.trim()) return series.label.trim();
-  if (series.source.kind === "economic") return `FRED ${series.source.seriesId}`;
-  if (series.source.kind === "capability") return series.source.seriesId;
-  if (series.source.kind === "prediction-market") {
-    const prefix = series.source.venue === "kalshi" ? "KALSHI" : "POLY";
-    return `${prefix} ${series.source.marketId}`;
-  }
-  const instrument = publicTickerKey(
-    series.source.instrument.symbol,
-    series.source.instrument.exchange,
-  );
-  const field = getTimeSeriesField(series.source.fieldId);
-  return `${instrument} ${field?.shortLabel ?? series.source.fieldId.split(".").at(-1) ?? "Series"}`;
+  return seriesSpecLabel(series);
 }
 
 export function getCompatibleSeriesStyles(fieldId: string): SeriesStyle[] {
@@ -712,10 +912,16 @@ export function buildSeriesSpec(
   }
 
   const presentation = defaultSeriesPresentation(expression.fieldId);
-  const style = overrides.style ?? presentation.style;
+  const requestedTransform = expression.transform;
+  const rawStyle = presentation.style;
+  // A non-raw transform is incompatible with OHLC styles; fall back to a line
+  // so `SYMBOL:price:percent`-style expressions stay valid chart specs.
+  const style = requestedTransform && requestedTransform !== "raw" && isOhlcSeriesStyle(rawStyle)
+    ? "line"
+    : (overrides.style ?? rawStyle);
   const timestampMode = defaultFinancialTimestampMode(expression.fieldId);
   return {
-    id: `${slug(expression.symbol)}-${slug(expression.fieldId)}-${index + 1}`,
+    id: `${slug(expression.symbol)}-${slug(expression.fieldId)}${requestedTransform ? `-${requestedTransform}` : ""}-${index + 1}`,
     source: {
       kind: "security",
       instrument: {
@@ -727,7 +933,7 @@ export function buildSeriesSpec(
       ...(timestampMode ? { timestampMode } : {}),
     },
     ...(expression.label ? { label: expression.label } : {}),
-    transform: presentation.transform,
+    transform: requestedTransform ?? presentation.transform,
     axis: presentation.axis,
     panelId: presentation.panelId,
     ...overrides,
@@ -929,6 +1135,188 @@ export function appendChartSeries(
   };
 }
 
+function uniqueStudyId(studies: readonly ChartStudySpec[], preferred: string): string {
+  if (!studies.some((entry) => entry.id === preferred)) return preferred;
+  let suffix = 2;
+  while (studies.some((entry) => entry.id === `${preferred}-${suffix}`)) suffix += 1;
+  return `${preferred}-${suffix}`;
+}
+
+export interface ChartIdeaApplyResult {
+  spec: ChartSpec;
+  /** The series the idea added, in authoring order (hidden operands included). */
+  appended: ChartSeriesSpec[];
+}
+
+/**
+ * Canonical source key shared by {@link SeriesOrConstant} operands and built
+ * {@link ChartSeriesSpec}s, so an idea merge can recognize "the user already
+ * charts this source" regardless of which side it is compared from.
+ */
+function parsedSourceIdentityKey(expression: SeriesOrConstant): string | null {
+  switch (expression.kind) {
+    case "security":
+      return `SEC:${expression.symbol}:${expression.fieldId}`;
+    // Futures resolve through the security pipeline as their continuous symbol.
+    case "future":
+      return `SEC:${expression.symbol}:${CHART_FIELD_IDS.price}`;
+    // Treasury yields resolve through the FRED economic pipeline.
+    case "treasury-yield":
+      return `FRED:${expression.seriesId}`;
+    case "economic":
+      return `FRED:${expression.seriesId}`;
+    case "capability":
+      return `CAP:${expression.capabilityId}:${expression.seriesId}`;
+    case "adjacent-index":
+      return `ADJ:${expression.indexId}`;
+    case "benchmark":
+      return `BENCH:${expression.selector}:${expression.metric}`;
+    case "poll":
+      return `POLL:${expression.subject}:${expression.choice}`;
+    case "weather":
+      return `WX:${expression.provider}:${expression.stationId}:${expression.metric}`;
+    case "owid":
+      return `OWID:${expression.slug}:${expression.entity}`;
+    case "prediction-market":
+      return `PM:${expression.venue}:${expression.marketId}`;
+    case "constant":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** {@link parsedSourceIdentityKey}, from the built-series side of a chart spec. */
+function seriesSourceIdentityKey(series: ChartSeriesSpec): string | null {
+  switch (series.source.kind) {
+    case "security":
+      return `SEC:${series.source.instrument.symbol}:${series.source.fieldId}`;
+    case "economic":
+      return `FRED:${series.source.seriesId}`;
+    case "capability":
+      return `CAP:${series.source.capabilityId}:${series.source.seriesId}`;
+    case "adjacent-index":
+      return `ADJ:${series.source.indexId}`;
+    case "benchmark":
+      return `BENCH:${series.source.selector}:${series.source.metric}`;
+    case "poll":
+      return `POLL:${series.source.subject}:${series.source.choice}`;
+    case "weather":
+      return `WX:${series.source.provider}:${series.source.stationId}:${series.source.metric}`;
+    case "owid":
+      return `OWID:${series.source.slug}:${series.source.entity}`;
+    case "prediction-market":
+      return `PM:${series.source.venue}:${series.source.marketId}`;
+    case "constant":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Apply a chart "idea" expression onto an open spec. Idea expressions need more
+ * than one series or a derived study row (`DD:`, `VOL:`, `DIST:`, `CORR(a, b)`,
+ * `a / b`, `a - b`), so they cannot go through the single-series
+ * {@link appendChartSeries}. The full expression is built fresh — reusing the
+ * exact same preset logic the `G` command uses — and its series/studies/panels
+ * are merged into the existing spec under collision-safe ids. A source already
+ * on the chart is reused as the study/formula input instead of appending a
+ * look-alike series (which would break the one-candle-per-panel rule). Previous
+ * pair formulas are superseded whenever a new formula idea lands, so the pair
+ * study selection always reflects the most recent ratio/spread/correlation add.
+ *
+ * Returns null when the text is not a chart idea or cannot be parsed; callers
+ * then fall back to a plain single-series append.
+ */
+export function applyChartIdeaToSpec(
+  spec: ChartSpec,
+  expressionText: string,
+): ChartIdeaApplyResult | null {
+  const text = expressionText.trim();
+  if (!text) return null;
+  const study = parseStudyExpression(text);
+  const correlation = study ? null : parseCorrelationExpression(text);
+  const binary = study || correlation ? null : parseBinarySeriesExpression(text);
+  const isIdea = Boolean(study || correlation || binary);
+  if (!isIdea) return null;
+
+  const fresh = study
+    ? buildStudyPreset(study)
+    : buildCustomChartPreset(text);
+  if (fresh.series.length === 0) return null;
+
+  // The parsed source behind each fresh series, in authoring order. Stays in
+  // sync with what buildStudyPreset / buildCustomChartPreset actually built.
+  const sources: SeriesOrConstant[] = study
+    ? [study.source]
+    : correlation
+      ? [correlation.left, correlation.right]
+      : [binary!.left, binary!.right];
+
+  const existingBySource = new Map<string, ChartSeriesSpec>();
+  for (const entry of spec.series) {
+    const key = seriesSourceIdentityKey(entry);
+    if (key && !existingBySource.has(key)) existingBySource.set(key, entry);
+  }
+
+  // Reuse a matching existing source as the fresh series (and therefore as the
+  // study/formula input); append only sources the chart does not have yet.
+  const seriesIdMap = new Map<string, string>();
+  const appended: ChartSeriesSpec[] = [];
+  const claimed = new Set<string>();
+  fresh.series.forEach((entry, index) => {
+    const key = sources[index] ? parsedSourceIdentityKey(sources[index]!) : null;
+    const existing = key ? existingBySource.get(key) : undefined;
+    if (existing && !claimed.has(existing.id)) {
+      claimed.add(existing.id);
+      seriesIdMap.set(entry.id, existing.id);
+      return;
+    }
+    const id = uniqueSeriesId(spec.series, entry.id);
+    seriesIdMap.set(entry.id, id);
+    // Same candle/OHLC-collision protection the fresh builders use, in case the
+    // chart already has a price series this merge could not reuse.
+    appended.push(coerceOhlcPanelCollision({ ...entry, id }, [...spec.series, ...appended]));
+  });
+
+  // Panels keep the live chart's authored panel state; fresh study/formula
+  // panels (Drawdown, Volatility, MA Distance, Formula, Correlation) are added
+  // with their default labels/heights only when the id is brand new.
+  const panelIds = new Set(spec.panels.map((panel) => panel.id));
+  const mergedPanels = [...spec.panels];
+  for (const panel of fresh.panels) {
+    if (panelIds.has(panel.id)) continue;
+    mergedPanels.push(panel);
+    panelIds.add(panel.id);
+  }
+
+  // Fresh pair formulas (ratio/spread/correlation) supersede prior ones so
+  // `pair:ratio` remains a unique id and getSelectedPairStudies reflects the
+  // newest formula; a plain DD/VOL/DIST study must never remove a pair formula
+  // the user already authored.
+  const mergedStudies = study
+    ? spec.studies
+    : spec.studies.filter((entry) => (
+      !entry.id.startsWith(PAIR_STUDY_ID_PREFIX)
+    ));
+  const freshStudies = fresh.studies.map((entry) => ({
+    ...entry,
+    id: uniqueStudyId(mergedStudies, entry.id),
+    inputSeriesIds: entry.inputSeriesIds.map((inputId) => seriesIdMap.get(inputId) ?? inputId),
+  }));
+
+  return {
+    spec: {
+      ...spec,
+      series: [...spec.series, ...appended],
+      studies: [...mergedStudies, ...freshStudies],
+      panels: mergedPanels,
+    },
+    appended,
+  };
+}
+
 function panelsForSeries(series: readonly ChartSeriesSpec[], studies: readonly ChartStudySpec[] = []): ChartPanelSpec[] {
   const panelIds = new Set(["main", ...series.map((entry) => entry.panelId), ...studies.map((entry) => entry.panelId)]);
   return [...panelIds].map((id) => ({
@@ -940,6 +1328,9 @@ function panelsForSeries(series: readonly ChartSeriesSpec[], studies: readonly C
     ...(id === "rsi" || id === "macd" ? { label: id.toUpperCase(), height: 0.28 } : {}),
     ...(id === "formula" ? { label: "Formula", height: 0.3 } : {}),
     ...(id === "correlation" ? { label: "Correlation", height: 0.3 } : {}),
+    ...(id === "drawdown" ? { label: "Drawdown", height: 0.3 } : {}),
+    ...(id === "volatility" ? { label: "Volatility", height: 0.3 } : {}),
+    ...(id === "distance" ? { label: "MA Distance", height: 0.3 } : {}),
     ...(/^panel-\d+$/.test(id) ? { label: `Panel ${id.slice("panel-".length)}`, height: 0.35 } : {}),
   }));
 }
@@ -1018,7 +1409,7 @@ function reconcilePanels(
 ): ChartPanelSpec[] {
   const defaults = panelsForSeries(series, studies);
   const requiredIds = new Set(defaults.map((panel) => panel.id));
-  const managedStudyPanelIds = new Set(["volume", "rsi", "macd", "formula", "correlation"]);
+  const managedStudyPanelIds = new Set(["volume", "rsi", "macd", "formula", "correlation", "drawdown", "volatility", "distance"]);
   const retained = existing.filter((panel) => (
     requiredIds.has(panel.id) || !managedStudyPanelIds.has(panel.id)
   ));
@@ -1048,6 +1439,18 @@ export function buildEmptyChartPreset(): ChartSpec {
 }
 
 export function buildCustomChartPreset(expression: string, fallbackSymbol?: string | null): ChartSpec {
+  const study = parseStudyExpression(expression);
+  if (study) return buildStudyPreset(study);
+  const correlation = parseCorrelationExpression(expression);
+  if (correlation) {
+    const spec = setPairStudies(
+      chartSpec(buildCustomSeries([correlation.left, correlation.right])),
+      ["correlation"],
+    );
+    // Like the ratio/spread operands, the two correlation inputs stay authored
+    // hidden so the derived rolling correlation is what the expression asks for.
+    return { ...spec, series: spec.series.map((series) => ({ ...series, visible: false })) };
+  }
   const binary = parseBinarySeriesExpression(expression);
   if (binary) {
     const spec = setPairStudies(
@@ -1065,6 +1468,49 @@ export function buildCustomChartPreset(expression: string, fallbackSymbol?: stri
   return chartSpec(buildCustomSeries(parsed), owidOnly ? { range: "ALL" } : {});
 }
 
+/**
+ * Build the chart for a single-source study expression (`DD:`, `VOL:`, `DIST:`).
+ * The source series stays visible as context; the derived line lands in its own
+ * lower panel.
+ */
+export function buildStudyPreset(study: ChartStudyExpression): ChartSpec {
+  const source = buildSeriesSpec(study.source, 0);
+  return chartSpec([source], { studies: [buildStudySpec(study, source)] });
+}
+
+/**
+ * Maps a {@link ChartStudyExpression} onto a resolved {@link ChartStudySpec}.
+ * The three study kinds the expression layer exposes (drawdown, volatility,
+ * distance) are implemented by the chart resolver and accepted by the spec
+ * normalizer; they are intentionally kept out of the annotated single-source
+ * study toggles, which remain on the classic builtin indicators.
+ */
+export function buildStudySpec(
+  study: ChartStudyExpression,
+  source: ChartSeriesSpec,
+): ChartStudySpec {
+  const panelId = study.kind === "drawdown"
+    ? "drawdown"
+    : study.kind === "volatility"
+      ? "volatility"
+      : "distance";
+  const parameters: Record<string, number> = {};
+  if ((study.kind === "volatility" || study.kind === "distance") && study.period) {
+    parameters.period = study.period;
+  }
+  return {
+    id: `${study.kind}-${source.id}`,
+    // `drawdown` / `volatility` / `distance` are real resolver kinds but are not
+    // part of the shared ChartStudyKind union (types.ts is a no-touch file), so
+    // the spec object is built through a locally-typed cast.
+    kind: study.kind as unknown as ChartStudyKind,
+    inputSeriesIds: [source.id],
+    parameters,
+    panelId,
+    axis: "auto",
+  };
+}
+
 export function buildPriceChartPreset(symbol: string): ChartSpec {
   const normalized = normalizeInstrument(symbol, true);
   if (!normalized) return buildEmptyChartPreset();
@@ -1072,6 +1518,24 @@ export function buildPriceChartPreset(symbol: string): ChartSpec {
     chartSpec([buildSeriesSpec({ kind: "security", ...normalized, fieldId: CHART_FIELD_IDS.price }, 0)]),
     ["volume"],
   );
+}
+
+/**
+ * Research / bound-pane charts. Prefixed alt series (POLY:, KALSHI:, ADJ:,
+ * FRED:, …) go through the expression parser; everything else is a security.
+ */
+export function buildBoundChartPreset(symbol: string): ChartSpec {
+  const trimmed = symbol.trim();
+  if (!trimmed) return buildEmptyChartPreset();
+  const parsed = parseSeriesExpression(trimmed);
+  if (parsed && parsed.kind !== "security") {
+    try {
+      return buildCustomChartPreset(trimmed);
+    } catch {
+      return buildEmptyChartPreset();
+    }
+  }
+  return buildPriceChartPreset(trimmed);
 }
 
 export function toggleMainPanelScale(spec: ChartSpec): ChartSpec {

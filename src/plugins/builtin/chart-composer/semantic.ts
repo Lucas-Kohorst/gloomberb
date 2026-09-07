@@ -25,24 +25,49 @@ function viewportEvidence(viewport: UseChartResolutionResult["viewport"]) {
 }
 
 function sourceEvidence(series: ChartSeriesSpec) {
-  if (series.source.kind === "security") return {
-    sourceKind: "security",
-    symbol: publicTickerKey(series.source.instrument.symbol, series.source.instrument.exchange),
-    exchange: series.source.instrument.exchange ?? null,
-    fieldId: series.source.fieldId,
-    period: series.source.period ?? "auto",
-    timestampMode: series.source.timestampMode ?? null,
-  };
-  if (series.source.kind === "economic") return {
-    sourceKind: "economic",
-    provider: series.source.provider,
-    economicSeriesId: series.source.seriesId,
-  };
-  return {
-    sourceKind: "capability",
-    capabilityId: series.source.capabilityId,
-    providerSeriesId: series.source.seriesId,
-  };
+  const source = series.source;
+  switch (source.kind) {
+    case "security":
+      return {
+        sourceKind: "security",
+        symbol: publicTickerKey(source.instrument.symbol, source.instrument.exchange),
+        exchange: source.instrument.exchange ?? null,
+        fieldId: source.fieldId,
+        period: source.period ?? "auto",
+        timestampMode: source.timestampMode ?? null,
+      };
+    case "economic":
+      return {
+        sourceKind: "economic",
+        provider: source.provider,
+        economicSeriesId: source.seriesId,
+      };
+    case "capability":
+      return {
+        sourceKind: "capability",
+        capabilityId: source.capabilityId,
+        providerSeriesId: source.seriesId,
+      };
+    case "adjacent-index":
+      return { sourceKind: "adjacent-index", indexId: source.indexId };
+    case "benchmark":
+      return { sourceKind: "benchmark", selector: source.selector, metric: source.metric };
+    case "poll":
+      return { sourceKind: "poll", subject: source.subject, choice: source.choice };
+    case "weather":
+      return {
+        sourceKind: "weather",
+        provider: source.provider,
+        stationId: source.stationId,
+        metric: source.metric,
+      };
+    case "owid":
+      return { sourceKind: "owid", slug: source.slug, entity: source.entity };
+    case "prediction-market":
+      return { sourceKind: "prediction-market", venue: source.venue, marketId: source.marketId };
+    case "constant":
+      return { sourceKind: "constant", value: source.value };
+  }
 }
 
 /** Stable semantic evidence used by desktop automation and bot-safe screenshots. */

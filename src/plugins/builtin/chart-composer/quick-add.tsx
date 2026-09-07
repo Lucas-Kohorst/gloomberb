@@ -16,9 +16,11 @@ import { useOptionalPaneInstanceId } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import type { ChartSpec } from "../../../time-series/types";
 import { getSharedRegistry } from "../../registry";
-import { MAX_CHART_COMPOSER_SERIES } from "./chart-spec";
-import { appendChartSeries } from "./presets";
-import type { SeriesCatalogInstrument, SeriesCatalogSuggestion } from "./series-catalog";
+import { armCommitLock, resolveCatalogSuggestion } from "./catalog-commit";
+import {
+  type SeriesCatalogInstrument,
+  type SeriesCatalogSuggestion,
+} from "./series-catalog";
 import { useSeriesCatalogSuggestions } from "./use-series-catalog";
 
 const MAX_VISIBLE_SUGGESTIONS = 4;
@@ -260,15 +262,14 @@ export function ChartSeriesQuickAdd({
   const commitSuggestion = useCallback((suggestion: SeriesCatalogSuggestion | undefined) => {
     if (!suggestion || commitLockRef.current) return;
     cancelPendingBlur();
-    if (spec.series.length >= MAX_CHART_COMPOSER_SERIES) {
-      setError(`Charts support up to ${MAX_CHART_COMPOSER_SERIES} base series.`);
+    const result = resolveCatalogSuggestion(suggestion, spec);
+    if (!result) return;
+    if (result.kind === "limit") {
+      setError(result.message);
       return;
     }
-    commitLockRef.current = true;
-    queueMicrotask(() => {
-      commitLockRef.current = false;
-    });
-    setSpec(appendChartSeries(spec, suggestion.expression).spec);
+    armCommitLock(commitLockRef);
+    setSpec(result.spec);
     clearInput();
     setSelectedIndex(0);
     setError(null);
