@@ -261,7 +261,7 @@ function HelpPane({ focused, width, height }: PaneProps) {
               />
               <ShortcutRow
                 badges={["Esc"]}
-                description="Cancel an active pane drag."
+                description="Exit pane focus, unfocus a floating pane, or cancel an active pane drag."
               />
               <ShortcutRow
                 badges={["Esc", "Esc"]}
