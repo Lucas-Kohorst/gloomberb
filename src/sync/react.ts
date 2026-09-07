@@ -89,7 +89,7 @@ function configForSignedOutAccount(current: AppConfig): AppConfig {
   return createDefaultConfig(dataDir);
 }
 
-const CLOUD_SYNC_POLL_MS = 15_000;
+const CLOUD_SYNC_POLL_MS = 2_000;
 
 interface CloudSyncRuntimeOptions {
   state: AppState;
@@ -132,12 +132,15 @@ export function useCloudSyncRuntime({
   }, [initialized, pluginRegistry]);
 
   useEffect(() => {
-    if (!initialized || !appActive) return;
-    void cloudSyncController.requestSync({ reason: "foreground" });
+    if (!initialized) return;
     const timer = setInterval(() => {
       void cloudSyncController.requestSync({ reason: "poll" });
     }, CLOUD_SYNC_POLL_MS);
     return () => clearInterval(timer);
+  }, [initialized]);
+
+  useEffect(() => {
+    if (initialized && appActive) void cloudSyncController.requestSync({ reason: "foreground" });
   }, [appActive, initialized]);
 
   useEffect(() => subscribeToCloudVerification(apiClient, () => {

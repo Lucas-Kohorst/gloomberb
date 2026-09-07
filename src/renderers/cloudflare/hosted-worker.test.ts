@@ -222,11 +222,25 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(putResponse2?.status).toBe(400);
   });
 
+  test("accepts a workspace larger than the former 512 KB limit", async () => {
+    mockSessionUser = { id: "user-A" };
+    installMockFetch();
+    const response = await workerModule.default.fetch?.(
+      makeRequest("PUT", "/api/config", {
+        body: JSON.stringify({ config: { pluginConfig: { notes: { content: "x".repeat(600_000) } } }, updatedAt: "2026-09-07T12:00:00.000Z" }),
+        origin: ORIGIN,
+        sessionToken: "tok",
+      }),
+      makeEnv(),
+    );
+    expect(response?.status).toBe(200);
+  });
+
   test("rejects an oversized body", async () => {
     mockSessionUser = { id: "user-A" };
     installMockFetch();
     const env = makeEnv();
-    const huge = "x".repeat(513_000);
+    const huge = "x".repeat(2_000_001);
     const putResponse = await workerModule.default.fetch?.(
       makeRequest("PUT", "/api/config", {
         body: JSON.stringify({ config: { padding: huge }, updatedAt: "2026-08-17T12:00:00.000Z" }),
