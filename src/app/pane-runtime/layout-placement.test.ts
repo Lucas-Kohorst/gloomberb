@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LayoutConfig } from "../../types/config";
-import { resolvePaneShowTarget } from "./layout-placement";
+import { isFullscreenOverlaySession, resolvePaneShowTarget } from "./layout-placement";
 
 describe("resolvePaneShowTarget", () => {
   test("resolves a hidden pane by its exact instance id", () => {
@@ -23,5 +23,13 @@ describe("resolvePaneShowTarget", () => {
       paneType: "news-top",
       instance: hiddenPane,
     });
+  });
+});
+
+describe("isFullscreenOverlaySession", () => {
+  test("is true only while a pane is fullscreen", () => {
+    expect(isFullscreenOverlaySession({})).toBe(false);
+    expect(isFullscreenOverlaySession({ getFullscreenPaneIdFn: () => null })).toBe(false);
+    expect(isFullscreenOverlaySession({ getFullscreenPaneIdFn: () => "chart:main" })).toBe(true);
   });
 });

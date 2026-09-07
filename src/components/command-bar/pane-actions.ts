@@ -132,7 +132,8 @@ export function useCommandBarPaneActions({
     });
 
     const { width, height } = pluginRegistry.getTermSizeFn();
-    const nextLayout = currentState.config.layout.floating.some((entry) => entry.instanceId === paneId)
+    const nextLayout = !!pluginRegistry.getFullscreenPaneIdFn?.()
+      || currentState.config.layout.floating.some((entry) => entry.instanceId === paneId)
       ? addPaneFloating(currentState.config.layout, duplicate, width, height, paneDef)
       : addPaneToLayout(currentState.config.layout, duplicate, { relativeTo: paneId, position: "right" });
     persistLayoutChange(nextLayout);

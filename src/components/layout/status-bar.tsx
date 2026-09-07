@@ -39,6 +39,7 @@ type LayoutTabItem = {
   label: string;
   value: string;
   reorderable?: boolean;
+  onClose?: (value: string) => void;
   onContextMenu: (value: string, event: any) => void;
 };
 
@@ -89,17 +90,23 @@ export function StatusBar({ onOpenChangelog }: { onOpenChangelog?: (version: str
     value: String(index),
     reorderable: true,
   }));
-  const layoutTabs = transientLayout
+  const layoutTabs: Array<Omit<LayoutTabItem, "onContextMenu">> = transientLayout
     ? [
       ...savedLayoutTabs,
       {
         label: transientLayout.label,
         value: transientLayout.id,
         reorderable: false,
+        onClose: transientLayout.active
+          ? () => transientLayout.onExit?.()
+          : undefined,
       },
     ]
     : savedLayoutTabs;
-  const layoutTabsWidth = layoutTabs.reduce((sum, tab) => sum + tab.label.length + 2, 0);
+  const layoutTabsWidth = layoutTabs.reduce(
+    (sum, tab) => sum + tab.label.length + 2 + (tab.onClose ? 2 : 0),
+    0,
+  );
   const activeLayoutValue = transientLayout?.active ? transientLayout.id : String(activeLayoutIdx);
   const handleLayoutSelect = (value: string) => {
     if (value === transientLayout?.id) {

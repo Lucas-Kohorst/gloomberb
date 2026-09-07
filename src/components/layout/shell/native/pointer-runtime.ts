@@ -6,6 +6,7 @@ import type {
   LayoutBounds,
 } from "../../../../plugins/pane-manager";
 import type { ActionMenuState } from "../action-menu-overlay";
+import { isFullscreenBasePane } from "../fullscreen";
 import type { ShellDragRuntimeState, ShellMouseEvent } from "../drag/runtime";
 import type { WindowEditState } from "../../window-edit/mode";
 
@@ -26,6 +27,8 @@ interface UseShellNativePointerRuntimeOptions {
   setHoveredMenuItemId: Dispatch<SetStateAction<string | null>>;
   setMenuState: Dispatch<SetStateAction<ActionMenuState | null>>;
   transientFocusActive: boolean;
+  transientFocusPaneId?: string | null;
+  exitTransientFocus?: () => boolean;
   togglePaneFloating: (paneId: string) => boolean;
   windowMode: WindowEditState | null;
   commandBarOpen?: boolean;
@@ -44,6 +47,8 @@ export function useShellNativePointerRuntime({
   setHoveredMenuItemId,
   setMenuState,
   transientFocusActive,
+  transientFocusPaneId = null,
+  exitTransientFocus,
   togglePaneFloating,
   windowMode,
   commandBarOpen = false,
@@ -90,7 +95,7 @@ export function useShellNativePointerRuntime({
     if (!nativePaneChrome) return;
     if (commandBarOpen) return;
     if (windowMode) return;
-    if (transientFocusActive) return;
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId)) return;
     if (event.button === 2) return;
 
     const pointer = getShellPointer(event);
@@ -106,7 +111,7 @@ export function useShellNativePointerRuntime({
     };
     updateDragFloatingRect({ paneId, rect: { ...rect } });
     event.preventDefault();
-  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, updateDragFloatingRect, windowMode]);
+  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, transientFocusActive, transientFocusPaneId, updateDragFloatingRect, windowMode]);
 
   const startNativeDockedDrag = useCallback((paneId: string, rect: LayoutBounds, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
@@ -137,7 +142,7 @@ export function useShellNativePointerRuntime({
   ) => {
     if (!nativePaneChrome) return;
     if (commandBarOpen) return;
-    if (transientFocusActive) return;
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId)) return;
 
     const pointer = getShellPointer(event);
     if (windowMode) {
@@ -156,7 +161,7 @@ export function useShellNativePointerRuntime({
     updateDragFloatingRect({ paneId, rect: { ...rect } });
     event.stopPropagation();
     event.preventDefault();
-  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, selectWindowModePane, transientFocusActive, updateDragFloatingRect, windowMode]);
+  }, [commandBarOpen, dragRef, focusNativePane, getShellPointer, nativePaneChrome, selectWindowModePane, transientFocusActive, transientFocusPaneId, updateDragFloatingRect, windowMode]);
 
   const startNativeDividerDrag = useCallback((divider: DockDividerLayout, event: ShellMouseEvent) => {
     if (!nativePaneChrome) return;
@@ -206,8 +211,9 @@ export function useShellNativePointerRuntime({
     if (windowMode) return;
     event.stopPropagation();
     event.preventDefault();
+    if (isFullscreenBasePane(transientFocusActive, transientFocusPaneId, paneId) && exitTransientFocus?.()) return;
     handleFloatingClose(paneId);
-  }, [commandBarOpen, handleFloatingClose, windowMode]);
+  }, [commandBarOpen, exitTransientFocus, handleFloatingClose, transientFocusActive, transientFocusPaneId, windowMode]);
 
   const handlePaneFloatToggle = useCallback((paneId: string, event: ShellMouseEvent) => {
     event.stopPropagation();

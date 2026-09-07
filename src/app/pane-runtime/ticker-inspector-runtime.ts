@@ -4,6 +4,7 @@ import {
   addPaneToLayout,
   findDockLeaf,
 } from "../../plugins/pane-manager";
+import { isFullscreenOverlaySession } from "./layout-placement";
 import type { PluginRegistry } from "../../plugins/registry";
 import {
   findTickerResearchFollower,
@@ -103,7 +104,9 @@ export function useAppTickerInspectorRuntime({
     });
     const { width, height } = pluginRegistry.getTermSizeFn();
     const sourceDocked = findDockLeaf(state.config.layout, sourcePaneId);
-    const layout = sourceDocked && paneDef.defaultMode !== "floating"
+    const layout = !isFullscreenOverlaySession(pluginRegistry)
+      && sourceDocked
+      && paneDef.defaultMode !== "floating"
       ? addPaneToLayout(state.config.layout, instance, { relativeTo: sourcePaneId, position: "right" })
       : addPaneFloating(state.config.layout, instance, width, height, paneDef);
     return { layout, instance };
