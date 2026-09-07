@@ -1,3 +1,4 @@
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import { attachEarningsCallsPersistence, resetEarningsCallsPersistence } from "./data";
@@ -15,7 +16,7 @@ export const earningsCallsModule: PluginModule = {
       name: "Calls",
       order: 34,
       component: EarningsCallsPane,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
     });
   },
 

@@ -16,6 +16,7 @@ import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
 import { fetchDividendData, type DividendData } from "./client";
 import {
   buildDividendColumns,
+  buildYieldChartPoints,
   DEFAULT_SORT_PREFERENCE,
   nextSortPreference,
   sortRows,
@@ -24,7 +25,7 @@ import {
   type DividendRow,
   type DividendSortPreference,
 } from "./model";
-import type { DividendMetrics, DividendPayment } from "./types";
+import type { DividendMetrics } from "./types";
 
 function formatYield(value: number | null): string {
   if (value == null) return "—";
@@ -79,31 +80,6 @@ function buildMetricRows(metrics: DividendMetrics, currency: string): MetricRow[
   ];
 }
 
-function buildYieldChartPoints(payments: DividendPayment[], currentPrice: number | null): ProjectedChartPoint[] {
-  if (payments.length === 0 || currentPrice == null || currentPrice <= 0) return [];
-  const sorted = [...payments].sort((a, b) => a.exDate.getTime() - b.exDate.getTime());
-  const DAY = 24 * 60 * 60 * 1000;
-  const points: ProjectedChartPoint[] = [];
-
-  for (const payment of sorted) {
-    const trailingCutoff = new Date(payment.exDate.getTime() - 365 * DAY);
-    const trailingSum = sorted
-      .filter((p) => p.exDate >= trailingCutoff && p.exDate <= payment.exDate)
-      .reduce((sum, p) => sum + p.amount, 0);
-    const yieldPct = (trailingSum / currentPrice) * 100;
-    points.push({
-      date: payment.exDate,
-      open: yieldPct,
-      high: yieldPct,
-      low: yieldPct,
-      close: yieldPct,
-      volume: 0,
-    });
-  }
-
-  return points;
-}
-
 function renderMetricCell(row: MetricRow, width: number) {
   const valueWidth = Math.min(row.value.length, Math.max(6, width - 8));
   const labelWidth = Math.max(8, width - valueWidth - 1);
@@ -126,11 +102,13 @@ function DividendSummary({
   metrics,
   currency,
   width,
+  chartHeight,
   chartPoints,
 }: {
   metrics: DividendMetrics;
   currency: string;
   width: number;
+  chartHeight: number;
   chartPoints: ProjectedChartPoint[];
 }) {
   const metricRows = buildMetricRows(metrics, currency);
@@ -138,11 +116,13 @@ function DividendSummary({
   const columnCount = width - 2 >= MIN_METRIC_COLUMN_WIDTH * 2 ? 2 : 1;
   const colWidth = Math.max(MIN_METRIC_COLUMN_WIDTH, Math.floor((width - 2) / columnCount));
   const rowCount = Math.ceil(metricRows.length / columnCount);
-  const chartHeight = chartPoints.length >= 2 ? 6 : 0;
   const palette = resolveChartPalette(colors, "positive");
+  const last = chartPoints[chartPoints.length - 1];
+  const first = chartPoints[0];
+  const delta = last && first && first.close ? ((last.close - first.close) / first.close) * 100 : null;
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" flexShrink={0}>
       <Box flexDirection="column" paddingX={1} height={rowCount}>
         {Array.from({ length: rowCount }, (_, i) => {
           const left = metricRows[i * columnCount]!;
@@ -155,15 +135,31 @@ function DividendSummary({
           );
         })}
       </Box>
-      {chartPoints.length >= 2 && (
-        <Box flexDirection="column" paddingX={1} height={chartHeight}>
+      {chartPoints.length >= 2 && chartHeight > 0 && (
+        <Box flexDirection="column" paddingX={1} height={chartHeight} marginTop={1}>
+          {last ? (
+            <Box height={1} flexDirection="row">
+              <Text fg={colors.textDim}>TTM yield</Text>
+              <Box width={1} />
+              <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
+                {last.close.toFixed(2)}%
+              </Text>
+              {delta != null && (
+                <>
+                  <Box width={1} />
+                  <Text fg={priceColor(delta)}>{formatPercentRaw(delta)}</Text>
+                </>
+              )}
+            </Box>
+          ) : null}
           <StaticChartSurface
             points={chartPoints}
-            width={Math.max(10, width - 2)}
-            height={chartHeight}
-            mode="line"
+            width={Math.max(24, width - 2)}
+            height={Math.max(4, chartHeight - (last ? 1 : 0))}
+            mode="area"
             colors={palette}
-            yAxisLabel="Yield %"
+            showTimeAxis
+            timeAxisColor={colors.textDim}
             yAxisColor={colors.textDim}
             formatYAxisValue={(value) => `${value.toFixed(2)}%`}
           />
@@ -250,14 +246,24 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
   }), [error, loading]);
 
   const payments = data?.payments ?? [];
-  const metrics = data?.metrics;
+  const eps = financials?.fundamentals?.eps;
+  const metrics = data?.metrics && data.metrics.payoutRatio == null
+    && eps != null && eps > 0 && data.metrics.trailingRate != null
+    ? { ...data.metrics, payoutRatio: data.metrics.trailingRate / eps }
+    : data?.metrics;
   const rows = useMemo(() => toDividendRows(payments), [payments]);
   const sortedRows = useMemo(() => sortRows(rows, sortPreference), [rows, sortPreference]);
-  const columns = useMemo(() => buildDividendColumns(width), [width]);
+  const columns = useMemo(() => buildDividendColumns(), []);
   const chartPoints = useMemo(
-    () => buildYieldChartPoints(payments, data?.price ?? quotePrice),
-    [data?.price, payments, quotePrice],
+    () => buildYieldChartPoints(payments, data?.price ?? quotePrice, data?.history ?? []),
+    [data?.history, data?.price, payments, quotePrice],
   );
+  const metricRowCount = width - 2 >= MIN_METRIC_COLUMN_WIDTH * 2 ? 5 : 10;
+  const showChart = chartPoints.length >= 2;
+  const chartHeight = showChart
+    ? Math.max(12, Math.min(22, Math.floor((height - metricRowCount) * 0.45)))
+    : 0;
+  const tableHeight = Math.max(8, height - metricRowCount - (showChart ? chartHeight + 1 : 0));
 
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextSortPreference(current, columnId));
@@ -274,33 +280,38 @@ export function DividendYieldPane({ focused, width, height }: { focused: boolean
       : error ?? "No dividend history";
 
   return (
-    <DataTableView<DividendRow, DividendColumn>
-      focused={focused}
-      selection={{
-        kind: "index",
-        selectedIndex: sortedRows.length === 0 ? null : Math.min(selectedIdx, sortedRows.length - 1),
-        onChange: (index) => setSelectedIdx(index),
-      }}
-      onRootKeyDown={handleKeyDown}
-      resetScrollKey={symbol}
-      rootWidth={width}
-      rootHeight={height}
-      rootBefore={metrics ? (
+    <Box flexDirection="column" width={width} height={height}>
+      {metrics ? (
         <DividendSummary
           metrics={metrics}
           currency={payments[0]?.currency ?? currency}
           width={width}
+          chartHeight={chartHeight}
           chartPoints={chartPoints}
         />
-      ) : undefined}
-      columns={columns}
-      items={sortedRows}
-      sortColumnId={sortPreference.columnId}
-      sortDirection={sortPreference.direction}
-      onHeaderClick={handleHeaderClick}
-      getItemKey={(row) => row.key}
-      renderCell={renderCell}
-      emptyStateTitle={emptyTitle}
-    />
+      ) : null}
+      <Box flexGrow={1} minHeight={8}>
+        <DataTableView<DividendRow, DividendColumn>
+          focused={focused}
+          selection={{
+            kind: "index",
+            selectedIndex: sortedRows.length === 0 ? null : Math.min(selectedIdx, sortedRows.length - 1),
+            onChange: (index) => setSelectedIdx(index),
+          }}
+          onRootKeyDown={handleKeyDown}
+          resetScrollKey={symbol}
+          rootWidth={width}
+          rootHeight={metrics ? tableHeight : height}
+          columns={columns}
+          items={sortedRows}
+          sortColumnId={sortPreference.columnId}
+          sortDirection={sortPreference.direction}
+          onHeaderClick={handleHeaderClick}
+          getItemKey={(row) => row.key}
+          renderCell={renderCell}
+          emptyStateTitle={emptyTitle}
+        />
+      </Box>
+    </Box>
   );
 }

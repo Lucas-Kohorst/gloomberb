@@ -3,6 +3,17 @@ import { isPriceAlertCondition } from "./types";
 
 export type { AlertRule };
 
+/** Conditions a stored alert may carry; anything else is corrupt or from a future release. */
+const KNOWN_CONDITIONS = new Set<AlertCondition>([
+  "above",
+  "below",
+  "crosses",
+  "halted",
+  "short_float",
+  "ex_div",
+  "weather",
+]);
+
 export function createAlert(
   symbol: string,
   condition: AlertCondition,

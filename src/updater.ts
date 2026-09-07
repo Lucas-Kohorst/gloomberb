@@ -54,16 +54,75 @@ function compareSemver(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * Detect whether a macOS x64 process is actually running on Apple Silicon
+ * hardware (via Rosetta 2). Mirrors the check in scripts/install.sh:
+ *   - sysctl.proc_translated = 1  → this process is Rosetta-translated
+ *   - hw.optional.arm64     = 1  → hardware has arm64 support
+ * Returns true for Apple Silicon (use arm64 binary), false for genuine Intel
+ * Macs (cannot run arm64 binaries). The result is cached for the process
+ * lifetime since hardware does not change at runtime.
+ */
+let rosettaCache: boolean | null = null;
+
+function isDarwinX64OnArm64Hardware(): boolean {
+  if (rosettaCache !== null) return rosettaCache;
+  rosettaCache = false;
+  if (typeof Bun === "undefined" || typeof Bun.spawnSync !== "function") {
+    return false;
+  }
+  try {
+    const translated = Bun.spawnSync(["sysctl", "-n", "sysctl.proc_translated"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    if (translated.stdout?.toString().trim() === "1") {
+      rosettaCache = true;
+      return true;
+    }
+    const hasArm64 = Bun.spawnSync(["sysctl", "-n", "hw.optional.arm64"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    if (hasArm64.stdout?.toString().trim() === "1") {
+      rosettaCache = true;
+      return true;
+    }
+  } catch {
+    // If sysctl is unavailable, assume genuine Intel (conservative — avoids
+    // downloading an arm64 binary that cannot run on Intel hardware).
+  }
+  return rosettaCache;
+}
+
+/** @internal Reset the Rosetta detection cache. For tests only. */
+export function __resetRosettaCache(): void {
+  rosettaCache = null;
+}
+
 export function getAssetBaseNameForRuntime(
   runtimeProcess: Pick<NodeJS.Process, "platform" | "arch"> | null = getRuntimeProcess(),
+  isRosettaTranslated?: boolean,
 ): string {
   const os = runtimeProcess?.platform === "darwin"
     ? "darwin"
     : runtimeProcess?.platform === "win32"
       ? "windows"
       : "linux";
-  // macOS x64 uses arm64 binary (runs via Rosetta 2)
-  const arch = os === "darwin" || runtimeProcess?.arch === "arm64" ? "arm64" : "x64";
+
+  let arch: string;
+  if (os === "darwin" && runtimeProcess?.arch === "arm64") {
+    // Native Apple Silicon process — always arm64.
+    arch = "arm64";
+  } else if (os === "darwin" && runtimeProcess?.arch === "x64") {
+    // x64 on macOS: Rosetta 2 (Apple Silicon) uses the arm64 binary;
+    // a genuine Intel Mac must use x64 (or fail if no x64 asset exists).
+    const rosetta = isRosettaTranslated ?? isDarwinX64OnArm64Hardware();
+    arch = rosetta ? "arm64" : "x64";
+  } else {
+    arch = runtimeProcess?.arch === "arm64" ? "arm64" : "x64";
+  }
+
   const extension = os === "windows" ? ".exe" : "";
   return `gloomberb-${os}-${arch}${extension}`;
 }
@@ -267,9 +326,17 @@ export async function checkForUpdateDetailed(
 
     const asset = resolveReleaseAsset(data.assets);
     if (!asset) {
+      const baseName = getAssetBaseName();
+      if (baseName.includes("darwin-x64")) {
+        return {
+          kind: "error",
+          error:
+            "Intel Macs are not supported. Gloomberb currently ships Apple Silicon (arm64) only.",
+        };
+      }
       return {
         kind: "error",
-        error: `No compatible release asset found for ${getAssetBaseName()}`,
+        error: `No compatible release asset found for ${baseName}`,
       };
     }
     if (!asset.checksum) {

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { usePaneFooter, type PaneHint } from "../../../components";
 import { t } from "../../../i18n";
 import { useAppLanguage } from "../../../i18n/react";
+import type { AccountManagementTab } from "./navigation";
 
 /**
  * Email, plan, and visibility are fixed account metadata already rendered in the
@@ -9,20 +10,24 @@ import { useAppLanguage } from "../../../i18n/react";
  * save or error message.
  */
 export function useAccountManagementFooter({
+  activeTab,
   busy,
   hasSession,
   message,
   saveProfile,
 }: {
+  activeTab: AccountManagementTab;
   busy: "profile" | "password" | "alerts" | "billing" | "delete" | null;
   hasSession: boolean;
   message: { tone: "info" | "success" | "error"; text: string } | null;
   saveProfile: () => Promise<void>;
 }) {
   const language = useAppLanguage();
-  const footerHints = useMemo<PaneHint[]>(() => [
-    { id: "save", key: "Ctrl+S", label: t("save"), onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession },
-  ], [busy, hasSession, language, saveProfile]);
+  const footerHints = useMemo<PaneHint[]>(() => (
+    activeTab === "ai"
+      ? []
+      : [{ id: "save", key: "Ctrl+S", label: t("save"), onPress: () => { void saveProfile(); }, disabled: !!busy || !hasSession }]
+  ), [activeTab, busy, hasSession, language, saveProfile]);
 
   usePaneFooter("account-management", () => ({
     info: [

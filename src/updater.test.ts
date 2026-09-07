@@ -12,6 +12,7 @@ import {
   performUpdate,
   resolveSelfUpdateTargetPath,
   setUpdateHost,
+  __resetRosettaCache,
   type ReleaseInfo,
   type UpdateProgress,
 } from "./updater";
@@ -21,21 +22,103 @@ const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
   setUpdateHost(null);
+  __resetRosettaCache();
 });
 
 function expectedAssetName(compressed = false): string {
-  const os = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
-  const arch = os === "darwin" || process.arch === "arm64" ? "arm64" : "x64";
-  const extension = os === "windows" ? ".exe" : "";
-  return compressed ? `gloomberb-${os}-${arch}${extension}.gz` : `gloomberb-${os}-${arch}${extension}`;
+  const base = getAssetBaseNameForRuntime();
+  return compressed ? `${base}.gz` : base;
+}
+
+/**
+ * Simulate a genuine Intel Mac process: darwin x64 standalone binary, with
+ * sysctl reporting neither Rosetta translation nor arm64 hardware. Restores
+ * process metadata, the Rosetta cache, and the Bun.spawnSync mock.
+ */
+function mockIntelMacRuntime(): () => void {
+  const originalPlatform = process.platform;
+  const originalArch = process.arch;
+  const originalExecPath = process.execPath;
+  const originalArgv = process.argv;
+  const originalSpawnSync = Bun.spawnSync;
+  __resetRosettaCache();
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  Object.defineProperty(process, "arch", { value: "x64", configurable: true });
+  Object.defineProperty(process, "execPath", { value: "/Applications/gloomberb", configurable: true });
+  Object.defineProperty(process, "argv", { value: ["/Applications/gloomberb"], configurable: true });
+  Bun.spawnSync = (() => ({
+    success: true,
+    stdout: new TextEncoder().encode("0"),
+    stderr: new Uint8Array(0),
+    exitCode: 0,
+  })) as typeof Bun.spawnSync;
+  return () => {
+    Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+    Object.defineProperty(process, "arch", { value: originalArch, configurable: true });
+    Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+    Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+    Bun.spawnSync = originalSpawnSync;
+    __resetRosettaCache();
+  };
 }
 
 describe("getAssetBaseNameForRuntime", () => {
-  test("uses the Windows executable release asset name on win32", () => {
+  test("uses the Windows executable release asset name on win32 x64", () => {
     expect(getAssetBaseNameForRuntime({
       platform: "win32",
       arch: "x64",
     })).toBe("gloomberb-windows-x64.exe");
+  });
+
+  test("selects arm64 for native Apple Silicon (darwin arm64)", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "darwin",
+      arch: "arm64",
+    })).toBe("gloomberb-darwin-arm64");
+  });
+
+  test("selects arm64 for darwin x64 under Rosetta 2", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "darwin",
+      arch: "x64",
+    }, true)).toBe("gloomberb-darwin-arm64");
+  });
+
+  test("selects x64 for genuine Intel Mac (darwin x64, not Rosetta)", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "darwin",
+      arch: "x64",
+    }, false)).toBe("gloomberb-darwin-x64");
+  });
+
+  test("selects arm64 for linux arm64", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "linux",
+      arch: "arm64",
+    })).toBe("gloomberb-linux-arm64");
+  });
+
+  test("selects x64 for linux x64", () => {
+    expect(getAssetBaseNameForRuntime({
+      platform: "linux",
+      arch: "x64",
+    })).toBe("gloomberb-linux-x64");
+  });
+
+  test("does not treat darwin x64 as arm64 when Rosetta is not detected", () => {
+    const restore = mockIntelMacRuntime();
+    try {
+      // Without the isRosettaTranslated override the decision must come from
+      // the Rosetta detector, not a hardcoded assumption. The mocked sysctl
+      // says this x64 process is genuine Intel hardware, so the result is the
+      // x64 asset — deterministic on any test machine.
+      expect(getAssetBaseNameForRuntime({
+        platform: "darwin",
+        arch: "x64",
+      })).toBe("gloomberb-darwin-x64");
+    } finally {
+      restore();
+    }
   });
 });
 
@@ -322,6 +405,53 @@ describe("checkForUpdateDetailed", () => {
     } finally {
       Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
       Object.defineProperty(process, "argv", { value: originalArgv, configurable: true });
+    }
+  });
+
+  it("returns a clear Intel Mac error when no x64 asset exists", async () => {
+    const restore = mockIntelMacRuntime();
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      tag_name: "v0.3.2",
+      published_at: "2026-04-03T00:00:00Z",
+      // Release ships only arm64 — no x64 asset for Intel Macs.
+      assets: [{
+        name: "gloomberb-darwin-arm64.gz",
+        browser_download_url: "https://example.com/gloomberb-darwin-arm64.gz",
+        digest: `sha256:${"ab".repeat(32)}`,
+      }],
+    }), { status: 200 })) as typeof fetch;
+
+    try {
+      await expect(checkForUpdateDetailed("0.3.1")).resolves.toEqual({
+        kind: "error",
+        error: "Intel Macs are not supported. Gloomberb currently ships Apple Silicon (arm64) only.",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("uses a real x64 asset when one exists for Intel Macs", async () => {
+    const restore = mockIntelMacRuntime();
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      tag_name: "v0.3.2",
+      published_at: "2026-04-03T00:00:00Z",
+      assets: [{
+        name: "gloomberb-darwin-x64.gz",
+        browser_download_url: "https://example.com/gloomberb-darwin-x64.gz",
+        digest: `sha256:${"cd".repeat(32)}`,
+      }],
+    }), { status: 200 })) as typeof fetch;
+
+    try {
+      const result = await checkForUpdateDetailed("0.3.1");
+      expect(result.kind).toBe("available");
+      if (result.kind === "available") {
+        expect(result.release.downloadUrl).toBe("https://example.com/gloomberb-darwin-x64.gz");
+        expect(result.release.checksum).toBe("cd".repeat(32));
+      }
+    } finally {
+      restore();
     }
   });
 });

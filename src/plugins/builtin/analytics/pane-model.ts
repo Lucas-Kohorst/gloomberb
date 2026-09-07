@@ -98,13 +98,17 @@ export function buildPortfolioReturnSeries({
   chartEntries: ChartEntryLookup;
   financials: Map<string, TickerFinancials>;
   columnContext: ColumnContext;
+  equalWeight?: boolean;
 }): PortfolioReturnSeriesResult {
   const weightedSeries: WeightedReturnSeries[] = [];
+  const equalShare = chartTargets.length > 0 ? 1 / chartTargets.length : 0;
   let coveredValue = 0;
   let totalValue = 0;
   let missingCount = 0;
   for (const { ticker, request } of chartTargets) {
-    const value = getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
+    const value = equalWeight
+      ? equalShare
+      : getPortfolioPositionValue(ticker, financials.get(ticker.metadata.ticker), columnContext);
     const weight = value == null ? 0 : Math.abs(value);
     totalValue += weight;
 
@@ -293,13 +297,18 @@ export function buildAnalyticsRiskRows({
   beta,
   coverage = 1,
   missingCount = 0,
+  indicative = false,
 }: {
   sharpe: number | null;
   beta: number | null;
   coverage?: number;
   missingCount?: number;
+  indicative?: boolean;
 }): AnalyticsMetricRow[] {
-  const partial = formatRiskCoverage(coverage, missingCount);
+  // Equal-weight collections have no lots, so a "share of value covered"
+  // coverage note is meaningless; the indicative marker takes its place.
+  const partial = indicative ? null : formatRiskCoverage(coverage, missingCount);
+  const indicativeDetail = indicative ? "indicative" : null;
   const partialSuffix = partial ? ` - partial: ${partial}` : "";
   return [
     sharpe !== null
@@ -307,14 +316,14 @@ export function buildAnalyticsRiskRows({
         id: "sharpe",
         label: "Sharpe Ratio",
         value: formatNumber(sharpe, 2),
-        detail: `${sharpeLabel(sharpe)}${partialSuffix}`,
+        detail: [sharpeLabel(sharpe), indicativeDetail].filter(Boolean).join(" · ") + partialSuffix,
         color: partial ? colors.textMuted : sharpeColor(sharpe),
       }
       : {
         id: "sharpe",
         label: "Sharpe Ratio",
         value: "—",
-        detail: partial ?? "insufficient data",
+        detail: indicativeDetail ?? partial ?? "insufficient data",
         color: colors.textMuted,
       },
     beta !== null
@@ -322,14 +331,14 @@ export function buildAnalyticsRiskRows({
         id: "beta",
         label: "Beta (SPY)",
         value: formatNumber(beta, 2),
-        detail: `${betaLabel(beta)}${partialSuffix}`,
+        detail: [betaLabel(beta), indicativeDetail].filter(Boolean).join(" · ") + partialSuffix,
         color: partial ? colors.textMuted : betaColor(beta),
       }
       : {
         id: "beta",
         label: "Beta (SPY)",
         value: "—",
-        detail: partial ?? "insufficient data",
+        detail: indicativeDetail ?? partial ?? "insufficient data",
         color: colors.textMuted,
       },
   ];

@@ -24,8 +24,10 @@ export const optionsCalculatorModule: PluginModule = {
       paneId: OPTIONS_CALCULATOR_PANE_ID,
       label: "Options Calculator",
       description: "Black-Scholes value, Greeks, and implied volatility for a European call or put.",
-      keywords: ["option", "options", "calculator", "black", "scholes", "greeks", "implied", "volatility", "ovme"],
-      shortcut: { prefix: "OVME" },
+      keywords: ["option", "options", "calculator", "black", "scholes", "greeks", "implied", "volatility"],
+      // OVME belongs to the Godel-parity options-calc pane; this port keeps its
+      // own prefix so both panes stay in the assist inventory.
+      shortcut: { prefix: "OPTCALC" },
       createInstance: (_context, options) => ({
         params: options?.values ?? {},
         placement: "floating",

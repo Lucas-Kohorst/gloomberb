@@ -86,6 +86,16 @@ export function getYahooSymbolsToTry(ticker: string, exchange: string): string[]
   const dotVariant = normalized.includes(".") ? normalized.replace(/\./g, "-") : null;
 
   if (!canonical) {
+    // A bare US equity (e.g. COIN) or an index aliased onto a caret symbol
+    // (e.g. VIX -> ^VIX) is already a complete Yahoo symbol; walking it onto
+    // every international suffix just fabricates quotes for the wrong market.
+    // Only suffix-guess when the ticker can plausibly live on another
+    // exchange: numeric tickers and compact crypto/FX pairs.
+    if (normalized.startsWith("^") || isBareUsEquityYahooSymbol(normalized)) {
+      if (dotVariant) return [dotVariant, normalized];
+      return [normalized];
+    }
+
     const symbols = new Set<string>();
     const candidates = [normalized];
     if (dotVariant) candidates.unshift(dotVariant);

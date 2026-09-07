@@ -51,6 +51,7 @@ const byokViewerTemplate: PaneTemplateDef = {
   label: "Custom API",
   description: "Open a tested custom API in a data viewer.",
   keywords: ["api", "custom", "byok", "json", "csv"],
+  shortcut: { prefix: "API" },
   canCreate: (_context, options) => !!options?.arg?.trim(),
   createInstance: (_context, options) => {
     const keyId = options?.arg?.trim() ?? "";

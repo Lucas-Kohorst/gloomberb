@@ -48,6 +48,7 @@ interface PollColumn extends DataTableColumn {
 }
 
 const TABS: Array<{ value: PollTabId; label: string }> = [
+  { value: "all", label: "All" },
   { value: "approval", label: "Approval" },
   { value: "favorability", label: "Favorability" },
   { value: "generic-ballot", label: "Generic" },
@@ -78,20 +79,15 @@ function answerChoiceColor(choice: string): string | undefined {
   return undefined;
 }
 
-function createColumns(width: number): PollColumn[] {
-  const dateWidth = 8;
-  const popWidth = 7;
-  // Both answers and both percentages of a two-way result must fit; a clipped
-  // number is worse than a narrower subject column.
-  const resultWidth = 32;
-  const pollsterWidth = 14;
-  const subjectWidth = Math.max(12, width - dateWidth - popWidth - resultWidth - pollsterWidth - 8);
+function createColumns(): PollColumn[] {
   return [
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "subject", label: "SUBJECT", width: subjectWidth, align: "left" },
-    { id: "pollster", label: "POLLSTER", width: pollsterWidth, align: "left" },
-    { id: "pop", label: "SAMPLE", width: popWidth, align: "left" },
-    { id: "result", label: "RESULT", width: resultWidth, align: "left" },
+    { id: "date", label: "DATE", width: 8, align: "left" },
+    { id: "subject", label: "SUBJECT", width: 12, align: "left", flexGrow: 1 },
+    { id: "pollster", label: "POLLSTER", width: 14, align: "left" },
+    { id: "pop", label: "SAMPLE", width: 7, align: "left" },
+    // Both answers and both percentages of a two-way result must fit; a clipped
+    // number is worse than a narrower subject column.
+    { id: "result", label: "RESULT", width: 32, align: "left" },
   ];
 }
 
@@ -448,7 +444,7 @@ function PollDetail({
 }
 
 export function PollsPane({ focused, width, height }: PaneProps) {
-  const [tab, setTab] = useState<PollTabId>("approval");
+  const [tab, setTab] = useState<PollTabId>("all");
   const [rowsByTab, setRowsByTab] = useState<Partial<Record<PollTabId, PollRow[]>>>({});
   // The mount effect loads immediately, so the first paint is a spinner rather
   // than a premature "No polls in this category".
@@ -600,7 +596,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     return false;
   }, [load, selected?.url, tab]);
 
-  const columns = useMemo(() => createColumns(width), [width]);
+  const columns = useMemo(() => createColumns(), []);
   const updatedAgo = useUpdatedAgo(status === "loaded" ? lastUpdated : null);
   const renderCell = useCallback(
     (row: PollRow, column: PollColumn, _index: number, rowState: { selected: boolean }) =>
@@ -714,7 +710,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
         }}
         getItemKey={(row) => row.id}
         renderCell={renderCell}
-        emptyStateTitle={searchQuery.trim() ? "No matching polls." : "No polls in this category."}
+        emptyStateTitle={searchQuery.trim() ? "No matching polls." : tab === "all" ? "No polls." : "No polls in this category."}
         emptyStateHint={searchQuery.trim() ? "Clear search." : undefined}
       />
     </Box>

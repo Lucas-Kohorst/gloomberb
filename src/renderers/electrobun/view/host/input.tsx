@@ -266,6 +266,10 @@ export const WebInput = forwardRef<InputRenderable, Record<string, unknown>>(fun
       event.preventDefault();
       (propsRef.current.onSubmit as (value: string) => void)(syncElementValue());
     }
+    const forwarded = propsRef.current.onKeyDown;
+    if (typeof forwarded === "function") {
+      (forwarded as (event: KeyboardEvent<HTMLInputElement>) => void)(event);
+    }
   };
 
   return (

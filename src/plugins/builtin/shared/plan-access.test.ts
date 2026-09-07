@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolvePlanAccess, type PlanAccessUser } from "./plan-access";
+import { needsEmailVerification, resolvePlanAccess, type PlanAccessUser } from "./plan-access";
 
 const NOW = Date.parse("2026-08-04T12:00:00.000Z");
 const HOUR = 60 * 60 * 1000;
@@ -57,6 +57,17 @@ describe("plan access", () => {
     expect(paid).toMatchObject({ hasProAccess: true, isPayingPro: true, isTrialActive: false });
   });
 
+  test("keeps a paying session entitled when emailVerified dropped from cache", () => {
+    expect(resolvePlanAccess(
+      user({ emailVerified: false, plan: "pro", effectivePlan: "pro" }),
+      NOW,
+    )).toMatchObject({ hasProAccess: true, isPayingPro: true, isTrialActive: false });
+    expect(resolvePlanAccess(
+      user({ emailVerified: false, plan: "free", effectivePlan: "pro" }),
+      NOW,
+    )).toMatchObject({ hasProAccess: true, isPayingPro: true, isTrialActive: false });
+  });
+
   test("requires a verified email and falls back to the legacy plan field", () => {
     expect(resolvePlanAccess(
       user({ emailVerified: false, effectivePlan: "pro", trialEndsAt: new Date(NOW + DAY).toISOString() }),
@@ -64,6 +75,33 @@ describe("plan access", () => {
     ).hasProAccess).toBe(false);
     // Sessions from a server without effectivePlan still resolve.
     expect(resolvePlanAccess({ emailVerified: true, plan: "pro" }, NOW).hasProAccess).toBe(true);
-    expect(resolvePlanAccess(null, NOW)).toMatchObject({ signedIn: false, hasProAccess: false });
+    expect(resolvePlanAccess(user({ emailVerified: false, plan: "pro" }), NOW).hasProAccess).toBe(true);
+    expect(resolvePlanAccess(null, NOW)).toMatchObject({
+      signedIn: false,
+      accountKnown: true,
+      hasProAccess: false,
+    });
+  });
+
+  test("does not ask a paying or hydrating session to verify email", () => {
+    expect(needsEmailVerification(resolvePlanAccess(
+      user({ emailVerified: false, plan: "pro" }),
+      NOW,
+    ))).toBe(false);
+    expect(needsEmailVerification(resolvePlanAccess(null, NOW, { hasCredential: true }))).toBe(false);
+    expect(needsEmailVerification(resolvePlanAccess(
+      user({ emailVerified: false, plan: "free" }),
+      NOW,
+    ))).toBe(true);
+  });
+
+  test("a session credential without a hydrated user is signed in, not a free upgrade target", () => {
+    const pending = resolvePlanAccess(null, NOW, { hasCredential: true });
+    expect(pending).toMatchObject({
+      signedIn: true,
+      accountKnown: false,
+      emailVerified: false,
+      hasProAccess: false,
+    });
   });
 });

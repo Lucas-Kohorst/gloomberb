@@ -25,6 +25,7 @@ import { boardErrorMessage } from "../world-indices/footer";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
+  FUTURES_SECTOR_ORDER,
   getContractsBySector,
   type FuturesSector,
 } from "./contracts";
@@ -50,6 +51,18 @@ import {
 export const FUTURES_PANE_ID = "futures";
 
 const FUTURES_SYMBOLS = FUTURES_CONTRACTS.map((contract) => contract.symbol);
+const COMM_COLLAPSE_SECTORS: FuturesSector[] = ["equity-index", "rates", "currencies"];
+
+function parseCollapsedSectors(raw: string | undefined): Set<FuturesSector> {
+  if (!raw?.trim()) return new Set();
+  const allowed = new Set<string>(FUTURES_SECTOR_ORDER);
+  const next = new Set<FuturesSector>();
+  for (const token of raw.split(",")) {
+    const sector = token.trim();
+    if (allowed.has(sector)) next.add(sector as FuturesSector);
+  }
+  return next;
+}
 
 function FuturesPane({ focused, width, height }: PaneProps) {
   const { pinTicker } = usePluginTickerActions();
@@ -66,7 +79,9 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
-  const [collapsedSectors, setCollapsedSectors] = useState<ReadonlySet<FuturesSector>>(new Set());
+  const [collapsedSectors, setCollapsedSectors] = useState<ReadonlySet<FuturesSector>>(
+    () => parseCollapsedSectors(paneInstance?.params?.collapse),
+  );
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const contractsBySector = useMemo(() => getContractsBySector(), []);
@@ -294,6 +309,39 @@ export const futuresModule: PluginModule = {
         "cme",
       ],
       shortcut: { prefix: "FUT" },
+    },
+    {
+      id: "commodities-pane",
+      paneId: FUTURES_PANE_ID,
+      label: "Commodities",
+      description:
+        "Delayed Yahoo commodities board: energy, metals, and agriculture front-month prices (oil, gas, gold, copper, grains, and softs). Same FUT quotes; equity-index, rates, and FX start collapsed.",
+      keywords: [
+        "commodities",
+        "oil",
+        "crude",
+        "brent",
+        "wti",
+        "gold",
+        "silver",
+        "copper",
+        "palladium",
+        "wheat",
+        "corn",
+        "soy",
+        "cotton",
+        "cocoa",
+        "natgas",
+        "metals",
+        "agriculture",
+        "delayed",
+      ],
+      category: "Data",
+      shortcut: { prefix: "COMM" },
+      createInstance: () => ({
+        placement: "floating",
+        params: { collapse: COMM_COLLAPSE_SECTORS.join(",") },
+      }),
     },
   ],
 };

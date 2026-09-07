@@ -132,11 +132,7 @@ export function buildTickerFinancialsKeys(tickers: TickerRecord[], options: Tick
   for (const ticker of tickers) {
     const instrument = instrumentFromTicker(ticker, ticker.metadata.ticker, options);
     if (!instrument) continue;
-    keys.push(
-      buildSnapshotKey(instrument),
-      buildQuoteKey(instrument),
-      buildChartKey(createBaselineChartRequest(instrument)),
-    );
+    keys.push(buildQuoteKey(instrument));
   }
   return keys;
 }

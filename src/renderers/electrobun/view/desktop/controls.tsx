@@ -222,6 +222,7 @@ export function WebTextField({
   textColor,
   placeholderColor,
   onMouseDown,
+  onKeyDown,
 }: TextFieldProps) {
   const colors = useThemeColors();
   const resolvedBackgroundColor = backgroundColor ?? colors.bg;
@@ -290,6 +291,7 @@ export function WebTextField({
           }}
           onInput={onChange}
           onChange={onChange}
+          onKeyDown={onKeyDown}
           onSubmit={(nextValue?: string) => onSubmit?.(
             typeof nextValue === "string" ? nextValue : resolvedInputRef.current?.editBuffer.getText() ?? value ?? "",
           )}

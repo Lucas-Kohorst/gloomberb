@@ -1,5 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { mapCloudFinancials } from "./normalizers";
+import { mapCloudFinancials, mapQuote } from "./normalizers";
+
+describe("mapQuote session state", () => {
+  const base = { price: 100, currency: "USD", change: 1, changePercent: 1, lastUpdated: Date.now() };
+
+  test("derives REGULAR for crypto stream payloads that omit marketState", () => {
+    const byExchange = mapQuote({ ...base, symbol: "BTC-USD", exchangeName: "CCC" });
+    expect(byExchange.marketState).toBe("REGULAR");
+    expect(byExchange.sessionConfidence).toBe("derived");
+
+    const bySymbol = mapQuote({ ...base, symbol: "ZEC/USD" });
+    expect(bySymbol.marketState).toBe("REGULAR");
+  });
+
+  test("leaves session state unknown for non-crypto payloads without marketState", () => {
+    const quote = mapQuote({ ...base, symbol: "NVDA", exchangeName: "NASDAQ" });
+    expect(quote.marketState).toBeUndefined();
+  });
+
+  test("keeps an explicit marketState from the backend", () => {
+    const quote = mapQuote({ ...base, symbol: "NVDA", exchangeName: "NASDAQ", marketState: "CLOSED", sessionConfidence: "explicit" });
+    expect(quote.marketState).toBe("CLOSED");
+    expect(quote.sessionConfidence).toBe("explicit");
+  });
+});
 
 describe("mapCloudFinancials", () => {
   test("divides GBp history with the raw quote currency, not the normalized GBP quote", () => {

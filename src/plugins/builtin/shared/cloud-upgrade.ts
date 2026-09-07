@@ -107,7 +107,7 @@ export function useCloudAccessFooter({
   const access = usePlanAccess();
   const openUpgrade = useCloudUpgradeAction();
 
-  const showUpgrade = !access.hasProAccess && degraded;
+  const showUpgrade = !access.hasProAccess && degraded && access.accountKnown;
   const bindsShortcut = !!shortcutScope && showUpgrade && focused;
 
   useShortcut(

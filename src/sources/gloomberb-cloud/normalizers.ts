@@ -14,6 +14,7 @@ import {
 } from "../../api-client";
 import { normalizePriceValueByDivisor, resolveCurrencyUnit } from "../../utils/currency-units";
 import { resolveExchangeTimeZone } from "../../utils/exchanges";
+import { isCryptoMarketInstrument } from "../coingecko/ids";
 import { createProviderMiss } from "../provider-errors";
 
 export const GLOOMBERB_CLOUD_PROVIDER_ID = "gloomberb-cloud" as const;
@@ -38,8 +39,18 @@ export function mapQuote(
     quote.fullExchangeName ??
     listingExchangeName;
   const internalProviderId = cloudInternalProviderId(providerMeta);
+  // Stream/poll payloads omit session state. Crypto trades 24/7, so derive
+  // REGULAR here — otherwise the quote counts as fresh and no REST warmup
+  // ever backfills marketState, leaving the session dot stuck on "unknown".
+  const derivedMarketState =
+    quote.marketState == null && isCryptoMarketInstrument(quote.symbol, listingExchangeName)
+      ? ("REGULAR" as const)
+      : undefined;
   return {
     ...quote,
+    ...(derivedMarketState
+      ? { marketState: derivedMarketState, sessionConfidence: quote.sessionConfidence ?? ("derived" as const) }
+      : {}),
     currency: currency || quote.currency,
     price: normalizePriceValueByDivisor(quote.price, divisor) ?? quote.price,
     change: normalizePriceValueByDivisor(quote.change, divisor) ?? quote.change,
