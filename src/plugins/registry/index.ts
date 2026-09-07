@@ -20,6 +20,8 @@ import type {
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
   CommandBarSearchProvider,
+  ChartSeriesCatalogProvider,
+  DocumentSearchProvider,
   CommandDef,
   CustomColumnDef,
   GloomPlugin,
@@ -270,6 +272,38 @@ export class PluginRegistry implements PluginRuntimeAccess {
     return this.contributions.commandBarSearchProvidersMap;
   }
   get columns(): ReadonlyMap<string, CustomColumnDef> { return this.contributions.columnsMap; }
+  get documentSearchProviders(): ReadonlyMap<string, DocumentSearchProvider> {
+    return this.contributions.documentSearchProvidersMap;
+  }
+  get chartSeriesCatalogs(): ReadonlyMap<string, ChartSeriesCatalogProvider> {
+    return this.contributions.chartSeriesCatalogsMap;
+  }
+
+  getDocumentSearchProviderPluginId(id: string): string | undefined {
+    return this.contributions.documentSearchProviderOwners.get(id);
+  }
+
+  getChartSeriesCatalogPluginId(id: string): string | undefined {
+    return this.contributions.chartSeriesCatalogOwners.get(id);
+  }
+
+  private discoveryEnabled(pluginId: string | undefined, sourceId: string): boolean {
+    const config = this.getConfigFn();
+    return (!pluginId || !config.disabledPlugins.includes(pluginId))
+      && !(config.disabledSources ?? []).includes(sourceId);
+  }
+
+  getAvailableDocumentSearchProviders(): DocumentSearchProvider[] {
+    return [...this.documentSearchProviders.values()].filter((provider) => (
+      this.discoveryEnabled(this.getDocumentSearchProviderPluginId(provider.id), provider.sourceId ?? provider.id)
+    ));
+  }
+
+  getAvailableChartSeriesCatalogs(): ChartSeriesCatalogProvider[] {
+    return [...this.chartSeriesCatalogs.values()].filter((provider) => (
+      this.discoveryEnabled(this.getChartSeriesCatalogPluginId(provider.id), provider.sourceId ?? provider.id)
+    ));
+  }
   get brokers(): ReadonlyMap<string, BrokerAdapter> { return this.contributions.brokersMap; }
   get tickerResearchTabs(): ReadonlyMap<string, TickerResearchTabDef> { return this.contributions.tickerResearchTabsMap; }
   get shortcuts(): ReadonlyMap<string, KeyboardShortcut> { return this.contributions.shortcutsMap; }

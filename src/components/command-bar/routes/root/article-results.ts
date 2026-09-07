@@ -12,10 +12,6 @@ import {
   cachedPeriodicFilingArticles,
   searchPeriodicFilingArticles,
 } from "../../../../plugins/builtin/sec/filing-search";
-import {
-  getSharedAdjacentClient,
-  loadCftcFilings,
-} from "../../../../plugins/builtin/adjacent/client";
 import type { ResultItem } from "../../list/model";
 import { useDebouncedAbortableEffect } from "./use-debounced-effect";
 
@@ -82,53 +78,6 @@ export function useFilingArticleSearch(query: string): {
     },
     onDisable: () => { setArticles([]); setPhase("idle"); },
   });
-
-  return { articles, phase };
-}
-
-export function useCftcFilingSearch(query: string): {
-  articles: NewsArticle[];
-  phase: NewsQueryPhase;
-} {
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [phase, setPhase] = useState<NewsQueryPhase>("idle");
-
-  useDebouncedAbortableEffect(
-    query,
-    looksLikeCftcQuery(query) || looksLikeFilingQuery(query),
-    async (signal) => {
-      try {
-        const page = await loadCftcFilings(getSharedAdjacentClient(), query, 8);
-        if (signal.aborted) return;
-        setArticles(page.filings.map((filing) => ({
-          id: `cftc:${filing.id}`,
-          title: filing.title,
-          url: "",
-          source: "CFTC",
-          publishedAt: filing.statusDate,
-          summary: [filing.orgCode, filing.status, filing.feed].filter(Boolean).join(" · "),
-          topic: "filing",
-          topics: ["filing", "cftc", filing.feed],
-          sectors: [],
-          categories: ["CFTC"],
-          tickers: [],
-          scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
-          isBreaking: false,
-          isDeveloping: false,
-          importance: 0,
-          origin: "cftc" as const,
-        })));
-        setPhase("ready");
-      } catch {
-        if (signal.aborted) return;
-        setPhase("ready");
-      }
-    },
-    {
-      onEnable: () => setPhase("loading"),
-      onDisable: () => { setArticles([]); setPhase("idle"); },
-    },
-  );
 
   return { articles, phase };
 }

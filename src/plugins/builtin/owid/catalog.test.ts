@@ -5,6 +5,7 @@ import {
   matchOwidCatalogEntries,
   matchesOwidCatalogQuery,
   owidCatalogExpression,
+  owidSeriesCatalog,
   owidSeriesLabel,
 } from "./catalog";
 import { catalogExpressionForRow, filterCatalogRows, listStaticCatalogInventory } from "../chart-composer/catalog-inventory";
@@ -27,10 +28,9 @@ describe("OWID catalog snapshot", () => {
   });
 
   test("catalog rows chart through a resolving OWID spec", () => {
-    const rows = filterCatalogRows(listStaticCatalogInventory(), "owid", "life expectancy");
-    const row = rows.find((entry) => entry.owidSlug === "life-expectancy");
+    const rows = filterCatalogRows(listStaticCatalogInventory([], [owidSeriesCatalog]), "owid", "life expectancy");
+    const row = rows.find((entry) => entry.expression === "OWID:life-expectancy:OWID_WRL");
     expect(row).toBeDefined();
-    expect(row!.needsEntity).toBe(false);
     const expression = catalogExpressionForRow(row!);
     expect(expression).toBe("OWID:life-expectancy:OWID_WRL");
     expect(owidCatalogExpression(findOwidCatalogEntryBySlug("life-expectancy")!)).toBe(expression);

@@ -1,4 +1,6 @@
 
+import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
+
 interface FredMapping {
   seriesId: string;
   /** How to display the value: "level" shows the raw number, "change" shows month-over-month or quarter-over-quarter percent change */
@@ -116,6 +118,26 @@ export function listFredCatalogSeries(): ReadonlyArray<{ seriesId: string; label
     ...EXTRA_CATALOG_SERIES.filter((entry) => !known.has(entry.seriesId)),
   ];
 }
+
+export const fredSeriesCatalog: ChartSeriesCatalogProvider = {
+  id: "fred",
+  name: "FRED",
+  sourceId: "fred",
+  entries: listFredCatalogSeries().map(({ seriesId, label }) => ({
+    id: seriesId,
+    expression: `FRED:${seriesId}`,
+    label,
+    source: "FRED",
+    searchText: `${label} ${seriesId} fred federal reserve economic macro`.toLowerCase(),
+    description: `Federal Reserve Economic Data · ${seriesId}`,
+    detail: "FRED",
+    url: `https://fred.stlouisfed.org/series/${seriesId}`,
+  })),
+  assist: {
+    keywords: ["fred", "macro", "economic data", "inflation", "employment"],
+    examples: ["oil inventories", "10 year real yield", "M2 money stock"],
+  },
+};
 
 export function listKnownFredSeries(): Array<{ seriesId: string; label: string }> {
   return [...FRED_CATALOG_SERIES];

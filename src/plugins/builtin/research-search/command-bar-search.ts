@@ -5,6 +5,7 @@ import type {
   GloomPluginContext,
 } from "../../../types/plugin";
 import { apiClient } from "../../../api-client";
+import { getSharedRegistry } from "../../registry";
 import { runDocumentSearch } from "./data";
 import { requestDocumentFocus } from "./focus-handoff";
 import {
@@ -14,6 +15,7 @@ import {
   hitTypeLabel,
   researchSearchInstanceId,
   RESEARCH_SEARCH_TEMPLATE_ID,
+  type ResearchSearchHit,
 } from "./model";
 import { parseMarkedSnippet } from "./snippet";
 
@@ -54,6 +56,28 @@ export function hitResultDef(
     lines: segments.length > 0 ? [{ segments }] : undefined,
     keywords: [hit.ticker, hitTypeLabel(hit)],
     execute: () => openHit(hit),
+  };
+}
+
+export function pluginHitResultDef(
+  providerId: string,
+  hit: import("../../../types/plugin").DocumentSearchHit,
+  openHit: (hit: ResearchSearchHit) => void,
+  now = Date.now(),
+): CommandBarResultDef {
+  const snippet = parseMarkedSnippet(hit.snippet ?? "").map((segment) => ({
+    text: segment.text,
+    emphasis: segment.marked ? "match" as const : undefined,
+  }));
+  return {
+    id: `${providerId}:${hit.id}`,
+    label: hit.title,
+    detail: [hit.source, hit.documentType, formatHitDate(hit.publishedAt)].filter(Boolean).join(" · "),
+    badge: hit.documentType?.toUpperCase().slice(0, 6) || "DOC",
+    right: formatHitDateShort(hit.publishedAt, now),
+    lines: snippet.length > 0 ? [{ segments: snippet }] : undefined,
+    keywords: hit.keywords,
+    execute: () => openHit({ kind: "plugin", providerId, hit }),
   };
 }
 
@@ -106,11 +130,8 @@ function createCorpusSearchProvider(
       // comes back empty, which leaves the app authenticated for every other
       // surface while reporting itself signed out here. Entitlement is the
       // server's answer anyway, and it already returns 401 or 402 on its own.
-      if (!apiClient.isSignedIn()) return [];
-
-      let hits: CloudSearchHit[] = [];
-      try {
-        const response = await runDocumentSearch(
+      const cloudRequest = apiClient.isSignedIn()
+        ? runDocumentSearch(
           // One row per story: three matching paragraphs of one article is one
           // result, and the teaser has three rows to spend.
           {
@@ -121,29 +142,54 @@ function createCorpusSearchProvider(
             distinct: true,
           },
           signal,
-        );
-        hits = response.hits ?? [];
-      } catch {
-        return [];
-      }
+        ).then((response) => response.hits ?? []).catch(() => [] as CloudSearchHit[])
+        : Promise.resolve([] as CloudSearchHit[]);
+
+      const providers = section.id === "research-search:documents"
+        ? getSharedRegistry()?.getAvailableDocumentSearchProviders() ?? []
+        : [];
+      const pluginRequests = providers.map(async (provider) => {
+        if (query.trim().length < (provider.minQueryLength ?? 3)) return [];
+        return provider.search(query, signal);
+      });
+      const [hits, pluginResults] = await Promise.all([
+        cloudRequest,
+        Promise.allSettled(pluginRequests),
+      ]);
 
       const now = Date.now();
+      const openHit = (target: ResearchSearchHit) => {
+        openSearchPane(query);
+        requestDocumentFocus(researchSearchInstanceId(query), target);
+      };
       const rows = hits.map((hit) => hitResultDef(
         hit,
-        (target) => {
-          openSearchPane(query);
-          requestDocumentFocus(researchSearchInstanceId(query), target);
-        },
+        (target) => openHit({ kind: "cloud", hit: target }),
         now,
         { badge: section.badge },
       ));
+      if (providers.length > 0) {
+        const successful = pluginResults.map((result) => (
+          result.status === "fulfilled" ? result.value : []
+        ));
+        for (let index = 0; rows.length < COMMAND_BAR_HIT_LIMIT * 2; index += 1) {
+          let found = false;
+          for (let providerIndex = 0; providerIndex < providers.length; providerIndex += 1) {
+            const hit = successful[providerIndex]?.[index];
+            if (!hit || rows.length >= COMMAND_BAR_HIT_LIMIT * 2) continue;
+            found = true;
+            rows.push(pluginHitResultDef(providers[providerIndex]!.id, hit, openHit, now));
+          }
+          if (!found) break;
+        }
+      }
       if (!section.searchAllRow || rows.length === 0) return rows;
       return [
         ...rows,
         {
           id: "search-all",
           label: "Search all documents →",
-          detail: "Earnings calls, news, and SEC filings",
+          detail: "Earnings calls, news, SEC filings, and CFTC metadata",
           badge: "DOCS",
           right: "SRCH",
           execute: () => openSearchPane(query),

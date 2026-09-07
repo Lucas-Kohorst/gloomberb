@@ -24,6 +24,7 @@ export async function installPluginHostModules(): Promise<void> {
     capabilities,
     utils,
     pluginReact,
+    pluginsHelpers,
   ] = await Promise.all([
     import("react"),
     import("react/jsx-runtime"),
@@ -37,6 +38,7 @@ export async function installPluginHostModules(): Promise<void> {
     import("../capabilities"),
     import("../public/utils"),
     import("../public/react"),
+    import("./helpers"),
   ]);
 
   const registry: Record<string, unknown> = {
@@ -51,6 +53,7 @@ export async function installPluginHostModules(): Promise<void> {
     "gloomberb/capabilities": capabilities,
     "gloomberb/utils": utils,
     "gloomberb/react": pluginReact,
+    "gloomberb/plugins": pluginsHelpers,
   };
 
   for (const specifier of SHARED_SPECIFIERS) {

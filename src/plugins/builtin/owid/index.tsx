@@ -2,8 +2,12 @@ import type { PluginModule } from "../plugin-module";
 import { parseOwidShortcutArg } from "../../../sources/owid/parse";
 import { OwidPane } from "./pane";
 import { OWID_PANE_ID } from "./types";
+import { owidSeriesCatalog } from "./catalog";
 
 export const owidModule: PluginModule = {
+  setup(ctx) {
+    ctx.registerChartSeriesCatalog(owidSeriesCatalog);
+  },
   panes: [
     {
       id: OWID_PANE_ID,

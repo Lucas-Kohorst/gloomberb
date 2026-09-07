@@ -14,6 +14,7 @@ import {
 } from "../builtin/composite-plugins";
 import { getAiRunHost, setAiRunHost } from "../builtin/ai/runner";
 import { PluginRegistry } from "./index";
+import { browserBuiltinPlugins } from "../catalog-browser";
 
 const dataProvider: DataProvider = {
   id: "test-provider",
@@ -310,6 +311,72 @@ describe("PluginRegistry context menu providers", () => {
     }));
 
     expect(contextMenuLabels(registry.getContextMenuItems({ kind: "app" }))).toEqual(["Works"]);
+  });
+});
+
+describe("PluginRegistry searchable content", () => {
+  test("browser plugin setup registers document and series discovery with capability handlers disabled", async () => {
+    const registry = createRegistry({ enableCapabilityHandlers: false });
+    for (const entry of browserBuiltinPlugins) {
+      if (["ticker-research", "macro", "adjacent", "research-search"].includes(entry.id)) {
+        await registry.register(entry);
+      }
+    }
+    expect(registry.getAvailableChartSeriesCatalogs().map((provider) => provider.id))
+      .toEqual(expect.arrayContaining(["fred", "owid"]));
+    expect(registry.getAvailableDocumentSearchProviders().map((provider) => provider.id))
+      .toContain("adjacent:cftc-filings");
+    expect(registry.commandBarSearchProviders.has("research-search:documents")).toBe(true);
+    expect(registry.paneTemplates.has("research-search-pane")).toBe(true);
+  });
+
+  test("keeps discovery available without capability handlers and respects source/plugin state", async () => {
+    const disabledPlugins: string[] = [];
+    const disabledSources: string[] = [];
+    const registry = createRegistry({ enableCapabilityHandlers: false, disabledPlugins, disabledSources });
+    await registry.register(plugin("documents-and-charts", (ctx) => {
+      ctx.registerDocumentSearchProvider({
+        id: "documents", name: "Documents", sourceId: "source",
+        search: async () => [],
+        load: async (id) => ({ id, title: "Document", markdown: "Body" }),
+      });
+      ctx.registerChartSeriesCatalog({ id: "charts", sourceId: "source", entries: [] });
+    }));
+    expect(registry.getAvailableDocumentSearchProviders().map((provider) => provider.id)).toEqual(["documents"]);
+    expect(registry.getAvailableChartSeriesCatalogs().map((provider) => provider.id)).toEqual(["charts"]);
+    disabledSources.push("source");
+    expect(registry.getAvailableDocumentSearchProviders()).toEqual([]);
+    expect(registry.getAvailableChartSeriesCatalogs()).toEqual([]);
+    disabledSources.length = 0;
+    disabledPlugins.push("documents-and-charts");
+    expect(registry.getAvailableDocumentSearchProviders()).toEqual([]);
+    expect(registry.getAvailableChartSeriesCatalogs()).toEqual([]);
+    registry.unregister("documents-and-charts");
+    expect(registry.documentSearchProviders.size).toBe(0);
+    expect(registry.chartSeriesCatalogs.size).toBe(0);
+    expect(registry.getDocumentSearchProviderPluginId("documents")).toBeUndefined();
+    expect(registry.getChartSeriesCatalogPluginId("charts")).toBeUndefined();
+  });
+
+  test("old disposers cannot withdraw replacements and failed setup rolls back discovery", async () => {
+    const registry = createRegistry();
+    let withdraw = () => {};
+    await registry.register(plugin("search-tools", (ctx) => {
+      withdraw = ctx.registerChartSeriesCatalog({ id: "same", entries: [] });
+      withdraw();
+      ctx.registerChartSeriesCatalog({ id: "same", entries: [] });
+    }));
+    withdraw();
+    expect(registry.chartSeriesCatalogs.has("same")).toBe(true);
+    await expect(registry.register(plugin("broken-search", (ctx) => {
+      ctx.registerDocumentSearchProvider({
+        id: "rolled-back", name: "Documents", search: async () => [],
+        load: async (id) => ({ id, title: "Document", markdown: "Body" }),
+      });
+      throw new Error("setup failed");
+    }))).rejects.toThrow("setup failed");
+    expect(registry.documentSearchProviders.has("rolled-back")).toBe(false);
+    expect(registry.getDocumentSearchProviderPluginId("rolled-back")).toBeUndefined();
   });
 });
 

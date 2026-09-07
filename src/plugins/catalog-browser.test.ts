@@ -17,6 +17,8 @@ describe("browser plugin catalog", () => {
       "market-overview",
       "macro",
       "alerts",
+      "adjacent",
+      "research-search",
     ]);
   });
 

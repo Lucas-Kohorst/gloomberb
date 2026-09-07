@@ -10,7 +10,7 @@ import {
 import { ResearchSearchPane } from "./pane";
 
 const description =
-  "Full-text search across earnings call transcripts, news wires, and SEC filings, with saved searches and keyword alerts.";
+  "Search earnings call transcripts, news wires, SEC filings, and source-provided document metadata, with saved cloud searches and keyword alerts.";
 
 function queryFromOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.values?.query ?? "").trim();
@@ -61,6 +61,7 @@ export const researchSearchPlugin: GloomPlugin = {
         "calls",
         "news",
         "filings",
+        "cftc",
         "sec",
         "alerts",
         "saved search",

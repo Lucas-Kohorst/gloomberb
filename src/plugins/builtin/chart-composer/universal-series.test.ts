@@ -13,6 +13,9 @@ import {
   buildSeriesCatalogSuggestions,
   buildChartSeriesAssistContext,
 } from "./series-catalog";
+import { localCatalogSuggestions } from "./catalog-providers";
+import { owidSeriesCatalog } from "../owid/catalog";
+import { llmStatsSeriesCatalog } from "../llm-stats/metrics";
 import {
   FUTURES_CATALOG,
   TREASURY_CATALOG,
@@ -390,14 +393,14 @@ describe("universal series catalog suggestions", () => {
   });
 
   test("suggests benchmarks when the query matches an org or 'benchmark'", () => {
-    const suggestions = buildSeriesCatalogSuggestions("benchmark openai", AAPL);
+    const suggestions = localCatalogSuggestions("benchmark openai", [llmStatsSeriesCatalog]);
     const benches = suggestions.filter((entry) => entry.expression.kind === "benchmark");
     expect(benches.length).toBeGreaterThan(0);
     expect(benches.some((entry) => entry.label.includes("OpenAI"))).toBe(true);
   });
 
   test("suggests OWID series from human names, topics, and slugs", () => {
-    const byName = buildSeriesCatalogSuggestions("life expectancy", AAPL);
+    const byName = localCatalogSuggestions("life expectancy", [owidSeriesCatalog]);
     expect(byName[0]?.expression).toMatchObject({
       kind: "owid",
       slug: "life-expectancy",
@@ -405,12 +408,12 @@ describe("universal series catalog suggestions", () => {
     });
     expect(formatParsedSeriesExpression(byName[0]!.expression)).toBe("OWID:life-expectancy:OWID_WRL");
 
-    const byTopic = buildSeriesCatalogSuggestions("co2 emissions", AAPL);
+    const byTopic = localCatalogSuggestions("co2 emissions", [owidSeriesCatalog]);
     expect(byTopic.some((entry) => (
       entry.expression.kind === "owid" && entry.expression.slug.includes("co2")
     ))).toBe(true);
 
-    const bySlug = buildSeriesCatalogSuggestions("life-expectancy", AAPL);
+    const bySlug = localCatalogSuggestions("life-expectancy", [owidSeriesCatalog]);
     expect(bySlug[0]?.expression).toMatchObject({ kind: "owid", slug: "life-expectancy" });
   });
 

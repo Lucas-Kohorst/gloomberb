@@ -78,9 +78,28 @@ export async function listExternalPluginEntries(
   const plugins: ExternalPluginEntry[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    // Skip hidden dirs and node_modules at the root level.
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const pluginDir = join(rootDir, entry.name);
     const entryFile = resolvePluginEntryFile(pluginDir);
-    if (entryFile) plugins.push({ dirName: entry.name, pluginDir, entryFile });
+    if (entryFile) {
+      plugins.push({ dirName: entry.name, pluginDir, entryFile });
+      continue;
+    }
+
+    // Monorepo support: a top-level directory with no entry file of its own
+    // may contain plugin subdirectories. Scan one level deep so a single
+    // `gloomberb-plugins` checkout registers every contained plugin.
+    const subEntries = await readdir(pluginDir, { withFileTypes: true });
+    for (const sub of subEntries) {
+      if (!sub.isDirectory()) continue;
+      if (sub.name.startsWith(".") || sub.name === "node_modules") continue;
+      const subDir = join(pluginDir, sub.name);
+      const subEntryFile = resolvePluginEntryFile(subDir);
+      if (subEntryFile) {
+        plugins.push({ dirName: sub.name, pluginDir: subDir, entryFile: subEntryFile });
+      }
+    }
   }
   return plugins;
 }

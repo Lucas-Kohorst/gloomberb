@@ -1,3 +1,5 @@
+import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
+
 export const DEFILLAMA_CAPABILITY_ID = "defillama";
 
 export interface DefiLlamaSeriesIdentity {
@@ -37,3 +39,25 @@ export const DEFILLAMA_CATALOG = [
   label: `${entry.name} ${entry.kind} ${metric === "tvl" ? "TVL" : `daily ${metric}`} (USD)`,
   url: `https://defillama.com/${entry.kind}/${entry.slug}`,
 })));
+
+export const defillamaSeriesCatalog: ChartSeriesCatalogProvider = {
+  id: "defillama",
+  name: "DefiLlama",
+  sourceId: "defillama",
+  entries: DEFILLAMA_CATALOG.map((entry) => ({
+    id: entry.seriesId,
+    expression: entry.expression,
+    label: entry.label,
+    source: "DefiLlama",
+    searchText: `${entry.label} ${entry.expression} defillama defi crypto total value locked on-chain fundamentals`.toLowerCase(),
+    description: "DefiLlama free API · daily USD observations",
+    detail: "DefiLlama",
+    url: entry.url,
+    unit: "USD",
+    frequency: "daily",
+  })),
+  assist: {
+    keywords: ["defi", "tvl", "protocol fees", "protocol revenue"],
+    examples: ["aave fees", "ethereum tvl"],
+  },
+};

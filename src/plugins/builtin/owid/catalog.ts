@@ -1,4 +1,5 @@
 import { OWID_ORIGIN } from "../../../sources/owid/types";
+import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
 
 /**
  * Searchable snapshot of redistributable OWID grapher series for CAT / G.
@@ -245,3 +246,24 @@ export function matchOwidCatalogEntries(query: string): readonly OwidCatalogEntr
 export function owidCatalogExpression(entry: OwidCatalogEntry, entity = entry.defaultEntity): string {
   return `OWID:${entry.slug}:${entity}`;
 }
+
+export const owidSeriesCatalog: ChartSeriesCatalogProvider = {
+  id: "owid",
+  name: "Our World in Data",
+  sourceId: "owid",
+  entries: OWID_CATALOG.map((entry) => ({
+    id: `${entry.slug}:${entry.defaultEntity}`,
+    expression: owidCatalogExpression(entry),
+    label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
+    source: "Our World in Data",
+    searchText: owidCatalogSearchText(entry),
+    description: entry.topics.join(" · "),
+    detail: "OWID",
+    url: owidGrapherUrl(entry.slug),
+    ...(entry.unit ? { unit: entry.unit } : {}),
+  })),
+  assist: {
+    keywords: ["owid", "population", "health", "climate", "development"],
+    examples: ["life expectancy", "world population", "co2 emissions"],
+  },
+};

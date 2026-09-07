@@ -1,9 +1,9 @@
 import { useEffect } from "react";
-import type { CloudSearchHit } from "../../../api-client";
+import type { ResearchSearchHit } from "./model";
 
-type FocusListener = (hit: CloudSearchHit) => void;
+type FocusListener = (hit: ResearchSearchHit) => void;
 
-const pendingByPaneId = new Map<string, CloudSearchHit>();
+const pendingByPaneId = new Map<string, ResearchSearchHit>();
 const listenersByPaneId = new Map<string, Set<FocusListener>>();
 
 /**
@@ -13,7 +13,7 @@ const listenersByPaneId = new Map<string, Set<FocusListener>>();
  * push through pane settings, which are persisted and shared. So the request is
  * parked here until the pane mounts, and delivered directly if it already has.
  */
-export function requestDocumentFocus(paneId: string, hit: CloudSearchHit): void {
+export function requestDocumentFocus(paneId: string, hit: ResearchSearchHit): void {
   const listeners = listenersByPaneId.get(paneId);
   if (listeners && listeners.size > 0) {
     for (const listener of listeners) listener(hit);

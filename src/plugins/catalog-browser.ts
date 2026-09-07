@@ -8,7 +8,9 @@ import { alertsPlugin } from "./builtin/alerts";
 import { browserGloomberbCloudPlugin } from "./builtin/cloud/browser";
 import { changelogModule } from "./builtin/changelog";
 import { chartComposerModule } from "./builtin/chart-composer";
-import { connectionsModule } from "./builtin/connections";
+import { connectionsModule } from "./builtin/connections/index.ts";
+import { adjacentPlugin } from "./builtin/adjacent";
+import { researchSearchPlugin } from "./builtin/research-search";
 import { correlationModule } from "./builtin/correlation";
 import { cdsModule } from "./builtin/cds";
 import { creditConditionsModule } from "./builtin/credit-conditions";
@@ -141,6 +143,8 @@ export const browserBuiltinPlugins: readonly GloomPlugin[] = [
   browserMarketOverviewPlugin,
   browserMacroPlugin,
   alertsPlugin,
+  adjacentPlugin,
+  researchSearchPlugin,
 ];
 
 export function getBrowserBuiltinPlugins(): readonly GloomPlugin[] {

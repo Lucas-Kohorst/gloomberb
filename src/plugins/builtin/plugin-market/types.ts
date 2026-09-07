@@ -15,6 +15,10 @@ export interface PluginRow {
   toggleable: boolean;
   source: PluginSource;
   dirName?: string;
+  /** Directory to update when the plugin is part of a monorepo. */
+  managementDirName?: string;
+  /** Monorepo plugins are updated together and cannot be removed individually. */
+  removable?: boolean;
   hasError?: boolean;
   error?: string;
   stars?: number;
@@ -24,6 +28,8 @@ export interface PluginRow {
 
 export interface ExternalPluginEntry {
   dirName: string;
+  /** Top-level install directory, when this entry is nested in a monorepo. */
+  managementDirName?: string;
   pluginId: string | null;
   version: string;
   description: string;

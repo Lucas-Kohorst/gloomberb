@@ -35,6 +35,7 @@ import {
   updatePlugins,
   validatePlugin,
 } from "./commands/plugins";
+import { type ScaffoldTemplate, SCAFFOLD_TEMPLATES, SCAFFOLD_TEMPLATE_DESCRIPTIONS } from "./scaffold/templates";
 import { runPaneCatalog, runPaneFunction, runPaneScreenshot } from "./pane-functions";
 
 function createCoreCliCommands(
@@ -211,14 +212,25 @@ function createCoreCliCommands(
       aliases: ["plugin-new", "scaffold"],
       description: "Scaffold a new plugin in ~/.gloomberb/plugins/",
       help: {
-        usage: ["new <name>"],
+        usage: ["new <name> [--template <template>]"],
+        sections: [{
+          title: "Templates",
+          lines: SCAFFOLD_TEMPLATES.map((t) => `  ${t.padEnd(16)} ${SCAFFOLD_TEMPLATE_DESCRIPTIONS[t]}`),
+        }],
       },
       execute: (args) => {
         const name = args[0];
         if (!name) {
-          fail("Usage: gloomberb new <plugin-name>");
+          fail("Usage: gloomberb new <plugin-name> [--template <template>]");
         }
-        scaffoldPlugin(name!);
+        const templateFlag = args.indexOf("--template");
+        const template = templateFlag !== -1 && args[templateFlag + 1]
+          ? args[templateFlag + 1]!
+          : "pane-only";
+        if (!SCAFFOLD_TEMPLATES.includes(template as ScaffoldTemplate)) {
+          fail(`Unknown template: ${template}`, `Available: ${SCAFFOLD_TEMPLATES.join(", ")}`);
+        }
+        scaffoldPlugin(name!, template as ScaffoldTemplate);
       },
     },
     {

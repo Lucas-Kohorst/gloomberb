@@ -4,7 +4,7 @@
     {
       "id": "adjacent",
       "name": "Adjacent Cloud",
-      "description": "Shared reference data cached at the edge: Adjacent indices, rates, and CFTC filings, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
+      "description": "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, llm-stats benchmarks, and Our World in Data grapher prints.",
       "categories": [
         "data"
       ],
@@ -15,13 +15,9 @@
           "adjacent-rates",
           "cftc-filings",
           "llm-stats",
-          "owid",
-          "polls",
-          "weather"
+          "owid"
         ],
-        "capabilities": [
-          "poll-trends"
-        ],
+        "capabilities": [],
         "broker": false
       }
     },
@@ -104,22 +100,6 @@
       }
     },
     {
-      "id": "crt-sh",
-      "name": "crt.sh",
-      "description": "Search Certificate Transparency logs for domains, subdomains, and certificate history.",
-      "categories": [
-        "research"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "crt-sh"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
       "id": "debug",
       "name": "Debug",
       "description": "View and export debug logs",
@@ -129,22 +109,6 @@
       "toggleable": true,
       "contributes": {
         "panes": [],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "federal-register",
-      "name": "Federal Register",
-      "description": "Search Federal Register documents: proposed rules, final rules, and agency notices.",
-      "categories": [
-        "research"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "federal-register"
-        ],
         "capabilities": [],
         "broker": false
       }
@@ -164,7 +128,6 @@
           "account-management",
           "buildout",
           "chat",
-          "congress-trades",
           "unread-inbox"
         ],
         "capabilities": [
@@ -186,7 +149,6 @@
         "panes": [
           "bond-search",
           "cds",
-          "country-econ",
           "credit-conditions",
           "earnings-calendar",
           "earnings-calls",
@@ -234,22 +196,6 @@
       }
     },
     {
-      "id": "nasa-firms",
-      "name": "NASA FIRMS",
-      "description": "Near-real-time active fire detection from NASA MODIS and VIIRS satellites.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "fire-detection"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
       "id": "news",
       "name": "News",
       "description": "View latest news for each ticker",
@@ -282,38 +228,6 @@
       "toggleable": true,
       "contributes": {
         "panes": [],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "ofac-sanctions",
-      "name": "OFAC Sanctions",
-      "description": "Search the US Consolidated Screening List. Screen people, companies, and entities against OFAC and other sanctions lists.",
-      "categories": [
-        "research"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "sanctions"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "opensky",
-      "name": "OpenSky Network",
-      "description": "Live global aircraft positions from OpenSky Network. Track flights by callsign.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "aircraft"
-        ],
         "capabilities": [],
         "broker": false
       }
@@ -354,41 +268,9 @@
       }
     },
     {
-      "id": "prediction-markets",
-      "name": "Prediction Markets",
-      "description": "Browse prediction markets (Polymarket and Kalshi).",
-      "categories": [
-        "markets"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "prediction-markets"
-        ],
-        "capabilities": [
-          "prediction-markets.series"
-        ],
-        "broker": false
-      }
-    },
-    {
-      "id": "public",
-      "name": "Public",
-      "description": "Read-only account and position sync for Public.",
-      "categories": [
-        "broker"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [],
-        "capabilities": [],
-        "broker": true
-      }
-    },
-    {
       "id": "research-search",
       "name": "Research Search",
-      "description": "Full-text search across earnings call transcripts, news wires, and SEC filings, with saved searches and keyword alerts.",
+      "description": "Search earnings call transcripts, news wires, SEC filings, and source-provided document metadata, with saved cloud searches and keyword alerts.",
       "categories": [
         "research",
         "news"
@@ -397,66 +279,6 @@
       "contributes": {
         "panes": [
           "research-search"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "robinhood",
-      "name": "Robinhood",
-      "description": "Read every Robinhood account; trade only the Agentic account.",
-      "categories": [
-        "broker"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [],
-        "capabilities": [],
-        "broker": true
-      }
-    },
-    {
-      "id": "satellite",
-      "name": "Satellite",
-      "description": "NASA FIRMS fire hotspots and NASA GIBS / HLS imagery, a public substitute for Copernicus Browser.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "satellite"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "simplefin",
-      "name": "SimpleFIN",
-      "description": "Read-only investment position sync through SimpleFIN Bridge.",
-      "categories": [
-        "broker"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [],
-        "capabilities": [],
-        "broker": true
-      }
-    },
-    {
-      "id": "space-weather",
-      "name": "Space Weather",
-      "description": "Real-time space weather from NOAA SWPC. K-index, solar wind, and X-ray flare data.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "space-weather"
         ],
         "capabilities": [],
         "broker": false
@@ -494,57 +316,6 @@
           "short-interest",
           "thirteenf-funds",
           "ticker-research"
-        ],
-        "capabilities": [
-          "defillama"
-        ],
-        "broker": false
-      }
-    },
-    {
-      "id": "traffic",
-      "name": "Air & Sea Traffic",
-      "description": "Delayed OpenSky aircraft and public Digitraffic AIS ship positions for research overlays. Not Flightradar24 or MarineTraffic.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "traffic"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "usaspending",
-      "name": "USAspending",
-      "description": "Search federal contract awards by recipient, agency, or keyword.",
-      "categories": [
-        "data",
-        "research"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "usaspending"
-        ],
-        "capabilities": [],
-        "broker": false
-      }
-    },
-    {
-      "id": "usgs-earthquakes",
-      "name": "USGS Earthquakes",
-      "description": "Real-time global earthquake data from USGS. Filter by magnitude and search by location.",
-      "categories": [
-        "data"
-      ],
-      "toggleable": true,
-      "contributes": {
-        "panes": [
-          "earthquakes"
         ],
         "capabilities": [],
         "broker": false

@@ -1,5 +1,4 @@
 import { chartComposerModule } from "./chart-composer";
-import { defillamaModule } from "./defillama";
 import { dividendYieldModule } from "./dividend-yield";
 import { earningsTranscriptsModule } from "./earnings-transcripts";
 import { esgModule } from "./esg";
@@ -23,7 +22,6 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
   modules: [
     tickerDetailModule,
     chartComposerModule,
-    defillamaModule,
     optionsModule,
     optionsCalculatorModule,
     researchModule,

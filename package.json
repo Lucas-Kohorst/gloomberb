@@ -27,7 +27,8 @@
     "./time-series": "./src/public/time-series.ts",
     "./market-data": "./src/public/market-data.ts",
     "./dialog": "./src/ui/dialog.tsx",
-    "./broker": "./src/public/broker.ts"
+    "./broker": "./src/public/broker.ts",
+    "./plugins": "./src/plugins/helpers.ts"
   },
   "bin": {
     "gloomberb": "bin/gloomberb"

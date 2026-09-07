@@ -23,6 +23,11 @@ import { parseSeriesExpression } from "./presets";
 import { loadCatalogOwidRows } from "./catalog-owid";
 import type { CatalogSeriesRow } from "./catalog-inventory";
 import {
+  dedupeCatalogSuggestions,
+  localCatalogSuggestions,
+  searchRegisteredCatalogs,
+} from "./catalog-providers";
+import {
   looksLikePredictionMarketQuery,
   venueChartHitFromAdjacentMarket,
   type PredictionMarketSearchHit,
@@ -30,6 +35,7 @@ import {
 
 const EMPTY_TICKERS: ReadonlyMap<string, TickerRecord> = new Map();
 const EMPTY_RECENT: readonly string[] = [];
+const EMPTY_DISABLED: readonly string[] = [];
 const DEFAULT_CATALOG_INSTRUMENTS: readonly SeriesCatalogInstrument[] = [
   { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." },
   { symbol: "MSFT", exchange: "NASDAQ", name: "Microsoft Corporation" },
@@ -205,6 +211,8 @@ export function useSeriesCatalogSuggestions({
   enabled: boolean;
 }): SeriesCatalogSearchResult {
   const tickers = useOptionalAppSelector((state) => state.tickers, EMPTY_TICKERS);
+  const disabledPlugins = useOptionalAppSelector((state) => state.config.disabledPlugins, EMPTY_DISABLED);
+  const disabledSources = useOptionalAppSelector((state) => state.config.disabledSources ?? EMPTY_DISABLED, EMPTY_DISABLED);
   const analysis = useMemo(() => analyzeSeriesSearchQuery(query), [query]);
   const [providerSearch, setProviderSearch] = useState<{
     query: string;
@@ -236,22 +244,25 @@ export function useSeriesCatalogSuggestions({
       setProviderSearch({ query: "", suggestions: [], loading: false, error: null });
       return;
     }
+    const catalogs = registry.getAvailableChartSeriesCatalogs();
+    const local = localCatalogSuggestions(normalizedQuery, catalogs);
     let cancelled = false;
     const controller = new AbortController();
-    setProviderSearch({ query: normalizedQuery, suggestions: [], loading: true, error: null });
+    setProviderSearch({ query: normalizedQuery, suggestions: local, loading: true, error: null });
     const timer = setTimeout(() => {
-      void searchChartSeriesCapabilities(registry, normalizedQuery, 8, controller.signal).then((items) => {
-        if (!cancelled) setProviderSearch({
-          query: normalizedQuery,
-          suggestions: buildCapabilitySeriesSuggestions(items),
-          loading: false,
-          error: null,
-        });
+      void Promise.all([
+        searchRegisteredCatalogs(normalizedQuery, catalogs, controller.signal),
+        searchChartSeriesCapabilities(registry, normalizedQuery, 8, controller.signal)
+          .then(buildCapabilitySeriesSuggestions),
+      ]).then(([registered, capabilities]) => {
+        if (cancelled) return;
+        const suggestions = dedupeCatalogSuggestions([...local, ...registered, ...capabilities]);
+        setProviderSearch({ query: normalizedQuery, suggestions, loading: false, error: null });
       }).catch((error: unknown) => {
         if (controller.signal.aborted || cancelled) return;
         setProviderSearch({
           query: normalizedQuery,
-          suggestions: [],
+          suggestions: local,
           loading: false,
           error: searchFailureMessage(error),
         });
@@ -262,7 +273,7 @@ export function useSeriesCatalogSuggestions({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [enabled, query]);
+  }, [disabledPlugins, disabledSources, enabled, query]);
 
   useEffect(() => {
     const instrumentQuery = analysis.instrumentQuery.trim();
@@ -384,7 +395,7 @@ export function useSeriesCatalogSuggestions({
       owidSuggestions,
     );
     const provider = providerSearch.query === query.trim() ? providerSearch.suggestions : [];
-    return [...provider, ...builtIn.filter((entry) => !provider.some((candidate) => candidate.id === entry.id))].slice(0, 8);
+    return dedupeCatalogSuggestions([...provider, ...builtIn]);
   }, [defaultInstrument, instruments, markets, owidSuggestions, providerSearch, query]);
 
   return {

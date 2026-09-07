@@ -75,3 +75,17 @@ export { splitLongTextSegmentByDisplayWidth, truncateWithEllipsis, wrapTextLines
 export { httpFetch, setHttpFetchTransport } from "../utils/http-transport";
 export type { HttpFetchTransport } from "../utils/http-transport";
 export { debugLog } from "../utils/debug-log";
+
+// Search-focus navigation: arrow-up from the first table row should return
+// focus to the search bar. External data-table panes need these to match
+// first-party behavior.
+export {
+  isPlainArrowUp,
+  isPlainArrowDown,
+  stopSearchFocusNavigation,
+} from "../utils/search-focus-navigation";
+export type { SearchFocusNavigationEvent } from "../utils/search-focus-navigation";
+
+// Sort helpers for data-table panes.
+export { compareSortValues } from "../utils/sort-values";
+export type { SortPreference } from "../utils/sort-values";

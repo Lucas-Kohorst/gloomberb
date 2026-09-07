@@ -29,6 +29,11 @@ export function getPluginCommandCategory(command: CommandDef): string {
   return COMMAND_CATEGORY_LABELS[command.category] ?? "Commands";
 }
 
+function getPluginName(pluginRegistry: PluginRegistry, commandId: string): string | undefined {
+  const pluginId = pluginRegistry.getCommandPluginId(commandId);
+  return pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : undefined;
+}
+
 export function getAvailablePluginCommandsForState(
   pluginRegistry: PluginRegistry,
   disabledPlugins: readonly string[],
@@ -83,6 +88,7 @@ export function buildPluginCommandItem(options: {
 }): ResultItem {
   const shortcut = options.command.shortcut?.trim() || undefined;
   const shortcutArg = options.shortcutArg?.trim() || "";
+  const pluginName = getPluginName(options.pluginRegistry, options.command.id);
   return {
     id: options.command.id,
     label: options.command.label,
@@ -91,7 +97,7 @@ export function buildPluginCommandItem(options: {
     kind: "command",
     right: shortcut,
     shortcutQuery: shortcut,
-    searchText: `${options.command.label} ${options.command.description || ""} ${(options.command.keywords ?? []).join(" ")} ${shortcut || ""}`,
+    searchText: `${options.command.label} ${options.command.description || ""} ${(options.command.keywords ?? []).join(" ")} ${shortcut || ""} ${pluginName ?? ""}`,
     action: () => {
       if (shortcutArg && options.command.wizard && options.command.wizard.length > 0) {
         try {
@@ -152,8 +158,7 @@ export function buildPluginCommandResultItem(options: {
   closeAll: (options?: { revertThemePreview?: boolean }) => void;
   notify: NotifyFn;
 }): ResultItem {
-  const pluginId = options.pluginRegistry.getCommandPluginId(options.command.id);
-  const pluginName = pluginId ? options.pluginRegistry.allPlugins.get(pluginId)?.name : null;
+  const pluginName = getPluginName(options.pluginRegistry, options.command.id);
   const category = options.result.category ?? pluginName ?? options.command.label;
   return {
     id: `plugin-command-result:${options.command.id}:${options.result.id}`,
@@ -162,7 +167,7 @@ export function buildPluginCommandResultItem(options: {
     category,
     kind: "command",
     right: (options.result.right ?? options.command.shortcut?.trim()) || undefined,
-    searchText: `${options.result.label} ${options.result.detail || ""} ${(options.result.keywords ?? []).join(" ")} ${options.command.label} ${options.command.description || ""} ${(options.command.keywords ?? []).join(" ")}`,
+    searchText: `${options.result.label} ${options.result.detail || ""} ${(options.result.keywords ?? []).join(" ")} ${options.command.label} ${options.command.description || ""} ${(options.command.keywords ?? []).join(" ")} ${pluginName ?? ""}`,
     disabled: options.result.disabled,
     current: options.result.current,
     action: async () => {

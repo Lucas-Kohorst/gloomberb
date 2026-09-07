@@ -16,13 +16,11 @@ import { buildWhoCommandResults } from "../chat/profile-search";
 import { UnreadInboxPane } from "../chat/unread-inbox-pane";
 import { buildChatPaneSettingsDef } from "../chat/settings";
 import { UNREAD_INBOX_PANE_ID, UNREAD_INBOX_TEMPLATE_ID } from "../chat/unread-inbox";
-import { CongressTradesPane, CONGRESS_TRADES_PANE_ID } from "../congress-trades/pane";
 import { disposeTwitterFeedFeature, registerTwitterFeedFeature } from "../cloud-tweets/registration";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
 import { registerCloudAuthCommands } from "./auth-commands";
 import { registerCloudUpgradeCommand } from "./upgrade-command";
 import { CloudUpgradeStatusWidget } from "./upgrade-status-widget";
-import { createPublicPaneShare } from "../shared/public-pane";
 import { registerConnectionSource, withConnectionRequest } from "../connections/register";
 import type { SyncTransport } from "../../../sync/types";
 
@@ -240,29 +238,6 @@ const accountModule: PluginModule = {
   },
 };
 
-const congressTradesModule: PluginModule = {
-  panes: [{
-    id: CONGRESS_TRADES_PANE_ID,
-    name: "Congress",
-    icon: "G",
-    component: CongressTradesPane,
-    defaultPosition: "right",
-    defaultMode: "floating",
-    defaultFloatingSize: { width: 112, height: 30 },
-    tableExport: true,
-  }],
-  paneTemplates: [{
-    id: "congress-trades-pane",
-    paneId: CONGRESS_TRADES_PANE_ID,
-    label: "Congress Trades",
-    description: "Track newly disclosed House periodic transaction reports.",
-    keywords: ["congress", "house", "trades", "ptr", "stock", "disclosures"],
-    shortcut: { prefix: "CG" },
-    createInstance: () => ({ placement: "floating" }),
-    publicShare: createPublicPaneShare("Congress Trades"),
-  }],
-};
-
 const twitterModule: PluginModule = {
   setup: registerTwitterFeedFeature,
   dispose: disposeTwitterFeedFeature,
@@ -285,7 +260,6 @@ export function createGloomberbCloudPlugin({
       createChatModule(ChatPane, ChatStatusWidget),
       accountModule,
       ...extraModules,
-      congressTradesModule,
       twitterModule,
     ],
   });

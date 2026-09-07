@@ -1,6 +1,6 @@
 import { join } from "path";
 import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync } from "fs";
-import { getPluginsDir } from "../../loader";
+import { getPluginsDir, resolvePluginEntryFile } from "../../loader";
 import type { ExternalPluginEntry, OperationResult } from "./types";
 
 const GITHUB_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -164,32 +164,53 @@ export function scanExternalPlugins(): ExternalPluginEntry[] {
   const pluginsDir = getPluginsDir();
   if (!existsSync(pluginsDir)) return [];
 
+  const results: ExternalPluginEntry[] = [];
+
   const entries = readdirSync(pluginsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
 
-  return entries.map((entry) => {
+  for (const entry of entries) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const dir = join(pluginsDir, entry.name);
-    let version = "—";
-    let description = "—";
-    let hasError = false;
-    let pluginId: string | null = null;
 
-    const pkgPath = join(dir, "package.json");
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-        version = pkg.version || "—";
-        description = pkg.description || "—";
-      } catch {
-        description = "Unreadable package.json";
-        hasError = true;
-      }
+    // Check if this directory itself is a plugin (has a package.json with main
+    // or an index file at root).
+    const isDirectPlugin = resolvePluginEntryFile(dir) !== null;
+
+    if (isDirectPlugin) {
+      results.push(scanPluginDir(entry.name, dir));
+      continue;
     }
 
-    // Try to find the plugin ID by checking entry files for a default export name.
-    // We avoid importing to keep the scan lightweight; the registry already has
-    // loaded plugins. Instead, we match by directory name at the pane level.
-    pluginId = null;
+    // Monorepo: scan subdirectories for plugins.
+    const subEntries = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory());
+    for (const sub of subEntries) {
+      if (sub.name.startsWith(".") || sub.name === "node_modules") continue;
+      const subDir = join(dir, sub.name);
+      if (resolvePluginEntryFile(subDir) !== null) {
+        results.push(scanPluginDir(sub.name, subDir, entry.name));
+      }
+    }
+  }
 
-    return { dirName: entry.name, pluginId, version, description, hasError };
-  });
+  return results;
+}
+
+function scanPluginDir(dirName: string, dir: string, managementDirName?: string): ExternalPluginEntry {
+  let version = "—";
+  let description = "—";
+  let hasError = false;
+
+  const pkgPath = join(dir, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      version = pkg.version || "—";
+      description = pkg.description || "—";
+    } catch {
+      description = "Unreadable package.json";
+      hasError = true;
+    }
+  }
+
+  return { dirName, managementDirName, pluginId: null, version, description, hasError };
 }

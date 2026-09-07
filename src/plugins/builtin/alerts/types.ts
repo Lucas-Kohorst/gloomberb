@@ -1,7 +1,7 @@
 import type { QuoteDataSource } from "../../../types/financials";
 import type { WeatherAlertCondition } from "./weather";
 
-export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div" | "weather";
+export type AlertCondition = "above" | "below" | "crosses" | "halted" | "short_float" | "ex_div" | "weather" | (string & {});
 export type AlertStatus = "active" | "triggered" | "expired";
 
 export function isPriceAlertCondition(
@@ -16,6 +16,8 @@ export interface AlertRule {
   exchange?: string;
   condition: AlertCondition;
   targetPrice: number;
+  /** Text target for custom alert conditions registered via `registerAlertCondition`. */
+  targetText?: string;
   createdAt: number;
   status: AlertStatus;
   triggeredAt?: number;

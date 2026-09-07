@@ -211,20 +211,12 @@ export const CREDIT_SPREAD_CATALOG: readonly CorporateYieldCatalogEntry[] = [
 // AI benchmark metrics — maps a short metric code to a display label + unit.
 // ---------------------------------------------------------------------------
 
-export { BENCHMARK_METRICS, findBenchmarkMetric } from "../llm-stats/metrics";
+export {
+  BENCHMARK_METRICS,
+  BENCHMARK_ORGANIZATIONS as BENCHMARK_ORGS,
+  findBenchmarkMetric,
+} from "../llm-stats/metrics";
 export type { BenchmarkMetricEntry } from "../llm-stats/metrics";
-
-/** Well-known organizations for benchmark suggestion discoverability. */
-export const BENCHMARK_ORGS: readonly string[] = [
-  "OpenAI",
-  "Anthropic",
-  "Google",
-  "Meta",
-  "Mistral",
-  "Amazon",
-  "Cohere",
-  "Microsoft",
-];
 
 // ---------------------------------------------------------------------------
 // Poll subjects — common VoteHub subjects for suggestion discoverability.

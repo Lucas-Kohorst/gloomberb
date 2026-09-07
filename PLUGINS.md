@@ -30,6 +30,222 @@ gloomberb remove my-plugin         # remove a plugin
 
 Plugins are installed to `~/.gloomberb/plugins/`.
 
+### External plugin monorepo
+
+The extracted data, research, prediction-market, and broker plugins live in
+the companion [`gloomberb-plugins`](https://github.com/Lucas-Kohorst/gloomberb-plugins)
+monorepo. Install the monorepo once and the loader discovers each package under
+`plugins/`:
+
+```bash
+gloomberb install Lucas-Kohorst/gloomberb-plugins
+```
+
+The monorepo currently contains:
+
+- Data and research: DefiLlama, OpenSky, NASA FIRMS, USGS earthquakes, space
+  weather, Federal Register, OFAC sanctions, crt.sh, USAspending, traffic,
+  satellite imagery, country economics, and congressional trades.
+- Market data: polls, weather, and prediction markets.
+- Broker adapters: Public, Robinhood, and SimpleFin.
+
+Each package exports one default `GloomPlugin` and declares `gloomberb` and
+`react` as optional peer dependencies. The host links those packages to the
+running app, so the same plugins work in CLI, terminal, and desktop targets
+without bundling a second copy of the host runtime.
+
+## Scaffolding
+
+Scaffold a new plugin with a template that matches what you are building:
+
+```bash
+gloomberb new my-plugin                            # pane-only (default)
+gloomberb new my-source --template chart-source    # chart-series catalog + resolver
+gloomberb new my-docs --template document-source   # document search provider
+gloomberb new my-data --template data-pane         # pane + headless model + client
+gloomberb new my-tab --template research-tab       # Ticker Research tab
+gloomberb new my-cmd --template command-only        # command-bar command
+```
+
+Templates generate `index.ts`, `package.json`, and where needed a `client.ts` stub with `withConnectionRequest()` already wired. The plugin reloads as soon as it compiles.
+
+Available templates:
+
+| Template | What it generates |
+|----------|-------------------|
+| `pane-only` | A pane with a command-bar template and shortcut |
+| `data-pane` | A data pane with a headless model, client stub, and connection source |
+| `chart-source` | A chart-series catalog and resolver with a connection source (no pane) |
+| `document-source` | A document search provider with a connection source (no pane) |
+| `research-tab` | A Ticker Research tab with an agent prompt fragment |
+| `command-only` | A command-bar command with an agent prompt fragment (no pane) |
+
+## Registration helpers
+
+`gloomberb/plugins` exports composable helpers that bundle common registration patterns into a single call. Each one wraps the raw `register*` methods, auto-attributes contributions via `ctx.pluginId`, and returns a cleanup function. Use them in `setup()` for both first-party and external plugins.
+
+```typescript
+import { createChartSource, createDocumentSource, createDataPane, createResearchTab, createConnection } from "gloomberb/plugins";
+```
+
+### createChartSource
+
+Registers a chart-series capability, a chart-series catalog for command-bar search, and a connection source in one call. The capability's `catalog` method is auto-generated from the catalog provider's `entries` and `searchText` fields; pass `capabilityCatalog` to override.
+
+```typescript
+setup(ctx) {
+  const dispose = createChartSource(ctx, {
+    id: "defillama",
+    name: "DefiLlama",
+    catalog: defillamaSeriesCatalog,  // ChartSeriesCatalogProvider
+    resolve: resolveDefiLlamaChartSeries,  // (seriesId, signal) => Promise<ResolvedSeries>
+    connection: { kind: "api", authRequired: false, priority: 300 },
+  });
+}
+```
+
+### createDocumentSource
+
+Registers a document search provider and a connection source.
+
+```typescript
+setup(ctx) {
+  const dispose = createDocumentSource(ctx, {
+    id: "cftc-docs",
+    name: "CFTC Documents",
+    search: async (query, signal) => { /* ... */ },
+    load: async (id, signal) => { /* ... */ },
+    minQueryLength: 3,
+    connection: { kind: "api", authRequired: false },
+  });
+}
+```
+
+### createDataPane
+
+Registers a pane, its template, and an optional connection source.
+
+```typescript
+setup(ctx) {
+  const dispose = createDataPane(ctx, {
+    pane: { id: "fear-greed", name: "Fear & Greed", component: FearGreedPane, defaultPosition: "right" },
+    template: { id: "fear-greed-pane", paneId: "fear-greed", label: "Fear & Greed", description: "...", shortcut: { prefix: "FNG" } },
+    connection: { id: "cnn-fear-greed", name: "CNN Fear & Greed", kind: "api", authRequired: false },
+  });
+}
+```
+
+### createResearchTab
+
+Registers a Ticker Research tab and an optional agent prompt fragment.
+
+```typescript
+setup(ctx) {
+  createResearchTab(ctx, {
+    tab: { id: "sentiment", name: "Sentiment", order: 60, component: SentimentTab },
+    agentPrompt: "Sentiment: Ticker Research tab showing sentiment data.",
+  });
+}
+```
+
+### createConnection
+
+Registers a connection source with `pluginId` auto-filled from the context. Every external API or data source should show up in the Connections pane.
+
+```typescript
+setup(ctx) {
+  const dispose = createConnection(ctx, {
+    id: "my-api",
+    name: "My API",
+    kind: "api",
+    authRequired: false,
+  });
+}
+```
+
+### Connection utilities
+
+`withConnectionRequest` and `reportConnectionRequest` are re-exported from `gloomberb/plugins` so plugins can import everything from one place. Wrap your fetch path to report traffic in the Connections pane:
+
+```typescript
+import { withConnectionRequest } from "gloomberb/plugins";
+
+const data = await withConnectionRequest("my-api", "fetch", async () => {
+  return fetch("https://api.example.com/data").then((r) => r.json());
+});
+```
+
+### Alert conditions
+
+`registerAlertCondition` lets a plugin hook into Gloom's alert system. The alerts plugin owns the pane, poll loop, storage, and notifications. Your plugin provides the condition evaluator and display formatter, and creates alerts programmatically via `createAlert`.
+
+```typescript
+import { createAlert } from "gloomberb/plugins";
+
+setup(ctx) {
+  ctx.registerAlertCondition({
+    id: "rss-mention",
+    label: "RSS mentions symbol",
+    description: "Trigger when an RSS feed mentions the symbol",
+    targetType: "text",
+    targetLabel: "Feed name (or * for all)",
+    targetPlaceholder: "* or Reuters or Bloomberg",
+    async evaluate(alert, signal) {
+      const items = await fetchFeedItems(alert.symbol, signal);
+      return items.some((item) =>
+        alert.targetText === "*" || alert.targetText === "" || item.source === alert.targetText
+      );
+    },
+    formatDescription(alert) {
+      return `${alert.symbol} mentioned in ${alert.targetText || "*"}`;
+    },
+  });
+}
+
+// Create an alert from your plugin (e.g., when the user picks "Add alert" from your pane)
+createAlert({
+  condition: "rss-mention",
+  symbol: "AAPL",
+  targetText: "Reuters",
+  message: "AAPL mentioned in Reuters",
+});
+```
+
+The alerts poll loop calls `evaluate` for each active alert with your condition. Return `true` to trigger it — the alerts plugin handles the notification, status change, and persistence. The `signal` is aborted if the poll cycle is cancelled.
+
+`createAlert` is also re-exported from `gloomberb/plugins` so external plugins can create alerts without importing the alerts plugin directly.
+
+### createFeedSource
+
+Registers a news feed source that pipes into the firehose, breaking news, top news, and all other news panes. The news aggregator polls all registered sources and merges their articles — the firehose is a dumb subscriber that displays whatever comes back. Any plugin can contribute articles by registering a feed source.
+
+```typescript
+import { createFeedSource } from "gloomberb/plugins";
+
+setup(ctx) {
+  createFeedSource(ctx, {
+    id: "my-feed",
+    name: "My Feed",
+    priority: 200,
+    // Optional: filter which queries this source answers
+    supports: (query) => query.feed === "latest" || query.feed === "ticker",
+    // Fetch articles for a query. Return NewsArticle[].
+    async fetchNews(query) {
+      return myArticles;
+    },
+    // Optional: return cached articles without a network call
+    getCachedNews(query) {
+      return cachedArticles;
+    },
+    connection: { kind: "news", authRequired: false },
+  });
+}
+```
+
+The `NewsArticle` type (from `gloomberb/types/plugin`) has `id`, `title`, `url`, `source`, `publishedAt`, `summary`, `tickers`, `categories`, `topics`, and `scores`. Articles from all registered sources are deduped by id and merged by the news aggregator. The firehose, breaking news, and top news panes all pick up new sources automatically — no pane wiring needed.
+
+Built-in sources that already use this pattern: RSS feeds, Adjacent News, and X/Twitter Markets.
+
 ## Plugin structure
 
 A plugin implements the `GloomPlugin` interface:
@@ -220,6 +436,8 @@ The `setup()` function receives a context object with these capabilities:
 | `ctx.registerTickerResearchTab(tab)` | Add a tab to the Ticker Research pane |
 | `ctx.registerCommand(cmd)` | Add a command to the command bar |
 | `ctx.registerCommandBarSearchProvider(provider)` | Add asynchronous result rows to the command bar (see [Command-bar search providers](#command-bar-search-providers)) |
+| `ctx.registerDocumentSearchProvider(provider)` | Add searchable documents and their reader content to document discovery |
+| `ctx.registerChartSeriesCatalog(provider)` | Add chartable series metadata to search and the Data Catalog |
 | `ctx.registerColumn(col)` | Add a custom column to the ticker list |
 | `ctx.registerPane(pane)` | Add a full pane (left/right/bottom) |
 | `ctx.registerPaneTemplate(template)` | Add a reusable pane template (see [Pane templates](#pane-templates)) |
@@ -309,6 +527,69 @@ setup(ctx) {
 The command bar debounces each provider separately, aborts the request through `signal` as soon as the query moves on, and memoizes answers for as long as the bar is open. Provider rows are added below what the command bar already resolved, so a slow, failing, or empty provider never disturbs the local matches — return an empty array rather than an error row. Rows are capped at two extra lines and truncated to the panel width, and `emphasis` is styled by the theme, so never put markup in `text`.
 
 The returned function withdraws the provider; otherwise it is removed with the plugin.
+
+### Searchable documents and chart series
+
+Use document and chart contributions when your plugin owns content. Unlike raw
+command-bar rows, these contributions can be reused by the document search pane
+and chart catalog. They work independently of capability invoke handlers,
+including hosted builds, and are removed with their owning plugin. Set `sourceId`
+to the Connection/source ID so disabling the source hides its contributions too.
+Both registration methods return an unregister function.
+
+```typescript
+setup(ctx) {
+  ctx.registerDocumentSearchProvider({
+    id: "my-plugin:documents",
+    name: "My Documents",
+    sourceId: "my-source",
+    async search(query, signal) {
+      const rows = await client.searchDocuments(query, { signal });
+      return rows.map((row) => ({
+        id: String(row.id),
+        title: row.title,
+        snippet: row.description,
+        source: "My Source",
+        documentType: "Report",
+        publishedAt: row.publishedAt,
+      }));
+    },
+    async load(id, signal) {
+      const doc = await client.getDocument(id, { signal });
+      return { id, title: doc.title, markdown: doc.markdown, sourceUrl: doc.url };
+    },
+  });
+  ctx.registerChartSeriesCatalog({
+    id: "my-plugin:series",
+    sourceId: "my-source",
+    entries: [{
+      id: "activity",
+      label: "Daily activity",
+      source: "My Source",
+      expression: "CAP:my-series:activity",
+      searchText: "daily activity transactions my source",
+      unit: "transactions",
+      frequency: "daily",
+    }],
+    assist: { examples: ["daily activity"], keywords: ["transactions"] },
+  });
+}
+```
+
+IDs must remain stable within a provider. Document `search` returns metadata;
+`load` retrieves only the selected document. It may also return
+`documentLinks: [{ label, url }]` and string-valued `metadata`. Registering a
+provider exposes its existing search, and does not index attachment bodies or
+automatically create cloud alerts. Honor the abort signal and use the normal
+Connection-instrumented client for network requests.
+
+Catalog entries contain executable chart expressions supported by your chart
+resolver. Registration supplies discovery, not a new resolver. Optional
+`search(query, signal)` can discover additional entries, guarded by
+`shouldSearch(query)` and `minQueryLength`. Keep local entries cheap and do not
+fetch chart histories while users type. Aliases belong in `searchText`; units
+and frequency help users distinguish similar series. This metadata contract can
+also be produced by plugin templates without adding source-specific search UI.
 
 ### CLI commands
 

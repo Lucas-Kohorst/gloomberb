@@ -10,6 +10,7 @@ import {
   renderTable,
 } from "../../utils/cli-output";
 import { fail } from "../errors";
+import { buildScaffold, type ScaffoldTemplate, SCAFFOLD_TEMPLATES, SCAFFOLD_TEMPLATE_DESCRIPTIONS } from "../scaffold/templates";
 
 function ensurePluginsDir() {
   const dir = getPluginsDir();
@@ -290,57 +291,7 @@ export function toVariableName(name: string): string {
   return [first, ...rest].join("");
 }
 
-export function buildPluginIndexContent(name: string): string {
-  const varName = toVariableName(name);
-  const displayName = toDisplayName(name);
-  const shortcut = name.replace(/-/g, "").slice(0, 4).toUpperCase() || "PANE";
-  return `import type { GloomPlugin } from "gloomberb/types/plugin";
-
-export const ${varName}: GloomPlugin = {
-  id: "${name}",
-  name: "${displayName}",
-  version: "0.1.0",
-  description: "A new Gloomberb plugin.",
-  toggleable: true,
-  panes: [{
-    id: "${name}",
-    name: "${displayName}",
-    icon: "P",
-    component: () => null,
-  }],
-  paneTemplates: [{
-    id: "${name}-pane",
-    paneId: "${name}",
-    label: "${displayName}",
-    description: "${displayName} pane. Open with pane.createFromTemplate ${name}-pane.",
-    keywords: ["${name}"],
-    shortcut: { prefix: "${shortcut}" },
-  }],
-  setup(ctx) {
-    ctx.registerAgentPromptFragment(
-      "${displayName}: pane.createFromTemplate ${name}-pane (${shortcut}).",
-    );
-  },
-};
-
-export default ${varName};
-`;
-}
-
-export function buildPluginPackageJson(name: string): string {
-  return JSON.stringify(
-    {
-      name,
-      version: "0.1.0",
-      description: "A new Gloomberb plugin.",
-      main: "index.ts",
-    },
-    null,
-    2,
-  ) + "\n";
-}
-
-export function scaffoldPlugin(name: string) {
+export function scaffoldPlugin(name: string, template: ScaffoldTemplate = "pane-only") {
   validatePluginDirectoryName(name);
   ensurePluginsDir();
   const targetDir = join(getPluginsDir(), name);
@@ -349,12 +300,16 @@ export function scaffoldPlugin(name: string) {
     fail(`Plugin "${name}" already exists.`, getPluginsDir());
   }
 
-  mkdirSync(targetDir, { recursive: true });
-  writeFileSync(join(targetDir, "index.ts"), buildPluginIndexContent(name));
-  writeFileSync(join(targetDir, "package.json"), buildPluginPackageJson(name));
+  const output = buildScaffold(name, template);
 
-  console.log(cliStyles.success(`Scaffolded plugin "${name}"`));
+  mkdirSync(targetDir, { recursive: true });
+  for (const file of output.files) {
+    writeFileSync(join(targetDir, file.filename), file.content);
+  }
+
+  console.log(cliStyles.success(`Scaffolded ${template} plugin "${name}"`));
   console.log(renderStat("Path", targetDir));
+  console.log(renderStat("Template", template));
   console.log("");
   console.log(cliStyles.muted(`Edit ${join(targetDir, "index.ts")} to start building.`));
   console.log(cliStyles.muted("Native reloads the plugin as soon as it compiles."));

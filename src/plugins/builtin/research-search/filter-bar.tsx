@@ -1,12 +1,13 @@
 import { SegmentedControl } from "../../../components";
 import { MultiSelectDialogButton } from "../../../components/ui";
 import { Box } from "../../../ui";
-import type { CloudSearchDocType, CloudSearchSort } from "../../../api-client";
+import type { CloudSearchSort } from "../../../api-client";
 import {
   DOC_TYPE_OPTIONS,
   RANGE_OPTIONS,
   SORT_OPTIONS,
   type SearchFilters,
+  type SearchDocumentType,
   type SearchRangeKey,
 } from "./model";
 
@@ -19,12 +20,14 @@ export function SearchFilterBar({
   onChange,
   onDialogOpenChange,
   width,
+  sourceOptions,
 }: {
   filters: SearchFilters;
   onChange: (next: SearchFilters) => void;
   /** Lets the pane stop competing for keys while the type picker is open. */
   onDialogOpenChange: (open: boolean) => void;
   width: number;
+  sourceOptions: Array<{ value: string; label: string }>;
 }) {
   const compact = width < 84;
   return (
@@ -38,9 +41,20 @@ export function SearchFilterBar({
         onOpenChange={onDialogOpenChange}
         onChange={(values: string[]) => onChange({
           ...filters,
-          docTypes: values as CloudSearchDocType[],
+          docTypes: values as SearchDocumentType[],
         })}
       />
+      {sourceOptions.length > 0 ? (
+        <MultiSelectDialogButton
+          label="Sources"
+          title="Document sources"
+          options={sourceOptions}
+          selectedValues={filters.sourceIds ?? []}
+          emptyLabel="All"
+          onOpenChange={onDialogOpenChange}
+          onChange={(sourceIds: string[]) => onChange({ ...filters, sourceIds })}
+        />
+      ) : null}
       <SegmentedControl
         options={RANGE_OPTIONS}
         value={filters.range === "custom" ? "all" : filters.range}

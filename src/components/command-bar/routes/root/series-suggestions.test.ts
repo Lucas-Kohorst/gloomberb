@@ -6,6 +6,14 @@ import {
   formatParsedSeriesExpression,
   looksLikeCatalogSeriesQuery,
 } from "../../../../plugins/builtin/chart-composer/series-catalog";
+import {
+  localCatalogSuggestions,
+  shouldSearchRegisteredCatalogs,
+} from "../../../../plugins/builtin/chart-composer/catalog-providers";
+import { defillamaSeriesCatalog } from "../../../../plugins/builtin/defillama/catalog";
+import { fredSeriesCatalog } from "../../../../plugins/builtin/econ/fred-series-map";
+import { owidSeriesCatalog } from "../../../../plugins/builtin/owid/catalog";
+import { llmStatsSeriesCatalog } from "../../../../plugins/builtin/llm-stats/metrics";
 
 describe("chart series command-bar autocomplete", () => {
   test("treats the whole input as the current leg with no separator", () => {
@@ -44,7 +52,7 @@ describe("chart series command-bar autocomplete", () => {
   });
 
   test("builds an AI assist context naming chart fields and syntax", () => {
-    const ctx = buildChartSeriesAssistContext();
+    const ctx = buildChartSeriesAssistContext([defillamaSeriesCatalog, fredSeriesCatalog]);
     expect(ctx).toContain("revenue");
     expect(ctx).toContain("eps");
     expect(ctx).toContain("FRED:seriesId");
@@ -52,19 +60,42 @@ describe("chart series command-bar autocomplete", () => {
     expect(ctx).toContain("BTC-USD:price");
     expect(ctx).toContain("CAT <query>");
     expect(ctx).toContain("A / B");
+    expect(ctx).toContain("aave fees");
   });
 
-  test("suggests a FRED series from a non-security catalog query", () => {
-    const aapl = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
-    const suggestions = buildSeriesCatalogSuggestions("cpi", aapl, [], 12);
+  test("source catalogs expose chart rows for ordinary data queries", () => {
+    const catalogs = [fredSeriesCatalog, defillamaSeriesCatalog, owidSeriesCatalog, llmStatsSeriesCatalog];
+    const suggestions = localCatalogSuggestions("cpi", catalogs, 12);
     expect(suggestions.some((entry) => (
       entry.expression.kind === "economic"
       && entry.expression.seriesId === "CPIAUCSL"
     ))).toBe(true);
+    expect(localCatalogSuggestions("oil inventories", catalogs)).not.toHaveLength(0);
+    expect(localCatalogSuggestions("aave fees", catalogs)[0]?.expression).toMatchObject({
+      kind: "capability", capabilityId: "defillama", seriesId: "protocol/aave/fees",
+    });
+    expect(localCatalogSuggestions("life expectancy", catalogs)[0]?.expression).toMatchObject({
+      kind: "owid", slug: "life-expectancy",
+    });
+    expect(localCatalogSuggestions("OpenAI throughput", catalogs)[0]?.expression).toMatchObject({
+      kind: "benchmark", selector: "OpenAI", metric: "tps",
+    });
     expect(looksLikeCatalogSeriesQuery("cpi fred")).toBe(true);
     expect(looksLikeCatalogSeriesQuery("AAPL revenue")).toBe(false);
     expect(looksLikeCatalogSeriesQuery("atlanta temp")).toBe(true);
     expect(looksLikeCatalogSeriesQuery("alanta temp")).toBe(true);
+  });
+
+  test("remote-only catalogs can opt an otherwise unknown query into discovery", () => {
+    const remote = {
+      id: "astronomy",
+      minQueryLength: 4,
+      shouldSearch: (query: string) => query.includes("saturn"),
+      search: async () => [],
+    };
+    expect(shouldSearchRegisteredCatalogs("saturn rings", [remote])).toBe(true);
+    expect(shouldSearchRegisteredCatalogs("mars", [remote])).toBe(false);
+    expect(shouldSearchRegisteredCatalogs("sun", [{ ...remote, shouldSearch: undefined }])).toBe(false);
   });
 
   test("ranks Atlanta temperature series for a city + temp query", () => {

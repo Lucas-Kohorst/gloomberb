@@ -1,12 +1,11 @@
 import { resolveAssetDisplayKind } from "../../../market-data/market/format";
-import { DEFILLAMA_CATALOG } from "../defillama/catalog";
+import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
 import {
   getTimeSeriesField,
   isMarketFieldId,
   listTimeSeriesFields,
 } from "../../../time-series/field-catalog";
 import { parseOptionSymbol } from "../../../utils/options";
-import { listFredCatalogSeries } from "../econ/fred-series-map";
 import {
   FUTURES_CONTRACTS,
   FUTURES_SECTOR_LABELS,
@@ -19,13 +18,10 @@ import type { PollTabId } from "../polls/types";
 import { normalizeOwidEntityCode, pickDefaultOwidEntityCode } from "../../../sources/owid/parse";
 import type { OwidChartMetadataPrint, OwidChartSearchHit } from "../../../sources/owid/types";
 import {
-  OWID_CATALOG,
   findOwidCatalogEntryBySlug,
-  owidCatalogExpression,
   owidCatalogSearchText,
   owidGrapherUrl,
   owidSeriesLabel,
-  type OwidCatalogEntry,
 } from "../owid/catalog";
 import { fieldCategory, type SeriesCatalogInstrument } from "./series-catalog";
 
@@ -69,7 +65,7 @@ export interface CatalogSeriesRow {
   id: string;
   label: string;
   source: string;
-  sourceId: CatalogSourceId;
+  sourceId: string;
   kind: string;
   expression: string;
   url?: string;
@@ -97,7 +93,7 @@ export const CATALOG_FILTERS: ReadonlyArray<{ id: CatalogFilterId; label: string
   { id: "owid", label: "OWID" },
 ];
 
-const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | null> = {
+const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<string> | null> = {
   all: null,
   securities: new Set(["security"]),
   options: new Set(["option"]),
@@ -404,24 +400,8 @@ function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSer
 }
 
 const STATIC_CATALOG_INVENTORY: readonly CatalogSeriesRow[] = [
-  ...DEFILLAMA_CATALOG.map((entry) => row({
-    id: `defillama:${entry.seriesId}`, label: entry.label,
-    source: "DefiLlama", sourceId: "defillama", kind: "DeFi",
-    expression: entry.expression, url: entry.url,
-    searchExtra: "crypto total value locked on-chain fundamentals",
-  })),
   ...securityFieldRows(),
   ...optionFieldRows(),
-  ...catalogRowsFromOwidCatalog(),
-  ...listFredCatalogSeries().map((entry) => row({
-    id: `fred:${entry.seriesId}`,
-    label: entry.label,
-    source: "FRED",
-    sourceId: "fred",
-    kind: "Economic",
-    expression: `FRED:${entry.seriesId}`,
-    url: `https://fred.stlouisfed.org/series/${entry.seriesId}`,
-  })),
   ...TREASURY_MATURITIES.map((entry) => row({
     id: `ust:${entry.maturity}`,
     label: `${entry.maturity} Treasury Yield`,
@@ -449,10 +429,26 @@ const STATIC_CATALOG_INVENTORY: readonly CatalogSeriesRow[] = [
   })),
 ];
 
+export function catalogRowsFromProviders(
+  providers: readonly ChartSeriesCatalogProvider[],
+): CatalogSeriesRow[] {
+  return providers.flatMap((provider) => (provider.entries ?? []).map((entry) => ({
+    id: `${provider.id}:${entry.id}`,
+    label: entry.label,
+    source: entry.source,
+    sourceId: provider.sourceId ?? provider.id,
+    kind: entry.detail ?? provider.name ?? entry.source,
+    expression: entry.expression,
+    ...(entry.url ? { url: entry.url } : {}),
+    searchText: entry.searchText,
+  })));
+}
+
 export function listStaticCatalogInventory(
   instruments: readonly SeriesCatalogInstrument[] = [],
+  providers: readonly ChartSeriesCatalogProvider[] = [],
 ): CatalogSeriesRow[] {
-  return [...STATIC_CATALOG_INVENTORY, ...cryptoRows(instruments)];
+  return [...STATIC_CATALOG_INVENTORY, ...catalogRowsFromProviders(providers), ...cryptoRows(instruments)];
 }
 
 function matchesCatalogQuery(entry: CatalogSeriesRow, query: string): boolean {
@@ -509,18 +505,6 @@ function owidCatalogRow(entry: {
     needsEntity: entry.needsEntity,
     owidSlug: entry.slug,
   });
-}
-
-export function catalogRowsFromOwidCatalog(
-  entries: readonly OwidCatalogEntry[] = OWID_CATALOG,
-): CatalogSeriesRow[] {
-  return entries.map((entry) => owidCatalogRow({
-    slug: entry.slug,
-    title: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
-    expression: owidCatalogExpression(entry),
-    searchExtra: owidCatalogSearchText(entry),
-    needsEntity: false,
-  }));
 }
 
 export function catalogRowsFromOwidHits(

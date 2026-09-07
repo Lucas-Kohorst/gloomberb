@@ -46,6 +46,7 @@ export type {
   PaneSidebarRowRenderState,
 } from "./layout/pane/sidebar";
 export { useExternalLinkFooter } from "./use-external-link-footer";
+export { openUrl } from "./ui/external-link";
 export { Button } from "./ui/button";
 export { Checkbox } from "./ui/checkbox";
 export { ConfirmDialog } from "./ui/confirm-dialog";

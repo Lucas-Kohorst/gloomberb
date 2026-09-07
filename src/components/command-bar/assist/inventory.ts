@@ -16,6 +16,7 @@ interface AssistInventorySource {
   commands: readonly Command[];
   pluginCommands: readonly CommandDef[];
   paneTemplates: readonly PaneTemplateDef[];
+  getPluginNameForCommand?: (commandId: string) => string | undefined;
   limit?: number;
 }
 
@@ -63,6 +64,7 @@ export function buildAssistCommandInventory({
   commands,
   pluginCommands,
   paneTemplates,
+  getPluginNameForCommand,
   limit = ASSIST_INVENTORY_LIMIT,
 }: AssistInventorySource): AssistCommandDescriptor[] {
   const descriptors: Array<AssistCommandDescriptor | null> = [
@@ -72,13 +74,16 @@ export function buildAssistCommandInventory({
       command.description,
       describeArg(getCommandShortcutArgKind(command), command.argPlaceholder),
     )),
-    ...pluginCommands.map((command) => describe(
-      command.shortcut ?? "",
-      command.label,
-      command.description,
-      describeArg(getPluginCommandShortcutArgKind(command), command.shortcutArg?.placeholder),
-      command.keywords,
-    )),
+    ...pluginCommands.map((command) => {
+      const pluginName = getPluginNameForCommand?.(command.id)?.trim();
+      return describe(
+        command.shortcut ?? "",
+        command.label,
+        command.description,
+        describeArg(getPluginCommandShortcutArgKind(command), command.shortcutArg?.placeholder),
+        [...(command.keywords ?? []), ...(pluginName ? [pluginName] : [])],
+      );
+    }),
     ...paneTemplates.map((template) => describe(
       template.shortcut?.prefix ?? "",
       getPaneTemplateDisplayLabel(template),

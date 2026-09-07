@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudSearchHit } from "../../../api-client";
-import { appendUniqueHits } from "./model";
+import { appendUniqueHits, filterProviderDocumentHits, filtersToSaved } from "./model";
 
 function hit(overrides: Partial<CloudSearchHit>): CloudSearchHit {
   return {
@@ -36,5 +36,24 @@ describe("appendUniqueHits", () => {
     const second = [hit({ id: "filing", docType: "filing", sourceId: "shared" })];
 
     expect(appendUniqueHits(first, second)).toHaveLength(2);
+  });
+});
+
+describe("plugin document filters", () => {
+  test("source selection stays local to the pane and cloud saved alerts", () => {
+    const filters = { tickers: [], docTypes: ["filing"] as const, sourceIds: ["provider:filings"], range: "all" as const, sort: "relevance" as const };
+    expect(filtersToSaved({ ...filters, docTypes: [...filters.docTypes] })).toEqual({ docTypes: ["filing"] });
+  });
+
+  test("applies portable ticker, range, and sort filters to provider metadata", () => {
+    const hits = [
+      { id: "old", title: "Old", publishedAt: "2026-08-01T00:00:00Z", keywords: ["AAPL"] },
+      { id: "new", title: "New", publishedAt: "2026-09-01T00:00:00Z", metadata: { ticker: "AAPL" } },
+      { id: "other", title: "Other", publishedAt: "2026-09-02T00:00:00Z", keywords: ["MSFT"] },
+    ];
+    const filtered = filterProviderDocumentHits(hits, {
+      tickers: ["AAPL"], docTypes: [], range: "30d", sort: "newest",
+    }, new Date("2026-09-07T00:00:00Z").getTime());
+    expect(filtered.map((entry) => entry.id)).toEqual(["new"]);
   });
 });

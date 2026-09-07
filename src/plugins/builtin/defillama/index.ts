@@ -1,16 +1,19 @@
 import type { PluginModule } from "../plugin-module";
-import { registerConnectionSource } from "../connections/register";
-import { defillamaChartCapability } from "./chart-series";
+import { createChartSource } from "../../helpers";
+import { resolveDefiLlamaChartSeries } from "./chart-series";
+import { defillamaSeriesCatalog } from "./catalog";
 
 let unregister: (() => void) | undefined;
 
 export const defillamaModule: PluginModule = {
-  capabilities: [defillamaChartCapability],
-  setup() {
+  setup(ctx) {
     unregister?.();
-    unregister = registerConnectionSource({
-      id: "defillama", name: "DefiLlama", kind: "api", pluginId: "ticker-research",
-      authRequired: false, priority: 300,
+    unregister = createChartSource(ctx, {
+      id: "defillama",
+      name: "DefiLlama",
+      catalog: defillamaSeriesCatalog,
+      resolve: (seriesId) => resolveDefiLlamaChartSeries(seriesId),
+      connection: { kind: "api", authRequired: false, priority: 300 },
     });
   },
   dispose() {

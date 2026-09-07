@@ -112,6 +112,23 @@ describe("provider rows in the root result model", () => {
 
     expect(items.map((item) => item.id)).not.toContain(documentRow.id);
   });
+
+  test.each(["ART", "G", "CORR"])("retains relevant discovery rows for %s without unrelated providers", (prefix) => {
+    const chartRow = { ...documentRow, id: "chart-series:example", category: "Chart Series" };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: `${prefix} example`,
+      providerResultItems: [documentRow, chartRow, { ...documentRow, id: "search-provider:unrelated:example" }],
+      rootShortcutIntent: {
+        kind: "complete", source: "pane-template", prefix, label: prefix,
+        description: "", argKind: "text", argText: "example", completionQuery: null,
+        template: { id: "example-pane" } as PaneTemplateDef,
+      },
+    }));
+    const ids = items.map((item) => item.id);
+    expect(ids).toContain(prefix === "ART" ? documentRow.id : chartRow.id);
+    expect(ids).not.toContain(prefix === "ART" ? chartRow.id : documentRow.id);
+    expect(ids).not.toContain("search-provider:unrelated:example");
+  });
 });
 
 describe("assist rows in the root result model", () => {
@@ -184,5 +201,95 @@ describe("assist rows in the root result model", () => {
       paneShortcutItems: () => [optionsRow],
     }));
     expect(abbreviated.map((item) => item.id)).toEqual([optionsRow.id]);
+  });
+
+  test("keeps the concrete chart and one filtered catalog action for a chartable query", () => {
+    const genericCatalog: ResultItem = {
+      id: "pane-template:data-catalog",
+      label: "Data Catalog",
+      detail: "Search every chartable series",
+      category: "Panes",
+      kind: "action",
+      right: "CAT",
+      shortcutQuery: "CAT",
+      searchText: "data catalog chart series lido tvl",
+      action: () => {},
+    };
+    const chart: ResultItem = {
+      id: "chart-series:defillama:lido-tvl",
+      label: "Lido TVL",
+      detail: "Total value locked",
+      category: "Chart Series",
+      kind: "action",
+      right: "G",
+      shortcutQuery: "G",
+      action: () => {},
+    };
+    const filteredCatalog: ResultItem = {
+      id: "chart-series:data-catalog",
+      label: "Browse Data Catalog",
+      detail: "Search “lido tvl” across every series",
+      category: "Data Catalog",
+      kind: "action",
+      right: "CAT",
+      shortcutQuery: "CAT",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "lido tvl",
+      assist: {
+        ...assist,
+        state: {
+          status: "answered",
+          query: "lido tvl",
+          source: "auto",
+          candidates: [{
+            input: "CAT lido tvl",
+            title: "Search the data catalog for Lido TVL",
+            prefix: "CAT",
+            confidence: 0.9,
+          }],
+        },
+      },
+      paneShortcutItems: () => [genericCatalog],
+      providerResultItems: [chart, filteredCatalog],
+    }));
+
+    expect(items.map((item) => item.id)).toEqual([chart.id, filteredCatalog.id]);
+  });
+
+  test("keeps an AI catalog action that transforms the query", () => {
+    const filteredCatalog: ResultItem = {
+      id: "chart-series:data-catalog",
+      label: "Browse Data Catalog",
+      detail: "Search “lido” across every series",
+      category: "Data Catalog",
+      kind: "action",
+      shortcutQuery: "CAT",
+      action: () => {},
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "compare staking protocols",
+      assist: {
+        ...assist,
+        state: {
+          status: "answered",
+          query: "compare staking protocols",
+          source: "auto",
+          candidates: [{
+            input: "CAT lido tvl",
+            title: "Search the data catalog for Lido TVL",
+            prefix: "CAT",
+            confidence: 0.9,
+          }],
+        },
+      },
+      providerResultItems: [filteredCatalog],
+    }));
+
+    expect(items.map((item) => item.id)).toEqual([
+      "assist:candidate:0:CAT lido tvl",
+      filteredCatalog.id,
+    ]);
   });
 });
