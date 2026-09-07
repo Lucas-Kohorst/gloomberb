@@ -70,6 +70,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 071  | QA invariant layer over the pane-function harness (+ scheduled canary) | P1 | L | advisory until 072 | TODO |
 | 072  | Restore a green CI baseline | P1 | L | — | TODO |
 | 073  | Kalshi weather index and calibration provenance | P1 | M | existing weather/Kalshi clients | DONE |
+| 074  | Make pane tables flex instead of dropping columns | P1 | L | — | DONE |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 
