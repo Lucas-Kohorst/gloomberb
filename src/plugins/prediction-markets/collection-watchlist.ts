@@ -286,19 +286,16 @@ export function isPredictionMarketTicker(ticker: TickerRecord): boolean {
 }
 
 export function resolvePredictionWatchlistKeys(
-  legacyKeys: readonly string[],
   tickers: ReadonlyMap<string, TickerRecord>,
   config: Pick<AppConfig, "watchlists">,
 ): string[] {
   const watchlistId = resolveDefaultWatchlistId(config);
-  const keys = new Set(legacyKeys);
+  const keys = new Set<string>();
   for (const ticker of tickers.values()) {
     const summary = stubSummaryFromTicker(ticker);
     if (!summary) continue;
     if (watchlistId && ticker.metadata.watchlists.includes(watchlistId)) {
       keys.add(summary.key);
-    } else {
-      keys.delete(summary.key);
     }
   }
   return [...keys];

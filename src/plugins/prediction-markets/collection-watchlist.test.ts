@@ -1,9 +1,11 @@
+import { createPredictionWatchlistState, restorePredictionWatchlistSnapshots } from "./watchlist-sync";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   hydrateHostedUserConfig,
   setHostedConfigUserId,
 } from "../../data/config/hosted-user-persist";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../builtin/byok/types";
+import { coreConfigSyncContributor, overlayCoreConfigPayload } from "../../sync/core-contributors";
 import { createDefaultConfig } from "../../types/config";
 import type { TickerRecord } from "../../types/ticker";
 import {
@@ -214,7 +216,7 @@ test("PM stars hydrate from synced memberships without local plugin state", () =
   const { config, watchlistId } = ensureDefaultWatchlist(createDefaultConfig("/tmp/pm-sync"));
   const records = applyPredictionStarMemberships([kalshi, polymarket], new Map(), watchlistId, true);
   const tickers = new Map(records.map((ticker) => [ticker.metadata.ticker, ticker]));
-  const keys = resolvePredictionWatchlistKeys([], tickers, config);
+  const keys = resolvePredictionWatchlistKeys(tickers, config);
   expect(new Set(keys)).toEqual(new Set([kalshi.key, polymarket.key]));
   const snapshots = hydrateWatchlistSnapshots([], keys, tickers);
   expect(resolveWatchlistMarkets([], snapshots, new Set(keys)).map((market) => market.title))
@@ -222,6 +224,24 @@ test("PM stars hydrate from synced memberships without local plugin state", () =
 
   const [removed] = applyPredictionStarMemberships([kalshi], tickers, watchlistId, false);
   tickers.set(removed!.metadata.ticker, removed!);
-  expect(resolvePredictionWatchlistKeys([kalshi.key, "kalshi:legacy"], tickers, config))
-    .toEqual(["kalshi:legacy", polymarket.key]);
+  expect(resolvePredictionWatchlistKeys(tickers, config))
+    .toEqual([polymarket.key]);
+});
+
+
+test("synced PM settings preserve separate outcomes sharing a ticker and explicit unstars", async () => {
+  const config = createDefaultConfig("/tmp/pm-sync");
+  const otherOutcome = { ...polymarket, key: "polymarket:other", marketId: "other" };
+  expect(predictionCollectionSymbol(otherOutcome)).toBe(predictionCollectionSymbol(polymarket));
+  const watchlist = createPredictionWatchlistState([polymarket.key, otherOutcome.key], [polymarket, otherOutcome]);
+  expect(restorePredictionWatchlistSnapshots(watchlist).map((market) => market.key)).toEqual(watchlist.keys);
+  config.pluginConfig["prediction-markets"] = { "watchlist:v2": watchlist };
+  const payload = await coreConfigSyncContributor.collect({ state: { config } } as any);
+  const hydrated = overlayCoreConfigPayload(createDefaultConfig("cloud://user"), JSON.parse(JSON.stringify(payload)))!;
+  expect(hydrated.pluginConfig["prediction-markets"]?.["watchlist:v2"]).toEqual(watchlist);
+
+  config.pluginConfig["prediction-markets"] = { "watchlist:v2": { keys: [], markets: [] } };
+  const cleared = await coreConfigSyncContributor.collect({ state: { config } } as any);
+  expect(overlayCoreConfigPayload(hydrated, cleared)?.pluginConfig["prediction-markets"]?.["watchlist:v2"])
+    .toEqual({ keys: [], markets: [] });
 });
