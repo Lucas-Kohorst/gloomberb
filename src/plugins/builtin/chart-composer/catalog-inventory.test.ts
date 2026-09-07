@@ -41,18 +41,18 @@ describe("data catalog inventory", () => {
     expect(catalogExpressionForRow(close!, "")).toBeNull();
   });
 
-  test("crypto tab lists pairs, not equity fields", () => {
+  test("crypto tab keeps prices and DeFi fundamentals out of the equity field picker", () => {
     const rows = listStaticCatalogInventory([
       AAPL,
       { symbol: "ETH-USD", exchange: "CCC", name: "Ethereum USD" },
     ]);
     const crypto = filterCatalogRows(rows, "crypto", "");
-    expect(crypto.length).toBeGreaterThan(0);
-    expect(crypto.every((row) => row.sourceId === "crypto" && row.kind === "Crypto")).toBe(true);
+    expect(crypto.some((row) => row.expression === "LLAMA:chain:ethereum:tvl")).toBe(true);
+    expect(crypto.some((row) => row.expression === "LLAMA:protocol:aave:tvl")).toBe(true);
     expect(crypto.some((row) => row.expression === "ETH-USD:price")).toBe(true);
     expect(crypto.some((row) => row.expression === "BTC-USD:price")).toBe(true);
     expect(crypto.every((row) => !row.needsTicker)).toBe(true);
-    expect(filterCatalogRows(rows, "securities", "").some((row) => row.sourceId === "crypto")).toBe(false);
+    expect(filterCatalogRows(rows, "securities", "").some((row) => ["crypto", "defillama"].includes(row.sourceId))).toBe(false);
   });
 
   test("FRED tab includes mapped series and treasuries; futures stay on their own tab", () => {

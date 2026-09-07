@@ -9,6 +9,8 @@ import { loadPollSeries } from "./builtin/polls/chart-series";
 import { loadWeatherSeries } from "./builtin/weather/chart-series";
 import { loadOwidSeries } from "./builtin/owid/chart-series";
 import { loadPredictionMarketSeries } from "./prediction-markets/chart-series";
+import { DEFILLAMA_CAPABILITY_ID } from "./builtin/defillama/catalog";
+import { resolveDefiLlamaChartSeries } from "./builtin/defillama/chart-series";
 
 async function loadFred(request: FredSeriesRequest) {
   return loadCachedFredSeries(
@@ -40,6 +42,16 @@ export function createResolvedChartSources(
     dataProvider,
     loadFredSeries: loadFred,
     loadUniversalSeries: loadUniversalChartSeries,
-    resolveCapabilitySeries,
+    resolveCapabilitySeries: (source, viewport, spec) => {
+      // Hosted clients disable capability invocation; public built-ins share
+      // the same local adapter with CLI and native charts.
+      if (source.capabilityId === DEFILLAMA_CAPABILITY_ID) {
+        return resolveDefiLlamaChartSeries(source.seriesId);
+      }
+      if (!resolveCapabilitySeries) {
+        throw new Error(`Chart series capability "${source.capabilityId}" is unavailable. Enable its plugin or provider.`);
+      }
+      return resolveCapabilitySeries(source, viewport, spec);
+    },
   };
 }

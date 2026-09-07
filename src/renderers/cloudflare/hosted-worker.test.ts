@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
 import { resetKeyedDataCache } from "./data-providers/handle";
+import { loadDefiLlamaSeries, clearDefiLlamaSeriesCache } from "../../sources/defillama/client";
+import { setHttpFetchTransport } from "../../utils/http-transport";
 
 /**
  * Tests for the hosted config snapshot Worker endpoints.
@@ -262,6 +264,32 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect(response?.status).toBe(200);
     expect(fetchedUrl).toBe("https://api.llm-stats.com/v1/models");
     expect((await response?.json()).ok).toBe(true);
+  });
+
+  test("DefiLlama histories cross the hosted public HTTP bridge without a session", async () => {
+    globalThis.fetch = (async (input: URL | RequestInfo) => {
+      expect(String(input)).toBe("https://api.llama.fi/v2/historicalChainTvl/hosted-rpc-chain");
+      return Response.json([{ date: 1704067200, tvl: 123 }]);
+    }) as typeof fetch;
+    setHttpFetchTransport(async (url, init) => {
+      const response = await workerModule.default.fetch?.(
+        makeRequest("POST", "/_gloomberb/rpc", {
+          body: JSON.stringify({ method: "http.fetch", payload: { url, init: { method: "GET", headers: init?.headers } } }),
+        }),
+        makeEnv(),
+      );
+      expect(response?.status).toBe(200);
+      const payload = await response!.json() as { ok: boolean; value: { body: string; status: number; headers: Record<string, string> } };
+      expect(payload.ok).toBe(true);
+      return new Response(payload.value.body, { status: payload.value.status, headers: payload.value.headers });
+    });
+    try {
+      const series = await loadDefiLlamaSeries("chain", "hosted-rpc-chain", "tvl");
+      expect(series.points).toMatchObject([{ date: new Date("2024-01-01T00:00:00.000Z"), value: 123 }]);
+    } finally {
+      setHttpFetchTransport(null);
+      clearDefiLlamaSeriesCache();
+    }
   });
 });
 

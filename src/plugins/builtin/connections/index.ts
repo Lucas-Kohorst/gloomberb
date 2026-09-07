@@ -2,8 +2,11 @@ import type { PluginCapability } from "../../../capabilities";
 import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import type { PluginModule } from "../plugin-module";
 import { ConnectionsPane } from "./pane";
+import { bridgeRegisteredConnectionSources } from "./health-bridge";
 
 export const CONNECTION_HEALTH_CAPABILITY_ID = "application.connection-health";
+
+let disposeHealthBridge: (() => void) | null = null;
 
 function connectionHealthCapability(health: ConnectionHealthRegistry): PluginCapability {
   return {
@@ -51,6 +54,12 @@ export const connectionsModule: PluginModule = {
     shortcut: { prefix: "CONN" },
   }],
   setup(ctx) {
+    disposeHealthBridge?.();
+    disposeHealthBridge = bridgeRegisteredConnectionSources(ctx.connectionHealth);
     ctx.registerCapability(connectionHealthCapability(ctx.connectionHealth));
+  },
+  dispose() {
+    disposeHealthBridge?.();
+    disposeHealthBridge = null;
   },
 };

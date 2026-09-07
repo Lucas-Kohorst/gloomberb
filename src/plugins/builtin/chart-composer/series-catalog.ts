@@ -58,6 +58,7 @@ import {
   type PredictionMarketSearchHit,
 } from "./prediction-series";
 import { listKnownFredSeries } from "../econ/fred-series-map";
+import { DEFILLAMA_CATALOG } from "../defillama/catalog";
 
 const CHART_LABEL_SEPARATOR = " — ";
 
@@ -1010,6 +1011,17 @@ export function buildSeriesCatalogSuggestions(
     .sort((left, right) => right.score - left.score || left.field.label.localeCompare(right.field.label));
 
   const suggestions: SeriesCatalogSuggestion[] = exact ? [exact] : [];
+  const defiWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (defiWords.length && /\b(defillama|llama|defi|tvl|total value locked|chain|protocol|aave|uniswap|lido)\b/i.test(query)) {
+    for (const entry of DEFILLAMA_CATALOG) {
+      const text = `${entry.label} ${entry.expression} defillama defi total value locked crypto`.toLowerCase();
+      if (!defiWords.every((word) => text.includes(word))) continue;
+      const suggestion = exactExpressionSuggestion(entry.expression);
+      if (suggestion && !suggestions.some((item) => item.id === suggestion.id)) {
+        suggestions.push({ ...suggestion, label: entry.label, detail: "DefiLlama", description: "Daily on-chain fundamentals in USD" });
+      }
+    }
+  }
   for (const suggestion of coreAliasSuggestions(query)) {
     if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
   }
@@ -1515,6 +1527,7 @@ export function buildChartSeriesAssistContext(): string {
     + "NWS:icao:metric for NWS Daily Climate Report (e.g. NWS:KNYC:high), "
     + "OWID:slug:entity for Our World in Data (e.g. OWID:life-expectancy:USA, OWID:population:OWID_WRL), "
     + "BTC-USD:price for crypto. "
+    + "LLAMA:chain:ethereum:tvl or LLAMA:protocol:aave:tvl for DefiLlama total value locked in USD; protocols also support fees and revenue. "
     + "Use G <expression> to chart or CAT <query> to browse the Data Catalog. "
     + "Natural language such as 'relative performance', 'AAPL vs MSFT', 'drawdown', "
     + "'realized volatility', 'yield curve spread', 'revenue growth', 'gross margin', "
@@ -1549,6 +1562,7 @@ function looksLikeWeatherStationQuery(query: string): boolean {
 export function looksLikeCatalogSeriesQuery(query: string): boolean {
   const trimmed = query.trim();
   if (!trimmed) return false;
+  if (/^LLAMA:|\b(defillama|tvl|total value locked)\b/i.test(trimmed)) return true;
   if (CATALOG_SERIES_PREFIX_RE.test(trimmed)) return true;
   if (looksLikePredictionMarketQuery(trimmed)) return true;
   if (looksLikeOwidSeriesQuery(trimmed)) return true;

@@ -1,4 +1,5 @@
 import { resolveAssetDisplayKind } from "../../../market-data/market/format";
+import { DEFILLAMA_CATALOG } from "../defillama/catalog";
 import {
   getTimeSeriesField,
   isMarketFieldId,
@@ -45,6 +46,7 @@ export type CatalogSourceId =
   | "security"
   | "option"
   | "crypto"
+  | "defillama"
   | "fred"
   | "futures"
   | "treasury"
@@ -99,7 +101,7 @@ const FILTER_SOURCES: Record<CatalogFilterId, ReadonlySet<CatalogSourceId> | nul
   all: null,
   securities: new Set(["security"]),
   options: new Set(["option"]),
-  crypto: new Set(["crypto"]),
+  crypto: new Set(["crypto", "defillama"]),
   fred: new Set(["fred", "treasury"]),
   futures: new Set(["futures"]),
   valuation: new Set(["valuation"]),
@@ -402,6 +404,12 @@ function cryptoRows(instruments: readonly SeriesCatalogInstrument[]): CatalogSer
 }
 
 const STATIC_CATALOG_INVENTORY: readonly CatalogSeriesRow[] = [
+  ...DEFILLAMA_CATALOG.map((entry) => row({
+    id: `defillama:${entry.seriesId}`, label: entry.label,
+    source: "DefiLlama", sourceId: "defillama", kind: "DeFi",
+    expression: entry.expression, url: entry.url,
+    searchExtra: "crypto total value locked on-chain fundamentals",
+  })),
   ...securityFieldRows(),
   ...optionFieldRows(),
   ...catalogRowsFromOwidCatalog(),
