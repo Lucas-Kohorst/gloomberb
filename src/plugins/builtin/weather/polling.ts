@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { nextAutoRefreshDelayMs } from "../shared/use-auto-refresh";
 import { aggregateMonthlyDegreeDays, computeDailyDegreeDays } from "./degree-days";
 import { loadKalshiWeatherIndexForStation } from "./kalshi-index";
 import { loadNwsObservations } from "./nws-observations";
@@ -64,12 +65,14 @@ export function useWeatherPolling(
   const [degreeDays, setDegreeDays] = useState<DegreeDayReading | null>(null);
   const generationRef = useRef(0);
   const accumulatedRef = useRef<WeatherObservation[]>([]);
+  const lastUpdatedRef = useRef<number | null>(null);
 
   // Switching stations starts a fresh accumulation.
   useEffect(() => {
     accumulatedRef.current = [];
     setObservations([]);
     setError(null);
+    lastUpdatedRef.current = null;
     setLastUpdated(null);
     setDegreeDays(null);
   }, [stationId]);
@@ -134,7 +137,9 @@ export function useWeatherPolling(
     const merged = mergeWeatherObservations(accumulatedRef.current, incoming);
     accumulatedRef.current = merged;
     setObservations(merged);
-    setLastUpdated(Date.now());
+    const stamp = Date.now();
+    lastUpdatedRef.current = stamp;
+    setLastUpdated(stamp);
     setLoading(false);
     setError(failures[0] ?? null);
 
@@ -193,12 +198,36 @@ export function useWeatherPolling(
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  useEffect(() => {
     if (!(intervalMs > 0)) return;
-    const timer = setInterval(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const delay = nextAutoRefreshDelayMs(lastUpdatedRef.current, intervalMs);
+      timer = setTimeout(tick, delay);
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      const previous = lastUpdatedRef.current;
+      if (previous && Date.now() - previous < intervalMs) {
+        schedule();
+        return;
+      }
       void load();
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [load, intervalMs]);
+      timer = setTimeout(tick, intervalMs);
+    };
+
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [intervalMs, lastUpdated, load]);
 
   const refresh = useCallback(() => {
     void load();

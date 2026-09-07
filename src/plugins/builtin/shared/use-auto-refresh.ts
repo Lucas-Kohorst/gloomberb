@@ -9,10 +9,20 @@ import { shouldYieldToUi, whenUiQuiet } from "../../../utils/ui-yield";
  *
  * Pass `intervalMinutes` to use a per-pane override (TWIT uses 1m when live
  * polling is on, and 0 to disable the timer).
- * The timer runs on the interval itself rather than a faster poll: a load
- * that failed is retried on the next tick, and a load that succeeded early
- * is left alone.
+ * The next tick is scheduled from the data's age, not from mount: a load
+ * that failed is retried after a full interval, and a load that succeeded
+ * early waits only the remaining freshness.
  */
+export function nextAutoRefreshDelayMs(
+  lastUpdated: number | null,
+  intervalMs: number,
+  now = Date.now(),
+): number {
+  if (!(intervalMs > 0)) return 0;
+  if (!lastUpdated) return intervalMs;
+  return Math.max(0, intervalMs - (now - lastUpdated));
+}
+
 export function useAutoRefresh(
   lastUpdated: number | null,
   refresh: () => void,
@@ -29,20 +39,35 @@ export function useAutoRefresh(
     if (!(resolvedMinutes > 0)) return;
     const intervalMs = resolvedMinutes * 60_000;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const delay = nextAutoRefreshDelayMs(lastUpdatedRef.current, intervalMs);
+      timer = setTimeout(tick, delay);
+    };
+
     const tick = () => {
       if (cancelled) return;
       const previous = lastUpdatedRef.current;
-      if (previous && Date.now() - previous < intervalMs) return;
+      if (previous && Date.now() - previous < intervalMs) {
+        schedule();
+        return;
+      }
       if (shouldYieldToUi()) {
         void whenUiQuiet().then(tick);
         return;
       }
       refreshRef.current();
+      // lastUpdated updates asynchronously, so wait a full interval before
+      // checking again instead of treating the still-stale stamp as due now.
+      timer = setTimeout(tick, intervalMs);
     };
-    const timer = setInterval(tick, intervalMs);
+
+    schedule();
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
-  }, [resolvedMinutes]);
+  }, [lastUpdated, resolvedMinutes]);
 }

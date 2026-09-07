@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { useAppSelector } from "../../../state/app/context";
+import { useEffect, useState } from "react";
 import { formatRelativeAge } from "../../../utils/relative-time";
+import { useAutoRefresh as useCadenceAutoRefresh } from "./use-auto-refresh";
 
 /** The label only changes once a minute, so a coarse tick is enough. */
 export const AGE_TICK_MS = 30_000;
@@ -23,29 +23,9 @@ export function useUpdatedAgo(lastUpdated: number | null): string | null {
 }
 
 /**
- * Re-pull a pane once its data is older than the global refresh interval, so
- * network panes follow the one cadence the user already configured instead of
- * each hardcoding its own.
- *
- * The timer runs on the interval itself rather than a faster poll: a load that
- * failed is retried on the next tick, and a load that succeeded early is left
- * alone, so a dead endpoint can never turn into a retry storm.
+ * Re-pull a pane once its data is older than the global refresh interval.
+ * Override-capable callers should import `use-auto-refresh.ts` instead.
  */
 export function useAutoRefresh(lastUpdated: number | null, refresh: () => void): void {
-  const intervalMinutes = useAppSelector((state) => state.config.refreshIntervalMinutes);
-  const refreshRef = useRef(refresh);
-  const lastUpdatedRef = useRef(lastUpdated);
-  refreshRef.current = refresh;
-  lastUpdatedRef.current = lastUpdated;
-
-  useEffect(() => {
-    if (!(intervalMinutes > 0)) return;
-    const intervalMs = intervalMinutes * 60_000;
-    const timer = setInterval(() => {
-      const previous = lastUpdatedRef.current;
-      if (previous && Date.now() - previous < intervalMs) return;
-      refreshRef.current();
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMinutes]);
+  useCadenceAutoRefresh(lastUpdated, refresh);
 }
