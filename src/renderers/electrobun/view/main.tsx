@@ -33,7 +33,6 @@ import { createDesktopWindowBridge } from "./desktop/window/bridge";
 import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
 import { getRendererPlugins } from "../../../plugins/catalog-ui";
-import { installGloomPluginRuntime } from "../../../plugins/desktop-runtime/view-runtime";
 import { loadDesktopExternalPlugins } from "./external-plugins";
 import { setPluginInstaller } from "../../../plugins/builtin/plugin-marketplace/store";
 import { enableUiYield } from "../../../utils/ui-yield";
@@ -104,7 +103,6 @@ async function boot() {
   installElectrobunCloudApiFetchTransport();
   installElectrobunUpdateHost();
   const init = await measurePerfAsync("startup.electrobun.backend-init", () => backendInitPromise);
-  installGloomPluginRuntime();
   installElectrobunAiHost();
   installFocusScopeRelease();
   const desktopSnapshot = init.windowKind === "detached" && init.paneId && init.desktopSnapshot

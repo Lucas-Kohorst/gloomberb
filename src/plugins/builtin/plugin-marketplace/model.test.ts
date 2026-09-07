@@ -113,9 +113,66 @@ describe("mergeCatalog", () => {
 
     expect(entry?.loadError).toBe("SyntaxError");
   });
+
+  test("matches a failed load keyed by repo directory to the registry plugin", () => {
+    const entries = mergeCatalog({
+      registry: [registryPlugin({
+        id: "ibkr-gateway",
+        name: "IBKR Gateway",
+        repo: "gloom-sh/gloomberb-ibkr-gateway",
+      })],
+      installed: [installedPlugin({
+        id: "gloomberb-ibkr-gateway",
+        name: "gloomberb-ibkr-gateway",
+        loadError: "Cannot find module",
+      })],
+      target: "desktop",
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.id).toBe("ibkr-gateway");
+    expect(entries[0]?.name).toBe("IBKR Gateway");
+    expect(entries[0]?.installed).toBe(true);
+    expect(entries[0]?.loadError).toBe("Cannot find module");
+  });
 });
 
 describe("sortEntries", () => {
+  test("does not crash when an installed plugin has no name", () => {
+    const nameless = {
+      id: "broken-sidecar",
+      version: "0.0.0",
+      toggleable: true,
+      enabled: true,
+      source: "external",
+    } as InstalledPlugin;
+    delete (nameless as { name?: string }).name;
+
+    const entries = mergeCatalog({
+      registry: [registryPlugin({ id: "hackernews", name: "Hacker News" })],
+      installed: [nameless],
+      target: "desktop",
+    });
+
+    expect(() => sortEntries(entries)).not.toThrow();
+    const sorted = sortEntries(entries);
+    expect(sorted.every((entry) => typeof entry.name === "string" && entry.name.length > 0)).toBe(true);
+    expect(sorted.find((entry) => entry.id === "broken-sidecar")?.name).toBe("broken-sidecar");
+  });
+
+  test("puts a failed install above the rest of what is installed", () => {
+    const entries = mergeCatalog({
+      registry: [
+        registryPlugin({ id: "cloud", name: "Gloom Cloud", bundled: true, featured: true, tier: "official" }),
+        registryPlugin({ id: "broken", name: "Broken" }),
+      ],
+      installed: [installedPlugin({ id: "broken", loadError: "SyntaxError" })],
+      target: "desktop",
+    });
+
+    expect(sortEntries(entries).map((entry) => entry.id)).toEqual(["broken", "cloud"]);
+  });
+
   test("puts what is installed above the rest of the catalog", () => {
     // One list rather than two tabs: acting on what you already have should not
     // require a mode switch, and an uninstalled plugin should never outrank one

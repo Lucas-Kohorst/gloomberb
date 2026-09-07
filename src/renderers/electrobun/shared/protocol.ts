@@ -21,7 +21,6 @@ export interface ElectrobunBackendInit {
   desktopPlatform: string;
   windowKind: "main" | "detached";
   paneId?: string;
-  externalPlugins?: DesktopExternalPluginBundle[];
 }
 
 export interface DesktopRestartMessage {

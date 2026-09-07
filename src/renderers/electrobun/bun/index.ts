@@ -54,7 +54,6 @@ import { handleDesktopWorkspaceRequest } from "./desktop/workspace/requests";
 import { handleDesktopBackendRequest } from "./desktop/backend-requests";
 import { resolveDesktopLiveStream } from "./desktop/media";
 import { initializeDesktopBackend } from "./desktop/initialization";
-import { compileExternalPlugins } from "../../../plugins/desktop-runtime/compile";
 import { getPluginsDir, watchPluginsDir } from "../../../plugins/loader";
 import { mkdirSync } from "fs";
 import { applyWindowsCustomChrome } from "./desktop/windows-custom-chrome";
@@ -432,7 +431,7 @@ async function initialize(
 }
 
 async function broadcastExternalPlugins(): Promise<void> {
-  const bundles = await compileExternalPlugins();
+  const bundles = await collectExternalPluginBundles();
   windowRpcRegistry.forEachReadyWindowRpc((rpc) => {
     try {
       rpc.send["plugins.externalChanged"]({
@@ -470,8 +469,6 @@ async function handleBackendRequest(
       return resolveDesktopLiveStream(request.payload);
     case "remote.forward":
       return forwardRemoteControlRequest(request.payload.request);
-    case "plugins.listExternal":
-      return compileExternalPlugins();
     case "capability.invoke":
     case "capability.cancel":
     case "capability.subscribe":

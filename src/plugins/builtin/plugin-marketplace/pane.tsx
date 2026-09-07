@@ -4,19 +4,23 @@ import {
   DataTableStackView,
   InputSearchBar,
   Spinner,
-  useExternalLinkFooter,
   type DataTableCell,
   type DataTableColumn,
-  type DataTableKeyEvent,
   type PaneFooterSegment,
 } from "../../../components";
-import { useShortcut } from "../../../react/input";
+import { useMarketplaceListNavigation } from "../../../components/marketplace/sidebar";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiHost, type InputRenderable } from "../../../ui";
 import { formatCompact } from "../../../utils/format";
-import { isPlainKey } from "../../../utils/keyboard";
 import { formatRelativeAge } from "../../../utils/relative-time";
+import {
+  applySortPreference,
+  CLEARED_SORT,
+  nextSortPreference,
+  type SortPreference,
+} from "../../../utils/sort-values";
+import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { getCurrentPluginTarget } from "../../current-target";
 import { loadRegistry, registryPluginUrl } from "./feed";
 import { PluginGalleryDesktop, type PluginGalleryController } from "./gallery-desktop";
@@ -28,25 +32,25 @@ import {
   type MarketplaceEntry,
   type RegistryPlugin,
 } from "./model";
+import { DetailRow } from "./detail-row";
 import { getMarketplaceHost, getPluginInstaller } from "./store";
 import { statusOf } from "./status";
 
 export const PLUGIN_MARKETPLACE_PANE_ID = "plugin-marketplace";
 
-type Column = DataTableColumn & { id: "name" | "tagline" | "stars" | "status" };
+type ColumnId = "name" | "tagline" | "stars" | "status";
+type Column = DataTableColumn & { id: ColumnId };
 
-function buildColumns(width: number): Column[] {
-  const starsWidth = 6;
-  const statusWidth = 14;
-  const nameWidth = Math.min(26, Math.max(14, Math.floor(width * 0.24)));
-  const taglineWidth = Math.max(16, width - nameWidth - starsWidth - statusWidth - 8);
+function buildColumns(): Column[] {
   return [
-    { id: "name", label: "PLUGIN", width: nameWidth, align: "left" },
-    { id: "tagline", label: "DESCRIPTION", width: taglineWidth, align: "left" },
-    { id: "stars", label: "STARS", width: starsWidth, align: "right" },
-    { id: "status", label: "STATUS", width: statusWidth, align: "left" },
+    { id: "name", label: "PLUGIN", width: 14, align: "left" },
+    { id: "tagline", label: "DESCRIPTION", width: 16, align: "left", flexGrow: 1 },
+    { id: "stars", label: "STARS", width: 6, align: "right" },
+    { id: "status", label: "STATUS", width: 14, align: "left" },
   ];
 }
+
+const COLUMNS = buildColumns();
 
 function renderCell(
   entry: MarketplaceEntry,
@@ -77,15 +81,6 @@ function renderCell(
   }
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Box flexDirection="row" height={1} gap={1}>
-      <Text fg={colors.textDim}>{`${label}:`}</Text>
-      <Text fg={colors.text}>{value}</Text>
-    </Box>
-  );
-}
-
 function EntryDetail({ entry, width }: { entry: MarketplaceEntry; width: number }) {
   const contributes: string[] = [];
   if (entry.contributes) {
@@ -97,16 +92,18 @@ function EntryDetail({ entry, width }: { entry: MarketplaceEntry; width: number 
 
   return (
     <ScrollBox flexDirection="column" width={width} paddingLeft={1} paddingRight={1}>
-      <Box flexDirection="row" gap={2} height={1}>
-        <Text fg={colors.textDim}>{entry.tier}</Text>
-        <Text fg={colors.textDim}>{entry.categories.join(", ")}</Text>
-        {entry.installedVersion ? <Text fg={colors.textDim}>{`v${entry.installedVersion}`}</Text> : null}
-        {!entry.bundled && entry.stars > 0 ? <Text fg={colors.textDim}>{`${entry.stars} stars`}</Text> : null}
-      </Box>
+      <Text fg={colors.textDim} wrapText style={{ minWidth: 0 }}>
+        {[
+          entry.tier,
+          entry.categories.join(", "),
+          entry.installedVersion ? `v${entry.installedVersion}` : null,
+          !entry.bundled && entry.stars > 0 ? `${entry.stars} stars` : null,
+        ].filter(Boolean).join(" — ")}
+      </Text>
 
       {entry.description ? (
         <Box paddingTop={1} flexDirection="column">
-          <Text fg={colors.text}>{entry.description}</Text>
+          <Text fg={colors.text} wrapText style={{ minWidth: 0 }}>{entry.description}</Text>
         </Box>
       ) : null}
 
@@ -124,8 +121,10 @@ function EntryDetail({ entry, width }: { entry: MarketplaceEntry; width: number 
 
       {!entry.installed && !entry.bundled && entry.repo ? (
         <Box paddingTop={1} flexDirection="column">
-          <Text fg={colors.textDim}>Runs with your full permissions. Read the source first.</Text>
-          <Text fg={colors.textBright}>{`gloomberb install ${entry.repo}`}</Text>
+          <Text fg={colors.textDim} wrapText style={{ minWidth: 0 }}>
+            Runs with your full permissions. Read the source first.
+          </Text>
+          <Text fg={colors.textBright} wrapText style={{ minWidth: 0 }}>{`gloomberb install ${entry.repo}`}</Text>
         </Box>
       ) : null}
     </ScrollBox>
@@ -139,13 +138,14 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
-  // null keeps the curated order: featured first, then tier, then stars.
-  const [sortColumn, setSortColumn] = useState<"name" | "stars" | null>(null);
+  // Cleared sort keeps the curated order: featured first, then tier, then stars.
+  const [sortPreference, setSortPreference] = useState<SortPreference<ColumnId>>(CLEARED_SORT);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
 
   const [registry, setRegistry] = useState<RegistryPlugin[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<number | null>(null);
   // Bumped after a toggle or install so the list is re-read from the host.
@@ -162,6 +162,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
       setRegistry(result.plugins);
       setStale(result.stale);
       setFetchedAt(result.fetchedAt);
+      setCatalogError(result.error);
       setStatus(result.error && result.plugins.length === 0 ? "error" : "ready");
     });
   }, []);
@@ -177,10 +178,19 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
 
   const rows = useMemo(() => {
     const filtered = filterEntries(entries, { query, category: null });
-    if (sortColumn === "name") return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-    if (sortColumn === "stars") return [...filtered].sort((a, b) => b.stars - a.stars);
-    return filtered;
-  }, [entries, query, sortColumn]);
+    return applySortPreference(filtered, sortPreference, (entry, columnId) => {
+      switch (columnId) {
+        case "name":
+          return entry.name;
+        case "tagline":
+          return entry.tagline;
+        case "stars":
+          return entry.stars;
+        case "status":
+          return statusOf(entry, installedNow).text;
+      }
+    });
+  }, [entries, installedNow, query, sortPreference]);
 
   const selected = useMemo(
     () => rows.find((entry) => entry.id === selectedId) ?? rows[0] ?? null,
@@ -239,56 +249,17 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   }, [renderer, sourceUrl]);
   const canInstall = !!selected && isInstallable(selected) && !installedNow.includes(selected.id) && !!getPluginInstaller();
   const canToggle = !!selected && selected.installed && selected.toggleable;
+  const isDesktop = ui.kind === "desktop-web";
 
-  /**
-   * Pane keys go through the table's key handler rather than a global shortcut:
-   * while the DataTable holds key focus it consumes plain letters, so a
-   * `useShortcut` for "i" never fires.
-   */
-  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (searchFocused) return;
-    const key = (event.name ?? "").toLowerCase();
-    if (key === "i") {
-      installSelected();
-      return true;
-    }
-    if (key === "e") {
-      toggleSelected();
-      return true;
-    }
-    if (key === "r") {
-      refresh(true);
-      return true;
-    }
-    if (key === "/") {
-      focusSearch();
-      return true;
-    }
-    return undefined;
-  }, [focusSearch, installSelected, refresh, searchFocused, toggleSelected]);
-
-  useShortcut((event) => {
-    if (!focused || searchFocused) return;
-    const key = (event.name ?? event.key ?? "").toLowerCase();
-    if (key === "r" && isPlainKey(event)) {
-      event.preventDefault?.();
-      refresh(true);
-      return;
-    }
-    if (key === "e" && isPlainKey(event)) {
-      event.preventDefault?.();
-      toggleSelected();
-      return;
-    }
-    if (key === "/" && isPlainKey(event)) {
-      event.preventDefault?.();
-      focusSearch();
-      return;
-    }
-    if (key === "i" && isPlainKey(event)) {
-      event.preventDefault?.();
-      installSelected();
-    }
+  // The terminal table owns its own cursor; only the desktop sidebar needs this.
+  // Items follow the sidebar's rendered order, not the table's sort order.
+  const sidebarItems = useMemo(() => [...installed, ...discover], [discover, installed]);
+  useMarketplaceListNavigation({
+    enabled: isDesktop && focused,
+    scope: "plugin-gallery",
+    items: sidebarItems,
+    selectedId: selected?.id ?? null,
+    select: setSelectedId,
   });
 
   const info: PaneFooterSegment[] = [];
@@ -306,20 +277,23 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     info.push({ id: "updated", parts: [{ text: formatRelativeAge(fetchedAt), tone: "muted" }] });
   }
 
-  useExternalLinkFooter({
+  usePaneStatusLinkFooter({
     registrationId: PLUGIN_MARKETPLACE_PANE_ID,
     focused,
-    url: selected ? registryPluginUrl(selected.id) : null,
+    url: sourceUrl,
     source: selected ? "gloom.sh" : null,
+    showOpenHint: true,
     info,
-    hints: canInstall
-      ? [{ id: "install", key: "i", label: "nstall", onPress: installSelected }]
-      : canToggle
-        ? [{ id: "toggle", key: "e", label: selected?.enabled ? "disable" : "nable", onPress: toggleSelected }]
-        : [],
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(() => refresh(true)),
+      ...(canInstall
+        ? [{ id: "install", key: "i", label: "nstall", onPress: installSelected }]
+        : canToggle
+          ? [{ id: "toggle", key: "e", label: selected?.enabled ? "disable" : "nable", onPress: toggleSelected }]
+          : []),
+    ],
   });
-
-  const columns = useMemo(() => buildColumns(width), [width]);
 
   const controller: PluginGalleryController = {
     query,
@@ -329,6 +303,8 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     selected,
     select: (id) => setSelectedId(id),
     status,
+    catalogError,
+    stale,
     refresh,
     install,
     toggle,
@@ -341,7 +317,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     sourceUrl,
   };
 
-  if (ui.kind === "desktop-web") {
+  if (isDesktop) {
     return (
       <PluginGalleryDesktop
         controller={controller}
@@ -354,9 +330,10 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
 
   if (status === "loading" && entries.length === 0) {
     return (
-      <Box flexDirection="column" width={width} height={height}>
-        <Box flexGrow={1} alignItems="center" justifyContent="center">
+      <Box flexDirection="column" width={width} height={height} backgroundColor={colors.bg}>
+        <Box flexGrow={1} alignItems="center" justifyContent="center" flexDirection="column">
           <Spinner />
+          <Text fg={colors.textDim}>Loading plugin catalog…</Text>
         </Box>
       </Box>
     );
@@ -392,26 +369,25 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
           getId: (entry) => entry.id,
           onChange: (id) => setSelectedId(typeof id === "string" ? id : null),
         }}
-        onRootKeyDown={handleRootKeyDown}
-        onDetailKeyDown={handleRootKeyDown}
         onActivate={() => setDetailOpen(true)}
         rootWidth={width}
         rootHeight={height}
-        columns={columns}
+        columns={COLUMNS}
         items={rows}
         getItemKey={(entry) => entry.id}
-        sortColumnId={sortColumn}
-        sortDirection={sortColumn === "name" ? "asc" : "desc"}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
         onHeaderClick={(columnId) => {
-          // Only these two columns have a meaningful order; the rest keep the
-          // curated ranking rather than pretending to be sortable.
-          if (columnId === "name" || columnId === "stars") {
-            setSortColumn((current) => (current === columnId ? null : columnId));
-          }
+          setSortPreference((current) => nextSortPreference(current, columnId as ColumnId, {
+            defaultDirection: (id) => (id === "stars" ? "desc" : "asc"),
+            resetTo: CLEARED_SORT,
+          }));
         }}
         renderCell={(entry, column, _index, rowState) => renderCell(entry, column, rowState, installedNow)}
         emptyStateTitle={status === "error" ? "Plugin catalog unavailable." : "No plugins match."}
-        emptyStateHint={status === "error" ? "Press r to retry." : undefined}
+        emptyStateHint={status === "error"
+          ? `${catalogError ?? "The catalog could not be loaded."} Press r to retry.`
+          : undefined}
       />
     </Box>
   );

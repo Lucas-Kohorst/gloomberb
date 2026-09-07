@@ -1,5 +1,4 @@
 import {
-  getPaneSidebarWidth,
   PaneSidebar,
   PaneSidebarRow,
 } from "../../../components/layout/pane/sidebar";
@@ -7,14 +6,20 @@ import {
   MarketplaceActionRow,
   MarketplaceNote,
   MarketplaceSection,
+  marketplaceSidebarWidth,
+  useScrollMarketplaceRowIntoView,
 } from "../../../components/marketplace/sidebar";
 import { Button } from "../../../components/ui/button";
 import { TextField } from "../../../components/ui/fields";
 import { Spinner } from "../../../components/ui/loading";
 import { t } from "../../../i18n";
 import { useThemeColors } from "../../../theme/theme-context";
-import { Box, ScrollBox, Text, TextAttributes, useUiCapabilities } from "../../../ui";
+import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { formatCompact } from "../../../utils/format";
+import type { DockLayoutNode, LayoutConfig, PaneInstanceConfig } from "../../../types/config";
+import type { PaneDef } from "../../../types/plugin";
+import { MiniWorkspace } from "../../../layout-marketplace/mini-workspace";
+import { DetailRow } from "./detail-row";
 import { isInstallable, type MarketplaceEntry } from "./model";
 import { statusOf } from "./status";
 
@@ -29,6 +34,8 @@ export interface PluginGalleryController {
   selected: MarketplaceEntry | null;
   select: (id: string) => void;
   status: "loading" | "ready" | "error";
+  catalogError: string | null;
+  stale: boolean;
   refresh: (force: boolean) => void;
   install: (entry: MarketplaceEntry) => void;
   toggle: (entry: MarketplaceEntry) => void;
@@ -75,6 +82,7 @@ function EntryRow({
           tabIndex={0}
           aria-label={`${entry.name}, ${status.text}`}
           aria-current={selected ? "true" : undefined}
+          data-gloom-id={entry.id}
           data-gloom-role={ROW_ROLE}
           data-gloom-interactive="true"
           onMouseOver={select}
@@ -99,8 +107,6 @@ function EntryRow({
           >
             {entry.name}
           </Text>
-          <Box flexGrow={1} minWidth={0} />
-          <Text fg={selected ? foregroundColor : status.color} selectable={false}>{status.text}</Text>
           <Text> </Text>
         </Box>
       )}
@@ -121,8 +127,26 @@ function DiscoverStatus({ controller }: { controller: PluginGalleryController })
   if (controller.status === "error") {
     return (
       <>
-        <MarketplaceNote><Text fg={colors.negative} wrapText>{t("Plugin catalog unavailable.")}</Text></MarketplaceNote>
+        <MarketplaceNote>
+          <Text fg={colors.negative} wrapText>
+            {controller.catalogError
+              ? `${t("Plugin catalog unavailable.")} ${controller.catalogError}`
+              : t("Plugin catalog unavailable.")}
+          </Text>
+        </MarketplaceNote>
         <MarketplaceActionRow label={t("Retry")} onPress={() => controller.refresh(true)} rowRole={ROW_ROLE} />
+      </>
+    );
+  }
+  if (controller.stale && controller.catalogError) {
+    return (
+      <>
+        <MarketplaceNote>
+          <Text fg={colors.warning} wrapText>
+            {`Showing cached plugin catalog. ${controller.catalogError}`}
+          </Text>
+        </MarketplaceNote>
+        <MarketplaceActionRow label={t("Refresh")} onPress={() => controller.refresh(true)} rowRole={ROW_ROLE} />
       </>
     );
   }
@@ -156,12 +180,86 @@ function PreviewEmpty({ controller }: { controller: PluginGalleryController }) {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
-  const colors = useThemeColors();
+function splitPreviewDock(instanceIds: readonly string[]): DockLayoutNode | null {
+  if (instanceIds.length === 0) return null;
+  let node: DockLayoutNode = { kind: "pane", instanceId: instanceIds[0]! };
+  for (const instanceId of instanceIds.slice(1)) {
+    node = {
+      kind: "split",
+      axis: "horizontal",
+      ratio: 0.52,
+      first: node,
+      second: { kind: "pane", instanceId },
+    };
+  }
+  return node;
+}
+
+/** `hacker-news` → `Hacker News`, so preview tiles read like pane titles. */
+function humanizeId(value: string): string {
+  return value
+    .split(/[-_./:]/g)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+const MAX_PREVIEW_PANES = 4;
+
+function buildPluginPreview(entry: MarketplaceEntry): {
+  layout: LayoutConfig;
+  panes: ReadonlyMap<string, PaneDef>;
+} {
+  const contributed = entry.contributes?.panes ?? [];
+  // A plugin with no panes still gets one tile so the preview is never blank.
+  const previewIds = contributed.length > 0 ? contributed.slice(0, MAX_PREVIEW_PANES) : [entry.id];
+  const instances: PaneInstanceConfig[] = previewIds.map((paneId, index) => ({
+    instanceId: `plugin-preview:${entry.id}:${index}`,
+    paneId,
+    binding: { kind: "none" },
+  }));
+  const icon = entry.name.trim().charAt(0).toUpperCase();
+  const panes = new Map<string, PaneDef>(
+    previewIds.map((paneId) => [
+      paneId,
+      {
+        id: paneId,
+        name: humanizeId(paneId),
+        icon,
+        component: () => null,
+        defaultPosition: "left",
+      },
+    ]),
+  );
+  return {
+    layout: {
+      dockRoot: splitPreviewDock(instances.map((instance) => instance.instanceId)),
+      instances,
+      floating: [],
+      detached: [],
+    },
+    panes,
+  };
+}
+
+function PluginPreview({ entry }: { entry: MarketplaceEntry }) {
+  const preview = buildPluginPreview(entry);
   return (
-    <Box flexDirection="row" height={1} gap={1} minWidth={0}>
-      <Text fg={colors.textDim}>{`${label}:`}</Text>
-      <Text fg={colors.text} style={{ ...ELLIPSIS, minWidth: 0, flexShrink: 1 }}>{value}</Text>
+    <Box
+      flexGrow={1}
+      minWidth={0}
+      minHeight={8}
+      padding={1}
+      overflow="hidden"
+      data-gloom-role="plugin-gallery-preview-image"
+    >
+      <MiniWorkspace
+        layout={preview.layout}
+        panes={preview.panes}
+        width={640}
+        height={260}
+        detail
+      />
     </Box>
   );
 }
@@ -227,14 +325,15 @@ function PreviewPane({
       </Box>
 
       <ScrollBox flexGrow={1} minWidth={0} minHeight={8} padding={1} scrollY>
+        <PluginPreview entry={entry} />
         {entry.tagline ? (
           <Box paddingBottom={1}>
-            <Text fg={colors.text}>{entry.tagline}</Text>
+            <Text fg={colors.text} wrapText style={{ minWidth: 0 }}>{entry.tagline}</Text>
           </Box>
         ) : null}
         {entry.description ? (
           <Box paddingBottom={1} flexDirection="column">
-            <Text fg={colors.textDim} wrapText>{entry.description}</Text>
+            <Text fg={colors.textDim} wrapText style={{ minWidth: 0 }}>{entry.description}</Text>
           </Box>
         ) : null}
         {!entry.installed && !entry.bundled && entry.repo ? (
@@ -299,12 +398,9 @@ export function PluginGalleryDesktop({
   width?: number;
   height?: number;
 }) {
-  const { nativePaneChrome } = useUiCapabilities();
-  const sidebarWidth = getPaneSidebarWidth(width, !!nativePaneChrome);
-  const selected = controller.selected
-    ?? controller.installed[0]
-    ?? controller.discover[0]
-    ?? null;
+  const sidebarWidth = marketplaceSidebarWidth(width);
+  const selected = controller.selected;
+  useScrollMarketplaceRowIntoView(ROW_ROLE, selected?.id);
 
   return (
     <Box
@@ -314,7 +410,7 @@ export function PluginGalleryDesktop({
       overflow="hidden"
       data-gloom-role="plugin-gallery"
     >
-      <PaneSidebar width={sidebarWidth} height={height} focused={focused}>
+      <PaneSidebar width={sidebarWidth} height={height} focused={focused} keyboardFocused={focused}>
         {({ listWidth }) => (
           <>
             <Box height={2} paddingX={1} justifyContent="center" flexShrink={0}>

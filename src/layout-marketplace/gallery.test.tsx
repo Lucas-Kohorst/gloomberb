@@ -67,33 +67,40 @@ async function renderGallery() {
   return { actions, isClosed: () => closed };
 }
 
-test("lists owned layouts before Discover and details the selected layout", async () => {
+test("lists owned layouts in a sortable catalog and details the selected layout", async () => {
   await renderGallery();
 
   const frame = testSetup!.captureCharFrame();
-  expect(frame).toContain("YOUR LAYOUTS (2)");
+  expect(frame).toContain("LAYOUT");
+  expect(frame).toContain("ARRANGEMENT");
   expect(frame).toContain("Default");
   expect(frame).toContain("Research Desk");
-  expect(frame.indexOf("YOUR LAYOUTS")).toBeLessThan(frame.indexOf("DISCOVER"));
+  expect(frame.indexOf("Default")).toBeLessThan(frame.indexOf("Research Desk"));
   // Signed out keeps Discover gated without touching the network.
-  expect(frame).toContain("Log in to browse community layouts");
-  // Details name real panes instead of drawing empty preview boxes.
-  expect(frame).toContain("Portfolio");
-  expect(frame).toContain("Ticker Research");
+  expect(frame).toContain("[l]og in");
   expect(frame).toContain("3 docked");
 
   const searchLine = frame.split("\n").find((line) => line.includes("Search layouts and panes"));
   expect(searchLine?.startsWith("/ Search layouts and panes")).toBe(true);
-  expect(frame).toContain("[/]search");
+  expect(frame).toContain("[/] search");
   expect(frame).toContain("[n]ew");
   expect(frame).toContain("[o]pen");
   expect(frame).toContain("[r]ename");
   expect(frame).toContain("[c]opy");
   expect(frame).toContain("[d]elete");
   expect(frame).toContain("[p]ublish");
+
+  await act(async () => {
+    testSetup!.mockInput.pressEnter();
+    await testSetup!.renderOnce();
+  });
+  const detail = testSetup!.captureCharFrame();
+  expect(detail).toContain("Default");
+  expect(detail).toContain("Portfolio");
+  expect(detail).toContain("Ticker Research");
 });
 
-test("search Enter returns to the list before activating the filtered layout", async () => {
+test("search Enter returns to the list before opening the filtered layout", async () => {
   const { actions, isClosed } = await renderGallery();
 
   await act(async () => {
@@ -111,7 +118,11 @@ test("search Enter returns to the list before activating the filtered layout", a
   expect(testSetup!.captureCharFrame()).toContain("/ Research");
 
   await act(async () => {
-    testSetup!.mockInput.pressEnter();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    await testSetup!.renderOnce();
+  });
+  await act(async () => {
+    testSetup!.mockInput.pressKey("o");
     await testSetup!.renderOnce();
   });
 
@@ -131,7 +142,7 @@ test("n opens the new layout workflow", async () => {
   expect(testSetup!.captureCharFrame()).toContain("Create Layout");
 });
 
-test("j/k move the selection and Enter switches to the layout and closes", async () => {
+test("j/k move the selection and o switches to the layout and closes", async () => {
   const { actions, isClosed } = await renderGallery();
 
   await act(async () => {
@@ -139,7 +150,7 @@ test("j/k move the selection and Enter switches to the layout and closes", async
     await testSetup!.renderOnce();
   });
   await act(async () => {
-    testSetup!.mockInput.pressEnter();
+    testSetup!.mockInput.pressKey("o");
     await testSetup!.renderOnce();
   });
 
