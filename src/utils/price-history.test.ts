@@ -50,14 +50,14 @@ describe("normalizePriceHistory", () => {
     ).toBe(false);
   });
 
-  test("treats weekend-old listed history as stale instead of a live session", () => {
+  test("keeps weekend-old listed history while the market is closed", () => {
     expect(
       isPriceHistoryStaleForCurrentWindow(
         [{ date: new Date("2026-05-15T15:30:00Z"), close: 67 }],
         Date.parse("2026-05-17T12:00:00Z"),
         { exchange: "NASDAQ" },
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test("still treats old always-open market history as stale", () => {

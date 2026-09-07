@@ -1,4 +1,5 @@
 Pane ".+" crashed:
+undefined is not an object
 Can't find variable:
 ReferenceError:
 TypeError:

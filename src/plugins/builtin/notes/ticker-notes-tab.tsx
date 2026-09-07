@@ -4,7 +4,7 @@ import { useShortcut } from "../../../react/input";
 import type { TickerResearchTabProps } from "../../../types/plugin";
 import { usePaneTicker } from "../../../state/app/context";
 import { MarkdownEditor } from "../../../components/markdown-editor";
-import { EmptyState, usePaneFooter } from "../../../components";
+import { EmptyState, TickerEmptyState, usePaneFooter } from "../../../components";
 import { usePluginAppActions } from "../../runtime";
 import type { NotesFiles } from "./files";
 import { MarkdownNotePreview } from "./markdown-note-preview";

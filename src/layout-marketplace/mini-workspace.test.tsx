@@ -1,53 +1,19 @@
 /** @jsxImportSource react */
-import { Window } from "happy-dom";
+import { createTestRendererHost, createWebUiHost, installDomGlobals } from "../test-support/dom";
 
-const testWindow = new Window({ url: "http://localhost" });
-const domGlobals = {
-  IS_REACT_ACT_ENVIRONMENT: true,
-  window: testWindow,
-  document: testWindow.document,
-  navigator: testWindow.navigator,
-  HTMLElement: testWindow.HTMLElement,
-  Node: testWindow.Node,
-};
+const testWindow = installDomGlobals();
 
-/** Bun shares one process across test files, so the DOM globals must not leak. */
-const priorGlobals = Object.fromEntries(
-  Object.keys(domGlobals).map((key) => [key, (globalThis as Record<string, unknown>)[key]]),
-);
-Object.assign(globalThis, domGlobals);
-
-import { afterAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { UiHostProvider, type RendererHost, type UiHost } from "../ui";
-import { WebBox } from "../renderers/electrobun/view/host/box";
-import { WebText } from "../renderers/electrobun/view/host/text";
+import { UiHostProvider } from "../ui";
 import { cloneLayout, createDefaultConfig } from "../types/config";
 import type { PaneDef } from "../types/plugin";
 import { MiniWorkspace } from "./mini-workspace";
 
-const renderer: RendererHost = {
-  requestExit() {},
-  async openExternal() {},
-  async copyText() {},
-  async readText() { return ""; },
-  notify() {},
-};
+const renderer = createTestRendererHost();
 
-const ui = {
-  kind: "desktop-web",
-  capabilities: { cellWidthPx: 8, fractionalViewport: true },
-  Box: WebBox,
-  Text: WebText,
-} as unknown as UiHost;
-
-afterAll(() => {
-  for (const [key, value] of Object.entries(priorGlobals)) {
-    if (value === undefined) delete (globalThis as Record<string, unknown>)[key];
-    else (globalThis as Record<string, unknown>)[key] = value;
-  }
-});
+const ui = createWebUiHost();
 
 function paneDef(id: string, name: string, icon: string): PaneDef {
   return { id, name, icon, component: () => null, defaultPosition: "left" };

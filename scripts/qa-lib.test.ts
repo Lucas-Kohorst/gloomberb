@@ -16,6 +16,8 @@ describe("qa path mapping", () => {
     const root = mkdtempSync(join(tmpdir(), "gloom-qa-lib-"));
     mkdirSync(join(root, "src/plugins/builtin/chart-composer"), { recursive: true });
     writeFileSync(join(root, "src/plugins/catalog-ui.test.ts"), "");
+    mkdirSync(join(root, "src/plugins/builtin/plugin-marketplace"), { recursive: true });
+    writeFileSync(join(root, "src/plugins/builtin/plugin-marketplace/model.test.ts"), "");
     writeFileSync(join(root, "src/plugins/builtin/chart-composer/presets.test.ts"), "");
     mkdirSync(join(root, "src/plugins/builtin/market-valuation"), { recursive: true });
     writeFileSync(join(root, "src/plugins/builtin/market-valuation/model.test.ts"), "");
@@ -25,9 +27,10 @@ describe("qa path mapping", () => {
       "src/plugins/builtin/market-valuation/pane.tsx",
       "src/time-series/spec.ts",
     ]);
-    expect(plan.panes).toEqual(expect.arrayContaining(["chart-composer", "market-valuation"]));
+    expect(plan.panes).toEqual(expect.arrayContaining(["chart-composer", "market-valuation", "plugin-marketplace"]));
     expect(plan.fn).toEqual(expect.arrayContaining(["graph-price-pane AAPL", "VAL"]));
     expect(plan.tests).toContain("src/plugins/catalog-ui.test.ts");
+    expect(plan.tests).toContain("src/plugins/builtin/plugin-marketplace/model.test.ts");
   });
 
   test("siblingTestPath follows the repo convention", () => {

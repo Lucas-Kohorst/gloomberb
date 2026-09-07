@@ -1,66 +1,21 @@
 /** @jsxImportSource react */
-import { Window } from "happy-dom";
+import { createTestRendererHost, createWebUiHost, installDomGlobals } from "../test-support/dom";
 
-const testWindow = new Window({ url: "http://localhost" });
-const domGlobals = {
-  IS_REACT_ACT_ENVIRONMENT: true,
-  window: testWindow,
-  document: testWindow.document,
-  navigator: testWindow.navigator,
-  KeyboardEvent: testWindow.KeyboardEvent,
-  MouseEvent: testWindow.MouseEvent,
-  HTMLElement: testWindow.HTMLElement,
-  Node: testWindow.Node,
-};
+const testWindow = installDomGlobals();
 
-/** Bun shares one process across test files, so the DOM globals must not leak. */
-const priorGlobals = Object.fromEntries(
-  Object.keys(domGlobals).map((key) => [key, (globalThis as Record<string, unknown>)[key]]),
-);
-Object.assign(globalThis, domGlobals);
-
-import { afterAll, afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { UiHostProvider, type RendererHost, type UiHost } from "../ui";
-import { WebBox } from "../renderers/electrobun/view/host/box";
-import { WebText, WebSpan } from "../renderers/electrobun/view/host/text";
-import { WebScrollBox } from "../renderers/electrobun/view/host/scroll-box";
-import { WebInput } from "../renderers/electrobun/view/host/input";
-import { WebButton, WebTextField } from "../renderers/electrobun/view/desktop/controls";
+import { UiHostProvider } from "../ui";
 import { cloneLayout, createDefaultConfig } from "../types/config";
 import type { PaneDef } from "../types/plugin";
 import { LayoutGalleryDesktop } from "./gallery-desktop";
 import { buildOwnedEntries, type GalleryEntry } from "./model";
 import type { LayoutGalleryController } from "./gallery";
 
-const renderer: RendererHost = {
-  requestExit() {},
-  async openExternal() {},
-  async copyText() {},
-  async readText() { return ""; },
-  notify() {},
-};
+const renderer = createTestRendererHost();
 
-const ui = {
-  kind: "desktop-web",
-  capabilities: { cellWidthPx: 8, cellHeightPx: 18, fractionalViewport: true },
-  Box: WebBox,
-  Text: WebText,
-  Span: WebSpan,
-  ScrollBox: WebScrollBox,
-  Button: WebButton,
-  Input: WebInput,
-  TextField: WebTextField,
-  SpinnerMark: () => null,
-} as unknown as UiHost;
-
-afterAll(() => {
-  for (const [key, value] of Object.entries(priorGlobals)) {
-    if (value === undefined) delete (globalThis as Record<string, unknown>)[key];
-    else (globalThis as Record<string, unknown>)[key] = value;
-  }
-});
+const ui = createWebUiHost();
 
 function paneDef(id: string, name: string, icon: string): PaneDef {
   return { id, name, icon, component: () => null, defaultPosition: "left" };
@@ -203,6 +158,23 @@ test("sidebar rows select the preview instead of activating the layout", async (
 
   expect(selections).toEqual(["owned:0", "owned:1", "owned:1"]);
   expect(activated).toEqual([]);
+});
+
+test("sidebar arrow keys move focus to the next layout", async () => {
+  const { controller, selections } = createController();
+  const container = await renderGallery(controller);
+  const sidebarRows = rows(container);
+
+  await act(async () => {
+    (sidebarRows[0] as unknown as HTMLElement).focus();
+    sidebarRows[0]!.dispatchEvent(new testWindow.KeyboardEvent("keydown", {
+      bubbles: true,
+      key: "ArrowDown",
+    }));
+  });
+
+  expect(testWindow.document.activeElement).toBe(sidebarRows[1]);
+  expect(selections.at(-1)).toBe("owned:1");
 });
 
 test("preview falls back to the layout in use and runs owned actions", async () => {

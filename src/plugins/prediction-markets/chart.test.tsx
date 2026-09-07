@@ -95,8 +95,11 @@ describe("PredictionMarketChart kitty scrolling", () => {
   test("creates a native chart surface when scrolled into view", async () => {
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 100, height: 24 });
+    // multiplexer: "none" keeps the simulated kitty terminal hermetic when the
+    // test itself runs inside tmux (the multiplexer guard reads the env).
     (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = {
       kitty_graphics: true,
+      multiplexer: "none",
     };
     (testSetup.renderer as unknown as { _resolution: unknown })._resolution = {
       width: 1000,

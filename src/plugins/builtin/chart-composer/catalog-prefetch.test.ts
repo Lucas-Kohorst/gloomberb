@@ -1,5 +1,12 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import { VOTEHUB_POLL_TYPES } from "./catalog-inventory";
+
+// Capture the real modules before mocking so afterAll can restore them.
+// bun shares one module registry across test files in a run, so a
+// mock.module without a restore leaks into every file loaded afterwards.
+const realLlmStatsClient = await import("../llm-stats/client");
+const realPollsClient = await import("../polls/client");
+const realAdjacentClient = await import("../adjacent/client");
 
 let benchCalls = 0;
 let benchEmpty = false;
@@ -56,6 +63,12 @@ mock.module("../adjacent/client", () => ({
     },
   }),
 }));
+
+afterAll(() => {
+  mock.module("../llm-stats/client", () => realLlmStatsClient);
+  mock.module("../polls/client", () => realPollsClient);
+  mock.module("../adjacent/client", () => realAdjacentClient);
+});
 
 const {
   loadCatalogAdjacentIndices,

@@ -123,7 +123,7 @@ describe("sanitizeLayout", () => {
 
   test("ships an Adjacent layout with firehose, indices, a dedicated collection, and polls", () => {
     const config = createDefaultConfig("/tmp/gloomberb-adjacent-layout");
-    expect(config.layouts.map((entry) => entry.name)).toEqual(["Home", "Monitor", "Adjacent"]);
+    expect(config.layouts.map((entry) => entry.name)).toEqual(["Home", "Monitor", "Macro", "Adjacent"]);
     expect(config.watchlists.map((watchlist) => watchlist.id)).toEqual(["watchlist", "adjacent"]);
 
     expect(DEFAULT_ADJACENT_LAYOUT.instances.map((instance) => instance.instanceId)).toEqual([
@@ -290,6 +290,35 @@ describe("sanitizeLayout", () => {
         fixedGeometry: true,
       }],
       detached: [],
+    }, DEFAULT_LAYOUT);
+
+    expect(layout.floating).toEqual([{
+      instanceId: "portfolio-list:main",
+      x: 50,
+      y: 30,
+      width: 10,
+      height: 3,
+      fixedGeometry: true,
+      zIndex: undefined,
+    }]);
+  });
+
+  test("converts retired chart panes into composer specs", () => {
+    const layout = sanitizeLayout({
+      dockRoot: { kind: "pane", instanceId: "comparison-chart:main" },
+      instances: [{
+        instanceId: "comparison-chart:main",
+        paneId: "comparison-chart",
+        binding: { kind: "none" },
+        settings: {
+          symbols: ["AAPL", "MSFT"],
+          axisMode: "percent",
+          rangePreset: "1Y",
+          chartResolution: "1d",
+        },
+      }],
+      floating: [],
+      detached: [],
     }, DEFAULT_LAYOUT, { migrateLegacy: true });
 
     const pane = findPaneInstance(layout, "comparison-chart:main");
@@ -314,7 +343,7 @@ describe("sanitizeLayout", () => {
     });
   });
 
-  test("does not convert legacy chart settings during ordinary sanitization", () => {
+  test("migrates ticker research chart settings into one composer spec", () => {
     const layout = sanitizeLayout({
       dockRoot: { kind: "pane", instanceId: "ticker-detail:aapl" },
       instances: [{
@@ -322,6 +351,9 @@ describe("sanitizeLayout", () => {
         paneId: "ticker-research",
         binding: { kind: "fixed", symbol: "AAPL" },
         settings: {
+          hideTabs: true,
+          lockedTabId: "fundamental-graphs",
+          chartAxisMode: "percent",
           chartRangePreset: "1Y",
           chartResolution: "1wk",
         },
@@ -348,6 +380,9 @@ describe("sanitizeLayout", () => {
         })],
       }),
     });
+    expect(settings).not.toHaveProperty("chartAxisMode");
+    expect(settings).not.toHaveProperty("chartRangePreset");
+    expect(settings).not.toHaveProperty("chartResolution");
   });
 
   test("does not convert legacy chart settings during ordinary sanitization", () => {
@@ -824,7 +859,7 @@ describe("loadConfig", () => {
 
     const config = await loadConfig(dataDir);
 
-    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker"]);
+    expect(config.disabledPlugins).toEqual(["ticker-research", "market-overview", "macro", "ibkr", "broker", "portfolio"]);
   });
 
   test("migrates grouped built-in plugin config keys", async () => {
@@ -1094,6 +1129,65 @@ describe("config backup files", () => {
       expect(imported.dataDir).toBe(importDataDir);
     } finally {
       process.env.HOME = originalHome;
+    }
+  });
+});
+
+describe("tickerSearchShortcut normalization", () => {
+  test("keeps the default untouched when the field is missing", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({}));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBeUndefined();
+  });
+
+  test("preserves a valid custom shortcut across load and save", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "TS" }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.tickerSearchShortcut).toBe("TS");
+
+    await saveConfig(config);
+    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
+      tickerSearchShortcut?: string;
+    };
+    expect(persisted.tickerSearchShortcut).toBe("TS");
+  });
+
+  test("normalizes case and surrounding whitespace on load", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "  ts " }));
+
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBe("TS");
+  });
+
+  test("drops invalid values and rewrites them away on the next save", async () => {
+    const dataDir = await createTempConfigDir();
+    await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: "T CLASH" }));
+
+    const config = await loadConfig(dataDir);
+    expect(config.tickerSearchShortcut).toBeUndefined();
+
+    await saveConfig(config);
+    const persisted = JSON.parse(await readFile(join(dataDir, "config.json"), "utf-8")) as {
+      tickerSearchShortcut?: string;
+    };
+    expect(persisted.tickerSearchShortcut).toBeUndefined();
+  });
+
+  test("treats non-string and oversized values as unset", async () => {
+    for (const invalid of [123, ["TS"], "ABCDEFGHI"]) {
+      const dataDir = await createTempConfigDir();
+      await writeConfigJson(dataDir, createSavedConfig({ tickerSearchShortcut: invalid }));
+
+      const config = await loadConfig(dataDir);
+
+      expect(config.tickerSearchShortcut).toBeUndefined();
     }
   });
 });

@@ -102,7 +102,6 @@ export function buildPluginToggleItems({
       category: "Plugins",
       kind: "plugin",
       checked: enabled,
-      pluginToggle: toggleAction,
       action: toggleAction,
     };
   });

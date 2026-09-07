@@ -32,6 +32,7 @@ describe("desktop backend plugin catalog", () => {
     expect(adjacent?.panes?.map((pane) => pane.id)).toEqual([
       "adjacent-indices",
       "adjacent-rates",
+      "cftc-filings",
       "polls",
       "llm-stats",
       "weather",

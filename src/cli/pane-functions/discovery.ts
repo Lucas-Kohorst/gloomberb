@@ -1,11 +1,13 @@
 import { ConnectionHealthRegistry } from "../../core/connection-health";
 import type { AppConfig } from "../../types/config";
 import type { DataProvider } from "../../types/data-provider";
+import { normalizeRegisteredPane } from "../../plugins/runtime/normalize-pane";
 import type {
   GloomPlugin,
   GloomPluginContext,
   PaneDef,
   PaneTemplateDef,
+  PluginPaneRegistration,
   PluginPersistence,
 } from "../../types/plugin";
 import type { PersistedResourceValue } from "../../types/persistence";
@@ -72,8 +74,13 @@ function buildDiscoveryContext({
   connectionHealth: ConnectionHealthRegistry;
 }): GloomPluginContext {
   const fakePersistence = createDiscoveryPluginPersistence();
+  const registerDiscoveredPane = (pane: PluginPaneRegistration) => {
+    const def = normalizeRegisteredPane(pane);
+    panes.set(def.id, def);
+  };
   const discoveryContext: GloomPluginContext = {
-    registerPane: (pane: PaneDef) => panes.set(pane.id, pane),
+    registerPane: registerDiscoveredPane,
+    registerPaneType: registerDiscoveredPane,
     registerPaneTemplate: (template: PaneTemplateDef) => paneTemplates.set(template.id, template),
     registerCommand: () => {},
     registerCommandBarSearchProvider: () => () => {},
@@ -93,6 +100,8 @@ function buildDiscoveryContext({
     getTicker: () => null,
     getConfig,
     getPaneDef: (paneId: string) => panes.get(paneId),
+    listCapabilities: () => [],
+    getApiKey: () => undefined,
     marketData,
     connectionHealth,
     tickerRepository,
@@ -155,7 +164,10 @@ export async function createPaneCatalog(context: MarketContext, plugins: GloomPl
   });
 
   for (const plugin of plugins) {
-    for (const pane of plugin.panes ?? []) panes.set(pane.id, pane);
+    for (const pane of plugin.panes ?? []) {
+      const def = normalizeRegisteredPane(pane);
+      panes.set(def.id, def);
+    }
     for (const template of plugin.paneTemplates ?? []) paneTemplates.set(template.id, template);
     if (plugin.setup) {
       setupPlugins.push(plugin);

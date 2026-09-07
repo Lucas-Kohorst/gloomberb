@@ -20,7 +20,9 @@ const bitmap = {
 };
 
 function setNativeRendererReady(): void {
-  (testSetup!.renderer as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+  // multiplexer: "none" wins over the process env, so the test is hermetic
+  // even when the suite itself runs inside tmux.
+  (testSetup!.renderer as { _capabilities: unknown })._capabilities = { kitty_graphics: true, multiplexer: "none" };
   (testSetup!.renderer as { _resolution: unknown })._resolution = { width: 800, height: 400 };
 }
 

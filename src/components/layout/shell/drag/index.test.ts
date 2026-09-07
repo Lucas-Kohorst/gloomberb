@@ -106,7 +106,7 @@ describe("layout construction grid", () => {
       "a:main",
       { x: 9, y: 8, width: 20, height: 10 },
       preview,
-    ).nextLayout).toEqual(preview!.layout);
+    )).toEqual(preview!.layout);
   });
 
   for (const directionalCase of [
@@ -199,7 +199,7 @@ describe("layout construction grid", () => {
         "a:main",
         { x: 9, y: 8, width: 20, height: 10 },
         preview,
-      ).nextLayout;
+      );
       expect(committed).toEqual(preview!.layout);
       expect(getDockLeafLayouts(committed, BOUNDS, { reserveDividerGutters: true })
         .map(({ instanceId, rect }) => ({ instanceId, rect })))

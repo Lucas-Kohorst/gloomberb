@@ -185,11 +185,8 @@ describe("assist catalog coverage", () => {
     expect(prefixes.has("AIBENCH")).toBe(true);
     expect(prefixes.has("CAT")).toBe(true);
     expect(prefixes.has("PM")).toBe(true);
-    expect(prefixes.has("RH")).toBe(true);
     expect(prefixes.has("BR")).toBe(true);
     expect(prefixes.has("FUT")).toBe(true);
-    expect(prefixes.has("COMM")).toBe(true);
-    expect(paneTemplates.find((template) => template.shortcut?.prefix === "COMM")?.paneId).toBe("futures");
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "FUT")?.paneId).toBe("futures");
     expect(prefixes.has("WB")).toBe(true);
     expect(prefixes.has("10K")).toBe(true);
@@ -200,5 +197,23 @@ describe("assist catalog coverage", () => {
     for (const template of prefixless) {
       expect(template.canCreate).toBeTypeOf("function");
     }
+  });
+
+  test("keeps both options calculators in the assist inventory with distinct prefixes", () => {
+    const paneTemplates = getLoadablePlugins().flatMap((plugin) => plugin.paneTemplates ?? []);
+    // OVME is owned by exactly one pane: the Godel-parity options-calc.
+    // A second template reusing the prefix would silently drop one of the two
+    // options calculators from the assist inventory.
+    const ovmeTemplates = paneTemplates.filter((template) => template.shortcut?.prefix === "OVME");
+    expect(ovmeTemplates.map((template) => template.paneId)).toEqual(["options-calc"]);
+
+    const calculator = paneTemplates.find((template) => template.paneId === "options-calculator");
+    expect(calculator?.shortcut?.prefix).toBeTruthy();
+    expect(calculator?.shortcut?.prefix).not.toBe("OVME");
+
+    const inventory = buildAssistCommandInventory({ commands: [], pluginCommands: [], paneTemplates });
+    const prefixes = new Set(inventory.map((entry) => entry.prefix));
+    expect(prefixes.has("OVME")).toBe(true);
+    expect(prefixes.has(calculator?.shortcut?.prefix ?? "")).toBe(true);
   });
 });

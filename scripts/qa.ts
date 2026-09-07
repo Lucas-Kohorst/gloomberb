@@ -3,7 +3,7 @@
  *
  *   bun run qa              tests for this checkout's changes + CLI data shape + TUI boot
  *   bun run qa --fast       skip live TUI / pilotty
- *   bun run qa --live       also open changed panes (or --all-panes)
+ *   bun run qa --live       TUI boot + pane.show (marketplace plus changed panes; --all-panes for every pane)
  *   bun run qa --hook       default pre-push: tests + CLI (set GLOOM_QA_LIVE=1 for TUI)
  *   bun run qa --offline    skip network CLI probes
  *
@@ -56,11 +56,12 @@ Usage: bun run qa [--fast] [--live] [--all-panes] [--offline] [--hook]
 Always (and on every git push via the default pre-push hook):
   - bun test on files related to this checkout (working tree + commits since local main)
   - catalog-ui duplicate-pane guard
+  - plugin-marketplace catalog merge/sort (nameless plugins must not crash)
   - CLI JSON probes (ticker + pane fn) with shape invariants
 
 Live (pilotty, skipped by --fast / --hook unless GLOOM_QA_LIVE=1):
   - TUI boot snapshot (crash banners fail)
-  - pane.show for changed pane ids (or every pane with --all-panes)
+  - pane.show for plugin-marketplace plus changed pane ids (or every pane with --all-panes)
   - remote quote / news / markets probes
 
 The hook is installed by bun install. Reinstall with: bun run qa:install-hook
