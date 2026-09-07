@@ -1,4 +1,6 @@
 import type { PluginModule } from "../plugin-module";
+import { registerConnectionSource } from "../connections/register";
+import { PLUGIN_REGISTRY_CONNECTION_ID } from "./feed";
 import { PluginMarketplacePane, PLUGIN_MARKETPLACE_PANE_ID } from "./pane";
 
 export { PLUGIN_MARKETPLACE_PANE_ID } from "./pane";
@@ -9,7 +11,24 @@ export const PLUGIN_MARKETPLACE_TEMPLATE_ID = "plugin-marketplace-pane";
 const MARKETPLACE_DESCRIPTION =
   "Search installed and GitHub plugins, then install, toggle, update, or remove them.";
 
+let disposeRegistryConnection: (() => void) | null = null;
+
 export const pluginMarketplaceModule: PluginModule = {
+  setup() {
+    disposeRegistryConnection = registerConnectionSource({
+      id: PLUGIN_REGISTRY_CONNECTION_ID,
+      name: "Plugin Registry",
+      kind: "api",
+      pluginId: "plugin-marketplace",
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeRegistryConnection?.();
+    disposeRegistryConnection = null;
+  },
+
   panes: [
     {
       id: PLUGIN_MARKETPLACE_PANE_ID,

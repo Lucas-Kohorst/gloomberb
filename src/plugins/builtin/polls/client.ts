@@ -1,5 +1,6 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
 import { httpFetch } from "../../../utils/http-transport";
+import { withConnectionRequest } from "../connections/register";
 import type { VoteHubPoll } from "./types";
 
 const BASE_URL = "https://api.votehub.com";
@@ -41,17 +42,27 @@ function buildUrl(path: string, params?: Record<string, string | undefined>): st
   return url.toString();
 }
 
+export function voteHubPollQuery(params?: {
+  pollType?: string;
+  subject?: string;
+}): Record<string, string | undefined> {
+  const pollType = params?.pollType?.trim();
+  return {
+    poll_type: !pollType || pollType === "all" ? undefined : pollType,
+    subject: params?.subject,
+  };
+}
+
 export async function fetchVoteHubPolls(params?: {
   pollType?: string;
   subject?: string;
 }): Promise<VoteHubPoll[]> {
-  const url = buildUrl("/polls", {
-    poll_type: params?.pollType,
-    subject: params?.subject,
+  const url = buildUrl("/polls", voteHubPollQuery(params));
+  return withConnectionRequest("votehub", "polls", async () => {
+    const response = await VOTEHUB_FETCH.fetch(url);
+    if (!response.ok) {
+      throw new Error(`VoteHub request failed (${response.status})`);
+    }
+    return parseVoteHubPollsPayload(await response.json());
   });
-  const response = await VOTEHUB_FETCH.fetch(url);
-  if (!response.ok) {
-    throw new Error(`VoteHub request failed (${response.status})`);
-  }
-  return parseVoteHubPollsPayload(await response.json());
 }

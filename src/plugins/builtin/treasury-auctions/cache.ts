@@ -1,13 +1,13 @@
 import type { ConnectionHealthRegistry } from "../../../core/connection-health";
 import type { PluginPersistence } from "../../../types/plugin";
 import { AUCTION_HISTORY_DAYS, fetchTreasuryAuctions } from "./client";
-import type { TreasuryAuction } from "./types";
+import { TREASURY_FISCAL_DATA_CONNECTION_ID, type TreasuryAuction } from "./types";
 
 const CACHE_KIND = "treasury-auctions";
 const CACHE_SOURCE = "treasury-fiscal-data";
 /** 2: rows carry a CUSIP, so reopenings no longer share an id with the original. */
 const CACHE_SCHEMA_VERSION = 2;
-export const TREASURY_FISCAL_DATA_CONNECTION_ID = "treasury-fiscal-data";
+export { TREASURY_FISCAL_DATA_CONNECTION_ID };
 /**
  * Auctions settle a few times a week and results never change once published,
  * so an hour of freshness is plenty; the week-long expiry is what keeps an

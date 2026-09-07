@@ -1,5 +1,6 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
-import type { TreasuryAuction, TreasuryAuctionRaw } from "./types";
+import { withConnectionRequest } from "../connections/register";
+import { TREASURY_FISCAL_DATA_CONNECTION_ID, type TreasuryAuction, type TreasuryAuctionRaw } from "./types";
 
 const BASE_URL =
   "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query";
@@ -142,7 +143,11 @@ export async function fetchTreasuryAuctions(
 ): Promise<TreasuryAuction[]> {
   const requestedAt = Date.now();
   return fetchAuctionPages(async (page) => {
-    const response = await TREASURY_FETCH.fetch(buildAuctionsUrl(sinceDays, requestedAt, page));
+    const response = await withConnectionRequest(
+      TREASURY_FISCAL_DATA_CONNECTION_ID,
+      "fetchAuctions",
+      () => TREASURY_FETCH.fetch(buildAuctionsUrl(sinceDays, requestedAt, page)),
+    );
     if (!response.ok) {
       throw new Error(`Treasury Fiscal Data request failed (${response.status})`);
     }

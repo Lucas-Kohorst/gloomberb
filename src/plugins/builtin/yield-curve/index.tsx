@@ -18,6 +18,9 @@ import {
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { useAutoRefresh, useUpdatedAgo } from "../shared/auto-refresh";
 import { usePluginAppActions } from "../../runtime";
+import { openUrl } from "../../../components/ui/external-link";
+
+const YIELD_CURVE_URL = "https://fred.stlouisfed.org/series/DGS10";
 
 function formatYield(y: number | null): string {
   if (y == null) return "—";

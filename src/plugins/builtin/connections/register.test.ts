@@ -3,6 +3,8 @@ import { createDefaultConfig } from "../../../types/config";
 import { adjacentPlugin } from "../adjacent";
 import { aiPlugin } from "../ai";
 import { AI_PROVIDER_IDS } from "../ai/providers";
+import { NWS_OBSERVATIONS_CONNECTION_ID } from "../weather/types";
+import { HKO_RAINFALL_CONNECTION_ID, WEATHER_UNDERGROUND_CONNECTION_ID } from "../weather/sources";
 import {
   ADJACENT_CLOUD_CONNECTION_ID,
   ADJACENT_CLOUD_PROVIDER_IDS,
@@ -171,12 +173,14 @@ describe("connection source registry", () => {
     expect(listConnectionSources().map((source) => source.id)).toEqual(["yahoo"]);
   });
 
-  test("Adjacent Cloud plugin lists one source, not VoteHub/OWID/weather children", async () => {
+  test("Adjacent Cloud plugin folds cloud children onto one row and keeps secondary feeds", async () => {
     await adjacentPlugin.setup?.({
       persistence: { getResource: () => null, setResource() {} },
       configState: { get: () => null, set: async () => {}, delete: async () => {}, keys: () => [] },
       registerCapability() {},
       registerCommand() {},
+      registerCommandBarSearchProvider() {},
+      registerAgentPromptFragment() {},
       notify() {},
       resume: { setPaneState() {} },
       focusPane() {},
@@ -184,7 +188,14 @@ describe("connection source registry", () => {
     disposers.push(() => adjacentPlugin.dispose?.());
 
     const ids = listConnectionSources().map((source) => source.id);
-    expect(ids).toEqual([ADJACENT_CLOUD_CONNECTION_ID]);
+    // VoteHub/OWID/llm-stats/weather-company/NWS-CLI fold onto the Adjacent
+    // Cloud row; the international/secondary weather feeds own their rows.
+    expect(ids).toEqual([
+      ADJACENT_CLOUD_CONNECTION_ID,
+      NWS_OBSERVATIONS_CONNECTION_ID,
+      HKO_RAINFALL_CONNECTION_ID,
+      WEATHER_UNDERGROUND_CONNECTION_ID,
+    ]);
     for (const id of ADJACENT_CLOUD_PROVIDER_IDS) {
       expect(ids).not.toContain(id);
     }

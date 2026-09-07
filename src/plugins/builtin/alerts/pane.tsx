@@ -235,6 +235,11 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       startAddAlert();
       return true;
     }
+    if (event.name === "w") {
+      event.preventDefault?.();
+      startAddWeatherAlert();
+      return true;
+    }
     if (event.name === "e") {
       event.preventDefault?.();
       editSelectedAlert();
@@ -246,7 +251,7 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
       return true;
     }
     return false;
-  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert]);
+  }, [close, deleteSelectedAlert, editSelectedAlert, startAddAlert, startAddWeatherAlert]);
 
   const renderCell = useCallback((
     alert: AlertRule,

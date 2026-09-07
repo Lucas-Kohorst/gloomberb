@@ -21,6 +21,7 @@ import {
   getTvChannelTabId,
   TV_CHANNEL_TABS,
   TV_CHANNELS,
+  YOUTUBE_CONNECTION_ID,
   type TvChannelId,
 } from "./channels";
 import type { ResolvedLiveStream } from "../../../types/media";

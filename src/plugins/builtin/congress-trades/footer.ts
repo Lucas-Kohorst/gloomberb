@@ -1,7 +1,6 @@
-import { usePaneFooter } from "../../../components";
-import { formatTimeAgo } from "../../../utils/format";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
+import { usePaneFooter, useUpdatedAgo } from "../../../components";
 import { useFeedPollInterval } from "../shared/feed-poll-interval";
+import { paneSearchHint } from "../shared/pane-footer";
 import type {
   CloudCongressHousePayload,
   CloudCongressTradePayload,
@@ -41,33 +40,37 @@ export function useCongressTradesFooter({
   lastUpdated: number | null;
 }) {
   const poll = useFeedPollInterval();
-  useAutoRefresh(lastUpdated, () => load(true), poll.intervalMinutes);
+  const updatedAgo = useUpdatedAgo(lastUpdated);
   usePaneFooter(CONGRESS_TRADES_PANE_ID, () => ({
     info: [
-      ...(payload ? [
-        { id: "asof", parts: [{ text: `updated ${formatTimeAgo(payload.asOf)}`, tone: "muted" as const }] },
-      ] : []),
+      ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-    hints: detailMode?.kind !== "member" && activeTab === "trades" && (detailTrade ?? selectedTrade)
-      ? [
-          { id: "member", key: "m", label: "ember", onPress: openSelectedTradeMember },
-          { id: "ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !(detailTrade?.ticker ?? selectedTrade?.ticker) },
-          { id: "open", key: "o", label: "pen", onPress: openSelectedTradeSource, disabled: !(detailTrade ?? selectedTrade)?.sourceUrl },
-        ]
-      : [],
+    trailingInfo: [poll.segment],
+    hints: [
+      paneSearchHint(focusSearch),
+      ...(detailMode?.kind !== "member" && activeTab === "trades" && (detailTrade ?? selectedTrade)
+        ? [
+            { id: "member", key: "m", label: "ember", onPress: openSelectedTradeMember },
+            { id: "ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !(detailTrade?.ticker ?? selectedTrade?.ticker) },
+            { id: "open", key: "o", label: "pen", onPress: openSelectedTradeSource, disabled: !(detailTrade ?? selectedTrade)?.sourceUrl },
+          ]
+        : []),
+    ],
   }), [
     activeTab,
     detailMode,
     detailTrade,
     error,
+    focusSearch,
     openSelectedTicker,
     openSelectedTradeMember,
     openSelectedTradeSource,
     payload,
+    poll.segment,
     selectedTrade,
     status,
-    poll.segment,
+    updatedAgo,
   ]);
 }

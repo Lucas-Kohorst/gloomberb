@@ -1,5 +1,9 @@
 import { createThrottledFetch } from "../../../utils/throttled-fetch";
+import { withConnectionRequest } from "../connections/register";
 import type { RegistryFeed, RegistryPlugin } from "./model";
+
+/** Connection source id reported to the Connections pane for registry traffic. */
+export const PLUGIN_REGISTRY_CONNECTION_ID = "plugin-registry";
 
 /**
  * Exported so the hosted build's CSP can be checked against it. The browser
@@ -54,7 +58,11 @@ export async function loadRegistry(options: { force?: boolean } = {}): Promise<F
 
   if (!inFlight) {
     inFlight = (async () => {
-      const response = await registryFetch.fetch(REGISTRY_URL);
+      const response = await withConnectionRequest(
+        PLUGIN_REGISTRY_CONNECTION_ID,
+        "registry.feed",
+        () => registryFetch.fetch(REGISTRY_URL),
+      );
       if (!response.ok) throw new Error(`Registry request failed (${response.status})`);
       return parseFeed(await response.json());
     })().finally(() => {

@@ -13,6 +13,7 @@ import {
   readByokKeysFromConfig,
 } from "../byok/store";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokApiKeyEntry } from "../byok/types";
+import { withConnectionRequest } from "../connections/register";
 
 /**
  * BYOK service ids that correspond to AI providers. Keys added for these
@@ -62,6 +63,8 @@ export interface AiProviderInventoryRow {
   hasKey: boolean;
   /** True when the provider is OAuth-capable (Pi-managed). */
   canOAuth: boolean;
+  /** True when Gloomberb can log this provider out (OAuth / stored credential). */
+  canDisconnect: boolean;
   /** True when the provider is a local endpoint (Ollama / Chrome on-device). */
   isLocal: boolean;
   /** BYOK service id for key management, or null when no key applies. */
@@ -103,9 +106,13 @@ export async function checkOllamaAvailability(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), OLLAMA_CHECK_TIMEOUT_MS);
   try {
-    const response = await fetch(`${endpoint.replace(/\/$/, "")}/api/tags`, {
-      signal: controller.signal,
-    });
+    const response = await withConnectionRequest(
+      "ollama",
+      "tags",
+      () => fetch(`${endpoint.replace(/\/$/, "")}/api/tags`, {
+        signal: controller.signal,
+      }),
+    );
     if (!response.ok) {
       return { availability: "unavailable", models: [] };
     }
@@ -240,6 +247,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: true,
         hasKey: false,
         canOAuth: false,
+        canDisconnect: false,
         isLocal: true,
         byokServiceId: null,
       });
@@ -258,6 +266,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: false,
         hasKey: false,
         canOAuth: false,
+        canDisconnect: false,
         isLocal: true,
         byokServiceId: OLLAMA_BYOK_SERVICE_ID,
       });
@@ -275,6 +284,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: false,
         hasKey: false,
         canOAuth: false,
+        canDisconnect: false,
         isLocal: true,
         byokServiceId: null,
       });
@@ -297,6 +307,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
       preferred: false,
       hasKey,
       canOAuth,
+      canDisconnect: account?.canDisconnect === true,
       isLocal: false,
       byokServiceId,
     });
@@ -354,9 +365,11 @@ export function aiInventoryStatusColor(status: AiInventoryStatus): string {
  * The fix action a user should take for a provider that is not available.
  * Returns null when the provider is already available.
  */
+export type AiInventoryActionKind = "add-key" | "start-ollama" | "download-model" | "sign-in" | "disconnect" | "none";
+
 export function aiInventoryFixAction(row: AiProviderInventoryRow): {
   label: string;
-  kind: "add-key" | "start-ollama" | "download-model" | "sign-in" | "none";
+  kind: AiInventoryActionKind;
 } | null {
   if (row.status === "available") return null;
   if (row.id === "browser-builtin") {
@@ -370,12 +383,21 @@ export function aiInventoryFixAction(row: AiProviderInventoryRow): {
     return null;
   }
   if (row.canOAuth && !row.hasKey) {
-    return { label: "Sign in or add key", kind: "sign-in" };
+    return { label: "Sign in", kind: "sign-in" };
   }
   if (row.byokServiceId) {
     return { label: "Add key", kind: "add-key" };
   }
   return { label: "Sign in", kind: "sign-in" };
+}
+
+/** Action shown in the inventory row, including disconnect for a live OAuth session. */
+export function aiInventoryRowAction(row: AiProviderInventoryRow): {
+  label: string;
+  kind: AiInventoryActionKind;
+} | null {
+  if (row.canDisconnect) return { label: "Disconnect", kind: "disconnect" };
+  return aiInventoryFixAction(row);
 }
 
 /**

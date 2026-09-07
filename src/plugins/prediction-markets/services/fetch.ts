@@ -147,10 +147,22 @@ function describeBlockedRequest(url: string, error: unknown): Error | null {
 }
 
 export async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await PREDICTION_FETCH.fetch(url, { signal });
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status}) for ${url}`);
-  }
+  const connectionId = connectionIdForPredictionUrl(url);
+  const request = async (): Promise<Response> => {
+    const response = await PREDICTION_FETCH.fetch(url, { signal });
+    if (!response.ok) {
+      throw new Error(`Request failed (${response.status}) for ${url}`);
+    }
+    noteKalshiProxyHeaders(response.headers);
+    return response;
+  };
+  const response = await (connectionId
+    ? withConnectionRequest(
+      connectionId,
+      new URL(url).pathname,
+      request,
+    )
+    : request());
   return response.json() as Promise<T>;
 }
 
@@ -190,6 +202,7 @@ export async function loadCachedPredictionResource<T>(
   options?: { force?: boolean },
 ): Promise<T> {
   const sourceKey = DEFAULT_SOURCE_KEY;
+  const inflightKey = predictionResourceInflightKey(kind, key, sourceKey);
   const cached = predictionMarketsPersistence?.getResource<T>(kind, key, {
     sourceKey,
   });
@@ -201,14 +214,27 @@ export async function loadCachedPredictionResource<T>(
   ) {
     return cached.value;
   }
+  const existing = predictionResourceInflight.get(inflightKey) as Promise<T> | undefined;
+  if (existing) return existing;
+
+  const request = (async () => {
+    try {
+      const nextValue = await fetcher();
+      setCachedPredictionResource(kind, key, nextValue, cachePolicy);
+      return nextValue;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") throw error;
+      if (cached) return cached.value;
+      throw error;
+    }
+  })();
+  predictionResourceInflight.set(inflightKey, request);
   try {
-    const nextValue = await fetcher();
-    setCachedPredictionResource(kind, key, nextValue, cachePolicy);
-    return nextValue;
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    if (cached) return cached.value;
-    throw error;
+    return await request;
+  } finally {
+    if (predictionResourceInflight.get(inflightKey) === request) {
+      predictionResourceInflight.delete(inflightKey);
+    }
   }
 }
 
