@@ -21,6 +21,10 @@ async function buildPage(name: string, entrypoint: string, title: string, loadin
     splitting: false,
     minify: true,
     sourcemap: "none",
+    // Hashed file names keep deploys safe: a stale index.html references the
+    // old hashed bundle and gets a clean 404 (the worker no longer SPA-serves
+    // HTML for missing JS) instead of silently running a cached-stable URL.
+    naming: "[name]-[hash].[ext]",
     define: {
       "process.env.NODE_ENV": '"production"',
       __GLOOMBERB_API_URL__: "location.origin",
