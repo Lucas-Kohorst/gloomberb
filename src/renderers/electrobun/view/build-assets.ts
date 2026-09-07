@@ -169,6 +169,7 @@ async function hashJsEntrypoint(entryPath: string, basename: string): Promise<st
   const hashedPath = join(dirname(entryPath), `${basename}.${hash}.js`);
   if (hashedPath === entryPath) return entryPath;
   await rename(entryPath, hashedPath);
+  await rename(`${entryPath}.map`, `${hashedPath}.map`);
   return hashedPath;
 }
 

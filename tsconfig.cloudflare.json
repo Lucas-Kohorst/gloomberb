@@ -1,7 +1,16 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "lib": ["ESNext", "WebWorker"]
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable",
+      "WebWorker"
+    ]
   },
-  "files": ["src/renderers/cloudflare/worker.ts"]
+  "files": [
+    "src/renderers/cloudflare/worker.ts",
+    "src/renderers/cloudflare/hosted-worker.ts",
+    "worker-configuration.d.ts"
+  ]
 }

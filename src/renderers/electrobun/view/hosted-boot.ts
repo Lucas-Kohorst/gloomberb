@@ -93,7 +93,7 @@ export function createHostedFallbackInit(options: {
     config,
     sessionSnapshot: null,
     desktopSnapshot: null,
-    desktopThemePreview: null,
+    desktopThemePreview: { theme: null },
     pluginState: {},
     capabilityManifests: [],
     desktopPlatform: "cloud",

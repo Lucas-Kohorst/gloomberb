@@ -18,7 +18,7 @@ import { Window } from "happy-dom";
 import { findRelativeAssetUrls } from "../src/renderers/electrobun/view/asset-urls";
 
 const SCRIPT_SRCS = /<script[^>]*\bsrc="(\/[^"]+\.js)"[^>]*>/g;
-const HASHED_SCRIPT_SRC = /^\/[\w/.-]*-[\w-]{8,}\.js$/;
+const HASHED_SCRIPT_SRC = /^\/[\w/.-]*[.-][\w-]{8,}\.js$/;
 const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/youtubei.js/",
   "node_modules/hls.js/",
@@ -27,10 +27,14 @@ const INITIAL_GRAPH_FORBIDDEN = [
   "node_modules/@opentui/",
 ] as const;
 
-const outdir = process.argv[2] ? dirname(process.argv[2]) : join("dist", "web");
+const outdir = process.argv[2] ? dirname(process.argv[2]) : join("dist", "web-client");
 
 const testWindow = new Window({ url: "https://terminal.kohor.st/" });
 testWindow.document.body.innerHTML = '<div id="root"></div>';
+Object.assign(testWindow, {
+  __GLOOM_WEB_SESSION: "bundle-check-session",
+  __GLOOM_CLOUD_HOSTED: true,
+});
 
 const globals: Record<string, unknown> = {
   window: testWindow,
@@ -123,7 +127,12 @@ if (!await shareBundle.exists()) {
   process.exit(1);
 }
 const shareBytes = shareBundle.size;
-const terminalGraphBytes = await reachableBundleBytes(bundlePath);
+const terminalGraph = await inspectBundleGraph(bundlePath);
+const terminalGraphBytes = terminalGraph.bytes;
+if (!terminalGraph.sources.some((path) => path.endsWith("plugins/catalog-ui.ts"))
+  || terminalGraph.sources.some((path) => path.endsWith("plugins/catalog-browser.ts"))) {
+  throw new Error("Hosted client must ship the desktop plugin catalog; the reduced browser catalog drops Firehose, Marketplace, and other fork panes.");
+}
 if (shareBytes > terminalGraphBytes / 4) {
   console.error(
     `Share bundle is ${(shareBytes / 1024).toFixed(0)} KB against a ${(terminalGraphBytes / 1024).toFixed(0)} KB terminal graph.`
@@ -226,11 +235,12 @@ function referencedDynamicImportChunks(source: string): string[] {
   return [...new Set([...matches].flatMap((match) => match[1] ? [match[1]] : []))];
 }
 
-async function reachableBundleBytes(entryPath: string): Promise<number> {
+async function inspectBundleGraph(entryPath: string): Promise<{ bytes: number; sources: string[] }> {
   const directory = dirname(entryPath);
   const pending = [entryPath];
   const seen = new Set<string>();
   let total = 0;
+  const sources = new Set<string>();
   while (pending.length > 0) {
     const current = pending.pop();
     if (!current || seen.has(current)) continue;
@@ -238,16 +248,19 @@ async function reachableBundleBytes(entryPath: string): Promise<number> {
     const file = Bun.file(current);
     if (!await file.exists()) continue;
     total += file.size;
+    for (const source of await readSourceMapSources(current)) sources.add(source);
     const nextSource = await file.text();
     for (const specifier of referencedRelativeModules(nextSource)) {
       pending.push(join(directory, specifier.slice(2)));
     }
   }
-  return total;
+  return { bytes: total, sources: [...sources] };
 }
 
 async function readSourceMapSources(jsPath: string): Promise<string[]> {
-  const mapFile = Bun.file(`${jsPath}.map`);
+  const source = await Bun.file(jsPath).text();
+  const sourceMapUrl = source.match(/\/\/# sourceMappingURL=([^\s]+)/)?.[1];
+  const mapFile = Bun.file(sourceMapUrl ? join(dirname(jsPath), sourceMapUrl) : `${jsPath}.map`);
   if (!await mapFile.exists()) return [];
   const map = JSON.parse(await mapFile.text()) as { sources?: unknown };
   if (!Array.isArray(map.sources)) return [];

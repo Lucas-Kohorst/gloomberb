@@ -1,14 +1,31 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "gloomberb-web",
-  "main": "src/renderers/cloudflare/worker.ts",
+  "name": "gloomberb-cloud",
+  "main": "src/renderers/cloudflare/hosted-worker.ts",
   "compatibility_date": "2026-08-21",
   "routes": [
-    { "pattern": "terminal.kohor.st", "custom_domain": true }
+    {
+      "pattern": "terminal.kohor.st",
+      "custom_domain": true
+    }
   ],
   "assets": {
-    "directory": "./dist/web",
+    "directory": "./dist/web-client",
     "binding": "ASSETS",
-    "run_worker_first": true
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "kv_namespaces": [
+    {
+      "binding": "SHARES",
+      "id": "64e485e108e54d3eb64a3dabd3f270fc"
+    }
+  ],
+  "vars": {
+    "GLOOM_CLOUD_API_URL": "https://api.gloom.sh"
   }
 }

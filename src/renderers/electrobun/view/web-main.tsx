@@ -2,6 +2,8 @@
 import { createRoot } from "react-dom/client";
 import { isHostedWebClient } from "../../../shared/hosted-api";
 import { App } from "../../../app";
+import { getRendererBuiltinPlugins } from "../../../plugins/catalog-ui";
+import { setCurrentPluginTarget } from "../../../plugins/current-target";
 import { applyLanguageFromConfig } from "../../../i18n";
 import { UiHostProvider } from "../../../ui/host";
 import { debugLog } from "../../../utils/debug-log";
@@ -64,6 +66,7 @@ const root = createRoot(rootElement);
 const bootLog = debugLog.createLogger("web-client-boot");
 root.render(<div className="gloom-loading">Starting Gloomberb...</div>);
 const isHosted = isHostedWebClient();
+setCurrentPluginTarget("web");
 
 /**
  * A boot still waiting on Gloom Cloud is indistinguishable from a frozen app,
@@ -168,6 +171,7 @@ async function boot(): Promise<void> {
             <WebDialogHostProvider>
               <App
                 config={init.config}
+                plugins={getRendererBuiltinPlugins()}
                 servicesFactory={createElectrobunAppServices}
                 desktopWindowBridge={desktopWindowBridge}
                 desktopDeepLinkBridge={desktopDeepLinkBridge}
