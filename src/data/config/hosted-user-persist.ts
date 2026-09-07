@@ -19,6 +19,7 @@ export interface HostedPersistenceIdentity {
 }
 
 interface HostedUserConfigRecord extends HostedUserConfigStamp {
+  configUpdatedAt?: string;
   config: Record<string, unknown>;
   tickers?: unknown;
   notes?: unknown;
@@ -55,6 +56,7 @@ function parseRecord(raw: string | null): HostedUserConfigRecord | null {
     return {
       userId,
       updatedAt,
+      configUpdatedAt: typeof parsed.configUpdatedAt === "string" ? parsed.configUpdatedAt : updatedAt,
       revision: typeof parsed.revision === "number" ? parsed.revision : 0,
       config: parsed.config,
       ...(parsed.tickers !== undefined ? { tickers: parsed.tickers } : {}),
@@ -147,7 +149,7 @@ export function peekHostedUserConfigStamp(userId = resolveHostedPersistUserId())
   if (!userId) return null;
   const record = parseRecord(tryLocalStorage()?.getItem(storageKey(userId)) ?? null);
   if (!record) return null;
-  return { userId: record.userId, updatedAt: record.updatedAt, revision: record.revision };
+  return { userId: record.userId, updatedAt: record.configUpdatedAt ?? record.updatedAt, revision: record.revision };
 }
 
 export function readHostedUserConfigRecord(userId = resolveHostedPersistUserId()): HostedUserConfigRecord | null {
@@ -163,9 +165,12 @@ export function writeHostedUserConfig(config: AppConfig, userId = resolveHostedP
   try {
     const persisted = normalizeConfigForSave(config);
     const existing = parseRecord(backend.getItem(storageKey(userId)));
+    const updatedAt = new Date().toISOString();
+    const unchanged = existing && JSON.stringify(existing.config) === JSON.stringify(persisted);
     const record: HostedUserConfigRecord = {
       userId,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
+      configUpdatedAt: unchanged ? existing.configUpdatedAt ?? existing.updatedAt : updatedAt,
       revision: (existing?.revision ?? 0) + 1,
       config: persisted as unknown as Record<string, unknown>,
       ...(existing?.tickers ? { tickers: existing.tickers } : {}),
