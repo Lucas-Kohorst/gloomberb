@@ -4,6 +4,8 @@
  * These paths are a client/server contract; changing them requires updating
  * both sides.
  */
+export const HOSTED_CONFIG_SNAPSHOT_MAX_BYTES = 2_000_000;
+
 export const KALSHI_PROXY_PATH = "/api/proxy/kalshi";
 
 /** Set by `/api/proxy/kalshi` so the client can tell live Kalshi from Adjacent fallback. */

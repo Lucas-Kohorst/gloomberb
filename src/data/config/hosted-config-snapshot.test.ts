@@ -39,6 +39,27 @@ const byokKeys: ByokStoredConfig = {
 describe("hosted config snapshot", () => {
   installMemoryStorage();
 
+  test("uploads a large workspace instead of silently skipping it", async () => {
+    const originalFetch = globalThis.fetch;
+    const pusher = createHostedConfigSnapshotPusher();
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_, init) => {
+      bodies.push(String(init?.body));
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      setHostedConfigUserId("large-workspace");
+      const config = createDefaultConfig("browser://local");
+      config.pluginConfig.notes = { content: "x".repeat(600_000) };
+      await pusher.flushForced(config);
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(bodies[0]!).config.pluginConfig.notes.content.length).toBe(600_000);
+    } finally {
+      pusher.cancel();
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("drops queued snapshots and remembered config across account changes", async () => {
     const originalFetch = globalThis.fetch;
     const pusher = createHostedConfigSnapshotPusher();

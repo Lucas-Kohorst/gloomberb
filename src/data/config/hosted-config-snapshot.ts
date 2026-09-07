@@ -1,3 +1,4 @@
+import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
 import { isRecord } from "../../utils/is-record";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
@@ -9,7 +10,6 @@ import { hasHostedNotes, readHostedNotes } from "./hosted-notes-persist";
 
 const CONFIG_SNAPSHOT_ENDPOINT = "/api/config";
 const SNAPSHOT_PUSH_DEBOUNCE_MS = 2000;
-const SNAPSHOT_PUSH_MAX_BODY_BYTES = 512_000;
 
 export interface HostedConfigSnapshotEnvelope {
   userId: string;
@@ -180,9 +180,10 @@ export function createHostedConfigSnapshotPusher(): {
       tickers,
       notes,
     });
-    if (new TextEncoder().encode(body).byteLength > SNAPSHOT_PUSH_MAX_BODY_BYTES) return;
-
     await withConnectionRequest("hosted-config", "push-snapshot", async () => {
+      if (new TextEncoder().encode(body).byteLength > HOSTED_CONFIG_SNAPSHOT_MAX_BYTES) {
+        throw new Error("Workspace snapshot exceeds the 2 MB hosted storage limit.");
+      }
       const response = await fetch(CONFIG_SNAPSHOT_ENDPOINT, {
         method: "PUT",
         credentials: "include",
@@ -205,7 +206,7 @@ export function createHostedConfigSnapshotPusher(): {
   function schedule(config: AppConfig): void {
     lastConfig = { config, identity: captureHostedPersistenceIdentity() };
     pendingConfig = lastConfig;
-    if (timer) clearTimeout(timer);
+    if (timer) return;
     timer = setTimeout(() => { timer = null; void drain(); }, SNAPSHOT_PUSH_DEBOUNCE_MS);
   }
 

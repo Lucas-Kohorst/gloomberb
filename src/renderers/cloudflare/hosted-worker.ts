@@ -1,3 +1,4 @@
+import { HOSTED_CONFIG_SNAPSHOT_MAX_BYTES } from "../../shared/hosted-api";
 import { handleHostedBackendRpc } from "./backend";
 import { isShareDocumentPath, isShareScriptPath } from "../../shares/routes";
 import { SHARE_KINDS, type ShareKind } from "../../shares/payload";
@@ -156,7 +157,6 @@ async function handleShareRequest(request: Request, env: Env, url: URL): Promise
   return Response.json({ error: "Method not allowed." }, { status: 405 });
 }
 
-const CONFIG_SNAPSHOT_MAX_BYTES = 512_000;
 const CONFIG_SNAPSHOT_KEY_PREFIX = "config:";
 
 function configSnapshotKey(userId: string): string {
@@ -193,7 +193,7 @@ async function handleConfigSnapshotRequest(request: Request, env: Env): Promise<
     }
 
     const rawBody = await request.text().catch(() => "");
-    if (new TextEncoder().encode(rawBody).byteLength > CONFIG_SNAPSHOT_MAX_BYTES) {
+    if (new TextEncoder().encode(rawBody).byteLength > HOSTED_CONFIG_SNAPSHOT_MAX_BYTES) {
       return Response.json({ error: "Config snapshot is too large." }, { status: 413 });
     }
 

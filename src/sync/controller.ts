@@ -33,7 +33,7 @@ interface SyncRuntime {
 }
 
 const CLIENT_ID_STORAGE_KEY = "gloomberb.sync.clientId";
-const PUSH_DEBOUNCE_MS = 2500;
+const PUSH_DELAY_MS = 500;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -159,11 +159,11 @@ export class CloudSyncController {
       });
       return;
     }
-    if (this.pushTimer) clearTimeout(this.pushTimer);
+    if (this.pushTimer) return;
     this.pushTimer = setTimeout(() => {
       this.pushTimer = null;
       void this.requestSync({ reason });
-    }, PUSH_DEBOUNCE_MS);
+    }, PUSH_DELAY_MS);
   }
 
   async requestSync(options: { reason?: string; force?: boolean } = {}): Promise<void> {
