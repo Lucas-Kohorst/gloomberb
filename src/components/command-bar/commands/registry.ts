@@ -1,5 +1,9 @@
 import type { AppAction } from "../../../state/app/context";
 import type { Dispatch } from "react";
+import {
+  isDefaultTickerSearchShortcut,
+  normalizeTickerSearchShortcut,
+} from "../../../data/config/ticker-search-shortcut";
 
 type CommandExecutor = (dispatch: Dispatch<AppAction>, context: CommandContext) => void | Promise<void>;
 
@@ -279,4 +283,64 @@ export function getCommandPrefixes(command: Command): string[] {
   return [command.prefix, ...(command.aliases ?? [])]
     .map((prefix) => prefix.trim().toUpperCase())
     .filter(Boolean);
+}
+
+/**
+ * True when `normalizedShortcut` (already trimmed/uppercased) is claimed by any
+ * prefix other than the ticker-search command itself, either from the command
+ * list or from `reservedPrefixes` (pane-template and plugin-command shortcuts).
+ * The ticker-search defaults (DES and T) are owned by that command, so they are
+ * not treated as conflicts.
+ */
+export function tickerSearchShortcutConflictsWith(
+  commandList: readonly Command[],
+  normalizedShortcut: string,
+  reservedPrefixes: Iterable<string> = [],
+): boolean {
+  const claimed = new Set<string>();
+  for (const prefix of reservedPrefixes) {
+    const normalized = prefix.trim().toUpperCase();
+    // T is also used by the built-in ticker-detail pane template, but it is
+    // owned by ticker search in the command bar. Do not let that existing
+    // overlap block a longer custom ticker-search prefix such as "TS".
+    if (normalized && !isDefaultTickerSearchShortcut(normalized)) claimed.add(normalized);
+  }
+  for (const command of commandList) {
+    if (command.id === "security-description") continue;
+    for (const prefix of getCommandPrefixes(command)) claimed.add(prefix);
+  }
+  return [...claimed].some((prefix) => (
+    prefix === normalizedShortcut
+    || prefix.startsWith(normalizedShortcut)
+    || normalizedShortcut.startsWith(prefix)
+  ));
+}
+
+/**
+ * Applies the optional `tickerSearchShortcut` config to a command list. The
+ * shortcut is added as an extra prefix on the security-description command
+ * (the command-bar entry that opens ticker search), leaving the existing
+ * "DES" prefix and "T" alias intact. Invalid or colliding values are ignored,
+ * so other command, pane, and plugin shortcuts never lose a prefix.
+ */
+export function applyTickerSearchShortcutConfig(
+  commandList: readonly Command[],
+  configuredShortcut: string | null | undefined,
+  options: { reservedPrefixes?: Iterable<string> } = {},
+): Command[] {
+  const normalized = normalizeTickerSearchShortcut(configuredShortcut);
+  if (!normalized) return [...commandList];
+  if (tickerSearchShortcutConflictsWith(commandList, normalized, options.reservedPrefixes)) {
+    return [...commandList];
+  }
+  return [...commandList].map((command) => {
+    if (command.id !== "security-description") return command;
+    const prefixes = [...new Set([...getCommandPrefixes(command), normalized])];
+    const primary = prefixes[0] ?? command.prefix;
+    return {
+      ...command,
+      prefix: primary,
+      aliases: prefixes.slice(1),
+    };
+  });
 }

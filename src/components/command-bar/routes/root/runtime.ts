@@ -83,6 +83,7 @@ interface UseCommandBarRootRuntimeOptions {
   skipTickerSearchDebounceRef: RefObject<boolean>;
   state: AppState;
   tickerActionItems(): ResultItem[];
+  onOpenPluginMarketplace?: () => void;
   writeTickerSearchCache(
     query: string,
     candidates: TickerSearchCandidate[],
@@ -132,6 +133,7 @@ export function useCommandBarRootRuntime({
   skipTickerSearchDebounceRef,
   state,
   tickerActionItems,
+  onOpenPluginMarketplace,
   writeTickerSearchCache,
 }: UseCommandBarRootRuntimeOptions): {
   activeMatch: ReturnType<typeof matchPrefix>;
@@ -197,6 +199,7 @@ export function useCommandBarRootRuntime({
     runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
+    onOpenPluginMarketplace,
   }), [
     activeCollectionId,
     activeTickerData,
@@ -225,6 +228,7 @@ export function useCommandBarRootRuntime({
     runSecurityDescriptionShortcut,
     state,
     tickerActionItems,
+    onOpenPluginMarketplace,
   ]);
 
   const rootSecurityDescriptionArg = activeMatch?.command.id === "security-description" && activeMatch.arg.length >= 1

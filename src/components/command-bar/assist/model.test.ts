@@ -49,8 +49,19 @@ describe("shouldShowAssistRow", () => {
 });
 
 describe("buildAssistResultItems", () => {
-  test("routes signed-out users to sign up instead of the request", () => {
-    expect(labels({ status: "idle" }, { enabled: false })).toEqual(["Ask AI — sign up to enable"]);
+  test("routes signed-out users to sign in instead of the request", () => {
+    expect(labels({ status: "idle" }, { enabled: false })).toEqual(["Ask AI — sign in to enable"]);
+  });
+
+  test("routes an unverified session to verify, not sign up", () => {
+    expect(buildAssistResultItems({
+      ...handlers,
+      query: "chart nvidia vs amd",
+      enabled: false,
+      signedIn: true,
+      auto: true,
+      state: { status: "idle" },
+    }).map((item) => item.label)).toEqual(["Ask AI — verify email to enable"]);
   });
 
   test("renders each state of the request", () => {

@@ -197,16 +197,22 @@ const ASSIST_SECTION_PRIORITY = -100;
  * at 190 and the rest of the corpus at 200 (both contributed by their provider).
  */
 const INSTRUMENTS_SECTION_PRIORITY = 100;
+const DATA_CATALOG_SECTION_PRIORITY = INSTRUMENTS_SECTION_PRIORITY + 100;
 
 function getCategoryPriority(category: string, options?: CommandBarSectionOptions): number {
   const contributed = options?.categoryPriorities?.get(category);
   if (contributed !== undefined) return contributed;
   const sectionOrder = options?.sectionOrder ?? "default";
   const normalized = category.trim().toLowerCase();
-  if (sectionOrder === "ranked") return 0;
+  if (sectionOrder === "ranked") {
+    if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
+    if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;
+    return 0;
+  }
   if (normalized === "ask ai") return ASSIST_SECTION_PRIORITY;
   if (normalized === "exact match") return EXACT_MATCH_SECTION_PRIORITY;
   if (normalized === "instruments") return INSTRUMENTS_SECTION_PRIORITY;
+  if (normalized === "data catalog") return DATA_CATALOG_SECTION_PRIORITY;
   if (sectionOrder === "app-first") {
     if (normalized === "saved") return 100;
     if (normalized === "primary listing") return 110;
@@ -217,6 +223,7 @@ function getCategoryPriority(category: string, options?: CommandBarSectionOption
   if (normalized === "primary listing") return -30;
   if (normalized === "other listings") return -20;
   if (normalized === "funds & derivatives") return -10;
+  if (normalized === "config") return -1;
   if (normalized.includes("danger")) return 900;
   if (normalized.includes("debug")) return 910;
   return 0;

@@ -25,6 +25,9 @@ export type AssistRequestState =
 export interface AssistRowHandlers {
   /** Signed in with a verified email, i.e. `/assist/command` will answer. */
   enabled: boolean;
+  /** Session exists (token or user). Distinct from verified — a paying sub can
+   *  look unverified while the profile is still hydrating. */
+  signedIn?: boolean;
   /** The query qualifies for a background ask, so the section is expected. */
   auto: boolean;
   state: AssistRequestState;
@@ -131,6 +134,7 @@ export function formatAssistCandidateLabel(candidate: Pick<AssistCommandCandidat
 export function buildAssistResultItems({
   query,
   enabled,
+  signedIn = false,
   auto,
   state,
   onAsk,
@@ -143,10 +147,13 @@ export function buildAssistResultItems({
 
   if (!enabled) {
     // An offer, not an answer: it never takes the Enter that belongs to the
-    // local match the user is looking at.
+    // local match the user is looking at. Paying accounts already exist —
+    // send them to sign-in, not sign-up.
     return [assistRow({
-      id: "assist:sign-up",
-      label: t("Ask AI — sign up to enable"),
+      id: signedIn ? "assist:verify" : "assist:sign-in",
+      label: signedIn
+        ? t("Ask AI — verify email to enable")
+        : t("Ask AI — sign in to enable"),
       kind: "action",
       action: onSignUp,
       defaultSelectable: false,

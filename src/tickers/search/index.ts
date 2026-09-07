@@ -1,7 +1,9 @@
+import { searchUsListedUniverse } from "../../sources/us-listings/client";
 import type { SearchRequestContext, DataProvider } from "../../types/data-provider";
 import type { InstrumentSearchResult } from "../../types/instrument";
 import type { TickerRecord } from "../../types/ticker";
 import { canonicalExchange } from "../../utils/exchanges";
+import { isValidIsin, normalizeIsin } from "../isin";
 import { parseOptionSymbol } from "../../utils/options";
 import {
   buildSymbolAliases,
@@ -9,6 +11,7 @@ import {
   findExactTickerSearchMatch,
   normalizeSearchText,
   normalizeTickerSymbol,
+  parseTickerListingQuery,
   rankTickerSearchItems,
 } from "./ranking";
 import type {
@@ -32,12 +35,23 @@ export {
 export { upsertTickerFromSearchResult } from "./upsert";
 
 const OPTION_TYPES = new Set(["OPT", "OPTION", "OPTIONS"]);
+const PREDICTION_SYMBOL_PREFIX = /^(POLY|KALSHI|PM):/i;
+
+function classifyTickerSearchInstrument(rawType: string | undefined, symbol: string) {
+  const classified = classifyInstrumentKind(rawType);
+  if (classified !== "other") return classified;
+  return PREDICTION_SYMBOL_PREFIX.test(symbol) ? "prediction" : classified;
+}
 
 const SHARE_CLASS_SUFFIXES = new Set(["A", "B", "C", "D", "K"]);
 
 interface TickerSearchCandidateOptions {
   includeOptionContracts?: boolean;
   providerRanks?: ReadonlyMap<string, number>;
+  /** When the query is a valid ISIN, provider results are aliased to it so
+   * they surface in ranking and exact-match resolution even though the
+   * provider returns a symbol, not the ISIN itself. */
+  isinQuery?: string | null;
 }
 
 export function normalizeTickerInput(activeTicker: string | null, arg?: string): string | null {
@@ -73,8 +87,11 @@ export function createLocalTickerSearchCandidates(
       category: "Saved",
       kind: "ticker",
       saved: true,
-      instrumentClass: classifyInstrumentKind(hint?.brokerContract?.secType || hint?.type || ticker.metadata.assetCategory),
-      searchAliases: buildSymbolAliases(symbol),
+      instrumentClass: classifyTickerSearchInstrument(
+        hint?.brokerContract?.secType || hint?.type || ticker.metadata.assetCategory,
+        ticker.metadata.ticker,
+      ),
+      searchAliases: buildLocalTickerSearchAliases(symbol, ticker.metadata.isin),
       ticker,
       result: hint,
     }];
@@ -102,8 +119,11 @@ function createProviderTickerSearchCandidates(
       category: saved ? "Saved" : "Other Listings",
       kind: "search",
       saved,
-      instrumentClass: classifyInstrumentKind(result.brokerContract?.secType || result.type),
-      searchAliases: buildSearchResultAliases(result),
+      instrumentClass: classifyTickerSearchInstrument(
+        result.brokerContract?.secType || result.type,
+        symbol,
+      ),
+      searchAliases: buildSearchResultAliases(result, options.isinQuery),
       result,
     }];
   });
@@ -164,9 +184,11 @@ export function buildTickerSearchCandidates({
     ? providerResults
     : providerResults.filter((result) => !isOptionSearchResult(result));
   const providerHints = buildProviderHints(filteredProviderResults, tickers);
+  const isinQuery = resolveIsinQuery(query);
   const candidateOptions = {
     includeOptionContracts,
     providerRanks: providerHints.ranks,
+    isinQuery,
   };
   const localItems = rankTickerSearchItems(
     createLocalTickerSearchCandidates(tickers.values(), providerHints.results, candidateOptions),
@@ -193,7 +215,13 @@ export async function resolveTickerSearch({
   const symbol = normalizeTickerInput(activeTicker, query);
   if (!symbol) return null;
 
-  const local = tickers.get(symbol)
+  const listing = parseTickerListingQuery(symbol);
+  const localLookup = listing.symbol || symbol;
+  const local = (
+    listing.exchangeHints.length === 0
+      ? (tickers.get(symbol) ?? tickers.get(localLookup) ?? null)
+      : null
+  )
     ?? findExactTickerSearchMatch(createLocalTickerSearchCandidates(tickers.values()), symbol)?.ticker
     ?? null;
   if (local) {
@@ -203,8 +231,9 @@ export async function resolveTickerSearch({
   const providerItems = createProviderTickerSearchCandidates(
     await searchProviderResults(dataProvider, symbol, searchContext),
     tickers,
+    { isinQuery: resolveIsinQuery(symbol) },
   );
-  const exactMatch = findExactTickerSearchMatch(providerItems, symbol);
+  const exactMatch = findExactTickerSearchMatch(rankTickerSearchItems(providerItems, symbol), symbol);
   if (!exactMatch?.result) return null;
 
   return {
@@ -256,10 +285,22 @@ async function searchProviderResults(
     }
   };
 
+  const listing = parseTickerListingQuery(query);
+  const providerQuery = listing.symbol || query;
+
+  // Listed-universe master (Adjacent Cloud hydrate) first. Yahoo/cloud
+  // typeahead is a supplement, not the security master. Added before the
+  // typeahead queries run so its entries win the key and keep their position.
+  try {
+    add(await searchUsListedUniverse(providerQuery));
+  } catch {
+    // listings miss must not block saved/typeahead search
+  }
+
   // The variants are independent lookups of the same words, so they run
   // together. Awaited in turn they multiplied every per-source timeout by the
   // number of spellings tried.
-  await Promise.all(buildProviderSearchQueries(query).map(async (searchQuery) => {
+  await Promise.all(buildProviderSearchQueries(providerQuery).map(async (searchQuery) => {
     try {
       const results = await dataProvider.search(searchQuery, {
         ...searchContext,
@@ -419,12 +460,41 @@ function isOptionType(rawType?: string): boolean {
   return OPTION_TYPES.has(normalizeSearchText(rawType || ""));
 }
 
-function buildSearchResultAliases(result: InstrumentSearchResult): string[] {
+function buildSearchResultAliases(result: InstrumentSearchResult, isinQuery?: string | null): string[] {
   const aliases = new Set(buildSymbolAliases(result.symbol));
   const resolvedSymbol = getSearchResultSymbol(result);
   for (const alias of buildSymbolAliases(resolvedSymbol)) aliases.add(alias);
   if (result.brokerContract?.symbol) {
     for (const alias of buildSymbolAliases(result.brokerContract.symbol)) aliases.add(alias);
+  }
+  // When the user typed a valid ISIN and the provider resolved it to this
+  // instrument, treat the ISIN as an alias so ranking and exact-match
+  // resolution can pair the query with the returned symbol. The provider
+  // contract (InstrumentSearchResult) has no ISIN field, so this is the
+  // only bridge from the query side.
+  if (isinQuery) aliases.add(isinQuery);
+  return [...aliases];
+}
+
+/**
+ * Returns the normalized ISIN when `query` is a valid ISIN, otherwise null.
+ * Used to decide whether to alias provider results to the ISIN.
+ */
+function resolveIsinQuery(query: string): string | null {
+  const isin = normalizeIsin(query);
+  return isValidIsin(isin) ? isin : null;
+}
+
+/**
+ * Build search aliases for a locally saved ticker, including its ISIN when
+ * one is stored in metadata. This lets a user type an ISIN and match a
+ * saved instrument directly without a provider round-trip.
+ */
+function buildLocalTickerSearchAliases(symbol: string, isin?: string): string[] {
+  const aliases = new Set(buildSymbolAliases(symbol));
+  const normalizedIsin = normalizeIsin(isin);
+  if (normalizedIsin && isValidIsin(normalizedIsin)) {
+    aliases.add(normalizedIsin);
   }
   return [...aliases];
 }

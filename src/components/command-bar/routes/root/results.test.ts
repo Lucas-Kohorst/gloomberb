@@ -136,6 +136,33 @@ describe("assist rows in the root result model", () => {
       .toEqual(["assist:pending", paneRow.id, documentRow.id]);
   });
 
+  test("keeps a related pane that shares a word when the strict match is empty", () => {
+    const weather = {
+      ...paneRow,
+      id: "pane-template:weather",
+      label: "Weather",
+      searchText: "weather climate temperature temp nws",
+    };
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "alanta temp",
+      paneShortcutItems: () => [weather],
+    }));
+    expect(items.map((item) => item.label)).toContain("Weather");
+  });
+
+  test("offers a plugin fallback when nothing local matched", () => {
+    let opened = false;
+    const { items } = buildRootResultModel(rootOptions({
+      rootQuery: "zzzznotapane",
+      onOpenPluginMarketplace: () => {
+        opened = true;
+      },
+    }));
+    expect(items.map((item) => item.id)).toContain("plugin:build");
+    items.find((item) => item.id === "plugin:build")?.action();
+    expect(opened).toBe(true);
+  });
+
   test("the local matcher no longer drags in panes whose keywords scatter the letters", () => {
     const optionsRow: ResultItem = {
       id: "pane-template:options-calculator",

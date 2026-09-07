@@ -428,3 +428,42 @@ describe("CLI search helpers", () => {
     expect(report).toContain("No matches found.");
   });
 });
+
+describe("CLI config set tickerSearchShortcut", () => {
+  test("sets the shortcut and persists it", async () => {
+    const { dataDir } = await createCliFixture({ watchlists: [] });
+
+    const { stdout } = await captureConsole(() => runCli(["config", "set", "tickerSearchShortcut", "TS"]));
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBe("TS");
+    expect(stdout).toContain("tickerSearchShortcut");
+  });
+
+  test("normalizes the shortcut to uppercase", async () => {
+    const { dataDir } = await createCliFixture({ watchlists: [] });
+
+    await captureConsole(() => runCli(["config", "set", "tickerSearchShortcut", "ts"]));
+    const config = await loadConfig(dataDir);
+
+    expect(config.tickerSearchShortcut).toBe("TS");
+  });
+
+  test("rejects shortcuts that collide with another command", async () => {
+    await createCliFixture({ watchlists: [] });
+
+    const result = await captureConsoleFailure(() => runCli(["config", "set", "tickerSearchShortcut", "AW"]));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("already used");
+  });
+
+  test("rejects malformed shortcuts", async () => {
+    await createCliFixture({ watchlists: [] });
+
+    const result = await captureConsoleFailure(() => runCli(["config", "set", "tickerSearchShortcut", "T!CK"]));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Invalid ticker-search shortcut");
+  });
+});
