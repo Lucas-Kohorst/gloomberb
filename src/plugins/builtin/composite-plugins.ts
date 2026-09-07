@@ -7,7 +7,7 @@ import { bondSearchModule } from "./bond-search";
 import { brokerManagerModule } from "./broker-manager";
 import { byokModule } from "./byok";
 import { changelogModule } from "./changelog";
-import { connectionsModule } from "./connections";
+import { connectionsModule } from "./connections/index.ts";
 import { pluginMarketplaceModule } from "./plugin-marketplace";
 import { correlationModule } from "./correlation";
 import { cdsModule } from "./cds";

@@ -115,3 +115,35 @@ test("chart reports and interactive charts load the same poll observations throu
   expect(requested.length).toBeGreaterThan(0);
   expect(new URL(requested[0]!).searchParams.get("subject")).toBe("Report Test Race");
 });
+
+test("DefiLlama catalog expressions use the same observations in CLI reports and interactive charts", async () => {
+  let requests = 0;
+  setHttpFetchTransport(async (url) => {
+    expect(url).toBe("https://api.llama.fi/protocol/report-test-protocol");
+    requests += 1;
+    return Response.json({ name: "Report Test", tvl: [
+      { date: 1704153600, totalLiquidityUSD: 250 },
+      { date: 1704067200, totalLiquidityUSD: 200 },
+    ] });
+  });
+  const defiSpec = buildCustomChartPreset("LLAMA:protocol:report-test-protocol:tvl");
+  defiSpec.viewport.range = "ALL";
+  const provider = createTestDataProvider();
+  const interactive = await resolveChartSpecData(defiSpec, createResolvedChartSources(provider));
+  const report = await buildFunctionReport({
+    token: "chart-composer", label: "Chart Composer", description: "",
+    pane: { id: "chart-composer", name: "Chart Composer" },
+    instance: { settings: { chartSpec: defiSpec } },
+    capability: { id: "chart-composer", reportReadiness: "ready" },
+  } as unknown as ResolvedPaneFunction, {
+    config: createDefaultConfig("/tmp/gloomberb-defillama-report"), dataProvider: provider,
+    store: { loadTicker: async () => null },
+  } as unknown as MarketContext, "");
+  expect(interactive.errors).toEqual([]);
+  expect(interactive.series[0]?.points.map((point) => point.value)).toEqual([200, 250]);
+  expect(report.data).toMatchObject({
+    complete: true,
+    series: [{ observations: interactive.series[0]!.points.map((point) => ({ date: point.date.toISOString(), value: point.value })) }],
+  });
+  expect(requests).toBe(1);
+});

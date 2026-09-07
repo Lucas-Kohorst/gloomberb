@@ -495,7 +495,9 @@
           "thirteenf-funds",
           "ticker-research"
         ],
-        "capabilities": [],
+        "capabilities": [
+          "defillama"
+        ],
         "broker": false
       }
     },

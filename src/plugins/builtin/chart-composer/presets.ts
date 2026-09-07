@@ -1,3 +1,4 @@
+import { DEFILLAMA_CAPABILITY_ID, parseDefiLlamaSeriesId, defillamaSeriesLabel } from "../defillama/catalog";
 import {
   CHART_SPEC_VERSION,
   type ChartPanelSpec,
@@ -183,6 +184,14 @@ export function parseSeriesExpression(value: string): ParsedSeriesExpression | n
   if (!trimmed) return null;
   const parts = trimmed.split(":");
   const prefix = parts[0]?.trim().toUpperCase() ?? "";
+  if (prefix === "LLAMA") {
+    const identity = parseDefiLlamaSeriesId(parts.slice(1).join("/"));
+    return identity ? {
+      kind: "capability", capabilityId: DEFILLAMA_CAPABILITY_ID,
+      seriesId: `${identity.kind}/${identity.slug}/${identity.metric}`,
+      label: defillamaSeriesLabel(identity),
+    } : null;
+  }
   if (parts[0]?.trim().toUpperCase() === "CAP") {
     const separator = trimmed.indexOf(":", 4);
     if (separator < 0) return null;

@@ -232,7 +232,7 @@ const chartComposerTemplates: PaneTemplateDef[] = [
     id: DATA_CATALOG_TEMPLATE_ID,
     paneId: DATA_CATALOG_PANE_ID,
     label: "Data Catalog",
-    description: "Browse and search the series Custom Chart already knows: securities, options, crypto, FRED, treasuries, and futures.",
+    description: "Browse chart series: securities, options, crypto, DefiLlama TVL/fees/revenue, FRED, treasuries, and futures.",
     keywords: [
       "catalog",
       "series",
@@ -242,6 +242,8 @@ const chartComposerTemplates: PaneTemplateDef[] = [
       "futures",
       "treasury",
       "crypto",
+      "defillama",
+      "tvl",
       "options",
       "option",
     ],
