@@ -1,6 +1,7 @@
 import { NOTES_FILES_CAPABILITY_ID } from "../../../capabilities";
 import {
   NotesFiles as HostedNotesFiles,
+  type NoteFileEntry,
   type NotesSyncPayload,
 } from "../../../plugins/builtin/notes/files";
 import { isHostedWebClient } from "../../../shared/hosted-api";
@@ -35,6 +36,11 @@ export class NotesFiles {
     return this.invoke<string>("load", {
       symbol,
     });
+  }
+
+  async list(): Promise<NoteFileEntry[]> {
+    if (this.hosted) return this.hosted.list();
+    return this.invoke<NoteFileEntry[]>("list");
   }
 
   async save(symbol: string, notes: string): Promise<void> {

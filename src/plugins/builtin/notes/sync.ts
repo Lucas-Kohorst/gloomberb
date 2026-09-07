@@ -63,7 +63,9 @@ function withinBudget(entries: NoteFileEntry[]): SyncedNote[] {
  * ponytail: deletions do not propagate, a note deleted on one device comes
  * back from the cloud. Add tombstones if that turns out to matter.
  */
-export function createNotesSyncContributor(notesFiles: NotesFiles): SyncContributor {
+export function createNotesSyncContributor(
+  notesFiles: Pick<NotesFiles, "list" | "save" | "loadQuickNotesIndex" | "saveQuickNotesIndex">,
+): SyncContributor {
   return {
     id: "notes",
     schemaVersion: 1,
