@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import type { UiHost } from "../../../ui/host";
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import type { TradingViewChartProps, UiHost } from "../../../ui/host";
 import { WEB_CELL_HEIGHT, WEB_CELL_WIDTH } from "./input-host";
 import { WebDataTable } from "./data-table";
 import {
@@ -16,13 +16,19 @@ import {
 import { WebPopover } from "./desktop/popover";
 import { WebBox } from "./host/box";
 import { WebChartSurface } from "./host/chart-surface";
-import { WebTradingViewChart } from "./host/tradingview-chart";
 import { WebInput, WebTextarea } from "./host/input";
 import { WebMediaSurface } from "./host/media-surface";
 import { WebScrollBox } from "./host/scroll-box";
 import { cleanDomProps, commonStyle } from "./host/style";
 import { WebAsciiText, WebSpan, WebStrong, WebText, WebUnderline } from "./host/text";
 import { WebTabs } from "./host/tabs";
+
+const TradingViewChart = lazy(() => import("./host/tradingview-chart")
+  .then((module) => ({ default: module.WebTradingViewChart })));
+
+function WebTradingViewChart(props: TradingViewChartProps) {
+  return <Suspense fallback={null}><TradingViewChart {...props} /></Suspense>;
+}
 
 function currentDesktopPlatform(): string {
   const navigatorWithUserAgentData = navigator as Navigator & {

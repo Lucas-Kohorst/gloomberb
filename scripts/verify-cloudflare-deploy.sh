@@ -3,13 +3,14 @@ set -euo pipefail
 
 : "${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}"
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}"
+worker_name=$(bun -p 'JSON.parse(require("fs").readFileSync("wrangler.jsonc", "utf8")).name')
 
 # Verify routing separately: a successful deploy can update an unserved worker.
 curl --fail --silent --show-error --max-time 30 \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
   "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains?hostname=terminal.kohor.st" \
-  | jq -e '.success == true and any(.result[]; .hostname == "terminal.kohor.st" and .service == "gloomberb-web" and .environment == "production")' >/dev/null
-echo "terminal.kohor.st routes to gloomberb-web (production)"
+  | jq -e --arg worker "$worker_name" '.success == true and any(.result[]; .hostname == "terminal.kohor.st" and .service == $worker and .environment == "production")' >/dev/null
+echo "terminal.kohor.st routes to $worker_name (production)"
 
 probe_body=$(mktemp)
 trap 'rm -f "$probe_body"' EXIT

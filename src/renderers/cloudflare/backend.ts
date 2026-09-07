@@ -142,7 +142,7 @@ async function dispatch(
         config: hostedConfig(user),
         sessionSnapshot: null,
         desktopSnapshot: null,
-        desktopThemePreview: null,
+        desktopThemePreview: { theme: null },
         pluginState: user ? {
           "gloomberb-cloud": {
             session: {

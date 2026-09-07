@@ -10,7 +10,7 @@ const args = process.argv.slice(2);
 if (args.some(arg => arg.includes("api.cloudflare.com"))) {
   console.log(JSON.stringify({ success: true, result: [{
     hostname: "terminal.kohor.st",
-    service: process.env.TEST_SERVICE ?? "gloomberb-web",
+    service: process.env.TEST_SERVICE ?? "gloomberb-cloud",
     environment: "production",
   }] }));
 } else {
