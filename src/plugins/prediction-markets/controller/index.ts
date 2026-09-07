@@ -7,6 +7,7 @@ import {
   applyWatchlistSnapshots,
   hydrateWatchlistSnapshots,
   persistPredictionStarsToDefaultWatchlist,
+  resolvePredictionWatchlistKeys,
 } from "../collection-watchlist";
 import {
   useDebouncedPluginPaneState,
@@ -63,9 +64,13 @@ export function usePredictionMarketsController({
   );
   const initialParams = paneInstance?.params;
 
-  const [watchlist, setWatchlist] = usePluginState<string[]>(
+  const [legacyWatchlist, setWatchlist] = usePluginState<string[]>(
     "watchlist:v1",
     [],
+  );
+  const watchlist = useMemo(
+    () => resolvePredictionWatchlistKeys(legacyWatchlist, tickersBySymbol, config),
+    [legacyWatchlist, tickersBySymbol, config.watchlists],
   );
   const [watchlistSnapshots, setWatchlistSnapshots] = usePluginState<
     PredictionMarketSummary[]

@@ -15,6 +15,7 @@ import {
   predictionCollectionSymbol,
   predictionTickerRecord,
   resolveWatchlistMarkets,
+  resolvePredictionWatchlistKeys,
 } from "./collection-watchlist";
 import { normalizeKalshiMarket } from "./services/kalshi/normalize";
 import { normalizePolymarketMarket } from "./services/polymarket/normalize";
@@ -69,11 +70,6 @@ describe("prediction market PF watchlist membership", () => {
   afterEach(() => {
     setHostedConfigUserId(null);
     globalThis.localStorage?.clear();
-  });
-
-  test("maps Kalshi tickers and Polymarket slugs onto collection symbols", () => {
-    expect(predictionCollectionSymbol(kalshi)).toBe("KALSHI:KXPRESPERSON");
-    expect(predictionCollectionSymbol(polymarket)).toBe("POLY:inflation-fall");
   });
 
   test("builds a research ticker from a catalog hit without starring it", () => {
@@ -211,4 +207,21 @@ describe("prediction market PF watchlist membership", () => {
     const unchanged = hydrateWatchlistSnapshots(hydrated, [key], tickers);
     expect(unchanged).toBe(hydrated);
   });
+});
+
+
+test("PM stars hydrate from synced memberships without local plugin state", () => {
+  const { config, watchlistId } = ensureDefaultWatchlist(createDefaultConfig("/tmp/pm-sync"));
+  const records = applyPredictionStarMemberships([kalshi, polymarket], new Map(), watchlistId, true);
+  const tickers = new Map(records.map((ticker) => [ticker.metadata.ticker, ticker]));
+  const keys = resolvePredictionWatchlistKeys([], tickers, config);
+  expect(new Set(keys)).toEqual(new Set([kalshi.key, polymarket.key]));
+  const snapshots = hydrateWatchlistSnapshots([], keys, tickers);
+  expect(resolveWatchlistMarkets([], snapshots, new Set(keys)).map((market) => market.title))
+    .toEqual([kalshi.title, polymarket.title]);
+
+  const [removed] = applyPredictionStarMemberships([kalshi], tickers, watchlistId, false);
+  tickers.set(removed!.metadata.ticker, removed!);
+  expect(resolvePredictionWatchlistKeys([kalshi.key, "kalshi:legacy"], tickers, config))
+    .toEqual(["kalshi:legacy", polymarket.key]);
 });
