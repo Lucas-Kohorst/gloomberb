@@ -68,7 +68,9 @@ export function useCommandBarTickerSearchActions({
     // instead (a short exchange code qualifies on its own) and the trailing
     // text goes quiet rather than repeating it.
     const badge = formatInstrumentBadge(candidate);
-    const right = candidate.exchangeLabel || candidate.primaryExchangeLabel || candidate.right || undefined;
+    const right = candidate.instrumentClass === "prediction"
+      ? undefined
+      : (candidate.exchangeLabel || candidate.primaryExchangeLabel || candidate.right || undefined);
 
     if (candidate.kind === "ticker" && candidate.ticker) {
       return {
@@ -187,6 +189,8 @@ function formatInstrumentClass(instrumentClass: TickerSearchInstrumentClass): st
       return "Fund";
     case "derivative":
       return "Derivative";
+    case "prediction":
+      return "Prediction";
     case "other":
       return "Other";
   }

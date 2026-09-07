@@ -83,5 +83,6 @@ test("names the instrument class for the badge column", () => {
     ticker: { metadata: { ticker: "VTI", assetCategory: "ETF" } } as never,
   })).toBe("ETF");
   expect(formatInstrumentBadge({ instrumentClass: "derivative" })).toBe("DERIV");
+  expect(formatInstrumentBadge({ instrumentClass: "prediction" })).toBe("PM");
   expect(formatInstrumentBadge({ instrumentClass: "other", result: search("INDEX") })).toBeUndefined();
 });

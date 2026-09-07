@@ -217,7 +217,7 @@ export function usePredictionMarketsDataState({
     setCatalogCache,
   });
   const catalogLive = usePredictionCatalogLiveQuotes({
-    enabled: focused && !detailOpen,
+    enabled: !detailOpen,
     rows: visibleRows,
     setCatalogCache,
   });

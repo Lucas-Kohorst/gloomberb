@@ -42,6 +42,8 @@ export function formatInstrumentBadge(
       return /\bET[FNP]\b/i.test(rawInstrumentType(candidate)) ? "ETF" : "FUND";
     case "derivative":
       return "DERIV";
+    case "prediction":
+      return "PM";
     case "other":
       return undefined;
   }

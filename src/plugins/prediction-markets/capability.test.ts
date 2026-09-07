@@ -121,6 +121,41 @@ test("polymarket resolution reloads the event and follows a rotated YES token", 
   expect(requested.some((url) => url.includes("market=rotated-yes"))).toBe(true);
 });
 
+test("polymarket resolution accepts synthetic event-slug market ids", async () => {
+  const requested: string[] = [];
+  setHttpFetchTransport(async (url) => {
+    requested.push(url);
+    if (url.endsWith("/events/51456")) {
+      return json({
+        id: "51456",
+        title: "Fed rates",
+        markets: [{
+          slug: "will-no-fed-rate-cuts-happen-in-2026",
+          question: "Will no Fed rate cuts happen in 2026?",
+          active: true,
+          closed: false,
+          outcomes: ["Yes", "No"],
+          outcomePrices: ["0.42", "0.58"],
+          clobTokenIds: ["yes-fed", "no-fed"],
+        }],
+      });
+    }
+    if (url.includes("prices-history") && url.includes("market=yes-fed")) {
+      return json({ history: [{ t: 1_760_000_000, p: 0.42 }] });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  const resolved = await predictionChartSeriesCapability.provider.resolve({
+    seriesId: "polymarket/51456/51456%3Awill-no-fed-rate-cuts-happen-in-2026",
+    viewport: { range: "1M", resolution: "auto" },
+  });
+
+  expect(resolved.label).toContain("Will no Fed rate cuts happen");
+  expect(resolved.points[0]?.value).toBe(0.42);
+  expect(requested.some((url) => url.includes("market=yes-fed"))).toBe(true);
+});
+
 test("polymarket pans request and cache their bounded history windows", async () => {
   attachPredictionMarketsPersistence(new MemoryPersistence());
   const historyRequests: string[] = [];

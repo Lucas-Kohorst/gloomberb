@@ -39,14 +39,30 @@ export function ensureDefaultWatchlist(config: AppConfig): { config: AppConfig; 
   };
 }
 
-export function upsertPredictionWatchlistTicker(
-  summary: PredictionMarketSummary,
-  existing: TickerRecord | null,
-  watchlistId: string,
-  starred: boolean,
+export function predictionTickerRecord(
+  summary: Pick<PredictionMarketSummary, "venue" | "marketId" | "title" | "url" | "key" | "eventId" | "eventTicker">,
+  existing?: TickerRecord | null,
 ): TickerRecord {
   const symbol = predictionCollectionSymbol(summary);
-  const ticker = existing ?? {
+  const custom = {
+    ...(existing?.metadata.custom ?? {}),
+    predictionMarketKey: summary.key,
+    predictionVenue: summary.venue,
+    predictionMarketId: summary.marketId,
+    ...(summary.eventId ? { predictionEventId: summary.eventId } : {}),
+    ...(summary.eventTicker ? { predictionEventTicker: summary.eventTicker } : {}),
+  };
+  if (existing) {
+    return {
+      ...existing,
+      metadata: {
+        ...existing.metadata,
+        name: summary.title || existing.metadata.name,
+        custom,
+      },
+    };
+  }
+  return {
     metadata: {
       ticker: symbol,
       exchange: summary.venue === "kalshi" ? "KALSHI" : "POLYMARKET",
@@ -56,14 +72,19 @@ export function upsertPredictionWatchlistTicker(
       portfolios: [],
       watchlists: [],
       positions: [],
-      custom: {
-        predictionMarketKey: summary.key,
-        predictionVenue: summary.venue,
-        predictionMarketId: summary.marketId,
-      },
+      custom,
       tags: ["prediction"],
     },
   };
+}
+
+export function upsertPredictionWatchlistTicker(
+  summary: PredictionMarketSummary,
+  existing: TickerRecord | null,
+  watchlistId: string,
+  starred: boolean,
+): TickerRecord {
+  const ticker = predictionTickerRecord(summary, existing);
   return starred
     ? addTickerToWatchlist(ticker, watchlistId).ticker
     : removeTickerFromWatchlist(ticker, watchlistId).ticker;
@@ -155,16 +176,19 @@ function createStubSummary({
   venue,
   marketId,
   title,
+  eventTicker,
 }: {
   key: string;
   venue: PredictionVenue;
   marketId: string;
   title: string;
+  eventTicker?: string;
 }): PredictionMarketSummary {
   return {
     key,
     venue,
     marketId,
+    ...(eventTicker ? { eventTicker } : {}),
     title,
     marketLabel: title,
     eventLabel: title,
@@ -209,6 +233,9 @@ export function stubSummaryFromTicker(ticker: TickerRecord): PredictionMarketSum
   const custom = ticker.metadata.custom;
   const customKey = typeof custom.predictionMarketKey === "string" ? custom.predictionMarketKey : "";
   const customMarketId = typeof custom.predictionMarketId === "string" ? custom.predictionMarketId : "";
+  const customEventTicker = typeof custom.predictionEventTicker === "string"
+    ? custom.predictionEventTicker
+    : "";
   const fromKey = customKey ? stubSummaryFromWatchlistKey(customKey) : null;
   let venue: PredictionVenue | null =
     custom.predictionVenue === "kalshi" || custom.predictionVenue === "polymarket"
@@ -243,7 +270,13 @@ export function stubSummaryFromTicker(ticker: TickerRecord): PredictionMarketSum
   }
 
   const title = ticker.metadata.name.trim() || marketId;
-  return createStubSummary({ key, venue, marketId, title });
+  return createStubSummary({
+    key,
+    venue,
+    marketId,
+    title,
+    ...(customEventTicker ? { eventTicker: customEventTicker } : {}),
+  });
 }
 
 export function isPredictionMarketTicker(ticker: TickerRecord): boolean {

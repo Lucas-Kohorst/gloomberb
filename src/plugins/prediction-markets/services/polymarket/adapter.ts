@@ -1,11 +1,13 @@
 import {
-  buildPredictionCatalogResourceKey,
+  buildPredictionCatalogLoadResourceKey,
+  resolvePredictionCatalogOptions,
+  type PredictionCatalogBrowseOptions,
+  type PredictionCatalogLoadOptions,
 } from "../../cache";
 import {
   getPolymarketCategoryTagSlugs,
 } from "../../categories";
 import type {
-  PredictionBrowseTab,
   PredictionCategoryId,
   PredictionMarketSummary,
 } from "../../types";
@@ -24,12 +26,16 @@ import type {
 } from "./types";
 import { loadPolymarketEvent } from "./detail";
 
-export { normalizePolymarketMarket } from "./normalize";
+export {
+  normalizePolymarketCatalog,
+  normalizePolymarketMarket,
+} from "./normalize";
 export { loadPolymarketDetail } from "./detail";
 
 const POLYMARKET_CATALOG_OFFSETS = [0, 200, 400];
 const POLYMARKET_CATEGORY_OFFSETS = [0, 200];
 const POLYMARKET_PAGE_SIZE = 200;
+type PolymarketCatalogSort = "volume24hr" | "endDate" | "createdAt";
 
 export function nextPolymarketCatalogOffset(
   categoryId: PredictionCategoryId,
@@ -40,7 +46,12 @@ export function nextPolymarketCatalogOffset(
   return (offsets.at(-1) ?? 0) + POLYMARKET_PAGE_SIZE;
 }
 
-function buildPolymarketCatalogUrl(offset: number, tagSlug?: string, limit = 200): string {
+function buildPolymarketCatalogUrl(
+  offset: number,
+  tagSlug?: string,
+  limit = 200,
+  sortOrder: PolymarketCatalogSort = "volume24hr",
+): string {
   const url = new URL("https://gamma-api.polymarket.com/events");
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
@@ -68,11 +79,12 @@ async function loadPolymarketCatalogPages(
   tagSlug?: string,
   limit = 200,
   signal?: AbortSignal,
+  sortOrder: PolymarketCatalogSort = "volume24hr",
 ): Promise<PolymarketEventRecord[]> {
   const results = await Promise.allSettled(
     offsets.map((offset) =>
       fetchJson<PolymarketEventRecord[]>(
-        buildPolymarketCatalogUrl(offset, tagSlug, limit),
+        buildPolymarketCatalogUrl(offset, tagSlug, limit, sortOrder),
         signal,
       ),
     ),
@@ -90,14 +102,32 @@ async function loadPolymarketCatalogPages(
 export async function loadPolymarketCatalog(
   searchQuery = "",
   categoryId: PredictionCategoryId = "all",
-  options: { limit?: number; signal?: AbortSignal } = {},
+  browseOrOptions: PredictionCatalogBrowseOptions = "top",
+  legacyOptions: PredictionCatalogLoadOptions = {},
 ): Promise<PredictionMarketSummary[]> {
+  const { browseTab, options } = resolvePredictionCatalogOptions(
+    browseOrOptions,
+    legacyOptions,
+  );
+  const sortOrder: PolymarketCatalogSort = browseTab === "ending"
+    ? "endDate"
+    : browseTab === "new"
+      ? "createdAt"
+      : "volume24hr";
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const requestedLimit = Math.max(1, Math.min(200, options.limit ?? 200));
   const pageLimit = Math.max(20, requestedLimit);
+  const resourceKey = buildPredictionCatalogLoadResourceKey(
+    "polymarket",
+    categoryId,
+    normalizedQuery,
+    browseTab,
+    requestedLimit,
+    options,
+  );
   return await loadCachedPredictionResource(
     "catalog",
-    `${buildPredictionCatalogResourceKey("polymarket", categoryId, normalizedQuery)}:${requestedLimit}`,
+    resourceKey,
     async () => {
       if (normalizedQuery.length > 0) {
         const response = await fetchJson<PolymarketSearchResponse>(
@@ -105,34 +135,31 @@ export async function loadPolymarketCatalog(
           options.signal,
         );
         const searchEvents = (response.events ?? []).slice(0, requestedLimit);
-        const hydratedEvents = (
-          await Promise.all(
-            [...new Set(searchEvents.map((event) => event.id).filter(Boolean))]
-              .map((eventId) => loadPolymarketEvent(eventId, options.signal)),
-          )
-        ).filter((event): event is PolymarketEventRecord => event != null);
-        const resolvedEvents = reconcilePolymarketSearchEvents(
-          searchEvents,
-          hydratedEvents,
+        const hydratedEvents = await Promise.all(
+          searchEvents
+            .filter((event) => !event.markets?.length && event.id)
+            .map((event) => loadPolymarketEvent(event.id, options.signal)),
         );
         return normalizePolymarketCatalog(
-          reconcilePolymarketSearchEvents(searchEvents, []),
+          reconcilePolymarketSearchEvents(
+            searchEvents,
+            hydratedEvents.filter((event): event is PolymarketEventRecord => event != null),
+          ),
           normalizedQuery,
           categoryId,
         ).slice(0, requestedLimit);
       }
-
-      const pollOffsets = firstPageOnly ? POLYMARKET_POLL_OFFSETS : null;
 
       if (categoryId !== "all") {
         const tagSlugs = getPolymarketCategoryTagSlugs(categoryId);
         const categoryPages = await Promise.all(
           tagSlugs.map((tagSlug) =>
             loadPolymarketCatalogPages(
-              options.limit ? [0] : POLYMARKET_CATEGORY_OFFSETS,
+              options.firstPageOnly || options.limit ? [0] : POLYMARKET_CATEGORY_OFFSETS,
               tagSlug,
               pageLimit,
               options.signal,
+              sortOrder,
             ).catch(() => []),
           ),
         );
@@ -145,10 +172,11 @@ export async function loadPolymarketCatalog(
       }
 
       const pages = await loadPolymarketCatalogPages(
-        options.limit ? [0] : POLYMARKET_CATALOG_OFFSETS,
+        options.firstPageOnly || options.limit ? [0] : POLYMARKET_CATALOG_OFFSETS,
         undefined,
         pageLimit,
         options.signal,
+        sortOrder,
       );
       return normalizePolymarketCatalog(pages, "", categoryId).slice(0, requestedLimit);
     },

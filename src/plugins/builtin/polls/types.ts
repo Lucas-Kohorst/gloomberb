@@ -27,6 +27,8 @@ export interface VoteHubPoll {
 export interface PollRow {
   id: string;
   subject: string;
+  /** Race/geography label VoteHub assigns (e.g. "2026 Michigan"), else null. */
+  seatName: string | null;
   pollType: string;
   pollTypeLabel: string;
   pollster: string;
@@ -46,6 +48,7 @@ export interface PollRow {
 }
 
 export type PollTabId =
+  | "all"
   | "approval"
   | "favorability"
   | "generic-ballot"
@@ -59,6 +62,12 @@ export interface PollTrendPoint {
   date: string;
   value: number;
   pollster: string;
+}
+
+/** One pollster's trend points within a race, for overlay series. */
+export interface PollsterSeries {
+  pollster: string;
+  points: PollTrendPoint[];
 }
 
 export interface PollsterAverage {

@@ -1,5 +1,5 @@
 import { Box } from "../../../ui";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PaneProps, TickerResearchTabDef } from "../../../types/plugin";
 import { t, tf } from "../../../i18n";
 import { quoteSubscriptionTargetFromTicker } from "../../../market-data/request-types";
@@ -17,6 +17,8 @@ import { getSharedRegistry } from "../../registry";
 import { EmptyState, PaneFooterScope, Tabs, TickerEmptyState, usePaneFooter } from "../../../components";
 import { useThrottledCommitValue } from "../../../react/use-throttled-commit-value";
 import { resolveOptionsTarget } from "../../../utils/options";
+import { isPredictionMarketTicker } from "../../prediction-markets/collection-watchlist";
+import { useMarketData } from "../../runtime";
 import {
   buildVisibleTickerResearchTabs,
   getTickerResearchPaneSettings,
@@ -88,6 +90,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   useQuoteUpdates(streamingTargets, { liveStreaming });
 
   const { collectionId } = usePaneCollection();
+  const dataProvider = useMarketData();
   const paneSettings = getTickerResearchPaneSettings(paneInstance?.settings);
   const [committedActiveTabId, setCommittedActiveTabId] = usePaneStateValue<string>(
     "activeTabId",
@@ -104,14 +107,16 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
   );
   const [pluginCaptured, setPluginCaptured] = useState(false);
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set());
-  const hasOptionsChain = !!resolveOptionsTarget(ticker)?.effectiveTicker;
+  const hasOptionsChain = !!ticker
+    && !isPredictionMarketTicker(ticker)
+    && !!resolveOptionsTarget(ticker)?.effectiveTicker;
   const collectionTickerCount = useAppSelector((state) => getCollectionTickerCount(state, collectionId));
   const collectionName = useAppSelector((state) => getCollectionName(state, collectionId));
 
   // Cloud quotes are delayed on the free tier; a broker feed can still be live.
   const cloudAccess = useCloudAccessFooter({
     delayLabel: tf("{count}m", { count: CLOUD_QUOTE_DELAY_MINUTES }),
-    degraded: financials?.quote?.dataSource !== "live",
+    degraded: financials?.quote?.dataSource === "delayed",
     focused,
     segmentId: "ticker-research-access",
     shortcutScope: "ticker-research:upgrade",
@@ -160,6 +165,7 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     }
     return next;
   }, [mountedTabIds, resolvedTabId, visibleTabIds]);
+  const prefetchedTabKeysRef = useRef(new Set<string>());
 
   const handlePluginCapture = useCallback((capturing: boolean) => {
     setPluginCaptured(capturing);
@@ -171,6 +177,28 @@ export function TickerResearchPane({ focused, width, height }: PaneProps) {
     setPluginCaptured(false);
     dispatch({ type: "SET_INPUT_CAPTURED", captured: false });
   }, [resolvedTabId, dispatch]);
+
+  useEffect(() => {
+    if (!ticker) return;
+    for (const tab of tickerResearchTabs) {
+      if (!tab.prefetch) continue;
+      if (!visibleTabIds.has(tab.id)) continue;
+      const key = `${ticker.metadata.ticker}:${ticker.metadata.exchange ?? ""}:${tab.id}`;
+      if (prefetchedTabKeysRef.current.has(key)) continue;
+      prefetchedTabKeysRef.current.add(key);
+      try {
+        void Promise.resolve(tab.prefetch({
+          config,
+          dataProvider,
+          ticker,
+          financials,
+          hasOptionsChain,
+        })).catch(() => {});
+      } catch {
+        // Prefetching must never prevent the selected tab from rendering.
+      }
+    }
+  }, [config, dataProvider, financials, hasOptionsChain, ticker, tickerResearchTabs, visibleTabIds]);
 
   useEffect(() => {
     setMountedTabIds((current) => {

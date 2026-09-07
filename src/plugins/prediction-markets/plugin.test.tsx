@@ -7,7 +7,8 @@ import {
   MemoryPersistence,
 } from "./test-helpers";
 import { colors } from "../../theme/colors";
-import { createPredictionColumns } from "./columns";
+import { KALSHI_PROXY_PATH } from "../../shared/hosted-api";
+import { createPredictionColumns, DEFAULT_PREDICTION_COLUMN_IDS } from "./columns";
 import {
   PREDICTION_FILTER_TABS,
   resolvePredictionFilterId,
@@ -17,6 +18,8 @@ import {
   buildPredictionListRowRevision,
   buildPredictionListRows,
   flattenPredictionListRows,
+  predictionChartExpression,
+  resolvePredictionGraphMarket,
   resolvePredictionListActivation,
   togglePredictionGroupExpanded,
 } from "./rows";
@@ -38,11 +41,23 @@ import {
 import {
   loadPolymarketCatalog,
   loadPolymarketDetail,
+  normalizePolymarketCatalog,
   normalizePolymarketMarket,
 } from "./services/polymarket/adapter";
 import { predictionMarketsPlugin } from "./index";
+import {
+  PREDICTION_CATALOG_MAX_EVENT_MARKETS,
+  capPredictionCatalogByEvent,
+  mergePredictionCatalogPage,
+  overlayLivePredictionQuotes,
+  slimPredictionCatalogSummary,
+  samePredictionCatalogSummaries,
+} from "./cache";
 
 afterEach(async () => {
+  // setup() registers kalshi/polymarket connection sources process-wide; the
+  // Connections registry tests assert exact source lists in the same process.
+  predictionMarketsPlugin.dispose?.();
   await cleanupPredictionTest();
 });
 
@@ -268,6 +283,21 @@ describe("prediction markets plugin registration and services", () => {
     const collapsed = flattenPredictionListRows(rows, new Set());
     expect(collapsed).toHaveLength(1);
     expect(collapsed[0]?.kind).toBe("group");
+    const liveGroup = {
+      ...rows[0]!,
+      markets: rows[0]!.markets.map((market) => (
+        market.key === rows[0]!.focusMarketKey
+          ? { ...market, yesPrice: 0.51 }
+          : market
+      )),
+    };
+    const flattenedLive = flattenPredictionListRows([liveGroup], new Set([liveGroup.key]));
+    expect(flattenedLive[0]?.focusYesPrice).toBe(0.51);
+    expect(getPredictionColumnValue(
+      { id: "yes", label: "TOP ODDS", width: 16, align: "right", description: "" },
+      flattenedLive[0]!,
+      false,
+    ).text).toContain("51%");
     expect(collapsed[0]?.kind === "group" && collapsed[0].expanded).toBe(false);
     expect(getPredictionColumnValue(
       { id: "market", label: "MARKET", width: 34, align: "left", description: "" },
@@ -304,6 +334,68 @@ describe("prediction markets plugin registration and services", () => {
     expect(getPredictionColumnValue(tickerColumn, expanded[1]!, false).text).toBe(
       "KXFED-27APR-T4.25",
     );
+  });
+
+  test("dedupes legacy contracts for the same Polymarket outcome and keeps the quotable quote", () => {
+    const event = {
+      id: "fed-september",
+      title: "Fed Decision in September?",
+    };
+    const outcome = (record: {
+      id: string;
+      yes: string;
+      no: string;
+      tokenIds?: string[];
+      volume24hr: number;
+    }) => normalizePolymarketMarket({
+      id: record.id,
+      question: "Will the Fed decrease interest rates by 25 bps after the September 2026 meeting?",
+      groupItemTitle: "25 bps decrease",
+      outcomes: ["Yes", "No"],
+      outcomePrices: [record.yes, record.no],
+      clobTokenIds: record.tokenIds,
+      volume24hr: record.volume24hr,
+      events: [event],
+    })!;
+
+    const rows = buildPredictionListRows([
+      outcome({
+        id: "legacy-no-token",
+        yes: "0.69",
+        no: "0.31",
+        volume24hr: 100_000,
+      }),
+      outcome({
+        id: "live-clob-contract",
+        yes: "0.49",
+        no: "0.51",
+        tokenIds: ["yes-token", "no-token"],
+        volume24hr: 10_000,
+      }),
+      normalizePolymarketMarket({
+        id: "fed-no-change",
+        question: "Will the Fed leave rates unchanged after the September 2026 meeting?",
+        groupItemTitle: "No change",
+        outcomes: ["Yes", "No"],
+        outcomePrices: ["0.50", "0.50"],
+        events: [event],
+      })!,
+    ]);
+
+    const decrease = rows.find((row) =>
+      row.kind === "group" && row.markets.some((market) => market.marketLabel === "25 bps decrease")
+    );
+    expect(decrease?.kind).toBe("group");
+    if (decrease?.kind !== "group") return;
+    expect(decrease.markets).toHaveLength(2);
+    expect(decrease.markets.find((market) => market.marketLabel === "25 bps decrease")?.marketId)
+      .toBe("live-clob-contract");
+    expect(decrease.focusMarketKey).toBe("polymarket:fed-no-change");
+    expect(getPredictionColumnValue(
+      { id: "yes", label: "TOP ODDS", width: 16, align: "right", description: "" },
+      decrease,
+      false,
+    ).text).toContain("50% No change");
   });
 
   test("row revisions stay stable until quote, volume, or group shape changes", () => {
@@ -374,6 +466,7 @@ describe("prediction markets plugin registration and services", () => {
         { title: "Fed funds" },
       )!,
     ]);
+
     const group = groups[0]!;
     const collapsed = flattenPredictionListRows(groups, new Set())[0]!;
     const expandedHeader = flattenPredictionListRows(
@@ -396,47 +489,44 @@ describe("prediction markets plugin registration and services", () => {
     }
   });
 
-  test("hides overflow prediction columns as the pane narrows", () => {
-    expect(createPredictionColumns(64).map((column) => column.id)).toEqual([
-      "watch",
-      "market",
-      "yes",
-      "spread",
+  test("graphs the highest-odds outcome on an event group, not the volume leader", () => {
+    const [row] = buildPredictionListRows([
+      normalizeKalshiMarket({
+        ticker: "KXNOMINEE-LOW",
+        title: "Will a long-shot win?",
+        yes_sub_title: "Long shot",
+        event_ticker: "KXNOMINEE-2028",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.08",
+        volume_24h_fp: "900000",
+      } as any, { title: "Republican Presidential Nominee 2028" })!,
+      normalizeKalshiMarket({
+        ticker: "KXNOMINEE-VANCE",
+        title: "Will J.D. Vance win?",
+        yes_sub_title: "J.D. Vance",
+        event_ticker: "KXNOMINEE-2028",
+        status: "open",
+        market_type: "binary",
+        last_price_dollars: "0.47",
+        volume_24h_fp: "12000",
+      } as any, { title: "Republican Presidential Nominee 2028" })!,
     ]);
-    expect(createPredictionColumns(80).map((column) => column.id)).toEqual([
-      "watch",
+    expect(row?.kind).toBe("group");
+    expect(row?.representative.marketId).toBe("KXNOMINEE-LOW");
+    expect(predictionChartExpression(resolvePredictionGraphMarket(row!)))
+      .toBe("KALSHI:KXNOMINEE-VANCE");
+  });
+
+  test("keeps requested prediction columns visible and flexes the market column", () => {
+    const idsAt = (width: number) => createPredictionColumns(width).map((column) => column.id);
+    expect(idsAt(64)).toEqual(DEFAULT_PREDICTION_COLUMN_IDS);
+    expect(idsAt(80)).toEqual(DEFAULT_PREDICTION_COLUMN_IDS);
+    expect(idsAt(160)).toEqual(DEFAULT_PREDICTION_COLUMN_IDS);
+    expect(createPredictionColumns(64).find((column) => column.id === "market")?.flexGrow).toBe(1);
+    expect(createPredictionColumns(64, ["market", "yes"]).map((column) => column.id)).toEqual([
       "market",
       "yes",
-      "spread",
-    ]);
-    expect(createPredictionColumns(100).map((column) => column.id)).toEqual([
-      "watch",
-      "market",
-      "yes",
-      "spread",
-      "vol_24h",
-    ]);
-    expect(createPredictionColumns(132).map((column) => column.id)).toEqual([
-      "watch",
-      "market",
-      "yes",
-      "spread",
-      "vol_24h",
-      "open_interest",
-      "ends",
-      "status",
-    ]);
-    expect(createPredictionColumns(160).map((column) => column.id)).toEqual([
-      "watch",
-      "market",
-      "market_id",
-      "venue",
-      "yes",
-      "spread",
-      "vol_24h",
-      "open_interest",
-      "ends",
-      "status",
     ]);
   });
 
@@ -617,7 +707,7 @@ describe("prediction markets plugin registration and services", () => {
       ),
     ).toMatchObject({
       text: "48% Above 4.25%",
-      color: colors.negative,
+      color: undefined,
     });
   });
 
@@ -852,6 +942,34 @@ describe("prediction markets plugin registration and services", () => {
         mergePredictionCatalogPage(merged, [refreshed]),
       ),
     ).toBe(true);
+  });
+
+  test("keeps a live CLOB quote when Gamma refreshes the catalog snapshot", () => {
+    const snapshot = normalizePolymarketMarket({
+      id: "pm-live",
+      question: "Live quote",
+      conditionId: "cond-live",
+      outcomes: '["Yes","No"]',
+      outcomePrices: '["0.69","0.31"]',
+      clobTokenIds: '["yes-live","no-live"]',
+      volume24hr: 1000,
+      active: true,
+      closed: false,
+    })!;
+    const live = {
+      ...snapshot,
+      yesPrice: 0.48,
+      noPrice: 0.52,
+      yesBid: 0.47,
+      yesAsk: 0.49,
+      lastTradePrice: 0.48,
+      updatedAt: new Date().toISOString(),
+    };
+    const refreshed = { ...snapshot, yesPrice: 0.69, noPrice: 0.31, volume24h: 2000 };
+    const overlaid = overlayLivePredictionQuotes([live], [refreshed]);
+    expect(overlaid[0]?.yesPrice).toBe(0.48);
+    expect(overlaid[0]?.yesBid).toBe(0.47);
+    expect(overlaid[0]?.volume24h).toBe(2000);
   });
 
   test("slim catalog summaries drop rules text and cap nested event markets", () => {

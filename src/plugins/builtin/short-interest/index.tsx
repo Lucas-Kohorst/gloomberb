@@ -1,3 +1,4 @@
+import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
 import {
@@ -26,7 +27,7 @@ export const shortInterestModule: PluginModule = {
       name: "Short Interest",
       order: 36,
       component: ShortInterestView,
-      isVisible: ({ ticker }) => !!ticker,
+      isVisible: ({ ticker }) => isEquityResearchTicker(ticker),
     });
   },
 
