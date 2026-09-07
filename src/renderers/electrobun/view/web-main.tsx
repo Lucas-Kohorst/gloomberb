@@ -42,7 +42,7 @@ import {
   resolveHostedInit,
   resolveHostedSession,
 } from "./hosted-boot";
-import { restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
+import { hydrateHostedWorkspaceFromCloud, restoreHostedLocalWorkspaceExtras } from "../../../data/config/hosted-sync-hydrate";
 import { getHostedConfigSnapshotPusher } from "../../../data/config/hosted-config-snapshot";
 import {
   armStartupInteractiveAfterFirstPaint,
@@ -149,10 +149,12 @@ async function boot(): Promise<void> {
     if (!publicShare) {
       hydrateHostedUserConfig(init.config);
       restoreHostedLocalWorkspaceExtras();
+      if (hostedSession?.user) {
+        await hydrateHostedWorkspaceFromCloud(init.config, {
+          pullSync: () => apiClient.getSyncSnapshot(),
+        });
+      }
       getHostedConfigSnapshotPusher().schedule(init.config);
-      // Local persist is enough for first paint (move/resize/chat/command bar).
-      // Worker `/api/config` and Gloom Cloud `/sync/snapshot` overlay after the
-      // first frames so a dense Home layout is interactive while they load.
     }
   }
   window.__GLOOM_CLOUD_DEGRADED = degraded;

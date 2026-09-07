@@ -92,7 +92,7 @@ async function deleteTextFile(path: string): Promise<void> {
 }
 
 function isHostedNotesDir(dataDir: string): boolean {
-  return dataDir.startsWith("cloud:") && typeof Bun === "undefined";
+  return dataDir.startsWith("cloud:");
 }
 
 export class NotesFiles {
@@ -143,6 +143,7 @@ export class NotesFiles {
         delete payload.tickerNotes[symbol];
       }
       writeHostedNotes(payload, userId);
+      writeLocalTimestamp(this.pathFor(symbol), notes ? Date.now() : null);
       getHostedConfigSnapshotPusher().scheduleFromLast();
       return;
     }
@@ -176,6 +177,21 @@ export class NotesFiles {
   }
 
   private async listKeys(): Promise<Array<[string, number]>> {
+    const userId = this.hostedUserId();
+    if (userId) {
+      const notes = readHostedNotes(userId, this.dataDir);
+      const timestamps = readLocalTimestamps();
+      const keys = [
+        ...Object.keys(notes.tickerNotes),
+        ...Object.keys(notes.quickNotes).map((id) => this.quickNoteKey(id)),
+      ];
+      return keys.map((key) => {
+        const path = this.pathFor(key);
+        const updatedAt = timestamps[path] ?? Date.now();
+        if (timestamps[path] == null) writeLocalTimestamp(path, updatedAt);
+        return [key, updatedAt];
+      });
+    }
     if (typeof Bun !== "undefined") {
       const fsModulePath = "fs/promises";
       const { readdir, stat } = await import(fsModulePath) as typeof import("fs/promises");

@@ -237,6 +237,9 @@ function createNotesFilesCapability(): PluginCapability {
     kind: "notes-files",
     name: "Notes Files",
     operations: {
+      list: op((input: any) => (
+        new NotesFiles(requireString(input.dataDir, "Notes dataDir")).list()
+      )),
       load: op((input: any) => readTextOrEmpty(notePath(
         requireString(input.dataDir, "Notes dataDir"),
         requireString(input.symbol, "Notes symbol"),
