@@ -120,7 +120,7 @@ function CdsTradeTable({
   onKeyDown: (event: DataTableKeyEvent) => boolean;
   before?: ReactNode;
 }) {
-  const columns = useMemo(() => buildTradeColumns(width), [width]);
+  const columns = useMemo(() => buildTradeColumns(), []);
   return (
     <DataTableView<CdsTrade, TradeColumn>
       focused={focused}
@@ -309,7 +309,7 @@ export function CdsPane({
     );
   }
 
-  const issuerColumns = buildIssuerColumns(width);
+  const issuerColumns = buildIssuerColumns();
   return (
     <DataTableStackView<CdsIssuerSummary, IssuerColumn>
       focused={focused}

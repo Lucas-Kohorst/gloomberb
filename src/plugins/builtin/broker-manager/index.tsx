@@ -198,7 +198,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
   const errorCount = rows.filter((row) => row.state === "error" || row.state === "unavailable").length;
   const bodyHeight = Math.max(5, height - 4);
   const tableWidth = Math.max(24, width - 2);
-  const columns = useMemo(() => buildBrokerColumns(tableWidth), [language, tableWidth]);
+  const columns = useMemo(() => buildBrokerColumns(), [language]);
 
   const openSelectedDetail = useCallback((index: number, _row: BrokerProfileRow) => {
     setSelectedIndex(index);

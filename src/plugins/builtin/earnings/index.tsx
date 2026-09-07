@@ -99,11 +99,11 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
   const selectedRowIndex = rows.findIndex((row) => row.kind === "event" && row.eventIdx === activeEventIdx);
   const columns = useMemo(
     () => resolveVisibleColumns(
-      buildEarningsColumns(width),
+      buildEarningsColumns(),
       pane?.settings?.columnIds,
       DEFAULT_EARNINGS_COLUMN_IDS,
     ),
-    [pane?.settings?.columnIds, width],
+    [pane?.settings?.columnIds],
   );
 
   const reload = useCallback((force = false) => {

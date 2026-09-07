@@ -90,24 +90,22 @@ describe("futures columns", () => {
     expect(resolveFuturesColumnIds(undefined)).toHaveLength(fullSet);
   });
 
-  test("gives the name column the leftover width whichever columns are visible", () => {
+  test("gives the name column flexGrow whichever columns are visible", () => {
     for (const visible of [undefined, ["code", "name", "price"]]) {
       const columns = createFuturesColumns(80, visible);
-      const total = columns.reduce((sum, column) => sum + (column.width ?? 0), 0);
-      expect(total).toBeLessThanOrEqual(80);
-      expect(columns.find((column) => column.id === "name")?.width ?? 0).toBeGreaterThanOrEqual(10);
+      expect(columns.find((column) => column.id === "name")?.flexGrow).toBe(1);
     }
   });
 
-  test("drops the extra columns a narrow board cannot fit instead of clipping them", () => {
-    const narrow = createFuturesColumns(80).map((column) => column.id);
-    expect(narrow).not.toContain("volume");
-    expect(narrow).not.toContain("time");
-
-    const wide = createFuturesColumns(130).map((column) => column.id);
-    expect(wide).toContain("volume");
-    expect(wide).toContain("prevClose");
-    expect(wide).toContain("time");
+  test("spells the session out on a wide board and collapses it to a dot on a narrow one", () => {
+    // The width breakpoint is the one piece of real layout state left in the
+    // column builder: wide panes get a word with room to breathe, narrow ones
+    // get a single-cell dot so the symbol columns keep their width.
+    const narrow = createFuturesColumns(80);
+    const wide = createFuturesColumns(130);
+    expect(narrow.find((column) => column.id === "status")?.width).toBe(1);
+    expect(wide.find((column) => column.id === "status")?.width).toBe(9);
+    expect(wide.find((column) => column.id === "status")?.label).toBe("SESSION");
   });
 });
 

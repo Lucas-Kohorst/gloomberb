@@ -97,17 +97,12 @@ export function nextSortPreference(
   return { columnId: columnId as ShortInterestColumnId, direction: "desc" };
 }
 
-export function buildColumns(width: number): ShortInterestColumn[] {
-  const dateWidth = 12;
-  const sharesWidth = 12;
-  const ratioWidth = 12;
-  const advWidth = Math.max(12, width - 2 - dateWidth - sharesWidth - ratioWidth - 12);
-  const percentWidth = 10;
+export function buildColumns(): ShortInterestColumn[] {
   return [
-    { id: "settlementDate", label: "DATE", width: dateWidth, align: "left" },
-    { id: "sharesShort", label: "SHARES SHORT", width: sharesWidth, align: "right" },
-    { id: "shortRatio", label: "DAYS TO COVER", width: ratioWidth, align: "right" },
-    { id: "averageDailyVolume", label: "AVG DAILY VOL", width: advWidth, align: "right" },
-    { id: "shortPercentFloat", label: "% FLOAT", width: percentWidth, align: "right" },
+    { id: "settlementDate", label: "DATE", width: 12, align: "left" },
+    { id: "sharesShort", label: "SHARES SHORT", width: 12, align: "right" },
+    { id: "shortRatio", label: "DAYS TO COVER", width: 12, align: "right" },
+    { id: "averageDailyVolume", label: "AVG DAILY VOL", width: 12, align: "right", flexGrow: 1 },
+    { id: "shortPercentFloat", label: "% FLOAT", width: 10, align: "right" },
   ];
 }

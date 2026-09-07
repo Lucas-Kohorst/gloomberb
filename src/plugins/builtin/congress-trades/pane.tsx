@@ -157,8 +157,8 @@ export function CongressTradesPane({ focused, width, height }: PaneProps) {
   const query = searchQuery.trim().toLowerCase();
   const tradeRows = useMemo(() => sortedTrades(trades.filter((trade) => !query || `${trade.ticker ?? ""} ${trade.memberName} ${trade.filingDate}`.toLowerCase().includes(query)), tradeSort), [query, trades, tradeSort]);
   const memberRows = useMemo(() => sortedMembers(members.filter((member) => !query || `${member.memberName} ${member.id}`.toLowerCase().includes(query)), memberSort), [query, members, memberSort]);
-  const tradeColumns = useMemo(() => buildTradeColumns(width), [width]);
-  const memberColumns = useMemo(() => buildMemberColumns(width), [width]);
+  const tradeColumns = useMemo(() => buildTradeColumns(), []);
+  const memberColumns = useMemo(() => buildMemberColumns(), []);
   const selectedTradeIndex = selectedIndexById(tradeRows, selectedTradeId);
   const selectedMemberIndex = selectedIndexById(memberRows, selectedMemberId);
   const selectedTrade = tradeRows[selectedTradeIndex] ?? null;

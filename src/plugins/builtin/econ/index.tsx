@@ -12,7 +12,6 @@ import { useAutoRefresh } from "../shared/auto-refresh";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
 import { colors, blendHex } from "../../../theme/colors";
-import { useAutoRefresh } from "../shared/use-auto-refresh";
 import type { EconEvent } from "./types";
 import { EconDetailView } from "./detail-view";
 import {
@@ -237,30 +236,15 @@ function EconCalendarPane({ focused, width, height }: PaneProps) {
     return false;
   }, [cycleCountryFilter, cycleImpactFilter, load]);
 
-  const columns = useMemo<EconCalendarColumn[]>(() => {
-    const timeWidth = 6;
-    const impactWidth = 4;
-    const flagWidth = 3;
-    const actualWidth = 9;
-    const forecastWidth = 10;
-    const priorWidth = 9;
-    const minEventWidth = 12;
-    const fixedWidth = timeWidth + impactWidth + flagWidth + actualWidth + forecastWidth + priorWidth;
-    // Padding, one gap per column boundary, and the vertical scrollbar lane;
-    // one column short of that clipped the PRIOR values at the right edge.
-    const columnCount = 7;
-    const eventWidth = Math.max(minEventWidth, width - 3 - columnCount - fixedWidth);
-
-    return [
-      { id: "time", label: "TIME", width: timeWidth, align: "left" },
-      { id: "impact", label: "IMP", width: impactWidth, align: "left" },
-      { id: "country", label: "CTY", width: flagWidth, align: "left" },
-      { id: "event", label: "EVENT", width: eventWidth, align: "left" },
-      { id: "actual", label: "ACTUAL", width: actualWidth, align: "right" },
-      { id: "forecast", label: "FORECAST", width: forecastWidth, align: "right" },
-      { id: "prior", label: "PRIOR", width: priorWidth, align: "right" },
-    ];
-  }, [width]);
+  const columns = useMemo<EconCalendarColumn[]>(() => [
+    { id: "time", label: "TIME", width: 6, align: "left" },
+    { id: "impact", label: "IMP", width: 4, align: "left" },
+    { id: "country", label: "CTY", width: 3, align: "left" },
+    { id: "event", label: "EVENT", width: 12, align: "left", flexGrow: 1 },
+    { id: "actual", label: "ACTUAL", width: 9, align: "right" },
+    { id: "forecast", label: "FORECAST", width: 10, align: "right" },
+    { id: "prior", label: "PRIOR", width: 9, align: "right" },
+  ], []);
   const separatorBg = blendHex(colors.bg, colors.border, 0.3);
   const staleness = fetchedAt ? formatStaleness(fetchedAt, now) : "";
   const emptyStateHint = settled && !loading && !error

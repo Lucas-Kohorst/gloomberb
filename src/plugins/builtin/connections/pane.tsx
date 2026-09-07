@@ -54,19 +54,13 @@ function formatLatency(latencyMs: number | null): string {
   return latencyMs < 1000 ? `${Math.round(latencyMs)}ms` : `${(latencyMs / 1000).toFixed(1)}s`;
 }
 
-function columnsForWidth(width: number): ConnectionColumn[] {
-  const statusWidth = 13;
-  const latencyWidth = 8;
-  const lastWidth = 9;
-  const requestWidth = width >= 72 ? 18 : 0;
-  // Floor low enough that a narrow pane scrolls horizontally instead of clipping.
-  const serviceWidth = Math.max(10, width - statusWidth - latencyWidth - lastWidth - requestWidth - 4);
+function buildConnectionColumns(): ConnectionColumn[] {
   return [
-    { id: "service", label: "SERVICE", width: serviceWidth, align: "left" },
-    { id: "status", label: "STATUS", width: statusWidth, align: "left" },
-    ...(requestWidth > 0 ? [{ id: "request", label: "REQUEST", width: requestWidth, align: "left" } as ConnectionColumn] : []),
-    { id: "latency", label: "LATENCY", width: latencyWidth, align: "right" },
-    { id: "last", label: "LAST", width: lastWidth, align: "right" },
+    { id: "service", label: "SERVICE", width: 10, align: "left", flexGrow: 1 },
+    { id: "status", label: "STATUS", width: 13, align: "left" },
+    { id: "request", label: "REQUEST", width: 18, align: "left" },
+    { id: "latency", label: "LATENCY", width: 8, align: "right" },
+    { id: "last", label: "LAST", width: 9, align: "right" },
   ];
 }
 
@@ -236,7 +230,7 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
           setSelectedId(source.id);
           setDetailOpen(true);
         }}
-        columns={columnsForWidth(width)}
+        columns={buildConnectionColumns()}
         items={sources}
         sortColumnId={sort.columnId}
         sortDirection={sort.direction}

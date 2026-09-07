@@ -35,21 +35,14 @@ const PORTFOLIO_VALUE_COLUMN: ColumnConfig = { id: "mkt_value", label: "VALUE", 
 const PORTFOLIO_PNL_COLUMN: ColumnConfig = { id: "pnl", label: "P&L", width: 10, align: "right" };
 const PORTFOLIO_COST_COLUMN: ColumnConfig = { id: "cost_basis", label: "COST", width: 10, align: "right" };
 
-export function buildSectorColumns(width: number): SectorTableColumn[] {
-  const sectorWidth = Math.max(12, Math.min(22, Math.floor(width * 0.28)));
-  const weightWidth = 8;
-  const valueWidth = 10;
-  const pnlWidth = 10;
-  const returnWidth = 8;
-  const barWidth = Math.max(8, width - sectorWidth - weightWidth - valueWidth - pnlWidth - returnWidth - 10);
-
+export function buildSectorColumns(): SectorTableColumn[] {
   return [
-    { id: "sector", label: "SECTOR", width: sectorWidth, align: "left" },
-    { id: "weight", label: "WEIGHT", width: weightWidth, align: "right" },
-    { id: "value", label: "VALUE", width: valueWidth, align: "right" },
-    { id: "pnl", label: "P&L", width: pnlWidth, align: "right" },
-    { id: "return", label: "RETURN", width: returnWidth, align: "right" },
-    { id: "bar", label: "ALLOCATION", width: barWidth, align: "left" },
+    { id: "sector", label: "SECTOR", width: 12, align: "left" },
+    { id: "weight", label: "WEIGHT", width: 8, align: "right" },
+    { id: "value", label: "VALUE", width: 10, align: "right" },
+    { id: "pnl", label: "P&L", width: 10, align: "right" },
+    { id: "return", label: "RETURN", width: 8, align: "right" },
+    { id: "bar", label: "ALLOCATION", width: 8, align: "left", flexGrow: 1 },
   ];
 }
 

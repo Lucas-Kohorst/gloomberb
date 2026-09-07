@@ -207,7 +207,7 @@ export function MemberTradesDetail({
   }, [load]);
 
   const sortedRows = useMemo(() => sortedTrades(trades, sortPreference), [sortPreference, trades]);
-  const columns = useMemo(() => buildMemberTradeColumns(width), [width]);
+  const columns = useMemo(() => buildMemberTradeColumns(), []);
   const selectedTrade = useMemo(() => (
     sortedRows.find((trade) => trade.id === selectedTradeId) ?? sortedRows[0] ?? null
   ), [selectedTradeId, sortedRows]);

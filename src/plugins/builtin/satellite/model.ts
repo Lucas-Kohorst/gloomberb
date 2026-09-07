@@ -9,18 +9,14 @@ export type FireSort = SortPreference<FireColumnId>;
 export const DEFAULT_FIRE_SORT: FireSort = { columnId: "frp", direction: "desc" };
 export const FIRE_ROW_CAP = 500;
 
-export function buildFireColumns(width: number): FireColumn[] {
-  const timeWidth = 14;
-  const numWidth = 8;
-  const satWidth = 6;
-  const leftover = Math.max(8, width - 2 - 6 - timeWidth - numWidth * 4 - satWidth);
+export function buildFireColumns(): FireColumn[] {
   return [
-    { id: "time", label: "ACQ", width: timeWidth + Math.floor(leftover / 2), align: "left" },
-    { id: "lat", label: "LAT", width: numWidth, align: "right" },
-    { id: "lon", label: "LON", width: numWidth, align: "right" },
-    { id: "frp", label: "FRP", width: numWidth, align: "right" },
-    { id: "bright", label: "BRT", width: numWidth, align: "right" },
-    { id: "sat", label: "SAT", width: satWidth, align: "left" },
+    { id: "time", label: "ACQ", width: 14, align: "left", flexGrow: 1 },
+    { id: "lat", label: "LAT", width: 8, align: "right" },
+    { id: "lon", label: "LON", width: 8, align: "right" },
+    { id: "frp", label: "FRP", width: 8, align: "right" },
+    { id: "bright", label: "BRT", width: 8, align: "right" },
+    { id: "sat", label: "SAT", width: 6, align: "left" },
   ];
 }
 

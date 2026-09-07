@@ -204,7 +204,7 @@ function CountryEconPane({ paneId, focused, width, height }: PaneProps) {
     }
   }, { enabled: focused && !searchFocused });
 
-  const columns = useMemo(() => buildCountryEconColumns(width), [width]);
+  const columns = useMemo(() => buildCountryEconColumns(), []);
   const tabs = (
     <Box height={1}>
       <Tabs

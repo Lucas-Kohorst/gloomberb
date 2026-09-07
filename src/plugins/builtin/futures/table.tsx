@@ -31,15 +31,6 @@ export const FUTURES_COLUMN_DEFS: readonly FuturesColumnDef[] = [
 
 const DEFAULT_FUTURES_COLUMN_IDS = FUTURES_COLUMN_DEFS.map((column) => column.id);
 
-/**
- * Extra columns only earn their width once the board is wide enough to keep a
- * readable contract name; a narrow pane drops them instead of clipping.
- */
-const COLUMN_MIN_PANE_WIDTH: Partial<Record<FuturesColumnId, number>> = {
-  volume: 92,
-  prevClose: 104,
-  time: 114,
-};
 const SESSION_TEXT_MIN_WIDTH = 100;
 
 const COLUMN_WIDTHS: Record<Exclude<FuturesColumnId, "name">, number> = {
@@ -66,20 +57,10 @@ function columnWidth(id: Exclude<FuturesColumnId, "name">, paneWidth: number): n
 }
 
 export function createFuturesColumns(width: number, visibleIds?: readonly string[]): FuturesColumn[] {
-  const ids = resolveFuturesColumnIds(visibleIds)
-    .filter((id) => width >= (COLUMN_MIN_PANE_WIDTH[id] ?? 0));
-  const fixed = ids
-    .filter((id): id is Exclude<FuturesColumnId, "name"> => id !== "name")
-    .reduce((total, id) => total + columnWidth(id, width), 0);
-  // Leaves room for the pane border and scrollbar gutter; the name column grows
-  // back into any slack because it is the flexible one.
-  const nameWidth = Math.max(10, width - 6 - ids.length - fixed);
-
+  const ids = resolveFuturesColumnIds(visibleIds);
   return ids.map((id) => {
     const label = id === "status" && usesSessionText(width) ? "SESSION" : FUTURES_HEADER_LABELS[id];
-    // The leftover width lands on the contract name rather than being spread
-    // across the number columns, which is what left a dead zone after it.
-    if (id === "name") return { id, label, width: nameWidth, align: "left", flexGrow: 1 };
+    if (id === "name") return { id, label, width: 16, align: "left", flexGrow: 1 };
     return {
       id,
       label,

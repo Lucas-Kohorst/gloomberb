@@ -94,16 +94,12 @@ function matchesQuery(view: StatViewModel, query: string): boolean {
   return query.split(/\s+/).every((token) => haystack.includes(token));
 }
 
-function buildColumns(width: number, stacked: boolean): Column[] {
-  const withPercentile = !stacked || width >= 100;
-  const trailing = 19 + (withPercentile ? 6 : 0);
+function buildColumns(): Column[] {
   return [
-    { id: "name", label: "INDICATOR", width: Math.max(13, width - trailing - 6), align: "left" },
+    { id: "name", label: "INDICATOR", width: 13, align: "left", flexGrow: 1 },
     { id: "latest", label: "LATEST", width: 10, align: "right" },
     { id: "previous", label: "PREV", width: 9, align: "right" },
-    ...(withPercentile
-      ? [{ id: "percentile" as const, label: "%ILE", width: 6, align: "right" as const }]
-      : []),
+    { id: "percentile", label: "%ILE", width: 6, align: "right" },
   ];
 }
 
@@ -273,7 +269,7 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const split = width >= SPLIT_MIN_WIDTH;
   const listWidth = split ? Math.min(LIST_WIDTH, Math.floor(width * 0.4)) : width;
   const detailWidth = split ? width - listWidth : width;
-  const columns = buildColumns(listWidth, !split);
+  const columns = buildColumns();
   const tableHeight = split
     ? Math.max(3, height - 2)
     : Math.min(rows.length + 2, Math.max(3, height - 12));

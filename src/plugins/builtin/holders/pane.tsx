@@ -61,7 +61,7 @@ export function HoldersView({ focused, width, height }: { focused: boolean; widt
   const exchange = ticker?.metadata.exchange ?? "";
   const rows = useMemo(() => buildRows(data), [data]);
   const sortedRows = useMemo(() => sortRows(rows, sortPreference, marketCap), [marketCap, rows, sortPreference]);
-  const columns = useMemo(() => buildColumns(width), [width]);
+  const columns = useMemo(() => buildColumns(), []);
   const selectedIdx = selectedId
     ? sortedRows.findIndex((row) => row.id === selectedId)
     : -1;

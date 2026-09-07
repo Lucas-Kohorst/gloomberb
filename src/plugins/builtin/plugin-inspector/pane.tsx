@@ -206,7 +206,7 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
   const registry = getSharedRegistry();
   const disabledPlugins = useAppSelector((state) => state.config.disabledPlugins);
 
-  const columns = useMemo(() => buildInspectorColumns(width), [width]);
+  const columns = useMemo(() => buildInspectorColumns(), []);
 
   const [sortPreference, setSortPreference] = useState<StackSortPreference<InspectorColumnId>>({
     columnId: "id",
@@ -358,7 +358,6 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
       renderCell={(row, column, _index, rowState) => renderInspectorCell(row, column, rowState.selected)}
       emptyStateTitle="No plugins loaded."
       emptyStateHint="Plugins are registered at startup."
-      showHorizontalScrollbar={false}
     />
   );
 }

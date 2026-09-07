@@ -232,7 +232,7 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
   }, { allowEditable: true });
 
   const sortedRows = useMemo(() => sortBrowserRows(rows, sortPreference), [rows, sortPreference]);
-  const columns = useMemo(() => buildBrowserColumns(width), [width]);
+  const columns = useMemo(() => buildBrowserColumns(), []);
 
   useEffect(() => {
     if (selectedId && sortedRows.some((row) => row.id === selectedId)) return;
@@ -604,7 +604,7 @@ function FundDetailView({
             return true;
           }}
           rootWidth={width}
-          columns={buildTimelineColumns(width)}
+          columns={buildTimelineColumns()}
           items={filingRows}
           sortColumnId={filingSort.columnId}
           sortDirection={filingSort.direction}
@@ -628,7 +628,7 @@ function FundDetailView({
             onChange: (id) => setHoldingSelectedId(id),
           }}
           rootWidth={width}
-          columns={buildHoldingColumns(width)}
+          columns={buildHoldingColumns()}
           items={visibleHoldingRows}
           sortColumnId={holdingSort.columnId}
           sortDirection={holdingSort.direction}
@@ -745,7 +745,7 @@ function FilingDetailView({
       sortPreference,
     )
   ), [filing.tableValueTotal, holdings, sortPreference]);
-  const columns = useMemo(() => buildFilingPositionColumns(width), [width]);
+  const columns = useMemo(() => buildFilingPositionColumns(), []);
 
   useEffect(() => {
     if (selectedPositionId && positionRows.some((row) => row.id === selectedPositionId)) return;

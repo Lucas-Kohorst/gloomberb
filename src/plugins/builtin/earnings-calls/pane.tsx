@@ -25,7 +25,7 @@ import {
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
-import { usePlanAccess } from "../shared/plan-access";
+import { needsEmailVerification, usePlanAccess } from "../shared/plan-access";
 import type {
   CloudEarningsCallPayload,
   CloudEarningsTranscriptPayload,
@@ -47,28 +47,19 @@ interface CallColumn {
   label: string;
   width: number;
   align: "left" | "right";
+  flexGrow?: number;
 }
 
-function buildColumns(width: number, showTicker: boolean): CallColumn[] {
-  const tickerWidth = showTicker ? 8 : 0;
-  const dateWidth = 10;
-  const periodWidth = 8;
-  const lengthWidth = 7;
-  // Wide enough for a state such as "in progress" on calls not yet produced.
-  const sentimentWidth = 11;
-  const companyWidth = Math.max(
-    10,
-    width - tickerWidth - dateWidth - periodWidth - lengthWidth - sentimentWidth - 8,
-  );
-
+function buildColumns(showTicker: boolean): CallColumn[] {
   const columns: CallColumn[] = [];
-  if (showTicker) columns.push({ id: "ticker", label: "TICKER", width: tickerWidth, align: "left" });
+  if (showTicker) columns.push({ id: "ticker", label: "TICKER", width: 8, align: "left" });
   columns.push(
-    { id: "company", label: "COMPANY", width: companyWidth, align: "left" },
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "period", label: "PERIOD", width: periodWidth, align: "left" },
-    { id: "length", label: "LENGTH", width: lengthWidth, align: "right" },
-    { id: "sentiment", label: "TONE", width: sentimentWidth, align: "right" },
+    { id: "company", label: "COMPANY", width: 10, align: "left", flexGrow: 1 },
+    { id: "date", label: "DATE", width: 10, align: "left" },
+    { id: "period", label: "PERIOD", width: 8, align: "left" },
+    { id: "length", label: "LENGTH", width: 7, align: "right" },
+    // Wide enough for a state such as "in progress" on calls not yet produced.
+    { id: "sentiment", label: "TONE", width: 11, align: "right" },
   );
   return columns;
 }
@@ -197,7 +188,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
 
   const fetchCalls = useCallback(
     (force: boolean) => {
-      if (!access.emailVerified || !access.hasProAccess) return;
+      if (!access.hasProAccess) return;
       setListStatus((current) => (current === "loaded" ? current : "loading"));
       loadEarningsCalls(ticker, { force })
         .then((result) => {
@@ -217,7 +208,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
           setListStatus("error");
         });
     },
-    [ticker, access.emailVerified, access.hasProAccess],
+    [ticker, access.hasProAccess],
   );
 
   useEffect(() => {
@@ -405,8 +396,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
   }, [rendererHost, selected]);
 
   const signInRequired = !access.signedIn || listError?.status === 401;
-  const verificationRequired =
-    !signInRequired && (!access.emailVerified || listError?.status === 403);
+  const verificationRequired = needsEmailVerification(access, listError?.status);
   // The whole feature is a Pro entitlement, so the list itself can be refused.
   const proRequired =
     !signInRequired &&
@@ -414,7 +404,7 @@ export function EarningsCallsPane({ focused, width, height }: EarningsCallsViewP
     (!access.hasProAccess || listError?.status === 402);
   const transcriptProRequired = transcriptError?.status === 402;
 
-  const columns = useMemo(() => buildColumns(width, !ticker), [width, ticker]);
+  const columns = useMemo(() => buildColumns(!ticker), [ticker]);
 
   const handleRootKey = useCallback(
     (event: DataTableKeyEvent, context: DataTableRootKeyContext) => {

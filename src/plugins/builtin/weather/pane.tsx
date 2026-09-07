@@ -122,29 +122,17 @@ function statusColor(status: WeatherReportStatus, selected: boolean): string {
   return colors.textMuted;
 }
 
-function createColumns(width: number): WeatherColumn[] {
-  const stationWidth = 5;
-  const highWidth = 5;
-  const impliedWidth = width >= 44 ? 5 : 0;
-  const yForecastWidth = width >= 62 ? 5 : 0;
-  const ySettlementWidth = width >= 54 ? 5 : 0;
-  const lowWidth = width >= 72 ? 5 : 0;
-  const nowWidth = width >= 80 ? 5 : 0;
-  const statusWidth = width >= 90 ? 8 : 0;
-  const cityWidth = Math.max(
-    10,
-    width - stationWidth - highWidth - impliedWidth - yForecastWidth - ySettlementWidth - lowWidth - nowWidth - statusWidth - 8,
-  );
+function createColumns(): WeatherColumn[] {
   return [
-    { id: "city", label: "CITY", width: cityWidth, align: "left" },
-    { id: "station", label: "STN", width: stationWidth, align: "left" },
-    { id: "high", label: "HIGH", width: highWidth, align: "right" },
-    ...(impliedWidth ? [{ id: "implied" as const, label: "IMPL", width: impliedWidth, align: "right" as const }] : []),
-    ...(yForecastWidth ? [{ id: "yForecast" as const, label: "Y.FC", width: yForecastWidth, align: "right" as const }] : []),
-    ...(ySettlementWidth ? [{ id: "ySettlement" as const, label: "Y.ST", width: ySettlementWidth, align: "right" as const }] : []),
-    ...(lowWidth ? [{ id: "low" as const, label: "LOW", width: lowWidth, align: "right" as const }] : []),
-    ...(nowWidth ? [{ id: "now" as const, label: "NOW", width: nowWidth, align: "right" as const }] : []),
-    ...(statusWidth ? [{ id: "status" as const, label: "PRINT", width: statusWidth, align: "left" as const }] : []),
+    { id: "city", label: "CITY", width: 10, align: "left", flexGrow: 1 },
+    { id: "station", label: "STN", width: 5, align: "left" },
+    { id: "high", label: "HIGH", width: 5, align: "right" },
+    { id: "implied", label: "IMPL", width: 5, align: "right" },
+    { id: "yForecast", label: "Y.FC", width: 5, align: "right" },
+    { id: "ySettlement", label: "Y.ST", width: 5, align: "right" },
+    { id: "low", label: "LOW", width: 5, align: "right" },
+    { id: "now", label: "NOW", width: 5, align: "right" },
+    { id: "status", label: "PRINT", width: 8, align: "left" },
   ];
 }
 
@@ -356,18 +344,13 @@ interface ReportColumn extends DataTableColumn {
   id: ReportSortColumnId;
 }
 
-function createReportColumns(width: number): ReportColumn[] {
-  const hitWidth = 6;
-  const maeWidth = 5;
-  const biasWidth = 6;
-  const samplesWidth = width >= 48 ? 4 : 0;
-  const cityWidth = Math.max(10, width - hitWidth - maeWidth - biasWidth - samplesWidth - 6);
+function createReportColumns(): ReportColumn[] {
   return [
-    { id: "city", label: "CITY", width: cityWidth, align: "left" },
-    { id: "hit", label: "HIT", width: hitWidth, align: "right" },
-    { id: "mae", label: "MAE", width: maeWidth, align: "right" },
-    { id: "bias", label: "BIAS", width: biasWidth, align: "right" },
-    ...(samplesWidth ? [{ id: "samples" as const, label: "N", width: samplesWidth, align: "right" as const }] : []),
+    { id: "city", label: "CITY", width: 10, align: "left", flexGrow: 1 },
+    { id: "hit", label: "HIT", width: 6, align: "right" },
+    { id: "mae", label: "MAE", width: 5, align: "right" },
+    { id: "bias", label: "BIAS", width: 6, align: "right" },
+    { id: "samples", label: "N", width: 4, align: "right" },
   ];
 }
 
@@ -854,8 +837,8 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     return false;
   }, [graphSelected, load, openSelected, scope, selected]);
 
-  const columns = useMemo(() => createColumns(width), [width]);
-  const reportColumns = useMemo(() => createReportColumns(width), [width]);
+  const columns = useMemo(() => createColumns(), []);
+  const reportColumns = useMemo(() => createReportColumns(), []);
   const filteredReportRows = useMemo(
     () => {
       const needle = searchQuery.trim().toLowerCase();

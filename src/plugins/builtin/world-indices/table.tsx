@@ -22,8 +22,6 @@ export const DEFAULT_WORLD_INDEX_COLUMN_IDS: WorldIndexColumnId[] = [
 ];
 
 const SESSION_TEXT_MIN_WIDTH = 84;
-const CHANGE_MIN_WIDTH = 62;
-const TIME_MIN_WIDTH = 78;
 
 /** A colored dot needs a legend; the session word does not, so wide panes spell it out. */
 export function usesSessionText(width: number): boolean {
@@ -32,43 +30,18 @@ export function usesSessionText(width: number): boolean {
 
 export function createWorldIndexColumns(width: number): WorldIndexColumn[] {
   const statusWidth = usesSessionText(width) ? 9 : 1;
-  const symbolWidth = 8;
-  const priceWidth = 15;
-  const changeWidth = 12;
-  const changePercentWidth = 9;
-  // 5-char 24h time in an 8-wide column: the shared table's floating-pane width
-  // accounting runs a few cells long, and the slack keeps the value intact.
-  const timeWidth = 8;
-  const showChange = width >= CHANGE_MIN_WIDTH;
-  const showTime = width >= TIME_MIN_WIDTH;
-
-  const trailing: WorldIndexColumn[] = [
-    { id: "price", label: "LAST", width: priceWidth, align: "right" },
-    ...(showChange
-      ? [{ id: "change" as const, label: "CHG", width: changeWidth, align: "right" as const }]
-      : []),
-    { id: "changePercent", label: "CHG%", width: changePercentWidth, align: "right" },
-    // Left-aligned on purpose: the shared table trims a few cells off the right
-    // edge of a floating pane, and a right-aligned value would lose digits.
-    ...(showTime
-      ? [{ id: "time" as const, label: "TIME", width: timeWidth, align: "left" as const }]
-      : []),
-  ];
-
-  const columnCount = trailing.length + 3;
-  const fixedWidth = statusWidth + symbolWidth
-    + trailing.reduce((total, column) => total + (column.width ?? 0), 0);
-  // Leaves room for the pane border and scrollbar gutter; the name column grows
-  // back into any slack because it is the flexible one.
-  const nameWidth = Math.max(10, width - 6 - columnCount - fixedWidth);
-
   return [
     { id: "status", label: usesSessionText(width) ? "SESSION" : "", width: statusWidth, align: "left" },
-    { id: "symbol", label: "INDEX", width: symbolWidth, align: "left" },
-    // The leftover width lands here rather than being spread across the number
-    // columns, which is what left a dead zone between NAME and LAST.
-    { id: "name", label: "NAME", width: nameWidth, align: "left", flexGrow: 1 },
-    ...trailing,
+    { id: "symbol", label: "INDEX", width: 8, align: "left" },
+    { id: "name", label: "NAME", width: 10, align: "left", flexGrow: 1 },
+    { id: "price", label: "LAST", width: 15, align: "right" },
+    { id: "change", label: "CHG", width: 12, align: "right" },
+    { id: "changePercent", label: "CHG%", width: 9, align: "right" },
+    // Left-aligned on purpose: the shared table trims a few cells off the right
+    // edge of a floating pane, and a right-aligned value would lose digits.
+    // 5-char 24h time in an 8-wide column: the shared table's floating-pane width
+    // accounting runs a few cells long, and the slack keeps the value intact.
+    { id: "time", label: "TIME", width: 8, align: "left" },
   ];
 }
 

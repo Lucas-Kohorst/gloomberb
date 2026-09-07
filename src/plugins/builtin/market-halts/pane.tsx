@@ -135,7 +135,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     handlePaneKey(event as DataTableKeyEvent);
   }, { enabled: focused });
 
-  const columns = useMemo(() => buildHaltColumns(width), [width]);
+  const columns = useMemo(() => buildHaltColumns(), []);
 
   usePaneStatusFooter({
     registrationId: MARKET_HALTS_PANE_ID,

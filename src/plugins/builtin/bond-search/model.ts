@@ -68,19 +68,13 @@ export function sortedYields(
   });
 }
 
-export function buildYieldColumns(width: number): YieldColumnDef[] {
-  const ratingWidth = 5;
-  const maturityWidth = 8;
-  const yieldWidth = 9;
-  const spreadWidth = 10;
-  // 4 inter-column gaps + 2 leading/trailing pad cells ≈ 6
-  const labelWidth = Math.max(14, width - ratingWidth - maturityWidth - yieldWidth - spreadWidth - 6);
+export function buildYieldColumns(): YieldColumnDef[] {
   return [
-    { id: "label", label: "LABEL", width: labelWidth, align: "left" },
-    { id: "rating", label: "RATING", width: ratingWidth, align: "left" },
-    { id: "maturity", label: "MATURITY", width: maturityWidth, align: "left" },
-    { id: "yield", label: "YIELD", width: yieldWidth, align: "right" },
-    { id: "spread", label: "SPREAD", width: spreadWidth, align: "right" },
+    { id: "label", label: "LABEL", width: 14, align: "left", flexGrow: 1 },
+    { id: "rating", label: "RATING", width: 5, align: "left" },
+    { id: "maturity", label: "MATURITY", width: 8, align: "left" },
+    { id: "yield", label: "YIELD", width: 9, align: "right" },
+    { id: "spread", label: "SPREAD", width: 10, align: "right" },
   ];
 }
 
@@ -104,14 +98,11 @@ export function formatYieldDate(value: Date | null): string {
   });
 }
 
-export function buildSearchColumns(width: number): SearchColumnDef[] {
-  const kindWidth = 10;
-  const detailWidth = Math.min(28, Math.max(16, Math.floor(width * 0.35)));
-  const labelWidth = Math.max(16, width - kindWidth - detailWidth - 6);
+export function buildSearchColumns(): SearchColumnDef[] {
   return [
-    { id: "label", label: "NAME", width: labelWidth, align: "left" },
-    { id: "kind", label: "KIND", width: kindWidth, align: "left" },
-    { id: "detail", label: "ID", width: detailWidth, align: "left" },
+    { id: "label", label: "NAME", width: 16, align: "left", flexGrow: 1 },
+    { id: "kind", label: "KIND", width: 10, align: "left" },
+    { id: "detail", label: "ID", width: 16, align: "left" },
   ];
 }
 

@@ -353,7 +353,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
     });
   }, [createPaneFromTemplate, selectedEntry]);
 
-  const columns = useMemo(() => buildByokColumns(width), [width]);
+  const columns = useMemo(() => buildByokColumns(), []);
   const editing = formMode !== "idle";
   const canOpen = selectedEntry != null && isOpenableCustomKey(selectedEntry);
 
@@ -418,10 +418,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
       ...(testing ? [{ id: "testing", parts: [{ text: "testing…", tone: "muted" as const }] }] : []),
     ],
     hints: editing
-      ? [
-          { id: "save", key: "Enter", label: "save", onPress: handleSave },
-          { id: "cancel", key: "Esc", label: "cancel", onPress: handleCancel },
-        ]
+      ? []
       : [
           { id: "add", key: "a", label: "dd", onPress: handleAdd },
           ...(selectedEntry ? [{ id: "edit", key: "e", label: "dit", onPress: handleEdit }] : []),
@@ -429,7 +426,7 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
           ...(canOpen ? [{ id: "open", key: "o", label: "pen", onPress: handleOpen }] : []),
           ...(selectedEntry ? [{ id: "delete", key: "d", label: "elete", onPress: handleDelete }] : []),
         ],
-  }), [testing, editing, handleSave, handleCancel, handleAdd, handleEdit, handleTest, handleOpen, handleDelete, selectedEntry, canOpen]);
+  }), [testing, editing, handleAdd, handleEdit, handleTest, handleOpen, handleDelete, selectedEntry, canOpen]);
 
   if (editing) {
     return (
@@ -500,7 +497,6 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
               }}
               emptyStateTitle="No API keys configured."
               emptyStateHint="Press [a] to add a key for a known service or custom API."
-              showHorizontalScrollbar={false}
             />
           )}
       </Box>

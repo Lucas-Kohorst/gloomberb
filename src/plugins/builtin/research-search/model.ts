@@ -238,21 +238,13 @@ export interface SearchColumn extends DataTableColumn {
   id: SearchColumnId;
 }
 
-export function buildResultColumns(width: number): SearchColumn[] {
-  // Wide enough for a five-letter symbol plus the badge's own padding.
-  const tickerWidth = 8;
-  const typeWidth = 7;
-  const dateWidth = 10;
-  const fixed = tickerWidth + typeWidth + dateWidth + 8;
-  const remaining = Math.max(24, width - fixed);
-  // The snippet is what makes a hit judgeable, so it takes the larger share.
-  const titleWidth = Math.max(14, Math.min(38, Math.round(remaining * 0.4)));
+export function buildResultColumns(): SearchColumn[] {
   return [
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "type", label: "TYPE", width: typeWidth, align: "left" },
-    { id: "date", label: "DATE", width: dateWidth, align: "left" },
-    { id: "title", label: "TITLE", width: titleWidth, align: "left" },
-    { id: "match", label: "MATCH", width: Math.max(10, remaining - titleWidth), align: "left" },
+    { id: "ticker", label: "TICKER", width: 8, align: "left" },
+    { id: "type", label: "TYPE", width: 7, align: "left" },
+    { id: "date", label: "DATE", width: 10, align: "left" },
+    { id: "title", label: "TITLE", width: 14, align: "left", flexGrow: 1 },
+    { id: "match", label: "MATCH", width: 10, align: "left" },
   ];
 }
 

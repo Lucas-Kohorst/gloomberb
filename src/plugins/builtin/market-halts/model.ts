@@ -224,19 +224,14 @@ export type HaltSortPreference = SortPreference<HaltColumnId>;
 /** Newest halt first: the reason anyone opens this pane. */
 export const DEFAULT_HALT_SORT: HaltSortPreference = { columnId: "halted", direction: "desc" };
 
-export function buildHaltColumns(width: number): HaltColumn[] {
+export function buildHaltColumns(): HaltColumn[] {
   // "Non NASDAQ" and "NYSE Arca" are real feed values, so MKT holds all ten cells.
-  const fixed = 8 + 10 + 5 + 9 + 9 + 11 + 11 + 8;
-  const gaps = 12;
-  const flexible = Math.max(26, width - fixed - gaps);
-  const companyWidth = Math.max(12, Math.floor(flexible * 0.45));
-  const reasonWidth = Math.max(14, flexible - companyWidth);
   return [
     { id: "symbol", label: "SYMBOL", width: 8, align: "left" },
     { id: "market", label: "MKT", width: 10, align: "left" },
-    { id: "company", label: "COMPANY", width: companyWidth, align: "left" },
+    { id: "company", label: "COMPANY", width: 12, align: "left", flexGrow: 1 },
     { id: "code", label: "CODE", width: 5, align: "left" },
-    { id: "reason", label: "REASON", width: reasonWidth, align: "left" },
+    { id: "reason", label: "REASON", width: 14, align: "left" },
     { id: "date", label: "DATE ET", width: 9, align: "left" },
     { id: "halted", label: "HALT ET", width: 9, align: "left" },
     { id: "quote", label: "QUOTE ET", width: 11, align: "left" },

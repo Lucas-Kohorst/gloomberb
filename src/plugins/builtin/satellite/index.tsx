@@ -238,7 +238,7 @@ function SatellitePane({ paneId, focused, width, height }: PaneProps) {
     }
   }, { enabled: focused && !searchFocused });
 
-  const columns = useMemo(() => buildFireColumns(width), [width]);
+  const columns = useMemo(() => buildFireColumns(), []);
   const tabs = (
     <Box height={1}>
       <Tabs

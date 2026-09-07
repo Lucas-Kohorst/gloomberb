@@ -80,12 +80,10 @@ export function stockAnalysisUrl(ticker: string): string {
 /** "$100.00-$120.00" is the widest price a row can hold; anything narrower clips a real number. */
 const PRICE_WIDTH = 15;
 
-export function buildColumns(width: number): IPOColumn[] {
-  const fixed = 7 + 11 + 9 + 8 + 8 + PRICE_WIDTH + 7 + 8;
-  const companyWidth = Math.max(10, width - fixed - 11);
+export function buildColumns(): IPOColumn[] {
   return [
     { id: "ticker", label: "TICKER", width: 7, align: "left" },
-    { id: "company", label: "COMPANY", width: companyWidth, align: "left" },
+    { id: "company", label: "COMPANY", width: 10, align: "left", flexGrow: 1 },
     { id: "date", label: "DATE", width: 11, align: "left" },
     { id: "status", label: "STATUS", width: 9, align: "left" },
     { id: "exchange", label: "EXCH", width: 8, align: "left" },

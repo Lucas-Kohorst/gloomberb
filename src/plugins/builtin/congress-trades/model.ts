@@ -150,75 +150,42 @@ export function nextSort<TColumn extends string>(
   };
 }
 
-export function buildTradeColumns(width: number): TradeColumn[] {
-  const filedWidth = 7;
-  const txWidth = 7;
-  const lagWidth = 5;
-  const sideWidth = 5;
-  const tickerWidth = 12;
-  const amountWidth = 14;
-  const ownerWidth = 8;
-  const memberWidth = Math.max(
-    14,
-    width - filedWidth - txWidth - lagWidth - sideWidth - tickerWidth - amountWidth - ownerWidth - 10,
-  );
+export function buildTradeColumns(): TradeColumn[] {
   return [
-    { id: "filed", label: "FILED", width: filedWidth, align: "left" },
-    { id: "tx", label: "TX", width: txWidth, align: "left" },
-    { id: "lag", label: "LAG", width: lagWidth, align: "right" },
-    { id: "member", label: "MEMBER", width: memberWidth, align: "left" },
-    { id: "side", label: "SIDE", width: sideWidth, align: "left" },
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "amount", label: "AMOUNT", width: amountWidth, align: "right" },
-    { id: "owner", label: "OWNER", width: ownerWidth, align: "left" },
+    { id: "filed", label: "FILED", width: 7, align: "left" },
+    { id: "tx", label: "TX", width: 7, align: "left" },
+    { id: "lag", label: "LAG", width: 5, align: "right" },
+    { id: "member", label: "MEMBER", width: 14, align: "left", flexGrow: 1 },
+    { id: "side", label: "SIDE", width: 5, align: "left" },
+    { id: "ticker", label: "TICKER", width: 12, align: "left" },
+    { id: "amount", label: "AMOUNT", width: 14, align: "right" },
+    { id: "owner", label: "OWNER", width: 8, align: "left" },
   ];
 }
 
-export function buildMemberTradeColumns(width: number): TradeColumn[] {
-  const filedWidth = 7;
-  const txWidth = 7;
-  const sideWidth = 8;
-  const tickerWidth = 12;
-  const amountWidth = 14;
-  const ownerWidth = 8;
-  const lagWidth = 5;
-  const assetWidth = Math.max(
-    18,
-    width - filedWidth - txWidth - sideWidth - tickerWidth - amountWidth - ownerWidth - lagWidth - 9,
-  );
+export function buildMemberTradeColumns(): TradeColumn[] {
   return [
-    { id: "filed", label: "FILED", width: filedWidth, align: "left" },
-    { id: "tx", label: "TX", width: txWidth, align: "left" },
-    { id: "side", label: "SIDE", width: sideWidth, align: "left" },
-    { id: "ticker", label: "TICKER", width: tickerWidth, align: "left" },
-    { id: "amount", label: "AMOUNT", width: amountWidth, align: "right" },
-    { id: "asset", label: "ASSET", width: assetWidth, align: "left" },
-    { id: "owner", label: "OWNER", width: ownerWidth, align: "left" },
-    { id: "lag", label: "LAG", width: lagWidth, align: "right" },
+    { id: "filed", label: "FILED", width: 7, align: "left" },
+    { id: "tx", label: "TX", width: 7, align: "left" },
+    { id: "side", label: "SIDE", width: 8, align: "left" },
+    { id: "ticker", label: "TICKER", width: 12, align: "left" },
+    { id: "amount", label: "AMOUNT", width: 14, align: "right" },
+    { id: "asset", label: "ASSET", width: 18, align: "left", flexGrow: 1 },
+    { id: "owner", label: "OWNER", width: 8, align: "left" },
+    { id: "lag", label: "LAG", width: 5, align: "right" },
   ];
 }
 
-export function buildMemberColumns(width: number): MemberColumn[] {
-  const districtWidth = 6;
-  const tradesWidth = 7;
-  const buysWidth = 5;
-  const sellsWidth = 6;
-  const rangeWidth = 17;
-  const lastWidth = 7;
-  const lagWidth = 6;
-  const memberWidth = Math.max(
-    18,
-    width - districtWidth - tradesWidth - buysWidth - sellsWidth - rangeWidth - lastWidth - lagWidth - 9,
-  );
+export function buildMemberColumns(): MemberColumn[] {
   return [
-    { id: "member", label: "MEMBER", width: memberWidth, align: "left" },
-    { id: "district", label: "DIST", width: districtWidth, align: "left" },
-    { id: "trades", label: "TRADES", width: tradesWidth, align: "right" },
-    { id: "buys", label: "BUY", width: buysWidth, align: "right" },
-    { id: "sells", label: "SELL", width: sellsWidth, align: "right" },
-    { id: "range", label: "EST RANGE", width: rangeWidth, align: "right" },
-    { id: "last", label: "LAST", width: lastWidth, align: "left" },
-    { id: "lag", label: "AVG", width: lagWidth, align: "right" },
+    { id: "member", label: "MEMBER", width: 18, align: "left", flexGrow: 1 },
+    { id: "district", label: "DIST", width: 6, align: "left" },
+    { id: "trades", label: "TRADES", width: 7, align: "right" },
+    { id: "buys", label: "BUY", width: 5, align: "right" },
+    { id: "sells", label: "SELL", width: 6, align: "right" },
+    { id: "range", label: "EST RANGE", width: 17, align: "right" },
+    { id: "last", label: "LAST", width: 7, align: "left" },
+    { id: "lag", label: "AVG", width: 6, align: "right" },
   ];
 }
 
