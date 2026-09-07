@@ -8,6 +8,8 @@ import {
   rememberHostedUserId,
   setHostedConfigUserId,
   writeHostedUserConfig,
+  attachHostedUserWorkspaceExtras,
+  hostedUserConfigStorageKey,
 } from "./hosted-user-persist";
 
 function installMemoryStorage(): void {
@@ -38,6 +40,24 @@ describe("hosted user config persist", () => {
   afterEach(() => {
     setHostedConfigUserId(null);
     globalThis.localStorage?.clear();
+  });
+
+  test("routine saves and note imports do not make an unchanged layout newer", () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("cloud://users/user-1");
+    writeHostedUserConfig(config);
+    const key = hostedUserConfigStorageKey("user-1");
+    const record = JSON.parse(localStorage.getItem(key)!);
+    record.updatedAt = "2000-01-01T00:00:00.000Z";
+    delete record.configUpdatedAt;
+    localStorage.setItem(key, JSON.stringify(record));
+
+    writeHostedUserConfig(config);
+    attachHostedUserWorkspaceExtras({ notes: { tickerNotes: { AAPL: "Imported note" } } });
+    expect(peekHostedUserConfigStamp()?.updatedAt).toBe(record.updatedAt);
+
+    writeHostedUserConfig({ ...config, theme: "white" });
+    expect(peekHostedUserConfigStamp()?.updatedAt).not.toBe(record.updatedAt);
   });
 
   test("writes and hydrates layouts and plugin config for the signed-in user", () => {

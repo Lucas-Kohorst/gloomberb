@@ -3,7 +3,7 @@ import { createDefaultConfig } from "../../types/config";
 import { hydrateHostedWorkspaceFromCloud } from "./hosted-sync-hydrate";
 import { readHostedTickers, writeHostedTickers, parseIncomingTickerRecords } from "./hosted-ticker-persist";
 import { readHostedNotes, writeHostedNotes } from "./hosted-notes-persist";
-import { setHostedConfigUserId, writeHostedUserConfig, peekHostedUserConfigStamp } from "./hosted-user-persist";
+import { setHostedConfigUserId, writeHostedUserConfig, peekHostedUserConfigStamp, hostedUserConfigStorageKey } from "./hosted-user-persist";
 import type { SyncSnapshot } from "../../sync/types";
 
 function installMemoryStorage(): void {
@@ -171,14 +171,19 @@ describe("hosted workspace hydrate", () => {
     writeHostedUserConfig(config);
     writeHostedTickers(parseIncomingTickerRecords([{ ticker: "LOCAL" }]));
     writeHostedNotes({ quickNotesIndex: [], quickNotes: {}, tickerNotes: { LOCAL: "Latest note" } });
+    const key = hostedUserConfigStorageKey("user-1");
+    const stored = JSON.parse(localStorage.getItem(key)!);
+    stored.configUpdatedAt = "2000-01-01T00:00:00Z";
+    localStorage.setItem(key, JSON.stringify(stored));
     await hydrateHostedWorkspaceFromCloud(config, {
       pullConfig: async () => ({
-        config: null, updatedAt: "2020-01-01T00:00:00Z",
+        config: { theme: "white" }, updatedAt: "2020-01-01T00:00:00Z",
         tickers: [{ ticker: "REMOVED" }], notes: { tickerNotes: { LOCAL: "Old note" } },
       }),
       pullSync: async () => ({ snapshot: snapshot({}, { tickers: [{ ticker: "REMOVED" }] }) }),
     });
     expect(readHostedTickers().map((ticker) => ticker.metadata.ticker)).toEqual(["LOCAL"]);
     expect(readHostedNotes().tickerNotes).toEqual({ LOCAL: "Latest note" });
+    expect(config.theme).toBe("white");
   });
 });

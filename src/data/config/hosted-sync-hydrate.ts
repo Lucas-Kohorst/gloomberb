@@ -130,6 +130,7 @@ export async function hydrateHostedWorkspaceFromCloud(
   const identity = captureHostedPersistenceIdentity();
   const localStamp = peekHostedUserConfigStamp(userId);
   const localUpdatedAt = localStamp?.updatedAt ?? null;
+  const workspaceUpdatedAt = record?.updatedAt ?? null;
   const localRevision = localStamp?.revision ?? null;
   const pullConfig = pull.pullConfig ?? fetchHostedConfigSnapshot;
   let remote: HostedConfigSnapshotResponse | null = null;
@@ -141,10 +142,10 @@ export async function hydrateHostedWorkspaceFromCloud(
       localUpdatedAt,
     );
     if (merged) Object.assign(config, merged, { dataDir: config.dataDir });
-    if (remote.tickers && !isOlderThanLocal(remote.updatedAt, localUpdatedAt)) {
+    if (remote.tickers && !isOlderThanLocal(remote.updatedAt, workspaceUpdatedAt)) {
       tickers = mergeTickerRecords(tickers, parseIncomingTickerRecords(remote.tickers));
     }
-    if (remote.notes && !isOlderThanLocal(remote.updatedAt, localUpdatedAt)) {
+    if (remote.notes && !isOlderThanLocal(remote.updatedAt, workspaceUpdatedAt)) {
       notes = mergeHostedNotesPayload(notes, remote.notes);
     }
   } catch {
@@ -183,7 +184,7 @@ export async function hydrateHostedWorkspaceFromCloud(
     }
   }
   const incoming = parseIncomingTickerRecords(collectionsPayload);
-  if (incoming.length > 0 && !isOlderThanLocal(snapshot?.createdAt, localUpdatedAt)) {
+  if (incoming.length > 0 && !isOlderThanLocal(snapshot?.createdAt, workspaceUpdatedAt)) {
     tickers = mergeTickerRecords(tickers, incoming);
   }
   hydrateHostedByokConfig(config, userId, false);
