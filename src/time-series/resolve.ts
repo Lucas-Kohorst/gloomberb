@@ -65,13 +65,8 @@ import type {
   ChartSpec,
   ResolvedSeries,
   TimeSeriesPoint,
+  UniversalSeriesSource,
 } from "./types";
-
-// ---------------------------------------------------------------------------
-// Universal series loader interfaces — implementations are wired in hooks.ts
-// using each plugin's existing client/normalize code so the resolver stays
-// independent of plugin internals.
-// ---------------------------------------------------------------------------
 
 export interface UniversalSeriesLoadResult {
   points: TimeSeriesPoint[];
@@ -84,25 +79,7 @@ export interface UniversalSeriesLoadResult {
 export interface ChartResolveSources {
   dataProvider: DataProvider | null;
   loadFredSeries: (request: FredSeriesRequest) => Promise<FredSeriesLoadResult>;
-  /** Loads an Adjacent prediction-market index price history. */
-  loadAdjacentIndexSeries?: (indexId: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads AI benchmark data as point-in-time observations at model release dates. */
-  loadBenchmarkSeries?: (selector: string, metric: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a VoteHub poll time series for a subject/choice pair. */
-  loadPollSeries?: (subject: string, choice: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a TWC or NWS CLI weather print series keyed by station / ICAO. */
-  loadWeatherSeries?: (
-    provider: "twc-kalshi" | "nws-cli",
-    stationId: string,
-    metric: "high" | "low" | "precip" | "hourly",
-  ) => Promise<UniversalSeriesLoadResult>;
-  /** Loads an Our World in Data grapher series keyed by slug + entity code. */
-  loadOwidSeries?: (slug: string, entity: string) => Promise<UniversalSeriesLoadResult>;
-  /** Loads a Kalshi/Polymarket yes-price history. */
-  loadPredictionMarketSeries?: (
-    venue: "kalshi" | "polymarket",
-    marketId: string,
-  ) => Promise<UniversalSeriesLoadResult>;
+  loadUniversalSeries?: (source: UniversalSeriesSource) => Promise<UniversalSeriesLoadResult>;
   now?: Date;
   /** Latest streamed quote per security identity, layered over snapshot data. */
   quoteOverrides?: ReadonlyMap<string, Quote>;
@@ -1207,15 +1184,14 @@ export async function resolveChartSpecData(
     return pending;
   };
 
-  const loadUniversalSeries = (
-    kind: "adjacent-index" | "benchmark" | "poll" | "weather" | "owid" | "prediction-market",
-    key: string,
-    loader: () => Promise<UniversalSeriesLoadResult>,
-  ): Promise<UniversalSeriesLoadResult> => {
-    const cacheKey = `${kind}:${key}`;
+  const loadUniversalSeries = (source: UniversalSeriesSource): Promise<UniversalSeriesLoadResult> => {
+    if (!sources.loadUniversalSeries) {
+      throw new Error(`Chart data source "${source.kind}" is not available.`);
+    }
+    const cacheKey = JSON.stringify(Object.entries(source).sort(([left], [right]) => left.localeCompare(right)));
     let pending = cache.universalSeriesByKey.get(cacheKey);
     if (!pending) {
-      pending = loader();
+      pending = sources.loadUniversalSeries(source);
       cache.universalSeriesByKey.set(cacheKey, pending);
     }
     return pending;
@@ -1267,82 +1243,8 @@ export async function resolveChartSpecData(
         return result;
       }
 
-      if (seriesSpec.source.kind === "adjacent-index") {
-        if (!sources.loadAdjacentIndexSeries) {
-          throw new Error("Adjacent index data source is not available.");
-        }
-        const { indexId } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "adjacent-index",
-          indexId,
-          () => sources.loadAdjacentIndexSeries!(indexId),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "benchmark") {
-        if (!sources.loadBenchmarkSeries) {
-          throw new Error("AI benchmark data source is not available.");
-        }
-        const { selector, metric } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "benchmark",
-          `${selector}:${metric}`,
-          () => sources.loadBenchmarkSeries!(selector, metric),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "poll") {
-        if (!sources.loadPollSeries) {
-          throw new Error("Poll data source is not available.");
-        }
-        const { subject, choice } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "poll",
-          `${subject}:${choice}`,
-          () => sources.loadPollSeries!(subject, choice),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "weather") {
-        if (!sources.loadWeatherSeries) {
-          throw new Error("Weather data source is not available.");
-        }
-        const { provider, stationId, metric } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "weather",
-          `${provider}:${stationId}:${metric}`,
-          () => sources.loadWeatherSeries!(provider, stationId, metric),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "owid") {
-        if (!sources.loadOwidSeries) {
-          throw new Error("OWID data source is not available.");
-        }
-        const { slug, entity } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "owid",
-          `${slug}:${entity}`,
-          () => sources.loadOwidSeries!(slug, entity),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
-      }
-
-      if (seriesSpec.source.kind === "prediction-market") {
-        if (!sources.loadPredictionMarketSeries) {
-          throw new Error("Prediction market data source is not available.");
-        }
-        const { venue, marketId } = seriesSpec.source;
-        const data = await loadUniversalSeries(
-          "prediction-market",
-          `${venue}:${marketId}`,
-          () => sources.loadPredictionMarketSeries!(venue, marketId),
-        );
-        return baseUniversalSeries(seriesSpec, data, index);
+      if (seriesSpec.source.kind !== "security" && seriesSpec.source.kind !== "constant") {
+        return baseUniversalSeries(seriesSpec, await loadUniversalSeries(seriesSpec.source), index);
       }
 
       if (seriesSpec.source.kind === "constant") {

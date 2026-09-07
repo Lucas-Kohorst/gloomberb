@@ -29,10 +29,7 @@ import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import { parseChartSpec } from "../../plugins/builtin/chart-composer/chart-spec";
 import { resolveChartSpecData } from "../../time-series/resolve";
-import {
-  loadAdjacentIndexSeries,
-  loadPredictionMarketSeries,
-} from "../../time-series/hooks";
+import { createResolvedChartSources } from "../../plugins/chart-sources";
 import { buildCorrelationChartSpec } from "../../plugins/builtin/correlation/symbols";
 import { createChartSeriesResolver } from "../../capabilities";
 import { getSharedRegistry } from "../../plugins/registry";
@@ -235,19 +232,10 @@ async function buildChartComposerReport(
     })),
   };
   const capabilityInvoker = getSharedRegistry();
-  const result = await resolveChartSpecData(spec, {
-    dataProvider: context.dataProvider,
-    ...(capabilityInvoker ? { resolveCapabilitySeries: createChartSeriesResolver(capabilityInvoker) } : {}),
-    loadFredSeries: async (request) => ({
-      data: await apiClient.getCloudFredSeries(request.seriesId, {
-        startDate: request.startDate,
-        sortOrder: request.sortOrder,
-      }),
-      fetchedAt: Date.now(),
-      stale: false,
-      source: "network",
-    }),
-  });
+  const result = await resolveChartSpecData(spec, createResolvedChartSources(
+    context.dataProvider,
+    capabilityInvoker ? createChartSeriesResolver(capabilityInvoker) : undefined,
+  ));
   const baseIds = new Set(spec.series.map((series) => series.id));
   const series = result.series.map((entry) => ({
     id: entry.id,
@@ -654,20 +642,11 @@ async function buildCorrelationReport(
   const symbols = resolvedSymbols(resolved);
   const range = resolvedPriceRange(resolved);
   const spec = buildCorrelationChartSpec(symbols, range);
-  const result = await resolveChartSpecData(spec, {
-    dataProvider: context.dataProvider,
-    loadFredSeries: async (request) => ({
-      data: await apiClient.getCloudFredSeries(request.seriesId, {
-        startDate: request.startDate,
-        sortOrder: request.sortOrder,
-      }),
-      fetchedAt: Date.now(),
-      stale: false,
-      source: "network",
-    }),
-    loadAdjacentIndexSeries,
-    loadPredictionMarketSeries,
-  });
+  const capabilityInvoker = getSharedRegistry();
+  const result = await resolveChartSpecData(spec, createResolvedChartSources(
+    context.dataProvider,
+    capabilityInvoker ? createChartSeriesResolver(capabilityInvoker) : undefined,
+  ));
   const resolvedById = new Map(result.series.map((series) => [series.id, series] as const));
   const series = symbols.map((symbol, index): CorrelationSeries => {
     const specSeries = spec.series[index];

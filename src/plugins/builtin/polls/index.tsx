@@ -4,10 +4,12 @@ import { registerConnectionSource } from "../connections/register";
 import { PollsPane } from "./pane";
 import { POLLS_PANE_ID, POLLS_PLUGIN_ID } from "./types";
 import { buildPollsPaneSettingsDef } from "./settings";
+import { createPollChartSeriesCapability } from "./chart-series";
 
 let disposeVoteHubConnection: (() => void) | null = null;
 
 export const pollsModule: PluginModule = {
+  capabilities: [createPollChartSeriesCapability()],
   setup() {
     disposeVoteHubConnection = registerConnectionSource({
       id: "votehub",

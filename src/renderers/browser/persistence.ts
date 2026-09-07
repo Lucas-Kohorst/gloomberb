@@ -1,35 +1,38 @@
 import type { AppPersistencePort } from "../../core/app-service-ports";
+import type { AppSessionSnapshot } from "../../core/state/session-persistence";
+import {
+  readHostedPluginState,
+  writeHostedPluginState,
+} from "../../data/config/hosted-plugin-state-persist";
+import {
+  readHostedSessionSnapshot,
+  writeHostedSessionSnapshot,
+} from "../../data/config/hosted-session-persist";
 import type { PluginStateRecord } from "../../data/plugin-state-store";
 import type { SessionSnapshotRecord } from "../../data/session-store";
 import { DesktopMemoryResourceStore } from "../electrobun/view/resource-store";
-import { BROWSER_STORAGE_KEYS, SafeJsonStorage, type StorageLike } from "./storage";
 
-type PluginState = Record<string, Record<string, PluginStateRecord>>;
-type Sessions = Record<string, SessionSnapshotRecord>;
+const SESSION_PLUGIN_ID = "browser:sessions";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function storedRecord<T>(value: unknown, schemaVersion: number): PluginStateRecord<T> | null {
+  if (!isRecord(value) || value.schemaVersion !== schemaVersion || !("value" in value)) return null;
+  return value as unknown as PluginStateRecord<T>;
+}
+
 export class BrowserPersistence implements AppPersistencePort {
   readonly resources = new DesktopMemoryResourceStore();
-  private readonly pluginStateData: SafeJsonStorage<PluginState>;
-  private readonly sessionData: SafeJsonStorage<Sessions>;
-
-  constructor(storage: StorageLike) {
-    this.pluginStateData = new SafeJsonStorage(storage, BROWSER_STORAGE_KEYS.pluginState, {}, (value): value is PluginState => isRecord(value));
-    this.sessionData = new SafeJsonStorage(storage, BROWSER_STORAGE_KEYS.session, {}, (value): value is Sessions => isRecord(value));
-  }
 
   readonly pluginState = {
     get: <T>(pluginId: string, key: string, schemaVersion = 1): PluginStateRecord<T> | null => {
-      const record = this.pluginStateData.get()[pluginId]?.[key];
-      if (!isRecord(record) || record.schemaVersion !== schemaVersion || !("value" in record)) return null;
-      return record as unknown as PluginStateRecord<T>;
+      return storedRecord<T>(readHostedPluginState()[pluginId]?.[key], schemaVersion);
     },
     set: (pluginId: string, key: string, value: unknown, schemaVersion = 1): void => {
-      const state = this.pluginStateData.get();
-      this.pluginStateData.set({
+      const state = readHostedPluginState();
+      writeHostedPluginState({
         ...state,
         [pluginId]: {
           ...state[pluginId],
@@ -38,35 +41,49 @@ export class BrowserPersistence implements AppPersistencePort {
       });
     },
     delete: (pluginId: string, key: string): void => {
-      const state = this.pluginStateData.get();
+      const state = readHostedPluginState();
       const plugin = { ...state[pluginId] };
       delete plugin[key];
-      this.pluginStateData.set({ ...state, [pluginId]: plugin });
+      writeHostedPluginState({ ...state, [pluginId]: plugin });
     },
-    keys: (pluginId: string): string[] => Object.keys(this.pluginStateData.get()[pluginId] ?? {}),
+    keys: (pluginId: string): string[] => Object.keys(readHostedPluginState()[pluginId] ?? {}),
     clear: (pluginId: string): void => {
-      const state = { ...this.pluginStateData.get() };
+      const state = { ...readHostedPluginState() };
       delete state[pluginId];
-      this.pluginStateData.set(state);
+      writeHostedPluginState(state);
     },
   };
 
   readonly sessions = {
     get: <T>(sessionId = "app", schemaVersion = 1): SessionSnapshotRecord<T> | null => {
-      const record = this.sessionData.get()[sessionId];
-      if (!isRecord(record) || record.schemaVersion !== schemaVersion || !("value" in record)) return null;
-      return record as unknown as SessionSnapshotRecord<T>;
+      if (sessionId !== "app") {
+        return storedRecord<T>(
+          readHostedPluginState()[SESSION_PLUGIN_ID]?.[sessionId],
+          schemaVersion,
+        ) as SessionSnapshotRecord<T> | null;
+      }
+      const snapshot = readHostedSessionSnapshot();
+      if (!snapshot) return null;
+      return {
+        sessionId,
+        value: snapshot as T,
+        schemaVersion,
+        updatedAt: snapshot.savedAt,
+      };
     },
     set: (sessionId: string, value: unknown, schemaVersion = 1): void => {
-      this.sessionData.set({
-        ...this.sessionData.get(),
-        [sessionId]: { sessionId, value, schemaVersion, updatedAt: Date.now() },
-      });
+      if (sessionId === "app") {
+        writeHostedSessionSnapshot(value as AppSessionSnapshot);
+        return;
+      }
+      this.pluginState.set(SESSION_PLUGIN_ID, sessionId, value, schemaVersion);
     },
     delete: (sessionId: string): void => {
-      const state = { ...this.sessionData.get() };
-      delete state[sessionId];
-      this.sessionData.set(state);
+      if (sessionId === "app") {
+        writeHostedSessionSnapshot(null);
+        return;
+      }
+      this.pluginState.delete(SESSION_PLUGIN_ID, sessionId);
     },
   };
 

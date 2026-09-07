@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useSyncExternalStore, type Dispatch } from "react";
 import { isHostedWebClient } from "../shared/hosted-api";
 import { apiClient } from "../api-client";
-import { setHostedConfigUserId, peekHostedUserConfigStamp, writeHostedUserConfig } from "../data/config/hosted-user-persist";
-import { fetchHostedConfigSnapshot, mergeRemoteConfigSnapshot } from "../data/config/hosted-config-snapshot";
-import { hydrateHostedWorkspaceFromCloud, cloneAppConfigForOverlay } from "../data/config/hosted-sync-hydrate";
+import {
+  hydrateHostedUserConfig,
+  rememberHostedUserId,
+  setHostedConfigUserId,
+} from "../data/config/hosted-user-persist";
+import { fetchHostedConfigSnapshot } from "../data/config/hosted-config-snapshot";
+import {
+  hydrateHostedWorkspaceFromCloud,
+  cloneAppConfigForOverlay,
+  isHostedWorkspaceHydrationCurrent,
+  persistHostedWorkspaceHydration,
+  type HostedSyncPull,
+} from "../data/config/hosted-sync-hydrate";
 import { readHostedTickers } from "../data/config/hosted-ticker-persist";
 import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
 import type { AppConfig } from "../types/config";
+import { createDefaultConfig } from "../types/config";
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { AppTickerRepositoryPort } from "../core/app-service-ports";
 import type { PluginRegistry } from "../plugins/registry";
@@ -21,32 +32,61 @@ function tickerMap(tickers: TickerRecord[]): Map<string, TickerRecord> {
   return new Map(tickers.map((ticker) => [ticker.metadata.ticker, ticker]));
 }
 
-async function applyHostedCloudOverlay(args: {
+export async function applyHostedCloudOverlay(args: {
   capturedConfig: AppConfig;
+  baseConfig?: AppConfig;
   getState: () => AppState;
   dispatch: Dispatch<AppAction>;
   tickerRepository: AppTickerRepositoryPort;
   beforeApply?: Promise<void>;
-}): Promise<void> {
-  const working = cloneAppConfigForOverlay(args.capturedConfig);
+  pullConfig?: typeof fetchHostedConfigSnapshot;
+  pullSync?: () => Promise<HostedSyncPull>;
+}): Promise<boolean> {
+  const working = cloneAppConfigForOverlay(args.baseConfig ?? args.capturedConfig);
   const hydrated = await hydrateHostedWorkspaceFromCloud(working, {
-    pullConfig: fetchHostedConfigSnapshot,
-    pullSync: () => apiClient.getSyncSnapshot(),
+    pullConfig: args.pullConfig ?? fetchHostedConfigSnapshot,
+    pullSync: args.pullSync ?? (() => apiClient.getSyncSnapshot()),
     persist: false,
   });
   if (args.beforeApply) await args.beforeApply;
-  if (args.getState().config !== args.capturedConfig) return;
+  if (
+    args.getState().config !== args.capturedConfig
+    || !isHostedWorkspaceHydrationCurrent(hydrated)
+  ) return false;
+  if (!persistHostedWorkspaceHydration(hydrated)) return false;
   args.dispatch({ type: "SET_CONFIG", config: hydrated.config });
   // An empty overlay must not replace the sqlite book. That is how Main
   // Portfolio went blank while ~/.gloomberb still had the holdings.
   if (hydrated.tickers.length > 0) {
     args.dispatch({ type: "SET_TICKERS", tickers: tickerMap(hydrated.tickers) });
-    for (const ticker of hydrated.tickers) {
-      await args.tickerRepository.saveTicker(ticker);
-    }
+    await Promise.all(hydrated.tickers.map((ticker) => args.tickerRepository.saveTicker(ticker)));
   }
-  writeHostedUserConfig(hydrated.config);
-  hydrateHostedByokConfig(hydrated.config);
+  return true;
+}
+
+function configForHostedAccount(current: AppConfig, userId: string): AppConfig {
+  if (!current.dataDir.startsWith("cloud:") && !current.dataDir.startsWith("browser:")) {
+    return current;
+  }
+  const dataDir = current.dataDir.startsWith("cloud:")
+    ? `cloud://users/${userId}`
+    : current.dataDir;
+  const config = createDefaultConfig(dataDir);
+  config.onboardingComplete = true;
+  hydrateHostedUserConfig(config, userId);
+  hydrateHostedByokConfig(config, userId);
+  return config;
+}
+
+function isUserScopedConfig(config: AppConfig): boolean {
+  return config.dataDir.startsWith("cloud:") || config.dataDir.startsWith("browser:");
+}
+
+function configForSignedOutAccount(current: AppConfig): AppConfig {
+  const dataDir = current.dataDir.startsWith("cloud:")
+    ? "cloud://users/anonymous"
+    : current.dataDir;
+  return createDefaultConfig(dataDir);
 }
 
 const CLOUD_SYNC_POLL_MS = 15_000;
@@ -118,52 +158,50 @@ export function useCloudSyncRuntime({
       const userId = apiClient.getCurrentUser()?.id ?? null;
       const hosted = isHostedWebClient();
       const hostedAuthenticated = (globalThis as { __GLOOM_CLOUD_AUTHENTICATED?: boolean }).__GLOOM_CLOUD_AUTHENTICATED === true;
+      if (!userId && hosted && hostedAuthenticated) return;
+      const previousUserId = lastUserId;
+      lastUserId = userId;
       if (userId) {
         setHostedConfigUserId(userId);
+        rememberHostedUserId(userId);
       } else if (!hosted || !hostedAuthenticated) {
         setHostedConfigUserId(userId);
+        rememberHostedUserId(null);
       }
       if (!initialized) return;
-      if (userId !== lastUserId) {
+      if (userId !== previousUserId) {
+        const currentConfig = getState().config;
+        if (isUserScopedConfig(currentConfig)) {
+          dispatch({
+            type: "SET_CONFIG",
+            config: userId
+              ? configForHostedAccount(currentConfig, userId)
+              : configForSignedOutAccount(currentConfig),
+          });
+        }
         // Switching Gloom Cloud accounts must not keep the previous book.
         // Account 2 with no snapshot stays empty. A first sign-in with an
         // empty local book must not wipe tickers already in memory (boot
         // hydrate / repository) — that race is how watchlists vanish on refresh.
         const localTickers = readHostedTickers(userId);
-        const switchingAccounts = !!lastUserId && lastUserId !== userId;
+        const switchingAccounts = !!previousUserId && previousUserId !== userId;
         if (localTickers.length > 0 || switchingAccounts) {
           dispatch({ type: "SET_TICKERS", tickers: tickerMap(localTickers) });
         }
       }
-      if (userId && userId !== lastUserId) {
+      if (userId && userId !== previousUserId) {
         // User signed in (possibly after sign-out). Reset the sync pull state
         // so Gloom Cloud is re-pulled with the new session, and restore the
         // Worker + Cloud snapshots the same way boot does.
         cloudSyncController.resetPullState();
-        try {
-          await applyHostedCloudOverlay({
-            capturedConfig: getState().config,
-            getState,
-            dispatch,
-            tickerRepository,
-          });
-        } catch {
-          const remote = await fetchHostedConfigSnapshot().catch(() => null);
-          if (remote) {
-            const merged = mergeRemoteConfigSnapshot(
-              getState().config,
-              remote,
-              peekHostedUserConfigStamp()?.updatedAt ?? null,
-            );
-            if (merged) {
-              dispatch({ type: "SET_CONFIG", config: merged });
-              writeHostedUserConfig(merged);
-              hydrateHostedByokConfig(merged);
-            }
-          }
-        }
+        const capturedConfig = getState().config;
+        await applyHostedCloudOverlay({
+          capturedConfig,
+          getState,
+          dispatch,
+          tickerRepository,
+        }).catch(() => false);
       }
-      lastUserId = userId;
       if (!apiClient.isVerified()) return;
       void cloudSyncController.requestSync({ reason: "signed-in" });
     };

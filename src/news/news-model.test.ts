@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { dedupeNewsArticles, filterNewsArticlesForQuery, TOP_NEWS_WINDOW_MS } from "./news-model";
+import {
+  dedupeNewsArticles,
+  expandNewsQueryForFetch,
+  filterNewsArticlesForQuery,
+  TOP_NEWS_FETCH_LIMIT,
+  TOP_NEWS_WINDOW_MS,
+} from "./news-model";
 import type { NewsArticle } from "./types";
 
 function makeArticle(overrides: Partial<NewsArticle> & { url: string }): NewsArticle {
@@ -65,7 +71,7 @@ describe("dedupeNewsArticles identity", () => {
 describe("filterNewsArticlesForQuery top ranking", () => {
   const now = Date.now();
 
-  it("keeps the last 24 hours, drops RSS, X, and Substack, and ranks by score", () => {
+  it("ranks the last 24 hours first, drops RSS/X/Substack, and backfills older wire", () => {
     const high = makeArticle({
       id: "high",
       url: "https://wire.example/high",
@@ -118,10 +124,21 @@ describe("filterNewsArticlesForQuery top ranking", () => {
 
     const ranked = filterNewsArticlesForQuery(
       [high, older, stale, rss, tweet, newsletter, higher],
-      { feed: "top" },
+      { feed: "top", limit: 10 },
     );
 
-    expect(ranked.map((item) => item.id)).toEqual(["higher", "older", "high"]);
+    expect(ranked.map((item) => item.id)).toEqual(["higher", "older", "high", "stale"]);
+  });
+
+  it("asks sources for a larger top page than the pane limit", () => {
+    expect(expandNewsQueryForFetch({ feed: "top", limit: 10 })).toEqual({
+      feed: "top",
+      limit: TOP_NEWS_FETCH_LIMIT,
+    });
+    expect(expandNewsQueryForFetch({ feed: "latest", limit: 10 })).toEqual({
+      feed: "latest",
+      limit: 10,
+    });
   });
 
   it("does not apply top ranking to latest", () => {

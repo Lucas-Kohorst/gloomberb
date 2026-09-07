@@ -10,6 +10,7 @@ import {
   buildNewsQueryKey,
   createIdleNewsQueryState,
   dedupeNewsArticles,
+  expandNewsQueryForFetch,
   filterNewsArticlesForQuery,
   markDetailCapableArticle,
   mergeNewsArticle,
@@ -523,11 +524,12 @@ export class NewsService {
     query: NewsQuery,
     entry: NewsQueryEntry | null,
   ): Promise<{ articles: NewsArticle[]; nextCursor: string | null }> {
+    const fetchQuery = expandNewsQueryForFetch(query);
     if (source.provider.fetchNewsPage) {
       const page = await this.trackSourceRequest(
         source,
         "fetchNewsPage",
-        () => source.provider.fetchNewsPage!(query),
+        () => source.provider.fetchNewsPage!(fetchQuery),
       );
       return {
         articles: page.articles.map((article) => attributeArticle(source, article)),
@@ -537,7 +539,7 @@ export class NewsService {
     const articles = (await this.trackSourceRequest(
       source,
       "fetchNews",
-      () => source.provider.fetchNews(query, {
+      () => source.provider.fetchNews(fetchQuery, {
         onPartial: entry && !query.cursor
           ? (partial) => {
             this.applySourceArticles(
@@ -728,7 +730,7 @@ export class NewsService {
     if (accepted.length === 0) return;
     await Promise.allSettled(accepted.map(async (entry) => {
       try {
-        const articles = (await source.provider.fetchNews(entry.query, {
+        const articles = (await source.provider.fetchNews(expandNewsQueryForFetch(entry.query), {
           onPartial: (partial) => {
             this.applySourceArticles(
               entry,
@@ -749,7 +751,7 @@ export class NewsService {
     let changed = false;
     for (const source of this.sources.values()) {
       if (!this.queryAcceptsSource(entry, source)) continue;
-      const cached = (source.provider.getCachedNews?.(entry.query) ?? [])
+      const cached = (source.provider.getCachedNews?.(expandNewsQueryForFetch(entry.query)) ?? [])
         .map((article) => attributeArticle(source, article));
       if (cached.length === 0) continue;
       entry.sourceArticles.set(newsCapabilitySourceId(source), cached);
@@ -769,7 +771,7 @@ export class NewsService {
     let changed = false;
     for (const entry of this.queries.values()) {
       if (!this.queryAcceptsSource(entry, source)) continue;
-      const cached = (news.getCachedNews?.(entry.query) ?? [])
+      const cached = (news.getCachedNews?.(expandNewsQueryForFetch(entry.query)) ?? [])
         .map((article) => attributeArticle(source, article));
       if (cached.length === 0) continue;
       entry.sourceArticles.set(newsCapabilitySourceId(source), cached);

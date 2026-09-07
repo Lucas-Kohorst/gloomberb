@@ -2,12 +2,18 @@ import {
   setConfigStoreHost,
   type ConfigStoreHost,
 } from "../../data/config/store";
-import {
-  normalizeConfigForSave,
-  normalizeLoadedConfig,
-} from "../../data/config/store/normalize";
 import { createDefaultConfig, type AppConfig } from "../../types/config";
-import { BROWSER_STORAGE_KEYS, SafeJsonStorage, type StorageLike } from "./storage";
+import {
+  hydrateHostedUserConfig,
+  resolveHostedPersistUserId,
+  writeHostedUserConfig,
+} from "../../data/config/hosted-user-persist";
+import { getHostedConfigSnapshotPusher } from "../../data/config/hosted-config-snapshot";
+import { clearHostedBrowserWorkspace } from "../../data/config/hosted-file-ops";
+import {
+  hydrateHostedByokConfig,
+  writeHostedByokKeys,
+} from "../../plugins/builtin/byok/hosted-persist";
 
 export const BROWSER_DATA_DIR = "browser://local";
 
@@ -19,30 +25,35 @@ function createBrowserDefaultConfig(dataDir: string): AppConfig {
   return browserReady(createDefaultConfig(dataDir));
 }
 
-export function createBrowserConfigStore(storage: StorageLike): ConfigStoreHost {
-  const data = new SafeJsonStorage<unknown>(storage, BROWSER_STORAGE_KEYS.config, null);
+export function createBrowserConfigStore(): ConfigStoreHost {
   return {
     async getDataDir() { return BROWSER_DATA_DIR; },
     async loadConfig(dataDir) {
-      const saved = data.get();
-      if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
-        return createBrowserDefaultConfig(dataDir);
-      }
-      return browserReady(normalizeLoadedConfig(saved as Record<string, unknown>, dataDir).config);
+      const config = createBrowserDefaultConfig(dataDir);
+      hydrateHostedUserConfig(config);
+      hydrateHostedByokConfig(config);
+      return browserReady(config);
     },
     async saveConfig(config) {
-      data.set(normalizeConfigForSave(browserReady({ ...config, dataDir: BROWSER_DATA_DIR })));
+      if (!resolveHostedPersistUserId()) return;
+      const saved = browserReady({ ...config, dataDir: BROWSER_DATA_DIR });
+      writeHostedUserConfig(saved);
+      writeHostedByokKeys(saved);
+      getHostedConfigSnapshotPusher().schedule(saved);
     },
     async initDataDir(dataDir) {
       const config = createBrowserDefaultConfig(dataDir);
-      data.set(config);
+      writeHostedUserConfig(config);
       return config;
     },
     async resetAllData(dataDir) {
-      for (const key of Object.values(BROWSER_STORAGE_KEYS)) {
-        try { storage.removeItem(key); } catch {}
-      }
-      data.set(createBrowserDefaultConfig(dataDir));
+      const pusher = getHostedConfigSnapshotPusher();
+      pusher.cancel();
+      clearHostedBrowserWorkspace();
+      const config = createBrowserDefaultConfig(dataDir);
+      writeHostedUserConfig(config);
+      writeHostedByokKeys(config);
+      await pusher.flushForced(config);
     },
     async exportConfig() {
       throw new Error("Config file export is unavailable in the browser.");
@@ -53,6 +64,6 @@ export function createBrowserConfigStore(storage: StorageLike): ConfigStoreHost 
   };
 }
 
-export function installBrowserConfigStore(storage: StorageLike = localStorage): void {
-  setConfigStoreHost(createBrowserConfigStore(storage));
+export function installBrowserConfigStore(): void {
+  setConfigStoreHost(createBrowserConfigStore());
 }

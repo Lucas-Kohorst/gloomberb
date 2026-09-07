@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../types/config";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "../../plugins/builtin/byok/types";
 import {
+  createHostedConfigSnapshotPusher,
   isPlaceholderHostedConfig,
   mergeRemoteConfigSnapshot,
   stripByokKeysForSnapshot,
@@ -37,6 +38,41 @@ const byokKeys: ByokStoredConfig = {
 
 describe("hosted config snapshot", () => {
   installMemoryStorage();
+
+  test("drops queued snapshots and remembered config across account changes", async () => {
+    const originalFetch = globalThis.fetch;
+    const pusher = createHostedConfigSnapshotPusher();
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_, init) => {
+      bodies.push(String(init?.body));
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    try {
+      setHostedConfigUserId("user-a");
+      const config = createDefaultConfig("browser://local");
+      config.baseCurrency = "EUR";
+      config.theme = "amber";
+      pusher.schedule(config);
+      const queued = pusher.flush();
+      setHostedConfigUserId("user-b");
+      await queued;
+      pusher.scheduleFromLast();
+      await pusher.flush();
+      expect(bodies).toEqual([]);
+
+      setHostedConfigUserId("user-a");
+      pusher.scheduleFromLast();
+      await pusher.flush();
+      expect(bodies).toEqual([]);
+      pusher.schedule(config);
+      await pusher.flush();
+      expect(bodies).toHaveLength(1);
+      expect(JSON.parse(bodies[0]!).config.baseCurrency).toBe("EUR");
+    } finally {
+      pusher.cancel();
+      globalThis.fetch = originalFetch;
+    }
+  });
 
   afterEach(() => {
     setHostedConfigUserId(null);

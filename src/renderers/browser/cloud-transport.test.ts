@@ -62,7 +62,13 @@ test("browser cloud transport plants session cookies before dropping the Cookie 
 
 test("browser boot restores an existing Gloom Cloud cookie session", async () => {
   const getSession = spyOn(apiClient, "getSession").mockResolvedValue(null);
-  await restoreBrowserCloudSession();
+  await expect(restoreBrowserCloudSession()).resolves.toEqual({ user: null, degraded: false });
   expect(getSession).toHaveBeenCalledTimes(1);
+  getSession.mockRestore();
+});
+
+test("browser boot distinguishes an unavailable session check from a signed-out session", async () => {
+  const getSession = spyOn(apiClient, "getSession").mockRejectedValue(new Error("offline"));
+  await expect(restoreBrowserCloudSession()).resolves.toEqual({ user: null, degraded: true });
   getSession.mockRestore();
 });

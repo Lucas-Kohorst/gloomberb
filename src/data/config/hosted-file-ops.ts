@@ -2,9 +2,14 @@ import type { AppConfig } from "../../types/config";
 import { isRecord } from "../../utils/is-record";
 import { tryLocalStorage } from "../../utils/browser-storage";
 import { normalizeConfigForSave, normalizeLoadedConfig } from "./store/normalize";
+import { hostedUserConfigStorageKey, resolveHostedPersistUserId } from "./hosted-user-persist";
+import { hostedTickerStorageKey } from "./hosted-ticker-persist";
+import { hostedNotesStorageKey } from "./hosted-notes-persist";
+import { hostedPluginStateStorageKey } from "./hosted-plugin-state-persist";
+import { hostedSessionStorageKey } from "./hosted-session-persist";
+import { hostedByokStorageKey } from "../../plugins/builtin/byok/hosted-persist";
 
 export const HOSTED_CONFIG_BACKUP_FILENAME = "gloomberb-config-backup.json";
-const HOSTED_USER_ID_KEY = "gloomberb:hosted-user-id";
 
 export class HostedConfigImportCancelledError extends Error {
   constructor() {
@@ -38,19 +43,24 @@ export function parseHostedConfigBackup(raw: string, dataDir: string): AppConfig
   return normalizeLoadedConfig(saved, dataDir).config;
 }
 
-function isHostedWorkspaceStorageKey(key: string): boolean {
-  if (key === HOSTED_USER_ID_KEY) return false;
-  return key.startsWith("gloomberb:hosted-") || key.startsWith("gloomberb:notes:");
-}
-
-/** Drops this browser's hosted workspace blobs. Keeps the signed-in user id. */
-export function clearHostedBrowserWorkspace(): void {
+/** Drops the selected user's hosted workspace blobs. Keeps other accounts and the remembered id. */
+export function clearHostedBrowserWorkspace(userId = resolveHostedPersistUserId()): void {
   const storage = tryLocalStorage();
-  if (!storage) return;
-  const keys: string[] = [];
+  if (!storage || !userId) return;
+  const keys = new Set([
+    hostedUserConfigStorageKey(userId),
+    hostedTickerStorageKey(userId),
+    hostedNotesStorageKey(userId),
+    hostedPluginStateStorageKey(userId),
+    hostedSessionStorageKey(userId),
+    hostedByokStorageKey(userId),
+  ]);
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
-    if (key && isHostedWorkspaceStorageKey(key)) keys.push(key);
+    if (key?.startsWith(`gloomberb:notes:cloud://users/${userId}/`)
+      || key?.startsWith(`gloomberb:notes:cloud:/users/${userId}/`)) {
+      keys.add(key);
+    }
   }
   for (const key of keys) {
     try {
