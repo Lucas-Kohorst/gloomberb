@@ -28,7 +28,7 @@ function nwsHeaders(userAgent: string): HeadersInit {
 }
 
 async function fetchJson(
-  fetchImpl: typeof fetch,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
   url: string,
   userAgent: string,
 ): Promise<unknown> {

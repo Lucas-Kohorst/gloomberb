@@ -1,4 +1,4 @@
-import type { ResourceStore } from "../../data/resource-store";
+import type { ResourceStoreContract } from "../../data/resource-store";
 import type { ConnectionHealthRegistry } from "../../core/connection-health";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { BrokerAdapter } from "../../types/broker";
@@ -76,7 +76,7 @@ export class AssetDataRouter implements DataProvider {
   constructor(
     fallbackSource: CapabilityRouteSource | DataProvider | null = null,
     extraSources: Array<CapabilityRouteSource | DataProvider> = [],
-    private readonly resources?: ResourceStore,
+    private readonly resources?: ResourceStoreContract,
     private readonly connectionHealth?: ConnectionHealthRegistry,
   ) {
     this.fallbackSource = fallbackSource ? normalizeRouteSource(fallbackSource) : null;

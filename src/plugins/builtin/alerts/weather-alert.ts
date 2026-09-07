@@ -90,7 +90,8 @@ export async function evaluateWeatherAlert(alert: AlertRule, now = Date.now()): 
     const station = findWeatherStation(alert.weather.stationId);
     const date = zonedDateKey(station?.timezone ?? "UTC", now);
     const print = prints.find((item) => item.date === date);
-    const value = print && (condition.metric === "high" ? print.highF : condition.metric === "low" ? print.lowF : print.precipIn);
+    if (!print) return null;
+    const value = condition.metric === "high" ? print.highF : condition.metric === "low" ? print.lowF : print.precipIn;
     if (value == null) return null;
     return { ...evaluateSourceDiscrepancy(condition, [current, {
       sourceId: "nws-cli",

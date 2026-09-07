@@ -15,6 +15,8 @@ let capturedPaneSetting: ((value: string) => void) | null = null;
 
 function createTickerDetailConfig(symbol: string): AppConfig {
   const config = createDefaultConfig("/tmp/gloomberb-test");
+  // Pin the committed theme so these tests don't drift with DEFAULT_THEME.
+  config.theme = "amber";
   const layout = {
     dockRoot: { kind: "pane" as const, instanceId: TEST_PANE_ID },
     instances: [{

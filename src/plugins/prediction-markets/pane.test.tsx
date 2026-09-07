@@ -78,9 +78,19 @@ describe("prediction markets pane interactions", () => {
     testSetup = await testRender(<Harness />, { width: 120, height: 34 });
     await flushFrames(testSetup);
 
-    const frame = testSetup.captureCharFrame();
+    let frame = testSetup.captureCharFrame();
     expect(frame).toContain("Will inflation fall?");
     expect(frame).toContain("Will the Fed cut rates?");
+    // The seeded cache paints instantly; the live refresh behind it fails only
+    // after the throttled-fetch retry window (750ms base, two retries), and the
+    // footer "updated" stamp lands when that attempt settles.
+    for (let attempt = 0; attempt < 80 && !frame.includes("updated"); attempt += 1) {
+      await act(async () => {
+        await Bun.sleep(50);
+        await testSetup!.renderOnce();
+      });
+      frame = testSetup.captureCharFrame();
+    }
     expect(frame).toContain("updated");
     expect(frame).toContain("poll 5m");
     expect(frame).not.toContain("poll 20s");
@@ -656,7 +666,9 @@ describe("prediction markets pane interactions", () => {
 
     let frame = testSetup.captureCharFrame();
     expect(frame).toContain("▾");
-    expect(frame).toContain("Will the upper bound of the federal funds target rate be");
+    // Children render under the group; the MARKET column truncates the long
+    // question, and the collapsed group's TOP ODDS cell never reaches this far.
+    expect(frame).toContain("Will the upper bound of the f");
     expect(frame).not.toContain("\u2190 Back");
 
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
@@ -664,7 +676,7 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("▸");
-    expect(frame).not.toContain("Will the upper bound of the federal funds target rate be");
+    expect(frame).not.toContain("Will the upper bound of the f");
     expect(frame).not.toContain("\u2190 Back");
 
     await emitKeypress(testSetup, { name: "enter", sequence: "\r" });
@@ -809,7 +821,7 @@ describe("prediction markets pane interactions", () => {
 
     frame = testSetup.captureCharFrame();
     expect(frame).toContain("▾");
-    expect(frame).toContain("Will the upper bound of the federal funds target rate be");
+    expect(frame).toContain("Will the upper bound of the f");
   });
 
 });

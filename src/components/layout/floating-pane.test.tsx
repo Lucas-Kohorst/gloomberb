@@ -293,6 +293,7 @@ describe("FloatingPaneWrapper", () => {
     let stopped = false;
     let prevented = false;
     props.onMouseDown?.({
+      button: 0,
       stopPropagation() { stopped = true; },
       preventDefault() { prevented = true; },
     });
@@ -300,12 +301,12 @@ describe("FloatingPaneWrapper", () => {
 
     expect(stopped).toBe(true);
     expect(prevented).toBe(false);
-    expect(activations).toBe(2);
+    expect(activations).toBe(3);
     expect(props.tabIndex).toBeUndefined();
     expect(props.onKeyDown).toBeUndefined();
     expect(headerDrags).toBe(0);
 
-    props.onClick?.({});
+    props.onClick?.({ detail: 1 });
     expect(activations).toBe(3);
     expect(focusedPaneShortcuts).toBe(0);
     expect(headerDrags).toBe(0);

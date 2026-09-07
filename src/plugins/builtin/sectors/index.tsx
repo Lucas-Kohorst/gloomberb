@@ -81,11 +81,11 @@ function SectorPerformancePane({ focused, width, height }: PaneProps) {
 
   const columns = useMemo(
     () => resolveVisibleColumns(
-      buildSectorColumns(width),
+      buildSectorColumns(),
       paneInstance?.settings?.columnIds,
       DEFAULT_SECTOR_COLUMN_IDS,
     ),
-    [paneInstance?.settings?.columnIds, width],
+    [paneInstance?.settings?.columnIds],
   );
   const rows = useMemo(
     () => normalizeRowsForCollection(rowsByCollection, activeCollection.id, activeItems),
@@ -368,20 +368,6 @@ export const sectorsModule: PluginModule = {
       }),
     },
   ],
-
-  setup(ctx) {
-    ctx.registerCommand({
-      id: "sectors-sp",
-      label: "Sector Performance",
-      description: "S&P 500 sector and industry performance sorted by daily change.",
-      keywords: ["sector", "sectors", "sp", "performance"],
-      category: "data",
-      shortcut: "SP",
-      execute: () => {
-        ctx.createPaneFromTemplate("sectors-pane");
-      },
-    });
-  },
 
   paneTemplates: [
     {

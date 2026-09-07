@@ -43,6 +43,8 @@ if [ ! -f "$HOME_DIR/.gloomberb/config.json" ]; then
     mkdirSync(dir, { recursive: true });
     const config = createDefaultConfig(dir);
     config.onboardingComplete = true;
+    // Isolated QA homes must not clone extracted plugins from GitHub.
+    config.seededPlugins = ["substack", "ibkr", "ibkr-gateway"];
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));
   '
 fi
@@ -86,7 +88,7 @@ if [ "${GLOOM_QA_COMMAND_BAR:-0}" = "1" ]; then
   pilotty key -s "$SESSION" Ctrl+P >/dev/null
   sleep 0.6
   BAR="$(pilotty snapshot -s "$SESSION" --format text --settle 400)"
-  if ! echo "$BAR" | grep -aE 'Commands|Command or plain English' >/dev/null; then
+  if ! echo "$BAR" | grep -aE '\[S\]earch or run a command|Commands|Command or plain English' >/dev/null; then
     echo "qa-tui: Ctrl+P did not open the command bar" >&2
     echo "$BAR" >&2
     exit 1

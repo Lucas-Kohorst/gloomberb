@@ -12,6 +12,7 @@ describe("pane action menu", () => {
         def: { defaultPosition: "right" },
         floating: false,
       } as any,
+      { x: 0, y: 0, width: 120, height: 40 },
       {
         dockRoot: { kind: "pane", instanceId: "chart-1" },
         instances: [{ instanceId: "chart-1", paneId: "chart-composer" }],

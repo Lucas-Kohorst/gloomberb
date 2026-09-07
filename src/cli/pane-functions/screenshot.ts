@@ -54,7 +54,12 @@ import { publicTickerKey } from "../../utils/exchanges";
 import { apiClient } from "../../api-client";
 import { getCloudApiBaseUrl } from "../../api-client/request";
 import type { FredSeriesCacheEntry } from "../../data/fred-series";
-import type { ResolvedSeries } from "../../time-series/types";
+import type {
+  CapabilitySeriesSource,
+  ChartSeriesSource,
+  ResolvedSeries,
+  SeriesTransform,
+} from "../../time-series/types";
 import { chartSeriesSourceKey, createChartSeriesResolver } from "../../capabilities";
 import { getSharedRegistry } from "../../plugins/registry";
 import {
@@ -259,7 +264,7 @@ export interface PaneScreenshotExpectedChartEvidence {
   sourceSeries?: PaneScreenshotChartSeriesEvidence[];
   baseSeries?: Array<{
     id: string;
-    sourceKind: "security" | "economic" | "capability";
+    sourceKind: ChartSeriesSource["kind"];
     symbol?: string;
     fieldId?: string;
     economicSeriesId?: string;
@@ -869,6 +874,16 @@ function shotExpectedChart(
           value: typeof (point.value ?? point.close) === "number" ? point.value ?? point.close ?? null : null,
         }
       : null;
+    const capabilityEvidence = (source: CapabilitySeriesSource, transform: SeriesTransform) => {
+      const loaded = capabilitySeries.get(chartSeriesSourceKey(source));
+      const resolvedSeries = loaded ? applyResolvedSeriesTransform(loaded, transform) : undefined;
+      return {
+        capabilityId: source.capabilityId,
+        providerSeriesId: source.seriesId,
+        first: capabilityPoint(resolvedSeries?.points[0]),
+        last: capabilityPoint(resolvedSeries?.points.at(-1)),
+      };
+    };
     return {
       kind: "chart-composer",
       symbols: [...new Set(spec.series.flatMap((series) => (
@@ -888,16 +903,9 @@ function shotExpectedChart(
           }
           : series.source.kind === "economic"
             ? { economicSeriesId: series.source.seriesId }
-            : (() => {
-                const loaded = capabilitySeries.get(chartSeriesSourceKey(series.source));
-                const resolvedSeries = loaded ? applyResolvedSeriesTransform(loaded, series.transform) : undefined;
-                return {
-                  capabilityId: series.source.capabilityId,
-                  providerSeriesId: series.source.seriesId,
-                  first: capabilityPoint(resolvedSeries?.points[0]),
-                  last: capabilityPoint(resolvedSeries?.points.at(-1)),
-                };
-              })()),
+            : series.source.kind === "capability"
+              ? capabilityEvidence(series.source, series.transform)
+              : {}),
         style: series.style,
         transform: series.transform,
         panelId: series.panelId,

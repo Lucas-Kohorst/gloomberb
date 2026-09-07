@@ -26,12 +26,10 @@ function ToastViewport() {
   return <Viewport />;
 }
 
-test("DOM notifications show context and open from the whole card", async () => {
+async function mountViewport() {
   const container = testWindow.document.createElement("div");
   testWindow.document.body.appendChild(container);
   const root = createRoot(container as unknown as HTMLElement);
-  let opened = 0;
-
   await act(async () => {
     root.render(
       <WebToastHostProvider>
@@ -39,40 +37,86 @@ test("DOM notifications show context and open from the whole card", async () => 
       </WebToastHostProvider>,
     );
   });
+  return {
+    container,
+    unmount: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+      toastHost = null;
+    },
+  };
+}
+
+async function click(element: EventTarget) {
   await act(async () => {
-    toastHost?.info("@bob mentioned you", {
-      title: "Gloomberb chat",
-      subtitle: "#everyone",
-      duration: 0,
-      action: { label: "Open", onClick: () => opened++ },
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+test("announces toast content and only acts on click when an action is attached", async () => {
+  const { container, unmount } = await mountViewport();
+  let opened = 0;
+
+  try {
+    const viewport = container.querySelector(".gloom-toast-viewport") as unknown as HTMLElement;
+    expect(viewport.getAttribute("aria-live")).toBe("polite");
+
+    await act(async () => {
+      toastHost?.info("@bob mentioned you", {
+        title: "Gloomberb chat",
+        subtitle: "#everyone",
+        duration: 0,
+        action: { label: "Open", onClick: () => opened++ },
+      });
     });
-  });
+    const toast = container.querySelector(".gloom-toast") as unknown as HTMLElement;
+    expect(toast.textContent).toContain("Gloomberb chat");
+    expect(toast.textContent).toContain("#everyone");
 
-  const toast = container.querySelector(".gloom-toast") as unknown as HTMLElement;
-  expect(toast.textContent).toContain("Gloomberb chat");
-  expect(toast.textContent).toContain("#everyone");
-  expect(toast.getAttribute("data-actionable")).toBe("true");
+    await click(toast);
+    expect(opened).toBe(1);
+    expect(container.querySelector(".gloom-toast")).toBeNull();
 
-  await act(async () => {
-    toast.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-  expect(opened).toBe(1);
-  expect(container.querySelector(".gloom-toast")).toBeNull();
-
-  await act(async () => {
-    toastHost?.info("Another message", {
-      duration: 0,
-      action: { label: "Open", onClick: () => opened++ },
+    // A toast without an action must not respond to whole-card clicks.
+    await act(async () => {
+      toastHost?.info("Saved", { duration: 0 });
     });
-  });
-  const dismiss = container.querySelector(".gloom-toast-dismiss") as unknown as HTMLElement;
-  await act(async () => {
-    dismiss.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-  expect(opened).toBe(1);
-  expect(container.querySelector(".gloom-toast")).toBeNull();
+    const inert = container.querySelector(".gloom-toast") as unknown as HTMLElement;
+    await click(inert);
+    expect(opened).toBe(1);
+    expect(container.querySelector(".gloom-toast")).not.toBeNull();
+  } finally {
+    await unmount();
+  }
+});
 
-  await act(async () => root.unmount());
-  container.remove();
-  toastHost = null;
+test("dismiss never fires the action, and the action button opens and closes", async () => {
+  const { container, unmount } = await mountViewport();
+  let opened = 0;
+
+  try {
+    await act(async () => {
+      toastHost?.info("First toast", {
+        duration: 0,
+        action: { label: "Open", onClick: () => opened++ },
+      });
+    });
+    const dismiss = container.querySelector(".gloom-toast-dismiss") as unknown as HTMLElement;
+    await click(dismiss);
+    expect(opened).toBe(0);
+    expect(container.querySelector(".gloom-toast")).toBeNull();
+
+    await act(async () => {
+      toastHost?.info("Second toast", {
+        duration: 0,
+        action: { label: "Open", onClick: () => opened++ },
+      });
+    });
+    const actionButton = container.querySelector(".gloom-toast-action") as unknown as HTMLElement;
+    await click(actionButton);
+    expect(opened).toBe(1);
+    expect(container.querySelector(".gloom-toast")).toBeNull();
+  } finally {
+    await unmount();
+  }
 });

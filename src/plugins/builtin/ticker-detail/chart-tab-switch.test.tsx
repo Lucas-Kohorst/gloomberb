@@ -204,7 +204,12 @@ describe("Ticker detail chart tab switching", () => {
 
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 120, height: 36 });
-    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    // multiplexer: "none" keeps the simulated kitty terminal hermetic when the
+    // test itself runs inside tmux (the multiplexer guard reads the env).
+    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = {
+      kitty_graphics: true,
+      multiplexer: "none",
+    };
     (testSetup.renderer as unknown as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
 
     root = createRoot(testSetup.renderer);
@@ -263,7 +268,12 @@ describe("Ticker detail chart tab switching", () => {
 
     actEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
     testSetup = await createTestRenderer({ width: 120, height: 36 });
-    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = { kitty_graphics: true };
+    // multiplexer: "none" keeps the simulated kitty terminal hermetic when the
+    // test itself runs inside tmux (the multiplexer guard reads the env).
+    (testSetup.renderer as unknown as { _capabilities: unknown })._capabilities = {
+      kitty_graphics: true,
+      multiplexer: "none",
+    };
     (testSetup.renderer as unknown as { _resolution: unknown })._resolution = { width: 1200, height: 960 };
 
     root = createRoot(testSetup.renderer);

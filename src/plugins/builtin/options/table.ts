@@ -5,8 +5,10 @@ import { blendHex, colors } from "../../../theme/colors";
 import { blendForContrast, contrastRatio } from "../../../theme/color-utils";
 import { formatCompact, formatNumber } from "../../../utils/format";
 import { formatMarketPrice } from "../../../market-data/market/format";
+import type { SortComparableValue } from "../../../utils/sort-values";
 import type {
   OptionColumn,
+  OptionColumnId,
   OptionFieldId,
   OptionTableRow,
 } from "./types";
@@ -250,7 +252,7 @@ function formatOptionContractCell(
 
 export function optionSortValue(row: OptionTableRow, columnId: OptionColumnId): SortComparableValue {
   if (columnId === "strike") return row.strike;
-  const contract = optionContractForColumn(row, columnId);
+  const contract = columnId.startsWith("call") ? row.call : row.put;
   if (!contract) return null;
   switch (columnId) {
     case "callLast":

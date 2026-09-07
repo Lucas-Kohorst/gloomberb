@@ -3,7 +3,7 @@
  *
  *   bun run qa              tests for this checkout's changes + CLI data shape + TUI boot
  *   bun run qa --fast       skip live TUI / pilotty
- *   bun run qa --live       also open changed panes (or --all-panes)
+ *   bun run qa --live       TUI boot + pane.show (marketplace plus changed panes; --all-panes for every pane)
  *   bun run qa --hook       default pre-push: tests + CLI (set GLOOM_QA_LIVE=1 for TUI)
  *   bun run qa --offline    skip network CLI probes
  *
@@ -42,7 +42,7 @@ function parseFlags(argv: string[]): Flags {
     fast: argv.includes("--fast") || (hook && !liveEnv),
     live: argv.includes("--live") || liveEnv,
     hook,
-    offline: argv.includes("--offline"),
+    offline: argv.includes("--offline") || process.env.GLOOM_QA_OFFLINE === "1",
     allPanes: argv.includes("--all-panes"),
     help: argv.includes("--help") || argv.includes("-h"),
   };
@@ -56,11 +56,12 @@ Usage: bun run qa [--fast] [--live] [--all-panes] [--offline] [--hook]
 Always (and on every git push via the default pre-push hook):
   - bun test on files related to this checkout (working tree + commits since local main)
   - catalog-ui duplicate-pane guard
+  - plugin-marketplace catalog merge/sort (nameless plugins must not crash)
   - CLI JSON probes (ticker + pane fn) with shape invariants
 
 Live (pilotty, skipped by --fast / --hook unless GLOOM_QA_LIVE=1):
   - TUI boot snapshot (crash banners fail)
-  - pane.show for changed pane ids (or every pane with --all-panes)
+  - pane.show for plugin-marketplace plus changed pane ids (or every pane with --all-panes)
   - remote quote / news / markets probes
 
 The hook is installed by bun install. Reinstall with: bun run qa:install-hook
@@ -204,12 +205,17 @@ function parseJsonPayload(text: string): unknown {
 async function runTests(plan: QaPlan): Promise<void> {
   const targets = plan.tests.length > 0 ? plan.tests : ALWAYS_TESTS;
   console.log(`qa tests: ${targets.join(" ")}`);
-  const result = await run(["bun", "test", ...targets], { timeoutMs: 180_000 });
+  // --parallel matches the repo test script: per-file isolation prevents
+  // mock.module pollution between test files sharing a process.
+  const result = await run(["bun", "test", "--parallel", ...targets], { timeoutMs: 180_000 });
   process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.exit !== 0) failStep("tests", `bun test exited ${result.exit}`);
 }
 
+// Live data probes need network access to Yahoo and friends. On a host
+// without it (or during a provider outage), skip via --offline or
+// GLOOM_QA_OFFLINE=1 rather than weakening these checks.
 async function runData(plan: QaPlan, offline: boolean): Promise<void> {
   if (offline) {
     console.log("qa data: skipped (--offline)");

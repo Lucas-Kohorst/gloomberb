@@ -3,7 +3,7 @@ import { useState, type ReactNode } from "react";
 import { colors } from "../../../../theme/colors";
 import { ChoiceDialog } from "../../../ui/choice-dialog";
 import { Popover } from "../../../ui/popover";
-import type { DialogApi } from "../../../../ui/dialog";
+import type { DialogApi, PromptContext } from "../../../../ui/dialog";
 import type { PaneFooterSelectMenu } from "./model";
 
 export const FOOTER_SELECT_MENU_TITLE = "Refresh interval";
@@ -15,7 +15,7 @@ export async function openFooterSelectMenu(
   if (!dialog) return;
   const selected = await dialog.prompt<string>({
     closeOnClickOutside: true,
-    content: (context) => (
+    content: (context: PromptContext<string>) => (
       <ChoiceDialog
         {...context}
         title={FOOTER_SELECT_MENU_TITLE}

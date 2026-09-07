@@ -276,42 +276,12 @@ export function bindPluginRegistryRuntimeAccess({
     );
 
     const nextPortfolios = stateRef.current.config.portfolios.filter((portfolio) => !removedPortfolioIds.has(portfolio.id));
-    const nextTickers = new Map(stateRef.current.tickers);
-
-    for (const ticker of stateRef.current.tickers.values()) {
-      const nextPositions = ticker.metadata.positions.filter((position) => position.brokerInstanceId !== instanceId);
-      const nextPortfolioRefs = ticker.metadata.portfolios.filter((portfolioId) => !removedPortfolioIds.has(portfolioId));
-      const nextBrokerContracts = (ticker.metadata.broker_contracts ?? []).filter((contract) => contract.brokerInstanceId !== instanceId);
-
-      const nextTicker: TickerRecord = {
-        ...ticker,
-        metadata: {
-          ...ticker.metadata,
-          positions: nextPositions,
-          portfolios: nextPortfolioRefs,
-          broker_contracts: nextBrokerContracts,
-        },
-      };
-
-      const shouldDeleteTicker =
-        nextPositions.length === 0
-        && nextPortfolioRefs.length === 0
-        && nextTicker.metadata.watchlists.length === 0
-        && nextBrokerContracts.length === 0
-        && nextTicker.metadata.tags.length === 0
-        && Object.keys(nextTicker.metadata.custom).length === 0;
-
-      if (shouldDeleteTicker) {
-        nextTickers.delete(ticker.metadata.ticker);
-        await tickerRepository.deleteTicker(ticker.metadata.ticker);
-        dispatch({ type: "REMOVE_TICKER", symbol: ticker.metadata.ticker });
-        pluginRegistry.events.emit("ticker:removed", { symbol: ticker.metadata.ticker });
-      } else {
-        await tickerRepository.saveTicker(nextTicker);
-        nextTickers.set(nextTicker.metadata.ticker, nextTicker);
-        dispatch({ type: "UPDATE_TICKER", ticker: nextTicker });
-      }
-    }
+    const { nextTickers, removedSymbols, changedTickers } = applyBrokerInstanceRemovalToTickers(
+      stateRef.current.tickers.values(),
+      instanceId,
+      removedPortfolioIds,
+    );
+    await persistRemovedBrokerTickers(tickerRepository, nextTickers, removedSymbols, changedTickers);
 
     const nextConfig = {
       ...stateRef.current.config,

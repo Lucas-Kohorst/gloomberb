@@ -8,7 +8,6 @@ import { extractScreenerResult, DEFAULT_UNIVERSE } from "./client";
 import type { ScreenerResult } from "./types";
 import type { TickerFinancials } from "../../../types/financials";
 import {
-  buildScreenerColumns,
   filterScreenerRows,
   nextSortPreference,
   sortRows,
@@ -224,8 +223,14 @@ describe("filterScreenerRows", () => {
     expect(filterScreenerRows(SAMPLE_RESULTS, "APPLE").map((row) => row.symbol)).toEqual(["AAPL"]);
   });
 
-  test("fuzzy-matches a subsequence against the company name", () => {
-    expect(filterScreenerRows(SAMPLE_RESULTS, "aple").map((row) => row.symbol)).toEqual(["AAPL"]);
+  test("fuzzy-matches a word-prefix run against the company name", () => {
+    expect(filterScreenerRows(SAMPLE_RESULTS, "appl").map((row) => row.symbol)).toEqual(["AAPL"]);
+  });
+
+  test("ignores subsequences scattered across a word", () => {
+    // The fuzzy fallback only accepts an ordered run of word prefixes, so a
+    // mid-word skip like "aple" must not hit "Apple".
+    expect(filterScreenerRows(SAMPLE_RESULTS, "aple")).toEqual([]);
   });
 });
 
@@ -325,19 +330,7 @@ describe("DEFAULT_UNIVERSE", () => {
   });
 });
 
-// ── Model: columns and sorting ──────────────────────────────────────
-
-describe("buildScreenerColumns", () => {
-  test("produces columns with all expected IDs", () => {
-    const columns = buildScreenerColumns(120);
-    const ids = columns.map((c) => c.id);
-    expect(ids).toContain("symbol");
-    expect(ids).toContain("marketCap");
-    expect(ids).toContain("peRatio");
-    expect(ids).toContain("dividendYield");
-    expect(columns.length).toBe(13);
-  });
-});
+// ── Model: sorting ──────────────────────────────────────────────────
 
 describe("sortRows", () => {
   test("sorts by market cap descending", () => {
@@ -351,6 +344,29 @@ describe("sortRows", () => {
     const pref: ScreenerSortPreference = { columnId: "peRatio", direction: "asc" };
     const sorted = sortRows(SAMPLE_RESULTS, pref);
     expect(sorted[0]!.symbol).toBe("XOM"); // pe=12
+  });
+
+  test("sorts a text column ascending", () => {
+    const pref: ScreenerSortPreference = { columnId: "symbol", direction: "asc" };
+    const sorted = sortRows(SAMPLE_RESULTS, pref);
+    expect(sorted.map((row) => row.symbol)).toEqual(["AAPL", "MSFT", "TSLA", "XOM"]);
+  });
+
+  // Empty cells (null) are a real profile: TSLA reports no dividend. The sort
+  // must keep such rows last in both directions so a null dividend never reads
+  // as "cheapest" or "richest" on the dividend column.
+  test("keeps rows missing the sorted value last, ascending", () => {
+    const pref: ScreenerSortPreference = { columnId: "dividendYield", direction: "asc" };
+    const sorted = sortRows(SAMPLE_RESULTS, pref);
+    expect(sorted.at(-1)?.symbol).toBe("TSLA"); // dividendYield null
+    expect(sorted[0]!.symbol).toBe("AAPL"); // 0.005
+  });
+
+  test("keeps rows missing the sorted value last, descending", () => {
+    const pref: ScreenerSortPreference = { columnId: "dividendYield", direction: "desc" };
+    const sorted = sortRows(SAMPLE_RESULTS, pref);
+    expect(sorted.at(-1)?.symbol).toBe("TSLA"); // dividendYield null
+    expect(sorted[0]!.symbol).toBe("XOM"); // 0.035
   });
 });
 

@@ -8,7 +8,7 @@ import {
 import { instrumentFromTicker } from "../../../market-data/request-types";
 import { usePaneTicker } from "../../../state/app/context";
 import type { ScrollBoxRenderable } from "../../../ui";
-import { EmptyState, FeedDataTableStackView, Spinner, useExternalLinkFooter, useTableLoadMore, type FeedDataTableItem } from "../../../components";
+import { EmptyState, FeedDataTableStackView, Spinner, TickerEmptyState, useExternalLinkFooter, useTableLoadMore, type FeedDataTableItem } from "../../../components";
 import { usePluginPaneState } from "../../runtime";
 import { isUsEquityTicker } from "../../../utils/sec";
 import { formatCompact, formatCurrency } from "../../../utils/format";

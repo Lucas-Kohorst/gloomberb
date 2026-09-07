@@ -13,6 +13,7 @@ const domGlobals = {
   HTMLElement: testWindow.HTMLElement,
   Node: testWindow.Node,
 };
+for (const key of Object.keys(domGlobals)) { const d = Object.getOwnPropertyDescriptor(globalThis, key); if (d && ((d.writable === false) || (!('value' in d) && !d.set))) console.error('[wvm] readonly global:', key, JSON.stringify({writable: d.writable, hasGet: !!d.get, hasSet: !!d.set, configurable: d.configurable})); }
 const priorGlobals = Object.fromEntries(
   Object.keys(domGlobals).map((key) => [key, (globalThis as Record<string, unknown>)[key]]),
 );
