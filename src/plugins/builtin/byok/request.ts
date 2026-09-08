@@ -2,7 +2,7 @@ import { isHostedWebClient } from "../../../shared/hosted-api";
 import { httpFetch } from "../../../utils/http-transport";
 import { CUSTOM_SERVICE_OPTION, getByokKnownService } from "./services";
 import { BYOK_CUSTOM_SERVICE_ID, type ByokApiKeyEntry, type ByokAuthType } from "./types";
-import { ByokOpenApiError, parseByokOpenApi } from "./openapi";
+import { ByokOpenApiError, parseByokOpenApi, safeUrlOrigin } from "./openapi";
 
 export function resolveByokService(entry: ByokApiKeyEntry) {
   if (entry.serviceId === BYOK_CUSTOM_SERVICE_ID) return CUSTOM_SERVICE_OPTION;
@@ -12,6 +12,14 @@ export function resolveByokService(entry: ByokApiKeyEntry) {
 export function resolveByokRequestUrl(entry: ByokApiKeyEntry): string | null {
   const url = (entry.apiUrl || resolveByokService(entry).apiUrl || "").trim();
   return url || null;
+}
+
+/** Returns the origin (scheme://host[:port]) of the entry's configured API URL,
+ *  used to constrain OpenAPI spec server URLs so the key is never sent to a
+ *  spec-chosen origin. */
+export function byokAllowedOrigin(entry: Pick<ByokApiKeyEntry, "serviceId" | "apiUrl">): string | undefined {
+  const url = (entry.apiUrl || resolveByokService(entry as ByokApiKeyEntry).apiUrl || "").trim();
+  return url ? safeUrlOrigin(url) : undefined;
 }
 
 export function buildByokAuthHeaders(entry: ByokApiKeyEntry): Record<string, string> {
@@ -73,16 +81,26 @@ export async function fetchByokSpec(entry: ByokApiKeyEntry): Promise<{ body: str
  * `httpFetch` (which uses the Electrobun backend on desktop) otherwise.
  */
 export async function fetchByokEndpoint(entry: ByokApiKeyEntry): Promise<ByokRequestResult> {
+  const resolvedUrl = resolveByokRequestUrl(entry);
   let parsedSpec: ReturnType<typeof parseByokOpenApi> | undefined;
   if (entry.openApiSpecBody || entry.openApiSpecUrl) {
+    // The spec must never be the source of the origin. Require a configured
+    // API URL and constrain the spec's server URL to its origin so the stored
+    // key cannot be exfiltrated to a spec-chosen host.
+    const allowedOrigin = resolvedUrl ? safeUrlOrigin(resolvedUrl) : undefined;
+    if (!allowedOrigin) {
+      throw new ByokRequestError(
+        "No API URL configured for this key. The OpenAPI spec cannot determine where to send the key.",
+        "bad-url",
+      );
+    }
     parsedSpec = entry.openApiSpecBody
-      ? parseByokOpenApi(entry.openApiSpecBody, entry.openApiSpecUrl)
-      : await fetchByokSpec(entry).then(({ body, url }) => parseByokOpenApi(body, url));
+      ? parseByokOpenApi(entry.openApiSpecBody, entry.openApiSpecUrl, allowedOrigin)
+      : await fetchByokSpec(entry).then(({ body, url }) => parseByokOpenApi(body, url, allowedOrigin));
   }
-  const rawUrl = resolveByokRequestUrl(entry) ?? parsedSpec?.baseUrl;
-  if (!rawUrl) throw new ByokRequestError("No API URL configured for this key.", "bad-url");
+  if (!resolvedUrl) throw new ByokRequestError("No API URL configured for this key.", "bad-url");
 
-  let targetUrl = rawUrl;
+  let targetUrl = resolvedUrl;
   if (parsedSpec) targetUrl = parsedSpec.probe.probeUrl!;
   const effectiveEntry = parsedSpec
     ? { ...entry, openApiAuthType: parsedSpec.authType, openApiAuthKey: parsedSpec.authKey }

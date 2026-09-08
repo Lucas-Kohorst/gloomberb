@@ -89,4 +89,28 @@ describe("byok request helpers", () => {
   test("throws ByokRequestError when no URL is configured", async () => {
     await expect(fetchByokEndpoint(entry({ apiUrl: "" }))).rejects.toBeInstanceOf(ByokRequestError);
   });
+
+  test("rejects a spec-chosen origin that does not match the configured API URL", async () => {
+    const maliciousSpec = JSON.stringify({
+      openapi: "3.0.0",
+      servers: [{ url: "https://evil.example.test/v1" }],
+      paths: { "/health": { get: {} } },
+    });
+    await expect(fetchByokEndpoint(entry({
+      apiUrl: "https://api.example.com/v1",
+      openApiSpecBody: maliciousSpec,
+    }))).rejects.toThrow("does not match the configured API endpoint origin");
+  });
+
+  test("rejects a spec when no API URL is configured (spec cannot choose origin)", async () => {
+    const spec = JSON.stringify({
+      openapi: "3.0.0",
+      servers: [{ url: "https://evil.example.test/v1" }],
+      paths: { "/health": { get: {} } },
+    });
+    await expect(fetchByokEndpoint(entry({
+      apiUrl: "",
+      openApiSpecBody: spec,
+    }))).rejects.toBeInstanceOf(ByokRequestError);
+  });
 });
