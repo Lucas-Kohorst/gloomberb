@@ -21,9 +21,27 @@ export interface NoteFileEntry {
 const QUICK_NOTES_INDEX = "__quick-notes-index__";
 const STORAGE_PREFIX = "gloomberb:notes:";
 const LOCAL_TIMESTAMP_KEY = "gloomberb:notes:__updated-at__";
+const MAX_NOTE_KEY_LENGTH = 64;
 
 function joinPath(...parts: string[]): string {
   return parts.join("/").replace(/\/+/g, "/");
+}
+
+export function isSafeNoteKey(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= MAX_NOTE_KEY_LENGTH
+    && !value.includes("..")
+    && !value.startsWith(".")
+    && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(value);
+}
+
+export function isSafeQuickNoteId(value: unknown): value is string {
+  return typeof value === "string" && isSafeNoteKey(`__note-${value}__`);
+}
+
+function assertSafeNoteKey(value: string): void {
+  if (!isSafeNoteKey(value)) throw new Error("Invalid note key");
 }
 
 interface LocalStorageLike {
@@ -99,6 +117,7 @@ export class NotesFiles {
   constructor(private readonly dataDir: string) {}
 
   private pathFor(symbol: string): string {
+    assertSafeNoteKey(symbol);
     return joinPath(this.dataDir, `${symbol}.md`);
   }
 
@@ -113,6 +132,7 @@ export class NotesFiles {
    * one, or the next save silently overwrites real content.
    */
   async load(symbol: string): Promise<string> {
+    const path = this.pathFor(symbol);
     const userId = this.hostedUserId();
     if (userId) {
       const payload = readHostedNotes(userId, this.dataDir);
@@ -122,7 +142,7 @@ export class NotesFiles {
       return payload.tickerNotes[symbol] ?? "";
     }
     try {
-      return await readTextFile(this.pathFor(symbol));
+      return await readTextFile(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return "";
       throw error;
@@ -130,6 +150,7 @@ export class NotesFiles {
   }
 
   async save(symbol: string, notes: string): Promise<void> {
+    const path = this.pathFor(symbol);
     const userId = this.hostedUserId();
     if (userId) {
       const payload = readHostedNotes(userId, this.dataDir);
@@ -143,21 +164,22 @@ export class NotesFiles {
         delete payload.tickerNotes[symbol];
       }
       writeHostedNotes(payload, userId);
-      writeLocalTimestamp(this.pathFor(symbol), notes ? Date.now() : null);
+      writeLocalTimestamp(path, notes ? Date.now() : null);
       getHostedConfigSnapshotPusher().scheduleFromLast();
       return;
     }
-    await writeTextFile(this.pathFor(symbol), notes || "");
+    await writeTextFile(path, notes || "");
   }
 
   async delete(symbol: string): Promise<void> {
+    const path = this.pathFor(symbol);
     const userId = this.hostedUserId();
     if (userId) {
       await this.save(symbol, "");
       return;
     }
     try {
-      await deleteTextFile(this.pathFor(symbol));
+      await deleteTextFile(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
@@ -182,8 +204,10 @@ export class NotesFiles {
       const notes = readHostedNotes(userId, this.dataDir);
       const timestamps = readLocalTimestamps();
       const keys = [
-        ...Object.keys(notes.tickerNotes),
-        ...Object.keys(notes.quickNotes).map((id) => this.quickNoteKey(id)),
+        ...Object.keys(notes.tickerNotes).filter(isSafeNoteKey),
+        ...Object.keys(notes.quickNotes)
+          .filter(isSafeQuickNoteId)
+          .map((id) => this.quickNoteKey(id)),
       ];
       return keys.map((key) => {
         const path = this.pathFor(key);
@@ -203,7 +227,7 @@ export class NotesFiles {
       }
       const keys: Array<[string, number]> = [];
       for (const name of names) {
-        if (!name.endsWith(".md")) continue;
+        if (!name.endsWith(".md") || !isSafeNoteKey(name.slice(0, -3))) continue;
         try {
           const info = await stat(joinPath(this.dataDir, name));
           keys.push([name.slice(0, -3), Math.round(info.mtimeMs)]);
@@ -222,7 +246,9 @@ export class NotesFiles {
       if (timestamps[path] == null) writeLocalTimestamp(path, timestamps[path] = Date.now());
     }
     return Object.entries(timestamps)
-      .filter(([path]) => path.startsWith(prefix) && path.endsWith(".md"))
+      .filter(([path]) => path.startsWith(prefix)
+        && path.endsWith(".md")
+        && isSafeNoteKey(path.slice(prefix.length, -3)))
       .map(([path, updatedAt]) => [path.slice(prefix.length, -3), updatedAt]);
   }
 
@@ -259,14 +285,16 @@ export class NotesFiles {
 
   async listAllNoteSymbols(): Promise<string[]> {
     const userId = this.hostedUserId();
-    if (userId) return Object.keys(readHostedNotes(userId, this.dataDir).tickerNotes);
+    if (userId) return Object.keys(readHostedNotes(userId, this.dataDir).tickerNotes).filter(isSafeNoteKey);
     if (typeof Bun !== "undefined") {
       const fsModulePath = "fs/promises";
       const { readdir } = await import(fsModulePath) as typeof import("fs/promises");
       try {
         const entries = await readdir(this.dataDir);
         return entries
-          .filter((entry) => entry.endsWith(".md") && !entry.startsWith(QUICK_NOTES_INDEX))
+          .filter((entry) => entry.endsWith(".md")
+            && !entry.startsWith(QUICK_NOTES_INDEX)
+            && isSafeNoteKey(entry.slice(0, -3)))
           .map((entry) => entry.slice(0, -3));
       } catch {
         return [];
@@ -279,7 +307,9 @@ export class NotesFiles {
       const key = storage.key(i);
       if (!key || !key.startsWith(STORAGE_PREFIX)) continue;
       const path = key.slice(STORAGE_PREFIX.length);
-      if (path.endsWith(".md") && !path.startsWith(QUICK_NOTES_INDEX)) {
+      if (path.endsWith(".md")
+        && !path.startsWith(QUICK_NOTES_INDEX)
+        && isSafeNoteKey(path.slice(0, -3))) {
         symbols.push(path.slice(0, -3));
       }
     }
@@ -290,6 +320,7 @@ export class NotesFiles {
     const quickNotesIndex = await this.loadQuickNotesIndex();
     const quickNotes: Record<string, string> = {};
     for (const entry of quickNotesIndex) {
+      if (!isSafeQuickNoteId(entry.id)) continue;
       const text = await this.load(this.quickNoteKey(entry.id));
       if (text) quickNotes[entry.id] = text;
     }
@@ -308,14 +339,14 @@ export class NotesFiles {
     }
     if (data.quickNotes && typeof data.quickNotes === "object") {
       for (const [id, text] of Object.entries(data.quickNotes)) {
-        if (typeof text === "string") {
+        if (typeof text === "string" && isSafeQuickNoteId(id)) {
           await this.save(this.quickNoteKey(id), text);
         }
       }
     }
     if (data.tickerNotes && typeof data.tickerNotes === "object") {
       for (const [symbol, text] of Object.entries(data.tickerNotes)) {
-        if (typeof text === "string") {
+        if (typeof text === "string" && isSafeNoteKey(symbol)) {
           await this.save(symbol, text);
         }
       }
