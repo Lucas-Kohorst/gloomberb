@@ -160,12 +160,15 @@ async function seedConfig(home: string): Promise<void> {
       import { mkdirSync, writeFileSync } from "fs";
       import { join } from "path";
       import { createDefaultConfig } from "./src/types/config";
+      import { EXTRACTED_PLUGINS } from "./src/plugins/seed";
       const dir = join(process.env.HOME, ".gloomberb");
       mkdirSync(dir, { recursive: true });
       const config = createDefaultConfig(dir);
       config.onboardingComplete = true;
-      // Isolated QA homes must not clone extracted plugins from GitHub.
-      config.seededPlugins = ["substack", "ibkr", "ibkr-gateway"];
+      // Isolated QA homes must not clone extracted plugins from GitHub:
+      // mark every extracted plugin (including the gloomberb-plugins
+      // monorepo) as already seeded so the CLI never tries to install it.
+      config.seededPlugins = EXTRACTED_PLUGINS.map((entry) => entry.id);
       writeFileSync(join(dir, "config.json"), JSON.stringify(config));
     `,
   ], { env: { HOME: home }, timeoutMs: 30_000 });

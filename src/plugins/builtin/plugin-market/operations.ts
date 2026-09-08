@@ -1,6 +1,6 @@
 import { join } from "path";
-import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync } from "fs";
-import { getPluginsDir, resolvePluginEntryFile } from "../../loader";
+import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
+import { getPluginsDir, listExternalPluginEntries } from "../../loader";
 import type { ExternalPluginEntry, OperationResult } from "./types";
 
 const GITHUB_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -158,44 +158,17 @@ export async function removePluginAsync(name: string): Promise<OperationResult> 
  * Scans the external plugins directory without importing plugins.
  * Returns directory-level metadata (name, version, description) parsed
  * from each plugin's package.json when available.
+ *
+ * The directory walk lives in `listExternalPluginEntries` so discovery and
+ * the marketplace never drift apart; this only adds package.json metadata.
  */
-export function scanExternalPlugins(): ExternalPluginEntry[] {
+export async function scanExternalPlugins(): Promise<ExternalPluginEntry[]> {
   if (!isNativeRuntime()) return [];
-  const pluginsDir = getPluginsDir();
-  if (!existsSync(pluginsDir)) return [];
-
-  const results: ExternalPluginEntry[] = [];
-
-  const entries = readdirSync(pluginsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
-
-  for (const entry of entries) {
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-    const dir = join(pluginsDir, entry.name);
-
-    // Check if this directory itself is a plugin (has a package.json with main
-    // or an index file at root).
-    const isDirectPlugin = resolvePluginEntryFile(dir) !== null;
-
-    if (isDirectPlugin) {
-      results.push(scanPluginDir(entry.name, dir));
-      continue;
-    }
-
-    // Monorepo: scan subdirectories for plugins.
-    const subEntries = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory());
-    for (const sub of subEntries) {
-      if (sub.name.startsWith(".") || sub.name === "node_modules") continue;
-      const subDir = join(dir, sub.name);
-      if (resolvePluginEntryFile(subDir) !== null) {
-        results.push(scanPluginDir(sub.name, subDir, entry.name));
-      }
-    }
-  }
-
-  return results;
+  const entries = await listExternalPluginEntries();
+  return entries.map((entry) => readPluginDirMetadata(entry.dirName, entry.pluginDir, entry.managementDirName));
 }
 
-function scanPluginDir(dirName: string, dir: string, managementDirName?: string): ExternalPluginEntry {
+function readPluginDirMetadata(dirName: string, dir: string, managementDirName?: string): ExternalPluginEntry {
   let version = "—";
   let description = "—";
   let hasError = false;
@@ -212,5 +185,5 @@ function scanPluginDir(dirName: string, dir: string, managementDirName?: string)
     }
   }
 
-  return { dirName, managementDirName, pluginId: null, version, description, hasError };
+  return { dirName, managementDirName, version, description, hasError };
 }

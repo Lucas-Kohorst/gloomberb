@@ -80,6 +80,7 @@
     "qa:install-hook": "bash scripts/install-qa-hook.sh",
     "qa:tui": "bash scripts/qa-tui.sh",
     "qa:panes": "bash scripts/qa-panes.sh",
+    "qa:plugins": "bash scripts/qa-plugins.sh",
     "qa:desktop": "bash scripts/qa-desktop-ax.sh",
     "test:global-upgrade": "bun run scripts/smoke-global-upgrade.ts",
     "release": "./scripts/release.sh"

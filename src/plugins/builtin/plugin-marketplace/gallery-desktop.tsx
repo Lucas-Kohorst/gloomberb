@@ -46,6 +46,8 @@ export interface PluginGalleryController {
   canToggle: boolean;
   openSource: () => void;
   sourceUrl: string | null;
+  remove: () => void;
+  canRemove: boolean;
 }
 
 function EntryRow({
@@ -57,7 +59,6 @@ function EntryRow({
   controller: PluginGalleryController;
   selected: boolean;
 }) {
-  const colors = useThemeColors();
   const status = statusOf(entry, controller.installedNow);
   const select = () => controller.select(entry.id);
   const activate = () => {
@@ -96,9 +97,6 @@ function EntryRow({
           }}
           style={{ cursor: "pointer" }}
         >
-          <Text fg={entry.featured ? colors.borderFocused : foregroundColor} selectable={false}>
-            {entry.featured ? " ● " : "   "}
-          </Text>
           <Text
             fg={foregroundColor}
             attributes={entry.featured || entry.enabled ? TextAttributes.BOLD : 0}
@@ -365,6 +363,9 @@ function PreviewPane({
             disabled={installing}
             onPress={() => (installable ? controller.install(entry) : controller.toggle(entry))}
           />
+        ) : null}
+        {controller.canRemove ? (
+          <Button label="Uninstall" variant="danger" onPress={controller.remove} />
         ) : null}
         {controller.sourceUrl ? (
           <>

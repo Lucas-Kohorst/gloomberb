@@ -65,19 +65,29 @@ export function setPluginsDirForTests(dir: string | null): void {
 }
 
 export interface ExternalPluginEntry {
+  /** Install directory name; also the plugin id when metadata is missing. */
   dirName: string;
   pluginDir: string;
   entryFile: string;
+  /** Top-level install directory name, set for packages nested in a monorepo. */
+  managementDirName?: string;
 }
 
+/**
+ * Walks the plugins directory for installable plugins. A directory is a plugin
+ * when it has an entry file of its own (`package.json` main or an index file).
+ * Directories without one are treated as monorepo checkouts and scanned for
+ * nested packages in both `<repo>/<plugin>` and `<repo>/plugins/<plugin>`
+ * layouts; the enclosing repo name becomes `managementDirName`.
+ */
 export async function listExternalPluginEntries(
   rootDir = getPluginsDir(),
 ): Promise<ExternalPluginEntry[]> {
   if (!existsSync(rootDir)) return [];
-  const entries = await readdir(rootDir, { withFileTypes: true });
+
   const plugins: ExternalPluginEntry[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  for (const entry of await readdir(rootDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     // Skip hidden dirs and node_modules at the root level.
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const pluginDir = join(rootDir, entry.name);
@@ -87,42 +97,46 @@ export async function listExternalPluginEntries(
       continue;
     }
 
-    // Monorepo support: a top-level directory with no entry file of its own
-    // may contain plugin subdirectories. Scan one level deep so a single
-    // `gloomberb-plugins` checkout registers every contained plugin.
-    const subEntries = await readdir(pluginDir, { withFileTypes: true });
-    for (const sub of subEntries) {
-      if (!sub.isDirectory()) continue;
-      if (sub.name.startsWith(".") || sub.name === "node_modules") continue;
-      const subDir = join(pluginDir, sub.name);
-      const subEntryFile = resolvePluginEntryFile(subDir);
-      if (subEntryFile) {
-        plugins.push({ dirName: sub.name, pluginDir: subDir, entryFile: subEntryFile });
-      }
-    }
+    plugins.push(...await findRepoPackages(pluginDir, entry.name));
   }
   return plugins;
 }
 
-/** Resolves a plugin directory's entry file the way `bun install` would. */
-export async function resolvePluginEntry(pluginDir: string): Promise<string | null> {
-  const pkgPath = join(pluginDir, "package.json");
-  if (existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(await Bun.file(pkgPath).text());
-      if (pkg.main) {
-        const main = join(pluginDir, pkg.main);
-        if (existsSync(main)) return main;
+async function findRepoPackages(repoDir: string, repoName: string): Promise<ExternalPluginEntry[]> {
+  const packages: ExternalPluginEntry[] = [];
+
+  for (const sub of await readdir(repoDir, { withFileTypes: true })) {
+    if (!sub.isDirectory() && !sub.isSymbolicLink()) continue;
+    if (sub.name.startsWith(".") || sub.name === "node_modules") continue;
+    const subDir = join(repoDir, sub.name);
+    const subEntryFile = resolvePluginEntryFile(subDir);
+
+    // `<repo>/<plugin>`: a package living directly in the checkout.
+    if (subEntryFile) {
+      packages.push({ dirName: sub.name, pluginDir: subDir, entryFile: subEntryFile, managementDirName: repoName });
+      continue;
+    }
+
+    // `<repo>/plugins/<plugin>`: only the conventional workspace dir nests
+    // packages any deeper.
+    if (sub.name !== "plugins") continue;
+    for (const packageEntry of await readdir(subDir, { withFileTypes: true })) {
+      if (!packageEntry.isDirectory() && !packageEntry.isSymbolicLink()) continue;
+      if (packageEntry.name.startsWith(".") || packageEntry.name === "node_modules") continue;
+      const packageDir = join(subDir, packageEntry.name);
+      const packageEntryFile = resolvePluginEntryFile(packageDir);
+      if (packageEntryFile) {
+        packages.push({
+          dirName: packageEntry.name,
+          pluginDir: packageDir,
+          entryFile: packageEntryFile,
+          managementDirName: repoName,
+        });
       }
-    } catch {
-      // Malformed package.json falls through to the index candidates.
     }
   }
-  for (const candidate of ["index.ts", "index.tsx", "index.js"]) {
-    const path = join(pluginDir, candidate);
-    if (existsSync(path)) return path;
-  }
-  return null;
+
+  return packages;
 }
 
 export function pluginSupportsTarget(plugin: GloomPlugin, target: PluginTarget): boolean {

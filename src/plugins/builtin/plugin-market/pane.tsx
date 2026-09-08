@@ -100,7 +100,13 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   const [discoveryStatus, setDiscoveryStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
   useEffect(() => {
-    setExternalEntries(scanExternalPlugins());
+    let cancelled = false;
+    void scanExternalPlugins().then((entries) => {
+      if (!cancelled) setExternalEntries(entries);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [refreshCounter]);
 
   useEffect(() => {

@@ -30,7 +30,6 @@ export interface ExternalPluginEntry {
   dirName: string;
   /** Top-level install directory, when this entry is nested in a monorepo. */
   managementDirName?: string;
-  pluginId: string | null;
   version: string;
   description: string;
   hasError: boolean;

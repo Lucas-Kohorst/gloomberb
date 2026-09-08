@@ -22,7 +22,10 @@ function scratchPlugin(source: string): string {
 }
 
 const fakeExports = async (specifier: string) => (
-  specifier === "gloomberb/ui" ? ["Box", "Text"] : specifier === "react" ? ["useState"] : []
+  specifier === "gloomberb/ui" ? ["Box", "Text"]
+    : specifier === "react" ? ["useState"]
+      : specifier === "react/jsx-runtime" ? ["jsx", "jsxs", "Fragment"]
+        : []
 );
 
 describe("buildSharedModuleSource", () => {
@@ -82,6 +85,22 @@ describe("bundleExternalPlugin", () => {
 
       expect(result.shared).toEqual([]);
       expect(code).toContain("* 2");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("emits production JSX calls for desktop-compatible TSX plugins", async () => {
+    const dir = scratchPlugin(`
+      export const Pane = () => <div>Plugin</div>;
+      export default { id: "scratch", name: "Scratch", Pane };
+    `);
+    try {
+      const result = await bundleExternalPlugin(dir, join(dir, "out"), { exportNamesFor: fakeExports });
+      const code = await Bun.file(result.outputPath).text();
+
+      expect(result.shared).toEqual(["react/jsx-runtime"]);
+      expect(code).not.toContain("jsxDEV");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

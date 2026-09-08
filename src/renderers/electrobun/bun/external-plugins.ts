@@ -1,11 +1,11 @@
-import { readdir, stat } from "fs/promises";
+import { readdir, rm, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 
 import type { DesktopExternalPluginBundle } from "../shared/protocol";
 import { bundleExternalPlugin, pluginBundleCacheDir } from "../../../plugins/bundle";
 import { linkHostPackages } from "../../../plugins/host-link";
-import { getPluginsDir, resolvePluginEntry } from "../../../plugins/loader";
+import { getPluginsDir, listExternalPluginEntries } from "../../../plugins/loader";
 import type { GloomPlugin } from "../../../types/plugin";
 import { debugLog } from "../../../utils/debug-log";
 
@@ -67,19 +67,16 @@ export async function collectExternalPluginBundles(): Promise<DesktopExternalPlu
   const outDir = pluginBundleCacheDir(join(pluginsDir, ".cache"));
   const bundles: DesktopExternalPluginBundle[] = [];
 
-  for (const entry of await readdir(pluginsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const pluginDir = join(pluginsDir, entry.name);
-
-    const entryFile = await resolvePluginEntry(pluginDir);
-    if (!entryFile) continue;
+  for (const entry of await listExternalPluginEntries(pluginsDir)) {
+    const pluginDir = entry.pluginDir;
+    const entryFile = entry.entryFile;
 
     linkHostPackages(pluginDir);
 
     const plugin = await readPluginMetadata(entryFile);
     const base = {
-      id: plugin?.id ?? entry.name,
-      name: plugin?.name ?? entry.name,
+      id: plugin?.id ?? entry.dirName,
+      name: plugin?.name ?? entry.dirName,
       version: plugin?.version ?? "0.0.0",
       path: pluginDir,
       ...(plugin?.targets ? { targets: plugin.targets } : {}),
@@ -105,7 +102,7 @@ export async function collectExternalPluginBundles(): Promise<DesktopExternalPlu
         continue;
       }
 
-      const result = await bundleExternalPlugin(pluginDir, join(outDir, entry.name));
+      const result = await bundleExternalPlugin(pluginDir, join(outDir, entry.dirName));
       const code = await Bun.file(result.outputPath).text();
       bundleCache.set(pluginDir, { mtimeMs, code });
       log.info(`Bundled ${plugin.id} (${Math.round(code.length / 1024)}KB, shared: ${result.shared.join(", ")})`);
@@ -134,6 +131,33 @@ export async function installExternalPlugin(ref: string): Promise<{ ok: boolean;
     await installPlugin(ref, { quiet: true });
     bundleCache.clear();
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Removes exactly one external plugin directory, including monorepo packages. */
+export async function removeExternalPlugin(pluginId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const entries = await listExternalPluginEntries();
+
+    // Fast path: the install directory name is the id the marketplace shows
+    // for any plugin whose metadata failed to load.
+    const byDirName = entries.find((entry) => entry.dirName === pluginId);
+    if (byDirName) {
+      await rm(byDirName.pluginDir, { recursive: true, force: true });
+      bundleCache.delete(byDirName.pluginDir);
+      return { ok: true };
+    }
+
+    for (const entry of entries) {
+      const plugin = await readPluginMetadata(entry.entryFile);
+      if (plugin?.id !== pluginId) continue;
+      await rm(entry.pluginDir, { recursive: true, force: true });
+      bundleCache.delete(entry.pluginDir);
+      return { ok: true };
+    }
+    return { ok: false, error: `Plugin "${pluginId}" was not found.` };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

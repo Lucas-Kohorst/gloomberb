@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DataTableStackView,
+  ConfirmDialog,
   InputSearchBar,
   Spinner,
   type DataTableCell,
@@ -12,6 +13,7 @@ import { useMarketplaceListNavigation } from "../../../components/marketplace/si
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiHost, type InputRenderable } from "../../../ui";
+import { useDialog, type PromptContext } from "../../../ui/dialog";
 import { formatCompact } from "../../../utils/format";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import {
@@ -33,7 +35,7 @@ import {
   type RegistryPlugin,
 } from "./model";
 import { DetailRow } from "./detail-row";
-import { getMarketplaceHost, getPluginInstaller } from "./store";
+import { getMarketplaceHost, getPluginInstaller, getPluginRemover } from "./store";
 import { statusOf } from "./status";
 
 export const PLUGIN_MARKETPLACE_PANE_ID = "plugin-marketplace";
@@ -133,6 +135,7 @@ function EntryDetail({ entry, width }: { entry: MarketplaceEntry; width: number 
 
 export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const ui = useUiHost();
+  const dialog = useDialog();
   const renderer = useRendererHost();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -241,6 +244,26 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const installSelected = useCallback(() => {
     if (selected) install(selected);
   }, [install, selected]);
+  const removeSelected = useCallback(async () => {
+    const remover = getPluginRemover();
+    if (!selected || selected.bundled || !selected.installed || !remover) return;
+    const confirmed = await dialog.prompt<boolean>({
+      closeOnClickOutside: true,
+      content: (context: PromptContext<boolean>) => (
+        <ConfirmDialog
+          {...context}
+          title="Uninstall plugin?"
+          body={`Remove "${selected.name}" from disk?`}
+          confirmLabel="Uninstall"
+          cancelLabel="Cancel"
+        />
+      ),
+    }).catch(() => false);
+    if (!confirmed) return;
+    const result = await remover(selected.id);
+    if (result.ok) setLocalRevision((value) => value + 1);
+    else setInstallError(result.error ?? "Uninstall failed.");
+  }, [dialog, selected]);
 
   const sourceUrl = selected ? registryPluginUrl(selected.id) : null;
   const openSource = useCallback(() => {
@@ -249,6 +272,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   }, [renderer, sourceUrl]);
   const canInstall = !!selected && isInstallable(selected) && !installedNow.includes(selected.id) && !!getPluginInstaller();
   const canToggle = !!selected && selected.installed && selected.toggleable;
+  const canRemove = !!selected && selected.installed && !selected.bundled && !!getPluginRemover();
   const isDesktop = ui.kind === "desktop-web";
 
   // The terminal table owns its own cursor; only the desktop sidebar needs this.
@@ -292,6 +316,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
         : canToggle
           ? [{ id: "toggle", key: "e", label: selected?.enabled ? "disable" : "nable", onPress: toggleSelected }]
           : []),
+      ...(canRemove ? [{ id: "remove", key: "x", label: "uninstall", onPress: () => void removeSelected() }] : []),
     ],
   });
 
@@ -313,8 +338,10 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
     installedNow,
     canInstall,
     canToggle,
+    canRemove,
     openSource,
     sourceUrl,
+    remove: removeSelected,
   };
 
   if (isDesktop) {

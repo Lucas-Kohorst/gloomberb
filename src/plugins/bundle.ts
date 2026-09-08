@@ -1,7 +1,7 @@
 import { mkdir } from "fs/promises";
 import { join } from "path";
 
-import { resolvePluginEntry } from "./loader";
+import { resolvePluginEntryFile } from "./loader";
 import { PLUGIN_HOST_GLOBAL, SHARED_SPECIFIERS } from "./host-contract";
 
 /**
@@ -98,7 +98,7 @@ export async function bundleExternalPlugin(
   outDir: string,
   options: { exportNamesFor?: (specifier: string) => Promise<readonly string[]> } = {},
 ): Promise<BundlePluginResult> {
-  const entry = await resolvePluginEntry(pluginDir);
+  const entry = resolvePluginEntryFile(pluginDir);
   if (!entry) throw new Error(`No plugin entry file in ${pluginDir}`);
 
   await mkdir(outDir, { recursive: true });
@@ -109,6 +109,9 @@ export async function bundleExternalPlugin(
     outdir: outDir,
     target: "browser",
     format: "esm",
+    // Plugin bundles execute in production desktop windows too. Never emit
+    // jsxDEV: React's production jsx-dev-runtime intentionally leaves it undefined.
+    jsx: { runtime: "automatic", importSource: "react", development: false },
     splitting: false,
     minify: false,
     sourcemap: "none",

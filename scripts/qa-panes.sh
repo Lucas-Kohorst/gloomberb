@@ -29,12 +29,13 @@ if [ ! -f "$HOME_DIR/.gloomberb/config.json" ]; then
     import { mkdirSync, writeFileSync } from "fs";
     import { join } from "path";
     import { createDefaultConfig } from "./src/types/config";
+    import { EXTRACTED_PLUGINS } from "./src/plugins/seed";
     const dir = join(process.env.HOME, ".gloomberb");
     mkdirSync(dir, { recursive: true });
     const config = createDefaultConfig(dir);
     config.onboardingComplete = true;
     // Isolated QA homes must not clone extracted plugins from GitHub.
-    config.seededPlugins = ["substack", "ibkr", "ibkr-gateway"];
+    config.seededPlugins = EXTRACTED_PLUGINS.map((entry) => entry.id);
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));
   '
 fi
