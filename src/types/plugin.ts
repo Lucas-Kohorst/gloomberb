@@ -773,6 +773,11 @@ export interface GloomPluginContext {
    * Resolve an API key for a known service (e.g. "adjacent", "hyperliquid",
    * "sec-edgar") or a custom BYOK entry. Checks stored BYOK keys first, then
    * falls back to the service's configured environment variable.
+   *
+   * External (user-installed) plugins are denied key resolution unless the
+   * host has granted this plugin explicit access via
+   * `PluginRegistry.grantApiKeyAccess` (issued after user approval); those
+   * plugins also receive a `getConfig()` view with BYOK key values redacted.
    */
   getApiKey(serviceId: string): string | undefined;
 

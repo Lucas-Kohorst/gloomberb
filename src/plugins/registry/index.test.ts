@@ -678,3 +678,83 @@ describe("PluginRegistry broker runtime", () => {
     ]);
   });
 });
+
+describe("PluginRegistry API-key access", () => {
+  function configWithByokKeys(keys: Array<{ serviceId: string; apiKey: string }>) {
+    const config = createDefaultConfig("/tmp/gloomberb-byok-grant");
+    config.pluginConfig = {
+      application: {
+        byokApiKeys: {
+          keys: keys.map((key, index) => ({
+            id: `k${index + 1}`,
+            serviceId: key.serviceId,
+            name: key.serviceId,
+            apiKey: key.apiKey,
+            createdAt: 1,
+          })),
+        },
+      },
+    };
+    return config;
+  }
+
+  test("external plugins cannot resolve BYOK keys or read raw key config without a host grant", async () => {
+    const registry = createRegistry();
+    registry.getConfigFn = () => configWithByokKeys([
+      { serviceId: "adjacent", apiKey: "adj-secret" },
+      { serviceId: "sec-edgar", apiKey: "edgar-secret" },
+    ]);
+
+    let externalCtx: GloomPluginContext | null = null;
+    await registry.registerExternalPlugin(
+      {
+        id: "external-plugin",
+        name: "External Plugin",
+        version: "1.0.0",
+        setup: (ctx) => { externalCtx = ctx; },
+      },
+      "/tmp/gloomberb-external/index.ts",
+    );
+
+    // Denied by default for every service.
+    expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
+    expect(externalCtx!.getApiKey("sec-edgar")).toBeUndefined();
+    expect(externalCtx!.getApiKey("unknown-service")).toBeUndefined();
+
+    // getConfig redacts the stored key values for external plugins while
+    // preserving entry shape/count.
+    const redactedConfig = externalCtx!.getConfig().pluginConfig.application
+      .byokApiKeys as { keys: Array<{ apiKey: string; serviceId: string }> };
+    expect(redactedConfig.keys).toHaveLength(2);
+    expect(redactedConfig.keys.map((entry) => entry.apiKey)).toEqual(["[redacted]", "[redacted]"]);
+    expect(redactedConfig.keys.map((entry) => entry.serviceId)).toEqual(["adjacent", "sec-edgar"]);
+
+    // A host-issued grant unlocks exactly the granted service.
+    registry.grantApiKeyAccess("external-plugin", "adjacent");
+    expect(externalCtx!.getApiKey("adjacent")).toBe("adj-secret");
+    expect(externalCtx!.getApiKey("sec-edgar")).toBeUndefined();
+
+    registry.revokeApiKeyAccess("external-plugin", "adjacent");
+    expect(externalCtx!.getApiKey("adjacent")).toBeUndefined();
+  });
+
+  test("bundled plugins keep resolving BYOK keys and see the raw config", async () => {
+    const registry = createRegistry();
+    registry.getConfigFn = () => configWithByokKeys([
+      { serviceId: "adjacent", apiKey: "adj-secret" },
+    ]);
+
+    let builtinCtx: GloomPluginContext | null = null;
+    await registry.register({
+      id: "builtin-plugin",
+      name: "Builtin Plugin",
+      version: "1.0.0",
+      setup: (ctx) => { builtinCtx = ctx; },
+    });
+
+    expect(builtinCtx!.getApiKey("adjacent")).toBe("adj-secret");
+    const rawConfig = builtinCtx!.getConfig().pluginConfig.application
+      .byokApiKeys as { keys: Array<{ apiKey: string }> };
+    expect(rawConfig.keys[0]!.apiKey).toBe("adj-secret");
+  });
+});
