@@ -83,6 +83,19 @@ describe("applyRemoteControlText", () => {
     )).rejects.toThrow(/capability\.invoke/);
   });
 
+  test("refuses patch app://config before sending", async () => {
+    await expect(applyRemoteControlText(
+      JSON.stringify({
+        type: "patch",
+        resource: "app://config",
+        patch: [{ op: "replace", path: "/activeLayoutIndex", value: 0 }],
+      }),
+      async () => {
+        throw new Error("must not send");
+      },
+    )).rejects.toThrow(/app:\/\/config cannot be patched by the agent/);
+  });
+
   test("does not crash on a batch without requests", async () => {
     const result = await applyRemoteControlText(
       '{"type":"batch"}',
