@@ -50,6 +50,7 @@ describe("CloudApiSocket connection health", () => {
     const socket = new CloudApiSocket({
       getBaseUrl: () => `http://127.0.0.1:${server.port}`,
       getSocketAuthToken: () => null,
+      getSocketAuthHeaders: () => null,
       isCookieAuthenticated: () => false,
       hasSessionCredential: () => false,
       hasVerifiedUser: () => false,

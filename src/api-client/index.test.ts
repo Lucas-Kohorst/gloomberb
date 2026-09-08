@@ -48,12 +48,15 @@ class TestWebSocket {
   onerror: ((event: unknown) => void) | null = null;
   readonly sent: unknown[] = [];
   closeCalls = 0;
+  readonly init: { headers?: Record<string, string> } | undefined;
 
   constructor(
     readonly url: string,
     initialReadyState: number,
+    init?: { headers?: Record<string, string> },
   ) {
     this.readyState = initialReadyState;
+    this.init = init;
   }
 
   send(payload: string): void {
@@ -86,8 +89,8 @@ function installTestWebSocket(initialReadyState = 1): TestWebSocket[] {
   class InstalledTestWebSocket extends TestWebSocket {
     static readonly OPEN = 1;
 
-    constructor(url: string) {
-      super(url, initialReadyState);
+    constructor(url: string, init?: { headers?: Record<string, string> }) {
+      super(url, initialReadyState, init);
       sockets.push(this);
     }
   }
@@ -410,7 +413,9 @@ describe("apiClient quote socket", () => {
     const unsubscribe = apiClient.subscribeQuotes([{ symbol: "AAPL" }], () => {});
 
     expect(sockets).toHaveLength(1);
-    expect(sockets[0]!.url).toContain("token=stale-ws-token");
+    // The credential travels in the handshake Cookie header, never in the URL.
+    expect(sockets[0]!.url).not.toContain("token=");
+    expect(sockets[0]!.init?.headers?.Cookie).toContain("session_token=stale-ws-token");
 
     sockets[0]!.closeWith({ code: 1008, reason: "Unauthorized" });
 
@@ -435,6 +440,8 @@ describe("apiClient quote socket", () => {
 
     expect(sockets).toHaveLength(1);
     expect(sockets[0]!.url).toBe("wss://api.gloom.sh/cloud/ws");
+    // Anonymous socket: no credential, so no handshake headers.
+    expect(sockets[0]!.init).toBeUndefined();
     expect(sockets[0]!.sent).toContainEqual({
       type: "market.subscribe",
       symbols: [{
@@ -467,7 +474,11 @@ describe("apiClient quote socket", () => {
 
     expect(sockets).toHaveLength(2);
     expect(sockets[0]!.closeCalls).toBe(1);
-    expect(sockets[1]!.url).toContain("token=session-token");
+    // Reconnect authenticates with the session token in the handshake Cookie
+    // header, never in the URL.
+    expect(sockets[1]!.url).not.toContain("token=");
+    expect(sockets[1]!.url).toBe("wss://api.gloom.sh/cloud/ws");
+    expect(sockets[1]!.init?.headers?.Cookie).toContain("session_token=session-token");
     sockets[1]!.open();
     expect(sockets[1]!.sent).toContainEqual({
       type: "market.subscribe",

@@ -100,6 +100,22 @@ export class CloudApiRequestTransport {
   }
 
   /**
+   * Native (non-hosted) clients authenticate the realtime socket by presenting
+   * the session token as the upstream session Cookie on the handshake — the
+   * same cookie names the hosted Worker relay presents to api.gloom.sh for
+   * `/cloud/ws`. The token is deliberately never placed in the URL: query
+   * strings leak into TLS-terminating proxy, CDN/edge, and APM URL logs, while
+   * handshake headers are not logged that way. Hosted web clients authenticate
+   * through the Worker's HttpOnly cookie and return null.
+   */
+  getSocketAuthHeaders(): Record<string, string> | null {
+    if (this.isHostedSocket()) return null;
+    const token = this.getSocketAuthToken();
+    if (!token) return null;
+    return { Cookie: SESSION_COOKIE_NAMES.map((name) => `${name}=${token}`).join("; ") };
+  }
+
+  /**
    * In the hosted web client the WebSocket must connect to the Worker's own
    * origin (which relays to Gloom Cloud with the server-held session), not
    * directly to api.gloom.sh. Setting this switches the socket to same-origin,

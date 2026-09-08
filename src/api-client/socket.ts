@@ -53,6 +53,8 @@ function mergeQuoteStreamSubscriptions(
 type CloudApiSocketDelegate = {
   getBaseUrl: () => string;
   getSocketAuthToken: () => string | null;
+  /** Native client: handshake headers carrying the session credential (never a URL query param). */
+  getSocketAuthHeaders: () => Record<string, string> | null;
   /** Hosted web client: authenticate via the same-origin session cookie, not a token query param. */
   isCookieAuthenticated: () => boolean;
   hasSessionCredential: () => boolean;
@@ -66,6 +68,17 @@ type CloudApiSocketDelegate = {
 type ChatChannelConnection = {
   send: (content: string, replyToId?: string, clientMessageId?: string) => Promise<ChatMessage>;
   close: () => void;
+};
+
+/**
+ * Bun's client WebSocket accepts handshake headers via its options object.
+ * The DOM typings (which tsc resolves for this tree) only model `protocols`
+ * as the second argument, so construct through this shape when headers are
+ * present. The hosted path never sends headers, so browsers thread through
+ * the plain `new WebSocket(url)` branch below.
+ */
+type WebSocketConstructorWithHeaders = {
+  new (url: string | URL, options: { headers: Record<string, string> }): WebSocket;
 };
 
 function marketKey(symbol: string, exchange?: string): string {
@@ -462,15 +475,20 @@ export class CloudApiSocket {
 
     const socketToken = this.delegate.getSocketAuthToken();
     const usingWebSocketToken = this.delegate.isUsingWebSocketToken();
-    // Hosted connects same-origin to the Worker and authenticates with the
-    // HttpOnly cookie sent on the handshake, so the opaque hosted-session
-    // sentinel must never be placed in the query string.
+    // The session credential never goes in the URL: query strings end up in
+    // TLS-terminating proxies, CDN/edge access logs, and APM crash reports, so
+    // a ?token= handshake would hand out replayable sessions to anyone with log
+    // read access. Hosted connects same-origin to the Worker and authenticates
+    // with the HttpOnly cookie sent on the handshake (no header needed); native
+    // connects directly to api.gloom.sh and carries the token in the upstream
+    // session Cookie header — the same cookie names the hosted Worker relay
+    // presents upstream, which is how /cloud/ws already authenticates.
     const hostedSocketUrl = hostedCloudWebSocketUrl();
     const cookieAuthenticated = this.delegate.isCookieAuthenticated();
-    const url = hostedSocketUrl
-      ?? (socketToken && !cookieAuthenticated
-        ? `${this.getWebSocketBaseUrl()}/cloud/ws?token=${encodeURIComponent(socketToken)}`
-        : `${this.getWebSocketBaseUrl()}/cloud/ws`);
+    const url = hostedSocketUrl ?? `${this.getWebSocketBaseUrl()}/cloud/ws`;
+    const socketHeaders = cookieAuthenticated
+      ? null
+      : this.delegate.getSocketAuthHeaders();
     cloudApiLog.info("open websocket", {
       hasToken: !!socketToken,
       tokenSource: cookieAuthenticated ? "cookie" : usingWebSocketToken ? "websocket" : "session",
@@ -480,7 +498,10 @@ export class CloudApiSocket {
     this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "connecting", this.getWebSocketBaseUrl());
     let ws: WebSocket;
     try {
-      ws = new WebSocket(url);
+      ws = socketHeaders && Object.keys(socketHeaders).length > 0
+        // Cast inline so the current global (possibly mocked in tests) is used.
+        ? new (WebSocket as unknown as WebSocketConstructorWithHeaders)(url, { headers: socketHeaders })
+        : new WebSocket(url);
     } catch (error) {
       this.health.reportSocketState(
         GLOOM_CLOUD_SOCKET_CONNECTION_ID,
