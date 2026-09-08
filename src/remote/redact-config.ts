@@ -99,11 +99,23 @@ function redactByokEntry(entry: Record<string, unknown>): Record<string, unknown
  * is, ensure it is NOT added to the safe-field sets above.
  */
 export function redactConfigForRemote(config: AppConfig): AppConfig {
-  const clone = structuredClone(config) as AppConfig;
+  const clone = redactByokKeysFromConfig(config);
 
   if (Array.isArray(clone.brokerInstances)) {
     clone.brokerInstances = clone.brokerInstances.map(redactBrokerInstance);
   }
+
+  return clone;
+}
+
+/**
+ * Redact only the BYOK API-key store from a config, leaving every other field
+ * (broker instances, plugin config, ...) untouched. Used by the plugin registry
+ * so external/untrusted plugins never receive raw stored credentials through
+ * `ctx.getConfig()` while still seeing everything else.
+ */
+export function redactByokKeysFromConfig(config: AppConfig): AppConfig {
+  const clone = structuredClone(config) as AppConfig;
 
   const appPluginConfig = clone.pluginConfig?.[BYOK_PLUGIN_ID];
   if (appPluginConfig && typeof appPluginConfig === "object") {
