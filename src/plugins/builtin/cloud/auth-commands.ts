@@ -3,6 +3,7 @@ import { apiClient } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { requestAuthDialog } from "./auth-dialog";
 import { requestDeviceSignInDialog } from "./device-signin-dialog";
+import { clearHostedByokKeys } from "../byok/hosted-persist";
 
 export function registerCloudAuthCommands(ctx: GloomPluginContext): void {
   ctx.registerCommand({
@@ -91,6 +92,7 @@ export function registerCloudAuthCommands(ctx: GloomPluginContext): void {
       } catch (error) {
         signOutError = error;
       }
+      clearHostedByokKeys();
       await chatController.refreshSession();
       await chatController.refreshMessages();
       ctx.notify({
