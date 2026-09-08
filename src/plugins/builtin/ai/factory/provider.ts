@@ -60,6 +60,44 @@ export const FACTORY_AGENT_SYSTEM_PROMPT = [
 const FACTORY_BASE_URL = "https://app.factory.ai";
 const MAX_FACTORY_PROMPT_CHARS = 120_000;
 
+/**
+ * Environment variables forwarded to the droid exec child. Everything else in
+ * the host process environment - AI provider keys, broker tokens, cloud
+ * credentials - is deliberately not inherited, so a prompt-steered nested
+ * agent cannot read or exfiltrate ambient secrets via the child's shell.
+ */
+const DROID_EXEC_ENV_ALLOWLIST = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LANG",
+  "LC_ALL",
+  "TERM",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "GLOOMBERB_DATA_DIR",
+]);
+
+/**
+ * Defense-in-depth: even if the allowlist above grows, never forward a
+ * variable whose name indicates credential material.
+ */
+const DROID_SECRET_ENV_PATTERN = /(^|_)(TOKEN|KEY|SECRET|CREDENTIAL|PASSWORD|PASSWD|AUTH)(_|$)|^(AWS|AZURE|GITHUB|OPENAI|ANTHROPIC|GOOGLE|GEMINI|GROQ|DEEPSEEK|XAI)_/i;
+
+function buildDroidExecEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of DROID_EXEC_ENV_ALLOWLIST) {
+    if (DROID_SECRET_ENV_PATTERN.test(name)) continue;
+    const value = process.env[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
+export { buildDroidExecEnv };
+
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
 const EMPTY_USAGE: AssistantMessage["usage"] = {
@@ -200,7 +238,7 @@ function runDroidExec(model: Model<"pi-messages">, prompt: string, signal?: Abor
     const child = spawn(resolveDroidBinary(), args, {
       cwd: FACTORY_WORKDIR,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: buildDroidExecEnv(),
     });
 
     let stdout = "";
