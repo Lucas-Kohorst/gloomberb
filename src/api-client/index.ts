@@ -130,6 +130,7 @@ class GloomApiClient {
     this.socket = new CloudApiSocket({
       getBaseUrl: () => this.transport.getSocketBaseUrl(),
       getSocketAuthToken: () => this.getSocketAuthToken(),
+      getSocketAuthHeaders: () => this.transport.getSocketAuthHeaders(),
       hasSessionCredential: () => this.transport.hasSessionCredential(),
       hasVerifiedUser: () => this.currentUser?.emailVerified === true,
       isCookieAuthenticated: () => this.transport.isHostedSocket(),
