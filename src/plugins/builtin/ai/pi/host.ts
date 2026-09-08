@@ -4,7 +4,7 @@ import { Type, type Static } from "typebox";
 import { sendRemoteControlRequest } from "../../../../remote/client";
 import { sendInProcessOrRemoteControlRequest } from "../../../../remote/in-process-handle";
 import { redactConfigForRemote } from "../../../../remote/redact-config";
-import { safeExternalUrl } from "../../../../utils/external-url";
+import { openUrlCommand, safeExternalUrl } from "../../../../utils/external-url";
 import type { AppConfig } from "../../../../types/config";
 import type {
   RemoteAppKind,
@@ -169,11 +169,8 @@ async function defaultOpenExternal(url: string): Promise<void> {
   if (typeof Bun === "undefined" || typeof Bun.spawn !== "function") {
     throw new Error("Opening AI sign-in requires the native app host.");
   }
-  const command = process.platform === "darwin"
-    ? ["open", safeUrl]
-    : process.platform === "win32"
-      ? ["cmd", "/c", "start", "", safeUrl]
-      : ["xdg-open", safeUrl];
+  const command = openUrlCommand(safeUrl);
+  if (!command) throw new Error("Could not open the AI sign-in page.");
   const processRef = Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
   const exitCode = await processRef.exited;
   if (exitCode !== 0) throw new Error("Could not open the AI sign-in page.");

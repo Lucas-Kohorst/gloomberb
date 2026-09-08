@@ -176,9 +176,10 @@ export async function initByokCryptoForUser(
       const parsed: unknown = JSON.parse(raw);
       if (isStoredConfig(parsed)) {
         configCache.set(userId, parsed);
-        void encryptConfig(kek, parsed).then((encrypted) => {
-          storage.setItem(storageKey, encrypted);
-        });
+        // Route through persistEncryptedByokKeys so the write-generation guard
+        // applies: a later user edit must not be overwritten by stale
+        // pre-migration ciphertext landing after the newer write.
+        void persistEncryptedByokKeys(userId, parsed, storage, storageKey);
       }
     } catch {
       // Invalid plaintext — ignore.

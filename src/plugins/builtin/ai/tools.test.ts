@@ -288,6 +288,32 @@ describe("tool execution", () => {
     }
   });
 
+  test("validate_plugin rejects a package.json main entry outside the plugins root", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gloomberb-validate-main-test"));
+    const pluginsDir = join(dir, "plugins");
+    const pluginDir = join(pluginsDir, "escape-plugin");
+    const outsideFile = join(dir, "payload.ts");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(outsideFile, "export default {}");
+    writeFileSync(join(pluginDir, "package.json"), JSON.stringify({ main: "../../payload.ts" }));
+    const origDataDir = process.env.GLOOMBERB_DATA_DIR;
+    process.env.GLOOMBERB_DATA_DIR = dir;
+    setPluginsDirForTests(null);
+    try {
+      const tools = createPluginTools(undefined);
+      const result = await executeToolCall(tools, {
+        tool: "validate_plugin",
+        args: { path: "escape-plugin" },
+      });
+      expect(result.success).toBe(false);
+      expect(result.output).toContain("within the plugins directory");
+    } finally {
+      process.env.GLOOMBERB_DATA_DIR = origDataDir;
+      setPluginsDirForTests(null);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("reload_plugin rejects path-shaped plugin ids before touching the registry", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gloomberb-reload-test"));
     const pluginsDir = join(dir, "plugins");

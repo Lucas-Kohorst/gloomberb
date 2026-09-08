@@ -752,7 +752,11 @@ export function createAppRemoteController({
           }
           return ok(
             target.redact ? target.redact(nextValue) : nextValue,
-            revisionFor(nextValue),
+            // After a non-dry-run write the persisted state may differ from
+            // `nextValue` (config-bearing resources hydrate `[redacted]`
+            // placeholders back to live credentials on apply), so compute the
+            // echoed rev over the written state to match a subsequent GET.
+            request.dryRun ? revisionFor(nextValue) : revisionForResource(request.resource, nextValue),
             buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_MUTATION_INCLUDE),
           );
         }

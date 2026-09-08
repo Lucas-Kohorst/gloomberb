@@ -70,7 +70,7 @@ import { cloudSyncController } from "../../sync/controller";
 import { queueAgentPromptFragment, queueAgentTool } from "../builtin/ai/runner";
 import { isReservedBuiltinPluginId } from "../ownership";
 import { resolveApiKey } from "../builtin/byok/store";
-import { redactByokKeysFromConfig } from "../../remote/redact-config";
+import { redactConfigForRemote } from "../../remote/redact-config";
 import { resolvePluginEntryFile } from "../loader";
 import { existsSync } from "fs";
 import { isAbsolute, join, relative, resolve, sep } from "path";
@@ -633,13 +633,14 @@ export class PluginRegistry implements PluginRuntimeAccess {
   }
 
   /**
-   * Config view handed to a plugin. External plugins do not see raw BYOK
-   * credential values (their `apiKey` fields are redacted); bundled plugins
+   * Config view handed to a plugin. External plugins do not see raw
+   * credential values: BYOK API-key fields and broker instance credentials
+   * (`brokerInstances[].config`) are redacted. Bundled first-party plugins
    * get the full config.
    */
   private configForPlugin(pluginId: string): import("../../types/config").AppConfig {
     return this.externalPluginEntryFiles.has(pluginId)
-      ? redactByokKeysFromConfig(this.getConfigFn())
+      ? redactConfigForRemote(this.getConfigFn())
       : this.getConfigFn();
   }
 

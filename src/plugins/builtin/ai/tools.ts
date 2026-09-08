@@ -318,6 +318,9 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
             return { success: false, output: "Path must stay within the plugins directory" };
           }
           entryFile = resolvePluginEntryFile(pluginDir);
+          if (entryFile && !resolveWithinRoot(pluginsRoot, entryFile)) {
+            return { success: false, output: "Plugin entry file must stay within the plugins directory" };
+          }
         }
 
         if (!entryFile || !existsSync(entryFile)) {
