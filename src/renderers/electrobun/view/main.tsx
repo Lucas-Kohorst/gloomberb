@@ -34,7 +34,7 @@ import { prepareDetachedSnapshot } from "./desktop/window/snapshot";
 import { createElectrobunAppServices } from "./app-services";
 import { getRendererPlugins } from "../../../plugins/catalog-ui";
 import { loadDesktopExternalPlugins } from "./external-plugins";
-import { setPluginInstaller } from "../../../plugins/builtin/plugin-marketplace/store";
+import { setPluginInstaller, setPluginRemover } from "../../../plugins/builtin/plugin-marketplace/store";
 import { enableUiYield } from "../../../utils/ui-yield";
 
 // Declared here rather than sniffed: the desktop view and the hosted browser
@@ -130,6 +130,7 @@ async function boot() {
   );
 
   setPluginInstaller((ref) => backendRequest("plugins.install", { ref }));
+  setPluginRemover((pluginId) => backendRequest("plugins.remove", { pluginId }));
 
   const remoteControlAdapter = init.windowKind === "main"
     ? { registerHandler: setElectrobunRemoteRequestHandler }

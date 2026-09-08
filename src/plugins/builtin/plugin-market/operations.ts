@@ -1,6 +1,6 @@
 import { join } from "path";
-import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync } from "fs";
-import { getPluginsDir } from "../../loader";
+import { existsSync, mkdirSync, rmSync, readFileSync } from "fs";
+import { getPluginsDir, listExternalPluginEntries } from "../../loader";
 import type { ExternalPluginEntry, OperationResult } from "./types";
 
 const GITHUB_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -158,38 +158,32 @@ export async function removePluginAsync(name: string): Promise<OperationResult> 
  * Scans the external plugins directory without importing plugins.
  * Returns directory-level metadata (name, version, description) parsed
  * from each plugin's package.json when available.
+ *
+ * The directory walk lives in `listExternalPluginEntries` so discovery and
+ * the marketplace never drift apart; this only adds package.json metadata.
  */
-export function scanExternalPlugins(): ExternalPluginEntry[] {
+export async function scanExternalPlugins(): Promise<ExternalPluginEntry[]> {
   if (!isNativeRuntime()) return [];
-  const pluginsDir = getPluginsDir();
-  if (!existsSync(pluginsDir)) return [];
+  const entries = await listExternalPluginEntries();
+  return entries.map((entry) => readPluginDirMetadata(entry.dirName, entry.pluginDir, entry.managementDirName));
+}
 
-  const entries = readdirSync(pluginsDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+function readPluginDirMetadata(dirName: string, dir: string, managementDirName?: string): ExternalPluginEntry {
+  let version = "—";
+  let description = "—";
+  let hasError = false;
 
-  return entries.map((entry) => {
-    const dir = join(pluginsDir, entry.name);
-    let version = "—";
-    let description = "—";
-    let hasError = false;
-    let pluginId: string | null = null;
-
-    const pkgPath = join(dir, "package.json");
-    if (existsSync(pkgPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-        version = pkg.version || "—";
-        description = pkg.description || "—";
-      } catch {
-        description = "Unreadable package.json";
-        hasError = true;
-      }
+  const pkgPath = join(dir, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      version = pkg.version || "—";
+      description = pkg.description || "—";
+    } catch {
+      description = "Unreadable package.json";
+      hasError = true;
     }
+  }
 
-    // Try to find the plugin ID by checking entry files for a default export name.
-    // We avoid importing to keep the scan lightweight; the registry already has
-    // loaded plugins. Instead, we match by directory name at the pane level.
-    pluginId = null;
-
-    return { dirName: entry.name, pluginId, version, description, hasError };
-  });
+  return { dirName, managementDirName, version, description, hasError };
 }

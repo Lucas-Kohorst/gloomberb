@@ -100,6 +100,25 @@ function isAssistSectionVisible(
   return assist.auto;
 }
 
+function normalizedCatalogAssistArgument(item: ResultItem): string | null {
+  if (!item.id.startsWith("assist:candidate:") || item.badge?.trim().toUpperCase() !== "CAT") return null;
+  const input = item.id.split(":").slice(3).join(":").trim();
+  if (!/^CAT(?:\s|$)/i.test(input)) return null;
+  return input.slice(3).trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function dedupeCatalogBrowseActions(items: ResultItem[], query: string): ResultItem[] {
+  if (!items.some((item) => item.id === "chart-series:data-catalog")) return items;
+  const normalizedQuery = query.trim().toLowerCase().replace(/\s+/g, " ");
+  return items.filter((item) => {
+    if (item.id.startsWith("pane-template:") && item.shortcutQuery?.trim().toUpperCase() === "CAT") {
+      return false;
+    }
+    const assistArgument = normalizedCatalogAssistArgument(item);
+    return assistArgument === null || assistArgument !== normalizedQuery;
+  });
+}
+
 export function buildRootResultModel(options: RootResultModelOptions): RootResultModel {
   const {
     activeCollectionId,
@@ -134,6 +153,15 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
 
   if (currentRoute) {
     return { items: [], initialIdx: 0 };
+  }
+
+  if (/^\s*ART\b/i.test(rootQuery)) {
+    return {
+      items: dedupeById(providerResultItems.filter((item) => (
+        item.id.startsWith("article:") || item.id.startsWith("search-provider:research-search:")
+      ))),
+      initialIdx: 0,
+    };
   }
 
   const commandToItem = createRootCommandItemBuilder({
@@ -257,6 +285,8 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
   // free-text providers stay out of the way.
   if (!shortcutClaimedQuery) {
     items.push(...providerResultItems);
+  } else if (rootShortcutIntent.prefix === "G" || rootShortcutIntent.prefix === "CORR") {
+    items.push(...providerResultItems.filter((item) => item.id.startsWith("chart-series:")));
   }
 
   if (
@@ -288,5 +318,8 @@ export function buildRootResultModel(options: RootResultModelOptions): RootResul
     })
     : [];
 
-  return { items: dedupeById([...assistItems, ...items]), initialIdx };
+  return {
+    items: dedupeCatalogBrowseActions(dedupeById([...assistItems, ...items]), rootQuery),
+    initialIdx,
+  };
 }

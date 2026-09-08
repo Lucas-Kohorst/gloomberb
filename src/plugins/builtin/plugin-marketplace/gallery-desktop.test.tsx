@@ -71,6 +71,8 @@ function createController(overrides: Partial<PluginGalleryController> = {}): {
     canToggle: false,
     openSource: () => {},
     sourceUrl: null,
+    remove: () => {},
+    canRemove: false,
     ...overrides,
   };
   return { controller, installCalls, toggleCalls, selections };

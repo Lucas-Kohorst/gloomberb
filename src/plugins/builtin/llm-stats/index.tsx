@@ -1,8 +1,12 @@
 import type { PluginModule } from "../plugin-module";
 import { LlmStatsPane } from "./pane";
 import { LLM_STATS_PANE_ID } from "./types";
+import { llmStatsSeriesCatalog } from "./metrics";
 
 export const llmStatsModule: PluginModule = {
+  setup(ctx) {
+    ctx.registerChartSeriesCatalog(llmStatsSeriesCatalog);
+  },
   panes: [
     {
       id: LLM_STATS_PANE_ID,

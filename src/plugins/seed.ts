@@ -14,11 +14,16 @@ const log = debugLog.createLogger("plugin-seed");
  * Extracting one must not take a working feature away from someone who upgrades.
  * On first launch after the move, each of these is installed once, then recorded
  * so it is never reinstalled — including when the user removes it deliberately.
+ *
+ * The `gloomberb-plugins` entry is a monorepo: a single clone contains every
+ * extracted data/broker plugin as a subfolder. The loader's subfolder expansion
+ * discovers each one and registers it individually.
  */
 export const EXTRACTED_PLUGINS = [
   { id: "substack", repo: "gloom-sh/gloomberb-substack", directory: "gloomberb-substack" },
   { id: "ibkr", repo: "gloom-sh/gloomberb-ibkr", directory: "gloomberb-ibkr" },
   { id: "ibkr-gateway", repo: "gloom-sh/gloomberb-ibkr-gateway", directory: "gloomberb-ibkr-gateway" },
+  { id: "gloomberb-plugins", repo: "Lucas-Kohorst/gloomberb-plugins", directory: "gloomberb-plugins" },
 ] as const;
 
 export interface SeedResult {

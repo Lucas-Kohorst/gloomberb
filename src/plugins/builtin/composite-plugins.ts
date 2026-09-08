@@ -14,7 +14,6 @@ import { cdsModule } from "./cds";
 import { creditConditionsModule } from "./credit-conditions";
 import { marketValuationModule } from "./market-valuation";
 import { economicCalendarModule } from "./econ";
-import { countryEconModule } from "./country-econ";
 import { econStatisticsModule } from "./econ-statistics";
 import { earningsModule } from "./earnings";
 import { earningsCallsModule } from "./earnings-calls";
@@ -111,7 +110,6 @@ export const macroPlugin = composeBuiltinPlugin({
   modules: [
     macroSharedResourcesModule,
     economicCalendarModule,
-    countryEconModule,
     econStatisticsModule,
     yieldCurveModule,
     volatilityModule,

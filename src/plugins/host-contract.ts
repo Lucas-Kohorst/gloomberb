@@ -32,6 +32,7 @@ export const SHARED_SPECIFIERS = [
   "gloomberb/capabilities",
   "gloomberb/utils",
   "gloomberb/react",
+  "gloomberb/plugins",
 ] as const;
 
 export type SharedSpecifier = (typeof SHARED_SPECIFIERS)[number];

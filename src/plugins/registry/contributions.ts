@@ -1,6 +1,9 @@
 import type { BrokerAdapter } from "../../types/broker";
 import type {
+  AlertConditionDef,
   CommandBarSearchProvider,
+  ChartSeriesCatalogProvider,
+  DocumentSearchProvider,
   CommandDef,
   ContextMenuProviderDef,
   CustomColumnDef,
@@ -23,6 +26,9 @@ export interface PluginItems {
   paneTemplates: string[];
   commands: string[];
   commandBarSearchProviders: string[];
+  documentSearchProviders: string[];
+  chartSeriesCatalogs: string[];
+  alertConditions: string[];
   columns: string[];
   brokers: string[];
   capabilities: string[];
@@ -52,6 +58,10 @@ export class RegistryContributions {
   readonly pluginItems = new Map<string, PluginItems>();
   readonly commandOwners = new Map<string, string>();
   readonly commandBarSearchProviderOwners = new Map<string, string>();
+  readonly documentSearchProviderOwners = new Map<string, string>();
+  readonly chartSeriesCatalogOwners = new Map<string, string>();
+  readonly alertConditionsMap = new Map<string, AlertConditionDef>();
+  readonly alertConditionOwners = new Map<string, string>();
   readonly paneOwners = new Map<string, string>();
   readonly paneTemplateOwners = new Map<string, string>();
   readonly shortcutOwners = new Map<string, string>();
@@ -62,6 +72,8 @@ export class RegistryContributions {
   readonly paneTemplatesMap = new Map<string, PaneTemplateDef>();
   readonly commandsMap = new Map<string, CommandDef>();
   readonly commandBarSearchProvidersMap = new Map<string, CommandBarSearchProvider>();
+  readonly documentSearchProvidersMap = new Map<string, DocumentSearchProvider>();
+  readonly chartSeriesCatalogsMap = new Map<string, ChartSeriesCatalogProvider>();
   readonly columnsMap = new Map<string, CustomColumnDef>();
   readonly brokersMap = new Map<string, BrokerAdapter>();
   readonly tickerResearchTabsMap = new Map<string, TickerResearchTabDef>();
@@ -80,6 +92,9 @@ export class RegistryContributions {
       paneTemplates: [],
       commands: [],
       commandBarSearchProviders: [],
+      documentSearchProviders: [],
+      chartSeriesCatalogs: [],
+      alertConditions: [],
       columns: [],
       brokers: [],
       capabilities: [],
@@ -139,6 +154,48 @@ export class RegistryContributions {
     items.columns.push(column.id);
   }
 
+  registerDocumentSearchProvider(
+    pluginId: string,
+    provider: DocumentSearchProvider,
+    items = this.getOrCreatePluginItems(pluginId),
+  ): () => void {
+    setUnique(this.documentSearchProvidersMap, provider.id, provider);
+    this.documentSearchProviderOwners.set(provider.id, pluginId);
+    items.documentSearchProviders.push(provider.id);
+    return () => {
+      if (this.documentSearchProvidersMap.get(provider.id) !== provider) return;
+      this.documentSearchProvidersMap.delete(provider.id);
+      this.documentSearchProviderOwners.delete(provider.id);
+      items.documentSearchProviders = items.documentSearchProviders.filter((id) => id !== provider.id);
+    };
+  }
+
+  registerChartSeriesCatalog(
+    pluginId: string,
+    provider: ChartSeriesCatalogProvider,
+    items = this.getOrCreatePluginItems(pluginId),
+  ): () => void {
+    setUnique(this.chartSeriesCatalogsMap, provider.id, provider);
+    this.chartSeriesCatalogOwners.set(provider.id, pluginId);
+    items.chartSeriesCatalogs.push(provider.id);
+    return () => {
+      if (this.chartSeriesCatalogsMap.get(provider.id) !== provider) return;
+      this.chartSeriesCatalogsMap.delete(provider.id);
+      this.chartSeriesCatalogOwners.delete(provider.id);
+      items.chartSeriesCatalogs = items.chartSeriesCatalogs.filter((id) => id !== provider.id);
+    };
+  }
+
+  registerAlertCondition(
+    pluginId: string,
+    condition: AlertConditionDef,
+    items = this.getOrCreatePluginItems(pluginId),
+  ): void {
+    setUnique(this.alertConditionsMap, condition.id, condition);
+    this.alertConditionOwners.set(condition.id, pluginId);
+    items.alertConditions.push(condition.id);
+  }
+
   registerBroker(pluginId: string, broker: BrokerAdapter, items = this.getOrCreatePluginItems(pluginId)): void {
     setUnique(this.brokersMap, broker.id, this.options.wrapBrokerAdapter?.(broker, pluginId) ?? broker);
     items.brokers.push(broker.id);
@@ -193,6 +250,18 @@ export class RegistryContributions {
       this.commandBarSearchProviderOwners.delete(providerId);
     }
     for (const columnId of items.columns) this.columnsMap.delete(columnId);
+    for (const providerId of items.documentSearchProviders) {
+      this.documentSearchProvidersMap.delete(providerId);
+      this.documentSearchProviderOwners.delete(providerId);
+    }
+    for (const providerId of items.chartSeriesCatalogs) {
+      this.chartSeriesCatalogsMap.delete(providerId);
+      this.chartSeriesCatalogOwners.delete(providerId);
+    }
+    for (const conditionId of items.alertConditions) {
+      this.alertConditionsMap.delete(conditionId);
+      this.alertConditionOwners.delete(conditionId);
+    }
     for (const brokerId of items.brokers) this.brokersMap.delete(brokerId);
     for (const capabilityId of items.capabilities) this.capabilityOwners.delete(capabilityId);
     for (const tabId of items.tickerResearchTabs) {

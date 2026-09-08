@@ -100,7 +100,13 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
   const [discoveryStatus, setDiscoveryStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
 
   useEffect(() => {
-    setExternalEntries(scanExternalPlugins());
+    let cancelled = false;
+    void scanExternalPlugins().then((entries) => {
+      if (!cancelled) setExternalEntries(entries);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [refreshCounter]);
 
   useEffect(() => {
@@ -147,6 +153,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         toggleable: plugin.toggleable === true && !isNonToggleableBuiltinPluginId(plugin.id),
         source: isExternal ? "external" : "built-in",
         dirName: isExternal ? plugin.id : undefined,
+        managementDirName: extEntry?.managementDirName,
+        removable: !extEntry?.managementDirName,
         hasError: extEntry?.hasError,
       };
     });
@@ -163,6 +171,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
         toggleable: false,
         source: "external" as const,
         dirName: e.dirName,
+        managementDirName: e.managementDirName,
+        removable: !e.managementDirName,
         hasError: true,
         error: e.error || "Failed to load",
       }));
@@ -225,10 +235,10 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
       const result = await installPluginAsync(trimmed);
       if (result.success) {
         // Hot-reload the newly installed plugin without restarting.
-        const reloadResult = await registry?.reloadExternalPlugin(result.name);
+        const reloadResult = await registry?.reloadExternalPlugins();
         notify({
-          body: reloadResult?.success ? reloadResult.message : result.message,
-          type: reloadResult?.success ? "success" : "info",
+          body: reloadResult ? `${result.message} Reloaded ${reloadResult.added.length} new plugin(s).` : result.message,
+          type: "success",
         });
         setInstallMode(false);
         setInstallRef("");
@@ -256,13 +266,13 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
     setBusyMessage(`Updating ${row.dirName}...`);
     setError(null);
     try {
-      const result = await updatePluginAsync(row.dirName);
+      const result = await updatePluginAsync(row.managementDirName ?? row.dirName);
       if (result.success) {
-        // Hot-reload the updated plugin without restarting.
-        const reloadResult = await registry?.reloadExternalPlugin(row.dirName);
+        // A monorepo update may add or remove more than the selected plugin.
+        const reloadResult = await registry?.reloadExternalPlugins();
         notify({
-          body: reloadResult?.success ? reloadResult.message : result.message,
-          type: reloadResult?.success ? "success" : "info",
+          body: reloadResult ? `${result.message} Reloaded ${reloadResult.added.length} new plugin(s).` : result.message,
+          type: "success",
         });
         setRefreshCounter((c) => c + 1);
       } else {
@@ -426,7 +436,10 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
 
   const canToggle = selectedRow?.toggleable === true;
   const canUpdate = selectedRow?.source === "external" && !!selectedRow?.dirName && managementAvailable;
-  const canRemove = selectedRow?.source === "external" && !!selectedRow?.dirName && managementAvailable;
+  const canRemove = selectedRow?.source === "external"
+    && !!selectedRow?.dirName
+    && selectedRow.removable !== false
+    && managementAvailable;
   const canInstallSelected = selectedRow?.source === "github" && !!selectedRow.fullName && managementAvailable;
   const canOpen = !!selectedRow?.url;
 

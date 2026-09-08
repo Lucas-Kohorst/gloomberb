@@ -14,6 +14,7 @@ import {
   usePaneCollection as usePaneCollectionInternal,
   usePaneInstanceId as usePaneInstanceIdInternal,
   usePaneTicker as usePaneTickerInternal,
+  usePaneSettingValue as usePaneSettingValueInternal,
 } from "../state/app/context";
 import type { AppConfig } from "../types/config";
 import type { AppState } from "../state/app/context";
@@ -40,6 +41,7 @@ export { AppContext, PaneInstanceProvider, useAppDispatch, useAppSelector } from
 export const usePaneInstanceId = usePaneInstanceIdInternal;
 export const usePaneCollection = usePaneCollectionInternal;
 export const usePaneTicker = usePaneTickerInternal;
+export const usePaneSettingValue = usePaneSettingValueInternal;
 
 /**
  * Declares that this pane owns keyboard input while `captured` is true, so the

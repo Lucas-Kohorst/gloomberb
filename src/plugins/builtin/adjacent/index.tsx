@@ -1,9 +1,7 @@
 import { useMemo } from "react";
 import type { PaneProps, PaneTemplateCreateOptions, PaneTemplateContext } from "../../../types/plugin";
 import { composeBuiltinPlugin, type PluginModule } from "../plugin-module";
-import { pollsModule } from "../polls";
 import { llmStatsModule } from "../llm-stats";
-import { weatherModule } from "../weather";
 import { owidModule } from "../owid";
 import {
   AdjacentClient,
@@ -16,6 +14,7 @@ import { AdjacentRatesPane } from "./rates";
 import { AdjacentFilingsPane, createCftcBrowserInstance } from "./filings";
 import { createAdjacentNewsCapability } from "./news";
 import { createAdjacentCatalogSearchProvider } from "./command-bar-search";
+import { createCftcDocumentSearchProvider } from "./document-search";
 import { ADJACENT_CLOUD_CONNECTION_ID } from "../connections/adjacent-cloud";
 import { registerConnectionSource } from "../connections/register";
 import { registerPluginAgentHarness } from "../../agent-harness";
@@ -190,6 +189,7 @@ const adjacentMarketsModule: PluginModule = {
 
     ctx.registerCapability?.(createAdjacentNewsCapability(adjacentClient));
     ctx.registerCommandBarSearchProvider(createAdjacentCatalogSearchProvider(ctx));
+    ctx.registerDocumentSearchProvider(createCftcDocumentSearchProvider());
     disposeAdjacentConnection = registerConnectionSource({
       id: ADJACENT_CLOUD_CONNECTION_ID,
       name: "Adjacent Cloud",
@@ -256,9 +256,9 @@ export const adjacentPlugin = composeBuiltinPlugin({
   name: "Adjacent Cloud",
   version: "1.0.0",
   description:
-    "Shared reference data cached at the edge: Adjacent indices, rates, and CFTC filings, VoteHub polls, Weather Company / NWS settlements, llm-stats benchmarks, and Our World in Data grapher prints.",
+    "Shared reference data cached at the edge: Adjacent indices, rates, CFTC filings, llm-stats benchmarks, and Our World in Data grapher prints.",
   toggleable: true,
-  modules: [adjacentMarketsModule, pollsModule, llmStatsModule, weatherModule, owidModule],
+  modules: [adjacentMarketsModule, llmStatsModule, owidModule],
 });
 
 export default adjacentPlugin;

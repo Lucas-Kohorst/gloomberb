@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Button, EmptyState, Spinner } from "../../../components";
+import { MarkdownText } from "../../../components/markdown-text";
 import { openUrl } from "../../../components/ui/external-link";
 import { colors } from "../../../theme/colors";
 import {
@@ -21,6 +22,7 @@ import type {
 import { chunkAttribution, documentBodyWidth } from "./model";
 import { highlightTerms, snippetMatchTerms, type SnippetSegment } from "./snippet";
 import { SnippetText } from "./snippet-text";
+import type { ResearchSearchDocument, ResearchSearchHit } from "./model";
 
 interface DocumentLine {
   key: string;
@@ -173,8 +175,8 @@ export function SearchDocumentView({
   error,
   width,
 }: {
-  hit: CloudSearchHit;
-  document: CloudSearchDocument | null;
+  hit: ResearchSearchHit | CloudSearchHit;
+  document: ResearchSearchDocument | CloudSearchDocument | null;
   loading: boolean;
   error: string | null;
   width: number;
@@ -182,10 +184,17 @@ export function SearchDocumentView({
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
   const { nativePaneChrome } = useUiCapabilities();
   const bodyWidth = documentBodyWidth(width);
-  const terms = useMemo(() => snippetMatchTerms(hit.snippet), [hit.snippet]);
+  const wrappedHit = "kind" in hit;
+  const cloudHit = wrappedHit ? (hit.kind === "cloud" ? hit.hit : null) : hit;
+  const wrappedDocument = !!document && "kind" in document;
+  const cloudDocument = wrappedDocument
+    ? (document.kind === "cloud" ? document.document : null)
+    : document;
+  const snippet = wrappedHit ? hit.hit.snippet ?? "" : hit.snippet;
+  const terms = useMemo(() => snippetMatchTerms(snippet), [snippet]);
   const layout = useMemo(
-    () => (document ? buildLayout(document, hit, bodyWidth) : null),
-    [bodyWidth, document, hit],
+    () => (cloudDocument && cloudHit ? buildLayout(cloudDocument, cloudHit, bodyWidth) : null),
+    [bodyWidth, cloudDocument, cloudHit],
   );
 
   // Land the reader on the chunk that matched, with a little context above it.
@@ -211,7 +220,8 @@ export function SearchDocumentView({
     // A news hit names a story that is public at its source, so a server that
     // will not hand over the indexed copy is not a dead end: the whole point of
     // opening one is to read it, and the original always can be.
-    if (hit.url) {
+    const fallbackUrl = wrappedHit ? hit.hit.url : hit.url;
+    if (fallbackUrl) {
       return (
         <Box flexDirection="column" paddingX={1}>
           <EmptyState
@@ -222,7 +232,7 @@ export function SearchDocumentView({
             <Button
               label="Open original"
               variant="secondary"
-              onPress={() => openUrl(hit.url)}
+              onPress={() => openUrl(fallbackUrl)}
             />
           </Box>
         </Box>
@@ -230,7 +240,22 @@ export function SearchDocumentView({
     }
     return <EmptyState title="Could not load this document." message={error} />;
   }
-  if (!document || !layout) return null;
+  if (wrappedDocument && document.kind === "plugin") {
+    return (
+      <ScrollBox ref={scrollRef} scrollY flexGrow={1} paddingLeft={1}>
+        <Box flexDirection="column" width={nativePaneChrome ? "100%" : bodyWidth}>
+          {document.document.metadata
+            ? <Text fg={colors.textDim}>{Object.values(document.document.metadata).filter(Boolean).join(" · ")}</Text>
+            : null}
+          <MarkdownText text={document.document.markdown || "No further detail was published."} lineWidth={bodyWidth} />
+          {document.document.documentLinks?.map((link) => (
+            <Button key={link.url} label={link.label} variant="secondary" onPress={() => openUrl(link.url)} />
+          ))}
+        </Box>
+      </ScrollBox>
+    );
+  }
+  if (!cloudDocument || !layout) return null;
 
   return (
     // Only the left inset lives here: the scrollbar already holds the column on
@@ -238,13 +263,13 @@ export function SearchDocumentView({
     <ScrollBox ref={scrollRef} scrollY flexGrow={1} paddingLeft={1}>
       <Box flexDirection="column" width={nativePaneChrome ? "100%" : bodyWidth}>
         {nativePaneChrome
-          ? document.chunks.map((chunk) => (
+          ? cloudDocument.chunks.map((chunk) => (
             <DocumentChunkView
               key={chunk.id}
               chunk={chunk}
-              docType={document.docType}
+              docType={cloudDocument.docType}
               terms={terms}
-              active={chunk.chunkIndex === hit.chunkIndex}
+              active={chunk.chunkIndex === cloudHit!.chunkIndex}
             />
           ))
           : layout.lines.map((line) => <DocumentLineView key={line.key} line={line} />)}

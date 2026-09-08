@@ -54,9 +54,38 @@ export {
   useInputCapture,
   usePaneCollection,
   usePaneInstanceId,
+  usePaneSettingValue,
   usePaneTicker,
   useTickers,
 } from "./pane-hooks";
 
 // Keyboard handling for plugin panes; the renderer decides how events arrive.
 export { useShortcut } from "../react/input";
+
+// Auto-refresh hook: re-pulls pane data on the global refresh cadence.
+// Plugins that show network-backed data should use this instead of a
+// hardcoded setInterval so the user's refresh-interval setting is respected.
+export { useAutoRefresh } from "../plugins/builtin/shared/use-auto-refresh";
+
+// Pane footer helpers: the standard status/link footer composition used by
+// every data-backed pane. External plugins need these to keep footer behavior
+// (open hints, search/refresh bindings, loading/error chips) consistent with
+// first-party panes.
+export {
+  PANE_FOOTER_ACTION_KEYS,
+  paneSearchHint,
+  paneRefreshHint,
+  paneShareHint,
+  paneDelayedStatus,
+  paneLiveStatus,
+  usePaneFooterHintBindings,
+  usePaneStatusFooter,
+  usePaneStatusLinkFooter,
+} from "../plugins/builtin/shared/pane-footer";
+
+// News wire helpers: plugins that display articles (Federal Register, RSS
+// feeds, etc.) need to pop out the shared article reader and track read state
+// the same way the built-in news wire does.
+export { usePopOutNewsArticle } from "../plugins/builtin/news/wire/news/pop-out";
+export { useNewsReadState } from "../plugins/builtin/news/wire/read-state";
+export type { NewsArticle } from "../news/types";

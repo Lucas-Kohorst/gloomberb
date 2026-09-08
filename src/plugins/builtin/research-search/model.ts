@@ -8,6 +8,33 @@ import type {
 } from "../../../api-client";
 import type { CloudSearchParams } from "../../../api-client/paths";
 import type { DataTableColumn } from "../../../components";
+import type { DocumentSearchHit, SearchDocument } from "../../../types/plugin";
+
+export type ResearchSearchHit =
+  | { kind: "cloud"; hit: CloudSearchHit }
+  | { kind: "plugin"; providerId: string; hit: DocumentSearchHit };
+
+export type ResearchSearchDocument =
+  | { kind: "cloud"; document: import("../../../api-client").CloudSearchDocument }
+  | { kind: "plugin"; document: SearchDocument };
+
+export function researchHitId(hit: ResearchSearchHit): string {
+  return hit.kind === "cloud" ? `cloud:${hit.hit.id}` : `${hit.providerId}:${hit.hit.id}`;
+}
+
+export function researchHitTitle(hit: ResearchSearchHit): string { return hit.hit.title; }
+export function researchHitPublishedAt(hit: ResearchSearchHit): string | undefined {
+  return hit.hit.publishedAt ?? undefined;
+}
+export function researchHitSnippet(hit: ResearchSearchHit): string {
+  return hit.hit.snippet ?? "";
+}
+export function researchHitTicker(hit: ResearchSearchHit): string {
+  return hit.kind === "cloud" ? hit.hit.ticker : hit.hit.metadata?.ticker ?? "";
+}
+export function researchHitTypeLabel(hit: ResearchSearchHit): string {
+  return hit.kind === "cloud" ? hitTypeLabel(hit.hit) : hit.hit.documentType || "DOC";
+}
 
 export const RESEARCH_SEARCH_PANE_ID = "research-search";
 export const RESEARCH_SEARCH_TEMPLATE_ID = "research-search-pane";
@@ -21,10 +48,13 @@ export function researchSearchInstanceId(query: string): string {
 }
 
 export type SearchRangeKey = "all" | "7d" | "30d" | "1y" | "custom";
+export type SearchDocumentType = CloudSearchDocType;
 
 export interface SearchFilters {
   tickers: string[];
-  docTypes: CloudSearchDocType[];
+  docTypes: SearchDocumentType[];
+  /** Provider IDs. Empty means every available document source. Kept local. */
+  sourceIds?: string[];
   range: SearchRangeKey;
   /** Absolute bounds; presets recompute `from` per request so the window stays relative. */
   from?: string;
@@ -40,7 +70,7 @@ export const DEFAULT_FILTERS: SearchFilters = {
 };
 
 /** An empty selection means every type, so there is no explicit "all" option. */
-export const DOC_TYPE_OPTIONS: Array<{ value: CloudSearchDocType; label: string }> = [
+export const DOC_TYPE_OPTIONS: Array<{ value: SearchDocumentType; label: string }> = [
   { value: "transcript", label: "Calls" },
   { value: "news", label: "News" },
   { value: "filing", label: "Filings" },
@@ -123,12 +153,44 @@ export function filtersFromSaved(saved: CloudSavedSearch): SearchFilters {
   return {
     tickers: filters.tickers ?? [],
     docTypes: filters.docTypes ?? [],
+    sourceIds: [],
     range: filters.from || filters.to ? "custom" : "all",
     from: filters.from,
     to: filters.to,
     // Sort is a viewing preference, not part of what the server matches.
     sort: "relevance",
   };
+}
+
+/** Apply the portable filters a metadata provider can represent after its search. */
+export function filterProviderDocumentHits(
+  hits: readonly DocumentSearchHit[],
+  filters: SearchFilters,
+  now = Date.now(),
+): DocumentSearchHit[] {
+  const bounds = resolveRangeBounds(filters, now);
+  const tickerSet = new Set(filters.tickers.map((ticker) => ticker.toUpperCase()));
+  const filtered = hits.filter((hit) => {
+    if (tickerSet.size > 0) {
+      const tickers = [hit.metadata?.ticker, ...(hit.keywords ?? [])]
+        .filter((value): value is string => !!value)
+        .map((value) => value.toUpperCase());
+      if (!tickers.some((ticker) => tickerSet.has(ticker))) return false;
+    }
+    if (!hit.publishedAt) return !bounds.from && !bounds.to;
+    const time = new Date(hit.publishedAt).getTime();
+    if (Number.isNaN(time)) return !bounds.from && !bounds.to;
+    if (bounds.from && time < new Date(bounds.from).getTime()) return false;
+    if (bounds.to && time > new Date(bounds.to).getTime()) return false;
+    return true;
+  });
+  if (filters.sort === "relevance") return filtered;
+  const direction = filters.sort === "oldest" ? 1 : -1;
+  return [...filtered].sort((left, right) => {
+    const leftTime = left.publishedAt ? new Date(left.publishedAt).getTime() : 0;
+    const rightTime = right.publishedAt ? new Date(right.publishedAt).getTime() : 0;
+    return direction * (leftTime - rightTime);
+  });
 }
 
 export function describeFilters(filters: CloudSavedSearchFilters | undefined): string {

@@ -15,7 +15,7 @@ import { compareSortValues, type SortDirection } from "../../../utils/sort-value
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { usePaneSettingValue } from "../../../state/app/context";
+import { useOptionalAppSelector, usePaneSettingValue } from "../../../state/app/context";
 import { usePluginAppActions } from "../../runtime";
 import { usePaneStatusLinkFooter } from "../shared/pane-footer";
 import { PaneTemplateInputStep } from "../../../components/pane-template-wizard";
@@ -35,6 +35,7 @@ import {
   type CatalogSeriesRow,
 } from "./catalog-inventory";
 import { useCatalogUniverse } from "./use-series-catalog";
+import { getSharedRegistry } from "../../registry";
 
 type CatalogColumnId = "series" | "source" | "kind" | "expression";
 type CatalogColumn = DataTableColumn & { id: CatalogColumnId };
@@ -45,6 +46,7 @@ interface CatalogSortPreference {
 }
 
 const DEFAULT_SORT: CatalogSortPreference = { columnId: "source", direction: "asc" };
+const EMPTY_DISABLED: readonly string[] = [];
 
 function nextSortPreference(
   current: CatalogSortPreference,
@@ -89,6 +91,8 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
+  const disabledPlugins = useOptionalAppSelector((state) => state.config.disabledPlugins, EMPTY_DISABLED);
+  const disabledSources = useOptionalAppSelector((state) => state.config.disabledSources ?? EMPTY_DISABLED, EMPTY_DISABLED);
 
   const tickerQuery = looksLikeCatalogTickerQuery(searchQuery);
   const { instruments, loading: universeLoading } = useCatalogUniverse(
@@ -98,7 +102,8 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
   const emptyCopy = catalogEmptyCopy(loading, searchQuery);
 
   const rows = useMemo(() => {
-    const staticRows = listStaticCatalogInventory(instruments);
+    const catalogs = getSharedRegistry()?.getAvailableChartSeriesCatalogs() ?? [];
+    const staticRows = listStaticCatalogInventory(instruments, catalogs);
     const resolvedRows = tickerQuery
       ? catalogRowsForResolvedInstruments(
         instruments.filter((instrument) => catalogInstrumentMatchesQuery(instrument, searchQuery)),
@@ -115,7 +120,7 @@ export function DataCatalogPane({ focused, width, height }: PaneProps) {
       compareSortValues(sortValue(columnId, left), sortValue(columnId, right), direction)
       || left.label.localeCompare(right.label)
     ));
-  }, [filter, instruments, searchQuery, sortPreference, tickerQuery]);
+  }, [disabledPlugins, disabledSources, filter, instruments, searchQuery, sortPreference, tickerQuery]);
 
   useEffect(() => {
     if (selectedId && rows.some((row) => row.id === selectedId)) return;

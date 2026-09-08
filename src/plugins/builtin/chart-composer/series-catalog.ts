@@ -33,8 +33,6 @@ import {
   SERIES_PREFIX,
   FUTURES_CATALOG,
   TREASURY_CATALOG,
-  BENCHMARK_METRICS,
-  BENCHMARK_ORGS,
   POLL_SUBJECTS,
   ADJACENT_INDEX_CATALOG,
   CORPORATE_YIELD_CATALOG,
@@ -45,20 +43,13 @@ import {
 import { WEATHER_STATIONS } from "../weather/stations";
 import { weatherMetricLabel } from "../weather/mapping";
 import {
-  OWID_CATALOG,
-  matchOwidCatalogEntries,
-  owidSeriesLabel,
-  type OwidCatalogEntry,
-} from "../owid/catalog";
-import {
   formatPredictionSeriesExpression,
   looksLikePredictionMarketQuery,
   normalizePredictionMarketId,
   resolvePredictionSeriesQuery,
   type PredictionMarketSearchHit,
 } from "./prediction-series";
-import { listKnownFredSeries } from "../econ/fred-series-map";
-import { DEFILLAMA_CATALOG } from "../defillama/catalog";
+import type { ChartSeriesCatalogProvider } from "../../../types/plugin";
 
 const CHART_LABEL_SEPARATOR = " — ";
 
@@ -1011,17 +1002,6 @@ export function buildSeriesCatalogSuggestions(
     .sort((left, right) => right.score - left.score || left.field.label.localeCompare(right.field.label));
 
   const suggestions: SeriesCatalogSuggestion[] = exact ? [exact] : [];
-  const defiWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (defiWords.length && /\b(defillama|llama|defi|tvl|total value locked|chain|protocol|aave|uniswap|lido)\b/i.test(query)) {
-    for (const entry of DEFILLAMA_CATALOG) {
-      const text = `${entry.label} ${entry.expression} defillama defi total value locked crypto`.toLowerCase();
-      if (!defiWords.every((word) => text.includes(word))) continue;
-      const suggestion = exactExpressionSuggestion(entry.expression);
-      if (suggestion && !suggestions.some((item) => item.id === suggestion.id)) {
-        suggestions.push({ ...suggestion, label: entry.label, detail: "DefiLlama", description: "Daily on-chain fundamentals in USD" });
-      }
-    }
-  }
   for (const suggestion of coreAliasSuggestions(query)) {
     if (!suggestions.some((entry) => entry.id === suggestion.id)) suggestions.push(suggestion);
   }
@@ -1097,17 +1077,6 @@ function appendUniversalSuggestions(
     }
   }
 
-  for (const entry of listKnownFredSeries()) {
-    const score = universalScore(q, qCompact, [
-      entry.seriesId,
-      entry.label,
-      "fred",
-      "economic",
-      "macro",
-    ]);
-    if (score >= 0) scored.push({ suggestion: fredSuggestion(entry.seriesId, entry.label), score });
-  }
-
   for (const entry of CRYPTO_CATALOG) {
     const score = universalScore(q, qCompact, [
       entry.symbol,
@@ -1171,24 +1140,6 @@ function appendUniversalSuggestions(
     }
   }
 
-  // Benchmarks — org + metric combos
-  for (const org of BENCHMARK_ORGS) {
-    for (const metric of BENCHMARK_METRICS) {
-      const score = universalScore(q, qCompact, [
-        org,
-        metric.label,
-        metric.code,
-        "benchmark",
-        "bench",
-        "ai",
-        "llm",
-      ]);
-      if (score >= 0) {
-        scored.push({ suggestion: benchmarkSuggestion(org, metric.code, metric.label), score });
-      }
-    }
-  }
-
   // Polls — subject + choice combos
   for (const subject of POLL_SUBJECTS) {
     for (const choice of subject.choices) {
@@ -1219,18 +1170,6 @@ function appendUniversalSuggestions(
     if (score >= 0) {
       scored.push({ suggestion: adjacentIndexSuggestion(entry.indexId, entry.name), score });
     }
-  }
-
-  for (const entry of matchOwidCatalogEntries(query)) {
-    const score = universalScore(q, qCompact, [
-      entry.title,
-      entry.slug,
-      entry.slug.replaceAll("-", " "),
-      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
-      "owid",
-      "our world in data",
-    ]);
-    if (score >= 0) scored.push({ suggestion: owidCatalogSuggestion(entry), score });
   }
 
   for (const station of WEATHER_STATIONS) {
@@ -1321,42 +1260,6 @@ function universalScore(query: string, queryCompact: string, keywords: string[])
   return total;
 }
 
-function owidCatalogSuggestion(entry: OwidCatalogEntry): SeriesCatalogSuggestion {
-  return {
-    id: `owid:${entry.slug}:${entry.defaultEntity}`,
-    label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
-    description: "Our World in Data grapher series (CC BY 4.0)",
-    detail: "OWID",
-    expression: {
-      kind: "owid",
-      slug: entry.slug,
-      entity: entry.defaultEntity,
-      label: owidSeriesLabel(entry.title, entry.defaultEntity, entry.defaultEntityName),
-    },
-  };
-}
-
-function owidCatalogSuggestions(query: string): SeriesCatalogSuggestion[] {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-  const q = trimmed.toLowerCase();
-  const qCompact = compact(q);
-  const browse = /^(owid|our world in data)$/i.test(trimmed);
-  const scored = OWID_CATALOG.map((entry) => ({
-    entry,
-    score: universalScore(q, qCompact, [
-      entry.title,
-      entry.slug,
-      entry.slug.replaceAll("-", " "),
-      ...entry.topics.filter((topic) => topic.replace(/[^a-z0-9]+/gi, "").length >= 4),
-      "owid",
-      "our world in data",
-    ]),
-  })).filter((row) => browse || row.score >= 1_000);
-  scored.sort((left, right) => right.score - left.score);
-  return scored.slice(0, 6).map((row) => owidCatalogSuggestion(row.entry));
-}
-
 const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "BTC-USD", name: "Bitcoin" },
   { symbol: "ETH-USD", name: "Ethereum" },
@@ -1364,16 +1267,6 @@ const CRYPTO_CATALOG: ReadonlyArray<{ symbol: string; name: string }> = [
   { symbol: "XRP-USD", name: "XRP" },
   { symbol: "DOGE-USD", name: "Dogecoin" },
 ];
-
-function fredSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
-  return {
-    id: `fred:${seriesId}`,
-    label: `FRED${CHART_LABEL_SEPARATOR}${label}`,
-    description: "Economic series from FRED",
-    detail: "FRED",
-    expression: { kind: "economic", provider: "fred", seriesId },
-  };
-}
 
 function corporateYieldSuggestion(seriesId: string, label: string): SeriesCatalogSuggestion {
   return {
@@ -1422,16 +1315,6 @@ function treasurySuggestion(entry: TreasuryCatalogEntry): SeriesCatalogSuggestio
     description: "US Treasury yield (FRED)",
     detail: "UST",
     expression: { kind: "treasury-yield", maturity: entry.maturity, seriesId: entry.seriesId, label: entry.label },
-  };
-}
-
-function benchmarkSuggestion(org: string, metricCode: string, metricLabel: string): SeriesCatalogSuggestion {
-  return {
-    id: `bench:${org}:${metricCode}`,
-    label: `${org}${CHART_LABEL_SEPARATOR}${metricLabel}`,
-    description: "AI benchmark (point-in-time)",
-    detail: "Bench",
-    expression: { kind: "benchmark", selector: org, metric: metricCode },
   };
 }
 
@@ -1506,7 +1389,16 @@ const ASSIST_FIELD_NAMES = [
   "trailingPE", "forwardPE", "pegRatio", "priceSales", "evEbitda", "priceFcf",
 ] as const;
 
-export function buildChartSeriesAssistContext(): string {
+export function buildChartSeriesAssistContext(
+  providers: readonly ChartSeriesCatalogProvider[] = [],
+): string {
+  const discovered = providers.flatMap((provider) => [
+    ...(provider.assist?.keywords ?? []),
+    ...(provider.assist?.examples ?? []),
+  ]);
+  const providerContext = discovered.length > 0
+    ? ` Available catalog terms and examples: ${[...new Set(discovered)].join(", ")}.`
+    : "";
   return ` Chart series fields: ${ASSIST_FIELD_NAMES.join(", ")}. `
     + "Syntax: SYMBOL:field (e.g. AAPL:revenue), comma-separated for multiple series, "
     + "SYMBOL:field:transform for transforms (e.g. AAPL:revenue:yoy for growth), "
@@ -1533,7 +1425,8 @@ export function buildChartSeriesAssistContext(): string {
     + "'realized volatility', 'yield curve spread', 'revenue growth', 'gross margin', "
     + "'dividend yield', 'correlation', 'distance from moving average', 'life expectancy', "
     + "'co2 emissions', 'adjacent red index', 'trump kalshi', 'cpi fred', or 'will fed cut polymarket' "
-    + "maps onto those expressions.";
+    + "maps onto those expressions."
+    + providerContext;
 }
 
 const CATALOG_SERIES_PREFIX_RE = /^(FRED|ADJ|KALSHI|POLY|PM|FUT|UST|BENCH|POLL|WX|NWS|OWID|DD|VOL|DIST):|^CORR\s*\(/i;

@@ -71,6 +71,7 @@ fully before starting, honor its STOP conditions, and update your row when done.
 | 072  | Restore a green CI baseline | P1 | L | — | TODO |
 | 073  | Kalshi weather index and calibration provenance | P1 | M | existing weather/Kalshi clients | DONE |
 | 074  | Make pane tables flex instead of dropping columns | P1 | L | — | DONE |
+| 075  | Discover documents, chart series, and panes from ordinary search | P1 | L | — | TODO |
 
 Batch map: `plans/041-aug26-batch.md`. Landed in v0.13.4.
 

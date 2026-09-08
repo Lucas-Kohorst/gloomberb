@@ -6,10 +6,6 @@ import { aiPlugin } from "./builtin/ai";
 import { gloomberbCloudPlugin } from "./builtin/cloud";
 import { yahooPlugin } from "./builtin/yahoo";
 import { coingeckoPlugin } from "./builtin/coingecko";
-import { publicPlugin } from "./broker-sync/public";
-import { robinhoodPlugin } from "./broker-sync/robinhood";
-import { simpleFinPlugin } from "./broker-sync/simplefin";
-import { predictionMarketsPlugin } from "./prediction-markets";
 import { alertsPlugin } from "./builtin/alerts";
 import { researchSearchPlugin } from "./builtin/research-search";
 import {
@@ -22,17 +18,15 @@ import {
 import { adjacentPlugin } from "./builtin/adjacent";
 import { pluginInspectorPlugin } from "./builtin/plugin-inspector";
 import { tickerResearchPlugin } from "./builtin/ticker-research-plugin";
-import { trafficPlugin } from "./builtin/traffic";
-import { satellitePlugin } from "./builtin/satellite";
-import { usaspendingPlugin } from "./builtin/usaspending";
-import { openskyPlugin } from "./builtin/opensky";
-import { nasaFirmsPlugin } from "./builtin/nasa-firms";
-import { usgsEarthquakesPlugin } from "./builtin/usgs-earthquakes";
-import { spaceWeatherPlugin } from "./builtin/space-weather";
-import { federalRegisterPlugin } from "./builtin/federal-register";
-import { ofacSanctionsPlugin } from "./builtin/ofac-sanctions";
-import { crtShPlugin } from "./builtin/crt-sh";
 
+/**
+ * First-party plugins that ship inside the app.
+ *
+ * Plugins that have been extracted to the `gloomberb-plugins` monorepo are
+ * intentionally absent: they load as external plugins from
+ * `~/.gloomberb/plugins/` when installed. The seed mechanism restores them on
+ * first launch after the extraction.
+ */
 export const uiBuiltinPlugins: GloomPlugin[] = [
   gloomberbCloudPlugin,
   coingeckoPlugin,
@@ -40,30 +34,16 @@ export const uiBuiltinPlugins: GloomPlugin[] = [
   portfolioPlugin,
   tickerResearchPlugin,
   brokerPlugin,
-  publicPlugin,
-  robinhoodPlugin,
-  simpleFinPlugin,
   applicationPlugin,
   newsPlugin,
   adjacentPlugin,
-  trafficPlugin,
-  satellitePlugin,
   notesPlugin,
   aiPlugin,
-  predictionMarketsPlugin,
   marketOverviewPlugin,
   macroPlugin,
   alertsPlugin,
   researchSearchPlugin,
   pluginInspectorPlugin,
-  usaspendingPlugin,
-  openskyPlugin,
-  nasaFirmsPlugin,
-  usgsEarthquakesPlugin,
-  spaceWeatherPlugin,
-  federalRegisterPlugin,
-  ofacSanctionsPlugin,
-  crtShPlugin,
 ];
 
 export function getRendererBuiltinPlugins(): GloomPlugin[] {

@@ -44,3 +44,15 @@ export function setPluginInstaller(next: PluginInstaller | null): void {
 export function getPluginInstaller(): PluginInstaller | null {
   return installer;
 }
+
+export type PluginRemover = (pluginId: string) => Promise<{ ok: boolean; error?: string }>;
+
+let remover: PluginRemover | null = null;
+
+export function setPluginRemover(next: PluginRemover | null): void {
+  remover = next;
+}
+
+export function getPluginRemover(): PluginRemover | null {
+  return remover;
+}

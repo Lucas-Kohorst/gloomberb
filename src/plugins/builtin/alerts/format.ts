@@ -91,5 +91,7 @@ export function conditionLabel(condition: AlertCondition): string {
       return "Ex-div";
     case "weather":
       return "Weather";
+    default:
+      return condition;
   }
 }

@@ -7,6 +7,8 @@ import {
   listStaticCatalogInventory,
   looksLikeCatalogTickerQuery,
 } from "./catalog-inventory";
+import { defillamaSeriesCatalog } from "../defillama/catalog";
+import { fredSeriesCatalog } from "../econ/fred-series-map";
 
 const AAPL = { symbol: "AAPL", exchange: "NASDAQ", name: "Apple Inc." };
 const MSFT = { symbol: "MSFT", exchange: "NASDAQ", name: "Microsoft Corp." };
@@ -45,7 +47,7 @@ describe("data catalog inventory", () => {
     const rows = listStaticCatalogInventory([
       AAPL,
       { symbol: "ETH-USD", exchange: "CCC", name: "Ethereum USD" },
-    ]);
+    ], [defillamaSeriesCatalog]);
     const crypto = filterCatalogRows(rows, "crypto", "");
     expect(crypto.some((row) => row.expression === "LLAMA:chain:ethereum:tvl")).toBe(true);
     expect(crypto.some((row) => row.expression === "LLAMA:protocol:aave:tvl")).toBe(true);
@@ -56,7 +58,7 @@ describe("data catalog inventory", () => {
   });
 
   test("FRED tab includes mapped series and treasuries; futures stay on their own tab", () => {
-    const rows = listStaticCatalogInventory([]);
+    const rows = listStaticCatalogInventory([], [fredSeriesCatalog]);
     const fred = filterCatalogRows(rows, "fred", "");
     const seriesIds = fred.filter((row) => row.sourceId === "fred").map((row) => row.expression);
     expect(new Set(seriesIds).size).toBe(seriesIds.length);

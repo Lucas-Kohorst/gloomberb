@@ -16,6 +16,7 @@ import {
   parseWeatherAlertCommandValues,
 } from "./command";
 import { POLL_INTERVAL_MS, POLL_SECONDS_KEY } from "./constants";
+import { setAlertHandler } from "./alert-registry";
 import { AlertsPane } from "./pane";
 import {
   createQuoteErrorMessage,
@@ -43,6 +44,21 @@ export const alertsPlugin: GloomPlugin = {
   toggleable: true,
 
   setup(ctx) {
+    setAlertHandler((options) => {
+      const existing = loadAlerts(ctx);
+      existing.push({
+        id: `alert-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        symbol: options.symbol.toUpperCase(),
+        condition: options.condition,
+        targetPrice: options.targetPrice ?? 0,
+        ...(options.targetText ? { targetText: options.targetText } : {}),
+        ...(options.message ? { message: options.message } : {}),
+        createdAt: Date.now(),
+        status: "active",
+      });
+      saveAlerts(ctx, existing);
+    });
+
     ctx.registerCommand({
       id: "set-alert",
       label: "Add Alert",
@@ -221,6 +237,54 @@ export const alertsPlugin: GloomPlugin = {
         changed = true;
       }
 
+      // Evaluate custom alert conditions registered by other plugins.
+      const customConditions = new Map(
+        ctx.listAlertConditions().map((c) => [c.id, c]),
+      );
+      const builtinConditions = new Set(["above", "below", "crosses", "halted", "short_float", "ex_div", "weather"]);
+      if (customConditions.size > 0) {
+        const controller = new AbortController();
+        for (const alert of alerts) {
+          if (alert.status !== "active") continue;
+          if (builtinConditions.has(alert.condition)) continue;
+          const def = customConditions.get(alert.condition);
+          if (!def) continue;
+          try {
+            const triggered = await def.evaluate({
+              symbol: alert.symbol,
+              targetPrice: alert.targetPrice,
+              ...(alert.targetText ? { targetText: alert.targetText } : {}),
+              ...(alert.message ? { message: alert.message } : {}),
+            }, controller.signal);
+            if (triggered) {
+              alert.status = "triggered";
+              alert.triggeredAt = Date.now();
+              const description = def.formatDescription?.({
+                symbol: alert.symbol,
+                targetPrice: alert.targetPrice,
+                ...(alert.targetText ? { targetText: alert.targetText } : {}),
+                ...(alert.message ? { message: alert.message } : {}),
+              }) ?? formatAlertDescription(alert);
+              ctx.log.info("poll: TRIGGERED (custom)", { symbol: alert.symbol, condition: alert.condition });
+              ctx.notify({
+                body: `${description} triggered`,
+                type: "success",
+                desktop: "always",
+                persistent: true,
+                sound: "Glass",
+                action: {
+                  label: "Open",
+                  onClick: () => ctx.showPane("alerts"),
+                },
+              });
+              changed = true;
+            }
+          } catch (err) {
+            ctx.log.warn("poll: custom evaluate failed", { condition: alert.condition, error: String(err) });
+          }
+        }
+      }
+
         if (changed) saveAlerts(ctx, alerts);
       } finally {
         pollInFlight = false;
@@ -277,6 +341,7 @@ export const alertsPlugin: GloomPlugin = {
   },
 
   dispose() {
+    setAlertHandler(null);
     if (pollTimer) {
       clearTimeout(pollTimer);
       pollTimer = null;

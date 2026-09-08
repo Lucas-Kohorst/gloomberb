@@ -10,7 +10,7 @@ describe("desktop backend plugin catalog", () => {
       getLoadablePlugins().map((plugin) => plugin.id),
     );
 
-    for (const pluginId of ["ticker-research", "prediction-markets"]) {
+    for (const pluginId of ["ticker-research"]) {
       const plugin = backendPlugins.find((candidate) => candidate.id === pluginId);
       expect(plugin).toBeDefined();
       expect(plugin?.panes).toBeUndefined();
@@ -19,11 +19,12 @@ describe("desktop backend plugin catalog", () => {
     }
   });
 
-  test("registers Adjacent Cloud as a data plugin with VoteHub, AI Benchmarks, and Weather", () => {
+  test("registers Adjacent Cloud as a data plugin with AI Benchmarks and OWID", () => {
     const plugins = getLoadablePlugins();
     const adjacent = plugins.find((plugin) => plugin.id === "adjacent");
     const cloud = plugins.find((plugin) => plugin.id === "gloomberb-cloud");
 
+    // Polls and weather have been extracted to the gloomberb-plugins monorepo.
     expect(plugins.some((plugin) => plugin.id === "polls")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "llm-stats")).toBe(false);
     expect(plugins.some((plugin) => plugin.id === "weather")).toBe(false);
@@ -33,9 +34,7 @@ describe("desktop backend plugin catalog", () => {
       "adjacent-indices",
       "adjacent-rates",
       "cftc-filings",
-      "polls",
       "llm-stats",
-      "weather",
       "owid",
     ]);
     expect(cloud?.panes?.some((pane) => pane.id.startsWith("adjacent-"))).toBe(false);

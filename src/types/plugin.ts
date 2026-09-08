@@ -378,6 +378,96 @@ export interface CommandBarSearchProvider {
   ): Promise<CommandBarResultDef[]>;
 }
 
+/** Metadata returned by a plugin's existing document search. IDs are provider-local. */
+export interface DocumentSearchHit {
+  id: string;
+  title: string;
+  publishedAt?: string;
+  snippet?: string;
+  source?: string;
+  documentType?: string;
+  url?: string;
+  keywords?: string[];
+  metadata?: Record<string, string>;
+}
+
+export interface SearchDocument {
+  id: string;
+  title: string;
+  markdown: string;
+  sourceUrl?: string;
+  documentLinks?: Array<{ label: string; url: string }>;
+  metadata?: Record<string, string>;
+}
+
+export interface DocumentSearchProvider {
+  id: string;
+  name: string;
+  sourceId?: string;
+  documentTypes?: readonly string[];
+  minQueryLength?: number;
+  search(query: string, signal: AbortSignal): Promise<DocumentSearchHit[]>;
+  load(id: string, signal: AbortSignal): Promise<SearchDocument>;
+}
+
+export interface ChartSeriesCatalogEntry {
+  id: string;
+  expression: string;
+  label: string;
+  source: string;
+  searchText: string;
+  description?: string;
+  detail?: string;
+  url?: string;
+  unit?: string;
+  frequency?: string;
+}
+
+/** Discovery is separate from history resolution; typing must not fetch chart data. */
+export interface ChartSeriesCatalogProvider {
+  id: string;
+  name?: string;
+  sourceId?: string;
+  entries?: readonly ChartSeriesCatalogEntry[];
+  minQueryLength?: number;
+  shouldSearch?(query: string): boolean;
+  search?(query: string, signal: AbortSignal): Promise<readonly ChartSeriesCatalogEntry[]>;
+  assist?: { keywords?: readonly string[]; examples?: readonly string[] };
+}
+
+export interface AlertEvaluationInput {
+  symbol: string;
+  targetPrice: number;
+  targetText?: string;
+  message?: string;
+}
+
+export interface AlertConditionDef {
+  id: string;
+  label: string;
+  description?: string;
+  /** What the wizard asks for as the target value. */
+  targetType: "text" | "number";
+  targetLabel?: string;
+  targetPlaceholder?: string;
+  /**
+   * Called on each poll cycle for active alerts with this condition.
+   * Return true to trigger the alert. The registering plugin captures
+   * whatever services it needs from its own `setup(ctx)`.
+   */
+  evaluate: (alert: AlertEvaluationInput, signal: AbortSignal) => Promise<boolean> | boolean;
+  /** Custom description for the alerts table. Falls back to `label`. */
+  formatDescription?: (alert: AlertEvaluationInput) => string;
+}
+
+export interface CreateAlertOptions {
+  condition: string;
+  symbol: string;
+  targetPrice?: number;
+  targetText?: string;
+  message?: string;
+}
+
 interface CliHelpColumn {
   header: string;
   align?: "left" | "right" | "center";
@@ -633,12 +723,18 @@ export interface PinTickerOptions {
 }
 
 export interface GloomPluginContext {
+  /** The owning plugin's id. Available so registration helpers can auto-attribute contributions. */
+  readonly pluginId: string;
+
   registerPane(pane: PluginPaneRegistration): void;
   /** Agent plugins often call this; same as registerPane. */
   registerPaneType(pane: PluginPaneRegistration): void;
   registerPaneTemplate(template: PaneTemplateDef): void;
   registerCommand(command: CommandDef): void;
   registerCommandBarSearchProvider(provider: CommandBarSearchProvider): () => void;
+  registerDocumentSearchProvider(provider: DocumentSearchProvider): () => void;
+  registerChartSeriesCatalog(provider: ChartSeriesCatalogProvider): () => void;
+  registerAlertCondition(condition: AlertConditionDef): void;
   registerColumn(column: CustomColumnDef): void;
   registerBroker(broker: BrokerAdapter): void;
   registerCapability(capability: PluginCapability): void;
@@ -670,6 +766,8 @@ export interface GloomPluginContext {
   getConfig(): import("./config").AppConfig;
   getPaneDef(paneId: string): PaneDef | undefined;
   listCapabilities(): RegisteredCapability[];
+  listAlertConditions(): AlertConditionDef[];
+  createAlert(options: CreateAlertOptions): void;
 
   /**
    * Resolve an API key for a known service (e.g. "adjacent", "hyperliquid",

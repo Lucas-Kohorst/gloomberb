@@ -18,7 +18,6 @@ import { enabledNewsFeedNamesFromPluginConfig } from "../../../plugins/builtin/n
 import {
   buildArticleSearchResultItems,
   useAdjacentArticleSearch,
-  useCftcFilingSearch,
   useFilingArticleSearch,
 } from "../routes/root/article-results";
 import {
@@ -44,9 +43,9 @@ import { openUrl } from "../../ui/external-link";
 import { useChartSeriesSuggestions } from "../routes/root/series-suggestions";
 import {
   buildChartSeriesAssistContext,
-  looksLikeCatalogSeriesQuery,
   type SeriesCatalogInstrument,
 } from "../../../plugins/builtin/chart-composer/series-catalog";
+import { hasLocalChartSeriesCatalogMatch } from "../../../plugins/builtin/chart-composer/catalog-providers";
 import { DATA_CATALOG_TEMPLATE_ID } from "../../../plugins/builtin/chart-composer/catalog-inventory";
 import { isMarketFieldId } from "../../../time-series/field-catalog";
 import { useRouteListState } from "../routing/list-state";
@@ -230,7 +229,6 @@ export function CommandBar({
   const [warmingNewsCache, setWarmingNewsCache] = useState(false);
   const adjacentNews = useAdjacentArticleSearch(rootQuery);
   const filingNews = useFilingArticleSearch(rootQuery);
-  const cftcNews = useCftcFilingSearch(rootQuery);
   const newsState = useNewsArticles(watchNews ? ARTICLE_SEARCH_QUERY : null);
   useEffect(() => {
     if (!watchNews) {
@@ -263,7 +261,6 @@ export function CommandBar({
       ...cached,
       ...adjacentNews.articles,
       ...filingNews.articles,
-      ...cftcNews.articles,
       ...newsState.articles,
     ]) {
       if (seen.has(article.id)) continue;
@@ -275,28 +272,21 @@ export function CommandBar({
       || newsState.phase === "loading"
       || newsState.phase === "idle"
       || (cached.length === 0 && warmingNewsCache)
-    )) || (filingNews.phase === "loading" && filingNews.articles.length === 0)
-      || (cftcNews.phase === "loading" && cftcNews.articles.length === 0);
+    )) || (filingNews.phase === "loading" && filingNews.articles.length === 0);
     return buildArticleSearchResultItems({
       articles,
       query: rootQuery,
       phase: stillLoading ? "loading" : "ready",
       onOpen: (article) => {
-        if (article.origin === "cftc") {
-          pluginRegistry.createPaneFromTemplate("cftc-filings-pane", { arg: rootQuery });
-        } else {
-          openNewsArticle(article, (templateId, options) => {
-            pluginRegistry.createPaneFromTemplate(templateId, options);
-          });
-        }
+        openNewsArticle(article, (templateId, options) => {
+          pluginRegistry.createPaneFromTemplate(templateId, options);
+        });
         closeAll({ revertThemePreview: false });
       },
     });
   }, [
     adjacentNews.articles,
     adjacentNews.phase,
-    cftcNews.articles,
-    cftcNews.phase,
     closeAll,
     filingNews.articles,
     filingNews.phase,
@@ -328,7 +318,8 @@ export function CommandBar({
   }), [closeAll, dispatch, pluginRegistry, predictionSearch.markets, state.tickers, tickerRepository]);
   const catalogChartQuery = !currentRoute
     && rootShortcutIntent.kind === "none"
-    && looksLikeCatalogSeriesQuery(rootQuery);
+    && !looksLikeArticleQuery(rootQuery)
+    && hasLocalChartSeriesCatalogMatch(rootQuery);
   const chartSeriesIntent = rootShortcutIntent.kind !== "none"
     && rootShortcutIntent.source === "pane-template"
     && rootShortcutIntent.argKind === "text"
@@ -385,14 +376,18 @@ export function CommandBar({
   const buildAssistInventory = useCallback(() => applyChartSeriesContextToAssistInventory(
     applyNewsFeedContextToAssistInventory(
       buildAssistCommandInventory({
+        getPluginNameForCommand: (commandId) => {
+          const pluginId = pluginRegistry.getCommandPluginId(commandId);
+          return pluginId ? pluginRegistry.allPlugins.get(pluginId)?.name : undefined;
+        },
         commands: availableCommands,
         pluginCommands: getAvailablePluginCommands(),
         paneTemplates: getAvailablePaneTemplates(undefined, { includePromptableTickerTemplates: true }),
       }),
       enabledNewsFeedNamesFromPluginConfig(state.config.pluginConfig.news),
     ),
-    buildChartSeriesAssistContext(),
-  ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, state.config.pluginConfig.news]);
+    buildChartSeriesAssistContext(pluginRegistry.getAvailableChartSeriesCatalogs()),
+  ), [availableCommands, getAvailablePaneTemplates, getAvailablePluginCommands, pluginRegistry, state.config.pluginConfig.news, state.config.disabledPlugins, state.config.disabledSources]);
   // Only the root list asks on its own, and only for text the prefix parser
   // could not claim — otherwise the user is mid-command, not mid-question.
   const assistEnabled = planAccess.emailVerified
@@ -482,8 +477,11 @@ export function CommandBar({
   ]);
 
   const searchProviders = useMemo(
-    () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins),
-    [pluginRegistry, state.config.disabledPlugins],
+    () => getAvailableCommandBarSearchProviders(pluginRegistry, state.config.disabledPlugins)
+      .filter((provider) => /^\s*ART\b/i.test(rootQuery)
+        ? provider.id.startsWith("research-search:")
+        : rootShortcutIntent.kind === "none"),
+    [pluginRegistry, rootShortcutIntent.kind, rootQuery, state.config.disabledPlugins],
   );
   const searchProviderContext = useMemo(() => ({
     activeTicker: activeTickerSymbol,
@@ -494,10 +492,8 @@ export function CommandBar({
   }, [closeAll]);
   const { providerResultItems, providerSearching } = useCommandBarSearchProviders({
     providers: searchProviders,
-    query: rootQuery,
-    // A resolved prefix means the user is running a command, so free-text
-    // providers neither ask the network nor add rows.
-    enabled: !currentRoute && rootShortcutIntent.kind === "none",
+    query: rootQuery.replace(/^\s*ART\s+/i, ""),
+    enabled: !currentRoute && (rootShortcutIntent.kind === "none" || looksLikeArticleQuery(rootQuery)),
     context: searchProviderContext,
     onExecuted: closeAfterProviderResult,
   });

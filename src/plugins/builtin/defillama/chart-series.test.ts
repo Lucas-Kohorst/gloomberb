@@ -1,13 +1,15 @@
 import { afterEach, expect, test } from "bun:test";
 import { buildCustomChartPreset, parseSeriesExpression } from "../chart-composer/presets";
 import { parseChartSpec } from "../chart-composer/chart-spec";
-import { buildSeriesCatalogSuggestions, looksLikeCatalogSeriesQuery } from "../chart-composer/series-catalog";
+import { buildCapabilitySeriesSuggestions, looksLikeCatalogSeriesQuery } from "../chart-composer/series-catalog";
+import { dedupeCatalogSuggestions, localCatalogSuggestions } from "../chart-composer/catalog-providers";
 import { createResolvedChartSources } from "../../chart-sources";
 import { resolveChartSpecData } from "../../../time-series/resolve";
 import { setHttpFetchTransport } from "../../../utils/http-transport";
 import { defillamaModule } from "./index";
 import { connectionsModule } from "../connections/index.ts";
 import { ConnectionHealthRegistry } from "../../../core/connection-health";
+import { defillamaSeriesCatalog } from "./catalog";
 
 afterEach(() => {
   setHttpFetchTransport(null);
@@ -24,15 +26,26 @@ test("LLAMA identities survive saved chart specs and distinguish protocol TVL fr
   for (const invalid of ["LLAMA:aave:tvl", "LLAMA:chain:ethereum:fees", "LLAMA:protocol:../aave:tvl", "LLAMA:protocol:aave:price", "LLAMA:protocol:aave:tvl:extra"]) {
     expect(parseSeriesExpression(invalid)).toBeNull();
   }
-  const suggestions = buildSeriesCatalogSuggestions("aave tvl", { symbol: "SPY" });
+  const suggestions = localCatalogSuggestions("aave tvl", [defillamaSeriesCatalog]);
   expect(suggestions[0]?.expression).toMatchObject({ kind: "capability", capabilityId: "defillama", seriesId: "protocol/aave/tvl" });
+  const legacyCapability = buildCapabilitySeriesSuggestions([{
+    capabilityId: "defillama",
+    capabilityName: "DefiLlama",
+    seriesId: "protocol/aave/tvl",
+    label: "Aave TVL",
+  }]);
+  expect(dedupeCatalogSuggestions([...suggestions, ...legacyCapability])).toHaveLength(1);
   expect(looksLikeCatalogSeriesQuery("aave tvl")).toBe(true);
 });
 
 test("hosted charts load public data and report Connection traffic without capability invocation", async () => {
   const health = new ConnectionHealthRegistry();
   await connectionsModule.setup?.({ connectionHealth: health, registerCapability: () => {} } as never);
-  await defillamaModule.setup?.({} as never);
+  await defillamaModule.setup?.({
+    pluginId: "ticker-research",
+    registerCapability: () => {},
+    registerChartSeriesCatalog: () => () => {},
+  } as never);
   setHttpFetchTransport(async (url) => {
     expect(url).toBe("https://api.llama.fi/v2/historicalChainTvl/hosted-test-chain");
     return Response.json([{ date: 1704067200, tvl: 100 }, { date: 1704153600, tvl: 150 }]);

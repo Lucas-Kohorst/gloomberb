@@ -9,6 +9,7 @@ import type {
   AppNotificationDelivery,
   AppNotificationRequest,
   BrokerInstanceUpdateOptions,
+  CreateAlertOptions,
   GloomPluginContext,
   PaneTemplateCreateOptions,
   PinTickerOptions,
@@ -18,6 +19,7 @@ import type { NewsQuery, NewsQueryState } from "../../types/news-source";
 import type { SyncContributor, SyncTransport } from "../../sync/types";
 import { debugLog } from "../../utils/debug-log";
 import { createPluginPersistence } from "../plugin-persistence";
+import { createAlert as createAlertHandler } from "../builtin/alerts/alert-registry";
 import type { PluginEvents } from "../event-bus";
 import type { PluginItems, RegistryContributions } from "./contributions";
 import {
@@ -147,12 +149,23 @@ export function createRegistryPluginContext({
   });
 
   return {
+    pluginId,
+
     registerPane: (pane) => contributions.registerPane(pluginId, pane, items),
     registerPaneType: (pane) => contributions.registerPane(pluginId, pane, items),
     registerPaneTemplate: (template) => contributions.registerPaneTemplate(pluginId, template, items),
     registerCommand: (command) => contributions.registerCommand(pluginId, command, items),
     registerCommandBarSearchProvider: (provider) => (
       contributions.registerCommandBarSearchProvider(pluginId, provider, items)
+    ),
+    registerDocumentSearchProvider: (provider) => (
+      contributions.registerDocumentSearchProvider(pluginId, provider, items)
+    ),
+    registerChartSeriesCatalog: (provider) => (
+      contributions.registerChartSeriesCatalog(pluginId, provider, items)
+    ),
+    registerAlertCondition: (condition) => (
+      contributions.registerAlertCondition(pluginId, condition, items)
     ),
     registerColumn: (column) => contributions.registerColumn(pluginId, column, items),
     registerBroker: (broker) => contributions.registerBroker(pluginId, broker, items),
@@ -185,6 +198,8 @@ export function createRegistryPluginContext({
     getApiKey,
     getPaneDef: (paneId) => contributions.panesMap.get(paneId),
     listCapabilities,
+    listAlertConditions: () => [...contributions.alertConditionsMap.values()],
+    createAlert: (options: CreateAlertOptions) => createAlertHandler(options),
 
     marketData,
     connectionHealth,

@@ -168,6 +168,40 @@ describe("buildAssistCommandInventory", () => {
     });
     expect(inventory.map((entry) => entry.prefix)).toEqual(["EXTW", "FOOP"]);
   });
+
+  test("includes plugin ownership for prefixed commands but does not expose prefixless commands", () => {
+    const pluginCommands: CommandDef[] = [
+      {
+        id: "adjacent-search",
+        label: "Search Markets",
+        description: "Search private markets",
+        keywords: [],
+        category: "data",
+        shortcut: "AM",
+        execute: () => {},
+      },
+      {
+        id: "adjacent-internal",
+        label: "Internal Action",
+        description: "No command-bar prefix",
+        keywords: [],
+        category: "data",
+        execute: () => {},
+      },
+    ];
+    const inventory = buildAssistCommandInventory({
+      commands: [],
+      pluginCommands,
+      paneTemplates: [],
+      getPluginNameForCommand: () => "Adjacent",
+    });
+
+    expect(inventory).toEqual([{
+      prefix: "AM",
+      name: "Search Markets",
+      description: "Search private markets Also: Adjacent.",
+    }]);
+  });
 });
 
 describe("assist catalog coverage", () => {
@@ -179,19 +213,18 @@ describe("assist catalog coverage", () => {
       paneTemplates,
     });
     const prefixes = new Set(inventory.map((entry) => entry.prefix));
-    expect(prefixes.has("WX")).toBe(true);
-    expect(prefixes.has("POLL")).toBe(true);
+    // Adjacent Cloud data surfaces that stay first-party.
     expect(prefixes.has("OWID")).toBe(true);
     expect(prefixes.has("AIBENCH")).toBe(true);
+    // Core financial panes.
     expect(prefixes.has("CAT")).toBe(true);
-    expect(prefixes.has("PM")).toBe(true);
     expect(prefixes.has("BR")).toBe(true);
     expect(prefixes.has("FUT")).toBe(true);
     expect(paneTemplates.find((template) => template.shortcut?.prefix === "FUT")?.paneId).toBe("futures");
-    expect(prefixes.has("WB")).toBe(true);
     expect(prefixes.has("10K")).toBe(true);
-    expect(prefixes.has("AIS")).toBe(true);
-    expect(prefixes.has("SAT")).toBe(true);
+    // Plugins moved to the gloomberb-plugins monorepo (traffic, satellite,
+    // weather, polls, country-econ, prediction-markets) are external and may
+    // or may not be installed; do not assert their prefixes here.
 
     const prefixless = paneTemplates.filter((template) => !template.shortcut?.prefix?.trim());
     for (const template of prefixless) {

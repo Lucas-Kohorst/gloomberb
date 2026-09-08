@@ -12,6 +12,8 @@ import { createTestPluginRuntime } from "../../../test-support/plugin-runtime";
 import { createDefaultConfig } from "../../../types/config";
 import { PluginRenderProvider } from "../../runtime";
 import { ResearchSearchPane } from "./pane";
+import { setSharedRegistryForTests } from "../../registry/shared";
+import type { DocumentSearchProvider } from "../../../types/plugin";
 
 const PANE_ID = "research-search:test";
 
@@ -188,9 +190,36 @@ afterEach(async () => {
   }
   setCloudApiFetchTransport(null);
   apiClient.setSessionToken(null);
+  setSharedRegistryForTests(undefined);
 });
 
 describe("ResearchSearchPane", () => {
+  test("opens a selected plugin document and renders its markdown body", async () => {
+    const provider: DocumentSearchProvider = {
+      id: "fixture:filings",
+      name: "Fixture filings",
+      documentTypes: ["filing"],
+      async search() {
+        return [{ id: "987654", title: "Kalshi Search Discovery Fixture", source: "CFTC", documentType: "Filing" }];
+      },
+      async load(id) {
+        return { id, title: "Kalshi Search Discovery Fixture", markdown: "Selected filing 987654 body." };
+      },
+    };
+    setSharedRegistryForTests({
+      getAvailableDocumentSearchProviders: () => [provider],
+      documentSearchProviders: new Map([[provider.id, provider]]),
+    } as never);
+
+    testSetup = await testRender(<Harness />, { width: 110, height: 20 });
+    await renderFrames();
+    expect(testSetup.captureCharFrame()).toContain("Kalshi Search Discovery Fixture");
+
+    await pressKey("return");
+    await renderFrames();
+    expect(testSetup.captureCharFrame()).toContain("Selected filing 987654 body.");
+  });
+
   test("renders a hit with the matched terms styled instead of tagged", async () => {
     installTransport();
     signIn();

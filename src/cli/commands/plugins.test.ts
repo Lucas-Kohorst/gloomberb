@@ -3,12 +3,11 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
-  buildPluginIndexContent,
-  buildPluginPackageJson,
   scaffoldPlugin,
   toDisplayName,
   toVariableName,
 } from "./plugins";
+import { buildScaffold, SCAFFOLD_TEMPLATES } from "../scaffold/templates";
 import { setPluginsDirForTests } from "../../plugins/loader";
 
 describe("toDisplayName", () => {
@@ -35,31 +34,69 @@ describe("toVariableName", () => {
   });
 });
 
-describe("buildPluginIndexContent", () => {
-  test("generates a valid GloomPlugin skeleton", () => {
-    const content = buildPluginIndexContent("my-plugin");
-    expect(content).toContain('id: "my-plugin"');
-    expect(content).toContain('name: "My Plugin"');
-    expect(content).toContain('version: "0.1.0"');
-    expect(content).toContain("toggleable: true");
-    expect(content).toContain("setup(ctx)");
-    expect(content).toContain("export default myPlugin");
-    expect(content).toContain('import type { GloomPlugin } from "gloomberb/types/plugin"');
+describe("buildScaffold", () => {
+  test("pane-only generates a valid GloomPlugin skeleton", () => {
+    const output = buildScaffold("my-plugin", "pane-only");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    expect(indexFile.content).toContain('id: "my-plugin"');
+    expect(indexFile.content).toContain('name: "My Plugin"');
+    expect(indexFile.content).toContain('version: "0.1.0"');
+    expect(indexFile.content).toContain("toggleable: true");
+    expect(indexFile.content).toContain("setup(ctx)");
+    expect(indexFile.content).toContain("export default myPlugin");
+    expect(indexFile.content).toContain('import type { GloomPlugin } from "gloomberb/types/plugin"');
   });
 
-  test("uses camelCase variable name", () => {
-    const content = buildPluginIndexContent("market-data");
-    expect(content).toContain("export const marketData: GloomPlugin");
-    expect(content).toContain("export default marketData");
+  test("chart-source generates createChartSource and client.ts", () => {
+    const output = buildScaffold("my-source", "chart-source");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    const clientFile = output.files.find((f) => f.filename === "client.ts")!;
+    expect(indexFile.content).toContain("createChartSource");
+    expect(indexFile.content).toContain("resolveMySourceSeries");
+    expect(clientFile.content).toContain("resolveMySourceSeries");
+    expect(clientFile.content).toContain("withConnectionRequest");
   });
-});
 
-describe("buildPluginPackageJson", () => {
-  test("generates valid package.json with name and version", () => {
-    const json = JSON.parse(buildPluginPackageJson("my-plugin"));
-    expect(json.name).toBe("my-plugin");
-    expect(json.version).toBe("0.1.0");
-    expect(json.main).toBe("index.ts");
+  test("document-source generates createDocumentSource and client.ts", () => {
+    const output = buildScaffold("my-docs", "document-source");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    const clientFile = output.files.find((f) => f.filename === "client.ts")!;
+    expect(indexFile.content).toContain("createDocumentSource");
+    expect(clientFile.content).toContain("withConnectionRequest");
+  });
+
+  test("data-pane generates headless model and client.ts", () => {
+    const output = buildScaffold("my-data", "data-pane");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    const clientFile = output.files.find((f) => f.filename === "client.ts")!;
+    expect(indexFile.content).toContain("HeadlessPaneDefinition");
+    expect(indexFile.content).toContain("createConnection");
+    expect(clientFile.content).toContain("withConnectionRequest");
+  });
+
+  test("research-tab generates createResearchTab", () => {
+    const output = buildScaffold("my-tab", "research-tab");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    expect(indexFile.content).toContain("createResearchTab");
+    expect(indexFile.content).toContain("TickerResearchTabProps");
+  });
+
+  test("command-only generates registerCommand", () => {
+    const output = buildScaffold("my-cmd", "command-only");
+    const indexFile = output.files.find((f) => f.filename === "index.ts")!;
+    expect(indexFile.content).toContain("registerCommand");
+    expect(indexFile.content).toContain("registerAgentPromptFragment");
+  });
+
+  test("all templates generate package.json", () => {
+    for (const template of SCAFFOLD_TEMPLATES) {
+      const output = buildScaffold("test-plugin", template);
+      const pkgFile = output.files.find((f) => f.filename === "package.json")!;
+      const pkg = JSON.parse(pkgFile.content);
+      expect(pkg.name).toBe("test-plugin");
+      expect(pkg.version).toBe("0.1.0");
+      expect(pkg.main).toBe("index.ts");
+    }
   });
 });
 
@@ -90,6 +127,21 @@ describe("scaffoldPlugin", () => {
       const pkg = JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf-8"));
       expect(pkg.name).toBe("test-plugin");
       expect(pkg.version).toBe("0.1.0");
+    } finally {
+      setPluginsDirForTests(null);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("chart-source template creates client.ts", () => {
+    const tempDir = makeTempPluginsDir();
+    setPluginsDirForTests(tempDir);
+    try {
+      scaffoldPlugin("chart-test", "chart-source");
+      const pluginDir = join(tempDir, "chart-test");
+      expect(existsSync(join(pluginDir, "client.ts"))).toBe(true);
+      const indexContent = readFileSync(join(pluginDir, "index.ts"), "utf-8");
+      expect(indexContent).toContain("createChartSource");
     } finally {
       setPluginsDirForTests(null);
       rmSync(tempDir, { recursive: true, force: true });

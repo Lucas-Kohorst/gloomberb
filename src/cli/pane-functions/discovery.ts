@@ -79,11 +79,17 @@ function buildDiscoveryContext({
     panes.set(def.id, def);
   };
   const discoveryContext: GloomPluginContext = {
+    pluginId: "discovery",
     registerPane: registerDiscoveredPane,
     registerPaneType: registerDiscoveredPane,
     registerPaneTemplate: (template: PaneTemplateDef) => paneTemplates.set(template.id, template),
     registerCommand: () => {},
     registerCommandBarSearchProvider: () => () => {},
+    registerDocumentSearchProvider: () => () => {},
+    registerChartSeriesCatalog: () => () => {},
+    registerAlertCondition: () => {},
+    listAlertConditions: () => [],
+    createAlert: () => {},
     registerColumn: () => {},
     registerBroker: () => {},
     registerCapability: () => {},

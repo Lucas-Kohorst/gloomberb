@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudSearchHit } from "../../../api-client";
-import { hitResultDef } from "./command-bar-search";
+import { hitResultDef, pluginHitResultDef } from "./command-bar-search";
 import { formatHitDateShort } from "./model";
 
 const NOW = new Date("2026-09-01T12:00:00").getTime();
@@ -43,6 +43,22 @@ describe("formatHitDateShort", () => {
 });
 
 describe("document hit rows", () => {
+  test("preserves the provider and selected document ID on activation", () => {
+    let selected: import("./model").ResearchSearchHit | null = null;
+    const row = pluginHitResultDef("adjacent:cftc-filings", {
+      id: "742",
+      title: "Kalshi contract certification",
+      source: "CFTC",
+      documentType: "New contract",
+    }, (hit) => { selected = hit; }, NOW);
+    row.execute();
+    expect(selected).toMatchObject({
+      kind: "plugin",
+      providerId: "adjacent:cftc-filings",
+      hit: { id: "742" },
+    });
+  });
+
   test("put the date on the right and the source and ticker ahead of the snippet", () => {
     const row = hitResultDef(hit({}), () => {}, NOW);
     expect(row.badge).toBe("NEWS");

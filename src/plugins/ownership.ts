@@ -6,7 +6,6 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   connections: "application",
   "company-research": "ticker-research",
   commodities: "market-overview",
-  "country-econ": "macro",
   "chart-composer": "ticker-research",
   "comparison-chart": "ticker-research",
   tradingview: "ticker-research",
@@ -44,9 +43,7 @@ const BUILTIN_PLUGIN_OWNER_ALIASES: Record<string, string> = {
   "treasury-auctions": "macro",
   volatility: "macro",
   "world-indices": "market-overview",
-  polls: "adjacent",
   "llm-stats": "adjacent",
-  weather: "adjacent",
   "adjacent-dev": "adjacent",
 };
 
@@ -63,8 +60,8 @@ const LEGACY_MODULE_IDS_BY_OWNER: Record<string, readonly string[]> = {
   portfolio: ["portfolio-list", "analytics", "kelly-sizer", "options-calc"],
   "ticker-research": ["short-interest", "dividend-yield", "esg"],
   "market-overview": ["market-halts", "scanner", "commodities"],
-  macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions", "country-econ"],
-  adjacent: ["polls", "llm-stats", "weather", "adjacent-dev"],
+  macro: ["ipo-calendar", "treasury-auctions", "volatility", "bond-search", "credit-conditions"],
+  adjacent: ["llm-stats", "adjacent-dev"],
 };
 
 export function normalizeBuiltinPluginOwnerId(pluginId: string): string {

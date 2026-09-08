@@ -216,6 +216,8 @@ function makePluginRegistry(hasPaneSettings: (paneId: string) => boolean = () =>
     ]),
     commandBarSearchProviders: new Map<string, any>(),
     getCommandBarSearchProviderPluginId: () => undefined,
+    getAvailableChartSeriesCatalogs: () => [],
+    getAvailableDocumentSearchProviders: () => [],
     tickerActions: new Map<string, any>([
       ["pin", {
         id: "pin",

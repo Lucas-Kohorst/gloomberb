@@ -37,6 +37,7 @@ import {
 import { usePaneStatusFooter } from "../shared/pane-footer";
 import { useAppActive } from "../../../state/app/activity";
 import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
+import { fredSeriesCatalog } from "./fred-series-map";
 
 let disposeEconCalendarConnection: (() => void) | null = null;
 
@@ -427,6 +428,7 @@ export const economicCalendarModule: PluginModule = {
     createInstance: () => ({ placement: "floating" as const }),
   }],
   setup(ctx) {
+    ctx.registerChartSeriesCatalog(fredSeriesCatalog);
     attachEconCalendarPersistence(ctx.persistence);
   },
   dispose() {

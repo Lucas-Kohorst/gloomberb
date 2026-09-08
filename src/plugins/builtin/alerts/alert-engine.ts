@@ -3,8 +3,8 @@ import { isPriceAlertCondition } from "./types";
 
 export type { AlertRule };
 
-/** Conditions a stored alert may carry; anything else is corrupt or from a future release. */
-const KNOWN_CONDITIONS = new Set<AlertCondition>([
+/** Built-in conditions a stored alert may carry. Custom conditions from other plugins are also accepted. */
+const BUILTIN_CONDITIONS = new Set<string>([
   "above",
   "below",
   "crosses",
@@ -115,11 +115,15 @@ export function formatAlertDescription(alert: AlertRule): string {
       return `${alert.symbol} ex-div ≤ ${alert.targetPrice}d`;
     case "weather":
       return alert.message ?? `${alert.symbol} weather alert`;
-    default: {
+    case "above":
+    case "below":
+    case "crosses": {
       const prefix = alert.condition === "above" ? ">"
         : alert.condition === "below" ? "<" : "↕";
       return `${alert.symbol} ${prefix} ${alert.targetPrice}`;
     }
+    default:
+      return alert.message ?? `${alert.symbol} ${alert.condition}`;
   }
 }
 
@@ -144,8 +148,9 @@ export function deserializeAlerts(json: string): AlertRule[] {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((a: any) => a?.id && a?.symbol && KNOWN_CONDITIONS.has(a?.condition)
+    return parsed.filter((a: any) => a?.id && a?.symbol && typeof a?.condition === "string"
       && typeof a?.targetPrice === "number"
+      && (BUILTIN_CONDITIONS.has(a.condition) || typeof a.condition === "string")
       && (a.condition !== "weather" || (a.weather?.stationId && a.weather?.condition?.kind)));
   } catch {
     return [];
