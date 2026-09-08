@@ -3,6 +3,7 @@ import type { Context } from "@earendil-works/pi-ai";
 import { homedir } from "os";
 import {
   buildDroidExecArgs,
+  buildDroidExecEnv,
   createFactoryProvider,
   extractPrompt,
   FACTORY_AGENT_SYSTEM_PROMPT,
@@ -134,5 +135,34 @@ describe("Factory droid-exec provider", () => {
     expect(prompt).toContain("latest");
     expect(prompt).toContain("truncated");
     expect(prompt.length).toBeLessThan(130_000);
+  });
+
+  test("never inherits ambient credentials into the droid exec environment", () => {
+    const set = (name: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    };
+    const snapshot: Record<string, string | undefined> = {};
+    for (const name of ["PATH", "HOME", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"]) {
+      snapshot[name] = process.env[name];
+    }
+    try {
+      set("PATH", "/usr/bin:/bin");
+      set("HOME", "/tmp/droid-home");
+      set("OPENAI_API_KEY", "sk-attacker");
+      set("ANTHROPIC_API_KEY", "ak-attacker");
+      set("GITHUB_TOKEN", "ghp-attacker");
+      set("AWS_SECRET_ACCESS_KEY", "aws-secret");
+
+      const env = buildDroidExecEnv();
+      expect(env.PATH).toBe("/usr/bin:/bin");
+      expect(env.HOME).toBe("/tmp/droid-home");
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.GITHUB_TOKEN).toBeUndefined();
+      expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    } finally {
+      for (const [name, value] of Object.entries(snapshot)) set(name, value);
+    }
   });
 });

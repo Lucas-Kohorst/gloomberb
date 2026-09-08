@@ -25,6 +25,36 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     && Object.values(value).every((entry) => typeof entry === "string");
 }
 
+/**
+ * Cached baseUrl values are used verbatim as the transport endpoint for
+ * credential-bearing requests, so structural string checks are not enough.
+ * Accept only absolute http(s) URLs without embedded credentials; anything
+ * else (relative paths, data:, user:pass@ hosts) is rejected outright.
+ */
+function isValidModelBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+  if (parsed.username !== "" || parsed.password !== "") return false;
+  return parsed.hostname.length > 0;
+}
+
+/**
+ * Header names a cached model entry must never carry. Cached headers are
+ * merged over the credential store's auth headers on every request, so a
+ * poisoned cache could otherwise spoof or override Authorization/Cookie and
+ * redirect the credential-bearing request to an attacker-controlled endpoint.
+ */
+const FORBIDDEN_MODEL_HEADER_NAME = /(authorization|cookie|set-cookie|api[-_]?key|apikey|token|secret|password|credential)/i;
+
+function hasForbiddenModelHeaders(headers: Record<string, string>): boolean {
+  return Object.keys(headers).some((name) => FORBIDDEN_MODEL_HEADER_NAME.test(name));
+}
+
 function isCost(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
@@ -46,13 +76,15 @@ function isModel(value: unknown): value is Model<Api> {
     && typeof model.api === "string"
     && typeof model.provider === "string"
     && typeof model.baseUrl === "string"
+    && isValidModelBaseUrl(model.baseUrl)
     && typeof model.reasoning === "boolean"
     && Array.isArray(model.input)
     && model.input.every((input) => input === "text" || input === "image")
     && isCost(model.cost)
     && isFiniteNumber(model.contextWindow)
     && isFiniteNumber(model.maxTokens)
-    && (model.headers === undefined || isStringRecord(model.headers));
+    && (model.headers === undefined
+      || (isStringRecord(model.headers) && !hasForbiddenModelHeaders(model.headers)));
 }
 
 function validateEntry(value: unknown, providerId?: string): ModelsStoreEntry {

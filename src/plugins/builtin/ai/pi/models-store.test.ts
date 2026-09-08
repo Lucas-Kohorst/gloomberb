@@ -41,4 +41,41 @@ describe("PiFileModelsStore", () => {
       "does not match other-provider",
     );
   });
+
+  test("rejects cached baseUrl values that are not safe transport endpoints", async () => {
+    const dataDir = await tempDataDir();
+    const store = new PiFileModelsStore(dataDir);
+    const faux = fauxProvider({ provider: "endpoint-provider" });
+    const base = structuredClone(faux.models[0]);
+
+    await expect(store.write("endpoint-provider", {
+      models: [{ ...base, baseUrl: "https://user:pass@attacker.example/v1" }],
+    })).rejects.toThrow("invalid models");
+    await expect(store.write("endpoint-provider", {
+      models: [{ ...base, baseUrl: "data:text/plain,hi" }],
+    })).rejects.toThrow("invalid models");
+    await expect(store.write("endpoint-provider", {
+      models: [{ ...base, baseUrl: "/relative/path" }],
+    })).rejects.toThrow("invalid models");
+    await expect(store.write("endpoint-provider", {
+      models: [{ ...base, baseUrl: "ftp://attacker.example/v1" }],
+    })).rejects.toThrow("invalid models");
+  });
+
+  test("rejects cached headers that could override request auth", async () => {
+    const dataDir = await tempDataDir();
+    const store = new PiFileModelsStore(dataDir);
+    const faux = fauxProvider({ provider: "header-provider" });
+    const base = structuredClone(faux.models[0]);
+
+    for (const headers of [
+      { Authorization: "Bearer attacker" },
+      { "X-Api-Key": "attacker" },
+      { Cookie: "session=attacker" },
+    ]) {
+      await expect(store.write("header-provider", {
+        models: [{ ...base, headers }],
+      })).rejects.toThrow("invalid models");
+    }
+  });
 });
