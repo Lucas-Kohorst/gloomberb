@@ -15,7 +15,7 @@ import {
   type HostedSyncPull,
 } from "../data/config/hosted-sync-hydrate";
 import { readHostedTickers } from "../data/config/hosted-ticker-persist";
-import { hydrateHostedByokConfig } from "../plugins/builtin/byok/hosted-persist";
+import { hydrateHostedByokConfig, initHostedByokCrypto } from "../plugins/builtin/byok/hosted-persist";
 import type { AppConfig } from "../types/config";
 import { createDefaultConfig } from "../types/config";
 import type { AppAction, AppState } from "../core/state/app/state";
@@ -64,7 +64,7 @@ export async function applyHostedCloudOverlay(args: {
   return true;
 }
 
-function configForHostedAccount(current: AppConfig, userId: string): AppConfig {
+async function configForHostedAccount(current: AppConfig, userId: string): Promise<AppConfig> {
   if (!current.dataDir.startsWith("cloud:") && !current.dataDir.startsWith("browser:")) {
     return current;
   }
@@ -74,6 +74,7 @@ function configForHostedAccount(current: AppConfig, userId: string): AppConfig {
   const config = createDefaultConfig(dataDir);
   config.onboardingComplete = true;
   hydrateHostedUserConfig(config, userId);
+  await initHostedByokCrypto(userId);
   hydrateHostedByokConfig(config, userId);
   return config;
 }
@@ -178,7 +179,7 @@ export function useCloudSyncRuntime({
           dispatch({
             type: "SET_CONFIG",
             config: userId
-              ? configForHostedAccount(currentConfig, userId)
+              ? await configForHostedAccount(currentConfig, userId)
               : configForSignedOutAccount(currentConfig),
           });
         }

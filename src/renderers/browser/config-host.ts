@@ -12,6 +12,7 @@ import { getHostedConfigSnapshotPusher } from "../../data/config/hosted-config-s
 import { clearHostedBrowserWorkspace } from "../../data/config/hosted-file-ops";
 import {
   hydrateHostedByokConfig,
+  initHostedByokCrypto,
   writeHostedByokKeys,
 } from "../../plugins/builtin/byok/hosted-persist";
 
@@ -31,6 +32,7 @@ export function createBrowserConfigStore(): ConfigStoreHost {
     async loadConfig(dataDir) {
       const config = createBrowserDefaultConfig(dataDir);
       hydrateHostedUserConfig(config);
+      await initHostedByokCrypto();
       hydrateHostedByokConfig(config);
       return browserReady(config);
     },
