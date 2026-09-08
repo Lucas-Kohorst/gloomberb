@@ -75,6 +75,22 @@ export async function startLocalWebClient(options: LocalWebClientOptions = {}): 
     hostname: "127.0.0.1",
     port: options.port ?? 0,
     fetch: async (request, serverInstance) => {
+      // The local bridge is owner-level over loopback. Only accept requests
+      // whose Host header is a loopback alias of the bound port; anything else
+      // (e.g. an attacker-controlled DNS name rebinding to 127.0.0.1) is
+      // rejected before any asset, RPC, or WebSocket code runs. The port-less
+      // aliases are also accepted because browsers omit the port for a default
+      // HTTP port (80); a browser always derives Host from the URL host, so a
+      // foreign origin can never present one of these values.
+      const host = request.headers.get("host");
+      if (
+        host !== `127.0.0.1:${server.port}`
+        && host !== `localhost:${server.port}`
+        && host !== "127.0.0.1"
+        && host !== "localhost"
+      ) {
+        return new Response("Forbidden", { status: 403 });
+      }
       const url = new URL(request.url);
       if (url.pathname === "/_gloomberb/events") {
         if (url.searchParams.get("token") !== sessionToken) return new Response("Unauthorized", { status: 401 });
@@ -163,6 +179,7 @@ async function serveAsset(pathname: string, publicDir: string): Promise<Response
     headers: {
       "content-type": MIME_TYPES[extname(path)] ?? "application/octet-stream",
       "cache-control": path.endsWith("index.html") ? "no-store" : "public, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
     },
   });
 }
@@ -224,6 +241,11 @@ async function handleRequest(options: {
       return imported;
     }
     case "config.resetAllData":
+      // A bearer-token client must not be able to point the recursive delete
+      // at an arbitrary directory. Only the active data directory may be reset.
+      if (resolve(request.payload.dataDir) !== resolve(config().dataDir)) {
+        throw new Error("config.resetAllData: dataDir must match the active data directory.");
+      }
       return resetAllData(request.payload.dataDir);
     case "session.set":
       services().persistence.sessions.set(request.payload.sessionId, request.payload.value, request.payload.schemaVersion);
