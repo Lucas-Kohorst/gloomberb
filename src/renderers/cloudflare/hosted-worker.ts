@@ -21,6 +21,7 @@ import {
   relayError,
   resolveSessionUser,
   sessionCookieHeader,
+  stripUpstreamTokenBody,
   upstreamSessionCookieHeader,
 } from "./gloom-cloud";
 import { KALSHI_PROXY_PATH, KALSHI_SOURCE_HEADER } from "../../shared/hosted-api";
@@ -365,25 +366,6 @@ async function proxyGloomCloudWebSocket(request: Request, env: Env, url: URL): P
   upstreamRequest.headers.set("Cookie", upstreamSessionCookieHeader(token));
   upstreamRequest.headers.set("Origin", baseUrl);
   return fetch(upstreamRequest);
-}
-
-/**
- * Return the upstream JSON body with any top-level `token` removed. Falls back
- * to the raw text when the body is not a JSON object, so non-auth responses are
- * passed through untouched.
- */
-async function stripUpstreamTokenBody(upstream: Response): Promise<string> {
-  const text = await upstream.text();
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (isPlainObject(parsed) && "token" in parsed) {
-      delete (parsed as Record<string, unknown>).token;
-      return JSON.stringify(parsed);
-    }
-  } catch {
-    // Not JSON — pass the original text through unchanged.
-  }
-  return text;
 }
 
 async function handleBackendRequest(request: Request, env: Env, url: URL): Promise<Response> {

@@ -280,6 +280,55 @@ describe("hosted config snapshot Worker endpoint", () => {
     expect((await response?.json()).ok).toBe(true);
   });
 
+  test("RPC http.fetch to Gloom Cloud never exposes the upstream session token", async () => {
+    let upstreamCookie: string | null = null;
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const request = typeof input === "string" || input instanceof URL ? new Request(input, init) : input;
+      upstreamCookie = request.headers.get("Cookie");
+      // A rotating response (sign-in shaped): upstream rotates the session in
+      // Set-Cookie and echoes the raw token in the JSON body.
+      return new Response(JSON.stringify({ token: "rotated-raw-token", user: { id: "user-A" } }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "set-cookie": "__Secure-gloomberb.session_token=rotated-raw-token; Path=/; HttpOnly; Secure",
+          "x-upstream-marker": "kept",
+        },
+      });
+    }) as typeof globalThis.fetch;
+
+    const response = await workerModule.default.fetch?.(
+      makeRequest("POST", "/_gloomberb/rpc", {
+        body: JSON.stringify({
+          method: "http.fetch",
+          payload: { url: "https://api.gloom.sh/sync/snapshot", init: { method: "GET" } },
+        }),
+        sessionToken: "server-held-token",
+      }),
+      makeEnv(),
+    );
+
+    expect(response?.status).toBe(200);
+    // The Worker unwrapped the hosted cookie and attached the real session upstream.
+    expect(upstreamCookie).toContain("__Secure-gloomberb.session_token=server-held-token");
+
+    const envelope = await response?.json() as {
+      ok: boolean;
+      value: { headers: Record<string, string>; setCookie?: string[]; body: string };
+    };
+    expect(envelope.ok).toBe(true);
+    // Set-Cookie (the rotated session token) must not reach renderer JS, and
+    // the generic header map must not smuggle it in either.
+    expect(envelope.value.setCookie).toEqual([]);
+    expect(Object.keys(envelope.value.headers).some((key) => key.toLowerCase() === "set-cookie")).toBe(false);
+    expect(JSON.stringify(envelope.value.headers)).not.toContain("rotated-raw-token");
+    // Unrelated upstream headers still pass through untouched.
+    expect(envelope.value.headers["x-upstream-marker"]).toBe("kept");
+    // The raw token echoed in a rotating JSON body is stripped as well.
+    expect(JSON.parse(envelope.value.body)).toEqual({ user: { id: "user-A" } });
+    expect(envelope.value.body).not.toContain("rotated-raw-token");
+  });
+
   test("DefiLlama histories cross the hosted public HTTP bridge without a session", async () => {
     globalThis.fetch = (async (input: URL | RequestInfo) => {
       expect(String(input)).toBe("https://api.llama.fi/v2/historicalChainTvl/hosted-rpc-chain");

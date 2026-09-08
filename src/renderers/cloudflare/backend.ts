@@ -3,7 +3,7 @@ import { resolveHostedTvStream } from "../../plugins/builtin/tv/youtube-embed";
 import type { LiveStreamResolveRequest } from "../../types/media";
 import { handleHttpFetch, type SharedHttpFetchRequest, type SharedHttpFetchResponse } from "../electrobun/shared/http-fetch";
 import { decodeRpcValue, encodeRpcValue } from "../electrobun/view/rpc-codec";
-import { gloomFetch, readSessionCookie } from "./gloom-cloud";
+import { gloomFetch, readSessionCookie, stripUpstreamTokenBody } from "./gloom-cloud";
 import {
   applyHostedSharedVendorKeys,
   hostedPublicGetCacheTtlSeconds,
@@ -172,16 +172,23 @@ async function dispatch(
           body: request.payload.init?.body ?? null,
           token,
         });
+        // The real Gloom Cloud session token is held server-side in the
+        // HttpOnly `__Host-gloom.session` cookie and must never reach browser
+        // JS. Upstream Set-Cookie carries the rotated session token, and a
+        // rotating response (e.g. sign-in) echoes it in the JSON body, so both
+        // are stripped at this RPC boundary. Session rotation stays server-side
+        // through the `/cloud` proxy, which re-issues only the hosted cookie.
         const headers: Record<string, string> = {};
         upstream.headers.forEach((value, key) => {
+          if (key.toLowerCase() === "set-cookie" || key.toLowerCase() === "set-cookie2") return;
           headers[key] = value;
         });
         return {
           status: upstream.status,
           statusText: upstream.statusText,
           headers,
-          setCookie: upstream.headers.getSetCookie?.() ?? [],
-          body: await upstream.text(),
+          setCookie: [],
+          body: await stripUpstreamTokenBody(upstream),
         };
       }
       const fetchUrl = new URL(url);
