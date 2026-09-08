@@ -12,6 +12,7 @@ import {
   type CliCommandRegistry,
 } from "./registry";
 import { fail, inferCliErrorOptions, printCliError } from "./errors";
+import { confirmPluginInstall } from "./confirm";
 import { setCliColorEnabledOverride } from "../utils/cli-output";
 import { search, searchCandidatesForCli, buildSearchReport } from "./commands/search";
 import { ticker } from "./commands/ticker";
@@ -146,12 +147,23 @@ function createCoreCliCommands(
       name: "install",
       description: "Install a plugin from GitHub",
       help: {
-        usage: ["install <user/repo>"],
+        usage: ["install <user/repo> [--yes]"],
       },
-      execute: async (args) => {
+      execute: async (args, ctx) => {
         const ref = args[0];
         if (!ref) {
           fail("Usage: gloomberb install <github-user/repo>");
+        }
+        const confirmed = await confirmPluginInstall({
+          ref,
+          approved: ctx.cliOptions.yes,
+          interactive: ctx.cliOptions.format === "text" && process.stdin.isTTY === true,
+        });
+        if (!confirmed) {
+          fail(
+            `Install of "${ref}" cancelled: no confirmation given.`,
+            `Installing clones the repository, installs its dependencies, and runs the plugin's code with your user permissions. Re-run with --yes to explicitly confirm, or answer the interactive prompt.`,
+          );
         }
         await installPlugin(ref);
       },
