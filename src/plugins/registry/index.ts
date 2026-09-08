@@ -72,7 +72,30 @@ import { isReservedBuiltinPluginId } from "../ownership";
 import { resolveApiKey } from "../builtin/byok/store";
 import { resolvePluginEntryFile } from "../loader";
 import { existsSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, relative, resolve, sep } from "path";
+
+/**
+ * A plugin identifier is safe to treat as a single directory name under the
+ * plugins root when it is a bounded ASCII slug with no path separators, no
+ * `.`/`..` components, and no leading specials (which would also reject
+ * absolute paths). This mirrors the directory-name grammar the installer
+ * enforces for newly installed plugins, so any legitimately installed plugin
+ * directory passes.
+ */
+const SAFE_PLUGIN_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function isSafePluginIdentifier(pluginId: string): boolean {
+  return SAFE_PLUGIN_IDENTIFIER_PATTERN.test(pluginId);
+}
+
+/**
+ * True when `candidate` resolves strictly inside `root`. `candidate == root`
+ * is rejected: callers resolve a *plugin* directory, not the root itself.
+ */
+function isStrictlyInsideRoot(root: string, candidate: string): boolean {
+  const rel = relative(resolve(root), resolve(candidate));
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -650,8 +673,21 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
     // If the entry file is not tracked, try to resolve it from the plugins dir.
     if (!entryFile) {
+      // The untracked id is joined onto the plugins root, so only a bare
+      // directory name may reach this path. Rejecting separators, `..`, and
+      // absolute input here stops `reload_plugin` from importing entry files
+      // from outside the plugins directory (audit plugin-lifecycle-001).
+      if (!isSafePluginIdentifier(pluginId)) {
+        return { success: false, message: `Invalid plugin id: ${pluginId}` };
+      }
       const { getPluginsDir } = await import("../loader");
-      const pluginDir = join(getPluginsDir(), pluginId);
+      const pluginsRoot = getPluginsDir();
+      const pluginDir = join(pluginsRoot, pluginId);
+      // Defense in depth: even a syntactically valid id cannot resolve outside
+      // the plugins root (e.g. a future looser grammar or symlinked root).
+      if (!isStrictlyInsideRoot(pluginsRoot, pluginDir)) {
+        return { success: false, message: `Plugin directory not found: ${pluginId}` };
+      }
       if (!existsSync(pluginDir)) {
         return { success: false, message: `Plugin directory not found: ${pluginId}` };
       }
