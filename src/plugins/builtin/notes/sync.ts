@@ -1,5 +1,11 @@
 import type { SyncContributor } from "../../../sync/types";
-import type { NoteFileEntry, NotesFiles, QuickNoteEntry } from "./files";
+import {
+  isSafeNoteKey,
+  isSafeQuickNoteId,
+  type NoteFileEntry,
+  type NotesFiles,
+  type QuickNoteEntry,
+} from "./files";
 
 // The server rejects snapshots over 1.5MB, and notes share it with portfolios.
 const MAX_NOTE_CHARS = 100_000;
@@ -18,7 +24,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function parseNotes(value: unknown): SyncedNote[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => (
-    isPlainObject(entry) && typeof entry.key === "string" && typeof entry.text === "string"
+    isPlainObject(entry) && isSafeNoteKey(entry.key) && typeof entry.text === "string"
       ? [{
         key: entry.key,
         text: entry.text,
@@ -33,7 +39,7 @@ function parseNotes(value: unknown): SyncedNote[] {
 function parseQuickNotes(value: unknown): QuickNoteEntry[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => (
-    isPlainObject(entry) && typeof entry.id === "string" && typeof entry.title === "string"
+    isPlainObject(entry) && isSafeQuickNoteId(entry.id) && typeof entry.title === "string"
       ? [{
         id: entry.id,
         title: entry.title,
