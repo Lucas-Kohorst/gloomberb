@@ -134,6 +134,34 @@ export async function relayError(upstream: Response): Promise<Response> {
   return Response.json({ error: parseApiErrorMessage(text) || "Gloom Cloud request failed." }, { status: upstream.status });
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Return the upstream JSON body with any top-level `token` removed. Falls back
+ * to the raw text when the body is not a JSON object, so non-auth responses are
+ * passed through untouched.
+ *
+ * Shared by the `/cloud` REST proxy and the `http.fetch` RPC cloud branch: a
+ * rotating session (e.g. sign-in) echoes the raw session token in the JSON
+ * body, and the hosted client must never receive it — it authenticates through
+ * the Worker's HttpOnly `__Host-gloom.session` cookie.
+ */
+export async function stripUpstreamTokenBody(upstream: Response): Promise<string> {
+  const text = await upstream.text();
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (isPlainObject(parsed) && "token" in parsed) {
+      delete (parsed as Record<string, unknown>).token;
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON — pass the original text through unchanged.
+  }
+  return text;
+}
+
 export interface GloomSessionUser {
   id: string;
   email?: string;
