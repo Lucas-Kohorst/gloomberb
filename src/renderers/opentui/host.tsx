@@ -5,7 +5,7 @@ import { resetTerminalInputState } from "../../utils/terminal-input-reset";
 import type { KeyEventLike } from "../../react/input";
 import type { NativeRendererHost, PixelResolution, RendererHost } from "../../ui/host";
 import { colors } from "../../theme/colors";
-import { safeExternalUrl } from "../../utils/external-url";
+import { safeExternalUrl, openUrlCommand } from "../../utils/external-url";
 import { createTerminalMediaReaper, terminalMediaStateFile } from "./terminal-media";
 import { saveTextFileToDownloads } from "../../utils/save-text-file";
 import { installInteractionPerformanceRecorder } from "./interaction-performance";
@@ -106,11 +106,8 @@ export async function createOpenTuiHost(): Promise<OpenTuiHost> {
     async openExternal(rawUrl) {
       const url = safeExternalUrl(rawUrl);
       if (!url) return;
-      const command = process.platform === "darwin"
-        ? ["open", url]
-        : process.platform === "win32"
-          ? ["cmd", "/c", "start", "", url]
-          : ["xdg-open", url];
+      const command = openUrlCommand(url);
+      if (!command) return;
       const proc = Bun.spawn(command, {
         stdout: "ignore",
         stderr: "ignore",
