@@ -1,8 +1,8 @@
 import type { RemoteControlSchema, RemoteOperationSchema, RemoteResourceSchema } from "./types";
 
 export const REMOTE_RESOURCES: RemoteResourceSchema[] = [
-  { uri: "app://snapshot", description: "Current app snapshot including layout, focus, panes, command bar, and plugin/capability catalogs." },
-  { uri: "app://config", description: "Current app config.", patchable: true },
+  { uri: "app://snapshot", description: "Current app snapshot including layout, focus, panes, command bar, and plugin/capability catalogs. Credential-bearing config fields are redacted with [redacted] placeholders." },
+  { uri: "app://config", description: "Current app config. Credential-bearing fields (broker config, BYOK API keys) are redacted with [redacted] placeholders.", patchable: true },
   { uri: "app://layout/current", description: "Current active layout.", patchable: true },
   { uri: "app://layouts", description: "Saved layouts." },
   { uri: "app://panes", description: "Current pane instances with placement and runtime state." },

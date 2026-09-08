@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createDefaultConfig, type AppConfig, type BrokerInstanceConfig } from "../types/config";
-import { REDACTED, redactConfigForRemote } from "./redact-config";
+import { REDACTED, hydrateRedactedConfigForRemote, redactConfigForRemote } from "./redact-config";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } from "../plugins/builtin/byok/types";
 
 // Obviously-fake sentinels defined by the test itself. Never real credentials.
@@ -104,5 +104,69 @@ describe("redactConfigForRemote", () => {
     expect((config.brokerInstances[0].config as Record<string, unknown>).token).toBe(
       BROKER_TOKEN,
     );
+  });
+
+  test("hydrates redacted markers back to live credentials without touching real writes", () => {
+    const live = buildConfigWithSecrets();
+    // A consumer that read the redacted view and round-trips it: every field
+    // the redactor touched is the marker, everything else is the tweaked value.
+    const redacted = redactConfigForRemote(live);
+    (redacted.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
+      BYOK_API_KEYS_CONFIG_KEY
+    ] = {
+      keys: [
+        {
+          id: "byok-1",
+          serviceId: "fred",
+          name: "Renamed FRED key",
+          apiKey: REDACTED,
+          openApiSpecBody: REDACTED,
+          createdAt: 1700000000000,
+        },
+      ],
+    };
+    const broker = redacted.brokerInstances[0];
+    broker.label = "Renamed label";
+    broker.config = { ...broker.config, token: REDACTED, refreshToken: REDACTED };
+
+    const hydrated = hydrateRedactedConfigForRemote(live, redacted);
+
+    // Credentials are restored from the live config...
+    expect(hydrated.brokerInstances[0].config.token).toBe(BROKER_TOKEN);
+    expect(hydrated.brokerInstances[0].config.refreshToken).toBe(BROKER_REFRESH);
+    const byok = (hydrated.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
+      BYOK_API_KEYS_CONFIG_KEY
+    ] as { keys: Record<string, unknown>[] };
+    expect(byok.keys[0].apiKey).toBe(BYOK_KEY);
+    expect(byok.keys[0].openApiSpecBody).toBe(BYOK_SPEC_BODY);
+    // ...while the consumer's real edits are preserved.
+    expect(hydrated.brokerInstances[0].label).toBe("Renamed label");
+    expect(byok.keys[0].name).toBe("Renamed FRED key");
+    // The live config is untouched and neither input is mutated.
+    expect(live.brokerInstances[0].config.token).toBe(BROKER_TOKEN);
+    expect(redacted.brokerInstances[0].config.token).toBe(REDACTED);
+  });
+
+  test("hydrate leaves real writes alone and ignores unknown live entries", () => {
+    const live = buildConfigWithSecrets();
+    const incoming = structuredClone(live) as AppConfig;
+    incoming.brokerInstances[0].config = {
+      ...incoming.brokerInstances[0].config,
+      token: "new-real-token",
+    };
+    incoming.brokerInstances.push({
+      id: "broker-new",
+      brokerType: "ibkr",
+      label: "New broker",
+      config: { token: REDACTED },
+    });
+
+    const hydrated = hydrateRedactedConfigForRemote(live, incoming);
+
+    // A real write passes through untouched.
+    expect(hydrated.brokerInstances[0].config.token).toBe("new-real-token");
+    expect(hydrated.brokerInstances[0].config.refreshToken).toBe(BROKER_REFRESH);
+    // An entry with no live counterpart keeps its marker.
+    expect(hydrated.brokerInstances[1].config.token).toBe(REDACTED);
   });
 });

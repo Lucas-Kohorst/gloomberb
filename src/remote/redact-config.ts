@@ -132,3 +132,59 @@ export function redactByokKeysFromConfig(config: AppConfig): AppConfig {
 
   return clone;
 }
+
+/**
+ * Restore live credential values in place of redaction markers before a
+ * remote patch is written back. A consumer that reads the redacted config and
+ * round-trips it (read → tweak → patch) must not be able to clobber real
+ * credentials with the {@link REDACTED} placeholder: only fields carrying the
+ * marker are hydrated from the matching live entry, and every other value
+ * (including legitimate new credentials) passes through unchanged.
+ */
+export function hydrateRedactedConfigForRemote(live: AppConfig, incoming: AppConfig): AppConfig {
+  const clone = structuredClone(incoming) as AppConfig;
+
+  if (Array.isArray(clone.brokerInstances) && Array.isArray(live.brokerInstances)) {
+    const liveBrokers = new Map(live.brokerInstances.map((broker) => [broker.id, broker]));
+    for (const broker of clone.brokerInstances) {
+      if (!broker.config || typeof broker.config !== "object") continue;
+      const liveBroker = liveBrokers.get(broker.id);
+      if (!liveBroker) continue;
+      for (const key of Object.keys(broker.config)) {
+        if (broker.config[key] === REDACTED && key in (liveBroker.config ?? {})) {
+          broker.config[key] = liveBroker.config[key];
+        }
+      }
+    }
+  }
+
+  const appPluginConfig = clone.pluginConfig?.[BYOK_PLUGIN_ID];
+  const livePluginConfig = live.pluginConfig?.[BYOK_PLUGIN_ID];
+  if (
+    appPluginConfig && typeof appPluginConfig === "object"
+    && livePluginConfig && typeof livePluginConfig === "object"
+  ) {
+    const byokEntry = (appPluginConfig as Record<string, unknown>)[BYOK_API_KEYS_CONFIG_KEY];
+    const liveByokEntry = (livePluginConfig as Record<string, unknown>)[BYOK_API_KEYS_CONFIG_KEY];
+    if (byokEntry && typeof byokEntry === "object" && liveByokEntry && typeof liveByokEntry === "object") {
+      const byokConfig = byokEntry as { keys?: unknown[] };
+      const liveByokConfig = liveByokEntry as { keys?: unknown[] };
+      if (Array.isArray(byokConfig.keys) && Array.isArray(liveByokConfig.keys)) {
+        const liveEntries = new Map(
+          (liveByokConfig.keys as Record<string, unknown>[]).map((entry) => [entry.id, entry]),
+        );
+        for (const entry of byokConfig.keys as Record<string, unknown>[]) {
+          const liveEntry = liveEntries.get(entry.id);
+          if (!liveEntry) continue;
+          for (const key of Object.keys(entry)) {
+            if (entry[key] === REDACTED && key in liveEntry) {
+              entry[key] = liveEntry[key];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return clone;
+}

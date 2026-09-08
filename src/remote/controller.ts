@@ -161,7 +161,7 @@ export function createAppRemoteController({
   desktopWindowBridge,
   afterMutation = () => {},
 }: AppRemoteControllerOptions) {
-  const { buildIncludedState, getResource, patchTarget } = createRemoteResources({
+  const { buildIncludedState, getResource, patchTarget, revisionForResource } = createRemoteResources({
     dispatch,
     getState,
     pluginRegistry,
@@ -731,7 +731,7 @@ export function createAppRemoteController({
           return ok(remoteControlSchema());
         case "get": {
           const data = getResource(request.resource);
-          return ok(data, revisionFor(data), buildIncludedState(request.include));
+          return ok(data, revisionForResource(request.resource, data), buildIncludedState(request.include));
         }
         case "data":
           return ok(await queryMarketData(request));
@@ -751,7 +751,7 @@ export function createAppRemoteController({
             await afterMutation();
           }
           return ok(
-            nextValue,
+            target.redact ? target.redact(nextValue) : nextValue,
             revisionFor(nextValue),
             buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_MUTATION_INCLUDE),
           );
