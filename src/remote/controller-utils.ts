@@ -7,6 +7,8 @@ import type { RemoteControlResponse, RemoteIncludedState, RemoteStateInclude } f
 export interface PatchTarget<T> {
   value: T;
   apply(value: T): Promise<void> | void;
+  /** Transform applied to the value echoed back in patch responses. */
+  redact?(value: T): unknown;
 }
 
 export function ok<T>(data: T, rev?: string, state?: RemoteIncludedState): RemoteControlResponse<T> {

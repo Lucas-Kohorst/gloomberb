@@ -14,6 +14,8 @@ import type {
   PaneTemplateDef,
 } from "../types/plugin";
 import { commandBarResultsFromNodes, commandBarSnapshot } from "./command-bar";
+import { hydrateRedactedConfigForRemote, redactConfigForRemote } from "./redact-config";
+import { revisionFor } from "./revision";
 import type { RemoteUiRegistry } from "./semantic-tree";
 import { REMOTE_AGENT_HELP, remoteControlSchema } from "./schema";
 import type { RemoteIncludedState, RemoteStateInclude } from "./types";
@@ -132,7 +134,7 @@ export function createRemoteResources({
           commandBarQuery: state.commandBarQuery,
           initialized: state.initialized,
         },
-        config: state.config,
+        config: redactConfigForRemote(state.config),
         panes: state.config.layout.instances.map((pane) => paneSnapshot(state, pane)),
         commandBar: commandBarSnapshot(state, uiNodes),
         ui: uiNodes,
@@ -140,7 +142,7 @@ export function createRemoteResources({
         help: REMOTE_AGENT_HELP,
       };
     }
-    if (resource === "app://config") return state.config;
+    if (resource === "app://config") return redactConfigForRemote(state.config);
     if (resource === "app://layout/current") return state.config.layout;
     if (resource === "app://layouts") return state.config.layouts;
     if (resource === "app://panes") return state.config.layout.instances.map((pane) => paneSnapshot(state, pane));
@@ -242,7 +244,14 @@ export function createRemoteResources({
     if (resource === "app://config") {
       return {
         value: state.config,
-        apply: (value) => dispatch({ type: "SET_CONFIG", config: value as AppState["config"] }),
+        apply: (value) => dispatch({
+          type: "SET_CONFIG",
+          config: hydrateRedactedConfigForRemote(
+            getState().config,
+            value as AppState["config"],
+          ),
+        }),
+        redact: (value) => redactConfigForRemote(value as AppState["config"]),
       };
     }
     if (resource === "app://layout/current") {
@@ -273,9 +282,18 @@ export function createRemoteResources({
     throw new Error(`Remote resource "${resource}" is not patchable.`);
   };
 
+  const revisionForResource = (resource: string, data: unknown): string => {
+    // The redacted view differs from the source for config-bearing resources,
+    // so rev must be computed over the raw source to keep the expectRev
+    // conditional-write contract intact across get → patch round trips.
+    if (resource === "app://config") return revisionFor(getState().config);
+    return revisionFor(data);
+  };
+
   return {
     buildIncludedState,
     getResource,
     patchTarget,
+    revisionForResource,
   };
 }
