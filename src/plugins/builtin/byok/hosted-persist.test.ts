@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createDefaultConfig } from "../../../types/config";
 import {
+  clearHostedByokKeys,
+  flushByokWrites,
   hydrateHostedByokConfig,
+  initHostedByokCrypto,
   readHostedByokKeys,
   writeHostedByokKeys,
 } from "./hosted-persist";
+import { resetByokCryptoCache, isEncryptedBlob } from "./crypto";
 import { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID, type ByokStoredConfig } from "./types";
 import { rememberHostedUserId, setHostedConfigUserId } from "../../../data/config/hosted-user-persist";
 
@@ -19,7 +23,7 @@ const stored: ByokStoredConfig = {
   }],
 };
 
-function installMemoryStorage(): void {
+function installMemoryStorage(target: "localStorage" | "sessionStorage"): void {
   const values = new Map<string, string>();
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
@@ -35,7 +39,7 @@ function installMemoryStorage(): void {
       return values.size;
     },
   } satisfies Storage;
-  Object.defineProperty(globalThis, "localStorage", {
+  Object.defineProperty(globalThis, target, {
     configurable: true,
     value: storage,
   });
@@ -45,12 +49,15 @@ describe("hosted BYOK persist", () => {
   afterEach(() => {
     setHostedConfigUserId(null);
     rememberHostedUserId(null);
+    resetByokCryptoCache();
     globalThis.localStorage?.clear();
+    globalThis.sessionStorage?.clear();
   });
 
-  installMemoryStorage();
+  installMemoryStorage("localStorage");
+  installMemoryStorage("sessionStorage");
 
-  test("writes and hydrates keys through localStorage", () => {
+  test("writes encrypted data and hydrates keys through the cache", async () => {
     setHostedConfigUserId("user-1");
     const config = createDefaultConfig("/tmp/byok");
     config.pluginConfig = {
@@ -58,6 +65,20 @@ describe("hosted BYOK persist", () => {
     };
 
     writeHostedByokKeys(config);
+    // Cache is updated synchronously.
+    expect(readHostedByokKeys()).toEqual(stored);
+
+    // Wait for the async encrypted write to land in localStorage.
+    await flushByokWrites();
+    const raw = globalThis.localStorage.getItem("gloomberb:hosted-byok-keys:user-1");
+    expect(raw).not.toBeNull();
+    expect(isEncryptedBlob(raw!)).toBe(true);
+    // The raw blob must not contain the plaintext key.
+    expect(raw!).not.toContain("sk-hosted");
+
+    // Simulate a fresh session: clear cache, re-init from encrypted storage.
+    resetByokCryptoCache();
+    await initHostedByokCrypto("user-1");
     expect(readHostedByokKeys()).toEqual(stored);
 
     const next = createDefaultConfig("/tmp/byok");
@@ -88,5 +109,19 @@ describe("hosted BYOK persist", () => {
 
     setHostedConfigUserId("user-2");
     expect(readHostedByokKeys()).toBeNull();
+  });
+
+  test("clearHostedByokKeys removes cached and persisted data", async () => {
+    setHostedConfigUserId("user-1");
+    const config = createDefaultConfig("/tmp/byok");
+    config.pluginConfig = {
+      [BYOK_PLUGIN_ID]: { [BYOK_API_KEYS_CONFIG_KEY]: stored },
+    };
+    writeHostedByokKeys(config);
+    await flushByokWrites();
+
+    clearHostedByokKeys("user-1");
+    expect(readHostedByokKeys("user-1")).toBeNull();
+    expect(globalThis.localStorage.getItem("gloomberb:hosted-byok-keys:user-1")).toBeNull();
   });
 });

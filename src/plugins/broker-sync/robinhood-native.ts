@@ -11,6 +11,7 @@ import type { OAuthClientInformationMixed, OAuthTokens } from "@modelcontextprot
 import type { BrokerAdapter, BrokerConnectionStatus } from "../../types/broker";
 import type { BrokerInstanceConfig } from "../../types/config";
 import type { GloomPlugin } from "../../types/plugin";
+import { openUrlCommand, safeExternalUrl } from "../../utils/external-url";
 import { normalizeRobinhoodSnapshot, type BrokerPortfolioSnapshot } from "./normalize";
 
 const ROBINHOOD_MCP_URL = "https://agent.robinhood.com/mcp/trading";
@@ -55,11 +56,10 @@ function cloneOAuth(value: unknown): RobinhoodOAuthData {
 }
 
 async function openExternal(url: string): Promise<void> {
-  const command = process.platform === "darwin"
-    ? ["open", url]
-    : process.platform === "win32"
-      ? ["cmd", "/c", "start", "", url]
-      : ["xdg-open", url];
+  const safeUrl = safeExternalUrl(url);
+  if (!safeUrl) throw new Error("Gloomberb could not open the Robinhood sign-in page: invalid URL.");
+  const command = openUrlCommand(safeUrl);
+  if (!command) throw new Error("Gloomberb could not open the Robinhood sign-in page.");
   const processHandle = Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
   const exitCode = await processHandle.exited;
   if (exitCode !== 0) throw new Error("Gloomberb could not open the Robinhood sign-in page.");

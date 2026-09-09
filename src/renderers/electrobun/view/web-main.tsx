@@ -27,7 +27,7 @@ import { createElectrobunAppServices } from "./app-services";
 import { localWebRendererHost } from "./web-client-host";
 import { createWebWindowBridge } from "./web-window-bridge";
 import { createWebDeepLinkBridge } from "./web-deeplink-bridge";
-import { hydrateHostedByokConfig } from "../../../plugins/builtin/byok/hosted-persist";
+import { hydrateHostedByokConfig, initHostedByokCrypto } from "../../../plugins/builtin/byok/hosted-persist";
 import { isPublicShareLocation } from "../../../plugins/builtin/shared/share-link";
 import {
   getHostedConfigUserId,
@@ -145,6 +145,7 @@ async function boot(): Promise<void> {
   }
   if (isHosted) {
     const publicShare = isPublicShareLocation();
+    await initHostedByokCrypto();
     hydrateHostedByokConfig(init.config);
     if (!publicShare) {
       hydrateHostedUserConfig(init.config);

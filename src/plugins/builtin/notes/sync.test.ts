@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "fs";
 import { mkdtemp, rm } from "fs/promises";
+import { basename, join } from "path";
 import { tmpdir } from "os";
-import { join } from "path";
 import type { SyncApplyContext } from "../../../sync/types";
 import { NotesFiles } from "./files";
 import { createNotesSyncContributor } from "./sync";
@@ -14,16 +15,16 @@ afterEach(async () => {
   }
 });
 
-async function createNotesFiles(): Promise<NotesFiles> {
+async function createNotesFiles(): Promise<{ directory: string; notesFiles: NotesFiles }> {
   const directory = await mkdtemp(join(tmpdir(), "gloomberb-notes-sync-"));
   directories.push(directory);
-  return new NotesFiles(directory);
+  return { directory, notesFiles: new NotesFiles(directory) };
 }
 
 const applyContext = { isCurrent: () => true } as unknown as SyncApplyContext;
 
 test("resolves each note to whichever side wrote it last", async () => {
-  const notesFiles = await createNotesFiles();
+  const { notesFiles } = await createNotesFiles();
   await notesFiles.save("AAPL", "local aapl");
   await notesFiles.save("MSFT", "local msft");
   const contributor = createNotesSyncContributor(notesFiles);
@@ -46,4 +47,23 @@ test("resolves each note to whichever side wrote it last", async () => {
 
   const payload = await contributor.collect({} as never) as { notes: Array<{ key: string }> };
   expect(payload.notes.map((note) => note.key).sort()).toEqual(["AAPL", "MSFT", "TSLA"]);
+});
+
+test("ignores traversal-bearing note keys from sync payloads", async () => {
+  const { directory, notesFiles } = await createNotesFiles();
+  const contributor = createNotesSyncContributor(notesFiles);
+  const outsidePath = join(directory, "..", `${basename(directory)}-escape.md`);
+  const outsideKey = `../${basename(directory)}-escape`;
+
+  await contributor.apply?.({
+    notes: [
+      { key: outsideKey, text: "escaped", updatedAt: Date.now() + 60_000 },
+      { key: "AAPL", text: "safe", updatedAt: Date.now() + 60_000 },
+    ],
+    quickNotes: [],
+  }, applyContext);
+
+  expect(await notesFiles.load("AAPL")).toBe("safe");
+  await expect(notesFiles.load(outsideKey)).rejects.toThrow("Invalid note key");
+  expect(existsSync(outsidePath)).toBe(false);
 });

@@ -1,5 +1,12 @@
-import { join } from "path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, cpSync } from "fs";
+import { basename, dirname, join, resolve, sep } from "path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "fs";
 import type { GloomPlugin } from "../../../types/plugin";
 import type { PluginRegistry } from "../../registry";
 import { resolvePluginEntryFile, getPluginsDir } from "../../loader";
@@ -74,6 +81,62 @@ export function parseToolCalls(response: string): ParsedToolCall[] {
 }
 
 /**
+ * True when `candidate` (already a resolved absolute path) equals `root` or
+ * sits strictly inside it. The boundary is a path separator, so a sibling
+ * directory that merely shares the root's name prefix does not pass.
+ */
+function isWithinRoot(root: string, candidate: string): boolean {
+  return candidate === root || candidate.startsWith(root + sep);
+}
+
+/**
+ * Canonicalize `target`, resolving symlinks in its deepest existing ancestor.
+ * This is the containment check to use when the final component may not exist
+ * yet (e.g. a file that is about to be written) but a symlink could still
+ * redirect the resolved directory chain outside the intended root. Falls back
+ * to the normalized lexical path when nothing under `target` exists.
+ */
+function canonicalPath(target: string): string {
+  let current = resolve(target);
+  const suffix: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...suffix);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return resolve(target);
+      suffix.unshift(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * Resolve `candidate` under `root` and verify it stays inside `root` after
+ * both normalization (`..` segments, sibling-prefix collisions) and symlink
+ * resolution. Returns the normalized absolute path when contained, otherwise
+ * null. Every AI file tool that touches the filesystem funnels through this.
+ */
+function resolveWithinRoot(root: string, candidate: string): string | null {
+  const resolvedCandidate = resolve(candidate);
+  const resolvedRoot = resolve(root);
+  if (!isWithinRoot(resolvedRoot, resolvedCandidate)) return null;
+  if (!isWithinRoot(canonicalPath(resolvedRoot), canonicalPath(resolvedCandidate))) return null;
+  return resolvedCandidate;
+}
+
+/**
+ * A plugin id is a directory name inside the plugins root. Reject path-shaped
+ * values so reload_plugin can never resolve (and import) outside that tree.
+ */
+function isSafePluginId(pluginId: string): boolean {
+  if (pluginId.length === 0 || pluginId.length > 128) return false;
+  if (pluginId.startsWith(".")) return false;
+  if (pluginId.includes("/") || pluginId.includes("\\")) return false;
+  return true;
+}
+
+/**
  * Create the set of plugin tools the AI agent can invoke.
  */
 export function createPluginTools(registry: PluginRegistry | undefined): PluginTool[] {
@@ -92,10 +155,11 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         if (!content && content !== "") return { success: false, output: "Missing required parameter: content" };
 
         const pluginsRoot = getPluginsDir();
-        const fullPath = join(pluginsRoot, relPath);
-
-        // Prevent path traversal outside the plugins directory.
-        if (!fullPath.startsWith(pluginsRoot)) {
+        // Canonical containment: normalization rejects `..`/sibling-prefix
+        // escapes and the real-path check rejects symlink escapes before any
+        // file is created or overwritten (see resolveWithinRoot).
+        const fullPath = resolveWithinRoot(pluginsRoot, join(pluginsRoot, relPath));
+        if (!fullPath) {
           return { success: false, output: "Path must stay within the plugins directory" };
         }
 
@@ -121,17 +185,14 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
 
         const pluginsRoot = getPluginsDir();
         const appRoot = process.cwd();
-        let fullPath: string;
-        if (relPath.startsWith("/")) {
-          fullPath = relPath;
-          if (!fullPath.startsWith(appRoot)) {
-            return { success: false, output: "Path must stay within the plugins directory or the app source directory" };
-          }
-        } else {
-          fullPath = join(pluginsRoot, relPath);
-          if (!fullPath.startsWith(pluginsRoot)) {
-            return { success: false, output: "Path must stay within the plugins directory" };
-          }
+        // Canonical containment on a resolved, symlink-checked path. The raw
+        // prefix form allowed /<appRoot>/../ traversal and sibling directories
+        // sharing the root's name; resolveWithinRoot rejects both.
+        const fullPath = relPath.startsWith("/")
+          ? resolveWithinRoot(appRoot, relPath)
+          : resolveWithinRoot(pluginsRoot, join(pluginsRoot, relPath));
+        if (!fullPath) {
+          return { success: false, output: "Path must stay within the plugins directory or the app source directory" };
         }
 
         if (!existsSync(fullPath)) {
@@ -173,6 +234,9 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         if (!registry) return { success: false, output: "Plugin registry is not available" };
         const pluginId = String(args.pluginId ?? "");
         if (!pluginId) return { success: false, output: "Missing required parameter: pluginId" };
+        if (!isSafePluginId(pluginId)) {
+          return { success: false, output: `Invalid plugin id: ${pluginId}` };
+        }
         const result = await registry.reloadExternalPlugin(pluginId);
         return { success: result.success, output: result.message };
       },
@@ -193,13 +257,20 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         // Find the built-in plugin source directory.
         // Built-in plugins live under src/plugins/builtin/<sourcePluginId>/.
         const appRoot = process.cwd();
-        const sourceDir = join(appRoot, "src", "plugins", "builtin", sourcePluginId);
+        const builtinPluginsRoot = join(appRoot, "src", "plugins", "builtin");
+        const sourceDir = resolveWithinRoot(builtinPluginsRoot, join(builtinPluginsRoot, sourcePluginId));
+        if (!sourceDir) {
+          return { success: false, output: `Invalid source plugin id: ${sourcePluginId}` };
+        }
         if (!existsSync(sourceDir)) {
           return { success: false, output: `Built-in plugin source not found: ${sourcePluginId}` };
         }
 
         const pluginsRoot = getPluginsDir();
-        const targetDir = join(pluginsRoot, newId);
+        const targetDir = resolveWithinRoot(pluginsRoot, join(pluginsRoot, newId));
+        if (!targetDir) {
+          return { success: false, output: `Target must stay within the plugins directory: ${newId}` };
+        }
         if (existsSync(targetDir)) {
           return { success: false, output: `Target directory already exists: ${newId}` };
         }
@@ -230,11 +301,26 @@ export function createPluginTools(registry: PluginRegistry | undefined): PluginT
         let entryFile: string | null = null;
 
         if (path.endsWith(".ts") || path.endsWith(".tsx") || path.endsWith(".js")) {
-          entryFile = path.startsWith("/") ? path : join(pluginsRoot, path);
+          // Absolute or relative, the entry file must resolve inside the
+          // plugins root: validate_plugin imports its target, so containment
+          // here is a code-execution boundary, not just a read boundary.
+          const resolved = path.startsWith("/")
+            ? resolveWithinRoot(pluginsRoot, path)
+            : resolveWithinRoot(pluginsRoot, join(pluginsRoot, path));
+          if (!resolved) {
+            return { success: false, output: "Path must stay within the plugins directory" };
+          }
+          entryFile = resolved;
         } else {
           // Treat as directory name.
-          const pluginDir = join(pluginsRoot, path);
+          const pluginDir = resolveWithinRoot(pluginsRoot, join(pluginsRoot, path));
+          if (!pluginDir) {
+            return { success: false, output: "Path must stay within the plugins directory" };
+          }
           entryFile = resolvePluginEntryFile(pluginDir);
+          if (entryFile && !resolveWithinRoot(pluginsRoot, entryFile)) {
+            return { success: false, output: "Plugin entry file must stay within the plugins directory" };
+          }
         }
 
         if (!entryFile || !existsSync(entryFile)) {

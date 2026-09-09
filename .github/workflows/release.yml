@@ -223,7 +223,15 @@ jobs:
         run: npm install -g npm@11
 
       - name: Publish to npm
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          node -e "const p=require('./package.json'); p.version='$VERSION'; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2)+'\n')"
+          set -euo pipefail
+          VERSION="${VERSION#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Invalid version tag: $VERSION (expected X.Y.Z)" >&2
+            exit 1
+          fi
+          export VERSION
+          node -e "const p=require('./package.json'); p.version=process.env.VERSION; require('fs').writeFileSync('./package.json', JSON.stringify(p,null,2)+'\n')"
           npm publish --access public --provenance

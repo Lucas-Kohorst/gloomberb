@@ -39,6 +39,21 @@ describe("agent remote and CLI guards", () => {
     })).toThrow(/capability\.invoke/);
   });
 
+  test("refuses patch app://config, including inside batches", () => {
+    expect(() => refuseUnsafeRemoteRequest({
+      type: "patch",
+      resource: "app://config",
+      patch: [],
+    })).toThrow(/app:\/\/config cannot be patched by the agent/);
+    expect(() => refuseUnsafeRemoteRequest({
+      type: "batch",
+      requests: [
+        { type: "get", resource: "app://snapshot" },
+        { type: "patch", resource: "app://config", patch: [{ op: "replace", path: "/activeLayoutIndex", value: 0 }] },
+      ],
+    })).toThrow(/app:\/\/config cannot be patched by the agent/);
+  });
+
   test("seeds chart-composer-pane from gloomberb_show arg", () => {
     expect(buildAgentShowRequest({
       templateId: "chart-composer-pane",
@@ -64,5 +79,25 @@ describe("agent remote and CLI guards", () => {
     expect(() => resolveAgentCliCommand(["launch-ui"])).toThrow(/cannot launch a separate UI process/);
     expect(() => resolveAgentCliCommand(["ui"])).toThrow(/cannot launch a separate UI process/);
     expect(() => resolveAgentCliCommand(["not-a-command"])).toThrow(/not allowed/);
+  });
+
+  test("validates the dispatched command, not a flag value", () => {
+    // --data-dir consumes the next argument, so the real command is "ai",
+    // which is not in the agent allowlist. The pre-parse allowlist lookup
+    // would have seen the allowed word "quote" instead.
+    expect(() => resolveAgentCliCommand([
+      "--data-dir", "quote",
+      "--data-dir=/tmp/gloomberb",
+      "ai", "ask", "--provider", "factory", "hello",
+    ])).toThrow(/"ai" is not allowed/);
+    expect(resolveAgentCliCommand(["--data-dir", "/tmp/gloomberb", "quote", "AAPL"])).toBe("quote");
+    expect(resolveAgentCliCommand(["quote", "--limit", "3", "AAPL"])).toBe("quote");
+    expect(() => resolveAgentCliCommand(["--limit", "3"])).toThrow(/must include a command/);
+  });
+
+  test("plugin lifecycle commands are not agent-callable", () => {
+    expect(() => resolveAgentCliCommand(["install", "evil/repo"])).toThrow(/not allowed/);
+    expect(() => resolveAgentCliCommand(["update", "evil/repo"])).toThrow(/not allowed/);
+    expect(() => resolveAgentCliCommand(["remove", "evil/repo"])).toThrow(/not allowed/);
   });
 });

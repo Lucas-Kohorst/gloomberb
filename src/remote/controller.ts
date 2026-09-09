@@ -161,7 +161,7 @@ export function createAppRemoteController({
   desktopWindowBridge,
   afterMutation = () => {},
 }: AppRemoteControllerOptions) {
-  const { buildIncludedState, getResource, patchTarget } = createRemoteResources({
+  const { buildIncludedState, getResource, patchTarget, revisionForResource } = createRemoteResources({
     dispatch,
     getState,
     pluginRegistry,
@@ -731,7 +731,7 @@ export function createAppRemoteController({
           return ok(remoteControlSchema());
         case "get": {
           const data = getResource(request.resource);
-          return ok(data, revisionFor(data), buildIncludedState(request.include));
+          return ok(data, revisionForResource(request.resource, data), buildIncludedState(request.include));
         }
         case "data":
           return ok(await queryMarketData(request));
@@ -751,8 +751,12 @@ export function createAppRemoteController({
             await afterMutation();
           }
           return ok(
-            nextValue,
-            revisionFor(nextValue),
+            target.redact ? target.redact(nextValue) : nextValue,
+            // After a non-dry-run write the persisted state may differ from
+            // `nextValue` (config-bearing resources hydrate `[redacted]`
+            // placeholders back to live credentials on apply), so compute the
+            // echoed rev over the written state to match a subsequent GET.
+            request.dryRun ? revisionFor(nextValue) : revisionForResource(request.resource, nextValue),
             buildIncludedState(request.include, request.dryRun ? [] : DEFAULT_MUTATION_INCLUDE),
           );
         }

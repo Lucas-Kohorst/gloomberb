@@ -8,6 +8,23 @@ import { SubstackAuthError, type SubstackAuthState, type SubstackCachedData } fr
 
 export const SUBSTACK_ORIGIN = "https://substack.com";
 
+export function isAllowedSubstackUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === "https:"
+      && url.port === ""
+      && (hostname === "substack.com" || hostname.endsWith(".substack.com"));
+  } catch {
+    return false;
+  }
+}
+
+export function trustedSubstackOrigin(value: string | null): string | null {
+  if (!value || !isAllowedSubstackUrl(value)) return null;
+  return new URL(value).origin;
+}
+
 const AUTH_STATE_KEY = "auth";
 const AUTH_SCHEMA_VERSION = 1;
 export const CACHE_SOURCE = "substack";
@@ -129,6 +146,9 @@ export async function substackFetch(url: string, init?: RequestInit): Promise<Re
 }
 
 export async function fetchJsonAuthenticated<T = unknown>(url: string, auth: SubstackAuthState): Promise<T> {
+  if (!isAllowedSubstackUrl(url)) {
+    throw new Error("Refusing authenticated Substack request to an untrusted origin");
+  }
   const response = await substackClient.fetch(url, {
     headers: authHeaders(auth),
   });

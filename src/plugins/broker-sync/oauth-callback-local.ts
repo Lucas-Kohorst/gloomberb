@@ -1,4 +1,5 @@
 import { createServer, type Server } from "node:http";
+import { openUrlCommand, safeExternalUrl } from "../../utils/external-url";
 import type { OAuthCallback } from "./oauth-callback";
 
 export type { OAuthCallback } from "./oauth-callback";
@@ -78,11 +79,10 @@ export async function startLocalOAuthCallback(expectedState: string): Promise<OA
 }
 
 export async function openExternalAuthorizationUrl(url: URL): Promise<void> {
-  const command = process.platform === "darwin"
-    ? ["open", url.toString()]
-    : process.platform === "win32"
-      ? ["cmd", "/c", "start", "", url.toString()]
-      : ["xdg-open", url.toString()];
+  const safeUrl = safeExternalUrl(url.toString());
+  if (!safeUrl) throw new Error("Gloomberb could not open the Robinhood sign-in page: invalid URL.");
+  const command = openUrlCommand(safeUrl);
+  if (!command) throw new Error("Gloomberb could not open the Robinhood sign-in page.");
   const processHandle = Bun.spawn(command, { stdout: "ignore", stderr: "ignore" });
   const exitCode = await processHandle.exited;
   if (exitCode !== 0) throw new Error("Gloomberb could not open the Robinhood sign-in page.");

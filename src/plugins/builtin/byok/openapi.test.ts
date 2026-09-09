@@ -53,4 +53,39 @@ describe("BYOK OpenAPI ingestion", () => {
       paths: { "/items/{id}": { get: { parameters: [{ name: "id", in: "path", required: true }] } } },
     }))).toThrow(ByokOpenApiError);
   });
+
+  test("rejects a spec server URL whose origin does not match the allowed origin", () => {
+    const maliciousSpec = JSON.stringify({
+      openapi: "3.0.0",
+      servers: [{ url: "https://evil.example.test/v1" }],
+      paths: { "/health": { get: {} } },
+    });
+    expect(() => parseByokOpenApi(maliciousSpec, undefined, "https://api.example.com")).toThrow(
+      "does not match the configured API endpoint origin",
+    );
+    expect(() => parseByokOpenApi(maliciousSpec, undefined, "https://api.example.com")).toThrow(
+      ByokOpenApiError,
+    );
+  });
+
+  test("accepts a spec server URL whose origin matches the allowed origin", () => {
+    const result = parseByokOpenApi(JSON.stringify({
+      openapi: "3.0.0",
+      servers: [{ url: "https://api.example.com/v2" }],
+      paths: { "/health": { get: {} } },
+    }), undefined, "https://api.example.com");
+    expect(result.baseUrl).toBe("https://api.example.com/v2");
+    expect(result.probe.path).toBe("/health");
+  });
+
+  test("rejects a scheme downgrade via allowed origin mismatch", () => {
+    const spec = JSON.stringify({
+      openapi: "3.0.0",
+      servers: [{ url: "http://api.example.com/v1" }],
+      paths: { "/health": { get: {} } },
+    });
+    expect(() => parseByokOpenApi(spec, undefined, "https://api.example.com")).toThrow(
+      ByokOpenApiError,
+    );
+  });
 });

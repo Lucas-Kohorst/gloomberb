@@ -3,10 +3,14 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { RemoteControlRequest } from "../../../../remote/types";
 import { refuseUnsafeRemoteRequest } from "../remote-request";
 import { dispatchCli } from "../../../../cli/index";
+import { parseCliGlobalArgs } from "../../../../cli/options";
 import { AiRunCancelledError } from "../runner";
 import { createPluginTools, type PluginTool } from "../tools";
 import { getSharedRegistry } from "../../../registry";
 
+// Read-only and research commands only. Plugin lifecycle mutations
+// (install/update/remove) clone and execute third-party code and are never
+// reachable from an agent, whose prompts routinely contain untrusted content.
 const AGENT_CLI_COMMANDS = new Set([
   "new",
   "plugin-new",
@@ -15,9 +19,6 @@ const AGENT_CLI_COMMANDS = new Set([
   "plugin-validate",
   "plugins",
   "plugin-search",
-  "install",
-  "update",
-  "remove",
   "search",
   "ticker",
   "help",
@@ -69,7 +70,13 @@ const ShowPaneSchema = Type.Object({
 export { refuseUnsafeRemoteRequest };
 
 export function resolveAgentCliCommand(args: string[]): string {
-  const command = args.find((arg) => !arg.startsWith("-"));
+  // Validate the command exactly as dispatchCli will dispatch it. A naive
+  // "first non-dash arg" lookup can be defeated by flags that consume a value
+  // (e.g. --data-dir <x>), letting an allowed word disguise a different,
+  // non-allowlisted command. parseCliGlobalArgs applies the same flag parsing
+  // the real dispatch path uses, so there is no parser differential to abuse.
+  const parsed = parseCliGlobalArgs(["--json", ...args]);
+  const command = parsed.args[0];
   if (!command) throw new Error("CLI args must include a command.");
   if (command === "launch-ui" || command === "ui") {
     throw new Error("The agent cannot launch a separate UI process. Use gloomberb_remote or gloomberb_show to change the live app.");
@@ -150,7 +157,7 @@ export function createAgentCliTool(): AgentTool<typeof CliArgsSchema, unknown> {
     description: [
       "Run a Gloomberb CLI command. It does not open desktop panes.",
       "Pass args like [\"new\",\"hello-world\"], [\"validate\",\"hello-world\"], [\"plugins\"], [\"search\",\"AAPL\"], or [\"quote\",\"AAPL\"].",
-      "Allowed: new, validate, plugins, plugin-search, install, update, remove, search, ticker, help, api,",
+      "Allowed: new, validate, plugins, plugin-search, search, ticker, help, api,",
       "config, layout, quote, history, financials, fundamentals, filings, holders, insider, 13f,",
       "analyst, events, earnings, options, movers, sectors, indices, fx, compare, valuation,",
       "correlation, fear-greed, yield-curve, econ, fred, notes, version, changelog, alerts, rss,",

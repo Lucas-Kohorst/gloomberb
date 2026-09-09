@@ -28,6 +28,15 @@ function operationParameters(spec: AnyRecord, pathItem: AnyRecord, operation: An
   );
 }
 
+/** Safely extracts the origin (scheme://host[:port]) from a URL string. */
+export function safeUrlOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 function serverUrl(spec: AnyRecord, specUrl?: string): string {
   let raw: string | undefined;
   if (Array.isArray(spec.servers) && spec.servers[0]?.url) {
@@ -70,7 +79,7 @@ function makeProbe(baseUrl: string, path: string, parameters: AnyRecord[]): stri
   return url.toString();
 }
 
-export function parseByokOpenApi(input: string, specUrl?: string): ParsedByokOpenApi {
+export function parseByokOpenApi(input: string, specUrl?: string, allowedOrigin?: string): ParsedByokOpenApi {
   let spec: AnyRecord;
   try {
     if (!input.trim().startsWith("{")) {
@@ -85,6 +94,15 @@ export function parseByokOpenApi(input: string, specUrl?: string): ParsedByokOpe
     throw new ByokOpenApiError("The document is not an OpenAPI 3.x or Swagger 2.0 spec.", "parse");
   }
   const baseUrl = serverUrl(spec, specUrl);
+  if (allowedOrigin) {
+    const specOrigin = safeUrlOrigin(baseUrl);
+    if (!specOrigin || specOrigin !== allowedOrigin) {
+      throw new ByokOpenApiError(
+        `The OpenAPI spec's server URL (${baseUrl}) does not match the configured API endpoint origin (${allowedOrigin}). The API key cannot be sent to a spec-chosen origin.`,
+        "servers",
+      );
+    }
+  }
   const auth = authFromSpec(spec);
   const operations: ByokOpenApiOperation[] = [];
   const candidates: Array<{ operation: ByokOpenApiOperation; preferred: boolean; safe: boolean; length: number }> = [];

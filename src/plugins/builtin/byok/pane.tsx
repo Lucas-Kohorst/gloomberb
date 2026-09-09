@@ -28,7 +28,7 @@ import {
   getByokKnownService,
   getByokKnownServices,
 } from "./services";
-import { fetchByokEndpoint, fetchByokSpec, isByokTestSuccess, ByokRequestError } from "./request";
+import { fetchByokEndpoint, fetchByokSpec, isByokTestSuccess, ByokRequestError, byokAllowedOrigin } from "./request";
 import { ByokOpenApiError, parseByokOpenApi } from "./openapi";
 import { isOpenableCustomKey, maskApiKey } from "./store";
 import { buildByokColumns, type ByokColumn, type ByokColumnId } from "./columns";
@@ -230,7 +230,8 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
       openApiSpecBody = draft.openApiSpecBody.trim() || undefined;
       if (openApiSpecBody) {
         try {
-          const parsed = parseByokOpenApi(openApiSpecBody, openApiSpecUrl);
+          const allowedOrigin = byokAllowedOrigin({ serviceId: draft.serviceId, apiUrl });
+          const parsed = parseByokOpenApi(openApiSpecBody, openApiSpecUrl, allowedOrigin);
           openApiOperations = parsed.operations;
           openApiAuthType = parsed.authType;
           openApiAuthKey = parsed.authKey;
@@ -303,7 +304,8 @@ export function ByokSettingsPane({ focused, width, height }: PaneProps) {
       let specPatch: Partial<ByokApiKeyEntry> = {};
       if (selectedEntry.openApiSpecUrl && !selectedEntry.openApiSpecBody) {
         const spec = await fetchByokSpec(selectedEntry);
-        const parsed = parseByokOpenApi(spec.body, spec.url);
+        const allowedOrigin = byokAllowedOrigin(selectedEntry);
+        const parsed = parseByokOpenApi(spec.body, spec.url, allowedOrigin);
         specPatch = {
           openApiSpecBody: spec.body,
           openApiOperations: parsed.operations,

@@ -206,6 +206,8 @@ const { setSharedNewsService } = await import("../news/hooks");
 const { registerConnectionSource } = await import("../plugins/builtin/connections/register");
 const { hydrateTickerMetadata } = await import("../tickers/metadata");
 const { createDefaultConfig } = await import("../types/config");
+const { BYOK_API_KEYS_CONFIG_KEY, BYOK_PLUGIN_ID } = await import("../plugins/builtin/byok/types");
+const { REDACTED } = await import("./redact-config");
 const { createAppRemoteController } = await import("./controller");
 import type { AppAction, AppState } from "../core/state/app/state";
 import type { PluginRegistry } from "../plugins/registry";
@@ -238,7 +240,7 @@ const TEST_PANE_TEMPLATE: PaneTemplateDef = {
   shortcut: { prefix: "RTP" },
 };
 
-function createRegistryHarness(options: { withFloatingPane?: boolean } = {}) {
+function createRegistryHarness(options: { withFloatingPane?: boolean; withCredentials?: boolean } = {}) {
   const config = {
     ...createDefaultConfig("/tmp/gloom-remote-controller"),
     onboardingComplete: true,
@@ -250,6 +252,39 @@ function createRegistryHarness(options: { withFloatingPane?: boolean } = {}) {
       { id: "core", name: "Core", currency: "USD" },
     ],
   };
+  if (options.withCredentials) {
+    config.brokerInstances = [
+      {
+        id: "broker-1",
+        brokerType: "ibkr",
+        label: "Main IBKR",
+        connectionMode: "live",
+        enabled: true,
+        config: {
+          token: "broker-token-sentinel-001",
+          refreshToken: "broker-refresh-sentinel-002",
+        },
+      },
+    ];
+    config.pluginConfig = {
+      ...config.pluginConfig,
+      [BYOK_PLUGIN_ID]: {
+        [BYOK_API_KEYS_CONFIG_KEY]: {
+          keys: [
+            {
+              id: "byok-1",
+              serviceId: "fred",
+              name: "FRED key",
+              apiKey: "byok-key-sentinel-003",
+              createdAt: 1700000000000,
+              lastValidated: 1700000001000,
+              lastValidationStatus: "ok",
+            },
+          ],
+        },
+      },
+    };
+  }
   if (options.withFloatingPane) {
     const instance = {
       instanceId: "help:test",
@@ -418,6 +453,142 @@ describe("createAppRemoteController", () => {
       expect(data.ui).toEqual([{ id: "ui:test", role: "button", label: "Test", actions: ["press"] }]);
       expect(typeof snapshot.rev).toBe("string");
     }
+  });
+
+  test("redacts broker and BYOK credentials from config resources", async () => {
+    const { controller, getState } = createRegistryHarness({ withCredentials: true });
+    const rawConfig = getState().config;
+
+    const configResponse = await controller.handle({ type: "get", resource: "app://config" });
+    expect(configResponse.ok).toBe(true);
+    if (configResponse.ok) {
+      const data = configResponse.data as typeof rawConfig;
+      // Credentials are replaced by the marker...
+      expect(data.brokerInstances[0].config.token).toBe(REDACTED);
+      expect(data.brokerInstances[0].config.refreshToken).toBe(REDACTED);
+      const byok = (data.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
+        BYOK_API_KEYS_CONFIG_KEY
+      ] as { keys: Record<string, unknown>[] };
+      expect(byok.keys[0].apiKey).toBe(REDACTED);
+      // ...while identity and shape survive.
+      expect(data.brokerInstances[0].id).toBe("broker-1");
+      expect(data.brokerInstances[0].label).toBe("Main IBKR");
+      expect(byok.keys[0].name).toBe("FRED key");
+      expect(JSON.stringify(data)).not.toContain("broker-token-sentinel-001");
+      expect(JSON.stringify(data)).not.toContain("broker-refresh-sentinel-002");
+      expect(JSON.stringify(data)).not.toContain("byok-key-sentinel-003");
+    }
+
+    const snapshotResponse = await controller.handle({ type: "get", resource: "app://snapshot" });
+    expect(snapshotResponse.ok).toBe(true);
+    if (snapshotResponse.ok) {
+      const data = snapshotResponse.data as { config: typeof rawConfig };
+      expect(data.config.brokerInstances[0].config.token).toBe(REDACTED);
+      const snapshotByok = (data.config.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
+        BYOK_API_KEYS_CONFIG_KEY
+      ] as { keys: Record<string, unknown>[] };
+      expect(snapshotByok.keys[0].apiKey).toBe(REDACTED);
+      expect(JSON.stringify(snapshotResponse)).not.toContain("broker-token-sentinel-001");
+      expect(JSON.stringify(snapshotResponse)).not.toContain("byok-key-sentinel-003");
+    }
+
+    // The live config is never mutated by remote reads.
+    expect(rawConfig.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
+    expect(getState().config.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
+  });
+
+  test("patch responses redact untouched secrets even in dry-run mode", async () => {
+    const { controller, getState } = createRegistryHarness({ withCredentials: true });
+
+    const dryRun = await controller.handle({
+      type: "patch",
+      resource: "app://config",
+      patch: [],
+      dryRun: true,
+    });
+    expect(dryRun.ok).toBe(true);
+    if (dryRun.ok) {
+      const data = dryRun.data as AppState["config"];
+      expect(data.brokerInstances[0].config.token).toBe(REDACTED);
+      expect(JSON.stringify(dryRun)).not.toContain("broker-token-sentinel-001");
+      expect(JSON.stringify(dryRun)).not.toContain("broker-refresh-sentinel-002");
+      expect(JSON.stringify(dryRun)).not.toContain("byok-key-sentinel-003");
+    }
+    // Dry-run never applies.
+    expect(getState().config.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
+
+    const noOp = await controller.handle({
+      type: "patch",
+      resource: "app://config",
+      patch: [{ op: "replace", path: "/theme", value: getState().config.theme }],
+    });
+    expect(noOp.ok).toBe(true);
+    if (noOp.ok) {
+      // A real patch echo is redacted too, even though the write succeeds.
+      const data = noOp.data as AppState["config"];
+      expect(data.brokerInstances[0].config.token).toBe(REDACTED);
+      expect(JSON.stringify(noOp)).not.toContain("broker-token-sentinel-001");
+    }
+    // The write itself still landed and preserved live secrets.
+    expect(getState().config.theme).toBe("adjacent");
+    expect(getState().config.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
+  });
+
+  test("config get rev stays stable for expectRev conditional patches", async () => {
+    const { controller, actions } = createRegistryHarness({ withCredentials: true });
+
+    const get = await controller.handle({ type: "get", resource: "app://config" });
+    expect(get.ok).toBe(true);
+    if (!get.ok) throw new Error("get failed");
+    const rev = get.rev as string;
+    expect(typeof rev).toBe("string");
+
+    const patch = await controller.handle({
+      type: "patch",
+      resource: "app://config",
+      expectRev: rev,
+      patch: [{ op: "replace", path: "/theme", value: "light" }],
+    });
+    expect(patch.ok).toBe(true);
+    expect(actions).toContainEqual({ type: "SET_CONFIG", config: expect.objectContaining({ theme: "light" }) });
+  });
+
+  test("config patch apply hydrates redacted markers back to live secrets", async () => {
+    const { controller, getState } = createRegistryHarness({ withCredentials: true });
+
+    // A consumer that read the redacted config and round-trips it must not
+    // clobber live credentials with the placeholder on write.
+    const response = await controller.handle({
+      type: "patch",
+      resource: "app://config",
+      patch: [
+        {
+          op: "replace",
+          path: "/brokerInstances/0/config/token",
+          value: REDACTED,
+        },
+      ],
+    });
+    expect(response.ok).toBe(true);
+    expect(getState().config.brokerInstances[0].config.token).toBe("broker-token-sentinel-001");
+    expect(getState().config.brokerInstances[0].config.refreshToken).toBe("broker-refresh-sentinel-002");
+
+    const byokResponse = await controller.handle({
+      type: "patch",
+      resource: "app://config",
+      patch: [
+        {
+          op: "replace",
+          path: `/pluginConfig/${BYOK_PLUGIN_ID}/${BYOK_API_KEYS_CONFIG_KEY}/keys/0/apiKey`,
+          value: REDACTED,
+        },
+      ],
+    });
+    expect(byokResponse.ok).toBe(true);
+    const byok = (getState().config.pluginConfig[BYOK_PLUGIN_ID] as Record<string, unknown>)[
+      BYOK_API_KEYS_CONFIG_KEY
+    ] as { keys: Record<string, unknown>[] };
+    expect(byok.keys[0].apiKey).toBe("byok-key-sentinel-003");
   });
 
   test("exposes pane types with settings fields and templates", async () => {

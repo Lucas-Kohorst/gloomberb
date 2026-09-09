@@ -5,6 +5,12 @@ export function refuseUnsafeRemoteRequest(request: RemoteControlRequest): void {
   if (request.type === "call" && request.operation === "capability.invoke") {
     throw new Error("capability.invoke is not available to the agent. Use gloomberb_remote app operations or gloomberb_cli.");
   }
+  if (request.type === "patch" && request.resource === "app://config") {
+    throw new Error(
+      "app://config cannot be patched by the agent. It is the credential-bearing application store; "
+      + "ask the user to change settings in the app instead.",
+    );
+  }
   if (request.type === "batch") {
     if (!Array.isArray(request.requests)) {
       throw new Error("batch request is missing requests.");

@@ -30,6 +30,7 @@ import {
 } from "./hosted-notes-persist";
 import {
   hydrateHostedByokConfig,
+  initHostedByokCrypto,
   writeHostedByokKeys,
 } from "../../plugins/builtin/byok/hosted-persist";
 import { isRecord } from "../../utils/is-record";
@@ -187,6 +188,7 @@ export async function hydrateHostedWorkspaceFromCloud(
   if (incoming.length > 0 && !isOlderThanLocal(snapshot?.createdAt, workspaceUpdatedAt)) {
     tickers = mergeTickerRecords(tickers, incoming);
   }
+  await initHostedByokCrypto(userId);
   hydrateHostedByokConfig(config, userId, false);
   const hydration = { config, tickers, notes, identity, localUpdatedAt, localRevision };
   if (pull.persist !== false) persistHostedWorkspaceHydration(hydration);

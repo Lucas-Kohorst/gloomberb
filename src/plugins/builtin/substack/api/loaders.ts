@@ -15,6 +15,7 @@ import {
   loadCachedResource,
   requireAuth,
   SUBSTACK_ORIGIN,
+  trustedSubstackOrigin,
 } from "./store";
 
 const READER_FEED_TARGET_ITEMS = 50;
@@ -97,7 +98,7 @@ export async function loadSubstackPublicationFeed(
   offset = 0,
 ): Promise<SubstackCachedData<SubstackPublicationFeedPage>> {
   const auth = requireAuth();
-  const baseUrl = publication.baseUrl;
+  const baseUrl = trustedSubstackOrigin(publication.baseUrl);
   if (!baseUrl) {
     return {
       data: { items: [], nextOffset: null, hasMore: false },
@@ -126,8 +127,8 @@ function detailCandidateUrls(article: SubstackArticleSummary): string[] {
   if (/^\d+$/.test(article.id)) {
     urls.push(new URL(`/api/v1/posts/by-id/${article.id}`, SUBSTACK_ORIGIN).toString());
   }
-  const baseUrl = article.publicationBaseUrl
-    ?? (article.url ? new URL(article.url).origin : null);
+  const baseUrl = trustedSubstackOrigin(article.publicationBaseUrl)
+    ?? trustedSubstackOrigin(article.url);
   if (baseUrl) {
     if (/^\d+$/.test(article.id)) {
       urls.push(new URL(`/api/v1/posts/by-id/${article.id}`, baseUrl).toString());

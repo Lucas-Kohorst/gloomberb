@@ -70,9 +70,33 @@ import { cloudSyncController } from "../../sync/controller";
 import { queueAgentPromptFragment, queueAgentTool } from "../builtin/ai/runner";
 import { isReservedBuiltinPluginId } from "../ownership";
 import { resolveApiKey } from "../builtin/byok/store";
+import { redactConfigForRemote } from "../../remote/redact-config";
 import { resolvePluginEntryFile } from "../loader";
 import { existsSync } from "fs";
-import { join } from "path";
+import { isAbsolute, join, relative, resolve, sep } from "path";
+
+/**
+ * A plugin identifier is safe to treat as a single directory name under the
+ * plugins root when it is a bounded ASCII slug with no path separators, no
+ * `.`/`..` components, and no leading specials (which would also reject
+ * absolute paths). This mirrors the directory-name grammar the installer
+ * enforces for newly installed plugins, so any legitimately installed plugin
+ * directory passes.
+ */
+const SAFE_PLUGIN_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function isSafePluginIdentifier(pluginId: string): boolean {
+  return SAFE_PLUGIN_IDENTIFIER_PATTERN.test(pluginId);
+}
+
+/**
+ * True when `candidate` resolves strictly inside `root`. `candidate == root`
+ * is rejected: callers resolve a *plugin* directory, not the root itself.
+ */
+function isStrictlyInsideRoot(root: string, candidate: string): boolean {
+  const rel = relative(resolve(root), resolve(candidate));
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
 
 interface PluginRegistryOptions {
   enableCapabilityHandlers?: boolean;
@@ -101,6 +125,13 @@ export class PluginRegistry implements PluginRuntimeAccess {
   private plugins = new Map<string, GloomPlugin>();
   private externalPluginEntryFiles = new Map<string, string>();
   private readonly resumeStateListeners = new RegistryResumeStateListeners();
+
+  /**
+   * Per-plugin BYOK API-key grants (pluginId -> granted service ids). Only the
+   * host (after user approval) may add grants; plugins cannot self-grant.
+   * Without a grant, external/user-installed plugins are denied key access.
+   */
+  private readonly apiKeyAccessGrants = new Map<string, Set<string>>();
 
   readonly events: EventBus;
   readonly capabilities: CapabilityRegistry;
@@ -525,8 +556,8 @@ export class PluginRegistry implements PluginRuntimeAccess {
       watchNewsQuery: (query, listener) => this.watchNewsQueryFn(query, listener),
       getData: (ticker) => this.getDataFn(ticker),
       getTicker: (symbol) => this.getTickerFn(symbol),
-      getConfig: () => this.getConfigFn(),
-      getApiKey: (serviceId: string) => resolveApiKey(this.getConfigFn(), serviceId),
+      getConfig: () => this.configForPlugin(pluginId),
+      getApiKey: (serviceId: string) => this.resolveApiKeyForPlugin(pluginId, serviceId),
       getResumeState: (key, schemaVersion) => this.getResumeState(pluginId, key, schemaVersion),
       setResumeState: (key, value, schemaVersion) => this.setResumeState(pluginId, key, value, schemaVersion),
       deleteResumeState: (key) => this.deleteResumeState(pluginId, key),
@@ -562,6 +593,55 @@ export class PluginRegistry implements PluginRuntimeAccess {
         queueAgentPromptFragment(fragment);
       },
     });
+  }
+
+  /**
+   * Grant a plugin access to resolve a BYOK service's API key (stored entry or
+   * the service's environment variable). Only the host should call this —
+   * e.g. after the user approves the grant in a settings/consent flow — never
+   * plugin code. Revoking removes the grant.
+   */
+  grantApiKeyAccess(pluginId: string, serviceId: string): void {
+    if (!pluginId || !serviceId) return;
+    const services = this.apiKeyAccessGrants.get(pluginId) ?? new Set<string>();
+    services.add(serviceId);
+    this.apiKeyAccessGrants.set(pluginId, services);
+  }
+
+  revokeApiKeyAccess(pluginId: string, serviceId: string): void {
+    this.apiKeyAccessGrants.get(pluginId)?.delete(serviceId);
+  }
+
+  /**
+   * Resolve a BYOK or environment-backed API key for a plugin.
+   *
+   * - An explicit host-issued grant always wins.
+   * - External (user-installed, marketplace/GitHub-ref) plugins are untrusted
+   *   code: without a grant they get no key at all, closing the "any plugin
+   *   resolves any service's key" disclosure (audit plugin-lifecycle-006).
+   * - Bundled first-party plugins keep resolving keys as before.
+   */
+  private resolveApiKeyForPlugin(pluginId: string, serviceId: string): string | undefined {
+    if (this.apiKeyAccessGrants.get(pluginId)?.has(serviceId)) {
+      return resolveApiKey(this.getConfigFn(), serviceId);
+    }
+    if (this.externalPluginEntryFiles.has(pluginId)) {
+      this.registryLog.debug("Denied API-key resolution for external plugin", { pluginId, serviceId });
+      return undefined;
+    }
+    return resolveApiKey(this.getConfigFn(), serviceId);
+  }
+
+  /**
+   * Config view handed to a plugin. External plugins do not see raw
+   * credential values: BYOK API-key fields and broker instance credentials
+   * (`brokerInstances[].config`) are redacted. Bundled first-party plugins
+   * get the full config.
+   */
+  private configForPlugin(pluginId: string): import("../../types/config").AppConfig {
+    return this.externalPluginEntryFiles.has(pluginId)
+      ? redactConfigForRemote(this.getConfigFn())
+      : this.getConfigFn();
   }
 
   private registryLog = debugLog.createLogger("registry");
@@ -650,8 +730,21 @@ export class PluginRegistry implements PluginRuntimeAccess {
 
     // If the entry file is not tracked, try to resolve it from the plugins dir.
     if (!entryFile) {
+      // The untracked id is joined onto the plugins root, so only a bare
+      // directory name may reach this path. Rejecting separators, `..`, and
+      // absolute input here stops `reload_plugin` from importing entry files
+      // from outside the plugins directory (audit plugin-lifecycle-001).
+      if (!isSafePluginIdentifier(pluginId)) {
+        return { success: false, message: `Invalid plugin id: ${pluginId}` };
+      }
       const { getPluginsDir } = await import("../loader");
-      const pluginDir = join(getPluginsDir(), pluginId);
+      const pluginsRoot = getPluginsDir();
+      const pluginDir = join(pluginsRoot, pluginId);
+      // Defense in depth: even a syntactically valid id cannot resolve outside
+      // the plugins root (e.g. a future looser grammar or symlinked root).
+      if (!isStrictlyInsideRoot(pluginsRoot, pluginDir)) {
+        return { success: false, message: `Plugin directory not found: ${pluginId}` };
+      }
       if (!existsSync(pluginDir)) {
         return { success: false, message: `Plugin directory not found: ${pluginId}` };
       }
@@ -754,6 +847,7 @@ export class PluginRegistry implements PluginRuntimeAccess {
     try { this.contributions.unregister(pluginId); } catch (error) { cleanupError ??= error; }
     this.plugins.delete(pluginId);
     this.externalPluginEntryFiles.delete(pluginId);
+    this.apiKeyAccessGrants.delete(pluginId);
     if (cleanupError) throw cleanupError;
   }
 

@@ -116,6 +116,42 @@ describe("PluginRegistry reload", () => {
     expect(registry.allPlugins.get("plugin-b")?.name).toBe("Plugin B v2");
   });
 
+  test("rejects plugin ids that would escape the plugins directory", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-traversal-"));
+    const pluginsRoot = join(tempDir, "plugins");
+    mkdirSync(pluginsRoot, { recursive: true });
+    setPluginsDirForTests(pluginsRoot);
+
+    // A plugin planted just outside the plugins root — reachable only via a
+    // traversal-bearing pluginId (the reload_plugin attack in
+    // plugin-lifecycle-001).
+    const escapeDir = join(tempDir, "escape-plugin");
+    writePluginFile(escapeDir, "escape-plugin", "Escape Plugin");
+
+    const registry = createRegistry();
+
+    for (const evilId of [
+      "",
+      "..",
+      "../escape-plugin",
+      "../../escape-plugin",
+      "/tmp/gloomberb-reload-traversal-escape",
+      "escape/plugin",
+      "escape-plugin/..",
+    ]) {
+      const result = await registry.reloadExternalPlugin(evilId);
+      expect(result.success).toBe(false);
+      expect(registry.allPlugins.has("escape-plugin")).toBe(false);
+    }
+
+    // A plain directory name inside the plugins root still loads.
+    const goodDir = join(pluginsRoot, "good-plugin");
+    writePluginFile(goodDir, "good-plugin", "Good Plugin");
+    const result = await registry.reloadExternalPlugin("good-plugin");
+    expect(result.success).toBe(true);
+    expect(registry.allPlugins.has("good-plugin")).toBe(true);
+  });
+
   test("syncs a newly created plugin from disk and opens its first pane", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "gloomberb-reload-new-"));
     setPluginsDirForTests(tempDir);

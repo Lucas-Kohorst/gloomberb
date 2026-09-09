@@ -116,7 +116,7 @@ describe("Pi AI host screener mode", () => {
     await expect(run.done).rejects.toThrow("without submitting structured results");
   });
 
-  test("exposes market data, submission, and file tools to the screener", async () => {
+  test("gives the screener only market data and submission tools, never file or app-control tools", async () => {
     const requests: RemoteControlRequest[] = [];
     const fixture = createHostFixture(async (request) => {
       requests.push(request);
@@ -134,9 +134,12 @@ describe("Pi AI host screener mode", () => {
         const toolNames = context.tools?.map((tool) => tool.name);
         expect(toolNames).toContain("gloomberb_market_data");
         expect(toolNames).toContain("submit_screener_results");
-        expect(toolNames).toContain("write_file");
-        expect(toolNames).toContain("read_file");
-        expect(toolNames).toContain("list_plugins");
+        expect(toolNames).not.toContain("write_file");
+        expect(toolNames).not.toContain("read_file");
+        expect(toolNames).not.toContain("list_plugins");
+        expect(toolNames).not.toContain("reload_plugin");
+        expect(toolNames).not.toContain("fork_plugin");
+        expect(toolNames).not.toContain("validate_plugin");
         expect(toolNames).not.toContain("gloomberb_remote");
         expect(toolNames).not.toContain("gloomberb_cli");
         expect(toolNames).not.toContain("gloomberb_show");
@@ -147,6 +150,7 @@ describe("Pi AI host screener mode", () => {
         expect(toolDefinition).not.toContain("app.openCommandBar");
         expect(toolDefinition).not.toContain('"call"');
         expect(context.systemPrompt).toContain("Never operate, navigate, alter, or type into the Gloomberb UI");
+        expect(context.systemPrompt).toContain("You cannot write or modify files, install plugins, or run CLI commands.");
         return fauxAssistantMessage(fauxToolCall("gloomberb_market_data", {
           operation: "quote",
           symbol: "nvda",
@@ -424,6 +428,96 @@ describe("Pi AI host catalog and account connection", () => {
     ))).toBe(true);
   });
 
+  test("Factory provider cannot widen the screener tool surface", async () => {
+    const received: Array<{ tools?: { name: string }[] }> = [];
+    const runtime = {
+      getProviderSummary: async () => ({
+        id: "factory" as const,
+        label: "Factory",
+        name: "Factory",
+        defaultModelId: "claude-opus-5",
+        authMethods: [],
+        connection: {
+          state: "connected" as const,
+          type: "api_key" as const,
+          source: "droid CLI",
+          origin: "external" as const,
+          disconnectable: false,
+        },
+        models: [],
+      }),
+      runAgent: (request: { tools?: { name: string }[] }) => {
+        received.push(request);
+        return {
+          done: Promise.resolve({ text: "done", messages: [] }),
+          cancel() {},
+        };
+      },
+      runText: () => {
+        throw new Error("screener should use runAgent");
+      },
+    };
+    const host = createPiAiHost({
+      appKind: "tui",
+      dataDir: "/tmp/gloomberb-pi-host-factory-screener-test",
+      runtime: runtime as never,
+    });
+
+    await expect(host.run({
+      providerId: "factory",
+      prompt: "screen semis",
+      outputMode: "screener",
+    }).done).rejects.toThrow("without submitting structured results");
+
+    const toolNames = received[0]?.tools?.map((tool) => tool.name) ?? [];
+    expect(toolNames).toContain("gloomberb_market_data");
+    expect(toolNames).toContain("submit_screener_results");
+    expect(toolNames).not.toContain("gloomberb_remote");
+    expect(toolNames).not.toContain("gloomberb_cli");
+    expect(toolNames).not.toContain("write_file");
+  });
+
+  test("Factory plain runs use runText without agent tools or remote-control parsing", async () => {
+    const received: string[] = [];
+    const runtime = {
+      getProviderSummary: async () => ({
+        id: "factory" as const,
+        label: "Factory",
+        name: "Factory",
+        defaultModelId: "claude-opus-5",
+        authMethods: [],
+        connection: {
+          state: "connected" as const,
+          type: "api_key" as const,
+          source: "droid CLI",
+          origin: "external" as const,
+          disconnectable: false,
+        },
+        models: [],
+      }),
+      runAgent: () => {
+        throw new Error("plain Factory runs must not use runAgent");
+      },
+      runText: (request: { prompt: string }) => {
+        received.push(request.prompt);
+        return { done: Promise.resolve("plain answer"), cancel() {} };
+      },
+    };
+    const host = createPiAiHost({
+      appKind: "tui",
+      dataDir: "/tmp/gloomberb-pi-host-factory-plain-test",
+      runtime: runtime as never,
+    });
+
+    const output = await host.run({
+      providerId: "factory",
+      prompt: "explain X",
+    }).done;
+
+    expect(output).toBe("plain answer");
+    expect(received).toEqual(["explain X"]);
+  });
+
   test("uses the safe github.com default for Copilot before opening its device flow", async () => {
     const providerSummary = disconnectedSummary("github-copilot", "GitHub Copilot");
     const opened: string[] = [];
@@ -592,7 +686,7 @@ describe("Pi AI host plugin-contributed tools", () => {
     expect(output).toBe("Done.");
   });
 
-  test("includes a plugin-registered tool in the screener tool array", async () => {
+  test("keeps plugin-registered tools out of the screener tool array", async () => {
     const fixture = createHostFixture();
     const customTool: AgentTool = {
       name: "plugin_risk_score",
@@ -609,14 +703,12 @@ describe("Pi AI host plugin-contributed tools", () => {
         const names = context.tools?.map((tool) => tool.name) ?? [];
         expect(names).toContain("gloomberb_market_data");
         expect(names).toContain("submit_screener_results");
-        expect(names).toContain("plugin_risk_score");
-        expect(names.at(-1)).toBe("plugin_risk_score");
-        return fauxAssistantMessage(fauxToolCall("plugin_risk_score", { symbol: "NVDA" }), { stopReason: "toolUse" });
+        expect(names).not.toContain("plugin_risk_score");
+        return fauxAssistantMessage(fauxToolCall("submit_screener_results", {
+          title: "NVDA",
+          tickers: [{ symbol: "NVDA", exchange: "NASDAQ", reason: "Market data checked." }],
+        }), { stopReason: "toolUse" });
       },
-      fauxAssistantMessage(fauxToolCall("submit_screener_results", {
-        title: "NVDA",
-        tickers: [{ symbol: "NVDA", exchange: "NASDAQ", reason: "Risk score checked." }],
-      }), { stopReason: "toolUse" }),
     ]);
 
     await fixture.host.run({

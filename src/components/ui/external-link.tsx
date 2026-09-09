@@ -1,7 +1,7 @@
 import { Box, Text } from "../../ui";
 import { TextAttributes } from "../../ui";
 import { colors } from "../../theme/colors";
-import { safeExternalUrl } from "../../utils/external-url";
+import { safeExternalUrl, openUrlCommand } from "../../utils/external-url";
 import { linkContextMenuItems, useContextMenu, useRendererHost, useUiCapabilities } from "../../ui";
 
 export function openUrl(rawUrl: string) {
@@ -15,12 +15,8 @@ export function openUrl(rawUrl: string) {
   }
 
   if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
-    const platform = typeof process !== "undefined" ? process.platform : "linux";
-    const command = platform === "darwin"
-      ? ["open", url]
-      : platform === "win32"
-        ? ["cmd", "/c", "start", "", url]
-        : ["xdg-open", url];
+    const command = openUrlCommand(url);
+    if (!command) return;
     const child = Bun.spawn(command, { stdio: ["ignore", "ignore", "ignore"] });
     child.unref();
   }

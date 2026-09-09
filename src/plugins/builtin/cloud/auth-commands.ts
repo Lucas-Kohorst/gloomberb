@@ -3,6 +3,8 @@ import { apiClient } from "../../../api-client";
 import { chatController } from "../chat/controller";
 import { requestAuthDialog } from "./auth-dialog";
 import { requestDeviceSignInDialog } from "./device-signin-dialog";
+import { clearHostedByokKeys } from "../byok/hosted-persist";
+import { resolveHostedPersistUserId } from "../../../data/config/hosted-user-persist";
 
 export function registerCloudAuthCommands(ctx: GloomPluginContext): void {
   ctx.registerCommand({
@@ -86,11 +88,16 @@ export function registerCloudAuthCommands(ctx: GloomPluginContext): void {
         return;
       }
       let signOutError: unknown = null;
+      // Capture the hosted identity BEFORE signOut() clears it — the
+      // current-user subscription nulls the hosted user id synchronously
+      // during sign-out, which would make the post-sign-out clear a no-op.
+      const hostedUserId = resolveHostedPersistUserId();
       try {
         await apiClient.signOut();
       } catch (error) {
         signOutError = error;
       }
+      clearHostedByokKeys(hostedUserId ?? undefined);
       await chatController.refreshSession();
       await chatController.refreshMessages();
       ctx.notify({
