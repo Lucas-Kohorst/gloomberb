@@ -1,3 +1,4 @@
+import { assetsUnderManagementModule } from "./assets-under-management";
 import { chartComposerModule } from "./chart-composer";
 import { dividendYieldModule } from "./dividend-yield";
 import { earningsTranscriptsModule } from "./earnings-transcripts";
@@ -33,5 +34,6 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     earningsTranscriptsModule,
     insiderModule,
     esgModule,
+    assetsUnderManagementModule,
   ],
 });
