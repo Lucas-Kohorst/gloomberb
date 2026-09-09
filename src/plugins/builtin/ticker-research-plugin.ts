@@ -1,3 +1,4 @@
+import { cashFlowModule } from "./cash-flow";
 import { chartComposerModule } from "./chart-composer";
 import { dividendYieldModule } from "./dividend-yield";
 import { earningsTranscriptsModule } from "./earnings-transcripts";
@@ -25,6 +26,7 @@ export const tickerResearchPlugin = composeBuiltinPlugin({
     optionsModule,
     optionsCalculatorModule,
     researchModule,
+    cashFlowModule,
     dividendYieldModule,
     holdersModule,
     shortInterestModule,
