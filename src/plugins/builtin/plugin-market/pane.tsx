@@ -370,7 +370,8 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
 
   useShortcut((event) => {
     if (!focused || installMode || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -379,6 +380,7 @@ export function PluginMarketPane({ paneId, focused, width, height }: PaneProps) 
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (installMode || searchFocused) return false;
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (isPlainKey(event, "t")) {
       event.preventDefault?.();
       event.stopPropagation?.();

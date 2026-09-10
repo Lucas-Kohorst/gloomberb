@@ -622,6 +622,11 @@ function SecPane({ width, height, focused }: PaneProps) {
       event.preventDefault?.();
       popOutSelected();
     }
+    if (isPlainKey(event, "s") && canSummarize) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      handleSummarize();
+    }
   }, { allowEditable: true, enabled: focused });
 
   usePaneStatusLinkFooter({
@@ -675,8 +680,14 @@ function SecPane({ width, height, focused }: PaneProps) {
       popOutSelected();
       return true;
     }
+    if (event.name === "s" && canSummarize) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      handleSummarize();
+      return true;
+    }
     return false;
-  }, [canPopOut, focusSearch, load, popOutSelected, query]);
+  }, [canPopOut, canSummarize, focusSearch, handleSummarize, load, popOutSelected, query]);
 
   const rootBefore = (
     <InputSearchBar

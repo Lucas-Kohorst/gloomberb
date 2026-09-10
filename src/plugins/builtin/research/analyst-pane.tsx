@@ -16,6 +16,7 @@ import { formatCurrency, formatNumber, formatPercent } from "../../../utils/form
 import { compareSortValues, type SortDirection } from "../../../utils/sort-values";
 import { useAssetData } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo } from "../shared/table-pane";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding, useTickerRequest } from "../shared/ticker-request";
 
 function compactPeriod(period: string): string {
@@ -334,6 +335,7 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   }, [ratingCurrency]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (event.name === "/") {
       event.preventDefault?.(); event.stopPropagation?.();
       setSearchFocused(true); setSearchFocusToken((value) => value + 1); return true;
@@ -343,10 +345,18 @@ export function AnalystResearchView({ focused, width, height }: { focused: boole
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => nextRatingSortPreference(current, columnId));
   }, []);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
 
   usePaneFooter("analyst-research", () => ({
     info: loadingErrorFooterInfo(loading, error),
-  }), [error, loading]);
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(reload),
+    ],
+  }), [error, focusSearch, loading, reload]);
 
   if (loading) return <LoadingState title="Loading analyst data..." />;
   if (error || rows.length === 0) {

@@ -1,6 +1,6 @@
 import type { NewsArticle } from "../../../news/types";
 import type { SecFilingItem } from "../../../types/data-provider";
-import { isPeriodicReportForm } from "./forms";
+import { isPeriodicReportForm, normalizeFilingForm } from "./forms";
 
 const EMPTY_SCORES = {
   importance: 0,
@@ -53,4 +53,11 @@ export function filingLookupQuery(query: string): string {
 
 export function isPeriodicFiling(filing: SecFilingItem): boolean {
   return isPeriodicReportForm(filing.form);
+}
+
+/** Forms readable enough for the article reader (10-K/Q families + 8-K). */
+const POP_OUT_ELIGIBLE_FORMS = new Set(["10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A"]);
+
+export function isPopOutEligibleFiling(filing: SecFilingItem): boolean {
+  return POP_OUT_ELIGIBLE_FORMS.has(normalizeFilingForm(filing.form));
 }

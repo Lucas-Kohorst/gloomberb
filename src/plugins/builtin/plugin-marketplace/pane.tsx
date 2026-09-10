@@ -7,6 +7,7 @@ import {
   Spinner,
   type DataTableCell,
   type DataTableColumn,
+  type DataTableKeyEvent,
   type PaneFooterSegment,
 } from "../../../components";
 import { useMarketplaceListNavigation } from "../../../components/marketplace/sidebar";
@@ -14,6 +15,7 @@ import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
 import { Box, ScrollBox, Text, TextAttributes, useRendererHost, useUiHost, type InputRenderable } from "../../../ui";
 import { useDialog, type PromptContext } from "../../../ui/dialog";
+import { isPlainKey } from "../../../utils/keyboard";
 import { formatCompact } from "../../../utils/format";
 import { formatRelativeAge } from "../../../utils/relative-time";
 import {
@@ -275,6 +277,48 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
   const canRemove = !!selected && selected.installed && !selected.bundled && !!getPluginRemover();
   const isDesktop = ui.kind === "desktop-web";
 
+  const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if (searchFocused) return false;
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
+    if (isPlainKey(event, "/")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      focusSearch();
+      return true;
+    }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refresh(true);
+      return true;
+    }
+    if (isPlainKey(event, "i") && canInstall) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      installSelected();
+      return true;
+    }
+    if (isPlainKey(event, "e") && canToggle) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      toggleSelected();
+      return true;
+    }
+    if (isPlainKey(event, "x") && canRemove) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      void removeSelected();
+      return true;
+    }
+    if (isPlainKey(event, "o") && sourceUrl) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      openSource();
+      return true;
+    }
+    return false;
+  }, [canInstall, canRemove, canToggle, focusSearch, installSelected, openSource, refresh, removeSelected, searchFocused, sourceUrl, toggleSelected]);
+
   // The terminal table owns its own cursor; only the desktop sidebar needs this.
   // Items follow the sidebar's rendered order, not the table's sort order.
   const sidebarItems = useMemo(() => [...installed, ...discover], [discover, installed]);
@@ -401,6 +445,7 @@ export function PluginMarketplacePane({ focused, width, height }: PaneProps) {
         rootHeight={height}
         columns={COLUMNS}
         items={rows}
+        onRootKeyDown={handleRootKeyDown}
         getItemKey={(entry) => entry.id}
         sortColumnId={sortPreference.columnId}
         sortDirection={sortPreference.direction}
