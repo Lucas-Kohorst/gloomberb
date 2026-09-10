@@ -274,6 +274,7 @@ export function ThirteenFPane({ focused, width, height }: PaneProps) {
     info: browserStatusInfo,
     hints: [
       { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
     ],
   });
 
@@ -662,6 +663,7 @@ function FilingDetailView({
   width: number;
 }) {
   const { pinTicker } = usePluginTickerActions();
+  const rendererHost = useRendererHost();
   const [sortPreference, setSortPreference] = usePluginPaneState<FundSortPreference<FilingPositionColumnId>>(
     "filingPositionSort",
     DEFAULT_FILING_POSITION_SORT,
@@ -777,14 +779,32 @@ function FilingDetailView({
   ];
   const summary = (
     <Box flexDirection="column" paddingX={1} paddingTop={1} paddingBottom={1}>
-      {summaryRows.map(([label, value]) => (
-        <Box key={label} height={1} flexDirection="row">
-          <Box width={12}>
-            <Text fg={colors.textDim}>{label}</Text>
+      {summaryRows.map(([label, value]) => {
+        const isSource = label === "Source" && !!filing.url;
+        return (
+          <Box key={label} height={1} flexDirection="row">
+            <Box width={12}>
+              <Text fg={colors.textDim}>{label}</Text>
+            </Box>
+            {isSource ? (
+              <Text
+                fg={colors.text}
+                data-gloom-interactive="true"
+                style={{ cursor: "pointer" }}
+                onMouseDown={(event: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+                  event.preventDefault?.();
+                  event.stopPropagation?.();
+                  void rendererHost.openExternal(filing.url!);
+                }}
+              >
+                {value}
+              </Text>
+            ) : (
+              <Text fg={colors.text}>{value}</Text>
+            )}
           </Box>
-          <Text fg={colors.text}>{value}</Text>
-        </Box>
-      ))}
+        );
+      })}
     </Box>
   );
   const emptyTitle = status === "loading" || status === "idle"

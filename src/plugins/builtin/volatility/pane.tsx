@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, ScrollBox, Text, TextAttributes } from "../../../ui";
 import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import { ErrorState, LoadingState, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import { PriceSparkline } from "../../../components/price-sparkline/view";
 import { resolveChartPalette } from "../../../components/chart/core/palette";
@@ -199,21 +200,21 @@ export function VolatilityPane({ paneId, focused, width, height }: PaneProps) {
   useAutoRefresh(lastRefreshed, refresh);
 
   useShortcut((event) => {
-    if (!focused) return;
-    if (event.name === "r") {
+    if (!focused || event.targetEditable) return;
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
-    } else if (event.name === "g") {
+    } else if (isPlainKey(event, "g")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       chartVix();
-    } else if (event.name === "o") {
+    } else if (isPlainKey(event, "o")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       openUrl(VIX_URL);
     }
-  });
+  }, { allowEditable: true, enabled: focused });
 
   const regime = classifyTermStructure(data?.vxvVixRatio.value ?? null);
   const updatedLabel = data?.updatedAt ? formatDate(data.updatedAt) : null;

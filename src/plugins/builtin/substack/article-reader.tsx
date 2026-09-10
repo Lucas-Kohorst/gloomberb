@@ -110,8 +110,19 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
 
   const archiveAction = useArticleArchiveAction(article?.url ?? url);
 
+  const knownBody = substackReaderBody(article, detail.data);
+  const skipJina = knownBody.length >= 400 || knownBody.includes("\n\n");
+  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url) && !skipJina);
+
   useShortcut((event) => {
     if (!focused || !article) return;
+    if (isPlainKey(event, "r")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      if (skipJina) loadDetail(article, true);
+      else jina.refresh();
+      return;
+    }
     if (isPlainKey(event, "y")) {
       event.stopPropagation?.();
       event.preventDefault?.();
@@ -131,9 +142,6 @@ export function SubstackArticleReaderPane({ focused, width, height }: PaneProps)
   const archiveHint: PaneHint[] = archiveAction.enabled
     ? [{ id: "archive", key: "a", label: "rchive", onPress: archiveAction.archive }]
     : [];
-  const knownBody = substackReaderBody(article, detail.data);
-  const skipJina = knownBody.length >= 400 || knownBody.includes("\n\n");
-  const jina = useJinaArticle(article?.url ?? url, !!(article?.url ?? url) && !skipJina);
 
   usePaneStatusLinkFooter({
     registrationId: "substack-article-reader",

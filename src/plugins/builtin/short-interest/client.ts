@@ -1,6 +1,7 @@
 import { apiClient } from "../../../api-client";
 import type { CloudShortInterestPayload } from "../../../api-client/types";
 import type { ConnectionHealthRegistry } from "../../../core/connection-health";
+import { withConnectionRequest } from "../connections/register";
 import { YahooHttpClient } from "../../../sources/yahoo-finance/http";
 import { financeRawNumber, yahooRawDate } from "../../../sources/yahoo-finance/mappers";
 import type { QuoteSummaryResponse, YahooQuoteSummaryResult } from "../../../sources/yahoo-finance/types";
@@ -81,7 +82,11 @@ async function requestShortInterest(symbol: string): Promise<ShortInterestRecord
 }
 
 function fetchYahooShortInterest(symbol: string): Promise<ShortInterestRecord[]> {
-  const request = () => requestShortInterest(symbol);
+  const request = () => withConnectionRequest(
+    YAHOO_SHORT_INTEREST_CONNECTION_ID,
+    "short-interest",
+    () => requestShortInterest(symbol),
+  );
   return connectionHealth?.hasSource(YAHOO_SHORT_INTEREST_CONNECTION_ID)
     ? connectionHealth.track(YAHOO_SHORT_INTEREST_CONNECTION_ID, "fetch", request)
     : request();

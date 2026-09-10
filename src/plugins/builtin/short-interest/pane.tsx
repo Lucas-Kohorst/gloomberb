@@ -126,7 +126,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }, [setSortPreference]);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
-    if (event.name === "r") {
+    if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
@@ -136,13 +136,13 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }, [refresh]);
 
   useShortcut((event) => {
-    if (!focused) return;
+    if (!focused || event.targetEditable) return;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       refresh();
     }
-  });
+  }, { allowEditable: true, enabled: focused });
 
   const renderCell = useCallback((
     row: ShortInterestRow,
@@ -168,9 +168,12 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   usePaneFooter("short-interest", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(status === "error" && error ? [{ id: "error", parts: [{ text: error.slice(0, 60), tone: "warning" as const }] }] : []),
+      ...(status === "error" && error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-  }), [error, status]);
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    ],
+  }), [error, refresh, status]);
 
   if (!ticker || !symbol) {
     return <EmptyState title="No ticker selected." message="Select a ticker to view short interest." />;
@@ -181,7 +184,7 @@ function ShortInterestView({ width, height, focused }: { width: number; height: 
   }
 
   if (status === "error" && records.length === 0) {
-    return <EmptyState title={unavailableText("Short interest")} message={error ?? undefined} />;
+    return <EmptyState title={unavailableText("Short interest")} message={error ?? undefined} hint="Press r to retry." />;
   }
 
   if (status === "loaded" && records.length === 0) {

@@ -1,6 +1,7 @@
 import { Box, ScrollBox, Text } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
+import { isPlainKey } from "../../../utils/keyboard";
 import { Button, EmptyState, Spinner, StaticChartSurface, type PaneFooterSegment } from "../../../components";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
@@ -76,15 +77,21 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   const updatedAgo = useUpdatedAgo(lastUpdated);
 
   useShortcut((ev) => {
-    if (!focused) return;
-    if (ev.name === "r") {
+    if (!focused || ev.targetEditable) return;
+    if (isPlainKey(ev, "r")) {
+      ev.preventDefault?.();
+      ev.stopPropagation?.();
       load();
-    } else if (ev.name === "g") {
+    } else if (isPlainKey(ev, "g")) {
+      ev.preventDefault?.();
+      ev.stopPropagation?.();
       chartCurve();
-    } else if (ev.name === "o") {
+    } else if (isPlainKey(ev, "o")) {
+      ev.preventDefault?.();
+      ev.stopPropagation?.();
       openUrl(YIELD_CURVE_URL);
     }
-  });
+  }, { allowEditable: true, enabled: focused });
 
   const inverted = isInverted(points);
   const bp = spreadBp(points);
@@ -93,11 +100,8 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
   const asOf = curveAsOf(points);
 
   const yieldStatus = useMemo<PaneFooterSegment[]>(() => [
-      ...(inverted ? [{ id: "inverted", parts: [{ text: "INVERTED", tone: "warning" as const, bold: true }] }] : []),
-      ...(bp != null ? [{ id: "spread", parts: [{ text: `2Y-10Y ${bp >= 0 ? "+" : ""}${bp}bp`, tone: bp < 0 ? "warning" as const : "muted" as const }] }] : []),
-      ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
-  ], [asOf, bp, inverted, updatedAgo]);
+  ], [updatedAgo]);
   usePaneStatusFooter({
     registrationId: "yield-curve",
     hints: [
@@ -153,11 +157,18 @@ function YieldCurvePane({ focused, width, height }: PaneProps) {
     return formatYield(pt?.yield ?? null).padEnd(colWidth);
   }).join("").trimEnd();
 
+  const spreadLabel = bp != null ? `2Y-10Y ${bp >= 0 ? "+" : ""}${bp}bp` : null;
+  const curveStateLabel = inverted ? "INVERTED" : "NORMAL";
+  const headerLabel = [curveStateLabel, spreadLabel, asOf ? `as of ${asOf}` : null].filter(Boolean).join(" · ");
+
   return (
     <Box flexDirection="column" width={width} height={height}>
       {/* Scrollable chart + table */}
       <ScrollBox flexGrow={1} scrollY focusable={false}>
         <Box flexDirection="column">
+          <Box paddingX={1} marginTop={1} height={1}>
+            <Text fg={inverted ? colors.warning : colors.textDim}>{headerLabel}</Text>
+          </Box>
           {/* Chart */}
           {chartPoints.length >= 2 ? (
             <Box flexDirection="column" paddingX={1} marginTop={1}>

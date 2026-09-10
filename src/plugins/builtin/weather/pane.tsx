@@ -871,22 +871,11 @@ export function WeatherPane({ focused, width, height }: PaneProps) {
     [],
   );
 
-  const officialDate = allRows.find((row) => row.status === "official")?.date
-    ?? allRows.find((row) => row.date)?.date
-    ?? null;
-
   usePaneStatusFooter({
     registrationId: WEATHER_PANE_ID,
     loading: status === "loading",
     error,
     info: [
-      ...(tab === "report" && report.samples > 0
-        ? [{ id: "hit", parts: [{ text: `${formatHitRate(report.hitRate)} on ${reportKind === "implied" ? "Kalshi" : "TWC"} fcst`, tone: "muted" as const }] }]
-        : []),
-      ...(tab === "report" && report.samples > 0
-        ? [{ id: "bias", parts: [{ text: `bias ${formatBias(report.bias)}`, tone: "muted" as const }] }]
-        : []),
-      ...(tab !== "report" && officialDate ? [{ id: "print", parts: [{ text: officialDate, tone: "muted" as const }] }] : []),
       ...(backfillPending ? [{ id: "backfill", parts: [{ text: "backfilling Y.FC", tone: "muted" as const }] }] : []),
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],

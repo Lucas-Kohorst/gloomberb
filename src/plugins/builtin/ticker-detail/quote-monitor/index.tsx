@@ -16,6 +16,7 @@ import { colors } from "../../../../theme/colors";
 import { EmptyState } from "../../../../components";
 import { getQuoteMonitorPaneSettings } from "../settings";
 import { useShortcut } from "../../../../react/input";
+import { isPlainKey } from "../../../../utils/keyboard";
 import { QuoteMonitorCard } from "./card";
 import { useLiveStreamingSetting } from "../../shared/live-streaming";
 
@@ -136,11 +137,11 @@ export function QuoteMonitorPane({ paneId, focused, width, height }: PaneProps) 
     pinTicker(nextSymbol, { paneType: TICKER_RESEARCH_PANE_ID, floating: true });
   }, [pinTicker]);
   useShortcut((event) => {
-    if (!focused || event.name !== "t") return;
+    if (!focused || event.targetEditable || !isPlainKey(event, "t")) return;
     event.preventDefault?.();
     event.stopPropagation?.();
     openPaneSettings(paneId);
-  });
+  }, { allowEditable: true, enabled: focused });
 
   if (symbols.length === 0) {
     return (

@@ -186,7 +186,7 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
       focusSearch();
       return true;
     }
-    if (event.name === "s" || event.name === "/") {
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -203,9 +203,8 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
 
   const bbox = findBbox(bboxId);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
-    ...(kind === "aircraft" ? [{ id: "bbox", parts: [{ text: bbox.label, tone: "muted" as const }] }] : []),
     ...(vehicles.length > 0 ? [paneDelayedStatus()] : []),
-  ], [bbox.label, kind, vehicles.length]);
+  ], [vehicles.length]);
 
   usePaneStatusLinkFooter({
     registrationId: paneId,
@@ -227,13 +226,13 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
   });
 
   useShortcut((event) => {
-    if (!focused || searchFocused) return;
-    if (event.name === "s" || event.name === "/") {
+    if (!focused || searchFocused || event.targetEditable) return;
+    if (isPlainKey(event, "s") || isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
     }
-  }, { enabled: focused && !searchFocused });
+  }, { allowEditable: true, enabled: focused && !searchFocused });
 
   const columns = useMemo(() => buildTrafficColumns(kind), [kind]);
   const tabs = (
@@ -295,7 +294,7 @@ function TrafficPane({ paneId, focused, width, height }: PaneProps) {
             width={width}
             focusToken={searchFocusToken}
             inputRef={searchInputRef}
-            placeholder={kind === "aircraft" ? "callsign or country" : "name or MMSI"}
+            placeholder={kind === "aircraft" ? `callsign or country · ${bbox.label}` : "name or MMSI"}
             debounceMs={80}
             onFocus={focusSearch}
             onBlur={() => setSearchFocused(false)}
