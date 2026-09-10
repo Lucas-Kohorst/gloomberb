@@ -152,6 +152,12 @@ function FirehosePane({ focused, width, height }: PaneProps) {
   // [s] / [/] search shortcut — only when search is not already focused.
   useShortcut((event) => {
     if (!focused || searchFocused) return;
+    if (event.name === "r") {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      refresh();
+      return;
+    }
     if (event.name === "s" || event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -161,6 +167,12 @@ function FirehosePane({ focused, width, height }: PaneProps) {
 
   const handleRootKeyDown = useCallback(
     (event: { name?: string; preventDefault?: () => void; stopPropagation?: () => void }) => {
+      if (event.name === "r") {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        refresh();
+        return true;
+      }
       if (event.name === "s" || event.name === "/") {
         event.preventDefault?.();
         event.stopPropagation?.();
@@ -169,7 +181,7 @@ function FirehosePane({ focused, width, height }: PaneProps) {
       }
       return false;
     },
-    [focusSearch],
+    [focusSearch, refresh],
   );
 
   const detailContent = detailArticle ? (

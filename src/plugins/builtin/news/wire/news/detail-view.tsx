@@ -220,13 +220,14 @@ export function NewsDetailView({ item, focused, width, showTitle = true }: {
 
   useShortcut((event) => {
     if (!focused) return;
-    if (isPlainKey(event, "j", "down")) {
+    // j/k stay reserved for table navigation; detail scroll uses arrows.
+    if (isPlainKey(event, "down")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollBy(1);
       return;
     }
-    if (isPlainKey(event, "k", "up")) {
+    if (isPlainKey(event, "up")) {
       event.stopPropagation?.();
       event.preventDefault?.();
       scrollBy(-1);

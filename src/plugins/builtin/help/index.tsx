@@ -434,4 +434,15 @@ export const helpModule: PluginModule = {
       defaultFloatingSize: { width: 88, height: 32 },
     },
   ],
+
+  paneTemplates: [
+    {
+      id: "help-pane",
+      paneId: "help",
+      label: "Help",
+      description: "How to use Gloomberb: command bar prefixes, shortcuts, layouts, and troubleshooting.",
+      keywords: ["help", "shortcuts", "commands", "guide", "howto", "issues", "support"],
+      shortcut: { prefix: "HELP" },
+    },
+  ],
 };

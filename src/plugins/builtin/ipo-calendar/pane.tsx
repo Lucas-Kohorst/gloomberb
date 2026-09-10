@@ -186,8 +186,11 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
   ], [error, records.length, searchQuery, stale, status]);
 
   const footerHints = useMemo(
-    () => [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
-    [focusSearch],
+    () => [
+      { id: "search", key: "/", label: "search", onPress: focusSearch },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    ],
+    [focusSearch, refresh],
   );
 
   useExternalLinkFooter({
@@ -289,7 +292,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
         <Box padding={1} flexDirection="column" gap={1}>
-          <EmptyState title="IPO calendar unavailable." message={error ?? undefined} />
+          <EmptyState title="IPO calendar unavailable." message={error ?? undefined} hint="Press r to retry." />
         </Box>
       </Box>
     );
@@ -323,6 +326,7 @@ export function IPOCalendarPane({ focused, width, height }: PaneProps) {
             ? "Failed to load IPO data"
             : "No IPO data"
       }
+      emptyStateHint={status === "error" && !searchQuery ? "Press r to retry." : undefined}
     />
   );
 }

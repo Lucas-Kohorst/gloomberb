@@ -141,7 +141,11 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
     registrationId: MARKET_HALTS_PANE_ID,
     loading: status === "loading",
     error,
-    hints: [{ id: "filter", key: "f", label: "ilter", onPress: cycleFilter }],
+    hints: [
+      { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+    ],
+    focused,
   });
 
   const renderCell = useCallback((
@@ -221,7 +225,7 @@ export function MarketHaltsPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Trading halts unavailable." message={error ?? undefined} />
+          <EmptyState title="Trading halts unavailable." message={error ?? undefined} hint="Press r to retry." />
         </Box>
       </Box>
     );

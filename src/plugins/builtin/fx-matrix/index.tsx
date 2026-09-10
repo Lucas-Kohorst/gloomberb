@@ -1,12 +1,18 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   DataTableView,
+  Spinner,
+  nextStackSortPreference,
+  sortStackItems,
   usePaneFooter,
   type DataTableCell,
   type DataTableColumn,
   type DataTableKeyEvent,
   type PaneFooterSegment,
+  type StackSortPreference,
 } from "../../../components";
+import { Box } from "../../../ui";
+import { paneRefreshHint } from "../shared/pane-footer";
 import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import { useFxRatesMap } from "../../../market-data/hooks";
 import { usePaneSettingValue } from "../../../state/app/context";
@@ -51,14 +57,45 @@ function readFxStatus(currencies: readonly MajorCurrency[], rates: Map<string, n
   return { loading, unavailable, latestTs };
 }
 
+type FxSortPreference = StackSortPreference<string>;
+
+function compareFxRows(
+  left: MajorCurrency,
+  right: MajorCurrency,
+  columnId: string,
+  rates: Map<string, number>,
+): number {
+  if (columnId === "base") return left.localeCompare(right);
+  const quote = columnId as MajorCurrency;
+  if (left === quote && right === quote) return left.localeCompare(right);
+  if (left === quote) return -1;
+  if (right === quote) return 1;
+  const leftBase = rates.get(left);
+  const rightBase = rates.get(right);
+  const quoteRate = rates.get(quote);
+  const leftRate = leftBase != null && quoteRate != null ? leftBase / quoteRate : null;
+  const rightRate = rightBase != null && quoteRate != null ? rightBase / quoteRate : null;
+  if (leftRate == null && rightRate == null) return left.localeCompare(right);
+  if (leftRate == null) return 1;
+  if (rightRate == null) return -1;
+  return leftRate - rightRate || left.localeCompare(right);
+}
+
 function FxMatrixPane({ focused, width, height }: PaneProps) {
   const dataProvider = useAssetData();
   const [savedCurrencies] = usePaneSettingValue<string[]>("currencies", NO_SAVED_CURRENCIES);
   const currencies = useMemo(() => resolveCurrencies(savedCurrencies), [savedCurrencies]);
   const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
+  const [sortPreference, setSortPreference] = useState<FxSortPreference>({ columnId: "base", direction: "asc" });
 
   const rates = useFxRatesMap(currencies);
   const status = useMemo(() => readFxStatus(currencies, rates), [currencies, rates]);
+  const sortedCurrencies = useMemo(
+    () => sortStackItems(currencies, sortPreference, (left, right, columnId) =>
+      compareFxRows(left, right, columnId, rates),
+    ),
+    [currencies, rates, sortPreference],
+  );
 
   const refresh = useCallback(() => {
     const coordinator = getSharedMarketDataCoordinator();
@@ -122,6 +159,10 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
 
   const updatedAgo = useUpdatedAgo(status.latestTs || null);
 
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setSortPreference((current) => nextStackSortPreference(current, columnId, "asc"));
+  }, []);
+
   usePaneFooter(FX_MATRIX_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
     if (status.loading > 0) info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
@@ -132,25 +173,33 @@ function FxMatrixPane({ focused, width, height }: PaneProps) {
       });
     }
     if (updatedAgo) info.push({ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" }] });
-    return { info };
-  }, [status.loading, status.unavailable, updatedAgo]);
+    return { info, hints: [paneRefreshHint(refresh)] };
+  }, [refresh, status.loading, status.unavailable, updatedAgo]);
+
+  if (status.loading > 0 && rates.size <= 1 && dataProvider) {
+    return (
+      <Box width={width} height={height} justifyContent="center" alignItems="center">
+        <Spinner label="Loading FX rates..." />
+      </Box>
+    );
+  }
 
   return (
     <DataTableView<MajorCurrency>
       focused={focused}
       selection={{
         kind: "id",
-        selectedId: selectedCurrency ?? currencies[0] ?? null,
+        selectedId: selectedCurrency ?? sortedCurrencies[0] ?? null,
         getId: (row) => row,
         onChange: (id) => setSelectedCurrency(id),
       }}
       rootWidth={width}
       rootHeight={height}
       columns={columns}
-      items={dataProvider ? currencies : []}
-      sortColumnId={null}
-      sortDirection="asc"
-      onHeaderClick={() => {}}
+      items={dataProvider ? sortedCurrencies : []}
+      sortColumnId={sortPreference.columnId}
+      sortDirection={sortPreference.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={(row) => row}
       renderCell={renderCell}
       onRootKeyDown={handleKeyDown}

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, useUiCapabilities } from "../../../ui";
 import {
+  EmptyState,
   findMetricTreemapNeighbor,
   MetricTreemapSurface,
+  Spinner,
   Tabs,
   useMetricTreemapLayout,
   usePaneFooter,
@@ -13,10 +15,8 @@ import { useShortcut } from "../../../react/input";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
 import type { PaneProps } from "../../../types/plugin";
 import type { PluginModule } from "../plugin-module";
-import { priceColor } from "../../../theme/colors";
 import {
   formatCompact,
-  formatCurrency,
   formatMoneyCompact,
   formatPercentRaw,
 } from "../../../utils/format";
@@ -311,19 +311,6 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("market-heatmap", () => ({
     info: [
-      ...(selectedAsset ? [{
-        id: "selected",
-        parts: [
-          { text: selectedAsset.symbol, tone: "label" as const },
-          { text: formatCurrency(selectedAsset.price, selectedAsset.currency), tone: "value" as const },
-          {
-            text: selectedAsset.hasChange ? formatPercentRaw(selectedAsset.changePercent) : "—",
-            tone: "value" as const,
-            color: selectedAsset.hasChange ? priceColor(selectedAsset.changePercent) : undefined,
-            bold: true,
-          },
-        ],
-      }] : []),
       ...(updated ? [{
         id: "updated",
         parts: [{ text: `updated ${updated}`, tone: "muted" as const }],
@@ -335,28 +322,56 @@ function MarketHeatmapPane({ focused, width, height }: PaneProps) {
         parts: [{ text: feedStatus, tone: feedStatus === "live" ? "value" as const : "muted" as const }],
       }] : []),
     ],
-  }), [feedStatus, loadError, loading, selectedAsset, updated]);
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      ...(selectedAsset ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedAsset.symbol) }] : []),
+    ],
+  }), [feedStatus, loadError, loading, openSymbol, refresh, selectedAsset, updated]);
 
-  const emptyStateTitle = loading
-    ? "Loading market heatmap..."
-    : loadError ?? "No market heatmap data";
+  const tabs = (
+    <Box height={1} paddingX={1}>
+      <Tabs
+        tabs={MARKET_HEATMAP_UNIVERSES.map((universe) => ({ label: universe.label, value: universe.id }))}
+        activeValue={activeUniverse}
+        onSelect={(value) => {
+          setActiveUniverse(value as MarketHeatmapUniverseId);
+          setSelectedSymbol(null);
+        }}
+        compact
+        variant="bare"
+        focused={focused}
+        keyboardNavigation={false}
+      />
+    </Box>
+  );
+
+  if (loading && resolvedAssets.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <Box flexGrow={1} justifyContent="center" alignItems="center">
+          <Spinner label="Loading market heatmap..." />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (loadError && resolvedAssets.length === 0) {
+    return (
+      <Box flexDirection="column" width={width} height={height}>
+        {tabs}
+        <Box padding={1}>
+          <EmptyState title="Market heatmap unavailable." message={loadError} hint="Press r to retry." />
+        </Box>
+      </Box>
+    );
+  }
+
+  const emptyStateTitle = loadError ?? "No market heatmap data";
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Box height={1} paddingX={1}>
-        <Tabs
-          tabs={MARKET_HEATMAP_UNIVERSES.map((universe) => ({ label: universe.label, value: universe.id }))}
-          activeValue={activeUniverse}
-          onSelect={(value) => {
-            setActiveUniverse(value as MarketHeatmapUniverseId);
-            setSelectedSymbol(null);
-          }}
-          compact
-          variant="bare"
-          focused={focused}
-          keyboardNavigation={false}
-        />
-      </Box>
+      {tabs}
 
       <MetricTreemapSurface
         items={displayItems}

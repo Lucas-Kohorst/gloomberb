@@ -258,6 +258,10 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
     return false;
   }, [activeTab, loadTab, openSymbol, selectedSymbol]);
 
+  const refreshMovers = useCallback(() => {
+    void loadTab(activeTab, { forceRefresh: true });
+  }, [activeTab, loadTab]);
+
   usePaneFooter("market-movers", () => ({
     info: [
       ...summaryQuotes.map((idx) => {
@@ -280,7 +284,11 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         parts: [{ text: "stale", tone: "muted" as const }],
       }] : []),
     ],
-  }), [feedStatus, loading, moversStale, summaryQuotes]);
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: refreshMovers },
+      ...(selectedSymbol ? [{ id: "open", key: "o", label: "pen", onPress: () => openSymbol(selectedSymbol) }] : []),
+    ],
+  }), [feedStatus, loading, moversStale, openSymbol, refreshMovers, selectedSymbol, summaryQuotes]);
 
   return (
     <Box flexDirection="column" width={width} height={height}>
@@ -318,9 +326,10 @@ function MarketMoversPane({ focused, width, height }: PaneProps) {
         onActivate={(row) => openSymbol(row.symbol)}
         renderCell={renderMarketMoverCell}
         emptyStateTitle={loading ? "Loading movers..." : loadError ?? "No movers returned."}
+        emptyStateHint={loadError && !loading ? "Press r to retry." : undefined}
         emptyContent={loadError ? (
           <Box paddingX={1} paddingY={1}>
-            <EmptyState title={loadError} message="Try again in a moment." />
+            <EmptyState title={loadError} message="Try again in a moment." hint="Press r to retry." />
           </Box>
         ) : undefined}
       />

@@ -171,6 +171,10 @@ function AddFeedForm({ width, onCancel, onSubmit }: {
     }
   });
 
+  const cycleCategory = useCallback((dir: 1 | -1) => {
+    setCategoryIdx((prev) => (prev + dir + CATEGORY_OPTIONS.length) % CATEGORY_OPTIONS.length);
+  }, []);
+
   return (
     <Box flexDirection="column" width={width} paddingX={1} paddingY={1} gap={1}>
       <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>Add RSS Feed</Text>
@@ -186,7 +190,15 @@ function AddFeedForm({ width, onCancel, onSubmit }: {
         </Text>
         <Text fg={colors.text}>{name || (field === "name" ? "_" : "")}</Text>
       </Box>
-      <Box height={1} flexDirection="row">
+      <Box
+        height={1}
+        flexDirection="row"
+        cursor="pointer"
+        onMouseDown={() => {
+          setField("category");
+          cycleCategory(1);
+        }}
+      >
         <Text fg={field === "category" ? colors.textBright : colors.textDim}>
           {field === "category" ? "> " : "  "}Category:{" "}
         </Text>
@@ -360,7 +372,7 @@ function FeedsManager({ focused, width, height, onBack }: {
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} paddingX={1}>
         <Text fg={colors.textBright} attributes={TextAttributes.BOLD}>
-          RSS Feeds ({rows.length})
+          RSS Feeds
         </Text>
       </Box>
       <DataTableView<FeedRow, DataTableColumn>
