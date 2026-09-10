@@ -573,6 +573,7 @@ function ChartComposerSurface({
       { id: "formulas", key: "f", label: "ormulas", onPress: openFormulas, disabled: formulasDisabled },
       { id: "resolution", key: "t", label: "imeframe", onPress: footerResolution },
       { id: "range", key: "1-8", label: "range", onPress: footerRange },
+      { id: "refresh", key: "r", label: "efresh", onPress: footerReload },
       ...(publicSharing
         ? [{ id: "share", key: "y", label: " share", onPress: shareChart, disabled: !shareData }]
         : []),

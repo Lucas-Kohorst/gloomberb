@@ -34,7 +34,6 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
   const [status, setStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<ParsedByokPayload | null>(null);
-  const [httpStatus, setHttpStatus] = useState<number | null>(null);
   const genRef = useRef(0);
 
   const load = useCallback(() => {
@@ -51,7 +50,6 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
     void fetchByokEndpoint(entry)
       .then((result) => {
         if (genRef.current !== gen) return;
-        setHttpStatus(result.status);
         if (!result.ok) {
           setError(`Request failed (${result.status}).`);
           setPayload({ kind: "text", text: result.body });
@@ -84,13 +82,12 @@ export function ByokApiViewerPane({ focused, width, height }: PaneProps) {
   usePaneFooter("byok-api-viewer", () => ({
     info: [
       ...(status === "loading" ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
-      ...(httpStatus != null ? [{ id: "http", parts: [{ text: String(httpStatus), tone: status === "error" ? "warning" as const : "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
     hints: [
       { id: "refresh", key: "r", label: "efresh", onPress: load },
     ],
-  }), [error, httpStatus, load, status]);
+  }), [error, load, status]);
 
   if (!entry && status !== "loading") {
     return (

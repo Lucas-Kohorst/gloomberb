@@ -20,6 +20,8 @@ import type { PluginModule } from "../plugin-module";
 import { isPlainKey } from "../../../utils/keyboard";
 import { changelogReleaseSharePayload, useCopyShareLink } from "../shared/article-share";
 import { usePersistedReadIds } from "../shared/read-state";
+import { registerConnectionSource, withConnectionRequest } from "../connections/register";
+import { paneRefreshHint, paneSearchHint, paneShareHint } from "../shared/pane-footer";
 import {
   DEFAULT_CHANGELOG_SORT,
   nextChangelogSortPreference,
@@ -29,6 +31,10 @@ import {
 } from "./model";
 
 const CHANGELOG_LIMIT = 40;
+/** Connections inventory row for the GitHub releases fetch. */
+export const CHANGELOG_CONNECTION_ID = "github-releases";
+export const CHANGELOG_PLUGIN_ID = "changelog";
+let disposeChangelogConnection: (() => void) | null = null;
 /** GitHub can hang or be blocked outright; the pane must still reach a verdict. */
 const CHANGELOG_TIMEOUT_MS = 5_000;
 const CHANGELOG_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -159,7 +165,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     setError(null);
 
     try {
-      const nextReleases = await fetchChangelogReleases(CHANGELOG_LIMIT, controller.signal);
+      const nextReleases = await withConnectionRequest(CHANGELOG_CONNECTION_ID, "releases", () => fetchChangelogReleases(CHANGELOG_LIMIT, controller.signal));
       cachedReleases = { releases: nextReleases, fetchedAt: Date.now() };
       setReleases(nextReleases);
       setStatus("loaded");
@@ -243,6 +249,16 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused) return;
+    if (searchFocused) {
+      if (isPlainKey(event, "escape")) {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        setSearchFocused(false);
+        setSearchQuery("");
+      }
+      return;
+    }
+    if (event.targetEditable) return;
     if (isPlainKey(event, "/") && !openRelease) {
       event.stopPropagation?.(); event.preventDefault?.(); focusSearch(); return;
     }
@@ -257,7 +273,7 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     event.stopPropagation?.();
     event.preventDefault?.();
     void loadReleases(true);
-  });
+  }, { allowEditable: true, enabled: focused });
 
   const columns = useMemo(() => buildColumns(releases), [releases]);
 
@@ -352,6 +368,11 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
     source: linkRelease?.version,
     label: "release",
     info: footerInfo,
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(() => { void loadReleases(true); }),
+      ...(linkRelease ? [paneShareHint(shareRelease)] : []),
+    ],
     onOpen: linkRelease ? () => markRead(linkRelease.id) : undefined,
   });
 
@@ -409,6 +430,22 @@ function ChangelogPane({ focused, width, height }: PaneProps) {
 }
 
 export const changelogModule: PluginModule = {
+  setup() {
+    disposeChangelogConnection?.();
+    disposeChangelogConnection = registerConnectionSource({
+      id: CHANGELOG_CONNECTION_ID,
+      name: "GitHub Releases",
+      kind: "api",
+      pluginId: CHANGELOG_PLUGIN_ID,
+      authRequired: false,
+    });
+  },
+
+  dispose() {
+    disposeChangelogConnection?.();
+    disposeChangelogConnection = null;
+  },
+
   panes: [
     {
       id: "changelog",

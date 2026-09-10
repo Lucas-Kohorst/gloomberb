@@ -197,13 +197,6 @@ export function AlertsPane({ focused, width, height, close }: PaneProps) {
         disabled: rows.length === 0,
       },
       {
-        id: "edit",
-        key: "e",
-        label: "dit",
-        onPress: editSelectedAlert,
-        disabled: rows.length === 0,
-      },
-      {
         id: "delete",
         key: "d",
         label: "elete",

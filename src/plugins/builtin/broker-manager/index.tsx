@@ -156,6 +156,17 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     setDetailOpen(true);
   }, []);
 
+  const connectedCount = rows.filter((row) => row.state === "connected").length;
+  const errorCount = rows.filter((row) => row.state === "error" || row.state === "unavailable").length;
+  const summary = useMemo(
+    () => tf("{profiles} profiles · {connected} connected · {issues} issues", {
+      profiles: rows.length,
+      connected: connectedCount,
+      issues: errorCount,
+    }),
+    [connectedCount, errorCount, rows.length],
+  );
+
   useBrokerManagerFooter({
     actions: {
       connectSelected,
@@ -170,6 +181,9 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     canRemoveSelected,
     canUseSelectedBroker,
     editing: !!editDraft,
+    busy,
+    message,
+    summary,
   });
 
   useBrokerManagerKeyboard({
@@ -194,9 +208,7 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
     syncSelected,
   });
 
-  const connectedCount = rows.filter((row) => row.state === "connected").length;
-  const errorCount = rows.filter((row) => row.state === "error" || row.state === "unavailable").length;
-  const bodyHeight = Math.max(5, height - 4);
+  const bodyHeight = Math.max(5, height - 3);
   const tableWidth = Math.max(24, width - 2);
   const columns = useMemo(() => buildBrokerColumns(), [language]);
 
@@ -271,12 +283,6 @@ export function BrokersPane({ focused, width, height }: PaneProps) {
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      <Box height={1} flexDirection="row">
-        <Box flexGrow={1} flexDirection="row" overflow="hidden">
-          <Text fg={colors.textDim}>{tf("{profiles} profiles · {connected} connected · {issues} issues", { profiles: rows.length, connected: connectedCount, issues: errorCount })}</Text>
-        </Box>
-        {busy && <Text fg={colors.textDim}>{busy}</Text>}
-      </Box>
       <Box height={1}>
         <Text fg={isBrokerErrorMessage(message) ? colors.negative : colors.textDim}>
           {message || t("Manage broker profiles, connection tests, and position syncs.")}

@@ -211,8 +211,13 @@ function IndexDetail({
   const [newsFocusToken, setNewsFocusToken] = useState(0);
   const newsSearchRef = useRef<import("../../../ui").InputRenderable | null>(null);
   const genRef = useRef(0);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const popOutArticle = usePopOutNewsArticle();
   const { readArticleIds, markArticleRead } = useNewsReadState();
+
+  const reloadDetail = useCallback(() => {
+    setReloadNonce((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     genRef.current += 1;
@@ -237,11 +242,15 @@ function IndexDetail({
         setNews(articles);
       });
 
-      await Promise.allSettled([constituentsTask, pricesTask, newsTask]);
-      if (genRef.current === gen) setLoading(false);
+      const settled = await Promise.allSettled([constituentsTask, pricesTask, newsTask]);
+      if (genRef.current !== gen) return;
+      setLoading(false);
+      if (settled.every((entry) => entry.status === "rejected")) {
+        setError("Index detail unavailable.");
+      }
     };
     void load();
-  }, [client, index.id, index.name]);
+  }, [client, index.id, index.name, reloadNonce]);
 
   const sortedConstituents = useMemo(
     () => applySortPreference(constituents, constituentSort, constituentSortValue),
@@ -336,11 +345,16 @@ function IndexDetail({
     return [
       { id: "graph", key: "g", label: "raph", onPress: graphTarget, disabled: !graphExpression },
       { id: "open", key: "o", label: "pen", onPress: openTarget },
+      { id: "refresh", key: "r", label: "efresh", onPress: reloadDetail },
     ];
-  }, [detailTab, graphExpression, graphTarget, index.name, markArticleRead, openTarget, popOutArticle, selectedArticle]);
+  }, [detailTab, graphExpression, graphTarget, index.name, markArticleRead, openTarget, popOutArticle, reloadDetail, selectedArticle]);
   usePaneFooter("adjacent-indices-detail", () => ({
+    info: [
+      ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
+      ...(error ? [{ id: "error", parts: [{ text: "error", tone: "warning" as const }] }] : []),
+    ],
     hints: detailHints,
-  }), [detailHints]);
+  }), [detailHints, error, loading]);
   usePaneFooterHintBindings(focused, detailHints);
 
   useEffect(() => {
@@ -384,7 +398,7 @@ function IndexDetail({
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Error loading index data." message={error} />
+          <EmptyState title="Error loading index data." message={error} hint="Press r to retry." />
         </Box>
       </Box>
     );
