@@ -278,6 +278,17 @@ export function getAiProviderDefinition(
   return PROVIDER_DEFINITIONS.find((provider) => provider.id === canonicalId) ?? null;
 }
 
+/**
+ * Single display name for a provider id, used by thread titles, headers,
+ * and composer placeholders so they always match the Settings names.
+ * Legacy agent-plugin ids without definitions keep their historic labels.
+ */
+export function getAiProviderDisplayName(providerId: string): string {
+  if (providerId === "opencode") return "OpenCode";
+  if (providerId === "pi") return "Pi";
+  return getAiProviderDefinition(providerId)?.name ?? providerId;
+}
+
 export function getAiProviderDefinitions(): AiProviderDefinition[] {
   return PROVIDER_DEFINITIONS.map((definition) => ({
     ...definition,

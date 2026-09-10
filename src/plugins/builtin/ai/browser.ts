@@ -12,7 +12,7 @@ import { isHostedWebClient } from "./providers";
 import { withDeadline } from "../../../utils/async-deadline";
 import { getInProcessRemoteHandle } from "../../../remote/in-process-handle";
 import type { AiAgentHistoryMessage } from "./agent-history";
-import { applyRemoteControlText, parseRemoteControlRequest } from "./remote-request";
+import { applyRemoteControlText, parseRemoteControlRequest, tryParseJson } from "./remote-request";
 
 const BROWSER_AI_CHECK_TIMEOUT_MS = 5_000;
 
@@ -194,6 +194,22 @@ const STRUCTURED_NANO_INSTRUCTIONS = [
 
 export const parseBrowserRemoteControlRequest = parseRemoteControlRequest;
 
+/**
+ * Unwraps the plain-answer envelope the structured Nano instructions ask
+ * for (`{"message":"your answer"}`). Remote-control requests (string `type`)
+ * are never envelopes — those go through applyRemoteControlText first.
+ * Returns null for prose and anything without a non-empty message string.
+ */
+export function unwrapBrowserMessageEnvelope(raw: string): string | null {
+  const parsed = tryParseJson(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.type === "string") return null;
+  if (typeof record.message !== "string") return null;
+  const text = record.message.trim();
+  return text ? text : null;
+}
+
 async function collectPromptOutput(
   session: LanguageModelSession,
   prompt: string,
@@ -228,7 +244,8 @@ async function runHostedStructuredRequest(
       },
       onAgentMessages,
     );
-    return result.applied ? result.output : null;
+    if (result.applied) return result.output;
+    return unwrapBrowserMessageEnvelope(raw) ?? raw;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }

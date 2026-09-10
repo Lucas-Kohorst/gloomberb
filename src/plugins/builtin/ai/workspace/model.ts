@@ -1,4 +1,4 @@
-import { migrateLegacyAiProviderId, type AiProviderId } from "../providers";
+import { getAiProviderDisplayName, migrateLegacyAiProviderId, type AiProviderId } from "../providers";
 import {
   extractThinkingTurns,
   normalizeAiAgentHistory,
@@ -74,21 +74,10 @@ export const EMPTY_LOCAL_AGENT_WORKSPACE: LocalAgentWorkspaceState = {
 const MAX_THREADS = 50;
 const MAX_MESSAGES_PER_THREAD = 100;
 const MAX_AGENT_MESSAGES_PER_THREAD = 300;
-const LEGACY_PROVIDER_TITLES: Record<string, string> = {
-  anthropic: "Claude",
-  claude: "Claude",
-  google: "Google Gemini",
-  gemini: "Gemini",
-  "openai-codex": "OpenAI",
-  codex: "OpenAI",
-  openai: "OpenAI API",
-  "github-copilot": "GitHub Copilot",
-  xai: "xAI / Grok",
-  openrouter: "OpenRouter",
-  spore: "Spore",
-  opencode: "OpenCode",
-  pi: "Pi",
-};
+function providerTitle(providerId: string, providerLabel?: string): string {
+  return providerLabel?.trim()
+    || getAiProviderDisplayName(providerId);
+}
 
 function isProviderId(value: unknown): value is LocalAgentProviderId {
   return typeof value === "string" && value.trim().length > 0;
@@ -96,12 +85,6 @@ function isProviderId(value: unknown): value is LocalAgentProviderId {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function providerTitle(providerId: string, providerLabel?: string): string {
-  return providerLabel?.trim()
-    || LEGACY_PROVIDER_TITLES[providerId]
-    || providerId;
 }
 
 function normalizeMessage(value: unknown): LocalAgentMessage | null {
