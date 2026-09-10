@@ -29,7 +29,7 @@ const REMOTE_REQUEST_TYPES = new Set([
   "batch",
 ]);
 
-function tryParseJson(raw: string): unknown | null {
+export function tryParseJson(raw: string): unknown | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   const candidates = [

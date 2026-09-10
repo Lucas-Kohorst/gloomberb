@@ -4,6 +4,7 @@ import {
   createBrowserAiRunHost,
   getBrowserAiState,
   parseBrowserRemoteControlRequest,
+  unwrapBrowserMessageEnvelope,
   type BrowserAiAvailability,
 } from "./browser";
 import { parseAssistCommandOutput } from "./assist-local";
@@ -169,6 +170,25 @@ describe("parseBrowserRemoteControlRequest", () => {
   test("ignores prose that is not a remote request", () => {
     expect(parseBrowserRemoteControlRequest("Opened the pane.")).toBeNull();
     expect(parseBrowserRemoteControlRequest('{"message":"done"}')).toBeNull();
+  });
+});
+
+describe("unwrapBrowserMessageEnvelope", () => {
+  test("unwraps the plain-answer envelope", () => {
+    expect(unwrapBrowserMessageEnvelope('{"message":"Hello! How can I help you today?"}'))
+      .toBe("Hello! How can I help you today?");
+  });
+
+  test("unwraps fenced envelopes", () => {
+    expect(unwrapBrowserMessageEnvelope('```json\n{"message":"done"}\n```')).toBe("done");
+  });
+
+  test("leaves prose and remote requests alone", () => {
+    expect(unwrapBrowserMessageEnvelope("Just a plain answer.")).toBeNull();
+    expect(unwrapBrowserMessageEnvelope('{"type":"get","resource":"app://commands"}')).toBeNull();
+    expect(unwrapBrowserMessageEnvelope('{"type":"nonsense","message":"x"}')).toBeNull();
+    expect(unwrapBrowserMessageEnvelope('{"message":"  "}')).toBeNull();
+    expect(unwrapBrowserMessageEnvelope("[1,2]")).toBeNull();
   });
 });
 
