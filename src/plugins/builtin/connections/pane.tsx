@@ -196,11 +196,12 @@ export function ConnectionsPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("connections", () => ({
     info: [
+      ...(!settled ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(issues > 0 ? [{ id: "issues", parts: [{ text: `${issues} issue${issues === 1 ? "" : "s"}`, tone: "warning" as const }] }] : []),
       ...(connecting > 0 ? [{ id: "connecting", parts: [{ text: `${connecting} connecting`, tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen ? [] : [{ id: "sort", key: "s", label: "ort", onPress: cycleSort }],
-  }), [connecting, cycleSort, detailOpen, issues]);
+  }), [connecting, cycleSort, detailOpen, issues, settled]);
 
   const renderCell = useCallback((source: ConnectionHealthState, column: ConnectionColumn): DataTableCell => {
     if (column.id === "service") return { text: truncateToDisplayWidth(source.name, column.width), color: colors.text };

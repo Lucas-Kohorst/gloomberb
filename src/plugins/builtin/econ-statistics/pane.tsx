@@ -3,7 +3,9 @@ import {
   DataTableView,
   EmptyState,
   InputSearchBar,
+  nextStackSortPreference,
   SegmentedControl,
+  sortStackItems,
   Spinner,
   type DataTableCell,
   type DataTableColumn,
@@ -20,7 +22,7 @@ import { formatNumber } from "../../../utils/format";
 import { isPlainKey } from "../../../utils/keyboard";
 import { stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { usePaneStatusFooter } from "../shared/pane-footer";
+import { usePaneStatusFooter, paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { getCachedStatsBundle, loadStatsBundle, type StatsBundle } from "./client";
 import { categoryLabel, changeColor, type StatCategoryId } from "./defs";
 import { StatDetail } from "./detail";
@@ -141,6 +143,19 @@ export function shouldPersistStat({
   return reason !== "keyboard" || selectionOnScreen;
 }
 
+function compareStatViews(a: StatViewModel, b: StatViewModel, columnId: ColumnId): number {
+  switch (columnId) {
+    case "name":
+      return a.stat.shortLabel.localeCompare(b.stat.shortLabel);
+    case "latest":
+      return a.latest.value - b.latest.value;
+    case "previous":
+      return (a.previous?.value ?? Number.NEGATIVE_INFINITY) - (b.previous?.value ?? Number.NEGATIVE_INFINITY);
+    case "percentile":
+      return a.percentile - b.percentile;
+  }
+}
+
 export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const [statId, setStatId] = usePaneSettingValue<string>("stat", DEFAULT_STAT_ID);
   const [range, setRange] = usePaneSettingValue<StatRangeId>("range", "20Y");
@@ -154,6 +169,10 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const searchInputRef = useRef<InputRenderable | null>(null);
   const generation = useRef(0);
+  const [sortPreference, setSortPreference] = useState<{ columnId: ColumnId; direction: "asc" | "desc" }>({
+    columnId: "name",
+    direction: "asc",
+  });
 
   const load = useCallback(async () => {
     const current = ++generation.current;
@@ -211,8 +230,13 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
   );
   const normalizedQuery = query.trim().toLowerCase();
   const visible = useMemo(
-    () => views.filter((view) => matchesQuery(view, normalizedQuery)),
-    [normalizedQuery, views],
+    () => sortStackItems(
+      views.filter((view) => matchesQuery(view, normalizedQuery)),
+      sortPreference,
+      compareStatViews,
+      (a, b) => a.stat.shortLabel.localeCompare(b.stat.shortLabel),
+    ),
+    [normalizedQuery, sortPreference, views],
   );
   const rows = useMemo(() => withCategoryHeaders(visible), [visible]);
   const selected = views.find((view) => view.stat.id === statId) ?? views[0] ?? null;
@@ -237,17 +261,16 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
     if (selected.observationStale) {
       info.push({ id: "stale", parts: [{ text: "STALE", tone: "warning", bold: true }] });
     }
-    if (normalizedQuery) {
-      info.push({ id: "filter", parts: [{ text: `filter: ${normalizedQuery}`, tone: "value" }] });
-    }
     return info;
-  }, [normalizedQuery, selected]);
+  }, [selected]);
 
   usePaneStatusFooter({
     registrationId: "econ-statistics",
     loading: state.status === "loading",
     error,
     info: footerInfo,
+    focused,
+    hints: [paneSearchHint(focusSearch), paneRefreshHint(refresh)],
   });
 
   if (!bundle && state.status !== "error") {
@@ -298,8 +321,8 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
               rootHeight={tableHeight}
               columns={columns}
               items={rows}
-              sortColumnId={null}
-              sortDirection="asc"
+              sortColumnId={sortPreference.columnId}
+              sortDirection={sortPreference.direction}
               selection={{
                 kind: "id",
                 selectedId: selected.stat.id,
@@ -307,7 +330,14 @@ export function EconStatisticsPane({ focused, width, height }: PaneProps) {
                 onChange: (id, _item, _index, reason) => chooseStat(String(id), reason),
               }}
               isNavigable={(row) => row.kind === "stat"}
-              onHeaderClick={() => {}}
+              onHeaderClick={(columnId) => {
+                const next = columnId as ColumnId;
+                setSortPreference((current) => nextStackSortPreference(
+                  current,
+                  next,
+                  next === "name" ? "asc" : "desc",
+                ));
+              }}
               onRootKeyDown={handlePaneKey}
               getItemKey={(row) => row.id}
               renderCell={(row, column) =>

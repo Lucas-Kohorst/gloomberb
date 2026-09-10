@@ -327,6 +327,18 @@ export const debugPlugin: GloomPlugin = {
   description: "View and export debug logs",
   toggleable: true,
 
+  paneTemplates: [{
+    id: "debug-pane",
+    paneId: "debug",
+    label: "Debug Log",
+    description: "View and export debug logs with level and source filters.",
+    keywords: ["debug", "log", "logs", "console", "errors"],
+    category: "Data",
+    shortcut: { prefix: "DBG" },
+    createInstance() {
+      return { placement: "floating" as const };
+    },
+  }],
   setup(ctx) {
     ctx.registerPane({
       id: "debug",

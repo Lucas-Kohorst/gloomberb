@@ -1,5 +1,6 @@
 import { apiClient } from "../../../api-client";
 import type { DatedObservation } from "../shared/series-cache";
+import { withConnectionRequest } from "../connections/register";
 import { statsCache } from "./cache";
 import type { StatDef } from "./defs";
 import { STATS } from "./stats";
@@ -22,12 +23,14 @@ export interface StatsBundle {
 
 export type StatsCloudClient = Pick<typeof apiClient, "getCloudFredSeries">;
 
+export const ECON_STATISTICS_CONNECTION_ID = "fred-econ-statistics";
+
 export function createStatSeriesLoader(client: StatsCloudClient): StatSeriesLoader {
   const cloudLoader: StatSeriesLoader = async (def) => {
-    const data = await client.getCloudFredSeries(def.seriesId, {
+    const data = await withConnectionRequest(ECON_STATISTICS_CONNECTION_ID, def.seriesId, () => client.getCloudFredSeries(def.seriesId, {
       limit: def.limit,
       sortOrder: "desc",
-    });
+    }));
     return data.observations;
   };
   return (def) => statsCache.load(def.seriesId, () => cloudLoader(def));

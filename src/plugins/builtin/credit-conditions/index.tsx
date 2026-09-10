@@ -15,9 +15,9 @@ import { useAutoRefresh } from "../shared/auto-refresh";
 import type { PaneProps } from "../../../types/plugin";
 import { colors } from "../../../theme/colors";
 import type { PluginModule } from "../plugin-module";
-import { getCachedCreditConditions, loadCreditConditions } from "./client";
+import { registerConnectionSource } from "../connections/register";
+import { getCachedCreditConditions, loadCreditConditions, CREDIT_CONDITIONS_CONNECTION_ID } from "./client";
 import {
-  CREDIT_SERIES,
   type CreditConditionRow,
   type CreditSeriesId,
 } from "./model";
@@ -123,17 +123,18 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     event.preventDefault?.();
     event.stopPropagation?.();
   });
-  const partial = rows.length > 0 && rows.length < CREDIT_SERIES.length;
   const asOf = rows.reduce<string | null>((latest, row) => !latest || row.date > latest ? row.date : latest, null);
   const footerInfo = useMemo<PaneFooterSegment[]>(() => [
     ...(asOf ? [{ id: "as-of", parts: [{ text: `as of ${asOf}`, tone: "muted" as const }] }] : []),
     ...(rows.length > 0 ? [{ id: "delayed", parts: [{ text: "delayed", tone: "muted" as const }] }] : []),
-    ...(partial ? [{ id: "partial", parts: [{ text: `PARTIAL ${rows.length}/${CREDIT_SERIES.length}`, tone: "warning" as const, bold: true }] }] : []),
     ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
     ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
     ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-  ], [asOf, error, loading, partial, rows.length, stale]);
-  usePaneFooter(paneId, () => ({ info: footerInfo }), [footerInfo, paneId]);
+  ], [asOf, error, loading, rows.length, stale]);
+  usePaneFooter(paneId, () => ({
+    info: footerInfo,
+    hints: [{ id: "refresh", key: "r", label: "efresh", onPress: reload }],
+  }), [footerInfo, paneId, reload]);
 
   if (rows.length === 0 && loading) {
     return (
@@ -157,8 +158,7 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
     </Box>
   );
 
-  return (
-    <DataTableView<CreditConditionRow, Column>
+  return (    <DataTableView<CreditConditionRow, Column>
       focused={focused}
       rootWidth={width}
       rootHeight={height}
@@ -184,7 +184,22 @@ export function CreditConditionsPane({ paneId, focused, width, height }: PanePro
   );
 }
 
+let disposeCreditConnection: (() => void) | null = null;
+
 export const creditConditionsModule: PluginModule = {
+  setup() {
+    disposeCreditConnection = registerConnectionSource({
+      id: CREDIT_CONDITIONS_CONNECTION_ID,
+      name: "FRED Credit Spreads",
+      kind: "api",
+      pluginId: "credit-conditions",
+      authRequired: false,
+    });
+  },
+  dispose() {
+    disposeCreditConnection?.();
+    disposeCreditConnection = null;
+  },
   panes: [{
     id: "credit-conditions",
     name: "Credit Spreads",

@@ -115,7 +115,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
   }, []);
 
   useShortcut((ev) => {
-    if (!focused) return;
+    if (!focused || ev.targetEditable) return;
     if (isPlainKey(ev, "j", "down")) {
       ev.stopPropagation?.();
       ev.preventDefault?.();
@@ -318,6 +318,7 @@ export function EconDetailView({ event, width, height, focused }: EconDetailView
                 <Box
                   key={ticker}
                   marginLeft={i > 0 ? 2 : 0}
+                  cursor="pointer"
                   onMouseDown={() => {
                     navigateTicker(ticker);
                   }}
