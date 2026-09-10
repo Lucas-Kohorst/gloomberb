@@ -24,6 +24,7 @@ import { togetherProvider } from "@earendil-works/pi-ai/providers/together";
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { createFactoryProvider } from "../factory/provider";
 import { AI_PROVIDER_IDS, type AiProviderId } from "../providers";
+import { sporeProvider } from "./spore";
 
 export type PiProviderFactory = () => Provider;
 
@@ -40,6 +41,7 @@ const FACTORIES_BY_PROVIDER_ID = {
   "github-copilot": githubCopilotProvider,
   xai: xaiProvider,
   openrouter: openrouterProvider,
+  spore: sporeProvider,
   deepseek: deepseekProvider,
   groq: groqProvider,
   cerebras: cerebrasProvider,

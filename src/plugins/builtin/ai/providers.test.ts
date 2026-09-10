@@ -3,6 +3,7 @@ import {
   AI_PROVIDER_IDS,
   detectProviders,
   getAiProvider,
+  getAiProviderDefinition,
   getAiProviderDefinitions,
   migrateLegacyAiProviderId,
   resolveDefaultAiProviderId,
@@ -13,6 +14,7 @@ import {
   GLOOMBERB_PI_PROVIDER_FACTORIES,
   GLOOMBERB_PI_PROVIDER_IDS,
 } from "./pi/providers";
+import { SPORE_API_BASE_URL, SPORE_API_KEY_ENV, sporeProvider } from "./pi/spore";
 
 describe("Pi provider catalog", () => {
   afterEach(() => {
@@ -32,6 +34,7 @@ describe("Pi provider catalog", () => {
       "github-copilot",
       "xai",
       "openrouter",
+      "spore",
       "deepseek",
       "groq",
       "cerebras",
@@ -65,10 +68,14 @@ describe("Pi provider catalog", () => {
       expect(provider).toBeDefined();
       expect(definition.name.length).toBeGreaterThan(0);
       expect(definition.outputModes).toEqual(["plain", "structured", "screener"]);
-      expect(definition.preferredModelIds.length).toBeGreaterThan(0);
-      expect(provider?.getModels().some((model) => (
-        definition.preferredModelIds.includes(model.id)
-      ))).toBe(true);
+      const models = provider?.getModels() ?? [];
+      if (models.length > 0) {
+        expect(definition.preferredModelIds.length).toBeGreaterThan(0);
+        expect(models.some((model) => definition.preferredModelIds.includes(model.id))).toBe(true);
+      } else {
+        expect(provider?.refreshModels).toBeDefined();
+        expect(definition.preferredModelIds).toEqual([]);
+      }
       expect(definition).not.toHaveProperty("command");
       expect(definition).not.toHaveProperty("buildArgs");
     }
@@ -131,5 +138,23 @@ describe("Pi provider catalog", () => {
     expect(getAiProvider("claude")?.id).toBe("anthropic");
     expect(getAiProvider("codex")?.id).toBe("openai-codex");
     setDetectedProviders(null);
+  });
+
+  test("wires Spore as an OpenRouter-style openai-completions API-key provider", () => {
+    const definition = getAiProviderDefinition("spore");
+    const provider = sporeProvider();
+
+    expect(definition).toMatchObject({
+      id: "spore",
+      name: "Spore",
+      preferredModelIds: [],
+      fastModelIds: [],
+    });
+    expect(provider.baseUrl).toBe(SPORE_API_BASE_URL);
+    expect(provider.auth.apiKey?.name).toBe("Spore API key");
+    expect(provider.getModels()).toEqual([]);
+    expect(provider.refreshModels).toBeDefined();
+    expect(SPORE_API_KEY_ENV).toBe("SPORE_API_KEY");
+    expect(SPORE_API_BASE_URL).toBe("https://api.sporeintel.com/api/v1");
   });
 });

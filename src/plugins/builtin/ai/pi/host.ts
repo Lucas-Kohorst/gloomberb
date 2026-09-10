@@ -530,7 +530,7 @@ export function createPiAiHost(options: CreatePiAiHostOptions): AiRunHost {
   const registeredTools: AgentTool[] = [];
   const promptFragments: string[] = [];
 
-  const getCatalog = async () => toAiRuntimeCatalog(await runtime.getCatalog());
+  const getCatalog = async () => toAiRuntimeCatalog(await runtime.getCatalog({ refresh: true }));
 
   return {
     getCatalog,

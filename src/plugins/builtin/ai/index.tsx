@@ -308,7 +308,7 @@ export const aiPlugin: GloomPlugin = {
       paneId: "local-agent-workspace",
       label: "AI Agent",
       description: "Create a persistent AI thread with optional model selection.",
-      keywords: ["ai", "agent", "claude", "openai", "chatgpt", "gemini", "copilot", "grok", "factory", "openrouter", "research", "thread"],
+      keywords: ["ai", "agent", "claude", "openai", "chatgpt", "gemini", "copilot", "grok", "factory", "openrouter", "spore", "research", "thread"],
       shortcut: { prefix: "AGENT" },
       createInstance: () => ({
         title: "AI Agent",
