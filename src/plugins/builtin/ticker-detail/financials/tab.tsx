@@ -158,13 +158,13 @@ export function ResolvedFinancialsTab({
   usePaneFooter("financials", () => ({
     info: [],
     hints: [
-      {
-        id: "section",
-        key: "1-3",
-        label: "section",
+      ...FINANCIAL_SUB_TABS.map((tab, index) => ({
+        id: `section-${tab.key}`,
+        key: String(index + 1),
+        label: ` ${tab.name}`,
         disabled: !financials,
-        onPress: () => setSubTabIdx((current) => (current + 1) % FINANCIAL_SUB_TABS.length),
-      },
+        onPress: () => setSubTabIdx(index),
+      })),
       {
         id: "period",
         key: "p",

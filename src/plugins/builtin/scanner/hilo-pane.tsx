@@ -9,6 +9,7 @@ import {
 import { usePaneSettingValue } from "../../../state/app/context";
 import { colors } from "../../../theme/colors";
 import { formatCompact, formatNumber } from "../../../utils/format";
+import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import type { PaneProps } from "../../../types/plugin";
 import type { ScannerHiloExtreme } from "../../../api-client";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -79,6 +80,7 @@ function HiloPane({ focused, width, height }: PaneProps) {
   const [sort] = usePaneSettingValue<HiloSort>("sort", "recent");
   const [activeSide, setActiveSide] = useState<Side>("lows");
   const [selected, setSelected] = useState<Record<Side, string | null>>({ lows: null, highs: null });
+  const [tableSort, setTableSort] = useState<SortPreference<string>>({ columnId: null, direction: "desc" });
 
   const lows = useMemo(
     () => filterHiloRows(feed.payload?.lows, minPrice, sort),
@@ -88,6 +90,27 @@ function HiloPane({ focused, width, height }: PaneProps) {
     () => filterHiloRows(feed.payload?.highs, minPrice, sort),
     [feed.payload?.highs, minPrice, sort],
   );
+  const sortRows = useCallback((rows: ScannerHiloExtreme[]) => (
+    applySortPreference(rows, tableSort, (row, columnId) => {
+      switch (columnId) {
+        case "symbol":
+          return row.symbol.toLowerCase();
+        case "price":
+          return row.price;
+        case "count":
+          return row.count;
+        default:
+          return null;
+      }
+    })
+  ), [tableSort]);
+  const sortedLows = useMemo(() => sortRows(lows), [lows, sortRows]);
+  const sortedHighs = useMemo(() => sortRows(highs), [highs, sortRows]);
+  const handleHeaderClick = useCallback((columnId: string) => {
+    setTableSort((current) => nextSortPreference(current, columnId, {
+      defaultDirection: (id) => (id === "symbol" ? "asc" : "desc"),
+    }));
+  }, []);
 
   useScannerStatusFooter("hilo", feed, focused);
 
@@ -132,9 +155,9 @@ function HiloPane({ focused, width, height }: PaneProps) {
       rootHeight={tableHeight}
       columns={columns}
       items={rows}
-      sortColumnId={null}
-      sortDirection="desc"
-      onHeaderClick={() => {}}
+      sortColumnId={tableSort.columnId}
+      sortDirection={tableSort.direction}
+      onHeaderClick={handleHeaderClick}
       getItemKey={rowKey}
       onActivate={(row) => pinTicker(row.symbol, { floating: true, paneType: TICKER_RESEARCH_PANE_ID })}
       renderCell={(row, column, _index, rowState) => renderCell(side, row, column, rowState)}
@@ -149,13 +172,13 @@ function HiloPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="row" flexGrow={1} overflow="hidden">
         {split ? (
           <>
-            {renderTable("lows", lows)}
+            {renderTable("lows", sortedLows)}
             <Box width={1} flexShrink={0} />
-            {renderTable("highs", highs)}
+            {renderTable("highs", sortedHighs)}
           </>
         ) : (
           // Too narrow for both: show the focused side and keep left/right switching it.
-          renderTable(activeSide, activeSide === "lows" ? lows : highs)
+          renderTable(activeSide, activeSide === "lows" ? sortedLows : sortedHighs)
         )}
       </Box>
     </Box>

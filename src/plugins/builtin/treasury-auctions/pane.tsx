@@ -289,17 +289,12 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
   }, [focusSearch, handlePaneKey]);
 
   const columns = useMemo(() => buildAuctionColumns(), []);
-  const activeFilterLabel = AUCTION_FILTERS.find((entry) => entry.value === filter)?.label ?? "All";
 
   usePaneFooter(TREASURY_AUCTIONS_PANE_ID, () => {
     const info: PaneFooterSegment[] = [];
     if (status === "loading") info.push({ id: "loading", parts: [{ text: "loading", tone: "muted" }] });
     if (error) info.push({ id: "error", parts: [{ text: "error", tone: "warning" }] });
     if (stale) info.push({ id: "stale", parts: [{ text: "stale cache", tone: "warning" }] });
-    if (filter !== "all") info.push({ id: "filter", parts: [{ text: activeFilterLabel, tone: "value" }] });
-    if (searchQuery.trim()) {
-      info.push({ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" }] });
-    }
     if (fetchedAt) {
       info.push({ id: "updated", parts: [{ text: formatRelativeAge(fetchedAt), tone: "muted" }] });
     }
@@ -310,18 +305,17 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
         : [
           { id: "search", key: "/", label: "search", onPress: focusSearch },
           { id: "filter", key: "f", label: "ilter", onPress: cycleFilter },
+          { id: "refresh", key: "r", label: "efresh", onPress: () => load(true) },
         ],
     };
   }, [
-    activeFilterLabel,
     auctions.length,
     cycleFilter,
     detailOpen,
     error,
     fetchedAt,
-    filter,
     focusSearch,
-    searchQuery,
+    load,
     stale,
     status,
   ]);
@@ -355,7 +349,7 @@ export function TreasuryAuctionsPane({ focused, width, height }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {tabs}
         <Box padding={1}>
-          <EmptyState title="Treasury auctions unavailable." message={error} />
+          <EmptyState title="Treasury auctions unavailable." message={error} hint="Press r to retry." />
         </Box>
       </Box>
     );

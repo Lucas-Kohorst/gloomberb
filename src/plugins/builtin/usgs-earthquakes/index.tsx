@@ -1,4 +1,4 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GloomPlugin,
@@ -7,6 +7,7 @@ import type {
   PaneTemplateContext,
 } from "../../../types/plugin";
 import {
+  EmptyState,
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
@@ -16,7 +17,6 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { colors } from "../../../theme/colors";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
@@ -267,7 +267,6 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
     loading,
     error,
     info: [
-      { id: "minmag", parts: [{ text: `≥M${minMagnitude.toFixed(1)}`, tone: "muted" as const }] },
       { id: "live", parts: [{ text: "live", tone: "value" as const }] },
       ...(updatedAgo
         ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }]
@@ -355,7 +354,7 @@ function EarthquakesPane({ width, height, focused }: PaneProps) {
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
         <Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}>
-          <Text fg={colors.textDim}>Error: {error}</Text>
+          <EmptyState title="Earthquakes unavailable." message={error} hint="Press r to retry." />
         </Box>
       </Box>
     );

@@ -1,6 +1,7 @@
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import type { PluginModule } from "../plugin-module";
 import { createTickerSurfacePaneTemplate } from "../shared/ticker-surface";
+import { registerConnectionSource } from "../connections/register";
 import {
   attachShortInterestHealth,
   resetShortInterestHealth,
@@ -9,17 +10,25 @@ import {
 import { ShortInterestView } from "./pane";
 
 let disposeConnection: (() => void) | null = null;
+let disposeHealth: (() => void) | null = null;
 
 export const shortInterestModule: PluginModule = {
   setup(ctx) {
     attachShortInterestHealth(ctx.connectionHealth);
-    disposeConnection = ctx.connectionHealth.registerSource({
+    disposeHealth = ctx.connectionHealth.registerSource({
       id: YAHOO_SHORT_INTEREST_CONNECTION_ID,
       name: "Yahoo Finance Short Interest",
       kind: "api",
       ownerId: "ticker-research",
       detail: "finance.yahoo.com",
       priority: 300,
+    });
+    disposeConnection = registerConnectionSource({
+      id: YAHOO_SHORT_INTEREST_CONNECTION_ID,
+      name: "Yahoo Finance Short Interest",
+      kind: "api",
+      pluginId: "ticker-research",
+      authRequired: false,
     });
 
     ctx.registerTickerResearchTab({
@@ -34,6 +43,8 @@ export const shortInterestModule: PluginModule = {
   dispose() {
     disposeConnection?.();
     disposeConnection = null;
+    disposeHealth?.();
+    disposeHealth = null;
     resetShortInterestHealth();
   },
 

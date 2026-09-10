@@ -1,4 +1,4 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GloomPlugin,
@@ -7,6 +7,7 @@ import type {
   PaneTemplateContext,
 } from "../../../types/plugin";
 import {
+  EmptyState,
   FeedDataTableStackView,
   InputSearchBar,
   Spinner,
@@ -16,7 +17,6 @@ import {
 import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { isPlainArrowUp, stopSearchFocusNavigation } from "../../../utils/search-focus-navigation";
-import { colors } from "../../../theme/colors";
 import { useDebouncedPluginPaneState, usePluginPaneState } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { registerConnectionSource } from "../connections/register";
@@ -182,7 +182,7 @@ function CrtShPane({ width, height, focused }: PaneProps) {
       onNavigateDown={() => setSearchFocused(false)} onQueryChange={updateQuery} />
   );
   if (loading && records.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center"><Spinner label={`Searching crt.sh${query ? ` for ${query}` : ""}...`} /></Box></Box>;
-  if (error && records.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><Text fg={colors.textDim}>Error: {error}</Text></Box></Box>;
+  if (error && records.length === 0) return <Box flexDirection="column" width={width} height={height}>{rootBefore}<Box flexGrow={1} justifyContent="center" alignItems="center" padding={1}><EmptyState title="Certificate search unavailable." message={error} hint="Press r to retry." /></Box></Box>;
   return <FeedDataTableStackView width={width} height={height} focused={focused && !searchFocused}
     rootBefore={rootBefore} items={items} selectedIdx={selectedIdx} onSelect={setSelectedIdx}
     onOpenItemIdChange={setOpenItemId} sourceLabel="Issuer" titleLabel="Domain" onRootKeyDown={(event, context) => {
