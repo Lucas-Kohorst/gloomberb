@@ -377,7 +377,7 @@ function FirePane({ width, height, focused }: PaneProps) {
     return (
       <Box flexDirection="column" width={width} height={height}>
         {rootBefore}
-        <ErrorState kind="FIRMS" error={error} />
+        <ErrorState kind="FIRMS" error={error} hint="Press r to retry." />
       </Box>
     );
   }

@@ -181,17 +181,17 @@ function FuturesPane({ focused, width, height }: PaneProps) {
   usePaneFooter(FUTURES_PANE_ID, () => {
     const info: PaneFooterSegment[] = quoteBoardFooterInfo(status);
     if (errorMessage) info.push({ id: "reason", parts: [{ text: errorMessage, tone: "warning" }] });
-    if (searchQuery.trim()) {
-      info.push({ id: "search", parts: [{ text: `search: ${searchQuery.trim()}`, tone: "value" }] });
-    }
     return {
       info,
-      hints: [{ id: "search", key: "/", label: "search", onPress: focusSearch }],
+      hints: [
+        { id: "search", key: "/", label: "search", onPress: focusSearch },
+        { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      ],
     };
   }, [
     errorMessage,
     focusSearch,
-    searchQuery,
+    refresh,
     status.latestTs,
     status.loading,
     status.stale,

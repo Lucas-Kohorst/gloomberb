@@ -55,6 +55,17 @@ export const layoutManagerModule: PluginModule = {
     },
   ],
 
+  paneTemplates: [
+    {
+      id: "layout-marketplace-pane",
+      paneId: "layout-marketplace",
+      label: "Layouts",
+      description: "Browse and switch saved layouts, publish layouts, and organize panes.",
+      keywords: ["layout", "layouts", "marketplace", "windows", "panes", "workspace", "presets"],
+      shortcut: { prefix: "LAYOUT" },
+    },
+  ],
+
   setup(ctx) {
     const notify = (body: string, options?: Omit<AppNotificationRequest, "body">) => {
       ctx.notify({ body, ...options });
