@@ -3,6 +3,7 @@ import {
   DataTableStackView,
   DataTableView,
   EmptyState,
+  InputSearchBar,
   Spinner,
   usePaneTicker,
   type DataTableCell,
@@ -11,11 +12,12 @@ import {
 } from "../../../components";
 import { colors } from "../../../theme/colors";
 import type { PaneProps } from "../../../types/plugin";
-import { Box, Text, TextAttributes } from "../../../ui";
+import { Box, Text, TextAttributes, type InputRenderable } from "../../../ui";
+import { useShortcut } from "../../../react/input";
 import { isPlainKey } from "../../../utils/keyboard";
 import { cycleSortPreference } from "../../../utils/sort-values";
 import { useAutoRefresh } from "../shared/auto-refresh";
-import { usePaneStatusFooter } from "../shared/pane-footer";
+import { paneRefreshHint, paneSearchHint, usePaneStatusFooter } from "../shared/pane-footer";
 import { loadCdsActivity, type CdsActivity, type CdsActivityLoader } from "./client";
 import {
   buildIssuerColumns,
@@ -172,6 +174,10 @@ export function CdsPane({
   const [selectedIssuerKey, setSelectedIssuerKey] = useState<string | null>(null);
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const searchInputRef = useRef<InputRenderable | null>(null);
   const generation = useRef(0);
   // Held in a ref so an inline loader prop cannot turn every render into a fetch.
   const loadActivityRef = useRef(loadActivity);
@@ -200,10 +206,15 @@ export function CdsPane({
   useAutoRefresh(fetchedAt, load);
 
   const trades = activity?.trades ?? NO_TRADES;
-  const issuers = useMemo(
-    () => (issuerQuery ? [] : sortIssuers(summarizeIssuers(trades), issuerSort)),
-    [issuerQuery, issuerSort, trades],
-  );
+  const issuers = useMemo(() => {
+    if (issuerQuery) return [];
+    const query = searchQuery.trim().toLowerCase();
+    const rows = summarizeIssuers(trades);
+    const filtered = query
+      ? rows.filter((row) => row.issuer.toLowerCase().includes(query))
+      : rows;
+    return sortIssuers(filtered, issuerSort);
+  }, [issuerQuery, issuerSort, searchQuery, trades]);
   const visibleTrades = useMemo(() => sortTrades(
     issuerQuery ? trades : selectedIssuerKey ? tradesForIssuer(trades, selectedIssuerKey) : [],
     tradeSort,
@@ -245,9 +256,21 @@ export function CdsPane({
     }
     return false;
   }, [load]);
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
   const handleIssuerKey = useCallback(
-    (event: DataTableKeyEvent) => handleKey(event, cycleIssuerSort),
-    [cycleIssuerSort, handleKey],
+    (event: DataTableKeyEvent) => {
+      if (!detailOpen && isPlainKey(event, "/", "s")) {
+        event.preventDefault?.();
+        event.stopPropagation?.();
+        focusSearch();
+        return true;
+      }
+      return handleKey(event, cycleIssuerSort);
+    },
+    [cycleIssuerSort, detailOpen, focusSearch, handleKey],
   );
   const handleTradeKey = useCallback(
     (event: DataTableKeyEvent) => handleKey(event, cycleTradeSort),
@@ -264,7 +287,33 @@ export function CdsPane({
     loading: status === "loading",
     error,
     info: footerInfo,
+    focused,
+    hints: [
+      ...(!issuerQuery ? [paneSearchHint(focusSearch)] : []),
+      paneRefreshHint(load),
+    ],
   });
+
+  useShortcut((event) => {
+    if (!focused) return;
+    if (searchFocused) {
+      if (isPlainKey(event, "escape")) {
+        event.stopPropagation?.();
+        event.preventDefault?.();
+        setSearchFocused(false);
+        setSearchQuery("");
+      }
+      return;
+    }
+    if (event.targetEditable) return;
+    // The tables own r/[ ] when they are mounted; this covers the
+    // loading/error empty states which render no table.
+    if (!activity && isPlainKey(event, "r")) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      load();
+    }
+  }, { allowEditable: true, enabled: focused });
 
   if (status === "loading" && !activity) {
     return (
@@ -277,7 +326,7 @@ export function CdsPane({
     return (
       <Box width={width} height={height} padding={1} flexDirection="column">
         {/* The reason lives in the footer, so the body never repeats it. */}
-        <EmptyState title="CDS activity unavailable." />
+        <EmptyState title="CDS activity unavailable." hint="Press r to retry." />
       </Box>
     );
   }
@@ -312,7 +361,7 @@ export function CdsPane({
   const issuerColumns = buildIssuerColumns();
   return (
     <DataTableStackView<CdsIssuerSummary, IssuerColumn>
-      focused={focused}
+      focused={focused && !searchFocused}
       detailOpen={detailOpen && !!selectedSummary}
       onBack={() => setDetailOpen(false)}
       detailTitle={selectedSummary?.issuer}
@@ -331,6 +380,22 @@ export function CdsPane({
       onDetailKeyDown={handleTradeKey}
       rootWidth={width}
       rootHeight={height}
+      rootBefore={(
+        <InputSearchBar
+          value={searchQuery}
+          focused={focused && !detailOpen}
+          active={searchFocused}
+          width={width}
+          focusToken={searchFocusToken}
+          inputRef={searchInputRef}
+          placeholder="issuer"
+          debounceMs={80}
+          onFocus={focusSearch}
+          onBlur={() => setSearchFocused(false)}
+          onNavigateDown={() => setSearchFocused(false)}
+          onQueryChange={setSearchQuery}
+        />
+      )}
       selection={{
         kind: "id",
         selectedId: selectedIssuerKey,
@@ -353,6 +418,7 @@ export function CdsPane({
       getItemKey={(row) => row.key}
       renderCell={(row, column, _index, state) => renderIssuerCell(row, column, state.selected)}
       emptyStateTitle={error ? "CDS activity unavailable." : "No reported single-name CDS trades."}
+      emptyStateHint={searchQuery.trim() ? undefined : "Press r to retry."}
     />
   );
 }
