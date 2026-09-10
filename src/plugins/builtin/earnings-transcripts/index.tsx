@@ -17,6 +17,8 @@ import {
 import { isEquityResearchTicker } from "../../../tickers/research-visibility";
 import { registerConnectionSource } from "../connections/register";
 import { paneRefreshHint, paneSearchHint, usePaneStatusLinkFooter } from "../shared/pane-footer";
+import { usePopOutNewsArticle } from "../news/wire/news/pop-out";
+import type { NewsArticle } from "../../../news/types";
 import { fetchEarningsTranscriptContent, fetchEarningsTranscripts } from "./client";
 import type { EarningsTranscript } from "./types";
 
@@ -72,6 +74,28 @@ function toFeedItems(
 
 function queryFromTemplateOptions(options?: PaneTemplateCreateOptions): string {
   return (options?.arg ?? options?.symbol ?? options?.values?.query ?? "").trim();
+}
+
+function toTranscriptArticle(transcript: EarningsTranscript): NewsArticle {
+  return {
+    id: `earnings-transcript:${transcript.id}`,
+    title: transcript.title,
+    url: transcript.url ?? "",
+    source: transcript.company ?? transcript.form ?? "Earnings Transcript",
+    publishedAt: transcript.date ? new Date(transcript.date) : new Date(0),
+    summary: transcript.body ? transcript.body.slice(0, 280) : undefined,
+    topic: "earnings",
+    topics: ["earnings", "transcript"],
+    sectors: [],
+    categories: ["Earnings Transcripts", transcript.form],
+    tickers: transcript.symbol ? [transcript.symbol] : [],
+    scores: { importance: 0, urgency: 0, marketImpact: 0, novelty: 0, confidence: 0 },
+    isBreaking: false,
+    isDeveloping: false,
+    importance: 0,
+    origin: "earnings-transcripts",
+    body: transcript.body || undefined,
+  };
 }
 
 function useOpenTranscriptContent(
@@ -186,9 +210,24 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     setSelectedIdx(0);
     setOpenItemId(null);
   }, [setQuery, setSelectedIdx]);
+  const popOut = usePopOutNewsArticle(() => setOpenItemId(null));
+  const activeTranscript = openItemId
+    ? transcripts.find((t) => t.id === openItemId) ?? transcripts[selectedIdx] ?? null
+    : transcripts[selectedIdx] ?? null;
+  const popOutSelected = useCallback(() => {
+    if (!activeTranscript) return;
+    popOut(toTranscriptArticle(activeTranscript));
+  }, [activeTranscript, popOut]);
 
   useShortcut((event) => {
-    if (!focused || openItemId) return;
+    if (!focused) return;
+    if (isPlainKey(event, "p") && activeTranscript && !searchFocused && !event.targetEditable) {
+      event.stopPropagation?.();
+      event.preventDefault?.();
+      popOutSelected();
+      return;
+    }
+    if (openItemId) return;
     if (searchFocused) {
       if (isPlainKey(event, "escape")) {
         event.stopPropagation?.();
@@ -224,6 +263,7 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
     hints: [
       paneSearchHint(focusSearch),
       paneRefreshHint(() => load(query)),
+      ...(activeTranscript && !error ? [{ id: "pop-out", key: "p", label: "op out", onPress: popOutSelected }] : []),
     ],
   });
 
@@ -245,8 +285,14 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
       load(query);
       return true;
     }
+    if (event.name === "p" && activeTranscript) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      popOutSelected();
+      return true;
+    }
     return false;
-  }, [focusSearch, load, query]);
+  }, [activeTranscript, focusSearch, load, popOutSelected, query]);
 
   const rootBefore = (
     <InputSearchBar
@@ -304,6 +350,10 @@ function EarningsTranscriptsPane({ width, height, focused }: PaneProps) {
       onSelect={setSelectedIdx}
       onOpenItemIdChange={setOpenItemId}
       onRootKeyDown={handleRootKeyDown}
+      onPopOut={(item) => {
+        const transcript = transcripts.find((t) => t.id === item.id) ?? activeTranscript;
+        if (transcript) popOut(toTranscriptArticle(transcript));
+      }}
       sourceLabel="Form"
       titleLabel="Transcript"
       emptyStateTitle={trimmedQuery ? "No transcripts data" : "Enter a ticker to load transcripts."}

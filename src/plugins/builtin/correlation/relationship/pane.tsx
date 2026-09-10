@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Text } from "../../../../ui";
-import { Button, usePaneFooter } from "../../../../components";
+import { Button, EmptyState, usePaneFooter } from "../../../../components";
 import { useShortcut, type KeyEventLike } from "../../../../react/input";
 import { StaticMultiLineChartSurface, StaticScatterChartSurface } from "../../../../components/chart/static";
 import { resolveChartPalette } from "../../../../components/chart/core/palette";
@@ -79,7 +79,7 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
   const [showCorrelation, setShowCorrelation] = usePluginPaneState<boolean>("showCorrelation", true);
   const [showRegression, setShowRegression] = usePluginPaneState<boolean>("showRegression", true);
   const [cursorDateMs, setCursorDateMs] = useState<number | null>(null);
-  const { data, loading, error } = useRelationshipHistories(pair, range, exchange);
+  const { data, loading, error, reload } = useRelationshipHistories(pair, range, exchange);
   const left = data?.[0] ?? null;
   const right = data?.[1] ?? null;
   const analysis = useMemo(() => (
@@ -98,7 +98,7 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
   const chartWidth = Math.max(20, width - 2);
   // Panels are allocated in priority order out of the rows that actually exist, so
   // a short pane drops the lowest-priority chart instead of clipping every axis.
-  const headerRows = 2;
+  const headerRows = 3;
   const availableChartRows = Math.max(0, height - headerRows);
   const railWidth = chartWidth >= 68 ? Math.min(34, Math.floor(chartWidth * 0.3)) : 0;
   const statsBelowRows = railWidth === 0 ? 1 : 0;
@@ -165,7 +165,7 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
     () => analysis ? buildRelationshipMetricsRows(stats, analysis) : [],
     [analysis, stats],
   );
-  const footerSummary = useMemo(() => {
+  const cursorSummary = useMemo(() => {
     const parts = [
       cursorDate ? formatDateTime(cursorDate).slice(0, 10) : "latest",
       `ratio ${formatNullableNumber(selectedRatio, 3)}`,
@@ -194,6 +194,12 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused) return;
+    if ((event.name ?? "").toLowerCase() === "r" && !event.ctrl && !event.meta) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      reload();
+      return;
+    }
     switch (resolveRelationshipGraphShortcut(event)) {
       case "range":
         event.preventDefault();
@@ -220,7 +226,6 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
 
   usePaneFooter("relationship-graph", () => ({
     info: [
-      { id: "summary", parts: [{ text: footerSummary, tone: "muted" as const }] },
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
@@ -229,13 +234,14 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
       { id: "window", key: "p", label: "eriod", onPress: cycleWindow },
       { id: "correlation", key: "c", label: "orr", onPress: toggleCorrelation },
       { id: "regression", key: "f", label: "it line", onPress: toggleRegression },
+      { id: "refresh", key: "r", label: "efresh", onPress: reload },
     ],
   }), [
     cycleRange,
     cycleWindow,
     error,
-    footerSummary,
     loading,
+    reload,
     toggleCorrelation,
     toggleRegression,
   ]);
@@ -251,9 +257,11 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
   if (!analysis || analysis.aligned.length < 2) {
     return (
       <Box padding={1} flexDirection="column" gap={1}>
-        <Text fg={error ? colors.warning : colors.textDim}>
-          {loading ? "Loading relationship history..." : error ?? "No overlapping price history."}
-        </Text>
+        <EmptyState
+          title={loading ? "Loading relationship history..." : "Relationship unavailable."}
+          message={loading ? undefined : error ?? "No overlapping price history."}
+          hint={loading ? undefined : "Press r to retry."}
+        />
       </Box>
     );
   }
@@ -279,6 +287,9 @@ export function RelationshipGraphPane({ focused, width, height }: PaneProps) {
             <Text fg={colors.textDim}>{series.label}</Text>
           </Box>
         ))}
+      </Box>
+      <Box height={1} flexDirection="row" overflow="hidden">
+        <Text fg={colors.textMuted}>{cursorSummary}</Text>
       </Box>
       <StaticMultiLineChartSurface
         series={priceSeries}

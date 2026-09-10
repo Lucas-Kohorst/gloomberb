@@ -94,7 +94,7 @@ export function TradeDetail({
           <>
             <Text>{" "}</Text>
             <Text fg={colors.textDim}>description</Text>
-            <Text fg={colors.text}>{truncate(trade.description, lineWidth)}</Text>
+            <Text fg={colors.text} wrapMode="word" wrapText>{trade.description}</Text>
           </>
         ) : null}
       </Box>
@@ -165,12 +165,12 @@ export function MemberTradesDetail({
     if (!nextRequest) return;
     const gen = fetchGenRef.current;
     setLoadingMore(true);
-    apiClient.getCloudCongressHouse({
+    withConnectionRequest(CONGRESS_CONNECTION_ID, "member-trades", () => apiClient.getCloudCongressHouse({
       ...nextRequest,
       member: member.memberName,
       limit: CONGRESS_MEMBER_TRADE_LIMIT,
       filingLimit: Math.max(CONGRESS_MEMBER_FILING_LIMIT, filingLimit),
-    })
+    }))
       .then((payload) => {
         if (fetchGenRef.current !== gen) return;
         const merged = detailPayload ? mergeCongressPages(detailPayload, payload) : payload;
@@ -266,17 +266,17 @@ export function MemberTradesDetail({
     info: [
       ...(status === "loading" ? [{ id: "member-loading", parts: [{ text: "loading member trades", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "member-error", parts: [{ text: error, tone: "warning" as const }] }] : []),
-      ...(maybeTruncated ? [{ id: "member-truncated", parts: [{ text: `limited to ${CONGRESS_MEMBER_TRADE_LIMIT} trades`, tone: "warning" as const }] }] : []),
     ],
     hints: [
+      { id: "member-refresh", key: "r", label: "efresh", onPress: refresh },
       { id: "member-ticker", key: "t", label: "icker", onPress: openSelectedTicker, disabled: !selectedTrade?.ticker },
       { id: "member-open", key: "o", label: "pen", onPress: openSelectedSource, disabled: !selectedTrade?.sourceUrl },
     ],
   }), [
     error,
-    maybeTruncated,
     openSelectedSource,
     openSelectedTicker,
+    refresh,
     selectedTrade?.sourceUrl,
     selectedTrade?.ticker,
     status,
@@ -289,6 +289,11 @@ export function MemberTradesDetail({
           {`${summaryMember.stateDistrict || "--"}  ${summaryMember.tradeCount} trades  ${summaryMember.buyCount} buys  ${summaryMember.sellCount} sells  ${formatAmountRange(summaryMember.estimatedLow, summaryMember.estimatedHigh)}`}
         </Text>
       </Box>
+      {maybeTruncated ? (
+        <Box height={1} flexDirection="row">
+          <Text fg={colors.warning}>{`limited to ${CONGRESS_MEMBER_TRADE_LIMIT} trades`}</Text>
+        </Box>
+      ) : null}
     </Box>
   );
   const emptyTitle = status === "loading"

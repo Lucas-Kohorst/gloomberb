@@ -13,6 +13,7 @@ import { nextSortPreference, type SortPreference } from "../../../utils/sort-val
 import { parseTickerListInput, formatTickerListInput } from "../../../tickers/list";
 import { useAssetData, usePluginPaneState, usePluginTickerActions } from "../../runtime";
 import { useAutoRefresh } from "../shared/auto-refresh";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import type { PaneSettingsContext, PaneSettingsDef } from "../../../types/plugin";
 import { formatTickerListInput as formatTickers } from "../../../tickers/list";
 import {
@@ -158,12 +159,16 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
     navigateTicker(event.symbol);
   }, [navigateTicker]);
 
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
+
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
     if (event.name === "/") {
       event.preventDefault?.();
       event.stopPropagation?.();
-      setSearchFocused(true);
-      setSearchFocusToken((value) => value + 1);
+      focusSearch();
       return true;
     }
     if (event.name === "r") {
@@ -172,7 +177,7 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       return true;
     }
     return false;
-  }, [reload]);
+  }, [focusSearch, reload]);
 
   const renderCell = useCallback((
     row: EarningsDisplayRow,
@@ -191,7 +196,11 @@ function EarningsCalendarPane({ focused, width, height }: PaneProps) {
       ...(loading ? [{ id: "loading", parts: [{ text: "loading", tone: "muted" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-  }), [error, loading, stale]);
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(() => reload(true)),
+    ],
+  }), [error, focusSearch, loading, reload, stale]);
 
   return (
     <DataTableView<EarningsDisplayRow, EarningsColumn>

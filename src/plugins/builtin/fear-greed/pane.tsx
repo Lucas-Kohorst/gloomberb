@@ -11,8 +11,6 @@ import { getCachedFearGreedData, loadFearGreed } from "./cache";
 import { IndicatorChart, IndexHistoryChart, PreviousScoreGrid } from "./charts";
 import {
   FEAR_GREED_GAUGE_SEGMENTS,
-  formatScore,
-  ratingColor,
   ratingLabel,
 } from "./format";
 import { openUrl } from "../../../components/ui/external-link";
@@ -83,19 +81,18 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   });
 
   const footerAge = updatedAgo ? `updated ${updatedAgo}` : loading ? "loading" : "";
+  const openSource = useCallback(() => openUrl(FEAR_GREED_URL), []);
   usePaneFooter(paneId, () => ({
     info: [
-      ...(data ? [{
-        id: "score",
-        parts: [
-          { text: `${formatScore(data.overall.score)} ${ratingLabel(data.overall.rating)}`, color: ratingColor(data.overall.rating), bold: true },
-        ],
-      }] : []),
       ...(stale ? [{ id: "stale", parts: [{ text: "STALE", tone: "warning" as const }] }] : []),
       ...(footerAge ? [{ id: "age", parts: [{ text: footerAge, tone: loading ? "muted" as const : "value" as const }] }] : []),
       ...(error ? [{ id: "error", parts: [{ text: error, tone: "warning" as const }] }] : []),
     ],
-  }), [data, error, footerAge, loading, paneId, stale]);
+    hints: [
+      { id: "refresh", key: "r", label: "efresh", onPress: refresh },
+      { id: "open", key: "o", label: "pen", onPress: openSource },
+    ],
+  }), [error, footerAge, loading, openSource, paneId, refresh, stale]);
 
   if (loading && !data) {
     return (
@@ -110,7 +107,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
   if (!data) {
     return (
       <Box flexDirection="column" width={width} height={height} padding={1} gap={1}>
-        <EmptyState title="Fear & Greed unavailable." message={error ?? undefined} />
+        <EmptyState title="Fear & Greed unavailable." message={error ?? undefined} hint="Press r to retry." />
       </Box>
     );
   }
@@ -158,7 +155,7 @@ export function FearGreedPane({ paneId, focused, width, height }: PaneProps) {
           ) : null}
           {error ? (
             <Box paddingX={1} marginTop={1}>
-              <Text fg={colors.warning}>{error}</Text>
+              <EmptyState title="Refresh failed." message={error} hint="Press r to retry." />
             </Box>
           ) : null}
           <IndexHistoryChart data={data} width={width} />
