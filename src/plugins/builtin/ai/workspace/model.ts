@@ -85,6 +85,7 @@ const LEGACY_PROVIDER_TITLES: Record<string, string> = {
   "github-copilot": "GitHub Copilot",
   xai: "xAI / Grok",
   openrouter: "OpenRouter",
+  spore: "Spore",
   opencode: "OpenCode",
   pi: "Pi",
 };

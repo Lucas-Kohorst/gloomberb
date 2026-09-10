@@ -365,6 +365,21 @@ function stripPromptSignal(prompt: AuthPrompt): PiSerializableAuthPrompt {
   return serializable as PiSerializableAuthPrompt;
 }
 
+function isPersonalModelId(modelId: string): boolean {
+  return modelId.endsWith(":personal");
+}
+
+function pickDefaultModel(
+  preferredModelIds: readonly string[],
+  available: readonly Model<Api>[],
+): Model<Api> | undefined {
+  for (const modelId of preferredModelIds) {
+    const match = available.find((candidate) => candidate.id === modelId);
+    if (match) return match;
+  }
+  return available.find((candidate) => !isPersonalModelId(candidate.id)) ?? available[0];
+}
+
 function connectionFromAuthCheck(authCheck: AuthCheck | undefined): PiProviderConnection {
   if (!authCheck) return { state: "not_connected" };
   const disconnectable = authCheck.type === "oauth" || authCheck.source === "stored credential";
@@ -531,8 +546,10 @@ export class PiAiRuntime {
       id: definition.id,
       label: definition.name,
       name: provider.name,
-      defaultModelId: definition.preferredModelIds.find((modelId) => availableIds.has(modelId))
-        ?? definition.preferredModelIds[0],
+      defaultModelId: pickDefaultModel(
+        definition.preferredModelIds,
+        provider.getModels().filter((model) => availableIds.has(model.id)),
+      )?.id ?? definition.preferredModelIds[0],
       authMethods,
       connection,
       models: provider.getModels().map((model) => modelSummary(model, availableIds.has(model.id))),
@@ -586,9 +603,7 @@ export class PiAiRuntime {
     const requestedModelId = selection.modelId?.trim();
     const model = requestedModelId
       ? this.models.getModel(providerId, requestedModelId)
-      : definition.preferredModelIds
-        .map((modelId) => available.find((candidate) => candidate.id === modelId))
-        .find((candidate): candidate is Model<Api> => candidate !== undefined);
+      : pickDefaultModel(definition.preferredModelIds, available);
     if (!model) {
       if (!requestedModelId) {
         throw new PiRuntimeError(
