@@ -26,6 +26,7 @@ export const AI_BYOK_SERVICE_IDS = [
   "google",
   "xai",
   "openrouter",
+  "spore",
   "github-copilot",
   "openai-codex",
 ] as const;
@@ -63,6 +64,10 @@ export interface AiProviderInventoryRow {
   hasKey: boolean;
   /** True when the provider is OAuth-capable (Pi-managed). */
   canOAuth: boolean;
+  /** True when the provider offers any OAuth method at all (vs API-key-only
+   *  providers like Spore). A stored BYOK key fully backs those providers,
+   *  so Delete key — not Disconnect — is the honest fix action. */
+  supportsOAuth: boolean;
   /** True when Gloomberb can log this provider out (OAuth / stored credential). */
   canDisconnect: boolean;
   /** True when the provider is a local endpoint (Ollama / Chrome on-device). */
@@ -247,6 +252,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: true,
         hasKey: false,
         canOAuth: false,
+        supportsOAuth: false,
         canDisconnect: false,
         isLocal: true,
         byokServiceId: null,
@@ -266,6 +272,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: false,
         hasKey: false,
         canOAuth: false,
+        supportsOAuth: false,
         canDisconnect: false,
         isLocal: true,
         byokServiceId: OLLAMA_BYOK_SERVICE_ID,
@@ -284,6 +291,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
         preferred: false,
         hasKey: false,
         canOAuth: false,
+        supportsOAuth: false,
         canDisconnect: false,
         isLocal: true,
         byokServiceId: null,
@@ -296,6 +304,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
       : null;
     const hasKey = byokServiceId ? hasByokKey(byokKeys, byokServiceId) : false;
     const canOAuth = account?.authMethods.some((method) => method.type === "oauth" && method.canLogin) ?? false;
+    const supportsOAuth = account?.authMethods.some((method) => method.type === "oauth") ?? false;
     const { status, detail } = piProviderStatus(account, hasKey, canOAuth);
 
     rows.push({
@@ -307,6 +316,7 @@ export function resolveAiInventory(options: ResolveAiInventoryOptions): AiInvent
       preferred: false,
       hasKey,
       canOAuth,
+      supportsOAuth,
       canDisconnect: account?.canDisconnect === true,
       isLocal: false,
       byokServiceId,
@@ -396,8 +406,21 @@ export function aiInventoryRowAction(row: AiProviderInventoryRow): {
   label: string;
   kind: AiInventoryActionKind;
 } | null {
-  if (row.canDisconnect) return { label: "Disconnect", kind: "disconnect" };
+  // A stored BYOK key fully backs API-key-only providers (no OAuth method):
+  // Disconnect cannot remove it, so Delete key stays the honest action.
+  if (row.canDisconnect && (row.supportsOAuth || !row.hasKey)) {
+    return { label: "Disconnect", kind: "disconnect" };
+  }
   return aiInventoryFixAction(row);
+}
+
+/**
+ * True when the row's live connection can only come from its stored BYOK key
+ * (API-key-only provider). Disconnect cannot remove such a connection;
+ * deleting the key can.
+ */
+export function isByokKeyBackedConnection(row: AiProviderInventoryRow): boolean {
+  return row.hasKey && !row.supportsOAuth;
 }
 
 /**
@@ -417,6 +440,7 @@ const AI_PROVIDER_API_URLS: Readonly<Record<string, string>> = {
   google: "https://generativelanguage.googleapis.com",
   xai: "https://api.x.ai",
   openrouter: "https://openrouter.ai/api",
+  spore: "https://api.sporeintel.com/api/v1",
   "github-copilot": "https://api.githubcopilot.com",
   "openai-codex": "https://api.openai.com",
 };

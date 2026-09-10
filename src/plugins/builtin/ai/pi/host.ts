@@ -39,6 +39,8 @@ import {
   type PiSerializableAuthPrompt,
   isPiRunCancelled,
 } from "./runtime";
+import { PiFileCredentialStore } from "./credential-store";
+import { ByokOverlayCredentialStore } from "./byok-credentials";
 import {
   createAgentCliTool,
   createAgentPluginFileTools,
@@ -523,7 +525,16 @@ export interface CreatePiAiHostOptions {
 }
 
 export function createPiAiHost(options: CreatePiAiHostOptions): AiRunHost {
-  const runtime = options.runtime ?? new PiAiRuntime({ dataDir: options.dataDir });
+  // BYOK keys saved through Account Management authenticate Pi providers via
+  // the overlay; anything already in the file store (OAuth, manual keys)
+  // keeps precedence, and automation/CLI runtimes without the AI plugin
+  // simply delegate to the file store.
+  const runtime = options.runtime ?? new PiAiRuntime({
+    dataDir: options.dataDir,
+    ...(options.dataDir
+      ? { credentials: new ByokOverlayCredentialStore(new PiFileCredentialStore(options.dataDir)) }
+      : {}),
+  });
   const openExternal = options.openExternal ?? defaultOpenExternal;
   const sendRemoteRequest = options.sendRemoteRequest ?? sendInProcessOrRemoteControlRequest;
   const pendingConnections = new Map<string, Promise<AiRuntimeCatalog>>();

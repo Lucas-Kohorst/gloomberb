@@ -11,7 +11,9 @@ import {
 } from "./providers";
 import { browserAiProviderStatus, buildBrowserAiSettings, getBrowserAiState } from "./browser";
 import { registerByokKnownService } from "../byok/services";
+import { readByokKeysFromConfig } from "../byok/store";
 import { aiProviderByokService } from "../account-management/ai-providers";
+import { setByokApiKeyReader } from "./pi/byok-credentials";
 import {
   AI_SCREENER_PANE_STATE_KEY,
   AiScreenerPane,
@@ -148,6 +150,21 @@ export const aiPlugin: GloomPlugin = {
       }
     }
 
+    // Feed stored BYOK keys into the Pi credential overlay so an API key
+    // saved in Account Management actually connects its provider. Stored
+    // Pi credentials (OAuth, manual keys) keep precedence inside the
+    // overlay, and env vars remain the fallback when no key is stored.
+    const syncByokCredentialReader = (config?: AppConfig) => {
+      const keysByService = new Map(
+        readByokKeysFromConfig(config ?? ctx.getConfig()).map((entry) => [entry.serviceId, entry.apiKey] as const),
+      );
+      setByokApiKeyReader((providerId) => {
+        const key = keysByService.get(providerId)?.trim();
+        return key ? key : undefined;
+      });
+    };
+    syncByokCredentialReader();
+
     const initialProviders = detectProviders();
     if (isHostedWebClient()) {
       void getBrowserAiState().then((state) => {
@@ -227,7 +244,10 @@ export const aiPlugin: GloomPlugin = {
         }
       })();
     }
-    ctx.on("config:changed", ({ config }) => updateWizards(config));
+    ctx.on("config:changed", ({ config }) => {
+      syncByokCredentialReader(config);
+      updateWizards(config);
+    });
     subscribeAiRuntimeCatalog(() => updateWizards(ctx.getConfig()));
 
     const manageAiAccounts = {
