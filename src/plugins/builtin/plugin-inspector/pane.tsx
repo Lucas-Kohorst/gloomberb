@@ -257,6 +257,7 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
   }, []);
 
   const handleRootKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (isPlainKey(event, "r")) {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -322,7 +323,7 @@ export function PluginInspectorPane({ paneId, focused, width, height }: PaneProp
     return (
       <Box flexDirection="column" width={width} height={height}>
         <Box flexGrow={1} justifyContent="center" alignItems="center">
-          <EmptyState title="Plugin registry unavailable." />
+          <EmptyState title="Plugin registry unavailable." message="Plugins are registered at startup." hint="Restart the app to reload plugins." />
         </Box>
       </Box>
     );

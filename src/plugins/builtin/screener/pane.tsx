@@ -1,14 +1,14 @@
-import { Box, Text, type InputRenderable } from "../../../ui";
+import { Box, type InputRenderable } from "../../../ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShortcut } from "../../../react/input";
 import {
   DataTableView,
+  EmptyState,
   InputSearchBar,
   Spinner,
   usePaneFooter,
   type DataTableKeyEvent,
 } from "../../../components";
-import { colors } from "../../../theme/colors";
 import { useAssetData, usePluginTickerActions } from "../../runtime";
 import { usePaneSettingValue } from "../../../state/app/context";
 import { TICKER_RESEARCH_PANE_ID } from "../../../types/config";
@@ -128,6 +128,7 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleTableKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (event.name === "r") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -159,6 +160,16 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
     }
   }, { allowEditable: true, enabled: focused && searchActive });
 
+  // Retry from the error branch, where the table (and its r handler) is unmounted.
+  useShortcut((ev) => {
+    if (!focused || searchActive) return;
+    if ((ev as { targetEditable?: boolean }).targetEditable) return;
+    if (ev.name !== "r" || ev.ctrl || ev.meta || ev.alt || ev.shift) return;
+    ev.preventDefault?.();
+    ev.stopPropagation?.();
+    refresh();
+  }, { enabled: focused && !searchActive });
+
   const filterCount = activeFilterCount(filters);
 
   usePaneFooter("fundamental-screener", () => ({
@@ -188,7 +199,7 @@ export function ScreenerPane({ focused, width, height }: PaneProps) {
   if (loadError && allResults.length === 0) {
     return (
       <Box flexDirection="column" width={width} height={height} justifyContent="center" alignItems="center">
-        <Text fg={colors.negative}>{loadError}</Text>
+        <EmptyState title="Screener unavailable." message={loadError} hint="Press r to retry." />
       </Box>
     );
   }

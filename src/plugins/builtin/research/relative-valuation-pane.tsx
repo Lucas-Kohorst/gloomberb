@@ -21,6 +21,7 @@ import { applySortPreference, compareSortValues, type SortDirection } from "../.
 import { formatCompact, formatCurrency, formatNumber, formatPercent, formatPercentRaw } from "../../../utils/format";
 import { usePluginTickerActions } from "../../runtime";
 import { handleRefreshKey, loadingErrorFooterInfo, useClampSelectedIndex } from "../shared/table-pane";
+import { paneRefreshHint, paneSearchHint } from "../shared/pane-footer";
 import { useBoundTicker as useSymbolBinding } from "../shared/ticker-request";
 
 type RelativeColumnId = "symbol" | "price" | "change" | "marketCap" | "pe" | "forwardPe" | "evSales" | "fcfYield" | "revenueGrowth" | "margin";
@@ -228,6 +229,7 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
   }, []);
 
   const handleKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (event.name === "/") { event.preventDefault?.(); event.stopPropagation?.(); setSearchFocused(true); setSearchFocusToken((value) => value + 1); return true; }
     if (event.name === "o") {
       const row = sortedRows[selectedIdx];
@@ -241,6 +243,25 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
     return handleRefreshKey(event, () => reload(true), { stopPropagation: true });
   }, [navigateTicker, reload, selectedIdx, sortedRows]);
 
+  const focusSearch = useCallback(() => {
+    setSearchFocused(true);
+    setSearchFocusToken((value) => value + 1);
+  }, []);
+  const refresh = useCallback(() => reload(true), [reload]);
+  const openSelected = useCallback(() => {
+    const row = sortedRows[selectedIdx];
+    if (row) navigateTicker(row.symbol);
+  }, [navigateTicker, selectedIdx, sortedRows]);
+
+  usePaneFooter("relative-valuation", () => ({
+    info: loadingErrorFooterInfo(loading, error),
+    hints: [
+      paneSearchHint(focusSearch),
+      paneRefreshHint(refresh),
+      { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !sortedRows[selectedIdx] },
+    ],
+  }), [error, focusSearch, loading, openSelected, refresh, selectedIdx, sortedRows]);
+
   const handleHeaderClick = useCallback((columnId: string) => {
     setSortPreference((current) => (
       current.columnId === columnId
@@ -248,10 +269,6 @@ export function RelativeValuationPane({ focused, width, height }: PaneProps) {
         : { columnId: columnId as RelativeColumnId, direction: columnId === "symbol" ? "asc" : "desc" }
     ));
   }, []);
-
-  usePaneFooter("relative-valuation", () => ({
-    info: loadingErrorFooterInfo(loading, error),
-  }), [error, loading]);
 
   return (
     <DataTableView<RelativeRow, RelativeColumn>

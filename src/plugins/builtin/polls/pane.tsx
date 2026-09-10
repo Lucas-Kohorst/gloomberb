@@ -525,12 +525,13 @@ export function PollsPane({ focused, width, height }: PaneProps) {
     event: DataTableKeyEvent,
     context: DataTableRootKeyContext,
   ) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (context.selectedIndex <= 0 && isPlainArrowUp(event)) {
       stopSearchFocusNavigation(event);
       focusSearch();
       return true;
     }
-    if (event.name === "/") {
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -553,7 +554,8 @@ export function PollsPane({ focused, width, height }: PaneProps) {
 
   useShortcut((event) => {
     if (!focused || detailOpen || searchFocused) return;
-    if (event.name === "/") {
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
+    if (isPlainKey(event, "/")) {
       event.preventDefault?.();
       event.stopPropagation?.();
       focusSearch();
@@ -561,6 +563,7 @@ export function PollsPane({ focused, width, height }: PaneProps) {
   }, { enabled: focused && !detailOpen && !searchFocused });
 
   const handleDetailKeyDown = useCallback((event: DataTableKeyEvent) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return false;
     if (isPlainKey(event, "h") || event.name === "left") {
       event.preventDefault?.();
       event.stopPropagation?.();
@@ -611,12 +614,16 @@ export function PollsPane({ focused, width, height }: PaneProps) {
       ...(updatedAgo ? [{ id: "updated", parts: [{ text: `updated ${updatedAgo}`, tone: "muted" as const }] }] : []),
     ],
     hints: detailOpen
-      ? [{ id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url }]
+      ? [
+          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab },
+          { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
+        ]
       : [
           { id: "search", key: "/", label: "search", onPress: focusSearch },
+          { id: "refresh", key: "r", label: "efresh", onPress: refreshActiveTab },
           { id: "open", key: "o", label: "pen", onPress: openSelected, disabled: !selected?.url },
         ],
-  }), [error, detailOpen, focusSearch, openSelected, selected?.url, status, updatedAgo]);
+  }), [error, detailOpen, focusSearch, openSelected, refreshActiveTab, selected?.url, status, updatedAgo]);
 
   const tabs = (
     <Box height={1} flexShrink={0} overflow="hidden">
@@ -680,7 +687,6 @@ export function PollsPane({ focused, width, height }: PaneProps) {
             />
           ) : null
         }
-        detailTitle={selected?.subject}
         rootBefore={searchBar}
         onRootKeyDown={handleRootKeyDown}
         onDetailKeyDown={handleDetailKeyDown}

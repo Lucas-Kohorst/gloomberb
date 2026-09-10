@@ -6,6 +6,7 @@ import { isPlainKey } from "../../../utils/keyboard";
 import { formatCompact } from "../../../utils/format";
 import { formatExpDate, resolveOptionsTarget } from "../../../utils/options";
 import { useOptionsQuery, useResolvedEntryValue, useTickerFinancials } from "../../../market-data/hooks";
+import { getSharedMarketDataCoordinator } from "../../../market-data/coordinator";
 import {
   DataTableView,
   EmptyState,
@@ -30,11 +31,13 @@ import {
   findNearestStrikeIndex,
   formatIv,
   optionColumnColor,
+  optionSortValue,
   renderOptionCell,
   resolveDefaultStrikeTarget,
   resolveOptionFieldIds,
 } from "./table";
-import type { OptionColumn, OptionFieldId, OptionTableRow, OptionsViewProps } from "./types";
+import type { OptionColumn, OptionColumnId, OptionFieldId, OptionTableRow, OptionsViewProps } from "./types";
+import { applySortPreference, nextSortPreference, type SortPreference } from "../../../utils/sort-values";
 import {
   buildOptionQuoteTargets,
   overlayOptionRowQuotes,
@@ -100,6 +103,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     range: DataTableVisibleRange;
   } | null>(null);
   const [interactive, setInteractive] = useState(false);
+  const [sortPreference, setSortPreference] = useState<SortPreference<OptionColumnId>>({ columnId: null, direction: "asc" });
   const userSelectedStrikeRef = useRef(false);
   const onCaptureRef = useRef(onCapture);
   const target = resolveOptionsTarget(ticker);
@@ -269,6 +273,10 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     () => overlayOptionRowQuotes(snapshotRows, optionQuoteEntries, optionQuoteFreshness),
     [optionQuoteEntries, optionQuoteFreshness, snapshotRows],
   );
+  const sortedRows = useMemo(
+    () => applySortPreference(rows, sortPreference, (row, columnId) => optionSortValue(row, columnId as OptionColumnId)),
+    [rows, sortPreference],
+  );
   const optionQuoteCoverage = useMemo(
     () => resolveOptionQuoteCoverage(
       optionQuoteTargets,
@@ -282,7 +290,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     headerColor: optionColumnColor(column, colors.panel),
   })), [optionFieldIds]);
 
-  const selectedRow = rows[strikeIdx] ?? null;
+  const selectedRow = sortedRows[strikeIdx] ?? null;
   const calcParams = useMemo(() => buildChainCalcParams({
     symbol: effectiveTicker,
     row: selectedRow,
@@ -297,6 +305,15 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     if (!calcParams) return;
     createPaneFromTemplate(OPTIONS_CALCULATOR_TEMPLATE_ID, { values: calcParams });
   }, [calcParams, createPaneFromTemplate]);
+
+  const retry = useCallback(() => {
+    const coordinator = getSharedMarketDataCoordinator();
+    if (!coordinator || !baseRequest) return;
+    void coordinator.loadOptions(baseRequest, { forceRefresh: true }).catch(() => {});
+    if (selectedExpiration != null) {
+      void coordinator.loadOptions({ ...baseRequest, expirationDate: selectedExpiration }, { forceRefresh: true }).catch(() => {});
+    }
+  }, [baseRequest, selectedExpiration]);
 
   const footerHints = useMemo(
     () => (calcParams ? [{ id: "calc", key: "c", label: "alc", onPress: openCalculator }] : undefined),
@@ -385,6 +402,13 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       event.preventDefault();
       event.stopPropagation();
       openCalculator();
+      return;
+    }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault();
+      event.stopPropagation();
+      retry();
+      return;
     }
   }, { enabled: focused, phase: "before" });
 
@@ -422,6 +446,12 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
       openCalculator();
       return true;
     }
+    if (isPlainKey(event, "r")) {
+      event.preventDefault?.();
+      event.stopPropagation?.();
+      retry();
+      return true;
+    }
 
     return false;
   }, [
@@ -430,6 +460,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     exitInteractive,
     interactive,
     openCalculator,
+    retry,
     selectAdjacentExpiration,
   ]);
 
@@ -437,7 +468,7 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
     return <EmptyState title="No ticker selected." message="Select a ticker to view options." />;
   }
   if (loading && !chain) return <Spinner label="Loading options chain..." />;
-  if (error) return <EmptyState title="Options chain unavailable." message={error} />;
+  if (error) return <EmptyState title="Options chain unavailable." message={error} hint="Press r to retry." />;
   if (!chain || chain.expirationDates.length === 0) {
     return <EmptyState title={`No options available for ${effectiveTicker}.`} />;
   }
@@ -511,10 +542,14 @@ export function OptionsView({ width, height, focused, onCapture = () => {} }: Op
         headerScrollId="options-table-header-scroll"
         bodyScrollId="options-table-body-scroll"
         columns={optionColumns}
-        items={rows}
-        sortColumnId={null}
-        sortDirection="asc"
-        onHeaderClick={() => {}}
+        items={sortedRows}
+        sortColumnId={sortPreference.columnId}
+        sortDirection={sortPreference.direction}
+        onHeaderClick={(columnId) => {
+          setSortPreference((current) => nextSortPreference(current, columnId as OptionColumnId, {
+            defaultDirection: (id) => (id === "strike" ? "asc" : "desc"),
+          }));
+        }}
         onTableMouseDown={enterInteractive}
         onBodyScrollActivity={() => { userSelectedStrikeRef.current = true; }}
         visibleRangeKey={viewportKey}

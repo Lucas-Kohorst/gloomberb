@@ -484,6 +484,7 @@ export function EquityDiagnosticView({ focused, width }: {
   const retry = useCallback(() => load("cache-first"), [load]);
 
   useShortcut((event) => {
+    if ((event as { targetEditable?: boolean }).targetEditable) return;
     if (!isPlainKey(event, "r")) return;
     event.preventDefault();
     event.stopPropagation();
