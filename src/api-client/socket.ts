@@ -498,7 +498,14 @@ export class CloudApiSocket {
     this.health.reportSocketState(GLOOM_CLOUD_SOCKET_CONNECTION_ID, "connecting", this.getWebSocketBaseUrl());
     let ws: WebSocket;
     try {
-      ws = socketHeaders && Object.keys(socketHeaders).length > 0
+      // Bun's client WebSocket is the only one that accepts handshake headers
+      // via its options object. A DOM WebSocket (desktop webview, hosted
+      // browser) only accepts subprotocol(s) as the second argument, so the
+      // { headers } object coerces to "[object Object]", fails subprotocol
+      // validation, and makes WebKit throw "The string did not match the
+      // expected pattern." — which used to break chat sends for logged-in
+      // desktop users before the REST send ever ran.
+      ws = socketHeaders && Object.keys(socketHeaders).length > 0 && typeof Bun !== "undefined"
         // Cast inline so the current global (possibly mocked in tests) is used.
         ? new (WebSocket as unknown as WebSocketConstructorWithHeaders)(url, { headers: socketHeaders })
         : new WebSocket(url);

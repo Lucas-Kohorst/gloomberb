@@ -34,6 +34,7 @@ import {
   byokKeysConfigSelector,
   canSelectAiProvider,
   checkOllamaAvailability,
+  isByokKeyBackedConnection,
   OLLAMA_BYOK_SERVICE_ID,
   OLLAMA_DEFAULT_URL,
   resolveAiInventory,
@@ -328,11 +329,15 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
     && !selectedRow.isActive
     && !canDownloadModel;
   const canAddKey = selectedRow != null && selectedRow.byokServiceId != null;
-  const canDisconnect = selectedRow?.canDisconnect === true;
-  const canDeleteKey = !canDisconnect
-    && selectedRow != null
+  // A stored BYOK key fully backs API-key-only providers: Disconnect cannot
+  // remove such a connection, so offer Delete key instead (matches the row
+  // action, which hides the dead Disconnect the same way).
+  const keyBackedConnection = selectedRow != null && isByokKeyBackedConnection(selectedRow);
+  const canDisconnect = selectedRow?.canDisconnect === true && !keyBackedConnection;
+  const canDeleteKey = selectedRow != null
     && selectedRow.byokServiceId != null
-    && selectedRow.hasKey;
+    && selectedRow.hasKey
+    && (!selectedRow.canDisconnect || keyBackedConnection);
   const canSignIn = selectedRow != null && selectedRow.canOAuth && !selectedRow.hasKey && selectedRow.status !== "available";
   const canRefresh = selectedRow != null;
 
@@ -455,6 +460,17 @@ export function AiProvidersTab({ focused, width, height }: { focused: boolean; w
               next,
               next === "active" ? "desc" : "asc",
             ));
+          }}
+          onRootKeyDown={(event) => {
+            // "k" is vim-up for DataTableView (handled in phase "before", which
+            // would consume it before the tab's own shortcut). Intercept it here
+            // when the selected row takes a key so Add key still opens.
+            if (event.name === "k" && canAddKey) {
+              event.stopPropagation?.();
+              event.preventDefault?.();
+              handleAddKey();
+              return true;
+            }
           }}
           getItemKey={(row) => row.id}
           renderCell={renderAiCell}

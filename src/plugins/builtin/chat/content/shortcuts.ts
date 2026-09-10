@@ -249,12 +249,8 @@ export function useChatContentShortcuts({
         }
       }
 
-      if (isPlainKey(event, "p") && composerIsEmpty() && openSelectedProfile?.()) {
-        event.preventDefault?.();
-        event.stopPropagation?.();
-        return;
-      }
-
+      // Footer commands must not fire while the composer owns the keyboard:
+      // typing always wins, Esc blurs first (handled above).
       return;
     }
 

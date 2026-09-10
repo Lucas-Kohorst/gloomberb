@@ -470,7 +470,12 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
   }, [blurModelInput, clearDraft, setPaneThreadId, updateWorkspace]);
 
   const beginCreateThread = useCallback(() => {
+    // Clone the active thread only when it already follows the pane default.
+    // Otherwise the pane settings ("Used by new threads in this pane") win —
+    // otherwise + New could never produce the configured default while a
+    // ready thread on another provider is open.
     const cloneFromActive = activeThread && activeThreadProviderSupported
+      && activeThread.providerId === paneNewThreadDefaults.providerId
       ? workspaceProviders.find((provider) => provider.id === activeThread.providerId)
       : null;
     const ready = cloneFromActive && isAiProviderReady(cloneFromActive)
@@ -868,8 +873,13 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
           label: "ign in",
           onPress: openAccounts,
         }]
-      : [],
-  }), [checkingProviderId, creating, openAccounts, runningMessageId, statusMessage]);
+      : [
+          { id: "new-thread", key: "n", label: "ew", onPress: () => beginCreateThread() },
+          ...(activeThreadProviderSupported
+            ? [{ id: "attach", key: "a", label: "ttach", onPress: () => attachSelectedTicker() }]
+            : []),
+        ],
+  }), [activeThreadProviderSupported, attachSelectedTicker, beginCreateThread, checkingProviderId, creating, openAccounts, runningMessageId, statusMessage]);
 
   const messageText = activeThread?.messages.map((message) => message.content) ?? [];
   const { catalog, openTicker } = useInlineTickers(messageText);
@@ -954,12 +964,27 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
                 {workspace.threads.map((thread) => {
                   const selected = thread.id === activeThread.id;
                   const supported = providers.some((provider) => provider.id === thread.providerId);
+                  // The header already names the active runner, so only subtitle
+                  // what differs from what "+ New" would create. Threads on the
+                  // pane default collapse to a single title line.
+                  const defaultModelId = normalizeAiModelId(paneNewThreadDefaults.modelId);
+                  const threadModelId = normalizeAiModelId(thread.modelId);
+                  const distinguishingParts: string[] = [];
+                  if (thread.providerId !== paneNewThreadDefaults.providerId) {
+                    distinguishingParts.push(providerLabel(thread.providerId));
+                  }
+                  if (threadModelId && threadModelId !== defaultModelId) {
+                    distinguishingParts.push(threadModelId);
+                  }
+                  const subtitle = !supported
+                    ? `${formatAiRunnerSelection(providerLabel(thread.providerId), thread.modelId)} · unsupported`
+                    : distinguishingParts.join(" · ");
                   return (
                     <PaneSidebarRow
                       key={thread.id}
                       active={selected}
                       disabled={busyRef.current}
-                      height={2}
+                      height={subtitle ? 2 : 1}
                       ariaLabel={`Open AI thread ${thread.title}`}
                       onSelect={() => {
                         setPaneThreadId(thread.id);
@@ -972,12 +997,11 @@ export function LocalAgentWorkspacePane({ paneId, focused, width, height }: Pane
                           <Text fg={foregroundColor} attributes={selected ? TextAttributes.BOLD : 0} onMouseDown={onMouseDown}>
                             {truncateWithEllipsis(thread.title, Math.max(listWidth - 2, 1))}
                           </Text>
-                          <Text fg={selected ? foregroundColor : colors.textMuted} onMouseDown={onMouseDown}>
-                            {truncateWithEllipsis(
-                              `${formatAiRunnerSelection(providerLabel(thread.providerId), thread.modelId)}${supported ? "" : " · unsupported"}`,
-                              Math.max(listWidth - 2, 1),
-                            )}
-                          </Text>
+                          {subtitle ? (
+                            <Text fg={selected ? foregroundColor : colors.textMuted} onMouseDown={onMouseDown}>
+                              {truncateWithEllipsis(subtitle, Math.max(listWidth - 2, 1))}
+                            </Text>
+                          ) : null}
                         </Box>
                       )}
                     </PaneSidebarRow>

@@ -643,7 +643,7 @@ export function ChatContent({
         { id: "refresh", key: "r", label: "efresh", onPress: retryMessages },
         { id: "search", key: "/", label: "search", onPress: openSearch },
         ...(
-          (!inputFocused || composerDraft.length === 0)
+          !inputFocused
           && (
             (selectedIdx >= 0 && selectedIdx < visibleMessages.length)
             || (activeChannel?.kind === "direct" && !!activeChannel.dmUser)
@@ -656,7 +656,6 @@ export function ChatContent({
   }, [
     activeChannel,
     canSend,
-    composerDraft.length,
     inputFocused,
     loadFailed,
     loading,

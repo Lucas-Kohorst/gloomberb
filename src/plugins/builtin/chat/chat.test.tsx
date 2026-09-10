@@ -1704,7 +1704,7 @@ describe("chat public profiles and presence", () => {
     expect(frame).toContain("Trades energy");
   });
 
-  test("empty-composer p opens the DM peer profile without stealing typed p", async () => {
+  test("empty-composer p types the letter; p opens the DM peer profile after Esc", async () => {
     const controller = createController({ sessionToken: "token-123" });
     installServerChannels(controller, [
       { id: "everyone", name: "everyone", created_at: "2026-03-26T12:10:05.684Z" },
@@ -1732,6 +1732,22 @@ describe("chat public profiles and presence", () => {
       channelId: "dm:bob",
     });
 
+    await emitKeypress({ name: "p" });
+    await flushFrame();
+    expect(setup().captureCharFrame()).not.toContain("Trades energy");
+
+    await act(async () => {
+      await setup().mockInput.typeText("p");
+      await setup().renderOnce();
+      await setup().renderOnce();
+    });
+    await flushFrame();
+    const typed = setup().captureCharFrame();
+    expect(typed).toContain("> p");
+    expect(typed).not.toContain("Trades energy");
+
+    await emitKeypress({ name: "escape" });
+    await flushFrame();
     await emitKeypress({ name: "p" });
     await flushFrame();
     expect(setup().captureCharFrame()).toContain("Trades energy");

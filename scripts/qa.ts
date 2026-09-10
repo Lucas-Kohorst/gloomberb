@@ -208,9 +208,18 @@ function parseJsonPayload(text: string): unknown {
 async function runTests(plan: QaPlan): Promise<void> {
   const targets = plan.tests.length > 0 ? plan.tests : ALWAYS_TESTS;
   console.log(`qa tests: ${targets.join(" ")}`);
+  // Bare paths make `bun test --parallel` treat the filter as a name match
+  // and walk the whole tree (node_modules included, 100k+ files), which
+  // exhausts fds spawning test workers (EBADF/SpawnFailed). Force path
+  // filters with ./ so only the targets are scanned.
+  const targetArgs = targets.map((target) => (
+    target.startsWith("./") || target.startsWith("/") || target.startsWith("-")
+      ? target
+      : `./${target}`
+  ));
   // --parallel matches the repo test script: per-file isolation prevents
   // mock.module pollution between test files sharing a process.
-  const result = await run(["bun", "test", "--parallel", ...targets], { timeoutMs: 180_000 });
+  const result = await run(["bun", "test", "--parallel", ...targetArgs], { timeoutMs: 180_000 });
   process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.exit !== 0) failStep("tests", `bun test exited ${result.exit}`);
