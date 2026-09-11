@@ -279,6 +279,14 @@ export class GloomberbCloudProvider implements AssetDataProvider {
           symbol: item.symbol,
           exchange: item.exchange,
         };
+        if (item.stale === true) {
+          results[itemIndex] = {
+            target,
+            quote: null,
+            error: createProviderMiss(`Cloud quotes are stale for ${target.symbol}`),
+          };
+          return;
+        }
         if ((item.status === "success" || item.status === "partial") && item.data) {
           results[itemIndex] = { target, quote: mapQuote(item.data) };
           return;

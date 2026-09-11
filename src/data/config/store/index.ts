@@ -43,6 +43,8 @@ export async function loadConfig(dataDir: string): Promise<AppConfig> {
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
+  // Installed browser hosts write localStorage before yielding on page exit.
+  if (configuredHost) return configuredHost.saveConfig(config);
   return (await getHost()).saveConfig(config);
 }
 

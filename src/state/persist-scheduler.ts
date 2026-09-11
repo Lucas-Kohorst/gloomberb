@@ -2,6 +2,13 @@ export const CONFIG_SAVE_DEBOUNCE_MS = 500;
 export const SESSION_SAVE_DEBOUNCE_MS = 1000;
 export const PLUGIN_STATE_SAVE_DEBOUNCE_MS = 500;
 
+const pendingFlushes = new Set<() => Promise<void>>();
+
+/** Start delayed local writes before the browser suspends or discards the page. */
+export async function flushPendingPersistence(): Promise<void> {
+  await Promise.allSettled([...pendingFlushes].map((flush) => flush()));
+}
+
 export interface PersistSchedulerOptions<T> {
   delayMs: number;
   save: (value: T) => Promise<void> | void;
@@ -23,7 +30,7 @@ export function createPersistScheduler<T>({
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingValue: T | undefined;
   let hasPendingValue = false;
-  let inFlight: Promise<void> = Promise.resolve();
+  let inFlight: Promise<void> | null = null;
 
   const clearTimer = () => {
     if (!timer) return;
@@ -32,23 +39,29 @@ export function createPersistScheduler<T>({
   };
 
   const enqueueSave = (value: T, reportError: boolean): Promise<void> => {
-    const saveTask = inFlight.then(async () => {
+    const run = async () => {
       try {
         await save(value);
       } catch (error) {
         if (reportError) onError?.(error);
         throw error;
       }
-    });
+    };
+    // An idle flush must reach synchronous storage before pagehide returns.
+    const saveTask = inFlight ? inFlight.then(run) : run();
     // Keep the serialization chain usable after a failed immediate save while
     // still returning that failure to its caller.
-    inFlight = saveTask.catch(() => {});
+    const settled = saveTask.catch(() => {}).then(() => {
+      if (inFlight === settled) inFlight = null;
+    });
+    inFlight = settled;
     return saveTask;
   };
 
   const drain = async () => {
     clearTimer();
-    if (!hasPendingValue) return inFlight;
+    pendingFlushes.delete(drain);
+    if (!hasPendingValue) return inFlight ?? undefined;
     const value = pendingValue as T;
     pendingValue = undefined;
     hasPendingValue = false;
@@ -59,6 +72,7 @@ export function createPersistScheduler<T>({
     schedule(value: T): void {
       pendingValue = value;
       hasPendingValue = true;
+      pendingFlushes.add(drain);
       clearTimer();
       timer = setTimeout(() => {
         void drain();
@@ -69,11 +83,13 @@ export function createPersistScheduler<T>({
     },
     cancel(): void {
       clearTimer();
+      pendingFlushes.delete(drain);
       pendingValue = undefined;
       hasPendingValue = false;
     },
     saveImmediately(value: T): Promise<void> {
       clearTimer();
+      pendingFlushes.delete(drain);
       pendingValue = undefined;
       hasPendingValue = false;
       return enqueueSave(value, false);

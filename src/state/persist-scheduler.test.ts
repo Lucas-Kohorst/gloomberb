@@ -1,11 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { createPersistScheduler } from "./persist-scheduler";
+import { createPersistScheduler, flushPendingPersistence } from "./persist-scheduler";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe("createPersistScheduler", () => {
+  test("global flush excludes cancelled saves, tolerates errors, and allows later saves", async () => {
+    const saved: string[] = [];
+    const scheduler = createPersistScheduler<string>({ delayMs: 60_000, save: (value) => { saved.push(value); } });
+    const cancelled = createPersistScheduler<string>({ delayMs: 60_000, save: (value) => { saved.push(value); } });
+    const failing = createPersistScheduler<string>({ delayMs: 60_000, save: () => { throw new Error("storage unavailable"); } });
+    scheduler.schedule("old");
+    scheduler.schedule("latest");
+    cancelled.schedule("discarded");
+    cancelled.cancel();
+    failing.schedule("failure");
+    await flushPendingPersistence();
+    await flushPendingPersistence();
+    expect(saved).toEqual(["latest"]);
+    scheduler.schedule("resumed");
+    await flushPendingPersistence();
+    expect(saved).toEqual(["latest", "resumed"]);
+  });
+
   test("coalesces scheduled saves and writes the latest value", async () => {
     const saved: number[] = [];
     const scheduler = createPersistScheduler<number>({
@@ -29,9 +47,9 @@ describe("createPersistScheduler", () => {
     });
 
     scheduler.schedule("pending");
-    await scheduler.flush();
-
+    const flushed = scheduler.flush();
     expect(saved).toEqual(["pending"]);
+    await flushed;
   });
 
   test("cancel drops pending value", async () => {

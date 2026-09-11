@@ -11,6 +11,7 @@ import { measurePerfAsync } from "../../../utils/perf-marks";
 import { initElectrobunBackend } from "./backend-rpc";
 import { installElectrobunAiHost } from "./ai-host";
 import { installElectrobunBrokerRemoteClient } from "./broker-remote-client";
+import { installPersistenceLifecycle } from "./persistence-lifecycle";
 import { installElectrobunConfigStoreHost } from "./config-host";
 import { WebDialogHostProvider } from "./dialog-host";
 import {
@@ -89,6 +90,7 @@ function renderFatalError(error: unknown): void {
 
 async function boot(): Promise<void> {
   installElectrobunConfigStoreHost();
+  installPersistenceLifecycle(window, document);
   installElectrobunBrokerRemoteClient();
   installElectrobunHttpFetchTransport();
   let degraded = false;

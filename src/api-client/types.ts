@@ -901,6 +901,7 @@ export interface CloudMarketBatchItem<T> {
   status: CloudMarketStatus;
   data: T | null;
   reasonCode?: string;
+  stale?: boolean;
 }
 
 export interface CloudMarketBatchPayload<T> {
