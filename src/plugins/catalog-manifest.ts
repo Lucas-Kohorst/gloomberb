@@ -33,6 +33,7 @@ export interface BuiltinPluginManifestEntry {
 const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   adjacent: { categories: ["data"] },
   "cboe-book": { categories: ["research", "data"] },
+  "crt-sh": { categories: ["research", "data"] },
   "cfpb-complaints": { categories: ["research", "data"] },
   "clinical-trials": { categories: ["research", "data"] },
   "comment-letters": { categories: ["research", "data"] },
@@ -50,6 +51,7 @@ const EDITORIAL: Record<string, { categories: string[]; featured?: true }> = {
   "sec-8k-alerts": { categories: ["research", "data"] },
   "sec-fts": { categories: ["research", "data"] },
   "short-campaigns": { categories: ["research", "data"] },
+  "usgs-earthquakes": { categories: ["research", "data"] },
   "workplace-signals": { categories: ["research", "data"] },
 
   ai: { categories: ["ai"] },
