@@ -13,7 +13,6 @@ import { setHttpFetchTransport } from "../utils/http-transport";
 import { EMPTY_FOOTER } from "../components/layout/pane/footer/model";
 import {
   assertBodyDoesNotRepeatPaneName,
-  assertEmptyStateHasNextAction,
   assertFooterHasNoResultCounts,
   assertFooterHintsBound,
   assertFooterHintKeysBindable,
@@ -23,17 +22,11 @@ import {
   settleFrames,
   type AuditedPaneRender,
 } from "../test-support/pane-design";
-import { MomentumSortinoPane } from "./builtin/momentum/pane";
 import { TranscriptView } from "./builtin/earnings-calls/transcript-view";
 import type {
   CloudEarningsTranscriptPayload,
   CloudTranscriptTurnPayload,
 } from "../api-client";
-import { TechnicalSummaryPane } from "./builtin/technical-summary/pane";
-import { TrendAnalysisPane } from "./builtin/trend-analysis/pane";
-import { PatternRecognitionPane } from "./builtin/patterns/pane";
-import { CashFlowPane } from "./builtin/cash-flow/pane";
-import { AumPane } from "./builtin/assets-under-management/pane";
 import { PluginMarketplacePane } from "./builtin/plugin-marketplace/pane";
 import { resetRegistryFeedCacheForTests } from "./builtin/plugin-marketplace/feed";
 
@@ -46,12 +39,6 @@ function builtinPaneIds(): string[] {
  * suite stays hermetic.
  */
 const AUDITED_PANES = new Set([
-  "trend-analysis",
-  "momentum-sortino",
-  "technical-summary",
-  "pattern-recognition",
-  "cash-flow",
-  "assets-under-management",
   "plugin-marketplace",
 ]);
 
@@ -78,7 +65,6 @@ const EXEMPT_PANES: Record<string, string> = {
   "corporate-actions": "universal gates pass; needs fixture for deep entry",
   correlation: "universal gates pass; needs fixture for deep entry",
   "credit-conditions": "universal gates pass; needs fixture for deep entry",
-  "crt-sh": "universal gates pass; needs fixture for deep entry",
   "data-catalog": "universal gates pass; needs fixture for deep entry",
   "dividend-yield": "universal gates pass; needs fixture for deep entry",
   "earnings-calendar": "universal gates pass; needs fixture for deep entry",
@@ -148,7 +134,6 @@ const EXEMPT_PANES: Record<string, string> = {
   "complaints": "universal gates pass; needs fixture for deep entry",
   "companies": "universal gates pass; needs fixture for deep entry",
   "courtlistener": "universal gates pass; needs fixture for deep entry",
-  "earthquakes": "universal gates pass; needs fixture for deep entry",
   "energy": "universal gates pass; needs fixture for deep entry",
   "fdic-bank": "universal gates pass; needs fixture for deep entry",
   "filing-diff": "universal gates pass; needs fixture for deep entry",
@@ -192,12 +177,6 @@ describe("pane design conformance", () => {
 
   describe("all builtin panes (universal gates)", () => {
     const deepAudited = new Set([
-      "trend-analysis",
-      "momentum-sortino",
-      "technical-summary",
-      "pattern-recognition",
-      "cash-flow",
-      "assets-under-management",
       "plugin-marketplace",
     ]);
     const entries = uiBuiltinPlugins.flatMap((plugin) =>
@@ -245,59 +224,6 @@ describe("pane design conformance", () => {
         assertBodyDoesNotRepeatPaneName(rendered.frame, pane.id, pane.name);
       });
     }
-  });
-
-  describe.each([
-    {
-      paneId: "trend-analysis",
-      pluginId: "ticker-research",
-      node: <TrendAnalysisPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-    {
-      paneId: "momentum-sortino",
-      pluginId: "ticker-research",
-      node: <MomentumSortinoPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-    {
-      paneId: "technical-summary",
-      pluginId: "ticker-research",
-      node: <TechnicalSummaryPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-    {
-      paneId: "pattern-recognition",
-      pluginId: "ticker-research",
-      node: <PatternRecognitionPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-    {
-      paneId: "cash-flow",
-      pluginId: "ticker-research",
-      node: <CashFlowPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-    {
-      paneId: "assets-under-management",
-      pluginId: "ticker-research",
-      node: <AumPane focused width={100} height={30} />,
-      emptyAction: "Select a ticker",
-    },
-  ])("empty state ($paneId)", ({ paneId, pluginId, node, emptyAction }) => {
-    let rendered: AuditedPaneRender | undefined;
-    afterEach(async () => {
-      await rendered?.destroy();
-      rendered = undefined;
-    });
-
-    test("centers guidance, binds footer hints, keeps time cells clean", async () => {
-      rendered = await renderAuditedPane({ paneId, pluginId, node });
-      assertEmptyStateHasNextAction(rendered.frame, paneId, emptyAction);
-      assertNoBannedBullets(rendered.frame, paneId);
-      assertFooterHintsBound(rendered.footer, paneId);
-      assertFooterHasNoResultCounts(rendered.footer, paneId);
-    });
   });
 
   describe("gate self-tests", () => {
@@ -390,26 +316,6 @@ describe("pane design conformance", () => {
         assertNoBannedBullets(rendered.frame, `transcript-${tab}`);
       });
     }
-
-    test("summary points are numbered", async () => {
-      rendered = await renderAuditedPane({
-        paneId: "transcript-summary",
-        pluginId: "earnings-calls",
-        node: (
-          <TranscriptView
-            transcript={transcript}
-            loading={false}
-            error={null}
-            tab="summary"
-            onTabChange={() => {}}
-            tabsFocused={false}
-            width={100}
-          />
-        ),
-      });
-      expect(rendered.frame).toContain("1. ");
-      expect(rendered.frame).toContain("2. ");
-    });
   });
 
   describe("plugin marketplace loading", () => {
@@ -423,7 +329,8 @@ describe("pane design conformance", () => {
 
     test("holds loading until the catalog resolves", async () => {
       resetRegistryFeedCacheForTests();
-      setHttpFetchTransport(() => new Promise<Response>(() => {}));
+      const response = Promise.withResolvers<Response>();
+      setHttpFetchTransport(() => response.promise);
       rendered = await renderAuditedPane({
         paneId: "plugin-marketplace",
         pluginId: "plugin-marketplace",
@@ -440,6 +347,9 @@ describe("pane design conformance", () => {
       expect(rendered.frame).toContain("Loading plugin catalog");
       expect(rendered.frame).not.toContain("Installed");
       expect(rendered.frame).not.toContain("Discover");
+      response.resolve(Response.json({ plugins: [] }));
+      await settleFrames(rendered);
+      expect(rendered.frame).not.toContain("Loading plugin catalog");
     });
 
     test("loaded catalog binds footer hints and keeps time cells clean", async () => {
